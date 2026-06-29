@@ -236,7 +236,7 @@ const main = Effect.gen(function* () {
 
   yield* Effect.promise(() => app.whenReady())
 
-  if (!TEST_ONBOARDING) migrate()
+  if (!TEST_ONBOARDING && !process.env.OPENCODE_DEV_SKIP_MIGRATE) migrate()
   app.setAsDefaultProtocolClient("opencode")
   registerRendererProtocol()
   setDockIcon()
