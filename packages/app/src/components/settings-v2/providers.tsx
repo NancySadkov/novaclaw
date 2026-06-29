@@ -5,6 +5,7 @@ import { ProviderIcon } from "@opencode-ai/ui/provider-icon"
 import { showToast } from "@/utils/toast"
 import { popularProviders, useProviders } from "@/hooks/use-providers"
 import { createMemo, type Component, For, Show } from "solid-js"
+import type { Config } from "@opencode-ai/sdk/v2/client"
 import { useLanguage } from "@/context/language"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
@@ -161,7 +162,21 @@ export const SettingsProvidersV2: Component = () => {
                 showToast({ variant: "error", title: "Invalid JSONC", description: "Could not parse the config file." })
                 return
               }
-              serverSync().set("config", parsed)
+              // Persist via the server (updateGlobal patch-merges into the global
+              // opencode.jsonc and refetches the config query). A bare set() is a
+              // no-op here: globalStore.config is a getter over the config query.
+              const ok = await serverSync()
+                .updateConfig(parsed as unknown as Config)
+                .then(() => true)
+                .catch((err: unknown) => {
+                  showToast({
+                    variant: "error",
+                    title: "Import failed",
+                    description: err instanceof Error ? err.message : String(err),
+                  })
+                  return false
+                })
+              if (!ok) return
               showToast({ variant: "success", icon: "circle-check", title: "Config imported" })
             }}
           >Import</ButtonV2>
