@@ -29,6 +29,7 @@ import * as OtelTracer from "@effect/opentelemetry/Tracer"
 import { LLMAISDK } from "./llm/ai-sdk"
 import { LLMNativeRuntime } from "./llm/native-runtime"
 import { LLMRequestPrep } from "./llm/request"
+import { resolveToolName, repairToolArgs } from "./llm/tool-repair"
 
 export const OUTPUT_TOKEN_MAX = ProviderTransform.OUTPUT_TOKEN_MAX
 
@@ -294,18 +295,22 @@ const live: Layer.Layer<
           // Copilot returns the authoritative billed amount only in provider-specific response fields.
           includeRawChunks: input.model.providerID.includes("github-copilot"),
           async experimental_repairToolCall(failed) {
-            const lower = failed.toolCall.toolName.toLowerCase()
-            if (lower !== failed.toolCall.toolName && prepared.tools[lower]) {
-              return {
-                ...failed.toolCall,
-                toolName: lower,
-              }
+            // Small/local models emit imperfect tool calls (wrong case, fuzzy or
+            // hallucinated names, malformed argument JSON). Recover the call so the
+            // loop continues; only an unresolvable name or unrecoverable args fall
+            // through to the `invalid` breadcrumb sink.
+            const names = Object.keys(prepared.tools).filter((name) => name !== "invalid")
+            const toolName = resolveToolName(failed.toolCall.toolName, names)
+            if (toolName) {
+              const input = repairToolArgs(failed.toolCall.input)
+              if (input !== undefined) return { ...failed.toolCall, toolName, input }
             }
             return {
               ...failed.toolCall,
               input: JSON.stringify({
                 tool: failed.toolCall.toolName,
                 error: failed.error.message,
+                available: names,
               }),
               toolName: "invalid",
             }
