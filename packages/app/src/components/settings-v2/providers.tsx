@@ -259,7 +259,126 @@ export const SettingsProvidersV2: Component = () => {
             {language.t("dialog.provider.viewAll")}
           </button>
         </div>
+
+        <div class="settings-v2-section">
+          <h3 class="settings-v2-section-title">Config</h3>
+          <SettingsListV2>
+            <div class="settings-v2-provider-row">
+              <div class="settings-v2-provider-lead">
+                <span class="settings-v2-provider-name">Export opencode.jsonc</span>
+              </div>
+              <ButtonV2
+                size="normal"
+                variant="neutral"
+                icon="download"
+                onClick={async () => {
+                  const cfg = serverSync().data.config
+                  const jsonc = generateConfigTemplate(cfg)
+                  const api = (window as any).api
+                  if (!api?.saveFilePicker || !api?.writeFile) return
+                  const path = await api.saveFilePicker({ title: "Export opencode.jsonc", defaultPath: "opencode.jsonc" })
+                  if (!path) return
+                  await api.writeFile(path, jsonc)
+                  showToast({ variant: "success", icon: "circle-check", title: "Config exported", description: path })
+                }}
+              >
+                Export
+              </ButtonV2>
+            </div>
+            <div class="settings-v2-provider-row">
+              <div class="settings-v2-provider-lead">
+                <span class="settings-v2-provider-name">Import opencode.jsonc</span>
+              </div>
+              <ButtonV2
+                size="normal"
+                variant="neutral"
+                icon="upload"
+                onClick={async () => {
+                  const api = (window as any).api
+                  if (!api?.openFilePicker || !api?.readFile) return
+                  const result = await api.openFilePicker({ title: "Import opencode.jsonc", extensions: ["jsonc", "json"] })
+                  if (!result?.files?.length) return
+                  const content = await api.readFile(result.files[0].path)
+                  const parsed = parseJSONC(content)
+                  if (!parsed) {
+                    showToast({ variant: "error", title: "Invalid JSONC", description: "Could not parse the config file." })
+                    return
+                  }
+                  await serverSDK().client.global.config.update({ config: parsed })
+                  showToast({ variant: "success", icon: "circle-check", title: "Config imported" })
+                }}
+              >
+                Import
+              </ButtonV2>
+            </div>
+          </SettingsListV2>
+        </div>
       </div>
     </>
   )
+}
+
+function generateConfigTemplate(current: Record<string, unknown>): string {
+  let out = "{\n"
+  out += '  "$schema": "https://opencode.ai/config.json",\n\n'
+  out += '  // Default model: "provider/model"  (e.g. "dgx-spark/openai/gpt-oss-120b")\n'
+  if (current.model) out += `  "model": ${JSON.stringify(current.model)},\n`
+  else out += '  // "model": "anthropic/claude-sonnet-4",\n'
+  out += "\n"
+  out += '  // Shell for terminal commands\n'
+  if (current.shell) out += `  "shell": ${JSON.stringify(current.shell)},\n`
+  out += "\n"
+  out += '  // Provider configurations\n'
+  out += '  "provider": {\n'
+  const providers = (current.provider as Record<string, unknown>) || {}
+  for (const [id, p] of Object.entries(providers)) {
+    out += `    ${JSON.stringify(id)}: {\n`
+    const cfg = p as Record<string, unknown>
+    if (cfg.name) out += `      "name": ${JSON.stringify(cfg.name)},\n`
+    if (cfg.npm) out += `      "npm": ${JSON.stringify(cfg.npm)},\n`
+    if (cfg.options) {
+      out += `      "options": ${JSON.stringify(cfg.options, null, 2).replace(/\n/g, "\n      ")},\n`
+    }
+    if (cfg.models) {
+      out += `      "models": ${JSON.stringify(cfg.models, null, 2).replace(/\n/g, "\n      ")},\n`
+    }
+    if (cfg.api) out += `      "api": ${JSON.stringify(cfg.api)},\n`
+    if (cfg.env) out += `      "env": ${JSON.stringify(cfg.env)},\n`
+    out += "    },\n"
+  }
+  out += "    // Example custom provider:\n"
+  out += '    // "my-local": {\n'
+  out += '    //   "name": "My Local Server",\n'
+  out += '    //   "npm": "@ai-sdk/openai-compatible",\n'
+  out += '    //   "options": { "baseURL": "http://localhost:8000/v1" },\n'
+  out += '    //   "models": {\n'
+  out += '    //     "my-model": {\n'
+  out += '    //       "name": "My Model",\n'
+  out += '    //       "tool_call": true,\n'
+  out += '    //       "reasoning": true,\n'
+  out += '    //       "temperature": true,\n'
+  out += '    //       "limit": { "context": 131072, "output": 16384 },\n'
+  out += '    //       "modalities": { "input": ["text"], "output": ["text"] },\n'
+  out += '    //       "options": { "stream": false, "temperature": 0.6, "top_p": 0.95 }\n'
+  out += '    //     }\n'
+  out += '    //   }\n'
+  out += '    // },\n'
+  out += "  },\n\n"
+  if (current.mcp) out += `  "mcp": ${JSON.stringify(current.mcp, null, 2).replace(/\n/g, "\n  ")},\n\n`
+  if (current.agent) out += `  "agent": ${JSON.stringify(current.agent, null, 2).replace(/\n/g, "\n  ")},\n\n`
+  if (current.permission) out += `  "permission": ${JSON.stringify(current.permission, null, 2).replace(/\n/g, "\n  ")},\n\n`
+  out += "}\n"
+  return out
+}
+
+function parseJSONC(content: string): Record<string, unknown> | null {
+  try {
+    // strip comments
+    const stripped = content
+      .replace(/\/\/.*$/gm, "")
+      .replace(/\/\*[\s\S]*?\*\//g, "")
+    return JSON.parse(stripped)
+  } catch {
+    return null
+  }
 }

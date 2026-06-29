@@ -99,4 +99,6 @@ export type ElectronAPI = {
   setBackgroundColor: (color: string) => Promise<void>
   exportDebugLogs: () => Promise<string>
   recordFatalRendererError: (error: FatalRendererError) => Promise<void>
+  writeFile: (filePath: string, content: string) => Promise<void>
+  readFile: (filePath: string) => Promise<string>
 }

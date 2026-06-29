@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process"
 import { stat } from "node:fs/promises"
+import { readFileSync, writeFileSync } from "node:fs"
 import { basename } from "node:path"
 import { app, BrowserWindow, Notification, clipboard, dialog, ipcMain, shell } from "electron"
 import type { IpcMainEvent, IpcMainInvokeEvent } from "electron"
@@ -230,6 +231,14 @@ export function registerIpcHandlers(deps: Deps) {
       checkForUpdates: () => void deps.showUpdater(),
       relaunch: deps.relaunch,
     })
+  })
+
+  ipcMain.handle("write-file", (_event: IpcMainInvokeEvent, filePath: string, content: string) => {
+    writeFileSync(filePath, content, "utf-8")
+  })
+
+  ipcMain.handle("read-file", (_event: IpcMainInvokeEvent, filePath: string) => {
+    return readFileSync(filePath, "utf-8")
   })
 }
 
