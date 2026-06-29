@@ -311,9 +311,9 @@ function generateConfigTemplate(current: Record<string, unknown>): string {
 
 function parseJSONC(content: string): Record<string, unknown> | null {
   try {
-    // strip comments
+    // Strip single-line comments but not URLs (don't match ://)
     const stripped = content
-      .replace(/\/\/.*$/gm, "")
+      .replace(/(?<!:)\/\/.*$/gm, "")
       .replace(/\/\*[\s\S]*?\*\//g, "")
     return JSON.parse(stripped)
   } catch {
