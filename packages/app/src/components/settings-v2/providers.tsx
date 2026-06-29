@@ -295,10 +295,11 @@ export const SettingsProvidersV2: Component = () => {
                 icon="upload"
                 onClick={async () => {
                   const api = (window as any).api
-                  if (!api?.openFilePicker || !api?.readFile) return
+                  if (!api?.openFilePicker || !api?.readPickedFile) return
                   const result = await api.openFilePicker({ title: "Import opencode.jsonc", extensions: ["jsonc", "json"] })
                   if (!result?.files?.length) return
-                  const content = await api.readFile(result.files[0].path)
+                  const buf = await api.readPickedFile(result.token, result.files[0].path)
+                  const content = new TextDecoder().decode(buf)
                   const parsed = parseJSONC(content)
                   if (!parsed) {
                     showToast({ variant: "error", title: "Invalid JSONC", description: "Could not parse the config file." })
