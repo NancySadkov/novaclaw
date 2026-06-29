@@ -135,6 +135,37 @@ export const SettingsProvidersV2: Component = () => {
     <>
       <div class="settings-v2-tab-header">
         <h2 class="settings-v2-tab-title">{language.t("settings.providers.title")}</h2>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <ButtonV2 size="small" variant="neutral" icon="download"
+            onClick={async () => {
+              const cfg = serverSync().data.config
+              const jsonc = generateConfigTemplate(cfg)
+              const api = (window as any).api
+              if (!api?.saveFilePicker || !api?.writeFile) return
+              const path = await api.saveFilePicker({ title: "Export opencode.jsonc", defaultPath: "opencode.jsonc" })
+              if (!path) return
+              await api.writeFile(path, jsonc)
+              showToast({ variant: "success", icon: "circle-check", title: "Config exported", description: path })
+            }}
+          >Export</ButtonV2>
+          <ButtonV2 size="small" variant="neutral" icon="upload"
+            onClick={async () => {
+              const api = (window as any).api
+              if (!api?.openFilePicker || !api?.readPickedFile) return
+              const result = await api.openFilePicker({ title: "Import opencode.jsonc", extensions: ["jsonc", "json"] })
+              if (!result?.files?.length) return
+              const buf = await api.readPickedFile(result.token, result.files[0].path)
+              const content = new TextDecoder().decode(buf)
+              const parsed = parseJSONC(content)
+              if (!parsed) {
+                showToast({ variant: "error", title: "Invalid JSONC", description: "Could not parse the config file." })
+                return
+              }
+              await serverSDK().client.global.config.update({ config: parsed })
+              showToast({ variant: "success", icon: "circle-check", title: "Config imported" })
+            }}
+          >Import</ButtonV2>
+        </div>
       </div>
 
       <div class="settings-v2-tab-body settings-v2-providers">
@@ -258,61 +289,6 @@ export const SettingsProvidersV2: Component = () => {
           >
             {language.t("dialog.provider.viewAll")}
           </button>
-        </div>
-
-        <div class="settings-v2-section">
-          <h3 class="settings-v2-section-title">Config</h3>
-          <SettingsListV2>
-            <div class="settings-v2-provider-row">
-              <div class="settings-v2-provider-lead">
-                <span class="settings-v2-provider-name">Export opencode.jsonc</span>
-              </div>
-              <ButtonV2
-                size="normal"
-                variant="neutral"
-                icon="download"
-                onClick={async () => {
-                  const cfg = serverSync().data.config
-                  const jsonc = generateConfigTemplate(cfg)
-                  const api = (window as any).api
-                  if (!api?.saveFilePicker || !api?.writeFile) return
-                  const path = await api.saveFilePicker({ title: "Export opencode.jsonc", defaultPath: "opencode.jsonc" })
-                  if (!path) return
-                  await api.writeFile(path, jsonc)
-                  showToast({ variant: "success", icon: "circle-check", title: "Config exported", description: path })
-                }}
-              >
-                Export
-              </ButtonV2>
-            </div>
-            <div class="settings-v2-provider-row">
-              <div class="settings-v2-provider-lead">
-                <span class="settings-v2-provider-name">Import opencode.jsonc</span>
-              </div>
-              <ButtonV2
-                size="normal"
-                variant="neutral"
-                icon="upload"
-                onClick={async () => {
-                  const api = (window as any).api
-                  if (!api?.openFilePicker || !api?.readPickedFile) return
-                  const result = await api.openFilePicker({ title: "Import opencode.jsonc", extensions: ["jsonc", "json"] })
-                  if (!result?.files?.length) return
-                  const buf = await api.readPickedFile(result.token, result.files[0].path)
-                  const content = new TextDecoder().decode(buf)
-                  const parsed = parseJSONC(content)
-                  if (!parsed) {
-                    showToast({ variant: "error", title: "Invalid JSONC", description: "Could not parse the config file." })
-                    return
-                  }
-                  await serverSDK().client.global.config.update({ config: parsed })
-                  showToast({ variant: "success", icon: "circle-check", title: "Config imported" })
-                }}
-              >
-                Import
-              </ButtonV2>
-            </div>
-          </SettingsListV2>
         </div>
       </div>
     </>
