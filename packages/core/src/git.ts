@@ -5,6 +5,7 @@ import { randomUUID } from "crypto"
 import { Context, Effect, Layer, Schema, Stream } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { AbsolutePath, RelativePath } from "./schema"
+import { ChangesetBudget } from "./changeset-budget"
 import { FSUtil } from "./fs-util"
 import { AppProcess } from "./process"
 import { makeGlobalNode } from "./effect/app-node"
@@ -572,48 +573,67 @@ export const layer = Layer.effect(
       paths?: readonly RelativePath[]
     }) {
       const paths = input.paths ?? (yield* treeFiles(input))
-      return yield* Effect.forEach(paths, (file) =>
-        Effect.gen(function* () {
-          const statusText = (yield* repositoryOperation("diff", input.repository, [
-            "diff",
-            "--name-status",
-            "--no-renames",
-            input.from,
-            input.to,
-            "--",
-            file,
-          ])).text.trim()
-          const status = statusText.startsWith("A") ? "added" : statusText.startsWith("D") ? "deleted" : "modified"
-          const stats = (yield* repositoryOperation("diff", input.repository, [
-            "diff",
-            "--numstat",
-            "--no-renames",
-            input.from,
-            input.to,
-            "--",
-            file,
-          ])).text.split("\t")
-          const binary = stats[0] === "-" || stats[1] === "-"
-          const patch = binary
-            ? ""
-            : (yield* repositoryOperation("diff", input.repository, [
-                "diff",
-                `--unified=${input.context ?? 3}`,
-                "--no-renames",
-                input.from,
-                input.to,
-                "--",
-                file,
-              ])).text
-          return {
+      // 1G: bound diff cost. Beyond the budget we still list each file (nothing
+      // vanishes) but skip its ~3 git subprocesses and omit the patch, so a huge
+      // change set can't hang the instance. The file-name list above is uncapped.
+      const diffs: File.Diff[] = []
+      let computed = 0
+      let bytes = 0
+      for (const file of paths) {
+        if (!ChangesetBudget.withinBudget({ files: computed, bytes })) {
+          diffs.push({
             path: file,
-            status,
-            additions: binary ? 0 : Number(stats[0] ?? 0),
-            deletions: binary ? 0 : Number(stats[1] ?? 0),
-            patch,
-          } satisfies File.Diff
-        }),
-      )
+            status: "modified",
+            additions: 0,
+            deletions: 0,
+            patch: ChangesetBudget.omittedPatch(ChangesetBudget.exceededBy({ files: computed, bytes })),
+          } satisfies File.Diff)
+          continue
+        }
+        const statusText = (yield* repositoryOperation("diff", input.repository, [
+          "diff",
+          "--name-status",
+          "--no-renames",
+          input.from,
+          input.to,
+          "--",
+          file,
+        ])).text.trim()
+        const status = statusText.startsWith("A") ? "added" : statusText.startsWith("D") ? "deleted" : "modified"
+        const stats = (yield* repositoryOperation("diff", input.repository, [
+          "diff",
+          "--numstat",
+          "--no-renames",
+          input.from,
+          input.to,
+          "--",
+          file,
+        ])).text.split("\t")
+        const binary = stats[0] === "-" || stats[1] === "-"
+        const patch = binary
+          ? ""
+          : (yield* repositoryOperation("diff", input.repository, [
+              "diff",
+              `--unified=${input.context ?? 3}`,
+              "--no-renames",
+              input.from,
+              input.to,
+              "--",
+              file,
+            ])).text
+        diffs.push({
+          path: file,
+          status,
+          additions: binary ? 0 : Number(stats[0] ?? 0),
+          deletions: binary ? 0 : Number(stats[1] ?? 0),
+          patch,
+        } satisfies File.Diff)
+        computed++
+        bytes += Buffer.byteLength(patch, "utf8")
+      }
+      if (computed < paths.length)
+        yield* Effect.logWarning(`Git.tree.diff: ${ChangesetBudget.summary(paths.length, computed, bytes)}`)
+      return diffs
     })
 
     const entry = Effect.fnUntraced(function* (repository: Repository, tree: TreeID, file: RelativePath) {
