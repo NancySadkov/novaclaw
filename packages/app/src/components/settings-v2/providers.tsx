@@ -296,56 +296,17 @@ export const SettingsProvidersV2: Component = () => {
 }
 
 function generateConfigTemplate(current: Record<string, unknown>): string {
-  let out = "{\n"
-  out += '  "$schema": "https://opencode.ai/config.json",\n\n'
-  out += '  // Default model: "provider/model"  (e.g. "dgx-spark/openai/gpt-oss-120b")\n'
-  if (current.model) out += `  "model": ${JSON.stringify(current.model)},\n`
-  else out += '  // "model": "anthropic/claude-sonnet-4",\n'
-  out += "\n"
-  out += '  // Shell for terminal commands\n'
-  if (current.shell) out += `  "shell": ${JSON.stringify(current.shell)},\n`
-  out += "\n"
-  out += '  // Provider configurations\n'
-  out += '  "provider": {\n'
-  const providers = (current.provider as Record<string, unknown>) || {}
-  for (const [id, p] of Object.entries(providers)) {
-    out += `    ${JSON.stringify(id)}: {\n`
-    const cfg = p as Record<string, unknown>
-    if (cfg.name) out += `      "name": ${JSON.stringify(cfg.name)},\n`
-    if (cfg.npm) out += `      "npm": ${JSON.stringify(cfg.npm)},\n`
-    if (cfg.options) {
-      out += `      "options": ${JSON.stringify(cfg.options, null, 2).replace(/\n/g, "\n      ")},\n`
-    }
-    if (cfg.models) {
-      out += `      "models": ${JSON.stringify(cfg.models, null, 2).replace(/\n/g, "\n      ")},\n`
-    }
-    if (cfg.api) out += `      "api": ${JSON.stringify(cfg.api)},\n`
-    if (cfg.env) out += `      "env": ${JSON.stringify(cfg.env)},\n`
-    out += "    },\n"
-  }
-  out += "    // Example custom provider:\n"
-  out += '    // "my-local": {\n'
-  out += '    //   "name": "My Local Server",\n'
-  out += '    //   "npm": "@ai-sdk/openai-compatible",\n'
-  out += '    //   "options": { "baseURL": "http://localhost:8000/v1" },\n'
-  out += '    //   "models": {\n'
-  out += '    //     "my-model": {\n'
-  out += '    //       "name": "My Model",\n'
-  out += '    //       "tool_call": true,\n'
-  out += '    //       "reasoning": true,\n'
-  out += '    //       "temperature": true,\n'
-  out += '    //       "limit": { "context": 131072, "output": 16384 },\n'
-  out += '    //       "modalities": { "input": ["text"], "output": ["text"] },\n'
-  out += '    //       "options": { "stream": false, "temperature": 0.6, "top_p": 0.95 }\n'
-  out += '    //     }\n'
-  out += '    //   }\n'
-  out += '    // },\n'
-  out += "  },\n\n"
-  if (current.mcp) out += `  "mcp": ${JSON.stringify(current.mcp, null, 2).replace(/\n/g, "\n  ")},\n\n`
-  if (current.agent) out += `  "agent": ${JSON.stringify(current.agent, null, 2).replace(/\n/g, "\n  ")},\n\n`
-  if (current.permission) out += `  "permission": ${JSON.stringify(current.permission, null, 2).replace(/\n/g, "\n  ")},\n\n`
-  out += "}\n"
-  return out
+  const out: Record<string, unknown> = { "$schema": "https://opencode.ai/config.json" }
+  if (current.model) out.model = current.model
+  if (current.shell) out.shell = current.shell
+  if (current.default_agent) out.default_agent = current.default_agent
+  if (current.small_model) out.small_model = current.small_model
+  if (current.username) out.username = current.username
+  if (current.provider) out.provider = current.provider
+  if (current.mcp) out.mcp = current.mcp
+  if (current.agent) out.agent = current.agent
+  if (current.permission) out.permission = current.permission
+  return JSON.stringify(out, null, 2) + "\n"
 }
 
 function parseJSONC(content: string): Record<string, unknown> | null {
