@@ -8,6 +8,7 @@ import { Image } from "../image"
 import { LocationMutation } from "../location-mutation"
 import { PermissionV2 } from "../permission"
 import { AbsolutePath } from "../schema"
+import { ReadGuidance } from "./read-guidance"
 import { ReadToolFileSystem } from "./read-filesystem"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
@@ -90,6 +91,23 @@ export const layer = Layer.effectDiscard(
               }
               if ("encoding" in content && content.encoding === "base64")
                 return yield* Effect.fail(new ReadToolFileSystem.BinaryFileError({ resource }))
+              // 1F: warn the model when a read takes a large slice of context so small
+              // models continue in chunks (offset/limit) rather than holding a whole file.
+              if (content instanceof ReadToolFileSystem.TextPage) {
+                const note = ReadGuidance.forText({
+                  text: content.content,
+                  truncated: content.truncated,
+                  offset: content.offset,
+                  ...(content.next === undefined ? {} : { next: content.next }),
+                })
+                return note
+                  ? new ReadToolFileSystem.TextPage({ ...content, content: `${content.content}\n\n[read] ${note}` })
+                  : content
+              }
+              if (content.encoding === "utf8") {
+                const note = ReadGuidance.forText({ text: content.content, truncated: false, offset: 1 })
+                return note ? { ...content, content: `${content.content}\n\n[read] ${note}` } : content
+              }
               return content
             }).pipe(
               Effect.mapError((error) => {
