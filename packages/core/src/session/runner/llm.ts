@@ -28,12 +28,15 @@ import { SessionCompaction } from "../compaction"
 import { SessionEvent } from "../event"
 import { SessionHistory } from "../history"
 import { SessionInput } from "../input"
+import { SessionMessage } from "../message"
+import { Prompt } from "../prompt"
 import { SessionSchema } from "../schema"
 import { SessionStore } from "../store"
 import { type RunError, Service } from "./index"
 import { SessionRunnerModel } from "./model"
 import { createLLMEventPublisher } from "./publish-llm-event"
 import { toLLMMessages } from "./to-llm-message"
+import { detectDoomLoop, redirectMessage } from "./doom-loop"
 import { MAX_STEPS_PROMPT } from "./max-steps"
 import { Snapshot } from "../../snapshot"
 import { makeLocationNode } from "../../effect/app-node"
@@ -383,6 +386,9 @@ export const layer = Layer.effect(
       const hasQueue = hasSteer ? false : yield* SessionInput.hasPending(db, input.sessionID, "queue")
       if (!input.force && !hasSteer && !hasQueue) return
       yield* failInterruptedTools(input.sessionID)
+      // 1E: track which repeated-call loops we have already redirected this drain, so a
+      // persistent loop is nudged once (not every turn).
+      const nudged = new Set<string>()
       let promotion: SessionInput.Delivery | undefined = hasSteer ? "steer" : hasQueue ? "queue" : undefined
       let shouldRun = input.force || hasSteer || hasQueue
       while (shouldRun) {
@@ -393,6 +399,40 @@ export const layer = Layer.effect(
           needsContinuation = result.needsContinuation
           step = result.step + 1
           promotion = "steer"
+          // 1E doom-loop break: only while the model is still acting (made a tool call).
+          // If its last few tool calls are byte-identical, inject a one-shot redirect as a
+          // steer so the next turn is nudged to change approach.
+          if (result.needsContinuation) {
+            const context = yield* getContext(input.sessionID)
+            const calls = context.flatMap((message) =>
+              message.type === "assistant"
+                ? message.content.flatMap((part) =>
+                    part.type === "tool"
+                      ? [
+                          {
+                            name: part.name,
+                            input:
+                              typeof part.state.input === "string"
+                                ? part.state.input
+                                : JSON.stringify(part.state.input),
+                          },
+                        ]
+                      : [],
+                  )
+                : [],
+            )
+            const looping = detectDoomLoop(calls)
+            const key = looping ? `${looping.name} ${looping.input}` : undefined
+            if (looping && key !== undefined && !nudged.has(key)) {
+              nudged.add(key)
+              yield* SessionInput.admit(db, events, {
+                id: SessionMessage.ID.create(),
+                sessionID: input.sessionID,
+                prompt: Prompt.make({ text: redirectMessage(looping) }),
+                delivery: "steer",
+              })
+            }
+          }
           if (!needsContinuation) needsContinuation = yield* SessionInput.hasPending(db, input.sessionID, "steer")
         }
         shouldRun = yield* SessionInput.hasPending(db, input.sessionID, "queue")
