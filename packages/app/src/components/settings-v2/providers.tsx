@@ -161,7 +161,7 @@ export const SettingsProvidersV2: Component = () => {
                 showToast({ variant: "error", title: "Invalid JSONC", description: "Could not parse the config file." })
                 return
               }
-              await serverSDK().client.global.config.update({ config: parsed })
+              serverSync().set("config", parsed)
               showToast({ variant: "success", icon: "circle-check", title: "Config imported" })
             }}
           >Import</ButtonV2>
