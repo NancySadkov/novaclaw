@@ -131,6 +131,60 @@ export function make<
   return tool
 }
 
+/**
+ * Escape hatch for tools whose input is a raw JSON Schema and whose execution is
+ * external — MCP servers and plugins — rather than an Effect-Schema-typed core tool.
+ * `make` is Effect-Schema-first; dynamic MCP/plugin tools register through here instead
+ * (see the note in `builtins.ts`). `execute` receives the already-parsed call input and
+ * returns the model-facing `content` plus a `structured` value, mirroring `make`'s
+ * settlement shape. The same conversion (`Content` → wire parts) as `make` is applied.
+ */
+export function makeExternal(config: {
+  readonly description: string
+  readonly inputSchema: JsonSchema.JsonSchema
+  readonly outputSchema?: JsonSchema.JsonSchema
+  readonly permission?: string
+  readonly execute: (
+    input: unknown,
+    context: Context,
+  ) => Effect.Effect<{ readonly structured: unknown; readonly content: ReadonlyArray<Content> }, ToolFailure>
+}): AnyTool {
+  const tool = Object.freeze({}) as AnyTool
+  const definitions = new Map<string, ToolDefinition>()
+  runtimes.set(tool, {
+    ...(config.permission === undefined ? {} : { permission: config.permission }),
+    definition: (name) => {
+      const cached = definitions.get(name)
+      if (cached) return cached
+      const definition = new ToolDefinition({
+        name,
+        description: config.description,
+        inputSchema: config.inputSchema,
+        outputSchema: config.outputSchema ?? { type: "object" },
+      })
+      definitions.set(name, definition)
+      return definition
+    },
+    settle: (call, context) =>
+      config.execute(call.input, context).pipe(
+        Effect.map((result) => ({
+          structured: result.structured,
+          content: result.content.map((part) =>
+            part.type === "text"
+              ? { type: "text" as const, text: part.text }
+              : {
+                  type: "file" as const,
+                  uri: `data:${part.mime};base64,${part.data}`,
+                  mime: part.mime,
+                  name: part.name,
+                },
+          ),
+        })),
+      ),
+  })
+  return tool
+}
+
 export const validateName = (name: string) =>
   /^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(name)
     ? Effect.void
