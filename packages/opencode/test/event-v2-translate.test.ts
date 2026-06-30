@@ -73,6 +73,21 @@ function stepFailed(input: { messageID?: string; ms?: number; error?: unknown } 
   })
 }
 
+function prompted(input: {
+  messageID?: string
+  text: string
+  files?: Array<{ uri: string; mime?: string; name?: string }>
+  agents?: Array<{ name: string }>
+  ms?: number
+} = { text: "hi" }) {
+  return ev("session.next.prompted", {
+    messageID: input.messageID ?? "msg_user1",
+    prompt: { text: input.text, ...(input.files ? { files: input.files } : {}), ...(input.agents ? { agents: input.agents } : {}) },
+    delivery: "steer",
+    timestamp: ts(input.ms ?? 900),
+  })
+}
+
 function textStarted(textID: string, ms = 1100) {
   return ev("session.next.text.started", { assistantMessageID: MSG, textID, timestamp: ts(ms) })
 }
@@ -231,6 +246,46 @@ describe("event-v2-translate / golden per-event shapes", () => {
     expect(endPart.time.end).toBe(1070)
   })
 
+  test("prompted -> user message.updated + text part with the prompt text", () => {
+    const t = createTranslator()
+    const envs = t.translate(prompted({ messageID: "msg_user1", text: "hello world", ms: 900 }))
+    // user row first, then its text part (ordering matches the assistant path)
+    expect(envs.map((e) => e.type)).toEqual(["message.updated", "message.part.updated"])
+
+    const info = (envs[0]!.properties as any).info
+    expect((envs[0]!.properties as any).sessionID).toBe(SES)
+    expect(info).toMatchObject({ id: "msg_user1", sessionID: SES, role: "user", time: { created: 900 } })
+
+    const part = (envs[1]!.properties as any).part
+    expect(part).toMatchObject({ type: "text", text: "hello world", sessionID: SES, messageID: "msg_user1" })
+    expect(part.id.startsWith("prt")).toBe(true)
+  })
+
+  test("prompted with file attachments -> file parts (uri->url, no mime required)", () => {
+    const t = createTranslator()
+    const envs = t.translate(
+      prompted({
+        messageID: "msg_user2",
+        text: "see attached",
+        files: [{ uri: "file:///a.txt", mime: "text/plain", name: "a.txt" }],
+      }),
+    )
+    expect(envs.map((e) => e.type)).toEqual(["message.updated", "message.part.updated", "message.part.updated"])
+    const filePart = (envs[2]!.properties as any).part
+    expect(filePart).toMatchObject({
+      type: "file",
+      url: "file:///a.txt",
+      mime: "text/plain",
+      filename: "a.txt",
+      messageID: "msg_user2",
+    })
+  })
+
+  test("prompt.admitted still drops (only prompted creates the user row)", () => {
+    const t = createTranslator()
+    expect(t.translate(ev("session.next.prompt.admitted", { messageID: "msg_x", prompt: { text: "x" } }))).toEqual([])
+  })
+
   test("dropped events translate to []", () => {
     const t = createTranslator()
     for (const type of [
@@ -246,7 +301,6 @@ describe("event-v2-translate / golden per-event shapes", () => {
       "session.next.tool.progress",
       "session.next.shell.started",
       "session.next.shell.ended",
-      "session.next.prompted",
       "session.next.context.updated",
       "session.next.synthetic",
     ]) {
@@ -455,6 +509,31 @@ describe("event-v2-translate / round-trip through the desktop reducer", () => {
     expect((toolPart as any).state.status).toBe("completed")
     expect((toolPart as any).state.output).toBe("file1\n")
     expect((toolPart as any).tool).toBe("bash")
+  })
+
+  test("a prompted user message renders in the store (row + text part)", async () => {
+    const applyDirectoryEvent = await loadDesktopReducer()
+    const t = createTranslator()
+    const [store, setStore] = createStore(baseDesktopState())
+    const feed = (e: BridgeEvent) => {
+      for (const env of t.translate(e)) {
+        applyDirectoryEvent({ event: env, store, setStore, push() {}, directory: "/tmp", loadLsp() {} })
+      }
+    }
+
+    feed(prompted({ messageID: "msg_user1", text: "what is 2+2?", ms: 900 }))
+
+    // the user message landed in the store keyed by sessionID
+    const messages = store.message[SES]
+    expect(messages).toBeDefined()
+    const user = messages!.find((m: any) => m.id === "msg_user1")
+    expect(user?.role).toBe("user")
+
+    // the prompt text rendered as a text part keyed by messageID
+    const parts = store.part["msg_user1"]
+    expect(parts).toBeDefined()
+    const textPart = parts!.find((p: any) => p.type === "text")
+    expect((textPart as any).text).toBe("what is 2+2?")
   })
 
   test("text deltas accumulate through the reducer's part_text_accum_delta", async () => {

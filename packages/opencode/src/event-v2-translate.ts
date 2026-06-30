@@ -16,8 +16,9 @@
 // Events that message-updater treats as `Effect.void`, or that have no v1
 // streaming target (moved, prompt.admitted, retried, compaction.*, revert.*,
 // agent.switched, model.switched, tool.input.delta, tool.progress, shell.*,
-// prompted, context.updated, synthetic), translate to `[]` (drop). We do NOT
-// invent mappings for those.
+// context.updated, synthetic), translate to `[]` (drop). We do NOT
+// invent mappings for those. `prompted` is the exception: it projects the
+// user's own message (row + text/file parts) so legacy clients render it.
 //
 // HARD CONSTRAINT: we never synthesize a turn-terminal / idle / session.status
 // envelope from step.ended. step.ended fires once per provider step (a
@@ -173,6 +174,25 @@ export function createTranslator() {
       ...(input.error !== undefined ? { error: input.error } : {}),
     } as Parameters<typeof SessionV1.Assistant.make>[0])
 
+  // Build the v1 User Info row from a V2 `prompted` event. The V2 event carries
+  // no agent/model (those live on the session, not the prompt), so we default
+  // them to empty — exactly like step.ended defaults a model-less assistant.
+  // The desktop/CLI reducers key a user message by id + render its text/file
+  // parts; they do not read agent/model off a user row, so empty is safe.
+  const userInfo = (input: {
+    sessionID: string
+    messageID: SessionV1.MessageID
+    created: number
+  }): SessionV1.Info =>
+    SessionV1.User.make({
+      id: input.messageID,
+      sessionID: input.sessionID as SessionID,
+      role: "user",
+      time: { created: input.created },
+      agent: "",
+      model: { providerID: "" as Provider.ID, modelID: "" as Model.ID },
+    } as Parameters<typeof SessionV1.User.make>[0]) as SessionV1.Info
+
   const messageUpdated = (info: SessionV1.Info): LegacyEnvelope => ({
     type: SessionV1.Event.MessageUpdated.type,
     properties: { sessionID: info.sessionID, info },
@@ -186,6 +206,7 @@ export function createTranslator() {
     | ReturnType<typeof SessionV1.TextPart.make>
     | ReturnType<typeof SessionV1.ReasoningPart.make>
     | ReturnType<typeof SessionV1.ToolPart.make>
+    | ReturnType<typeof SessionV1.FilePart.make>
   const partUpdated = (sessionID: string, part: AnyPart, time: number): LegacyEnvelope => ({
     type: SessionV1.Event.PartUpdated.type,
     properties: { sessionID, part, time },
@@ -470,11 +491,54 @@ export function createTranslator() {
         return [partUpdated(sessionID, part, time)]
       }
 
+      // --- user prompt -------------------------------------------------------
+      // The user's own message. message-updater builds a SessionMessage.User
+      // from this same event (text/files/agents). Here we project it into the
+      // v1 user row + its text part (+ file parts) so legacy clients render the
+      // prompt the user typed. Only `prompted` creates the row; `prompt.admitted`
+      // stays a drop (it precedes promotion and carries no renderable identity).
+      case "session.next.prompted": {
+        const messageID = data.messageID as SessionV1.MessageID
+        const created = toMillis(data.timestamp)
+        const prompt = (data.prompt ?? {}) as {
+          text?: string
+          files?: ReadonlyArray<{ uri: string; mime?: string; name?: string; filename?: string }>
+        }
+        const out: LegacyEnvelope[] = [messageUpdated(userInfo({ sessionID, messageID, created }))]
+        // The text part. Always emit it (even empty) so the user row has a
+        // renderable body and an ordering anchor, matching the assistant path
+        // where the role row precedes its parts.
+        const textPart = SessionV1.TextPart.make({
+          id: SessionV1.PartID.ascending(),
+          sessionID: sessionID as SessionID,
+          messageID,
+          type: "text",
+          text: prompt.text ?? "",
+          time: { start: created, end: created },
+        })
+        out.push(partUpdated(sessionID, textPart, created))
+        // File attachments, if any. V2 FileAttachment is {uri, mime, name?};
+        // v1 FilePart is {url, mime, filename?}.
+        for (const file of prompt.files ?? []) {
+          const filePart = SessionV1.FilePart.make({
+            id: SessionV1.PartID.ascending(),
+            sessionID: sessionID as SessionID,
+            messageID,
+            type: "file",
+            mime: file.mime ?? "application/octet-stream",
+            url: file.uri,
+            ...(file.name ?? file.filename ? { filename: file.name ?? file.filename } : {}),
+          } as Parameters<typeof SessionV1.FilePart.make>[0])
+          out.push(partUpdated(sessionID, filePart, created))
+        }
+        return out
+      }
+
       // --- dropped: no v1 streaming target (mirrors message-updater Effect.void
       //     handlers + the live-only/structural events) -------------------------
       // session.next.moved, prompt.admitted, retried, compaction.*, revert.*,
       // agent.switched, model.switched, tool.input.delta, tool.progress,
-      // shell.started, shell.ended, prompted, context.updated, synthetic
+      // shell.started, shell.ended, context.updated, synthetic
       default:
         return []
     }

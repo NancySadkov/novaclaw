@@ -1,0 +1,89 @@
+import { describe, expect, test } from "bun:test"
+import { Schema } from "effect"
+import { PromptInput } from "@opencode-ai/schema/prompt-input"
+import { toV2Prompt } from "../../src/server/routes/instance/httpapi/handlers/session"
+import { PromptPayload } from "../../src/server/routes/instance/httpapi/groups/session"
+
+// Build a PromptPayload from a parts array (the only field toV2Prompt reads
+// besides text). We decode through the real PromptPayload schema so the input
+// is exactly what the wire produces.
+function payload(parts: unknown[]): typeof PromptPayload.Type {
+  return Schema.decodeUnknownSync(PromptPayload)({ parts })
+}
+
+const decodePrompt = Schema.decodeUnknownSync(PromptInput.Prompt)
+
+describe("toV2Prompt", () => {
+  test("text-only part → { text }", () => {
+    const out = toV2Prompt(payload([{ type: "text", text: "hello" }]))
+    expect(out).toEqual({ text: "hello" })
+    // decodes as a valid PromptInput.Prompt (no mime required anywhere)
+    expect(decodePrompt(out)).toEqual({ text: "hello" })
+  })
+
+  test("multiple text parts are newline-joined", () => {
+    const out = toV2Prompt(payload([
+      { type: "text", text: "line one" },
+      { type: "text", text: "line two" },
+    ]))
+    expect(out.text).toBe("line one\nline two")
+    expect(out.files).toBeUndefined()
+    expect(out.agents).toBeUndefined()
+  })
+
+  test("file part → { uri, name } with NO mime", () => {
+    const out = toV2Prompt(payload([
+      { type: "text", text: "see file" },
+      { type: "file", mime: "text/plain", url: "file:///a.txt", filename: "a.txt" },
+    ]))
+    expect(out.text).toBe("see file")
+    expect(out.files).toEqual([{ uri: "file:///a.txt", name: "a.txt" }])
+    // critical: the V2 FileAttachment has no mime — the result must still decode
+    const decoded = decodePrompt(out)
+    expect(decoded.files?.[0]).toEqual({ uri: "file:///a.txt", name: "a.txt" })
+    expect("mime" in (decoded.files![0] as object)).toBe(false)
+  })
+
+  test("file part without filename → { uri } only", () => {
+    const out = toV2Prompt(payload([{ type: "file", mime: "image/png", url: "https://x/y.png" }]))
+    expect(out.files).toEqual([{ uri: "https://x/y.png" }])
+    expect(decodePrompt(out).files).toEqual([{ uri: "https://x/y.png" }])
+  })
+
+  test("agent part → { name }", () => {
+    const out = toV2Prompt(payload([
+      { type: "text", text: "do it" },
+      { type: "agent", name: "build" },
+    ]))
+    expect(out.agents).toEqual([{ name: "build" }])
+    expect(decodePrompt(out).agents).toEqual([{ name: "build" }])
+  })
+
+  test("subtask part is dropped", () => {
+    const out = toV2Prompt(payload([
+      { type: "text", text: "go" },
+      { type: "subtask", prompt: "sub", description: "d", agent: "build" },
+    ]))
+    expect(out).toEqual({ text: "go" })
+  })
+
+  test("empty parts → { text: '' }", () => {
+    const out = toV2Prompt(payload([]))
+    expect(out).toEqual({ text: "" })
+    expect(decodePrompt(out)).toEqual({ text: "" })
+  })
+
+  test("mixed text + file + agent, all carried", () => {
+    const out = toV2Prompt(payload([
+      { type: "text", text: "a" },
+      { type: "file", mime: "text/plain", url: "u", filename: "f" },
+      { type: "agent", name: "build" },
+      { type: "text", text: "b" },
+      { type: "subtask", prompt: "p", description: "d", agent: "build" },
+    ]))
+    expect(out.text).toBe("a\nb")
+    expect(out.files).toEqual([{ uri: "u", name: "f" }])
+    expect(out.agents).toEqual([{ name: "build" }])
+    expect(decodePrompt(out)).toBeDefined()
+  })
+})

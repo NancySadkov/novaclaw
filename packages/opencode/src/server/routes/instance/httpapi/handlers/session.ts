@@ -11,6 +11,10 @@ import { MessageV2 } from "@/session/message-v2"
 import { SessionPrompt } from "@/session/prompt"
 import { SessionRevert } from "@/session/revert"
 import { SessionRunState } from "@/session/run-state"
+import { SessionV2 } from "@opencode-ai/core/session"
+import { ModelV2 } from "@opencode-ai/core/model"
+import { RuntimeFlags } from "@/effect/runtime-flags"
+import { PromptInput } from "@opencode-ai/schema/prompt-input"
 import { SessionStatus } from "@/session/status"
 import { SessionSummary } from "@/session/summary"
 import { Todo } from "@/session/todo"
@@ -44,6 +48,49 @@ const tryParseJson = (text: string) =>
     catch: () => new HttpApiError.BadRequest({}),
   })
 
+// Map a legacy PromptPayload (the v1 wire shape) onto the V2 PromptInput.Prompt
+// the V2 session admits. Concatenate text parts (newline-joined), carry file
+// parts as {uri, name} (the V2 FileAttachment has NO mime), and agent parts as
+// {name}. Subtask + any other part types are dropped (V2 has no inline subtask
+// prompt-part). Exported for unit testing.
+export const toV2Prompt = (payload: typeof PromptPayload.Type): typeof PromptInput.Prompt.Type => {
+  const texts: string[] = []
+  const files: Array<{ uri: string; name?: string }> = []
+  const agents: Array<{ name: string }> = []
+  for (const part of payload.parts) {
+    switch (part.type) {
+      case "text":
+        texts.push(part.text)
+        break
+      case "file":
+        files.push(part.filename ? { uri: part.url, name: part.filename } : { uri: part.url })
+        break
+      case "agent":
+        agents.push({ name: part.name })
+        break
+      default:
+        // subtask + unknown → dropped
+        break
+    }
+  }
+  return PromptInput.Prompt.make({
+    text: texts.join("\n"),
+    ...(files.length ? { files } : {}),
+    ...(agents.length ? { agents } : {}),
+  })
+}
+
+// new = zero legacy message rows. This is enforced structurally: a V2 turn
+// writes only to `session_message` (disjoint from the legacy `message`/`part`
+// tables MessageV2.page reads), so a session stays "new" across prompt→abort
+// even after a V2 turn has run. We never reroute a session that already has a
+// legacy v1 message — that path stays on the legacy runner.
+const isNewSession = (sid: SessionID) =>
+  Effect.gen(function* () {
+    const page = yield* MessageV2.page({ sessionID: sid, limit: 1 })
+    return page.items.length === 0
+  })
+
 export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", (handlers) =>
   Effect.gen(function* () {
     const session = yield* Session.Service
@@ -55,6 +102,8 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     const agentSvc = yield* Agent.Service
     const permissionSvc = yield* Permission.Service
     const statusSvc = yield* SessionStatus.Service
+    const sessionV2 = yield* SessionV2.Service
+    const flags = yield* RuntimeFlags.Service
     const todoSvc = yield* Todo.Service
     const summary = yield* SessionSummary.Service
     const events = yield* EventV2Bridge.Service
@@ -228,6 +277,18 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     })
 
     const abort = Effect.fn("SessionHttpApi.abort")(function* (ctx: { params: { sessionID: SessionID } }) {
+      // Symmetric with promptAsync: a flag-ON new session may be running a V2
+      // turn, so interrupt the V2 runner. We ALSO call the legacy cancel
+      // unconditionally — it is a harmless no-op when there is no V1 runner and
+      // guards against an orphaned V1 background job (SAFETY). We do NOT emit
+      // idle here: the V2 turn fiber's `ensuring` owns the idle transition.
+      // isNewSession fails (NotFoundError) for a session with no rows at all;
+      // abort must stay total (it tolerates missing sessions), so treat any
+      // failure as "not eligible" and fall through to the legacy cancel.
+      const eligible =
+        flags.experimentalNativeSession &&
+        (yield* isNewSession(ctx.params.sessionID).pipe(Effect.orElseSucceed(() => false)))
+      if (eligible) yield* sessionV2.interrupt(ctx.params.sessionID)
       yield* promptSvc.cancel(ctx.params.sessionID)
       return true
     })
@@ -306,23 +367,86 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       })
     })
 
+    // Mirror the legacy catchCause: log + publish a v1 session error event so
+    // unchanged clients still surface a failed async turn. Shared by both paths.
+    const reportAsyncFailure = (sessionID: SessionID, cause: Cause.Cause<unknown>) =>
+      Effect.gen(function* () {
+        yield* Effect.logError("prompt_async failed", { sessionID, cause })
+        yield* events.publish(Session.Event.Error, {
+          sessionID,
+          error: new NamedError.Unknown({ message: Cause.pretty(cause) }).toObject(),
+        })
+      })
+
     const promptAsync = Effect.fn("SessionHttpApi.promptAsync")(function* (ctx: {
       params: { sessionID: SessionID }
       payload: typeof PromptPayload.Type
     }) {
-      yield* requireSession(ctx.params.sessionID)
-      yield* promptSvc.prompt({ ...ctx.payload, sessionID: ctx.params.sessionID }).pipe(
-        Effect.catchCause((cause) =>
-          Effect.gen(function* () {
-            yield* Effect.logError("prompt_async failed", { sessionID: ctx.params.sessionID, cause })
-            yield* events.publish(Session.Event.Error, {
-              sessionID: ctx.params.sessionID,
-              error: new NamedError.Unknown({ message: Cause.pretty(cause) }).toObject(),
-            })
-          }),
-        ),
-        Effect.forkIn(scope, { startImmediately: true }),
+      const current = yield* requireSession(ctx.params.sessionID)
+      // `&&` order is load-bearing: the flag short-circuits BEFORE isNewSession
+      // so a flag-OFF request never touches MessageV2.page. A session is eligible
+      // only if it has zero legacy message rows (new-sessions-only reroute).
+      // The model must also be resolvable for the (single) V2 turn: the per-turn
+      // payload model, else the session's own model. Without one the V2 runner
+      // throws ModelNotSelectedError, so a model-less turn FALLS THROUGH to legacy.
+      const hasModel = ctx.payload.model !== undefined || current.model !== undefined
+      // requireSession already proved the session exists, so isNewSession's
+      // NotFoundError can't fire here; orDie keeps it off the handler's typed
+      // error channel (the route only declares BadRequest/NotFound).
+      const useV2 =
+        flags.experimentalNativeSession &&
+        hasModel &&
+        (yield* isNewSession(ctx.params.sessionID).pipe(Effect.orDie))
+
+      if (!useV2) {
+        // Legacy path — unchanged.
+        yield* promptSvc.prompt({ ...ctx.payload, sessionID: ctx.params.sessionID }).pipe(
+          Effect.catchCause((cause) => reportAsyncFailure(ctx.params.sessionID, cause)),
+          Effect.forkIn(scope, { startImmediately: true }),
+        )
+        return HttpApiSchema.NoContent.make()
+      }
+
+      // V2 path. Thread the per-turn model/agent onto the session BEFORE
+      // prompting so a fresh session has a model when the runner wakes
+      // (BLOCKER-FIX #2). switchModel/switchAgent publish switch events that the
+      // V2 runner reads; they no-op when the value already matches.
+      // switchModel/switchAgent also only fail with NotFoundError (impossible
+      // post-requireSession); orDie for the same reason as above.
+      if (ctx.payload.model)
+        yield* sessionV2
+          .switchModel({
+            sessionID: ctx.params.sessionID,
+            // payload.model is the v1 ModelRef {providerID, modelID}; its fields
+            // already carry the V2 brands. Rename modelID→id for Model.Ref.
+            model: {
+              id: ctx.payload.model.modelID,
+              providerID: ctx.payload.model.providerID,
+              ...(ctx.payload.variant ? { variant: ModelV2.VariantID.make(ctx.payload.variant) } : {}),
+            },
+          })
+          .pipe(Effect.orDie)
+      if (ctx.payload.agent)
+        yield* sessionV2
+          .switchAgent({ sessionID: ctx.params.sessionID, agent: ctx.payload.agent })
+          .pipe(Effect.orDie)
+
+      const sessionID = ctx.params.sessionID
+      const v2Turn = Effect.gen(function* () {
+        // prompt ADMITS + WAKES (returns immediately); resume JOINS the live run
+        // and settles on success, error, AND interrupt.
+        yield* sessionV2.prompt({ sessionID, prompt: toV2Prompt(ctx.payload) })
+        yield* sessionV2.resume(sessionID)
+      }).pipe(
+        Effect.catchCause((cause) => reportAsyncFailure(sessionID, cause)),
+        // Load-bearing: the V2→v1 translator emits NO turn-terminal, so this
+        // bracket is the SOLE busy/idle source on the V2 path. A missing idle
+        // hangs the client spinner forever. ensuring fires on success/error/interrupt.
+        Effect.ensuring(statusSvc.set(sessionID, { type: "idle" })),
       )
+      // Publish busy BEFORE the fork so the client sees it synchronously.
+      yield* statusSvc.set(sessionID, { type: "busy" })
+      yield* v2Turn.pipe(Effect.forkIn(scope, { startImmediately: true }))
       return HttpApiSchema.NoContent.make()
     })
 
