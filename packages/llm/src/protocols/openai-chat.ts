@@ -22,6 +22,7 @@ import { OpenAIOptions } from "./utils/openai-options"
 import { Lifecycle } from "./utils/lifecycle"
 import { ToolSchemaProjection } from "./utils/tool-schema"
 import { ToolStream } from "./utils/tool-stream"
+import { recoverToolCallsFromText } from "./utils/tool-recovery"
 
 const ADAPTER = "openai-chat"
 const IMAGE_MIMES = new Set<string>(ProviderShared.IMAGE_MIMES)
@@ -172,6 +173,12 @@ interface ParserState {
   readonly usage?: Usage
   readonly finishReason?: FinishReason
   readonly lifecycle: Lifecycle.State
+  // The request's tool names — the whitelist that keeps text-recovery from
+  // misreading prose with angle brackets as a call. Empty => recovery is off.
+  readonly allowedToolNames: ReadonlyArray<string>
+  // Assistant text accumulated across deltas, so that on halt we can recover a
+  // tool call a small model dumped into TEXT instead of the structured channel.
+  readonly content: string
 }
 
 const invalid = ProviderShared.invalidRequest
@@ -465,17 +472,49 @@ const step = (state: ParserState, event: OpenAIChatEvent) =>
         usage,
         finishReason,
         lifecycle,
+        allowedToolNames: state.allowedToolNames,
+        content: delta?.content ? state.content + delta.content : state.content,
       },
       events,
     ] as const
   })
 
+// Arguments recovered from text are already a valid JSON string; parse defensively
+// so a freak value can never throw inside the decoder.
+const safeParseArgs = (json: string): Record<string, unknown> => {
+  try {
+    const value = JSON.parse(json)
+    return isRecord(value) ? value : {}
+  } catch {
+    return {}
+  }
+}
+
+// The tool-call events to finalize with. Prefer the structured calls; only when the
+// model emitted NONE do we try to recover one it dumped into assistant text. The
+// recovery core is whitelist-gated on `allowedToolNames`, so ordinary prose / code
+// with angle brackets is never misread as a call.
+const finalToolCallEvents = (state: ParserState): ReadonlyArray<LLMEvent> => {
+  if (state.toolCallEvents.length > 0) return state.toolCallEvents
+  return recoverToolCallsFromText(state.content, state.allowedToolNames).flatMap((call, index) => {
+    const id = `call_recovered_${index}`
+    return [
+      LLMEvent.toolInputStart({ id, name: call.name }),
+      LLMEvent.toolInputEnd({ id, name: call.name }),
+      LLMEvent.toolCall({ id, name: call.name, input: safeParseArgs(call.arguments) }),
+    ]
+  })
+}
+
 const finishEvents = (state: ParserState): ReadonlyArray<LLMEvent> => {
   const events: LLMEvent[] = []
-  const hasToolCalls = state.toolCallEvents.length > 0
+  const toolCallEvents = finalToolCallEvents(state)
+  const hasToolCalls = toolCallEvents.length > 0
+  // A model that emits a tool call but reports finish="stop", or dumps the call into
+  // text, must still continue the loop instead of halting — synthesize "tool-calls".
   const reason = state.finishReason === "stop" && hasToolCalls ? "tool-calls" : state.finishReason
-  const lifecycle = state.toolCallEvents.length ? Lifecycle.stepStart(state.lifecycle, events) : state.lifecycle
-  events.push(...state.toolCallEvents)
+  const lifecycle = hasToolCalls ? Lifecycle.stepStart(state.lifecycle, events) : state.lifecycle
+  events.push(...toolCallEvents)
   if (reason) Lifecycle.finish(lifecycle, events, { reason, usage: state.usage })
   return events
 }
@@ -497,7 +536,13 @@ export const protocol = Protocol.make({
   },
   stream: {
     event: Protocol.jsonEvent(OpenAIChatEvent),
-    initial: () => ({ tools: ToolStream.empty<number>(), toolCallEvents: [], lifecycle: Lifecycle.initial() }),
+    initial: (request) => ({
+      tools: ToolStream.empty<number>(),
+      toolCallEvents: [],
+      lifecycle: Lifecycle.initial(),
+      allowedToolNames: request.tools.map((tool) => tool.name),
+      content: "",
+    }),
     step,
     onHalt: finishEvents,
   },
