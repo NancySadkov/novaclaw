@@ -325,7 +325,18 @@ const toHttpError = (redactedNames: ReadonlyArray<string | RegExp>) => (error: u
     return transportError({ message: error.message, kind: "Timeout" })
   }
   if (!HttpClientError.isHttpClientError(error)) {
-    return transportError({ message: "HTTP transport failed" })
+    // Surface the underlying failure instead of a catch-all. The bare
+    // "HTTP transport failed" hides the real cause (ECONNREFUSED / ENOTFOUND /
+    // TLS / proxy / runtime), which makes transport bugs (esp. cross-runtime,
+    // e.g. the Electron sidecar vs bun) far harder to diagnose.
+    const detail =
+      error instanceof Error
+        ? error.message +
+          (error.cause !== undefined
+            ? ` | cause: ${String((error.cause as { message?: unknown })?.message ?? error.cause)}`
+            : "")
+        : String(error)
+    return transportError({ message: `HTTP transport failed: ${detail}` })
   }
   const request = "request" in error ? error.request : undefined
   if (error.reason._tag === "TransportError") {
