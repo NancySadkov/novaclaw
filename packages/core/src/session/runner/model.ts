@@ -1,6 +1,7 @@
 export * as SessionRunnerModel from "./model"
 
 import { makeLocationNode } from "../../effect/app-node"
+import { splitModelSampling } from "./sampling-split"
 import { type Model } from "@opencode-ai/llm"
 import * as AnthropicMessages from "@opencode-ai/llm/protocols/anthropic-messages"
 import * as OpenAICompatibleChat from "@opencode-ai/llm/protocols/openai-compatible-chat"
@@ -92,11 +93,17 @@ const withDefaults = (model: ModelV2.Info, route: AnyRoute) => {
   const httpBody = Object.hasOwn(body, "apiKey")
     ? Object.fromEntries(Object.entries(body).filter(([key]) => key !== "apiKey"))
     : body
+  // Protocol-owned sampling (temperature/top_p/top_k/penalties/…) must go through the
+  // canonical `generation` options, not the http.body overlay — the native transport
+  // rejects those keys in an overlay. Only provider extras (min_p, repetition_penalty, …)
+  // stay in http.body. See sampling-split.ts.
+  const split = splitModelSampling(httpBody)
   return route.with({
     provider: model.providerID,
     endpoint: model.api.url === undefined ? undefined : { baseURL: model.api.url },
     headers: model.request.headers,
-    http: { body: httpBody },
+    ...(Object.keys(split.generation).length > 0 ? { generation: split.generation } : {}),
+    http: { body: split.http },
     limits: { context: model.limit.context, output: model.limit.output },
   })
 }
