@@ -9,6 +9,7 @@ import { SessionSchema } from "../session/schema"
 import { ToolOutputStore } from "../tool-output-store"
 import { Wildcard } from "../util/wildcard"
 import { ApplicationTools } from "./application-tools"
+import { ExternalToolSource } from "./external-tool-source"
 import { definition, permission, settle, validateName, type AnyTool, type RegistrationError } from "./tool"
 import { Tools } from "./tools"
 import { makeLocationNode } from "../effect/app-node"
@@ -43,13 +44,16 @@ const registryLayer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const applications = yield* ApplicationTools.Service
+    const external = yield* ExternalToolSource.Service
     const resources = yield* ToolOutputStore.Service
     type Registration = { readonly identity: object; readonly tool: AnyTool }
     const local = new Map<string, Array<{ readonly token: object; readonly registration: Registration }>>()
 
     const settleWith = Effect.fn("ToolRegistry.settle")(function* (input: ExecuteInput, advertised?: object) {
       const registration =
-        local.get(input.call.name)?.at(-1)?.registration ?? applications.entries().get(input.call.name)
+        local.get(input.call.name)?.at(-1)?.registration ??
+        applications.entries().get(input.call.name) ??
+        (yield* external.entries()).get(input.call.name)
       if (!registration)
         return {
           result: {
@@ -105,6 +109,7 @@ const registryLayer = Layer.effect(
       }),
       materialize: Effect.fn("ToolRegistry.materialize")(function* (permissions = []) {
         const registrations = new Map(applications.entries())
+        for (const [name, entry] of yield* external.entries()) registrations.set(name, entry)
         for (const [name, entries] of local) {
           const registration = entries.at(-1)?.registration
           if (registration) registrations.set(name, registration)
@@ -136,17 +141,18 @@ function whollyDisabled(action: string, rules: PermissionV2.Ruleset) {
 
 export const defaultLayer = layer.pipe(
   Layer.provide(ApplicationTools.layer),
+  Layer.provide(ExternalToolSource.layer),
   Layer.provide(ToolOutputStore.defaultLayer),
 )
 
 export const node = makeLocationNode({
   service: Service,
   layer,
-  deps: [ApplicationTools.node, ToolOutputStore.node],
+  deps: [ApplicationTools.node, ExternalToolSource.node, ToolOutputStore.node],
 })
 
 export const toolsNode = makeLocationNode({
   service: Tools.Service,
   layer,
-  deps: [ApplicationTools.node, ToolOutputStore.node],
+  deps: [ApplicationTools.node, ExternalToolSource.node, ToolOutputStore.node],
 })

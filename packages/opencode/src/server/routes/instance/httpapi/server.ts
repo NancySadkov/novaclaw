@@ -98,7 +98,9 @@ import { sessionHandlers } from "./handlers/session"
 import { syncHandlers } from "./handlers/sync"
 import { tuiHandlers } from "./handlers/tui"
 import { handlers } from "@opencode-ai/server/handlers"
-import { locationServiceMapLayer } from "@opencode-ai/core/location-services"
+import { buildLocationServiceMap, locationServiceMapLayer } from "@opencode-ai/core/location-services"
+import { ExternalToolSource } from "@opencode-ai/core/tool/external-tool-source"
+import { McpExternalToolSource } from "@/mcp/external-tool-source"
 import { layer as locationLayer } from "@opencode-ai/server/location"
 import { sessionLocationLayer } from "@opencode-ai/server/middleware/session-location"
 import { PtyEnvironment } from "@opencode-ai/server/pty-environment"
@@ -296,7 +298,9 @@ export function createRoutes(
     Layer.provide(
       SessionV2.defaultLayer.pipe(
         Layer.provide(SessionExecutionLocal.defaultLayer),
-        Layer.provide(locationServiceMapLayer),
+        // V2 runner's location services, with MCP tools injected: replace core's empty
+        // ExternalToolSource node with the opencode MCP-backed one so searxng et al. appear.
+        Layer.provide(buildLocationServiceMap([[ExternalToolSource.node, McpExternalToolSource.node]])),
       ),
     ),
     Layer.provide(locationServiceMapLayer),
