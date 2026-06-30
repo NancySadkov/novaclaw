@@ -585,7 +585,16 @@ export function createServerSession(client: OpencodeClient, options?: { retry?: 
           undefined,
         )
         const preserveUnfetched =
-          mode === "prepend" || (!page.complete && (!first || ((message: Message) => cmpMessage(message, first) < 0)))
+          mode === "prepend" ||
+          // An empty fetched page carries no authority — it cannot mean "the server
+          // deleted these" when it returned no parseable messages. For a V2-native
+          // session the v1 `/session/{id}/message` route yields rows the `info.id`
+          // filter drops to `[]`, so a forced "stale" refresh would otherwise wipe the
+          // live user row mid-turn (only the assistant re-emits => is `touched`),
+          // orphaning the in-flight assistant under the wrong group (the streaming
+          // "ghost"). Real removals still arrive as `message.removed`/`touched` events.
+          page.session.length === 0 ||
+          (!page.complete && (!first || ((message: Message) => cmpMessage(message, first) < 0)))
         applyMessagePage(
           sessionID,
           page,

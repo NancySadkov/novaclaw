@@ -38,6 +38,12 @@ export function createTimelineProjection(input: {
       const result = Binary.search(messages, parentID, (message) => message.id)
       const message = result.found ? messages[result.index] : messages.find((item) => item.id === parentID)
       if (message?.role === "user") return message.id
+      // The in-flight assistant declares a parent but that user row isn't present
+      // (e.g. a transient store wipe). Don't fall through to "last user" — that would
+      // cross-attribute the streaming turn to a prior group. (A system-initiated
+      // assistant that self-parents — no `prompted` user — also lands here and
+      // correctly reports no active user.)
+      return
     }
 
     if (input.status().type === "idle") return

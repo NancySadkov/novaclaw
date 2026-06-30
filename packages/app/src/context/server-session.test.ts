@@ -283,14 +283,36 @@ describe("server session", () => {
     expect(store.data.part[message.id]).toEqual([part])
   })
 
-  test("drops stale event content omitted by a complete initial page", async () => {
+  test("preserves live messages when a complete page is empty (V2 live-only session)", async () => {
+    // An empty fetched page is non-authoritative: a V2-native session renders purely
+    // from live events while the v1 fetch returns nothing parseable, so an empty page
+    // must NOT wipe live state.
     const stale = userMessage("stale")
     const store = createServerSession(messageClient(response()))
     store.apply({ type: "message.updated", properties: { info: stale } })
 
     await store.sync("child")
 
-    expect(store.data.message.child).toEqual([])
+    expect(store.data.message.child).toEqual([stale])
+  })
+
+  test("in-flight assistant stays grouped under its user across a forced empty refresh", async () => {
+    // The streaming-ghost regression: during generation only the assistant re-emits
+    // (=> touched); the user fired `prompted` once. A forced empty refresh must keep
+    // the user row, else the in-flight assistant orphans and ghosts under prior groups.
+    const pending = deferredResponse()
+    const user = userMessage("user-1")
+    const assistant = { ...userMessage("asst-1"), role: "assistant", parentID: "user-1" } as unknown as Message
+    const store = createServerSession(messageClient(response(), pending.promise))
+    store.apply({ type: "message.updated", properties: { info: user } })
+    await store.sync("child")
+
+    const refreshing = store.sync("child", { force: true })
+    store.apply({ type: "message.updated", properties: { info: assistant } })
+    pending.resolve(response())
+    await refreshing
+
+    expect(store.data.message.child.map((m) => m.id).sort()).toEqual(["asst-1", "user-1"])
   })
 
   test("preserves event content outside an incomplete initial page", async () => {
@@ -1065,10 +1087,16 @@ describe("server session", () => {
     expect(store.data.part[older.id]).toBeUndefined()
   })
 
-  test("clears orphaned parts when a refresh drops a message", async () => {
+  test("clears orphaned parts when a non-empty refresh drops a message", async () => {
+    // A NON-empty authoritative page that omits a message still drops it and clears
+    // its orphaned parts. (An EMPTY page is now non-authoritative and preserves live
+    // state — covered above — so the drop path is exercised via a real non-empty page.)
     const message = userMessage("message")
     const part = textPart(message.id, { text: "stale" })
-    const store = createServerSession(messageClient(response([{ info: message, parts: [part] }]), response()))
+    const other = userMessage("other")
+    const store = createServerSession(
+      messageClient(response([{ info: message, parts: [part] }]), response([{ info: other, parts: [] }])),
+    )
     await store.sync("child")
     store.apply({
       type: "message.part.delta",
@@ -1076,7 +1104,7 @@ describe("server session", () => {
     })
     await store.sync("child", { force: true })
 
-    expect(store.data.message.child).toEqual([])
+    expect(store.data.message.child.map((m) => m.id)).toEqual(["other"])
     expect(store.data.part[message.id]).toBeUndefined()
     expect(store.data.part_text_accum_delta[part.id]).toBeUndefined()
   })
