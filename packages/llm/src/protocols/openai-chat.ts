@@ -145,6 +145,12 @@ type OpenAIChatToolCallDelta = Schema.Schema.Type<typeof OpenAIChatToolCallDelta
 const OpenAIChatDelta = Schema.Struct({
   content: optionalNull(Schema.String),
   reasoning_content: optionalNull(Schema.String),
+  // Some OpenAI-compatible backends (e.g. vLLM serving qwen3) stream the thinking
+  // block under `reasoning` rather than `reasoning_content`. Accept both — matching
+  // `@ai-sdk/openai-compatible`'s `reasoning_content ?? reasoning` tolerance — so the
+  // model's reasoning isn't silently dropped at decode (no reasoning events => no
+  // persisted/rendered/foldable thinking).
+  reasoning: optionalNull(Schema.String),
   tool_calls: optionalNull(Schema.Array(OpenAIChatToolCallDelta)),
 })
 
@@ -207,8 +213,13 @@ const lowerMedia = Effect.fn("OpenAIChat.lowerMedia")(function* (part: MediaPart
   return { type: "image_url" as const, image_url: { url: media.dataUrl } }
 })
 
-const openAICompatibleReasoningContent = (native: unknown) =>
-  isRecord(native) && typeof native.reasoning_content === "string" ? native.reasoning_content : undefined
+const openAICompatibleReasoningContent = (native: unknown) => {
+  if (!isRecord(native)) return undefined
+  // Accept the `reasoning` alias (vLLM/qwen3) in addition to `reasoning_content`.
+  if (typeof native.reasoning_content === "string") return native.reasoning_content
+  if (typeof native.reasoning === "string") return native.reasoning
+  return undefined
+}
 
 const lowerUserMessage = Effect.fn("OpenAIChat.lowerUserMessage")(function* (message: OpenAIChatRequestMessage) {
   const content: Array<Schema.Schema.Type<typeof OpenAIChatUserContent>> = []
@@ -416,8 +427,8 @@ const step = (state: ParserState, event: OpenAIChatEvent) =>
 
     let lifecycle = state.lifecycle
 
-    if (delta?.reasoning_content)
-      lifecycle = Lifecycle.reasoningDelta(lifecycle, events, "reasoning-0", delta.reasoning_content)
+    const reasoningDelta = delta?.reasoning_content ?? delta?.reasoning
+    if (reasoningDelta) lifecycle = Lifecycle.reasoningDelta(lifecycle, events, "reasoning-0", reasoningDelta)
 
     if (delta?.content) {
       lifecycle = Lifecycle.reasoningEnd(lifecycle, events, "reasoning-0")
