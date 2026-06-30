@@ -302,6 +302,24 @@
       }
     }
   }
+
+  .reasoning-collapsible > [data-slot="collapsible-trigger"] {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 0;
+    margin: 0;
+    background: none;
+    border: none;
+    cursor: pointer;
+    font-size: 13px;
+    color: var(--v2-text-text-muted);
+    opacity: 0.8;
+  }
+
+  .reasoning-collapsible > [data-slot="collapsible-trigger"]:hover {
+    opacity: 1;
+  }
 }
 
 @media (prefers-color-scheme: dark) {

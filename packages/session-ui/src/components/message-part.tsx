@@ -1640,18 +1640,33 @@ PART_MAPPING["text"] = function TextPartDisplay(props) {
 
 PART_MAPPING["reasoning"] = function ReasoningPartDisplay(props) {
   const data = useData()
+  const i18n = useI18n()
   const part = () => props.part as ReasoningPart
   const streaming = createMemo(
     () => props.message.role === "assistant" && typeof (props.message as AssistantMessage).time.completed !== "number",
   )
   const text = () => readPartText(data.store.part_text_accum_delta, props.message.id, part())
+  // Open and follow the thought live while the model is thinking, then auto-collapse
+  // to a clickable header once the turn completes — so the full chain-of-thought stays
+  // available to unfold afterward (essential for debugging local models). The effect
+  // only re-runs on the streaming->done transition, so a manual toggle afterward sticks.
+  const [open, setOpen] = createSignal(streaming())
+  createEffect(() => setOpen(streaming()))
 
   return (
     <Show when={text()}>
       <div data-component="reasoning-part" data-timeline-part-id={part().id}>
-        <Show when={streaming()} fallback={<Markdown text={text()} cacheKey={part().id} streaming={false} />}>
-          <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
-        </Show>
+        <Collapsible open={open()} onOpenChange={setOpen} class="reasoning-collapsible">
+          <Collapsible.Trigger data-slot="reasoning-trigger" data-streaming={streaming() ? "" : undefined}>
+            <span data-slot="reasoning-label">{i18n.t("ui.sessionTurn.status.thinking")}</span>
+            <Collapsible.Arrow />
+          </Collapsible.Trigger>
+          <Collapsible.Content>
+            <Show when={streaming()} fallback={<Markdown text={text()} cacheKey={part().id} streaming={false} />}>
+              <PacedMarkdown text={text()} cacheKey={part().id} streaming={streaming()} />
+            </Show>
+          </Collapsible.Content>
+        </Collapsible>
       </div>
     </Show>
   )
