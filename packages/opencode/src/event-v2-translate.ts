@@ -125,23 +125,19 @@ export function createTranslator() {
     return state
   }
 
-  const textPartID = (state: SessionState, textID: string): SessionV1.PartID => {
-    let id = state.textParts.get(textID)
-    if (!id) {
-      id = SessionV1.PartID.ascending()
-      state.textParts.set(textID, id)
-    }
-    return id
-  }
+  // Reuse the V2 stream id (textID/reasoningID/callID) VERBATIM as the legacy part
+  // id. The V2 store persists each content part under this same id (message-updater:
+  // `id: event.data.textID`) and the desktop's `client.session.messages` fetch returns
+  // it unchanged, so emitting the SAME id here collapses the live-translated part and
+  // the fetched part into ONE (the client dedups parts by id) instead of rendering the
+  // assistant text twice. Previously we minted a random `prt_…`, which never matched
+  // the fetched id → two parts → duplicate bubble. The V2 id is not "prt"-prefixed, so
+  // parts below are built STRUCTURALLY (not via `*.make`, whose brand check rejects a
+  // non-"prt" id); the client stores non-"prt" fetched ids the same way, so this is safe.
+  const textPartID = (_state: SessionState, textID: string): SessionV1.PartID => textID as SessionV1.PartID
 
-  const reasoningPartID = (state: SessionState, reasoningID: string): SessionV1.PartID => {
-    let id = state.reasoningParts.get(reasoningID)
-    if (!id) {
-      id = SessionV1.PartID.ascending()
-      state.reasoningParts.set(reasoningID, id)
-    }
-    return id
-  }
+  const reasoningPartID = (_state: SessionState, reasoningID: string): SessionV1.PartID =>
+    reasoningID as SessionV1.PartID
 
   // Build the v1 Assistant Info row. step.started supplies zeroed cost/tokens;
   // step.ended/step.failed override via the `extra` overlay.
@@ -307,14 +303,14 @@ export function createTranslator() {
         const start = toMillis(data.timestamp)
         // Create the (empty) text part BEFORE any delta references it. Both
         // reducers require the part to exist before a delta lands.
-        const part = SessionV1.TextPart.make({
+        const part = {
           id: partID,
           sessionID: sessionID as SessionID,
           messageID,
           type: "text",
           text: "",
           time: { start },
-        })
+        } as unknown as ReturnType<typeof SessionV1.TextPart.make>
         return [partUpdated(sessionID, part, start)]
       }
 
@@ -329,14 +325,14 @@ export function createTranslator() {
         const partID = textPartID(state, data.textID)
         const end = toMillis(data.timestamp)
         // Re-emit the full part with final text + time.end (the replayable boundary).
-        const part = SessionV1.TextPart.make({
+        const part = {
           id: partID,
           sessionID: sessionID as SessionID,
           messageID,
           type: "text",
           text: data.text,
           time: { start: end, end },
-        })
+        } as unknown as ReturnType<typeof SessionV1.TextPart.make>
         return [partUpdated(sessionID, part, end)]
       }
 
@@ -345,14 +341,14 @@ export function createTranslator() {
         const messageID = (state.assistantMessageID ?? data.assistantMessageID) as SessionV1.MessageID
         const partID = reasoningPartID(state, data.reasoningID)
         const start = toMillis(data.timestamp)
-        const part = SessionV1.ReasoningPart.make({
+        const part = {
           id: partID,
           sessionID: sessionID as SessionID,
           messageID,
           type: "reasoning",
           text: "",
           time: { start },
-        })
+        } as unknown as ReturnType<typeof SessionV1.ReasoningPart.make>
         return [partUpdated(sessionID, part, start)]
       }
 
@@ -366,14 +362,14 @@ export function createTranslator() {
         const messageID = (state.assistantMessageID ?? data.assistantMessageID) as SessionV1.MessageID
         const partID = reasoningPartID(state, data.reasoningID)
         const end = toMillis(data.timestamp)
-        const part = SessionV1.ReasoningPart.make({
+        const part = {
           id: partID,
           sessionID: sessionID as SessionID,
           messageID,
           type: "reasoning",
           text: data.text,
           time: { start: end, end },
-        })
+        } as unknown as ReturnType<typeof SessionV1.ReasoningPart.make>
         return [partUpdated(sessionID, part, end)]
       }
 
@@ -385,7 +381,7 @@ export function createTranslator() {
         let entry = state.tools.get(callID)
         if (!entry) {
           entry = {
-            partID: SessionV1.PartID.ascending(),
+            partID: callID as SessionV1.PartID,
             tool: data.name,
             raw: "",
             input: {},
@@ -396,7 +392,7 @@ export function createTranslator() {
           entry.tool = data.name
           entry.timeStart = start
         }
-        const part = SessionV1.ToolPart.make({
+        const part = {
           id: entry.partID,
           sessionID: sessionID as SessionID,
           messageID,
@@ -404,7 +400,7 @@ export function createTranslator() {
           callID,
           tool: entry.tool,
           state: SessionV1.ToolStatePending.make({ status: "pending", input: {}, raw: "" }),
-        })
+        } as unknown as ReturnType<typeof SessionV1.ToolPart.make>
         return [partUpdated(sessionID, part, start)]
       }
 
@@ -425,7 +421,7 @@ export function createTranslator() {
           // tool.called without a prior input.started: synthesize an entry so
           // every ToolPart still carries a stable partID + tool name.
           entry = {
-            partID: SessionV1.PartID.ascending(),
+            partID: callID as SessionV1.PartID,
             tool: data.tool,
             raw: "",
             input: {},
@@ -435,7 +431,7 @@ export function createTranslator() {
         }
         entry.tool = data.tool
         entry.input = data.input ?? {}
-        const part = SessionV1.ToolPart.make({
+        const part = {
           id: entry.partID,
           sessionID: sessionID as SessionID,
           messageID,
@@ -447,7 +443,7 @@ export function createTranslator() {
             input: entry.input,
             time: { start: entry.timeStart || time },
           }),
-        })
+        } as unknown as ReturnType<typeof SessionV1.ToolPart.make>
         return [partUpdated(sessionID, part, time)]
       }
 
@@ -456,10 +452,10 @@ export function createTranslator() {
         const callID = data.callID as string
         const time = toMillis(data.timestamp)
         const entry = state.tools.get(callID)
-        const partID = entry?.partID ?? SessionV1.PartID.ascending()
+        const partID = entry?.partID ?? (callID as SessionV1.PartID)
         const tool = entry?.tool ?? "unknown"
         const output = flattenContent(data.content)
-        const part = SessionV1.ToolPart.make({
+        const part = {
           id: partID,
           sessionID: sessionID as SessionID,
           messageID,
@@ -475,7 +471,7 @@ export function createTranslator() {
             metadata: {},
             time: { start: entry?.timeStart || time, end: time },
           }),
-        })
+        } as unknown as ReturnType<typeof SessionV1.ToolPart.make>
         return [partUpdated(sessionID, part, time)]
       }
 
@@ -484,9 +480,9 @@ export function createTranslator() {
         const callID = data.callID as string
         const time = toMillis(data.timestamp)
         const entry = state.tools.get(callID)
-        const partID = entry?.partID ?? SessionV1.PartID.ascending()
+        const partID = entry?.partID ?? (callID as SessionV1.PartID)
         const tool = entry?.tool ?? "unknown"
-        const part = SessionV1.ToolPart.make({
+        const part = {
           id: partID,
           sessionID: sessionID as SessionID,
           messageID,
@@ -500,7 +496,7 @@ export function createTranslator() {
             error: errorMessage(data.error),
             time: { start: entry?.timeStart || time, end: time },
           }),
-        })
+        } as unknown as ReturnType<typeof SessionV1.ToolPart.make>
         return [partUpdated(sessionID, part, time)]
       }
 

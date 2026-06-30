@@ -239,7 +239,9 @@ describe("event-v2-translate / golden per-event shapes", () => {
     expect(startedEnv.type).toBe("message.part.updated")
     const startPart = (startedEnv.properties as any).part
     expect(startPart).toMatchObject({ type: "text", text: "", sessionID: SES, messageID: MSG })
-    expect(startPart.id.startsWith("prt")).toBe(true)
+    // The legacy part id is the V2 textID verbatim (NOT a minted prt_…) so the live
+    // part and the fetched part (server-session, same V2 id) dedup to one bubble.
+    expect(startPart.id).toBe("txt-1")
     expect(startPart.time).toEqual({ start: 1100 })
     const partID = startPart.id
 
@@ -357,7 +359,8 @@ describe("event-v2-translate / tool lifecycle", () => {
     expect(pendingPart).toMatchObject({ type: "tool", callID: "call-1", tool: "bash" })
     expect(pendingPart.state.status).toBe("pending")
     const partID = pendingPart.id
-    expect(partID.startsWith("prt")).toBe(true)
+    // The legacy tool part id is the V2 callID verbatim so it dedups with the fetch.
+    expect(partID).toBe("call-1")
 
     // input.ended itself is not a streaming target -> []
     expect(t.translate(toolInputEnded("call-1", '{"command":"ls"}'))).toEqual([])
@@ -544,6 +547,44 @@ describe("event-v2-translate / round-trip through the desktop reducer", () => {
     expect((toolPart as any).tool).toBe("bash")
   })
 
+  test("the fetched part and the live translated part dedup to ONE (no doubled response)", async () => {
+    // The desktop has TWO writers for an assistant's parts: the live translated events
+    // (this translator) AND the client.session.messages fetch, which returns the V2
+    // content part under its V2 stream id (e.g. "txt-1"). Before the fix the translator
+    // minted a random prt_… id that never matched the fetch -> TWO text parts -> a
+    // doubled bubble. Now both use the V2 id, so the reducer's dedup-by-id (the same
+    // Binary.search mechanism the server-session store uses at server-session.ts:814)
+    // collapses them to one. This reproduces the actual two-writer bug, which the
+    // earlier single-writer round-trips could not.
+    const applyDirectoryEvent = await loadDesktopReducer()
+    const t = createTranslator()
+    const [store, setStore] = createStore(baseDesktopState())
+    const apply = (env: { type: string; properties?: unknown }) =>
+      applyDirectoryEvent({ event: env, store, setStore, push() {}, directory: "/tmp", loadLsp() {} })
+    const feed = (e: BridgeEvent) => t.translate(e).forEach(apply)
+
+    // live writer: a streamed text turn -> part id == the V2 textID "txt-1"
+    feed(stepStarted())
+    feed(textStarted("txt-1", 1100))
+    feed(textDelta("txt-1", "hello", 1110))
+    feed(textEnded("txt-1", "hello", 1130))
+    feed(stepEnded())
+
+    // fetch writer: client.session.messages returns the SAME assistant part under its
+    // V2 id "txt-1" (this is what the desktop stores from the fetch).
+    apply({
+      type: "message.part.updated",
+      properties: {
+        part: { id: "txt-1", sessionID: SES, messageID: MSG, type: "text", text: "hello", time: { start: 1100, end: 1130 } },
+      },
+    })
+
+    const textParts = (store.part[MSG] ?? []).filter((p: any) => p.type === "text")
+    expect(textParts).toHaveLength(1) // one part, not two -> a single rendered bubble
+    expect((textParts[0] as any).id).toBe("txt-1")
+    expect((textParts[0] as any).text).toBe("hello")
+  })
+
   test("a prompted user message renders in the store (row + text part)", async () => {
     const applyDirectoryEvent = await loadDesktopReducer()
     const t = createTranslator()
@@ -686,7 +727,7 @@ describe("event-v2-translate / ordering invariant", () => {
 })
 
 describe("event-v2-translate / interleaving", () => {
-  test("two sessionIDs keep independent part maps (distinct part ids)", () => {
+  test("part id is the V2 stream id; same textID across sessions is scoped by messageID", () => {
     const t = createTranslator()
     const sesA = "ses_A"
     const sesB = "ses_B"
@@ -701,8 +742,11 @@ describe("event-v2-translate / interleaving", () => {
     const partA = (only(t.translate(textA)).properties as any).part
     const partB = (only(t.translate(textB)).properties as any).part
 
-    // same V2 textID across two sessions must map to DISTINCT legacy part ids
-    expect(partA.id).not.toBe(partB.id)
+    // The part id is the V2 textID verbatim, so the SAME textID across two sessions
+    // yields the same part id — but parts are scoped per messageID, so they never
+    // collide, and each dedups with its own session's fetched part (the bug fix).
+    expect(partA.id).toBe("txt")
+    expect(partB.id).toBe("txt")
     expect(partA.messageID).toBe("msg_A")
     expect(partB.messageID).toBe("msg_B")
   })
