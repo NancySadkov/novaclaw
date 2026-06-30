@@ -7,6 +7,7 @@ import { EventV2 } from "@opencode-ai/core/event"
 import { Location } from "@opencode-ai/core/location"
 import { Project } from "@opencode-ai/core/project"
 import { AbsolutePath } from "@opencode-ai/core/schema"
+import { createTranslator } from "@/event-v2-translate"
 import { Context, Effect, Layer } from "effect"
 
 export class Service extends Context.Service<Service, EventV2.Interface>()("@opencode/EventV2Bridge") {}
@@ -32,6 +33,14 @@ export const layer = Layer.effect(
         })
       })
 
+    // One V2->v1 legacy translator per sessionID. Each instance is a per-session
+    // state machine (assistant identity, stable part ids, tool bookkeeping). We
+    // never delete on step.ended (a tool-using turn emits N step.ended events
+    // mid-turn; there is no per-turn terminal event to key cleanup on), so we
+    // leave entries to accumulate -- session count is bounded in practice. The
+    // F0 cutover can revisit eviction once turn-boundary semantics land.
+    const translators = new Map<string, ReturnType<typeof createTranslator>>()
+
     const unsubscribe = yield* events.listen((event) =>
       Effect.gen(function* () {
         const ctx = yield* InstanceRef
@@ -42,6 +51,29 @@ export const layer = Layer.effect(
           workspace: workspaceID,
           payload: { id: event.id, type: event.type, properties: event.data },
         })
+        // ADDITIVE v1 projection: translate V2 session.next.* events into the
+        // legacy v1 event vocabulary so unchanged desktop/CLI clients can render
+        // V2 sessions. The startsWith guard keeps the legacy live path (flag OFF)
+        // byte-identical -- this branch never runs for non-V2 events.
+        const sessionID = (event.data as { sessionID?: unknown })?.sessionID
+        if (event.type.startsWith("session.next.") && typeof sessionID === "string") {
+          let translator = translators.get(sessionID)
+          if (!translator) {
+            translator = createTranslator()
+            translators.set(sessionID, translator)
+          }
+          for (const envelope of translator.translate({
+            type: event.type,
+            data: event.data as Record<string, any>,
+          })) {
+            GlobalBus.emit("event", {
+              directory: event.location?.directory ?? ctx?.directory,
+              project: ctx?.project.id,
+              workspace: workspaceID,
+              payload: { type: envelope.type, properties: envelope.properties },
+            })
+          }
+        }
         if (event.durable === undefined) return
         GlobalBus.emit("event", {
           directory: event.location?.directory ?? ctx?.directory,
