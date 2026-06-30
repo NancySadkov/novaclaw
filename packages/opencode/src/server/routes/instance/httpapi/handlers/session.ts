@@ -435,7 +435,18 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       const v2Turn = Effect.gen(function* () {
         // prompt ADMITS + WAKES (returns immediately); resume JOINS the live run
         // and settles on success, error, AND interrupt.
-        yield* sessionV2.prompt({ sessionID, prompt: toV2Prompt(ctx.payload) })
+        // Reuse the client's message id (the desktop generates one in submit.ts and
+        // sends it as payload.messageID) as the V2 prompt `id`. The translator's
+        // `prompted` mapping then emits the user message under that SAME id, so it
+        // reconciles with the desktop's OPTIMISTIC user bubble. Without this, V2
+        // mints a fresh id and the client renders the user's prompt TWICE.
+        yield* sessionV2.prompt({
+          sessionID,
+          ...(ctx.payload.messageID
+            ? { id: ctx.payload.messageID as unknown as Parameters<typeof sessionV2.prompt>[0]["id"] }
+            : {}),
+          prompt: toV2Prompt(ctx.payload),
+        })
         yield* sessionV2.resume(sessionID)
       }).pipe(
         Effect.catchCause((cause) => reportAsyncFailure(sessionID, cause)),
