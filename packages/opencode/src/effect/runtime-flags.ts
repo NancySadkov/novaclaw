@@ -51,6 +51,9 @@ export class Service extends ConfigService.Service<Service>()("@opencode/Runtime
   outputTokenMax: positiveInteger("OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX"),
   bashDefaultTimeoutMs: positiveInteger("OPENCODE_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS"),
   experimentalNativeLlm: bool("OPENCODE_EXPERIMENTAL_NATIVE_LLM"),
+  // F0: gate the cutover that makes the V2 session stack (SessionV2 + SessionRunner)
+  // the default prompt path for default clients. Off by default; rolled out per-client.
+  experimentalNativeSession: enabledByExperimental("OPENCODE_EXPERIMENTAL_NATIVE_SESSION"),
   experimentalWebSockets: bool("OPENCODE_EXPERIMENTAL_WEBSOCKETS"),
   client: Config.string("OPENCODE_CLIENT").pipe(Config.withDefault("cli")),
 }) {}
