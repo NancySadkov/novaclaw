@@ -11,6 +11,7 @@ import type {
   SnapshotFileDiff,
   Todo,
 } from "@opencode-ai/sdk/v2/client"
+import { accumDeltaKey } from "@opencode-ai/session-ui/message-part-text"
 import { batch } from "solid-js"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { diffs as cleanDiffs, message as cleanMessage } from "@/utils/diffs"
@@ -159,8 +160,8 @@ export function createServerSession(client: OpencodeClient, options?: { retry?: 
     messageID: string,
   ) => {
     for (const part of cache.part[messageID] ?? []) {
-      delete cache.part_text_accum_delta[part.id]
-      deltaBases.delete(part.id)
+      delete cache.part_text_accum_delta[accumDeltaKey(messageID, part.id)]
+      deltaBases.delete(accumDeltaKey(messageID, part.id))
     }
     delete cache.part[messageID]
   }
@@ -486,8 +487,8 @@ export function createServerSession(client: OpencodeClient, options?: { retry?: 
       const pending = pendingParts.get(sessionID)?.get(item.id)
       const touched = new Set([...(load?.touchedParts.get(item.id) ?? []), ...(pending ?? [])])
       for (const part of fetched) {
-        const accumulated = data.part_text_accum_delta[part.id]
-        const base = deltaBases.get(part.id)?.base
+        const accumulated = data.part_text_accum_delta[accumDeltaKey(item.id, part.id)]
+        const base = deltaBases.get(accumDeltaKey(item.id, part.id))?.base
         const preserveDelta =
           base !== undefined &&
           accumulated !== undefined &&
@@ -514,8 +515,8 @@ export function createServerSession(client: OpencodeClient, options?: { retry?: 
         produce((draft) => {
           for (const part of data.part[item.id] ?? []) {
             if (!partIDs.has(part.id) || !touched.has(part.id)) {
-              delete draft[part.id]
-              deltaBases.delete(part.id)
+              delete draft[accumDeltaKey(item.id, part.id)]
+              deltaBases.delete(accumDeltaKey(item.id, part.id))
             }
           }
         }),
@@ -808,12 +809,12 @@ export function createServerSession(client: OpencodeClient, options?: { retry?: 
         const optimistic = load?.optimisticParts.get(part.messageID)
         optimistic?.delete(part.id)
         if (optimistic?.size === 0) load?.optimisticParts.delete(part.messageID)
-        deltaBases.delete(part.id)
+        deltaBases.delete(accumDeltaKey(part.messageID, part.id))
         trackPartChange(part.sessionID, part.messageID, part.id)
         confirmOptimisticPart(part.sessionID, part.messageID, part)
         setData(
           "part_text_accum_delta",
-          produce((draft) => void delete draft[part.id]),
+          produce((draft) => void delete draft[accumDeltaKey(part.messageID, part.id)]),
         )
         const parts = data.part[part.messageID]
         if (!parts) {
@@ -857,8 +858,8 @@ export function createServerSession(client: OpencodeClient, options?: { retry?: 
         clearOptimisticPart(props.sessionID, props.messageID, props.partID)
         setData(
           produce((draft) => {
-            delete draft.part_text_accum_delta[props.partID]
-            deltaBases.delete(props.partID)
+            delete draft.part_text_accum_delta[accumDeltaKey(props.messageID, props.partID)]
+            deltaBases.delete(accumDeltaKey(props.messageID, props.partID))
             const parts = draft.part[props.messageID]
             if (!parts) return
             const result = Binary.search(parts, props.partID, (part) => part.id)
@@ -892,11 +893,11 @@ export function createServerSession(client: OpencodeClient, options?: { retry?: 
         }
         const field = props.field as keyof (typeof parts)[number]
         const current = parts[result.index]?.[field]
-        if (!deltaBases.has(props.partID) && typeof current === "string")
-          deltaBases.set(props.partID, { base: current, sessionID: props.sessionID })
+        if (!deltaBases.has(accumDeltaKey(props.messageID, props.partID)) && typeof current === "string")
+          deltaBases.set(accumDeltaKey(props.messageID, props.partID), { base: current, sessionID: props.sessionID })
         setData(
           "part_text_accum_delta",
-          props.partID,
+          accumDeltaKey(props.messageID, props.partID),
           (value) => (value ?? (typeof current === "string" ? current : "")) + props.delta,
         )
         setData(
@@ -1026,8 +1027,8 @@ export function createServerSession(client: OpencodeClient, options?: { retry?: 
           "part_text_accum_delta",
           produce((draft) => {
             for (const part of [...(data.part[input.message.id] ?? []), ...parts]) {
-              delete draft[part.id]
-              deltaBases.delete(part.id)
+              delete draft[accumDeltaKey(input.message.id, part.id)]
+              deltaBases.delete(accumDeltaKey(input.message.id, part.id))
             }
           }),
         )
@@ -1043,8 +1044,8 @@ export function createServerSession(client: OpencodeClient, options?: { retry?: 
           setData(
             produce((draft) => {
               for (const part of item.parts) {
-                delete draft.part_text_accum_delta[part.id]
-                deltaBases.delete(part.id)
+                delete draft.part_text_accum_delta[accumDeltaKey(input.messageID, part.id)]
+                deltaBases.delete(accumDeltaKey(input.messageID, part.id))
               }
               const parts = draft.part[input.messageID]
               if (!parts) return
