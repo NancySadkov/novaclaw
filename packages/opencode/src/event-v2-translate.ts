@@ -90,6 +90,11 @@ type SessionState = {
   // The currently-owned assistant message identity. message-updater resumes the
   // latest incomplete assistant; here each step.started (re)sets the owned id.
   assistantMessageID?: SessionV1.MessageID
+  // The user message id of the in-flight turn, captured from `prompted`. Used as
+  // the assistant rows' parentID so the desktop links them to the user turn
+  // (matches legacy `parentID: lastUser.id`). Multiple `prompted` per turn
+  // (steer/queue) is possible -> this holds the LAST one, the intended grouping.
+  userMessageID?: SessionV1.MessageID
   // Stable legacy PartID per V2 textID / reasoningID.
   textParts: Map<string, SessionV1.PartID>
   reasoningParts: Map<string, SessionV1.PartID>
@@ -100,6 +105,7 @@ type SessionState = {
 function freshSession(): SessionState {
   return {
     assistantMessageID: undefined,
+    userMessageID: undefined,
     textParts: new Map(),
     reasoningParts: new Map(),
     tools: new Map(),
@@ -142,6 +148,7 @@ export function createTranslator() {
   const assistantInfo = (input: {
     sessionID: string
     messageID: SessionV1.MessageID
+    parentID?: SessionV1.MessageID
     agent: string
     model: { id: string; providerID: string; variant?: string }
     created: number
@@ -155,9 +162,12 @@ export function createTranslator() {
       id: input.messageID,
       sessionID: input.sessionID as SessionID,
       role: "assistant",
-      // V2 has no parent linkage on a step; the message's own id is a safe,
-      // schema-valid default (a real MessageID).
-      parentID: input.messageID,
+      // Group the assistant row under the in-flight user turn so the desktop's
+      // `assistantMessagesByParent` links it to the user message (the red Error
+      // card only renders for rows parented to the user). Falls back to the
+      // message's own id (a safe, schema-valid default) when no `prompted` was
+      // seen yet, preserving prior behavior.
+      parentID: input.parentID ?? input.messageID,
       modelID: input.model.id as Model.ID,
       providerID: input.model.providerID as Provider.ID,
       mode: input.agent,
@@ -244,6 +254,7 @@ export function createTranslator() {
         const info = assistantInfo({
           sessionID,
           messageID,
+          parentID: state.userMessageID,
           agent: data.agent,
           model: data.model,
           created,
@@ -260,6 +271,7 @@ export function createTranslator() {
         const info = assistantInfo({
           sessionID,
           messageID,
+          parentID: state.userMessageID,
           agent: data.agent ?? "",
           model: data.model ?? { id: "", providerID: "" },
           created: completed,
@@ -277,6 +289,7 @@ export function createTranslator() {
         const info = assistantInfo({
           sessionID,
           messageID,
+          parentID: state.userMessageID,
           agent: data.agent ?? "",
           model: data.model ?? { id: "", providerID: "" },
           created: completed,
@@ -499,6 +512,9 @@ export function createTranslator() {
       // stays a drop (it precedes promotion and carries no renderable identity).
       case "session.next.prompted": {
         const messageID = data.messageID as SessionV1.MessageID
+        // Capture the in-flight turn's user message id so the assistant rows
+        // (step.started/ended/failed) group under it. Last `prompted` wins.
+        state.userMessageID = messageID
         const created = toMillis(data.timestamp)
         const prompt = (data.prompt ?? {}) as {
           text?: string

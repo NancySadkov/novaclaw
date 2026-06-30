@@ -172,4 +172,41 @@ describe("isSessionNotFoundError", () => {
       ),
     ).toBe(false)
   })
+
+  // The real shape from wrapClientError (error-interceptor.ts): the v2
+  // `session.get` of a removed session 404s as NotFoundError with a
+  // server-authored "Session not found: <id>" message under cause.body.data.
+  test("matches the wrapClientError NotFoundError shape for the requested session", () => {
+    const error = new Error("Session not found: ses_x", {
+      cause: {
+        body: { name: "NotFoundError", data: { message: "Session not found: ses_x" } },
+        status: 404,
+      },
+    })
+    expect(isSessionNotFoundError(error, "ses_x")).toBe(true)
+  })
+
+  test("matches a bare client-synthesized Error (result-tuple path)", () => {
+    expect(isSessionNotFoundError(new Error("Session not found: ses_x"), "ses_x")).toBe(true)
+  })
+
+  test("rejects the wrapClientError NotFoundError shape for a different session", () => {
+    const error = new Error("Session not found: ses_x", {
+      cause: {
+        body: { name: "NotFoundError", data: { message: "Session not found: ses_x" } },
+        status: 404,
+      },
+    })
+    expect(isSessionNotFoundError(error, "ses_other")).toBe(false)
+  })
+
+  test("rejects a non-session 404 (NotFoundError for an unrelated resource)", () => {
+    const error = new Error("Resource not found: /some/path", {
+      cause: {
+        body: { name: "NotFoundError", data: { message: "Resource not found: /some/path" } },
+        status: 404,
+      },
+    })
+    expect(isSessionNotFoundError(error, "ses_x")).toBe(false)
+  })
 })

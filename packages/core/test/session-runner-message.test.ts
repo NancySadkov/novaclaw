@@ -396,6 +396,9 @@ Recent work
         metadata: undefined,
         providerMetadata: undefined,
       },
+      // A failed turn's error is recorded as a trailing text part so it survives
+      // lowering and reaches the model on the next prompt.
+      { type: "text", text: "[Previous turn failed before completing: Provider turn interrupted]" },
     ])
   })
 
@@ -496,6 +499,89 @@ Recent work
         metadata: undefined,
         providerMetadata: undefined,
       },
+    ])
+  })
+
+  test("a failed turn with empty content still surfaces the error text to the model", () => {
+    const errorText =
+      "HTTP transport failed: connect ECONNREFUSED (target http://127.0.0.1:1/v1/chat/completions)"
+    const messages = toLLMMessages(
+      [
+        SessionMessage.Assistant.make({
+          id: id("assistant-empty-failed"),
+          type: "assistant",
+          agent: "build",
+          model: { id: ModelV2.ID.make("model"), providerID: ProviderV2.ID.make("provider") },
+          content: [],
+          finish: "error",
+          error: { type: "unknown", message: errorText },
+          time: { created, completed: created },
+        }),
+      ],
+      model,
+    )
+
+    expect(messages).toHaveLength(1)
+    expect(messages[0]?.role).toBe("assistant")
+    expect(messages[0]?.content).toEqual([
+      { type: "text", text: `[Previous turn failed before completing: ${errorText}]` },
+    ])
+  })
+
+  test("an assistant with empty content and NO error still returns [] (unchanged)", () => {
+    const messages = toLLMMessages(
+      [
+        SessionMessage.Assistant.make({
+          id: id("assistant-empty-clean"),
+          type: "assistant",
+          agent: "build",
+          model: { id: ModelV2.ID.make("model"), providerID: ProviderV2.ID.make("provider") },
+          content: [],
+          time: { created, completed: created },
+        }),
+      ],
+      model,
+    )
+
+    expect(messages).toEqual([])
+  })
+
+  test("two errored assistant turns with a user message between lower to legal user/assistant ordering", () => {
+    const messages = toLLMMessages(
+      [
+        SessionMessage.User.make({ id: id("u1"), type: "user", text: "first", time: { created } }),
+        SessionMessage.Assistant.make({
+          id: id("a1"),
+          type: "assistant",
+          agent: "build",
+          model: { id: ModelV2.ID.make("model"), providerID: ProviderV2.ID.make("provider") },
+          content: [],
+          finish: "error",
+          error: { type: "unknown", message: "first failure" },
+          time: { created, completed: created },
+        }),
+        SessionMessage.User.make({ id: id("u2"), type: "user", text: "second", time: { created } }),
+        SessionMessage.Assistant.make({
+          id: id("a2"),
+          type: "assistant",
+          agent: "build",
+          model: { id: ModelV2.ID.make("model"), providerID: ProviderV2.ID.make("provider") },
+          content: [],
+          finish: "error",
+          error: { type: "unknown", message: "second failure" },
+          time: { created, completed: created },
+        }),
+      ],
+      model,
+    )
+
+    // No two adjacent same-role messages: user/assistant/user/assistant.
+    expect(messages.map((m) => m.role)).toEqual(["user", "assistant", "user", "assistant"])
+    expect(messages[1]?.content).toEqual([
+      { type: "text", text: "[Previous turn failed before completing: first failure]" },
+    ])
+    expect(messages[3]?.content).toEqual([
+      { type: "text", text: "[Previous turn failed before completing: second failure]" },
     ])
   })
 })

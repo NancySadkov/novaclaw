@@ -43,10 +43,18 @@ function unwrapNamedError(error: unknown): unknown {
 }
 
 export function isSessionNotFoundError(error: unknown, sessionID: string) {
+  // Bare client-synthesized Error (result-tuple path).
+  if (error instanceof Error && error.message === `Session not found: ${sessionID}`) return true
   const unwrapped = unwrapNamedError(error)
   if (typeof unwrapped !== "object" || unwrapped === null) return false
   const value = unwrapped as Record<string, unknown>
-  return value._tag === "SessionNotFoundError" && value.sessionID === sessionID
+  // Tagged shape (if ever emitted).
+  if (value._tag === "SessionNotFoundError" && value.sessionID === sessionID) return true
+  // wrapClientError path: cause.body = { name:"NotFoundError", data:{ message:"Session not found: <id>" } }.
+  // Scope to THIS session via the server-authored message so other 404s stay visible.
+  const data = value.data as { message?: unknown } | undefined
+  if (value.name === "NotFoundError" && typeof data?.message === "string" && data.message.includes(sessionID)) return true
+  return false
 }
 
 function isConfigInvalidErrorLike(error: unknown): error is ConfigInvalidError {

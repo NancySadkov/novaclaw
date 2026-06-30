@@ -198,6 +198,39 @@ describe("event-v2-translate / golden per-event shapes", () => {
     expect(info.error).toEqual({ name: "UnknownError", data: { message: "kaboom" } })
   })
 
+  test("prompted then step.failed -> failed assistant row parents under the user messageID (visible Error card)", () => {
+    const t = createTranslator()
+    t.translate(prompted({ messageID: "msg_user1", text: "hi" }))
+    const env = only(
+      t.translate(stepFailed({ error: { type: "unknown", message: "HTTP transport failed (target http://127.0.0.1:1)" } })),
+    )
+    const info = (env.properties as any).info
+    // The desktop groups assistant rows by parentID under the user message id;
+    // this is what makes the red Error card render instead of being orphaned.
+    expect(info.parentID).toBe("msg_user1")
+    expect(info.id).toBe(MSG)
+    expect(info.finish).toBe("error")
+    expect(info.error.data.message).toBe("HTTP transport failed (target http://127.0.0.1:1)")
+  })
+
+  test("prompted then a full step -> started/ended assistant rows also parent under the user messageID", () => {
+    const t = createTranslator()
+    t.translate(prompted({ messageID: "msg_user1", text: "hi" }))
+    const startInfo = (only(t.translate(stepStarted())).properties as any).info
+    expect(startInfo.parentID).toBe("msg_user1")
+    const endInfo = (only(t.translate(stepEnded())).properties as any).info
+    expect(endInfo.parentID).toBe("msg_user1")
+  })
+
+  test("step.failed with NO prior prompted -> still emits; parentID falls back to its own id (no crash)", () => {
+    const t = createTranslator()
+    const env = only(t.translate(stepFailed({ error: { type: "unknown", message: "boom" } })))
+    const info = (env.properties as any).info
+    expect(info.parentID).toBe(MSG) // falls back to own message id
+    expect(info.finish).toBe("error")
+    expect(info.error.data.message).toBe("boom")
+  })
+
   test("text.started -> empty TextPart with time.start; delta -> part.delta; ended -> full part + time.end", () => {
     const t = createTranslator()
     t.translate(stepStarted())

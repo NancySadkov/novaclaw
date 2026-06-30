@@ -93,6 +93,16 @@ const assistant = (message: SessionMessage.Assistant, model: Model) => {
     )
     return result ? [call, result] : [call]
   })
+  // Record a failed turn's error in the assistant content so it survives lowering
+  // and reaches the model on the next prompt. Without this, a turn that fails
+  // before producing any content yields empty `content` -> empty `meaningful` ->
+  // `[]`, and the model never learns the turn failed. NOTE: this error line is
+  // PERSISTED in history and re-sent on every subsequent turn -- that is
+  // intended: the transcript is the durable record of what happened, so a later
+  // (e.g. recovered/online) turn can read it and reason about the failure.
+  if (message.error) {
+    content.push({ type: "text", text: `[Previous turn failed before completing: ${message.error.message}]` })
+  }
   const meaningful = content.filter((part) => {
     if (part.type === "text") return part.text !== ""
     if (part.type !== "reasoning") return true
