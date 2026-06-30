@@ -1,5 +1,5 @@
 import { Buffer } from "node:buffer"
-import { Effect, Schema, Stream } from "effect"
+import { Effect, Option, Schema, Stream } from "effect"
 import * as Sse from "effect/unstable/encoding/Sse"
 import { Headers, HttpClientRequest } from "effect/unstable/http"
 import {
@@ -19,6 +19,37 @@ export { isRecord }
 export const Json = Schema.fromJsonString(Schema.Unknown)
 export const decodeJson = Schema.decodeUnknownSync(Json)
 export const encodeJson = Schema.encodeSync(Json)
+const decodeJsonOption = Schema.decodeUnknownOption(Json)
+const isValidJson = (input: string) => Option.isSome(decodeJsonOption(input))
+
+/**
+ * Best-effort repair of tool-call argument JSON from small / local models so a
+ * fumbled call does not hard-fail the whole turn (the jh-tolerance principle).
+ * Valid JSON is returned UNTOUCHED — we never rewrite a well-formed payload (which
+ * could legitimately contain `<|...|>` inside a string). Only invalid input is
+ * cleaned (strip leaked harmony / `tool_call` tokens) and, failing that, reduced to
+ * its outermost `{...}` / `[...]` span. Last resort is `{}`, which lets the tool's
+ * own schema validation produce a recoverable error instead of crashing the stream.
+ */
+export const repairToolJson = (raw: string): string => {
+  const input = raw || "{}"
+  if (isValidJson(input)) return input
+  const cleaned = input
+    .replace(/<\|[^|]*\|>/g, "")
+    .replace(/<\/?tool_call>/g, "")
+    .trim()
+  if (cleaned.length === 0) return "{}"
+  if (isValidJson(cleaned)) return cleaned
+  for (const [open, close] of [
+    ["{", "}"],
+    ["[", "]"],
+  ] as const) {
+    const start = cleaned.indexOf(open)
+    const end = cleaned.lastIndexOf(close)
+    if (start >= 0 && start < end && isValidJson(cleaned.slice(start, end + 1))) return cleaned.slice(start, end + 1)
+  }
+  return "{}"
+}
 const isJson = Schema.is(Schema.Json)
 export const JsonObject = Schema.Record(Schema.String, Schema.Unknown)
 export const optionalArray = <const S extends Schema.Top>(schema: S) => Schema.optional(Schema.Array(schema))
@@ -153,7 +184,7 @@ export const wrappedSystemUpdate = Effect.fn("ProviderShared.wrappedSystemUpdate
  * routes: `Invalid JSON input for <route> tool call <name>`.
  */
 export const parseToolInput = (route: string, name: string, raw: string) =>
-  parseJson(route, raw || "{}", `Invalid JSON input for ${route} tool call ${name}`)
+  parseJson(route, repairToolJson(raw), `Invalid JSON input for ${route} tool call ${name}`)
 
 export const IMAGE_MIMES = ["image/png", "image/jpeg", "image/gif", "image/webp"] as const
 export const VIDEO_MIMES = ["video/mp4", "video/webm", "video/quicktime"] as const
