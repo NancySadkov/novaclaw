@@ -304,7 +304,9 @@ const statusError =
       })
     })
 
-const toHttpError = (redactedNames: ReadonlyArray<string | RegExp>) => (error: unknown) => {
+const toHttpError =
+  (redactedNames: ReadonlyArray<string | RegExp>, outgoing: HttpClientRequest.HttpClientRequest) =>
+  (error: unknown) => {
   const transportError = (input: {
     readonly message: string
     readonly kind?: string | undefined
@@ -322,7 +324,7 @@ const toHttpError = (redactedNames: ReadonlyArray<string | RegExp>) => (error: u
     })
 
   if (Cause.isTimeoutError(error)) {
-    return transportError({ message: error.message, kind: "Timeout" })
+    return transportError({ message: `${error.message} (target ${redactUrl(outgoing.url)})`, kind: "Timeout", request: outgoing })
   }
   if (!HttpClientError.isHttpClientError(error)) {
     // Surface the underlying failure instead of a catch-all. The bare
@@ -336,9 +338,12 @@ const toHttpError = (redactedNames: ReadonlyArray<string | RegExp>) => (error: u
             ? ` | cause: ${String((error.cause as { message?: unknown })?.message ?? error.cause)}`
             : "")
         : String(error)
-    return transportError({ message: `HTTP transport failed: ${detail}` })
+    // Always name the target host:port — the #1 diagnostic lead, so a user (or an
+    // online model reading the transcript) can tell a dead/misconfigured endpoint
+    // from a real outage without rebuilding the app with extra logging.
+    return transportError({ message: `HTTP transport failed: ${detail} (target ${redactUrl(outgoing.url)})`, request: outgoing })
   }
-  const request = "request" in error ? error.request : undefined
+  const request = ("request" in error ? error.request : undefined) ?? outgoing
   if (error.reason._tag === "TransportError") {
     return transportError({
       message: error.reason.description ?? "HTTP transport failed",
@@ -383,7 +388,7 @@ export const layer: Layer.Layer<Service, never, HttpClient.HttpClient> = Layer.e
         const redactedNames = yield* Headers.CurrentRedactedNames
         return yield* http
           .execute(request)
-          .pipe(Effect.mapError(toHttpError(redactedNames)), Effect.flatMap(statusError(request, redactedNames)))
+          .pipe(Effect.mapError(toHttpError(redactedNames, request)), Effect.flatMap(statusError(request, redactedNames)))
       })
     return Service.of({
       execute: (request) => retryStatusFailures(executeOnce(request)),
