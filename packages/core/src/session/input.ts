@@ -80,6 +80,22 @@ export const admit = Effect.fn("SessionInput.admit")(function* (
     )
 })
 
+/**
+ * F2 — inject a one-shot **steer** nudge (promoted on the next turn). The shared primitive
+ * for harness interjections: doom-loop redirects (1E), forgiving-loop nudges (1D), graceful
+ * permission-denial redirects (1J), and introspection/affective interjections (2B/3B). A thin
+ * wrapper over `admit` so callers don't re-derive the id / Prompt / delivery each time. Uses a
+ * fresh id per call — idempotency (nudge-once) is the caller's concern (e.g. the doom-loop's
+ * `nudged` set).
+ */
+export const steer = (db: DatabaseService, events: EventV2.Interface, sessionID: SessionSchema.ID, text: string) =>
+  admit(db, events, {
+    id: SessionMessage.ID.create(),
+    sessionID,
+    prompt: Prompt.make({ text }),
+    delivery: "steer",
+  })
+
 export const projectAdmitted = Effect.fn("SessionInput.projectAdmitted")(function* (
   db: DatabaseService,
   input: {

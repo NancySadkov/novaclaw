@@ -425,12 +425,7 @@ export const layer = Layer.effect(
             const key = looping ? `${looping.name} ${looping.input}` : undefined
             if (looping && key !== undefined && !nudged.has(key)) {
               nudged.add(key)
-              yield* SessionInput.admit(db, events, {
-                id: SessionMessage.ID.create(),
-                sessionID: input.sessionID,
-                prompt: Prompt.make({ text: redirectMessage(looping) }),
-                delivery: "steer",
-              })
+              yield* SessionInput.steer(db, events, input.sessionID, redirectMessage(looping))
             }
           }
           if (!needsContinuation) needsContinuation = yield* SessionInput.hasPending(db, input.sessionID, "steer")
