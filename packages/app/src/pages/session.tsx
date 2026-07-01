@@ -44,6 +44,7 @@ import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
 import { PromptInput } from "@/components/prompt-input"
 import { useSettingsCommand } from "@/components/settings-dialog"
+import { useProcessesCommand } from "@/components/dialog-processes"
 import { type FollowupDraft, sendFollowupDraft } from "@/components/prompt-input/submit"
 import {
   createPromptInputController,
@@ -789,6 +790,7 @@ export default function Page() {
 
   useComposerCommands()
   useSettingsCommand()
+  useProcessesCommand()
   useSessionCommands({
     navigateMessageByOffset,
     setActiveMessage,
