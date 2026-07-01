@@ -64,6 +64,7 @@ import { isSessionNotFoundError } from "./utils/server-errors"
 import Session from "@/pages/session"
 import { NewHome, LegacyHome } from "@/pages/home"
 import { HomeScreen } from "@/pages/home-screen/home-screen"
+import { FilesPage } from "@/pages/files"
 
 const NewSession = lazy(() => import("@/pages/new-session"))
 
@@ -604,6 +605,7 @@ function Routes() {
       <Show when={settings.general.newLayoutDesigns()}>
         <Route path="/" component={HomeScreen} />
         <Route path="/chats" component={NewHome} />
+        <Route path="/files" component={FilesPage} />
         <Route path="/:dir/session/:id" component={LegacyTargetSessionRoute} />
       </Show>
       <Route path="/new-session" component={DraftRoute} />

@@ -22,7 +22,7 @@ export function useBuiltinApps(): () => HomeApp[] {
   return () => [
     { id: "chats", title: "Chats", icon: "chats", accent: "#8b5cf6", source: "builtin", open: () => navigate("/chats") },
     { id: "notes", title: "Notes", icon: "edit", accent: "#e6b422", source: "builtin", open: comingSoon("Notes") },
-    { id: "files", title: "Files", icon: "folder-add-left", accent: "#3b82f6", source: "builtin", open: comingSoon("Files") },
+    { id: "files", title: "Files", icon: "folder-add-left", accent: "#3b82f6", source: "builtin", open: () => navigate("/files") },
     { id: "processes", title: "Processes", icon: "status", accent: "#22d3ee", source: "builtin", open: () => void dialog.show(() => <DialogProcesses />) },
     { id: "search", title: "Search", icon: "magnifying-glass", accent: "#34d399", source: "builtin", open: comingSoon("Search") },
     { id: "terminal", title: "Terminal", icon: "monitor", accent: "#64748b", source: "builtin", open: comingSoon("Terminal") },
