@@ -78,6 +78,7 @@ export type ListInput = typeof ListInput.Type
 
 type CreateInput = {
   id?: SessionSchema.ID
+  parentID?: SessionSchema.ID
   agent?: AgentV2.ID
   model?: ModelV2.Ref
   location: Location.Ref
@@ -219,6 +220,7 @@ export const layer = Layer.effect(
         const now = Date.now()
         const info = SessionV1.SessionInfo.make({
           id: sessionID,
+          parentID: input.parentID,
           slug: Slug.create(),
           version: InstallationVersion,
           projectID: project.id,
