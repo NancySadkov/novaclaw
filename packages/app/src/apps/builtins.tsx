@@ -20,7 +20,7 @@ export function useBuiltinApps(): () => HomeApp[] {
   const comingSoon = (title: string) => () => void dialog.show(() => <AppPlaceholder title={title} />)
 
   return () => [
-    { id: "chats", title: "Chats", icon: "menu", accent: "#8b5cf6", source: "builtin", open: () => navigate("/chats") },
+    { id: "chats", title: "Chats", icon: "chats", accent: "#8b5cf6", source: "builtin", open: () => navigate("/chats") },
     { id: "notes", title: "Notes", icon: "edit", accent: "#e6b422", source: "builtin", open: comingSoon("Notes") },
     { id: "files", title: "Files", icon: "folder-add-left", accent: "#3b82f6", source: "builtin", open: comingSoon("Files") },
     { id: "processes", title: "Processes", icon: "status", accent: "#22d3ee", source: "builtin", open: () => void dialog.show(() => <DialogProcesses />) },

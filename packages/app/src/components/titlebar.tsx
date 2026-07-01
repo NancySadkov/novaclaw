@@ -426,9 +426,12 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                 }}
               >
                 <ChannelIndicator />
-                <Show when={windows() || linux()}>
-                  <WindowsAppMenu command={command} platform={platform} variant="v2" />
-                </Show>
+                {/* Session-nav (app menu + Home + Chats) is hidden on the launcher ("/") — you launch
+                    apps from the tiles there; the nav returns inside a chat/session. */}
+                <Show when={location.pathname !== "/"}>
+                  <Show when={windows() || linux()}>
+                    <WindowsAppMenu command={command} platform={platform} variant="v2" />
+                  </Show>
                 <TooltipV2
                   placement="bottom"
                   value={
@@ -452,17 +455,18 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                   />
                 </TooltipV2>
 
-                <TooltipV2 placement="bottom" value="Chats" class="shrink-0">
-                  <IconButtonV2
-                    type="button"
-                    variant="ghost-muted"
-                    size="large"
-                    class="!w-9 shrink-0"
-                    icon={<IconV2 name="menu" />}
-                    onClick={() => navigate("/chats")}
-                    aria-label="Chats"
-                  />
-                </TooltipV2>
+                  <TooltipV2 placement="bottom" value="Chats" class="shrink-0">
+                    <IconButtonV2
+                      type="button"
+                      variant="ghost-muted"
+                      size="large"
+                      class="!w-9 shrink-0"
+                      icon={<IconV2 name="tab" />}
+                      onClick={() => navigate("/chats")}
+                      aria-label="Chats"
+                    />
+                  </TooltipV2>
+                </Show>
 
                 <TitlebarTabStrip
                   tabs={tabsStore}
