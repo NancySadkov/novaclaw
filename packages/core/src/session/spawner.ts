@@ -1,6 +1,6 @@
 export * as SessionSpawner from "./spawner"
 
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Schema } from "effect"
 import { makeLocationNode } from "../effect/app-node"
 import { Database } from "../database/database"
 import { EventV2 } from "../event"
@@ -26,6 +26,15 @@ import { Prompt } from "./prompt"
 // doesn't override is inherited from the parent via `resolveSessionConfig` (the child carries
 // `parentID`). The child inherits the parent's location (this seam's `Location`).
 
+/** Recursion-depth cap: a child deeper than this is refused (fork-bomb guard, must ship with spawn). */
+export const MAX_SPAWN_DEPTH = 8
+
+/** Raised when the parent chain is already `MAX_SPAWN_DEPTH` deep — surfaced to the model, not fatal. */
+export class SpawnLimitError extends Schema.TaggedErrorClass<SpawnLimitError>()("SessionSpawner.LimitError", {
+  depth: Schema.Number,
+  limit: Schema.Number,
+}) {}
+
 export interface SpawnInput {
   /** The spawning session — becomes the child's `parentID`, the root of config inheritance. */
   readonly parentID: SessionSchema.ID
@@ -37,7 +46,7 @@ export interface SpawnInput {
 }
 
 export interface Interface {
-  readonly spawn: (input: SpawnInput) => Effect.Effect<SessionSchema.ID>
+  readonly spawn: (input: SpawnInput) => Effect.Effect<SessionSchema.ID, SpawnLimitError>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/v2/SessionSpawner") {}
@@ -52,6 +61,20 @@ export const layer = Layer.effect(
     const location = yield* Location.Service
     return Service.of({
       spawn: Effect.fn("SessionSpawner.spawn")(function* (input) {
+        // Fork-bomb guard (recursion depth): refuse if the parent chain is already too deep. A
+        // cycle-guarded parentID walk, like resolveSessionConfig. Flat max-children + spawn-rate
+        // quotas are a follow-up (architecture.md step 6 / todo Vision).
+        let depth = 0
+        let ancestor: SessionSchema.ID | undefined = input.parentID
+        const seen = new Set<string>()
+        while (ancestor !== undefined && !seen.has(ancestor)) {
+          seen.add(ancestor)
+          const parent: SessionSchema.Info | undefined = yield* store.get(ancestor)
+          if (!parent) break
+          depth++
+          ancestor = parent.parentID
+        }
+        if (depth >= MAX_SPAWN_DEPTH) return yield* Effect.fail(new SpawnLimitError({ depth, limit: MAX_SPAWN_DEPTH }))
         const child = yield* createSessionRecord(
           { db, events, projects, store },
           {

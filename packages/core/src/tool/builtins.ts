@@ -14,6 +14,7 @@ import { SkillTool } from "./skill"
 import { TodoWriteTool } from "./todowrite"
 import { WebFetchTool } from "./webfetch"
 import { WebSearchTool } from "./websearch"
+import { SpawnTool } from "./spawn"
 import { WriteTool } from "./write"
 
 /**
@@ -42,6 +43,7 @@ export const locationLayer = Layer.mergeAll(
   WebFetchTool.layer,
   WebSearchTool.layer.pipe(Layer.provide(WebSearchTool.defaultConfigLayer)),
   WriteTool.layer,
+  SpawnTool.layer,
 )
 
 export const node = makeLocationNode({
@@ -60,5 +62,6 @@ export const node = makeLocationNode({
     WebFetchTool.node,
     WebSearchTool.node,
     WriteTool.node,
+    SpawnTool.node,
   ],
 })
