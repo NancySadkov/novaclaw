@@ -234,3 +234,65 @@
     }
   }
 }
+
+/* ── NovaClaw "noble purple + gold" theme (B2) ──────────────────────────────────────────────────
+   App-wide remap of the v2 semantic design tokens to a deep-purple + gold palette. Every v2 component
+   reads these tokens, so overriding them here re-themes the whole new layout at once. Unlayered so it
+   wins over the `@layer theme` defaults; scoped to `[data-new-layout]` so the legacy layout is
+   untouched. Syntax-highlight + state (success/danger) colors are intentionally left alone. */
+body[data-new-layout] {
+  color-scheme: dark;
+
+  /* Backgrounds — deep noble purple, layered */
+  --v2-background-bg-deep: #160f30;
+  --v2-background-bg-base: #201748;
+  --v2-background-bg-layer-01: #281d57;
+  --v2-background-bg-layer-02: #322568;
+  --v2-background-bg-layer-03: #3d2e7b;
+  --v2-background-bg-layer-04: #4a3890;
+  --v2-background-bg-inverse: #f2ecff;
+  --v2-background-bg-contrast: #e7ddff;
+  --v2-background-bg-button-neutral: #281d57;
+  --v2-background-bg-accent: #e7b62f;
+
+  /* Text — light violet-white, gold accent */
+  --v2-text-text-base: #f3eeff;
+  --v2-text-text-muted: #bcaee0;
+  --v2-text-text-faint: #8b7db0;
+  --v2-text-text-inverse: #140c27;
+  --v2-text-text-contrast: #140c27;
+  --v2-text-text-accent: #f2c94c;
+  --v2-text-text-accent-hover: #f8d978;
+  --v2-text-text-code-accent: #f2c94c;
+
+  /* Icons */
+  --v2-icon-icon-base: #cabfe8;
+  --v2-icon-icon-muted: #8b7db0;
+  --v2-icon-icon-inverse: #140c27;
+  --v2-icon-icon-contrast: #1b1231;
+  --v2-icon-icon-accent: #f2c94c;
+  --v2-icon-icon-accent-hover: #f8d978;
+
+  /* Borders — subtle violet, gold focus */
+  --v2-border-border-muted: rgba(181, 158, 255, 0.08);
+  --v2-border-border-base: rgba(181, 158, 255, 0.15);
+  --v2-border-border-strong: rgba(181, 158, 255, 0.26);
+  --v2-border-border-focus: #e7b62f;
+
+  /* Legacy (v1) token bridge — some dialogs still read these; keep them on-palette */
+  --surface-base: #201748;
+  --surface-base-hover: #2a1f5c;
+  --text-base: #f3eeff;
+  --text-strong: #ffffff;
+  --text-weak: #bcaee0;
+  --border-weak-base: rgba(181, 158, 255, 0.15);
+  --icon-base: #cabfe8;
+}
+
+/* A soft radial aurora over the deep-purple base, for depth (the "glow" of the glassmorphic look).
+   On `main` (transparent over bg-deep) so it isn't hidden behind an opaque layer. */
+body[data-new-layout] main {
+  background-image:
+    radial-gradient(110% 75% at 12% -8%, rgba(139, 92, 246, 0.3), transparent 62%),
+    radial-gradient(85% 70% at 100% 4%, rgba(231, 182, 47, 0.1), transparent 58%);
+}
