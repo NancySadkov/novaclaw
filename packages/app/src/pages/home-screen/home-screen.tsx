@@ -1,7 +1,9 @@
-import { Component, createMemo, createSignal, For, Show } from "solid-js"
+import { Component, createMemo, createSignal, For, onMount, Show } from "solid-js"
+import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useBuiltinApps } from "@/apps/builtins"
 import { registeredApps, type HomeApp } from "@/apps/registry"
 import { AppTile } from "./app-tile"
+import { HelpTour, HELP_SEEN_KEY } from "./help-tour"
 
 const PER_PAGE = 24
 
@@ -21,6 +23,19 @@ export const HomeScreen: Component = () => {
   })
   const [page, setPage] = createSignal(0)
   let scroller: HTMLDivElement | undefined
+  const dialog = useDialog()
+
+  // First run: auto-open the Help tour once (guarded by a localStorage flag); reopenable via the Help app.
+  onMount(() => {
+    try {
+      if (!localStorage.getItem(HELP_SEEN_KEY)) {
+        localStorage.setItem(HELP_SEEN_KEY, "1")
+        void dialog.show(() => <HelpTour />)
+      }
+    } catch {
+      // localStorage unavailable (e.g. a non-browser test env) — just skip the tour.
+    }
+  })
 
   const onScroll = () => {
     if (scroller) setPage(Math.round(scroller.scrollLeft / Math.max(1, scroller.clientWidth)))

@@ -3,6 +3,7 @@ import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { DialogProcesses } from "@/components/dialog-processes"
 import { useSettingsDialog } from "@/components/settings-dialog"
 import { AppPlaceholder } from "@/pages/home-screen/app-placeholder"
+import { HelpTour } from "@/pages/home-screen/help-tour"
 import type { HomeApp } from "./registry"
 
 // The built-in NovaClaw apps. Each `open()` REUSES an existing opener (route navigation, a dialog, the
@@ -25,6 +26,7 @@ export function useBuiltinApps(): () => HomeApp[] {
     { id: "processes", title: "Processes", icon: "status", accent: "#22d3ee", source: "builtin", open: () => void dialog.show(() => <DialogProcesses />) },
     { id: "search", title: "Search", icon: "magnifying-glass", accent: "#34d399", source: "builtin", open: comingSoon("Search") },
     { id: "terminal", title: "Terminal", icon: "monitor", accent: "#64748b", source: "builtin", open: comingSoon("Terminal") },
+    { id: "help", title: "Help", icon: "help", accent: "#f472b6", source: "builtin", open: () => void dialog.show(() => <HelpTour />) },
     { id: "settings", title: "Settings", icon: "settings-gear", accent: "#a1a1aa", source: "builtin", open: () => openSettings() },
   ]
 }
