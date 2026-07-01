@@ -13,6 +13,7 @@ import { SettingsServersV2 } from "./servers"
 
 export const DialogSettings: Component<{
   sessionID?: string
+  defaultTab?: string
 }> = (props) => {
   const language = useLanguage()
   const platform = usePlatform()
