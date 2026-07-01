@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test"
-import { moreRestrictive, resolveConfig, type EffectiveConfig, type SessionConfig } from "./config-resolve"
+import { Effect } from "effect"
+import {
+  moreRestrictive,
+  resolveConfig,
+  resolveSessionConfig,
+  type EffectiveConfig,
+  type SessionConfig,
+  type SessionLike,
+} from "./config-resolve"
 
 const DEFAULTS: EffectiveConfig = {
   permissionMode: "ask",
@@ -86,4 +94,39 @@ describe("resolveConfig — permission RULES accumulate", () => {
       { action: "write", resource: "*", effect: "ask" },
     ])
   })
+})
+
+describe("resolveSessionConfig — the effectful parentID walk", () => {
+  const runWalk = (sessionID: string, sessions: Record<string, SessionLike>) =>
+    Effect.runSync(resolveSessionConfig(DEFAULTS, sessionID, (id: string) => Effect.succeed(sessions[id])))
+
+  test("single root session resolves its own config", () =>
+    expect(runWalk("root", { root: { id: "root", model: { providerID: "dgx", id: "qwen" } } }).model).toEqual({
+      providerID: "dgx",
+      id: "qwen",
+    }))
+
+  test("a child inherits the parent's model + overrides its agent", () => {
+    const eff = runWalk("child", {
+      root: { id: "root", model: { providerID: "dgx", id: "qwen" }, agent: "build" },
+      child: { id: "child", parentID: "root", agent: "review" },
+    })
+    expect(eff.model).toEqual({ providerID: "dgx", id: "qwen" }) // inherited
+    expect(eff.agent).toBe("review") // overridden
+  })
+
+  test("three-level chain resolves the nearest-defined value", () =>
+    expect(
+      runWalk("gc", {
+        root: { id: "root", agent: "a" },
+        parent: { id: "parent", parentID: "root", agent: "b" },
+        gc: { id: "gc", parentID: "parent" }, // inherits agent "b"
+      }).agent,
+    ).toBe("b"))
+
+  test("a missing parent stops the walk gracefully", () =>
+    expect(runWalk("child", { child: { id: "child", parentID: "ghost", agent: "x" } }).agent).toBe("x"))
+
+  test("a cyclic parentID chain terminates (guarded, does not hang)", () =>
+    expect(runWalk("a", { a: { id: "a", parentID: "b" }, b: { id: "b", parentID: "a" } }).permissionMode).toBe("ask"))
 })

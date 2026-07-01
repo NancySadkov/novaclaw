@@ -10,6 +10,8 @@
 //   - permissionRules ACCUMULATE down the chain (the evaluator is deny-wins, so more rules can
 //     only add restrictions).
 
+import { Effect } from "effect"
+
 export type PermissionMode = "plan" | "ask" | "surgical" | "bypass" | "yolo"
 
 // Ranked by escalating autonomous capability (plan = none … yolo = everything, incl. outside the
@@ -91,3 +93,48 @@ export function resolveConfig(defaults: EffectiveConfig, chain: readonly Session
 
   return { device, model, agent, systemPromptOverride, permissionMode, permissionRules, introspection, affective, tools }
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The effectful walk (1b). Additive — not yet called by the runner. Fetches the
+// `[root … session]` chain via `parentID` and feeds it to the pure `resolveConfig`.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The minimal read-model the walk needs. The runner's `SessionV2.Info` is structurally a superset. */
+export interface SessionLike {
+  readonly id: string
+  readonly parentID?: string
+  readonly model?: ModelRef
+  readonly agent?: string
+  // systemPromptOverride / permissionMode / permissionRules / introspection / affective / tools
+  // get mapped here as the session schema grows to carry them (see architecture.md Phase 1 step 3-4).
+}
+
+/** Project a session record onto its config OVERRIDES (only fields it actually carries today). */
+export const sessionToConfig = (session: SessionLike): SessionConfig => ({
+  model: session.model,
+  agent: session.agent,
+})
+
+/**
+ * Resolve a session's effective config by walking `parentID` root-ward and merging. `getSession`
+ * fetches a session by id (or `undefined`). Guards against a cyclic `parentID` chain so a corrupt
+ * tree can never loop forever.
+ */
+export const resolveSessionConfig = <E, R>(
+  defaults: EffectiveConfig,
+  sessionID: string,
+  getSession: (id: string) => Effect.Effect<SessionLike | undefined, E, R>,
+): Effect.Effect<EffectiveConfig, E, R> =>
+  Effect.gen(function* () {
+    const chain: SessionConfig[] = []
+    const seen = new Set<string>()
+    let id: string | undefined = sessionID
+    while (id !== undefined && !seen.has(id)) {
+      seen.add(id)
+      const session = yield* getSession(id)
+      if (!session) break
+      chain.unshift(sessionToConfig(session)) // prepend so the root ends up first
+      id = session.parentID
+    }
+    return resolveConfig(defaults, chain)
+  })
