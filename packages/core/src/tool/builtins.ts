@@ -15,6 +15,8 @@ import { TodoWriteTool } from "./todowrite"
 import { WebFetchTool } from "./webfetch"
 import { WebSearchTool } from "./websearch"
 import { SpawnTool } from "./spawn"
+import { ExitTool } from "./exit"
+import { WaitTool } from "./wait"
 import { WriteTool } from "./write"
 
 /**
@@ -44,6 +46,8 @@ export const locationLayer = Layer.mergeAll(
   WebSearchTool.layer.pipe(Layer.provide(WebSearchTool.defaultConfigLayer)),
   WriteTool.layer,
   SpawnTool.layer,
+  ExitTool.layer,
+  WaitTool.layer,
 )
 
 export const node = makeLocationNode({
@@ -63,5 +67,7 @@ export const node = makeLocationNode({
     WebSearchTool.node,
     WriteTool.node,
     SpawnTool.node,
+    ExitTool.node,
+    WaitTool.node,
   ],
 })

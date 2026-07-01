@@ -84,6 +84,20 @@ export const Moved = Event.define({
 })
 export type Moved = typeof Moved.Type
 
+// Agent-OS lifecycle (architecture.md step 5): a session's `exit(result)` — the complement to spawn.
+// Durable so `wait(childID)` can observe it after the fact; the projector writes `result` to the
+// session row (for ps/list). The drain-stop refinement (exit ends auto-prompting) is a follow-up —
+// today the drain already ends when input runs out, so there is no runaway loop to stop yet.
+export const Completed = Event.define({
+  type: "session.next.completed",
+  ...options,
+  schema: {
+    ...Base,
+    result: Schema.Unknown.pipe(optional),
+  },
+})
+export type Completed = typeof Completed.Type
+
 export const Prompted = Event.define({
   type: "session.next.prompted",
   ...options,
@@ -446,6 +460,7 @@ export namespace RevertEvent {
 }
 
 export const DurableDefinitions = Event.inventory(
+  Completed,
   AgentSwitched,
   ModelSwitched,
   Moved,
@@ -477,6 +492,7 @@ export const DurableDefinitions = Event.inventory(
 )
 
 export const Definitions = Event.inventory(
+  Completed,
   AgentSwitched,
   ModelSwitched,
   Moved,
