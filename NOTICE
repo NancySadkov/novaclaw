@@ -1,0 +1,27 @@
+NovaClaw
+Copyright (c) 2025 Nancy Sadkov. All rights reserved.
+
+NovaClaw is proprietary software; see the LICENSE file for terms.
+
+================================================================================
+Third-party components
+================================================================================
+
+NovaClaw is built on a fork of opencode, used under the terms of the MIT License:
+
+    opencode
+    Copyright (c) 2025 opencode
+    SPDX-License-Identifier: MIT
+    Full license text: licenses/opencode-LICENSE-MIT.txt
+
+The documentation package (packages/docs) is based on a Mintlify template:
+
+    Mintlify starter template
+    Copyright (c) 2023 Mintlify
+    SPDX-License-Identifier: MIT
+    Full license text: packages/docs/LICENSE
+
+NovaClaw also depends on numerous third-party open-source packages, each
+distributed under its own license. Refer to the individual package licenses
+under node_modules and to the dependency manifests (package.json / bun.lock)
+for the complete list and terms.
