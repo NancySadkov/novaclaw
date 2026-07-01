@@ -5,6 +5,7 @@ import {
   createMemo,
   createResource,
   createRoot,
+  createSignal,
   For,
   Match,
   on,
@@ -397,6 +398,28 @@ export function NewHome() {
     if (conn) setSelection({ server: ServerConnection.key(conn) })
   })
 
+  // Surface the backend's known projects on a fresh client. The web build has no native directory
+  // picker, so a browser session would otherwise be stranded with an empty project list even though
+  // the server already tracks projects (its `sync.data.project`). If nothing is opened yet, open what
+  // the server knows (most-recent first) and mark it current so the Chats entry + sessions work. Runs
+  // once per mount and only when zero projects are opened, so a curated client is never disturbed.
+  let surfacedBackendProjects = false
+  createEffect(() => {
+    const ctx = focusedServerCtx()
+    if (!ctx || surfacedBackendProjects) return
+    if (ctx.projects.list().length > 0) {
+      surfacedBackendProjects = true
+      return
+    }
+    const known = ctx.sync.data.project
+    if (known.length === 0) return
+    surfacedBackendProjects = true
+    const sorted = [...known].sort((a, b) => (b.time?.updated ?? b.time?.created ?? 0) - (a.time?.updated ?? a.time?.created ?? 0))
+    for (const project of sorted) ctx.projects.open(project.worktree)
+    const first = sorted[0]
+    if (first) ctx.projects.touch(first.worktree)
+  })
+
   createEffect(() => {
     const pending = pendingHomeNavigation
     if (!pending || pending.server !== server.key) return
@@ -442,6 +465,18 @@ export function NewHome() {
     ctx.projects.open(directory)
     ctx.projects.touch(directory)
     tabs.newDraft({ server: ServerConnection.key(conn), directory })
+  }
+
+  // Start a chat straight from the typed greeting entry: open a draft on the focused project and
+  // hand the composer the seed prompt (newDraft appends ?prompt=), so the user never clicks "new session".
+  function startChat(prompt: string) {
+    const conn = focusedServer()
+    const project = newSessionProject()
+    if (!conn || !project) return
+    const ctx = global.ensureServerCtx(conn)
+    ctx.projects.open(project.worktree)
+    ctx.projects.touch(project.worktree)
+    tabs.newDraft({ server: ServerConnection.key(conn), directory: project.worktree }, prompt.trim() || undefined)
   }
 
   function editProject(conn: ServerConnection.Any, project: LocalProject) {
@@ -546,6 +581,7 @@ export function NewHome() {
           class="min-h-0 min-w-0 flex-1 flex flex-col pt-6 lg:pt-12 relative"
           aria-label={language.t("sidebar.project.recentSessions")}
         >
+          <ChatEntry onSubmit={startChat} disabled={!newSessionProject()} />
           <HomeSessionSearch
             value={state.search}
             placeholder={searchPlaceholder()}
@@ -629,6 +665,58 @@ export function NewHome() {
             </Show>
           </ScrollView>
         </section>
+      </div>
+    </div>
+  )
+}
+
+// The greeting entry that leads the Chats main column: type a message and hit Enter (or Start) to
+// begin a new chat. It seeds `startChat`, which opens the real composer pre-filled — no "new session"
+// click. Disabled (with a hint) until a project is available, since a chat needs a working directory.
+function ChatEntry(props: { onSubmit: (prompt: string) => void; disabled?: boolean }) {
+  const [value, setValue] = createSignal("")
+  const submit = () => {
+    const text = value().trim()
+    if (!text || props.disabled) return
+    setValue("")
+    props.onSubmit(text)
+  }
+  return (
+    <div class="flex w-full shrink-0 flex-col items-center gap-3 pb-4">
+      <div class="text-[15px] [font-weight:530] text-v2-text-text-base">How can I help you today?</div>
+      <div
+        class="flex w-full items-end gap-2 rounded-[12px] bg-v2-background-bg-layer-02 px-3 py-2.5 shadow-[0_0_0_0.5px_var(--v2-border-border-base)] transition-[box-shadow] duration-[120ms] ease-in-out focus-within:shadow-[0_0_0_0.5px_var(--v2-border-border-focus),var(--v2-elevation-raised)]"
+        classList={{ "opacity-60": props.disabled }}
+      >
+        <textarea
+          rows={1}
+          data-component="chat-entry-input"
+          class="max-h-40 min-h-6 min-w-0 flex-1 resize-none border-0 bg-transparent py-1 text-v2-text-text-base outline-0 [font-weight:440] placeholder:text-v2-text-text-faint"
+          placeholder={props.disabled ? "Add a project to start chatting" : "Message to start a new chat…"}
+          value={value()}
+          disabled={props.disabled}
+          onInput={(event) => {
+            setValue(event.currentTarget.value)
+            event.currentTarget.style.height = "auto"
+            event.currentTarget.style.height = `${event.currentTarget.scrollHeight}px`
+          }}
+          onKeyDown={(event) => {
+            if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+              event.preventDefault()
+              submit()
+            }
+          }}
+        />
+        <ButtonV2
+          data-action="chat-entry-start"
+          variant="neutral"
+          size="normal"
+          class="h-7 shrink-0 px-3 [font-weight:530]"
+          disabled={props.disabled || !value().trim()}
+          onClick={submit}
+        >
+          Start
+        </ButtonV2>
       </div>
     </div>
   )
