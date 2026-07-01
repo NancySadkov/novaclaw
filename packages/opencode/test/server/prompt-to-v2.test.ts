@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { Schema } from "effect"
-import { PromptInput } from "@opencode-ai/schema/prompt-input"
+import { PromptInput } from "@novaclaw/schema/prompt-input"
 import { toV2Prompt } from "../../src/server/routes/instance/httpapi/handlers/session"
 import { PromptPayload } from "../../src/server/routes/instance/httpapi/groups/session"
 

@@ -1,6 +1,6 @@
 export * as WaitTool from "./wait"
 
-import { ToolFailure } from "@opencode-ai/llm"
+import { ToolFailure } from "@novaclaw/llm"
 import { Duration, Effect, Layer, Schema } from "effect"
 import { makeLocationNode } from "../effect/app-node"
 import { SessionStore } from "../session/store"

@@ -1,7 +1,7 @@
 // Pure translator: V2 `session.next.*` events -> legacy v1 event envelopes.
 //
 // This MIRRORS the proven canonical fold in
-// `@opencode-ai/core/session/message-updater` (which projects each
+// `@novaclaw/core/session/message-updater` (which projects each
 // `session.next.*` event into a V2 SessionMessage draft). Instead of mutating a
 // draft, this projects each event into the v1 legacy event vocabulary
 // (`message.updated`, `message.part.updated`, `message.part.delta`) so the
@@ -27,11 +27,11 @@
 // increment's job, out of scope here.
 
 import { DateTime } from "effect"
-import { SessionV1 } from "@opencode-ai/schema/session-v1"
-import type { LLM } from "@opencode-ai/schema/llm"
-import type { Model } from "@opencode-ai/schema/model"
-import type { Provider } from "@opencode-ai/schema/provider"
-import type { SessionID } from "@opencode-ai/schema/session-id"
+import { SessionV1 } from "@novaclaw/schema/session-v1"
+import type { LLM } from "@novaclaw/schema/llm"
+import type { Model } from "@novaclaw/schema/model"
+import type { Provider } from "@novaclaw/schema/provider"
+import type { SessionID } from "@novaclaw/schema/session-id"
 
 export type LegacyEnvelope = { type: string; properties: unknown }
 

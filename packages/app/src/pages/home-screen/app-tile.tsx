@@ -1,5 +1,5 @@
 import { Component, type ComponentProps } from "solid-js"
-import { Icon } from "@opencode-ai/ui/icon"
+import { Icon } from "@novaclaw/ui/icon"
 import type { HomeApp } from "@/apps/registry"
 
 // One home-screen app tile: a large rounded gradient icon square + a label. Tap → app.open().

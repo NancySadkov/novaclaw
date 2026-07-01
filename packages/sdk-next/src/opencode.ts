@@ -1,7 +1,7 @@
-import { OpenCode } from "@opencode-ai/client/effect"
-import { PermissionSaved } from "@opencode-ai/core/permission/saved"
-import { ApplicationTools } from "@opencode-ai/core/tool/application-tools"
-import { createEmbeddedRoutes } from "@opencode-ai/server/routes"
+import { OpenCode } from "@novaclaw/client/effect"
+import { PermissionSaved } from "@novaclaw/core/permission/saved"
+import { ApplicationTools } from "@novaclaw/core/tool/application-tools"
+import { createEmbeddedRoutes } from "@novaclaw/server/routes"
 import { Context, Effect, Layer, Scope } from "effect"
 import { FetchHttpClient, HttpRouter, HttpServer } from "effect/unstable/http"
 
@@ -42,6 +42,6 @@ export const create = Effect.fn("OpenCode.create")(function* () {
 
 export type Interface = Effect.Success<ReturnType<typeof create>>
 
-export class Service extends Context.Service<Service, Interface>()("@opencode-ai/sdk-next/OpenCode") {}
+export class Service extends Context.Service<Service, Interface>()("@novaclaw/sdk-next/OpenCode") {}
 
 export const layer = Layer.effect(Service, create())

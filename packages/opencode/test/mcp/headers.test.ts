@@ -1,5 +1,5 @@
 import { describe, expect, mock, beforeEach } from "bun:test"
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
+import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { Effect } from "effect"
 import { testEffect } from "../lib/effect"
 

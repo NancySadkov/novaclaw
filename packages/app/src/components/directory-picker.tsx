@@ -1,4 +1,4 @@
-import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { useDialog } from "@novaclaw/ui/context/dialog"
 import { ServerConnection } from "@/context/server"
 import { useSettings } from "@/context/settings"
 import { lazy } from "solid-js"

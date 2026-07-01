@@ -1,5 +1,5 @@
 import { useNavigate } from "@solidjs/router"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { useDialog } from "@novaclaw/ui/context/dialog"
 import { DialogProcesses } from "@/components/dialog-processes"
 import { useSettingsDialog } from "@/components/settings-dialog"
 import { AppPlaceholder } from "@/pages/home-screen/app-placeholder"

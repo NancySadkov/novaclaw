@@ -1,35 +1,35 @@
 import { expect, test } from "bun:test"
 import { Schema } from "effect"
-import { AgentV2 } from "@opencode-ai/core/agent"
-import { ModelV2 } from "@opencode-ai/core/model"
-import { SessionV2 } from "@opencode-ai/core/session"
-import { Agent } from "@opencode-ai/schema/agent"
-import { Location } from "@opencode-ai/schema/location"
-import { Model } from "@opencode-ai/schema/model"
-import { AgentAttachment, FileAttachment, Prompt, Source } from "@opencode-ai/schema/prompt"
-import { Provider } from "@opencode-ai/schema/provider"
-import { Project } from "@opencode-ai/schema/project"
-import { ProjectDirectories } from "@opencode-ai/schema/project-directories"
-import { PermissionV1 } from "@opencode-ai/schema/permission-v1"
-import { Session } from "@opencode-ai/schema/session"
-import { SessionInput } from "@opencode-ai/schema/session-input"
-import { SessionMessage } from "@opencode-ai/schema/session-message"
-import { Workspace } from "@opencode-ai/schema/workspace"
-import { Command } from "@opencode-ai/schema/command"
-import { Connection } from "@opencode-ai/schema/connection"
-import { Credential } from "@opencode-ai/schema/credential"
-import { FileSystem } from "@opencode-ai/schema/filesystem"
-import { Integration } from "@opencode-ai/schema/integration"
-import { LLM } from "@opencode-ai/schema/llm"
-import { Permission } from "@opencode-ai/schema/permission"
-import { Plugin } from "@opencode-ai/schema/plugin"
-import { Pty } from "@opencode-ai/schema/pty"
-import { Reference } from "@opencode-ai/schema/reference"
-import { SessionTodo } from "@opencode-ai/schema/session-todo"
-import { Skill } from "@opencode-ai/schema/skill"
-import { AbsolutePath, DateTimeUtcFromMillis, optional, statics } from "@opencode-ai/schema/schema"
-import { ProviderV2 } from "@opencode-ai/core/provider"
-import { PluginV2 } from "@opencode-ai/core/plugin"
+import { AgentV2 } from "@novaclaw/core/agent"
+import { ModelV2 } from "@novaclaw/core/model"
+import { SessionV2 } from "@novaclaw/core/session"
+import { Agent } from "@novaclaw/schema/agent"
+import { Location } from "@novaclaw/schema/location"
+import { Model } from "@novaclaw/schema/model"
+import { AgentAttachment, FileAttachment, Prompt, Source } from "@novaclaw/schema/prompt"
+import { Provider } from "@novaclaw/schema/provider"
+import { Project } from "@novaclaw/schema/project"
+import { ProjectDirectories } from "@novaclaw/schema/project-directories"
+import { PermissionV1 } from "@novaclaw/schema/permission-v1"
+import { Session } from "@novaclaw/schema/session"
+import { SessionInput } from "@novaclaw/schema/session-input"
+import { SessionMessage } from "@novaclaw/schema/session-message"
+import { Workspace } from "@novaclaw/schema/workspace"
+import { Command } from "@novaclaw/schema/command"
+import { Connection } from "@novaclaw/schema/connection"
+import { Credential } from "@novaclaw/schema/credential"
+import { FileSystem } from "@novaclaw/schema/filesystem"
+import { Integration } from "@novaclaw/schema/integration"
+import { LLM } from "@novaclaw/schema/llm"
+import { Permission } from "@novaclaw/schema/permission"
+import { Plugin } from "@novaclaw/schema/plugin"
+import { Pty } from "@novaclaw/schema/pty"
+import { Reference } from "@novaclaw/schema/reference"
+import { SessionTodo } from "@novaclaw/schema/session-todo"
+import { Skill } from "@novaclaw/schema/skill"
+import { AbsolutePath, DateTimeUtcFromMillis, optional, statics } from "@novaclaw/schema/schema"
+import { ProviderV2 } from "@novaclaw/core/provider"
+import { PluginV2 } from "@novaclaw/core/plugin"
 
 test("Core reuses the canonical shared schemas", async () => {
   const [
@@ -55,27 +55,27 @@ test("Core reuses the canonical shared schemas", async () => {
     coreSchema,
     coreWorkspace,
   ] = await Promise.all([
-    import("@opencode-ai/core/command"),
-    import("@opencode-ai/core/integration/connection"),
-    import("@opencode-ai/core/credential"),
-    import("@opencode-ai/core/filesystem"),
-    import("@opencode-ai/core/integration"),
-    import("@opencode-ai/core/location"),
-    import("@opencode-ai/llm"),
-    import("@opencode-ai/core/permission"),
-    import("@opencode-ai/core/v1/permission"),
-    import("@opencode-ai/core/project/copy"),
-    import("@opencode-ai/core/pty"),
-    import("@opencode-ai/core/project/schema"),
-    import("@opencode-ai/core/reference"),
-    import("@opencode-ai/core/session/input"),
-    import("@opencode-ai/core/session/message"),
-    import("@opencode-ai/core/session/todo"),
-    import("@opencode-ai/core/session/prompt"),
-    import("@opencode-ai/core/skill"),
-    import("@opencode-ai/core/v2-schema"),
-    import("@opencode-ai/core/schema"),
-    import("@opencode-ai/core/workspace"),
+    import("@novaclaw/core/command"),
+    import("@novaclaw/core/integration/connection"),
+    import("@novaclaw/core/credential"),
+    import("@novaclaw/core/filesystem"),
+    import("@novaclaw/core/integration"),
+    import("@novaclaw/core/location"),
+    import("@novaclaw/llm"),
+    import("@novaclaw/core/permission"),
+    import("@novaclaw/core/v1/permission"),
+    import("@novaclaw/core/project/copy"),
+    import("@novaclaw/core/pty"),
+    import("@novaclaw/core/project/schema"),
+    import("@novaclaw/core/reference"),
+    import("@novaclaw/core/session/input"),
+    import("@novaclaw/core/session/message"),
+    import("@novaclaw/core/session/todo"),
+    import("@novaclaw/core/session/prompt"),
+    import("@novaclaw/core/skill"),
+    import("@novaclaw/core/v2-schema"),
+    import("@novaclaw/core/schema"),
+    import("@novaclaw/core/workspace"),
   ])
 
   const schemas = [

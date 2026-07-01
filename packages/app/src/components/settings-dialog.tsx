@@ -2,7 +2,7 @@ import { useParams } from "@solidjs/router"
 import { onCleanup } from "solid-js"
 import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { useDialog } from "@novaclaw/ui/context/dialog"
 
 export function useSettingsDialog(defaultTab?: string) {
   const dialog = useDialog()

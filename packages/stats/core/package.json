@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "@opencode-ai/stats-core",
+  "name": "@novaclaw/stats-core",
   "version": "0.0.1",
   "private": true,
   "type": "module",

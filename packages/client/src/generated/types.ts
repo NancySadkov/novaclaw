@@ -1,4 +1,4 @@
-import type { OpenCodeEventEncoded } from "@opencode-ai/protocol/groups/event"
+import type { OpenCodeEventEncoded } from "@novaclaw/protocol/groups/event"
 
 export type JsonValue =
   | null

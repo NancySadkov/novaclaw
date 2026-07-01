@@ -3,9 +3,9 @@ import { DateTime } from "effect"
 import { createStore } from "solid-js/store"
 import { createTranslator, type BridgeEvent, type LegacyEnvelope } from "@/event-v2-translate"
 import { createSessionData, reduceSessionData } from "@/cli/cmd/run/session-data"
-import type { Event as SdkEvent } from "@opencode-ai/sdk/v2"
+import type { Event as SdkEvent } from "@novaclaw/sdk/v2"
 
-// The desktop reducer lives in @opencode-ai/app, which is not a dependency of
+// The desktop reducer lives in @novaclaw/app, which is not a dependency of
 // this package and does not export this subpath. We load it at RUNTIME via a
 // dynamic relative import (resolved fine by bun's workspace), typed loosely so
 // tsgo does not traverse the app's JSX/UI module graph under this package's

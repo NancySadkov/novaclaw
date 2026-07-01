@@ -9,7 +9,7 @@ import { createSignal } from "solid-js"
 export interface HomeApp {
   readonly id: string
   readonly title: string
-  readonly icon: string // sprite icon name (@opencode-ai/ui/icon)
+  readonly icon: string // sprite icon name (@novaclaw/ui/icon)
   readonly accent: string // CSS color for the tile gradient/glow
   readonly source: "builtin" | "plugin" | "agent"
   readonly open: () => void

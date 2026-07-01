@@ -2,7 +2,7 @@ import { useCommand, type CommandOption } from "@/context/command"
 import { useLanguage } from "@/context/language"
 import { useLocal } from "@/context/local"
 import { useSettings } from "@/context/settings"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useSessionLayout } from "./session-layout"
 import { createSessionOwnership } from "./session-ownership"
 

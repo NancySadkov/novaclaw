@@ -1,8 +1,8 @@
 import type { McpServer } from "@agentclientprotocol/sdk"
-import type { Message, Part } from "@opencode-ai/sdk/v2"
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { ProviderV2 } from "@opencode-ai/core/provider"
-import { ModelV2 } from "@opencode-ai/core/model"
+import type { Message, Part } from "@novaclaw/sdk/v2"
+import { LayerNode } from "@novaclaw/core/effect/layer-node"
+import { ProviderV2 } from "@novaclaw/core/provider"
+import { ModelV2 } from "@novaclaw/core/model"
 import { Context, Effect, Layer, Ref } from "effect"
 import * as ACPError from "./error"
 

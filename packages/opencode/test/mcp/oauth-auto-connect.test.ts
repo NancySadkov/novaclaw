@@ -151,8 +151,8 @@ const { Config } = await import("../../src/config/config")
 const { McpAuth } = await import("../../src/mcp/auth")
 const { McpOAuthProvider } = await import("../../src/mcp/oauth-provider")
 const { McpOAuthCallback } = await import("../../src/mcp/oauth-callback")
-const { FSUtil } = await import("@opencode-ai/core/fs-util")
-const { CrossSpawnSpawner } = await import("@opencode-ai/core/cross-spawn-spawner")
+const { FSUtil } = await import("@novaclaw/core/fs-util")
+const { CrossSpawnSpawner } = await import("@novaclaw/core/cross-spawn-spawner")
 
 const mcpTest = testEffect(
   Layer.mergeAll(

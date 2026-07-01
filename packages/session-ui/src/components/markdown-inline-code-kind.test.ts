@@ -10,7 +10,7 @@ describe("inlineCodeKind", () => {
     ).toBeUndefined()
     expect(inlineCodeKind(`<SessionQuestionDock request={request} ... />`)).toBeUndefined()
     expect(inlineCodeKind(`from sync.data.question + sync.data.session.`)).toBeUndefined()
-    expect(inlineCodeKind(`@opencode-ai/app <StatusPopover />)`)).toBeUndefined()
+    expect(inlineCodeKind(`@novaclaw/app <StatusPopover />)`)).toBeUndefined()
     expect(inlineCodeKind(`sync.data.session`)).toBeUndefined()
     expect(inlineCodeKind(`window.api`)).toBeUndefined()
   })
@@ -19,7 +19,7 @@ describe("inlineCodeKind", () => {
     expect(inlineCodeKind(`app.tsx`)).toBe("path")
     expect(inlineCodeKind(`packages/desktop-electron`)).toBe("path")
     expect(inlineCodeKind(`~/.config/opencode`)).toBe("path")
-    expect(inlineCodeKind(`@opencode-ai/app`)).toBe("path")
+    expect(inlineCodeKind(`@novaclaw/app`)).toBe("path")
     expect(inlineCodeKind(`session/status`)).toBe("path")
   })
 

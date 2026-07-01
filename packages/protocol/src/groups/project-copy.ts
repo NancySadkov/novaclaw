@@ -1,5 +1,5 @@
-import { ProjectCopy } from "@opencode-ai/schema/project-copy"
-import { Project } from "@opencode-ai/schema/project"
+import { ProjectCopy } from "@novaclaw/schema/project-copy"
+import { Project } from "@novaclaw/schema/project"
 import { Schema, Struct } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
 import { LocationQuery, locationQueryOpenApi } from "./location"

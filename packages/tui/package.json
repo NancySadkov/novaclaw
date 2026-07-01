@@ -1,6 +1,6 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "name": "@opencode-ai/tui",
+  "name": "@novaclaw/tui",
   "version": "0.0.1",
   "private": true,
   "type": "module",
@@ -47,10 +47,10 @@
     "./component/spinner": "./src/component/spinner.tsx"
   },
   "dependencies": {
-    "@opencode-ai/core": "workspace:*",
-    "@opencode-ai/plugin": "workspace:*",
-    "@opencode-ai/sdk": "workspace:*",
-    "@opencode-ai/ui": "workspace:*",
+    "@novaclaw/core": "workspace:*",
+    "@novaclaw/plugin": "workspace:*",
+    "@novaclaw/sdk": "workspace:*",
+    "@novaclaw/ui": "workspace:*",
     "@opentui/core": "catalog:",
     "@opentui/keymap": "catalog:",
     "@opentui/solid": "catalog:",

@@ -1,6 +1,6 @@
 export * as ExitTool from "./exit"
 
-import { ToolFailure } from "@opencode-ai/llm"
+import { ToolFailure } from "@novaclaw/llm"
 import { DateTime, Effect, Layer, Schema } from "effect"
 import { makeLocationNode } from "../effect/app-node"
 import { EventV2 } from "../event"

@@ -1,5 +1,5 @@
 import { Component, createMemo, createSignal, For, onMount, Show } from "solid-js"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useBuiltinApps } from "@/apps/builtins"
 import { registeredApps, type HomeApp } from "@/apps/registry"
 import { AppTile } from "./app-tile"

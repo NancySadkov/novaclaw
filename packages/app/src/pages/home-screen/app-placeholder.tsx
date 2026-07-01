@@ -1,5 +1,5 @@
 import { Component } from "solid-js"
-import { Dialog } from "@opencode-ai/ui/v2/dialog-v2"
+import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
 
 // A minimal "coming soon" panel for apps whose rich surface isn't built yet (Search / Terminal /
 // Devices). Keeps every home tile launchable so the grid is real, not decorative.

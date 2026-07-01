@@ -1,5 +1,5 @@
 import { createEffect, createMemo, createResource, createSignal, For, Match, Show, Switch } from "solid-js"
-import { Icon } from "@opencode-ai/ui/icon"
+import { Icon } from "@novaclaw/ui/icon"
 import { useGlobal } from "@/context/global"
 import { ServerConnection, useServer } from "@/context/server"
 import { useTabs } from "@/context/tabs"

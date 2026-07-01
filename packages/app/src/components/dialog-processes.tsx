@@ -1,8 +1,8 @@
 import { Component, createMemo, For, Show } from "solid-js"
-import type { Session } from "@opencode-ai/sdk/v2/client"
-import { Dialog } from "@opencode-ai/ui/v2/dialog-v2"
-import { Icon } from "@opencode-ai/ui/icon"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
+import type { Session } from "@novaclaw/sdk/v2/client"
+import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
+import { Icon } from "@novaclaw/ui/icon"
+import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useCommand } from "@/context/command"
 import { useServerSync } from "@/context/server-sync"
 

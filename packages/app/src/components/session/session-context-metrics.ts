@@ -1,4 +1,4 @@
-import type { AssistantMessage, Message, Session } from "@opencode-ai/sdk/v2/client"
+import type { AssistantMessage, Message, Session } from "@novaclaw/sdk/v2/client"
 
 type Provider = {
   id: string

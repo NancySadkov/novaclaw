@@ -2,7 +2,7 @@ export * as QuestionV2 from "./question"
 
 import { makeLocationNode } from "./effect/app-node"
 import { Context, Deferred, Effect, Layer, Schema } from "effect"
-import { Question } from "@opencode-ai/schema/question"
+import { Question } from "@novaclaw/schema/question"
 import { EventV2 } from "./event"
 import { SessionSchema } from "./session/schema"
 

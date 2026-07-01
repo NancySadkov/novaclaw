@@ -1,5 +1,5 @@
-import { Binary } from "@opencode-ai/core/util/binary"
-import { retry } from "@opencode-ai/core/util/retry"
+import { Binary } from "@novaclaw/core/util/binary"
+import { retry } from "@novaclaw/core/util/retry"
 import type {
   Message,
   OpencodeClient,
@@ -10,8 +10,8 @@ import type {
   SessionStatus,
   SnapshotFileDiff,
   Todo,
-} from "@opencode-ai/sdk/v2/client"
-import { accumDeltaKey } from "@opencode-ai/session-ui/message-part-text"
+} from "@novaclaw/sdk/v2/client"
+import { accumDeltaKey } from "@novaclaw/session-ui/message-part-text"
 import { batch } from "solid-js"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { diffs as cleanDiffs, message as cleanMessage } from "@/utils/diffs"

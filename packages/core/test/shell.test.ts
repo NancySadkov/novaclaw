@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test"
 import path from "path"
-import { Shell } from "@opencode-ai/core/shell"
-import { FSUtil } from "@opencode-ai/core/fs-util"
-import { which } from "@opencode-ai/core/util/which"
+import { Shell } from "@novaclaw/core/shell"
+import { FSUtil } from "@novaclaw/core/fs-util"
+import { which } from "@novaclaw/core/util/which"
 
 const withShell = async (shell: string | undefined, fn: () => void | Promise<void>) => {
   const prev = process.env.SHELL

@@ -1,7 +1,7 @@
 import { Component, type ComponentProps, createSignal, For } from "solid-js"
-import { Dialog } from "@opencode-ai/ui/v2/dialog-v2"
-import { Icon } from "@opencode-ai/ui/icon"
-import { useDialog } from "@opencode-ai/ui/context/dialog"
+import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
+import { Icon } from "@novaclaw/ui/icon"
+import { useDialog } from "@novaclaw/ui/context/dialog"
 
 // First-run tour of NovaClaw — a friendly, plain-language intro for new users. Auto-opened once by the
 // home screen (guarded by HELP_SEEN_KEY) and reopenable anytime from the Help app tile. Deliberately

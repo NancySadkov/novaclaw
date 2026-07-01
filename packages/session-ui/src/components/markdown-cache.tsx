@@ -1,4 +1,4 @@
-import { checksum } from "@opencode-ai/core/util/encode"
+import { checksum } from "@novaclaw/core/util/encode"
 import DOMPurify from "dompurify"
 import { project } from "./markdown-stream"
 

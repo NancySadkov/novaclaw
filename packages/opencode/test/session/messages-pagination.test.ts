@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
-import { LayerNode } from "@opencode-ai/core/effect/layer-node"
-import { SessionV1 } from "@opencode-ai/core/v1/session"
-import { SessionProjector } from "@opencode-ai/core/session/projector"
+import { LayerNode } from "@novaclaw/core/effect/layer-node"
+import { SessionV1 } from "@novaclaw/core/v1/session"
+import { SessionProjector } from "@novaclaw/core/session/projector"
 import { Effect, Option } from "effect"
 import { Session as SessionNs } from "@/session/session"
 import { MessageV2 } from "../../src/session/message-v2"
@@ -9,8 +9,8 @@ import { MessageID, PartID, type SessionID } from "../../src/session/schema"
 
 import { NotFoundError } from "@/storage/storage"
 import { testEffect } from "../lib/effect"
-import { ProviderV2 } from "@opencode-ai/core/provider"
-import { ModelV2 } from "@opencode-ai/core/model"
+import { ProviderV2 } from "@novaclaw/core/provider"
+import { ModelV2 } from "@novaclaw/core/model"
 
 const it = testEffect(LayerNode.compile(LayerNode.group([SessionNs.node, MessageV2.node, SessionProjector.node])))
 
