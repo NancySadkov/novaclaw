@@ -4,6 +4,7 @@ import { useSearchParams } from "@solidjs/router"
 import { NewSessionDesignView } from "@/components/session"
 import { PromptInput } from "@/components/prompt-input"
 import { useSettingsCommand } from "@/components/settings-dialog"
+import { useProcessesCommand } from "@/components/dialog-processes"
 import {
   PromptProjectAddButton,
   PromptProjectSelector,
@@ -40,6 +41,7 @@ export default function NewSessionPage() {
 
   useComposerCommands()
   useSettingsCommand()
+  useProcessesCommand()
 
   let inputRef: HTMLDivElement | undefined
 

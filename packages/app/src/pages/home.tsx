@@ -36,6 +36,7 @@ import { DateTime } from "luxon"
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { useDirectoryPicker } from "@/components/directory-picker"
 import { useSettingsCommand } from "@/components/settings-dialog"
+import { useProcessesCommand } from "@/components/dialog-processes"
 import { DialogSelectServer, useServerManagementController } from "@/components/dialog-select-server"
 import { DialogServerV2 } from "@/components/settings-v2/dialog-server-v2"
 import { ServerConnection, serverName, useServer } from "@/context/server"
@@ -253,6 +254,7 @@ export function NewHome() {
   const notification = useNotification()
   const marked = useMarked()
   const openSettings = useSettingsCommand()
+  useProcessesCommand()
   let focusSessionSearch: (() => void) | undefined
   const [state, setState] = createStore({
     search: "",
