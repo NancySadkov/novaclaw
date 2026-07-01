@@ -75,20 +75,29 @@ export const HelpTour: Component = () => {
         <div class="flex items-center justify-between w-full gap-3 pt-1">
           <button
             type="button"
-            class="text-sm font-medium text-v2-text-text-muted px-3 py-1.5 rounded-lg transition-colors hover:bg-v2-background-bg-layer-02 disabled:opacity-40 disabled:pointer-events-none"
-            onClick={() => setI(Math.max(0, i() - 1))}
-            disabled={i() === 0}
+            class="text-sm font-medium text-v2-text-text-faint px-2 py-1.5 rounded-lg transition-colors hover:text-v2-text-text-muted"
+            onClick={() => dialog.close()}
           >
-            Back
+            Skip
           </button>
-          <button
-            type="button"
-            class="text-sm font-medium text-white px-4 py-1.5 rounded-lg shadow-[var(--v2-elevation-raised)] transition-transform active:scale-95"
-            style={{ "background-image": "linear-gradient(150deg, #8b5cf6, #6d28d9)" }}
-            onClick={() => (last() ? dialog.close() : setI(i() + 1))}
-          >
-            {last() ? "Get started" : "Next"}
-          </button>
+          <div class="flex items-center gap-2">
+            <button
+              type="button"
+              class="text-sm font-medium text-v2-text-text-muted px-3 py-1.5 rounded-lg transition-colors hover:bg-v2-background-bg-layer-02 disabled:opacity-40 disabled:pointer-events-none"
+              onClick={() => setI(Math.max(0, i() - 1))}
+              disabled={i() === 0}
+            >
+              Back
+            </button>
+            <button
+              type="button"
+              class="text-sm font-medium text-white px-4 py-1.5 rounded-lg shadow-[var(--v2-elevation-raised)] transition-transform active:scale-95"
+              style={{ "background-image": "linear-gradient(150deg, #8b5cf6, #6d28d9)" }}
+              onClick={() => (last() ? dialog.close() : setI(i() + 1))}
+            >
+              {last() ? "Get started" : "Next"}
+            </button>
+          </div>
         </div>
       </div>
     </Dialog>
