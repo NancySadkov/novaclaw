@@ -55,6 +55,23 @@ describe("recoverToolCallsFromText — hermes / <tool_call>", () => {
     ]))
   test("hermes block naming an UNKNOWN tool is dropped", () =>
     expect(recoverToolCallsFromText('<tool_call>{"name":"frobnicate","arguments":{}}</tool_call>', TOOLS)).toEqual([]))
+  test("doubled identical calls are deduped to one (1A.e)", () =>
+    expect(
+      recoverToolCallsFromText(
+        '<tool_call>{"name":"read","arguments":{"filePath":"a"}}</tool_call><tool_call>{"name":"read","arguments":{"filePath":"a"}}</tool_call>',
+        TOOLS,
+      ),
+    ).toEqual([{ name: "read", arguments: '{"filePath":"a"}' }]))
+  test("same tool with DIFFERENT args are both kept", () =>
+    expect(
+      recoverToolCallsFromText(
+        '<tool_call>{"name":"read","arguments":{"filePath":"a"}}</tool_call><tool_call>{"name":"read","arguments":{"filePath":"b"}}</tool_call>',
+        TOOLS,
+      ),
+    ).toEqual([
+      { name: "read", arguments: '{"filePath":"a"}' },
+      { name: "read", arguments: '{"filePath":"b"}' },
+    ]))
 })
 
 describe("recoverToolCallsFromText — bare JSON", () => {
