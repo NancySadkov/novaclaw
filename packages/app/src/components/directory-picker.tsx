@@ -1,10 +1,8 @@
 import { useDialog } from "@opencode-ai/ui/context/dialog"
 import { ServerConnection } from "@/context/server"
-import { usePlatform } from "@/context/platform"
 import { useSettings } from "@/context/settings"
 import { lazy } from "solid-js"
 import { DialogSelectDirectory } from "./dialog-select-directory"
-import { directoryPickerKind } from "./directory-picker-policy"
 
 const DialogSelectDirectoryV2 = lazy(() =>
   import("./dialog-select-directory-v2").then((module) => ({ default: module.DialogSelectDirectoryV2 })),
@@ -18,16 +16,15 @@ type DirectoryPickerInput = {
 }
 
 export function useDirectoryPicker() {
-  const platform = usePlatform()
   const settings = useSettings()
   const dialog = useDialog()
 
+  // Always browse the SERVER host's filesystem via our own modal (V2 dialog) — never the client-native
+  // OS dialog. NovaClaw's files live where the server RUNS (headless Spark / phone / local), not on the
+  // client. B9/FS-2 (plan.md M1): the native branch + desktop gate were removed so web, desktop, and
+  // future mobile all get the same in-app picker. The Electron `openDirectoryPickerDialog` IPC stays in
+  // place, just unreferenced, in case B9-final wants it behind a setting.
   return (input: DirectoryPickerInput) => {
-    if (directoryPickerKind(platform.platform, input.server) === "native" && platform.platform === "desktop") {
-      void platform.openDirectoryPickerDialog({ title: input.title, multiple: input.multiple }).then(input.onSelect)
-      return
-    }
-
     let selected = false
     const onSelect = (result: string | string[] | null) => {
       selected = result !== null
@@ -36,7 +33,7 @@ export function useDirectoryPicker() {
     const cancel = () => {
       if (!selected) input.onSelect(null)
     }
-    if (platform.platform === "desktop" && settings.general.newLayoutDesigns()) {
+    if (settings.general.newLayoutDesigns()) {
       dialog.show(() => <DialogSelectDirectoryV2 {...input} onSelect={onSelect} />, cancel)
       return
     }
