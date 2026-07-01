@@ -7,6 +7,7 @@ import { ApplyPatchTool } from "./apply-patch"
 import { EditTool } from "./edit"
 import { GlobTool } from "./glob"
 import { GrepTool } from "./grep"
+import { JsTool } from "./js"
 import { QuestionTool } from "./question"
 import { ReadTool } from "./read"
 import { ReadToolFileSystem } from "./read-filesystem"
@@ -38,6 +39,7 @@ export const locationLayer = Layer.mergeAll(
   EditTool.layer,
   GlobTool.layer,
   GrepTool.layer,
+  JsTool.layer,
   QuestionTool.layer,
   ReadTool.layer.pipe(Layer.provide(ReadToolFileSystem.layer)),
   SkillTool.layer,
@@ -59,6 +61,7 @@ export const node = makeLocationNode({
     EditTool.node,
     GlobTool.node,
     GrepTool.node,
+    JsTool.node,
     QuestionTool.node,
     ReadTool.node,
     SkillTool.node,

@@ -104,6 +104,7 @@
     "ai-gateway-provider": "3.1.2",
     "bun-pty": "0.4.8",
     "cross-spawn": "catalog:",
+    "decimal.js": "10.5.0",
     "diff": "catalog:",
     "drizzle-orm": "catalog:",
     "effect": "catalog:",
