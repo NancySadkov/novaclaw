@@ -132,11 +132,14 @@ describe("SessionRunnerModel", () => {
       const resolved = yield* SessionRunnerModel.resolve(session, catalog)
 
       expect(resolved.route.defaults.headers).toMatchObject({ "x-test": "header", "x-variant": "high" })
+      // Protocol-owned sampling (temperature) is routed to the canonical generation options,
+      // not the http.body overlay — the native transport rejects those keys in an overlay.
+      // See session/runner/sampling-split.ts.
+      expect(resolved.route.defaults.generation).toMatchObject({ temperature: 0.2 })
       expect(resolved.route.defaults.http?.body).toEqual({
         custom_extension: { enabled: true },
         store: false,
         service_tier: "priority",
-        temperature: 0.2,
         reasoning: { effort: "high" },
       })
     }),
