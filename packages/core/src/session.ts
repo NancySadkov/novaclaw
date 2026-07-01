@@ -183,6 +183,83 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@opencode/v2/Session") {}
 
+/**
+ * Create a session RECORD — persist the project row + publish `Created` (the projector writes the
+ * session table) — from CYCLE-FREE primitives only (no `LocationServiceMap`/execution). Shared by
+ * `SessionV2.create` and the `SessionSpawner` seam (architecture.md Phase 3 step 6): spawn reuses
+ * create WITHOUT depending on `SessionV2.node`, which would close the runner cycle
+ * `SessionV2 -> LocationServiceMap -> location services -> spawn -> SessionV2`.
+ */
+export const createSessionRecord = (
+  deps: {
+    readonly db: Database.Interface["db"]
+    readonly events: EventV2.Interface
+    readonly projects: ProjectV2.Interface
+    readonly store: SessionStore.Interface
+  },
+  input: CreateInput,
+) =>
+  Effect.gen(function* () {
+    const { db, events, projects, store } = deps
+    const sessionID = input.id ?? SessionSchema.ID.create()
+    const recorded = yield* store.get(sessionID)
+    if (recorded) return recorded
+    const project = yield* projects.resolve(input.location.directory)
+    yield* db
+      .insert(ProjectTable)
+      .values({ id: project.id, worktree: project.directory, vcs: project.vcs?.type, sandboxes: [] })
+      .onConflictDoNothing()
+      .run()
+      .pipe(Effect.orDie)
+    const now = Date.now()
+    const info = SessionV1.SessionInfo.make({
+      id: sessionID,
+      parentID: input.parentID,
+      slug: Slug.create(),
+      version: InstallationVersion,
+      projectID: project.id,
+      directory: input.location.directory,
+      path: path.relative(project.directory, input.location.directory).replaceAll("\\", "/"),
+      workspaceID: input.location.workspaceID ? WorkspaceV2.ID.make(input.location.workspaceID) : undefined,
+      title: `New session - ${new Date(now).toISOString()}`,
+      agent: input.agent,
+      model: input.model
+        ? {
+            id: ModelV2.ID.make(input.model.id),
+            providerID: input.model.providerID,
+            variant: input.model.variant,
+          }
+        : undefined,
+      systemPromptOverride: input.systemPromptOverride,
+      cost: 0,
+      tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+      time: { created: now, updated: now },
+    })
+    const projected = yield* events
+      .publish(SessionV1.Event.Created, { sessionID, info }, { location: input.location })
+      .pipe(
+        Effect.as({ type: "created" } as const),
+        Effect.catchDefect((defect) => {
+          if (!(defect instanceof SessionProjector.SessionAlreadyProjected)) {
+            return Effect.die(defect)
+          }
+          // Concurrent creation lost the projection race. The existing Session identity wins.
+          return store
+            .get(sessionID)
+            .pipe(
+              Effect.flatMap((session) =>
+                session ? Effect.succeed({ type: "existing", session } as const) : Effect.die(defect),
+              ),
+            )
+        }),
+      )
+    if (projected.type === "existing") return projected.session
+    // TODO: Restore recorded sessions onto replacement synchronized workspaces in a future API slice.
+    const created = yield* store.get(sessionID)
+    if (!created) return yield* Effect.die(new NotFoundError({ sessionID }))
+    return created
+  })
+
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -207,63 +284,7 @@ export const layer = Layer.effect(
       )
 
     const result = Service.of({
-      create: Effect.fn("V2Session.create")(function* (input) {
-        const sessionID = input.id ?? SessionSchema.ID.create()
-        const recorded = yield* store.get(sessionID)
-        if (recorded) return recorded
-        const project = yield* projects.resolve(input.location.directory)
-        yield* db
-          .insert(ProjectTable)
-          .values({ id: project.id, worktree: project.directory, vcs: project.vcs?.type, sandboxes: [] })
-          .onConflictDoNothing()
-          .run()
-          .pipe(Effect.orDie)
-        const now = Date.now()
-        const info = SessionV1.SessionInfo.make({
-          id: sessionID,
-          parentID: input.parentID,
-          slug: Slug.create(),
-          version: InstallationVersion,
-          projectID: project.id,
-          directory: input.location.directory,
-          path: path.relative(project.directory, input.location.directory).replaceAll("\\", "/"),
-          workspaceID: input.location.workspaceID ? WorkspaceV2.ID.make(input.location.workspaceID) : undefined,
-          title: `New session - ${new Date(now).toISOString()}`,
-          agent: input.agent,
-          model: input.model
-            ? {
-                id: ModelV2.ID.make(input.model.id),
-                providerID: input.model.providerID,
-                variant: input.model.variant,
-              }
-            : undefined,
-          systemPromptOverride: input.systemPromptOverride,
-          cost: 0,
-          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-          time: { created: now, updated: now },
-        })
-        const projected = yield* events
-          .publish(SessionV1.Event.Created, { sessionID, info }, { location: input.location })
-          .pipe(
-            Effect.as({ type: "created" } as const),
-            Effect.catchDefect((defect) => {
-              if (!(defect instanceof SessionProjector.SessionAlreadyProjected)) {
-                return Effect.die(defect)
-              }
-              // Concurrent creation lost the projection race. The existing Session identity wins.
-              return store
-                .get(sessionID)
-                .pipe(
-                  Effect.flatMap((session) =>
-                    session ? Effect.succeed({ type: "existing", session } as const) : Effect.die(defect),
-                  ),
-                )
-            }),
-          )
-        if (projected.type === "existing") return projected.session
-        // TODO: Restore recorded sessions onto replacement synchronized workspaces in a future API slice.
-        return yield* result.get(sessionID).pipe(Effect.orDie)
-      }),
+      create: Effect.fn("V2Session.create")((input) => createSessionRecord({ db, events, projects, store }, input)),
       get: Effect.fn("V2Session.get")(function* (sessionID) {
         const session = yield* store.get(sessionID)
         if (!session) return yield* new NotFoundError({ sessionID })
