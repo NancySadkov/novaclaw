@@ -555,6 +555,7 @@ export const SessionInfo = Schema.Struct({
   title: Schema.String,
   agent: optional(Schema.String),
   model: optional(SessionModel),
+  systemPromptOverride: optional(Schema.String),
   version: Schema.String,
   metadata: optional(Schema.Record(Schema.String, Schema.Any)),
   time: Schema.Struct({

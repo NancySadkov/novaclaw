@@ -205,6 +205,7 @@ export default {
           \`permission\` text,
           \`agent\` text,
           \`model\` text,
+          \`system_prompt_override\` text,
           \`time_created\` integer NOT NULL,
           \`time_updated\` integer NOT NULL,
           \`time_compacting\` integer,

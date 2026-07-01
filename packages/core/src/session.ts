@@ -81,6 +81,7 @@ type CreateInput = {
   parentID?: SessionSchema.ID
   agent?: AgentV2.ID
   model?: ModelV2.Ref
+  systemPromptOverride?: string
   location: Location.Ref
 }
 
@@ -236,6 +237,7 @@ export const layer = Layer.effect(
                 variant: input.model.variant,
               }
             : undefined,
+          systemPromptOverride: input.systemPromptOverride,
           cost: 0,
           tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
           time: { created: now, updated: now },

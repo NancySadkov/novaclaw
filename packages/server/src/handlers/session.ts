@@ -73,6 +73,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
               parentID: ctx.payload.parentID,
               agent: ctx.payload.agent,
               model: ctx.payload.model,
+              systemPromptOverride: ctx.payload.systemPromptOverride,
               location: ctx.payload.location ?? { directory: AbsolutePath.make(process.cwd()) },
             }),
           }
