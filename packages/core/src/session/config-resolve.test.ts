@@ -129,4 +129,20 @@ describe("resolveSessionConfig — the effectful parentID walk", () => {
 
   test("a cyclic parentID chain terminates (guarded, does not hang)", () =>
     expect(runWalk("a", { a: { id: "a", parentID: "b" }, b: { id: "b", parentID: "a" } }).permissionMode).toBe("ask"))
+
+  test("a child inherits the parent's systemPromptOverride through the walk", () =>
+    expect(
+      runWalk("child", {
+        root: { id: "root", systemPromptOverride: "You are Neo." },
+        child: { id: "child", parentID: "root" }, // no override of its own -> inherits
+      }).systemPromptOverride,
+    ).toBe("You are Neo."))
+
+  test("a child's own systemPromptOverride wins over the parent's", () =>
+    expect(
+      runWalk("child", {
+        root: { id: "root", systemPromptOverride: "parent prompt" },
+        child: { id: "child", parentID: "root", systemPromptOverride: "child prompt" },
+      }).systemPromptOverride,
+    ).toBe("child prompt"))
 })

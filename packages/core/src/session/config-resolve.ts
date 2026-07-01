@@ -117,14 +117,16 @@ export interface SessionLike {
   readonly parentID?: string
   readonly model?: ModelRef
   readonly agent?: string
-  // systemPromptOverride / permissionMode / permissionRules / introspection / affective / tools
-  // get mapped here as the session schema grows to carry them (see architecture.md Phase 1 step 3-4).
+  readonly systemPromptOverride?: string
+  // permissionMode / permissionRules / introspection / affective / tools get mapped here as the
+  // session schema grows to carry them (see architecture.md Phase 1 step 4).
 }
 
 /** Project a session record onto its config OVERRIDES (only fields it actually carries today). */
 export const sessionToConfig = (session: SessionLike): SessionConfig => ({
   model: session.model,
   agent: session.agent,
+  systemPromptOverride: session.systemPromptOverride,
 })
 
 /**
