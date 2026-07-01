@@ -32,6 +32,7 @@ import { SessionMessage } from "../message"
 import { Prompt } from "../prompt"
 import { SessionSchema } from "../schema"
 import { SessionStore } from "../store"
+import { resolveSessionConfig, EFFECTIVE_CONFIG_DEFAULTS } from "../config-resolve"
 import { type RunError, Service } from "./index"
 import { SessionRunnerModel } from "./model"
 import { createLLMEventPublisher } from "./publish-llm-event"
@@ -177,7 +178,14 @@ export const layer = Layer.effect(
       const session = yield* getSession(sessionID)
       if (session.location.directory !== location.directory || session.location.workspaceID !== location.workspaceID)
         return yield* Effect.interrupt
-      const agent = yield* agents.select(session.agent)
+      // Agent-OS Phase 1 (architecture.md): resolve model + agent through the config-inheritance
+      // walk, so a child session inherits its parent's unless overridden. Behavior-preserving at the
+      // root (the chain is just [session] -> config.* === session.*). config.* carry the real branded
+      // values (they flow from session.* through the walk; only the static type is widened -> cast).
+      const config = yield* resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, session.id, (id) =>
+        store.get(id as SessionSchema.ID),
+      )
+      const agent = yield* agents.select(config.agent as typeof session.agent)
       const initialized = yield* SessionContextEpoch.initialize(db, loadSystemContext(agent), session.id)
       const toolFibers = yield* FiberSet.make<void, ToolOutputStore.Error>()
       let needsContinuation = false
@@ -194,7 +202,7 @@ export const layer = Layer.effect(
       }
       const system =
         initialized ?? (yield* SessionContextEpoch.prepare(db, events, loadSystemContext(agent), session.id))
-      const model = yield* models.resolve(session)
+      const model = yield* models.resolve({ ...session, model: config.model as typeof session.model })
       const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)
       const context = entries.map((entry) => entry.message)
       const isLastStep = agent.info?.steps !== undefined && currentStep >= agent.info.steps

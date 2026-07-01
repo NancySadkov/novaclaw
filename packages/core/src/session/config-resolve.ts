@@ -48,6 +48,18 @@ export interface SessionConfig {
   readonly tools?: readonly string[]
 }
 
+/**
+ * The base effective config before any session override. `model`/`agent`/`device` are left
+ * undefined so the runner's existing catalog/agent fallbacks still apply; permission mode + the
+ * mode toggles carry safe defaults. Used as the root of the resolution chain.
+ */
+export const EFFECTIVE_CONFIG_DEFAULTS: EffectiveConfig = {
+  permissionMode: "ask",
+  permissionRules: [],
+  introspection: false,
+  affective: false,
+}
+
 /** The fully-resolved config a session actually runs with. */
 export interface EffectiveConfig {
   readonly device?: string
@@ -131,7 +143,7 @@ export const resolveSessionConfig = <E, R>(
     let id: string | undefined = sessionID
     while (id !== undefined && !seen.has(id)) {
       seen.add(id)
-      const session = yield* getSession(id)
+      const session: SessionLike | undefined = yield* getSession(id)
       if (!session) break
       chain.unshift(sessionToConfig(session)) // prepend so the root ends up first
       id = session.parentID
