@@ -121,7 +121,7 @@ export function useProcessesCommand() {
       id: "processes.open",
       title: "Processes (ps)",
       category: "Session",
-      keybind: "mod+shift+p",
+      keybind: "mod+shift+m", // NOT mod+shift+p — that's the command palette (command.tsx DEFAULT_PALETTE_KEYBIND)
       onSelect: show,
     },
   ])
