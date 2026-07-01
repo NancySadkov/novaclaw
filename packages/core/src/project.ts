@@ -49,7 +49,7 @@ export interface Interface {
   readonly commit: (input: { store: AbsolutePath; id: ID }) => Effect.Effect<void>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/ProjectV2") {}
+export class Service extends Context.Service<Service, Interface>()("@novaclaw/ProjectV2") {}
 
 export const layer = Layer.effect(
   Service,

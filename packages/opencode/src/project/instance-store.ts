@@ -26,7 +26,7 @@ export interface Interface {
   readonly provide: <A, E, R>(input: LoadInput, effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/InstanceStore") {}
+export class Service extends Context.Service<Service, Interface>()("@novaclaw/InstanceStore") {}
 
 export const use = serviceUse(Service)
 

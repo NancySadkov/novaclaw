@@ -17,7 +17,7 @@ export interface Interface {
   db: DatabaseShape
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/v2/storage/Database") {}
+export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/storage/Database") {}
 
 export const layer = Layer.effect(
   Service,

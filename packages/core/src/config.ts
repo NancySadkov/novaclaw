@@ -130,7 +130,7 @@ export interface Interface {
   readonly entries: () => Effect.Effect<Entry[]>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/v2/Config") {}
+export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/Config") {}
 
 export const layer = Layer.effect(
   Service,

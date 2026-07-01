@@ -171,7 +171,7 @@ export interface Interface {
   }
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/GitV2") {}
+export class Service extends Context.Service<Service, Interface>()("@novaclaw/GitV2") {}
 
 export const layer = Layer.effect(
   Service,

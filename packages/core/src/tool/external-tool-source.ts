@@ -21,7 +21,7 @@ export interface Interface {
   readonly entries: () => Effect.Effect<ReadonlyMap<string, Entry>>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/v2/ExternalToolSource") {}
+export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/ExternalToolSource") {}
 
 const EMPTY: ReadonlyMap<string, Entry> = new Map()
 

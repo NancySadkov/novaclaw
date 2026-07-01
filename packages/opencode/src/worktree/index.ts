@@ -127,7 +127,7 @@ export interface Interface {
   readonly reset: (input: ResetInput) => Effect.Effect<boolean, Error>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/Worktree") {}
+export class Service extends Context.Service<Service, Interface>()("@novaclaw/Worktree") {}
 
 type GitResult = { code: number; text: string; stderr: string }
 

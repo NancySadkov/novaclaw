@@ -9,7 +9,7 @@ import { HttpApiMiddleware } from "effect/unstable/httpapi"
 export type LocationServices = Layer.Success<ReturnType<(typeof LocationServiceMap.Service)["get"]>>
 
 export class LocationMiddleware extends HttpApiMiddleware.Service<LocationMiddleware, { provides: LocationServices }>()(
-  "@opencode/HttpApiLocation",
+  "@novaclaw/HttpApiLocation",
 ) {}
 
 export function response<A, E, R>(data: Effect.Effect<A, E, R>) {

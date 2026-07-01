@@ -10,7 +10,7 @@ import { AbsolutePath } from "@novaclaw/core/schema"
 import { createTranslator } from "@/event-v2-translate"
 import { Context, Effect, Layer } from "effect"
 
-export class Service extends Context.Service<Service, EventV2.Interface>()("@opencode/EventV2Bridge") {}
+export class Service extends Context.Service<Service, EventV2.Interface>()("@novaclaw/EventV2Bridge") {}
 
 export const layer = Layer.effect(
   Service,

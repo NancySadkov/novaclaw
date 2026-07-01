@@ -24,7 +24,7 @@ export interface Interface {
   ) => Effect.Effect<SessionV1.WithParts, Session.BusyError>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/SessionRunState") {}
+export class Service extends Context.Service<Service, Interface>()("@novaclaw/SessionRunState") {}
 
 export const layer = Layer.effect(
   Service,

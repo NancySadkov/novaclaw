@@ -59,7 +59,7 @@ export interface Interface {
   readonly list: () => Effect.Effect<ReadonlyArray<Request>>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/Question") {}
+export class Service extends Context.Service<Service, Interface>()("@novaclaw/Question") {}
 
 export const layer = Layer.effect(
   Service,

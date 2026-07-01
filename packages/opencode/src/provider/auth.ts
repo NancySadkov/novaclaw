@@ -102,7 +102,7 @@ interface State {
   pending: Map<ProviderV2.ID, AuthOAuthResult>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/ProviderAuth") {}
+export class Service extends Context.Service<Service, Interface>()("@novaclaw/ProviderAuth") {}
 
 export const use = serviceUse(Service)
 

@@ -58,7 +58,7 @@ export interface Interface {
   readonly list: (prefix: string[]) => Effect.Effect<string[][], FSUtil.Error>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/Storage") {}
+export class Service extends Context.Service<Service, Interface>()("@novaclaw/Storage") {}
 
 function file(dir: string, key: string[]) {
   return path.join(dir, ...key) + ".json"

@@ -13,7 +13,7 @@ const enabledByExperimental = (name: string) =>
     Config.map((flags) => Option.getOrElse(flags.enabled, () => flags.experimental)),
   )
 
-export class Service extends ConfigService.Service<Service>()("@opencode/RuntimeFlags", {
+export class Service extends ConfigService.Service<Service>()("@novaclaw/RuntimeFlags", {
   autoShare: bool("OPENCODE_AUTO_SHARE"),
   pure: bool("OPENCODE_PURE"),
   disableDefaultPlugins: bool("OPENCODE_DISABLE_DEFAULT_PLUGINS"),

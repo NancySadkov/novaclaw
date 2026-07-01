@@ -69,7 +69,7 @@ export type Interface = {
   readonly cancel: (input: CancelNotification) => Effect.Effect<void, Error>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/ACP/Service") {}
+export class Service extends Context.Service<Service, Interface>()("@novaclaw/ACP/Service") {}
 
 export function make(input: {
   sdk: OpencodeClient

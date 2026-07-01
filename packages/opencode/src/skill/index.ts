@@ -245,7 +245,7 @@ const loadSkills = Effect.fnUntraced(function* (
   yield* Effect.logInfo("init", { count: Object.keys(state.skills).length })
 })
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/Skill") {}
+export class Service extends Context.Service<Service, Interface>()("@novaclaw/Skill") {}
 
 export const layer = Layer.effect(
   Service,

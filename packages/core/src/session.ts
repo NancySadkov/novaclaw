@@ -181,7 +181,7 @@ export interface Interface {
   }
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/v2/Session") {}
+export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/Session") {}
 
 /**
  * Create a session RECORD — persist the project row + publish `Created` (the projector writes the

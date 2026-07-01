@@ -78,7 +78,7 @@ export interface Interface {
   readonly remove: (sessionID: SessionID) => Effect.Effect<void, unknown>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/ShareNext") {}
+export class Service extends Context.Service<Service, Interface>()("@novaclaw/ShareNext") {}
 
 export const use = serviceUse(Service)
 
