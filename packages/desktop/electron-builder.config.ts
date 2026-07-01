@@ -75,7 +75,7 @@ const getBase = (appId: string): Configuration => ({
   },
   protocols: {
     name: "NovaClaw",
-    schemes: ["novaclaw", "opencode"],
+    schemes: ["novaclaw"],
   },
   win: {
     icon: `resources/icons/icon.ico`,
@@ -124,7 +124,7 @@ function getConfig() {
         ...base,
         appId,
         productName: "NovaClaw Beta",
-        protocols: { name: "NovaClaw Beta", schemes: ["novaclaw", "opencode"] },
+        protocols: { name: "NovaClaw Beta", schemes: ["novaclaw"] },
         publish: { provider: "github", owner: "nancysadkov", repo: "novaclaw-beta", channel: "latest" },
         rpm: { packageName: "novaclaw-beta" },
       }
@@ -134,7 +134,7 @@ function getConfig() {
         ...base,
         appId,
         productName: "NovaClaw",
-        protocols: { name: "NovaClaw", schemes: ["novaclaw", "opencode"] },
+        protocols: { name: "NovaClaw", schemes: ["novaclaw"] },
         publish: { provider: "github", owner: "nancysadkov", repo: "novaclaw", channel: "latest" },
         deb: { fpm: [legacyDesktopEntryFpm] },
         rpm: { packageName: "novaclaw", fpm: [legacyDesktopEntryFpm] },
