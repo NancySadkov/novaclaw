@@ -629,12 +629,6 @@ export function NewHome() {
             </Show>
           </ScrollView>
         </section>
-        <HomeUtilityNav
-          class="flex lg:hidden"
-          openSettings={openSettings}
-          openHelp={() => platform.openLink("https://opencode.ai/desktop-feedback")}
-          language={language}
-        />
       </div>
     </div>
   )
@@ -733,12 +727,6 @@ function HomeProjectColumn(props: {
           </div>
         </Show>
       </ScrollView>
-      <HomeUtilityNav
-        class="mb-8 mt-4 hidden shrink-0 lg:flex"
-        openSettings={props.openSettings}
-        openHelp={props.openHelp}
-        language={props.language}
-      />
     </aside>
   )
 }
