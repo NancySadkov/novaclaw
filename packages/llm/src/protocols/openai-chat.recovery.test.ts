@@ -87,3 +87,22 @@ describe("openai-chat — structured tool calls unaffected", () => {
     expect(finishReason(events)).toBe("tool-calls")
   })
 })
+
+const toolCalls_ = { choices: [{ delta: {}, finish_reason: "tool_calls" }] }
+
+describe("openai-chat — structured tool-name canonicalization (A1)", () => {
+  test("case mismatch is canonicalized (Write -> write)", () => {
+    const events = decode(["write", "read"], [structuredCall("Write", '{"filePath":"a"}'), toolCalls_])
+    expect(toolCalls(events).map((c) => c.name)).toEqual(["write"])
+  })
+
+  test("near-typo is canonicalized (apply_path -> apply_patch)", () => {
+    const events = decode(["apply_patch", "read"], [structuredCall("apply_path", '{"patch":"x"}'), toolCalls_])
+    expect(toolCalls(events).map((c) => c.name)).toEqual(["apply_patch"])
+  })
+
+  test("an unknown structured name passes through unchanged (runner surfaces it, decoder doesn't drop)", () => {
+    const events = decode(["read"], [structuredCall("frobnicate", "{}"), toolCalls_])
+    expect(toolCalls(events).map((c) => c.name)).toEqual(["frobnicate"])
+  })
+})

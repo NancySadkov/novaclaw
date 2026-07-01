@@ -22,7 +22,7 @@ import { OpenAIOptions } from "./utils/openai-options"
 import { Lifecycle } from "./utils/lifecycle"
 import { ToolSchemaProjection } from "./utils/tool-schema"
 import { ToolStream } from "./utils/tool-stream"
-import { recoverToolCallsFromText } from "./utils/tool-recovery"
+import { recoverToolCallsFromText, resolveToolName } from "./utils/tool-recovery"
 
 const ADAPTER = "openai-chat"
 const IMAGE_MIMES = new Set<string>(ProviderShared.IMAGE_MIMES)
@@ -401,6 +401,14 @@ const mapFinishReason = (reason: string | null | undefined): FinishReason => {
   return "unknown"
 }
 
+// Canonicalize a structured tool-call name against the request's tools (Write -> write,
+// a near-typo -> the real name). An unresolved name passes through unchanged — a genuine
+// unknown tool is the runner's to surface as a recoverable error, not the decoder's to drop.
+const canonicalToolName = (raw: string | null | undefined, allowed: ReadonlyArray<string>): string | undefined => {
+  if (!raw) return undefined
+  return resolveToolName(raw, allowed) ?? raw
+}
+
 // OpenAI Chat reports `prompt_tokens` (inclusive total) with a
 // `cached_tokens` subset, and `completion_tokens` (inclusive total) with
 // a `reasoning_tokens` subset. We pass the inclusive totals through and
@@ -449,7 +457,11 @@ const step = (state: ParserState, event: OpenAIChatEvent) =>
         ADAPTER,
         tools,
         tool.index,
-        { id: tool.id ?? undefined, name: tool.function?.name ?? undefined, text: tool.function?.arguments ?? "" },
+        {
+          id: tool.id ?? undefined,
+          name: canonicalToolName(tool.function?.name, state.allowedToolNames),
+          text: tool.function?.arguments ?? "",
+        },
         "OpenAI Chat tool call delta is missing id or name",
       )
       if (ToolStream.isError(result)) return yield* result
