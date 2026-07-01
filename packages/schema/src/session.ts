@@ -23,6 +23,7 @@ export const Info = Schema.Struct({
   agent: Agent.ID.pipe(optional),
   model: Model.Ref.pipe(optional),
   systemPromptOverride: Schema.String.pipe(optional),
+  result: Schema.Unknown.pipe(optional),
   cost: Schema.Finite,
   tokens: Schema.Struct({
     input: Schema.Finite,

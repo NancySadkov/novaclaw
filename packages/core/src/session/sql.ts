@@ -55,6 +55,7 @@ export const SessionTable = sqliteTable(
       variant?: string
     }>(),
     system_prompt_override: text(),
+    result: text({ mode: "json" }).$type<unknown>(),
     ...Timestamps,
     time_compacting: integer(),
     time_archived: integer(),

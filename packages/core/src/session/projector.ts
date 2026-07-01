@@ -54,6 +54,7 @@ function sessionRow(info: SessionV1.SessionInfo): typeof SessionTable.$inferInse
     agent: info.agent,
     model: info.model,
     system_prompt_override: info.systemPromptOverride,
+    result: info.result,
     version: info.version,
     share_url: info.share?.url,
     summary_additions: info.summary?.additions,
