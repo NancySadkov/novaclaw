@@ -53,6 +53,7 @@ export function migrate(info: typeof ConfigV1.Info.Type) {
     persona: info.persona,
     introspection: info.introspection,
     adhoc_tools: info.adhoc_tools,
+    affective: info.affective,
     compaction: info.compaction && {
       auto: info.compaction.auto,
       prune: info.compaction.prune,

@@ -192,6 +192,19 @@ export const Info = Schema.Struct({
   ).annotate({
     description: "Ad-hoc tool recipes: name + description listed in the system prompt, manual pulled on demand",
   }),
+  affective: Schema.optional(
+    Schema.Struct({
+      enabled: Schema.optional(Schema.Boolean).annotate({
+        description: "Emotion-modulated sampling + loop-breaking nudges (default: false)",
+      }),
+      temperature: Schema.optional(Schema.Number).annotate({
+        description: "Calm-baseline temperature when the model config sets none (default: 0.7)",
+      }),
+      extended: Schema.optional(Schema.Boolean).annotate({
+        description: "Also modulate extended params (top_k) — for engines that accept them (default: false)",
+      }),
+    }),
+  ).annotate({ description: "Affective mode — emotion-modulated sampling + loop-breaking nudges" }),
   compaction: Schema.optional(
     Schema.Struct({
       auto: Schema.optional(Schema.Boolean).annotate({

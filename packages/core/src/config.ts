@@ -17,6 +17,7 @@ import { ConfigCommand } from "./config/command"
 import { ConfigExperimental } from "./config/experimental"
 import { ConfigFormatter } from "./config/formatter"
 import { ConfigAdhocTools } from "./config/adhoc-tools"
+import { ConfigAffective } from "./config/affective"
 import { ConfigIntrospection } from "./config/introspection"
 import { ConfigMCP } from "./config/mcp"
 import { ConfigPersona } from "./config/persona"
@@ -94,6 +95,9 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   }),
   adhoc_tools: ConfigAdhocTools.Info.pipe(Schema.optional).annotate({
     description: "Ad-hoc tool recipes: name + description listed in the system prompt, manual pulled on demand (P4)",
+  }),
+  affective: ConfigAffective.Info.pipe(Schema.optional).annotate({
+    description: "Affective mode — emotion-modulated sampling + loop-breaking nudges (P3)",
   }),
   skills: Schema.String.pipe(Schema.Array, Schema.optional).annotate({
     description: "Additional paths or URLs to discover skills from",

@@ -41,6 +41,7 @@ import { SessionRunnerModel } from "./model"
 import { createLLMEventPublisher } from "./publish-llm-event"
 import { toLLMMessages } from "./to-llm-message"
 import { AdhocGuidance } from "../../adhoc-tools/guidance"
+import { Affective } from "./affective"
 import { detectDoomLoop, redirectMessage } from "./doom-loop"
 import { Introspection } from "./introspection"
 import { MAX_STEPS_PROMPT } from "./max-steps"
@@ -132,6 +133,15 @@ export const layer = Layer.effect(
     const getContext = Effect.fn("SessionRunner.getContext")(function* (sessionID: SessionSchema.ID) {
       return yield* store.context(sessionID)
     })
+
+    // P3: per-session mood state for the affective engine (in-memory per location; bounded).
+    const affectiveConfig = Config.latest(configEntries, "affective")
+    const moods = new Map<string, Affective.Mood>()
+    const MAX_MOODS = 500
+    const rememberMood = (sessionID: string, mood: Affective.Mood) => {
+      if (moods.size >= MAX_MOODS && !moods.has(sessionID)) moods.clear()
+      moods.set(sessionID, mood)
+    }
 
     // P2 (2A/2B): the out-of-band judge call. Best-effort by design — ANY failure (judge
     // model unreachable, resolution error, empty reply) is logged and swallowed; the judge
@@ -276,6 +286,34 @@ export const layer = Layer.effect(
       const isLastStep = agent.info?.steps !== undefined && currentStep >= agent.info.steps
       const toolMaterialization = isLastStep ? undefined : yield* tools.materialize(agent.info?.permissions)
       const promptCacheKey = /^ses_[0-9a-f]{64}$/.test(session.id) ? session.id.slice(4) : session.id
+      // P3 (3A/3B): appraise the per-session mood from what has happened so far (runs BEFORE
+      // this turn's request, afpro-style), modulate sampling AROUND the model's configured
+      // baseline, and at high frustration/urgency steer a one-shot redirect (rising-edge only —
+      // decay naturally re-arms it). Enabled via global config or the per-session flag.
+      let affectiveGeneration: ReturnType<typeof Affective.toSampling> | undefined
+      if (affectiveConfig?.enabled === true || config.affective) {
+        const previous = moods.get(session.id) ?? Affective.calmMood
+        const mood = Affective.appraise(previous, context)
+        rememberMood(session.id, mood)
+        const defaults = model.route.defaults.generation
+        affectiveGeneration = Affective.toSampling(
+          mood,
+          {
+            temperature: defaults?.temperature ?? affectiveConfig?.temperature,
+            topP: defaults?.topP,
+            topK: defaults?.topK,
+            frequencyPenalty: defaults?.frequencyPenalty,
+            presencePenalty: defaults?.presencePenalty,
+          },
+          {
+            toolsPresent: (toolMaterialization?.definitions.length ?? 0) > 0,
+            extended: affectiveConfig?.extended === true,
+          },
+        )
+        const nudge = Affective.intervention(mood)
+        const wasCalm = Affective.intervention(previous) === undefined
+        if (nudge && wasCalm) yield* SessionInput.steer(db, events, session.id, nudge)
+      }
       const request = LLM.request({
         model,
         providerOptions: { openai: { promptCacheKey } },
@@ -285,6 +323,7 @@ export const layer = Layer.effect(
         messages: [...toLLMMessages(context, model), ...(isLastStep ? [Message.assistant(MAX_STEPS_PROMPT)] : [])],
         tools: toolMaterialization?.definitions ?? [],
         toolChoice: isLastStep ? "none" : undefined,
+        ...(affectiveGeneration === undefined ? {} : { generation: affectiveGeneration }),
       })
       if (yield* compaction.compactIfNeeded({ sessionID: session.id, entries, model, request }))
         return yield* Effect.die(continueAfterCompaction(currentStep))
