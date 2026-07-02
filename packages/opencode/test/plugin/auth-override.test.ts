@@ -3,7 +3,7 @@ import path from "path"
 import { pathToFileURL } from "url"
 import { Effect, Layer } from "effect"
 import { FSUtil } from "@novaclaw/core/fs-util"
-import { provideInstance, TestInstance, tmpdirScoped } from "../fixture/fixture"
+import { TestInstance } from "../fixture/fixture"
 import { ProviderAuth } from "@/provider/auth"
 
 import { Plugin } from "@/plugin"
@@ -45,7 +45,7 @@ function layer(directory: string, plugins: string[]) {
 
 describe("plugin.auth-override", () => {
   it.instance(
-    "user plugin overrides built-in github-copilot auth",
+    "user plugin registers provider auth",
     () =>
       Effect.gen(function* () {
         const tmp = yield* TestInstance
@@ -53,13 +53,13 @@ describe("plugin.auth-override", () => {
         const pluginDir = path.join(tmp.directory, ".novaclaw", "plugin")
 
         yield* fs.writeWithDirs(
-          path.join(pluginDir, "custom-copilot-auth.ts"),
+          path.join(pluginDir, "custom-provider-auth.ts"),
           [
             "export default {",
-            '  id: "demo.custom-copilot-auth",',
+            '  id: "demo.custom-provider-auth",',
             "  server: async () => ({",
             "    auth: {",
-            '      provider: "github-copilot",',
+            '      provider: "my-provider",',
             "      methods: [",
             '        { type: "api", label: "Test Override Auth" },',
             "      ],",
@@ -71,18 +71,13 @@ describe("plugin.auth-override", () => {
           ].join("\n"),
         )
 
-        const plain = yield* tmpdirScoped({ git: true })
-        const plugin = pathToFileURL(path.join(pluginDir, "custom-copilot-auth.ts")).href
+        const plugin = pathToFileURL(path.join(pluginDir, "custom-provider-auth.ts")).href
         const methods = yield* ProviderAuth.use.methods().pipe(Effect.provide(layer(tmp.directory, [plugin])))
-        const plainMethods = yield* ProviderAuth.use
-          .methods()
-          .pipe(Effect.provide(layer(plain, [])), provideInstance(plain))
 
-        const copilot = methods[ProviderV2.ID.make("github-copilot")]
-        expect(copilot).toBeDefined()
-        expect(copilot.length).toBe(1)
-        expect(copilot[0].label).toBe("Test Override Auth")
-        expect(plainMethods[ProviderV2.ID.make("github-copilot")][0].label).not.toBe("Test Override Auth")
+        const provider = methods[ProviderV2.ID.make("my-provider")]
+        expect(provider).toBeDefined()
+        expect(provider.length).toBe(1)
+        expect(provider[0].label).toBe("Test Override Auth")
       }),
     { git: true },
     30000,

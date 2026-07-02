@@ -9,15 +9,8 @@ import type {
 import { Config } from "@/config/config"
 import { createOpencodeClient } from "@novaclaw/sdk"
 import { ServerAuth } from "@/server/auth"
-import { CodexAuthPlugin } from "./openai/codex"
 import { Session } from "@/session/session"
 import { NamedError } from "@novaclaw/core/util/error"
-import { CopilotAuthPlugin } from "./github-copilot/copilot"
-import { CloudflareAIGatewayAuthPlugin, CloudflareWorkersAuthPlugin } from "./cloudflare"
-import { AzureAuthPlugin } from "./azure"
-import { DigitalOceanAuthPlugin } from "./digitalocean"
-import { XaiAuthPlugin } from "./xai"
-import { SnowflakeCortexAuthPlugin } from "./snowflake-cortex"
 import { Effect, Layer, Context } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { InstanceState } from "@/effect/instance-state"
@@ -28,7 +21,6 @@ import { registerAdapter } from "@/control-plane/adapters"
 import type { WorkspaceAdapter } from "@/control-plane/types"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
-import { InstallationChannel } from "@novaclaw/core/installation/version"
 
 type State = {
   hooks: Hooks[]
@@ -55,26 +47,11 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/Plugin") {}
 
-export function experimentalWebSocketsEnabled(input: { enabled: boolean; channel?: string }) {
-  return input.enabled || ["local", "dev", "beta"].includes(input.channel ?? InstallationChannel)
-}
-
-// Built-in plugins that are directly imported (not installed from npm)
-function internalPlugins(flags: RuntimeFlags.Info): PluginInstance[] {
-  return [
-    // Temporary rollout: pre-release builds use WebSockets by default; releases require explicit opt-in.
-    (input) =>
-      CodexAuthPlugin(input, {
-        experimentalWebSockets: experimentalWebSocketsEnabled({ enabled: flags.experimentalWebSockets }),
-      }),
-    CopilotAuthPlugin,
-    CloudflareWorkersAuthPlugin,
-    CloudflareAIGatewayAuthPlugin,
-    AzureAuthPlugin,
-    DigitalOceanAuthPlugin,
-    SnowflakeCortexAuthPlugin,
-    XaiAuthPlugin,
-  ]
+// Built-in plugins that are directly imported (not installed from npm). The cloud-provider OAuth
+// auth plugins (Codex/Copilot/Cloudflare/Azure/DigitalOcean/Snowflake/Xai) were removed in the
+// NovaClaw detach — local-first, no bundled cloud auth (see detach-triage.md). New built-ins register here.
+function internalPlugins(): PluginInstance[] {
+  return []
 }
 
 function isServerPlugin(value: unknown): value is PluginInstance {
@@ -159,7 +136,7 @@ export const layer = Layer.effect(
           $: typeof Bun === "undefined" ? undefined : Bun.$,
         }
 
-        for (const plugin of flags.disableDefaultPlugins ? [] : internalPlugins(flags)) {
+        for (const plugin of flags.disableDefaultPlugins ? [] : internalPlugins()) {
           const init = yield* Effect.tryPromise({
             try: () => plugin(input),
             catch: errorMessage,
