@@ -293,8 +293,10 @@ describe("HttpApi Server.listen", () => {
       return true
     }) as typeof process.stderr.write
     try {
+      // /status has no route; without an embedded web UI the catch-all answers a
+      // plain 404 (the upstream remote-proxy fallback was removed — it 500ed offline).
       const response = await Server.Default().app.request("/status")
-      expect(response.status).toBe(200)
+      expect(response.status).toBe(404)
     } finally {
       process.stderr.write = original
     }
