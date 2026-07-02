@@ -9,7 +9,6 @@ import { Global } from "@novaclaw/core/global"
 import { Config } from "@/config/config"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { Ripgrep } from "@novaclaw/core/ripgrep"
-import { LSP } from "@/lsp/lsp"
 import { Permission } from "../../src/permission"
 import { SessionID, MessageID } from "../../src/session/schema"
 import { Instruction } from "../../src/session/instruction"
@@ -49,7 +48,6 @@ const readLayer = (flags: Partial<RuntimeFlags.Info> = {}) =>
     FSUtil.defaultLayer,
     CrossSpawnSpawner.defaultLayer,
     Instruction.defaultLayer,
-    LSP.defaultLayer,
     Ripgrep.defaultLayer,
     Truncate.defaultLayer,
   )

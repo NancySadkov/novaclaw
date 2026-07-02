@@ -35,8 +35,6 @@ describe("bootstrapDirectory", () => {
       question: {},
       mcp_ready: true,
       mcp: {},
-      lsp_ready: true,
-      lsp: [],
       vcs: undefined,
       limit: 5,
       message: {},

@@ -19,7 +19,7 @@ import { SkillTest } from "../fake/skill"
 import { testEffect } from "../lib/effect"
 import { PLUGIN_AGENT } from "../fixture/agent-plugin.constants"
 
-// `it.instance` skips InstanceBootstrap so LSP / MCP don't spin up — those
+// `it.instance` skips InstanceBootstrap so MCP doesn't spin up — those
 // services hang during scope teardown on Windows and aren't needed
 // to verify plugin → config hook → Agent.list.
 const pluginUrl = pathToFileURL(path.join(import.meta.dir, "..", "fixture", "agent-plugin.ts")).href

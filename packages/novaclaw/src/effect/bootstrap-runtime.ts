@@ -1,7 +1,6 @@
 import { Layer, ManagedRuntime } from "effect"
 
 import { Plugin } from "@/plugin"
-import { LSP } from "@/lsp/lsp"
 import { Format } from "@/format"
 import { ShareNext } from "@/share/share-next"
 import { Vcs } from "@/project/vcs"
@@ -15,7 +14,6 @@ export const BootstrapLayer = Layer.mergeAll(
   Plugin.defaultLayer,
   ShareNext.defaultLayer,
   Format.defaultLayer,
-  LSP.defaultLayer,
   Vcs.defaultLayer,
   Snapshot.defaultLayer,
 ).pipe(Layer.provide(Observability.layer))

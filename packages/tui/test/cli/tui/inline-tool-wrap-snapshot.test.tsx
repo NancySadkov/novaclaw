@@ -43,7 +43,7 @@ const tools: readonly ToolFixture[] = [
   {
     icon: "→",
     label: "Read packages/novaclaw/src/index.ts [offset=1, limit=100]",
-    error: "No LSP server available for this file type.",
+    error: "No formatter available for this file type.",
   },
   {
     icon: "✱",

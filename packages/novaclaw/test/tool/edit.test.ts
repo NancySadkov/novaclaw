@@ -4,7 +4,6 @@ import fs from "fs/promises"
 import { Cause, Deferred, Effect, Exit, Fiber, Layer } from "effect"
 import { EditTool } from "../../src/tool/edit"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
-import { LSP } from "@/lsp/lsp"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { Format } from "../../src/format"
 import { Agent } from "../../src/agent/agent"
@@ -31,7 +30,6 @@ afterEach(async () => {
 })
 
 const layer = Layer.mergeAll(
-  LSP.defaultLayer,
   FSUtil.defaultLayer,
   Format.defaultLayer,
   EventV2Bridge.defaultLayer,

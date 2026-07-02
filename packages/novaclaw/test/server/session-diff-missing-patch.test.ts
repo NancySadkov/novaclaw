@@ -61,7 +61,7 @@ describe("session diff with missing patch (#26574)", () => {
         expect(response.status).toBe(200)
         expect(yield* response.json).toEqual([])
       }),
-    { git: true, config: { formatter: false, lsp: false } },
+    { git: true, config: { formatter: false } },
   )
 
   it.instance(
@@ -91,6 +91,6 @@ describe("session diff with missing patch (#26574)", () => {
         expect(response.status).toBe(200)
         expect(yield* response.json).toEqual([{ file: "turn.ts", additions: 1, deletions: 0, status: "modified" }])
       }),
-    { git: true, config: { formatter: false, lsp: false } },
+    { git: true, config: { formatter: false } },
   )
 })

@@ -294,7 +294,6 @@ export const dict = {
   "dialog.mcp.description": "{{enabled}} of {{total}} enabled",
   "dialog.mcp.empty": "No MCPs configured",
 
-  "dialog.lsp.empty": "LSPs auto-detected from file types",
   "dialog.plugins.empty": "Plugins configured in novaclaw.json",
 
   "mcp.status.connected": "connected",
@@ -682,7 +681,6 @@ export const dict = {
   "status.popover.ariaLabel": "Server configurations",
   "status.popover.tab.servers": "Servers",
   "status.popover.tab.mcp": "MCP",
-  "status.popover.tab.lsp": "LSP",
   "status.popover.tab.plugins": "Plugins",
   "status.popover.action.manageServers": "Manage servers",
 
@@ -700,8 +698,6 @@ export const dict = {
   "session.share.copy.copied": "Copied",
   "session.share.copy.copyLink": "Copy link",
 
-  "lsp.tooltip.none": "No LSP servers",
-  "lsp.label.connected": "{{count}} LSP",
 
   "prompt.loading": "Loading prompt...",
   "terminal.loading": "Loading terminal...",
@@ -999,8 +995,6 @@ export const dict = {
   "settings.permissions.tool.task.description": "Launch sub-agents",
   "settings.permissions.tool.skill.title": "Skill",
   "settings.permissions.tool.skill.description": "Load a skill by name",
-  "settings.permissions.tool.lsp.title": "LSP",
-  "settings.permissions.tool.lsp.description": "Run language server queries",
   "settings.permissions.tool.todowrite.title": "Todo Write",
   "settings.permissions.tool.todowrite.description": "Update the todo list",
   "settings.permissions.tool.webfetch.title": "Web Fetch",

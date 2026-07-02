@@ -280,7 +280,6 @@ export const dict = {
   "dialog.mcp.description": "{{enabled}} av {{total}} aktivert",
   "dialog.mcp.empty": "Ingen MCP-er konfigurert",
 
-  "dialog.lsp.empty": "LSP-er automatisk oppdaget fra filtyper",
   "dialog.plugins.empty": "Plugins konfigurert i novaclaw.json",
 
   "mcp.status.connected": "tilkoblet",
@@ -547,7 +546,6 @@ export const dict = {
   "status.popover.ariaLabel": "Serverkonfigurasjoner",
   "status.popover.tab.servers": "Servere",
   "status.popover.tab.mcp": "MCP",
-  "status.popover.tab.lsp": "LSP",
   "status.popover.tab.plugins": "Plugins",
   "status.popover.action.manageServers": "Administrer servere",
 
@@ -565,8 +563,6 @@ export const dict = {
   "session.share.copy.copied": "Kopiert",
   "session.share.copy.copyLink": "Kopier lenke",
 
-  "lsp.tooltip.none": "Ingen LSP-servere",
-  "lsp.label.connected": "{{count}} LSP",
 
   "prompt.loading": "Laster prompt...",
   "terminal.loading": "Laster terminal...",
@@ -786,8 +782,6 @@ export const dict = {
   "settings.permissions.tool.task.description": "Start underagenter",
   "settings.permissions.tool.skill.title": "Ferdighet",
   "settings.permissions.tool.skill.description": "Last en ferdighet etter navn",
-  "settings.permissions.tool.lsp.title": "LSP",
-  "settings.permissions.tool.lsp.description": "Kjør språkserverforespørsler",
   "settings.permissions.tool.todowrite.title": "Skriv gjøremål",
   "settings.permissions.tool.todowrite.description": "Oppdater gjøremålslisten",
   "settings.permissions.tool.webfetch.title": "Webhenting",

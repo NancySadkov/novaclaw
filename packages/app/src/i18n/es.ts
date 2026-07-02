@@ -277,7 +277,6 @@ export const dict = {
   "dialog.mcp.description": "{{enabled}} de {{total}} habilitados",
   "dialog.mcp.empty": "No hay MCPs configurados",
 
-  "dialog.lsp.empty": "LSPs detectados automáticamente por tipo de archivo",
   "dialog.plugins.empty": "Plugins configurados en novaclaw.json",
 
   "mcp.status.connected": "conectado",
@@ -547,7 +546,6 @@ export const dict = {
   "status.popover.ariaLabel": "Configuraciones del servidor",
   "status.popover.tab.servers": "Servidores",
   "status.popover.tab.mcp": "MCP",
-  "status.popover.tab.lsp": "LSP",
   "status.popover.tab.plugins": "Plugins",
   "status.popover.action.manageServers": "Administrar servidores",
 
@@ -565,8 +563,6 @@ export const dict = {
   "session.share.copy.copied": "Copiado",
   "session.share.copy.copyLink": "Copiar enlace",
 
-  "lsp.tooltip.none": "Sin servidores LSP",
-  "lsp.label.connected": "{{count}} LSP",
 
   "prompt.loading": "Cargando prompt...",
   "terminal.loading": "Cargando terminal...",
@@ -792,8 +788,6 @@ export const dict = {
   "settings.permissions.tool.task.description": "Lanzar sub-agentes",
   "settings.permissions.tool.skill.title": "Habilidad",
   "settings.permissions.tool.skill.description": "Cargar una habilidad por nombre",
-  "settings.permissions.tool.lsp.title": "LSP",
-  "settings.permissions.tool.lsp.description": "Ejecutar consultas de servidor de lenguaje",
   "settings.permissions.tool.todowrite.title": "Escribir Todo",
   "settings.permissions.tool.todowrite.description": "Actualizar la lista de tareas",
   "settings.permissions.tool.webfetch.title": "Web Fetch",

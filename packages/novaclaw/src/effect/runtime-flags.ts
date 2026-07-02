@@ -19,7 +19,6 @@ export class Service extends ConfigService.Service<Service>()("@novaclaw/Runtime
   disableDefaultPlugins: bool("NOVACLAW_DISABLE_DEFAULT_PLUGINS"),
   disableEmbeddedWebUi: bool("NOVACLAW_DISABLE_EMBEDDED_WEB_UI"),
   disableExternalSkills: bool("NOVACLAW_DISABLE_EXTERNAL_SKILLS"),
-  disableLspDownload: bool("NOVACLAW_DISABLE_LSP_DOWNLOAD"),
   disableClaudeCodePrompt: Config.all({
     broad: bool("NOVACLAW_DISABLE_CLAUDE_CODE"),
     direct: bool("NOVACLAW_DISABLE_CLAUDE_CODE_PROMPT"),
@@ -41,8 +40,6 @@ export class Service extends ConfigService.Service<Service>()("@novaclaw/Runtime
   enableQuestionTool: bool("NOVACLAW_ENABLE_QUESTION_TOOL"),
   experimentalReferences: enabledByExperimental("NOVACLAW_EXPERIMENTAL_REFERENCES"),
   experimentalBackgroundSubagents: enabledByExperimental("NOVACLAW_EXPERIMENTAL_BACKGROUND_SUBAGENTS"),
-  experimentalLspTy: bool("NOVACLAW_EXPERIMENTAL_LSP_TY"),
-  experimentalLspTool: enabledByExperimental("NOVACLAW_EXPERIMENTAL_LSP_TOOL"),
   experimentalOxfmt: enabledByExperimental("NOVACLAW_EXPERIMENTAL_OXFMT"),
   experimentalPlanMode: enabledByExperimental("NOVACLAW_EXPERIMENTAL_PLAN_MODE"),
   experimentalEventSystem: enabledByExperimental("NOVACLAW_EXPERIMENTAL_EVENT_SYSTEM"),

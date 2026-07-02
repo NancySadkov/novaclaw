@@ -2,7 +2,6 @@ import type {
   Agent,
   Command,
   Config,
-  LspStatus,
   McpStatus,
   Message,
   Part,
@@ -63,8 +62,6 @@ export type State = {
   mcp: {
     [name: string]: McpStatus
   }
-  lsp_ready: boolean
-  lsp: LspStatus[]
   vcs: VcsInfo | undefined
   limit: number
   message: {

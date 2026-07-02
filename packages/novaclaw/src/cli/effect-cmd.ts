@@ -29,7 +29,7 @@ interface EffectCmdOpts<Args, A> {
    * so `InstanceRef` resolves to a loaded `InstanceContext`. Auto-disposes via
    * `Effect.ensuring(store.dispose(ctx))` on every Exit (matches the legacy
    * `bootstrap()` finally-disposal). Runs InstanceBootstrap (config + plugin
-   * init + LSP/File/etc forks) eagerly.
+   * init + File/etc forks) eagerly.
    *
    * `false`: skip the instance entirely. Saves the InstanceBootstrap work and
    * suppresses the `server.instance.disposed` IPC event. The handler runs

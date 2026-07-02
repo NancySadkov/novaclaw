@@ -9,7 +9,6 @@
 export function testProviderConfig(llmUrl: string) {
   return {
     formatter: false,
-    lsp: false,
     provider: {
       test: {
         name: "Test",

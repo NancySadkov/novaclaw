@@ -279,7 +279,6 @@ export const dict = {
   "dialog.mcp.description": "已啟用 {{enabled}} / {{total}}",
   "dialog.mcp.empty": "未設定 MCP",
 
-  "dialog.lsp.empty": "已從檔案類型自動偵測到 LSPs",
   "dialog.plugins.empty": "在 novaclaw.json 中設定的外掛程式",
 
   "mcp.status.connected": "已連線",
@@ -539,7 +538,6 @@ export const dict = {
   "status.popover.ariaLabel": "伺服器設定",
   "status.popover.tab.servers": "伺服器",
   "status.popover.tab.mcp": "MCP",
-  "status.popover.tab.lsp": "LSP",
   "status.popover.tab.plugins": "外掛程式",
   "status.popover.action.manageServers": "管理伺服器",
 
@@ -555,8 +553,6 @@ export const dict = {
   "session.share.copy.copied": "已複製",
   "session.share.copy.copyLink": "複製連結",
 
-  "lsp.tooltip.none": "沒有 LSP 伺服器",
-  "lsp.label.connected": "{{count}} LSP",
 
   "prompt.loading": "正在載入提示...",
   "terminal.loading": "正在載入終端機...",
@@ -771,8 +767,6 @@ export const dict = {
   "settings.permissions.tool.task.description": "啟動子代理程式",
   "settings.permissions.tool.skill.title": "Skill",
   "settings.permissions.tool.skill.description": "按名稱載入技能",
-  "settings.permissions.tool.lsp.title": "LSP",
-  "settings.permissions.tool.lsp.description": "執行語言伺服器查詢",
   "settings.permissions.tool.todowrite.title": "更新待辦",
   "settings.permissions.tool.todowrite.description": "更新待辦清單",
   "settings.permissions.tool.webfetch.title": "Web Fetch",

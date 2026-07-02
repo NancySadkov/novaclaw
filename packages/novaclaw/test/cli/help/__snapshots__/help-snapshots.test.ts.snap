@@ -1,26 +1,5 @@
 // Bun Snapshot v1, https://bun.sh/docs/test/snapshots
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode acp --help 1`] = `
-"opencode acp
-
-start ACP (Agent Client Protocol) server
-
-Options:
-  -h, --help         show help                                                             [boolean]
-  -v, --version      show version number                                                   [boolean]
-      --print-logs   print logs to stderr                                                  [boolean]
-      --log-level    log level                  [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure         run without external plugins                                          [boolean]
-      --port         port to listen on                                         [number] [default: 0]
-      --hostname     hostname to listen on                           [string] [default: "127.0.0.1"]
-      --mdns         enable mDNS service discovery (defaults hostname to 0.0.0.0)
-                                                                          [boolean] [default: false]
-      --mdns-domain  custom domain name for mDNS service (default: opencode.local)
-                                                                [string] [default: "opencode.local"]
-      --cors         additional domains to allow for CORS                      [array] [default: []]
-      --cwd          working directory [string] [default: "<HOME>"]"
-`;
-
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode mcp --help 1`] = `
 "opencode mcp
 
@@ -118,7 +97,6 @@ debugging and troubleshooting tools
 
 Commands:
   opencode debug config        show resolved configuration
-  opencode debug lsp           LSP debugging utilities
   opencode debug rg            ripgrep debugging utilities
   opencode debug file          file system debugging utilities
   opencode debug scrap         list all known projects
@@ -309,23 +287,6 @@ import session data from JSON file or URL
 
 Positionals:
   file  path to JSON file or share URL                                           [string] [required]
-
-Options:
-  -h, --help        show help                                                              [boolean]
-  -v, --version     show version number                                                    [boolean]
-      --print-logs  print logs to stderr                                                   [boolean]
-      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
-`;
-
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode github --help 1`] = `
-"opencode github
-
-manage GitHub agent
-
-Commands:
-  opencode github install  install the GitHub agent
-  opencode github run      run the GitHub agent
 
 Options:
   -h, --help        show help                                                              [boolean]
@@ -537,7 +498,7 @@ Options:
       --mode                  agent mode            [string] [choices: "all", "primary", "subagent"]
       --permissions, --tools  comma-separated list of permissions to allow (default: all).
                               Available: "bash, read, edit, glob, grep, webfetch, task, todowrite,
-                              websearch, lsp, skill"                                        [string]
+                              websearch, skill"                                             [string]
   -m, --model                 model to use in the format of provider/model                  [string]"
 `;
 
@@ -583,34 +544,6 @@ Options:
       --print-logs  print logs to stderr                                                   [boolean]
       --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
       --pure        run without external plugins                                           [boolean]"
-`;
-
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode github install --help 1`] = `
-"opencode github install
-
-install the GitHub agent
-
-Options:
-  -h, --help        show help                                                              [boolean]
-  -v, --version     show version number                                                    [boolean]
-      --print-logs  print logs to stderr                                                   [boolean]
-      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
-`;
-
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode github run --help 1`] = `
-"opencode github run
-
-run the GitHub agent
-
-Options:
-  -h, --help        show help                                                              [boolean]
-  -v, --version     show version number                                                    [boolean]
-      --print-logs  print logs to stderr                                                   [boolean]
-      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]
-      --event       GitHub mock event to run the agent for                                  [string]
-      --token       GitHub personal access token (github_pat_********)                      [string]"
 `;
 
 exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode db path --help 1`] = `

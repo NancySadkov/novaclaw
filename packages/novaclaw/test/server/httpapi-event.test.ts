@@ -56,7 +56,7 @@ describe("event HttpApi", () => {
         expect(response.headers["x-content-type-options"]).toBe("nosniff")
         expect(yield* readEvent(reader)).toMatchObject({ type: "server.connected", properties: {} })
       }),
-    { git: true, config: { formatter: false, lsp: false } },
+    { git: true, config: { formatter: false } },
   )
 
   it.instance(
@@ -74,7 +74,7 @@ describe("event HttpApi", () => {
         )
         expect(status).toBe("open")
       }),
-    { git: true, config: { formatter: false, lsp: false } },
+    { git: true, config: { formatter: false } },
   )
 
   it.instance(
@@ -89,6 +89,6 @@ describe("event HttpApi", () => {
         expect(created.status).toBe(200)
         expect(yield* readEvent(reader)).toMatchObject({ type: "session.created" })
       }),
-    { git: true, config: { formatter: false, lsp: false } },
+    { git: true, config: { formatter: false } },
   )
 })

@@ -282,7 +282,6 @@ export const dict = {
   "dialog.mcp.description": "{{total}} içerisinden {{enabled}} etkin",
   "dialog.mcp.empty": "Yapılandırılmış MCP yok",
 
-  "dialog.lsp.empty": "LSP'ler dosya türlerinden otomatik algılanır",
   "dialog.plugins.empty": "Eklentiler novaclaw.json içinde yapılandırılır",
 
   "mcp.status.connected": "bağlı",
@@ -551,7 +550,6 @@ export const dict = {
   "status.popover.ariaLabel": "Sunucu yapılandırmaları",
   "status.popover.tab.servers": "Sunucular",
   "status.popover.tab.mcp": "MCP",
-  "status.popover.tab.lsp": "LSP",
   "status.popover.tab.plugins": "Eklentiler",
   "status.popover.action.manageServers": "Sunucuları yönet",
 
@@ -568,8 +566,6 @@ export const dict = {
   "session.share.copy.copied": "Kopyalandı",
   "session.share.copy.copyLink": "Bağlantı kopyala",
 
-  "lsp.tooltip.none": "LSP sunucusu yok",
-  "lsp.label.connected": "{{count}} LSP",
 
   "prompt.loading": "Komut yükleniyor...",
   "terminal.loading": "Terminal yükleniyor...",
@@ -794,8 +790,6 @@ export const dict = {
   "settings.permissions.tool.task.description": "Alt ajanlar başlat",
   "settings.permissions.tool.skill.title": "Beceri",
   "settings.permissions.tool.skill.description": "Ada göre bir beceri yükle",
-  "settings.permissions.tool.lsp.title": "LSP",
-  "settings.permissions.tool.lsp.description": "Dil sunucusu sorguları çalıştır",
   "settings.permissions.tool.todowrite.title": "Görev Yaz",
   "settings.permissions.tool.todowrite.description": "Görev listesini güncelle",
   "settings.permissions.tool.webfetch.title": "Web Getir",

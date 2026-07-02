@@ -14,7 +14,6 @@ import { Agent as AgentSvc } from "../../src/agent/agent"
 import { BackgroundJob } from "@/background/job"
 import { Command } from "../../src/command"
 import { Config } from "@/config/config"
-import { LSP } from "@/lsp/lsp"
 import { MCP } from "../../src/mcp"
 import { Permission } from "../../src/permission"
 import { Plugin } from "../../src/plugin"
@@ -136,26 +135,6 @@ function makeMcp(instructions: MCP.ServerInstructions[] = []) {
   )
 }
 
-const lsp = Layer.succeed(
-  LSP.Service,
-  LSP.Service.of({
-    init: () => Effect.void,
-    status: () => Effect.succeed([]),
-    hasClients: () => Effect.succeed(false),
-    touchFile: () => Effect.void,
-    diagnostics: () => Effect.succeed({}),
-    hover: () => Effect.succeed(undefined),
-    definition: () => Effect.succeed([]),
-    references: () => Effect.succeed([]),
-    implementation: () => Effect.succeed([]),
-    documentSymbol: () => Effect.succeed([]),
-    workspaceSymbol: () => Effect.succeed([]),
-    prepareCallHierarchy: () => Effect.succeed([]),
-    incomingCalls: () => Effect.succeed([]),
-    outgoingCalls: () => Effect.succeed([]),
-  }),
-)
-
 const status = SessionStatus.layer.pipe(Layer.provideMerge(EventV2Bridge.defaultLayer))
 const run = SessionRunState.layer.pipe(Layer.provide(status))
 const infra = Layer.mergeAll(NodeFileSystem.layer, CrossSpawnSpawner.defaultLayer)
@@ -180,7 +159,6 @@ function makePrompt(input?: { mcpInstructions?: MCP.ServerInstructions[]; proces
     Plugin.defaultLayer,
     Config.defaultLayer,
     ProviderSvc.defaultLayer,
-    lsp,
     makeMcp(input?.mcpInstructions),
     FSUtil.defaultLayer,
     BackgroundJob.defaultLayer,

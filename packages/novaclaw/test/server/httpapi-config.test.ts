@@ -33,7 +33,7 @@ describe("config HttpApi", () => {
   it.live(
     "serves config update through the default server app",
     Effect.gen(function* () {
-      const tmp = yield* tmpdirEffect({ config: { formatter: false, lsp: false } })
+      const tmp = yield* tmpdirEffect({ config: { formatter: false } })
       const disposed = yield* waitDisposed(tmp.path).pipe(Effect.forkScoped({ startImmediately: true }))
 
       const response = yield* Effect.promise(() =>
@@ -44,7 +44,7 @@ describe("config HttpApi", () => {
               "content-type": "application/json",
               "x-opencode-directory": tmp.path,
             },
-            body: JSON.stringify({ username: "patched-user", formatter: false, lsp: false }),
+            body: JSON.stringify({ username: "patched-user", formatter: false }),
           }),
         ),
       )
@@ -53,13 +53,11 @@ describe("config HttpApi", () => {
       expect(yield* Effect.promise(() => response.json())).toMatchObject({
         username: "patched-user",
         formatter: false,
-        lsp: false,
       })
       yield* Fiber.join(disposed)
       expect(yield* Effect.promise(() => Bun.file(path.join(tmp.path, "config.json")).json())).toMatchObject({
         username: "patched-user",
         formatter: false,
-        lsp: false,
       })
     }),
   )
@@ -70,7 +68,6 @@ describe("config HttpApi", () => {
       const tmp = yield* tmpdirEffect({
         config: {
           formatter: false,
-          lsp: false,
           provider: {
             omniroute: {
               models: {

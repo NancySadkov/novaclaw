@@ -78,6 +78,6 @@ describe("messages endpoint tolerates legacy negative token counts", () => {
       const res = yield* requestInDirectory(url, test.directory)
       expect(res.status, "messages endpoint 400'd on legacy negative tokens").not.toBe(400)
     }),
-    { git: true, config: { formatter: false, lsp: false } },
+    { git: true, config: { formatter: false } },
   )
 })

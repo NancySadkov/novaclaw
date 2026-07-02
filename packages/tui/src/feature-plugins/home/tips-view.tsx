@@ -228,7 +228,6 @@ const TIPS: Tip[] = [
   'Set {highlight}"formatter": true{/highlight} in config to enable built-in formatters like prettier, gofmt, and ruff',
   'Set {highlight}"formatter": false{/highlight} in config to disable formatters enabled by another config layer',
   "Define custom formatter commands with file extensions in config",
-  'Set {highlight}"lsp": true{/highlight} in config to enable built-in LSP servers for code analysis',
   "Create {highlight}.ts{/highlight} files in {highlight}.opencode/tools/{/highlight} to define new LLM tools",
   "Tool definitions can invoke scripts written in Python, Go, etc",
   "Add {highlight}.ts{/highlight} files to {highlight}.opencode/plugins/{/highlight} for event hooks",

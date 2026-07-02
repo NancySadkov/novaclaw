@@ -417,12 +417,14 @@ it.instance(
 )
 
 it.instance(
-  "loads lsp boolean config",
+  "ignores unknown lsp key in existing configs",
   Effect.gen(function* () {
+    // The LSP subsystem was removed; configs written before the removal may
+    // still carry an `lsp` key. It must be ignored, not a validation error.
     const config = yield* Config.use.get()
-    expect(config.lsp).toBe(true)
+    expect("lsp" in config).toBe(false)
   }),
-  { config: { lsp: true } },
+  { config: { lsp: true } as unknown as Partial<ConfigV1.Info> },
 )
 
 test("loads project config from Git Bash and MSYS2 paths on Windows", async () => {

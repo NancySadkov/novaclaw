@@ -17,7 +17,6 @@ type ApplyDirectoryEvent = (input: {
   setStore: any
   push: (directory: string) => void
   directory: string
-  loadLsp: () => void
 }) => void
 type State = Record<string, any>
 async function loadDesktopReducer(): Promise<ApplyDirectoryEvent> {
@@ -483,14 +482,13 @@ function baseDesktopState(): State {
     permission: {},
     question: {},
     mcp: {},
-    lsp: [],
     vcs: undefined,
     limit: 10,
     message: {},
     part: {},
     part_text_accum_delta: {},
     // The reducer reads only a subset of State; cast through unknown so newer
-    // required fields (provider_ready, session_working, mcp_ready, lsp_ready)
+    // required fields (provider_ready, session_working, mcp_ready)
     // don't force us to fabricate values the reducer never touches.
   } as unknown as State
 }
@@ -509,7 +507,6 @@ describe("event-v2-translate / round-trip through the desktop reducer", () => {
           setStore,
           push() {},
           directory: "/tmp",
-          loadLsp() {},
         })
       }
     }
@@ -560,7 +557,7 @@ describe("event-v2-translate / round-trip through the desktop reducer", () => {
     const t = createTranslator()
     const [store, setStore] = createStore(baseDesktopState())
     const apply = (env: { type: string; properties?: unknown }) =>
-      applyDirectoryEvent({ event: env, store, setStore, push() {}, directory: "/tmp", loadLsp() {} })
+      applyDirectoryEvent({ event: env, store, setStore, push() {}, directory: "/tmp" })
     const feed = (e: BridgeEvent) => t.translate(e).forEach(apply)
 
     // live writer: a streamed text turn -> part id == the V2 textID "txt-1"
@@ -591,7 +588,7 @@ describe("event-v2-translate / round-trip through the desktop reducer", () => {
     const [store, setStore] = createStore(baseDesktopState())
     const feed = (e: BridgeEvent) => {
       for (const env of t.translate(e)) {
-        applyDirectoryEvent({ event: env, store, setStore, push() {}, directory: "/tmp", loadLsp() {} })
+        applyDirectoryEvent({ event: env, store, setStore, push() {}, directory: "/tmp" })
       }
     }
 
@@ -616,7 +613,7 @@ describe("event-v2-translate / round-trip through the desktop reducer", () => {
     const [store, setStore] = createStore(baseDesktopState())
     const feed = (e: BridgeEvent) => {
       for (const env of t.translate(e)) {
-        applyDirectoryEvent({ event: env, store, setStore, push() {}, directory: "/tmp", loadLsp() {} })
+        applyDirectoryEvent({ event: env, store, setStore, push() {}, directory: "/tmp" })
       }
     }
     feed(stepStarted())

@@ -277,7 +277,6 @@ export const dict = {
   "dialog.mcp.description": "{{enabled}} จาก {{total}} ที่เปิดใช้งาน",
   "dialog.mcp.empty": "ไม่มี MCP ที่กำหนดค่า",
 
-  "dialog.lsp.empty": "LSPs ตรวจจับอัตโนมัติจากประเภทไฟล์",
   "dialog.plugins.empty": "ปลั๊กอินที่กำหนดค่าใน novaclaw.json",
 
   "mcp.status.connected": "เชื่อมต่อแล้ว",
@@ -541,7 +540,6 @@ export const dict = {
   "status.popover.ariaLabel": "การกำหนดค่าเซิร์ฟเวอร์",
   "status.popover.tab.servers": "เซิร์ฟเวอร์",
   "status.popover.tab.mcp": "MCP",
-  "status.popover.tab.lsp": "LSP",
   "status.popover.tab.plugins": "ปลั๊กอิน",
   "status.popover.action.manageServers": "จัดการเซิร์ฟเวอร์",
 
@@ -557,8 +555,6 @@ export const dict = {
   "session.share.copy.copied": "คัดลอกแล้ว",
   "session.share.copy.copyLink": "คัดลอกลิงก์",
 
-  "lsp.tooltip.none": "ไม่มีเซิร์ฟเวอร์ LSP",
-  "lsp.label.connected": "{{count}} LSP",
 
   "prompt.loading": "กำลังโหลดพร้อมท์...",
   "terminal.loading": "กำลังโหลดเทอร์มินัล...",
@@ -775,8 +771,6 @@ export const dict = {
   "settings.permissions.tool.task.description": "เปิดเอเจนต์ย่อย",
   "settings.permissions.tool.skill.title": "ทักษะ",
   "settings.permissions.tool.skill.description": "โหลดทักษะตามชื่อ",
-  "settings.permissions.tool.lsp.title": "LSP",
-  "settings.permissions.tool.lsp.description": "เรียกใช้การสืบค้นเซิร์ฟเวอร์ภาษา",
   "settings.permissions.tool.todowrite.title": "เขียนรายการงาน",
   "settings.permissions.tool.todowrite.description": "อัปเดตรายการงาน",
   "settings.permissions.tool.webfetch.title": "ดึงข้อมูลจากเว็บ",

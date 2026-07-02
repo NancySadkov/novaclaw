@@ -26,7 +26,6 @@ import { Plugin } from "../plugin"
 import { Provider } from "@/provider/provider"
 
 import { WebSearchTool } from "./websearch"
-import { LspTool } from "./lsp"
 import * as Truncate from "./truncate"
 import { ApplyPatchTool } from "./apply_patch"
 import { Glob } from "@novaclaw/core/util/glob"
@@ -41,7 +40,6 @@ import { InstanceState } from "@/effect/instance-state"
 import { EffectBridge } from "@/effect/bridge"
 import { Question } from "../question"
 import { Todo } from "../session/todo"
-import { LSP } from "@/lsp/lsp"
 import { Instruction } from "../session/instruction"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -94,7 +92,6 @@ export const layer = Layer.effect(
     const read = yield* ReadTool
     const question = yield* QuestionTool
     const todo = yield* TodoWriteTool
-    const lsptool = yield* LspTool
     const plan = yield* PlanExitTool
     const webfetch = yield* WebFetchTool
     const websearch = yield* WebSearchTool
@@ -210,7 +207,6 @@ export const layer = Layer.effect(
           skill: Tool.init(skilltool),
           patch: Tool.init(patchtool),
           question: Tool.init(question),
-          lsp: Tool.init(lsptool),
           plan: Tool.init(plan),
         })
 
@@ -231,7 +227,6 @@ export const layer = Layer.effect(
             tool.search,
             tool.skill,
             tool.patch,
-            ...(flags.experimentalLspTool ? [tool.lsp] : []),
             ...(flags.experimentalPlanMode && flags.client === "cli" ? [tool.plan] : []),
           ],
           task: tool.task,
@@ -327,7 +322,6 @@ export const defaultLayer = Layer.suspend(() =>
       Layer.provide(Session.defaultLayer),
       Layer.provide(BackgroundJob.defaultLayer),
       Layer.provide(Provider.defaultLayer),
-      Layer.provide(LSP.defaultLayer),
       Layer.provide(Instruction.defaultLayer),
       Layer.provide(FSUtil.defaultLayer),
       Layer.provide(EventV2Bridge.defaultLayer),
@@ -428,7 +422,6 @@ export const node = LayerNode.make({
     Session.node,
     BackgroundJob.node,
     Provider.node,
-    LSP.node,
     Instruction.node,
     FSUtil.node,
     EventV2Bridge.node,

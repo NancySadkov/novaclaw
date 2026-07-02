@@ -292,7 +292,6 @@ describe("Config", () => {
                   prettier: { disabled: true },
                   custom: { command: ["custom-fmt", "$FILE"], extensions: [".foo"] },
                 },
-                lsp: { typescript: { disabled: true }, custom: { command: ["custom-lsp"], extensions: [".foo"] } },
                 attachments: {
                   image: { auto_resize: false, max_width: 1200, max_height: 900, max_base64_bytes: 1048576 },
                 },
@@ -375,10 +374,6 @@ describe("Config", () => {
               prettier: { disabled: true },
               custom: { command: ["custom-fmt", "$FILE"], extensions: [".foo"] },
             })
-            expect(documents[0]?.info.lsp).toEqual({
-              typescript: { disabled: true },
-              custom: { command: ["custom-lsp"], extensions: [".foo"] },
-            })
             expect(documents[0]?.info.attachments).toEqual({
               image: { auto_resize: false, max_width: 1200, max_height: 900, max_base64_bytes: 1048576 },
             })
@@ -428,6 +423,36 @@ describe("Config", () => {
               "opencode-helicone-session",
               { package: "@my-org/audit-plugin", options: { endpoint: "https://audit.example.com" } },
             ])
+          }).pipe(Effect.provide(testLayer(tmp.path)))
+        }),
+      ),
+    ),
+  )
+
+  it.live("ignores unknown top-level keys such as the removed lsp field", () =>
+    Effect.acquireRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ).pipe(
+      Effect.flatMap((tmp) =>
+        Effect.gen(function* () {
+          yield* Effect.promise(() =>
+            fs.writeFile(
+              path.join(tmp.path, "novaclaw.json"),
+              JSON.stringify({
+                model: "anthropic/claude",
+                lsp: { typescript: { disabled: true } },
+              }),
+            ),
+          )
+
+          return yield* Effect.gen(function* () {
+            const config = yield* Config.Service
+            const documents = (yield* config.entries()).filter((entry) => entry.type === "document")
+
+            expect(documents).toHaveLength(1)
+            expect(documents[0]?.info.model).toBe("anthropic/claude")
+            expect(documents[0]?.info).not.toHaveProperty("lsp")
           }).pipe(Effect.provide(testLayer(tmp.path)))
         }),
       ),

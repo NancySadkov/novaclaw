@@ -142,7 +142,6 @@ const scenarios: Scenario[] = [
   http.protected.get("/command", "command.list").json(200, array, "status"),
   http.protected.get("/agent", "app.agents").json(200, array, "status"),
   http.protected.get("/skill", "app.skills").json(200, array, "status"),
-  http.protected.get("/lsp", "lsp.status").json(200, array),
   http.protected.get("/formatter", "formatter.status").json(200, array),
   http.protected.get("/config", "config.get").json(200, undefined, "status"),
   http.protected
@@ -353,11 +352,6 @@ const scenarios: Scenario[] = [
       path: `/find/file?${new URLSearchParams({ query: "hello", dirs: "false" })}`,
       headers: ctx.headers(),
     }))
-    .json(200, array),
-  http.protected
-    .get("/find/symbol", "find.symbols")
-    .seeded((ctx) => ctx.file("hello.ts", "export const hello = 1\n"))
-    .at((ctx) => ({ path: `/find/symbol?${new URLSearchParams({ query: "hello" })}`, headers: ctx.headers() }))
     .json(200, array),
   http.protected
     .get("/event", "event.stream")

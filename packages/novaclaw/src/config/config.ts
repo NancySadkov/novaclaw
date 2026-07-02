@@ -53,11 +53,12 @@ function mergeConfigConcatArrays(target: Info, source: Info): Info {
 function normalizeLoadedConfig(data: unknown) {
   if (!isRecord(data)) return data
   const copy = { ...data }
-  const hadLegacy = "theme" in copy || "keybinds" in copy || "tui" in copy
+  const hadLegacy = "theme" in copy || "keybinds" in copy || "tui" in copy || "lsp" in copy
   if (!hadLegacy) return copy
   delete copy.theme
   delete copy.keybinds
   delete copy.tui
+  delete copy.lsp
   return copy
 }
 

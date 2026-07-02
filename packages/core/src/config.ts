@@ -16,7 +16,6 @@ import { ConfigCompaction } from "./config/compaction"
 import { ConfigCommand } from "./config/command"
 import { ConfigExperimental } from "./config/experimental"
 import { ConfigFormatter } from "./config/formatter"
-import { ConfigLSP } from "./config/lsp"
 import { ConfigMCP } from "./config/mcp"
 import { ConfigPlugin } from "./config/plugin"
 import { ConfigProvider } from "./config/provider"
@@ -71,9 +70,6 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   }),
   formatter: ConfigFormatter.Info.pipe(Schema.optional).annotate({
     description: "Enable built-in formatters or configure formatter overrides",
-  }),
-  lsp: ConfigLSP.Info.pipe(Schema.optional).annotate({
-    description: "Enable built-in language servers or configure server overrides",
   }),
   attachments: ConfigAttachments.Info.pipe(Schema.optional).annotate({
     description: "Attachment processing configuration",

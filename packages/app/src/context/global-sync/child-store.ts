@@ -185,7 +185,6 @@ export function createChildStoreManager(input: {
 
           const pathQuery = useQuery(() => input.queryOptions.path(key))
           const mcpQuery = useQuery(() => ({ ...input.queryOptions.mcp(key), enabled: mcpEnabled() }))
-          const lspQuery = useQuery(() => input.queryOptions.lsp(key))
           const providerQuery = useQuery(() => input.queryOptions.providers(key))
 
           const child = createStore<State>({
@@ -226,12 +225,6 @@ export function createChildStoreManager(input: {
             },
             get mcp() {
               return mcpQuery.isLoading ? {} : (mcpQuery.data ?? {})
-            },
-            get lsp_ready() {
-              return !lspQuery.isLoading
-            },
-            get lsp() {
-              return lspQuery.isLoading ? [] : (lspQuery.data ?? [])
             },
             vcs: vcsStore.value,
             limit: 5,

@@ -278,7 +278,6 @@ export const dict = {
   "dialog.mcp.description": "{{enabled}} od {{total}} omogućeno",
   "dialog.mcp.empty": "Nema konfigurisnih MCP-ova",
 
-  "dialog.lsp.empty": "LSP-ovi se automatski otkrivaju prema tipu datoteke",
   "dialog.plugins.empty": "Plugini su konfigurisani u novaclaw.json",
 
   "mcp.status.connected": "povezano",
@@ -546,7 +545,6 @@ export const dict = {
   "status.popover.ariaLabel": "Konfiguracije servera",
   "status.popover.tab.servers": "Serveri",
   "status.popover.tab.mcp": "MCP",
-  "status.popover.tab.lsp": "LSP",
   "status.popover.tab.plugins": "Plugini",
   "status.popover.action.manageServers": "Upravljaj serverima",
 
@@ -562,8 +560,6 @@ export const dict = {
   "session.share.copy.copied": "Kopirano",
   "session.share.copy.copyLink": "Kopiraj link",
 
-  "lsp.tooltip.none": "Nema LSP servera",
-  "lsp.label.connected": "{{count}} LSP",
 
   "prompt.loading": "Učitavanje upita...",
   "terminal.loading": "Učitavanje terminala...",
@@ -785,8 +781,6 @@ export const dict = {
   "settings.permissions.tool.task.description": "Pokretanje pod-agenta",
   "settings.permissions.tool.skill.title": "Vještina",
   "settings.permissions.tool.skill.description": "Učitaj vještinu po nazivu",
-  "settings.permissions.tool.lsp.title": "LSP",
-  "settings.permissions.tool.lsp.description": "Pokreni upite jezičnog servera",
   "settings.permissions.tool.todowrite.title": "Ažuriranje liste zadataka",
   "settings.permissions.tool.todowrite.description": "Ažuriraj listu zadataka",
   "settings.permissions.tool.webfetch.title": "Web preuzimanje",

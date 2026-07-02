@@ -23,7 +23,7 @@ function client(directory: string) {
 
 describe("v1 SDK runtime smoke", () => {
   test("session.list reaches the server and returns 200", async () => {
-    await using tmp = await tmpdir({ git: true, config: { formatter: false, lsp: false } })
+    await using tmp = await tmpdir({ git: true, config: { formatter: false } })
     const sdk = client(tmp.path)
     const result = await sdk.session.list()
     expect(result.error).toBeUndefined()
@@ -31,7 +31,7 @@ describe("v1 SDK runtime smoke", () => {
   })
 
   test("path.get reaches the server and returns 200", async () => {
-    await using tmp = await tmpdir({ git: true, config: { formatter: false, lsp: false } })
+    await using tmp = await tmpdir({ git: true, config: { formatter: false } })
     const sdk = client(tmp.path)
     const result = await sdk.path.get()
     expect(result.error).toBeUndefined()
@@ -39,7 +39,7 @@ describe("v1 SDK runtime smoke", () => {
   })
 
   test("config.get reaches the server and returns 200", async () => {
-    await using tmp = await tmpdir({ git: true, config: { formatter: false, lsp: false } })
+    await using tmp = await tmpdir({ git: true, config: { formatter: false } })
     const sdk = client(tmp.path)
     const result = await sdk.config.get()
     expect(result.error).toBeUndefined()
@@ -47,7 +47,7 @@ describe("v1 SDK runtime smoke", () => {
   })
 
   test("session 404: result-tuple path returns the error body", async () => {
-    await using tmp = await tmpdir({ git: true, config: { formatter: false, lsp: false } })
+    await using tmp = await tmpdir({ git: true, config: { formatter: false } })
     const sdk = client(tmp.path)
     const result = await sdk.session.get({ path: { id: "ses_no_such" } as never })
     expect(result.error).toBeDefined()

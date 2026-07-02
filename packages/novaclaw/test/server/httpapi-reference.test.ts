@@ -17,7 +17,6 @@ describe("reference HttpApi", () => {
     await using tmp = await tmpdir({
       config: {
         formatter: false,
-        lsp: false,
         references: {
           docs: "./docs",
           effect: { repository: "Effect-TS/effect", branch: "main" },

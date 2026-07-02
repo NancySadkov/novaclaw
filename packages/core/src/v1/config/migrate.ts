@@ -47,7 +47,6 @@ export function migrate(info: typeof ConfigV1.Info.Type) {
     snapshots: info.snapshot,
     watcher: info.watcher,
     formatter: info.formatter,
-    lsp: info.lsp,
     attachments: info.attachment,
     tool_output: info.tool_output,
     mcp: mcp(info),

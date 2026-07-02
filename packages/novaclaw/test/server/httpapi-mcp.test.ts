@@ -177,7 +177,6 @@ describe("mcp HttpApi", () => {
     {
       config: {
         formatter: false,
-        lsp: false,
         mcp: {
           demo: {
             type: "local",

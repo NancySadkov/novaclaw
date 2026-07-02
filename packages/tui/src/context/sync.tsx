@@ -9,7 +9,6 @@ import type {
   Command,
   PermissionRequest,
   QuestionRequest,
-  LspStatus,
   McpStatus,
   McpResource,
   FormatterStatus,
@@ -94,7 +93,6 @@ export const {
       part: {
         [messageID: string]: Part[]
       }
-      lsp: LspStatus[]
       mcp: {
         [key: string]: McpStatus
       }
@@ -128,7 +126,6 @@ export const {
       todo: {},
       message: {},
       part: {},
-      lsp: [],
       mcp: {},
       mcp_resource: {},
       formatter: [],
@@ -413,12 +410,6 @@ export const {
           break
         }
 
-        case "lsp.updated": {
-          const workspace = project.workspace.current()
-          void sdk.client.lsp.status({ workspace }).then((x) => setStore("lsp", x.data ?? []))
-          break
-        }
-
         case "vcs.branch.updated": {
           if (workspace === project.workspace.current()) {
             setStore("vcs", { branch: event.properties.branch })
@@ -504,7 +495,6 @@ export const {
             ...(args.continue ? [] : [sessionListPromise.then((sessions) => setStore("session", reconcile(sessions)))]),
             consoleStatePromise.then((consoleState) => setStore("console_state", reconcile(consoleState))),
             sdk.client.command.list({ workspace }).then((x) => setStore("command", reconcile(x.data ?? []))),
-            sdk.client.lsp.status({ workspace }).then((x) => setStore("lsp", reconcile(x.data ?? []))),
             sdk.client.mcp.status({ workspace }).then((x) => setStore("mcp", reconcile(x.data ?? {}))),
             sdk.client.experimental.resource
               .list({ workspace })

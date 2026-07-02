@@ -276,7 +276,6 @@ export const dict = {
   "dialog.mcp.description": "{{enabled}} af {{total}} aktiveret",
   "dialog.mcp.empty": "Ingen MCP'er konfigureret",
 
-  "dialog.lsp.empty": "LSP'er registreret automatisk fra filtyper",
   "dialog.plugins.empty": "Plugins konfigureret i novaclaw.json",
 
   "mcp.status.connected": "forbundet",
@@ -541,7 +540,6 @@ export const dict = {
   "status.popover.ariaLabel": "Serverkonfigurationer",
   "status.popover.tab.servers": "Servere",
   "status.popover.tab.mcp": "MCP",
-  "status.popover.tab.lsp": "LSP",
   "status.popover.tab.plugins": "Plugins",
   "status.popover.action.manageServers": "Administrer servere",
 
@@ -559,8 +557,6 @@ export const dict = {
   "session.share.copy.copied": "Kopieret",
   "session.share.copy.copyLink": "Kopier link",
 
-  "lsp.tooltip.none": "Ingen LSP-servere",
-  "lsp.label.connected": "{{count}} LSP",
 
   "prompt.loading": "Indlæser prompt...",
   "terminal.loading": "Indlæser terminal...",
@@ -779,8 +775,6 @@ export const dict = {
   "settings.permissions.tool.task.description": "Start underagenter",
   "settings.permissions.tool.skill.title": "Færdighed",
   "settings.permissions.tool.skill.description": "Indlæs en færdighed efter navn",
-  "settings.permissions.tool.lsp.title": "LSP",
-  "settings.permissions.tool.lsp.description": "Kør sprogserverforespørgsler",
   "settings.permissions.tool.todowrite.title": "Skriv To-do",
   "settings.permissions.tool.todowrite.description": "Opdater to-do listen",
   "settings.permissions.tool.webfetch.title": "Webhentning",

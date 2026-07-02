@@ -3,7 +3,6 @@ import path from "path"
 import * as fs from "fs/promises"
 import { Cause, Effect, Exit, Layer } from "effect"
 import { ApplyPatchTool } from "../../src/tool/apply_patch"
-import { LSP } from "@/lsp/lsp"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { Format } from "../../src/format"
 import { Agent } from "../../src/agent/agent"
@@ -15,7 +14,6 @@ import { testEffect } from "../lib/effect"
 
 const it = testEffect(
   Layer.mergeAll(
-    LSP.defaultLayer,
     FSUtil.defaultLayer,
     Format.defaultLayer,
     EventV2Bridge.defaultLayer,

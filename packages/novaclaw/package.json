@@ -47,11 +47,9 @@
     "drizzle-orm": "catalog:",
     "prettier": "3.6.2",
     "typescript": "catalog:",
-    "vscode-languageserver-types": "3.17.5",
     "why-is-node-running": "3.2.2"
   },
   "dependencies": {
-    "@agentclientprotocol/sdk": "0.21.0",
     "@ai-sdk/openai-compatible": "2.0.41",
     "@ai-sdk/provider": "3.0.8",
     "@clack/prompts": "1.0.0-alpha.1",
@@ -112,7 +110,6 @@
     "tree-sitter-powershell": "0.25.10",
     "turndown": "7.2.0",
     "ulid": "catalog:",
-    "vscode-jsonrpc": "8.2.1",
     "web-tree-sitter": "0.25.10",
     "ws": "8.21.0",
     "xdg-basedir": "5.1.0",

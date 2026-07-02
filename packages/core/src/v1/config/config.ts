@@ -9,7 +9,6 @@ import { ConfigAttachmentV1 } from "./attachment"
 import { ConfigCommandV1 } from "./command"
 import { ConfigFormatterV1 } from "./formatter"
 import { ConfigLayoutV1 } from "./layout"
-import { ConfigLSPV1 } from "./lsp"
 import { ConfigMCPV1 } from "./mcp"
 import { ConfigPermissionV1 } from "./permission"
 import { ConfigPluginV1 } from "./plugin"
@@ -113,10 +112,6 @@ export const Info = Schema.Struct({
   formatter: Schema.optional(ConfigFormatterV1.Info).annotate({
     description:
       "Enable or configure formatters. Omit or set to false to disable, true to enable built-ins, or an object to enable built-ins with overrides.",
-  }),
-  lsp: Schema.optional(ConfigLSPV1.Info).annotate({
-    description:
-      "Enable or configure LSP servers. Omit or set to false to disable, true to enable built-ins, or an object to enable built-ins with overrides.",
   }),
   instructions: Schema.optional(Schema.mutable(Schema.Array(Schema.String))).annotate({
     description: "Additional instruction files or patterns to include",

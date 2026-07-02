@@ -168,7 +168,7 @@ async function openPtySocket(listener: Awaited<ReturnType<typeof startListener>>
 
 describe("HttpApi Server.listen", () => {
   testPty("serves HTTP routes and upgrades PTY websocket through Server.listen", async () => {
-    await using tmp = await tmpdir({ config: { formatter: false, lsp: false } })
+    await using tmp = await tmpdir({ config: { formatter: false } })
     const listener = await startListener()
     let stopped = false
     try {
@@ -219,7 +219,7 @@ describe("HttpApi Server.listen", () => {
   })
 
   testPty("stop(true) is safe when called concurrently and repeatedly", async () => {
-    await using tmp = await tmpdir({ git: true, config: { formatter: false, lsp: false } })
+    await using tmp = await tmpdir({ git: true, config: { formatter: false } })
     const listener = await startListener()
     let stopped = false
     try {
@@ -239,7 +239,7 @@ describe("HttpApi Server.listen", () => {
   })
 
   testPty("stop(true) can force a graceful stop already in progress", async () => {
-    await using tmp = await tmpdir({ git: true, config: { formatter: false, lsp: false } })
+    await using tmp = await tmpdir({ git: true, config: { formatter: false } })
     const listener = await startListener()
     let stopped = false
     try {
@@ -260,7 +260,7 @@ describe("HttpApi Server.listen", () => {
   })
 
   testPty("graceful stop waits for an overlapping forced stop", async () => {
-    await using tmp = await tmpdir({ git: true, config: { formatter: false, lsp: false } })
+    await using tmp = await tmpdir({ git: true, config: { formatter: false } })
     const listener = await startListener()
     let stopped = false
     try {
@@ -324,7 +324,7 @@ describe("HttpApi Server.listen", () => {
         )
         await Bun.write(
           path.join(directory, "opencode.json"),
-          JSON.stringify({ formatter: false, lsp: false, plugin: [pathToFileURL(plugin).href] }),
+          JSON.stringify({ formatter: false, plugin: [pathToFileURL(plugin).href] }),
         )
         return { initialized, completed }
       },
@@ -380,7 +380,7 @@ describe("HttpApi Server.listen", () => {
   })
 
   testPty("rejects unsafe PTY ticket mint and connect requests", async () => {
-    await using tmp = await tmpdir({ config: { formatter: false, lsp: false } })
+    await using tmp = await tmpdir({ config: { formatter: false } })
     const listener = await startListener()
     try {
       const info = await createCat(listener, tmp.path)
@@ -432,7 +432,7 @@ describe("HttpApi Server.listen", () => {
   })
 
   testPty("keeps PTY websocket tickets optional when server auth is disabled", async () => {
-    await using tmp = await tmpdir({ config: { formatter: false, lsp: false } })
+    await using tmp = await tmpdir({ config: { formatter: false } })
     const listener = await startNoAuthListener()
     try {
       const info = await createCat(listener, tmp.path)

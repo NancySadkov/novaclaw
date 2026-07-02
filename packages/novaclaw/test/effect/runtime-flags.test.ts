@@ -27,7 +27,6 @@ describe("RuntimeFlags", () => {
             NOVACLAW_AUTO_SHARE: "true",
             NOVACLAW_DISABLE_EMBEDDED_WEB_UI: "true",
             NOVACLAW_DISABLE_EXTERNAL_SKILLS: "true",
-            NOVACLAW_DISABLE_LSP_DOWNLOAD: "true",
             NOVACLAW_EXPERIMENTAL: "true",
             NOVACLAW_ENABLE_EXA: "true",
             NOVACLAW_ENABLE_PARALLEL: "true",
@@ -43,7 +42,6 @@ describe("RuntimeFlags", () => {
       expect(flags.disableDefaultPlugins).toBe(true)
       expect(flags.disableEmbeddedWebUi).toBe(true)
       expect(flags.disableExternalSkills).toBe(true)
-      expect(flags.disableLspDownload).toBe(true)
       expect(flags.disableClaudeCodePrompt).toBe(false)
       expect(flags.enableExa).toBe(true)
       expect(flags.enableParallel).toBe(true)
@@ -51,8 +49,6 @@ describe("RuntimeFlags", () => {
       expect(flags.enableQuestionTool).toBe(true)
       expect(flags.experimentalReferences).toBe(true)
       expect(flags.experimentalBackgroundSubagents).toBe(true)
-      expect(flags.experimentalLspTy).toBe(false)
-      expect(flags.experimentalLspTool).toBe(true)
       expect(flags.experimentalOxfmt).toBe(true)
       expect(flags.experimentalPlanMode).toBe(true)
       expect(flags.experimentalEventSystem).toBe(true)
@@ -61,20 +57,6 @@ describe("RuntimeFlags", () => {
       expect(flags.experimentalNativeLlm).toBe(false)
       expect(flags.experimentalWebSockets).toBe(false)
       expect(flags.client).toBe("desktop")
-    }),
-  )
-
-  it.effect("defaultLayer parses NOVACLAW_EXPERIMENTAL_LSP_TY", () =>
-    Effect.gen(function* () {
-      const flags = yield* readFlags.pipe(
-        Effect.provide(
-          fromConfig({
-            NOVACLAW_EXPERIMENTAL_LSP_TY: "true",
-          }),
-        ),
-      )
-
-      expect(flags.experimentalLspTy).toBe(true)
     }),
   )
 
@@ -109,7 +91,6 @@ describe("RuntimeFlags", () => {
       expect(flags.disableDefaultPlugins).toBe(true)
       expect(flags.disableEmbeddedWebUi).toBe(false)
       expect(flags.disableExternalSkills).toBe(false)
-      expect(flags.disableLspDownload).toBe(false)
       expect(flags.disableClaudeCodePrompt).toBe(false)
       expect(flags.disableClaudeCodeSkills).toBe(false)
       expect(flags.enableExa).toBe(false)
@@ -143,22 +124,6 @@ describe("RuntimeFlags", () => {
       const flags = yield* readFlags.pipe(Effect.provide(fromConfig({ NOVACLAW_DISABLE_EXTERNAL_SKILLS: "true" })))
 
       expect(flags.disableExternalSkills).toBe(true)
-    }),
-  )
-
-  it.effect("disableLspDownload defaults to false", () =>
-    Effect.gen(function* () {
-      const flags = yield* readFlags.pipe(Effect.provide(fromConfig({})))
-
-      expect(flags.disableLspDownload).toBe(false)
-    }),
-  )
-
-  it.effect("disableLspDownload reads NOVACLAW_DISABLE_LSP_DOWNLOAD", () =>
-    Effect.gen(function* () {
-      const flags = yield* readFlags.pipe(Effect.provide(fromConfig({ NOVACLAW_DISABLE_LSP_DOWNLOAD: "true" })))
-
-      expect(flags.disableLspDownload).toBe(true)
     }),
   )
 
@@ -321,8 +286,7 @@ describe("RuntimeFlags", () => {
               NOVACLAW_PURE: "true",
               NOVACLAW_DISABLE_DEFAULT_PLUGINS: "true",
               NOVACLAW_DISABLE_EXTERNAL_SKILLS: "true",
-              NOVACLAW_DISABLE_LSP_DOWNLOAD: "true",
-              NOVACLAW_EXPERIMENTAL: "true",
+                NOVACLAW_EXPERIMENTAL: "true",
               NOVACLAW_ENABLE_EXA: "true",
               NOVACLAW_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS: "1234",
               NOVACLAW_CLIENT: "desktop",
@@ -335,7 +299,6 @@ describe("RuntimeFlags", () => {
       expect(flags.disableDefaultPlugins).toBe(false)
       expect(flags.disableEmbeddedWebUi).toBe(false)
       expect(flags.disableExternalSkills).toBe(false)
-      expect(flags.disableLspDownload).toBe(false)
       expect(flags.disableClaudeCodePrompt).toBe(false)
       expect(flags.disableClaudeCodeSkills).toBe(false)
       expect(flags.enableExa).toBe(false)

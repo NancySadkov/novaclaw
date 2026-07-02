@@ -56,12 +56,6 @@ export const loadMcpQuery = (scope: ServerScope, directory: string, sdk: Opencod
     queryFn: () => sdk.mcp.status().then((r) => r.data ?? {}),
   })
 
-export const loadLspQuery = (scope: ServerScope, directory: string, sdk: OpencodeClient) =>
-  queryOptions({
-    queryKey: [scope, directory, "lsp"] as const,
-    queryFn: () => sdk.lsp.status().then((r) => r.data ?? []),
-  })
-
 function makeQueryOptionsApi(
   scope: ServerScope,
   serverSDK: () => OpencodeClient,
@@ -76,7 +70,6 @@ function makeQueryOptionsApi(
       loadPathQuery(scope, directory, directory === null ? serverSDK() : sdkFor(directory)),
     agents: (directory: PathKey) => loadAgentsQuery(scope, directory, sdkFor(directory)),
     mcp: (directory: PathKey) => loadMcpQuery(scope, directory, sdkFor(directory)),
-    lsp: (directory: PathKey) => loadLspQuery(scope, directory, sdkFor(directory)),
     sessions: (directory: PathKey) => ({ queryKey: [scope, directory, "loadSessions"] as const }),
   }
 }
@@ -393,9 +386,6 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
       sessionContent: false,
       permission: session.data.permission,
       vcsCache: children.vcsCache.get(key),
-      loadLsp: () => {
-        void queryClient.fetchQuery(queryOptionsApi.lsp(key))
-      },
     })
   })
 

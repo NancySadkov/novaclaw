@@ -18,7 +18,7 @@ exports[`TUI inline tool wrapping snapshots expanded tool errors under the tool 
    ✱ Glob "**/*db*" in packages/novaclaw (6 matches)
    → Read packages/novaclaw/src/storage/db.ts [offset=1, limit=130]
    → Read packages/novaclaw/src/index.ts [offset=1, limit=100]
-     No LSP server available for this file type.
+     No formatter available for this file type.
 
    ✱ Grep "export const NOVACLAW_DB|NOVACLAW_DB|NOVACLAW_DEV|Global\\.
      Path\\.data|data =" in packages/novaclaw/src (115 matches)"

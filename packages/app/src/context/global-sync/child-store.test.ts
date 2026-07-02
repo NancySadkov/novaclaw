@@ -34,7 +34,6 @@ const queryOptionsApi = {
   }),
   agents: (directory: string) => ({ queryKey: [directory, "agents"], queryFn: async () => [] }),
   mcp: (directory: string) => ({ queryKey: [directory, "mcp"], queryFn: async () => ({}) }),
-  lsp: (directory: string) => ({ queryKey: [directory, "lsp"], queryFn: async () => [] }),
   sessions: (directory: string) => ({ queryKey: [directory, "loadSessions"] as const }),
 } as unknown as QueryOptionsApi
 
@@ -59,7 +58,6 @@ beforeAll(async () => {
         get data() {
           if (options().queryKey?.[1] === "path") throw new Error("pending path data read")
           if (options().queryKey?.[1] === "mcp") return options().enabled ? { demo: { status: "disabled" } } : undefined
-          if (options().queryKey?.[1] === "lsp") return []
           if (options().queryKey?.[1] === "providers") return provider
           return undefined
         },
@@ -197,7 +195,7 @@ describe("createChildStoreManager", () => {
     try {
       if (!manager) throw new Error("manager required")
       const [store, setStore] = manager.child("/project", { bootstrap: false })
-      expect(querySingles.length - offset).toBe(4)
+      expect(querySingles.length - offset).toBe(3)
       const query = querySingles[offset + 1]
       if (!query) throw new Error("query required")
       expect(query().enabled).toBe(false)

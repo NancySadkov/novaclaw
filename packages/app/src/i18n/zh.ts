@@ -298,7 +298,6 @@ export const dict = {
   "dialog.mcp.description": "已启用 {{enabled}} / {{total}}",
   "dialog.mcp.empty": "未配置 MCPs",
 
-  "dialog.lsp.empty": "已从文件类型自动检测到 LSPs",
 
   "dialog.plugins.empty": "在 novaclaw.json 中配置的插件",
 
@@ -553,7 +552,6 @@ export const dict = {
   "status.popover.ariaLabel": "服务器配置",
   "status.popover.tab.servers": "服务器",
   "status.popover.tab.mcp": "MCP",
-  "status.popover.tab.lsp": "LSP",
   "status.popover.tab.plugins": "插件",
   "status.popover.action.manageServers": "管理服务器",
 
@@ -569,8 +567,6 @@ export const dict = {
   "session.share.copy.copied": "已复制",
   "session.share.copy.copyLink": "复制链接",
 
-  "lsp.tooltip.none": "没有 LSP 服务器",
-  "lsp.label.connected": "{{count}} LSP",
 
   "prompt.loading": "正在加载提示...",
 
@@ -787,8 +783,6 @@ export const dict = {
   "settings.permissions.tool.task.description": "启动子智能体",
   "settings.permissions.tool.skill.title": "技能",
   "settings.permissions.tool.skill.description": "按名称加载技能",
-  "settings.permissions.tool.lsp.title": "LSP",
-  "settings.permissions.tool.lsp.description": "运行语言服务器查询",
   "settings.permissions.tool.todowrite.title": "更新待办",
   "settings.permissions.tool.todowrite.description": "更新待办列表",
   "settings.permissions.tool.webfetch.title": "网页获取",

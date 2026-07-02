@@ -277,7 +277,6 @@ export const dict = {
   "dialog.mcp.description": "{{enabled}} из {{total}} включено",
   "dialog.mcp.empty": "MCP не настроены",
 
-  "dialog.lsp.empty": "LSP автоматически обнаружены по типам файлов",
   "dialog.plugins.empty": "Плагины настроены в novaclaw.json",
 
   "mcp.status.connected": "подключено",
@@ -544,7 +543,6 @@ export const dict = {
   "status.popover.ariaLabel": "Настройки серверов",
   "status.popover.tab.servers": "Серверы",
   "status.popover.tab.mcp": "MCP",
-  "status.popover.tab.lsp": "LSP",
   "status.popover.tab.plugins": "Плагины",
   "status.popover.action.manageServers": "Управлять серверами",
 
@@ -562,8 +560,6 @@ export const dict = {
   "session.share.copy.copied": "Скопировано",
   "session.share.copy.copyLink": "Копировать ссылку",
 
-  "lsp.tooltip.none": "Нет LSP серверов",
-  "lsp.label.connected": "{{count}} LSP",
 
   "prompt.loading": "Загрузка запроса...",
   "terminal.loading": "Загрузка терминала...",
@@ -787,8 +783,6 @@ export const dict = {
   "settings.permissions.tool.task.description": "Запуск подагентов",
   "settings.permissions.tool.skill.title": "Skill",
   "settings.permissions.tool.skill.description": "Загрузка навыка по имени",
-  "settings.permissions.tool.lsp.title": "LSP",
-  "settings.permissions.tool.lsp.description": "Запросы к языковому серверу",
   "settings.permissions.tool.todowrite.title": "Todo Write",
   "settings.permissions.tool.todowrite.description": "Обновление списка задач",
   "settings.permissions.tool.webfetch.title": "Web Fetch",

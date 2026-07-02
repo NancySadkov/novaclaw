@@ -28,7 +28,7 @@ function client(directory: string) {
 
 describe("v2 SDK error shape", () => {
   test("404 with NamedError body throws a real Error carrying the server message", async () => {
-    await using tmp = await tmpdir({ git: true, config: { formatter: false, lsp: false } })
+    await using tmp = await tmpdir({ git: true, config: { formatter: false } })
     const sdk = client(tmp.path)
 
     let caught: unknown
@@ -55,7 +55,7 @@ describe("v2 SDK error shape", () => {
     // wrapClientError extracts .data.message into Error.message. If either
     // side regresses (#26457 reverted because both layers were missing),
     // this test fails before users see (empty response body).
-    await using tmp = await tmpdir({ config: { formatter: false, lsp: false } })
+    await using tmp = await tmpdir({ config: { formatter: false } })
     const sdk = client(tmp.path)
 
     let caught: unknown

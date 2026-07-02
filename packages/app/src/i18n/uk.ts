@@ -284,7 +284,6 @@ export const dict = {
   "dialog.mcp.description": "{{enabled}} з {{total}} увімкнено",
   "dialog.mcp.empty": "MCP не налаштовано",
 
-  "dialog.lsp.empty": "LSP автоматично виявлені за типами файлів",
   "dialog.plugins.empty": "Плагіни налаштовані в novaclaw.json",
 
   "mcp.status.connected": "підключено",
@@ -598,7 +597,6 @@ export const dict = {
   "status.popover.ariaLabel": "Конфігурації серверів",
   "status.popover.tab.servers": "Сервери",
   "status.popover.tab.mcp": "MCP",
-  "status.popover.tab.lsp": "LSP",
   "status.popover.tab.plugins": "Плагіни",
   "status.popover.action.manageServers": "Керувати серверами",
 
@@ -616,8 +614,6 @@ export const dict = {
   "session.share.copy.copied": "Скопійовано",
   "session.share.copy.copyLink": "Копіювати посилання",
 
-  "lsp.tooltip.none": "Немає серверів LSP",
-  "lsp.label.connected": "{{count}} LSP",
 
   "prompt.loading": "Завантаження запиту...",
   "terminal.loading": "Завантаження термінала...",
@@ -905,8 +901,6 @@ export const dict = {
   "settings.permissions.tool.task.description": "Запуск підагентів",
   "settings.permissions.tool.skill.title": "Навичка",
   "settings.permissions.tool.skill.description": "Завантаження навички за назвою",
-  "settings.permissions.tool.lsp.title": "LSP",
-  "settings.permissions.tool.lsp.description": "Виконання запитів мовного сервера",
   "settings.permissions.tool.todowrite.title": "Todo Write",
   "settings.permissions.tool.todowrite.description": "Оновлення списку завдань",
   "settings.permissions.tool.webfetch.title": "Web Fetch",

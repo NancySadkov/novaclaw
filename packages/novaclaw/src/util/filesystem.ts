@@ -109,8 +109,8 @@ export async function mimeType(p: string): Promise<string> {
 
 /**
  * On Windows, normalize a path to its canonical casing using the filesystem.
- * This is needed because Windows paths are case-insensitive but LSP servers
- * may return paths with different casing than what we send them.
+ * This is needed because Windows paths are case-insensitive but external
+ * tools may return paths with different casing than what we send them.
  */
 export function normalizePath(p: string): string {
   if (process.platform !== "win32") return p

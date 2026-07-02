@@ -3,7 +3,6 @@ import { Effect, Layer } from "effect"
 import path from "path"
 import fs from "fs/promises"
 import { WriteTool } from "../../src/tool/write"
-import { LSP } from "@/lsp/lsp"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { EventV2Bridge } from "../../src/event-v2-bridge"
 import { Format } from "../../src/format"
@@ -32,7 +31,6 @@ afterEach(async () => {
 
 const it = testEffect(
   Layer.mergeAll(
-    LSP.defaultLayer,
     FSUtil.defaultLayer,
     EventV2Bridge.defaultLayer,
     Format.defaultLayer,
