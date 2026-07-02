@@ -77,7 +77,6 @@
     "@effect/platform-node": "catalog:",
     "@ff-labs/fff-bun": "0.9.4",
     "@modelcontextprotocol/sdk": "1.29.0",
-    "@openauthjs/openauth": "catalog:",
     "@novaclaw/llm": "workspace:*",
     "@novaclaw/plugin": "workspace:*",
     "@novaclaw/protocol": "workspace:*",
