@@ -5,15 +5,9 @@ import { Iterable, pipe } from "effect"
 import type { Accessor } from "solid-js"
 import { selectProviderCatalog } from "./provider-catalog"
 
-export const popularProviders = [
-  "openai-compatible",
-  "anthropic",
-  "github-copilot",
-  "openai",
-  "google",
-  "openrouter",
-  "vercel",
-]
+// NovaClaw bundles only the generic OpenAI-compatible provider (local vLLM / any OpenAI-compatible
+// endpoint). Users add a local endpoint via it or a custom provider; see detach-triage.md.
+export const popularProviders = ["openai-compatible"]
 const popularProviderSet = new Set(popularProviders)
 
 export function useProviders(directory?: Accessor<string | undefined>) {

@@ -111,9 +111,6 @@ export const DialogSelectModelUnpaid: Component<{ model?: ModelState }> = (props
                   <div class="w-full flex items-center gap-x-3">
                     <ProviderIcon data-slot="list-item-extra-icon" id={i.id} />
                     <span>{i.name}</span>
-                    <Show when={i.id === "anthropic"}>
-                      <div class="text-14-regular text-text-weak">{language.t("dialog.provider.anthropic.note")}</div>
-                    </Show>
                   </div>
                 )}
               </List>

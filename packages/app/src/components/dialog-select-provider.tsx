@@ -19,11 +19,6 @@ export const DialogSelectProvider: Component<{ directory?: Accessor<string | und
   const popularGroup = () => language.t("dialog.provider.group.popular")
   const otherGroup = () => language.t("dialog.provider.group.other")
   const customLabel = () => language.t("settings.providers.tag.custom")
-  const note = (id: string) => {
-    if (id === "anthropic") return language.t("dialog.provider.anthropic.note")
-    if (id === "openai") return language.t("dialog.provider.openai.note")
-    if (id.startsWith("github-copilot")) return language.t("dialog.provider.copilot.note")
-  }
 
   return (
     <Dialog title={language.t("command.provider.connect")} transition>
@@ -68,7 +63,6 @@ export const DialogSelectProvider: Component<{ directory?: Accessor<string | und
             <Show when={i.id === CUSTOM_ID}>
               <Tag>{language.t("settings.providers.tag.custom")}</Tag>
             </Show>
-            <Show when={note(i.id)}>{(value) => <div class="text-14-regular text-text-weak">{value()}</div>}</Show>
           </div>
         )}
       </List>

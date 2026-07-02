@@ -98,12 +98,6 @@ export const dict = {
   "dialog.provider.group.popular": "ยอดนิยม",
   "dialog.provider.group.other": "อื่น ๆ",
   "dialog.provider.tag.recommended": "แนะนำ",
-  "dialog.provider.anthropic.note": "เข้าถึงโมเดล Claude โดยตรง รวมถึง Pro และ Max",
-  "dialog.provider.copilot.note": "โมเดล AI สำหรับการช่วยเหลือในการเขียนโค้ดผ่าน GitHub Copilot",
-  "dialog.provider.openai.note": "โมเดล GPT สำหรับงาน AI ทั่วไปที่รวดเร็วและมีความสามารถ",
-  "dialog.provider.google.note": "โมเดล Gemini สำหรับการตอบสนองที่รวดเร็วและมีโครงสร้าง",
-  "dialog.provider.openrouter.note": "เข้าถึงโมเดลที่รองรับทั้งหมดจากผู้ให้บริการเดียว",
-  "dialog.provider.vercel.note": "การเข้าถึงโมเดล AI แบบรวมด้วยการกำหนดเส้นทางอัจฉริยะ",
 
   "dialog.model.select.title": "เลือกโมเดล",
   "dialog.model.search.placeholder": "ค้นหาโมเดล",

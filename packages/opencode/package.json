@@ -52,9 +52,6 @@
   },
   "dependencies": {
     "@agentclientprotocol/sdk": "0.21.0",
-    "@ai-sdk/anthropic": "3.0.82",
-    "@ai-sdk/google": "3.0.73",
-    "@ai-sdk/openai": "3.0.53",
     "@ai-sdk/openai-compatible": "2.0.41",
     "@ai-sdk/provider": "3.0.8",
     "@clack/prompts": "1.0.0-alpha.1",

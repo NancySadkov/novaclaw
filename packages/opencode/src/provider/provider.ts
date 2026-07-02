@@ -107,9 +107,6 @@ type BundledSDK = {
 const BUNDLED_PROVIDERS: Record<string, () => Promise<(opts: any) => BundledSDK>> = {
   // Local-first: only the OpenAI-compatible (local vLLM / BYO-endpoint) provider + a few well-known
   // onboarding providers are bundled. The other cloud SDKs were removed to shrink deps (detach-triage.md).
-  "@ai-sdk/anthropic": () => import("@ai-sdk/anthropic").then((m) => m.createAnthropic),
-  "@ai-sdk/google": () => import("@ai-sdk/google").then((m) => m.createGoogleGenerativeAI),
-  "@ai-sdk/openai": () => import("@ai-sdk/openai").then((m) => m.createOpenAI),
   "@ai-sdk/openai-compatible": () => import("@ai-sdk/openai-compatible").then((m) => m.createOpenAICompatible),
 }
 

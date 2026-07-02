@@ -98,12 +98,6 @@ export const dict = {
   "dialog.provider.group.popular": "Популярные",
   "dialog.provider.group.other": "Другие",
   "dialog.provider.tag.recommended": "Рекомендуемые",
-  "dialog.provider.anthropic.note": "Прямой доступ к моделям Claude, включая Pro и Max",
-  "dialog.provider.copilot.note": "ИИ-модели для помощи в кодировании через GitHub Copilot",
-  "dialog.provider.openai.note": "Модели GPT для быстрых и мощных задач общего ИИ",
-  "dialog.provider.google.note": "Модели Gemini для быстрых и структурированных ответов",
-  "dialog.provider.openrouter.note": "Доступ ко всем поддерживаемым моделям через одного провайдера",
-  "dialog.provider.vercel.note": "Единый доступ к ИИ-моделям с умной маршрутизацией",
 
   "dialog.model.select.title": "Выбрать модель",
   "dialog.model.search.placeholder": "Поиск моделей",

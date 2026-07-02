@@ -18,14 +18,8 @@ import "./settings-v2.css"
 type ProviderSource = "env" | "api" | "config" | "custom"
 type ProviderItem = ReturnType<ReturnType<typeof useProviders>["connected"]>[number]
 
-const PROVIDER_NOTES = [
-  { match: (id: string) => id === "anthropic", key: "dialog.provider.anthropic.note" },
-  { match: (id: string) => id.startsWith("github-copilot"), key: "dialog.provider.copilot.note" },
-  { match: (id: string) => id === "openai", key: "dialog.provider.openai.note" },
-  { match: (id: string) => id === "google", key: "dialog.provider.google.note" },
-  { match: (id: string) => id === "openrouter", key: "dialog.provider.openrouter.note" },
-  { match: (id: string) => id === "vercel", key: "dialog.provider.vercel.note" },
-] as const
+// No bundled provider ships a note now (only the generic openai-compatible + dynamic remain).
+const PROVIDER_NOTES: { match: (id: string) => boolean; key: string }[] = []
 
 const PROVIDER_ICON_SIZE = 16
 
