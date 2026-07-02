@@ -53,8 +53,8 @@ import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { ModelV2 } from "@novaclaw/core/model"
 
-export function webSearchEnabled(providerID: ProviderV2.ID, flags = { exa: false, parallel: false }) {
-  return providerID === ProviderV2.ID.opencode || flags.exa || flags.parallel
+export function webSearchEnabled(_providerID: ProviderV2.ID, flags = { exa: false, parallel: false }) {
+  return flags.exa || flags.parallel
 }
 
 type TaskDef = Tool.InferDef<typeof TaskTool>
