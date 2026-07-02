@@ -10,6 +10,8 @@ import {
 } from "./config-resolve"
 
 const DEFAULTS: EffectiveConfig = {
+  type: "interactive",
+  priority: 0,
   permissionMode: "ask",
   permissionRules: [],
   introspection: false,
@@ -145,4 +147,46 @@ describe("resolveSessionConfig — the effectful parentID walk", () => {
         child: { id: "child", parentID: "root", systemPromptOverride: "child prompt" },
       }).systemPromptOverride,
     ).toBe("child prompt"))
+})
+
+describe("resolveConfig — thread type + priority (K1)", () => {
+  test("defaults: interactive at priority 0", () => {
+    const resolved = resolveConfig(DEFAULTS, [])
+    expect(resolved.type).toBe("interactive")
+    expect(resolved.priority).toBe(0)
+  })
+
+  test("a session's own type/priority override the defaults", () => {
+    const resolved = resolveConfig(DEFAULTS, [{ type: "goal-oriented", priority: 5 }])
+    expect(resolved.type).toBe("goal-oriented")
+    expect(resolved.priority).toBe(5)
+  })
+
+  test("a child inherits the parent's type/priority when it defines none", () => {
+    const resolved = resolveConfig(DEFAULTS, [{ type: "auto-prompting", priority: 3 }, {}])
+    expect(resolved.type).toBe("auto-prompting")
+    expect(resolved.priority).toBe(3)
+  })
+
+  test("a child's own type/priority win over the parent's", () => {
+    const resolved = resolveConfig(DEFAULTS, [{ type: "auto-prompting", priority: 3 }, { type: "sub-agent", priority: 1 }])
+    expect(resolved.type).toBe("sub-agent")
+    expect(resolved.priority).toBe(1)
+  })
+
+  test("priority 0 on a child is a real override, not inherit", () => {
+    const resolved = resolveConfig(DEFAULTS, [{ priority: 9 }, { priority: 0 }])
+    expect(resolved.priority).toBe(0)
+  })
+
+  test("type/priority flow through the effectful walk", () => {
+    const sessions: Record<string, SessionLike> = {
+      root: { id: "root", type: "goal-oriented", priority: 7 },
+      child: { id: "child", parentID: "root" },
+    }
+    const resolved = Effect.runSync(
+      resolveSessionConfig(DEFAULTS, "child", (id) => Effect.succeed(sessions[id])),
+    )
+    expect(resolved).toMatchObject({ type: "goal-oriented", priority: 7 })
+  })
 })

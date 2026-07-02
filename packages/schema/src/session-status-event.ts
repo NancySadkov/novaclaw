@@ -29,6 +29,11 @@ export const Info = Schema.Union([
   Schema.Struct({
     type: Schema.Literal("busy"),
   }),
+  // Terminal state (K1): the session called exit(result) — done, never busy again. Lets ps/task
+  // managers show exited threads instead of inferring it from `result !== undefined`.
+  Schema.Struct({
+    type: Schema.Literal("exited"),
+  }),
 ]).annotate({ identifier: "SessionStatus" })
 export type Info = Schema.Schema.Type<typeof Info>
 

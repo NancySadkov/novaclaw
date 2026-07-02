@@ -8,6 +8,7 @@ import { Project } from "./project"
 import { DateTimeUtcFromMillis, optional, RelativePath } from "./schema"
 import { SessionEvent } from "./session-event"
 import { SessionID } from "./session-id"
+import { SessionType } from "./session-type"
 import { Revert } from "./revert"
 
 export const ID = SessionID
@@ -23,6 +24,8 @@ export const Info = Schema.Struct({
   agent: Agent.ID.pipe(optional),
   model: Model.Ref.pipe(optional),
   systemPromptOverride: Schema.String.pipe(optional),
+  type: SessionType.Info.pipe(optional),
+  priority: Schema.Finite.pipe(optional),
   result: Schema.Unknown.pipe(optional),
   cost: Schema.Finite,
   tokens: Schema.Struct({

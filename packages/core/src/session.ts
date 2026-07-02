@@ -1,7 +1,7 @@
 export * as SessionV2 from "./session"
 export * from "./session/schema"
 
-import { DateTime, Effect, Layer, Schema, Context, Stream } from "effect"
+import { DateTime, Duration, Effect, Layer, Schema, Context, Stream } from "effect"
 import { ListAnchor } from "@novaclaw/schema/session"
 import { and, asc, desc, eq, gt, like, lt, or, type SQL } from "drizzle-orm"
 import { ProjectV2 } from "./project"
@@ -82,6 +82,8 @@ type CreateInput = {
   agent?: AgentV2.ID
   model?: ModelV2.Ref
   systemPromptOverride?: string
+  type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
+  priority?: number
   location: Location.Ref
 }
 
@@ -231,6 +233,8 @@ export const createSessionRecord = (
           }
         : undefined,
       systemPromptOverride: input.systemPromptOverride,
+      type: input.type,
+      priority: input.priority,
       cost: 0,
       tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
       time: { created: now, updated: now },
@@ -444,7 +448,16 @@ export const layer = Layer.effect(
         return yield* new OperationUnavailableError({ operation: "compact" })
       }),
       wait: Effect.fn("V2Session.wait")(function* (sessionID) {
-        yield* result.get(sessionID)
+        // K1 de-stub: join on completion, same semantics as the wait TOOL — poll the session's
+        // `result` (set by exit() via the Completed event) until present. Times out after ~2
+        // minutes with the retryable unavailable error, so a client keeps waiting by re-calling.
+        const POLL_MS = 2000
+        const MAX_POLLS = 60
+        for (let i = 0; i < MAX_POLLS; i++) {
+          const session = yield* result.get(sessionID)
+          if (session.result !== undefined) return
+          yield* Effect.sleep(Duration.millis(POLL_MS))
+        }
         return yield* new OperationUnavailableError({ operation: "wait" })
       }),
       active: execution.active,

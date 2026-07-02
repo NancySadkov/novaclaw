@@ -1,6 +1,7 @@
 export * as ExitTool from "./exit"
 
 import { ToolFailure } from "@novaclaw/llm"
+import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
 import { DateTime, Effect, Layer, Schema } from "effect"
 import { makeLocationNode } from "../effect/app-node"
 import { EventV2 } from "../event"
@@ -50,6 +51,12 @@ export const layer = Layer.effectDiscard(
                 sessionID: context.sessionID,
                 timestamp,
                 result: input.result ?? "",
+              })
+              // K1: announce the terminal thread state so ps/task managers show "exited" live
+              // (the durable record is the Completed event + the session row's result).
+              yield* events.publish(SessionStatusEvent.Status, {
+                sessionID: context.sessionID,
+                status: { type: "exited" },
               })
               return { completed: true, message: "Session marked complete; result recorded." }
             }).pipe(Effect.mapError(() => new ToolFailure({ message: "Unable to mark session complete." }))),

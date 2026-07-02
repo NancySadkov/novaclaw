@@ -26,6 +26,8 @@ export function fromRow(row: typeof SessionTable.$inferSelect): SessionSchema.In
         }
       : undefined,
     systemPromptOverride: row.system_prompt_override ?? undefined,
+    type: row.type ?? undefined,
+    priority: row.priority ?? undefined,
     result: row.result ?? undefined,
     cost: row.cost,
     tokens: {

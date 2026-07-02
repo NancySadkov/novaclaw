@@ -206,6 +206,8 @@ export default {
           \`agent\` text,
           \`model\` text,
           \`system_prompt_override\` text,
+          \`type\` text,
+          \`priority\` integer,
           \`result\` text,
           \`time_created\` integer NOT NULL,
           \`time_updated\` integer NOT NULL,

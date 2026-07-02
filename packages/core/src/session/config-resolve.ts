@@ -29,6 +29,9 @@ export interface ModelRef {
   readonly variant?: string
 }
 
+/** The Vision's typed threads: how a session decides whether to keep running (K1). */
+export type SessionType = "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
+
 export interface PermissionRule {
   readonly action: string
   readonly resource: string
@@ -41,6 +44,8 @@ export interface SessionConfig {
   readonly model?: ModelRef
   readonly agent?: string
   readonly systemPromptOverride?: string
+  readonly type?: SessionType
+  readonly priority?: number
   readonly permissionMode?: PermissionMode
   readonly permissionRules?: readonly PermissionRule[]
   readonly introspection?: boolean
@@ -54,6 +59,8 @@ export interface SessionConfig {
  * mode toggles carry safe defaults. Used as the root of the resolution chain.
  */
 export const EFFECTIVE_CONFIG_DEFAULTS: EffectiveConfig = {
+  type: "interactive",
+  priority: 0,
   permissionMode: "ask",
   permissionRules: [],
   introspection: false,
@@ -66,6 +73,8 @@ export interface EffectiveConfig {
   readonly model?: ModelRef
   readonly agent?: string
   readonly systemPromptOverride?: string
+  readonly type: SessionType
+  readonly priority: number
   readonly permissionMode: PermissionMode
   readonly permissionRules: readonly PermissionRule[]
   readonly introspection: boolean
@@ -82,6 +91,8 @@ export function resolveConfig(defaults: EffectiveConfig, chain: readonly Session
   let model = defaults.model
   let agent = defaults.agent
   let systemPromptOverride = defaults.systemPromptOverride
+  let type = defaults.type
+  let priority = defaults.priority
   let introspection = defaults.introspection
   let affective = defaults.affective
   let tools = defaults.tools
@@ -93,6 +104,8 @@ export function resolveConfig(defaults: EffectiveConfig, chain: readonly Session
     if (layer.model !== undefined) model = layer.model
     if (layer.agent !== undefined) agent = layer.agent
     if (layer.systemPromptOverride !== undefined) systemPromptOverride = layer.systemPromptOverride
+    if (layer.type !== undefined) type = layer.type
+    if (layer.priority !== undefined) priority = layer.priority
     if (layer.introspection !== undefined) introspection = layer.introspection
     if (layer.affective !== undefined) affective = layer.affective
     if (layer.tools !== undefined) tools = layer.tools
@@ -103,7 +116,19 @@ export function resolveConfig(defaults: EffectiveConfig, chain: readonly Session
     }
   })
 
-  return { device, model, agent, systemPromptOverride, permissionMode, permissionRules, introspection, affective, tools }
+  return {
+    device,
+    model,
+    agent,
+    systemPromptOverride,
+    type,
+    priority,
+    permissionMode,
+    permissionRules,
+    introspection,
+    affective,
+    tools,
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -118,6 +143,8 @@ export interface SessionLike {
   readonly model?: ModelRef
   readonly agent?: string
   readonly systemPromptOverride?: string
+  readonly type?: SessionType
+  readonly priority?: number
   // permissionMode / permissionRules / introspection / affective / tools get mapped here as the
   // session schema grows to carry them (see architecture.md Phase 1 step 4).
 }
@@ -127,6 +154,8 @@ export const sessionToConfig = (session: SessionLike): SessionConfig => ({
   model: session.model,
   agent: session.agent,
   systemPromptOverride: session.systemPromptOverride,
+  type: session.type,
+  priority: session.priority,
 })
 
 /**

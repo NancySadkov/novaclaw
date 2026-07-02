@@ -133,6 +133,10 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
           agent: Agent.ID.pipe(Schema.optional),
           model: Model.Ref.pipe(Schema.optional),
           systemPromptOverride: Schema.String.pipe(Schema.optional),
+          type: Schema.Literals(["interactive", "sub-agent", "auto-prompting", "goal-oriented"]).pipe(
+            Schema.optional,
+          ),
+          priority: Schema.Finite.pipe(Schema.optional),
           location: Location.Ref.pipe(Schema.optional),
         }),
         success: Schema.Struct({ data: Session.Info }),
@@ -250,7 +254,8 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
           OpenApi.annotations({
             identifier: "v2.session.wait",
             summary: "Wait for session",
-            description: "Wait for a session agent loop to become idle.",
+            description:
+              "Block until the session completes via exit() (its result is recorded). Times out after ~2 minutes with 503 — re-call to continue waiting.",
           }),
         ),
     )

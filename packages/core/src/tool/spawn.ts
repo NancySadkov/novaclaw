@@ -79,7 +79,11 @@ export const layer = Layer.effectDiscard(
                   (error): Effect.Effect<Output> =>
                     Effect.succeed({
                       limited: true,
-                      message: `Spawn refused: the session chain is already ${error.depth} deep (max ${error.limit}). Do the sub-task in this session instead of spawning deeper.`,
+                      message: {
+                        depth: `Spawn refused: the session chain is already ${error.depth} deep (max ${error.limit}). Do the sub-task in this session instead of spawning deeper.`,
+                        children: `Spawn refused: this session already has ${error.depth} children (max ${error.limit}). Reuse or wait on existing children instead of spawning more.`,
+                        rate: `Spawn refused: ${error.depth} spawns in the last minute (max ${error.limit}). Slow down — wait on the children you already spawned.`,
+                      }[error.reason],
                     }),
                 ),
                 Effect.mapError(() => new ToolFailure({ message: "Unable to spawn child session." })),

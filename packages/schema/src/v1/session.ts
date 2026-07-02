@@ -556,6 +556,8 @@ export const SessionInfo = Schema.Struct({
   agent: optional(Schema.String),
   model: optional(SessionModel),
   systemPromptOverride: optional(Schema.String),
+  type: optional(Schema.Literals(["interactive", "sub-agent", "auto-prompting", "goal-oriented"])),
+  priority: optional(Schema.Finite),
   result: optional(Schema.Unknown),
   version: Schema.String,
   metadata: optional(Schema.Record(Schema.String, Schema.Any)),
