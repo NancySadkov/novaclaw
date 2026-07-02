@@ -21,6 +21,7 @@ const PathInfo = Schema.Struct({
   data: Schema.String,
   worktree: Schema.String,
   directory: Schema.String,
+  roots: Schema.Array(Schema.String),
 }).annotate({ identifier: "Path" })
 
 export const VcsDiffQuery = Schema.Struct({

@@ -82,6 +82,15 @@ export function useBuiltinApps(): () => HomeApp[] {
       open: comingSoon({ id: "terminal", title: "Terminal", icon: "terminal", accent: "#64748b", subtitle: "A shell, for when you want one" }),
     },
     {
+      id: "trash",
+      title: "Trash",
+      icon: "trash",
+      accent: "#ef4444",
+      subtitle: "Restore anything deleted in the last 2 days",
+      source: "builtin",
+      open: () => navigate("/trash"),
+    },
+    {
       id: "help",
       title: "Help",
       icon: "help",

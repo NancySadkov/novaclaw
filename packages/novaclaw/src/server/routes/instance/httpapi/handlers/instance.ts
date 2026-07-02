@@ -6,10 +6,31 @@ import { Global } from "@novaclaw/core/global"
 import { Vcs } from "@/project/vcs"
 import { Skill } from "@/skill"
 import { Effect } from "effect"
+import fs from "fs/promises"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
 import { ApiVcsApplyError } from "../groups/instance"
 import { markInstanceForDisposal } from "../lifecycle"
+
+// Filesystem roots for the picker / Files "jump to drive" affordance (M6). Windows probes A:–Z:
+// once per process (the drive set rarely changes; a restart re-probes); POSIX is just "/".
+let cachedRoots: Promise<string[]> | undefined
+function probeRoots(): Promise<string[]> {
+  cachedRoots ??= (async () => {
+    if (process.platform !== "win32") return ["/"]
+    const letters = Array.from({ length: 26 }, (_, i) => String.fromCharCode(65 + i))
+    const found = await Promise.all(
+      letters.map((letter) =>
+        fs.stat(`${letter}:\\`).then(
+          () => `${letter}:\\`,
+          () => undefined,
+        ),
+      ),
+    )
+    return found.filter((root): root is string => root !== undefined)
+  })()
+  return cachedRoots
+}
 
 export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance", (handlers) =>
   Effect.gen(function* () {
@@ -26,6 +47,7 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
 
     const getPath = Effect.fn("InstanceHttpApi.path")(function* () {
       const ctx = yield* InstanceState.context
+      const roots: string[] = yield* Effect.promise(() => probeRoots())
       return {
         home: Global.Path.home,
         state: Global.Path.state,
@@ -33,6 +55,7 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
         data: Global.Path.data,
         worktree: ctx.worktree,
         directory: ctx.directory,
+        roots,
       }
     })
 

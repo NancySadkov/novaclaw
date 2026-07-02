@@ -43,19 +43,28 @@ export function FilesPage() {
   const [tick, setTick] = createSignal(0)
   const [showTrash, setShowTrash] = createSignal(false)
 
-  // Resolve a starting directory: the server's known home/cwd, else ask /path (authoritative).
-  const [startDir] = createResource(ctx, async (c) => {
-    const p = c.sync.data.path
-    if (p && (p.home || p.directory)) return p.home || p.directory
+  // Resolve a starting directory + the host's filesystem roots (drives on Windows, "/" on POSIX);
+  // /path is authoritative — `roots`/`data` postdate the generated SDK type, hence the cast.
+  type PathLike = { home?: string; directory?: string; roots?: readonly string[] }
+  const [pathInfo] = createResource(ctx, async (c) => {
+    const p = c.sync.data.path as PathLike | undefined
+    if (p && (p.home || p.directory) && p.roots?.length)
+      return { start: p.home || p.directory || "", roots: p.roots }
     const got = await c.sdk.client.path
       .get()
-      .then((r) => r.data)
+      .then((r) => r.data as PathLike | undefined)
       .catch(() => undefined)
-    return got?.home || got?.directory || ""
+    return { start: got?.home || got?.directory || "", roots: got?.roots ?? [] }
   })
   createEffect(() => {
-    const s = startDir()
+    const s = pathInfo()?.start
     if (s && !dir()) setDir(s)
+  })
+  const roots = createMemo(() => pathInfo()?.roots ?? [])
+  // The root the current dir lives under (case-insensitive — Windows drive letters), "" if unknown.
+  const currentRoot = createMemo(() => {
+    const d = dir().toLowerCase()
+    return roots().find((r) => d.startsWith(r.toLowerCase())) ?? ""
   })
 
   const [entries] = createResource(
@@ -165,6 +174,19 @@ export function FilesPage() {
         <button type="button" class={btn} onClick={up} disabled={!parentDir(dir())}>
           {language.t("files.up")}
         </button>
+        <Show when={roots().length > 1}>
+          <select
+            class="rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-1.5 py-1 text-xs text-v2-text-text-muted outline-none"
+            title={language.t("files.drives")}
+            value={currentRoot()}
+            onChange={(e) => {
+              setSelected(undefined)
+              setDir(e.currentTarget.value)
+            }}
+          >
+            <For each={roots()}>{(root) => <option value={root}>{root}</option>}</For>
+          </select>
+        </Show>
         <span class="min-w-0 flex-1 truncate font-mono text-xs text-v2-text-text-faint">{dir() || "…"}</span>
         <button
           type="button"

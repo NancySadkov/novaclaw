@@ -75,6 +75,13 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
     { initialValue: undefined },
   )
   const home = createMemo(() => sync.data.path.home || fallbackPath()?.home || "")
+  // Host filesystem roots (drives on Windows) — `roots` postdates the generated SDK type, hence the
+  // cast; an older server just yields no buttons.
+  const hostRoots = createMemo(() => {
+    const fromSync = (sync.data.path as { roots?: readonly string[] }).roots
+    const fromFallback = (fallbackPath() as { roots?: readonly string[] } | undefined)?.roots
+    return fromSync ?? fromFallback ?? []
+  })
   const start = createMemo(
     () =>
       props.start ||
@@ -305,6 +312,15 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
             <ButtonV2 size="small" variant="ghost" onClick={() => void navigate(pickerParent(root()))}>
               {language.t("dialog.directory.parent")}
             </ButtonV2>
+            <Show when={hostRoots().length > 1}>
+              <For each={hostRoots()}>
+                {(hostRoot) => (
+                  <ButtonV2 size="small" variant="ghost" onClick={() => void navigate(hostRoot)}>
+                    {hostRoot.replace(/\\$/, "")}
+                  </ButtonV2>
+                )}
+              </For>
+            </Show>
           </div>
           <Show when={suggestionsOpen() && currentSuggestions().length > 0}>
             <div id="directory-picker-v2-suggestions" role="listbox" class="directory-picker-v2-suggestions">

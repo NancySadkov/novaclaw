@@ -65,6 +65,7 @@ import { NewHome, LegacyHome } from "@/pages/home"
 import { HomeScreen } from "@/pages/home-screen/home-screen"
 import { FilesPage } from "@/pages/files"
 import { NotesPage } from "@/pages/notes"
+import { TrashPage } from "@/pages/trash"
 
 const NewSession = lazy(() => import("@/pages/new-session"))
 
@@ -606,6 +607,7 @@ function Routes() {
         <Route path="/chats" component={NewHome} />
         <Route path="/files" component={FilesPage} />
         <Route path="/notes" component={NotesPage} />
+        <Route path="/trash" component={TrashPage} />
         <Route path="/:dir/session/:id" component={LegacyTargetSessionRoute} />
       </Show>
       <Route path="/new-session" component={DraftRoute} />
