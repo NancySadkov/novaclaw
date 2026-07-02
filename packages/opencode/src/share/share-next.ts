@@ -20,7 +20,12 @@ import { ProviderV2 } from "@novaclaw/core/provider"
 import { ModelV2 } from "@novaclaw/core/model"
 import { EventV2 } from "@novaclaw/core/event"
 
-const disabled = process.env["OPENCODE_DISABLE_SHARE"] === "true" || process.env["OPENCODE_DISABLE_SHARE"] === "1"
+// NovaClaw has no hosted share backend and never uploads session data to any external service.
+// Session sharing is hard-disabled here — this kills the egress at the source (no request is sent,
+// so nothing leaves the machine, not even a failed POST). The full share-feature removal (module +
+// httpapi endpoints + generated SDK + app UI) is a follow-up that needs an SDK regen + build; see
+// detach-triage.md. Typed `boolean` so the disabled guards below aren't flagged as unreachable code.
+const disabled: boolean = true
 
 export type Api = {
   create: string
@@ -207,7 +212,7 @@ export const layer = Layer.effect(
       const headers: Record<string, string> = {}
       const active = yield* account.active()
       if (Option.isNone(active) || !active.value.active_org_id) {
-        const baseUrl = (yield* cfg.get()).enterprise?.url ?? "https://opncd.ai"
+        const baseUrl = (yield* cfg.get()).enterprise?.url ?? ""
         return { headers, api: legacyApi, baseUrl } satisfies Req
       }
 
