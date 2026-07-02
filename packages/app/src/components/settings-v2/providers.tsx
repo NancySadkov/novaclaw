@@ -143,7 +143,7 @@ export const SettingsProvidersV2: Component = () => {
               const jsonc = generateConfigTemplate(cfg)
               const api = (window as any).api
               if (!api?.saveFilePicker || !api?.writeFile) return
-              const path = await api.saveFilePicker({ title: "Export opencode.jsonc", defaultPath: "opencode.jsonc" })
+              const path = await api.saveFilePicker({ title: "Export novaclaw.jsonc", defaultPath: "novaclaw.jsonc" })
               if (!path) return
               await api.writeFile(path, jsonc)
               showToast({ variant: "success", icon: "circle-check", title: "Config exported", description: path })
@@ -153,7 +153,7 @@ export const SettingsProvidersV2: Component = () => {
             onClick={async () => {
               const api = (window as any).api
               if (!api?.openFilePicker || !api?.readPickedFile) return
-              const result = await api.openFilePicker({ title: "Import opencode.jsonc", extensions: ["jsonc", "json"] })
+              const result = await api.openFilePicker({ title: "Import novaclaw.jsonc", extensions: ["jsonc", "json"] })
               if (!result?.files?.length) return
               const buf = await api.readPickedFile(result.token, result.files[0].path)
               const content = new TextDecoder().decode(buf)
@@ -163,7 +163,7 @@ export const SettingsProvidersV2: Component = () => {
                 return
               }
               // Persist via the server (updateGlobal patch-merges into the global
-              // opencode.jsonc and refetches the config query). A bare set() is a
+              // novaclaw.jsonc and refetches the config query). A bare set() is a
               // no-op here: globalStore.config is a getter over the config query.
               const ok = await serverSync()
                 .updateConfig(parsed as unknown as Config)
