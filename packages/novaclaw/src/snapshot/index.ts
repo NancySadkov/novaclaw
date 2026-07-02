@@ -1,4 +1,5 @@
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
+import { ChangesetBudget } from "@novaclaw/core/changeset-budget"
 import { Cause, Duration, Effect, Layer, Schedule, Schema, Semaphore, Context } from "effect"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { formatPatch, structuredPatch } from "diff"
@@ -736,21 +737,59 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
               const patch = (file: string, before: string, after: string) =>
                 formatPatch(structuredPatch(file, file, before, after, "", "", { context: Number.MAX_SAFE_INTEGER }))
 
-              for (let i = 0; i < rows.length; i += step) {
-                const run = rows.slice(i, i + step)
-                const text = yield* load(run)
+              // 1G: this is the DISPLAY diff (summary.diffs -> session_diff -> one review row
+              // per entry), so both halves of the changeset budget apply. Patch COST: past the
+              // files/bytes budget, stop loading content and emit omitted-patch rows (nothing
+              // vanishes). LIST length: past MAX_LISTED_FILES, aggregate the tail into ONE
+              // synthetic row so a 5000-file change can't freeze the renderer or bloat the
+              // message row. Revert is unaffected — it restores from snapshots, not this list.
+              const listed = rows.slice(0, ChangesetBudget.MAX_LISTED_FILES)
+              const omittedRows = rows.slice(ChangesetBudget.MAX_LISTED_FILES)
+              let computed = 0
+              let bytes = 0
+
+              for (let i = 0; i < listed.length; i += step) {
+                const run = listed.slice(i, i + step)
+                const within = ChangesetBudget.withinBudget({ files: computed, bytes })
+                const text = within ? yield* load(run) : undefined
 
                 for (const row of run) {
+                  if (!ChangesetBudget.withinBudget({ files: computed, bytes })) {
+                    result.push({
+                      file: row.file,
+                      patch: ChangesetBudget.omittedPatch(ChangesetBudget.exceededBy({ files: computed, bytes })),
+                      additions: row.additions,
+                      deletions: row.deletions,
+                      status: row.status,
+                    })
+                    continue
+                  }
                   const hit = text?.get(row.file) ?? { before: "", after: "" }
                   const [before, after] = row.binary ? ["", ""] : text ? [hit.before, hit.after] : yield* show(row)
+                  const filePatch = row.binary ? "" : patch(row.file, before, after)
                   result.push({
                     file: row.file,
-                    patch: row.binary ? "" : patch(row.file, before, after),
+                    patch: filePatch,
                     additions: row.additions,
                     deletions: row.deletions,
                     status: row.status,
                   })
+                  computed++
+                  bytes += Buffer.byteLength(filePatch, "utf8")
                 }
+              }
+
+              if (omittedRows.length) {
+                result.push({
+                  file: ChangesetBudget.truncatedListLabel(omittedRows.length),
+                  patch: ChangesetBudget.truncatedListPatch(rows.length, listed.length),
+                  additions: omittedRows.reduce((sum, row) => sum + row.additions, 0),
+                  deletions: omittedRows.reduce((sum, row) => sum + row.deletions, 0),
+                  status: "modified",
+                })
+                yield* Effect.logWarning(
+                  `Snapshot.diffFull: ${ChangesetBudget.summary(rows.length, computed, bytes)}`,
+                )
               }
 
               return result

@@ -34,3 +34,14 @@ describe("summary", () => {
     expect(s).toContain("4700 more")
   })
 })
+
+describe("list cap (1G)", () => {
+  test("truncatedListLabel names the omitted count", () =>
+    expect(ChangesetBudget.truncatedListLabel(4500)).toBe("(+4500 more changed files)"))
+  test("truncatedListPatch reports shown/total and reassures about revert", () => {
+    const patch = ChangesetBudget.truncatedListPatch(5000, 500)
+    expect(patch).toContain("500 of 5000")
+    expect(patch).toContain("4500")
+    expect(patch).toContain("Revert is unaffected")
+  })
+})

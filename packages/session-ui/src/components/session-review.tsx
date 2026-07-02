@@ -13,7 +13,7 @@ import { useFileComponent } from "@novaclaw/ui/context/file"
 import { useI18n } from "@novaclaw/ui/context/i18n"
 import { getDirectory, getFilename } from "@novaclaw/core/util/path"
 import { checksum } from "@novaclaw/core/util/encode"
-import { createEffect, createMemo, For, Match, onCleanup, Show, Switch, untrack, type JSX } from "solid-js"
+import { createEffect, createMemo, createSignal, For, Match, onCleanup, Show, Switch, untrack, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
 import { type FileContent, type SnapshotFileDiff, type VcsFileDiff } from "@novaclaw/sdk/v2"
 import { PreloadMultiFileDiffResult } from "@pierre/diffs/ssr"
@@ -26,6 +26,8 @@ import type { LineCommentEditorProps } from "./line-comment"
 import { normalize, text, type ViewDiff } from "./session-diff"
 
 const MAX_DIFF_CHANGED_LINES = 500
+// 1G: cap the rendered file rows (not the data) — thousands of accordion rows freeze the renderer.
+const MAX_REVIEW_LIST_ROWS = 200
 const REVIEW_MOUNT_MARGIN = 300
 
 export type SessionReviewDiffStyle = "unified" | "split"
@@ -186,6 +188,13 @@ export const SessionReview = (props: SessionReviewProps) => {
     Object.fromEntries(list(props.diffs).map((diff) => [diff.file, { ...normalize(diff), preloaded: diff.preloaded }])),
   )
   const files = createMemo(() => props.diffs.map((diff) => diff.file!))
+  // 1G: one accordion row per file — thousands of rows freeze the renderer. Cap the RENDERED
+  // list and let the user opt in to the rest (per-file diff content stays viewport-gated).
+  const [showAllFiles, setShowAllFiles] = createSignal(false)
+  const visibleFiles = createMemo(() =>
+    showAllFiles() || files().length <= MAX_REVIEW_LIST_ROWS ? files() : files().slice(0, MAX_REVIEW_LIST_ROWS),
+  )
+  const hiddenFileCount = createMemo(() => files().length - visibleFiles().length)
   const grouped = createMemo(() => {
     const next = new Map<string, SessionReviewComment[]>()
     for (const comment of props.comments ?? []) {
@@ -388,7 +397,7 @@ export const SessionReview = (props: SessionReviewProps) => {
           <Show when={hasDiffs()} fallback={props.empty}>
             <div data-slot="session-review-list" class="pb-6">
               <Accordion multiple value={open()} onChange={handleChange}>
-                <For each={files()}>
+                <For each={visibleFiles()}>
                   {(file) => {
                     const diff = () => itemsMap()[file]
 
@@ -647,6 +656,16 @@ export const SessionReview = (props: SessionReviewProps) => {
                   }}
                 </For>
               </Accordion>
+              <Show when={hiddenFileCount() > 0}>
+                <div data-slot="session-review-show-all" class="flex items-center justify-center py-3">
+                  <Button size="small" variant="secondary" onClick={() => setShowAllFiles(true)}>
+                    {i18n.t("ui.sessionReview.showAll", {
+                      shown: visibleFiles().length.toLocaleString(),
+                      total: files().length.toLocaleString(),
+                    })}
+                  </Button>
+                </div>
+              </Show>
             </div>
           </Show>
         </div>

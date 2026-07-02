@@ -1,5 +1,6 @@
 import { afterEach, expect } from "bun:test"
 import { $ } from "bun"
+import { ChangesetBudget } from "@novaclaw/core/changeset-budget"
 import { CrossSpawnSpawner } from "@novaclaw/core/cross-spawn-spawner"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import fs from "fs/promises"
@@ -876,6 +877,37 @@ it.instance(
     expect(trim.additions).toBe(0)
     expect(trim.deletions).toBeGreaterThan(0)
   }),
+  { git: true },
+)
+
+it.instance(
+  "diffFull caps the listed file set and aggregates the tail (1G)",
+  withTrackedSnapshot(({ tmp, snapshot, before }) =>
+    Effect.gen(function* () {
+      const total = ChangesetBudget.MAX_LISTED_FILES + 5
+      yield* Effect.forEach(
+        Array.from({ length: total }, (_, i) => i),
+        (i) => write(`${tmp.path}/many/f${String(i).padStart(4, "0")}.txt`, `content ${i}\n`),
+        { concurrency: 16, discard: true },
+      )
+      const after = yield* snapshot.track()
+      expect(after).toBeTruthy()
+      const diffs = yield* snapshot.diffFull(before, after!)
+
+      // The LIST is capped: MAX_LISTED entries plus ONE synthetic aggregate tail row.
+      expect(diffs.length).toBe(ChangesetBudget.MAX_LISTED_FILES + 1)
+      const tail = diffs[diffs.length - 1]
+      expect(tail.file).toBe(ChangesetBudget.truncatedListLabel(total - ChangesetBudget.MAX_LISTED_FILES))
+      expect(tail.patch).toContain(`${ChangesetBudget.MAX_LISTED_FILES} of ${total}`)
+      // The tail aggregates the omitted rows' counts so totals stay truthful.
+      expect(tail.additions).toBe(total - ChangesetBudget.MAX_LISTED_FILES)
+
+      // The patch COST budget also applies: early rows carry real patches, rows past
+      // MAX_DIFF_FILES are listed with the patch omitted (nothing vanishes).
+      expect(diffs[0].patch).toContain("+content")
+      expect(diffs[ChangesetBudget.MAX_DIFF_FILES + 1].patch).toContain("(diff omitted")
+    }),
+  ),
   { git: true },
 )
 
