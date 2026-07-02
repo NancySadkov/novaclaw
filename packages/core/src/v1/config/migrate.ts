@@ -51,6 +51,7 @@ export function migrate(info: typeof ConfigV1.Info.Type) {
     tool_output: info.tool_output,
     mcp: mcp(info),
     persona: info.persona,
+    introspection: info.introspection,
     compaction: info.compaction && {
       auto: info.compaction.auto,
       prune: info.compaction.prune,

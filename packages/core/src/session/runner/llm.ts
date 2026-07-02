@@ -41,6 +41,7 @@ import { SessionRunnerModel } from "./model"
 import { createLLMEventPublisher } from "./publish-llm-event"
 import { toLLMMessages } from "./to-llm-message"
 import { detectDoomLoop, redirectMessage } from "./doom-loop"
+import { Introspection } from "./introspection"
 import { MAX_STEPS_PROMPT } from "./max-steps"
 import { ProviderRetry } from "./provider-retry"
 import { Snapshot } from "../../snapshot"
@@ -128,6 +129,61 @@ export const layer = Layer.effect(
 
     const getContext = Effect.fn("SessionRunner.getContext")(function* (sessionID: SessionSchema.ID) {
       return yield* store.context(sessionID)
+    })
+
+    // P2 (2A/2B): the out-of-band judge call. Best-effort by design — ANY failure (judge
+    // model unreachable, resolution error, empty reply) is logged and swallowed; the judge
+    // must never break the session it watches. Returns a small text completion.
+    const introspectionConfig = Introspection.resolve(Config.latest(configEntries, "introspection"))
+    const judgeCompletion = Effect.fn("SessionRunner.introspectionJudge")(function* (
+      sessionID: SessionSchema.ID,
+      prompt: string,
+    ) {
+      const session = yield* getSession(sessionID)
+      const model = yield* models.resolve(
+        introspectionConfig.model === undefined
+          ? session
+          : {
+              ...session,
+              model: {
+                providerID: ProviderV2.ID.make(introspectionConfig.model.providerID),
+                id: ModelV2.ID.make(introspectionConfig.model.id),
+              },
+            },
+      )
+      const chunks: string[] = []
+      yield* llm
+        .stream(
+          LLM.request({
+            model,
+            messages: [Message.user(prompt)],
+            tools: [],
+            generation: { maxTokens: 512 },
+          }),
+        )
+        .pipe(
+          Stream.runForEach((event) => {
+            if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
+            return Effect.void
+          }),
+        )
+      return chunks.join("")
+    })
+
+    const introspect = Effect.fn("SessionRunner.introspect")(function* (sessionID: SessionSchema.ID) {
+      const excerpt = Introspection.judgeExcerpt(yield* getContext(sessionID))
+      if (!excerpt) return
+      const verdict = yield* judgeCompletion(sessionID, Introspection.judgePrompt(introspectionConfig.prompt, excerpt))
+      if (!Introspection.isYesVerdict(verdict)) return
+      let interjection = introspectionConfig.interjection
+      if (introspectionConfig.generateInterjection) {
+        const generated = yield* judgeCompletion(sessionID, Introspection.generatePrompt(excerpt)).pipe(
+          Effect.orElseSucceed(() => ""),
+        )
+        if (generated.trim()) interjection = generated.trim()
+      }
+      yield* Effect.logInfo("introspection interjecting", { sessionID })
+      yield* SessionInput.steer(db, events, sessionID, interjection)
     })
     const failInterruptedTools = Effect.fn("SessionRunner.failInterruptedTools")(function* (
       sessionID: SessionSchema.ID,
@@ -468,11 +524,18 @@ export const layer = Layer.effect(
                 : [],
             )
             const looping = detectDoomLoop(calls)
-            const key = looping ? `${looping.name} ${looping.input}` : undefined
+            const key = looping ? `${looping.name}\x00${looping.input}` : undefined
             if (looping && key !== undefined && !nudged.has(key)) {
               nudged.add(key)
               yield* SessionInput.steer(db, events, input.sessionID, redirectMessage(looping))
             }
+            // P2 (2A): cadence-gated introspection judge — an out-of-band model call that
+            // asks "is this agent stuck?"; a YES steers the interjection (2B). Best-effort:
+            // never allowed to fail the drain it watches.
+            if (introspectionConfig.enabled && Introspection.shouldJudge(step, introspectionConfig.cadence))
+              yield* introspect(input.sessionID).pipe(
+                Effect.catch((cause) => Effect.logWarning("introspection judge failed", { cause })),
+              )
           }
           if (!needsContinuation) needsContinuation = yield* SessionInput.hasPending(db, input.sessionID, "steer")
         }

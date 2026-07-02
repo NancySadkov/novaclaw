@@ -16,6 +16,7 @@ import { ConfigCompaction } from "./config/compaction"
 import { ConfigCommand } from "./config/command"
 import { ConfigExperimental } from "./config/experimental"
 import { ConfigFormatter } from "./config/formatter"
+import { ConfigIntrospection } from "./config/introspection"
 import { ConfigMCP } from "./config/mcp"
 import { ConfigPersona } from "./config/persona"
 import { ConfigPlugin } from "./config/plugin"
@@ -86,6 +87,9 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   }),
   persona: ConfigPersona.Info.pipe(Schema.optional).annotate({
     description: "Persona baseline prepended to every agent's system prompt (B3)",
+  }),
+  introspection: ConfigIntrospection.Info.pipe(Schema.optional).annotate({
+    description: "Introspection mode — a judge model periodically checks whether the session is stuck (P2)",
   }),
   skills: Schema.String.pipe(Schema.Array, Schema.optional).annotate({
     description: "Additional paths or URLs to discover skills from",
