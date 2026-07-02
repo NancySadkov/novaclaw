@@ -86,12 +86,48 @@ export const LegacyStatus = Schema.Struct({
   status: Schema.Literals(["added", "deleted", "modified"]),
 }).annotate({ identifier: "File" })
 
+// FS-1b write half (M4): write/mkdir + the safe-delete trash trio. Payload paths are RELATIVE to
+// the routed directory (same contract as `path` on list/content); the handler enforces
+// FSUtil.contains so nothing escapes the browsed root.
+export const WritePayload = Schema.Struct({
+  path: Schema.String,
+  content: Schema.String,
+})
+
+export const MkdirPayload = Schema.Struct({
+  path: Schema.String,
+})
+
+export const TrashPayload = Schema.Struct({
+  path: Schema.String,
+})
+
+export const TrashRestorePayload = Schema.Struct({
+  id: Schema.String,
+})
+
+export const TrashEntry = Schema.Struct({
+  id: Schema.String,
+  originalPath: Schema.String,
+  trashedAt: Schema.Number,
+  type: Schema.Literals(["file", "directory"]),
+}).annotate({ identifier: "TrashEntry" })
+
+export const OkResult = Schema.Struct({ ok: Schema.Literal(true) })
+
+export const RestoreResult = Schema.Struct({ restoredPath: Schema.String })
+
 export const FilePaths = {
   findText: "/find",
   findFile: "/find/file",
   list: "/file",
   content: "/file/content",
   status: "/file/status",
+  write: "/file/content",
+  mkdir: "/file/mkdir",
+  trash: "/file/trash",
+  trashList: "/file/trash",
+  trashRestore: "/file/trash/restore",
 } as const
 
 export const FileApi = HttpApi.make("file")
@@ -146,6 +182,60 @@ export const FileApi = HttpApi.make("file")
             identifier: "file.status",
             summary: "Get file status",
             description: "Get the git status of all files in the project.",
+          }),
+        ),
+        HttpApiEndpoint.put("write", FilePaths.write, {
+          query: WorkspaceRoutingQuery,
+          payload: WritePayload,
+          success: described(OkResult, "File written"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "file.write",
+            summary: "Write file",
+            description: "Write text content to a file under the routed directory (parents created).",
+          }),
+        ),
+        HttpApiEndpoint.post("mkdir", FilePaths.mkdir, {
+          query: WorkspaceRoutingQuery,
+          payload: MkdirPayload,
+          success: described(OkResult, "Directory created"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "file.mkdir",
+            summary: "Create directory",
+            description: "Create a directory (recursive) under the routed directory.",
+          }),
+        ),
+        HttpApiEndpoint.post("trash", FilePaths.trash, {
+          query: WorkspaceRoutingQuery,
+          payload: TrashPayload,
+          success: described(TrashEntry, "Trashed entry"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "file.trash",
+            summary: "Trash file or directory",
+            description: "Safe-delete: move a file or directory into the dated Trash store (restorable, TTL ~2 days).",
+          }),
+        ),
+        HttpApiEndpoint.get("trashList", FilePaths.trashList, {
+          query: WorkspaceRoutingQuery,
+          success: described(Schema.Array(TrashEntry), "Trash entries"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "file.trash.list",
+            summary: "List trash",
+            description: "List trashed entries, newest first (expired entries are purged lazily).",
+          }),
+        ),
+        HttpApiEndpoint.post("trashRestore", FilePaths.trashRestore, {
+          query: WorkspaceRoutingQuery,
+          payload: TrashRestorePayload,
+          success: described(RestoreResult, "Restored path"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "file.trash.restore",
+            summary: "Restore from trash",
+            description: "Restore a trashed entry to its original path (collision-safe suffix if occupied).",
           }),
         ),
       )

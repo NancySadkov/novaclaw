@@ -13,6 +13,7 @@ import { ReadTool } from "./read"
 import { ReadToolFileSystem } from "./read-filesystem"
 import { SkillTool } from "./skill"
 import { TodoWriteTool } from "./todowrite"
+import { TrashTool } from "./trash"
 import { WebFetchTool } from "./webfetch"
 import { WebSearchTool } from "./websearch"
 import { SpawnTool } from "./spawn"
@@ -44,6 +45,7 @@ export const locationLayer = Layer.mergeAll(
   ReadTool.layer.pipe(Layer.provide(ReadToolFileSystem.layer)),
   SkillTool.layer,
   TodoWriteTool.layer,
+  TrashTool.layer,
   WebFetchTool.layer,
   WebSearchTool.layer.pipe(Layer.provide(WebSearchTool.defaultConfigLayer)),
   WriteTool.layer,
@@ -66,6 +68,7 @@ export const node = makeLocationNode({
     ReadTool.node,
     SkillTool.node,
     TodoWriteTool.node,
+    TrashTool.node,
     WebFetchTool.node,
     WebSearchTool.node,
     WriteTool.node,

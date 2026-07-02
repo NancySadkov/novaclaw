@@ -4,11 +4,13 @@ import { useGlobal } from "@/context/global"
 import { ServerConnection, useServer } from "@/context/server"
 import { useTabs } from "@/context/tabs"
 import { useLanguage } from "@/context/language"
+import { fsTrash, fsTrashList, fsTrashRestore } from "@/utils/fs-api"
 
-// The Files app (B7 v1 — plan.md M3). Browses the SERVER host's filesystem via the same V1 /file
-// endpoints the directory picker uses (sdk.client.file.list / .read, directory = any absolute host
-// path). Read-only for now: navigate folders, preview text files, and "Ask AI" which opens a
-// pre-filled chat draft (the OS spawn/chat seam). Write/delete arrive with M4 (Trash).
+// The Files app (B7 + the B8 Trash surface — plan.md M3/M4). Browses the SERVER host's filesystem
+// via the same V1 /file endpoints the directory picker uses (sdk.client.file.list / .read,
+// directory = any absolute host path); navigate folders, preview text files, "Ask AI" (opens a
+// pre-filled chat draft — the OS spawn/chat seam). Deletion is SAFE-delete only: rows trash via
+// POST /file/trash (dated store, ~2-day TTL) and the Trash panel restores — no destructive path.
 type Entry = { name: string; path: string; absolute: string; type: "file" | "directory"; ignored: boolean }
 
 // Parent of an absolute host path. Handles Windows (C:\a\b -> C:\a, C:\ stays) and POSIX (/a/b -> /a,
@@ -37,6 +39,9 @@ export function FilesPage() {
 
   const [dir, setDir] = createSignal("")
   const [selected, setSelected] = createSignal<Entry | undefined>(undefined)
+  // Bumped after every mutation (trash/restore) to refetch the listing + trash panel.
+  const [tick, setTick] = createSignal(0)
+  const [showTrash, setShowTrash] = createSignal(false)
 
   // Resolve a starting directory: the server's known home/cwd, else ask /path (authoritative).
   const [startDir] = createResource(ctx, async (c) => {
@@ -57,7 +62,7 @@ export function FilesPage() {
     () => {
       const c = ctx()
       const d = dir()
-      return c && d ? { c, d } : undefined
+      return c && d ? { c, d, t: tick() } : undefined
     },
     async ({ c, d }) => {
       const rows = await c.sdk.client.file
@@ -94,6 +99,32 @@ export function FilesPage() {
       }
     },
   )
+
+  // The Trash panel's data — global store (entries from any root), newest first; the directory
+  // param is only for request routing.
+  const [trashEntries] = createResource(
+    () => {
+      const cn = conn()
+      const d = dir()
+      return cn && d && showTrash() ? { cn, d, t: tick() } : undefined
+    },
+    ({ cn, d }) => fsTrashList(cn.http, { directory: d }).catch(() => undefined),
+  )
+
+  async function doTrash(entry: Entry) {
+    const cn = conn()
+    if (!cn || !dir()) return
+    await fsTrash(cn.http, { directory: dir(), path: entry.name }).catch(() => undefined)
+    if (selected()?.absolute === entry.absolute) setSelected(undefined)
+    setTick((t) => t + 1)
+  }
+
+  async function doRestore(id: string) {
+    const cn = conn()
+    if (!cn || !dir()) return
+    await fsTrashRestore(cn.http, { directory: dir(), id }).catch(() => undefined)
+    setTick((t) => t + 1)
+  }
 
   function open(entry: Entry) {
     if (entry.type === "directory") {
@@ -135,6 +166,15 @@ export function FilesPage() {
           {language.t("files.up")}
         </button>
         <span class="min-w-0 flex-1 truncate font-mono text-xs text-v2-text-text-faint">{dir() || "…"}</span>
+        <button
+          type="button"
+          class={btn}
+          classList={{ "bg-v2-background-bg-layer-02": showTrash() }}
+          onClick={() => setShowTrash((v) => !v)}
+          disabled={!conn() || !dir()}
+        >
+          {language.t("files.trash")}
+        </button>
         <button type="button" class={btn} onClick={() => askAI(dir())} disabled={!ctx() || !dir()}>
           {language.t("files.askAiFolder")}
         </button>
@@ -156,20 +196,34 @@ export function FilesPage() {
             >
               <For each={entries()}>
                 {(entry) => (
-                  <button
-                    type="button"
-                    class="flex w-full items-center gap-2 px-4 py-1.5 text-left text-sm hover:bg-v2-background-bg-layer-02"
+                  <div
+                    class="group flex w-full items-center hover:bg-v2-background-bg-layer-02"
                     classList={{
                       "opacity-50": entry.ignored,
                       "bg-v2-background-bg-layer-02": selected()?.absolute === entry.absolute,
                     }}
-                    onClick={() => open(entry)}
                   >
-                    <Show when={entry.type === "directory"} fallback={<span class="size-4 shrink-0" />}>
-                      <Icon name="folder" class="size-4 shrink-0 text-v2-text-text-muted" />
-                    </Show>
-                    <span class="truncate">{entry.name}</span>
-                  </button>
+                    <button
+                      type="button"
+                      class="flex min-w-0 flex-1 items-center gap-2 px-4 py-1.5 text-left text-sm"
+                      onClick={() => open(entry)}
+                    >
+                      <Show when={entry.type === "directory"} fallback={<span class="size-4 shrink-0" />}>
+                        <Icon name="folder" class="size-4 shrink-0 text-v2-text-text-muted" />
+                      </Show>
+                      <span class="truncate">{entry.name}</span>
+                    </button>
+                    {/* Hover-revealed SAFE delete — moves into the restorable Trash, never destroys. */}
+                    <button
+                      type="button"
+                      class="mr-2 hidden shrink-0 rounded p-1 text-v2-text-text-faint transition-colors hover:text-v2-state-fg-danger group-hover:block"
+                      title={language.t("files.delete")}
+                      aria-label={`${language.t("files.delete")} ${entry.name}`}
+                      onClick={() => void doTrash(entry)}
+                    >
+                      <Icon name="trash" class="size-4" />
+                    </button>
+                  </div>
                 )}
               </For>
             </Show>
@@ -177,9 +231,56 @@ export function FilesPage() {
         </div>
 
         <div class="flex w-1/2 min-w-0 flex-col">
+          <Show when={showTrash()}>
+            <div class="flex items-center gap-2 border-b border-v2-border-border-base px-4 py-2">
+              <Icon name="trash" class="size-4 shrink-0 text-v2-text-text-muted" />
+              <span class="min-w-0 flex-1 truncate text-sm font-medium">{language.t("files.trash")}</span>
+              <span class="text-xs text-v2-text-text-faint">{language.t("files.trashHint")}</span>
+            </div>
+            <div class="min-h-0 flex-1 overflow-auto py-1">
+              <Show
+                when={trashEntries()}
+                fallback={
+                  <div class="px-4 py-3 text-sm text-v2-text-text-faint">
+                    {trashEntries.loading ? language.t("files.loading") : language.t("files.trashEmpty")}
+                  </div>
+                }
+              >
+                <Show
+                  when={trashEntries()!.length}
+                  fallback={
+                    <div class="px-4 py-3 text-sm text-v2-text-text-faint">{language.t("files.trashEmpty")}</div>
+                  }
+                >
+                  <For each={trashEntries()}>
+                    {(entry) => (
+                      <div class="flex items-center gap-2 px-4 py-1.5 text-sm hover:bg-v2-background-bg-layer-02">
+                        <Show when={entry.type === "directory"} fallback={<span class="size-4 shrink-0" />}>
+                          <Icon name="folder" class="size-4 shrink-0 text-v2-text-text-muted" />
+                        </Show>
+                        <span class="min-w-0 flex-1 truncate" title={entry.originalPath}>
+                          {entry.originalPath}
+                        </span>
+                        <span class="shrink-0 text-xs text-v2-text-text-faint">
+                          {new Date(entry.trashedAt).toLocaleString()}
+                        </span>
+                        <button type="button" class={btn} onClick={() => void doRestore(entry.id)}>
+                          {language.t("files.restore")}
+                        </button>
+                      </div>
+                    )}
+                  </For>
+                </Show>
+              </Show>
+            </div>
+          </Show>
           <Show
-            when={selected()}
-            fallback={<div class="px-4 py-3 text-sm text-v2-text-text-faint">{language.t("files.selectHint")}</div>}
+            when={!showTrash() && selected()}
+            fallback={
+              <Show when={!showTrash()}>
+                <div class="px-4 py-3 text-sm text-v2-text-text-faint">{language.t("files.selectHint")}</div>
+              </Show>
+            }
           >
             <div class="flex items-center gap-2 border-b border-v2-border-border-base px-4 py-2">
               <span class="min-w-0 flex-1 truncate text-sm font-medium">{selected()!.name}</span>

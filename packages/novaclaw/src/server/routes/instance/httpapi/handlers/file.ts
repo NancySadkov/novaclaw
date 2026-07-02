@@ -5,7 +5,9 @@ import { Ripgrep } from "@novaclaw/core/ripgrep"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { Location } from "@novaclaw/core/location"
 import { AbsolutePath, RelativePath } from "@novaclaw/core/schema"
+import { Trash } from "@novaclaw/core/trash"
 import { Effect, Layer, Option } from "effect"
+import fs from "fs/promises"
 import ignore from "ignore"
 import path from "path"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
@@ -124,11 +126,58 @@ export const fileHandlers = HttpApiBuilder.group(InstanceHttpApi, "file", (handl
       return []
     })
 
+    // The write half (FS-1b/M4). Every mutating endpoint resolves against the routed directory and
+    // re-asserts FSUtil.contains — the ONLY thing preventing `path: "../../.."` writes outside the
+    // browsed root; keep the guard on any endpoint added here.
+    const resolveContained = Effect.fnUntraced(function* (relative: string) {
+      const directory = (yield* InstanceState.context).directory
+      const file = path.resolve(directory, relative)
+      if (!FSUtil.contains(directory, file)) return yield* Effect.die(new Error("Path escapes the location"))
+      return file
+    })
+
+    const write = Effect.fn("FileHttpApi.write")(function* (ctx: {
+      payload: { path: string; content: string }
+    }) {
+      const file = yield* resolveContained(ctx.payload.path)
+      yield* Effect.tryPromise(async () => {
+        await fs.mkdir(path.dirname(file), { recursive: true })
+        await fs.writeFile(file, ctx.payload.content, "utf8")
+      }).pipe(Effect.orDie)
+      return { ok: true as const }
+    })
+
+    const mkdir = Effect.fn("FileHttpApi.mkdir")(function* (ctx: { payload: { path: string } }) {
+      const dir = yield* resolveContained(ctx.payload.path)
+      yield* Effect.tryPromise(() => fs.mkdir(dir, { recursive: true })).pipe(Effect.orDie)
+      return { ok: true as const }
+    })
+
+    const trash = Effect.fn("FileHttpApi.trash")(function* (ctx: { payload: { path: string } }) {
+      const target = yield* resolveContained(ctx.payload.path)
+      return yield* Effect.tryPromise(() => Trash.trashPath(target)).pipe(Effect.orDie)
+    })
+
+    // The trash store is GLOBAL (one store, entries from any root) — `directory` is only for routing.
+    const trashList = Effect.fn("FileHttpApi.trashList")(function* () {
+      return yield* Effect.tryPromise(() => Trash.listTrash()).pipe(Effect.orDie)
+    })
+
+    const trashRestore = Effect.fn("FileHttpApi.trashRestore")(function* (ctx: { payload: { id: string } }) {
+      const restoredPath = yield* Effect.tryPromise(() => Trash.restore(ctx.payload.id)).pipe(Effect.orDie)
+      return { restoredPath }
+    })
+
     return handlers
       .handle("findText", findText)
       .handle("findFile", findFile)
       .handle("list", list)
       .handle("content", content)
       .handle("status", status)
+      .handle("write", write)
+      .handle("mkdir", mkdir)
+      .handle("trash", trash)
+      .handle("trashList", trashList)
+      .handle("trashRestore", trashRestore)
   }),
 ).pipe(Layer.provide(locationServiceMapLayer))
