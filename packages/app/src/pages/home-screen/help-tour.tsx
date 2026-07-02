@@ -65,7 +65,7 @@ export const HelpTour: Component = () => {
   const last = () => i() === STEPS.length - 1
 
   return (
-    <Dialog size="large">
+    <Dialog size="content">
       <div class="flex flex-col items-center gap-5 px-8 py-10 min-w-[24rem] max-w-[30rem] text-center">
         <div
           class="flex items-center justify-center size-[4.5rem] rounded-[1.375rem] shadow-[var(--v2-elevation-floating)] ring-1 ring-white/15"
@@ -79,7 +79,9 @@ export const HelpTour: Component = () => {
         >
           <Icon name={step().icon as ComponentProps<typeof Icon>["name"]} size="2xl" />
         </div>
-        <div class="flex flex-col gap-2">
+        {/* min-h fits the tallest step so the card keeps ONE size across the tour — the Next
+            button must not hop under the cursor between steps. */}
+        <div class="flex flex-col gap-2 min-h-[8rem]">
           <span class="text-[17px] font-semibold text-v2-text-text-base">{step().title}</span>
           <span class="text-sm text-v2-text-text-muted leading-relaxed">{step().body}</span>
         </div>

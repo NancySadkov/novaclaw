@@ -170,6 +170,22 @@
     height: 480px;
   }
 
+  /* Content-hugging card: the box shrink-wraps its children in both axes and centers them —
+     no fixed-box dead zones (the tour/placeholder class of dialog). Children own their width
+     bounds (e.g. min-w/max-w utility classes). */
+  &[data-size="content"] [data-slot="dialog-container"] {
+    width: fit-content;
+    height: auto;
+    max-width: min(calc(100vw - 32px), 640px);
+    max-height: calc(100vh - 92px);
+    align-items: center;
+
+    [data-slot="dialog-content"] {
+      min-height: 0;
+      width: fit-content;
+    }
+  }
+
   &[data-size="x-large"] [data-slot="dialog-container"] {
     width: min(calc(100vw - 32px), 980px);
     height: min(calc(100vh - 92px), 600px);

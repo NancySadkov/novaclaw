@@ -20,7 +20,7 @@ export const AppPlaceholder: Component<{
   const accent = () => props.accent ?? "#8b5cf6"
 
   return (
-    <Dialog size="large">
+    <Dialog size="content">
       <div class="flex flex-col items-center gap-5 px-10 py-12 min-w-[24rem] max-w-[30rem] text-center">
         <Show when={props.icon}>
           <div

@@ -3,7 +3,9 @@ import { type ComponentProps, type JSXElement, type ParentProps, Show, children,
 import "./dialog-v2.css"
 
 export interface DialogProps extends ParentProps {
-  size?: "normal" | "large" | "x-large"
+  /** "content" hugs the children in BOTH axes and centers them (tour/placeholder-style cards);
+   *  the other sizes are fixed boxes. `fit` only relaxes height and keeps the fixed width. */
+  size?: "normal" | "large" | "x-large" | "content"
   variant?: "default" | "settings"
   class?: ComponentProps<"div">["class"]
   classList?: ComponentProps<"div">["classList"]
