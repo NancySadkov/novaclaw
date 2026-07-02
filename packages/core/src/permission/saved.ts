@@ -23,6 +23,8 @@ export const AddInput = Schema.Struct({
   projectID: ProjectV2.ID,
   action: Schema.String,
   resources: Schema.Array(Schema.String),
+  /** 1K: persistent denies. Omitted = "allow" (legacy rows have no effect column). */
+  effect: Schema.optional(Schema.Literals(["allow", "deny"])),
 }).annotate({ identifier: "PermissionSaved.AddInput" })
 export type AddInput = typeof AddInput.Type
 
@@ -47,7 +49,13 @@ export const layer = Layer.effect(
         .all()
         .pipe(Effect.orDie)
       return rows.map(
-        (row): Info => ({ id: row.id, projectID: row.project_id, action: row.action, resource: row.resource }),
+        (row): Info => ({
+          id: row.id,
+          projectID: row.project_id,
+          action: row.action,
+          resource: row.resource,
+          effect: row.effect ?? "allow",
+        }),
       )
     })
 
@@ -61,9 +69,14 @@ export const layer = Layer.effect(
             project_id: input.projectID,
             action: input.action,
             resource,
+            effect: input.effect ?? "allow",
           })),
         )
-        .onConflictDoNothing()
+        // A re-save with a different verdict REPLACES the old grant (last decision wins).
+        .onConflictDoUpdate({
+          target: [PermissionTable.project_id, PermissionTable.action, PermissionTable.resource],
+          set: { effect: input.effect ?? "allow" },
+        })
         .run()
         .pipe(Effect.orDie)
     })

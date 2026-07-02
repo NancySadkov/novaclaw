@@ -84,6 +84,7 @@ type CreateInput = {
   systemPromptOverride?: string
   type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
   priority?: number
+  permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
   location: Location.Ref
 }
 
@@ -235,6 +236,7 @@ export const createSessionRecord = (
       systemPromptOverride: input.systemPromptOverride,
       type: input.type,
       priority: input.priority,
+      permissionMode: input.permissionMode,
       cost: 0,
       tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
       time: { created: now, updated: now },

@@ -137,6 +137,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
             Schema.optional,
           ),
           priority: Schema.Finite.pipe(Schema.optional),
+          permissionMode: Schema.Literals(["plan", "ask", "surgical", "bypass", "yolo"]).pipe(Schema.optional),
           location: Location.Ref.pipe(Schema.optional),
         }),
         success: Schema.Struct({ data: Session.Info }),

@@ -9,6 +9,7 @@ import { AgentV2 } from "./agent"
 import { SessionV2 } from "./session"
 import { SessionStore } from "./session/store"
 import { Wildcard } from "./util/wildcard"
+import { EFFECTIVE_CONFIG_DEFAULTS, MODE_RULES, resolveSessionConfig, type PermissionMode } from "./session/config-resolve"
 import { PermissionSaved } from "./permission/saved"
 
 export { Effect, Rule, Ruleset } from "@novaclaw/schema/permission"
@@ -93,6 +94,43 @@ export function denialMessage(error: unknown): string | undefined {
   return undefined
 }
 
+export type ReplyVerdict = "allow" | "deny"
+export type ReplyScope = "once" | "file" | "always"
+
+/** 1K: normalize the six verdict-scope replies (+ the legacy trio) into {verdict, scope}. */
+export function normalizeReply(reply: Reply): { verdict: ReplyVerdict; scope: ReplyScope } {
+  switch (reply) {
+    case "once":
+    case "allow-once":
+      return { verdict: "allow", scope: "once" }
+    case "always":
+    case "allow-always":
+      return { verdict: "allow", scope: "always" }
+    case "reject":
+    case "deny-once":
+      return { verdict: "deny", scope: "once" }
+    case "allow-file":
+      return { verdict: "allow", scope: "file" }
+    case "deny-file":
+      return { verdict: "deny", scope: "file" }
+    case "deny-always":
+      return { verdict: "deny", scope: "always" }
+  }
+}
+
+/**
+ * 1K: the resources a reply persists. `file` scope saves the request's CONCRETE resources (this
+ * file only); `always` saves the request's broad `save` patterns; `once` persists nothing.
+ */
+export function savedResources(
+  request: { readonly resources: readonly string[]; readonly save?: readonly string[] },
+  scope: ReplyScope,
+): readonly string[] {
+  if (scope === "once") return []
+  if (scope === "file") return request.resources
+  return request.save ?? []
+}
+
 export function evaluate(action: string, resource: string, ...rulesets: Permission.Ruleset[]): Permission.Rule {
   return (
     rulesets
@@ -150,7 +188,7 @@ export const layer = Layer.effect(
 
     const savedRules = EffectRuntime.fnUntraced(function* () {
       return (yield* saved.list({ projectID: location.project.id })).map(
-        (item): Permission.Rule => ({ action: item.action, resource: item.resource, effect: "allow" }),
+        (item): Permission.Rule => ({ action: item.action, resource: item.resource, effect: item.effect ?? "allow" }),
       )
     })
 
@@ -172,8 +210,22 @@ export const layer = Layer.effect(
       return rules.filter((rule) => Wildcard.match(input.action, rule.action))
     }
 
+    const sessionMode = EffectRuntime.fnUntraced(function* (sessionID: SessionV2.ID) {
+      const config = yield* resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, sessionID, (id) =>
+        sessions.get(id as SessionV2.ID),
+      )
+      return config.permissionMode
+    })
+
     const evaluateInput = EffectRuntime.fnUntraced(function* (input: AssertInput) {
-      const rules = yield* configured(input.sessionID, input.agent)
+      // 1K: the session's resolved permission MODE contributes a rule overlay. Appended after the
+      // agent's configured rules (last-match-wins) so the user's explicit mode outranks agent
+      // defaults; included in the early hard-deny check so a saved allow-always can never override
+      // plan/surgical denies.
+      const mode: PermissionMode = yield* sessionMode(input.sessionID).pipe(
+        EffectRuntime.catch(() => EffectRuntime.succeed("ask" as const)),
+      )
+      const rules = [...(yield* configured(input.sessionID, input.agent)), ...MODE_RULES[mode]]
       if (denied(input, rules)) return { effect: "deny" as const, rules }
       const all = [...rules, ...(yield* savedRules())]
       const effects = input.resources.map((resource) => evaluate(input.action, resource, all).effect)
@@ -247,7 +299,18 @@ export const layer = Layer.effect(
             reply: input.reply,
           })
 
-          if (input.reply === "reject") {
+          const { verdict, scope } = normalizeReply(input.reply)
+          const persisted = savedResources(existing.request, scope)
+
+          if (verdict === "deny") {
+            // 1K: a deny can persist (file/always scope) so the same ask never comes back.
+            if (persisted.length)
+              yield* saved.add({
+                projectID: location.project.id,
+                action: existing.request.action,
+                resources: persisted,
+                effect: "deny",
+              })
             yield* Deferred.fail(
               existing.deferred,
               input.message ? new CorrectedError({ feedback: input.message }) : new RejectedError(),
@@ -266,16 +329,17 @@ export const layer = Layer.effect(
             return
           }
 
-          if (input.reply === "always" && existing.request.save?.length) {
+          if (persisted.length) {
             yield* saved.add({
               projectID: location.project.id,
               action: existing.request.action,
-              resources: existing.request.save,
+              resources: persisted,
+              effect: "allow",
             })
           }
           yield* Deferred.succeed(existing.deferred, undefined)
           pending.delete(input.requestID)
-          if (input.reply !== "always" || !existing.request.save?.length) return
+          if (!persisted.length) return
 
           const rememberedRules = yield* savedRules()
           for (const [id, item] of pending) {

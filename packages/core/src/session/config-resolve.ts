@@ -23,6 +23,44 @@ const MODE_RANK: Record<PermissionMode, number> = { plan: 0, ask: 1, surgical: 2
 export const moreRestrictive = (a: PermissionMode, b: PermissionMode): PermissionMode =>
   MODE_RANK[a] <= MODE_RANK[b] ? a : b
 
+/**
+ * 1K: the rule overlay each permission MODE contributes at evaluation time. Appended AFTER the
+ * agent's configured rules (last-match-wins), so the user's explicit mode outranks agent defaults —
+ * but scoped to the mutation/exec cluster only, so agent-level gating of non-file actions
+ * (question, plan_exit, …) is never overridden. `ask` is the identity. External-directory classes
+ * (1I) stay ask in every mode except yolo — bypass is "anything INSIDE the project".
+ * Mode denies are HARD: they participate in the early deny check, so a saved allow-always can
+ * never override plan/surgical.
+ */
+export const MODE_RULES: Record<PermissionMode, readonly PermissionRule[]> = {
+  plan: [
+    { action: "edit", resource: "*", effect: "deny" },
+    { action: "write", resource: "*", effect: "deny" },
+    { action: "create", resource: "*", effect: "deny" },
+    { action: "trash", resource: "*", effect: "deny" },
+    { action: "external_directory_write", resource: "*", effect: "deny" },
+  ],
+  ask: [],
+  // Surgical: precise edits + new files stay possible; regenerating a whole existing file is not.
+  surgical: [{ action: "write", resource: "*", effect: "deny" }],
+  bypass: [
+    { action: "edit", resource: "*", effect: "allow" },
+    { action: "write", resource: "*", effect: "allow" },
+    { action: "create", resource: "*", effect: "allow" },
+    { action: "trash", resource: "*", effect: "allow" },
+    { action: "bash", resource: "*", effect: "allow" },
+  ],
+  yolo: [
+    { action: "edit", resource: "*", effect: "allow" },
+    { action: "write", resource: "*", effect: "allow" },
+    { action: "create", resource: "*", effect: "allow" },
+    { action: "trash", resource: "*", effect: "allow" },
+    { action: "bash", resource: "*", effect: "allow" },
+    { action: "external_directory_read", resource: "*", effect: "allow" },
+    { action: "external_directory_write", resource: "*", effect: "allow" },
+  ],
+}
+
 export interface ModelRef {
   readonly providerID: string
   readonly id: string
@@ -145,7 +183,8 @@ export interface SessionLike {
   readonly systemPromptOverride?: string
   readonly type?: SessionType
   readonly priority?: number
-  // permissionMode / permissionRules / introspection / affective / tools get mapped here as the
+  readonly permissionMode?: PermissionMode
+  // permissionRules / introspection / affective / tools get mapped here as the
   // session schema grows to carry them (see architecture.md Phase 1 step 4).
 }
 
@@ -156,6 +195,7 @@ export const sessionToConfig = (session: SessionLike): SessionConfig => ({
   systemPromptOverride: session.systemPromptOverride,
   type: session.type,
   priority: session.priority,
+  permissionMode: session.permissionMode,
 })
 
 /**

@@ -16,5 +16,7 @@ export const Info = Schema.Struct({
   projectID: ProjectID,
   action: Schema.String,
   resource: Schema.String,
+  /** 1K: persistent denies. Absent on legacy rows = "allow". */
+  effect: Schema.optional(Schema.Literals(["allow", "deny"])),
 }).annotate({ identifier: "PermissionSaved.Info" })
 export interface Info extends Schema.Schema.Type<typeof Info> {}

@@ -56,6 +56,8 @@ export interface SpawnInput {
   /** Thread type for the child (defaults to "sub-agent" — a spawned session waits on its supervisor). */
   readonly type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
   readonly priority?: number
+  /** Child mode request — resolveConfig NARROWS it against the parent chain (never escalates). */
+  readonly permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
 }
 
 export interface Interface {
@@ -119,6 +121,7 @@ export const layer = Layer.effect(
             // A spawned session is a sub-agent thread unless the caller says otherwise (Vision).
             type: input.type ?? "sub-agent",
             priority: input.priority,
+            permissionMode: input.permissionMode,
             location, // the parent's location = this seam's location
           },
         )

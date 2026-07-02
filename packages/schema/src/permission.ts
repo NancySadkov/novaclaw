@@ -37,7 +37,19 @@ export const Request = Schema.Struct({
 }).annotate({ identifier: "PermissionV2.Request" })
 export interface Request extends Schema.Schema.Type<typeof Request> {}
 
-export const Reply = Schema.Literals(["once", "always", "reject"]).annotate({ identifier: "PermissionV2.Reply" })
+// 1K: six explicit verdict-scope replies (allow/deny x once/file/always). The legacy trio stays
+// as aliases: once=allow-once, always=allow-always, reject=deny-once.
+export const Reply = Schema.Literals([
+  "once",
+  "always",
+  "reject",
+  "allow-once",
+  "allow-file",
+  "allow-always",
+  "deny-once",
+  "deny-file",
+  "deny-always",
+]).annotate({ identifier: "PermissionV2.Reply" })
 export type Reply = typeof Reply.Type
 
 const Asked = define({ type: "permission.v2.asked", schema: Request.fields })

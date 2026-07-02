@@ -92,6 +92,7 @@ export default {
           \`project_id\` text NOT NULL,
           \`action\` text NOT NULL,
           \`resource\` text NOT NULL,
+          \`effect\` text,
           \`time_created\` integer NOT NULL,
           \`time_updated\` integer NOT NULL,
           CONSTRAINT \`fk_permission_project_id_project_id_fk\` FOREIGN KEY (\`project_id\`) REFERENCES \`project\`(\`id\`) ON DELETE CASCADE
@@ -208,6 +209,7 @@ export default {
           \`system_prompt_override\` text,
           \`type\` text,
           \`priority\` integer,
+          \`permission_mode\` text,
           \`result\` text,
           \`time_created\` integer NOT NULL,
           \`time_updated\` integer NOT NULL,
