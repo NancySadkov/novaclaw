@@ -1,7 +1,9 @@
 import { Agent } from "@/agent/agent"
+import { GlobalBus } from "@/bus/global"
 import { Command } from "@/command"
 import * as InstanceState from "@/effect/instance-state"
 import { Format } from "@/format"
+import { AppRegistry } from "@novaclaw/core/app-registry"
 import { Global } from "@novaclaw/core/global"
 import { Vcs } from "@/project/vcs"
 import { Skill } from "@/skill"
@@ -9,7 +11,7 @@ import { Effect } from "effect"
 import fs from "fs/promises"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
-import { ApiVcsApplyError } from "../groups/instance"
+import { ApiAppRegisterError, ApiVcsApplyError } from "../groups/instance"
 import { markInstanceForDisposal } from "../lifecycle"
 
 // Filesystem roots for the picker / Files "jump to drive" affordance (M6). Windows probes A:–Z:
@@ -111,6 +113,30 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
       return yield* format.status()
     })
 
+    const listApp = Effect.fn("InstanceHttpApi.appList")(function* () {
+      return yield* Effect.tryPromise(() => AppRegistry.listApps()).pipe(Effect.orDie)
+    })
+
+    const registerApp = Effect.fn("InstanceHttpApi.appRegister")(function* (ctx: {
+      payload: AppRegistry.SaveInput
+    }) {
+      const manifest = yield* Effect.tryPromise(() => AppRegistry.saveApp(ctx.payload)).pipe(
+        Effect.mapError(
+          (error) =>
+            new ApiAppRegisterError({
+              name: "AppRegisterError",
+              data: { message: error.cause instanceof Error ? error.cause.message : String(error.cause) },
+            }),
+        ),
+      )
+      // Same notification the agent tool emits via EventV2 — clients refetch the manifest list.
+      GlobalBus.emit("event", {
+        directory: "global",
+        payload: { type: "app.registered", properties: { id: manifest.id, title: manifest.title } },
+      })
+      return manifest
+    })
+
     return handlers
       .handle("dispose", dispose)
       .handle("path", getPath)
@@ -123,5 +149,7 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
       .handle("agent", getAgent)
       .handle("skill", getSkill)
       .handle("formatter", getFormatter)
+      .handle("appList", listApp)
+      .handle("appRegister", registerApp)
   }),
 )

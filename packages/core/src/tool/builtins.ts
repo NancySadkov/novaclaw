@@ -11,6 +11,7 @@ import { JsTool } from "./js"
 import { QuestionTool } from "./question"
 import { ReadTool } from "./read"
 import { ReadToolFileSystem } from "./read-filesystem"
+import { RegisterAppTool } from "./register-app"
 import { SkillTool } from "./skill"
 import { TodoWriteTool } from "./todowrite"
 import { TrashTool } from "./trash"
@@ -43,6 +44,7 @@ export const locationLayer = Layer.mergeAll(
   JsTool.layer,
   QuestionTool.layer,
   ReadTool.layer.pipe(Layer.provide(ReadToolFileSystem.layer)),
+  RegisterAppTool.layer,
   SkillTool.layer,
   TodoWriteTool.layer,
   TrashTool.layer,
@@ -66,6 +68,7 @@ export const node = makeLocationNode({
     JsTool.node,
     QuestionTool.node,
     ReadTool.node,
+    RegisterAppTool.node,
     SkillTool.node,
     TodoWriteTool.node,
     TrashTool.node,

@@ -24,6 +24,36 @@ const PathInfo = Schema.Struct({
   roots: Schema.Array(Schema.String),
 }).annotate({ identifier: "Path" })
 
+// The persisted home-app registry (B14). Manifests are LAUNCHERS (route/URL/prompt), not code;
+// the store is global (Global.Path.data/apps) — `directory` on these endpoints is only routing.
+const AppManifest = Schema.Struct({
+  id: Schema.String,
+  title: Schema.String,
+  icon: Schema.optional(Schema.String),
+  accent: Schema.optional(Schema.String),
+  subtitle: Schema.optional(Schema.String),
+  open: Schema.Struct({ type: Schema.Literals(["route", "url", "prompt"]), value: Schema.String }),
+  createdAt: Schema.Number,
+  updatedAt: Schema.Number,
+}).annotate({ identifier: "AppManifest" })
+
+const AppRegisterPayload = Schema.Struct({
+  id: Schema.optional(Schema.String),
+  title: Schema.String,
+  icon: Schema.optional(Schema.String),
+  accent: Schema.optional(Schema.String),
+  subtitle: Schema.optional(Schema.String),
+  open: Schema.Struct({ type: Schema.Literals(["route", "url", "prompt"]), value: Schema.String }),
+})
+
+export class ApiAppRegisterError extends Schema.ErrorClass<ApiAppRegisterError>("AppRegisterError")(
+  {
+    name: Schema.Literal("AppRegisterError"),
+    data: Schema.Struct({ message: Schema.String }),
+  },
+  { httpApiStatus: 400 },
+) {}
+
 export const VcsDiffQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,
   mode: Vcs.Mode,
@@ -53,6 +83,7 @@ export const InstancePaths = {
   agent: "/agent",
   skill: "/skill",
   formatter: "/formatter",
+  app: "/app",
 } as const
 
 export const InstanceApi = HttpApi.make("instance")
@@ -174,6 +205,28 @@ export const InstanceApi = HttpApi.make("instance")
             identifier: "formatter.status",
             summary: "Get formatter status",
             description: "Get formatter status",
+          }),
+        ),
+        HttpApiEndpoint.get("appList", InstancePaths.app, {
+          query: WorkspaceRoutingQuery,
+          success: described(Schema.Array(AppManifest), "Persisted home-app manifests"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "app.list",
+            summary: "List home apps",
+            description: "List persisted home-app manifests (agent- or user-registered launchers).",
+          }),
+        ),
+        HttpApiEndpoint.post("appRegister", InstancePaths.app, {
+          query: WorkspaceRoutingQuery,
+          payload: AppRegisterPayload,
+          success: described(AppManifest, "The persisted manifest"),
+          error: ApiAppRegisterError,
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "app.register",
+            summary: "Register a home app",
+            description: "Register (or update, by id) a home-app manifest: a launcher tile opening a route, URL, or chat prompt.",
           }),
         ),
       )

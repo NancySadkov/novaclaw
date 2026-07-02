@@ -1,6 +1,7 @@
 import { Component, createMemo, createSignal, For, onMount, Show } from "solid-js"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useBuiltinApps } from "@/apps/builtins"
+import { useManifestApps } from "@/apps/manifest-apps"
 import { registeredApps, type HomeApp } from "@/apps/registry"
 import { AppTile } from "./app-tile"
 import { HelpTour, HELP_SEEN_KEY } from "./help-tour"
@@ -23,7 +24,8 @@ function greeting(): string {
 // purple field; a greeting header + capability hint frame the grid without competing with it.
 export const HomeScreen: Component = () => {
   const builtins = useBuiltinApps()
-  const apps = createMemo<HomeApp[]>(() => [...builtins(), ...registeredApps()])
+  const manifestApps = useManifestApps()
+  const apps = createMemo<HomeApp[]>(() => [...builtins(), ...manifestApps(), ...registeredApps()])
   const pages = createMemo<HomeApp[][]>(() => {
     const all = apps()
     const out: HomeApp[][] = []

@@ -16,6 +16,7 @@ import {
   loadProjectsQuery,
   loadProvidersQuery,
 } from "./global-sync/bootstrap"
+import { loadPersistedApps } from "@/apps/persisted"
 import { createChildStoreManager } from "./global-sync/child-store"
 import { applyDirectoryEvent, applyGlobalEvent } from "./global-sync/event-reducer"
 import { estimateRootSessionTotal, loadRootSessionsWithFallback } from "./global-sync/session-load"
@@ -353,6 +354,11 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
 
     session.apply(event)
 
+    // B14: a home-app manifest was registered (agent tool -> EventV2 bridge, or POST /app ->
+    // GlobalBus) — refetch the persisted list regardless of which directory the event rode in on.
+    // (The event union in the generated SDK predates app.registered — hence the cast.)
+    if ((event.type as string) === "app.registered") void loadPersistedApps(serverSDK.server.http)
+
     if (directory === "global") {
       applyGlobalEvent({
         event,
@@ -400,19 +406,22 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
   })
 
   onMount(() => {
-    if (typeof requestAnimationFrame === "function") {
-      eventFrame = requestAnimationFrame(() => {
-        eventFrame = undefined
-        eventTimer = setTimeout(() => {
-          eventTimer = undefined
-          void serverSDK.event.start()
-        }, 0)
-      })
-    } else {
+    // rAF defers the stream past first paint — but it NEVER fires in a hidden tab (background
+    // tab, headless preview), which used to leave the event stream unstarted until the tab was
+    // focused. Fall back to a plain timeout whenever the document isn't visible.
+    const begin = () => {
       eventTimer = setTimeout(() => {
         eventTimer = undefined
         void serverSDK.event.start()
       }, 0)
+    }
+    if (typeof requestAnimationFrame === "function" && typeof document !== "undefined" && document.visibilityState === "visible") {
+      eventFrame = requestAnimationFrame(() => {
+        eventFrame = undefined
+        begin()
+      })
+    } else {
+      begin()
     }
   })
 

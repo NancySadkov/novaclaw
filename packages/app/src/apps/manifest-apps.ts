@@ -1,0 +1,55 @@
+import { createEffect, createMemo } from "solid-js"
+import { useNavigate } from "@solidjs/router"
+import { useGlobal } from "@/context/global"
+import { ServerConnection, useServer } from "@/context/server"
+import { useTabs } from "@/context/tabs"
+import { loadPersistedApps, persistedManifests, type AppManifest } from "./persisted"
+import type { HomeApp } from "./registry"
+
+// Lives apart from persisted.ts so server-sync can import the DATA module (loadPersistedApps)
+// without pulling the context hooks in — that would be an import cycle.
+
+const DEFAULT_ICON = "square-arrow-top-right"
+const DEFAULT_ACCENT = "#38bdf8"
+
+/**
+ * Persisted manifests as live HomeApps — openers bind to the calling component's scope. Also
+ * loads the manifest list whenever the focused server changes (refetch-on-event is wired in
+ * server-sync, which calls loadPersistedApps on `app.registered`).
+ */
+export function useManifestApps(): () => HomeApp[] {
+  const navigate = useNavigate()
+  const global = useGlobal()
+  const server = useServer()
+  const tabs = useTabs()
+  const conn = createMemo(() => server.current ?? global.servers.list()[0])
+
+  createEffect(() => {
+    const c = conn()
+    if (c) void loadPersistedApps(c.http)
+  })
+
+  const open = (manifest: AppManifest) => {
+    if (manifest.open.type === "route") return navigate(manifest.open.value)
+    if (manifest.open.type === "url") return void window.open(manifest.open.value, "_blank", "noopener,noreferrer")
+    const c = conn()
+    if (!c) return
+    const ctx = global.ensureServerCtx(c)
+    const directory = ctx.sync.data.path.directory || ctx.sync.data.path.home
+    if (!directory) return
+    tabs.newDraft({ server: ServerConnection.key(c), directory }, manifest.open.value)
+  }
+
+  return () =>
+    persistedManifests().map(
+      (manifest): HomeApp => ({
+        id: manifest.id,
+        title: manifest.title,
+        icon: manifest.icon || DEFAULT_ICON,
+        accent: manifest.accent || DEFAULT_ACCENT,
+        ...(manifest.subtitle ? { subtitle: manifest.subtitle } : {}),
+        source: "agent",
+        open: () => open(manifest),
+      }),
+    )
+}
