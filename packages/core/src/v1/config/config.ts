@@ -138,6 +138,19 @@ export const Info = Schema.Struct({
     description:
       "Thresholds for truncating tool output. When output exceeds either limit, the full text is written to the truncation directory and a preview is returned.",
   }),
+  persona: Schema.optional(
+    Schema.Struct({
+      enabled: Schema.optional(Schema.Boolean).annotate({
+        description: "Prepend the persona baseline to every agent's system prompt (default: true)",
+      }),
+      name: Schema.optional(Schema.String).annotate({
+        description: "Persona name substituted into the default prompt (default: Nova)",
+      }),
+      prompt: Schema.optional(Schema.String).annotate({
+        description: "Replace the default persona prompt wholesale",
+      }),
+    }),
+  ).annotate({ description: "Persona baseline prepended to every agent's system prompt" }),
   compaction: Schema.optional(
     Schema.Struct({
       auto: Schema.optional(Schema.Boolean).annotate({

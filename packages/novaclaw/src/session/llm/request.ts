@@ -24,6 +24,7 @@ type PrepareInput = {
   readonly model: Provider.Model
   readonly agent: Agent.Info
   readonly permission?: PermissionV1.Ruleset
+  readonly persona?: string
   readonly system: string[]
   readonly messages: ModelMessage[]
   readonly small?: boolean
@@ -57,6 +58,9 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
   const isOpenaiOauth = input.provider.id === "openai" && input.auth?.type === "oauth"
   const system = [
     [
+      // The B3 persona baseline goes FIRST — before the agent's own prompt — so the assistant's
+      // approach survives agent/model swaps.
+      ...(input.persona ? [input.persona] : []),
       ...(input.agent.prompt ? [input.agent.prompt] : SystemPrompt.provider(input.model)),
       ...input.system,
       ...(input.user.system ? [input.user.system] : []),

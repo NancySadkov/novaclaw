@@ -17,6 +17,7 @@ import { ConfigCommand } from "./config/command"
 import { ConfigExperimental } from "./config/experimental"
 import { ConfigFormatter } from "./config/formatter"
 import { ConfigMCP } from "./config/mcp"
+import { ConfigPersona } from "./config/persona"
 import { ConfigPlugin } from "./config/plugin"
 import { ConfigProvider } from "./config/provider"
 import { ConfigReference } from "./config/reference"
@@ -82,6 +83,9 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   }),
   compaction: ConfigCompaction.Info.pipe(Schema.optional).annotate({
     description: "Conversation compaction behavior",
+  }),
+  persona: ConfigPersona.Info.pipe(Schema.optional).annotate({
+    description: "Persona baseline prepended to every agent's system prompt (B3)",
   }),
   skills: Schema.String.pipe(Schema.Array, Schema.optional).annotate({
     description: "Additional paths or URLs to discover skills from",

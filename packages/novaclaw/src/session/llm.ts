@@ -25,6 +25,9 @@ import { EffectBridge } from "@/effect/bridge"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import * as Option from "effect/Option"
 import * as OtelTracer from "@effect/opentelemetry/Tracer"
+import path from "path"
+import { Global } from "@novaclaw/core/global"
+import { Persona } from "@novaclaw/core/persona"
 import { LLMAISDK } from "./llm/ai-sdk"
 import { LLMNativeRuntime } from "./llm/native-runtime"
 import { LLMRequestPrep } from "./llm/request"
@@ -104,6 +107,10 @@ const live: Layer.Layer<
 
       const prepared = yield* LLMRequestPrep.prepare({
         ...input,
+        // The B3 persona baseline — skipped for utility (small-model) calls like titles/summaries.
+        persona: input.small
+          ? undefined
+          : Persona.resolve(cfg.persona, { notesDir: path.join(Global.Path.data, "notes") }),
         provider: item,
         auth: info,
         plugin,

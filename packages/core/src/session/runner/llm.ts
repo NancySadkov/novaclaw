@@ -9,8 +9,11 @@ import {
   type ProviderErrorEvent,
 } from "@novaclaw/llm"
 import { Cause, DateTime, Effect, FiberSet, Layer, Option, Semaphore, Stream } from "effect"
+import path from "path"
 import { AgentV2 } from "../../agent"
 import { Config } from "../../config"
+import { Global } from "../../global"
+import { Persona } from "../../persona"
 import { Database } from "../../database/database"
 import { EventV2 } from "../../event"
 import { Location } from "../../location"
@@ -109,7 +112,13 @@ export const layer = Layer.effect(
     const config = yield* Config.Service
     const snapshots = yield* Snapshot.Service
     const db = (yield* Database.Service).db
-    const compaction = SessionCompaction.make({ events, llm, config: yield* config.entries() })
+    const configEntries = yield* config.entries()
+    const compaction = SessionCompaction.make({ events, llm, config: configEntries })
+    // The B3 persona baseline: composed FIRST in the system prompt (before any per-session
+    // override or the agent's own prompt), so the assistant's approach survives model swaps.
+    const personaBaseline = Persona.resolve(Config.latest(configEntries, "persona"), {
+      notesDir: path.join(Global.Path.data, "notes"),
+    })
     const getSession = Effect.fn("SessionRunner.getSession")(function* (sessionID: SessionSchema.ID) {
       const session = yield* store.get(sessionID)
       if (!session) return yield* Effect.die(`Session not found: ${sessionID}`)
@@ -211,7 +220,7 @@ export const layer = Layer.effect(
       const request = LLM.request({
         model,
         providerOptions: { openai: { promptCacheKey } },
-        system: [config.systemPromptOverride, agent.info?.system, system.baseline]
+        system: [personaBaseline, config.systemPromptOverride, agent.info?.system, system.baseline]
           .filter((part): part is string => part !== undefined && part.length > 0)
           .map(SystemPart.make),
         messages: [...toLLMMessages(context, model), ...(isLastStep ? [Message.assistant(MAX_STEPS_PROMPT)] : [])],
