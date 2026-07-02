@@ -351,7 +351,7 @@
         "@typescript/native-preview": "catalog:",
       },
     },
-    "packages/opencode": {
+    "packages/novaclaw": {
       "name": "novaclaw",
       "version": "0.0.1",
       "bin": {
@@ -2522,7 +2522,7 @@
 
     "normalize-url": ["normalize-url@6.1.0", "", {}, "sha512-DlL+XwOy3NxAQ8xuC0okPgK46iuVNAK01YN7RueYBqqFeGsBjV9XmCAzAdgt+667bCl5kPh9EqKKDwnaPG1I7A=="],
 
-    "novaclaw": ["novaclaw@workspace:packages/opencode"],
+    "novaclaw": ["novaclaw@workspace:packages/novaclaw"],
 
     "npm-bundled": ["npm-bundled@5.0.0", "", { "dependencies": { "npm-normalize-package-bin": "^5.0.0" } }, "sha512-JLSpbzh6UUXIEoqPsYBvVNVmyrjVZ1fzEFbqxKkTJQkWBO3xFzFT+KDnSKQWwOQNbuWRwt5LSD6HOTLGIWzfrw=="],
 

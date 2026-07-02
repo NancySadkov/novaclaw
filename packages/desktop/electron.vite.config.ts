@@ -2,7 +2,7 @@ import { defineConfig } from "electron-vite"
 import appPlugin from "@novaclaw/app/vite"
 import * as fs from "node:fs/promises"
 
-const NOVACLAW_SERVER_DIST = "../opencode/dist/node"
+const NOVACLAW_SERVER_DIST = "../novaclaw/dist/node"
 
 const channel = (() => {
   const raw = process.env.NOVACLAW_CHANNEL

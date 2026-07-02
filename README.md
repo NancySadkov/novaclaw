@@ -27,7 +27,7 @@ bun install
 # desktop app:
 bun --cwd packages/desktop dev
 # server/CLI (headless):
-bun run --cwd packages/opencode --conditions=browser src/index.ts serve
+bun run --cwd packages/novaclaw --conditions=browser src/index.ts serve
 ```
 
 ## Attribution
