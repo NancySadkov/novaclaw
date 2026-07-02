@@ -2,6 +2,7 @@ export * as SessionSpawner from "./spawner"
 
 import { count, eq } from "drizzle-orm"
 import { Context, Effect, Layer, Schema } from "effect"
+import { copySessionRecipes } from "../adhoc-tools"
 import { makeLocationNode } from "../effect/app-node"
 import { Database } from "../database/database"
 import { EventV2 } from "../event"
@@ -124,6 +125,12 @@ export const layer = Layer.effect(
             permissionMode: input.permissionMode,
             location, // the parent's location = this seam's location
           },
+        )
+        // 4D: the child inherits the parent's session-DEFINED ad-hoc recipes (copy-on-spawn —
+        // the session scope is the "hand your sub-agents a tool set" channel). Best-effort:
+        // a store hiccup must never fail the spawn.
+        yield* Effect.tryPromise(() => copySessionRecipes(input.parentID, child.id)).pipe(
+          Effect.catch((cause) => Effect.logWarning("adhoc-tool copy-on-spawn failed", { cause }).pipe(Effect.as(0))),
         )
         yield* SessionInput.admit(db, events, {
           id: SessionMessage.ID.create(),

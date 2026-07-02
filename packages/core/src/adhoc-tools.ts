@@ -97,3 +97,21 @@ export async function saveSessionRecipe(sessionID: string, input: Recipe, option
   await fs.writeFile(file, JSON.stringify(next, null, 2), "utf8")
   return recipe
 }
+
+/**
+ * 4D: a spawned child inherits its parent's session-defined recipes — the session scope IS
+ * the "parent hands its sub-agents a tool set" channel. Copy-on-spawn (not shared): the child
+ * may define/override recipes without touching the parent's. No-op when the parent has none.
+ */
+export async function copySessionRecipes(
+  fromSessionID: string,
+  toSessionID: string,
+  options?: Options,
+): Promise<number> {
+  const recipes = await listSessionRecipes(fromSessionID, options)
+  if (recipes.length === 0) return 0
+  const file = sessionFile(toSessionID, options)
+  await fs.mkdir(path.dirname(file), { recursive: true })
+  await fs.writeFile(file, JSON.stringify(recipes, null, 2), "utf8")
+  return recipes.length
+}

@@ -4,6 +4,7 @@ import os from "node:os"
 import path from "node:path"
 import {
   MAX_MANUAL_CHARS,
+  copySessionRecipes,
   isValidName,
   listSessionRecipes,
   mergeRecipes,
@@ -84,5 +85,15 @@ describe("session store", () => {
   })
   test("a traversal session id throws", async () => {
     await expect(listSessionRecipes("../../evil", { root })).rejects.toThrow("Invalid session id")
+  })
+  test("copy-on-spawn: the child gets the parent's recipes, then diverges independently", async () => {
+    await saveSessionRecipe("ses_parent", recipe("weather"), { root })
+    const copied = await copySessionRecipes("ses_parent", "ses_child", { root })
+    expect(copied).toBe(1)
+    expect((await listSessionRecipes("ses_child", { root })).map((item) => item.name)).toEqual(["weather"])
+    await saveSessionRecipe("ses_child", recipe("child-only"), { root })
+    expect(await listSessionRecipes("ses_parent", { root })).toHaveLength(1)
+    expect(await copySessionRecipes("ses_empty", "ses_child2", { root })).toBe(0)
+    expect(await listSessionRecipes("ses_child2", { root })).toEqual([])
   })
 })
