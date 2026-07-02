@@ -435,7 +435,7 @@ export const SettingsGeneralV2: Component<{
           description={
             <>
               {language.t("settings.general.row.theme.description")}{" "}
-              <Link class="settings-v2-link" href="https://opencode.ai/docs/themes/">
+              <Link class="settings-v2-link" href="https://novaclaw.app/docs/themes/">
                 {language.t("common.learnMore")}
               </Link>
             </>

@@ -298,7 +298,7 @@ export const SettingsProvidersV2: Component = () => {
 }
 
 function generateConfigTemplate(current: Record<string, unknown>): string {
-  const out: Record<string, unknown> = { "$schema": "https://opencode.ai/config.json" }
+  const out: Record<string, unknown> = { "$schema": "https://novaclaw.app/config.json" }
   if (current.model) out.model = current.model
   if (current.shell) out.shell = current.shell
   if (current.default_agent) out.default_agent = current.default_agent

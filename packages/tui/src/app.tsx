@@ -802,7 +802,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
         name: "docs.open",
         title: "Open docs",
         run: () => {
-          open("https://opencode.ai/docs").catch(() => {})
+          open("https://novaclaw.app/docs").catch(() => {})
           dialog.clear()
         },
         category: "System",

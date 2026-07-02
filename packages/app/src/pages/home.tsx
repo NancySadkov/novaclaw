@@ -573,7 +573,7 @@ export function NewHome() {
           clearNotifications={clearNotifications}
           unseenCount={unseenCount}
           openSettings={openSettings}
-          openHelp={() => platform.openLink("https://opencode.ai/desktop-feedback")}
+          openHelp={() => platform.openLink("https://novaclaw.app/desktop-feedback")}
           language={language}
         />
 
