@@ -11,7 +11,7 @@
 //     → stream.ts bridges to footer API
 //       → footer.ts queues commits and patches the footer view
 //         → OpenTUI split-footer renderer writes to terminal
-import type { OpencodeClient, PermissionRequest, QuestionRequest, ToolPart } from "@novaclaw/sdk/v2"
+import type { NovaclawClient, PermissionRequest, QuestionRequest, ToolPart } from "@novaclaw/sdk/v2"
 import type { TuiConfig } from "@novaclaw/tui/config"
 
 export type RunFilePart = {
@@ -21,14 +21,14 @@ export type RunFilePart = {
   mime: string
 }
 
-type PromptModel = Parameters<OpencodeClient["session"]["prompt"]>[0]["model"]
-type PromptInput = Parameters<OpencodeClient["session"]["prompt"]>[0]
+type PromptModel = Parameters<NovaclawClient["session"]["prompt"]>[0]["model"]
+type PromptInput = Parameters<NovaclawClient["session"]["prompt"]>[0]
 
 export type RunPromptPart = NonNullable<PromptInput["parts"]>[number]
 
-export type RunCommand = NonNullable<Awaited<ReturnType<OpencodeClient["command"]["list"]>>["data"]>[number]
+export type RunCommand = NonNullable<Awaited<ReturnType<NovaclawClient["command"]["list"]>>["data"]>[number]
 
-export type RunProvider = NonNullable<Awaited<ReturnType<OpencodeClient["provider"]["list"]>>["data"]>["all"][number]
+export type RunProvider = NonNullable<Awaited<ReturnType<NovaclawClient["provider"]["list"]>>["data"]>["all"][number]
 
 export type RunPrompt = {
   messageID?: string
@@ -48,14 +48,14 @@ export type FooterQueuedPrompt = {
   prompt: RunPrompt
 }
 
-export type RunAgent = NonNullable<Awaited<ReturnType<OpencodeClient["app"]["agents"]>>["data"]>[number]
+export type RunAgent = NonNullable<Awaited<ReturnType<NovaclawClient["app"]["agents"]>>["data"]>[number]
 
-type RunResourceMap = NonNullable<Awaited<ReturnType<OpencodeClient["experimental"]["resource"]["list"]>>["data"]>
+type RunResourceMap = NonNullable<Awaited<ReturnType<NovaclawClient["experimental"]["resource"]["list"]>>["data"]>
 
 export type RunResource = RunResourceMap[string]
 
 export type RunInput = {
-  sdk: OpencodeClient
+  sdk: NovaclawClient
   directory: string
   sessionID: string
   sessionTitle?: string
@@ -280,11 +280,11 @@ export type FooterEvent =
       state: FooterSubagentState
     }
 
-export type PermissionReply = Parameters<OpencodeClient["permission"]["reply"]>[0]
+export type PermissionReply = Parameters<NovaclawClient["permission"]["reply"]>[0]
 
-export type QuestionReply = Parameters<OpencodeClient["question"]["reply"]>[0]
+export type QuestionReply = Parameters<NovaclawClient["question"]["reply"]>[0]
 
-export type QuestionReject = Parameters<OpencodeClient["question"]["reject"]>[0]
+export type QuestionReject = Parameters<NovaclawClient["question"]["reject"]>[0]
 
 export type RunTuiConfig = Pick<TuiConfig.Resolved, "keybinds" | "leader_timeout" | "diff_style">
 

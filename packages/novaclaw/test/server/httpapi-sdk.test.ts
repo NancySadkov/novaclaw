@@ -8,7 +8,7 @@ import { ChildProcessSpawner } from "effect/unstable/process"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { CrossSpawnSpawner } from "@novaclaw/core/cross-spawn-spawner"
 import { Flag } from "@novaclaw/core/flag/flag"
-import { createOpencodeClient } from "@novaclaw/sdk/v2"
+import { createNovaclawClient } from "@novaclaw/sdk/v2"
 import { validateSession } from "../../src/cli/tui/validate-session"
 import { InstanceBootstrap } from "../../src/project/bootstrap-service"
 import { InstanceStore } from "../../src/project/instance-store"
@@ -46,7 +46,7 @@ const original = {
 }
 
 type ServerPath = "default" | "raw"
-type Sdk = ReturnType<typeof createOpencodeClient>
+type Sdk = ReturnType<typeof createNovaclawClient>
 type SdkResult = { response: Response; data?: unknown; error?: unknown }
 type Captured = { status: number; data?: unknown; error?: unknown }
 type ProjectFixture = { sdk: Sdk; directory: string }
@@ -71,7 +71,7 @@ function client(
 ) {
   return serverFetch(serverPath, input).pipe(
     Effect.map((fetch) =>
-      createOpencodeClient({
+      createNovaclawClient({
         baseUrl: "http://localhost",
         directory,
         experimental_workspaceID: input?.workspaceID,
@@ -286,7 +286,7 @@ function writeStandardFiles(dir: string) {
 function writeProjectSkill(dir: string) {
   return FSUtil.Service.use((fs) =>
     fs.writeWithDirs(
-      path.join(dir, ".opencode", "skills", "project-rest-skill", "SKILL.md"),
+      path.join(dir, ".novaclaw", "skills", "project-rest-skill", "SKILL.md"),
       `---
 name: project-rest-skill
 description: A project skill visible to REST API prompts.
@@ -403,8 +403,8 @@ describe("HttpApi SDK", () => {
         expect(url.searchParams.get("workspace")).toBe(workspaceID)
         expect(url.searchParams.get("location[directory]")).toBe(directory)
         expect(url.searchParams.get("location[workspace]")).toBe(workspaceID)
-        expect(request!.headers.has("x-opencode-directory")).toBe(false)
-        expect(request!.headers.has("x-opencode-workspace")).toBe(false)
+        expect(request!.headers.has("x-novaclaw-directory")).toBe(false)
+        expect(request!.headers.has("x-novaclaw-workspace")).toBe(false)
       }),
     ),
   )

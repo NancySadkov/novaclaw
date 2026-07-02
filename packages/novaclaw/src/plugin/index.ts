@@ -7,7 +7,7 @@ import type {
   WorkspaceAdapter as PluginWorkspaceAdapter,
 } from "@novaclaw/plugin"
 import { Config } from "@/config/config"
-import { createOpencodeClient } from "@novaclaw/sdk"
+import { createNovaclawClient } from "@novaclaw/sdk"
 import { ServerAuth } from "@/server/auth"
 import { Session } from "@/session/session"
 import { NamedError } from "@novaclaw/core/util/error"
@@ -112,7 +112,7 @@ export const layer = Layer.effect(
         const { Server } = yield* Effect.promise(() => import("../server/server"))
 
         const serverUrl = Server.url
-        const client = createOpencodeClient({
+        const client = createNovaclawClient({
           baseUrl: serverUrl?.toString() ?? "http://localhost:4096",
           directory: ctx.directory,
           headers: ServerAuth.headers(),

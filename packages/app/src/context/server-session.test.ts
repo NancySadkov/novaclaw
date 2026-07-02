@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { accumDeltaKey } from "@novaclaw/session-ui/message-part-text"
 import type { retry } from "@novaclaw/core/util/retry"
-import type { Message, OpencodeClient, Part, Session } from "@novaclaw/sdk/v2/client"
+import type { Message, NovaclawClient, Part, Session } from "@novaclaw/sdk/v2/client"
 import { createServerSession } from "./server-session"
 
 const session = (id: string, parentID?: string): Session => ({
@@ -62,7 +62,7 @@ function messageClient(...responses: Array<MessageResponse | Promise<MessageResp
         return responses[index++]
       },
     },
-  } as unknown as OpencodeClient
+  } as unknown as NovaclawClient
   return Object.assign(client, {
     requests,
     requested(count: number) {
@@ -100,7 +100,7 @@ function setup(sessions: Record<string, Session>) {
       diff: async () => ({ data: [] }),
       todo: async () => ({ data: [] }),
     },
-  } as unknown as OpencodeClient
+  } as unknown as NovaclawClient
   return { get, messages, store: createServerSession(client) }
 }
 

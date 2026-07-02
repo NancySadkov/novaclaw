@@ -1,4 +1,4 @@
-import { createOpencodeClient } from "@novaclaw/sdk/v2"
+import { createNovaclawClient } from "@novaclaw/sdk/v2"
 import type { GlobalEvent } from "@novaclaw/sdk/v2"
 import { Flag } from "@novaclaw/core/flag/flag"
 import { createSimpleContext } from "./helper"
@@ -21,7 +21,7 @@ export const { use: useSDK, provider: SDKProvider } = createSimpleContext({
     let sse: AbortController | undefined
 
     function createSDK() {
-      return createOpencodeClient({
+      return createNovaclawClient({
         baseUrl: props.url,
         signal: abort.signal,
         directory: props.directory,

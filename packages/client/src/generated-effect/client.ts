@@ -60,13 +60,22 @@ const Endpoint3_0 = (raw: RawClient["server.session"]) => (input?: Endpoint3_0In
 type Endpoint3_1Request = Parameters<RawClient["server.session"]["session.create"]>[0]
 type Endpoint3_1Input = {
   readonly id?: Endpoint3_1Request["payload"]["id"]
+  readonly parentID?: Endpoint3_1Request["payload"]["parentID"]
   readonly agent?: Endpoint3_1Request["payload"]["agent"]
   readonly model?: Endpoint3_1Request["payload"]["model"]
+  readonly systemPromptOverride?: Endpoint3_1Request["payload"]["systemPromptOverride"]
   readonly location?: Endpoint3_1Request["payload"]["location"]
 }
 const Endpoint3_1 = (raw: RawClient["server.session"]) => (input?: Endpoint3_1Input) =>
   raw["session.create"]({
-    payload: { id: input?.["id"], agent: input?.["agent"], model: input?.["model"], location: input?.["location"] },
+    payload: {
+      id: input?.["id"],
+      parentID: input?.["parentID"],
+      agent: input?.["agent"],
+      model: input?.["model"],
+      systemPromptOverride: input?.["systemPromptOverride"],
+      location: input?.["location"],
+    },
   }).pipe(
     Effect.mapError(mapClientError),
     Effect.map((value) => value.data),

@@ -297,7 +297,7 @@ export function createRoutes(
       SessionV2.defaultLayer.pipe(
         Layer.provide(SessionExecutionLocal.defaultLayer),
         // V2 runner's location services, with MCP tools injected: replace core's empty
-        // ExternalToolSource node with the opencode MCP-backed one so searxng et al. appear.
+        // ExternalToolSource node with the novaclaw MCP-backed one so searxng et al. appear.
         Layer.provide(buildLocationServiceMap([[ExternalToolSource.node, McpExternalToolSource.node]])),
       ),
     ),

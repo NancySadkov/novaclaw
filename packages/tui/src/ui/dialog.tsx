@@ -5,7 +5,7 @@ import { MouseButton, Renderable, RGBA } from "@opentui/core"
 import { createStore } from "solid-js/store"
 import { useToast } from "./toast"
 import { Flag } from "@novaclaw/core/flag/flag"
-import { useBindings, useOpencodeModeStack } from "../keymap"
+import { useBindings, useNovaclawModeStack } from "../keymap"
 import { useClipboard } from "../context/clipboard"
 
 export function Dialog(
@@ -73,7 +73,7 @@ function init() {
   })
 
   const renderer = useRenderer()
-  const modeStack = useOpencodeModeStack()
+  const modeStack = useNovaclawModeStack()
 
   createEffect(() => {
     if (store.stack.length === 0) return

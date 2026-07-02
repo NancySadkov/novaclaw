@@ -1,11 +1,11 @@
-import { OpenCode } from "@novaclaw/client/effect"
+import { NovaClaw } from "@novaclaw/client/effect"
 import { PermissionSaved } from "@novaclaw/core/permission/saved"
 import { ApplicationTools } from "@novaclaw/core/tool/application-tools"
 import { createEmbeddedRoutes } from "@novaclaw/server/routes"
 import { Context, Effect, Layer, Scope } from "effect"
 import { FetchHttpClient, HttpRouter, HttpServer } from "effect/unstable/http"
 
-export const create = Effect.fn("OpenCode.create")(function* () {
+export const create = Effect.fn("NovaClaw.create")(function* () {
   const scope = yield* Scope.Scope
   const memoMap = yield* Layer.makeMemoMap
   const context = yield* Layer.buildWithMemoMap(
@@ -30,7 +30,7 @@ export const create = Effect.fn("OpenCode.create")(function* () {
   const fetch = Object.assign((input: RequestInfo | URL, init?: RequestInit) => web.handler(new Request(input, init)), {
     preconnect: () => undefined,
   }) satisfies typeof globalThis.fetch
-  const client = yield* OpenCode.make({ baseUrl: "http://opencode.local" }).pipe(
+  const client = yield* NovaClaw.make({ baseUrl: "http://novaclaw.local" }).pipe(
     Effect.provide(FetchHttpClient.layer),
     Effect.provideService(FetchHttpClient.Fetch, fetch),
   )
@@ -42,6 +42,6 @@ export const create = Effect.fn("OpenCode.create")(function* () {
 
 export type Interface = Effect.Success<ReturnType<typeof create>>
 
-export class Service extends Context.Service<Service, Interface>()("@novaclaw/sdk-next/OpenCode") {}
+export class Service extends Context.Service<Service, Interface>()("@novaclaw/sdk-next/NovaClaw") {}
 
 export const layer = Layer.effect(Service, create())

@@ -487,7 +487,7 @@ export const Terminal = (props: TerminalProps) => {
             { ptyID: id, directory },
             {
               throwOnError: false,
-              headers: { "x-opencode-ticket": "1" },
+              headers: { "x-novaclaw-ticket": "1" },
             },
           )
           .catch((err: unknown) => {

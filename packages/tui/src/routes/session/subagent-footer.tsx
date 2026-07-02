@@ -6,7 +6,7 @@ import { SplitBorder } from "../../ui/border"
 import type { AssistantMessage } from "@novaclaw/sdk/v2"
 import { Locale } from "../../util/locale"
 import { useTerminalDimensions } from "@opentui/solid"
-import { useCommandShortcut, useOpencodeKeymap } from "../../keymap"
+import { useCommandShortcut, useNovaclawKeymap } from "../../keymap"
 
 export function SubagentFooter() {
   const route = useRouteData("session")
@@ -55,7 +55,7 @@ export function SubagentFooter() {
   })
 
   const { theme } = useTheme()
-  const keymap = useOpencodeKeymap()
+  const keymap = useNovaclawKeymap()
   const parentShortcut = useCommandShortcut("session.parent")
   const previousShortcut = useCommandShortcut("session.child.previous")
   const nextShortcut = useCommandShortcut("session.child.next")

@@ -85,7 +85,7 @@ beforeAll(async () => {
   }))
 
   mock.module("@novaclaw/sdk/v2/client", () => ({
-    createOpencodeClient: (input: { directory: string }) => {
+    createNovaclawClient: (input: { directory: string }) => {
       createdClients.push(input.directory)
       return clientFor(input.directory)
     },

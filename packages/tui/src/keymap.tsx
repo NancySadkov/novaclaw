@@ -23,13 +23,13 @@ export const COMMAND_PALETTE_COMMAND = "command.palette.show"
 
 const NOVACLAW_MODE_KEY = "opencode.mode"
 
-export const OpencodeKeymapProvider = KeymapProvider
-export const useOpencodeKeymap = useKeymap
+export const NovaclawKeymapProvider = KeymapProvider
+export const useNovaclawKeymap = useKeymap
 
 export { useBindings, useKeymapSelector }
 
 export type OpenTuiKeymap = ReturnType<typeof useKeymap>
-type OpencodeModeStack = ReturnType<typeof createOpencodeModeStack>
+type NovaclawModeStack = ReturnType<typeof createNovaclawModeStack>
 type CommandSlashEntry = {
   display: string
   description?: string
@@ -44,13 +44,13 @@ type BindingLookup = {
 type FormatConfig = { keybinds: BindingLookup }
 type ResolvedKeymapConfig = FormatConfig & { leader_timeout: number }
 
-const modeStacks = new WeakMap<OpenTuiKeymap, OpencodeModeStack>()
+const modeStacks = new WeakMap<OpenTuiKeymap, NovaclawModeStack>()
 
 function isVisiblePaletteCommand(command: Command) {
   return command.hidden !== true && command.name !== COMMAND_PALETTE_COMMAND
 }
 
-export function createOpencodeModeStack(keymap: OpenTuiKeymap) {
+export function createNovaclawModeStack(keymap: OpenTuiKeymap) {
   keymap.setData(NOVACLAW_MODE_KEY, NOVACLAW_BASE_MODE)
 
   const offFields = keymap.registerLayerFields({
@@ -99,13 +99,13 @@ export function createOpencodeModeStack(keymap: OpenTuiKeymap) {
   return stackApi
 }
 
-export function useOpencodeModeStack() {
-  return getOpencodeModeStack(useOpencodeKeymap())
+export function useNovaclawModeStack() {
+  return getNovaclawModeStack(useNovaclawKeymap())
 }
 
-export function getOpencodeModeStack(keymap: OpenTuiKeymap) {
+export function getNovaclawModeStack(keymap: OpenTuiKeymap) {
   const value = modeStacks.get(keymap)
-  if (!value) throw new Error("Opencode mode stack is not registered for this keymap")
+  if (!value) throw new Error("Novaclaw mode stack is not registered for this keymap")
   return value
 }
 
@@ -211,8 +211,8 @@ export function formatKeyBindings(bindings: Parameters<typeof formatCommandBindi
   return formatCommandBindingsExtra(bindings, formatOptions(config))
 }
 
-export function registerOpencodeKeymap(keymap: OpenTuiKeymap, renderer: CliRenderer, config: ResolvedKeymapConfig) {
-  const modeStack = createOpencodeModeStack(keymap)
+export function registerNovaclawKeymap(keymap: OpenTuiKeymap, renderer: CliRenderer, config: ResolvedKeymapConfig) {
+  const modeStack = createNovaclawModeStack(keymap)
   const offCommaBindings = registerCommaBindings(keymap)
   const offAliasExpander = registerKeyAliases(keymap)
   const offBaseLayout = registerBaseLayoutFallback(keymap)
@@ -258,7 +258,7 @@ export function useCommandShortcut(command: string): Accessor<string> {
 }
 
 export function useCommandSlashes(): Accessor<readonly CommandSlashEntry[]> {
-  const keymap = useOpencodeKeymap()
+  const keymap = useNovaclawKeymap()
   const entries = useKeymapSelector((keymap: OpenTuiKeymap) =>
     keymap.getCommandEntries({
       visibility: "reachable",

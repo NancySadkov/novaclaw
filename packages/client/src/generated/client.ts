@@ -311,8 +311,10 @@ export function make(options: ClientOptions) {
             path: `/api/session`,
             body: {
               id: input?.["id"],
+              parentID: input?.["parentID"],
               agent: input?.["agent"],
               model: input?.["model"],
+              systemPromptOverride: input?.["systemPromptOverride"],
               location: input?.["location"],
             },
             successStatus: 200,

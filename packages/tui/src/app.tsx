@@ -70,10 +70,10 @@ import { CommandPaletteDialog } from "./component/command-palette"
 import {
   COMMAND_PALETTE_COMMAND,
   NOVACLAW_BASE_MODE,
-  OpencodeKeymapProvider,
-  registerOpencodeKeymap,
+  NovaclawKeymapProvider,
+  registerNovaclawKeymap,
   useBindings,
-  useOpencodeKeymap,
+  useNovaclawKeymap,
 } from "./keymap"
 
 import type { EventSource } from "./context/sdk"
@@ -208,7 +208,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
       win32DisableProcessedInput()
       const keymap = createDefaultOpenTuiKeymap(renderer)
       yield* Effect.acquireRelease(
-        Effect.sync(() => registerOpencodeKeymap(keymap, renderer, input.config)),
+        Effect.sync(() => registerNovaclawKeymap(keymap, renderer, input.config)),
         (unregister) => Effect.sync(unregister),
       )
       yield* Effect.addFinalizer(() =>
@@ -273,7 +273,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                         }}
                       >
                         <ClipboardProvider>
-                          <OpencodeKeymapProvider keymap={keymap}>
+                          <NovaclawKeymapProvider keymap={keymap}>
                             <ArgsProvider {...input.args}>
                               <KVProvider>
                                 <ToastProvider>
@@ -331,7 +331,7 @@ export const run = Effect.fn("Tui.run")(function* (input: TuiInput) {
                                 </ToastProvider>
                               </KVProvider>
                             </ArgsProvider>
-                          </OpencodeKeymapProvider>
+                          </NovaclawKeymapProvider>
                         </ClipboardProvider>
                       </TuiStartupProvider>
                     </TuiTerminalEnvironmentProvider>
@@ -363,7 +363,7 @@ function App(props: { onSnapshot?: () => Promise<string[]>; pluginHost: TuiPlugi
   const dialog = useDialog()
   const local = useLocal()
   const kv = useKV()
-  const keymap = useOpencodeKeymap()
+  const keymap = useNovaclawKeymap()
   const event = useEvent()
   const sdk = useSDK()
   const toast = useToast()

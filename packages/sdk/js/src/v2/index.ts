@@ -1,18 +1,18 @@
 export * from "./client.js"
 export * from "./server.js"
 
-import { createOpencodeClient } from "./client.js"
-import { createOpencodeServer } from "./server.js"
+import { createNovaclawClient } from "./client.js"
+import { createNovaclawServer } from "./server.js"
 import type { ServerOptions } from "./server.js"
 
 export * as data from "./data.js"
 
-export async function createOpencode(options?: ServerOptions) {
-  const server = await createOpencodeServer({
+export async function createNovaclaw(options?: ServerOptions) {
+  const server = await createNovaclawServer({
     ...options,
   })
 
-  const client = createOpencodeClient({
+  const client = createNovaclawClient({
     baseUrl: server.url,
   })
 

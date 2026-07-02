@@ -13,8 +13,8 @@ await Effect.runPromise(
         emitPromise(contract, {
           outputTypes: {
             "events.subscribe": {
-              name: "OpenCodeEventEncoded",
-              import: 'import type { OpenCodeEventEncoded } from "@novaclaw/protocol/groups/event"',
+              name: "NovaClawEventEncoded",
+              import: 'import type { NovaClawEventEncoded } from "@novaclaw/protocol/groups/event"',
             },
           },
         }),

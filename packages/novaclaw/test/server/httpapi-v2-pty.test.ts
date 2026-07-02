@@ -19,7 +19,7 @@ const testPty = process.platform === "win32" ? test.skip : test
 
 function request(route: string, directory: string, init: RequestInit = {}) {
   const headers = new Headers(init.headers)
-  headers.set("x-opencode-directory", directory)
+  headers.set("x-novaclaw-directory", directory)
   return HttpApiApp.webHandler().handler(
     new Request(`http://localhost${route}`, {
       ...init,
@@ -53,7 +53,7 @@ const effectIt = testEffect(
   ),
 )
 
-const directoryHeader = (dir: string) => HttpClientRequest.setHeader("x-opencode-directory", dir)
+const directoryHeader = (dir: string) => HttpClientRequest.setHeader("x-novaclaw-directory", dir)
 
 const serverUrl = () => HttpServer.HttpServer.use((server) => Effect.succeed(HttpServer.formatAddress(server.address)))
 
@@ -117,7 +117,7 @@ describe("v2 pty HttpApi", () => {
 
       const token = await request(`/api/pty/${info.id}/connect-token`, tmp.path, {
         method: "POST",
-        headers: { "x-opencode-ticket": "1" },
+        headers: { "x-novaclaw-ticket": "1" },
       })
       expect(token.status).toBe(200)
       const ticket = Schema.decodeUnknownSync(Location.response(PtyTicket.ConnectToken))(await token.json()).data.ticket

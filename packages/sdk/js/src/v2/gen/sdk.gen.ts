@@ -70,8 +70,6 @@ import type {
   FileStatusResponses,
   FindFilesErrors,
   FindFilesResponses,
-  FindSymbolsErrors,
-  FindSymbolsResponses,
   FindTextErrors,
   FindTextResponses,
   FormatterStatusErrors,
@@ -91,8 +89,6 @@ import type {
   InstanceDisposeErrors,
   InstanceDisposeResponses,
   LocationRef,
-  LspStatusErrors,
-  LspStatusResponses,
   McpAddErrors,
   McpAddResponses,
   McpAuthAuthenticateErrors,
@@ -441,7 +437,7 @@ class HeyApiRegistry<T> {
   get(key?: string): T {
     const instance = this.instances.get(key ?? this.defaultKey)
     if (!instance) {
-      throw new Error(`No SDK client found. Create one with "new OpencodeClient()" to fix this error.`)
+      throw new Error(`No SDK client found. Create one with "new NovaclawClient()" to fix this error.`)
     }
     return instance
   }
@@ -556,7 +552,7 @@ export class App extends HeyApiClient {
   /**
    * List agents
    *
-   * Get a list of all available AI agents in the OpenCode system.
+   * Get a list of all available AI agents in the NovaClaw system.
    */
   public agents<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -586,7 +582,7 @@ export class App extends HeyApiClient {
   /**
    * List skills
    *
-   * Get a list of all available skills in the OpenCode system.
+   * Get a list of all available skills in the NovaClaw system.
    */
   public skills<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -661,7 +657,7 @@ export class Capabilities extends HeyApiClient {
   /**
    * Get experimental capabilities
    *
-   * Get experimental features enabled on the OpenCode server.
+   * Get experimental features enabled on the NovaClaw server.
    */
   public get<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -765,7 +761,7 @@ export class Console extends HeyApiClient {
   /**
    * Switch active Console org
    *
-   * Persist a new active Console account/org selection for the current local OpenCode state.
+   * Persist a new active Console account/org selection for the current local NovaClaw state.
    */
   public switchOrg<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -806,7 +802,7 @@ export class Session extends HeyApiClient {
   /**
    * List sessions
    *
-   * Get a list of all OpenCode sessions across projects, sorted by most recently updated. Archived sessions are excluded by default.
+   * Get a list of all NovaClaw sessions across projects, sorted by most recently updated. Archived sessions are excluded by default.
    */
   public list<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -1281,7 +1277,7 @@ export class Config extends HeyApiClient {
   /**
    * Get global configuration
    *
-   * Retrieve the current global OpenCode configuration settings and preferences.
+   * Retrieve the current global NovaClaw configuration settings and preferences.
    */
   public get<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
     return (options?.client ?? this.client).get<GlobalConfigGetResponses, GlobalConfigGetErrors, ThrowOnError>({
@@ -1293,7 +1289,7 @@ export class Config extends HeyApiClient {
   /**
    * Update global configuration
    *
-   * Update global OpenCode configuration settings and preferences.
+   * Update global NovaClaw configuration settings and preferences.
    */
   public update<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -1319,7 +1315,7 @@ export class Global extends HeyApiClient {
   /**
    * Get health
    *
-   * Get health information about the OpenCode server.
+   * Get health information about the NovaClaw server.
    */
   public health<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
     return (options?.client ?? this.client).get<GlobalHealthResponses, GlobalHealthErrors, ThrowOnError>({
@@ -1331,7 +1327,7 @@ export class Global extends HeyApiClient {
   /**
    * Get global events
    *
-   * Subscribe to global events from the OpenCode system using server-sent events.
+   * Subscribe to global events from the NovaClaw system using server-sent events.
    */
   public event<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
     return (options?.client ?? this.client).sse.get<GlobalEventResponses, GlobalEventErrors, ThrowOnError>({
@@ -1343,7 +1339,7 @@ export class Global extends HeyApiClient {
   /**
    * Dispose instance
    *
-   * Clean up and dispose all OpenCode instances, releasing all resources.
+   * Clean up and dispose all NovaClaw instances, releasing all resources.
    */
   public dispose<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
     return (options?.client ?? this.client).post<GlobalDisposeResponses, GlobalDisposeErrors, ThrowOnError>({
@@ -1353,9 +1349,9 @@ export class Global extends HeyApiClient {
   }
 
   /**
-   * Upgrade opencode
+   * Upgrade novaclaw
    *
-   * Upgrade opencode to the specified version or latest if not specified.
+   * Upgrade novaclaw to the specified version or latest if not specified.
    */
   public upgrade<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -1418,7 +1414,7 @@ export class Config2 extends HeyApiClient {
   /**
    * Get configuration
    *
-   * Retrieve the current OpenCode configuration settings and preferences.
+   * Retrieve the current NovaClaw configuration settings and preferences.
    */
   public get<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -1448,7 +1444,7 @@ export class Config2 extends HeyApiClient {
   /**
    * Update configuration
    *
-   * Update OpenCode configuration settings and preferences.
+   * Update NovaClaw configuration settings and preferences.
    */
   public update<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -1792,38 +1788,6 @@ export class Find extends HeyApiClient {
       ...params,
     })
   }
-
-  /**
-   * Find symbols
-   *
-   * Search for workspace symbols like functions, classes, and variables using LSP.
-   */
-  public symbols<ThrowOnError extends boolean = false>(
-    parameters: {
-      directory?: string
-      workspace?: string
-      query: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "query", key: "query" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<FindSymbolsResponses, FindSymbolsErrors, ThrowOnError>({
-      url: "/find/symbol",
-      ...options,
-      ...params,
-    })
-  }
 }
 
 export class File extends HeyApiClient {
@@ -1926,7 +1890,7 @@ export class Instance extends HeyApiClient {
   /**
    * Dispose instance
    *
-   * Clean up and dispose the current OpenCode instance, releasing all resources.
+   * Clean up and dispose the current NovaClaw instance, releasing all resources.
    */
   public dispose<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -1958,7 +1922,7 @@ export class Path extends HeyApiClient {
   /**
    * Get paths
    *
-   * Retrieve the current working directory and related path information for the OpenCode instance.
+   * Retrieve the current working directory and related path information for the NovaClaw instance.
    */
   public get<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -2160,7 +2124,7 @@ export class Command extends HeyApiClient {
   /**
    * List commands
    *
-   * Get a list of all available commands in the OpenCode system.
+   * Get a list of all available commands in the NovaClaw system.
    */
   public list<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -2182,38 +2146,6 @@ export class Command extends HeyApiClient {
     )
     return (options?.client ?? this.client).get<CommandListResponses, CommandListErrors, ThrowOnError>({
       url: "/command",
-      ...options,
-      ...params,
-    })
-  }
-}
-
-export class Lsp extends HeyApiClient {
-  /**
-   * Get LSP status
-   *
-   * Get LSP server status
-   */
-  public status<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<LspStatusResponses, LspStatusErrors, ThrowOnError>({
-      url: "/lsp",
       ...options,
       ...params,
     })
@@ -2531,7 +2463,7 @@ export class Project extends HeyApiClient {
   /**
    * List all projects
    *
-   * Get a list of projects that have been opened with OpenCode.
+   * Get a list of projects that have been opened with NovaClaw.
    */
   public list<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -2561,7 +2493,7 @@ export class Project extends HeyApiClient {
   /**
    * Get current project
    *
-   * Retrieve the currently active project that OpenCode is working with.
+   * Retrieve the currently active project that NovaClaw is working with.
    */
   public current<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -2728,7 +2660,7 @@ export class Pty extends HeyApiClient {
   /**
    * List PTY sessions
    *
-   * Get a list of all active pseudo-terminal (PTY) sessions managed by OpenCode.
+   * Get a list of all active pseudo-terminal (PTY) sessions managed by NovaClaw.
    */
   public list<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -3363,7 +3295,7 @@ export class Session2 extends HeyApiClient {
   /**
    * List sessions
    *
-   * Get a list of all OpenCode sessions, sorted by most recently updated.
+   * Get a list of all NovaClaw sessions, sorted by most recently updated.
    */
   public list<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -3405,7 +3337,7 @@ export class Session2 extends HeyApiClient {
   /**
    * Create session
    *
-   * Create a new OpenCode session for interacting with AI assistants and managing conversations.
+   * Create a new NovaClaw session for interacting with AI assistants and managing conversations.
    */
   public create<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -3522,7 +3454,7 @@ export class Session2 extends HeyApiClient {
   /**
    * Get session
    *
-   * Retrieve detailed information about a specific OpenCode session.
+   * Retrieve detailed information about a specific NovaClaw session.
    */
   public get<ThrowOnError extends boolean = false>(
     parameters: {
@@ -5474,8 +5406,10 @@ export class Session3 extends HeyApiClient {
   public create<ThrowOnError extends boolean = false>(
     parameters?: {
       id?: string
+      parentID?: string
       agent?: string
       model?: ModelRef
+      systemPromptOverride?: string
       location?: LocationRef
     },
     options?: Options<never, ThrowOnError>,
@@ -5486,8 +5420,10 @@ export class Session3 extends HeyApiClient {
         {
           args: [
             { in: "body", key: "id" },
+            { in: "body", key: "parentID" },
             { in: "body", key: "agent" },
             { in: "body", key: "model" },
+            { in: "body", key: "systemPromptOverride" },
             { in: "body", key: "location" },
           ],
         },
@@ -5508,7 +5444,7 @@ export class Session3 extends HeyApiClient {
   /**
    * List active sessions
    *
-   * Retrieve foreground Session drains currently owned by this OpenCode process. Sessions absent from the result are inactive.
+   * Retrieve foreground Session drains currently owned by this NovaClaw process. Sessions absent from the result are inactive.
    */
   public active<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
     return (options?.client ?? this.client).get<V2SessionActiveResponses, V2SessionActiveErrors, ThrowOnError>({
@@ -5777,7 +5713,7 @@ export class Session3 extends HeyApiClient {
   /**
    * Interrupt session execution
    *
-   * Interrupt active execution owned by this OpenCode process. Idle interruption is a no-op.
+   * Interrupt active execution owned by this NovaClaw process. Idle interruption is a no-op.
    */
   public interrupt<ThrowOnError extends boolean = false>(
     parameters: {
@@ -7074,12 +7010,12 @@ export class V2 extends HeyApiClient {
   }
 }
 
-export class OpencodeClient extends HeyApiClient {
-  public static readonly __registry = new HeyApiRegistry<OpencodeClient>()
+export class NovaclawClient extends HeyApiClient {
+  public static readonly __registry = new HeyApiRegistry<NovaclawClient>()
 
   constructor(args?: { client?: Client; key?: string }) {
     super(args)
-    OpencodeClient.__registry.set(this, args?.key)
+    NovaclawClient.__registry.set(this, args?.key)
   }
 
   private _auth?: Auth
@@ -7150,11 +7086,6 @@ export class OpencodeClient extends HeyApiClient {
   private _command?: Command
   get command(): Command {
     return (this._command ??= new Command({ client: this.client }))
-  }
-
-  private _lsp?: Lsp
-  get lsp(): Lsp {
-    return (this._lsp ??= new Lsp({ client: this.client }))
   }
 
   private _formatter?: Formatter

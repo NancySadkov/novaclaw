@@ -1,6 +1,6 @@
 import type {
   AgentPart,
-  OpencodeClient,
+  NovaclawClient,
   Event,
   FilePart,
   McpStatus,
@@ -607,7 +607,7 @@ export type TuiPluginApi = {
   kv: TuiKV
   state: TuiState
   theme: TuiTheme
-  client: OpencodeClient
+  client: NovaclawClient
   event: TuiEventBus
   renderer: CliRenderer
   slots: TuiSlots

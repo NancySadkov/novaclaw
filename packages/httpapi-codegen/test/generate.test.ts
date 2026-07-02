@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { fileURLToPath } from "node:url"
 import { Effect, FileSystem, Schema, SchemaAST, SchemaGetter } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, HttpApiMiddleware, HttpApiSchema } from "effect/unstable/httpapi"
 import { format } from "prettier"
@@ -394,13 +395,13 @@ describe("HttpApiCodegen.generate", () => {
         ),
       ),
     )
-    const directory = await mkdtemp(join(tmpdir(), "opencode-httpapi-codegen-"))
+    const directory = await mkdtemp(join(tmpdir(), "novaclaw-httpapi-codegen-"))
 
     try {
       await Promise.all(output.files.map((file) => Bun.write(join(directory, file.path), file.content)))
       const generated = await import(`${join(directory, "index.ts")}?t=${crypto.randomUUID()}`)
       let request: Request | undefined
-      const client = generated.OpenCode.make({
+      const client = generated.NovaClaw.make({
         baseUrl: "https://example.com",
         fetch: async (input: RequestInfo | URL) => {
           request = input instanceof Request ? input : new Request(input)
@@ -427,12 +428,12 @@ describe("HttpApiCodegen.generate", () => {
         ),
       ),
     )
-    const directory = await mkdtemp(join(tmpdir(), "opencode-httpapi-codegen-"))
+    const directory = await mkdtemp(join(tmpdir(), "novaclaw-httpapi-codegen-"))
 
     try {
       await Promise.all(output.files.map((file) => Bun.write(join(directory, file.path), file.content)))
       const generated = await import(`${join(directory, "index.ts")}?t=${crypto.randomUUID()}`)
-      const client = generated.OpenCode.make({
+      const client = generated.NovaClaw.make({
         baseUrl: "https://example.com",
         fetch: async () => new Response(null, { status: 204 }),
       })
@@ -457,13 +458,13 @@ describe("HttpApiCodegen.generate", () => {
         ),
       ),
     )
-    const directory = await mkdtemp(join(tmpdir(), "opencode-httpapi-codegen-"))
+    const directory = await mkdtemp(join(tmpdir(), "novaclaw-httpapi-codegen-"))
 
     try {
       await Promise.all(output.files.map((file) => Bun.write(join(directory, file.path), file.content)))
       const generated = await import(`${join(directory, "index.ts")}?t=${crypto.randomUUID()}`)
       let request: Request | undefined
-      const client = generated.OpenCode.make({
+      const client = generated.NovaClaw.make({
         baseUrl: "https://example.com",
         fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
           request = input instanceof Request ? input : new Request(input, init)
@@ -494,12 +495,12 @@ describe("HttpApiCodegen.generate", () => {
         ),
       ),
     )
-    const directory = await mkdtemp(join(tmpdir(), "opencode-httpapi-codegen-"))
+    const directory = await mkdtemp(join(tmpdir(), "novaclaw-httpapi-codegen-"))
 
     try {
       await Promise.all(output.files.map((file) => Bun.write(join(directory, file.path), file.content)))
       const generated = await import(`${join(directory, "index.ts")}?t=${crypto.randomUUID()}`)
-      const client = generated.OpenCode.make({
+      const client = generated.NovaClaw.make({
         baseUrl: "https://example.com",
         fetch: async () => Response.json({ _tag: "Missing", message: "gone" }, { status: 404 }),
       })
@@ -525,14 +526,14 @@ describe("HttpApiCodegen.generate", () => {
         ),
       ),
     )
-    const directory = await mkdtemp(join(tmpdir(), "opencode-httpapi-codegen-"))
+    const directory = await mkdtemp(join(tmpdir(), "novaclaw-httpapi-codegen-"))
 
     try {
       await Promise.all(output.files.map((file) => Bun.write(join(directory, file.path), file.content)))
       const generated = await import(`${join(directory, "index.ts")}?t=${crypto.randomUUID()}`)
       let requests = 0
       let url: string | undefined
-      const client = generated.OpenCode.make({
+      const client = generated.NovaClaw.make({
         baseUrl: "https://example.com",
         fetch: async (input: RequestInfo | URL) => {
           requests++
@@ -607,7 +608,7 @@ describe("HttpApiCodegen.generate", () => {
     Effect.gen(function* () {
       const output = compile(FixtureApi)
       const actual = yield* Effect.promise(() =>
-        Array.fromAsync(new Bun.Glob("*.ts").scan(new URL("generated", import.meta.url).pathname)),
+        Array.fromAsync(new Bun.Glob("*.ts").scan(fileURLToPath(new URL("generated", import.meta.url)))),
       )
       expect(actual.sort((a, b) => a.localeCompare(b))).toEqual(
         output.files.map((file) => file.path).sort((a, b) => a.localeCompare(b)),

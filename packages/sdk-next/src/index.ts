@@ -1,4 +1,4 @@
-export * as OpenCode from "./opencode"
+export * as NovaClaw from "./novaclaw"
 export * as Tool from "./tool"
 
 export { ClientError } from "@novaclaw/client/effect"
@@ -14,4 +14,4 @@ export {
   SessionInput,
   SessionMessage,
 } from "@novaclaw/client/effect"
-export type { OpenCodeEvent } from "@novaclaw/client/effect"
+export type { NovaClawEvent } from "@novaclaw/client/effect"

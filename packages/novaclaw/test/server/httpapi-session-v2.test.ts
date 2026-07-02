@@ -25,7 +25,7 @@ import { HttpServer } from "effect/unstable/http"
 import { ChildProcessSpawner } from "effect/unstable/process"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { CrossSpawnSpawner } from "@novaclaw/core/cross-spawn-spawner"
-import { createOpencodeClient } from "@novaclaw/sdk/v2"
+import { createNovaclawClient } from "@novaclaw/sdk/v2"
 import { InstanceBootstrap } from "../../src/project/bootstrap-service"
 import { InstanceStore } from "../../src/project/instance-store"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
@@ -53,7 +53,7 @@ const it = testEffect(
   ),
 )
 
-type Sdk = ReturnType<typeof createOpencodeClient>
+type Sdk = ReturnType<typeof createNovaclawClient>
 type TestServices =
   | FSUtil.Service
   | ChildProcessSpawner.ChildProcessSpawner
@@ -80,7 +80,7 @@ function serverFetch() {
 
 function client(directory: string) {
   return serverFetch().pipe(
-    Effect.map((fetch) => createOpencodeClient({ baseUrl: "http://localhost", directory, fetch })),
+    Effect.map((fetch) => createNovaclawClient({ baseUrl: "http://localhost", directory, fetch })),
   )
 }
 

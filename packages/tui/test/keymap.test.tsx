@@ -5,7 +5,7 @@ import { testRender, useRenderer } from "@opentui/solid"
 import { expect, test } from "bun:test"
 import { onCleanup } from "solid-js"
 import { TuiKeybind } from "../src/config/keybind"
-import { getOpencodeModeStack, NOVACLAW_BASE_MODE, OpencodeKeymapProvider, registerOpencodeKeymap } from "../src/keymap"
+import { getNovaclawModeStack, NOVACLAW_BASE_MODE, NovaclawKeymapProvider, registerNovaclawKeymap } from "../src/keymap"
 
 function createResolvedKeymapConfig(input: TuiKeybind.KeybindOverrides = {}) {
   const keybinds = TuiKeybind.parse(input)
@@ -28,7 +28,7 @@ test("legacy page key aliases compile as page keys", async () => {
       messages_page_up: "pgup",
       messages_page_down: "pgdown",
     })
-    const offKeymap = registerOpencodeKeymap(keymap, renderer, config)
+    const offKeymap = registerNovaclawKeymap(keymap, renderer, config)
     const offLayer = keymap.registerLayer({
       bindings: config.keybinds.gather("session", ["session.page.up", "session.page.down"]),
     })
@@ -46,9 +46,9 @@ test("legacy page key aliases compile as page keys", async () => {
     })
 
     return (
-      <OpencodeKeymapProvider keymap={keymap}>
+      <NovaclawKeymapProvider keymap={keymap}>
         <box />
-      </OpencodeKeymapProvider>
+      </NovaclawKeymapProvider>
     )
   }
 
@@ -70,7 +70,7 @@ test("mode-less bindings stay active when opencode mode changes", async () => {
     const renderer = useRenderer()
     const keymap = createDefaultOpenTuiKeymap(renderer)
     const config = createResolvedKeymapConfig()
-    const offKeymap = registerOpencodeKeymap(keymap, renderer, config)
+    const offKeymap = registerNovaclawKeymap(keymap, renderer, config)
     const offGlobal = keymap.registerLayer({
       commands: [
         { name: "session.list", run() {} },
@@ -102,10 +102,10 @@ test("mode-less bindings stay active when opencode mode changes", async () => {
       )
 
     counts.base = activeCounts()
-    const popQuestion = getOpencodeModeStack(keymap).push("question")
+    const popQuestion = getNovaclawModeStack(keymap).push("question")
     counts.question = activeCounts()
     popQuestion()
-    const popAutocomplete = getOpencodeModeStack(keymap).push("autocomplete")
+    const popAutocomplete = getNovaclawModeStack(keymap).push("autocomplete")
     counts.autocomplete = activeCounts()
     popAutocomplete()
 
@@ -116,9 +116,9 @@ test("mode-less bindings stay active when opencode mode changes", async () => {
     })
 
     return (
-      <OpencodeKeymapProvider keymap={keymap}>
+      <NovaclawKeymapProvider keymap={keymap}>
         <box />
-      </OpencodeKeymapProvider>
+      </NovaclawKeymapProvider>
     )
   }
 

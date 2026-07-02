@@ -4,20 +4,20 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { Flag } from "@novaclaw/core/flag/flag"
 import { Deferred, Effect, Latch, Option, Schema, Stream } from "effect"
-import type { OpenCodeEvent } from "../src"
+import type { NovaClawEvent } from "../src"
 
 test("embedded client uses the real router and handlers", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "opencode-embedded-"))
+  const directory = await mkdtemp(join(tmpdir(), "novaclaw-embedded-"))
   const database = Flag.NOVACLAW_DB
-  Flag.NOVACLAW_DB = join(directory, "opencode.sqlite")
-  const { AbsolutePath, Agent, Location, Model, OpenCode, Prompt, Provider, Session, Tool } = await import("../src")
+  Flag.NOVACLAW_DB = join(directory, "novaclaw.sqlite")
+  const { AbsolutePath, Agent, Location, Model, NovaClaw, Prompt, Provider, Session, Tool } = await import("../src")
   const sessionID = Session.ID.make(`ses_embedded_${crypto.randomUUID()}`)
   const model = Model.Ref.make({ id: Model.ID.make("embedded"), providerID: Provider.ID.make("test") })
 
   try {
     const program = Effect.gen(function* () {
-      const opencode = yield* OpenCode.create()
-      yield* opencode.tools.register({
+      const novaclaw = yield* NovaClaw.create()
+      yield* novaclaw.tools.register({
         embedded_tool: Tool.make({
           description: "Embedded test tool",
           input: Schema.Struct({}),
@@ -26,54 +26,54 @@ test("embedded client uses the real router and handlers", async () => {
         }),
       })
 
-      const created = yield* opencode.sessions.create({
+      const created = yield* novaclaw.sessions.create({
         id: sessionID,
         agent: Agent.ID.make("build"),
         location: Location.Ref.make({ directory: AbsolutePath.make(directory) }),
       })
-      yield* opencode.sessions.switchModel({ sessionID, model })
-      const selected = yield* opencode.sessions.get({ sessionID })
-      const page = yield* opencode.sessions.list({ directory: AbsolutePath.make(directory) })
-      const active = yield* opencode.sessions.active()
-      const admitted = yield* opencode.sessions.prompt({
+      yield* novaclaw.sessions.switchModel({ sessionID, model })
+      const selected = yield* novaclaw.sessions.get({ sessionID })
+      const page = yield* novaclaw.sessions.list({ directory: AbsolutePath.make(directory) })
+      const active = yield* novaclaw.sessions.active()
+      const admitted = yield* novaclaw.sessions.prompt({
         sessionID,
         prompt: Prompt.make({ text: "Do not run" }),
         resume: false,
       })
-      const context = yield* opencode.sessions.context({ sessionID })
-      const wake = yield* opencode.sessions.prompt({
+      const context = yield* novaclaw.sessions.context({ sessionID })
+      const wake = yield* novaclaw.sessions.prompt({
         sessionID,
         prompt: Prompt.make({ text: "Promote this input" }),
       })
-      const prompted = yield* opencode.sessions.events({ sessionID }).pipe(
+      const prompted = yield* novaclaw.sessions.events({ sessionID }).pipe(
         Stream.filter((event) => event.type === "session.next.prompted" && event.data.messageID === wake.id),
         Stream.runHead,
         Effect.timeout("10 seconds"),
         Effect.map(Option.getOrThrow),
       )
-      const wakeContext = yield* opencode.sessions.context({ sessionID })
-      const event = yield* opencode.sessions
+      const wakeContext = yield* novaclaw.sessions.context({ sessionID })
+      const event = yield* novaclaw.sessions
         .events({ sessionID })
         .pipe(Stream.take(1), Stream.runHead, Effect.map(Option.getOrUndefined))
       const modelMessage = Option.fromNullishOr(context.find((message) => message.type === "model-switched")).pipe(
         Option.getOrThrow,
       )
-      const message = yield* opencode.sessions.message({ sessionID, messageID: modelMessage.id })
-      yield* opencode.sessions.interrupt({ sessionID })
-      const other = yield* opencode.sessions.create({
+      const message = yield* novaclaw.sessions.message({ sessionID, messageID: modelMessage.id })
+      yield* novaclaw.sessions.interrupt({ sessionID })
+      const other = yield* novaclaw.sessions.create({
         location: Location.Ref.make({ directory: AbsolutePath.make(directory) }),
       })
       const missingSessionID = Session.ID.make(`ses_missing_${crypto.randomUUID()}`)
       const missing = yield* Effect.all(
         [
-          opencode.sessions.events({ sessionID: missingSessionID }).pipe(Stream.runHead, Effect.flip),
-          opencode.sessions.interrupt({ sessionID: missingSessionID }).pipe(Effect.flip),
-          opencode.sessions.message({ sessionID: missingSessionID, messageID: modelMessage.id }).pipe(Effect.flip),
+          novaclaw.sessions.events({ sessionID: missingSessionID }).pipe(Stream.runHead, Effect.flip),
+          novaclaw.sessions.interrupt({ sessionID: missingSessionID }).pipe(Effect.flip),
+          novaclaw.sessions.message({ sessionID: missingSessionID, messageID: modelMessage.id }).pipe(Effect.flip),
         ],
         { concurrency: "unbounded" },
       )
       const missingMessage = yield* Effect.flip(
-        opencode.sessions.message({
+        novaclaw.sessions.message({
           sessionID: other.id,
           messageID: modelMessage.id,
         }),
@@ -105,18 +105,18 @@ test("embedded client uses the real router and handlers", async () => {
 })
 
 test("Location-owned runner events reach the ready global client", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "opencode-embedded-events-"))
+  const directory = await mkdtemp(join(tmpdir(), "novaclaw-embedded-events-"))
   const database = Flag.NOVACLAW_DB
-  Flag.NOVACLAW_DB = join(directory, "opencode.sqlite")
-  const { AbsolutePath, Location, OpenCode, Prompt, Session } = await import("../src")
+  Flag.NOVACLAW_DB = join(directory, "novaclaw.sqlite")
+  const { AbsolutePath, Location, NovaClaw, Prompt, Session } = await import("../src")
   const sessionID = Session.ID.make(`ses_embedded_${crypto.randomUUID()}`)
 
   try {
     const program = Effect.gen(function* () {
-      const opencode = yield* OpenCode.create()
+      const novaclaw = yield* NovaClaw.create()
       const connected = yield* Latch.make(false)
-      const prompted = yield* Deferred.make<OpenCodeEvent>()
-      yield* opencode.events.subscribe().pipe(
+      const prompted = yield* Deferred.make<NovaClawEvent>()
+      yield* novaclaw.events.subscribe().pipe(
         Stream.runForEach((event) =>
           event.type === "server.connected"
             ? connected.open
@@ -127,11 +127,11 @@ test("Location-owned runner events reach the ready global client", async () => {
         Effect.forkScoped,
       )
       yield* connected.await
-      yield* opencode.sessions.create({
+      yield* novaclaw.sessions.create({
         id: sessionID,
         location: Location.Ref.make({ directory: AbsolutePath.make(directory) }),
       })
-      yield* opencode.sessions.prompt({ sessionID, prompt: Prompt.make({ text: "Observe this input" }) })
+      yield* novaclaw.sessions.prompt({ sessionID, prompt: Prompt.make({ text: "Observe this input" }) })
 
       const event = yield* Deferred.await(prompted).pipe(Effect.timeout("4 seconds"))
       expect(event.durable).toEqual(expect.objectContaining({ aggregateID: sessionID, seq: expect.any(Number) }))
@@ -144,22 +144,22 @@ test("Location-owned runner events reach the ready global client", async () => {
 }, 10_000)
 
 test("independent embedded hosts do not share live notifications", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "opencode-embedded-hosts-"))
+  const directory = await mkdtemp(join(tmpdir(), "novaclaw-embedded-hosts-"))
   const database = Flag.NOVACLAW_DB
-  Flag.NOVACLAW_DB = join(directory, "opencode.sqlite")
-  const { AbsolutePath, Agent, Location, OpenCode, Session } = await import("../src")
+  Flag.NOVACLAW_DB = join(directory, "novaclaw.sqlite")
+  const { AbsolutePath, Agent, Location, NovaClaw, Session } = await import("../src")
   const sessionID = Session.ID.make(`ses_embedded_${crypto.randomUUID()}`)
 
   try {
     const program = Effect.gen(function* () {
-      const first = yield* OpenCode.create()
-      const second = yield* OpenCode.create()
+      const first = yield* NovaClaw.create()
+      const second = yield* NovaClaw.create()
       const firstReady = yield* Latch.make(false)
       const secondReady = yield* Latch.make(false)
       const firstEvent = yield* Latch.make(false)
       const secondEvent = yield* Latch.make(false)
       const observe = (ready: Latch.Latch, event: Latch.Latch) =>
-        Stream.runForEach((notification: OpenCodeEvent) =>
+        Stream.runForEach((notification: NovaClawEvent) =>
           notification.type === "server.connected"
             ? ready.open
             : notification.type === "session.next.agent.switched" && notification.data.sessionID === sessionID
@@ -187,21 +187,21 @@ test("independent embedded hosts do not share live notifications", async () => {
 }, 10_000)
 
 test("embedded client is available as a Layer service", async () => {
-  const directory = await mkdtemp(join(tmpdir(), "opencode-embedded-layer-"))
+  const directory = await mkdtemp(join(tmpdir(), "novaclaw-embedded-layer-"))
   const database = Flag.NOVACLAW_DB
-  Flag.NOVACLAW_DB = join(directory, "opencode.sqlite")
-  const { AbsolutePath, Location, OpenCode, Session } = await import("../src")
+  Flag.NOVACLAW_DB = join(directory, "novaclaw.sqlite")
+  const { AbsolutePath, Location, NovaClaw, Session } = await import("../src")
   const sessionID = Session.ID.make(`ses_embedded_${crypto.randomUUID()}`)
 
   try {
     const created = await Effect.runPromise(
       Effect.gen(function* () {
-        const opencode = yield* OpenCode.Service
-        return yield* opencode.sessions.create({
+        const novaclaw = yield* NovaClaw.Service
+        return yield* novaclaw.sessions.create({
           id: sessionID,
           location: Location.Ref.make({ directory: AbsolutePath.make(directory) }),
         })
-      }).pipe(Effect.provide(OpenCode.layer), Effect.scoped),
+      }).pipe(Effect.provide(NovaClaw.layer), Effect.scoped),
     )
 
     expect(created.id).toBe(sessionID)

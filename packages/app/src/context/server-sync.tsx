@@ -1,4 +1,4 @@
-import type { Config, OpencodeClient, Path, Project, ProviderAuthResponse } from "@novaclaw/sdk/v2/client"
+import type { Config, NovaclawClient, Path, Project, ProviderAuthResponse } from "@novaclaw/sdk/v2/client"
 import { showToast } from "@/utils/toast"
 import { getFilename } from "@novaclaw/core/util/path"
 import { type Accessor, batch, createMemo, getOwner, onCleanup, onMount, untrack } from "solid-js"
@@ -50,7 +50,7 @@ type GlobalStore = {
   reload: undefined | "pending" | "complete"
 }
 
-export const loadMcpQuery = (scope: ServerScope, directory: string, sdk: OpencodeClient) =>
+export const loadMcpQuery = (scope: ServerScope, directory: string, sdk: NovaclawClient) =>
   queryOptions({
     queryKey: [scope, directory, "mcp"] as const,
     queryFn: () => sdk.mcp.status().then((r) => r.data ?? {}),
@@ -58,8 +58,8 @@ export const loadMcpQuery = (scope: ServerScope, directory: string, sdk: Opencod
 
 function makeQueryOptionsApi(
   scope: ServerScope,
-  serverSDK: () => OpencodeClient,
-  sdkFor: (dir: PathKey) => OpencodeClient,
+  serverSDK: () => NovaclawClient,
+  sdkFor: (dir: PathKey) => NovaclawClient,
 ) {
   return {
     globalConfig: () => loadGlobalConfigQuery(scope, serverSDK()),
@@ -80,7 +80,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
   const owner = getOwner()
   if (!owner) throw new Error("ServerSync must be created within owner")
 
-  const sdkCache = new Map<string, OpencodeClient>()
+  const sdkCache = new Map<string, NovaclawClient>()
   const booting = new Map<string, Promise<void>>()
   const sessionLoads = new Map<string, Promise<void>>()
   const sessionMeta = new Map<string, { limit: number }>()

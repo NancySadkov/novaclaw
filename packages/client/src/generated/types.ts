@@ -1,4 +1,4 @@
-import type { OpenCodeEventEncoded } from "@novaclaw/protocol/groups/event"
+import type { NovaClawEventEncoded } from "@novaclaw/protocol/groups/event"
 
 export type JsonValue =
   | null
@@ -238,6 +238,8 @@ export type SessionsListOutput = {
     readonly projectID: string
     readonly agent?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly systemPromptOverride?: string
+    readonly result?: JsonValue
     readonly cost: number
     readonly tokens: {
       readonly input: number
@@ -269,26 +271,50 @@ export type SessionsListOutput = {
 export type SessionsCreateInput = {
   readonly id?: {
     readonly id?: string | null
+    readonly parentID?: string | null
     readonly agent?: string | null
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
+    readonly systemPromptOverride?: string | null
     readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
   }["id"]
-  readonly agent?: {
+  readonly parentID?: {
     readonly id?: string | null
+    readonly parentID?: string | null
     readonly agent?: string | null
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
+    readonly systemPromptOverride?: string | null
+    readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
+  }["parentID"]
+  readonly agent?: {
+    readonly id?: string | null
+    readonly parentID?: string | null
+    readonly agent?: string | null
+    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
+    readonly systemPromptOverride?: string | null
     readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
   }["agent"]
   readonly model?: {
     readonly id?: string | null
+    readonly parentID?: string | null
     readonly agent?: string | null
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
+    readonly systemPromptOverride?: string | null
     readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
   }["model"]
-  readonly location?: {
+  readonly systemPromptOverride?: {
     readonly id?: string | null
+    readonly parentID?: string | null
     readonly agent?: string | null
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
+    readonly systemPromptOverride?: string | null
+    readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
+  }["systemPromptOverride"]
+  readonly location?: {
+    readonly id?: string | null
+    readonly parentID?: string | null
+    readonly agent?: string | null
+    readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string } | null
+    readonly systemPromptOverride?: string | null
     readonly location?: { readonly directory: string; readonly workspaceID?: string } | null
   }["location"]
 }
@@ -300,6 +326,8 @@ export type SessionsCreateOutput = {
     readonly projectID: string
     readonly agent?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly systemPromptOverride?: string
+    readonly result?: JsonValue
     readonly cost: number
     readonly tokens: {
       readonly input: number
@@ -338,6 +366,8 @@ export type SessionsGetOutput = {
     readonly projectID: string
     readonly agent?: string
     readonly model?: { readonly id: string; readonly providerID: string; readonly variant?: string }
+    readonly systemPromptOverride?: string
+    readonly result?: JsonValue
     readonly cost: number
     readonly tokens: {
       readonly input: number
@@ -684,6 +714,14 @@ export type SessionsHistoryInput = {
 
 export type SessionsHistoryOutput = {
   readonly data: ReadonlyArray<
+    | {
+        readonly id: string
+        readonly metadata?: { readonly [x: string]: JsonValue }
+        readonly type: "session.next.completed"
+        readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly data: { readonly timestamp: number; readonly sessionID: string; readonly result?: JsonValue }
+      }
     | {
         readonly id: string
         readonly metadata?: { readonly [x: string]: JsonValue }
@@ -1142,6 +1180,14 @@ export type SessionsEventsInput = {
 }
 
 export type SessionsEventsOutput =
+  | {
+      readonly id: string
+      readonly metadata?: { readonly [x: string]: unknown }
+      readonly type: "session.next.completed"
+      readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly data: { readonly timestamp: number; readonly sessionID: string; readonly result?: unknown }
+    }
   | {
       readonly id: string
       readonly metadata?: { readonly [x: string]: unknown }
@@ -2538,7 +2584,7 @@ export type SkillsListOutput = {
   }>
 }
 
-export type EventsSubscribeOutput = OpenCodeEventEncoded
+export type EventsSubscribeOutput = NovaClawEventEncoded
 
 export type PtysListInput = {
   readonly location?: {

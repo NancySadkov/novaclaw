@@ -1,8 +1,8 @@
-import { createOpencodeClient, createOpencodeServer } from "@novaclaw/sdk"
+import { createNovaclawClient, createNovaclawServer } from "@novaclaw/sdk"
 import { pathToFileURL } from "bun"
 
-const server = await createOpencodeServer()
-const client = createOpencodeClient({ baseUrl: server.url })
+const server = await createNovaclawServer()
+const client = createNovaclawClient({ baseUrl: server.url })
 
 const input = await Array.fromAsync(new Bun.Glob("packages/core/*.ts").scan())
 
