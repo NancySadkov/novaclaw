@@ -6,8 +6,6 @@ import type { Accessor } from "solid-js"
 import { selectProviderCatalog } from "./provider-catalog"
 
 export const popularProviders = [
-  "opencode",
-  "opencode-go",
   "openai-compatible",
   "anthropic",
   "github-copilot",
