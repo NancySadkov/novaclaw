@@ -5,10 +5,10 @@ import { Tool } from "./tool"
 import { makeLocationNode } from "../effect/app-node"
 
 // Location-scoped dependency-inversion seam for tools that core can't construct itself —
-// MCP servers and (future) host plugins, which live in the opencode package. The V2
-// `ToolRegistry` consults this provider in `materialize`/`settle`, so an opencode-side
+// MCP servers and (future) host plugins, which live in the novaclaw package. The V2
+// `ToolRegistry` consults this provider in `materialize`/`settle`, so an novaclaw-side
 // replacement (injected via `buildLocationServiceMap` replacements) makes its tools visible
-// to the runner WITHOUT core depending on opencode. Default impl is empty → no behavior
+// to the runner WITHOUT core depending on novaclaw. Default impl is empty → no behavior
 // change until something replaces it. Entries carry a STABLE `identity` (rebuilt only when
 // the underlying tool set changes) so the registry's stale-call guard stays correct.
 

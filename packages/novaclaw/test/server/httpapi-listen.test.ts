@@ -15,7 +15,7 @@ const original = {
   envPassword: process.env.NOVACLAW_SERVER_PASSWORD,
   envUsername: process.env.NOVACLAW_SERVER_USERNAME,
 }
-const auth = { username: "opencode", password: "listen-secret" }
+const auth = { username: "novaclaw", password: "listen-secret" }
 const testPty = process.platform === "win32" ? test.skip : test
 
 afterEach(async () => {
@@ -323,7 +323,7 @@ describe("HttpApi Server.listen", () => {
           ].join("\n"),
         )
         await Bun.write(
-          path.join(directory, "opencode.json"),
+          path.join(directory, "novaclaw.json"),
           JSON.stringify({ formatter: false, plugin: [pathToFileURL(plugin).href] }),
         )
         return { initialized, completed }

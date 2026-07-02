@@ -1,7 +1,7 @@
 import { expect, test } from "bun:test"
 import { clearWslDistroState, requireWslIpcString, wslServerIdToRestart, wslTerminalArgs } from "./policy"
 import {
-  expectOpencodeVersion,
+  expectNovaclawVersion,
   pendingRestartAfterWslInstall,
   pollWslHealth,
   wslServerIdsToStartOnInitialize,
@@ -9,7 +9,7 @@ import {
 import { createWslServersController, type WslServerConfig } from "./servers"
 
 let persistedServers: WslServerConfig[] = []
-let releaseOpencodeResolve: (() => void) | undefined
+let releaseNovaclawResolve: (() => void) | undefined
 
 test("starts every configured WSL server on initialization", () => {
   expect(
@@ -21,13 +21,13 @@ test("starts every configured WSL server on initialization", () => {
 })
 
 test("rejects an update that did not install the desktop version", () => {
-  expect(() => expectOpencodeVersion("1.16.2", "1.16.2")).not.toThrow()
-  expect(() => expectOpencodeVersion("1.14.35", "1.16.2")).toThrow(
-    "OpenCode update finished but Debian still reports 1.14.35; expected 1.16.2",
+  expect(() => expectNovaclawVersion("1.16.2", "1.16.2")).not.toThrow()
+  expect(() => expectNovaclawVersion("1.14.35", "1.16.2")).toThrow(
+    "NovaClaw update finished but Debian still reports 1.14.35; expected 1.16.2",
   )
 })
 
-test("restarts an existing distro server after updating OpenCode", () => {
+test("restarts an existing distro server after updating NovaClaw", () => {
   expect(
     wslServerIdToRestart(
       [
@@ -49,7 +49,7 @@ test("clears cached distro probes when removing a WSL server", () => {
       {
         Debian: {
           distro: "Debian",
-          resolvedPath: "/home/luke/.opencode/bin/opencode",
+          resolvedPath: "/home/luke/.novaclaw/bin/novaclaw",
           version: "1.16.2",
           expectedVersion: "1.16.2",
           matchesDesktop: true,
@@ -58,7 +58,7 @@ test("clears cached distro probes when removing a WSL server", () => {
       },
       "Debian",
     ),
-  ).toEqual({ distroProbes: {}, opencodeChecks: {} })
+  ).toEqual({ distroProbes: {}, novaclawChecks: {} })
 })
 
 test("opens terminals for distro names containing spaces", () => {
@@ -96,9 +96,9 @@ test("derives a required Windows restart from the post-install runtime probe", (
   expect(pendingRestartAfterWslInstall({ available: true, version: "WSL version: 2.6.1", error: null })).toBe(false)
 })
 
-test("ignores stale background OpenCode checks after removing a WSL server", async () => {
+test("ignores stale background NovaClaw checks after removing a WSL server", async () => {
   persistedServers = []
-  releaseOpencodeResolve = undefined
+  releaseNovaclawResolve = undefined
   const controller = createWslServersController(
     "1.16.2",
     async () => ({
@@ -114,18 +114,18 @@ test("ignores stale background OpenCode checks after removing a WSL server", asy
   )
 
   await controller.addServer("Debian")
-  await waitFor(() => !!releaseOpencodeResolve)
+  await waitFor(() => !!releaseNovaclawResolve)
   await controller.removeServer("wsl:Debian")
-  releaseOpencodeResolve?.()
+  releaseNovaclawResolve?.()
   await new Promise((resolve) => setTimeout(resolve, 0))
 
   expect(controller.getState().servers).toEqual([])
-  expect(controller.getState().opencodeChecks).toEqual({})
+  expect(controller.getState().novaclawChecks).toEqual({})
 })
 
-test("ignores stale startup OpenCode checks after removing a WSL server", async () => {
+test("ignores stale startup NovaClaw checks after removing a WSL server", async () => {
   persistedServers = [{ id: "wsl:Debian", distro: "Debian" }]
-  releaseOpencodeResolve = undefined
+  releaseNovaclawResolve = undefined
   const controller = createWslServersController(
     "1.16.2",
     async () => new Promise<never>(() => undefined),
@@ -133,13 +133,13 @@ test("ignores stale startup OpenCode checks after removing a WSL server", async 
   )
 
   await controller.initialize()
-  await waitFor(() => !!releaseOpencodeResolve)
+  await waitFor(() => !!releaseNovaclawResolve)
   await controller.removeServer("wsl:Debian")
-  releaseOpencodeResolve?.()
+  releaseNovaclawResolve?.()
   await new Promise((resolve) => setTimeout(resolve, 0))
 
   expect(controller.getState().servers).toEqual([])
-  expect(controller.getState().opencodeChecks).toEqual({})
+  expect(controller.getState().novaclawChecks).toEqual({})
 })
 
 async function waitFor(check: () => boolean) {
@@ -157,11 +157,11 @@ function testControllerOptions() {
       persistedServers = servers
     },
     readCommandVersion: async () => "1.16.2",
-    resolveOpencode: async () => {
+    resolveNovaclaw: async () => {
       await new Promise<void>((resolve) => {
-        releaseOpencodeResolve = resolve
+        releaseNovaclawResolve = resolve
       })
-      return "/home/me/.opencode/bin/opencode"
+      return "/home/me/.novaclaw/bin/novaclaw"
     },
   }
 }

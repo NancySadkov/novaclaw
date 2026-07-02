@@ -15,7 +15,7 @@ import { httpClient } from "./effect/app-node-platform"
 export const CatalogModelStatus = Schema.Literals(["alpha", "beta", "deprecated"])
 export type CatalogModelStatus = typeof CatalogModelStatus.Type
 
-const USER_AGENT = `opencode/${InstallationChannel}/${InstallationVersion}/${Flag.NOVACLAW_CLIENT}`
+const USER_AGENT = `novaclaw/${InstallationChannel}/${InstallationVersion}/${Flag.NOVACLAW_CLIENT}`
 
 const CostTier = Schema.Struct({
   input: Schema.Finite,
@@ -198,7 +198,7 @@ export const layer = Layer.effect(
       const snapshot = yield* loadSnapshot
       if (snapshot) return snapshot
       if (Flag.NOVACLAW_DISABLE_MODELS_FETCH) return {}
-      // Flock is cross-process: concurrent opencode CLIs can race on this cache file.
+      // Flock is cross-process: concurrent novaclaw CLIs can race on this cache file.
       const text = yield* Effect.scoped(
         Effect.gen(function* () {
           yield* Flock.effect(lockKey)

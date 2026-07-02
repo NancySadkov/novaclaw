@@ -16,7 +16,7 @@ type SidecarMessage =
 
 export type SidecarListener = { stop: () => Promise<void> }
 
-const SIDECAR_SERVICE_NAME = "opencode server"
+const SIDECAR_SERVICE_NAME = "novaclaw server"
 const SIDECAR_START_STALL_TIMEOUT = 60_000
 const SIDECAR_STOP_TIMEOUT = 6_000
 
@@ -43,9 +43,9 @@ export function setDefaultServerUrl(url: string | null) {
 
 export function preferAppEnv(userDataPath: string) {
   const shell = process.platform === "win32" ? null : getUserShell()
-  // jh fork: isolate dev builds from production opencode installs.
+  // jh fork: isolate dev builds from production novaclaw installs.
   // When NOVACLAW_DEV_ISOLATED is set, all XDG paths redirect to userDataPath
-  // so the dev app never touches %APPDATA%/opencode/ (shared with CLI).
+  // so the dev app never touches %APPDATA%/novaclaw/ (shared with CLI).
   const defaultData = process.env.NOVACLAW_DEV_ISOLATED ? userDataPath : undefined
   Object.assign(process.env, {
     ...(shell ? loadShellEnv(shell, getLogger()) : null),
@@ -198,7 +198,7 @@ export async function checkHealth(url: string, password?: string | null): Promis
 
   const headers = new Headers()
   if (password) {
-    const auth = Buffer.from(`opencode:${password}`).toString("base64")
+    const auth = Buffer.from(`novaclaw:${password}`).toString("base64")
     headers.set("authorization", `Basic ${auth}`)
   }
 

@@ -1328,7 +1328,7 @@ describe("ProviderTransform.schema - openai supported schema subset", () => {
   })
 
   test.each([
-    ["opencode", "@ai-sdk/openai"],
+    ["novaclaw", "@ai-sdk/openai"],
     ["custom-openai-compatible", "@ai-sdk/openai"],
     ["azure", "@ai-sdk/azure"],
   ])("sanitizes %s models using %s", (providerID, npm) => {
@@ -1678,7 +1678,7 @@ describe("ProviderTransform.message - surrogate sanitization", () => {
         content: [
           { type: "text", text: text("assistant text") },
           { type: "reasoning", text: text("assistant reasoning") },
-          { type: "tool-call", toolCallId: "call-1", toolName: "Read", input: { filePath: ".opencode/tool/emoji.ts" } },
+          { type: "tool-call", toolCallId: "call-1", toolName: "Read", input: { filePath: ".novaclaw/tool/emoji.ts" } },
           {
             type: "tool-result",
             toolCallId: "call-2",
@@ -2326,12 +2326,12 @@ describe("ProviderTransform.message - strip openai metadata when store=false", (
   })
 
   test("preserves metadata using providerID key when store is false", () => {
-    const opencodeModel = {
+    const novaclawModel = {
       ...openaiModel,
-      providerID: "opencode",
+      providerID: "novaclaw",
       api: {
-        id: "opencode-test",
-        url: "https://api.opencode.ai",
+        id: "novaclaw-test",
+        url: "https://api.novaclaw.app",
         npm: "@ai-sdk/openai-compatible",
       },
     }
@@ -2343,7 +2343,7 @@ describe("ProviderTransform.message - strip openai metadata when store=false", (
             type: "text",
             text: "Hello",
             providerOptions: {
-              opencode: {
+              novaclaw: {
                 itemId: "msg_123",
                 otherOption: "value",
               },
@@ -2353,19 +2353,19 @@ describe("ProviderTransform.message - strip openai metadata when store=false", (
       },
     ] as any[]
 
-    const result = ProviderTransform.message(msgs, opencodeModel, { store: false }) as any[]
+    const result = ProviderTransform.message(msgs, novaclawModel, { store: false }) as any[]
 
-    expect(result[0].content[0].providerOptions?.opencode?.itemId).toBe("msg_123")
-    expect(result[0].content[0].providerOptions?.opencode?.otherOption).toBe("value")
+    expect(result[0].content[0].providerOptions?.novaclaw?.itemId).toBe("msg_123")
+    expect(result[0].content[0].providerOptions?.novaclaw?.otherOption).toBe("value")
   })
 
   test("preserves itemId across all providerOptions keys", () => {
-    const opencodeModel = {
+    const novaclawModel = {
       ...openaiModel,
-      providerID: "opencode",
+      providerID: "novaclaw",
       api: {
-        id: "opencode-test",
-        url: "https://api.opencode.ai",
+        id: "novaclaw-test",
+        url: "https://api.novaclaw.app",
         npm: "@ai-sdk/openai-compatible",
       },
     }
@@ -2374,7 +2374,7 @@ describe("ProviderTransform.message - strip openai metadata when store=false", (
         role: "assistant",
         providerOptions: {
           openai: { itemId: "msg_root" },
-          opencode: { itemId: "msg_opencode" },
+          novaclaw: { itemId: "msg_novaclaw" },
           extra: { itemId: "msg_extra" },
         },
         content: [
@@ -2383,7 +2383,7 @@ describe("ProviderTransform.message - strip openai metadata when store=false", (
             text: "Hello",
             providerOptions: {
               openai: { itemId: "msg_openai_part" },
-              opencode: { itemId: "msg_opencode_part" },
+              novaclaw: { itemId: "msg_novaclaw_part" },
               extra: { itemId: "msg_extra_part" },
             },
           },
@@ -2391,13 +2391,13 @@ describe("ProviderTransform.message - strip openai metadata when store=false", (
       },
     ] as any[]
 
-    const result = ProviderTransform.message(msgs, opencodeModel, { store: false }) as any[]
+    const result = ProviderTransform.message(msgs, novaclawModel, { store: false }) as any[]
 
     expect(result[0].providerOptions?.openai?.itemId).toBe("msg_root")
-    expect(result[0].providerOptions?.opencode?.itemId).toBe("msg_opencode")
+    expect(result[0].providerOptions?.novaclaw?.itemId).toBe("msg_novaclaw")
     expect(result[0].providerOptions?.extra?.itemId).toBe("msg_extra")
     expect(result[0].content[0].providerOptions?.openai?.itemId).toBe("msg_openai_part")
-    expect(result[0].content[0].providerOptions?.opencode?.itemId).toBe("msg_opencode_part")
+    expect(result[0].content[0].providerOptions?.novaclaw?.itemId).toBe("msg_novaclaw_part")
     expect(result[0].content[0].providerOptions?.extra?.itemId).toBe("msg_extra_part")
   })
 

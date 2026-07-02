@@ -9,7 +9,7 @@ const root = resolve(dir, "../..")
 const html = async (name: string) => Bun.file(join(dir, name)).text()
 
 /**
- * Packaged Electron windows load renderer HTML via the privileged `oc://`
+ * Packaged Electron windows load renderer HTML via the privileged `nc://`
  * protocol. Root-relative asset paths like `src="/foo.js"` would resolve from
  * the protocol origin root instead of relative to the current HTML entrypoint.
  *

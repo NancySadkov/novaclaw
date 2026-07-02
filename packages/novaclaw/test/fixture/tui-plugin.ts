@@ -140,7 +140,7 @@ export function createTuiPluginApi(opts: Opts = {}): HostPluginApi {
   let depth = 0
   let size: "medium" | "large" | "xlarge" = "medium"
   const has = opts.theme?.has ?? (() => false)
-  let selected = opts.theme?.selected ?? "opencode"
+  let selected = opts.theme?.selected ?? "novaclaw"
   const set =
     opts.theme?.set ??
     ((name: string) => {
@@ -196,7 +196,7 @@ export function createTuiPluginApi(opts: Opts = {}): HostPluginApi {
       soundboard: {
         registerPack: (pack) => opts.attention?.soundboard?.registerPack?.(pack) ?? (() => {}),
         activate: (id, options) => opts.attention?.soundboard?.activate?.(id, options) ?? false,
-        current: () => opts.attention?.soundboard?.current?.() ?? "opencode.default",
+        current: () => opts.attention?.soundboard?.current?.() ?? "novaclaw.default",
         list: () => opts.attention?.soundboard?.list?.() ?? [],
       },
     },

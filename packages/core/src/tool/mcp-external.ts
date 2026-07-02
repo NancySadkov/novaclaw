@@ -8,7 +8,7 @@ import { type AnyTool, type Content, Failure, makeExternal } from "./tool"
 // CallToolResult and throwing on error) — into a V2 core `AnyTool` via the
 // `makeExternal` escape hatch, so MCP servers (searxng, …) run inside a SessionRunner
 // turn. Step 2 of MCP-in-V2; the registration + layer wiring (steps 3-4) live on the
-// opencode side where `MCP.Service` is available.
+// novaclaw side where `MCP.Service` is available.
 //
 // The shape is kept structural so `core` needs no dependency on the MCP service or `ai`.
 

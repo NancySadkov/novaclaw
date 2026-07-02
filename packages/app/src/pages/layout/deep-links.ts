@@ -1,4 +1,4 @@
-export const deepLinkEvent = "opencode:deep-link"
+export const deepLinkEvent = "novaclaw:deep-link"
 
 const parseUrl = (input: string) => {
   if (!input.startsWith("novaclaw://")) return
@@ -36,13 +36,13 @@ export const collectOpenProjectDeepLinks = (urls: string[]) =>
 export const collectNewSessionDeepLinks = (urls: string[]) =>
   urls.map(parseNewSessionDeepLink).filter((link): link is { directory: string; prompt?: string } => !!link)
 
-type OpenCodeWindow = Window & {
+type NovaClawWindow = Window & {
   __NOVACLAW__?: {
     deepLinks?: string[]
   }
 }
 
-export const drainPendingDeepLinks = (target: OpenCodeWindow) => {
+export const drainPendingDeepLinks = (target: NovaClawWindow) => {
   const pending = target.__NOVACLAW__?.deepLinks ?? []
   if (pending.length === 0) return []
   if (target.__NOVACLAW__) target.__NOVACLAW__.deepLinks = []

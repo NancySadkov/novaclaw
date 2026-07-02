@@ -55,7 +55,7 @@ dependencies.
 ├── specs/                     # internal design docs (V2 architecture, session runtime, storage)
 ├── patches/                   # bun patchedDependencies
 ├── perf/                      # test-suite profiling notes
-├── licenses/ + NOTICE         # retained MIT attribution (parts based on opencode) — keep
+├── licenses/ + NOTICE         # retained upstream MIT attribution — keep
 └── novaclaw.jsonc convention  # user config file name; project dir convention is .novaclaw/
 ```
 

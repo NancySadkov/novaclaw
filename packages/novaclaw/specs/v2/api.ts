@@ -1,13 +1,13 @@
 // @ts-nocheck
 
-import { OpenCode } from "@novaclaw/core"
+import { NovaClaw } from "@novaclaw/core"
 import { ReadTool } from "@novaclaw/core/tools"
 
-const opencode = OpenCode.make({})
+const novaclaw = NovaClaw.make({})
 
-opencode.tool.add(ReadTool)
+novaclaw.tool.add(ReadTool)
 
-opencode.tool.add({
+novaclaw.tool.add({
   name: "bash",
   schema: {
     type: "object",
@@ -22,13 +22,13 @@ opencode.tool.add({
   execute(input, ctx) {},
 })
 
-opencode.auth.add({
+novaclaw.auth.add({
   provider: "openai",
   type: "api",
   value: process.env.OPENAI_API_KEY,
 })
 
-opencode.agent.add({
+novaclaw.agent.add({
   name: "build",
   permissions: [],
   model: {
@@ -38,20 +38,20 @@ opencode.agent.add({
   },
 })
 
-const sessionID = await opencode.session.create({
+const sessionID = await novaclaw.session.create({
   agent: "build",
 })
 
-opencode.subscribe((event) => {
+novaclaw.subscribe((event) => {
   console.log(event)
 })
 
-await opencode.session.prompt({
+await novaclaw.session.prompt({
   sessionID,
   text: "hey what is up",
 })
 
-await opencode.session.prompt({
+await novaclaw.session.prompt({
   sessionID,
   text: "what is up with this",
   files: [
@@ -62,6 +62,6 @@ await opencode.session.prompt({
   ],
 })
 
-await opencode.session.wait()
+await novaclaw.session.wait()
 
-console.log(await opencode.session.messages(sessionID))
+console.log(await novaclaw.session.messages(sessionID))

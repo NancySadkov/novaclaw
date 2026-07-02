@@ -146,7 +146,7 @@ it.instance("resolves attention config defaults and overrides", () =>
         notifications: true,
         sound: true,
         volume: 0.4,
-        sound_pack: "opencode.default",
+        sound_pack: "novaclaw.default",
         sounds: {},
       })
 

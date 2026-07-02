@@ -1,6 +1,6 @@
-# OpenCode Desktop
+# NovaClaw Desktop
 
-The OpenCode Desktop app, built with Electron.
+The NovaClaw Desktop app, built with Electron.
 
 ## Development
 

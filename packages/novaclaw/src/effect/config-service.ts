@@ -31,7 +31,7 @@ export type ServiceClass<Self, Id extends string, Service> = Context.ServiceClas
  *   "@novaclaw/ServerAuthConfig",
  *   {
  *     password: Config.string("NOVACLAW_SERVER_PASSWORD").pipe(Config.option),
- *     username: Config.string("NOVACLAW_SERVER_USERNAME").pipe(Config.withDefault("opencode")),
+ *     username: Config.string("NOVACLAW_SERVER_USERNAME").pipe(Config.withDefault("novaclaw")),
  *   },
  * ) {}
  *

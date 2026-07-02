@@ -21,7 +21,7 @@ export const LEADER_TOKEN = "leader"
 export const NOVACLAW_BASE_MODE = "base"
 export const COMMAND_PALETTE_COMMAND = "command.palette.show"
 
-const NOVACLAW_MODE_KEY = "opencode.mode"
+const NOVACLAW_MODE_KEY = "novaclaw.mode"
 
 export const NovaclawKeymapProvider = KeymapProvider
 export const useNovaclawKeymap = useKeymap

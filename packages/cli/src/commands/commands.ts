@@ -3,8 +3,8 @@ import { Spec } from "../framework/spec"
 
 declare const NOVACLAW_CLI_NAME: string | undefined
 
-export const Commands = Spec.make(typeof NOVACLAW_CLI_NAME === "string" ? NOVACLAW_CLI_NAME : "opencode", {
-  description: "OpenCode 2.0 preview command line interface",
+export const Commands = Spec.make(typeof NOVACLAW_CLI_NAME === "string" ? NOVACLAW_CLI_NAME : "novaclaw", {
+  description: "NovaClaw 2.0 preview command line interface",
   commands: [
     Spec.make("api", {
       description: "Make a request to the running server",

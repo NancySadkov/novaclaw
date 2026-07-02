@@ -6,7 +6,7 @@ interface ImportMeta {
   readonly env: ImportMetaEnv
 }
 
-declare module "virtual:opencode-server" {
+declare module "virtual:novaclaw-server" {
   export namespace Server {
     export const listen: typeof import("../../../novaclaw/dist/types/src/node").Server.listen
     export type Listener = import("../../../novaclaw/dist/types/src/node").Server.Listener

@@ -596,7 +596,7 @@ describe("plugin.loader.shared", () => {
           path.join(dir, "novaclaw.json"),
           JSON.stringify(
             {
-              plugin: ["opencode-openai-codex-auth@1.0.0", "opencode-copilot-auth@1.0.0", "regular-plugin@1.0.0"],
+              plugin: ["novaclaw-openai-codex-auth@1.0.0", "novaclaw-copilot-auth@1.0.0", "regular-plugin@1.0.0"],
             },
             null,
             2,
@@ -612,8 +612,8 @@ describe("plugin.loader.shared", () => {
 
             const pkgs = install.mock.calls.map((call) => call[0])
             expect(pkgs).toContain("regular-plugin@1.0.0")
-            expect(pkgs).not.toContain("opencode-openai-codex-auth@1.0.0")
-            expect(pkgs).not.toContain("opencode-copilot-auth@1.0.0")
+            expect(pkgs).not.toContain("novaclaw-openai-codex-auth@1.0.0")
+            expect(pkgs).not.toContain("novaclaw-copilot-auth@1.0.0")
           } finally {
             install.mockRestore()
           }

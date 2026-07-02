@@ -355,7 +355,7 @@ describe("session.llm-native.request", () => {
     const compatible = LLMNative.model({
       model: {
         ...baseModel,
-        providerID: ProviderV2.ID.make("opencode"),
+        providerID: ProviderV2.ID.make("novaclaw"),
         api: { ...baseModel.api, url: "https://ai.example.test/v1", npm: "@ai-sdk/openai-compatible" },
       },
       apiKey: "test-key",
@@ -389,8 +389,8 @@ describe("session.llm-native.request", () => {
     })
     expect(
       LLMNativeRuntime.status({
-        model: { ...baseModel, providerID: ProviderV2.ID.make("opencode") },
-        provider: { ...providerInfo, id: ProviderV2.ID.make("opencode") },
+        model: { ...baseModel, providerID: ProviderV2.ID.make("novaclaw") },
+        provider: { ...providerInfo, id: ProviderV2.ID.make("novaclaw") },
         auth: undefined,
       }),
     ).toMatchObject({
@@ -401,10 +401,10 @@ describe("session.llm-native.request", () => {
       LLMNativeRuntime.status({
         model: {
           ...baseModel,
-          providerID: ProviderV2.ID.make("opencode"),
+          providerID: ProviderV2.ID.make("novaclaw"),
           api: { ...baseModel.api, npm: "@ai-sdk/openai-compatible" },
         },
-        provider: { ...providerInfo, id: ProviderV2.ID.make("opencode") },
+        provider: { ...providerInfo, id: ProviderV2.ID.make("novaclaw") },
         auth: undefined,
       }),
     ).toMatchObject({
@@ -417,7 +417,7 @@ describe("session.llm-native.request", () => {
         provider: { ...providerInfo, id: ProviderV2.ID.make("google") },
         auth: undefined,
       }),
-    ).toEqual({ type: "unsupported", reason: "provider is not openai, opencode, or anthropic" })
+    ).toEqual({ type: "unsupported", reason: "provider is not openai, novaclaw, or anthropic" })
     expect(
       LLMNativeRuntime.status({
         model: baseModel,
@@ -470,13 +470,13 @@ describe("session.llm-native.request", () => {
     ).toMatchObject({ type: "supported", apiKey: "test-anthropic-key" })
   })
 
-  test("prefers console provider api key over stored opencode auth", () => {
+  test("prefers console provider api key over stored novaclaw auth", () => {
     expect(
       LLMNativeRuntime.status({
-        model: { ...baseModel, providerID: ProviderV2.ID.make("opencode") },
+        model: { ...baseModel, providerID: ProviderV2.ID.make("novaclaw") },
         provider: {
           ...providerInfo,
-          id: ProviderV2.ID.make("opencode"),
+          id: ProviderV2.ID.make("novaclaw"),
           options: { apiKey: "console-token" },
           key: "zen-token",
         },

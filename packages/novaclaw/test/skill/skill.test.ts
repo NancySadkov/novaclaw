@@ -520,13 +520,13 @@ description: A skill in the .agents/skills directory.
 `,
               ),
               Bun.write(
-                path.join(dir, ".novaclaw", "skill", "opencode-skill", "SKILL.md"),
+                path.join(dir, ".novaclaw", "skill", "novaclaw-skill", "SKILL.md"),
                 `---
-name: opencode-skill
+name: novaclaw-skill
 description: A skill in the .novaclaw/skill directory.
 ---
 
-# OpenCode Skill
+# NovaClaw Skill
 `,
               ),
             ]),
@@ -534,7 +534,7 @@ description: A skill in the .novaclaw/skill directory.
 
           const skill = yield* Skill.Service
           const list = (yield* skill.all()).filter((s) => s.location !== "<built-in>")
-          expect(list.map((s) => s.name)).toEqual(["opencode-skill"])
+          expect(list.map((s) => s.name)).toEqual(["novaclaw-skill"])
         }),
       { git: true },
     ),
@@ -569,21 +569,21 @@ description: A skill in the .agents/skills directory.
               Bun.write(
                 path.join(dir, ".novaclaw", "skill", "agent-skill", "SKILL.md"),
                 `---
-name: opencode-skill
+name: novaclaw-skill
 description: A skill in the .novaclaw/skill directory.
 ---
 
-# OpenCode Skill
+# NovaClaw Skill
 `,
               ),
               Bun.write(
                 path.join(dir, ".novaclaw", "skills", "agent-skill", "SKILL.md"),
                 `---
-name: opencode-skill
+name: novaclaw-skill
 description: A skill in the .novaclaw/skills directory.
 ---
 
-# OpenCode Skill
+# NovaClaw Skill
 `,
               ),
             ]),

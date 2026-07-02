@@ -54,14 +54,14 @@ async function start(command: StartCommand) {
     ensureLoopbackNoProxy()
     useSystemCertificates()
     useEnvProxy()
-    const { Server } = await import("virtual:opencode-server")
+    const { Server } = await import("virtual:novaclaw-server")
 
     listener = await Server.listen({
       port: command.port,
       hostname: command.hostname,
       username: "novaclaw",
       password: command.password,
-      cors: ["oc://renderer"],
+      cors: ["nc://renderer"],
     })
     parentPort.postMessage({ type: "ready" })
   } catch (error) {

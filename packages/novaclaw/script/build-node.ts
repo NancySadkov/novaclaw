@@ -24,7 +24,7 @@ await Bun.build({
     NOVACLAW_CHANNEL: `'${Script.channel}'`,
   },
   files: {
-    "opencode-web-ui.gen.ts": "",
+    "novaclaw-web-ui.gen.ts": "",
   },
 })
 

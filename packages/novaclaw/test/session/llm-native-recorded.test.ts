@@ -29,16 +29,6 @@ import { ModelV2 } from "@novaclaw/core/model"
 
 const FIXTURES_DIR = path.join(import.meta.dir, "../fixtures/recordings")
 
-const zenURL = (connection: string) => `https://console.opencode.ai/proxy/connections/${connection}/v1`
-
-const replayOpenAIOAuth = {
-  type: "oauth",
-  refresh: "fixture-refresh-token",
-  access: "fixture-access-token",
-  expires: Date.now() + 60 * 60 * 1000,
-  accountId: "fixture-account",
-} satisfies Auth.Info
-
 type RecordedScenario = {
   readonly id: string
   readonly name: string
@@ -48,8 +38,6 @@ type RecordedScenario = {
   readonly protocol: string
   readonly tags: ReadonlyArray<string>
   readonly canRecord: () => boolean
-  readonly recordAuth?: () => Auth.Info | undefined
-  readonly replayAuth?: Auth.Info
   readonly stableID?: string
   readonly config: (model: ModelsDev.Provider["models"][string]) => Partial<ConfigV1.Info>
 }
@@ -67,29 +55,6 @@ const cloneModel = (model: ModelsDev.Provider["models"][string]) => {
 }
 
 const envValue = (...names: string[]) => names.map((name) => process.env[name]).find(Boolean)
-const decodeAuth = Schema.decodeUnknownOption(Auth.Info)
-const recordOpenAIOAuth = (() => {
-  let loaded = false
-  let auth: Auth.Info | undefined
-  return () => {
-    if (loaded) return auth
-    loaded = true
-    auth = decodeRecordOpenAIOAuth()
-    return auth
-  }
-})()
-
-function decodeRecordOpenAIOAuth() {
-  const value = process.env.NOVACLAW_RECORD_OPENAI_AUTH
-  if (!value) return undefined
-  try {
-    const auth = Option.getOrUndefined(decodeAuth(JSON.parse(value)))
-    return auth?.type === "oauth" ? auth : undefined
-  } catch {
-    return undefined
-  }
-}
-
 const providerConfig = (input: {
   readonly providerID: ProviderV2.ID
   readonly name: string
@@ -120,7 +85,7 @@ const RECORDED_SCENARIOS = [
     modelID: "gpt-4.1-mini",
     cassette: "session/native-openai-tool-loop",
     protocol: "openai-responses",
-    tags: ["opencode", "native", "tool-loop"],
+    tags: ["novaclaw", "native", "tool-loop"],
     canRecord: () => Boolean(envValue("NOVACLAW_RECORD_OPENAI_API_KEY", "OPENAI_API_KEY")),
     config: (model) =>
       providerConfig({
@@ -137,59 +102,13 @@ const RECORDED_SCENARIOS = [
       }),
   },
   {
-    id: "openai-oauth",
-    name: "OpenAI OAuth",
-    providerID: ProviderV2.ID.openai,
-    modelID: "gpt-5.5",
-    cassette: "session/native-openai-oauth-tool-loop",
-    protocol: "openai-responses",
-    tags: ["opencode", "native", "oauth", "tool-loop"],
-    canRecord: () => recordOpenAIOAuth() !== undefined,
-    recordAuth: recordOpenAIOAuth,
-    replayAuth: replayOpenAIOAuth,
-    stableID: "openai-oauth",
-    config: (model) =>
-      providerConfig({
-        providerID: ProviderV2.ID.openai,
-        name: "OpenAI",
-        env: ["OPENAI_API_KEY"],
-        npm: "@ai-sdk/openai",
-        api: "https://api.openai.com/v1",
-        model,
-        options: { baseURL: "https://api.openai.com/v1" },
-      }),
-  },
-  {
-    id: "opencode-proxy",
-    name: "OpenCode proxy",
-    providerID: ProviderV2.ID.opencode,
-    modelID: "gpt-5.2-codex",
-    cassette: "session/native-zen-tool-loop",
-    protocol: "openai-responses",
-    tags: ["opencode", "zen", "native", "tool-loop"],
-    canRecord: () => Boolean(process.env.NOVACLAW_RECORD_CONSOLE_TOKEN && process.env.NOVACLAW_RECORD_ZEN_ORG_ID),
-    config: (model) =>
-      providerConfig({
-        providerID: ProviderV2.ID.opencode,
-        name: "OpenCode Zen",
-        env: ["NOVACLAW_CONSOLE_TOKEN"],
-        npm: "@ai-sdk/openai-compatible",
-        api: zenURL(process.env.NOVACLAW_RECORD_ZEN_CONNECTION ?? "fixture"),
-        model,
-        options: {
-          apiKey: process.env.NOVACLAW_RECORD_CONSOLE_TOKEN ?? "fixture-console-token",
-          headers: { "x-org-id": process.env.NOVACLAW_RECORD_ZEN_ORG_ID ?? "fixture-org" },
-        },
-      }),
-  },
-  {
     id: "anthropic-api-key",
     name: "Anthropic API key",
     providerID: ProviderV2.ID.anthropic,
     modelID: "claude-haiku-4-5-20251001",
     cassette: "session/native-anthropic-tool-loop",
     protocol: "anthropic-messages",
-    tags: ["opencode", "native", "tool-loop"],
+    tags: ["novaclaw", "native", "tool-loop"],
     canRecord: () => Boolean(envValue("NOVACLAW_RECORD_ANTHROPIC_API_KEY", "ANTHROPIC_API_KEY")),
     config: (model) =>
       providerConfig({
@@ -227,10 +146,7 @@ const canRun = (scenario: RecordedScenario) =>
     ? scenario.canRecord()
     : HttpRecorderInternal.hasCassetteSync(scenario.cassette, { directory: FIXTURES_DIR })
 
-const recordError = (scenario: RecordedScenario) =>
-  scenario.id === "openai-oauth"
-    ? "Set NOVACLAW_RECORD_OPENAI_AUTH to an OAuth auth JSON object in the recording environment."
-    : `Missing recording credentials for ${scenario.name}.`
+const recordError = (scenario: RecordedScenario) => `Missing recording credentials for ${scenario.name}.`
 
 const redactRecordedBody = (body: string) =>
   body
@@ -238,13 +154,8 @@ const redactRecordedBody = (body: string) =>
     .replace(/"safety_identifier"\s*:\s*"user-[^"]+"/g, '"safety_identifier":"user_redacted"')
     .replace(/"(access|access_token|refresh|refresh_token|accountId|account_id)"\s*:\s*"[^"]+"/g, '"$1":"redacted"')
 
-function authLayer(scenario: RecordedScenario) {
-  const replayAuth = shouldRecord ? scenario.recordAuth?.() : scenario.replayAuth
-  if (!replayAuth) return Auth.defaultLayer
-  return Layer.mock(Auth.Service)({
-    get: (providerID) => Effect.succeed(providerID === scenario.providerID ? replayAuth : undefined),
-    all: () => Effect.succeed({ [scenario.providerID]: replayAuth }),
-  })
+function authLayer(_scenario: RecordedScenario) {
+  return Auth.defaultLayer
 }
 
 async function loadFixture(providerID: string, modelID: string) {
@@ -271,7 +182,7 @@ function recordedNativeLLMLayer(scenario: RecordedScenario) {
     Layer.provide(ModelsDev.defaultLayer),
     Layer.provide(RuntimeFlags.defaultLayer),
   )
-  // Only the HTTP client is recorded; RequestExecutor and the opencode LLM stack remain real.
+  // Only the HTTP client is recorded; RequestExecutor and the novaclaw LLM stack remain real.
   const metadata = {
     provider: scenario.providerID,
     protocol: scenario.protocol,
@@ -310,8 +221,8 @@ function recordedNativeLLMLayer(scenario: RecordedScenario) {
 const writeConfig = (directory: string, scenario: RecordedScenario, model: ModelsDev.Provider["models"][string]) =>
   Effect.promise(() =>
     Bun.write(
-      path.join(directory, "opencode.json"),
-      JSON.stringify({ $schema: "https://opencode.ai/config.json", ...scenario.config(model) }),
+      path.join(directory, "novaclaw.json"),
+      JSON.stringify({ $schema: "https://novaclaw.app/config.json", ...scenario.config(model) }),
     ),
   )
 
@@ -418,12 +329,6 @@ const driveToolLoop = (scenario: RecordedScenario) =>
 describe("session.llm native recorded", () => {
   for (const scenario of RECORDED_SCENARIOS.filter(isSelected)) {
     if (!canRun(scenario)) {
-      if (shouldRecord && scenario.recordAuth && selectedScenarios.size > 0) {
-        test(`${scenario.name}: drives a tool loop to a final text answer`, () => {
-          throw new Error(recordError(scenario))
-        })
-        continue
-      }
       test.skip(`${scenario.name}: drives a tool loop to a final text answer`, () => {})
       continue
     }

@@ -35,13 +35,13 @@ function resourceAttributes() {
 
 export function resource(): { serviceName: string; serviceVersion: string; attributes: Record<string, string> } {
   return {
-    serviceName: "opencode",
+    serviceName: "novaclaw",
     serviceVersion: InstallationVersion,
     attributes: {
       ...resourceAttributes(),
       "deployment.environment.name": InstallationChannel,
-      "opencode.client": Flag.NOVACLAW_CLIENT,
-      "opencode.run": runID,
+      "novaclaw.client": Flag.NOVACLAW_CLIENT,
+      "novaclaw.run": runID,
       "service.instance.id": runID,
     },
   }

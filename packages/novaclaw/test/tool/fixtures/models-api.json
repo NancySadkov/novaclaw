@@ -28000,13 +28000,13 @@
       }
     }
   },
-  "opencode-go": {
-    "id": "opencode-go",
+  "novaclaw-go": {
+    "id": "novaclaw-go",
     "env": ["NOVACLAW_API_KEY"],
     "npm": "@ai-sdk/openai-compatible",
-    "api": "https://opencode.ai/zen/go/v1",
-    "name": "OpenCode Go",
-    "doc": "https://opencode.ai/docs/zen",
+    "api": "https://novaclaw.app/zen/go/v1",
+    "name": "NovaClaw Go",
+    "doc": "https://novaclaw.app/docs/zen",
     "models": {
       "minimax-m2.7": {
         "id": "minimax-m2.7",
@@ -57810,13 +57810,13 @@
       }
     }
   },
-  "opencode": {
-    "id": "opencode",
+  "novaclaw": {
+    "id": "novaclaw",
     "env": ["NOVACLAW_API_KEY"],
     "npm": "@ai-sdk/openai-compatible",
-    "api": "https://opencode.ai/zen/v1",
-    "name": "OpenCode Zen",
-    "doc": "https://opencode.ai/docs/zen",
+    "api": "https://novaclaw.app/zen/v1",
+    "name": "NovaClaw Zen",
+    "doc": "https://novaclaw.app/docs/zen",
     "models": {
       "minimax-m2.7": {
         "id": "minimax-m2.7",

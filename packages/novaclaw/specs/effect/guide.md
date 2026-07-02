@@ -16,7 +16,7 @@ export interface Interface {
   readonly get: (id: FooID) => Effect.Effect<FooInfo, FooError>
 }
 
-export class Service extends Context.Service<Service, Interface>()("@opencode/Foo") {}
+export class Service extends Context.Service<Service, Interface>()("@novaclaw/Foo") {}
 
 export const layer = Layer.effect(
   Service,
@@ -63,7 +63,7 @@ unless the service truly cannot live in `AppLayer`.
 
 ## Runtime Flags
 
-Read opencode runtime flags through
+Read novaclaw runtime flags through
 [`RuntimeFlags.Service`](../../src/effect/runtime-flags.ts), not through
 mutable `Flag` or late `process.env` reads.
 

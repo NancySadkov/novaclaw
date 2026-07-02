@@ -10,11 +10,11 @@ import { TestTuiContexts } from "../../fixture/tui-environment"
 import { discoverEditorConnection } from "@novaclaw/tui/editor"
 
 const originalClaudePort = process.env.CLAUDE_CODE_SSE_PORT
-const originalOpencodePort = process.env.NOVACLAW_EDITOR_SSE_PORT
+const originalNovaclawPort = process.env.NOVACLAW_EDITOR_SSE_PORT
 
 afterEach(() => {
   process.env.CLAUDE_CODE_SSE_PORT = originalClaudePort
-  process.env.NOVACLAW_EDITOR_SSE_PORT = originalOpencodePort
+  process.env.NOVACLAW_EDITOR_SSE_PORT = originalNovaclawPort
 })
 
 function nextTick() {

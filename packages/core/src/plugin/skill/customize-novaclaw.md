@@ -122,10 +122,10 @@ Every field is optional.
   },
 
   "plugin": [
-    "opencode-gemini-auth",
-    "opencode-foo@1.2.3",
+    "novaclaw-gemini-auth",
+    "novaclaw-foo@1.2.3",
     "./local-plugin.ts",
-    ["opencode-bar", { "option": "value" }]
+    ["novaclaw-bar", { "option": "value" }]
   ],
 
   "permission": {
@@ -310,11 +310,11 @@ model: anthropic/claude-sonnet-4-6
 
 ```json
 "plugin": [
-  "opencode-gemini-auth",            // npm spec, latest
-  "opencode-foo@1.2.3",              // npm spec, pinned
+  "novaclaw-gemini-auth",            // npm spec, latest
+  "novaclaw-foo@1.2.3",              // npm spec, pinned
   "./local-plugin.ts",               // file path, relative to the declaring config
   "file:///abs/path/plugin.js",      // file URL
-  ["opencode-bar", { "key": "val" }] // tuple form with options
+  ["novaclaw-bar", { "key": "val" }] // tuple form with options
 ]
 ```
 

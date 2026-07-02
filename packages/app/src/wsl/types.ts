@@ -23,7 +23,7 @@ export type WslDistroProbe = {
   error: string | null
 }
 
-export type WslOpencodeCheck = {
+export type WslNovaclawCheck = {
   distro: string
   resolvedPath: string | null
   version: string | null
@@ -54,15 +54,15 @@ export type WslJob =
   | { kind: "install-wsl"; startedAt: number }
   | { kind: "install-distro"; distro: string; startedAt: number }
   | { kind: "probe-distro"; distro: string; startedAt: number }
-  | { kind: "probe-opencode"; distro: string; startedAt: number }
-  | { kind: "install-opencode"; distro: string; startedAt: number }
+  | { kind: "probe-novaclaw"; distro: string; startedAt: number }
+  | { kind: "install-novaclaw"; distro: string; startedAt: number }
 
 export type WslServersState = {
   runtime: WslRuntimeCheck | null
   installed: WslInstalledDistro[]
   online: WslOnlineDistro[]
   distroProbes: Record<string, WslDistroProbe>
-  opencodeChecks: Record<string, WslOpencodeCheck>
+  novaclawChecks: Record<string, WslNovaclawCheck>
   pendingRestart: boolean
   servers: WslServerItem[]
   job: WslJob | null
@@ -78,8 +78,8 @@ export type WslServersPlatform = {
   installWsl(): Promise<void>
   installDistro(name: string): Promise<void>
   probeDistro(name: string): Promise<void>
-  probeOpencode(name: string): Promise<void>
-  installOpencode(name: string): Promise<void>
+  probeNovaclaw(name: string): Promise<void>
+  installNovaclaw(name: string): Promise<void>
   openTerminal(name: string): Promise<void>
   addServer(distro: string): Promise<WslServerConfig>
   removeServer(id: string): Promise<void>

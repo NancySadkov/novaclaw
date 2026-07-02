@@ -18,15 +18,15 @@ describe("inlineCodeKind", () => {
   test("detects file and directory paths", () => {
     expect(inlineCodeKind(`app.tsx`)).toBe("path")
     expect(inlineCodeKind(`packages/desktop-electron`)).toBe("path")
-    expect(inlineCodeKind(`~/.config/opencode`)).toBe("path")
+    expect(inlineCodeKind(`~/.config/novaclaw`)).toBe("path")
     expect(inlineCodeKind(`@novaclaw/app`)).toBe("path")
     expect(inlineCodeKind(`session/status`)).toBe("path")
   })
 
   test("detects urls", () => {
-    expect(inlineCodeKind(`https://opencode.ai/docs`)).toBe("url")
+    expect(inlineCodeKind(`https://novaclaw.app/docs`)).toBe("url")
     expect(inlineCodeKind(`http://localhost:4444`)).toBe("url")
-    expect(inlineCodeKind(`file:///tmp/opencode`)).toBeUndefined()
-    expect(inlineCodeKind(`ftp://opencode.ai/docs`)).toBeUndefined()
+    expect(inlineCodeKind(`file:///tmp/novaclaw`)).toBeUndefined()
+    expect(inlineCodeKind(`ftp://novaclaw.app/docs`)).toBeUndefined()
   })
 })

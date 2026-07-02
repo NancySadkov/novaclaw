@@ -236,11 +236,11 @@ describe("SessionStatus.Info", () => {
       message: "transient",
       action: {
         reason: "free_tier_limit",
-        provider: "opencode",
+        provider: "novaclaw",
         title: "Free limit reached",
-        message: "Subscribe to OpenCode Go.",
+        message: "Subscribe to NovaClaw Go.",
         label: "subscribe",
-        link: "https://opencode.ai/go",
+        link: "https://novaclaw.app/go",
       },
       next: 500,
     }

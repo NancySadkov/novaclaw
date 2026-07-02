@@ -39,11 +39,7 @@ const tui: TuiPlugin = async (api) => {
       home_bottom() {
         const hidden = createMemo(() => api.kv.get("tips_hidden", false))
         const first = createMemo(() => api.state.session.count() === 0)
-        const connected = createMemo(() =>
-          api.state.provider.some(
-            (item) => item.id !== "opencode" || Object.values(item.models).some((model) => model.cost?.input !== 0),
-          ),
-        )
+        const connected = createMemo(() => api.state.provider.length > 0)
         const show = createMemo(() => (!first() || !connected()) && !hidden())
         return <View api={api} hidden={hidden()} show={show()} connected={connected()} />
       },

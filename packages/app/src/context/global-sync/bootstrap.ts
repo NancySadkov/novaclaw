@@ -95,7 +95,7 @@ export const loadProjectsQuery = (scope: ServerScope, sdk: NovaclawClient) =>
         sdk.project.list().then((x) => {
           return (x.data ?? [])
             .filter((p) => !!p?.id)
-            .filter((p) => !!p.worktree && !p.worktree.includes("opencode-test"))
+            .filter((p) => !!p.worktree && !p.worktree.includes("novaclaw-test"))
             .slice()
             .sort((a, b) => cmp(a.id, b.id))
         }),

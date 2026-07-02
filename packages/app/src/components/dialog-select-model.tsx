@@ -15,7 +15,7 @@ import { useLanguage } from "@/context/language"
 import { decode64 } from "@/utils/base64"
 
 const isFree = (provider: string, cost: { input: number } | undefined) =>
-  provider === "opencode" && (!cost || cost.input === 0)
+  provider === "novaclaw" && (!cost || cost.input === 0)
 
 type ModelState = ReturnType<typeof useLocal>["model"]
 

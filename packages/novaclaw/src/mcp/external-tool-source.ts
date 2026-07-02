@@ -9,13 +9,13 @@ import { InstanceRef } from "@/effect/instance-ref"
 import type { InstanceContext } from "@/project/instance-context"
 import { MCP } from "."
 
-// Opencode-side `ExternalToolSource` backed by MCP. Lists connected MCP servers' tools
+// Novaclaw-side `ExternalToolSource` backed by MCP. Lists connected MCP servers' tools
 // (`mcp.tools()` forces lazy connection of configured servers like `npx mcp-searxng`) and
 // adapts each to a V2 core tool via `fromMcpTool`. Replaces core's empty `ExternalToolSource`
 // node in the V2 location graph (via `buildLocationServiceMap` replacements), so MCP tools
-// reach the runner without core depending on opencode.
+// reach the runner without core depending on novaclaw.
 //
-// MCP runs against opencode's instance context, which the V2 (core) location graph doesn't
+// MCP runs against novaclaw's instance context, which the V2 (core) location graph doesn't
 // construct — so we bridge a minimal `InstanceRef` from the location's directory (the only
 // field MCP/McpAuth read). `Effect.catchCause` keeps a missing-context defect from breaking
 // a session. Entries are cached and rebuilt only when the MCP tool-NAME set changes, so

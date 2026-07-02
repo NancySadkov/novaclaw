@@ -1,23 +1,23 @@
-// Subprocess integration tests for `opencode run` (non-interactive mode).
+// Subprocess integration tests for `novaclaw run` (non-interactive mode).
 // These exercise the real CLI binary against a TestLLMServer running in the
 // same process. See `test/lib/cli-process.ts` for the harness — each test uses
-// `opencode.run(message, opts?)` to spawn `bun src/index.ts run ...` with
+// `novaclaw.run(message, opts?)` to spawn `bun src/index.ts run ...` with
 // `NOVACLAW_CONFIG_CONTENT` providing the test provider config inline.
 import { describe, expect } from "bun:test"
 import { Effect } from "effect"
 import { reply } from "../../lib/llm-server"
 import { cliIt } from "../../lib/cli-process"
 
-describe("opencode run (non-interactive subprocess)", () => {
+describe("novaclaw run (non-interactive subprocess)", () => {
   // Happy path: prompt completes, output reaches stdout, process exits 0.
   // If this fails, all the others likely will too — debug here first.
   cliIt.concurrent(
     "exits 0 and writes the response to stdout on a successful prompt",
-    ({ llm, opencode }) =>
+    ({ llm, novaclaw }) =>
       Effect.gen(function* () {
         yield* llm.text("hello from the test llm")
-        const result = yield* opencode.run("say hi")
-        opencode.expectExit(result, 0)
+        const result = yield* novaclaw.run("say hi")
+        novaclaw.expectExit(result, 0)
         expect(result.stdout).toBe("hello from the test llm\n")
       }),
     60_000,
@@ -25,7 +25,7 @@ describe("opencode run (non-interactive subprocess)", () => {
 
   cliIt.concurrent(
     "prints each completed text part in order around a tool continuation",
-    ({ llm, opencode }) =>
+    ({ llm, novaclaw }) =>
       Effect.gen(function* () {
         yield* llm.push(
           reply().text("  before tool  ").tool("bash", {
@@ -35,11 +35,11 @@ describe("opencode run (non-interactive subprocess)", () => {
         )
         yield* llm.text("  after tool  ")
 
-        const result = yield* opencode.run("use a tool", {
+        const result = yield* novaclaw.run("use a tool", {
           extraArgs: ["--dangerously-skip-permissions"],
         })
 
-        opencode.expectExit(result, 0)
+        novaclaw.expectExit(result, 0)
         expect(result.stdout).toBe("before tool\nafter tool\n")
       }),
     60_000,
@@ -47,16 +47,16 @@ describe("opencode run (non-interactive subprocess)", () => {
 
   cliIt.concurrent(
     "prints reasoning before text only with --thinking",
-    ({ llm, opencode }) =>
+    ({ llm, novaclaw }) =>
       Effect.gen(function* () {
         yield* llm.reason("  considering  ", { text: "  answer  " })
-        const thinking = yield* opencode.run("think", { extraArgs: ["--thinking"] })
-        opencode.expectExit(thinking, 0)
+        const thinking = yield* novaclaw.run("think", { extraArgs: ["--thinking"] })
+        novaclaw.expectExit(thinking, 0)
         expect(thinking.stdout).toBe("Thinking: considering\nanswer\n")
 
         yield* llm.reason("hidden", { text: "visible" })
-        const plain = yield* opencode.run("think again")
-        opencode.expectExit(plain, 0)
+        const plain = yield* novaclaw.run("think again")
+        novaclaw.expectExit(plain, 0)
         expect(plain.stdout).toBe("visible\n")
       }),
     60_000,
@@ -69,9 +69,9 @@ describe("opencode run (non-interactive subprocess)", () => {
   // would expire the timeout and produce a different (signal-killed) failure.
   cliIt.concurrent(
     "exits nonzero promptly when the model is unknown (regression for #27371)",
-    ({ opencode }) =>
+    ({ novaclaw }) =>
       Effect.gen(function* () {
-        const result = yield* opencode.run("say hi", {
+        const result = yield* novaclaw.run("say hi", {
           model: "test/nonexistent-model",
           timeoutMs: 15_000,
         })
@@ -86,7 +86,7 @@ describe("opencode run (non-interactive subprocess)", () => {
   // is not accidentally used as the failure compatibility oracle.
   cliIt.concurrent(
     "unknown stream finish preserves partial output and exits 0",
-    ({ llm, opencode }) =>
+    ({ llm, novaclaw }) =>
       Effect.gen(function* () {
         yield* llm.push(
           reply().text("partial response").tool("bash", {
@@ -95,7 +95,7 @@ describe("opencode run (non-interactive subprocess)", () => {
           }),
         )
         yield* llm.fail("upstream provider exploded mid-stream")
-        const result = yield* opencode.run("trigger midstream error", { timeoutMs: 30_000 })
+        const result = yield* novaclaw.run("trigger midstream error", { timeoutMs: 30_000 })
         expect(result.exitCode).toBe(0)
         expect(result.stdout).toBe("partial response\n")
         expect(result.stderr).not.toContain("upstream provider exploded mid-stream")
@@ -108,13 +108,13 @@ describe("opencode run (non-interactive subprocess)", () => {
   // shape so a future event-emit change has to update this expectation.
   cliIt.concurrent(
     "--format json emits parseable line-delimited JSON to stdout",
-    ({ llm, opencode }) =>
+    ({ llm, novaclaw }) =>
       Effect.gen(function* () {
         yield* llm.text("structured output")
-        const result = yield* opencode.run("say hi", { format: "json" })
-        opencode.expectExit(result, 0)
+        const result = yield* novaclaw.run("say hi", { format: "json" })
+        novaclaw.expectExit(result, 0)
 
-        const events = opencode.parseJsonEvents(result.stdout)
+        const events = novaclaw.parseJsonEvents(result.stdout)
         expect(events.length).toBeGreaterThan(0)
         for (const evt of events) {
           expect(typeof evt.type).toBe("string")
@@ -142,15 +142,15 @@ describe("opencode run (non-interactive subprocess)", () => {
 
   cliIt.concurrent(
     "--format json emits a pure error record for a rejected prompt request",
-    ({ opencode }) =>
+    ({ novaclaw }) =>
       Effect.gen(function* () {
-        const result = yield* opencode.run("use an unknown model", {
+        const result = yield* novaclaw.run("use an unknown model", {
           model: "test/nonexistent-model",
           format: "json",
         })
 
         expect(result.exitCode).not.toBe(0)
-        const events = opencode.parseJsonEvents(result.stdout)
+        const events = novaclaw.parseJsonEvents(result.stdout)
         expect(events.map((event) => event.type)).toEqual(["error"])
         expect(events[0]).toEqual({
           type: "error",
@@ -165,7 +165,7 @@ describe("opencode run (non-interactive subprocess)", () => {
 
   cliIt.concurrent(
     "--format json preserves reasoning, tool, and continuation ordering",
-    ({ llm, opencode }) =>
+    ({ llm, novaclaw }) =>
       Effect.gen(function* () {
         yield* llm.push(
           reply().reason("reasoning").text("before").tool("bash", {
@@ -175,13 +175,13 @@ describe("opencode run (non-interactive subprocess)", () => {
         )
         yield* llm.text("after")
 
-        const result = yield* opencode.run("exercise json records", {
+        const result = yield* novaclaw.run("exercise json records", {
           format: "json",
           extraArgs: ["--thinking", "--dangerously-skip-permissions"],
         })
 
         expect(result.exitCode).toBe(0)
-        const events = opencode.parseJsonEvents(result.stdout)
+        const events = novaclaw.parseJsonEvents(result.stdout)
         expect(events.map((event) => event.type)).toEqual([
           "step_start",
           "reasoning",
@@ -214,7 +214,7 @@ describe("opencode run (non-interactive subprocess)", () => {
 
   cliIt.concurrent(
     "--format json records partial output for an unknown stream finish",
-    ({ llm, opencode }) =>
+    ({ llm, novaclaw }) =>
       Effect.gen(function* () {
         yield* llm.push(
           reply().text("partial json").tool("bash", {
@@ -223,9 +223,9 @@ describe("opencode run (non-interactive subprocess)", () => {
           }),
         )
         yield* llm.fail("provider failed")
-        const result = yield* opencode.run("fail after output", { format: "json" })
+        const result = yield* novaclaw.run("fail after output", { format: "json" })
 
-        const events = opencode.parseJsonEvents(result.stdout)
+        const events = novaclaw.parseJsonEvents(result.stdout)
         expect(result.exitCode).toBe(0)
         expect(events.map((event) => event.type)).toEqual([
           "step_start",
@@ -243,34 +243,34 @@ describe("opencode run (non-interactive subprocess)", () => {
 
   cliIt.concurrent(
     "rejects requested permissions by default and allows them with the dangerous flag",
-    ({ home, llm, opencode }) =>
+    ({ home, llm, novaclaw }) =>
       Effect.gen(function* () {
         yield* llm.tool("bash", { command: "rm -f denied-file", description: "Remove a test file" })
         yield* llm.text("continued after rejection")
-        const denied = yield* opencode.run("request permission", { permission: { bash: "ask" } })
-        opencode.expectExit(denied, 0)
+        const denied = yield* novaclaw.run("request permission", { permission: { bash: "ask" } })
+        novaclaw.expectExit(denied, 0)
         expect(denied.stderr).toContain("permission requested: bash")
         expect(denied.stdout).toBe("")
 
         yield* llm.reset
         yield* llm.tool("bash", { command: "rm -f allowed-file", description: "Remove a test file" })
         yield* llm.text("continued after approval")
-        const allowed = yield* opencode.run("request permission", {
+        const allowed = yield* novaclaw.run("request permission", {
           permission: { bash: "ask" },
           extraArgs: ["--dangerously-skip-permissions"],
         })
-        opencode.expectExit(allowed, 0)
+        novaclaw.expectExit(allowed, 0)
         expect(allowed.stderr).not.toContain("permission requested: bash")
         expect(allowed.stdout).toContain("continued after approval")
 
         yield* llm.reset
         yield* llm.tool("bash", { command: "touch explicitly-denied", description: "Create a denied marker" })
         yield* llm.text("continued after explicit denial")
-        const explicitlyDenied = yield* opencode.run("request denied permission", {
+        const explicitlyDenied = yield* novaclaw.run("request denied permission", {
           permission: { bash: "deny" },
           extraArgs: ["--dangerously-skip-permissions"],
         })
-        opencode.expectExit(explicitlyDenied, 0)
+        novaclaw.expectExit(explicitlyDenied, 0)
         expect(explicitlyDenied.stdout).toContain("continued after explicit denial")
         expect(yield* Effect.promise(() => Bun.file(`${home}/explicitly-denied`).exists())).toBe(false)
       }),
@@ -279,19 +279,19 @@ describe("opencode run (non-interactive subprocess)", () => {
 
   cliIt.live(
     "attach mode sends client-local file contents without a shared path",
-    ({ home, llm, opencode }) =>
+    ({ home, llm, novaclaw }) =>
       Effect.gen(function* () {
         const source = `${home}/client-only.txt`
         const sentinel = "client-only attachment sentinel"
         yield* Effect.promise(() => Bun.write(source, sentinel))
         yield* llm.text("attachment received")
-        const server = yield* opencode.serve()
+        const server = yield* novaclaw.serve()
 
-        const result = yield* opencode.run("read the attachment", {
+        const result = yield* novaclaw.run("read the attachment", {
           extraArgs: ["--attach", server.url, `--file=${source}`, "--"],
         })
 
-        opencode.expectExit(result, 0)
+        novaclaw.expectExit(result, 0)
         const input = JSON.stringify(yield* llm.inputs)
         expect(input).toContain(sentinel)
         expect(input).not.toContain(`file://${source}`)
@@ -301,9 +301,9 @@ describe("opencode run (non-interactive subprocess)", () => {
 
   cliIt.concurrent(
     "attach mode rejects local directories before prompt admission",
-    ({ home, opencode }) =>
+    ({ home, novaclaw }) =>
       Effect.gen(function* () {
-        const result = yield* opencode.run("read the directory", {
+        const result = yield* novaclaw.run("read the directory", {
           extraArgs: ["--attach", "http://127.0.0.1:1", `--file=${home}`, "--"],
         })
 
@@ -315,10 +315,10 @@ describe("opencode run (non-interactive subprocess)", () => {
 
   cliIt.live(
     "SIGINT interrupts an active non-interactive run without leaking the process",
-    ({ llm, opencode }) =>
+    ({ llm, novaclaw }) =>
       Effect.gen(function* () {
         yield* llm.hang
-        const run = yield* opencode.startRun("wait forever")
+        const run = yield* novaclaw.startRun("wait forever")
         yield* llm.wait(1)
         run.interrupt()
         const result = yield* run.result

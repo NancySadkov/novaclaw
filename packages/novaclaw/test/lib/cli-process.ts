@@ -1,22 +1,22 @@
-// Subprocess test harness for the opencode CLI. Spawns the real binary against
+// Subprocess test harness for the novaclaw CLI. Spawns the real binary against
 // a TestLLMServer running in-process at a random port, with full env isolation.
 //
 // This is the missing test tier: in-process tests can't catch bugs that span
 // argv parsing → server boot → SDK call → event consumption → exit code (like
 // the original /event race or #27371's invalid-model hang).
 //
-// Configuration flows through opencode's built-in test affordances:
+// Configuration flows through novaclaw's built-in test affordances:
 //   - NOVACLAW_CONFIG_CONTENT      : provider config inline, no files to find
 //   - NOVACLAW_TEST_HOME           : pins os.homedir() → tmpdir
-//   - NOVACLAW_DISABLE_PROJECT_CONFIG : skip walking up for opencode.json
+//   - NOVACLAW_DISABLE_PROJECT_CONFIG : skip walking up for novaclaw.json
 //   - NOVACLAW_PURE                : skip external plugin discovery + install
 //   - NOVACLAW_DISABLE_AUTOUPDATE / AUTOCOMPACT / MODELS_FETCH : no background work
 // Plus HOME / XDG_* pointing at the tmpdir for belt-and-suspenders isolation.
 //
-// Today only `opencode.run` is fully wired. The shape supports adding more
-// builders (`opencode.serve(opts)`, `opencode.auth(...)`)
+// Today only `novaclaw.run` is fully wired. The shape supports adding more
+// builders (`novaclaw.serve(opts)`, `novaclaw.auth(...)`)
 // without changing the fixture. Long-lived commands like `serve` will need a
-// different return shape — see the TODO at the bottom of OpencodeCli.
+// different return shape — see the TODO at the bottom of NovaclawCli.
 import { test, type TestOptions } from "bun:test"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { AppProcess } from "@novaclaw/core/process"
@@ -28,8 +28,8 @@ import { TestLLMServer } from "./llm-server"
 import { testProviderConfig } from "./test-provider"
 import { it } from "./effect"
 
-const opencodeRoot = path.resolve(import.meta.dir, "../../")
-const cliEntry = path.join(opencodeRoot, "src/index.ts")
+const novaclawRoot = path.resolve(import.meta.dir, "../../")
+const cliEntry = path.join(novaclawRoot, "src/index.ts")
 
 export const testModelID = "test/test-model"
 
@@ -89,7 +89,7 @@ export type RunHandle = {
 
 export type SpawnOpts = { readonly timeoutMs?: number; readonly env?: Record<string, string> }
 
-// Typed equivalent of constructing argv for `opencode run`. New flags should
+// Typed equivalent of constructing argv for `novaclaw run`. New flags should
 // land here so tests stay grep-able and refactor-safe.
 export type RunOpts = SpawnOpts & {
   readonly model?: string
@@ -101,7 +101,7 @@ export type RunOpts = SpawnOpts & {
   readonly extraArgs?: string[]
 }
 
-// `opencode serve` is a long-lived process — it never exits on its own.
+// `novaclaw serve` is a long-lived process — it never exits on its own.
 // `serve(opts)` therefore returns a handle inside the caller's Scope: the
 // subprocess is killed when the scope closes (test end), and the URL the
 // server actually bound to (port 0 means OS-assigned) is parsed off stdout.
@@ -128,11 +128,11 @@ export type ServeHandle = {
   readonly exited: Promise<number>
 }
 
-export type OpencodeCli = {
+export type NovaclawCli = {
   // High-level: run a single prompt against the test model. Short-lived.
   readonly run: (message: string, opts?: RunOpts) => Effect.Effect<RunResult>
   readonly startRun: (message: string, opts?: RunOpts) => Effect.Effect<RunHandle, never, Scope.Scope>
-  // Spawn `opencode serve` and wait until it's listening. Long-lived: the
+  // Spawn `novaclaw serve` and wait until it's listening. Long-lived: the
   // returned handle is killed when the caller's Scope closes. Fails if the
   // listening line doesn't appear within `readyTimeoutMs`.
   readonly serve: (opts?: ServeOpts) => Effect.Effect<ServeHandle, Error, Scope.Scope>
@@ -152,7 +152,7 @@ export type OpencodeCli = {
 export type CliFixture = {
   readonly llm: TestLLMServer["Service"]
   readonly home: string
-  readonly opencode: OpencodeCli
+  readonly novaclaw: NovaclawCli
 }
 
 // Provisions a TestLLMServer + tmpdir + spawn helper and invokes fn. Cleans
@@ -177,7 +177,7 @@ export function withCliFixture<A, E>(
     const configJson = JSON.stringify(testProviderConfig(llm.url))
     const env = isolatedEnv(home, configJson)
 
-    const spawn = Effect.fn("opencode.spawn")(function* (args: string[], opts?: SpawnOpts) {
+    const spawn = Effect.fn("novaclaw.spawn")(function* (args: string[], opts?: SpawnOpts) {
       const start = Date.now()
       const timeoutMs = opts?.timeoutMs ?? 30_000
       // stdin: "ignore" so the child doesn't see a piped stdin and block
@@ -251,7 +251,7 @@ export function withCliFixture<A, E>(
       return spawn(runArgs(message, opts), runOpts(opts))
     }
 
-    const startRun = Effect.fn("opencode.startRun")(function* (message: string, opts?: RunOpts) {
+    const startRun = Effect.fn("novaclaw.startRun")(function* (message: string, opts?: RunOpts) {
       const start = Date.now()
       const options = runOpts(opts)
       const proc = yield* Effect.acquireRelease(
@@ -284,7 +284,7 @@ export function withCliFixture<A, E>(
       } satisfies RunHandle
     })
 
-    const serve = Effect.fn("opencode.serve")(function* (opts?: ServeOpts) {
+    const serve = Effect.fn("novaclaw.serve")(function* (opts?: ServeOpts) {
       const argv = ["serve"]
       // Default port 0 — let the OS pick a free port, parse the actual one
       // off stdout. Hard-coded ports flake under parallel tests.
@@ -340,7 +340,7 @@ export function withCliFixture<A, E>(
           orElse: () =>
             Effect.fail(
               new Error(
-                `opencode serve did not become ready within ${readyTimeoutMs}ms\n` +
+                `novaclaw serve did not become ready within ${readyTimeoutMs}ms\n` +
                   `stderr (last 2000):\n${stderrChunks.join("").slice(-2000)}`,
               ),
             ),
@@ -358,11 +358,11 @@ export function withCliFixture<A, E>(
       } satisfies ServeHandle
     })
 
-    const opencode: OpencodeCli = { run, startRun, serve, spawn, expectExit, parseJsonEvents }
+    const novaclaw: NovaclawCli = { run, startRun, serve, spawn, expectExit, parseJsonEvents }
 
-    return yield* fn({ llm, home, opencode })
+    return yield* fn({ llm, home, novaclaw })
     // FetchHttpClient is provided so test bodies can `yield* HttpClient.HttpClient`
-    // and hit endpoints on `opencode.serve()` without rolling their own fetch.
+    // and hit endpoints on `novaclaw.serve()` without rolling their own fetch.
   }).pipe(
     Effect.provide(
       Layer.mergeAll(TestLLMServer.layer, FetchHttpClient.layer, FSUtil.defaultLayer, AppProcess.defaultLayer),
@@ -384,7 +384,7 @@ function normalizeLines(value: string) {
 
 // Convenience for the common assertion pattern. Dumps stderr/stdout when
 // the exit code doesn't match — saves debugging time on CI failures.
-function expectExit(result: RunResult, expected: number, label = "opencode") {
+function expectExit(result: RunResult, expected: number, label = "novaclaw") {
   if (result.exitCode === expected) return
   const tail = (s: string, n: number) => (s.length > n ? "..." + s.slice(-n) : s)
   // eslint-disable-next-line no-console
@@ -398,13 +398,13 @@ function expectExit(result: RunResult, expected: number, label = "opencode") {
 
 // `cliIt.live(name, fixture => effect)` is the same as
 // `it.live(name, () => withCliFixture(fixture))` — one fewer nesting level at
-// every call site. Use this for any test that needs the opencode CLI fixture.
+// every call site. Use this for any test that needs the novaclaw CLI fixture.
 //
 // Subprocess tests must run against the real clock — a TestClock-paused
 // environment can't drive a child process. If you need `.only` or `.skip`, fall
 // back to `it.live` + `withCliFixture` directly.
 // Body's R is `Scope.Scope | never` so tests can yield* scope-requiring
-// resources (e.g. `opencode.serve`) without an extra `Effect.scoped` wrapper —
+// resources (e.g. `novaclaw.serve`) without an extra `Effect.scoped` wrapper —
 // `withCliFixture`'s outer scope is the natural lifetime.
 export const cliIt = {
   live: <A, E>(

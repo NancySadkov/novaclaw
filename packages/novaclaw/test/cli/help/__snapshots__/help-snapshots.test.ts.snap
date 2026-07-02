@@ -1,16 +1,16 @@
 // Bun Snapshot v1, https://bun.sh/docs/test/snapshots
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode mcp --help 1`] = `
-"opencode mcp
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw mcp --help 1`] = `
+"novaclaw mcp
 
 manage MCP (Model Context Protocol) servers
 
 Commands:
-  opencode mcp add [name]     add an MCP server
-  opencode mcp list           list MCP servers and their status                        [aliases: ls]
-  opencode mcp auth [name]    authenticate with an OAuth-enabled MCP server
-  opencode mcp logout [name]  remove OAuth credentials for an MCP server
-  opencode mcp debug <name>   debug OAuth connection for an MCP server
+  novaclaw mcp add [name]     add an MCP server
+  novaclaw mcp list           list MCP servers and their status                        [aliases: ls]
+  novaclaw mcp auth [name]    authenticate with an OAuth-enabled MCP server
+  novaclaw mcp logout [name]  remove OAuth credentials for an MCP server
+  novaclaw mcp debug <name>   debug OAuth connection for an MCP server
 
 Options:
   -h, --help        show help                                                              [boolean]
@@ -20,10 +20,10 @@ Options:
       --pure        run without external plugins                                           [boolean]"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode attach --help 1`] = `
-"opencode attach <url>
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw attach --help 1`] = `
+"novaclaw attach <url>
 
-attach to a running opencode server
+attach to a running novaclaw server
 
 Positionals:
   url  http://localhost:4096                                                     [string] [required]
@@ -39,17 +39,17 @@ Options:
   -s, --session       session id to continue                                                [string]
       --fork          fork the session when continuing (use with --continue or --session)  [boolean]
   -p, --password      basic auth password (defaults to NOVACLAW_SERVER_PASSWORD)            [string]
-  -u, --username      basic auth username (defaults to NOVACLAW_SERVER_USERNAME or 'opencode')
+  -u, --username      basic auth username (defaults to NOVACLAW_SERVER_USERNAME or 'novaclaw')
                                                                                             [string]
       --mini          start the minimal interactive interface             [boolean] [default: false]
       --no-replay     disable mini session history replay on resume and after resize       [boolean]
       --replay-limit  cap visible mini replay to the newest N messages                      [number]"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode run --help 1`] = `
-"opencode run [message..]
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw run --help 1`] = `
+"novaclaw run [message..]
 
-run opencode with a message
+run novaclaw with a message
 
 Positionals:
   message  message to send                                                     [array] [default: []]
@@ -73,12 +73,12 @@ Options:
   -f, --file                          file(s) to attach to message                           [array]
       --title                         title for the session (uses truncated prompt if no value
                                       provided)                                             [string]
-      --attach                        attach to a running opencode server (e.g.,
+      --attach                        attach to a running novaclaw server (e.g.,
                                       http://localhost:4096)                                [string]
   -p, --password                      basic auth password (defaults to NOVACLAW_SERVER_PASSWORD)
                                                                                             [string]
   -u, --username                      basic auth username (defaults to NOVACLAW_SERVER_USERNAME or
-                                      'opencode')                                           [string]
+                                      'novaclaw')                                           [string]
       --dir                           directory to run in, path on remote server if attaching
                                                                                             [string]
       --port                          port for the local server (defaults to random port if no value
@@ -90,24 +90,24 @@ Options:
                                       (dangerous!)                        [boolean] [default: false]"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode debug --help 1`] = `
-"opencode debug
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw debug --help 1`] = `
+"novaclaw debug
 
 debugging and troubleshooting tools
 
 Commands:
-  opencode debug config        show resolved configuration
-  opencode debug rg            ripgrep debugging utilities
-  opencode debug file          file system debugging utilities
-  opencode debug scrap         list all known projects
-  opencode debug skill         list all available skills
-  opencode debug snapshot      snapshot debugging utilities
-  opencode debug startup       print startup timing
-  opencode debug agent <name>  show agent configuration details
-  opencode debug v2            debug v2 catalog and built-in plugins
-  opencode debug info          show debug information
-  opencode debug paths         show global paths (data, config, cache, state)
-  opencode debug wait          wait indefinitely (for debugging)
+  novaclaw debug config        show resolved configuration
+  novaclaw debug rg            ripgrep debugging utilities
+  novaclaw debug file          file system debugging utilities
+  novaclaw debug scrap         list all known projects
+  novaclaw debug skill         list all available skills
+  novaclaw debug snapshot      snapshot debugging utilities
+  novaclaw debug startup       print startup timing
+  novaclaw debug agent <name>  show agent configuration details
+  novaclaw debug v2            debug v2 catalog and built-in plugins
+  novaclaw debug info          show debug information
+  novaclaw debug paths         show global paths (data, config, cache, state)
+  novaclaw debug wait          wait indefinitely (for debugging)
 
 Options:
   -h, --help        show help                                                              [boolean]
@@ -117,15 +117,15 @@ Options:
       --pure        run without external plugins                                           [boolean]"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode providers --help 1`] = `
-"opencode providers
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw providers --help 1`] = `
+"novaclaw providers
 
 manage AI providers and credentials
 
 Commands:
-  opencode providers list               list providers and credentials                 [aliases: ls]
-  opencode providers login [url]        log in to a provider
-  opencode providers logout [provider]  log out from a configured provider
+  novaclaw providers list               list providers and credentials                 [aliases: ls]
+  novaclaw providers login [url]        log in to a provider
+  novaclaw providers logout [provider]  log out from a configured provider
 
 Options:
   -h, --help        show help                                                              [boolean]
@@ -135,14 +135,14 @@ Options:
       --pure        run without external plugins                                           [boolean]"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode agent --help 1`] = `
-"opencode agent
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw agent --help 1`] = `
+"novaclaw agent
 
 manage agents
 
 Commands:
-  opencode agent create  create a new agent
-  opencode agent list    list all available agents
+  novaclaw agent create  create a new agent
+  novaclaw agent list    list all available agents
 
 Options:
   -h, --help        show help                                                              [boolean]
@@ -152,10 +152,10 @@ Options:
       --pure        run without external plugins                                           [boolean]"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode upgrade --help 1`] = `
-"opencode upgrade [target]
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw upgrade --help 1`] = `
+"novaclaw upgrade [target]
 
-upgrade opencode to the latest or a specific version
+upgrade novaclaw to the latest or a specific version
 
 Positionals:
   target  version to upgrade to, for ex '0.1.48' or 'v0.1.48'                               [string]
@@ -170,10 +170,10 @@ Options:
                           [string] [choices: "curl", "npm", "pnpm", "bun", "brew", "choco", "scoop"]"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode uninstall --help 1`] = `
-"opencode uninstall
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw uninstall --help 1`] = `
+"novaclaw uninstall
 
-uninstall opencode and remove all related files
+uninstall novaclaw and remove all related files
 
 Options:
   -h, --help         show help                                                             [boolean]
@@ -187,30 +187,10 @@ Options:
   -f, --force        skip confirmation prompts                            [boolean] [default: false]"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode serve --help 1`] = `
-"opencode serve
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw serve --help 1`] = `
+"novaclaw serve
 
-starts a headless opencode server
-
-Options:
-  -h, --help         show help                                                             [boolean]
-  -v, --version      show version number                                                   [boolean]
-      --print-logs   print logs to stderr                                                  [boolean]
-      --log-level    log level                  [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure         run without external plugins                                          [boolean]
-      --port         port to listen on                                         [number] [default: 0]
-      --hostname     hostname to listen on                           [string] [default: "127.0.0.1"]
-      --mdns         enable mDNS service discovery (defaults hostname to 0.0.0.0)
-                                                                          [boolean] [default: false]
-      --mdns-domain  custom domain name for mDNS service (default: opencode.local)
-                                                                [string] [default: "opencode.local"]
-      --cors         additional domains to allow for CORS                      [array] [default: []]"
-`;
-
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode web --help 1`] = `
-"opencode web
-
-start opencode server and open web interface
+starts a headless novaclaw server
 
 Options:
   -h, --help         show help                                                             [boolean]
@@ -222,13 +202,33 @@ Options:
       --hostname     hostname to listen on                           [string] [default: "127.0.0.1"]
       --mdns         enable mDNS service discovery (defaults hostname to 0.0.0.0)
                                                                           [boolean] [default: false]
-      --mdns-domain  custom domain name for mDNS service (default: opencode.local)
-                                                                [string] [default: "opencode.local"]
+      --mdns-domain  custom domain name for mDNS service (default: novaclaw.local)
+                                                                [string] [default: "novaclaw.local"]
       --cors         additional domains to allow for CORS                      [array] [default: []]"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode models --help 1`] = `
-"opencode models [provider]
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw web --help 1`] = `
+"novaclaw web
+
+start novaclaw server and open web interface
+
+Options:
+  -h, --help         show help                                                             [boolean]
+  -v, --version      show version number                                                   [boolean]
+      --print-logs   print logs to stderr                                                  [boolean]
+      --log-level    log level                  [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure         run without external plugins                                          [boolean]
+      --port         port to listen on                                         [number] [default: 0]
+      --hostname     hostname to listen on                           [string] [default: "127.0.0.1"]
+      --mdns         enable mDNS service discovery (defaults hostname to 0.0.0.0)
+                                                                          [boolean] [default: false]
+      --mdns-domain  custom domain name for mDNS service (default: novaclaw.local)
+                                                                [string] [default: "novaclaw.local"]
+      --cors         additional domains to allow for CORS                      [array] [default: []]"
+`;
+
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw models --help 1`] = `
+"novaclaw models [provider]
 
 list all available models
 
@@ -245,8 +245,8 @@ Options:
       --refresh     refresh the models cache from models.dev                               [boolean]"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode stats --help 1`] = `
-"opencode stats
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw stats --help 1`] = `
+"novaclaw stats
 
 show token usage and cost statistics
 
@@ -263,8 +263,8 @@ Options:
       --project     filter by project (default: all projects, empty string: current project)[string]"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode export --help 1`] = `
-"opencode export [sessionID]
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw export --help 1`] = `
+"novaclaw export [sessionID]
 
 export session data as JSON
 
@@ -280,26 +280,65 @@ Options:
       --sanitize    redact sensitive transcript and file data                              [boolean]"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode import --help 1`] = `
-"opencode import <file>
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw import --help 1`] = `
+"⠀                                ▄     
+█▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█
+█  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀
+▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀  ▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀
 
-import session data from JSON file or URL
+Commands:
+  novaclaw completion          generate shell completion script
+  novaclaw mcp                 manage MCP (Model Context Protocol) servers
+  novaclaw [project]           start novaclaw tui                                          [default]
+  novaclaw attach <url>        attach to a running novaclaw server
+  novaclaw run [message..]     run novaclaw with a message
+  novaclaw debug               debugging and troubleshooting tools
+  novaclaw providers           manage AI providers and credentials                   [aliases: auth]
+  novaclaw agent               manage agents
+  novaclaw upgrade [target]    upgrade novaclaw to the latest or a specific version
+  novaclaw uninstall           uninstall novaclaw and remove all related files
+  novaclaw serve               starts a headless novaclaw server
+  novaclaw web                 start novaclaw server and open web interface
+  novaclaw models [provider]   list all available models
+  novaclaw stats               show token usage and cost statistics
+  novaclaw export [sessionID]  export session data as JSON
+  novaclaw pr <number>         fetch and checkout a GitHub PR branch, then run novaclaw
+  novaclaw session             manage sessions
+  novaclaw plugin <module>     install plugin and update config                      [aliases: plug]
+  novaclaw db                  database tools
 
 Positionals:
-  file  path to JSON file or share URL                                           [string] [required]
+  project  path to start novaclaw in                                                        [string]
 
 Options:
-  -h, --help        show help                                                              [boolean]
-  -v, --version     show version number                                                    [boolean]
-      --print-logs  print logs to stderr                                                   [boolean]
-      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure        run without external plugins                                           [boolean]"
+  -h, --help          show help                                                            [boolean]
+  -v, --version       show version number                                                  [boolean]
+      --print-logs    print logs to stderr                                                 [boolean]
+      --log-level     log level                 [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure          run without external plugins                                         [boolean]
+      --port          port to listen on                                        [number] [default: 0]
+      --hostname      hostname to listen on                          [string] [default: "127.0.0.1"]
+      --mdns          enable mDNS service discovery (defaults hostname to 0.0.0.0)
+                                                                          [boolean] [default: false]
+      --mdns-domain   custom domain name for mDNS service (default: novaclaw.local)
+                                                                [string] [default: "novaclaw.local"]
+      --cors          additional domains to allow for CORS                     [array] [default: []]
+  -m, --model         model to use in the format of provider/model                          [string]
+  -c, --continue      continue the last session                                            [boolean]
+  -s, --session       session id to continue                                                [string]
+      --fork          fork the session when continuing (use with --continue or --session)  [boolean]
+      --prompt        prompt to use                                                         [string]
+      --agent         agent to use                                                          [string]
+      --mini          start the minimal interactive interface             [boolean] [default: false]
+      --no-replay     disable mini session history replay on resume and after resize       [boolean]
+      --replay-limit  cap visible mini replay to the newest N messages                      [number]
+"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode pr --help 1`] = `
-"opencode pr <number>
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw pr --help 1`] = `
+"novaclaw pr <number>
 
-fetch and checkout a GitHub PR branch, then run opencode
+fetch and checkout a GitHub PR branch, then run novaclaw
 
 Positionals:
   number  PR number to checkout                                                  [number] [required]
@@ -312,14 +351,14 @@ Options:
       --pure        run without external plugins                                           [boolean]"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode session --help 1`] = `
-"opencode session
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw session --help 1`] = `
+"novaclaw session
 
 manage sessions
 
 Commands:
-  opencode session list                list sessions
-  opencode session delete <sessionID>  delete a session
+  novaclaw session list                list sessions
+  novaclaw session delete <sessionID>  delete a session
 
 Options:
   -h, --help        show help                                                              [boolean]
@@ -329,8 +368,8 @@ Options:
       --pure        run without external plugins                                           [boolean]"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode plugin --help 1`] = `
-"opencode plugin <module>
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw plugin --help 1`] = `
+"novaclaw plugin <module>
 
 install plugin and update config
 
@@ -347,14 +386,14 @@ Options:
   -f, --force       replace existing plugin version                       [boolean] [default: false]"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode db --help 1`] = `
-"opencode db
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw db --help 1`] = `
+"novaclaw db
 
 database tools
 
 Commands:
-  opencode db [query]     open an interactive sqlite3 shell or run a query                 [default]
-  opencode db path        print the database path
+  novaclaw db [query]     open an interactive sqlite3 shell or run a query                 [default]
+  novaclaw db path        print the database path
 
 Positionals:
   query  SQL query to execute                                                               [string]
@@ -368,8 +407,8 @@ Options:
       --format      Output format                 [string] [choices: "json", "tsv"] [default: "tsv"]"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode mcp list --help 1`] = `
-"opencode mcp list
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw mcp list --help 1`] = `
+"novaclaw mcp list
 
 list MCP servers and their status
 
@@ -381,8 +420,8 @@ Options:
       --pure        run without external plugins                                           [boolean]"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode mcp add --help 1`] = `
-"opencode mcp add [name]
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw mcp add --help 1`] = `
+"novaclaw mcp add [name]
 
 add an MCP server
 
@@ -400,13 +439,13 @@ Options:
       --header      HTTP header for a remote MCP server (KEY=VALUE)                          [array]"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode mcp auth --help 1`] = `
-"opencode mcp auth [name]
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw mcp auth --help 1`] = `
+"novaclaw mcp auth [name]
 
 authenticate with an OAuth-enabled MCP server
 
 Commands:
-  opencode mcp auth list  list OAuth-capable MCP servers and their auth status         [aliases: ls]
+  novaclaw mcp auth list  list OAuth-capable MCP servers and their auth status         [aliases: ls]
 
 Positionals:
   name  name of the MCP server                                                              [string]
@@ -419,8 +458,8 @@ Options:
       --pure        run without external plugins                                           [boolean]"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode mcp logout --help 1`] = `
-"opencode mcp logout [name]
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw mcp logout --help 1`] = `
+"novaclaw mcp logout [name]
 
 remove OAuth credentials for an MCP server
 
@@ -435,8 +474,8 @@ Options:
       --pure        run without external plugins                                           [boolean]"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode providers list --help 1`] = `
-"opencode providers list
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw providers list --help 1`] = `
+"novaclaw providers list
 
 list providers and credentials
 
@@ -448,13 +487,13 @@ Options:
       --pure        run without external plugins                                           [boolean]"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode providers login --help 1`] = `
-"opencode providers login [url]
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw providers login --help 1`] = `
+"novaclaw providers login [url]
 
 log in to a provider
 
 Positionals:
-  url  opencode auth provider                                                               [string]
+  url  novaclaw auth provider                                                               [string]
 
 Options:
   -h, --help        show help                                                              [boolean]
@@ -466,8 +505,8 @@ Options:
   -m, --method      login method label (skips method selection)                             [string]"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode providers logout --help 1`] = `
-"opencode providers logout [provider]
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw providers logout --help 1`] = `
+"novaclaw providers logout [provider]
 
 log out from a configured provider
 
@@ -482,8 +521,8 @@ Options:
       --pure        run without external plugins                                           [boolean]"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode agent create --help 1`] = `
-"opencode agent create
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw agent create --help 1`] = `
+"novaclaw agent create
 
 create a new agent
 
@@ -502,8 +541,8 @@ Options:
   -m, --model                 model to use in the format of provider/model                  [string]"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode agent list --help 1`] = `
-"opencode agent list
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw agent list --help 1`] = `
+"novaclaw agent list
 
 list all available agents
 
@@ -515,8 +554,8 @@ Options:
       --pure        run without external plugins                                           [boolean]"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode session list --help 1`] = `
-"opencode session list
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw session list --help 1`] = `
+"novaclaw session list
 
 list sessions
 
@@ -530,8 +569,8 @@ Options:
       --format      output format             [string] [choices: "table", "json"] [default: "table"]"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode session delete --help 1`] = `
-"opencode session delete <sessionID>
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw session delete --help 1`] = `
+"novaclaw session delete <sessionID>
 
 delete a session
 
@@ -546,8 +585,8 @@ Options:
       --pure        run without external plugins                                           [boolean]"
 `;
 
-exports[`opencode CLI help-text snapshots every documented command emits stable help text: opencode db path --help 1`] = `
-"opencode db path
+exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw db path --help 1`] = `
+"novaclaw db path
 
 print the database path
 

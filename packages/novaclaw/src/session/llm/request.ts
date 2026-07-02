@@ -15,7 +15,7 @@ import { jsonSchema, tool as aiTool, type ModelMessage, type Tool } from "ai"
 import type { Plugin } from "@/plugin"
 import { mergeDeep } from "remeda"
 
-const USER_AGENT = `opencode/${InstallationVersion}`
+const USER_AGENT = `novaclaw/${InstallationVersion}`
 
 type PrepareInput = {
   readonly user: SessionV1.User
@@ -174,7 +174,7 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
     })
   }
 
-  const opencodeProjectID = input.model.providerID.startsWith("opencode")
+  const novaclawProjectID = input.model.providerID.startsWith("novaclaw")
     ? (yield* InstanceState.context).project.id
     : undefined
 
@@ -185,9 +185,9 @@ export const prepare = Effect.fn("LLMRequestPrep.prepare")(function* (input: Pre
     params,
     messageTransformOptions: options,
     headers: {
-      ...(input.model.providerID.startsWith("opencode")
+      ...(input.model.providerID.startsWith("novaclaw")
         ? {
-            ...(opencodeProjectID ? { "x-novaclaw-project": opencodeProjectID } : {}),
+            ...(novaclawProjectID ? { "x-novaclaw-project": novaclawProjectID } : {}),
             "x-novaclaw-session": input.sessionID,
             "x-novaclaw-request": input.user.id,
             "x-novaclaw-client": input.flags.client,

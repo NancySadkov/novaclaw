@@ -5,7 +5,7 @@ import { NonNegativeInt } from "@novaclaw/core/schema"
 import { Global } from "@novaclaw/core/global"
 import { FSUtil } from "@novaclaw/core/fs-util"
 
-export const OAUTH_DUMMY_KEY = "opencode-oauth-dummy-key"
+export const OAUTH_DUMMY_KEY = "novaclaw-oauth-dummy-key"
 
 const file = path.join(Global.Path.data, "auth.json")
 

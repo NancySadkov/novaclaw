@@ -6,7 +6,7 @@
     "provider": "anthropic",
     "protocol": "anthropic-messages",
     "route": "anthropic-messages",
-    "tags": ["opencode", "native", "tool-loop"]
+    "tags": ["novaclaw", "native", "tool-loop"]
   },
   "interactions": [
     {

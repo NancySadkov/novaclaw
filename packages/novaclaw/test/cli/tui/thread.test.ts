@@ -66,29 +66,29 @@ describe("tui thread", () => {
     expect(args.mdns).toBe(false)
   })
 
-  cliIt.live("rejects mini-only options without --mini", ({ opencode }) =>
+  cliIt.live("rejects mini-only options without --mini", ({ novaclaw }) =>
     Effect.gen(function* () {
-      const result = yield* opencode.spawn(["--replay-limit", "10"])
+      const result = yield* novaclaw.spawn(["--replay-limit", "10"])
 
-      opencode.expectExit(result, 1)
+      novaclaw.expectExit(result, 1)
       expect(result.stderr).toContain("--replay-limit requires --mini")
     }),
   )
 
-  cliIt.live("routes attached sessions to mini mode", ({ opencode }) =>
+  cliIt.live("routes attached sessions to mini mode", ({ novaclaw }) =>
     Effect.gen(function* () {
-      const result = yield* opencode.spawn(["attach", "http://127.0.0.1:1", "--mini"])
+      const result = yield* novaclaw.spawn(["attach", "http://127.0.0.1:1", "--mini"])
 
-      opencode.expectExit(result, 1)
+      novaclaw.expectExit(result, 1)
       expect(result.stderr).toContain("--mini requires a TTY stdout")
     }),
   )
 
-  cliIt.live("rejects network options in mini mode", ({ opencode }) =>
+  cliIt.live("rejects network options in mini mode", ({ novaclaw }) =>
     Effect.gen(function* () {
-      const result = yield* opencode.spawn(["--mini", "--port", "4096"])
+      const result = yield* novaclaw.spawn(["--mini", "--port", "4096"])
 
-      opencode.expectExit(result, 1)
+      novaclaw.expectExit(result, 1)
       expect(result.stderr).toContain("--port cannot be used with --mini")
     }),
   )

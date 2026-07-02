@@ -7,11 +7,11 @@ import { createStore } from "solid-js/store"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { useWslServers } from "./context"
-import { enterWslOpencodeStep } from "./settings-model"
+import { enterWslNovaclawStep } from "./settings-model"
 
-type WslServerStep = "wsl" | "distro" | "opencode"
+type WslServerStep = "wsl" | "distro" | "novaclaw"
 
-const STEPS: WslServerStep[] = ["wsl", "distro", "opencode"]
+const STEPS: WslServerStep[] = ["wsl", "distro", "novaclaw"]
 
 function isHiddenDistro(name: string) {
   return /^docker-desktop(?:-data)?$/i.test(name)
@@ -66,10 +66,10 @@ export function DialogAddWslServer(props: DialogWslServerProps = {}) {
     if (!distro) return null
     return (current()?.installed ?? []).find((item) => item.name === distro) ?? null
   })
-  const opencodeCheck = createMemo(() => {
+  const novaclawCheck = createMemo(() => {
     const distro = selectedDistro()
     if (!distro) return null
-    return current()?.opencodeChecks[distro] ?? null
+    return current()?.novaclawChecks[distro] ?? null
   })
   const wslReady = createMemo(() => !!current()?.runtime?.available && !current()?.pendingRestart)
   const distroReady = createMemo(() => {
@@ -78,8 +78,8 @@ export function DialogAddWslServer(props: DialogWslServerProps = {}) {
     if (selectedInstalled()?.version === 1) return false
     return probe.canExecute && probe.hasBash && probe.hasCurl
   })
-  const opencodeReady = createMemo(() => {
-    const check = opencodeCheck()
+  const novaclawReady = createMemo(() => {
+    const check = novaclawCheck()
     return !!check?.resolvedPath && !check.error
   })
   const distroWarningProbe = createMemo(() => {
@@ -113,20 +113,20 @@ export function DialogAddWslServer(props: DialogWslServerProps = {}) {
     () => installableDistros().find((item) => item.name === store.installTarget) ?? installableDistros()[0] ?? null,
   )
   const installingDistro = createMemo(() => current()?.job?.kind === "install-distro")
-  const installingOpencode = createMemo(() => {
+  const installingNovaclaw = createMemo(() => {
     const job = current()?.job
-    return job?.kind === "install-opencode" && job.distro === selectedDistro()
+    return job?.kind === "install-novaclaw" && job.distro === selectedDistro()
   })
-  const allReady = createMemo(() => wslReady() && distroReady() && opencodeReady())
+  const allReady = createMemo(() => wslReady() && distroReady() && novaclawReady())
   const addDisabled = createMemo(() => {
     const job = current()?.job
     if (!job) return store.adding
-    return store.adding || job.kind !== "probe-opencode"
+    return store.adding || job.kind !== "probe-novaclaw"
   })
   const recommendedStep = createMemo<WslServerStep>(() => {
     if (!wslReady()) return "wsl"
     if (!distroReady()) return "distro"
-    return "opencode"
+    return "novaclaw"
   })
   // activeStep falls back to recommendedStep when the user hasn't picked one.
   // Once the user clicks a step tab we respect their choice rather than snapping
@@ -147,8 +147,8 @@ export function DialogAddWslServer(props: DialogWslServerProps = {}) {
       return { key: `probe-distro:${distro}`, run: () => api.probeDistro(distro) }
     }
     if (!distro || !distroReady()) return null
-    if (!state.opencodeChecks[distro]) {
-      return { key: `probe-opencode:${distro}`, run: () => api.probeOpencode(distro) }
+    if (!state.novaclawChecks[distro]) {
+      return { key: `probe-novaclaw:${distro}`, run: () => api.probeNovaclaw(distro) }
     }
     return null
   })
@@ -197,27 +197,27 @@ export function DialogAddWslServer(props: DialogWslServerProps = {}) {
     return language.t("wsl.onboarding.pickDistro")
   })
 
-  const opencodeMessage = createMemo(() => {
+  const novaclawMessage = createMemo(() => {
     const state = current()
     if (!state) return language.t("wsl.onboarding.checkingNovaclaw")
     const distro = selectedDistro()
-    if (state.job?.kind === "install-opencode") {
+    if (state.job?.kind === "install-novaclaw") {
       return distro
         ? language.t("wsl.onboarding.updatingNovaclawIn", { distro })
         : language.t("wsl.onboarding.updatingNovaclaw")
     }
-    if (state.job?.kind === "probe-opencode") {
+    if (state.job?.kind === "probe-novaclaw") {
       return distro
         ? language.t("wsl.onboarding.checkingNovaclawIn", { distro })
         : language.t("wsl.onboarding.checkingNovaclaw")
     }
-    if (opencodeCheck()?.error) return opencodeCheck()!.error
-    if (opencodeCheck()?.matchesDesktop === false) {
+    if (novaclawCheck()?.error) return novaclawCheck()!.error
+    if (novaclawCheck()?.matchesDesktop === false) {
       return distro
         ? language.t("wsl.onboarding.updateNovaclawIn", { distro })
         : language.t("wsl.onboarding.updateNovaclaw")
     }
-    if (opencodeReady()) {
+    if (novaclawReady()) {
       return distro
         ? language.t("wsl.onboarding.novaclawReadyIn", { distro })
         : language.t("wsl.onboarding.novaclawReady")
@@ -246,10 +246,10 @@ export function DialogAddWslServer(props: DialogWslServerProps = {}) {
     setStore("step", undefined)
   }
 
-  const openOpencodeStep = () => {
+  const openNovaclawStep = () => {
     const distro = selectedDistro()
     if (!distro) return
-    void run(() => enterWslOpencodeStep(distro, api.probeOpencode, (step) => setStore("step", step)))
+    void run(() => enterWslNovaclawStep(distro, api.probeNovaclaw, (step) => setStore("step", step)))
   }
 
   const finish = async () => {
@@ -297,9 +297,9 @@ export function DialogAddWslServer(props: DialogWslServerProps = {}) {
                   : index > activeIndex
                     ? "locked"
                     : "warning"
-                : opencodeCheck()?.matchesDesktop === false
+                : novaclawCheck()?.matchesDesktop === false
                   ? "warning"
-                  : opencodeReady()
+                  : novaclawReady()
                     ? "done"
                     : index > activeIndex
                       ? "locked"
@@ -528,7 +528,7 @@ export function DialogAddWslServer(props: DialogWslServerProps = {}) {
                     variant="secondary"
                     size="large"
                     disabled={busy() || !selectedDistro() || !distroReady()}
-                    onClick={openOpencodeStep}
+                    onClick={openNovaclawStep}
                   >
                     {language.t("wsl.onboarding.next")}
                   </Button>
@@ -536,7 +536,7 @@ export function DialogAddWslServer(props: DialogWslServerProps = {}) {
               </div>
             </Match>
 
-            <Match when={activeStep() === "opencode"}>
+            <Match when={activeStep() === "novaclaw"}>
               <div class="rounded-md bg-surface-base p-4 flex flex-col gap-3">
                 <div class="flex items-center justify-between gap-3">
                   <div class="text-14-medium text-text-strong">{language.t("wsl.onboarding.step.novaclaw")}</div>
@@ -546,30 +546,30 @@ export function DialogAddWslServer(props: DialogWslServerProps = {}) {
                         variant="ghost"
                         size="large"
                         disabled={busy()}
-                        onClick={() => runSelectedDistro((distro) => api.probeOpencode(distro))}
+                        onClick={() => runSelectedDistro((distro) => api.probeNovaclaw(distro))}
                       >
                         {language.t("wsl.onboarding.refresh")}
                       </Button>
                     </Show>
-                    <Show when={!opencodeReady() || opencodeCheck()?.matchesDesktop === false}>
+                    <Show when={!novaclawReady() || novaclawCheck()?.matchesDesktop === false}>
                       <Button
                         variant="secondary"
                         size="large"
                         disabled={busy()}
-                        onClick={() => runSelectedDistro((distro) => api.installOpencode(distro))}
+                        onClick={() => runSelectedDistro((distro) => api.installNovaclaw(distro))}
                       >
-                        <Show when={installingOpencode()}>
+                        <Show when={installingNovaclaw()}>
                           <Spinner class="size-4 shrink-0" />
                         </Show>
-                        {opencodeCheck()?.resolvedPath
+                        {novaclawCheck()?.resolvedPath
                           ? language.t("wsl.onboarding.updateNovaclaw")
                           : language.t("wsl.onboarding.installNovaclaw")}
                       </Button>
                     </Show>
                   </div>
                 </div>
-                <div class="text-12-regular text-text-weak whitespace-pre-wrap break-words">{opencodeMessage()}</div>
-                <Show when={opencodeCheck()?.matchesDesktop === false ? opencodeCheck() : null}>
+                <div class="text-12-regular text-text-weak whitespace-pre-wrap break-words">{novaclawMessage()}</div>
+                <Show when={novaclawCheck()?.matchesDesktop === false ? novaclawCheck() : null}>
                   {(check) => (
                     <div class="rounded-md border border-border-weak-base px-3 py-3 flex flex-col gap-1">
                       <div class="text-12-regular text-text-weak">
@@ -597,7 +597,7 @@ export function DialogAddWslServer(props: DialogWslServerProps = {}) {
             </Match>
           </Switch>
 
-          <Show when={activeStep() === "opencode" && allReady() && selectedDistro()}>
+          <Show when={activeStep() === "novaclaw" && allReady() && selectedDistro()}>
             <div class="flex items-center justify-end gap-2">
               <Button variant="ghost" size="large" disabled={store.adding} onClick={() => dialog.close()}>
                 {language.t("common.cancel")}

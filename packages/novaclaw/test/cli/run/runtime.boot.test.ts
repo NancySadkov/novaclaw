@@ -203,7 +203,7 @@ describe("run runtime boot", () => {
       Promise.resolve({
         data,
         error: undefined,
-        request: new Request("https://opencode.test"),
+        request: new Request("https://novaclaw.test"),
         response: new Response(),
       }),
     )
@@ -211,7 +211,7 @@ describe("run runtime boot", () => {
       Promise.resolve({
         data: configured,
         error: undefined,
-        request: new Request("https://opencode.test"),
+        request: new Request("https://novaclaw.test"),
         response: new Response(),
       }),
     )
@@ -266,7 +266,7 @@ describe("run runtime boot", () => {
       Promise.resolve({
         data,
         error: undefined,
-        request: new Request("https://opencode.test"),
+        request: new Request("https://novaclaw.test"),
         response: new Response(),
       }),
     )

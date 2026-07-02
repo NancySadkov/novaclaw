@@ -1,7 +1,7 @@
 import type { GlobalEvent } from "@novaclaw/sdk/v2"
 import type { EventSource } from "@novaclaw/tui/context/sdk"
 
-export const worktree = "/tmp/opencode"
+export const worktree = "/tmp/novaclaw"
 export const directory = `${worktree}/packages/novaclaw`
 
 export function json(data: unknown, init?: ResponseInit) {

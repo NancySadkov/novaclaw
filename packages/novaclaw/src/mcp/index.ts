@@ -39,13 +39,13 @@ import { McpEvent } from "@novaclaw/schema/mcp-event"
 const DEFAULT_TIMEOUT = 30_000
 const CLIENT_OPTIONS = {
   capabilities: {
-    // https://github.com/anomalyco/opencode/issues/11948
+    // upstream issue #11948
     // sampling: {},
-    // https://github.com/anomalyco/opencode/issues/23066
+    // upstream issue #23066
     // elicitation: {},
-    // https://github.com/anomalyco/opencode/issues/2308
+    // upstream issue #2308
     roots: {},
-    // https://github.com/anomalyco/opencode/issues/28567
+    // upstream issue #28567
     // tasks: {},
   },
 } satisfies ClientOptions
@@ -74,7 +74,7 @@ export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("MCP
 type MCPClient = Client
 
 function createClient(directory: string) {
-  const client = new Client({ name: "opencode", version: InstallationVersion }, CLIENT_OPTIONS)
+  const client = new Client({ name: "novaclaw", version: InstallationVersion }, CLIENT_OPTIONS)
   client.setRequestHandler(ListRootsRequestSchema, () =>
     Promise.resolve({ roots: [{ uri: pathToFileURL(directory).href }] }),
   )
@@ -306,7 +306,7 @@ export const layer = Layer.effect(
                 return events
                   .publish(TuiEvent.ToastShow, {
                     title: "MCP Authentication Required",
-                    message: `Server "${key}" requires authentication. Run: opencode mcp auth ${key}`,
+                    message: `Server "${key}" requires authentication. Run: novaclaw mcp auth ${key}`,
                     variant: "warning",
                     duration: 8000,
                   })
@@ -343,7 +343,7 @@ export const layer = Layer.effect(
         cwd,
         env: {
           ...process.env,
-          ...(cmd === "opencode" ? { BUN_BE_BUN: "1" } : {}),
+          ...(cmd === "novaclaw" ? { BUN_BE_BUN: "1" } : {}),
           ...mcp.environment,
         },
       })

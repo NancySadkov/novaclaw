@@ -1,19 +1,19 @@
-import type { WslOpencodeCheck, WslServerRuntime } from "./types"
+import type { WslNovaclawCheck, WslServerRuntime } from "./types"
 
 export const wslRuntimeRetryable = (runtime: WslServerRuntime) =>
   runtime.kind === "failed" || runtime.kind === "stopped"
 
-export async function enterWslOpencodeStep(
+export async function enterWslNovaclawStep(
   distro: string,
   probe: (distro: string) => Promise<unknown>,
-  select: (step: "opencode") => void,
+  select: (step: "novaclaw") => void,
 ) {
   await probe(distro)
-  select("opencode")
+  select("novaclaw")
 }
 
-export function wslOpencodeAction(check?: WslOpencodeCheck) {
+export function wslNovaclawAction(check?: WslNovaclawCheck) {
   if (!check) return
-  if (!check.resolvedPath) return "Install OpenCode"
-  if (check.matchesDesktop === false) return "Update OpenCode"
+  if (!check.resolvedPath) return "Install NovaClaw"
+  if (check.matchesDesktop === false) return "Update NovaClaw"
 }

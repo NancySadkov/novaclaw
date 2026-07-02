@@ -63,7 +63,7 @@ test("legacy page key aliases compile as page keys", async () => {
   }
 })
 
-test("mode-less bindings stay active when opencode mode changes", async () => {
+test("mode-less bindings stay active when novaclaw mode changes", async () => {
   const counts: Record<string, Record<string, number>> = {}
 
   function Harness() {

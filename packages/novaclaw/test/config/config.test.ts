@@ -76,7 +76,7 @@ function remoteConfigClient(input: {
   seen: { wellKnown?: string; remote?: string; authorization?: string }
 }) {
   return HttpClient.make((request) => {
-    if (request.url.includes(".well-known/opencode")) {
+    if (request.url.includes(".well-known/novaclaw")) {
       input.seen.wellKnown = request.url
       return Effect.succeed(json(request, input.wellKnown))
     }
@@ -444,7 +444,7 @@ test("loads project config from Cygwin paths on Windows", async () => {
   })
 })
 
-it.instance("ignores legacy tui keys in opencode config", () =>
+it.instance("ignores legacy tui keys in novaclaw config", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
@@ -595,7 +595,7 @@ const accountTokenIt = configIt({
     config: () =>
       Effect.succeed(
         Option.some({
-          provider: { opencode: { options: { apiKey: "{env:NOVACLAW_CONSOLE_TOKEN}" } } },
+          provider: { novaclaw: { options: { apiKey: "{env:NOVACLAW_CONSOLE_TOKEN}" } } },
         }),
       ),
     token: () => Effect.succeed(Option.some(AccessToken.make("st_test_token"))),
@@ -605,7 +605,7 @@ const accountTokenIt = configIt({
 accountTokenIt.instance("resolves env templates in account config with account token", () =>
   Effect.gen(function* () {
     const config = yield* Config.use.get()
-    expect(config.provider?.["opencode"]?.options?.apiKey).toBe("st_test_token")
+    expect(config.provider?.["novaclaw"]?.options?.apiKey).toBe("st_test_token")
   }),
 )
 
@@ -1480,7 +1480,7 @@ remoteProjectOverride.it.instance(
   () =>
     Effect.gen(function* () {
       const config = yield* Config.use.get()
-      expect(remoteProjectOverride.seen.wellKnown).toBe("https://example.com/.well-known/opencode")
+      expect(remoteProjectOverride.seen.wellKnown).toBe("https://example.com/.well-known/novaclaw")
       expect(config.mcp?.jira?.enabled).toBe(true)
     }),
   {
@@ -1499,7 +1499,7 @@ const trailingSlashWellKnown = wellKnown({
 trailingSlashWellKnown.it.instance("wellknown URL with trailing slash is normalized", () =>
   Effect.gen(function* () {
     yield* Config.use.get()
-    expect(trailingSlashWellKnown.seen.wellKnown).toBe("https://example.com/.well-known/opencode")
+    expect(trailingSlashWellKnown.seen.wellKnown).toBe("https://example.com/.well-known/novaclaw")
   }),
 )
 
@@ -1526,7 +1526,7 @@ test("remote well-known config can use FetchHttpClient layer", async () => {
         Config.Service.use((svc) =>
           Effect.gen(function* () {
             const config = yield* svc.get()
-            expect(fetchedUrl).toBe(`${server.url.origin}/.well-known/opencode`)
+            expect(fetchedUrl).toBe(`${server.url.origin}/.well-known/novaclaw`)
             expect(config.mcp?.jira?.enabled).toBe(true)
           }),
         ),
@@ -1568,7 +1568,7 @@ const templatedHeaderWellKnown = wellKnown({
 templatedHeaderWellKnown.it.instance("wellknown remote_config supports templated env vars in headers", () =>
   Effect.gen(function* () {
     const config = yield* Config.use.get()
-    expect(templatedHeaderWellKnown.seen.wellKnown).toBe("https://example.com/.well-known/opencode")
+    expect(templatedHeaderWellKnown.seen.wellKnown).toBe("https://example.com/.well-known/novaclaw")
     expect(templatedHeaderWellKnown.seen.remote).toBe("https://config.example.com/novaclaw.json")
     expect(templatedHeaderWellKnown.seen.authorization).toBe("Bearer test-token")
     expect(config.mcp?.confluence?.enabled).toBe(true)
@@ -1671,7 +1671,7 @@ describe("resolvePluginSpec", () => {
   test("keeps package specs unchanged", async () => {
     await using tmp = await tmpdir()
     const file = path.join(tmp.path, "novaclaw.json")
-    expect(await ConfigPlugin.resolvePluginSpec("oh-my-opencode@2.4.3", file)).toBe("oh-my-opencode@2.4.3")
+    expect(await ConfigPlugin.resolvePluginSpec("oh-my-novaclaw@2.4.3", file)).toBe("oh-my-novaclaw@2.4.3")
     expect(await ConfigPlugin.resolvePluginSpec("@scope/pkg", file)).toBe("@scope/pkg")
   })
 
@@ -1760,7 +1760,7 @@ describe("deduplicatePluginOrigins", () => {
   })
 
   test("keeps path plugins separate from package plugins", () => {
-    const plugins = ["oh-my-opencode@2.4.3", "file:///project/.novaclaw/plugin/oh-my-opencode.js"]
+    const plugins = ["oh-my-novaclaw@2.4.3", "file:///project/.novaclaw/plugin/oh-my-novaclaw.js"]
 
     const result = dedupe(plugins)
 
@@ -1941,9 +1941,9 @@ test("parseManagedPlist strips MDM metadata keys", async () => {
     ConfigParse.jsonc(
       await ConfigManaged.parseManagedPlist(
         JSON.stringify({
-          PayloadDisplayName: "OpenCode Managed",
-          PayloadIdentifier: "ai.opencode.managed.test",
-          PayloadType: "ai.opencode.managed",
+          PayloadDisplayName: "NovaClaw Managed",
+          PayloadIdentifier: "ai.novaclaw.managed.test",
+          PayloadType: "ai.novaclaw.managed",
           PayloadUUID: "AAAA-BBBB-CCCC",
           PayloadVersion: 1,
           _manualProfile: true,

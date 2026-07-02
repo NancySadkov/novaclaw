@@ -47,7 +47,7 @@ const bootstrapFixture = Effect.gen(function* () {
     Bun.write(
       path.join(dir, "novaclaw.json"),
       JSON.stringify({
-        $schema: "https://opencode.ai/config.json",
+        $schema: "https://novaclaw.app/config.json",
         plugin: [pathToFileURL(pluginFile).href],
       }),
     ),

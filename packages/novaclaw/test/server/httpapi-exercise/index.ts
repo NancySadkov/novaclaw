@@ -85,7 +85,7 @@ const scenarios: Scenario[] = [
     .seeded(() =>
       Effect.promise(() =>
         Bun.write(
-          path.join(exerciseConfigDirectory, "opencode.jsonc"),
+          path.join(exerciseConfigDirectory, "novaclaw.jsonc"),
           JSON.stringify({ username: "httpapi-global" }, null, 2),
         ),
       ),
@@ -98,7 +98,7 @@ const scenarios: Scenario[] = [
           object(body)
           check(body.username === "httpapi-global", "global config update should return patched config")
           const text = yield* Effect.promise(() =>
-            Bun.file(path.join(exerciseConfigDirectory, "opencode.jsonc")).text(),
+            Bun.file(path.join(exerciseConfigDirectory, "novaclaw.jsonc")).text(),
           )
           check(text.includes('"username": "httpapi-global"'), "global config update should write isolated config file")
         }),
@@ -521,7 +521,7 @@ const scenarios: Scenario[] = [
   http.protected
     .get("/experimental/tool", "tool.list")
     .at((ctx) => ({
-      path: `/experimental/tool?${new URLSearchParams({ provider: "opencode", model: "test" })}`,
+      path: `/experimental/tool?${new URLSearchParams({ provider: "novaclaw", model: "test" })}`,
       headers: ctx.headers(),
     }))
     .json(200, array, "status"),
@@ -990,7 +990,7 @@ const scenarios: Scenario[] = [
     .at((ctx) => ({
       path: route("/api/session/{sessionID}/model", { sessionID: ctx.state.id }),
       headers: { ...ctx.headers(), "content-type": "application/json" },
-      body: { model: { providerID: "opencode", id: "big-pickle" } },
+      body: { model: { providerID: "novaclaw", id: "big-pickle" } },
     }))
     .status(204, undefined, "none"),
   http.protected

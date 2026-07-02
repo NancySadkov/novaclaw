@@ -7,7 +7,7 @@ import { isRecord } from "@/util/record"
 import { Npm } from "@novaclaw/core/npm"
 
 // Old npm package names for plugins that are now built-in
-export const DEPRECATED_PLUGIN_PACKAGES = ["opencode-openai-codex-auth", "opencode-copilot-auth"]
+export const DEPRECATED_PLUGIN_PACKAGES: string[] = []
 
 export function isDeprecatedPlugin(spec: string) {
   return DEPRECATED_PLUGIN_PACKAGES.some((pkg) => spec.includes(pkg))
@@ -191,16 +191,16 @@ export async function resolvePathPluginTarget(spec: string) {
   throw new Error(`Plugin directory ${file} is missing package.json or index file`)
 }
 
-export async function checkPluginCompatibility(target: string, opencodeVersion: string, pkg?: PluginPackage) {
-  if (!semver.valid(opencodeVersion) || semver.major(opencodeVersion) === 0) return
+export async function checkPluginCompatibility(target: string, novaclawVersion: string, pkg?: PluginPackage) {
+  if (!semver.valid(novaclawVersion) || semver.major(novaclawVersion) === 0) return
   const hit = pkg ?? (await readPluginPackage(target).catch(() => undefined))
   if (!hit) return
   const engines = hit.json.engines
   if (!isRecord(engines)) return
-  const range = engines.opencode
+  const range = engines.novaclaw
   if (typeof range !== "string") return
-  if (!semver.satisfies(opencodeVersion, range)) {
-    throw new Error(`Plugin requires opencode ${range} but running ${opencodeVersion}`)
+  if (!semver.satisfies(novaclawVersion, range)) {
+    throw new Error(`Plugin requires novaclaw ${range} but running ${novaclawVersion}`)
   }
 }
 

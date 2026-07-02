@@ -7,7 +7,7 @@ import { Process } from "@/util/process"
 
 export const PrCommand = effectCmd({
   command: "pr <number>",
-  describe: "fetch and checkout a GitHub PR branch, then run opencode",
+  describe: "fetch and checkout a GitHub PR branch, then run novaclaw",
   builder: (yargs) =>
     yargs.positional("number", {
       type: "number",
@@ -37,19 +37,10 @@ export const PrCommand = effectCmd({
 
     const prInfoResult = yield* Effect.promise(() =>
       Process.text(
-        [
-          "gh",
-          "pr",
-          "view",
-          `${prNumber}`,
-          "--json",
-          "headRepository,headRepositoryOwner,isCrossRepository,headRefName,body",
-        ],
+        ["gh", "pr", "view", `${prNumber}`, "--json", "headRepository,headRepositoryOwner,isCrossRepository,headRefName"],
         { nothrow: true },
       ),
     )
-
-    let sessionId: string | undefined
 
     if (prInfoResult.code === 0 && prInfoResult.text.trim()) {
       const prInfo = JSON.parse(prInfoResult.text)
@@ -71,37 +62,16 @@ export const PrCommand = effectCmd({
           cwd: worktree,
         })
       }
-
-      if (prInfo?.body) {
-        const sessionMatch = prInfo.body.match(/https:\/\/opncd\.ai\/s\/([a-zA-Z0-9_-]+)/)
-        if (sessionMatch) {
-          const sessionUrl = sessionMatch[0]
-          UI.println(`Found opencode session: ${sessionUrl}`)
-          UI.println(`Importing session...`)
-
-          const importResult = yield* Effect.promise(() =>
-            Process.text(["opencode", "import", sessionUrl], { nothrow: true }),
-          )
-          if (importResult.code === 0) {
-            const sessionIdMatch = importResult.text.trim().match(/Imported session: ([a-zA-Z0-9_-]+)/)
-            if (sessionIdMatch) {
-              sessionId = sessionIdMatch[1]
-              UI.println(`Session imported: ${sessionId}`)
-            }
-          }
-        }
-      }
     }
 
     UI.println(`Successfully checked out PR #${prNumber} as branch '${localBranchName}'`)
     UI.println()
-    UI.println("Starting opencode...")
+    UI.println("Starting novaclaw...")
     UI.println()
 
-    const opencodeArgs = sessionId ? ["-s", sessionId] : []
     const code = yield* Effect.promise(
       () =>
-        Process.spawn(["opencode", ...opencodeArgs], {
+        Process.spawn(["novaclaw"], {
           stdin: "inherit",
           stdout: "inherit",
           stderr: "inherit",
@@ -110,6 +80,6 @@ export const PrCommand = effectCmd({
     )
     // Match legacy throw semantics — propagate as a defect so the top-level
     // index.ts catch handles it identically (exit 1, "Unexpected error" banner).
-    if (code !== 0) return yield* Effect.die(new Error(`opencode exited with code ${code}`))
+    if (code !== 0) return yield* Effect.die(new Error(`novaclaw exited with code ${code}`))
   }),
 })

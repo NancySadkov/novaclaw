@@ -5,19 +5,19 @@ import path from "path"
 const preserveExerciseGlobalRoot = !!process.env.NOVACLAW_HTTPAPI_EXERCISE_GLOBAL
 export const exerciseGlobalRoot =
   process.env.NOVACLAW_HTTPAPI_EXERCISE_GLOBAL ??
-  path.join(process.env.TMPDIR ?? "/tmp", `opencode-httpapi-global-${process.pid}`)
+  path.join(process.env.TMPDIR ?? "/tmp", `novaclaw-httpapi-global-${process.pid}`)
 process.env.XDG_DATA_HOME = path.join(exerciseGlobalRoot, "data")
 process.env.XDG_CONFIG_HOME = path.join(exerciseGlobalRoot, "config")
 process.env.XDG_STATE_HOME = path.join(exerciseGlobalRoot, "state")
 process.env.XDG_CACHE_HOME = path.join(exerciseGlobalRoot, "cache")
 process.env.NOVACLAW_DISABLE_SHARE = "true"
-export const exerciseConfigDirectory = path.join(exerciseGlobalRoot, "config", "opencode")
-export const exerciseDataDirectory = path.join(exerciseGlobalRoot, "data", "opencode")
+export const exerciseConfigDirectory = path.join(exerciseGlobalRoot, "config", "novaclaw")
+export const exerciseDataDirectory = path.join(exerciseGlobalRoot, "data", "novaclaw")
 
 const preserveExerciseDatabase = !!process.env.NOVACLAW_HTTPAPI_EXERCISE_DB
 export const exerciseDatabasePath =
   process.env.NOVACLAW_HTTPAPI_EXERCISE_DB ??
-  path.join(process.env.TMPDIR ?? "/tmp", `opencode-httpapi-exercise-${process.pid}.db`)
+  path.join(process.env.TMPDIR ?? "/tmp", `novaclaw-httpapi-exercise-${process.pid}.db`)
 process.env.NOVACLAW_DB = exerciseDatabasePath
 Flag.NOVACLAW_DB = exerciseDatabasePath
 

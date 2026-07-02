@@ -76,7 +76,7 @@ Core should not import from `packages/novaclaw`. If a type or concept is needed 
 
 Avoid moving legacy services over wholesale. Port the domain shape and the container API, then leave specific behavior behind hooks for plugins to implement.
 
-When porting an opencode service:
+When porting an novaclaw service:
 
 - identify the state it owns
 - identify the operations callers actually need
@@ -96,7 +96,7 @@ Use Effect schemas as the public contract:
 
 Prefer `Info` objects as the stored domain records. Add static `empty(...)` constructors when update APIs need to create records on first mutation.
 
-Keep schemas stable and explicit. Do not rely on opencode config shapes as core domain shapes unless the config shape is actually the domain model.
+Keep schemas stable and explicit. Do not rely on novaclaw config shapes as core domain shapes unless the config shape is actually the domain model.
 
 ## State And Events
 

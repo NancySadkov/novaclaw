@@ -71,12 +71,12 @@ export function resolveThreadDirectory(project?: string, envPWD = process.env.PW
 
 export const TuiThreadCommand = cmd({
   command: "$0 [project]",
-  describe: "start opencode tui",
+  describe: "start novaclaw tui",
   builder: (yargs) =>
     withNetworkOptions(yargs)
       .positional("project", {
         type: "string",
-        describe: "path to start opencode in",
+        describe: "path to start novaclaw in",
       })
       .option("model", {
         type: "string",
@@ -224,7 +224,7 @@ export const TuiThreadCommand = cmd({
             headers,
           }
         : {
-            url: "http://opencode.internal",
+            url: "http://novaclaw.internal",
             fetch: createWorkerFetch(client),
             events: createEventSource(client),
           }
