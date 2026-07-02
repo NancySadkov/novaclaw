@@ -1,22 +1,112 @@
-- To regenerate the legacy JavaScript SDK, run `./packages/sdk/js/script/build.ts`.
-- After changing the public Protocol or Server `HttpApi`, run `bun run generate` from `packages/client`. Do not edit `src/generated` or `src/generated-effect` directly.
-- Keep runtime dependencies directed from Schema to Core and Protocol, then from Core and Protocol to Server. Client runtime code may depend on Schema and Protocol but never Core or Server; `sdk-next` composes Client, Core, and Server.
-- The default branch in this repo is `dev`.
-- Local `main` ref may not exist; use `dev` or `origin/dev` for diffs.
+# NovaClaw — agent onboarding
 
-## Branch Names
+## Vision
 
-Use a short branch name of at most three words, separated by hyphens. Do not use slashes or type prefixes such as `feat/` or `fix/`.
+NovaClaw is a local-first **agent OS**: an operating system whose "processes" are AI-agent
+sessions (agent + model + system prompt + context). Sessions spawn sub-sessions, inherit
+configuration from their parent, auto-prompt themselves until they `exit()`, and are managed
+through a shell-like UI (task manager, launcher, apps).
 
-Examples: `session-recovery`, `fix-scroll-state`, `regenerate-sdk`.
+**We do two things and do them perfectly:**
 
-## Commits and PR Titles
+1. **The agentic OS kernel** — sessions as threads (spawn/exit/wait, config inheritance,
+   scheduling), durable session storage, the model-agnostic LLM path, tools, permissions,
+   and the extension seams (MCP, plugins, the app registry).
+2. **A user-friendly UI** — the desktop app, web app, and TUI that make driving agents
+   pleasant for non-experts.
 
-Use conventional commit-style messages and PR titles: `type(scope): summary`.
+Everything else is deliberately **not** kernel: LSP servers, code indexers, editor
+integrations, and similar developer services are things an **agent sets up for itself** when
+a task needs them (it has a shell; it can install and run tooling), or that **third-party
+developers ship as apps** on top of the OS. NovaClaw provides the robust framework (tools,
+spawn, MCP, the app registry) to host such capabilities — it does not bundle them. When in
+doubt about a feature: if it isn't kernel or UI, it's an app.
 
-Valid types are `feat`, `fix`, `docs`, `chore`, `refactor`, and `test`. Scopes are optional; use the affected package or area when helpful, e.g. `core`, `opencode`, `tui`, `app`, `desktop`, `sdk`, or `plugin`.
+NovaClaw runs entirely against local models (e.g. vLLM on a DGX Spark) — no paid APIs, no
+telemetry, no data egress. Cloud model endpoints are optional *devices* a user may add, never
+dependencies.
 
-Examples: `fix(tui): simplify thinking toggle styling`, `docs: update contributing guide`, `chore(sdk): regenerate types`.
+## Repository layout
+
+```
+├── packages/
+│   ├── novaclaw/              # main package: the `novaclaw` CLI + V1 server/runtime (live prompt path)
+│   ├── core/                  # V2 kernel: session runtime/runner, tools, DB (Drizzle/SQLite), Effect layers
+│   ├── llm/                   # schema-first LLM core: typed request/response/events, wire protocols
+│   ├── schema/                # shared Effect Schema semantic values (leaf)
+│   ├── protocol/              # V2 API route/schema definitions (HTTP paths, payloads, streams)
+│   ├── server/                # V2 Effect HttpApi server assembly (hosts protocol groups over core)
+│   ├── client/                # GENERATED V2 clients (from protocol/server via httpapi-codegen)
+│   ├── sdk/                   # GENERATED legacy JS SDK (js/src/gen — never hand-edit)
+│   ├── sdk-next/              # transitional Effect-native in-process host (composes client+core+server)
+│   ├── plugin/                # public plugin API surface
+│   ├── app/                   # SolidJS web app; also the desktop renderer (apps/ = home-app registry)
+│   ├── desktop/               # Electron desktop app (electron-vite + electron-builder)
+│   ├── tui/                   # terminal UI (@opentui/solid)
+│   ├── session-ui/            # session message rendering shared by app/TUI
+│   ├── ui/                    # shared Solid component library, themes, icons, i18n styles
+│   ├── cli/                   # standalone CLI binary packaging (bin: lildax)
+│   ├── effect-drizzle-sqlite/ # Effect wrapper for drizzle-orm over SQLite
+│   ├── effect-sqlite-node/    # Effect SQLite client for the Node runtime (Electron)
+│   ├── http-recorder/         # record/replay HTTP/WS cassettes for provider tests
+│   ├── httpapi-codegen/       # build-time generator producing packages/client
+│   └── script/                # shared build/release script helpers
+├── script/                    # repo dev scripts (generate, format, upgrade-opentui, sign-windows)
+├── specs/                     # internal design docs (V2 architecture, session runtime, storage)
+├── patches/                   # bun patchedDependencies
+├── perf/                      # test-suite profiling notes
+├── licenses/ + NOTICE         # retained MIT attribution (parts based on opencode) — keep
+└── novaclaw.jsonc convention  # user config file name; project dir convention is .novaclaw/
+```
+
+Dependency direction: keep runtime dependencies directed from Schema to Core and Protocol,
+then from Core and Protocol to Server. Client runtime code may depend on Schema and Protocol
+but never Core or Server; `sdk-next` composes Client, Core, and Server.
+
+## Build & run
+
+Requires **Bun 1.3.14** (`npm install -g bun@1.3.14`) and Node 24+ (Electron tooling).
+
+```sh
+bun install                    # one-time setup (repo root)
+
+# CLI / server (the live product entrypoint)
+bun run dev -- --help          # runs packages/novaclaw/src/index.ts
+bun run --conditions=browser packages/novaclaw/src/index.ts serve --port 4096
+
+# Desktop app (packages/desktop)
+bun run dev                    # electron-vite dev: Vite HMR renderer + server sidecar
+bun run prebuild && bun run build && bun run package:win
+                               # packaged build -> dist/win-unpacked/NovaClaw Dev.exe
+
+# Web app (packages/app)
+bun run dev                    # Vite on :3000; connects to a server on :4096
+
+# TUI
+bun run dev                    # from packages/tui
+```
+
+- **Typecheck:** `bun turbo typecheck` from the repo root, or `bun typecheck` from a package
+  dir. Never run `tsc`/`tsgo` directly against a package without its config.
+- **Tests:** run from package dirs (e.g. `cd packages/novaclaw && bun test test/config`).
+  Tests cannot run from the repo root (guard: `do-not-run-tests-from-root`).
+- **Legacy JS SDK regen:** `./packages/sdk/js/script/build.ts` (or `bun run script/generate.ts`
+  from the root, which also refreshes `packages/sdk/openapi.json`).
+- **V2 client regen:** after changing the public Protocol or Server `HttpApi`, run
+  `bun run generate` from `packages/client`. Do not edit `src/generated` or
+  `src/generated-effect` directly.
+- The desktop build only produces `out/`; you also need `package:win` to get the packaged
+  exe. Close running instances first or packaging can't overwrite the binary.
+
+## Git
+
+- The default branch in this repo is `dev`. Local `main` may not exist; use `dev` or
+  `origin/dev` for diffs.
+- Branch names: at most three hyphen-separated words, no slashes or type prefixes
+  (`session-recovery`, `fix-scroll-state`, `regenerate-sdk`).
+- Commits/PR titles: conventional style `type(scope): summary` with types `feat`, `fix`,
+  `docs`, `chore`, `refactor`, `test`; scopes are optional package/area names such as `core`,
+  `novaclaw`, `tui`, `app`, `desktop`, `sdk`, `plugin`.
 
 ## Style Guide
 
@@ -60,7 +150,7 @@ const { a, b } = obj
 
 - Never alias imports. Do not use `import { foo as bar } from "..."` or renamed imports like `resolve as pathResolve`.
 - Never use star imports. Do not use `import * as Foo from "..."` or `import type * as Foo from "..."`.
-- If a namespace-style value is needed, import the module's own exported namespace by name, for example `import { Project } from "@opencode-ai/core/project"`, then reference `Project.ID`.
+- If a namespace-style value is needed, import the module's own exported namespace by name, for example `import { Project } from "@novaclaw/core/project"`, then reference `Project.ID`.
 - Prefer dynamic imports for heavy modules that are only needed in selected code paths, especially in startup-sensitive entrypoints. Destructure dynamic import bindings near the top of the narrowest scope that needs them so they read like normal imports. Avoid inline chains such as `await import("./module").then((mod) => mod.value())` or `(await import("./module")).value()`. Keep branch-specific imports inside the branch that needs them to preserve lazy loading.
 
 ### Variables

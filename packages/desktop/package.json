@@ -3,11 +3,10 @@
   "private": true,
   "version": "0.0.1",
   "type": "module",
-  "license": "MIT",
-  "homepage": "https://opencode.ai",
+  "license": "UNLICENSED",
+  "homepage": "https://novaclaw.app",
   "author": {
-    "name": "OpenCode",
-    "email": "hello@opencode.ai"
+    "name": "Nancy Sadkov"
   },
   "scripts": {
     "typecheck": "tsgo -b",
