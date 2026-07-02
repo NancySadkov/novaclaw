@@ -108,13 +108,15 @@ export const layer = Layer.effectDiscard(
             execute: (input, context) => {
               const unableToEdit = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
                 effect.pipe(
-                  Effect.mapError((error) =>
-                    error instanceof FileMutation.StaleContentError
+                  Effect.mapError((error) => {
+                    const denial = PermissionV2.denialMessage(error)
+                    if (denial) return new ToolFailure({ message: denial })
+                    return error instanceof FileMutation.StaleContentError
                       ? new ToolFailure({
                           message: "File changed after permission approval. Read it again before editing.",
                         })
-                      : new ToolFailure({ message: `Unable to edit ${input.path}` }),
-                  ),
+                      : new ToolFailure({ message: `Unable to edit ${input.path}` })
+                  }),
                 )
 
               return Effect.gen(function* () {
@@ -139,7 +141,7 @@ export const layer = Layer.effectDiscard(
                 if (external) {
                   yield* unableToEdit(
                     permission.assert({
-                      ...LocationMutation.externalDirectoryPermission(external),
+                      ...LocationMutation.externalDirectoryPermission(external, "write"),
                       sessionID: context.sessionID,
                       agent: context.agent,
                       source: permissionSource,

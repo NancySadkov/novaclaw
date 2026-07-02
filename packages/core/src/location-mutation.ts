@@ -27,16 +27,21 @@ export class PathError extends Schema.TaggedErrorClass<PathError>()("LocationMut
 }) {}
 
 export interface ExternalDirectoryAuthorization {
-  readonly action: "external_directory"
   /** Canonical existing directory used as the external approval boundary. */
   readonly directory: string
-  /** `external_directory` permission resource. */
+  /** External-directory permission resource. */
   readonly resource: string
   readonly save: string
 }
 
-export const externalDirectoryPermission = (input: ExternalDirectoryAuthorization) => ({
-  action: input.action,
+/**
+ * External access is CLASSED (1I): reading outside the Location and mutating outside it are
+ * separate permission actions, so an "allow always" saved for READING an external directory
+ * (e.g. a toolchain like w64devkit) never silently authorizes writes there. read/glob-class
+ * tools pass "read"; every mutating tool (edit/write/bash/apply-patch/trash) passes "write".
+ */
+export const externalDirectoryPermission = (input: ExternalDirectoryAuthorization, access: "read" | "write") => ({
+  action: access === "read" ? "external_directory_read" : "external_directory_write",
   resources: [input.resource],
   save: [input.save],
 })
@@ -140,7 +145,6 @@ export const layer = Layer.effect(
         resource,
         externalDirectory: external
           ? {
-              action: "external_directory",
               directory: externalDirectory,
               resource: externalResource,
               save: externalResource,

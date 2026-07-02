@@ -73,6 +73,26 @@ export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("Per
 
 export type Error = DeniedError | RejectedError | CorrectedError
 
+/**
+ * 1J: lower a permission failure into a model-legible message (denial as observation, never a
+ * halt). Tools' blanket `mapError` absorbers call this FIRST, so a denial keeps its identity —
+ * including the user's optional reject feedback — instead of collapsing into "Unable to <x>".
+ */
+export function denialMessage(error: unknown): string | undefined {
+  if (error instanceof DeniedError) {
+    const denied = error.rules.filter((rule) => rule.effect === "deny")
+    const rules = denied.length ? denied : error.rules
+    const actions = [...new Set(rules.map((rule) => rule.action))].join(", ") || "unknown"
+    const resources = [...new Set(rules.map((rule) => rule.resource))].join(", ") || "unknown"
+    return `Permission denied by policy: action '${actions}' on '${resources}' is not allowed in this mode. Do not retry the same call — work within permitted paths and actions, or ask the user to adjust permissions.`
+  }
+  if (error instanceof CorrectedError)
+    return `The user declined this action and said: "${error.feedback}". Follow the user's direction instead of retrying the same call.`
+  if (error instanceof RejectedError)
+    return `The user declined permission for this action. Do not retry the identical call — take a different approach or ask the user how to proceed.`
+  return undefined
+}
+
 export function evaluate(action: string, resource: string, ...rulesets: Permission.Ruleset[]): Permission.Rule {
   return (
     rulesets

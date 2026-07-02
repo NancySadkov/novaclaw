@@ -78,8 +78,9 @@ export const layer = Layer.effectDiscard(
           ],
           execute: (input, context) =>
             Effect.gen(function* () {
+              // 1I: glob + grep share the "explore" action — listing/searching is one grant class.
               yield* permission.assert({
-                action: name,
+                action: "explore",
                 resources: [input.pattern],
                 save: ["*"],
                 metadata: {
@@ -123,7 +124,13 @@ export const layer = Layer.effectDiscard(
                     ),
                   ),
                 )
-            }).pipe(Effect.mapError(() => new ToolFailure({ message: `Unable to grep for ${input.pattern}` }))),
+            }).pipe(
+              Effect.mapError((error) => {
+                const denial = PermissionV2.denialMessage(error)
+                if (denial) return new ToolFailure({ message: denial })
+                return new ToolFailure({ message: `Unable to grep for ${input.pattern}` })
+              }),
+            ),
         }),
       })
       .pipe(Effect.orDie)

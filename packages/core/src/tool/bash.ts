@@ -126,7 +126,7 @@ export const layer = Layer.effectDiscard(
               const external = target.externalDirectory
               if (external)
                 yield* permission.assert({
-                  ...LocationMutation.externalDirectoryPermission(external),
+                  ...LocationMutation.externalDirectoryPermission(external, "write"),
                   sessionID: context.sessionID,
                   agent: context.agent,
                   source,
@@ -189,7 +189,13 @@ export const layer = Layer.effectDiscard(
                 truncated: result.outputTruncated === true,
                 ...(warnings.length ? { warnings } : {}),
               }
-            }).pipe(Effect.mapError(() => new ToolFailure({ message: `Unable to execute command: ${input.command}` }))),
+            }).pipe(
+              Effect.mapError((error) => {
+                const denial = PermissionV2.denialMessage(error)
+                if (denial) return new ToolFailure({ message: denial })
+                return new ToolFailure({ message: `Unable to execute command: ${input.command}` })
+              }),
+            ),
         }),
       })
       .pipe(Effect.orDie)

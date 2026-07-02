@@ -103,11 +103,15 @@ export const Plugin = define({
     const location = yield* Location.Service
     const worktree = location.directory
     const whitelistedDirs = [TRUNCATION_GLOB, path.join(Global.Path.tmp, "*")]
+    // 1I: external access is CLASSED — read grants never authorize writes. Both classes default
+    // to ask; the whitelisted scratch dirs (truncation, tmp) allow both.
     const readonlyExternalDirectory: PermissionV2.Ruleset = [
-      { action: "external_directory", resource: "*", effect: "ask" },
-      ...whitelistedDirs.map(
-        (resource): PermissionV2.Rule => ({ action: "external_directory", resource, effect: "allow" }),
-      ),
+      { action: "external_directory_read", resource: "*", effect: "ask" },
+      { action: "external_directory_write", resource: "*", effect: "ask" },
+      ...whitelistedDirs.flatMap((resource): PermissionV2.Rule[] => [
+        { action: "external_directory_read", resource, effect: "allow" },
+        { action: "external_directory_write", resource, effect: "allow" },
+      ]),
     ]
     const defaults: PermissionV2.Ruleset = [
       { action: "*", resource: "*", effect: "allow" },
@@ -137,18 +141,34 @@ export const Plugin = define({
       draft.update(AgentV2.ID.make("plan"), (item) => {
         item.description = "Plan mode. Disallows all edit tools."
         item.mode = "primary"
+        // 1I: mutation is three actions now (edit / write-overwrite / create) — plan denies all
+        // three, with the plan-file paths allowed for each so the agent can still write plans.
+        const planFileAllows = (action: string): PermissionV2.Rule[] => [
+          { action, resource: "*", effect: "deny" },
+          { action, resource: path.join(".novaclaw", "plans", "*.md"), effect: "allow" },
+          {
+            action,
+            resource: path.relative(worktree, path.join(Global.Path.data, "plans", "*.md")),
+            effect: "allow",
+          },
+        ]
         item.permissions.push(
           ...PermissionV2.merge(defaults, [
             { action: "question", resource: "*", effect: "allow" },
             { action: "plan_exit", resource: "*", effect: "allow" },
-            { action: "external_directory", resource: path.join(Global.Path.data, "plans", "*"), effect: "allow" },
-            { action: "edit", resource: "*", effect: "deny" },
-            { action: "edit", resource: path.join(".novaclaw", "plans", "*.md"), effect: "allow" },
             {
-              action: "edit",
-              resource: path.relative(worktree, path.join(Global.Path.data, "plans", "*.md")),
+              action: "external_directory_read",
+              resource: path.join(Global.Path.data, "plans", "*"),
               effect: "allow",
             },
+            {
+              action: "external_directory_write",
+              resource: path.join(Global.Path.data, "plans", "*"),
+              effect: "allow",
+            },
+            ...planFileAllows("edit"),
+            ...planFileAllows("write"),
+            ...planFileAllows("create"),
           ]),
         )
       })

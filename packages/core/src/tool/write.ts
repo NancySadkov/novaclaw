@@ -8,6 +8,7 @@ export * as WriteTool from "./write"
 
 import { ToolFailure } from "@novaclaw/llm"
 import { Effect, Layer, Schema } from "effect"
+import fs from "fs/promises"
 import { makeLocationNode } from "../effect/app-node"
 import { FileMutation } from "../file-mutation"
 import { LocationMutation } from "../location-mutation"
@@ -70,13 +71,22 @@ export const layer = Layer.effectDiscard(
                 const external = target.externalDirectory
                 if (external)
                   yield* permission.assert({
-                    ...LocationMutation.externalDirectoryPermission(external),
+                    ...LocationMutation.externalDirectoryPermission(external, "write"),
                     sessionID: context.sessionID,
                     agent: context.agent,
                     source,
                   })
+                // 1I: creating a NEW file and overwriting an existing one WHOLESALE are distinct
+                // actions, so a mode (1K "surgical") can permit edits + new files while denying
+                // full rewrites — the classic small-model failure of regenerating a whole file.
+                const existed = yield* Effect.promise(() =>
+                  fs.access(target.canonical).then(
+                    () => true,
+                    () => false,
+                  ),
+                )
                 yield* permission.assert({
-                  action: "edit",
+                  action: existed ? "write" : "create",
                   resources: [target.resource],
                   save: ["*"],
                   sessionID: context.sessionID,
@@ -84,9 +94,15 @@ export const layer = Layer.effectDiscard(
                   source,
                 })
                 return yield* files.writeTextPreservingBom({ target, content: input.content })
-              }).pipe(Effect.mapError(() => new ToolFailure({ message: `Unable to write ${input.path}` }))),
+              }).pipe(
+                Effect.mapError((error) => {
+                  const denial = PermissionV2.denialMessage(error)
+                  if (denial) return new ToolFailure({ message: denial })
+                  return new ToolFailure({ message: `Unable to write ${input.path}` })
+                }),
+              ),
           }),
-          "edit",
+          "write",
         ),
       })
       .pipe(Effect.orDie)

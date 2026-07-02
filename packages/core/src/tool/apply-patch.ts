@@ -107,7 +107,7 @@ export const layer = Layer.effectDiscard(
                 }
                 for (const external of externalDirectories.values()) {
                   yield* permission.assert({
-                    ...LocationMutation.externalDirectoryPermission(external),
+                    ...LocationMutation.externalDirectoryPermission(external, "write"),
                     sessionID: context.sessionID,
                     agent: context.agent,
                     source,
@@ -186,7 +186,14 @@ export const layer = Layer.effectDiscard(
                   { discard: true },
                 )
                 return { applied, files: patchFiles }
-              }).pipe(Effect.mapError((error) => (error instanceof ToolFailure ? error : fail("patch"))))
+              }).pipe(
+                Effect.mapError((error) => {
+                  if (error instanceof ToolFailure) return error
+                  const denial = PermissionV2.denialMessage(error)
+                  if (denial) return new ToolFailure({ message: denial })
+                  return fail("patch")
+                }),
+              )
             },
           }),
           "edit",

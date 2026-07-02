@@ -62,7 +62,7 @@ export const layer = Layer.effectDiscard(
                 const external = target.externalDirectory
                 if (external)
                   yield* permission.assert({
-                    ...LocationMutation.externalDirectoryPermission(external),
+                    ...LocationMutation.externalDirectoryPermission(external, "write"),
                     sessionID: context.sessionID,
                     agent: context.agent,
                     source,
@@ -78,13 +78,14 @@ export const layer = Layer.effectDiscard(
                 const entry = yield* Effect.tryPromise(() => trashPath(target.canonical))
                 return { id: entry.id, originalPath: entry.originalPath, type: entry.type }
               }).pipe(
-                Effect.mapError((error) =>
-                  error instanceof ToolFailure
-                    ? error
-                    : new ToolFailure({
-                        message: `Unable to trash ${input.path}: ${error instanceof Error ? error.message : String(error)}`,
-                      }),
-                ),
+                Effect.mapError((error) => {
+                  if (error instanceof ToolFailure) return error
+                  const denial = PermissionV2.denialMessage(error)
+                  if (denial) return new ToolFailure({ message: denial })
+                  return new ToolFailure({
+                    message: `Unable to trash ${input.path}: ${error instanceof Error ? error.message : String(error)}`,
+                  })
+                }),
               ),
           }),
           name,

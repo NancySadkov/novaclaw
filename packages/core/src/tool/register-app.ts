@@ -87,19 +87,20 @@ export const layer = Layer.effectDiscard(
                 yield* events.publish(AppEvent.Registered, { id: manifest.id, title: manifest.title })
                 return { id: manifest.id, title: manifest.title }
               }).pipe(
-                Effect.mapError((error) =>
-                  error instanceof ToolFailure
-                    ? error
-                    : new ToolFailure({
-                        message: `Unable to register app: ${
-                          error instanceof Error && error.cause instanceof Error
-                            ? error.cause.message
-                            : error instanceof Error
-                              ? error.message
-                              : String(error)
-                        }`,
-                      }),
-                ),
+                Effect.mapError((error) => {
+                  if (error instanceof ToolFailure) return error
+                  const denial = PermissionV2.denialMessage(error)
+                  if (denial) return new ToolFailure({ message: denial })
+                  return new ToolFailure({
+                    message: `Unable to register app: ${
+                      error instanceof Error && error.cause instanceof Error
+                        ? error.cause.message
+                        : error instanceof Error
+                          ? error.message
+                          : String(error)
+                    }`,
+                  })
+                }),
               ),
           }),
           name,

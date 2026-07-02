@@ -62,7 +62,7 @@ export const layer = Layer.effectDiscard(
               const external = target.externalDirectory
               if (external)
                 yield* permission.assert({
-                  ...LocationMutation.externalDirectoryPermission(external),
+                  ...LocationMutation.externalDirectoryPermission(external, "read"),
                   sessionID: context.sessionID,
                   agent: context.agent,
                   source,
@@ -111,6 +111,8 @@ export const layer = Layer.effectDiscard(
               return content
             }).pipe(
               Effect.mapError((error) => {
+                const denial = PermissionV2.denialMessage(error)
+                if (denial) return new ToolFailure({ message: denial })
                 const message =
                   error instanceof ReadToolFileSystem.BinaryFileError ||
                   error instanceof ReadToolFileSystem.MediaIngestLimitError ||
