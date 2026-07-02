@@ -70,8 +70,12 @@ function internalPlugins(flags: RuntimeFlags.Info): PluginInstance[] {
         experimentalWebSockets: experimentalWebSocketsEnabled({ enabled: flags.experimentalWebSockets }),
       }),
     CopilotAuthPlugin,
-    GitlabAuthPlugin,
-    PoeAuthPlugin,
+    // opencode-gitlab-auth / opencode-poe-auth are external npm packages typed against the published
+    // @opencode-ai/plugin; our local plugin package is @novaclaw/plugin (same API, different nominal
+    // type). Bridge the structurally-identical types. (Full trademark detach: drop these external
+    // opencode-* auth plugins — see B12.)
+    GitlabAuthPlugin as unknown as PluginInstance,
+    PoeAuthPlugin as unknown as PluginInstance,
     CloudflareWorkersAuthPlugin,
     CloudflareAIGatewayAuthPlugin,
     AzureAuthPlugin,
