@@ -12,12 +12,12 @@ export async function upgrade() {
   const enabled = false as boolean
   if (!enabled) return
   const config = await AppRuntime.runPromise(Config.Service.use((cfg) => cfg.getGlobal()))
-  if (config.autoupdate === false || Flag.OPENCODE_DISABLE_AUTOUPDATE) return
+  if (config.autoupdate === false || Flag.NOVACLAW_DISABLE_AUTOUPDATE) return
   const method = await Installation.method()
   const latest = await Installation.latest(method).catch(() => undefined)
   if (!latest) return
 
-  if (Flag.OPENCODE_ALWAYS_NOTIFY_UPDATE) {
+  if (Flag.NOVACLAW_ALWAYS_NOTIFY_UPDATE) {
     GlobalBus.emit("event", {
       directory: "global",
       payload: {

@@ -7,55 +7,55 @@ const positiveInteger = (name: string) =>
     Config.map((value) => (Number.isInteger(value) && value > 0 ? value : undefined)),
     Config.orElse(() => Config.succeed(undefined)),
   )
-const experimental = bool("OPENCODE_EXPERIMENTAL")
+const experimental = bool("NOVACLAW_EXPERIMENTAL")
 const enabledByExperimental = (name: string) =>
   Config.all({ experimental, enabled: Config.boolean(name).pipe(Config.option) }).pipe(
     Config.map((flags) => Option.getOrElse(flags.enabled, () => flags.experimental)),
   )
 
 export class Service extends ConfigService.Service<Service>()("@novaclaw/RuntimeFlags", {
-  autoShare: bool("OPENCODE_AUTO_SHARE"),
-  pure: bool("OPENCODE_PURE"),
-  disableDefaultPlugins: bool("OPENCODE_DISABLE_DEFAULT_PLUGINS"),
-  disableEmbeddedWebUi: bool("OPENCODE_DISABLE_EMBEDDED_WEB_UI"),
-  disableExternalSkills: bool("OPENCODE_DISABLE_EXTERNAL_SKILLS"),
-  disableLspDownload: bool("OPENCODE_DISABLE_LSP_DOWNLOAD"),
+  autoShare: bool("NOVACLAW_AUTO_SHARE"),
+  pure: bool("NOVACLAW_PURE"),
+  disableDefaultPlugins: bool("NOVACLAW_DISABLE_DEFAULT_PLUGINS"),
+  disableEmbeddedWebUi: bool("NOVACLAW_DISABLE_EMBEDDED_WEB_UI"),
+  disableExternalSkills: bool("NOVACLAW_DISABLE_EXTERNAL_SKILLS"),
+  disableLspDownload: bool("NOVACLAW_DISABLE_LSP_DOWNLOAD"),
   disableClaudeCodePrompt: Config.all({
-    broad: bool("OPENCODE_DISABLE_CLAUDE_CODE"),
-    direct: bool("OPENCODE_DISABLE_CLAUDE_CODE_PROMPT"),
+    broad: bool("NOVACLAW_DISABLE_CLAUDE_CODE"),
+    direct: bool("NOVACLAW_DISABLE_CLAUDE_CODE_PROMPT"),
   }).pipe(Config.map((flags) => flags.broad || flags.direct)),
   disableClaudeCodeSkills: Config.all({
-    broad: bool("OPENCODE_DISABLE_CLAUDE_CODE"),
-    direct: bool("OPENCODE_DISABLE_CLAUDE_CODE_SKILLS"),
+    broad: bool("NOVACLAW_DISABLE_CLAUDE_CODE"),
+    direct: bool("NOVACLAW_DISABLE_CLAUDE_CODE_SKILLS"),
   }).pipe(Config.map((flags) => flags.broad || flags.direct)),
   enableExa: Config.all({
     experimental,
-    enabled: bool("OPENCODE_ENABLE_EXA"),
-    legacy: bool("OPENCODE_EXPERIMENTAL_EXA"),
+    enabled: bool("NOVACLAW_ENABLE_EXA"),
+    legacy: bool("NOVACLAW_EXPERIMENTAL_EXA"),
   }).pipe(Config.map((flags) => flags.experimental || flags.enabled || flags.legacy)),
   enableParallel: Config.all({
-    enabled: bool("OPENCODE_ENABLE_PARALLEL"),
-    legacy: bool("OPENCODE_EXPERIMENTAL_PARALLEL"),
+    enabled: bool("NOVACLAW_ENABLE_PARALLEL"),
+    legacy: bool("NOVACLAW_EXPERIMENTAL_PARALLEL"),
   }).pipe(Config.map((flags) => flags.enabled || flags.legacy)),
-  enableExperimentalModels: bool("OPENCODE_ENABLE_EXPERIMENTAL_MODELS"),
-  enableQuestionTool: bool("OPENCODE_ENABLE_QUESTION_TOOL"),
-  experimentalReferences: enabledByExperimental("OPENCODE_EXPERIMENTAL_REFERENCES"),
-  experimentalBackgroundSubagents: enabledByExperimental("OPENCODE_EXPERIMENTAL_BACKGROUND_SUBAGENTS"),
-  experimentalLspTy: bool("OPENCODE_EXPERIMENTAL_LSP_TY"),
-  experimentalLspTool: enabledByExperimental("OPENCODE_EXPERIMENTAL_LSP_TOOL"),
-  experimentalOxfmt: enabledByExperimental("OPENCODE_EXPERIMENTAL_OXFMT"),
-  experimentalPlanMode: enabledByExperimental("OPENCODE_EXPERIMENTAL_PLAN_MODE"),
-  experimentalEventSystem: enabledByExperimental("OPENCODE_EXPERIMENTAL_EVENT_SYSTEM"),
-  experimentalWorkspaces: enabledByExperimental("OPENCODE_EXPERIMENTAL_WORKSPACES"),
-  experimentalIconDiscovery: enabledByExperimental("OPENCODE_EXPERIMENTAL_ICON_DISCOVERY"),
-  outputTokenMax: positiveInteger("OPENCODE_EXPERIMENTAL_OUTPUT_TOKEN_MAX"),
-  bashDefaultTimeoutMs: positiveInteger("OPENCODE_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS"),
-  experimentalNativeLlm: bool("OPENCODE_EXPERIMENTAL_NATIVE_LLM"),
+  enableExperimentalModels: bool("NOVACLAW_ENABLE_EXPERIMENTAL_MODELS"),
+  enableQuestionTool: bool("NOVACLAW_ENABLE_QUESTION_TOOL"),
+  experimentalReferences: enabledByExperimental("NOVACLAW_EXPERIMENTAL_REFERENCES"),
+  experimentalBackgroundSubagents: enabledByExperimental("NOVACLAW_EXPERIMENTAL_BACKGROUND_SUBAGENTS"),
+  experimentalLspTy: bool("NOVACLAW_EXPERIMENTAL_LSP_TY"),
+  experimentalLspTool: enabledByExperimental("NOVACLAW_EXPERIMENTAL_LSP_TOOL"),
+  experimentalOxfmt: enabledByExperimental("NOVACLAW_EXPERIMENTAL_OXFMT"),
+  experimentalPlanMode: enabledByExperimental("NOVACLAW_EXPERIMENTAL_PLAN_MODE"),
+  experimentalEventSystem: enabledByExperimental("NOVACLAW_EXPERIMENTAL_EVENT_SYSTEM"),
+  experimentalWorkspaces: enabledByExperimental("NOVACLAW_EXPERIMENTAL_WORKSPACES"),
+  experimentalIconDiscovery: enabledByExperimental("NOVACLAW_EXPERIMENTAL_ICON_DISCOVERY"),
+  outputTokenMax: positiveInteger("NOVACLAW_EXPERIMENTAL_OUTPUT_TOKEN_MAX"),
+  bashDefaultTimeoutMs: positiveInteger("NOVACLAW_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS"),
+  experimentalNativeLlm: bool("NOVACLAW_EXPERIMENTAL_NATIVE_LLM"),
   // F0: gate the cutover that makes the V2 session stack (SessionV2 + SessionRunner)
   // the default prompt path for default clients. Off by default; rolled out per-client.
-  experimentalNativeSession: enabledByExperimental("OPENCODE_EXPERIMENTAL_NATIVE_SESSION"),
-  experimentalWebSockets: bool("OPENCODE_EXPERIMENTAL_WEBSOCKETS"),
-  client: Config.string("OPENCODE_CLIENT").pipe(Config.withDefault("cli")),
+  experimentalNativeSession: enabledByExperimental("NOVACLAW_EXPERIMENTAL_NATIVE_SESSION"),
+  experimentalWebSockets: bool("NOVACLAW_EXPERIMENTAL_WEBSOCKETS"),
+  client: Config.string("NOVACLAW_CLIENT").pipe(Config.withDefault("cli")),
 }) {}
 
 export type Info = Context.Service.Shape<typeof Service>

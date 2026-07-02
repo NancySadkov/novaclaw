@@ -22,18 +22,18 @@ import { testEffect } from "../lib/effect"
 const testStateLayer = Layer.effectDiscard(
   Effect.gen(function* () {
     const original = {
-      OPENCODE_SERVER_PASSWORD: Flag.OPENCODE_SERVER_PASSWORD,
-      OPENCODE_SERVER_USERNAME: Flag.OPENCODE_SERVER_USERNAME,
-      envPassword: process.env.OPENCODE_SERVER_PASSWORD,
-      envUsername: process.env.OPENCODE_SERVER_USERNAME,
+      NOVACLAW_SERVER_PASSWORD: Flag.NOVACLAW_SERVER_PASSWORD,
+      NOVACLAW_SERVER_USERNAME: Flag.NOVACLAW_SERVER_USERNAME,
+      envPassword: process.env.NOVACLAW_SERVER_PASSWORD,
+      envUsername: process.env.NOVACLAW_SERVER_USERNAME,
     }
 
     yield* Effect.addFinalizer(() =>
       Effect.sync(() => {
-        Flag.OPENCODE_SERVER_PASSWORD = original.OPENCODE_SERVER_PASSWORD
-        Flag.OPENCODE_SERVER_USERNAME = original.OPENCODE_SERVER_USERNAME
-        restoreEnv("OPENCODE_SERVER_PASSWORD", original.envPassword)
-        restoreEnv("OPENCODE_SERVER_USERNAME", original.envUsername)
+        Flag.NOVACLAW_SERVER_PASSWORD = original.NOVACLAW_SERVER_PASSWORD
+        Flag.NOVACLAW_SERVER_USERNAME = original.NOVACLAW_SERVER_USERNAME
+        restoreEnv("NOVACLAW_SERVER_PASSWORD", original.envPassword)
+        restoreEnv("NOVACLAW_SERVER_USERNAME", original.envUsername)
       }),
     )
   }),
@@ -55,8 +55,8 @@ function app(input?: { password?: string; username?: string }) {
       Layer.provide(
         ConfigProvider.layer(
           ConfigProvider.fromUnknown({
-            OPENCODE_SERVER_PASSWORD: input?.password,
-            OPENCODE_SERVER_USERNAME: input?.username,
+            NOVACLAW_SERVER_PASSWORD: input?.password,
+            NOVACLAW_SERVER_USERNAME: input?.username,
           }),
         ),
       ),
@@ -102,8 +102,8 @@ function uiApp(input?: {
         HttpServer.layerServices,
         ConfigProvider.layer(
           ConfigProvider.fromUnknown({
-            OPENCODE_SERVER_PASSWORD: input?.password,
-            OPENCODE_SERVER_USERNAME: input?.username,
+            NOVACLAW_SERVER_PASSWORD: input?.password,
+            NOVACLAW_SERVER_USERNAME: input?.username,
           }),
         ),
       ]),

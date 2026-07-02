@@ -59,8 +59,8 @@ Options:
   -c, --continue      continue the last session                                            [boolean]
   -s, --session       session id to continue                                                [string]
       --fork          fork the session when continuing (use with --continue or --session)  [boolean]
-  -p, --password      basic auth password (defaults to OPENCODE_SERVER_PASSWORD)            [string]
-  -u, --username      basic auth username (defaults to OPENCODE_SERVER_USERNAME or 'opencode')
+  -p, --password      basic auth password (defaults to NOVACLAW_SERVER_PASSWORD)            [string]
+  -u, --username      basic auth username (defaults to NOVACLAW_SERVER_USERNAME or 'opencode')
                                                                                             [string]
       --mini          start the minimal interactive interface             [boolean] [default: false]
       --no-replay     disable mini session history replay on resume and after resize       [boolean]
@@ -96,9 +96,9 @@ Options:
                                       provided)                                             [string]
       --attach                        attach to a running opencode server (e.g.,
                                       http://localhost:4096)                                [string]
-  -p, --password                      basic auth password (defaults to OPENCODE_SERVER_PASSWORD)
+  -p, --password                      basic auth password (defaults to NOVACLAW_SERVER_PASSWORD)
                                                                                             [string]
-  -u, --username                      basic auth username (defaults to OPENCODE_SERVER_USERNAME or
+  -u, --username                      basic auth username (defaults to NOVACLAW_SERVER_USERNAME or
                                       'opencode')                                           [string]
       --dir                           directory to run in, path on remote server if attaching
                                                                                             [string]

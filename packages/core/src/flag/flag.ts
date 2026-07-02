@@ -1,21 +1,12 @@
 import { Config } from "effect"
 
-// Rebrand back-compat (NovaClaw): every flag prefers a NOVACLAW_* env var and falls back to the legacy
-// OPENCODE_* name, so existing OPENCODE_* usage (scripts, CI, tests, external tooling) keeps working
-// while NOVACLAW_* becomes the new primary. The internal Flag.* keys keep their OPENCODE_ names — they
-// are code identifiers, not the env-var contract, and renaming them would churn the whole codebase.
 function env(name: string): string | undefined {
-  const nova = name.replace(/^OPENCODE_/, "NOVACLAW_")
-  return process.env[nova] ?? process.env[name]
+  return process.env[name]
 }
 
-// An Effect Config source that prefers the NOVACLAW_* name and falls back to OPENCODE_* (default false).
+// An Effect Config source for a NOVACLAW_* boolean flag (default false).
 function boolFlag(name: string) {
-  const nova = name.replace(/^OPENCODE_/, "NOVACLAW_")
-  return Config.boolean(nova).pipe(
-    Config.orElse(() => Config.boolean(name)),
-    Config.withDefault(false),
-  )
+  return Config.boolean(name).pipe(Config.withDefault(false))
 }
 
 export function truthy(key: string) {
@@ -23,70 +14,70 @@ export function truthy(key: string) {
   return value === "true" || value === "1"
 }
 
-const copy = env("OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT")
-const fff = env("OPENCODE_DISABLE_FFF")
+const copy = env("NOVACLAW_EXPERIMENTAL_DISABLE_COPY_ON_SELECT")
+const fff = env("NOVACLAW_DISABLE_FFF")
 
 function enabledByExperimental(key: string) {
-  return env(key) === undefined ? truthy("OPENCODE_EXPERIMENTAL") : truthy(key)
+  return env(key) === undefined ? truthy("NOVACLAW_EXPERIMENTAL") : truthy(key)
 }
 
 export const Flag = {
   OTEL_EXPORTER_OTLP_ENDPOINT: process.env["OTEL_EXPORTER_OTLP_ENDPOINT"],
   OTEL_EXPORTER_OTLP_HEADERS: process.env["OTEL_EXPORTER_OTLP_HEADERS"],
 
-  OPENCODE_AUTO_HEAP_SNAPSHOT: truthy("OPENCODE_AUTO_HEAP_SNAPSHOT"),
-  OPENCODE_GIT_BASH_PATH: env("OPENCODE_GIT_BASH_PATH"),
-  OPENCODE_CONFIG: env("OPENCODE_CONFIG"),
-  OPENCODE_CONFIG_CONTENT: env("OPENCODE_CONFIG_CONTENT"),
-  OPENCODE_DISABLE_AUTOUPDATE: truthy("OPENCODE_DISABLE_AUTOUPDATE"),
-  OPENCODE_ALWAYS_NOTIFY_UPDATE: truthy("OPENCODE_ALWAYS_NOTIFY_UPDATE"),
-  OPENCODE_DISABLE_PRUNE: truthy("OPENCODE_DISABLE_PRUNE"),
-  OPENCODE_DISABLE_TERMINAL_TITLE: truthy("OPENCODE_DISABLE_TERMINAL_TITLE"),
-  OPENCODE_SHOW_TTFD: truthy("OPENCODE_SHOW_TTFD"),
-  OPENCODE_DISABLE_AUTOCOMPACT: truthy("OPENCODE_DISABLE_AUTOCOMPACT"),
-  OPENCODE_DISABLE_MODELS_FETCH: truthy("OPENCODE_DISABLE_MODELS_FETCH"),
-  OPENCODE_DISABLE_MOUSE: truthy("OPENCODE_DISABLE_MOUSE"),
-  OPENCODE_FAKE_VCS: env("OPENCODE_FAKE_VCS"),
-  OPENCODE_SERVER_PASSWORD: env("OPENCODE_SERVER_PASSWORD"),
-  OPENCODE_SERVER_USERNAME: env("OPENCODE_SERVER_USERNAME"),
-  OPENCODE_DISABLE_FFF: fff === undefined ? process.platform === "win32" : truthy("OPENCODE_DISABLE_FFF"),
+  NOVACLAW_AUTO_HEAP_SNAPSHOT: truthy("NOVACLAW_AUTO_HEAP_SNAPSHOT"),
+  NOVACLAW_GIT_BASH_PATH: env("NOVACLAW_GIT_BASH_PATH"),
+  NOVACLAW_CONFIG: env("NOVACLAW_CONFIG"),
+  NOVACLAW_CONFIG_CONTENT: env("NOVACLAW_CONFIG_CONTENT"),
+  NOVACLAW_DISABLE_AUTOUPDATE: truthy("NOVACLAW_DISABLE_AUTOUPDATE"),
+  NOVACLAW_ALWAYS_NOTIFY_UPDATE: truthy("NOVACLAW_ALWAYS_NOTIFY_UPDATE"),
+  NOVACLAW_DISABLE_PRUNE: truthy("NOVACLAW_DISABLE_PRUNE"),
+  NOVACLAW_DISABLE_TERMINAL_TITLE: truthy("NOVACLAW_DISABLE_TERMINAL_TITLE"),
+  NOVACLAW_SHOW_TTFD: truthy("NOVACLAW_SHOW_TTFD"),
+  NOVACLAW_DISABLE_AUTOCOMPACT: truthy("NOVACLAW_DISABLE_AUTOCOMPACT"),
+  NOVACLAW_DISABLE_MODELS_FETCH: truthy("NOVACLAW_DISABLE_MODELS_FETCH"),
+  NOVACLAW_DISABLE_MOUSE: truthy("NOVACLAW_DISABLE_MOUSE"),
+  NOVACLAW_FAKE_VCS: env("NOVACLAW_FAKE_VCS"),
+  NOVACLAW_SERVER_PASSWORD: env("NOVACLAW_SERVER_PASSWORD"),
+  NOVACLAW_SERVER_USERNAME: env("NOVACLAW_SERVER_USERNAME"),
+  NOVACLAW_DISABLE_FFF: fff === undefined ? process.platform === "win32" : truthy("NOVACLAW_DISABLE_FFF"),
 
   // Experimental
-  OPENCODE_EXPERIMENTAL_FILEWATCHER: boolFlag("OPENCODE_EXPERIMENTAL_FILEWATCHER"),
-  OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER: boolFlag("OPENCODE_EXPERIMENTAL_DISABLE_FILEWATCHER"),
-  OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT:
-    copy === undefined ? process.platform === "win32" : truthy("OPENCODE_EXPERIMENTAL_DISABLE_COPY_ON_SELECT"),
-  OPENCODE_MODELS_URL: env("OPENCODE_MODELS_URL"),
-  OPENCODE_MODELS_PATH: env("OPENCODE_MODELS_PATH"),
-  OPENCODE_DB: env("OPENCODE_DB"),
+  NOVACLAW_EXPERIMENTAL_FILEWATCHER: boolFlag("NOVACLAW_EXPERIMENTAL_FILEWATCHER"),
+  NOVACLAW_EXPERIMENTAL_DISABLE_FILEWATCHER: boolFlag("NOVACLAW_EXPERIMENTAL_DISABLE_FILEWATCHER"),
+  NOVACLAW_EXPERIMENTAL_DISABLE_COPY_ON_SELECT:
+    copy === undefined ? process.platform === "win32" : truthy("NOVACLAW_EXPERIMENTAL_DISABLE_COPY_ON_SELECT"),
+  NOVACLAW_MODELS_URL: env("NOVACLAW_MODELS_URL"),
+  NOVACLAW_MODELS_PATH: env("NOVACLAW_MODELS_PATH"),
+  NOVACLAW_DB: env("NOVACLAW_DB"),
 
-  OPENCODE_WORKSPACE_ID: env("OPENCODE_WORKSPACE_ID"),
-  OPENCODE_EXPERIMENTAL_WORKSPACES: enabledByExperimental("OPENCODE_EXPERIMENTAL_WORKSPACES"),
+  NOVACLAW_WORKSPACE_ID: env("NOVACLAW_WORKSPACE_ID"),
+  NOVACLAW_EXPERIMENTAL_WORKSPACES: enabledByExperimental("NOVACLAW_EXPERIMENTAL_WORKSPACES"),
 
   // Evaluated at access time (not module load) because tests, the CLI, and
   // external tooling set these env vars at runtime.
-  get OPENCODE_DISABLE_PROJECT_CONFIG() {
-    return truthy("OPENCODE_DISABLE_PROJECT_CONFIG")
+  get NOVACLAW_DISABLE_PROJECT_CONFIG() {
+    return truthy("NOVACLAW_DISABLE_PROJECT_CONFIG")
   },
-  get OPENCODE_EXPERIMENTAL_REFERENCES() {
-    return enabledByExperimental("OPENCODE_EXPERIMENTAL_REFERENCES")
+  get NOVACLAW_EXPERIMENTAL_REFERENCES() {
+    return enabledByExperimental("NOVACLAW_EXPERIMENTAL_REFERENCES")
   },
-  get OPENCODE_TUI_CONFIG() {
-    return env("OPENCODE_TUI_CONFIG")
+  get NOVACLAW_TUI_CONFIG() {
+    return env("NOVACLAW_TUI_CONFIG")
   },
-  get OPENCODE_CONFIG_DIR() {
-    return env("OPENCODE_CONFIG_DIR")
+  get NOVACLAW_CONFIG_DIR() {
+    return env("NOVACLAW_CONFIG_DIR")
   },
-  get OPENCODE_PURE() {
-    return truthy("OPENCODE_PURE")
+  get NOVACLAW_PURE() {
+    return truthy("NOVACLAW_PURE")
   },
-  get OPENCODE_PERMISSION() {
-    return env("OPENCODE_PERMISSION")
+  get NOVACLAW_PERMISSION() {
+    return env("NOVACLAW_PERMISSION")
   },
-  get OPENCODE_PLUGIN_META_FILE() {
-    return env("OPENCODE_PLUGIN_META_FILE")
+  get NOVACLAW_PLUGIN_META_FILE() {
+    return env("NOVACLAW_PLUGIN_META_FILE")
   },
-  get OPENCODE_CLIENT() {
-    return env("OPENCODE_CLIENT") ?? "cli"
+  get NOVACLAW_CLIENT() {
+    return env("NOVACLAW_CLIENT") ?? "cli"
   },
 }

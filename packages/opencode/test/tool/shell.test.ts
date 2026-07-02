@@ -537,7 +537,7 @@ describe("tool.shell permissions", () => {
           item,
           Effect.acquireUseRelease(
             Effect.sync(() => {
-              const key = "OPENCODE_TEST_MISSING"
+              const key = "NOVACLAW_TEST_MISSING"
               const prev = process.env[key]
               delete process.env[key]
               return { key, prev }

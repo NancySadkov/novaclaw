@@ -1,8 +1,8 @@
 declare global {
-  const OPENCODE_VERSION: string
-  const OPENCODE_CHANNEL: string
+  const NOVACLAW_VERSION: string
+  const NOVACLAW_CHANNEL: string
 }
 
-export const InstallationVersion = typeof OPENCODE_VERSION === "string" ? OPENCODE_VERSION : "local"
-export const InstallationChannel = typeof OPENCODE_CHANNEL === "string" ? OPENCODE_CHANNEL : "local"
+export const InstallationVersion = typeof NOVACLAW_VERSION === "string" ? NOVACLAW_VERSION : "local"
+export const InstallationChannel = typeof NOVACLAW_CHANNEL === "string" ? NOVACLAW_CHANNEL : "local"
 export const InstallationLocal = InstallationChannel === "local"

@@ -44,7 +44,7 @@ export const layer = Layer.effectDiscard(
       const insideProject =
         fromProject === "" || (fromProject !== ".." && !fromProject.startsWith(`..${sep}`) && !isAbsolute(fromProject))
       const discovered = new Set(
-        (Flag.OPENCODE_DISABLE_PROJECT_CONFIG || !insideProject
+        (Flag.NOVACLAW_DISABLE_PROJECT_CONFIG || !insideProject
           ? []
           : yield* fs.up({
               targets: ["AGENTS.md"],

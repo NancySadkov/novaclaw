@@ -15,7 +15,7 @@
 // the broader server suite (httpapi-sdk.test.ts et al.) which runs with the
 // flag OFF by default and stays green. We additionally assert the routing
 // predicate decision here so (b)/(c) are concrete, not implied.
-process.env.OPENCODE_EXPERIMENTAL_NATIVE_SESSION = "true"
+process.env.NOVACLAW_EXPERIMENTAL_NATIVE_SESSION = "true"
 
 import { afterEach, describe, expect } from "bun:test"
 import { SessionV1 } from "@novaclaw/core/v1/session"

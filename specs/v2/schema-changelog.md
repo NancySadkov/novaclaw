@@ -793,7 +793,7 @@ Change:
 - Retry Context Epoch preparation until stable after optimistic revision mismatches.
 - Clear the active Context Epoch when a Session moves so the destination initializes a complete baseline before promoting more input.
 - Fence Context Epoch initialization against the authoritative Session Location so a concurrent old-Location runner cannot recreate stale privileged context after a move.
-- Canonicalize ambient instruction traversal boundaries, honor `OPENCODE_DISABLE_PROJECT_CONFIG`, and make non-empty aggregate updates explicitly supersede previously loaded instructions.
+- Canonicalize ambient instruction traversal boundaries, honor `NOVACLAW_DISABLE_PROJECT_CONFIG`, and make non-empty aggregate updates explicitly supersede previously loaded instructions.
 
 Compatibility:
 
