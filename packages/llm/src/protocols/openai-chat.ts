@@ -101,6 +101,12 @@ export const bodyFields = {
   max_tokens: Schema.optional(Schema.Number),
   temperature: Schema.optional(Schema.Number),
   top_p: Schema.optional(Schema.Number),
+  // 1C: not in the official OpenAI API, but every local OpenAI-compatible server that matters
+  // here (vLLM, llama.cpp, ollama) accepts it. Encoded only when a config actually sets it,
+  // so requests to api.openai.com are unchanged. Without this, `generation.topK` (routed by
+  // the V2 sampling-split, and denylisted from the http.body overlay as protocol-owned) was
+  // silently dropped — the ONE sampling param that could not reach a local model.
+  top_k: Schema.optional(Schema.Number),
   frequency_penalty: Schema.optional(Schema.Number),
   presence_penalty: Schema.optional(Schema.Number),
   seed: Schema.optional(Schema.Number),
@@ -379,6 +385,7 @@ const fromRequest = Effect.fn("OpenAIChat.fromRequest")(function* (request: LLMR
     max_tokens: generation?.maxTokens,
     temperature: generation?.temperature,
     top_p: generation?.topP,
+    top_k: generation?.topK,
     frequency_penalty: generation?.frequencyPenalty,
     presence_penalty: generation?.presencePenalty,
     seed: generation?.seed,
