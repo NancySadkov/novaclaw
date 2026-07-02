@@ -43,7 +43,7 @@ export function useBuiltinApps(): () => HomeApp[] {
       accent: "#8b5cf6",
       subtitle: "Everyday notes, shared with your agents",
       source: "builtin",
-      open: comingSoon({ id: "notes", title: "Notes", icon: "edit", accent: "#8b5cf6", subtitle: "Everyday notes, shared with your agents" }),
+      open: () => navigate("/notes"),
     },
     {
       id: "files",
