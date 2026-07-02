@@ -4,6 +4,7 @@ import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { InstanceRef, WorkspaceRef } from "@/effect/instance-ref"
 import { GlobalBus } from "@/bus/global"
 import { EventV2 } from "@novaclaw/core/event"
+import { PermissionV1 } from "@novaclaw/core/v1/permission"
 import { Location } from "@novaclaw/core/location"
 import { Project } from "@novaclaw/core/project"
 import { AbsolutePath } from "@novaclaw/core/schema"
@@ -11,6 +12,18 @@ import { createTranslator } from "@/event-v2-translate"
 import { Context, Effect, Layer } from "effect"
 
 export class Service extends Context.Service<Service, EventV2.Interface>()("@novaclaw/EventV2Bridge") {}
+
+// More than one bridge instance can be alive (the MCP-injected location-service graph builds its
+// own), so every bridge's listener sees every event. The v1 permission projection must publish
+// exactly ONCE per source event — dedup on the event id, module-level so all instances share it.
+const projectedPermissionEvents = new Set<string>()
+const PROJECTED_CAP = 10_000
+function shouldProject(id: string): boolean {
+  if (projectedPermissionEvents.has(id)) return false
+  if (projectedPermissionEvents.size >= PROJECTED_CAP) projectedPermissionEvents.clear()
+  projectedPermissionEvents.add(id)
+  return true
+}
 
 export const layer = Layer.effect(
   Service,
@@ -51,6 +64,51 @@ export const layer = Layer.effect(
           workspace: workspaceID,
           payload: { id: event.id, type: event.type, properties: event.data },
         })
+        // ADDITIVE v1 projection (1K): a V2-native session's permission ask must reach the
+        // unchanged desktop/web/CLI clients, which only understand the legacy
+        // "permission.asked" vocabulary. Publishing the mapped V1 event back onto EventV2 (NOT
+        // just GlobalBus) is deliberate: the /event SSE the web app consumes streams EventV2
+        // envelopes directly, and this generic listener then also mirrors the published event to
+        // GlobalBus for the desktop. Field mapping: action->permission, resources->patterns,
+        // save->always, source->tool. The reply travels back through the V1 reply route, which
+        // falls back to PermissionV2 when the ask is pending there (handlers/permission.ts).
+        // Re-entrancy is bounded: the projected V1 event matches neither branch below.
+        if (event.type === "permission.v2.asked" && shouldProject(event.id)) {
+          const request = event.data as {
+            id: string
+            sessionID: string
+            action: string
+            resources: readonly string[]
+            save?: readonly string[]
+            metadata?: Record<string, unknown>
+            source?: { type: "tool"; messageID: string; callID: string }
+          }
+          yield* events.publish(
+            PermissionV1.Event.Asked,
+            {
+              id: request.id,
+              sessionID: request.sessionID,
+              permission: request.action,
+              patterns: request.resources,
+              metadata: request.metadata ?? {},
+              always: request.save ?? [],
+              tool: request.source ? { messageID: request.source.messageID, callID: request.source.callID } : undefined,
+            } as unknown as typeof PermissionV1.Event.Asked.Type["data"],
+            { location: event.location },
+          )
+        }
+        if (event.type === "permission.v2.replied" && shouldProject(event.id)) {
+          const replied = event.data as { sessionID: string; requestID: string; reply: string }
+          yield* events.publish(
+            PermissionV1.Event.Replied,
+            {
+              sessionID: replied.sessionID,
+              requestID: replied.requestID,
+              reply: replied.reply,
+            } as unknown as typeof PermissionV1.Event.Replied.Type["data"],
+            { location: event.location },
+          )
+        }
         // ADDITIVE v1 projection: translate V2 session.next.* events into the
         // legacy v1 event vocabulary so unchanged desktop/CLI clients can render
         // V2 sessions. The startsWith guard keeps the legacy live path (flag OFF)

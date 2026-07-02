@@ -8,6 +8,7 @@ import { useLanguage } from "@/context/language"
 import { usePermission } from "@/context/permission"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
+import type { PermissionReply } from "./session-permission-dock"
 import { sessionPermissionRequest, sessionQuestionRequest } from "./session-request-tree"
 
 export const todoState = (input: {
@@ -75,14 +76,17 @@ export function createSessionComposerController(options?: { closeMs?: number | (
     return store.responding === perm.id
   })
 
-  const decide = (response: "once" | "always" | "reject") => {
+  // 1K: six verdict-scope replies + an optional deny reason. Uses the /permission reply route
+  // (the deprecated per-session respond route has no `message` channel); the generated SDK type
+  // still lags the nine-literal union, hence the cast (golden rule: never edit sdk/gen).
+  const decide = (reply: PermissionReply, message?: string) => {
     const perm = permissionRequest()
     if (!perm) return
     if (store.responding === perm.id) return
 
     setStore("responding", perm.id)
     sdk()
-      .client.permission.respond({ sessionID: perm.sessionID, permissionID: perm.id, response })
+      .client.permission.reply({ requestID: perm.id, reply: reply as unknown as "once", message })
       .catch((err: unknown) => {
         const description = err instanceof Error ? err.message : String(err)
         showToast({ title: language.t("common.requestFailed"), description })

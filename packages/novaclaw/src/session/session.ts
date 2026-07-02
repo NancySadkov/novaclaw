@@ -1,5 +1,6 @@
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { PermissionV1 } from "@novaclaw/core/v1/permission"
+import { Permission } from "@/permission"
 import { Slug } from "@novaclaw/core/util/slug"
 import { SessionV1 } from "@novaclaw/core/v1/session"
 import { serviceUse } from "@novaclaw/core/effect/service-use"
@@ -111,6 +112,7 @@ export function fromRow(row: SessionRow): Info {
     metadata: row.metadata ?? undefined,
     revert,
     permission: row.permission ? [...row.permission] : undefined,
+    permissionMode: row.permission_mode ?? undefined,
     time: {
       created: row.time_created,
       updated: row.time_updated,
@@ -154,6 +156,7 @@ export function toRow(info: Info) {
         }
       : null,
     permission: info.permission,
+    permission_mode: info.permissionMode,
     time_created: info.time.created,
     time_updated: info.time.updated,
     time_compacting: info.time.compacting,
@@ -224,6 +227,12 @@ const Model = Schema.Struct({
 
 export const Metadata = Schema.Record(Schema.String, Schema.Any)
 
+// 1K: the session's permission-mode ceiling (see core session/config-resolve.ts — the V2 runner
+// resolves it through the inheritance walk; the V1 runtime enforces it via the mode->ruleset
+// overlay merged into `permission` at create).
+export const PermissionMode = Schema.Literals(["plan", "ask", "surgical", "bypass", "yolo"])
+export type PermissionMode = typeof PermissionMode.Type
+
 export const Info = Schema.Struct({
   id: SessionID,
   slug: Schema.String,
@@ -243,6 +252,7 @@ export const Info = Schema.Struct({
   metadata: optional(Metadata),
   time: Time,
   permission: optional(PermissionV1.Ruleset),
+  permissionMode: optional(PermissionMode),
   revert: optional(Revert),
 }).annotate({ identifier: "Session" })
 export type Info = Types.DeepMutable<Schema.Schema.Type<typeof Info>>
@@ -268,6 +278,7 @@ export const CreateInput = Schema.optional(
     model: Schema.optional(Model),
     metadata: Schema.optional(Metadata),
     permission: Schema.optional(PermissionV1.Ruleset),
+    permissionMode: Schema.optional(PermissionMode),
     workspaceID: Schema.optional(WorkspaceV2.ID),
   }),
 )
@@ -512,8 +523,15 @@ export const layer: Layer.Layer<
       path?: string
       metadata?: typeof Metadata.Type
       permission?: PermissionV1.Ruleset
+      permissionMode?: PermissionMode
     }) {
       const ctx = yield* InstanceState.context
+      // 1K: the mode's V1 ruleset overlay rides `permission` (merged after explicit rules so the
+      // mode wins on conflict); `permissionMode` itself lands on the row for the V2 runner's
+      // resolveSessionConfig walk. Both come from the one create-time choice.
+      const modeRules = input.permissionMode ? Permission.modeRuleset(input.permissionMode) : []
+      const permission =
+        input.permission || modeRules.length ? [...(input.permission ?? []), ...modeRules] : undefined
       const result: Info = {
         id: SessionID.descending(input.id),
         slug: Slug.create(),
@@ -527,7 +545,8 @@ export const layer: Layer.Layer<
         agent: input.agent,
         model: input.model,
         metadata: input.metadata,
-        permission: input.permission ? [...input.permission] : undefined,
+        permission,
+        permissionMode: input.permissionMode,
         cost: 0,
         tokens: EmptyTokens,
         time: {
@@ -676,6 +695,7 @@ export const layer: Layer.Layer<
       model?: Schema.Schema.Type<typeof Model>
       metadata?: typeof Metadata.Type
       permission?: PermissionV1.Ruleset
+      permissionMode?: PermissionMode
       workspaceID?: WorkspaceV2.ID
     }) {
       const ctx = yield* InstanceState.context
@@ -689,6 +709,7 @@ export const layer: Layer.Layer<
         model: input?.model,
         metadata: input?.metadata,
         permission: input?.permission,
+        permissionMode: input?.permissionMode,
         workspaceID: input?.workspaceID ?? workspace,
       })
     })

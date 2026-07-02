@@ -660,13 +660,9 @@ describe("session HttpApi", () => {
           service: "session.compact",
         })
 
-        const wait = yield* request(`/api/session/${session.id}/wait`, { method: "POST", headers })
-        expect(wait.status).toBe(503)
-        expect(yield* responseJson(wait)).toEqual({
-          _tag: "ServiceUnavailableError",
-          message: "Session wait is not available yet",
-          service: "session.wait",
-        })
+        // NB: `wait` is no longer a stub (K1 de-stubbed it into a ~2-minute join on the session's
+        // result — asserting the old instant 503 here would block the suite). The join semantics
+        // are covered live by tests/os-foundation-smoke.ts test 8.
       }),
     { git: true, config: { formatter: false } },
   )

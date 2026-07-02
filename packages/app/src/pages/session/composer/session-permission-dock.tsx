@@ -1,22 +1,31 @@
-import { For, Show } from "solid-js"
+import { For, Show, createSignal } from "solid-js"
 import type { PermissionRequest } from "@novaclaw/sdk/v2"
 import { Button } from "@novaclaw/ui/button"
 import { DockPrompt } from "@novaclaw/session-ui/dock-prompt"
 import { Icon } from "@novaclaw/ui/icon"
 import { useLanguage } from "@/context/language"
 
+/** 1K: the six verdict-scope replies the dock can send (deny reasons ride `message`). */
+export type PermissionReply = "allow-once" | "allow-file" | "allow-always" | "deny-once" | "deny-file" | "deny-always"
+
 export function SessionPermissionDock(props: {
   request: PermissionRequest
   responding: boolean
-  onDecide: (response: "once" | "always" | "reject") => void
+  onDecide: (reply: PermissionReply, message?: string) => void
 }) {
   const language = useLanguage()
+  const [reason, setReason] = createSignal("")
 
   const toolDescription = () => {
     const key = `settings.permissions.tool.${props.request.permission}.description`
     const value = language.t(key as Parameters<typeof language.t>[0])
     if (value === key) return ""
     return value
+  }
+
+  const decide = (reply: PermissionReply) => {
+    const message = reply.startsWith("deny") ? reason().trim() || undefined : undefined
+    props.onDecide(reply, message)
   }
 
   return (
@@ -31,25 +40,50 @@ export function SessionPermissionDock(props: {
         </div>
       }
       footer={
-        <>
-          <div />
-          <div data-slot="permission-footer-actions">
-            <Button variant="ghost" size="normal" onClick={() => props.onDecide("reject")} disabled={props.responding}>
-              {language.t("ui.permission.deny")}
-            </Button>
-            <Button
-              variant="secondary"
-              size="normal"
-              onClick={() => props.onDecide("always")}
-              disabled={props.responding}
-            >
-              {language.t("ui.permission.allowAlways")}
-            </Button>
-            <Button variant="primary" size="normal" onClick={() => props.onDecide("once")} disabled={props.responding}>
-              {language.t("ui.permission.allowOnce")}
-            </Button>
+        <div data-slot="permission-footer-stack">
+          <input
+            data-slot="permission-reason-input"
+            type="text"
+            value={reason()}
+            placeholder={language.t("ui.permission.reason.placeholder")}
+            disabled={props.responding}
+            onInput={(e) => setReason(e.currentTarget.value)}
+          />
+          <div data-slot="permission-footer-rows">
+            <div data-slot="permission-footer-actions" data-variant="deny">
+              <Button variant="ghost" size="normal" onClick={() => decide("deny-once")} disabled={props.responding}>
+                {language.t("ui.permission.denyOnce")}
+              </Button>
+              <Button variant="ghost" size="normal" onClick={() => decide("deny-file")} disabled={props.responding}>
+                {language.t("ui.permission.denyFile")}
+              </Button>
+              <Button variant="ghost" size="normal" onClick={() => decide("deny-always")} disabled={props.responding}>
+                {language.t("ui.permission.denyAlways")}
+              </Button>
+            </div>
+            <div data-slot="permission-footer-actions" data-variant="allow">
+              <Button
+                variant="secondary"
+                size="normal"
+                onClick={() => decide("allow-file")}
+                disabled={props.responding}
+              >
+                {language.t("ui.permission.allowFile")}
+              </Button>
+              <Button
+                variant="secondary"
+                size="normal"
+                onClick={() => decide("allow-always")}
+                disabled={props.responding}
+              >
+                {language.t("ui.permission.allowAlways")}
+              </Button>
+              <Button variant="primary" size="normal" onClick={() => decide("allow-once")} disabled={props.responding}>
+                {language.t("ui.permission.allowOnce")}
+              </Button>
+            </div>
           </div>
-        </>
+        </div>
       }
     >
       <Show when={toolDescription()}>

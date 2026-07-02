@@ -48,6 +48,10 @@ export function createPromptInputController(input: {
       paid: providers.paid().length > 0,
       loading: agentsQuery.isLoading || providersQuery.isLoading || globalProvidersQuery.isLoading,
     },
+    permissionMode: {
+      current: local.permissionMode.current(),
+      select: local.permissionMode.set,
+    },
     session: {
       id: input.sessionID(),
       tabs: layout.tabs(input.sessionKey),

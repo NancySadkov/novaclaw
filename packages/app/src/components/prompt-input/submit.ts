@@ -361,8 +361,16 @@ export function createPromptSubmit(input: PromptSubmitInput) {
 
     let session = input.info()
     if (!session && isNewSession) {
+      // 1K: the composer's permission-mode droplist applies at create. The generated SDK's create
+      // has no permissionMode arg yet — the `$body_` extra-prefix routes it into the JSON body
+      // without editing sdk/gen (golden rule 5).
+      const permissionMode = local.permissionMode.current()
+      const createParams =
+        permissionMode !== "ask"
+          ? ({ $body_permissionMode: permissionMode } as Parameters<typeof client.session.create>[0])
+          : undefined
       const created = await client.session
-        .create()
+        .create(createParams)
         .then((x) => x.data ?? undefined)
         .catch((err) => {
           showToast({

@@ -14,10 +14,14 @@ import { ScopedKey, type ServerScope } from "@/utils/server-scope"
 
 export type ModelKey = { providerID: string; modelID: string; variant?: string }
 
+/** 1K: the session's permission-mode ceiling, chosen at create time in the composer. */
+export type PermissionMode = "plan" | "ask" | "surgical" | "bypass" | "yolo"
+
 type State = {
   agent?: string
   model?: ModelKey
   variant?: string | null
+  permissionMode?: PermissionMode
 }
 
 type Saved = {
@@ -253,6 +257,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         agent: agent.current()?.name,
         model: model ? { providerID: model.provider.id, modelID: model.id } : undefined,
         variant: selected(),
+        permissionMode: scope()?.permissionMode,
       } satisfies State
     }
 
@@ -367,10 +372,18 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       },
     }
 
+    const permissionMode = {
+      current: (): PermissionMode => scope()?.permissionMode ?? "ask",
+      set(value: PermissionMode) {
+        write({ permissionMode: value === "ask" ? undefined : value })
+      },
+    }
+
     const result = {
       slug: createMemo(() => base64Encode(sdk().directory)),
       model,
       agent,
+      permissionMode,
       session: {
         reset() {
           setStore("draft", undefined)

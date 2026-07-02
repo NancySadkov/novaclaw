@@ -303,6 +303,13 @@ export const dict = {
   "prompt.action.send": "Send",
   "prompt.action.stop": "Stop",
 
+  "prompt.permissionMode.title": "Permission mode",
+  "prompt.permissionMode.plan": "Plan (no writes)",
+  "prompt.permissionMode.ask": "Ask",
+  "prompt.permissionMode.surgical": "Surgical (no overwrites)",
+  "prompt.permissionMode.bypass": "Bypass (in project)",
+  "prompt.permissionMode.yolo": "YOLO (everything)",
+
   "prompt.toast.pasteUnsupported.title": "Unsupported attachment",
   "prompt.toast.pasteUnsupported.description": "Only images, PDFs, or text files can be attached here.",
   "prompt.toast.modelAgentRequired.title": "Select an agent and model",

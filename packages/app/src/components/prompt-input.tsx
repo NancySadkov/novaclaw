@@ -14,7 +14,7 @@ import {
   type JSX,
 } from "solid-js"
 import { createStore, type SetStoreFunction, type Store } from "solid-js/store"
-import type { useLocal } from "@/context/local"
+import type { PermissionMode, useLocal } from "@/context/local"
 import { selectionFromLines, type SelectedLineRange, useFile } from "@/context/file"
 import {
   ContentPart,
@@ -94,6 +94,11 @@ export type PromptInputControls = {
     selection: ReturnType<typeof useLocal>["model"]
     paid: boolean
     loading: boolean
+  }
+  // 1K: the create-time permission-mode droplist (only rendered on the new-session composer).
+  permissionMode: {
+    current: PermissionMode
+    select: (value: PermissionMode) => void
   }
   session: {
     id?: string
@@ -1392,6 +1397,16 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       restoreFocus()
     },
   }))
+  const permissionModeControlState = createMemo<ComposerPermissionModeControlState>(() => ({
+    title: language.t("prompt.permissionMode.title"),
+    current: props.controls.permissionMode.current,
+    label: (mode) => language.t(`prompt.permissionMode.${mode}` as Parameters<typeof language.t>[0]),
+    style: control(),
+    onSelect: (value) => {
+      props.controls.permissionMode.select(value)
+      restoreFocus()
+    },
+  }))
   return (
     <div class="relative size-full flex flex-col gap-0">
       {(promptReady(), null)}
@@ -1530,6 +1545,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   </Show>
                   {props.toolbar}
                   <ComposerModelControl state={modelControlState()} />
+                  <Show when={newSession()}>
+                    <ComposerPermissionModeControl state={permissionModeControlState()} />
+                  </Show>
                   <Show when={!providersLoading() && store.mode !== "shell" && showVariantControl()}>
                     <div
                       data-component="prompt-variant-control"
@@ -1935,6 +1953,43 @@ type ComposerAgentControlState = {
   current: string
   style: JSX.CSSProperties | undefined
   onSelect: (value: string | undefined) => void
+}
+
+type ComposerPermissionModeControlState = {
+  title: string
+  current: PermissionMode
+  label: (mode: PermissionMode) => string
+  style: JSX.CSSProperties | undefined
+  onSelect: (value: PermissionMode) => void
+}
+
+const PERMISSION_MODES: PermissionMode[] = ["plan", "ask", "surgical", "bypass", "yolo"]
+
+/** 1K: the create-time permission-mode droplist — mirrors ComposerAgentControl's Select styling. */
+function ComposerPermissionModeControl(props: { state: ComposerPermissionModeControlState }) {
+  return (
+    <div class="relative">
+      <div class="pointer-events-none absolute left-2 top-1/2 z-10 flex size-4 -translate-y-1/2 items-center justify-center text-v2-icon-icon-muted">
+        <Icon name="checklist" size="small" />
+      </div>
+      <TooltipV2 placement="top" gutter={4} value={props.state.title}>
+        <Select
+          size="normal"
+          options={PERMISSION_MODES}
+          current={props.state.current}
+          label={(mode) => props.state.label(mode)}
+          onSelect={(value) => {
+            if (value) props.state.onSelect(value)
+          }}
+          class="max-w-[190px] justify-start text-v2-text-text-faint [&_[data-component=icon]]:text-v2-icon-icon-muted"
+          valueClass="truncate pl-5 text-[13px] font-[440] leading-5 text-v2-text-text-faint"
+          triggerStyle={props.state.style}
+          triggerProps={{ "data-action": "prompt-permission-mode" }}
+          variant="ghost"
+        />
+      </TooltipV2>
+    </div>
+  )
 }
 
 type ComposerModelControlState = {

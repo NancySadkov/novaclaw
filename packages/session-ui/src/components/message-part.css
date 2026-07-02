@@ -842,6 +842,47 @@
       padding-right: 12px;
     }
   }
+
+  /* 1K: the six-button footer — reason input on top, deny row left / allow row right below. */
+  [data-slot="permission-footer-stack"] {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  [data-slot="permission-footer-rows"] {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    flex-wrap: wrap;
+  }
+
+  [data-slot="permission-reason-input"] {
+    width: 100%;
+    padding: 6px 10px;
+    border: 1px solid var(--border-weak-base);
+    border-radius: 8px;
+    background: transparent;
+    box-shadow: none;
+    outline: none;
+    font-family: var(--font-family-sans);
+    font-size: 13px;
+    font-weight: var(--font-weight-regular);
+    line-height: var(--line-height-large);
+    color: var(--v2-text-text-base);
+    min-width: 0;
+
+    &::placeholder {
+      color: var(--v2-text-text-muted);
+    }
+
+    &:focus-visible {
+      outline: 1px solid var(--border-interactive-base);
+    }
+  }
 }
 
 [data-component="dock-prompt"][data-kind="question"] {

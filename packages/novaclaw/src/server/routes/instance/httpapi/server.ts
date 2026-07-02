@@ -97,7 +97,7 @@ import { sessionHandlers } from "./handlers/session"
 import { syncHandlers } from "./handlers/sync"
 import { tuiHandlers } from "./handlers/tui"
 import { handlers } from "@novaclaw/server/handlers"
-import { buildLocationServiceMap, locationServiceMapLayer } from "@novaclaw/core/location-services"
+import { buildLocationServiceMap } from "@novaclaw/core/location-services"
 import { ExternalToolSource } from "@novaclaw/core/tool/external-tool-source"
 import { McpExternalToolSource } from "@/mcp/external-tool-source"
 import { layer as locationLayer } from "@novaclaw/server/location"
@@ -116,6 +116,11 @@ import { fenceLayer } from "./middleware/fence"
 import { schemaErrorLayer } from "./middleware/schema-error"
 
 export const context = Context.makeUnsafe<unknown>(new Map())
+
+// ONE location-service map for the whole server (module-level so every Layer.provide sees the
+// same reference and Effect memoization builds it once). The V2 runner and the HTTP routes MUST
+// share per-location service instances — PermissionV2's pending-ask map lives in one of them.
+const sharedLocationServiceMap = buildLocationServiceMap([[ExternalToolSource.node, McpExternalToolSource.node]])
 
 const cors = (corsOptions?: CorsOptions) =>
   HttpRouter.middleware(
@@ -297,10 +302,13 @@ export function createRoutes(
         Layer.provide(SessionExecutionLocal.defaultLayer),
         // V2 runner's location services, with MCP tools injected: replace core's empty
         // ExternalToolSource node with the novaclaw MCP-backed one so searxng et al. appear.
-        Layer.provide(buildLocationServiceMap([[ExternalToolSource.node, McpExternalToolSource.node]])),
+        Layer.provide(sharedLocationServiceMap),
       ),
     ),
-    Layer.provide(locationServiceMapLayer),
+    // The SAME map instance serves the HTTP routes' LocationMiddleware. Two separate maps here
+    // means two per-location PermissionV2 instances — a runner's pending ask could then never be
+    // settled over HTTP (the reply route would look in the wrong instance's pending map).
+    Layer.provide(sharedLocationServiceMap),
 
     Layer.provide(LayerNode.compile(app)),
   )

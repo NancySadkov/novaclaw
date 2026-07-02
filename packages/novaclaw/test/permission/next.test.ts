@@ -912,6 +912,214 @@ it.instance(
   { git: true },
 )
 
+// 1K six-reply tests (allow/deny x once/file/always; legacy trio aliased)
+
+it.instance(
+  "reply - deny-always persists the denial",
+  () =>
+    Effect.gen(function* () {
+      const fiber = yield* ask({
+        id: PermissionV1.ID.make("per_deny_always"),
+        sessionID: SessionID.make("session_test"),
+        permission: "bash",
+        patterns: ["rm -rf build"],
+        metadata: {},
+        always: ["rm *"],
+        ruleset: [],
+      }).pipe(Effect.forkScoped)
+
+      yield* waitForPending(1)
+      yield* reply({ requestID: PermissionV1.ID.make("per_deny_always"), reply: "deny-always" })
+
+      const exit = yield* Fiber.await(fiber)
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(PermissionV1.RejectedError)
+
+      // The broad `always` pattern is now a saved deny — the same ask from another session
+      // fails immediately instead of prompting again.
+      const err = yield* fail(
+        ask({
+          sessionID: SessionID.make("session_test2"),
+          permission: "bash",
+          patterns: ["rm -rf dist"],
+          metadata: {},
+          always: [],
+          ruleset: [],
+        }),
+      )
+      expect(err).toBeInstanceOf(PermissionV1.DeniedError)
+    }),
+  { git: true },
+)
+
+it.instance(
+  "reply - deny-file persists only the concrete pattern",
+  () =>
+    Effect.gen(function* () {
+      const fiber = yield* ask({
+        id: PermissionV1.ID.make("per_deny_file"),
+        sessionID: SessionID.make("session_test"),
+        permission: "edit",
+        patterns: ["config.yaml"],
+        metadata: {},
+        always: ["*"],
+        ruleset: [],
+      }).pipe(Effect.forkScoped)
+
+      yield* waitForPending(1)
+      yield* reply({
+        requestID: PermissionV1.ID.make("per_deny_file"),
+        reply: "deny-file",
+        message: "config.yaml is generated — edit the template instead",
+      })
+
+      const exit = yield* Fiber.await(fiber)
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(PermissionV1.CorrectedError)
+
+      // The concrete file is denied...
+      const err = yield* fail(
+        ask({
+          sessionID: SessionID.make("session_test2"),
+          permission: "edit",
+          patterns: ["config.yaml"],
+          metadata: {},
+          always: [],
+          ruleset: [],
+        }),
+      )
+      expect(err).toBeInstanceOf(PermissionV1.DeniedError)
+
+      // ...but a different file still asks (the broad `always` pattern was NOT saved).
+      const other = yield* ask({
+        id: PermissionV1.ID.make("per_deny_file_other"),
+        sessionID: SessionID.make("session_test2"),
+        permission: "edit",
+        patterns: ["template.yaml"],
+        metadata: {},
+        always: [],
+        ruleset: [],
+      }).pipe(Effect.forkScoped)
+      expect(yield* waitForPending(1)).toHaveLength(1)
+      yield* rejectAll()
+      yield* Fiber.await(other)
+    }),
+  { git: true },
+)
+
+it.instance(
+  "reply - allow-file persists only the concrete pattern",
+  () =>
+    Effect.gen(function* () {
+      const fiber = yield* ask({
+        id: PermissionV1.ID.make("per_allow_file"),
+        sessionID: SessionID.make("session_test"),
+        permission: "bash",
+        patterns: ["ls"],
+        metadata: {},
+        always: ["*"],
+        ruleset: [],
+      }).pipe(Effect.forkScoped)
+
+      yield* waitForPending(1)
+      yield* reply({ requestID: PermissionV1.ID.make("per_allow_file"), reply: "allow-file" })
+      yield* Fiber.join(fiber)
+
+      // The concrete pattern is allowed...
+      const allowed = yield* ask({
+        sessionID: SessionID.make("session_test2"),
+        permission: "bash",
+        patterns: ["ls"],
+        metadata: {},
+        always: [],
+        ruleset: [],
+      })
+      expect(allowed).toBeUndefined()
+
+      // ...but a different pattern still asks (the broad `always` was NOT saved).
+      const other = yield* ask({
+        id: PermissionV1.ID.make("per_allow_file_other"),
+        sessionID: SessionID.make("session_test2"),
+        permission: "bash",
+        patterns: ["pwd"],
+        metadata: {},
+        always: [],
+        ruleset: [],
+      }).pipe(Effect.forkScoped)
+      expect(yield* waitForPending(1)).toHaveLength(1)
+      yield* rejectAll()
+      yield* Fiber.await(other)
+    }),
+  { git: true },
+)
+
+it.instance(
+  "reply - allow-once and deny-once alias the legacy trio",
+  () =>
+    Effect.gen(function* () {
+      const a = yield* ask({
+        id: PermissionV1.ID.make("per_alias_a"),
+        sessionID: SessionID.make("session_a"),
+        permission: "bash",
+        patterns: ["ls"],
+        metadata: {},
+        always: ["*"],
+        ruleset: [],
+      }).pipe(Effect.forkScoped)
+
+      yield* waitForPending(1)
+      yield* reply({ requestID: PermissionV1.ID.make("per_alias_a"), reply: "allow-once" })
+      yield* Fiber.join(a)
+
+      // allow-once persisted nothing — the same ask prompts again.
+      const b = yield* ask({
+        id: PermissionV1.ID.make("per_alias_b"),
+        sessionID: SessionID.make("session_b"),
+        permission: "bash",
+        patterns: ["ls"],
+        metadata: {},
+        always: ["*"],
+        ruleset: [],
+      }).pipe(Effect.forkScoped)
+
+      yield* waitForPending(1)
+      yield* reply({
+        requestID: PermissionV1.ID.make("per_alias_b"),
+        reply: "deny-once",
+        message: "not right now",
+      })
+      const exit = yield* Fiber.await(b)
+      expect(Exit.isFailure(exit)).toBe(true)
+      if (Exit.isFailure(exit)) expect(Cause.squash(exit.cause)).toBeInstanceOf(PermissionV1.CorrectedError)
+
+      // deny-once persisted nothing either — the same ask still prompts.
+      const c = yield* ask({
+        id: PermissionV1.ID.make("per_alias_c"),
+        sessionID: SessionID.make("session_c"),
+        permission: "bash",
+        patterns: ["ls"],
+        metadata: {},
+        always: [],
+        ruleset: [],
+      }).pipe(Effect.forkScoped)
+      expect(yield* waitForPending(1)).toHaveLength(1)
+      yield* rejectAll()
+      yield* Fiber.await(c)
+    }),
+  { git: true },
+)
+
+test("modeRuleset - maps each mode to its V1 overlay", () => {
+  expect(Permission.modeRuleset("plan")).toEqual([{ permission: "edit", pattern: "*", action: "deny" }])
+  expect(Permission.modeRuleset("ask")).toEqual([])
+  expect(Permission.modeRuleset("surgical")).toEqual([])
+  expect(Permission.modeRuleset("bypass")).toEqual([
+    { permission: "edit", pattern: "*", action: "allow" },
+    { permission: "bash", pattern: "*", action: "allow" },
+  ])
+  expect(Permission.modeRuleset("yolo")).toEqual([{ permission: "*", pattern: "*", action: "allow" }])
+})
+
 it.instance(
   "reply - publishes replied event",
   () =>

@@ -5,9 +5,36 @@ import { Wildcard } from "@novaclaw/core/util/wildcard"
 import { Deferred, Effect, Layer, Context } from "effect"
 import os from "os"
 import { PermissionV1 } from "@novaclaw/core/v1/permission"
+import { normalizeReply } from "@novaclaw/core/permission"
+import type { PermissionMode } from "@novaclaw/core/session/config-resolve"
 import { EventV2Bridge } from "@/event-v2-bridge"
 
 export const Event = PermissionV1.Event
+
+/**
+ * 1K on the V1 runtime: the ruleset overlay a permission MODE contributes to a session's own
+ * `permission` rules (merged AFTER the agent's — findLast wins, so mode outranks agent defaults).
+ * V1 permission names are coarser than V2 actions: "edit" covers edit/write/apply_patch, so
+ * `surgical` (edit-yes/overwrite-no) is NOT expressible here — it stays V2-only and maps to the
+ * identity on V1. `bypass` allows in-project mutations but leaves external_directory at ask;
+ * `yolo` allows everything.
+ */
+export function modeRuleset(mode: PermissionMode): PermissionV1.Rule[] {
+  switch (mode) {
+    case "plan":
+      return [{ permission: "edit", pattern: "*", action: "deny" }]
+    case "ask":
+    case "surgical":
+      return []
+    case "bypass":
+      return [
+        { permission: "edit", pattern: "*", action: "allow" },
+        { permission: "bash", pattern: "*", action: "allow" },
+      ]
+    case "yolo":
+      return [{ permission: "*", pattern: "*", action: "allow" }]
+  }
+}
 
 export interface Interface {
   readonly ask: (input: PermissionV1.AskInput) => Effect.Effect<void, PermissionV1.Error>
@@ -118,7 +145,21 @@ export const layer = Layer.effect(
         reply: input.reply,
       })
 
-      if (input.reply === "reject") {
+      // 1K: the six verdict-scope replies (legacy trio aliased). `file` scope saves the request's
+      // CONCRETE patterns; `always` saves the broad `always` patterns; `once` persists nothing.
+      const { verdict, scope } = normalizeReply(input.reply)
+      const persisted = scope === "file" ? existing.info.patterns : scope === "always" ? existing.info.always : []
+
+      if (verdict === "deny") {
+        // A deny can persist too, so the same ask never comes back (evaluate() is findLast —
+        // a later deny rule overrides an earlier allow for the same pattern, and vice versa).
+        for (const pattern of persisted) {
+          approved.push({
+            permission: existing.info.permission,
+            pattern,
+            action: "deny",
+          })
+        }
         yield* Deferred.fail(
           existing.deferred,
           input.message
@@ -140,9 +181,9 @@ export const layer = Layer.effect(
       }
 
       yield* Deferred.succeed(existing.deferred, undefined)
-      if (input.reply === "once") return
+      if (persisted.length === 0) return
 
-      for (const pattern of existing.info.always) {
+      for (const pattern of persisted) {
         approved.push({
           permission: existing.info.permission,
           pattern,

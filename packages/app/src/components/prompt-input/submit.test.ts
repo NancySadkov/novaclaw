@@ -109,6 +109,10 @@ beforeAll(async () => {
       agent: {
         current: () => ({ name: "agent" }),
       },
+      permissionMode: {
+        current: () => "ask",
+        set: () => {},
+      },
       session: {
         promote(directory: string, sessionID: string) {
           promoted.push({ directory, sessionID })

@@ -118,9 +118,15 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
       }
     }
 
+    // The /permission reply route (not the deprecated per-session respond): it also settles asks
+    // pending in the V2 permission service (1K bridge), which auto-accept must cover too.
     const respond: PermissionRespondFn = (input) => {
       serverSDK()
-        .client.permission.respond(input)
+        .client.permission.reply({
+          requestID: input.permissionID,
+          reply: input.response,
+          directory: input.directory,
+        })
         .catch(() => {
           responded.delete(input.permissionID)
         })
