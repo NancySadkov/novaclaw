@@ -199,31 +199,31 @@ export function DialogAddWslServer(props: DialogWslServerProps = {}) {
 
   const opencodeMessage = createMemo(() => {
     const state = current()
-    if (!state) return language.t("wsl.onboarding.checkingOpencode")
+    if (!state) return language.t("wsl.onboarding.checkingNovaclaw")
     const distro = selectedDistro()
     if (state.job?.kind === "install-opencode") {
       return distro
-        ? language.t("wsl.onboarding.updatingOpencodeIn", { distro })
-        : language.t("wsl.onboarding.updatingOpencode")
+        ? language.t("wsl.onboarding.updatingNovaclawIn", { distro })
+        : language.t("wsl.onboarding.updatingNovaclaw")
     }
     if (state.job?.kind === "probe-opencode") {
       return distro
-        ? language.t("wsl.onboarding.checkingOpencodeIn", { distro })
-        : language.t("wsl.onboarding.checkingOpencode")
+        ? language.t("wsl.onboarding.checkingNovaclawIn", { distro })
+        : language.t("wsl.onboarding.checkingNovaclaw")
     }
     if (opencodeCheck()?.error) return opencodeCheck()!.error
     if (opencodeCheck()?.matchesDesktop === false) {
       return distro
-        ? language.t("wsl.onboarding.updateOpencodeIn", { distro })
-        : language.t("wsl.onboarding.updateOpencode")
+        ? language.t("wsl.onboarding.updateNovaclawIn", { distro })
+        : language.t("wsl.onboarding.updateNovaclaw")
     }
     if (opencodeReady()) {
       return distro
-        ? language.t("wsl.onboarding.opencodeReadyIn", { distro })
-        : language.t("wsl.onboarding.opencodeReady")
+        ? language.t("wsl.onboarding.novaclawReadyIn", { distro })
+        : language.t("wsl.onboarding.novaclawReady")
     }
     return distro
-      ? language.t("wsl.onboarding.installOpencodeIn", { distro })
+      ? language.t("wsl.onboarding.installNovaclawIn", { distro })
       : language.t("wsl.onboarding.chooseDistroFirst")
   })
 
@@ -283,7 +283,7 @@ export function DialogAddWslServer(props: DialogWslServerProps = {}) {
             ? language.t("wsl.server.label")
             : step === "distro"
               ? language.t("wsl.onboarding.step.distro")
-              : language.t("wsl.onboarding.step.opencode"),
+              : language.t("wsl.onboarding.step.novaclaw"),
         state:
           active === step
             ? "current"
@@ -539,7 +539,7 @@ export function DialogAddWslServer(props: DialogWslServerProps = {}) {
             <Match when={activeStep() === "opencode"}>
               <div class="rounded-md bg-surface-base p-4 flex flex-col gap-3">
                 <div class="flex items-center justify-between gap-3">
-                  <div class="text-14-medium text-text-strong">{language.t("wsl.onboarding.step.opencode")}</div>
+                  <div class="text-14-medium text-text-strong">{language.t("wsl.onboarding.step.novaclaw")}</div>
                   <div class="flex items-center gap-2">
                     <Show when={selectedDistro()}>
                       <Button
@@ -562,8 +562,8 @@ export function DialogAddWslServer(props: DialogWslServerProps = {}) {
                           <Spinner class="size-4 shrink-0" />
                         </Show>
                         {opencodeCheck()?.resolvedPath
-                          ? language.t("wsl.onboarding.updateOpencode")
-                          : language.t("wsl.onboarding.installOpencode")}
+                          ? language.t("wsl.onboarding.updateNovaclaw")
+                          : language.t("wsl.onboarding.installNovaclaw")}
                       </Button>
                     </Show>
                   </div>

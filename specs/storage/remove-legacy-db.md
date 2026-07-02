@@ -14,7 +14,7 @@ This means eliminating imports from `@/storage/db` or `./storage/db`, including:
 - `Database.TxOrDb` / `Database.Transaction`
 - drizzle helpers re-exported from `@/storage/db`, such as `eq`
 
-This does not mean removing SQLite or Drizzle everywhere in one step. The smaller target is deleting the opencode legacy wrapper by moving call sites onto deeper modules or onto the core/effect database adapter directly.
+This does not mean removing SQLite or Drizzle everywhere in one step. The smaller target is deleting the legacy NovaClaw wrapper by moving call sites onto deeper modules or onto the core/effect database adapter directly.
 
 ## Current Inventory
 
@@ -46,7 +46,7 @@ There are 65 direct API/type references in those files. The references fall into
 
 ## Group 1: Database Runtime And Startup
 
-Status: Completed. Startup, the public node export, and database CLI tooling no longer import the legacy opencode database wrapper; `packages/novaclaw/src/storage/db.ts` has been deleted.
+Status: Completed. Startup, the public node export, and database CLI tooling no longer import the legacy NovaClaw database wrapper; `packages/novaclaw/src/storage/db.ts` has been deleted.
 
 Files:
 
@@ -69,14 +69,14 @@ Why this group comes first:
 
 Target shape:
 
-- Move database path and client startup behind the core/effect database module rather than the opencode wrapper.
+- Move database path and client startup behind the core/effect database module rather than the NovaClaw wrapper.
 - Replace `Database.Client()` with an Effect-provided database service or a narrow startup-only adapter.
 - Replace the public `node.ts` re-export with either no export or a stable non-legacy database capability.
 - Keep `cli/cmd/db.ts` as an admin/raw SQLite tool, but make it ask the replacement database path provider instead of importing `@/storage/db`.
 
 ## Group 2: Sync Event Transaction Boundary
 
-Status: Completed. `SyncEvent` and the opencode projector boundary were removed; session/message event projection now lives in core EventV2/projector infrastructure.
+Status: Completed. `SyncEvent` and the NovaClaw projector boundary were removed; session/message event projection now lives in core EventV2/projector infrastructure.
 
 Files:
 
@@ -109,7 +109,7 @@ Suggested first step:
 
 ## Group 3: Domain Repositories Already Behind Services
 
-Status: Completed. These services no longer import the legacy opencode database wrapper.
+Status: Completed. These services no longer import the legacy NovaClaw database wrapper.
 
 Files:
 
@@ -144,7 +144,7 @@ Suggested order:
 
 ## Group 4: Session And Message Read Models
 
-Status: Completed. Session/message reads and projector writes have moved off the legacy opencode database wrapper.
+Status: Completed. Session/message reads and projector writes have moved off the legacy NovaClaw database wrapper.
 
 Files:
 
@@ -183,7 +183,7 @@ Suggested order:
 
 ## Group 5: Legacy CLI And One-Off Admin Reads
 
-Status: Completed. Remaining one-off CLI/admin reads and writes now use core database services or domain services instead of the legacy opencode database wrapper.
+Status: Completed. Remaining one-off CLI/admin reads and writes now use core database services or domain services instead of the legacy NovaClaw database wrapper.
 
 Files:
 
@@ -221,9 +221,9 @@ All migration groups are complete or superseded. `packages/novaclaw/src/storage/
 
 ## Superseded: Data Migrations
 
-Status: Superseded. No opencode data-migration group remains.
+Status: Superseded. No NovaClaw data-migration group remains.
 
-The previous opencode `data-migration.ts` service only backfilled session usage from message rows. That work is now covered by core database migration `packages/core/src/database/migration/20260510033149_session_usage.ts`, so there is no separate opencode data-migration group.
+The previous NovaClaw `data-migration.ts` service only backfilled session usage from message rows. That work is now covered by core database migration `packages/core/src/database/migration/20260510033149_session_usage.ts`, so there is no separate NovaClaw data-migration group.
 
 ## Invariants To Preserve
 
