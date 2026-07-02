@@ -4,6 +4,7 @@ import { makeLocationNode } from "../effect/app-node"
 import { Layer } from "effect"
 import { BashTool } from "./bash"
 import { ApplyPatchTool } from "./apply-patch"
+import { DefineToolTool } from "./define-tool"
 import { EditTool } from "./edit"
 import { GlobTool } from "./glob"
 import { GrepTool } from "./grep"
@@ -15,6 +16,7 @@ import { ReadToolFileSystem } from "./read-filesystem"
 import { RegisterAppTool } from "./register-app"
 import { SkillTool } from "./skill"
 import { TodoWriteTool } from "./todowrite"
+import { ToolManualTool } from "./tool-manual"
 import { TrashTool } from "./trash"
 import { WebFetchTool } from "./webfetch"
 import { WebSearchTool } from "./websearch"
@@ -40,6 +42,7 @@ import { WriteHexTool } from "./write-hex"
 export const locationLayer = Layer.mergeAll(
   ApplyPatchTool.layer,
   BashTool.layer,
+  DefineToolTool.layer,
   EditTool.layer,
   GlobTool.layer,
   GrepTool.layer,
@@ -50,6 +53,7 @@ export const locationLayer = Layer.mergeAll(
   RegisterAppTool.layer,
   SkillTool.layer,
   TodoWriteTool.layer,
+  ToolManualTool.layer,
   TrashTool.layer,
   WebFetchTool.layer,
   WebSearchTool.layer.pipe(Layer.provide(WebSearchTool.defaultConfigLayer)),
@@ -66,6 +70,7 @@ export const node = makeLocationNode({
   deps: [
     ApplyPatchTool.node,
     BashTool.node,
+    DefineToolTool.node,
     EditTool.node,
     GlobTool.node,
     GrepTool.node,
@@ -76,6 +81,7 @@ export const node = makeLocationNode({
     RegisterAppTool.node,
     SkillTool.node,
     TodoWriteTool.node,
+    ToolManualTool.node,
     TrashTool.node,
     WebFetchTool.node,
     WebSearchTool.node,

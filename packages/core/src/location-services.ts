@@ -1,4 +1,5 @@
 import { Effect, Layer, LayerMap } from "effect"
+import { AdhocGuidance } from "./adhoc-tools/guidance"
 import { AgentV2 } from "./agent"
 import { AISDK } from "./aisdk"
 import { Catalog } from "./catalog"
@@ -60,6 +61,7 @@ export const locationServices = LayerNode.group([
   Watcher.node,
   Pty.node,
   SkillV2.node,
+  AdhocGuidance.node,
   SystemContextRegistry.node,
   SystemContextBuiltIns.node,
   LocationMutation.node,

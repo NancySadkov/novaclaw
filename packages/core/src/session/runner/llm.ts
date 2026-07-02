@@ -40,6 +40,7 @@ import { type RunError, Service } from "./index"
 import { SessionRunnerModel } from "./model"
 import { createLLMEventPublisher } from "./publish-llm-event"
 import { toLLMMessages } from "./to-llm-message"
+import { AdhocGuidance } from "../../adhoc-tools/guidance"
 import { detectDoomLoop, redirectMessage } from "./doom-loop"
 import { Introspection } from "./introspection"
 import { MAX_STEPS_PROMPT } from "./max-steps"
@@ -111,6 +112,7 @@ export const layer = Layer.effect(
     const systemContext = yield* SystemContextRegistry.Service
     const skillGuidance = yield* SkillGuidance.Service
     const referenceGuidance = yield* ReferenceGuidance.Service
+    const adhocGuidance = yield* AdhocGuidance.Service
     const config = yield* Config.Service
     const snapshots = yield* Snapshot.Service
     const db = (yield* Database.Service).db
@@ -231,7 +233,7 @@ export const layer = Layer.effect(
       new TurnTransitionError({ _tag: "ContinueAfterOverflowCompaction", step })
 
     const loadSystemContext = (agent: AgentV2.Selection) =>
-      Effect.all([systemContext.load(), skillGuidance.load(agent), referenceGuidance.load()], {
+      Effect.all([systemContext.load(), skillGuidance.load(agent), referenceGuidance.load(), adhocGuidance.load()], {
         concurrency: "unbounded",
       }).pipe(Effect.map(SystemContext.combine))
 
@@ -566,6 +568,7 @@ export const node = makeLocationNode({
     SystemContextRegistry.node,
     SkillGuidance.node,
     ReferenceGuidance.node,
+    AdhocGuidance.node,
     Config.node,
     Snapshot.node,
     Database.node,

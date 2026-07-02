@@ -174,6 +174,24 @@ export const Info = Schema.Struct({
       }),
     }),
   ).annotate({ description: "Introspection mode — a judge model periodically checks whether the session is stuck" }),
+  adhoc_tools: Schema.optional(
+    Schema.Array(
+      Schema.Struct({
+        name: Schema.String.annotate({ description: "Tool name (lowercase slug) listed in the system prompt" }),
+        description: Schema.String.annotate({
+          description: "One-line description shown beside the name (the model decides from this alone)",
+        }),
+        manual: Schema.String.annotate({
+          description: "Free-text manual the model pulls on demand: the API shape plus 1-2 curl/shell examples",
+        }),
+        enabled: Schema.optional(Schema.Boolean).annotate({
+          description: "Set false to hide the recipe without deleting it",
+        }),
+      }),
+    ),
+  ).annotate({
+    description: "Ad-hoc tool recipes: name + description listed in the system prompt, manual pulled on demand",
+  }),
   compaction: Schema.optional(
     Schema.Struct({
       auto: Schema.optional(Schema.Boolean).annotate({
