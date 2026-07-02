@@ -10,6 +10,7 @@ import { GrepTool } from "./grep"
 import { JsTool } from "./js"
 import { QuestionTool } from "./question"
 import { ReadTool } from "./read"
+import { ReadHexTool } from "./read-hex"
 import { ReadToolFileSystem } from "./read-filesystem"
 import { RegisterAppTool } from "./register-app"
 import { SkillTool } from "./skill"
@@ -21,6 +22,7 @@ import { SpawnTool } from "./spawn"
 import { ExitTool } from "./exit"
 import { WaitTool } from "./wait"
 import { WriteTool } from "./write"
+import { WriteHexTool } from "./write-hex"
 
 /**
  * Composes only the shipped Location-scoped built-in tool transforms.
@@ -44,6 +46,7 @@ export const locationLayer = Layer.mergeAll(
   JsTool.layer,
   QuestionTool.layer,
   ReadTool.layer.pipe(Layer.provide(ReadToolFileSystem.layer)),
+  ReadHexTool.layer,
   RegisterAppTool.layer,
   SkillTool.layer,
   TodoWriteTool.layer,
@@ -51,6 +54,7 @@ export const locationLayer = Layer.mergeAll(
   WebFetchTool.layer,
   WebSearchTool.layer.pipe(Layer.provide(WebSearchTool.defaultConfigLayer)),
   WriteTool.layer,
+  WriteHexTool.layer,
   SpawnTool.layer,
   ExitTool.layer,
   WaitTool.layer,
@@ -68,6 +72,7 @@ export const node = makeLocationNode({
     JsTool.node,
     QuestionTool.node,
     ReadTool.node,
+    ReadHexTool.node,
     RegisterAppTool.node,
     SkillTool.node,
     TodoWriteTool.node,
@@ -75,6 +80,7 @@ export const node = makeLocationNode({
     WebFetchTool.node,
     WebSearchTool.node,
     WriteTool.node,
+    WriteHexTool.node,
     SpawnTool.node,
     ExitTool.node,
     WaitTool.node,

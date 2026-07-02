@@ -211,7 +211,8 @@ describe("ReadTool", () => {
       expect(assertions).toMatchObject([
         {
           sessionID,
-          action: "external_directory",
+          // 1I: external access is split — read tools assert the read-class action.
+          action: "external_directory_read",
           resources: [path.join(path.dirname(external), "*").replaceAll("\\", "/")],
         },
         { sessionID, action: "read", resources: [external.replaceAll("\\", "/")], save: ["*"] },
@@ -493,18 +494,20 @@ describe("ReadTool", () => {
       readFailure = new ReadToolFileSystem.BinaryFileError({ resource: "archive.dat" })
       const registry = yield* ToolRegistry.Service
 
-      expect(
-        yield* executeTool(registry, {
-          sessionID,
-          ...toolIdentity,
-          call: {
-            type: "tool-call",
-            id: "call-binary",
-            name: "read",
-            input: { path: "archive.dat", offset: 2, limit: 1 },
-          },
-        }),
-      ).toEqual({ type: "error", value: "Cannot read binary file: archive.dat" })
+      const result = yield* executeTool(registry, {
+        sessionID,
+        ...toolIdentity,
+        call: {
+          type: "tool-call",
+          id: "call-binary",
+          name: "read",
+          input: { path: "archive.dat", offset: 2, limit: 1 },
+        },
+      })
+      // 1L: a binary file is reported as a nudge toward the hex tools, not a bare failure.
+      expect(result.type).toBe("error")
+      expect(String((result as { value: unknown }).value)).toContain('"archive.dat" is a binary file')
+      expect(String((result as { value: unknown }).value)).toContain("read-hex")
       expect(readCalls).toEqual([
         { input: AbsolutePath.make(path.join(process.cwd(), "archive.dat")), page: { offset: 2, limit: 1 } },
       ])
@@ -533,13 +536,14 @@ describe("ReadTool", () => {
       allow = false
       const registry = yield* ToolRegistry.Service
 
-      expect(
-        yield* executeTool(registry, {
-          sessionID,
-          ...toolIdentity,
-          call: { type: "tool-call", id: "call-read", name: "read", input: { path: "README.md" } },
-        }),
-      ).toEqual({ type: "error", value: "Unable to read README.md" })
+      const result = yield* executeTool(registry, {
+        sessionID,
+        ...toolIdentity,
+        call: { type: "tool-call", id: "call-read", name: "read", input: { path: "README.md" } },
+      })
+      // 1J: the denial is a model-legible policy message, never a bare "Unable to read".
+      expect(result.type).toBe("error")
+      expect(String((result as { value: unknown }).value)).toContain("Permission denied by policy")
       expect(readCalls).toEqual([])
     }),
   )
@@ -588,13 +592,14 @@ describe("ReadTool", () => {
       resolvedType = "directory"
       const registry = yield* ToolRegistry.Service
 
-      expect(
-        yield* executeTool(registry, {
-          sessionID,
-          ...toolIdentity,
-          call: { type: "tool-call", id: "call-read-directory-denied", name: "read", input: { path: "src" } },
-        }),
-      ).toEqual({ type: "error", value: "Unable to read src" })
+      const result = yield* executeTool(registry, {
+        sessionID,
+        ...toolIdentity,
+        call: { type: "tool-call", id: "call-read-directory-denied", name: "read", input: { path: "src" } },
+      })
+      // 1J: denial as a policy observation, not a bare failure.
+      expect(result.type).toBe("error")
+      expect(String((result as { value: unknown }).value)).toContain("Permission denied by policy")
       expect(listCalls).toEqual([])
     }),
   )
@@ -630,21 +635,26 @@ describe("ReadTool", () => {
       })
       const registry = yield* ToolRegistry.Service
 
-      expect(
-        yield* executeTool(registry, {
-          sessionID,
-          ...toolIdentity,
-          call: {
-            type: "tool-call",
-            id: "call-large",
-            name: "read",
-            input: { path: "large.txt", offset: 2, limit: 1 },
-          },
-        }),
-      ).toEqual({
-        type: "json",
-        value: { type: "text-page", content: "hello", mime: "text/plain", offset: 2, truncated: true, next: 3 },
+      const result = yield* executeTool(registry, {
+        sessionID,
+        ...toolIdentity,
+        call: {
+          type: "tool-call",
+          id: "call-large",
+          name: "read",
+          input: { path: "large.txt", offset: 2, limit: 1 },
+        },
       })
+      // 1F: a truncated page carries the continuation guidance note appended to the content.
+      expect(result.type).toBe("json")
+      expect((result as { value: { content: string } }).value).toMatchObject({
+        type: "text-page",
+        mime: "text/plain",
+        offset: 2,
+        truncated: true,
+        next: 3,
+      })
+      expect((result as { value: { content: string } }).value.content.startsWith("hello")).toBe(true)
       expect(readCalls).toEqual([
         { input: AbsolutePath.make(path.join(process.cwd(), "large.txt")), page: { offset: 2, limit: 1 } },
       ])
@@ -662,13 +672,15 @@ describe("ReadTool", () => {
       }
       const registry = yield* ToolRegistry.Service
 
-      expect(
-        yield* executeTool(registry, {
-          sessionID,
-          ...toolIdentity,
-          call: { type: "tool-call", id: "call-direct-binary", name: "read", input: { path: "late-binary" } },
-        }),
-      ).toEqual({ type: "error", value: "Cannot read binary file: late-binary" })
+      const result = yield* executeTool(registry, {
+        sessionID,
+        ...toolIdentity,
+        call: { type: "tool-call", id: "call-direct-binary", name: "read", input: { path: "late-binary" } },
+      })
+      // 1L: even the late-discovered binary nudges toward the hex tools.
+      expect(result.type).toBe("error")
+      expect(String((result as { value: unknown }).value)).toContain('"late-binary" is a binary file')
+      expect(String((result as { value: unknown }).value)).toContain("read-hex")
     }),
   )
 })

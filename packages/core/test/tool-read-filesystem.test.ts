@@ -64,7 +64,11 @@ describe("ReadToolFileSystem", () => {
       const malformedError = yield* ReadToolFileSystem.read(fs, malformed, "malformed.txt").pipe(Effect.flip)
 
       expect(binaryError).toBeInstanceOf(ReadToolFileSystem.BinaryFileError)
-      expect(binaryError.message).toBe("Cannot read binary file: archive.dat")
+      // 1L: the binary error carries the model-facing note — size + a nudge to the hex tools
+      // instead of a bare "cannot read" that derails small models.
+      expect(binaryError.message).toContain('"archive.dat" is a binary file')
+      expect(binaryError.message).toContain("4 bytes")
+      expect(binaryError.message).toContain("read-hex")
       expect(malformedError).toBeInstanceOf(ReadToolFileSystem.MalformedUtf8Error)
     }),
   )

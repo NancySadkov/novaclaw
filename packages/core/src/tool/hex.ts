@@ -1,11 +1,15 @@
 // Pure helpers for inspecting and patching binary files WITHOUT ever loading the whole
-// file — so the same tools work on a 20-byte `.o` and a 4 GB `.iso`. Three concerns:
+// file — so the same tools work on a 20-byte `.o` and a 4 GB `.iso`. Four concerns:
 //
 //   - detectFileType: best-effort magic-number -> format guess, for the "this is a binary
 //     file" note the read tool shows instead of the bare "Cannot read binary file" error
 //     that derails small models.
-//   - hexDump: canonical `OFFSET  hex…  |ascii|` for one byte window, offset-labelled so
-//     read-hex can page over a huge file (each window carries its own base offset).
+//   - hexDump: the ROUND-TRIPPABLE dump — read output is valid write input. 16
+//     space-separated hex bytes per line; `;` begins a comment to end-of-line, and the
+//     line's offset + ascii gloss ride in that comment:
+//       4d 5a 90 00 03 00 00 00 04 00 00 00 ff ff 00 00 ; @00000000 MZ..............
+//   - parseHexInput: the TOLERANT inverse — ignores `;` comments, indentation and blank
+//     lines; accepts a byte as `4d`, `0x4d`, `4dh` or `4d-h`; any whitespace between bytes.
 //   - binaryNote: the model-facing message that nudges toward read-hex/write-hex.
 //
 // Pure + dependency-free so it is unit-tested without a filesystem.
@@ -54,9 +58,13 @@ const hex2 = (byte: number): string => HEX_DIGITS[(byte >> 4) & 0xf] + HEX_DIGIT
 const hexOffset = (n: number): string => n.toString(16).padStart(8, "0")
 
 /**
- * Canonical hex dump of one window: `00000010  4d 5a 90 00 …  |MZ..…|`, 16 bytes per row.
- * `baseOffset` is the file offset of `bytes[0]` so windows page correctly across a huge file.
- * Missing trailing bytes on the last row are padded with spaces so the ascii gutter aligns.
+ * Round-trippable hex dump of one window, 16 bytes per line:
+ *
+ *   4d 5a 90 00 03 00 00 00 04 00 00 00 ff ff 00 00 ; @00000000 MZ..............
+ *
+ * Everything after `;` is a comment `parseHexInput` ignores, so read-hex output can be
+ * edited and fed straight back into write-hex. `baseOffset` is the file offset of
+ * `bytes[0]` so windows page correctly across a huge file.
  */
 export function hexDump(bytes: Uint8Array, baseOffset = 0): string {
   const lines: string[] = []
@@ -64,25 +72,58 @@ export function hexDump(bytes: Uint8Array, baseOffset = 0): string {
     const row = bytes.subarray(i, i + 16)
     const cells: string[] = []
     let ascii = ""
-    for (let j = 0; j < 16; j++) {
-      if (j < row.length) {
-        const byte = row[j]
-        cells.push(hex2(byte))
-        ascii += byte >= 0x20 && byte < 0x7f ? String.fromCharCode(byte) : "."
-      } else {
-        cells.push("  ")
-      }
+    for (let j = 0; j < row.length; j++) {
+      const byte = row[j]
+      cells.push(hex2(byte))
+      ascii += byte >= 0x20 && byte < 0x7f ? String.fromCharCode(byte) : "."
     }
-    lines.push(`${hexOffset(baseOffset + i)}  ${cells.join(" ")}  |${ascii}|`)
+    lines.push(`${cells.join(" ")} ; @${hexOffset(baseOffset + i)} ${ascii}`)
   }
   return lines.join("\n")
 }
 
+export class HexParseError extends Error {
+  constructor(
+    readonly token: string,
+    readonly line: number,
+  ) {
+    super(
+      `Invalid hex byte "${token}" on line ${line}. Write each byte as two hex digits — ` +
+        `"4d", "0x4d", "4dh" and "4d-h" are all accepted; anything after ";" on a line is a comment.`,
+    )
+  }
+}
+
+// One byte, tolerantly: 4d | 0x4d | 4dh | 4d-h (any case).
+const BYTE_TOKEN = /^(?:0x)?([0-9a-f]{1,2})(?:-?h)?$/i
+
+/**
+ * Tolerant inverse of `hexDump` — accepts exactly what read-hex prints, plus hand-written
+ * variants: `;` comments, indentation and blank lines are ignored; bytes may be written as
+ * `4d`, `0x4d`, `4dh` or `4d-h`; any whitespace (spaces, tabs, newlines) separates bytes.
+ */
+export function parseHexInput(text: string): Uint8Array {
+  const out: number[] = []
+  const lines = text.split(/\r?\n/)
+  for (let n = 0; n < lines.length; n++) {
+    const semicolon = lines[n].indexOf(";")
+    const code = semicolon === -1 ? lines[n] : lines[n].slice(0, semicolon)
+    for (const token of code.split(/\s+/)) {
+      if (!token) continue
+      const match = BYTE_TOKEN.exec(token)
+      if (!match) throw new HexParseError(token, n + 1)
+      out.push(parseInt(match[1], 16))
+    }
+  }
+  return Uint8Array.from(out)
+}
+
 /** The model-facing message that replaces the bare "Cannot read binary file". */
-export function binaryNote(resource: string, size: number, type: FileType | undefined): string {
+export function binaryNote(resource: string, size: number | undefined, type: FileType | undefined): string {
   const what = type ? `${type.format} — ${type.description}` : "unrecognized binary data"
+  const bytes = size === undefined ? "" : `${size} bytes; `
   return (
-    `"${resource}" is a binary file (${size} bytes; ${what}), not text. ` +
+    `"${resource}" is a binary file (${bytes}${what}), not text. ` +
     `Use \`read-hex\` to inspect it in chunks (it pages, so it works even on multi-GB images) ` +
     `and \`write-hex\` to patch bytes at an offset.`
   )

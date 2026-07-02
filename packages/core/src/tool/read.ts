@@ -8,6 +8,7 @@ import { Image } from "../image"
 import { LocationMutation } from "../location-mutation"
 import { PermissionV2 } from "../permission"
 import { AbsolutePath } from "../schema"
+import { binaryNote } from "./hex"
 import { ReadGuidance } from "./read-guidance"
 import { ReadToolFileSystem } from "./read-filesystem"
 import { ToolRegistry } from "./registry"
@@ -90,7 +91,12 @@ export const layer = Layer.effectDiscard(
                   .pipe(Effect.catchTag("Image.ResizerUnavailableError", () => Effect.succeed(content)))
               }
               if ("encoding" in content && content.encoding === "base64")
-                return yield* Effect.fail(new ReadToolFileSystem.BinaryFileError({ resource }))
+                return yield* Effect.fail(
+                  new ReadToolFileSystem.BinaryFileError({
+                    resource,
+                    note: binaryNote(resource, Math.floor((content.content.length * 3) / 4), undefined),
+                  }),
+                )
               // 1F: warn the model when a read takes a large slice of context so small
               // models continue in chunks (offset/limit) rather than holding a whole file.
               if (content instanceof ReadToolFileSystem.TextPage) {
