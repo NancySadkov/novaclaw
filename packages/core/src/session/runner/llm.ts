@@ -8,7 +8,7 @@ import {
   isContextOverflowFailure,
   type ProviderErrorEvent,
 } from "@novaclaw/llm"
-import { Cause, DateTime, Effect, FiberSet, Layer, Option, Semaphore, Stream } from "effect"
+import { Cause, DateTime, Duration, Effect, FiberSet, Layer, Option, Semaphore, Stream } from "effect"
 import path from "path"
 import { AgentV2 } from "../../agent"
 import { Config } from "../../config"
@@ -42,6 +42,7 @@ import { createLLMEventPublisher } from "./publish-llm-event"
 import { toLLMMessages } from "./to-llm-message"
 import { detectDoomLoop, redirectMessage } from "./doom-loop"
 import { MAX_STEPS_PROMPT } from "./max-steps"
+import { ProviderRetry } from "./provider-retry"
 import { Snapshot } from "../../snapshot"
 import { makeLocationNode } from "../../effect/app-node"
 import { llmClient } from "../../effect/app-node-platform"
@@ -244,9 +245,14 @@ export const layer = Layer.effect(
       const publish = (event: LLMEvent, outputPaths: ReadonlyArray<string> = []) =>
         withPublication(publisher.publish(event, outputPaths))
       let overflowFailure: ProviderErrorEvent | undefined
+      // 1D: an attempt that produced ANY event is never retried (a retry would duplicate
+      // partially-streamed output) — only pure pre-stream failures (connection refused,
+      // an HTTP error before the first SSE event) are transparently retried below.
+      let sawProviderEvent = false
       const providerStream = llm.stream(request).pipe(
         Stream.runForEach((event) =>
           Effect.gen(function* () {
+            sawProviderEvent = true
             if (overflowFailure || publisher.hasProviderError()) return
             if (LLMEvent.is.providerError(event)) {
               if (isContextOverflowFailure(event) && !publisher.hasAssistantStarted()) {
@@ -291,7 +297,30 @@ export const layer = Layer.effect(
 
       return yield* Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {
-          const stream = yield* restore(providerStream).pipe(Effect.exit)
+          // 1D — the forgiving loop: a TRANSIENT provider failure (local server down or
+          // restarting, 5xx, 429) that produced no events is retried with backoff, bounded
+          // by a hard per-turn attempt cap so a dead endpoint fails in seconds, not forever.
+          // Fatal classes (auth, invalid request, …) and mid-stream failures keep today's
+          // behavior; context overflow has its own recovery below.
+          let attempt = 1
+          let stream = yield* restore(providerStream).pipe(Effect.exit)
+          while (stream._tag === "Failure" && !Cause.hasInterrupts(stream.cause)) {
+            if (sawProviderEvent || attempt >= ProviderRetry.MAX_PROVIDER_ATTEMPTS) break
+            const transient = Option.getOrUndefined(Cause.findErrorOption(stream.cause))
+            if (!ProviderRetry.isTransientProviderFailure(transient)) break
+            yield* events.publish(SessionEvent.Retried, {
+              sessionID: session.id,
+              timestamp: yield* DateTime.now,
+              attempt,
+              error: ProviderRetry.retryErrorPayload(transient),
+            })
+            yield* restore(
+              Effect.sleep(Duration.millis(ProviderRetry.retryDelayMs(attempt, transient.retryAfterMs))),
+            )
+            attempt++
+            sawProviderEvent = false
+            stream = yield* restore(providerStream).pipe(Effect.exit)
+          }
           const failure =
             stream._tag === "Failure" ? Option.getOrUndefined(Cause.findErrorOption(stream.cause)) : undefined
           if (
