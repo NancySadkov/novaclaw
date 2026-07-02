@@ -13,6 +13,12 @@ export interface HomeApp {
   readonly accent: string // CSS color for the tile gradient/glow
   readonly source: "builtin" | "plugin" | "agent"
   readonly open: () => void
+  /** Renders as the 2×2 anchor tile that guides the eye (one per home — Chats). */
+  readonly hero?: boolean
+  /** One-line description; shown on the hero tile and in hover tooltips. */
+  readonly subtitle?: string
+  /** Glyph color on the tile. "dark" for light accents (gold) where white would wash out. */
+  readonly glyphTone?: "light" | "dark"
 }
 
 // A plain module-level signal is the whole registry — global reactive state, no provider to wire.

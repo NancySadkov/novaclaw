@@ -171,6 +171,39 @@
     position: relative;
   }
 
+  /* Live html embeds: a completed ```html fence renders its raw body inside a sandboxed
+     iframe. The highlighted source stays in the DOM as the "code" view and
+     data-html-embed-view on the block wrapper decides which of the two is visible. */
+  [data-markdown-block][data-html-embed-view="preview"] > [data-component="markdown-code"] {
+    display: none;
+  }
+
+  [data-markdown-block][data-html-embed-view="code"] > [data-component="markdown-html-embed"] {
+    display: none;
+  }
+
+  [data-component="markdown-html-embed"] {
+    position: relative;
+    height: 320px;
+    min-height: 120px;
+    /* native drag-to-grow handle; resize only works with overflow != visible */
+    resize: vertical;
+    overflow: hidden;
+    margin-top: 12px;
+    margin-bottom: 32px; /* mirror pre margins so toggling views doesn't shift the flow */
+    border: 1px solid var(--v2-border-border-base);
+    border-radius: 6px;
+    /* agent HTML almost always assumes a light canvas — keep it white even in dark mode */
+    background: white;
+  }
+
+  [data-component="markdown-html-embed"] > iframe {
+    display: block;
+    width: 100%;
+    height: 100%;
+    border: 0;
+  }
+
   [data-component="markdown-code"][data-code-kind="shell"] .shiki {
     background: var(--markdown-shell-code-background);
     border-color: var(--markdown-shell-code-border);
@@ -185,7 +218,7 @@
     color: var(--markdown-shell-code-token-color) !important;
   }
 
-  [data-slot="markdown-copy-button"] {
+  :is([data-slot="markdown-copy-button"], [data-slot="markdown-embed-toggle"]) {
     position: absolute;
     top: 4px;
     right: 4px;
@@ -224,22 +257,31 @@
     }
   }
 
-  [data-slot="markdown-copy-button"]:hover::after,
-  [data-slot="markdown-copy-button"]:focus-visible::after {
+  :is([data-slot="markdown-copy-button"], [data-slot="markdown-embed-toggle"]):hover::after,
+  :is([data-slot="markdown-copy-button"], [data-slot="markdown-embed-toggle"]):focus-visible::after {
     opacity: 1;
   }
 
-  [data-slot="markdown-copy-button"][data-variant="secondary"] {
+  :is([data-slot="markdown-copy-button"], [data-slot="markdown-embed-toggle"])[data-variant="secondary"] {
     box-shadow: none;
     border: 0.5px solid var(--v2-border-border-base);
   }
 
-  [data-slot="markdown-copy-button"][data-variant="secondary"] [data-slot="icon-svg"] {
+  :is([data-slot="markdown-copy-button"], [data-slot="markdown-embed-toggle"])[data-variant="secondary"]
+    [data-slot="icon-svg"] {
     color: var(--v2-icon-icon-base);
   }
 
-  [data-component="markdown-code"]:hover [data-slot="markdown-copy-button"] {
+  [data-component="markdown-code"]:hover
+    :is([data-slot="markdown-copy-button"], [data-slot="markdown-embed-toggle"]),
+  [data-component="markdown-html-embed"]:hover [data-slot="markdown-embed-toggle"] {
     opacity: 1;
+  }
+
+  /* in the code view the copy button owns the corner (small icon-button is 20px wide),
+     so the preview toggle sits just left of it */
+  [data-component="markdown-code"] [data-slot="markdown-embed-toggle"] {
+    right: 28px;
   }
 
   [data-slot="markdown-copy-button"] [data-slot="check-icon"] {
@@ -366,15 +408,16 @@ body:not([data-new-layout]) [data-component="markdown"] {
     background: none;
   }
 
-  [data-slot="markdown-copy-button"]::after {
+  :is([data-slot="markdown-copy-button"], [data-slot="markdown-embed-toggle"])::after {
     border: 1px solid var(--border-weak-base, rgba(0, 0, 0, 0.07));
   }
 
-  [data-slot="markdown-copy-button"][data-variant="secondary"] {
+  :is([data-slot="markdown-copy-button"], [data-slot="markdown-embed-toggle"])[data-variant="secondary"] {
     border: 1px solid var(--border-weak-base);
   }
 
-  [data-slot="markdown-copy-button"][data-variant="secondary"] [data-slot="icon-svg"] {
+  :is([data-slot="markdown-copy-button"], [data-slot="markdown-embed-toggle"])[data-variant="secondary"]
+    [data-slot="icon-svg"] {
     color: var(--icon-base);
   }
 

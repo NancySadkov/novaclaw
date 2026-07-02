@@ -129,12 +129,6 @@ export const SettingsGeneralV2: Component<{
     { initialValue: [] as ShellOption[] },
   )
 
-  const [pinchZoom, { mutate: setPinchZoom }] = createResource(
-    () => (desktop() && platform.getPinchZoomEnabled ? true : false),
-    () => Promise.resolve(platform.getPinchZoomEnabled?.() ?? false).catch(() => false),
-    { initialValue: false },
-  )
-
   onMount(() => {
     void theme.loadThemes()
   })
@@ -172,13 +166,6 @@ export const SettingsGeneralV2: Component<{
 
     return options
   })
-
-  const onPinchZoomChange = (checked: boolean) => {
-    setPinchZoom(checked)
-    const update = platform.setPinchZoomEnabled?.(checked)
-    if (!update) return
-    void update.catch(() => setPinchZoom(!checked))
-  }
 
   const colorSchemeOptions = createMemo((): { value: ColorScheme; label: string }[] => [
     { value: "system", label: language.t("theme.scheme.system") },
@@ -312,23 +299,27 @@ export const SettingsGeneralV2: Component<{
           </div>
         </SettingsRowV2>
 
-        <SettingsRowV2
-          title={language.t("settings.general.row.newLayoutDesigns.title")}
-          description={language.t("settings.general.row.newLayoutDesigns.description")}
-        >
-          <div data-action="settings-new-layout-designs">
-            <Switch
-              checked={settings.general.newLayoutDesigns()}
-              onChange={(checked) => {
-                settings.general.setNewLayoutDesigns(checked)
-                if (checked) return
-                void import("@/components/dialog-settings").then((module) => {
-                  dialog.show(() => <module.DialogSettings />)
-                })
-              }}
-            />
-          </div>
-        </SettingsRowV2>
+        {/* Dev-channel only: the product ships the new layout — flipping back to the legacy shell is a
+            developer escape hatch, not a user setting (vision: settings = bootstrap · manage · reset). */}
+        <Show when={import.meta.env.VITE_NOVACLAW_CHANNEL !== "prod"}>
+          <SettingsRowV2
+            title={language.t("settings.general.row.newLayoutDesigns.title")}
+            description={language.t("settings.general.row.newLayoutDesigns.description")}
+          >
+            <div data-action="settings-new-layout-designs">
+              <Switch
+                checked={settings.general.newLayoutDesigns()}
+                onChange={(checked) => {
+                  settings.general.setNewLayoutDesigns(checked)
+                  if (checked) return
+                  void import("@/components/dialog-settings").then((module) => {
+                    dialog.show(() => <module.DialogSettings />)
+                  })
+                }}
+              />
+            </div>
+          </SettingsRowV2>
+        </Show>
 
         <Show when={mobile() && import.meta.env.VITE_NOVACLAW_CHANNEL !== "prod"}>
           <SettingsRowV2
@@ -347,62 +338,9 @@ export const SettingsGeneralV2: Component<{
     </div>
   )
 
-  const AdvancedSection = () => (
-    <div class="settings-v2-section">
-      <h3 class="settings-v2-section-title">{language.t("settings.general.section.advanced")}</h3>
-
-      <SettingsListV2>
-        <SettingsRowV2
-          title={language.t("settings.general.row.showFileTree.title")}
-          description={language.t("settings.general.row.showFileTree.description")}
-        >
-          <div data-action="settings-show-file-tree">
-            <Switch
-              checked={settings.general.showFileTree()}
-              onChange={(checked) => settings.general.setShowFileTree(checked)}
-            />
-          </div>
-        </SettingsRowV2>
-
-        <SettingsRowV2
-          title={language.t("settings.general.row.showSearch.title")}
-          description={language.t("settings.general.row.showSearch.description")}
-        >
-          <div data-action="settings-show-search">
-            <Switch
-              checked={settings.general.showSearch()}
-              onChange={(checked) => settings.general.setShowSearch(checked)}
-            />
-          </div>
-        </SettingsRowV2>
-
-        <SettingsRowV2
-          title={language.t("settings.general.row.showStatus.title")}
-          description={language.t("settings.general.row.showStatus.description")}
-        >
-          <div data-action="settings-show-status">
-            <Switch
-              checked={settings.general.showStatus()}
-              onChange={(checked) => settings.general.setShowStatus(checked)}
-            />
-          </div>
-        </SettingsRowV2>
-
-        <SettingsRowV2
-          title={language.t("settings.general.row.showCustomAgents.title")}
-          description={language.t("settings.general.row.showCustomAgents.description")}
-        >
-          <div data-action="settings-show-custom-agents">
-            <Switch
-              checked={settings.general.showCustomAgents()}
-              onChange={(checked) => settings.general.setShowCustomAgents(checked)}
-            />
-          </div>
-        </SettingsRowV2>
-      </SettingsListV2>
-    </div>
-  )
-
+  // Removed per the settings vision (bootstrap · manage · reset): the Advanced dev-view toggles
+  // (file tree / search / status / custom agents) and the Display pinch-zoom row. Chrome visibility
+  // is the layout's job; a user who wants a different surface asks an agent for it.
   const AppearanceSection = () => (
     <div class="settings-v2-section">
       <h3 class="settings-v2-section-title">{language.t("settings.general.section.appearance")}</h3>
@@ -666,26 +604,6 @@ export const SettingsGeneralV2: Component<{
     </div>
   )
 
-  // We can probably remove this, right?
-  const DisplaySection = () => (
-    <Show when={desktop()}>
-      <div class="settings-v2-section">
-        <h3 class="settings-v2-section-title">{language.t("settings.general.section.display")}</h3>
-
-        <SettingsListV2>
-          <SettingsRowV2
-            title={language.t("settings.general.row.pinchZoom.title")}
-            description={language.t("settings.general.row.pinchZoom.description")}
-          >
-            <div data-action="settings-pinch-zoom">
-              <Switch checked={pinchZoom.latest} onChange={onPinchZoomChange} />
-            </div>
-          </SettingsRowV2>
-        </SettingsListV2>
-      </div>
-    </Show>
-  )
-
   return (
     <>
       <div class="settings-v2-tab-header">
@@ -704,10 +622,6 @@ export const SettingsGeneralV2: Component<{
         <Show when={desktop()}>
           <UpdatesSection />
         </Show>
-
-        <DisplaySection />
-
-        <AdvancedSection />
       </div>
     </>
   )

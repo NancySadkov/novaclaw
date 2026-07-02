@@ -27,6 +27,22 @@
     height: 24px;
   }
 
+  /* Display sizes for launcher tiles / hero surfaces (the small sizes above are for chrome). */
+  &[data-size="xl"] {
+    width: 32px;
+    height: 32px;
+  }
+
+  &[data-size="2xl"] {
+    width: 40px;
+    height: 40px;
+  }
+
+  &[data-size="3xl"] {
+    width: 56px;
+    height: 56px;
+  }
+
   [data-slot="icon-svg"] {
     width: 100%;
     height: auto;

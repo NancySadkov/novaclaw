@@ -1,5 +1,6 @@
 import { marked, type Tokens } from "marked"
 import remend from "remend"
+import { htmlEmbedLanguage } from "./markdown-html-embed"
 
 export type Block = {
   raw: string
@@ -20,7 +21,9 @@ function refs(text: string) {
 }
 
 function language(value: string | undefined) {
-  return value?.trim().split(/\s+/, 1)[0] || undefined
+  // Lowercased at the source: shiki's bundledLanguages ids are all lowercase (```HTML would
+  // silently normalize to "text" downstream, losing BOTH highlighting and the html embed).
+  return value?.trim().split(/\s+/, 1)[0]?.toLowerCase() || undefined
 }
 
 function novaClaw(raw: string) {
@@ -49,8 +52,47 @@ function heal(text: string) {
   return remend(text, { linkMode: "text-only" })
 }
 
+// Cheap gate before paying for a lexer pass on every historical message: only texts that
+// even mention an html-tagged fence opener are candidates for live-embed splitting.
+function mentionsHtmlFence(text: string) {
+  return /(?:^|\n)[ \t]{0,3}(?:`{3,}|~{3,})[ \t]*html\b/i.test(text)
+}
+
+// Splits ONLY closed top-level html fences out of a static message; everything else merges
+// back into "full" blocks so the marked/shiki pipeline stays byte-for-byte unchanged for
+// them. Static renders normally keep the whole message as one marked-rendered block, but
+// that pipeline sanitizes through DOMPurify (which strips <script>), so html fences must be
+// carved out as worker-rendered code blocks that still carry the raw body for the iframe.
+// Unclosed trailing fences stay merged: no fence close, no embed — marked renders them as
+// plain code exactly like before.
+function splitHtmlFences(text: string): Block[] {
+  const tokens = marked.lexer(text)
+  const result: Block[] = []
+  let pending = ""
+  for (const token of tokens) {
+    if (token.type === "code") {
+      const code = token as Tokens.Code
+      if (htmlEmbedLanguage(language(code.lang)) && !open(code.raw)) {
+        if (pending) result.push({ raw: pending, src: pending, mode: "full" })
+        pending = ""
+        result.push({ raw: code.raw, src: code.text, mode: "code", language: language(code.lang), complete: true })
+        continue
+      }
+    }
+    pending += token.raw
+  }
+  if (pending) result.push({ raw: pending, src: pending, mode: "full" })
+  if (result.length === 0) return [{ raw: text, src: text, mode: "full" }]
+  return result
+}
+
 export function stream(text: string, live: boolean): Block[] {
-  if (!live) return [{ raw: text, src: text, mode: "full" }] satisfies Block[]
+  if (!live) {
+    // Reference definitions must stay in one document for links to resolve, so those
+    // messages keep the single-block behavior (html fences degrade to highlighted code).
+    if (mentionsHtmlFence(text) && !refs(text)) return splitHtmlFences(text)
+    return [{ raw: text, src: text, mode: "full" }] satisfies Block[]
+  }
   if (refs(text)) return [{ raw: text, src: heal(text), mode: "live" }] satisfies Block[]
   const tokens = marked.lexer(text)
   const tail = tokens.findLastIndex((token) => token.type !== "space")

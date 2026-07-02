@@ -111,6 +111,25 @@ describe("markdown stream", () => {
     ])
   })
 
+  test("lowercases fence languages so shiki ids and the html embed both match", () => {
+    // ```HTML used to survive as "HTML": not in shiki's bundledLanguages (silently highlighted
+    // as text) AND rejected by htmlEmbedForBlock after the async result overwrote the language.
+    expect(stream("```HTML\n<b>x</b>\n```", true)).toEqual([
+      {
+        raw: "```HTML\n<b>x</b>\n```",
+        src: "<b>x</b>",
+        mode: "code",
+        language: "html",
+        complete: true,
+      },
+    ])
+    // The static path carves an uppercase fence into an embeddable code block too.
+    const blocks = stream("before\n\n```HTML\n<b>x</b>\n```\n\nafter", false)
+    const code = blocks.find((block) => block.mode === "code")
+    expect(code?.language).toBe("html")
+    expect(code?.complete).toBe(true)
+  })
+
   test("preserves trailing newlines in open code fences", () => {
     expect(stream("```ts\nconst x = 1\n", true)).toEqual([
       {
@@ -175,6 +194,37 @@ describe("markdown stream", () => {
       { raw: "```ts\nconst x = 1\n```\n", src: "const x = 1", mode: "code", language: "ts", complete: true },
       { raw: "after", src: "after", mode: "live" },
     ])
+  })
+
+  test("carves completed html fences out of static messages for live embeds", () => {
+    const text = "before\n\n```html\n<div>hi</div>\n```\n\nafter"
+    const blocks = stream(text, false)
+    expect(blocks.map((block) => block.mode)).toEqual(["full", "code", "full"])
+    expect(blocks[1]).toMatchObject({ language: "html", complete: true, src: "<div>hi</div>" })
+    expect(blocks.map((block) => block.raw).join("")).toBe(text)
+  })
+
+  test("keeps static messages without html fences as a single block", () => {
+    const text = "before\n\n```ts\nconst x = 1\n```"
+    expect(stream(text, false)).toEqual([{ raw: text, src: text, mode: "full" }])
+  })
+
+  test("only splits the html fences and merges other static content back together", () => {
+    const text = "```ts\nconst x = 1\n```\n\n```html\n<p>x</p>\n```"
+    const blocks = stream(text, false)
+    expect(blocks.map((block) => block.mode)).toEqual(["full", "code"])
+    expect(blocks[1]).toMatchObject({ language: "html", complete: true, src: "<p>x</p>" })
+    expect(blocks.map((block) => block.raw).join("")).toBe(text)
+  })
+
+  test("leaves unclosed static html fences in the marked block (renders as code, no embed)", () => {
+    const text = "```html\n<div>hi"
+    expect(stream(text, false)).toEqual([{ raw: text, src: text, mode: "full" }])
+  })
+
+  test("keeps reference-style static messages whole even when they contain html fences", () => {
+    const text = "[docs][1]\n\n```html\n<p>x</p>\n```\n\n[1]: https://example.com"
+    expect(stream(text, false)).toEqual([{ raw: text, src: text, mode: "full" }])
   })
 
   test("closes tilde fences split across provider deltas", () => {

@@ -143,7 +143,7 @@ function ensureSprite() {
 
 export interface IconProps extends ComponentProps<"svg"> {
   name: keyof typeof icons
-  size?: "small" | "normal" | "medium" | "large"
+  size?: "small" | "normal" | "medium" | "large" | "xl" | "2xl" | "3xl"
 }
 
 export function Icon(props: IconProps) {

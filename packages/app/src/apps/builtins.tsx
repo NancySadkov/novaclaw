@@ -10,23 +10,94 @@ import type { HomeApp } from "./registry"
 // settings surface) — nothing is re-implemented. Returned from a hook so the openers bind to the
 // current component scope; the home screen merges these with `registeredApps()` (plugin / agent apps).
 //
-// App-set decisions (2026-07-01): there is NO "New Chat" tile — new sessions live inside the Chats app.
-// Models + Devices are Settings tabs, not home apps. Notes (shared free-form notes) and Files (the
-// AI-ready file manager) are first-class apps; both ship as placeholders until their surfaces land.
+// App-set decisions (2026-07-01, refined 2026-07-02): there is NO "New Chat" tile — new sessions live
+// inside the Chats app, which is the HERO tile (the one eye-anchor; everything else is done through
+// chat with an agent). Models + Devices are Settings tabs, not home apps. Placeholder apps
+// (Notes / Search / Terminal) open a self-documenting panel that teaches the chat-first model.
+//
+// Tile palette: gold is reserved for the hero (the single warm accent on the cool purple field —
+// that contrast is what guides the eye); every other tile gets a cool hue so none competes.
 export function useBuiltinApps(): () => HomeApp[] {
   const navigate = useNavigate()
   const dialog = useDialog()
   const openSettings = useSettingsDialog()
-  const comingSoon = (title: string) => () => void dialog.show(() => <AppPlaceholder title={title} />)
+  const comingSoon = (app: Omit<HomeApp, "open" | "source">) => () =>
+    void dialog.show(() => <AppPlaceholder title={app.title} icon={app.icon} accent={app.accent} subtitle={app.subtitle} />)
 
   return () => [
-    { id: "chats", title: "Chats", icon: "chats", accent: "#8b5cf6", source: "builtin", open: () => navigate("/chats") },
-    { id: "notes", title: "Notes", icon: "edit", accent: "#e6b422", source: "builtin", open: comingSoon("Notes") },
-    { id: "files", title: "Files", icon: "folder-add-left", accent: "#3b82f6", source: "builtin", open: () => navigate("/files") },
-    { id: "processes", title: "Processes", icon: "status", accent: "#22d3ee", source: "builtin", open: () => void dialog.show(() => <DialogProcesses />) },
-    { id: "search", title: "Search", icon: "magnifying-glass", accent: "#34d399", source: "builtin", open: comingSoon("Search") },
-    { id: "terminal", title: "Terminal", icon: "monitor", accent: "#64748b", source: "builtin", open: comingSoon("Terminal") },
-    { id: "help", title: "Help", icon: "help", accent: "#f472b6", source: "builtin", open: () => void dialog.show(() => <HelpTour />) },
-    { id: "settings", title: "Settings", icon: "settings-gear", accent: "#a1a1aa", source: "builtin", open: () => openSettings() },
+    {
+      id: "chats",
+      title: "Chats",
+      icon: "speech-bubble",
+      accent: "#e7b62f",
+      glyphTone: "dark",
+      hero: true,
+      subtitle: "Ask anything — your agents do the work",
+      source: "builtin",
+      open: () => navigate("/chats"),
+    },
+    {
+      id: "notes",
+      title: "Notes",
+      icon: "edit",
+      accent: "#8b5cf6",
+      subtitle: "Everyday notes, shared with your agents",
+      source: "builtin",
+      open: comingSoon({ id: "notes", title: "Notes", icon: "edit", accent: "#8b5cf6", subtitle: "Everyday notes, shared with your agents" }),
+    },
+    {
+      id: "files",
+      title: "Files",
+      icon: "folder",
+      accent: "#3b82f6",
+      subtitle: "Browse folders and ask AI to work on them",
+      source: "builtin",
+      open: () => navigate("/files"),
+    },
+    {
+      id: "processes",
+      title: "Processes",
+      icon: "status",
+      accent: "#22d3ee",
+      subtitle: "What your agents are doing right now",
+      source: "builtin",
+      open: () => void dialog.show(() => <DialogProcesses />),
+    },
+    {
+      id: "search",
+      title: "Search",
+      icon: "magnifying-glass-menu",
+      accent: "#34d399",
+      subtitle: "Find anything across chats and files",
+      source: "builtin",
+      open: comingSoon({ id: "search", title: "Search", icon: "magnifying-glass-menu", accent: "#34d399", subtitle: "Find anything across chats and files" }),
+    },
+    {
+      id: "terminal",
+      title: "Terminal",
+      icon: "terminal",
+      accent: "#64748b",
+      subtitle: "A shell, for when you want one",
+      source: "builtin",
+      open: comingSoon({ id: "terminal", title: "Terminal", icon: "terminal", accent: "#64748b", subtitle: "A shell, for when you want one" }),
+    },
+    {
+      id: "help",
+      title: "Help",
+      icon: "help",
+      accent: "#f472b6",
+      subtitle: "A short tour of what NovaClaw can do",
+      source: "builtin",
+      open: () => void dialog.show(() => <HelpTour />),
+    },
+    {
+      id: "settings",
+      title: "Settings",
+      icon: "settings-gear",
+      accent: "#8d8fa6",
+      subtitle: "Providers, models, servers, recovery",
+      source: "builtin",
+      open: () => openSettings(),
+    },
   ]
 }

@@ -52,7 +52,10 @@ export interface Settings {
 export const monoDefault = "System Mono"
 export const sansDefault = "System Sans"
 export const terminalDefault = "JetBrainsMono Nerd Font Mono"
-export const newLayoutDesignsDefault = import.meta.env.VITE_NOVACLAW_CHANNEL !== "prod"
+// The new layout IS the product (launcher home, purple+gold, Chats hero — see uix.md): default ON
+// everywhere. The flip-back toggle is a dev-channel escape hatch only (gated in BOTH settings
+// dialogs), so prod can never strand itself in the legacy shell with no way back.
+export const newLayoutDesignsDefault = true
 
 const monoFallback =
   'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
@@ -161,7 +164,11 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
       defaultSettings.general.showCustomAgents,
     )
     const newLayoutDesigns = withFallback(() => store.general?.newLayoutDesigns, newLayoutDesignsDefault)
-    const visible = (preference: () => boolean) => createMemo(() => !newLayoutDesigns() || preference())
+    // Chrome visibility is the layout's job (uix.md): session chrome (file tree, search, status,
+    // custom agents) is always REACHABLE. The per-surface prefs only had writers in the pruned
+    // Advanced settings section — honoring them in the new layout would strand the chrome
+    // default-hidden with no remaining toggle. The stored show* keys are frozen legacy state.
+    const visible = (_preference: () => boolean) => createMemo(() => true)
 
     createEffect(() => {
       if (typeof document === "undefined") return

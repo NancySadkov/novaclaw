@@ -151,6 +151,8 @@ export const dict: Record<string, string> = {
   "ui.message.expand": "Expand message",
   "ui.message.collapse": "Collapse message",
   "ui.message.copy": "Copy",
+  "ui.message.embed.viewCode": "View code",
+  "ui.message.embed.viewPreview": "View preview",
   "ui.message.copyMessage": "Copy message",
   "ui.message.forkMessage": "Fork to new session",
   "ui.message.revertMessage": "Revert message",

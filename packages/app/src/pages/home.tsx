@@ -682,16 +682,17 @@ function ChatEntry(props: { onSubmit: (prompt: string) => void; disabled?: boole
     props.onSubmit(text)
   }
   return (
-    <div class="flex w-full shrink-0 flex-col items-center gap-3 pb-4">
-      <div class="text-[15px] [font-weight:530] text-v2-text-text-base">How can I help you today?</div>
+    <div class="flex w-full shrink-0 flex-col items-center gap-3.5 pb-4">
+      {/* The greeting is the page's focal point — sized like a title, not a label. */}
+      <div class="text-[20px] font-semibold tracking-tight text-v2-text-text-base">How can I help you today?</div>
       <div
-        class="flex w-full items-end gap-2 rounded-[12px] bg-v2-background-bg-layer-02 px-3 py-2.5 shadow-[0_0_0_0.5px_var(--v2-border-border-base)] transition-[box-shadow] duration-[120ms] ease-in-out focus-within:shadow-[0_0_0_0.5px_var(--v2-border-border-focus),var(--v2-elevation-raised)]"
+        class="flex w-full items-end gap-2 rounded-[14px] bg-v2-background-bg-layer-02 px-3.5 py-3 shadow-[0_0_0_0.5px_var(--v2-border-border-base)] transition-[box-shadow] duration-[120ms] ease-in-out focus-within:shadow-[0_0_0_1px_var(--v2-border-border-focus),var(--v2-elevation-raised)]"
         classList={{ "opacity-60": props.disabled }}
       >
         <textarea
           rows={1}
           data-component="chat-entry-input"
-          class="max-h-40 min-h-6 min-w-0 flex-1 resize-none border-0 bg-transparent py-1 text-v2-text-text-base outline-0 [font-weight:440] placeholder:text-v2-text-text-faint"
+          class="max-h-40 min-h-6 min-w-0 flex-1 resize-none border-0 bg-transparent py-1 text-[15px] text-v2-text-text-base outline-0 [font-weight:440] placeholder:text-v2-text-text-faint"
           placeholder={props.disabled ? "Add a project to start chatting" : "Message to start a new chat…"}
           value={value()}
           disabled={props.disabled}
@@ -707,11 +708,12 @@ function ChatEntry(props: { onSubmit: (prompt: string) => void; disabled?: boole
             }
           }}
         />
+        {/* The one gold CTA on the page — the shared gold variant (hover/pressed states intact). */}
         <ButtonV2
           data-action="chat-entry-start"
-          variant="neutral"
+          variant="gold"
           size="normal"
-          class="h-7 shrink-0 px-3 [font-weight:530]"
+          class="h-7 shrink-0 px-3.5"
           disabled={props.disabled || !value().trim()}
           onClick={submit}
         >

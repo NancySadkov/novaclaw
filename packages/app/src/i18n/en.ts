@@ -787,8 +787,24 @@ export const dict = {
 
   "settings.section.desktop": "Desktop",
   "settings.section.server": "Server",
+  "settings.section.safety": "Safety",
   "settings.tab.general": "General",
   "settings.tab.shortcuts": "Shortcuts",
+  "settings.tab.recovery": "Recovery",
+
+  "settings.recovery.row.resetUi.title": "Reset UI preferences",
+  "settings.recovery.row.resetUi.description":
+    "Restore the interface to factory defaults — theme, tour, layout and view options. Chats, files and providers are untouched.",
+  "settings.recovery.row.resetUi.action": "Reset",
+  "settings.recovery.row.resetUi.confirm": "Click again to confirm",
+  "settings.recovery.row.factory.title": "Factory reset",
+  "settings.recovery.row.factory.description":
+    "Erase all chats, sessions and configuration on this device and start fresh. Coming soon.",
+  "settings.recovery.row.factory.action": "Erase everything",
+  "settings.recovery.row.snapshots.title": "Snapshots",
+  "settings.recovery.row.snapshots.description":
+    "Roll the workspace back to an earlier point in time. File deletions already land in a dated Trash; full workspace snapshots are coming soon.",
+  "settings.recovery.row.snapshots.action": "Browse snapshots",
   "settings.desktop.section.wsl": "WSL",
   "settings.desktop.wsl.title": "WSL integration",
   "settings.desktop.wsl.description": "Run the NovaClaw server inside WSL on Windows.",

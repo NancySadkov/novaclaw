@@ -170,6 +170,33 @@
   cursor: not-allowed;
 }
 
+/* Gold — the primary CTA (one per surface). The gradient/ink are themeable via --nc-gold-gradient /
+   --nc-ink (set by the app's noble-purple theme); the fallbacks keep the package self-contained.
+   Hover/pressed stack the contrast overlays on top of the gold, mirroring the contrast variant. */
+[data-component="button-v2"][data-variant="gold"] {
+  background-image: var(--nc-gold-gradient, linear-gradient(155deg, #f4d06a, #e7b62f 55%, #c99a2e));
+  color: var(--nc-ink, #1a1135);
+  font-weight: 600;
+  box-shadow: var(--v2-elevation-button-neutral);
+}
+
+[data-component="button-v2"][data-variant="gold"]:is(:hover, [data-state="hover"]):not(:disabled) {
+  background-image:
+    linear-gradient(90deg, var(--v2-alpha-light-20) 0%, var(--v2-alpha-light-20) 100%),
+    var(--nc-gold-gradient, linear-gradient(155deg, #f4d06a, #e7b62f 55%, #c99a2e));
+}
+
+[data-component="button-v2"][data-variant="gold"]:is(:active, [data-state="pressed"]):not(:disabled) {
+  background-image:
+    linear-gradient(90deg, var(--v2-alpha-dark-10) 0%, var(--v2-alpha-dark-10) 100%),
+    var(--nc-gold-gradient, linear-gradient(155deg, #f4d06a, #e7b62f 55%, #c99a2e));
+}
+
+[data-component="button-v2"][data-variant="gold"]:is(:disabled, [data-state="disabled"]) {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 /* Ghost */
 [data-component="button-v2"][data-variant="ghost"] {
   background-color: transparent;

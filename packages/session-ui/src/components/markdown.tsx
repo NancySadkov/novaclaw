@@ -26,6 +26,7 @@ import { markdownBlockKey, type MarkdownToken } from "./markdown-worker-protocol
 import { shouldResetCodeTokens, type RenderedCodeState } from "./markdown-code-state"
 import { getCachedMarkdown, sanitizeMarkdown, touchCachedMarkdown, type MarkdownCacheEntry } from "./markdown-cache"
 import { inlineCodeKind } from "./markdown-inline-code-kind"
+import { htmlEmbedForBlock, HTML_EMBED_SANDBOX } from "./markdown-html-embed"
 
 type RenderedBlock =
   | (MarkdownCacheEntry & { key: string; mode: Exclude<Block["mode"], "code"> })
@@ -33,6 +34,9 @@ type RenderedBlock =
       key: string
       mode: "code"
       raw: string
+      // fence body without the fence markers — the html live embed needs it verbatim for
+      // iframe.srcdoc, so it is carried alongside the highlight tokens
+      src: string
       hash: string
       language: string
       complete: boolean
@@ -51,6 +55,9 @@ const renderedCodeTokens = new WeakMap<HTMLDivElement, RenderedCodeState>()
 const iconPaths = {
   copy: '<path d="M6.2513 6.24935V2.91602H17.0846V13.7493H13.7513M13.7513 6.24935V17.0827H2.91797V6.24935H13.7513Z" stroke="currentColor" stroke-linecap="round"/>',
   check: '<path d="M5 11.9657L8.37838 14.7529L15 5.83398" stroke="currentColor" stroke-linecap="square"/>',
+  code: '<path d="M7.08464 5.83398L2.91797 10.0007L7.08464 14.1673M12.918 5.83398L17.0846 10.0007L12.918 14.1673" stroke="currentColor" stroke-linecap="round"/>',
+  preview:
+    '<path d="M2.5 10C2.5 10 5.41667 4.58398 10 4.58398C14.5833 4.58398 17.5 10 17.5 10C17.5 10 14.5833 15.4173 10 15.4173C5.41667 15.4173 2.5 10 2.5 10Z" stroke="currentColor" stroke-linejoin="round"/><circle cx="10" cy="10" r="2.5" stroke="currentColor"/>',
 }
 
 function escape(text: string) {
@@ -86,6 +93,13 @@ type CopyLabels = {
   copy: string
   copied: string
 }
+
+type EmbedLabels = {
+  viewCode: string
+  viewPreview: string
+}
+
+type MarkdownLabels = CopyLabels & EmbedLabels
 
 const urlPattern = /^https?:\/\/[^\s<>()`"']+$/
 
@@ -139,6 +153,76 @@ function setCopyState(button: HTMLButtonElement, labels: CopyLabels, copied: boo
   button.removeAttribute("data-copied")
   button.setAttribute("aria-label", labels.copy)
   button.setAttribute("data-tooltip", labels.copy)
+}
+
+// One toggle per view, each with a fixed icon/label: the preview holds a "view code"
+// button, the code wrapper holds a "view preview" button, and CSS hides whichever view
+// (and therefore whichever button) is inactive — no dynamic icon or label swapping.
+function createEmbedToggle(target: "code" | "preview", label: string) {
+  const button = document.createElement("button")
+  button.type = "button"
+  button.setAttribute("data-component", "icon-button")
+  button.setAttribute("data-variant", "secondary")
+  button.setAttribute("data-size", "small")
+  button.setAttribute("data-slot", "markdown-embed-toggle")
+  button.dataset.embedTarget = target
+  button.setAttribute("aria-label", label)
+  button.setAttribute("data-tooltip", label)
+  button.appendChild(createIcon(target === "code" ? iconPaths.code : iconPaths.preview, `${target}-icon`))
+  return button
+}
+
+function setEmbedToggleLabel(button: HTMLButtonElement, labels: EmbedLabels) {
+  const label = button.dataset.embedTarget === "code" ? labels.viewCode : labels.viewPreview
+  button.setAttribute("aria-label", label)
+  button.setAttribute("data-tooltip", label)
+}
+
+function createHtmlEmbed(srcdoc: string, hash: string, labels: EmbedLabels) {
+  const container = document.createElement("div")
+  container.setAttribute("data-component", "markdown-html-embed")
+  container.dataset.embedHash = hash
+  const frame = document.createElement("iframe")
+  // sandbox WITHOUT allow-same-origin: scripts execute in an opaque origin with no
+  // cookies, storage, or parent access — that sandbox is the entire security boundary
+  // that lets the raw (never-sanitized) fence text run
+  frame.setAttribute("sandbox", HTML_EMBED_SANDBOX)
+  frame.setAttribute("loading", "lazy")
+  frame.setAttribute("referrerpolicy", "no-referrer")
+  frame.setAttribute("title", "Interactive content")
+  // property assignment only: the raw text must never be parsed into the parent document
+  frame.srcdoc = srcdoc
+  container.appendChild(frame)
+  container.appendChild(createEmbedToggle("code", labels.viewCode))
+  return container
+}
+
+// Reconciles the live html preview for a code block. Runs on every effect pass, so the
+// number one rule is: if the code did not change, do NOT touch the iframe — a re-mount
+// (or srcdoc rewrite) wipes the embedded document's state (timers, canvas, scroll). The
+// embed node is keyed by the block key (on `next`) plus a hash of the fence body.
+function syncHtmlEmbed(next: HTMLElement, block: Extract<RenderedBlock, { mode: "code" }>, labels: EmbedLabels) {
+  const embed = htmlEmbedForBlock(block)
+  const wrapper = next.querySelector(':scope > [data-component="markdown-code"]')
+  const existing = next.querySelector(':scope > [data-component="markdown-html-embed"]')
+  const toggle = wrapper?.querySelector(':scope > [data-slot="markdown-embed-toggle"]')
+  if (!embed) {
+    // fence re-opened (delta closed it, later text reopened it) or language changed away
+    // from html: tear the preview down entirely, including the stale view state
+    existing?.remove()
+    toggle?.remove()
+    delete next.dataset.htmlEmbedView
+    return
+  }
+  // default to the live preview; a user's toggle sticks because updateCodeBlock mutates
+  // this node in place and we never overwrite an existing view choice
+  if (!next.dataset.htmlEmbedView) next.dataset.htmlEmbedView = "preview"
+  if (wrapper && !toggle) wrapper.appendChild(createEmbedToggle("preview", labels.viewPreview))
+  const hash = checksum(embed.srcdoc) ?? String(embed.srcdoc.length)
+  if (existing instanceof HTMLElement && existing.dataset.embedHash === hash) return
+  const container = createHtmlEmbed(embed.srcdoc, hash, labels)
+  if (existing) existing.replaceWith(container)
+  else next.prepend(container)
 }
 
 const shellLanguages = new Set(["bash", "sh", "shell", "zsh", "fish", "console", "terminal"])
@@ -262,6 +346,16 @@ function setupCodeCopy(root: HTMLDivElement, getLabels: () => CopyLabels) {
     const target = event.target
     if (!(target instanceof Element)) return
 
+    // view toggles for html embeds share the delegated listener: flipping the attribute on
+    // the block wrapper is all it takes, CSS shows/hides the preview vs the code view
+    const toggle = target.closest('[data-slot="markdown-embed-toggle"]')
+    if (toggle instanceof HTMLButtonElement) {
+      const block = toggle.closest("[data-markdown-block]")
+      if (block instanceof HTMLElement)
+        block.dataset.htmlEmbedView = toggle.dataset.embedTarget === "code" ? "code" : "preview"
+      return
+    }
+
     const button = target.closest('[data-slot="markdown-copy-button"]')
     if (!(button instanceof HTMLButtonElement)) return
     const code = button.closest('[data-component="markdown-code"]')?.querySelector("code")
@@ -377,6 +471,7 @@ export function Markdown(
               key: blockKey,
               mode: block.mode,
               raw: block.raw,
+              src: block.src,
               hash: String(block.raw.length),
               complete: !!block.complete,
               ...result,
@@ -438,6 +533,8 @@ export function Markdown(
     const labels = {
       copy: i18n.t("ui.message.copy"),
       copied: i18n.t("ui.message.copied"),
+      viewCode: i18n.t("ui.message.embed.viewCode"),
+      viewPreview: i18n.t("ui.message.embed.viewPreview"),
     }
     const nextCodeKeys = new Set(content.filter((block) => block.mode === "code").map((block) => block.key))
     activeCodeKeys.forEach((key) => {
@@ -450,6 +547,9 @@ export function Markdown(
     container
       .querySelectorAll<HTMLButtonElement>('[data-slot="markdown-copy-button"]')
       .forEach((button) => setCopyState(button, labels, button.dataset.copied === "true"))
+    container
+      .querySelectorAll<HTMLButtonElement>('[data-slot="markdown-embed-toggle"]')
+      .forEach((button) => setEmbedToggleLabel(button, labels))
     if (!copyCleanup)
       copyCleanup = setupCodeCopy(container, () => ({
         copy: i18n.t("ui.message.copy"),
@@ -495,6 +595,7 @@ function pendingBlocks(
       key,
       mode: block.mode,
       raw: block.raw,
+      src: block.src,
       hash: String(block.raw.length),
       language: block.language ?? "text",
       complete: !!block.complete,
@@ -509,7 +610,7 @@ function disposeCode(key: string) {
   disposeStreamingCode(key)
 }
 
-function updateBlock(container: HTMLDivElement, index: number, block: RenderedBlock, labels: CopyLabels) {
+function updateBlock(container: HTMLDivElement, index: number, block: RenderedBlock, labels: MarkdownLabels) {
   const current = container.children[index]
   if (block.mode === "code") {
     updateCodeBlock(container, current, block, labels)
@@ -555,7 +656,7 @@ function updateCodeBlock(
   container: HTMLDivElement,
   current: Element | undefined,
   block: Extract<RenderedBlock, { mode: "code" }>,
-  labels: CopyLabels,
+  labels: MarkdownLabels,
 ) {
   const existing = current instanceof HTMLDivElement && current.dataset.markdownKey === block.key ? current : undefined
   const next = existing ?? document.createElement("div")
@@ -594,6 +695,9 @@ function updateCodeBlock(
       unstable: block.unstable,
       raw: block.raw,
     })
+    // reconcile the live html preview after the code view: the swap happens here the first
+    // time the block arrives with complete=true (fence just closed) and is a no-op after
+    syncHtmlEmbed(next, block, labels)
     return
   }
 
@@ -616,6 +720,9 @@ function updateCodeBlock(
     unstable: block.unstable,
     raw: block.raw,
   })
+  // static/historical html blocks land here already complete, so the embed mounts with
+  // the freshly created code view (which the preview state then hides)
+  syncHtmlEmbed(next, block, labels)
   if (current) current.replaceWith(next)
   else container.appendChild(next)
 }
