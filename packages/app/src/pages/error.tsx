@@ -1,5 +1,4 @@
 import { TextField } from "@novaclaw/ui/text-field"
-import * as Sentry from "@sentry/solid"
 import { Logo } from "@novaclaw/ui/logo"
 import { Button } from "@novaclaw/ui/button"
 import { Component, createSignal, onMount, Show } from "solid-js"
@@ -300,23 +299,6 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
             <Button size="large" variant="ghost" onClick={exportDebugLogs}>
               {language.t("error.page.action.exportLogs")}
             </Button>
-          </Show>
-          <Show when={Sentry.isEnabled}>
-            {(_) => {
-              const [reported, setReported] = createSignal(false)
-              return (
-                <Button
-                  size="large"
-                  disabled={reported()}
-                  onClick={() => {
-                    Sentry.captureException(props.error)
-                    setReported(true)
-                  }}
-                >
-                  {language.t(reported() ? "error.page.action.reported" : "error.page.action.report")}
-                </Button>
-              )
-            }}
           </Show>
           <Show when={platform.updater}>
             <Show

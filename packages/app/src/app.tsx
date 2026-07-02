@@ -1,5 +1,4 @@
 import "@/index.css"
-import * as Sentry from "@sentry/solid"
 import { I18nProvider } from "@novaclaw/ui/context"
 import { DialogProvider } from "@novaclaw/ui/context/dialog"
 import { FileComponentProvider } from "@novaclaw/ui/context/file"
@@ -399,7 +398,6 @@ export function AppBaseProviders(props: ParentProps<{ locale?: Locale }>) {
           <UiI18nBridge>
             <ErrorBoundary
               fallback={(error) => {
-                Sentry.captureException(error)
                 return <ErrorPage error={error} />
               }}
             >

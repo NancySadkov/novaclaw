@@ -25,8 +25,9 @@ let known: Set<string> | undefined
 
 function getFiles() {
   if (files) return files
-  files = import.meta.glob<{ default: DesktopTheme }>("./themes/*.json")
-  return files
+  const loaded = import.meta.glob<{ default: DesktopTheme }>("./themes/*.json")
+  files = loaded
+  return loaded
 }
 
 function themeIDs() {
