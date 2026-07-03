@@ -53,7 +53,7 @@ export const SettingsServersV2: Component = () => {
         classList={{ "settings-v2-tab-header--stacked": showSearch() }}
       >
         <div class="settings-v2-tab-header-row">
-          <h2 class="settings-v2-tab-title">{language.t("status.popover.tab.servers")}</h2>
+          <h2 class="settings-v2-tab-title">{language.t("settings.tab.instances")}</h2>
           <AddServerMenu onAddServer={openAdd} />
         </div>
         <Show when={showSearch()}>

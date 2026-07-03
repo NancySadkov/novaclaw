@@ -911,10 +911,12 @@ export const dict = {
 
   "app.name.desktop": "NovaClaw Desktop",
 
-  "settings.section.desktop": "Desktop",
+  "settings.section.desktop": "Settings",
   "settings.section.server": "Server",
   "settings.section.safety": "Safety",
   "settings.tab.general": "General",
+  "settings.tab.appearance": "Appearance",
+  "settings.tab.instances": "Instances",
   "settings.tab.shortcuts": "Shortcuts",
   "settings.tab.recovery": "Recovery",
 

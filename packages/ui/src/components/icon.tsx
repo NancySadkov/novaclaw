@@ -105,6 +105,7 @@ const icons = {
   models: `<path fill-rule="evenodd" clip-rule="evenodd" d="M17.5 10C12.2917 10 10 12.2917 10 17.5C10 12.2917 7.70833 10 2.5 10C7.70833 10 10 7.70833 10 2.5C10 7.70833 12.2917 10 17.5 10Z" stroke="currentColor"/>`,
   cpu: `<rect x="5.5" y="5.5" width="9" height="9" rx="1" stroke="currentColor"/><rect x="8.25" y="8.25" width="3.5" height="3.5" rx="0.5" stroke="currentColor"/><path d="M8 5.5V3M12 5.5V3M8 17V14.5M12 17V14.5M14.5 8H17M14.5 12H17M3 8H5.5M3 12H5.5" stroke="currentColor" stroke-linecap="round"/>`,
   "arrow-undo-down": `<path d="M4.08333 11.0859L1.75 8.7526L4.08333 6.41927M2.33333 8.7526L12.5417 8.7526L12.5417 3.21094L7 3.21094" stroke="currentColor" stroke-width="1" stroke-linecap="square"/>`,
+  palette: `<path d="M10 3C6.13 3 3 6.13 3 10s3.13 7 7 7c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.24-.36-.55-.36-.99 0-.83.67-1.5 1.5-1.5H13c2.21 0 4-1.79 4-4 0-3.31-3.13-6-7-6Z" stroke="currentColor" stroke-linejoin="round"/><circle cx="6.75" cy="10" r="1" fill="currentColor"/><circle cx="8.5" cy="6.5" r="1" fill="currentColor"/><circle cx="12.5" cy="7" r="1" fill="currentColor"/>`,
 }
 
 export type IconName = keyof typeof icons
