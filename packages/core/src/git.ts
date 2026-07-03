@@ -11,6 +11,22 @@ import { AppProcess } from "./process"
 import { makeGlobalNode } from "./effect/app-node"
 import { File } from "./file"
 import { KeyedMutex } from "./effect/keyed-mutex"
+import { ShellBundle } from "./shell-bundle"
+import { which } from "./util/which"
+
+let cachedBinary: string | undefined
+/**
+ * B11 — the git executable: system git when on PATH, else the bundled PortableGit's
+ * git (so snapshots/revert work on machines with no git installed). Bare "git" as the
+ * last resort keeps the old spawn-time ENOENT behavior when neither exists.
+ */
+export function binary(): string {
+  cachedBinary ??= which("git") ?? ShellBundle.resolve()?.git ?? "git"
+  return cachedBinary
+}
+binary.reset = () => {
+  cachedBinary = undefined
+}
 
 export class Repository extends Schema.Class<Repository>("Git.Repository")({
   worktree: AbsolutePath,
@@ -330,7 +346,7 @@ export const layer = Layer.effect(
     ) {
       const result = yield* proc
         .run(
-          ChildProcess.make("git", repositoryArgs(repository, args), {
+          ChildProcess.make(binary(), repositoryArgs(repository, args), {
             cwd: repository.worktree,
             env: options?.env,
             extendEnv: true,
@@ -498,7 +514,7 @@ export const layer = Layer.effect(
       if (!input.paths.length) return new Set<RelativePath>()
       const result = yield* proc
         .run(
-          ChildProcess.make("git", repositoryArgs(input.repository, ["check-ignore", "--no-index", "--stdin", "-z"]), {
+          ChildProcess.make(binary(), repositoryArgs(input.repository, ["check-ignore", "--no-index", "--stdin", "-z"]), {
             cwd: input.repository.worktree,
             extendEnv: true,
           }),
@@ -826,7 +842,7 @@ export const layer = Layer.effect(
     }) {
       const result = yield* proc
         .run(
-          ChildProcess.make("git", ["apply", "-"], {
+          ChildProcess.make(binary(), ["apply", "-"], {
             cwd: input.path,
             extendEnv: true,
             stdin: Stream.make(new TextEncoder().encode(input.changes)),
@@ -893,7 +909,7 @@ export const layer = Layer.effect(
       cwd = repository.worktree,
     ) {
       const result = yield* proc
-        .run(ChildProcess.make("git", args, { cwd, extendEnv: true, stdin: "ignore" }))
+        .run(ChildProcess.make(binary(), args, { cwd, extendEnv: true, stdin: "ignore" }))
         .pipe(
           Effect.mapError(
             (cause) => new WorktreeError({ operation, directory: worktreeDirectory, message: cause.message, cause }),
@@ -994,7 +1010,7 @@ function execute(cwd: string, proc: AppProcess.Interface) {
   return (args: string[]) =>
     proc
       .run(
-        ChildProcess.make("git", args, {
+        ChildProcess.make(binary(), args, {
           cwd,
           extendEnv: true,
           stdin: "ignore",

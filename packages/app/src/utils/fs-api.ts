@@ -86,3 +86,28 @@ export function providerProbe(
     ...(input.modelID === undefined ? {} : { modelID: input.modelID }),
   })
 }
+
+// B11 — the bundled-shell substrate (status + provisioner). Provisioning downloads
+// ~59 MB and extracts for a minute; the caller shows a busy state and awaits.
+export interface ShellStatus {
+  readonly platform: string
+  readonly agentShell: string
+  readonly bash: string | null
+  readonly git: string | null
+  readonly bundle: {
+    readonly root: string
+    readonly bash: string
+    readonly git: string
+    readonly version?: string
+    readonly provisionedAt?: number
+  } | null
+  readonly provisionSupported: boolean
+}
+
+export function shellStatus(server: ServerConnection.HttpBase, input: { directory: string }) {
+  return call<ShellStatus>(server, "GET", "shell/status", input.directory)
+}
+
+export function shellProvision(server: ServerConnection.HttpBase, input: { directory: string }) {
+  return call<ShellStatus>(server, "POST", "shell/provision", input.directory)
+}

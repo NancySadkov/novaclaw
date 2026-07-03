@@ -24,7 +24,12 @@ interface BoundaryInput {
   readonly messageID: SessionMessage.ID
 }
 
-const plan = Effect.fn("SessionRevert.plan")(function* (input: BoundaryInput) {
+/**
+ * Map every file changed by assistant messages AFTER the boundary to the snapshot tree
+ * of the FIRST message that touched it (= its state before that change). Shared by the
+ * UI revert dock (`stage`) and the model-facing revert tool (B11).
+ */
+export const plan = Effect.fn("SessionRevert.plan")(function* (input: BoundaryInput) {
   const db = (yield* Database.Service).db
   const boundary = yield* db
     .select({ seq: SessionMessageTable.seq })

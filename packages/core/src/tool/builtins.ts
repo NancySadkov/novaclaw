@@ -15,6 +15,7 @@ import { ReadTool } from "./read"
 import { ReadHexTool } from "./read-hex"
 import { ReadToolFileSystem } from "./read-filesystem"
 import { RegisterAppTool } from "./register-app"
+import { RevertTool } from "./revert"
 import { SkillTool } from "./skill"
 import { TodoWriteTool } from "./todowrite"
 import { ToolManualTool } from "./tool-manual"
@@ -52,6 +53,7 @@ export const locationLayer = Layer.mergeAll(
   ReadTool.layer.pipe(Layer.provide(ReadToolFileSystem.layer)),
   ReadHexTool.layer,
   RegisterAppTool.layer,
+  RevertTool.layer,
   SkillTool.layer,
   TodoWriteTool.layer,
   ToolManualTool.layer,
@@ -80,6 +82,7 @@ export const node = makeLocationNode({
     ReadTool.node,
     ReadHexTool.node,
     RegisterAppTool.node,
+    RevertTool.node,
     SkillTool.node,
     TodoWriteTool.node,
     ToolManualTool.node,

@@ -1,6 +1,8 @@
 export * as Snapshot from "./snapshot"
 
 import { makeLocationNode } from "./effect/app-node"
+import fsp from "node:fs/promises"
+import os from "node:os"
 import path from "path"
 import { Context, Effect, Layer, Schema } from "effect"
 import { Config } from "./config"
@@ -20,6 +22,25 @@ export class Error extends Schema.TaggedErrorClass<Error>()("Snapshot.Error", {
   message: Schema.String,
   cause: Schema.optional(Schema.Defect()),
 }) {}
+
+/**
+ * B11 — default excludes written to a SHADOW repo's info/exclude when the project is
+ * not itself a git repository (there are no project ignore rules to inherit, and
+ * staging node_modules-class trees would make every capture pathological).
+ */
+export const SHADOW_EXCLUDES = [
+  "node_modules/",
+  ".git/",
+  "dist/",
+  "build/",
+  "out/",
+  "target/",
+  ".venv/",
+  "venv/",
+  "__pycache__/",
+  ".cache/",
+  "*.log",
+].join("\n")
 
 export interface CompareInput {
   readonly from: ID
@@ -92,9 +113,12 @@ export const layer = Layer.effect(
     const global = yield* Global.Service
     const location = yield* Location.Service
     const source = yield* git.repo.discover(location.project.directory)
+    // Non-git fallback is the LOCATION directory, not project.directory: the synthetic
+    // "global" project roots at HOME, which the B11 shadow guard rightly refuses — the
+    // shadow repo should track exactly where the agent works.
     const worktree = source
       ? AbsolutePath.make(yield* fs.realPath(source.worktree).pipe(Effect.orDie))
-      : location.project.directory
+      : AbsolutePath.make(location.directory)
     const gitDirectory = AbsolutePath.make(path.join(global.data, "snapshot", location.project.id, Hash.fast(worktree)))
 
     const scope = Effect.fnUntraced(function* () {
@@ -104,14 +128,35 @@ export const layer = Layer.effect(
       return RelativePath.make(relative.replaceAll("\\", "/") || ".")
     })
 
+    // B11 guard: never shadow-track a filesystem root or the home directory — a
+    // first capture there would stage the user's world into the snapshot store.
+    const unsafeShadowWorktree =
+      path.parse(worktree).root === worktree || path.resolve(worktree) === path.resolve(os.homedir())
+
     const repository = Effect.fnUntraced(function* () {
-      if (!source) return yield* new Error({ operation: "capture", message: "Project is not a Git repository" })
       if (yield* fs.existsSafe(path.join(gitDirectory, "HEAD")))
         return new Git.Repository({
           worktree,
           gitDirectory,
           commonDirectory: gitDirectory,
         })
+      if (!source) {
+        // B11: non-git projects get a SHADOW repo so the git-substrate undo (per-turn
+        // snapshots + revert) covers any opened folder, not just git checkouts.
+        if (unsafeShadowWorktree)
+          return yield* new Error({
+            operation: "capture",
+            message: `Refusing to shadow-track ${worktree} (filesystem root / home directory)`,
+          })
+        const created = yield* git.repo
+          .create({ worktree, gitDirectory })
+          .pipe(Effect.mapError((cause) => failure("capture", cause)))
+        yield* Effect.promise(async () => {
+          await fsp.mkdir(path.join(gitDirectory, "info"), { recursive: true })
+          await fsp.writeFile(path.join(gitDirectory, "info", "exclude"), SHADOW_EXCLUDES)
+        })
+        return created
+      }
       return yield* git.repo
         .create({
           worktree,
@@ -122,8 +167,10 @@ export const layer = Layer.effect(
     })
 
     const enabled = Effect.fnUntraced(function* () {
-      if (location.vcs?.type !== "git") return false
-      return Config.latest(yield* config.entries(), "snapshots") !== false
+      if (Config.latest(yield* config.entries(), "snapshots") === false) return false
+      if (location.vcs?.type === "git") return true
+      // B11: snapshots for non-git projects ride the shadow repo (guarded above).
+      return !unsafeShadowWorktree
     })
 
     const capture = Effect.fn("Snapshot.capture")(function* () {

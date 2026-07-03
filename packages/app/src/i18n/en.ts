@@ -889,6 +889,16 @@ export const dict = {
   "settings.general.row.defaultPermissionMode.title": "Default permission mode",
   "settings.general.row.defaultPermissionMode.description":
     "The mode a new session's composer starts on. YOLO auto-allows everything including outside-project access — for low-stakes work on trusted projects.",
+  "settings.general.row.shellBundle.title": "Shell environment",
+  "settings.general.row.shellBundle.description":
+    "The bash + git substrate agents run on. Provisioning downloads the pinned PortableGit bundle (~59 MB) so every machine gets the same environment — do it before going airgapped",
+  "settings.general.row.shellBundle.bundled": "Bundled PortableGit",
+  "settings.general.row.shellBundle.system": "System bash",
+  "settings.general.row.shellBundle.none": "No bash — agents fall back to cmd.exe",
+  "settings.general.row.shellBundle.unknown": "Status unavailable",
+  "settings.general.row.shellBundle.provision": "Provision",
+  "settings.general.row.shellBundle.reprovision": "Re-provision",
+  "settings.general.row.shellBundle.provisioning": "Provisioning…",
   "settings.general.row.offline.title": "Offline / airgap mode",
   "settings.general.row.offline.description":
     "Restrict outbound HTTP to loopback and your configured model-provider hosts (fail-closed); blocks package installs and telemetry export. Restart the server to apply.",

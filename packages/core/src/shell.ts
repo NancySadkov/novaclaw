@@ -7,6 +7,7 @@ import { statSync } from "fs"
 import { setTimeout as sleep } from "node:timers/promises"
 import { Flag } from "./flag/flag"
 import { FSUtil } from "./fs-util"
+import { ShellBundle } from "./shell-bundle"
 import { which } from "./util/which"
 
 const SIGKILL_TIMEOUT_MS = 200
@@ -123,6 +124,10 @@ function select(file: string | undefined, opts?: { acceptable?: boolean }) {
 export function gitbash() {
   if (process.platform !== "win32") return
   if (Flag.NOVACLAW_GIT_BASH_PATH) return Flag.NOVACLAW_GIT_BASH_PATH
+  // B11: a provisioned bundle IS the standard agent environment — it outranks the
+  // system git-bash (the env flag above stays the explicit escape hatch).
+  const bundled = ShellBundle.resolve()?.bash
+  if (bundled) return bundled
   const git = which("git")
   if (!git) return
   const file = path.join(git, "..", "..", "bin", "bash.exe")
@@ -201,6 +206,24 @@ export function args(file: string, command: string, cwd: string) {
 
 let defaultPreferred: string | undefined
 let defaultAcceptable: string | undefined
+let defaultAgent: string | undefined
+
+/**
+ * B11 — the AGENT default shell: bash wherever one exists (the bundled PortableGit
+ * first on Windows, then system git-bash), because small models are trained
+ * overwhelmingly on bash. Platform fallbacks (COMSPEC / /bin/sh) apply only when no
+ * bash is found. The HUMAN terminal default (`preferred`) is deliberately unchanged.
+ */
+export function agentDefault(): string {
+  defaultAgent ??= (() => {
+    if (process.platform === "win32") return gitbash() ?? process.env.COMSPEC ?? "cmd.exe"
+    return which("bash") ?? "/bin/sh"
+  })()
+  return defaultAgent
+}
+agentDefault.reset = () => {
+  defaultAgent = undefined
+}
 
 export function preferred(configShell?: string) {
   if (configShell) return select(configShell)

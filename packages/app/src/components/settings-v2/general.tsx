@@ -1,4 +1,4 @@
-import { Component, Show, createMemo, createResource, onMount } from "solid-js"
+import { Component, Show, createMemo, createResource, createSignal, onMount } from "solid-js"
 import { createMediaQuery } from "@solid-primitives/media"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
@@ -6,11 +6,14 @@ import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { useTheme, type ColorScheme } from "@novaclaw/ui/theme/context"
 import { useDialog } from "@novaclaw/ui/context/dialog"
+import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
 import { usePermission } from "@/context/permission"
 import { usePlatform } from "@/context/platform"
+import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
 import { useServerSDK } from "@/context/server-sdk"
+import { shellProvision, shellStatus, type ShellStatus } from "@/utils/fs-api"
 import { useUpdaterAction } from "../updater-action"
 import {
   monoDefault,
@@ -132,6 +135,45 @@ export const SettingsGeneralV2: Component<{
   onMount(() => {
     void theme.loadThemes()
   })
+
+  // B11 — bundled-shell substrate status + provisioner (raw-fetch endpoints, not in the SDK).
+  const globalCtx = useGlobal()
+  const serverCtx = useServer()
+  const shellConn = createMemo(() => serverCtx.current ?? globalCtx.servers.list()[0])
+  const shellRouteDir = createMemo(() => {
+    const conn = shellConn()
+    if (!conn) return undefined
+    const ctx = globalCtx.ensureServerCtx(conn)
+    const p = ctx.sync.data.path as { directory?: string; home?: string } | undefined
+    return p?.directory || p?.home || undefined
+  })
+  const [provisioning, setProvisioning] = createSignal(false)
+  const [bundle, { refetch: refetchBundle }] = createResource(
+    () => (shellConn() && shellRouteDir() ? { conn: shellConn()!, d: shellRouteDir()! } : undefined),
+    ({ conn, d }) => shellStatus(conn.http, { directory: d }).catch(() => undefined),
+  )
+  const bundleLabel = createMemo(() => {
+    const status = bundle.latest as ShellStatus | undefined
+    if (!status) return language.t("settings.general.row.shellBundle.unknown")
+    if (status.bundle)
+      return `${language.t("settings.general.row.shellBundle.bundled")}${status.bundle.version ? ` ${status.bundle.version}` : ""}`
+    if (status.bash) return `${language.t("settings.general.row.shellBundle.system")} (${status.bash})`
+    return language.t("settings.general.row.shellBundle.none")
+  })
+  const provisionShell = async () => {
+    const conn = shellConn()
+    const d = shellRouteDir()
+    if (!conn || !d || provisioning()) return
+    setProvisioning(true)
+    try {
+      await shellProvision(conn.http, { directory: d })
+    } catch (error) {
+      console.error("shell provision failed", error)
+    } finally {
+      setProvisioning(false)
+      void refetchBundle()
+    }
+  }
 
   const autoOption = { id: "auto", value: "", label: language.t("settings.general.row.shell.autoDefault") }
   // 1K: the default-permission-mode options reuse the composer droplist's labels.
@@ -266,6 +308,28 @@ export const SettingsGeneralV2: Component<{
               serverSync().updateConfig({ shell: option.value })
             }}
           />
+        </SettingsRowV2>
+
+        <SettingsRowV2
+          title={language.t("settings.general.row.shellBundle.title")}
+          description={`${language.t("settings.general.row.shellBundle.description")} — ${bundleLabel()}`}
+        >
+          <Show when={(bundle.latest as ShellStatus | undefined)?.provisionSupported}>
+            <div data-action="settings-shell-bundle-provision">
+              <ButtonV2
+                size="small"
+                variant="outline"
+                disabled={provisioning()}
+                onClick={() => void provisionShell()}
+              >
+                {provisioning()
+                  ? language.t("settings.general.row.shellBundle.provisioning")
+                  : (bundle.latest as ShellStatus | undefined)?.bundle
+                    ? language.t("settings.general.row.shellBundle.reprovision")
+                    : language.t("settings.general.row.shellBundle.provision")}
+              </ButtonV2>
+            </div>
+          </Show>
         </SettingsRowV2>
 
         <SettingsRowV2
