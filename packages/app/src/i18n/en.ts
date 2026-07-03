@@ -1197,6 +1197,7 @@ export const dict = {
   "settings.models.config.modality.audio": "Audio",
   "settings.models.config.toast.saved": "Model settings saved",
   "settings.models.config.toast.failed": "Couldn't save model settings",
+  "settings.models.connect": "Connect a service",
   "settings.models.new.open": "New model",
   "settings.models.new.title": "Add a model",
   "settings.models.new.description": "Point NovaClaw at a model endpoint. It checks the connection and lists the models it serves, so you can pick which to add.",

@@ -1,5 +1,4 @@
 import { useFilteredList } from "@novaclaw/ui/hooks"
-import { ProviderIcon } from "@novaclaw/ui/provider-icon"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
@@ -17,12 +16,12 @@ import { SettingsRowV2 } from "./parts/row"
 import { DialogModelTier } from "./dialog-model-tier"
 import { DialogModelConfig } from "./dialog-model-config"
 import { DialogNewModel } from "./dialog-new-model"
+import { ConfigExportImport } from "./config-io"
+import { DialogSelectProvider } from "../dialog-select-provider"
 import { useConfirm } from "@/components/dialog-confirm"
 import "./settings-v2.css"
 
 type ModelItem = ReturnType<ReturnType<typeof useModels>["list"]>[number]
-
-const PROVIDER_ICON_SIZE = 16
 
 // B15 — one-line human rendering of a probe outcome (the config-drift killer: "cannot
 // connect" mysteries become "unreachable" / "auth failed" / "not on server" at a glance).
@@ -96,6 +95,10 @@ export const SettingsModelsV2: Component = () => {
     dialog.show(() => <DialogNewModel http={cn.http} directory={d} />)
   }
 
+  // Connect a known cloud provider (Anthropic/OpenAI/Google/…) via its OAuth/API-key flow — the
+  // Providers tab folded into Models (todo.md merge item a).
+  const openConnect = () => dialog.show(() => <DialogSelectProvider />)
+
   const removeModel = async (key: { providerID: string; modelID: string }, name: string) => {
     const ok = await confirm({
       title: language.t("settings.models.remove.confirm.title", { model: name }),
@@ -111,7 +114,8 @@ export const SettingsModelsV2: Component = () => {
     items: (_filter) => models.list(),
     key: (x) => `${x.provider.id}:${x.id}`,
     filterKeys: ["provider.name", "name", "id"],
-    sortBy: (a, b) => a.name.localeCompare(b.name),
+    // Flat list (no provider headers): keep same-provider models adjacent, then sort by name.
+    sortBy: (a, b) => a.provider.name.localeCompare(b.provider.name) || a.name.localeCompare(b.name),
     groupBy: (x) => x.provider.id,
     sortGroupsBy: (a, b) => {
       const aIndex = popularProviders.indexOf(a.category)
@@ -132,11 +136,17 @@ export const SettingsModelsV2: Component = () => {
   return (
     <>
       <div class="settings-v2-tab-header">
-        <div class="flex items-center justify-between gap-3">
+        <div class="flex items-center justify-between gap-3 flex-wrap">
           <h2 class="settings-v2-tab-title">{language.t("settings.models.title")}</h2>
-          <ButtonV2 size="small" variant="neutral" onClick={openNewModel}>
-            {language.t("settings.models.new.open")}
-          </ButtonV2>
+          <div class="flex items-center gap-2 flex-wrap justify-end">
+            <ConfigExportImport />
+            <ButtonV2 size="small" variant="ghost-muted" onClick={openConnect}>
+              {language.t("settings.models.connect")}
+            </ButtonV2>
+            <ButtonV2 size="small" variant="neutral" onClick={openNewModel}>
+              {language.t("settings.models.new.open")}
+            </ButtonV2>
+          </div>
         </div>
       </div>
 
@@ -158,20 +168,8 @@ export const SettingsModelsV2: Component = () => {
               </div>
             }
           >
-            <For each={list.grouped.latest}>
-              {(group) => (
-                <div class="settings-v2-section" data-component="settings-models-provider">
-                  <div class="settings-v2-models-group-header">
-                    <ProviderIcon
-                      id={group.category}
-                      width={PROVIDER_ICON_SIZE}
-                      height={PROVIDER_ICON_SIZE}
-                      class="settings-v2-models-provider-icon shrink-0"
-                    />
-                    <h3 class="settings-v2-section-title">{group.items[0].provider.name}</h3>
-                  </div>
-                  <SettingsListV2>
-                    <For each={group.items}>
+            <SettingsListV2>
+              <For each={list.flat()}>
                       {(item) => {
                         const key = { providerID: item.provider.id, modelID: item.id }
                         const probeState = () => probes()[`${key.providerID}:${key.modelID}`]
@@ -180,7 +178,7 @@ export const SettingsModelsV2: Component = () => {
                           return state && state !== "probing" ? state : undefined
                         }
                         return (
-                          <SettingsRowV2 title={item.name} description="">
+                          <SettingsRowV2 title={item.name} description={item.provider.name}>
                             <div class="settings-v2-models-row-actions">
                               <ButtonV2
                                 size="small"
@@ -262,11 +260,8 @@ export const SettingsModelsV2: Component = () => {
                           </SettingsRowV2>
                         )
                       }}
-                    </For>
-                  </SettingsListV2>
-                </div>
-              )}
-            </For>
+              </For>
+            </SettingsListV2>
           </Show>
         </Show>
       </div>
