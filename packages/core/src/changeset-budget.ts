@@ -35,8 +35,8 @@ export function exceededBy(spent: Spent, limits: Limits = {}): "count" | "bytes"
 
 export function omittedPatch(reason: "count" | "bytes", limits: Limits = {}): string {
   if (reason === "count")
-    return `(diff omitted — change set exceeds the ${limits.maxFiles ?? MAX_DIFF_FILES}-file display budget)`
-  return `(diff omitted — change set exceeds the ${Math.round((limits.maxBytes ?? MAX_DIFF_BYTES) / 1024 / 1024)} MB diff budget)`
+    return `(diff omitted — change set exceeds the ${limits.maxFiles ?? MAX_DIFF_FILES}-file display budget. You have NOT seen this change; do not review or conclude from it — read the file directly if it matters)`
+  return `(diff omitted — change set exceeds the ${Math.round((limits.maxBytes ?? MAX_DIFF_BYTES) / 1024 / 1024)} MB diff budget. You have NOT seen this change; do not review or conclude from it — read the file directly if it matters)`
 }
 
 // One-line summary for a partially-diffed change set, or undefined when all diffed.
@@ -44,7 +44,8 @@ export function summary(total: number, computed: number, bytes: number): string 
   if (computed >= total) return undefined
   return (
     `${total} files changed; computed diffs for the first ${computed} (~${Math.round(bytes / 1024)} KB). ` +
-    `${total - computed} more are listed with their diff omitted (change set too large).`
+    `${total - computed} more are listed with their diff omitted (change set too large). This is a ` +
+    `PARTIAL view — do not review or conclude about the omitted changes; read those files directly.`
   )
 }
 

@@ -26,8 +26,9 @@ export function guidance(stats: ReadStats): string | undefined {
     const resume = stats.next ?? last + 1
     return (
       `This file is too large to return in one read — you received lines ${stats.offset}-${last}. ` +
-      `Continue from offset ${resume} (pass it as \`offset\`) and process the file in chunks: read a ` +
-      `range, handle it, then read the next. Do not assume the file ends here.`
+      `This is a PARTIAL view: you cannot review, summarize, or conclude anything about code you ` +
+      `have not seen. Continue from offset ${resume} (pass it as \`offset\`) and process the file in ` +
+      `chunks: read a range, handle it, then read the next. Do not assume the file ends here.`
     )
   }
   if (stats.lines >= LARGE_READ_LINES || stats.bytes >= LARGE_READ_BYTES) {

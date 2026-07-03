@@ -52,6 +52,22 @@ const decodeUtf8 = (content: Uint8Array) => {
   return { bom, content, text: new TextDecoder().decode(bom ? content.slice(3) : content) }
 }
 
+// 1P/A5(3) — edit near-miss ergonomics: when the anchor isn't found, detect a block that differs
+// ONLY in whitespace (indentation, tabs-vs-spaces, trailing spaces, internal runs) and NAME that
+// in the failure, instead of a bare not-found. Detection only — never fuzzy auto-apply.
+const collapseWhitespace = (text: string) =>
+  text
+    .split("\n")
+    .map((line) => line.trim().replace(/[ \t]+/g, " "))
+    .join("\n")
+    .trim()
+
+export const whitespaceNearMiss = (content: string, search: string): boolean => {
+  const needle = collapseWhitespace(search)
+  if (needle === "") return false
+  return collapseWhitespace(content).includes(needle)
+}
+
 const countOccurrences = (content: string, search: string) => {
   if (search === "") return content.length + 1
   let count = 0
@@ -99,7 +115,7 @@ export const layer = Layer.effectDiscard(
         [name]: Tool.withPermission(
           Tool.make({
             description:
-              "Replace exact text in one file. Relative paths resolve within the active Location. Absolute paths inside the Location are accepted. Explicit external absolute paths require external_directory approval before edit approval.",
+              "Replace exact text in one file. Prefer this over `write` for any change short of a full rewrite — make the minimal change instead of regenerating the file. oldString must match the file's EXACT bytes, including whitespace and indentation: copy it from a fresh read, do not retype from memory. If it matches more than once, add surrounding context or set replaceAll. Relative paths resolve within the active Location. Absolute paths inside the Location are accepted. Explicit external absolute paths require external_directory approval before edit approval.",
             input: Input,
             output: Output,
             toModelOutput: ({ input, output }) => [
@@ -166,8 +182,11 @@ export const layer = Layer.effectDiscard(
                 const replacements = countOccurrences(source.text, oldString)
                 if (replacements === 0) {
                   return yield* new ToolFailure({
-                    message:
-                      "Could not find oldString in the file. It must match exactly, including whitespace and indentation.",
+                    message: whitespaceNearMiss(source.text, oldString)
+                      ? "Could not find oldString exactly, but a block there differs ONLY in whitespace " +
+                        "(indentation, tabs vs spaces, or trailing spaces). Re-read the exact lines and " +
+                        "copy the exact bytes, including indentation — do not retype from memory."
+                      : "Could not find oldString in the file. It must match exactly, including whitespace and indentation.",
                   })
                 }
                 if (replacements > 1 && input.replaceAll !== true) {
