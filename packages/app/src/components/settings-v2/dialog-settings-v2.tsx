@@ -11,6 +11,7 @@ import { SettingsModelsV2 } from "./models"
 import "./settings-v2.css"
 import { SettingsServersV2 } from "./servers"
 import { SettingsIntrospectionV2 } from "./introspection"
+import { SettingsAffectiveV2 } from "./affective"
 import { SettingsRecoveryV2 } from "./recovery"
 
 export const DialogSettings: Component<{
@@ -60,6 +61,10 @@ export const DialogSettings: Component<{
                       <Icon name="eye" />
                       {language.t("settings.introspection.title")}
                     </TabsV2.Trigger>
+                    <TabsV2.Trigger value="affective">
+                      <Icon name="brain" />
+                      {language.t("settings.affective.title")}
+                    </TabsV2.Trigger>
                   </div>
                 </div>
 
@@ -97,6 +102,9 @@ export const DialogSettings: Component<{
         </TabsV2.Content>
         <TabsV2.Content value="introspection" class="settings-v2-panel">
           <SettingsIntrospectionV2 />
+        </TabsV2.Content>
+        <TabsV2.Content value="affective" class="settings-v2-panel">
+          <SettingsAffectiveV2 />
         </TabsV2.Content>
         <TabsV2.Content value="recovery" class="settings-v2-panel">
           <SettingsRecoveryV2 />

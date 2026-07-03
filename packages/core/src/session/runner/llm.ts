@@ -314,7 +314,9 @@ export const layer = Layer.effect(
         affectiveGeneration = Affective.toSampling(
           mood,
           {
-            temperature: defaults?.temperature ?? affectiveConfig?.temperature,
+            // `|| undefined`: a config temperature of 0 means "cleared from the settings tab"
+            // (updateGlobal can't remove keys over the wire), not a real 0 baseline.
+            temperature: defaults?.temperature ?? (affectiveConfig?.temperature || undefined),
             topP: defaults?.topP,
             topK: defaults?.topK,
             frequencyPenalty: defaults?.frequencyPenalty,

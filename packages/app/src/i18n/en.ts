@@ -1039,6 +1039,18 @@ export const dict = {
   "settings.introspection.row.interjection.title": "Interjection",
   "settings.introspection.row.interjection.description":
     "Text injected into the session when the judge answers YES. Empty = the default redirect.",
+  "settings.affective.title": "Affective",
+  "settings.affective.description":
+    "Emotion-modulated sampling: a per-session mood (from tool errors, repeats, time-on-task) nudges temperature and friends around the model's baseline, and injects a redirect at high frustration.",
+  "settings.affective.toast.failed": "Saving affective settings failed",
+  "settings.affective.row.enabled.title": "Enable affective mode",
+  "settings.affective.row.enabled.description": "Modulate sampling by session mood and nudge on frustration/urgency.",
+  "settings.affective.row.temperature.title": "Baseline temperature",
+  "settings.affective.row.temperature.description":
+    "Calm-state temperature used when the model config sets none. Empty = 0.7.",
+  "settings.affective.row.extended.title": "Extended parameters",
+  "settings.affective.row.extended.description":
+    "Also modulate top_k — for local engines (vLLM, llama.cpp) that accept it.",
   "settings.agents.title": "Agents",
   "settings.agents.description": "Agent settings will be configurable here.",
   "settings.commands.title": "Commands",
