@@ -326,7 +326,7 @@ export const layer = Layer.effect(
       operationName: OperationError["operation"],
       repository: Repository,
       args: string[],
-      options?: { stdin?: string; env?: Record<string, string> },
+      options?: { stdin?: string; env?: Record<string, string>; maxOutputBytes?: number },
     ) {
       const result = yield* proc
         .run(
@@ -335,7 +335,9 @@ export const layer = Layer.effect(
             env: options?.env,
             extendEnv: true,
           }),
-          { stdin: options?.stdin },
+          // 1G follow-up: callers producing unbounded text (a single giant file's
+          // patch) can cap the capture instead of buffering arbitrarily.
+          { stdin: options?.stdin, ...(options?.maxOutputBytes ? { maxOutputBytes: options.maxOutputBytes } : {}) },
         )
         .pipe(
           Effect.mapError(
@@ -574,8 +576,36 @@ export const layer = Layer.effect(
     }) {
       const paths = input.paths ?? (yield* treeFiles(input))
       // 1G: bound diff cost. Beyond the budget we still list each file (nothing
-      // vanishes) but skip its ~3 git subprocesses and omit the patch, so a huge
+      // vanishes) but skip its git subprocess and omit the patch, so a huge
       // change set can't hang the instance. The file-name list above is uncapped.
+      //
+      // 1G follow-up: --name-status and --numstat run ONCE for the whole tree
+      // pair (no per-file `--` filter, so command-line length can't explode on
+      // 5000-file sets) and the loop keys into the parsed maps — only the PATCH
+      // remains per-file (it is what the budget gates).
+      const statusByFile = new Map<string, string>()
+      for (const line of (yield* repositoryOperation("diff", input.repository, [
+        "diff",
+        "--name-status",
+        "--no-renames",
+        input.from,
+        input.to,
+      ])).text.split("\n")) {
+        const tab = line.indexOf("\t")
+        if (tab > 0) statusByFile.set(line.slice(tab + 1).trim(), line.slice(0, tab))
+      }
+      const statsByFile = new Map<string, [string, string]>()
+      for (const line of (yield* repositoryOperation("diff", input.repository, [
+        "diff",
+        "--numstat",
+        "--no-renames",
+        input.from,
+        input.to,
+      ])).text.split("\n")) {
+        const [additions, deletions, ...rest] = line.split("\t")
+        if (additions !== undefined && deletions !== undefined && rest.length)
+          statsByFile.set(rest.join("\t").trim(), [additions, deletions])
+      }
       const diffs: File.Diff[] = []
       let computed = 0
       let bytes = 0
@@ -590,37 +620,20 @@ export const layer = Layer.effect(
           } satisfies File.Diff)
           continue
         }
-        const statusText = (yield* repositoryOperation("diff", input.repository, [
-          "diff",
-          "--name-status",
-          "--no-renames",
-          input.from,
-          input.to,
-          "--",
-          file,
-        ])).text.trim()
+        const statusText = statusByFile.get(file) ?? "M"
         const status = statusText.startsWith("A") ? "added" : statusText.startsWith("D") ? "deleted" : "modified"
-        const stats = (yield* repositoryOperation("diff", input.repository, [
-          "diff",
-          "--numstat",
-          "--no-renames",
-          input.from,
-          input.to,
-          "--",
-          file,
-        ])).text.split("\t")
+        const stats = statsByFile.get(file) ?? ["0", "0"]
         const binary = stats[0] === "-" || stats[1] === "-"
         const patch = binary
           ? ""
-          : (yield* repositoryOperation("diff", input.repository, [
+          : (yield* repositoryOperation(
               "diff",
-              `--unified=${input.context ?? 3}`,
-              "--no-renames",
-              input.from,
-              input.to,
-              "--",
-              file,
-            ])).text
+              input.repository,
+              ["diff", `--unified=${input.context ?? 3}`, "--no-renames", input.from, input.to, "--", file],
+              // A single pathological file cannot blow the in-memory buffer: cap
+              // its patch capture at the changeset byte budget.
+              { maxOutputBytes: ChangesetBudget.MAX_DIFF_BYTES },
+            )).text
         diffs.push({
           path: file,
           status,
