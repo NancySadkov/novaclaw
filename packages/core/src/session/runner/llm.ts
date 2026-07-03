@@ -14,6 +14,7 @@ import { AgentV2 } from "../../agent"
 import { Config } from "../../config"
 import { Global } from "../../global"
 import { Persona } from "../../persona"
+import { UserProfile } from "../../user-profile"
 import { Database } from "../../database/database"
 import { EventV2 } from "../../event"
 import { Location } from "../../location"
@@ -138,6 +139,11 @@ export const layer = Layer.effect(
     // override or the agent's own prompt), so the assistant's approach survives model swaps.
     const personaBaseline = Persona.resolve(Config.latest(configEntries, "persona"), {
       notesDir: path.join(Global.Path.data, "notes"),
+    })
+    // B4: the user-profile layer — persona → USER PROFILE → per-session override →
+    // agent-system → baseline. Falls back to the older `username` field for the name.
+    const userProfileBaseline = UserProfile.resolve(Config.latest(configEntries, "user_profile"), {
+      fallbackName: Config.latest(configEntries, "username"),
     })
     const getSession = Effect.fn("SessionRunner.getSession")(function* (sessionID: SessionSchema.ID) {
       const session = yield* store.get(sessionID)
@@ -334,7 +340,7 @@ export const layer = Layer.effect(
       const fullRequest = LLM.request({
         model,
         providerOptions: { openai: { promptCacheKey } },
-        system: [personaBaseline, config.systemPromptOverride, agent.info?.system, system.baseline]
+        system: [personaBaseline, userProfileBaseline, config.systemPromptOverride, agent.info?.system, system.baseline]
           .filter((part): part is string => part !== undefined && part.length > 0)
           .map(SystemPart.make),
         messages: [...toLLMMessages(context, model), ...(isLastStep ? [Message.assistant(MAX_STEPS_PROMPT)] : [])],

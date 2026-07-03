@@ -1019,6 +1019,31 @@ export const dict = {
   "settings.models.probe.noUrl": "No URL configured",
   "settings.models.probe.error": "Error",
   "settings.models.probe.window": "window",
+  "settings.systemPrompt.title": "System Prompt",
+  "settings.systemPrompt.description":
+    "The assistant's composed prompt, in layers: the persona baseline, your user profile, and project instructions. The shipped base is never forked — clearing a field restores the default.",
+  "settings.systemPrompt.toast.failed": "Saving system-prompt settings failed",
+  "settings.systemPrompt.persona.title": "Persona",
+  "settings.systemPrompt.persona.enabled.title": "Persona baseline",
+  "settings.systemPrompt.persona.enabled.description":
+    "Prepend the persona to every agent's system prompt so behavior stays steady across model swaps",
+  "settings.systemPrompt.persona.name.title": "Assistant name",
+  "settings.systemPrompt.persona.name.description": "Rename the assistant without forking the prompt text",
+  "settings.systemPrompt.persona.prompt.title": "Persona prompt",
+  "settings.systemPrompt.persona.prompt.description":
+    "Replaces the canonical persona wholesale. Leave empty to use the default shown below.",
+  "settings.systemPrompt.profile.title": "User profile",
+  "settings.systemPrompt.profile.name.title": "Your name",
+  "settings.systemPrompt.profile.name.description": "Injected so the assistant knows who it is helping",
+  "settings.systemPrompt.profile.name.placeholder": "e.g. Nancy",
+  "settings.systemPrompt.profile.about.title": "About you",
+  "settings.systemPrompt.profile.about.description":
+    "Background the assistant should know: role, expertise, preferences.",
+  "settings.systemPrompt.profile.about.placeholder": "e.g. systems programmer building a local-LLM agent OS",
+  "settings.systemPrompt.instructions.title": "Project instructions",
+  "settings.systemPrompt.instructions.description":
+    "Paths or URLs of instruction files loaded into every session (one per line). AGENTS.md files are discovered automatically.",
+  "settings.systemPrompt.instructions.placeholder": "docs/style-guide.md",
   "settings.introspection.title": "Introspection",
   "settings.introspection.description":
     "A judge model periodically checks whether a running session is stuck and, when it is, injects a course-correcting note.",

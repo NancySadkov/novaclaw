@@ -11,6 +11,7 @@ import { SettingsModelsV2 } from "./models"
 import "./settings-v2.css"
 import { SettingsServersV2 } from "./servers"
 import { SettingsIntrospectionV2 } from "./introspection"
+import { SettingsSystemPromptV2 } from "./system-prompt"
 import { SettingsAffectiveV2 } from "./affective"
 import { SettingsToolsV2 } from "./tools"
 import { SettingsRecoveryV2 } from "./recovery"
@@ -58,6 +59,10 @@ export const DialogSettings: Component<{
                       <Icon name="models" />
                       {language.t("settings.models.title")}
                     </TabsV2.Trigger>
+                    <TabsV2.Trigger value="system-prompt">
+                      <Icon name="prompt" />
+                      {language.t("settings.systemPrompt.title")}
+                    </TabsV2.Trigger>
                     <TabsV2.Trigger value="introspection">
                       <Icon name="eye" />
                       {language.t("settings.introspection.title")}
@@ -104,6 +109,9 @@ export const DialogSettings: Component<{
         </TabsV2.Content>
         <TabsV2.Content value="models" class="settings-v2-panel">
           <SettingsModelsV2 />
+        </TabsV2.Content>
+        <TabsV2.Content value="system-prompt" class="settings-v2-panel">
+          <SettingsSystemPromptV2 />
         </TabsV2.Content>
         <TabsV2.Content value="introspection" class="settings-v2-panel">
           <SettingsIntrospectionV2 />

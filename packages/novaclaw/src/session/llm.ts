@@ -28,6 +28,7 @@ import * as OtelTracer from "@effect/opentelemetry/Tracer"
 import path from "path"
 import { Global } from "@novaclaw/core/global"
 import { Persona } from "@novaclaw/core/persona"
+import { UserProfile } from "@novaclaw/core/user-profile"
 import { LLMAISDK } from "./llm/ai-sdk"
 import { LLMNativeRuntime } from "./llm/native-runtime"
 import { LLMRequestPrep } from "./llm/request"
@@ -107,10 +108,16 @@ const live: Layer.Layer<
 
       const prepared = yield* LLMRequestPrep.prepare({
         ...input,
-        // The B3 persona baseline — skipped for utility (small-model) calls like titles/summaries.
+        // The B3 persona baseline + the B4 user-profile layer (persona → profile →
+        // agent prompt) — both skipped for utility (small-model) calls like titles.
         persona: input.small
           ? undefined
-          : Persona.resolve(cfg.persona, { notesDir: path.join(Global.Path.data, "notes") }),
+          : [
+              Persona.resolve(cfg.persona, { notesDir: path.join(Global.Path.data, "notes") }),
+              UserProfile.resolve(cfg.user_profile, { fallbackName: cfg.username }),
+            ]
+              .filter((part): part is string => part !== undefined)
+              .join("\n\n") || undefined,
         provider: item,
         auth: info,
         plugin,

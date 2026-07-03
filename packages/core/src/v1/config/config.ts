@@ -205,6 +205,16 @@ export const Info = Schema.Struct({
       }),
     }),
   ).annotate({ description: "Affective mode — emotion-modulated sampling + loop-breaking nudges" }),
+  user_profile: Schema.optional(
+    Schema.Struct({
+      name: Schema.optional(Schema.String).annotate({ description: "The user's name" }),
+      about: Schema.optional(Schema.String).annotate({
+        description: "Background / 'about me' the assistant should know (role, expertise, preferences)",
+      }),
+    }),
+  ).annotate({
+    description: "User profile injected after the persona baseline so the model knows who it is helping (B4)",
+  }),
   offline: Schema.optional(Schema.Boolean).annotate({
     description:
       "Offline/airgap mode (OFF-A): outbound HTTP restricted to loopback + configured provider hosts, fail-closed. Only honored in the GLOBAL config",

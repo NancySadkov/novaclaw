@@ -90,6 +90,16 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   persona: ConfigPersona.Info.pipe(Schema.optional).annotate({
     description: "Persona baseline prepended to every agent's system prompt (B3)",
   }),
+  user_profile: Schema.Struct({
+    name: Schema.String.pipe(Schema.optional).annotate({ description: "The user's name" }),
+    about: Schema.String.pipe(Schema.optional).annotate({
+      description: "Background / 'about me' the assistant should know (role, expertise, preferences)",
+    }),
+  })
+    .pipe(Schema.optional)
+    .annotate({
+      description: "User profile injected after the persona baseline so the model knows who it is helping (B4)",
+    }),
   introspection: ConfigIntrospection.Info.pipe(Schema.optional).annotate({
     description: "Introspection mode — a judge model periodically checks whether the session is stuck (P2)",
   }),

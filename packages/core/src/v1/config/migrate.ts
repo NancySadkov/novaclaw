@@ -51,6 +51,7 @@ export function migrate(info: typeof ConfigV1.Info.Type) {
     tool_output: info.tool_output,
     mcp: mcp(info),
     persona: info.persona,
+    user_profile: info.user_profile,
     introspection: info.introspection,
     adhoc_tools: info.adhoc_tools,
     affective: info.affective,
