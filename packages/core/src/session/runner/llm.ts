@@ -52,8 +52,11 @@ import {
   runawayMessage,
   toolCallsSinceLastUser,
   isEmptyAssistantTurn,
+  lastAssistantText,
+  shouldReground,
   EMPTY_TURN_RECOVERY,
   EMPTY_TURN_DIAGNOSTIC,
+  REGROUND_NUDGE,
 } from "./doom-loop"
 import { Introspection } from "./introspection"
 import { MAX_STEPS_PROMPT } from "./max-steps"
@@ -578,6 +581,7 @@ export const layer = Layer.effect(
       const nudgedTargets = new Set<string>()
       let runawayNudged = false
       let consecutiveEmpty = 0
+      let regrounded = false
       let promotion: SessionInput.Delivery | undefined = hasSteer ? "steer" : hasQueue ? "queue" : undefined
       let shouldRun = input.force || hasSteer || hasQueue
       while (shouldRun) {
@@ -656,6 +660,16 @@ export const layer = Layer.effect(
             }
           } else {
             consecutiveEmpty = 0
+            // 2E/A7: finish re-grounding — a substantial turn ending with a clean, confident
+            // summary gets ONE "walk your acceptance criteria" re-prompt. Suppressed when the
+            // finish already admits an `unverified:` gap (the honesty exemption — re-prompting
+            // an honest caveat has been seen to regress it into a confident "it works").
+            const finalText = lastAssistantText(context)
+            if (!regrounded && shouldReground(finalText, toolCallsSinceLastUser(context).length)) {
+              regrounded = true
+              yield* Effect.logInfo("finish re-grounding nudge", { sessionID: input.sessionID })
+              yield* SessionInput.steer(db, events, input.sessionID, REGROUND_NUDGE)
+            }
           }
           if (!needsContinuation) needsContinuation = yield* SessionInput.hasPending(db, input.sessionID, "steer")
         }

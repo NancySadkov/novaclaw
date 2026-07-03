@@ -12,8 +12,13 @@ import {
   runawayMessage,
   toolCallsSinceLastUser,
   isEmptyAssistantTurn,
+  lastAssistantText,
+  containsUnverified,
+  shouldReground,
   FAILURE_STREAK_THRESHOLD,
   RUNAWAY_THRESHOLD,
+  REGROUND_TOOL_CALLS,
+  REGROUND_NUDGE,
 } from "./doom-loop"
 
 const call = (name: string, input: string) => ({ name, input })
@@ -235,6 +240,48 @@ describe("toolCallsSinceLastUser", () => {
     ]
     const calls = toolCallsSinceLastUser(context)
     expect(calls.map((c) => c.failed)).toEqual([true, false])
+  })
+})
+
+describe("finish re-grounding (2E/A7)", () => {
+  test("fires for a substantial turn ending with a confident summary", () => {
+    expect(shouldReground("All done, everything works.", REGROUND_TOOL_CALLS)).toBe(true)
+    expect(shouldReground("All done.", REGROUND_TOOL_CALLS + 5)).toBe(true)
+  })
+
+  test("does not fire under the threshold (small turns aren't re-ground)", () => {
+    expect(shouldReground("Done.", REGROUND_TOOL_CALLS - 1)).toBe(false)
+  })
+
+  test("the honesty exemption: an admitted unverified gap stands", () => {
+    expect(shouldReground("It should work. unverified: browser runtime — no browser here.", 20)).toBe(false)
+    expect(shouldReground("UNVERIFIED: could not run the tests", 20)).toBe(false)
+  })
+
+  test("no text (the A3 empty case) is not re-ground territory", () => {
+    expect(shouldReground("", 20)).toBe(false)
+  })
+
+  test("the nudge orders real checks and forbids manufactured proof", () => {
+    expect(REGROUND_NUDGE).toContain("acceptance criteria")
+    expect(REGROUND_NUDGE).toContain("unverified:")
+    expect(REGROUND_NUDGE.toLowerCase()).toContain("never dress up a static check")
+  })
+
+  test("lastAssistantText reads the newest assistant's visible text only", () => {
+    const context = [
+      userMsg("go"),
+      assistantMsg([textPart("old reply")]),
+      userMsg("more"),
+      assistantMsg([reasoningPart("hidden thinking"), textPart("final "), textPart("answer")]),
+    ]
+    expect(lastAssistantText(context)).toBe("final \nanswer")
+    expect(lastAssistantText([userMsg("nothing yet")])).toBe("")
+  })
+
+  test("containsUnverified is case-insensitive and substring-tolerant", () => {
+    expect(containsUnverified("note: Unverified claim")).toBe(true)
+    expect(containsUnverified("all verified")).toBe(false)
   })
 })
 
