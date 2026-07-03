@@ -8,6 +8,7 @@ import { useProviders } from "@/hooks/use-providers"
 import { Persist, persisted } from "@/utils/persist"
 import { cycleModelVariant, getConfiguredAgentVariant, resolveModelVariant } from "./model-variant"
 import { useSDK } from "./sdk"
+import { useSettings } from "./settings"
 import { useSync } from "./sync"
 import { useServerSDK } from "./server-sdk"
 import { ScopedKey, type ServerScope } from "@/utils/server-scope"
@@ -66,6 +67,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     const serverSDK = useServerSDK()
     const providers = useProviders(() => sdk().directory)
     const models = useModels()
+    const settings = useSettings()
 
     const id = createMemo(() => params.id || undefined)
     const list = createMemo(() => sync().data.agent.filter((item) => item.mode !== "subagent" && !item.hidden))
@@ -373,9 +375,13 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     }
 
     const permissionMode = {
-      current: (): PermissionMode => scope()?.permissionMode ?? "ask",
+      // 1K: an unset draft starts on the user's configured default mode (the
+      // "yolo setting" — Settings → General), not a hardcoded "ask".
+      current: (): PermissionMode => scope()?.permissionMode ?? settings.general.defaultPermissionMode(),
       set(value: PermissionMode) {
-        write({ permissionMode: value === "ask" ? undefined : value })
+        // Persist the explicit choice (no default-normalization: a chosen mode
+        // must stay sticky even if the default setting changes later).
+        write({ permissionMode: value })
       },
     }
 

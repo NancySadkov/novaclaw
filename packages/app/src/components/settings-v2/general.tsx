@@ -134,6 +134,11 @@ export const SettingsGeneralV2: Component<{
   })
 
   const autoOption = { id: "auto", value: "", label: language.t("settings.general.row.shell.autoDefault") }
+  // 1K: the default-permission-mode options reuse the composer droplist's labels.
+  const PERMISSION_MODES = (["plan", "ask", "surgical", "bypass", "yolo"] as const).map((mode) => ({
+    id: mode,
+    label: language.t(`prompt.permissionMode.${mode}`),
+  }))
   const currentShell = createMemo(() => serverSync().data.config.shell ?? "")
 
   const shellOptions = createMemo<ShellSelectOption[]>(() => {
@@ -259,6 +264,25 @@ export const SettingsGeneralV2: Component<{
               if (!option) return
               if (option.value === currentShell()) return
               serverSync().updateConfig({ shell: option.value })
+            }}
+          />
+        </SettingsRowV2>
+
+        <SettingsRowV2
+          title={language.t("settings.general.row.defaultPermissionMode.title")}
+          description={language.t("settings.general.row.defaultPermissionMode.description")}
+        >
+          <SelectV2
+            appearance="inline"
+            data-action="settings-default-permission-mode"
+            options={PERMISSION_MODES}
+            current={PERMISSION_MODES.find((mode) => mode.id === settings.general.defaultPermissionMode())}
+            placement="bottom-end"
+            gutter={6}
+            value={(option) => option.id}
+            label={(option) => option.label}
+            onSelect={(option) => {
+              if (option) settings.general.setDefaultPermissionMode(option.id)
             }}
           />
         </SettingsRowV2>

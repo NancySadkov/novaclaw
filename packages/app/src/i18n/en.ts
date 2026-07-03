@@ -886,6 +886,9 @@ export const dict = {
     "Place the title bar and session tabs at the bottom of the screen on mobile",
   "settings.general.row.showCustomAgents.title": "Custom agents",
   "settings.general.row.showCustomAgents.description": "Show the agent picker in the composer",
+  "settings.general.row.defaultPermissionMode.title": "Default permission mode",
+  "settings.general.row.defaultPermissionMode.description":
+    "The mode a new session's composer starts on. YOLO auto-allows everything including outside-project access — for low-stakes work on trusted projects.",
   "settings.general.row.offline.title": "Offline / airgap mode",
   "settings.general.row.offline.description":
     "Restrict outbound HTTP to loopback and your configured model-provider hosts (fail-closed); blocks package installs and telemetry export. Restart the server to apply.",

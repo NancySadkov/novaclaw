@@ -29,6 +29,7 @@ export interface Settings {
     showStatus: boolean
     showTerminal: boolean
     showReasoningSummaries: boolean
+    defaultPermissionMode: "plan" | "ask" | "surgical" | "bypass" | "yolo"
     shellToolPartsExpanded: boolean
     editToolPartsExpanded: boolean
     showCustomAgents: boolean
@@ -117,6 +118,7 @@ const defaultSettings: Settings = {
     showStatus: false,
     showTerminal: false,
     showReasoningSummaries: true,
+    defaultPermissionMode: "ask",
     shellToolPartsExpanded: false,
     editToolPartsExpanded: false,
     showCustomAgents: false,
@@ -229,6 +231,15 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         ),
         setShowReasoningSummaries(value: boolean) {
           setStore("general", "showReasoningSummaries", value)
+        },
+        // 1K: the DEFAULT permission mode a new session starts on — the "yolo
+        // setting" surface (yolo itself is the server-side mode overlay).
+        defaultPermissionMode: withFallback(
+          () => store.general?.defaultPermissionMode,
+          defaultSettings.general.defaultPermissionMode,
+        ),
+        setDefaultPermissionMode(value: Settings["general"]["defaultPermissionMode"]) {
+          setStore("general", "defaultPermissionMode", value)
         },
         shellToolPartsExpanded: withFallback(
           () => store.general?.shellToolPartsExpanded,
