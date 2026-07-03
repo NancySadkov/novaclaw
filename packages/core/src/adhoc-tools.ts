@@ -15,6 +15,7 @@ export * as AdhocTools from "./adhoc-tools"
 
 import fs from "node:fs/promises"
 import path from "node:path"
+import { applyEdits, modify, parse } from "jsonc-parser"
 import { Global } from "./global"
 
 export interface Recipe {
@@ -96,6 +97,48 @@ export async function saveSessionRecipe(sessionID: string, input: Recipe, option
   const next = [...existing.filter((item) => item.name !== recipe.name), recipe]
   await fs.writeFile(file, JSON.stringify(next, null, 2), "utf8")
   return recipe
+}
+
+/**
+ * 4E: promote a session recipe into a config file's `adhoc_tools` array (comment-preserving
+ * jsonc patch), so a useful model-defined recipe becomes permanent at project/global scope.
+ * Upsert by name: an existing entry with the same name is replaced in place; else appended.
+ */
+export function promoteRecipeToConfig(configText: string, recipe: Recipe): string {
+  const normalized = normalizeRecipe(recipe)
+  const entry = {
+    name: normalized.name,
+    description: normalized.description,
+    manual: normalized.manual,
+    ...(normalized.enabled === undefined ? {} : { enabled: normalized.enabled }),
+  }
+  const text = configText.trim() ? configText : "{}\n"
+  const current = parse(text) as { adhoc_tools?: Array<{ name?: string }> } | undefined
+  const list = Array.isArray(current?.adhoc_tools) ? current!.adhoc_tools! : []
+  const index = list.findIndex((item) => item?.name === normalized.name)
+  const at = index >= 0 ? index : list.length
+  const edits = modify(text, ["adhoc_tools", at], entry, {
+    isArrayInsertion: index < 0,
+    formattingOptions: { insertSpaces: true, tabSize: 2 },
+  })
+  return applyEdits(text, edits)
+}
+
+/**
+ * 4E: discard a session-defined recipe by name (the "throw this one away" half of the
+ * review surface). Returns true when a recipe was removed. No-op / false when absent.
+ */
+export async function removeSessionRecipe(sessionID: string, name: string, options?: Options): Promise<boolean> {
+  const existing = await listSessionRecipes(sessionID, options)
+  const next = existing.filter((item) => item.name !== name)
+  if (next.length === existing.length) return false
+  const file = sessionFile(sessionID, options)
+  if (next.length === 0) {
+    await fs.rm(file, { force: true })
+    return true
+  }
+  await fs.writeFile(file, JSON.stringify(next, null, 2), "utf8")
+  return true
 }
 
 /**
