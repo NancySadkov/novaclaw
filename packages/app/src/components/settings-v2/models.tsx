@@ -2,6 +2,8 @@ import { useFilteredList } from "@novaclaw/ui/hooks"
 import { ProviderIcon } from "@novaclaw/ui/provider-icon"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { Switch } from "@novaclaw/ui/v2/switch-v2"
+import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
+import { Icon } from "@novaclaw/ui/icon"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { type Component, For, Show, createMemo, createResource, createSignal } from "solid-js"
 import { useGlobal } from "@/context/global"
@@ -14,6 +16,8 @@ import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 import { DialogModelTier } from "./dialog-model-tier"
 import { DialogModelConfig } from "./dialog-model-config"
+import { DialogNewModel } from "./dialog-new-model"
+import { useConfirm } from "@/components/dialog-confirm"
 import "./settings-v2.css"
 
 type ModelItem = ReturnType<ReturnType<typeof useModels>["list"]>[number]
@@ -48,6 +52,7 @@ export const SettingsModelsV2: Component = () => {
   const global = useGlobal()
   const server = useServer()
   const dialog = useDialog()
+  const confirm = useConfirm()
   // Dynamic tier i18n keys need the loose-key cast the typed translator otherwise forbids.
   const tk = (key: string) => language.t(key as Parameters<typeof language.t>[0])
 
@@ -84,6 +89,24 @@ export const SettingsModelsV2: Component = () => {
     setProbes((prev) => ({ ...prev, [id]: result }))
   }
 
+  const openNewModel = () => {
+    const cn = conn()
+    const d = routeDir()
+    if (!cn || !d) return
+    dialog.show(() => <DialogNewModel http={cn.http} directory={d} />)
+  }
+
+  const removeModel = async (key: { providerID: string; modelID: string }, name: string) => {
+    const ok = await confirm({
+      title: language.t("settings.models.remove.confirm.title", { model: name }),
+      description: language.t("settings.models.remove.confirm.description"),
+      confirmLabel: language.t("settings.models.remove.confirm.action"),
+      destructive: true,
+    })
+    if (!ok) return
+    models.remove(key)
+  }
+
   const list = useFilteredList<ModelItem>({
     items: (_filter) => models.list(),
     key: (x) => `${x.provider.id}:${x.id}`,
@@ -109,7 +132,12 @@ export const SettingsModelsV2: Component = () => {
   return (
     <>
       <div class="settings-v2-tab-header">
-        <h2 class="settings-v2-tab-title">{language.t("settings.models.title")}</h2>
+        <div class="flex items-center justify-between gap-3">
+          <h2 class="settings-v2-tab-title">{language.t("settings.models.title")}</h2>
+          <ButtonV2 size="small" variant="neutral" onClick={openNewModel}>
+            {language.t("settings.models.new.open")}
+          </ButtonV2>
+        </div>
       </div>
 
       <div class="settings-v2-tab-body settings-v2-models">
@@ -223,6 +251,13 @@ export const SettingsModelsV2: Component = () => {
                               >
                                 {item.name}
                               </Switch>
+                              <IconButtonV2
+                                size="small"
+                                variant="ghost-muted"
+                                aria-label={language.t("settings.models.remove.confirm.action")}
+                                icon={<Icon name="trash" size="small" />}
+                                onClick={() => void removeModel(key, item.name)}
+                              />
                             </div>
                           </SettingsRowV2>
                         )

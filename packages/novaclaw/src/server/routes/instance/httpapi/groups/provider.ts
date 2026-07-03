@@ -104,7 +104,13 @@ export const ProviderApi = HttpApi.make("provider")
         HttpApiEndpoint.post("probe", `${root}/:providerID/probe`, {
           params: { providerID: ProviderV2.ID },
           query: WorkspaceRoutingQuery,
-          payload: Schema.Struct({ modelID: Schema.optional(Schema.String) }),
+          // baseURL/apiKey let the client probe an UNSAVED endpoint (the "New Model" discovery flow) —
+          // when absent, the probe resolves them from the saved provider config as before.
+          payload: Schema.Struct({
+            modelID: Schema.optional(Schema.String),
+            baseURL: Schema.optional(Schema.String),
+            apiKey: Schema.optional(Schema.String),
+          }),
           success: described(ProbeResult, "Provider probe result"),
         }).annotateMerge(
           OpenApi.annotations({

@@ -80,10 +80,12 @@ export interface ProbeResult {
 
 export function providerProbe(
   server: ServerConnection.HttpBase,
-  input: { directory: string; providerID: string; modelID?: string },
+  input: { directory: string; providerID: string; modelID?: string; baseURL?: string; apiKey?: string },
 ) {
   return call<ProbeResult>(server, "POST", `provider/${encodeURIComponent(input.providerID)}/probe`, input.directory, {
     ...(input.modelID === undefined ? {} : { modelID: input.modelID }),
+    ...(input.baseURL === undefined ? {} : { baseURL: input.baseURL }),
+    ...(input.apiKey === undefined ? {} : { apiKey: input.apiKey }),
   })
 }
 

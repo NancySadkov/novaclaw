@@ -110,7 +110,7 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
     // completion (costs tokens). Never throws — every failure classifies into the result.
     const probe = Effect.fn("ProviderHttpApi.probe")(function* (ctx: {
       params: { providerID: ProviderV2.ID }
-      payload: { modelID?: string | undefined }
+      payload: { modelID?: string | undefined; baseURL?: string | undefined; apiKey?: string | undefined }
     }) {
       const config = yield* cfg.get()
       const entry = config.provider?.[ctx.params.providerID]
@@ -118,14 +118,20 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       const catalog: Record<string, { api?: string }> = yield* ModelsDev.Service.use((s) => s.get()).pipe(
         Effect.orElseSucceed(() => ({})),
       )
+      // Payload baseURL/apiKey (the New-Model discovery flow, an unsaved endpoint) win over the
+      // saved-provider config; falling back to config then catalog keeps the Test-a-saved-model path.
       const baseURL =
-        (typeof options.baseURL === "string" ? options.baseURL : undefined) ?? catalog[ctx.params.providerID]?.api
+        ctx.payload.baseURL ??
+        (typeof options.baseURL === "string" ? options.baseURL : undefined) ??
+        catalog[ctx.params.providerID]?.api
       if (!baseURL)
         return {
           status: "no-url" as const,
           detail: "No baseURL is configured for this provider and its catalog entry has no API URL.",
         }
-      const apiKey = typeof options.apiKey === "string" && options.apiKey.length > 0 ? options.apiKey : undefined
+      const apiKey =
+        (ctx.payload.apiKey && ctx.payload.apiKey.length > 0 ? ctx.payload.apiKey : undefined) ??
+        (typeof options.apiKey === "string" && options.apiKey.length > 0 ? options.apiKey : undefined)
       const url = `${baseURL.replace(/\/+$/, "")}/models`
       const started = Date.now()
       const response = yield* Effect.tryPromise(() =>

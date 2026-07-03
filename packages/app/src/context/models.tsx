@@ -19,6 +19,7 @@ type Store = {
   recent: ModelKey[]
   variant?: Record<string, string | undefined>
   tier?: Record<string, ModelTier>
+  removed?: string[]
 }
 
 const RECENT_LIMIT = 5
@@ -42,13 +43,21 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
       }),
     )
 
-    const available = createMemo(() =>
+    const availableAll = createMemo(() =>
       providers.connected().flatMap((p) =>
         Object.values(p.models).map((m) => ({
           ...m,
           provider: p,
         })),
       ),
+    )
+    // Client-side "removed" models — the Models-tab delete. Filtered out of everything downstream
+    // (the tab AND the picker) reliably, without a config write: patchJsonc can't delete a key over
+    // the wire (JSON drops `undefined`; `null` would poison the entry). A user-added model's
+    // novaclaw.jsonc entry lingers but stays invisible; resetting UI prefs restores the catalog view.
+    const removedSet = createMemo(() => new Set(store.removed ?? []))
+    const available = createMemo(() =>
+      availableAll().filter((m) => !removedSet().has(modelKey({ providerID: m.provider.id, modelID: m.id }))),
     )
 
     const release = createMemo(
@@ -161,6 +170,12 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
       setStore("tier", key, value)
     }
 
+    const remove = (model: ModelKey) => {
+      const key = modelKey(model)
+      if ((store.removed ?? []).includes(key)) return
+      setStore("removed", [...(store.removed ?? []), key])
+    }
+
     const [recentModels] = createResource(
       async () => {
         const recent = store.recent
@@ -188,6 +203,7 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
         get: getTier,
         set: setTier,
       },
+      remove,
     }
   },
 })
