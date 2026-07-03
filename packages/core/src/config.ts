@@ -99,6 +99,10 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   affective: ConfigAffective.Info.pipe(Schema.optional).annotate({
     description: "Affective mode — emotion-modulated sampling + loop-breaking nudges (P3)",
   }),
+  offline: Schema.Boolean.pipe(Schema.optional).annotate({
+    description:
+      "Offline/airgap mode (OFF-A): outbound HTTP restricted to loopback + configured provider hosts, fail-closed. GLOBAL config only — the chokepoint is machine-level",
+  }),
   skills: Schema.String.pipe(Schema.Array, Schema.optional).annotate({
     description: "Additional paths or URLs to discover skills from",
   }),

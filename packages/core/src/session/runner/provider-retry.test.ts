@@ -41,6 +41,12 @@ describe("isTransientProviderFailure (1D taxonomy)", () => {
     expect(isTransientProviderFailure(new Error("random"))).toBe(false)
     expect(isTransientProviderFailure(undefined)).toBe(false)
   })
+  test("OFF-A: Transport with kind InvalidUrlError (offline-policy block) is FATAL", () =>
+    expect(
+      isTransientProviderFailure(
+        llmError(new TransportReason({ message: "HTTP transport failed: InvalidUrlError", kind: "InvalidUrlError" })),
+      ),
+    ).toBe(false))
 })
 
 describe("retryDelayMs", () => {

@@ -205,6 +205,10 @@ export const Info = Schema.Struct({
       }),
     }),
   ).annotate({ description: "Affective mode — emotion-modulated sampling + loop-breaking nudges" }),
+  offline: Schema.optional(Schema.Boolean).annotate({
+    description:
+      "Offline/airgap mode (OFF-A): outbound HTTP restricted to loopback + configured provider hosts, fail-closed. Only honored in the GLOBAL config",
+  }),
   compaction: Schema.optional(
     Schema.Struct({
       auto: Schema.optional(Schema.Boolean).annotate({

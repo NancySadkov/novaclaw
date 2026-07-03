@@ -351,8 +351,14 @@ const toHttpError =
       request,
     })
   }
+  // Keep the reason's own description when it has one — e.g. the offline-mode
+  // chokepoint attaches the full "host blocked, here is how to allow it" text to
+  // an InvalidUrlError; dropping it left only the bare tag in the session error.
+  const described = "description" in error.reason && error.reason.description
   return transportError({
-    message: `HTTP transport failed: ${error.reason._tag}`,
+    message: described
+      ? `HTTP transport failed: ${error.reason._tag} — ${error.reason.description}`
+      : `HTTP transport failed: ${error.reason._tag}`,
     kind: error.reason._tag,
     request,
   })
