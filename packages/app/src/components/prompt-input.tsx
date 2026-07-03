@@ -1545,7 +1545,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   </Show>
                   {props.toolbar}
                   <ComposerModelControl state={modelControlState()} />
-                  <Show when={newSession()}>
+                  {/* 1K: the permission-mode droplist shows on the new-session composer AND
+                      mid-session (an active session id) — mid-session selection calls switchMode. */}
+                  <Show when={newSession() || props.controls.session?.id}>
                     <ComposerPermissionModeControl state={permissionModeControlState()} />
                   </Show>
                   <Show when={!providersLoading() && store.mode !== "shell" && showVariantControl()}>

@@ -87,6 +87,19 @@ export const ResponderSwitched = Event.define({
 })
 export type ResponderSwitched = typeof ResponderSwitched.Type
 
+// 1K: mid-session permission-mode switch (the MODE_RULES overlay is read fresh each turn, so
+// flipping the column takes effect on the next turn without restarting the session).
+export const ModeSwitched = Event.define({
+  type: "session.next.mode.switched",
+  ...options,
+  schema: {
+    ...Base,
+    messageID: SessionMessage.ID,
+    permissionMode: Schema.Literals(["plan", "ask", "surgical", "bypass", "yolo"]),
+  },
+})
+export type ModeSwitched = typeof ModeSwitched.Type
+
 export const Moved = Event.define({
   type: "session.next.moved",
   ...options,
@@ -478,6 +491,7 @@ export const DurableDefinitions = Event.inventory(
   AgentSwitched,
   ModelSwitched,
   ResponderSwitched,
+  ModeSwitched,
   Moved,
   Prompted,
   PromptAdmitted,
@@ -511,6 +525,7 @@ export const Definitions = Event.inventory(
   AgentSwitched,
   ModelSwitched,
   ResponderSwitched,
+  ModeSwitched,
   Moved,
   Prompted,
   PromptAdmitted,

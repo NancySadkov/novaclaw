@@ -12,6 +12,7 @@ import type { QueryOptionsApi } from "@/context/server-sync"
 import { useServerSDK } from "@/context/server-sdk"
 import { serverName, ServerConnection, useServer } from "@/context/server"
 import { useSDK } from "@/context/sdk"
+import { switchMode } from "@/utils/fs-api"
 import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useTabs } from "@/context/tabs"
@@ -29,6 +30,7 @@ export function createPromptInputController(input: {
   const settings = useSettings()
   const sync = useSync()
   const sdk = useSDK()
+  const server = useServer()
   const view = layout.view(input.sessionKey)
   const agentsQuery = createQuery(() => input.queryOptions.agents(pathKey(sdk().directory)))
   const globalProvidersQuery = createQuery(() => input.queryOptions.providers(null))
@@ -50,7 +52,18 @@ export function createPromptInputController(input: {
     },
     permissionMode: {
       current: local.permissionMode.current(),
-      select: local.permissionMode.set,
+      // 1K: mid-session switch — update the local signal AND, when a session is live, tell the
+      // server so the MODE_RULES overlay applies from the next turn (create-time uses the signal only).
+      select: (value) => {
+        local.permissionMode.set(value)
+        const id = input.sessionID()
+        const conn = server.current
+        const directory = sdk().directory
+        if (id && conn && directory)
+          void switchMode(conn.http, { directory, sessionID: id, permissionMode: value }).catch((error) =>
+            console.error("switchMode failed", error),
+          )
+      },
     },
     session: {
       id: input.sessionID(),

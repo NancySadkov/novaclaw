@@ -153,6 +153,10 @@ export interface Interface {
     sessionID: SessionSchema.ID
     responder: "nova" | "operator"
   }) => Effect.Effect<void, NotFoundError>
+  readonly switchMode: (input: {
+    sessionID: SessionSchema.ID
+    permissionMode: "plan" | "ask" | "surgical" | "bypass" | "yolo"
+  }) => Effect.Effect<void, NotFoundError>
   readonly prompt: (input: {
     id?: SessionMessage.ID
     sessionID: SessionSchema.ID
@@ -461,6 +465,17 @@ export const layer = Layer.effect(
           responder: input.responder,
         })
         if (input.responder === "nova") yield* execution.wake(input.sessionID)
+      }),
+      // 1K: mid-session permission-mode switch (the MODE_RULES overlay applies on the next turn).
+      switchMode: Effect.fn("V2Session.switchMode")(function* (input) {
+        const session = yield* result.get(input.sessionID)
+        if ((session.permissionMode ?? "ask") === input.permissionMode) return
+        yield* events.publish(SessionEvent.ModeSwitched, {
+          sessionID: input.sessionID,
+          messageID: SessionMessage.ID.create(),
+          timestamp: yield* DateTime.now,
+          permissionMode: input.permissionMode,
+        })
       }),
       compact: Effect.fn("V2Session.compact")(function* (input) {
         yield* result.get(input.sessionID)

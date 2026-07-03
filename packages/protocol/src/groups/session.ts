@@ -226,6 +226,22 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
         ),
     )
     .add(
+      HttpApiEndpoint.post("session.switchMode", "/api/session/:sessionID/mode", {
+        params: { sessionID: Session.ID },
+        payload: Schema.Struct({ permissionMode: Schema.Literals(["plan", "ask", "surgical", "bypass", "yolo"]) }),
+        success: HttpApiSchema.NoContent,
+        error: SessionNotFoundError,
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.switchMode",
+            summary: "Switch session permission mode (1K)",
+            description: "Change the permission mode mid-session; the MODE_RULES overlay applies from the next turn.",
+          }),
+        ),
+    )
+    .add(
       HttpApiEndpoint.post("session.prompt", "/api/session/:sessionID/prompt", {
         params: { sessionID: Session.ID },
         payload: Schema.Struct({

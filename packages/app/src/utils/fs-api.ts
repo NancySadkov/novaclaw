@@ -124,17 +124,38 @@ export function offlineStatus(server: ServerConnection.HttpBase, input: { direct
   return call<OfflineStatus>(server, "GET", "shell/offline", input.directory)
 }
 
-// B10 — live control handoff. The V2 session endpoint is NOT in the generated SDK; call it
+// B10/1K — live session controls. These V2 endpoints are NOT in the generated SDK; call them
 // raw with the x-novaclaw-directory header (session-location routing) and tolerate 204.
-export async function switchResponder(
+async function sessionPost(
   server: ServerConnection.HttpBase,
-  input: { directory: string; sessionID: string; responder: "nova" | "operator" },
+  directory: string,
+  sessionID: string,
+  segment: string,
+  body: unknown,
 ): Promise<void> {
-  const url = new URL(`api/session/${input.sessionID}/responder`, server.url.endsWith("/") ? server.url : `${server.url}/`)
+  const url = new URL(
+    `api/session/${sessionID}/${segment}`,
+    server.url.endsWith("/") ? server.url : `${server.url}/`,
+  )
   const res = await fetch(url, {
     method: "POST",
-    headers: { ...headersFor(server), "x-novaclaw-directory": input.directory },
-    body: JSON.stringify({ responder: input.responder }),
+    headers: { ...headersFor(server), "x-novaclaw-directory": directory },
+    body: JSON.stringify(body),
   })
-  if (!res.ok) throw new Error(`switchResponder failed: ${res.status} ${await res.text().catch(() => "")}`)
+  if (!res.ok) throw new Error(`session/${segment} failed: ${res.status} ${await res.text().catch(() => "")}`)
+}
+
+export function switchResponder(
+  server: ServerConnection.HttpBase,
+  input: { directory: string; sessionID: string; responder: "nova" | "operator" },
+) {
+  return sessionPost(server, input.directory, input.sessionID, "responder", { responder: input.responder })
+}
+
+// 1K — mid-session permission-mode switch.
+export function switchMode(
+  server: ServerConnection.HttpBase,
+  input: { directory: string; sessionID: string; permissionMode: "plan" | "ask" | "surgical" | "bypass" | "yolo" },
+) {
+  return sessionPost(server, input.directory, input.sessionID, "mode", { permissionMode: input.permissionMode })
 }

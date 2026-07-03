@@ -370,6 +370,15 @@ export const layer = Layer.effectDiscard(
         .run()
         .pipe(Effect.orDie, Effect.andThen(run(db, event))),
     )
+    // 1K: mid-session permission-mode switch — the MODE_RULES overlay reads this fresh each turn.
+    yield* events.project(SessionEvent.ModeSwitched, (event) =>
+      db
+        .update(SessionTable)
+        .set({ permission_mode: event.data.permissionMode, time_updated: DateTime.toEpochMillis(event.data.timestamp) })
+        .where(eq(SessionTable.id, event.data.sessionID))
+        .run()
+        .pipe(Effect.orDie, Effect.andThen(run(db, event))),
+    )
     yield* events.project(SessionEvent.Prompted, (event) =>
       Effect.gen(function* () {
         if (event.durable === undefined) return yield* Effect.die("Durable Session event is missing aggregate sequence")
