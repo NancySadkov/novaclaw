@@ -10,6 +10,7 @@ import {
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useBuiltinApps } from "@/apps/builtins"
 import { useManifestApps } from "@/apps/manifest-apps"
+import { useExpertise } from "@/context/expertise"
 import { registeredApps, type HomeApp } from "@/apps/registry"
 import { AppTile } from "./app-tile"
 import { HelpTour, HELP_SEEN_KEY } from "./help-tour"
@@ -81,9 +82,15 @@ function greeting(): string {
 export const HomeScreen: Component = () => {
   const builtins = useBuiltinApps()
   const manifestApps = useManifestApps()
+  const { atLeast } = useExpertise()
   const [order, setOrder] = createSignal<string[]>(loadOrder())
   const apps = createMemo<HomeApp[]>(() =>
-    applyOrder([...builtins(), ...manifestApps(), ...registeredApps()], order()),
+    // Expertise gate (uix.md §6.4): a tile whose minLevel exceeds the current level is hidden (e.g.
+    // Terminal in Normal/Advanced). Filter before ordering so a hidden tile can't hold a saved slot.
+    applyOrder(
+      [...builtins(), ...manifestApps(), ...registeredApps()].filter((app) => atLeast(app.minLevel ?? "normal")),
+      order(),
+    ),
   )
   const pages = createMemo<HomeApp[][]>(() => {
     const all = apps()

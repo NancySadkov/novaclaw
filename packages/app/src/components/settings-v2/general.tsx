@@ -8,6 +8,7 @@ import { useTheme, type ColorScheme } from "@novaclaw/ui/theme/context"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
+import { useExpertise, PERMISSION_MODE_MIN_LEVEL } from "@/context/expertise"
 import { usePermission } from "@/context/permission"
 import { usePlatform } from "@/context/platform"
 import { useServer } from "@/context/server"
@@ -29,6 +30,7 @@ import {
 } from "@/context/settings"
 import { playSoundById, SOUND_OPTIONS } from "@/utils/sound"
 import { Link } from "../link"
+import { DialogExpertise } from "./dialog-expertise"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 import "./settings-v2.css"
@@ -88,6 +90,7 @@ export const SettingsGeneralV2: Component<{
 }> = (props) => {
   const theme = useTheme()
   const language = useLanguage()
+  const expertise = useExpertise()
   const permission = usePermission()
   const platform = usePlatform()
   const dialog = useDialog()
@@ -190,11 +193,22 @@ export const SettingsGeneralV2: Component<{
   })
 
   const autoOption = { id: "auto", value: "", label: language.t("settings.general.row.shell.autoDefault") }
-  // 1K: the default-permission-mode options reuse the composer droplist's labels.
-  const PERMISSION_MODES = (["plan", "ask", "surgical", "bypass", "yolo"] as const).map((mode) => ({
-    id: mode,
-    label: language.t(`prompt.permissionMode.${mode}`),
-  }))
+  // 1K: the default-permission-mode options reuse the composer droplist's labels. Expertise-gated
+  // (uix.md §6.4) — Normal sees plan/ask, Advanced +surgical, Developer +bypass/yolo — but a stored
+  // value above the level stays listed so the picker reflects the truth (the honesty valve nudges review).
+  const permissionModeOptions = createMemo(() => {
+    const current = settings.general.defaultPermissionMode()
+    return (["plan", "ask", "surgical", "bypass", "yolo"] as const)
+      .filter((mode) => mode === current || expertise.atLeast(PERMISSION_MODE_MIN_LEVEL[mode] ?? "normal"))
+      .map((mode) => ({ id: mode, label: language.t(`prompt.permissionMode.${mode}`) }))
+  })
+  // Honesty valve (uix.md §6.5): a "run without asking" mode is active but its picker option would be
+  // hidden at this level — surface a one-liner rather than silently masking a safety-relevant choice.
+  const hiddenDangerMode = createMemo(() => {
+    const current = settings.general.defaultPermissionMode()
+    const min = PERMISSION_MODE_MIN_LEVEL[current] ?? "normal"
+    return !expertise.atLeast(min)
+  })
   const currentShell = createMemo(() => serverSync().data.config.shell ?? "")
 
   const shellOptions = createMemo<ShellSelectOption[]>(() => {
@@ -274,9 +288,24 @@ export const SettingsGeneralV2: Component<{
     },
   })
 
+  // Dynamic i18n keys (level name/blurb) need the loose-key cast the translator otherwise forbids.
+  const tk = (key: string) => language.t(key as Parameters<typeof language.t>[0])
+  const openExpertise = () => dialog.show(() => <DialogExpertise />)
+
   const GeneralSection = () => (
     <div class="settings-v2-section">
       <SettingsListV2>
+        {/* Experience level — the progressive-disclosure control (uix.md §6.2), first row so the
+            friendliest surface is what a new user meets. */}
+        <SettingsRowV2
+          title={language.t("settings.expertise.title")}
+          description={`${tk(`settings.expertise.level.${expertise.level()}.name`)} — ${tk(`settings.expertise.level.${expertise.level()}.blurb`)}`}
+        >
+          <ButtonV2 size="normal" variant="neutral" data-action="settings-expertise-change" onClick={openExpertise}>
+            {language.t("settings.expertise.change")}
+          </ButtonV2>
+        </SettingsRowV2>
+
         <SettingsRowV2
           title={language.t("settings.general.row.language.title")}
           description={language.t("settings.general.row.language.description")}
@@ -353,8 +382,8 @@ export const SettingsGeneralV2: Component<{
           <SelectV2
             appearance="inline"
             data-action="settings-default-permission-mode"
-            options={PERMISSION_MODES}
-            current={PERMISSION_MODES.find((mode) => mode.id === settings.general.defaultPermissionMode())}
+            options={permissionModeOptions()}
+            current={permissionModeOptions().find((mode) => mode.id === settings.general.defaultPermissionMode())}
             placement="bottom-end"
             gutter={6}
             value={(option) => option.id}
@@ -446,6 +475,40 @@ export const SettingsGeneralV2: Component<{
                 onChange={(checked) => settings.general.setMobileTitlebarPosition(checked ? "bottom" : "top")}
               />
             </div>
+          </SettingsRowV2>
+        </Show>
+
+        {/* Honesty valve (uix.md §6.5): a "run without asking" default is active while its option is
+            hidden at this level — one quiet line so an active safety-relevant choice is never masked. */}
+        <Show when={hiddenDangerMode()}>
+          <SettingsRowV2
+            title={language.t("settings.expertise.activeHidden.title")}
+            description={language.t("settings.expertise.activeHidden.description")}
+          >
+            <ButtonV2 size="normal" variant="outline" onClick={openExpertise}>
+              {language.t("settings.expertise.change")}
+            </ButtonV2>
+          </SettingsRowV2>
+        </Show>
+
+        {/* One discoverability affordance (uix.md §6.5): a quiet nudge to the next level; gone at
+            Developer. No scattered lock icons. */}
+        <Show when={!expertise.atLeast("developer")}>
+          <SettingsRowV2
+            title={
+              expertise.atLeast("advanced")
+                ? language.t("settings.expertise.discover.developer.title")
+                : language.t("settings.expertise.discover.advanced.title")
+            }
+            description={
+              expertise.atLeast("advanced")
+                ? language.t("settings.expertise.discover.developer.description")
+                : language.t("settings.expertise.discover.advanced.description")
+            }
+          >
+            <ButtonV2 size="normal" variant="outline" data-action="settings-expertise-discover" onClick={openExpertise}>
+              {language.t("settings.expertise.discover.action")}
+            </ButtonV2>
           </SettingsRowV2>
         </Show>
       </SettingsListV2>

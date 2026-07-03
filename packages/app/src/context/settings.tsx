@@ -3,6 +3,12 @@ import { createEffect, createMemo } from "solid-js"
 import { createSimpleContext } from "@novaclaw/ui/context"
 import { persisted } from "@/utils/persist"
 
+// Progressive disclosure with consent (uix.md §6): the friendliest surface by default; advanced
+// capability is opt-in behind an explicit, reversible unlock. Gated things are HIDDEN, not disabled.
+// A safe default of "normal" means any load race fails safe (hides the sharp tools).
+export type ExpertiseLevel = "normal" | "advanced" | "developer"
+export const EXPERTISE_ORDER: Record<ExpertiseLevel, number> = { normal: 0, advanced: 1, developer: 2 }
+
 export interface NotificationSettings {
   agent: boolean
   permissions: boolean
@@ -34,6 +40,7 @@ export interface Settings {
     editToolPartsExpanded: boolean
     showCustomAgents: boolean
     mobileTitlebarPosition: "top" | "bottom"
+    expertiseLevel: ExpertiseLevel
     newLayoutDesigns?: boolean
   }
   appearance: {
@@ -123,6 +130,7 @@ const defaultSettings: Settings = {
     editToolPartsExpanded: false,
     showCustomAgents: false,
     mobileTitlebarPosition: "top",
+    expertiseLevel: "normal",
   },
   appearance: {
     fontSize: 14,
@@ -265,6 +273,13 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         ),
         setMobileTitlebarPosition(value: "top" | "bottom") {
           setStore("general", "mobileTitlebarPosition", value)
+        },
+        // Expertise level (uix.md §6) — the progressive-disclosure gate. Client-owned so it applies
+        // at first paint and works with zero servers connected; per-device is a feature (a phone stays
+        // friendly while the desktop is Developer). Reset UI prefs returns it to "normal" for free.
+        expertiseLevel: withFallback(() => store.general?.expertiseLevel, defaultSettings.general.expertiseLevel),
+        setExpertiseLevel(value: ExpertiseLevel) {
+          setStore("general", "expertiseLevel", value)
         },
         newLayoutDesigns,
         setNewLayoutDesigns(value: boolean) {

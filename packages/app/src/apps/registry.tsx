@@ -1,4 +1,5 @@
 import { createSignal } from "solid-js"
+import type { ExpertiseLevel } from "@/context/settings"
 
 // The NovaClaw "app" model — the extensibility keystone of the home screen (the OS metaphor: the home
 // is an app launcher, and built-in / plugin / AI-agent apps all register the same way). A HomeApp is a
@@ -19,6 +20,8 @@ export interface HomeApp {
   readonly subtitle?: string
   /** Glyph color on the tile. "dark" for light accents (gold) where white would wash out. */
   readonly glyphTone?: "light" | "dark"
+  /** Hide this tile below the given expertise level (uix.md §6.4 — e.g. Terminal is Developer-only). */
+  readonly minLevel?: ExpertiseLevel
 }
 
 // A plain module-level signal is the whole registry — global reactive state, no provider to wire.

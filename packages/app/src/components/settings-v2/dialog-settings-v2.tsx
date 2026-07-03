@@ -1,9 +1,11 @@
-import { Component } from "solid-js"
+import { Component, Show } from "solid-js"
 import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
 import { TabsV2 } from "@novaclaw/ui/v2/tabs-v2"
 import { Icon } from "@novaclaw/ui/icon"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
+import { useExpertise } from "@/context/expertise"
+import type { ExpertiseLevel } from "@/context/settings"
 import { SettingsGeneralV2 } from "./general"
 import { SettingsKeybinds } from "../settings-keybinds"
 import { SettingsProvidersV2 } from "./providers"
@@ -17,16 +19,35 @@ import { SettingsToolsV2 } from "./tools"
 import { SettingsQualityV2 } from "./quality"
 import { SettingsRecoveryV2 } from "./recovery"
 
+// Tabs above Normal are hidden until unlocked (uix.md §6.4). Bootstrap/manage/reset stay universal:
+// General, Shortcuts, Servers, Providers, Models, Recovery carry no entry (= Normal).
+const TAB_LEVELS: Record<string, ExpertiseLevel> = {
+  "system-prompt": "advanced",
+  tools: "advanced",
+  introspection: "developer",
+  affective: "developer",
+  quality: "developer",
+}
+
 export const DialogSettings: Component<{
   sessionID?: string
   defaultTab?: string
 }> = (props) => {
   const language = useLanguage()
   const platform = usePlatform()
+  const { atLeast } = useExpertise()
+  const tabVisible = (tab: string) => {
+    const level = TAB_LEVELS[tab]
+    return !level || atLeast(level)
+  }
+  // Uncontrolled initial tab: never open on a tab the current level can't see (a deep-link into a
+  // now-hidden tab falls back to General rather than selecting a phantom Kobalte value).
+  const requested = props.defaultTab ?? "general"
+  const initialTab = tabVisible(requested) ? requested : "general"
 
   return (
     <Dialog size="x-large" variant="settings" class="settings-v2-dialog">
-      <TabsV2 orientation="vertical" variant="settings" defaultValue={props.defaultTab ?? "general"} class="settings-v2">
+      <TabsV2 orientation="vertical" variant="settings" defaultValue={initialTab} class="settings-v2">
         <TabsV2.List>
           <div class="flex flex-col justify-between h-full w-full">
             <div class="flex flex-col gap-3 w-full">
@@ -60,26 +81,36 @@ export const DialogSettings: Component<{
                       <Icon name="models" />
                       {language.t("settings.models.title")}
                     </TabsV2.Trigger>
-                    <TabsV2.Trigger value="system-prompt">
-                      <Icon name="prompt" />
-                      {language.t("settings.systemPrompt.title")}
-                    </TabsV2.Trigger>
-                    <TabsV2.Trigger value="introspection">
-                      <Icon name="eye" />
-                      {language.t("settings.introspection.title")}
-                    </TabsV2.Trigger>
-                    <TabsV2.Trigger value="affective">
-                      <Icon name="brain" />
-                      {language.t("settings.affective.title")}
-                    </TabsV2.Trigger>
-                    <TabsV2.Trigger value="tools">
-                      <Icon name="code-lines" />
-                      {language.t("settings.tools.title")}
-                    </TabsV2.Trigger>
-                    <TabsV2.Trigger value="quality">
-                      <Icon name="checklist" />
-                      {language.t("settings.quality.title")}
-                    </TabsV2.Trigger>
+                    <Show when={tabVisible("system-prompt")}>
+                      <TabsV2.Trigger value="system-prompt">
+                        <Icon name="prompt" />
+                        {language.t("settings.systemPrompt.title")}
+                      </TabsV2.Trigger>
+                    </Show>
+                    <Show when={tabVisible("introspection")}>
+                      <TabsV2.Trigger value="introspection">
+                        <Icon name="eye" />
+                        {language.t("settings.introspection.title")}
+                      </TabsV2.Trigger>
+                    </Show>
+                    <Show when={tabVisible("affective")}>
+                      <TabsV2.Trigger value="affective">
+                        <Icon name="brain" />
+                        {language.t("settings.affective.title")}
+                      </TabsV2.Trigger>
+                    </Show>
+                    <Show when={tabVisible("tools")}>
+                      <TabsV2.Trigger value="tools">
+                        <Icon name="code-lines" />
+                        {language.t("settings.tools.title")}
+                      </TabsV2.Trigger>
+                    </Show>
+                    <Show when={tabVisible("quality")}>
+                      <TabsV2.Trigger value="quality">
+                        <Icon name="checklist" />
+                        {language.t("settings.quality.title")}
+                      </TabsV2.Trigger>
+                    </Show>
                   </div>
                 </div>
 
@@ -115,21 +146,31 @@ export const DialogSettings: Component<{
         <TabsV2.Content value="models" class="settings-v2-panel">
           <SettingsModelsV2 />
         </TabsV2.Content>
-        <TabsV2.Content value="system-prompt" class="settings-v2-panel">
-          <SettingsSystemPromptV2 />
-        </TabsV2.Content>
-        <TabsV2.Content value="introspection" class="settings-v2-panel">
-          <SettingsIntrospectionV2 />
-        </TabsV2.Content>
-        <TabsV2.Content value="affective" class="settings-v2-panel">
-          <SettingsAffectiveV2 />
-        </TabsV2.Content>
-        <TabsV2.Content value="tools" class="settings-v2-panel">
-          <SettingsToolsV2 />
-        </TabsV2.Content>
-        <TabsV2.Content value="quality" class="settings-v2-panel">
-          <SettingsQualityV2 />
-        </TabsV2.Content>
+        <Show when={tabVisible("system-prompt")}>
+          <TabsV2.Content value="system-prompt" class="settings-v2-panel">
+            <SettingsSystemPromptV2 />
+          </TabsV2.Content>
+        </Show>
+        <Show when={tabVisible("introspection")}>
+          <TabsV2.Content value="introspection" class="settings-v2-panel">
+            <SettingsIntrospectionV2 />
+          </TabsV2.Content>
+        </Show>
+        <Show when={tabVisible("affective")}>
+          <TabsV2.Content value="affective" class="settings-v2-panel">
+            <SettingsAffectiveV2 />
+          </TabsV2.Content>
+        </Show>
+        <Show when={tabVisible("tools")}>
+          <TabsV2.Content value="tools" class="settings-v2-panel">
+            <SettingsToolsV2 />
+          </TabsV2.Content>
+        </Show>
+        <Show when={tabVisible("quality")}>
+          <TabsV2.Content value="quality" class="settings-v2-panel">
+            <SettingsQualityV2 />
+          </TabsV2.Content>
+        </Show>
         <TabsV2.Content value="recovery" class="settings-v2-panel">
           <SettingsRecoveryV2 />
         </TabsV2.Content>

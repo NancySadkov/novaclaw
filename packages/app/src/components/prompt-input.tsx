@@ -45,6 +45,7 @@ import { useCommand } from "@/context/command"
 import { Persist, persisted } from "@/utils/persist"
 import { usePermission } from "@/context/permission"
 import { useLanguage } from "@/context/language"
+import { useExpertise, PERMISSION_MODE_MIN_LEVEL } from "@/context/expertise"
 import { usePlatform } from "@/context/platform"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { createTextFragment, getCursorPosition, setCursorPosition, setRangeEdge } from "./prompt-input/editor-dom"
@@ -214,6 +215,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const permission = usePermission()
   const language = useLanguage()
   const platform = usePlatform()
+  const expertise = useExpertise()
   const tabs = () => props.controls.session.tabs
   let editorRef!: HTMLDivElement
   let fileInputRef: HTMLInputElement | undefined
@@ -541,7 +543,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       title: language.t("command.prompt.mode.shell"),
       category: language.t("command.category.session"),
       keybind: shellModeKey,
-      disabled: store.mode === "shell",
+      // Shell mode is Advanced+ (uix.md §6.4) — disabled at Normal so the keybind is inert too.
+      disabled: store.mode === "shell" || !expertise.atLeast("advanced"),
       onSelect: () => setMode("shell"),
     },
     {
@@ -1212,7 +1215,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       }
     }
 
-    if (event.key === "!" && store.mode === "normal") {
+    // uix.md §6.4: for a Normal user a leading "!" just types "!" — the accidental keystroke must not
+    // flip the friendly chat box into a terminal. Shell mode is an Advanced+ affordance.
+    if (event.key === "!" && store.mode === "normal" && expertise.atLeast("advanced")) {
       const cursorPosition = getCursorPosition(editorRef)
       if (cursorPosition === 0) {
         setStore("mode", "shell")
@@ -1969,6 +1974,14 @@ const PERMISSION_MODES: PermissionMode[] = ["plan", "ask", "surgical", "bypass",
 
 /** 1K: the create-time permission-mode droplist — mirrors ComposerAgentControl's Select styling. */
 function ComposerPermissionModeControl(props: { state: ComposerPermissionModeControlState }) {
+  // uix.md §6.4: Normal sees plan/ask, Advanced +surgical, Developer +bypass/yolo. The current value
+  // always stays listed so an already-set mode never vanishes from the picker.
+  const { atLeast } = useExpertise()
+  const options = createMemo(() =>
+    PERMISSION_MODES.filter(
+      (mode) => mode === props.state.current || atLeast(PERMISSION_MODE_MIN_LEVEL[mode] ?? "normal"),
+    ),
+  )
   return (
     <div class="relative">
       <div class="pointer-events-none absolute left-2 top-1/2 z-10 flex size-4 -translate-y-1/2 items-center justify-center text-v2-icon-icon-muted">
@@ -1977,7 +1990,7 @@ function ComposerPermissionModeControl(props: { state: ComposerPermissionModeCon
       <TooltipV2 placement="top" gutter={4} value={props.state.title}>
         <Select
           size="normal"
-          options={PERMISSION_MODES}
+          options={options()}
           current={props.state.current}
           label={(mode) => props.state.label(mode)}
           onSelect={(value) => {

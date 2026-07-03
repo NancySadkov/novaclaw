@@ -79,6 +79,8 @@ export function useBuiltinApps(): () => HomeApp[] {
       accent: "#64748b",
       subtitle: "A shell, for when you want one",
       source: "builtin",
+      // Chat is the shell for everyone else; the raw terminal only appears in Developer (uix.md §6.4).
+      minLevel: "developer",
       open: comingSoon({ id: "terminal", title: "Terminal", icon: "terminal", accent: "#64748b", subtitle: "A shell, for when you want one" }),
     },
     {
