@@ -222,6 +222,7 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
   const platform = usePlatform()
   const language = useLanguage()
   const formattedError = () => formatError(props.error, language.t)
+  const [showDetails, setShowDetails] = createSignal(false)
   let recordedFatalError: Promise<void> | undefined
   const [store, setStore] = createStore({
     actionError: undefined as string | undefined,
@@ -275,22 +276,36 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
   }
 
   return (
-    <div class="relative flex-1 h-screen w-screen min-h-0 flex flex-col items-center justify-center bg-background-base font-sans">
+    <div class="relative flex-1 h-screen w-screen min-h-0 flex flex-col items-center justify-center bg-v2-background-bg-deep font-sans">
       <div class="w-2/3 max-w-3xl flex flex-col items-center justify-center gap-8">
         <Logo class="w-58.5 opacity-12 shrink-0" />
         <div class="flex flex-col items-center gap-2 text-center">
-          <h1 class="text-lg font-medium text-text-strong">{language.t("error.page.title")}</h1>
-          <p class="text-sm text-text-weak">{language.t(errorDescriptionKey(props.error))}</p>
+          <h1 class="text-lg font-medium text-v2-text-text-base">{language.t("error.page.title")}</h1>
+          <p class="text-sm text-v2-text-text-muted">{language.t(errorDescriptionKey(props.error))}</p>
         </div>
-        <TextField
-          value={formattedError()}
-          readOnly
-          copyable
-          multiline
-          class="max-h-96 w-full font-mono text-xs no-scrollbar"
-          label={language.t("error.page.details.label")}
-          hideLabel
-        />
+        {/* SP7: don't confront everyone with the raw stack/cause chain — tuck it behind a disclosure
+            (collapsed by default; the error page renders above SettingsProvider, so it can't read the
+            expertise level to auto-open in Developer). */}
+        <div class="flex w-full flex-col items-center gap-2">
+          <button
+            type="button"
+            class="text-xs font-medium text-v2-text-text-faint transition-colors hover:text-v2-text-text-muted"
+            onClick={() => setShowDetails((v) => !v)}
+          >
+            {showDetails() ? language.t("error.page.details.hide") : language.t("error.page.details.show")}
+          </button>
+          <Show when={showDetails()}>
+            <TextField
+              value={formattedError()}
+              readOnly
+              copyable
+              multiline
+              class="max-h-96 w-full font-mono text-xs no-scrollbar"
+              label={language.t("error.page.details.label")}
+              hideLabel
+            />
+          </Show>
+        </div>
         <div class="flex flex-row items-center justify-center gap-3 flex-wrap max-w-64">
           <Button size="large" onClick={platform.restart}>
             {language.t("error.page.action.restart")}
@@ -325,23 +340,23 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
           </Show>
         </div>
         <Show when={store.actionError}>
-          {(message) => <p class="text-xs text-text-danger-base text-center max-w-2xl">{message()}</p>}
+          {(message) => <p class="text-xs text-v2-state-fg-danger text-center max-w-2xl">{message()}</p>}
         </Show>
         <div class="flex flex-col items-center gap-2">
           <div class="flex items-center justify-center gap-1">
             {language.t("error.page.report.prefix")}
             <button
               type="button"
-              class="flex items-center text-text-interactive-base gap-1"
+              class="flex items-center text-v2-text-text-accent gap-1"
               onClick={() => platform.openLink("https://novaclaw.app/desktop-feedback")}
             >
               <div>{language.t("error.page.report.discord")}</div>
-              <Icon name="discord" class="text-text-interactive-base" />
+              <Icon name="discord" class="text-v2-text-text-accent" />
             </button>
           </div>
           <Show when={platform.version}>
             {(version) => (
-              <p class="text-xs text-text-weak">{language.t("error.page.version", { version: version() })}</p>
+              <p class="text-xs text-v2-text-text-muted">{language.t("error.page.version", { version: version() })}</p>
             )}
           </Show>
         </div>

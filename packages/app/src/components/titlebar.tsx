@@ -455,7 +455,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                   />
                 </TooltipV2>
 
-                  <TooltipV2 placement="bottom" value="Chats" class="shrink-0">
+                  <TooltipV2 placement="bottom" value={language.t("nav.chats")} class="shrink-0">
                     <IconButtonV2
                       type="button"
                       variant="ghost-muted"
@@ -463,7 +463,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                       class="!w-9 shrink-0"
                       icon={<IconV2 name="tab" />}
                       onClick={() => navigate("/chats")}
-                      aria-label="Chats"
+                      aria-label={language.t("nav.chats")}
                     />
                   </TooltipV2>
                 </Show>

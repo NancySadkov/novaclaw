@@ -4,13 +4,14 @@ import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
 import { Icon } from "@novaclaw/ui/icon"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useCommand } from "@/context/command"
+import { useLanguage } from "@/context/language"
+import { useExpertise } from "@/context/expertise"
 import { useServerSync } from "@/context/server-sync"
 
-// Processes ("ps") — a task-manager over the agent-session tree (architecture.md step 7 / the OS shell).
-// Lists every LOADED session as a tree (by parentID = the process tree) with agent · model · status ·
-// tokens, so the spawn/exit/wait lifecycle is visible. Reads the live server-session store (mirrors
-// sidebar-project.tsx). Shows loaded sessions; a full `session.list` fetch (incl. unloaded children)
-// + click-to-open + live refresh are follow-ups (Phase 2).
+// Processes — a friendly "what your agents are doing right now" activity view over the agent-session
+// tree (architecture.md step 7 / the OS shell). For everyone it reads as a plain activity list with a
+// status pill; the developer detail (raw model ids + token counts) is gated to Developer (uix.md §6.4 /
+// SP1). Reads the live server-session store (mirrors sidebar-project.tsx); v2 tokens, i18n'd.
 
 type Row = { session: Session; depth: number }
 
@@ -36,8 +37,23 @@ function toRows(sessions: Session[]): Row[] {
   return rows
 }
 
+// Raw status → a friendly, plain-language label + a status-pill tone. Unknown states read as "Ready".
+const STATUS: Record<string, { key: string; tone: "working" | "waiting" | "done" | "ready" }> = {
+  busy: { key: "processes.status.working", tone: "working" },
+  working: { key: "processes.status.working", tone: "working" },
+  idle: { key: "processes.status.ready", tone: "ready" },
+  waiting: { key: "processes.status.waiting", tone: "waiting" },
+  blocked: { key: "processes.status.waiting", tone: "waiting" },
+  paused: { key: "processes.status.paused", tone: "waiting" },
+  exited: { key: "processes.status.done", tone: "done" },
+  done: { key: "processes.status.done", tone: "done" },
+}
+
 export const DialogProcesses: Component = () => {
   const serverSync = useServerSync()
+  const language = useLanguage()
+  const { atLeast } = useExpertise()
+  const developer = () => atLeast("developer")
 
   const rows = createMemo(() => {
     const info = serverSync().session.data.info
@@ -55,48 +71,53 @@ export const DialogProcesses: Component = () => {
     return t ? (t.input ?? 0) + (t.output ?? 0) + (t.reasoning ?? 0) : 0
   }
 
+  const status = (id: string) => STATUS[statusOf(id)] ?? { key: "processes.status.ready", tone: "ready" as const }
+
   return (
     <Dialog size="large">
-      <div class="flex flex-col gap-2 p-4 min-w-[40rem] max-h-[70vh]">
-        <div class="flex items-center gap-2 pb-2 border-b border-border-weak-base">
-          <Icon name="sliders" />
-          <span class="text-14-medium text-text-strong grow">Processes (ps)</span>
-          <span class="text-12-medium text-text-weak">{rows().length} session(s)</span>
-        </div>
-        <div class="flex items-center gap-3 px-2 pb-1 text-12-medium text-text-weak">
-          <span class="grow min-w-0">Session</span>
-          <span class="shrink-0 w-16">Agent</span>
-          <span class="shrink-0 w-28">Model</span>
-          <span class="shrink-0 w-14">Status</span>
-          <span class="shrink-0 w-16 text-right">Tokens</span>
+      <div class="flex flex-col gap-2 p-4 min-w-[36rem] max-h-[70vh]">
+        <div class="flex items-center gap-2 pb-2 border-b border-v2-border-border-base">
+          <Icon name="status" size="small" class="text-v2-icon-icon-muted" />
+          <span class="text-[15px] font-semibold text-v2-text-text-base grow">{language.t("processes.title")}</span>
+          <span class="text-xs font-medium text-v2-text-text-faint">
+            {rows().length > 0
+              ? language.t("processes.running", { count: rows().length })
+              : language.t("processes.empty")}
+          </span>
         </div>
         <div class="flex flex-col overflow-auto">
           <Show
             when={rows().length > 0}
-            fallback={<div class="p-4 text-12-medium text-text-weak">No sessions loaded.</div>}
+            fallback={<div class="p-6 text-center text-sm text-v2-text-text-faint">{language.t("processes.empty")}</div>}
           >
             <For each={rows()}>
               {(row) => {
                 const s = row.session
-                const status = statusOf(s.id)
+                const st = status(s.id)
                 return (
-                  <div class="flex items-center gap-3 px-2 py-1.5 rounded hover:bg-surface-base-hover text-14-medium">
+                  <div class="flex items-center gap-3 px-2 py-2 rounded-lg hover:bg-v2-background-bg-layer-02">
+                    <div class="flex min-w-0 grow flex-col" style={{ "padding-left": `${row.depth * 14}px` }}>
+                      <span class="truncate text-sm text-v2-text-text-base">
+                        {row.depth > 0 ? "└ " : ""}
+                        {s.title || language.t("processes.untitled")}
+                      </span>
+                      <Show when={developer()}>
+                        <span class="truncate text-[11px] font-mono text-v2-text-text-faint">
+                          {s.agent ?? "—"} · {s.model?.id ?? "—"} · {language.t("processes.tokens", { count: tokensOf(s) })}
+                        </span>
+                      </Show>
+                    </div>
                     <span
-                      class="truncate grow min-w-0 text-text-base"
-                      style={{ "padding-left": `${row.depth * 14}px` }}
+                      class="shrink-0 rounded-full px-2 py-0.5 text-[11px] font-medium"
+                      classList={{
+                        "bg-v2-state-bg-info text-v2-state-fg-info": st.tone === "working",
+                        "bg-v2-state-bg-warning text-v2-state-fg-warning": st.tone === "waiting",
+                        "bg-v2-state-bg-success text-v2-state-fg-success": st.tone === "done",
+                        "text-v2-text-text-faint": st.tone === "ready",
+                      }}
                     >
-                      {row.depth > 0 ? "└ " : ""}
-                      {s.title || s.id}
+                      {language.t(st.key as Parameters<typeof language.t>[0])}
                     </span>
-                    <span class="shrink-0 w-16 text-12-medium text-text-weak truncate">{s.agent ?? "—"}</span>
-                    <span class="shrink-0 w-28 text-12-medium text-text-weak truncate">{s.model?.id ?? "—"}</span>
-                    <span
-                      class="shrink-0 w-14 text-12-medium"
-                      classList={{ "text-text-strong": status !== "idle", "text-text-weak": status === "idle" }}
-                    >
-                      {status}
-                    </span>
-                    <span class="shrink-0 w-16 text-right text-12-medium text-text-weak tabular-nums">{tokensOf(s)}</span>
                   </div>
                 )
               }}
@@ -113,14 +134,15 @@ export const DialogProcesses: Component = () => {
 export function useProcessesCommand() {
   const command = useCommand()
   const dialog = useDialog()
+  const language = useLanguage()
   const show = () => {
     void dialog.show(() => <DialogProcesses />)
   }
   command.register("processes", () => [
     {
       id: "processes.open",
-      title: "Processes (ps)",
-      category: "Session",
+      title: language.t("processes.title"),
+      category: language.t("command.category.session"),
       keybind: "mod+shift+m", // NOT mod+shift+p — that's the command palette (command.tsx DEFAULT_PALETTE_KEYBIND)
       onSelect: show,
     },

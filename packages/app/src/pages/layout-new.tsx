@@ -1,7 +1,6 @@
 import { createEffect, Suspense, type ParentProps } from "solid-js"
 import { useNavigate } from "@solidjs/router"
 import { DebugBar } from "@/components/debug-bar"
-import { HelpButton } from "@/components/help-button"
 import { Titlebar, type TitlebarUpdate } from "@/components/titlebar"
 import { usePlatform } from "@/context/platform"
 import { setNavigate } from "@/utils/notification-click"
@@ -37,7 +36,8 @@ export default function NewLayout(props: ParentProps) {
         <Suspense>{props.children}</Suspense>
       </main>
       {import.meta.env.DEV && <DebugBar inline />}
-      <HelpButton />
+      {/* No floating HelpButton in the new layout — the Help app tile owns the tour (SP8; the old
+          placeholder popover was dev-only lorem-ipsum competing with it). */}
       <ToastRegion v2 />
     </div>
   )

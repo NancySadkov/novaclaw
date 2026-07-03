@@ -15,11 +15,14 @@ const LAST_KEY = "novaclaw.notes.last"
 const AUTOSAVE_MS = 800
 
 function sanitizeName(raw: string): string | undefined {
+  // Keep Unicode letters/digits (Cyrillic, CJK, accents) — only strip characters a filesystem can't
+  // hold. The old `[^a-z0-9-_ ]` filter silently discarded any non-ASCII name (SP6).
   const base = raw
     .trim()
-    .toLowerCase()
-    .replace(/\.md$/, "")
-    .replace(/[^a-z0-9-_ ]/g, "")
+    .replace(/\.md$/i, "")
+    // eslint-disable-next-line no-control-regex -- intentionally strip control chars from filenames
+    .replace(/[\\/:*?"<>|\x00-\x1f]/g, "")
+    .replace(/\s+/g, " ")
     .trim()
   return base ? `${base}.md` : undefined
 }
@@ -38,6 +41,7 @@ export function NotesPage() {
   const [current, setCurrent] = createSignal<string | undefined>(undefined)
   const [text, setText] = createSignal("")
   const [dirty, setDirty] = createSignal(false)
+  const [saveFailed, setSaveFailed] = createSignal(false)
   const [naming, setNaming] = createSignal(false)
   const [tick, setTick] = createSignal(0)
 
@@ -83,8 +87,12 @@ export function NotesPage() {
     if (!cn || !d) return
     saveChain = saveChain
       .then(() => fsWrite(cn.http, { directory: d, path: name, content }))
-      .then(() => setDirty(false))
-      .catch(() => undefined)
+      .then(() => {
+        setDirty(false)
+        setSaveFailed(false)
+      })
+      // Surface the failure instead of leaving the indicator stuck at "Saving…" forever (SP5).
+      .catch(() => setSaveFailed(true))
   }
   function scheduleSave() {
     const name = current()
@@ -150,14 +158,24 @@ export function NotesPage() {
     "rounded-md px-2.5 py-1 text-xs font-medium text-v2-text-text-muted transition-colors hover:bg-v2-background-bg-layer-02 disabled:pointer-events-none disabled:opacity-40"
 
   return (
-    <div class="flex h-full flex-col bg-v2-background-bg-deep text-v2-text-text-base">
+    <div class="flex min-h-0 flex-1 flex-col self-stretch m-2 rounded-[10px] overflow-hidden bg-v2-background-bg-base shadow-[var(--v2-elevation-raised)] text-v2-text-text-base">
       <div class="flex items-center gap-3 border-b border-v2-border-border-base px-4 py-2.5">
         <Icon name="edit" size="normal" class="shrink-0 text-v2-text-text-muted" />
         <span class="text-[15px] font-semibold">{language.t("notes.title")}</span>
         <span class="min-w-0 flex-1 truncate text-xs text-v2-text-text-faint">{language.t("notes.hint")}</span>
         <Show when={current()}>
-          <span class="shrink-0 text-xs text-v2-text-text-faint">
-            {dirty() ? language.t("notes.saving") : language.t("notes.saved")}
+          <span
+            class="shrink-0 text-xs"
+            classList={{
+              "text-v2-state-fg-danger": saveFailed(),
+              "text-v2-text-text-faint": !saveFailed(),
+            }}
+          >
+            {saveFailed()
+              ? language.t("notes.saveFailed")
+              : dirty()
+                ? language.t("notes.saving")
+                : language.t("notes.saved")}
           </span>
         </Show>
       </div>

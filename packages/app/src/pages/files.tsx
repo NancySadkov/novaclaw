@@ -4,6 +4,7 @@ import { useGlobal } from "@/context/global"
 import { ServerConnection, useServer } from "@/context/server"
 import { useTabs } from "@/context/tabs"
 import { useLanguage } from "@/context/language"
+import { showToast } from "@/utils/toast"
 import { fsTrash, fsTrashList, fsTrashRestore } from "@/utils/fs-api"
 
 // The Files app (B7 + the B8 Trash surface — plan.md M3/M4). Browses the SERVER host's filesystem
@@ -134,7 +135,13 @@ export function FilesPage() {
   async function doTrash(entry: Entry) {
     const cn = conn()
     if (!cn || !dir()) return
-    await fsTrash(cn.http, { directory: dir(), path: entry.name }).catch(() => undefined)
+    try {
+      await fsTrash(cn.http, { directory: dir(), path: entry.name })
+    } catch (error) {
+      // Don't fail silently — a delete that didn't happen must say so (SP5).
+      showToast({ variant: "error", title: language.t("files.trashFailed"), description: String(error) })
+      return
+    }
     if (selected()?.absolute === entry.absolute) setSelected(undefined)
     setTick((t) => t + 1)
   }
@@ -142,7 +149,12 @@ export function FilesPage() {
   async function doRestore(id: string) {
     const cn = conn()
     if (!cn || !dir()) return
-    await fsTrashRestore(cn.http, { directory: dir(), id }).catch(() => undefined)
+    try {
+      await fsTrashRestore(cn.http, { directory: dir(), id })
+    } catch (error) {
+      showToast({ variant: "error", title: language.t("files.restoreFailed"), description: String(error) })
+      return
+    }
     setTick((t) => t + 1)
   }
 
@@ -178,7 +190,7 @@ export function FilesPage() {
     "rounded-md px-2.5 py-1 text-xs font-medium text-v2-text-text-muted transition-colors hover:bg-v2-background-bg-layer-02 disabled:pointer-events-none disabled:opacity-40"
 
   return (
-    <div class="flex h-full flex-col bg-v2-background-bg-deep text-v2-text-text-base">
+    <div class="flex min-h-0 flex-1 flex-col self-stretch m-2 rounded-[10px] overflow-hidden bg-v2-background-bg-base shadow-[var(--v2-elevation-raised)] text-v2-text-text-base">
       <div class="flex items-center gap-3 border-b border-v2-border-border-base px-4 py-2.5">
         <Icon name="folder-add-left" size="normal" class="shrink-0 text-v2-text-text-muted" />
         <span class="text-[15px] font-semibold">{language.t("files.title")}</span>
