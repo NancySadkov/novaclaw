@@ -5,6 +5,7 @@ import { SessionPermissionDock } from "@/pages/session/composer/session-permissi
 import { SessionQuestionDock } from "@/pages/session/composer/session-question-dock"
 import { SessionFollowupDock } from "@/pages/session/composer/session-followup-dock"
 import { SessionRevertDock } from "@/pages/session/composer/session-revert-dock"
+import { SessionResponderDock } from "@/pages/session/composer/session-responder-dock"
 import { SessionTodoDock } from "@/pages/session/composer/session-todo-dock"
 import type { SessionComposerRegionController } from "./session-composer-region-controller"
 
@@ -36,6 +37,10 @@ export function SessionComposerRegion(props: {
           "md:max-w-200 md:mx-auto 2xl:max-w-[1000px]": controller.centered(),
         }}
       >
+        <Show when={settings.general.newLayoutDesigns()}>
+          <SessionResponderDock sessionID={controller.sessionID()} />
+        </Show>
+
         <Show when={controller.state.questionRequest()} keyed>
           {(request) => (
             <div>

@@ -70,6 +70,9 @@ export interface ModelRef {
 /** The Vision's typed threads: how a session decides whether to keep running (K1). */
 export type SessionType = "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
 
+/** B10: who answers on our side — Nova (AI, default) or a human operator who took control. */
+export type Responder = "nova" | "operator"
+
 export interface PermissionRule {
   readonly action: string
   readonly resource: string
@@ -84,6 +87,7 @@ export interface SessionConfig {
   readonly systemPromptOverride?: string
   readonly type?: SessionType
   readonly priority?: number
+  readonly responder?: Responder
   readonly permissionMode?: PermissionMode
   readonly permissionRules?: readonly PermissionRule[]
   readonly introspection?: boolean
@@ -99,6 +103,7 @@ export interface SessionConfig {
 export const EFFECTIVE_CONFIG_DEFAULTS: EffectiveConfig = {
   type: "interactive",
   priority: 0,
+  responder: "nova",
   permissionMode: "ask",
   permissionRules: [],
   introspection: false,
@@ -113,6 +118,7 @@ export interface EffectiveConfig {
   readonly systemPromptOverride?: string
   readonly type: SessionType
   readonly priority: number
+  readonly responder: Responder
   readonly permissionMode: PermissionMode
   readonly permissionRules: readonly PermissionRule[]
   readonly introspection: boolean
@@ -131,6 +137,7 @@ export function resolveConfig(defaults: EffectiveConfig, chain: readonly Session
   let systemPromptOverride = defaults.systemPromptOverride
   let type = defaults.type
   let priority = defaults.priority
+  let responder = defaults.responder
   let introspection = defaults.introspection
   let affective = defaults.affective
   let tools = defaults.tools
@@ -144,6 +151,7 @@ export function resolveConfig(defaults: EffectiveConfig, chain: readonly Session
     if (layer.systemPromptOverride !== undefined) systemPromptOverride = layer.systemPromptOverride
     if (layer.type !== undefined) type = layer.type
     if (layer.priority !== undefined) priority = layer.priority
+    if (layer.responder !== undefined) responder = layer.responder
     if (layer.introspection !== undefined) introspection = layer.introspection
     if (layer.affective !== undefined) affective = layer.affective
     if (layer.tools !== undefined) tools = layer.tools
@@ -161,6 +169,7 @@ export function resolveConfig(defaults: EffectiveConfig, chain: readonly Session
     systemPromptOverride,
     type,
     priority,
+    responder,
     permissionMode,
     permissionRules,
     introspection,
@@ -183,6 +192,7 @@ export interface SessionLike {
   readonly systemPromptOverride?: string
   readonly type?: SessionType
   readonly priority?: number
+  readonly responder?: Responder
   readonly permissionMode?: PermissionMode
   // permissionRules / introspection / affective / tools get mapped here as the
   // session schema grows to carry them (see architecture.md Phase 1 step 4).
@@ -195,6 +205,7 @@ export const sessionToConfig = (session: SessionLike): SessionConfig => ({
   systemPromptOverride: session.systemPromptOverride,
   type: session.type,
   priority: session.priority,
+  responder: session.responder,
   permissionMode: session.permissionMode,
 })
 

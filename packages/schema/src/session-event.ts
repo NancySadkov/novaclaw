@@ -73,6 +73,20 @@ export const ModelSwitched = Event.define({
 })
 export type ModelSwitched = typeof ModelSwitched.Type
 
+// B10: live control handoff — who responds on OUR side of the conversation. "nova" =
+// the AI answers (default); "operator" = a human has taken control, so the runner stops
+// auto-responding (the user is an agent whose CPU is a human — the Vision made concrete).
+export const ResponderSwitched = Event.define({
+  type: "session.next.responder.switched",
+  ...options,
+  schema: {
+    ...Base,
+    messageID: SessionMessage.ID,
+    responder: Schema.Literals(["nova", "operator"]),
+  },
+})
+export type ResponderSwitched = typeof ResponderSwitched.Type
+
 export const Moved = Event.define({
   type: "session.next.moved",
   ...options,
@@ -463,6 +477,7 @@ export const DurableDefinitions = Event.inventory(
   Completed,
   AgentSwitched,
   ModelSwitched,
+  ResponderSwitched,
   Moved,
   Prompted,
   PromptAdmitted,
@@ -495,6 +510,7 @@ export const Definitions = Event.inventory(
   Completed,
   AgentSwitched,
   ModelSwitched,
+  ResponderSwitched,
   Moved,
   Prompted,
   PromptAdmitted,

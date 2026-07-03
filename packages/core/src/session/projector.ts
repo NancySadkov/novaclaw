@@ -56,6 +56,7 @@ function sessionRow(info: SessionV1.SessionInfo): typeof SessionTable.$inferInse
     system_prompt_override: info.systemPromptOverride,
     type: info.type,
     priority: info.priority,
+    responder: info.responder,
     permission_mode: info.permissionMode,
     result: info.result,
     version: info.version,
@@ -359,6 +360,15 @@ export const layer = Layer.effectDiscard(
           .pipe(Effect.orDie)
         yield* run(db, event)
       }),
+    )
+    // B10: the live control handoff — flip who answers on our side (nova ⇄ operator).
+    yield* events.project(SessionEvent.ResponderSwitched, (event) =>
+      db
+        .update(SessionTable)
+        .set({ responder: event.data.responder, time_updated: DateTime.toEpochMillis(event.data.timestamp) })
+        .where(eq(SessionTable.id, event.data.sessionID))
+        .run()
+        .pipe(Effect.orDie, Effect.andThen(run(db, event))),
     )
     yield* events.project(SessionEvent.Prompted, (event) =>
       Effect.gen(function* () {

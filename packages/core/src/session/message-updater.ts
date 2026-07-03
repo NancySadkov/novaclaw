@@ -123,6 +123,9 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
         )
       },
       "session.next.moved": () => Effect.void,
+      // B10: responder handoff is a control signal, not a transcript message — the
+      // projector writes the session column; nothing to append to the message log.
+      "session.next.responder.switched": () => Effect.void,
       "session.next.prompted": (event) => {
         return adapter.appendMessage(
           SessionMessage.User.make({

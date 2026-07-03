@@ -671,6 +671,11 @@ export const dict = {
   "session.revertDock.expand": "Expand rolled back messages",
   "session.revertDock.restore": "Restore message",
 
+  "session.responderDock.operator": "You have control",
+  "session.responderDock.operatorHint": "Nova is paused — you are responding in this conversation.",
+  "session.responderDock.handBack": "Hand back to Nova",
+  "session.responderDock.takeOver": "Take control",
+
   "session.new.title": "Build anything",
   "session.new.project.new": "New project",
   "session.new.project.search": "Search projects",

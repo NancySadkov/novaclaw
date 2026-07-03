@@ -26,6 +26,7 @@ export const Info = Schema.Struct({
   systemPromptOverride: Schema.String.pipe(optional),
   type: SessionType.Info.pipe(optional),
   priority: Schema.Finite.pipe(optional),
+  responder: Schema.Literals(["nova", "operator"]).pipe(optional),
   permissionMode: Schema.Literals(["plan", "ask", "surgical", "bypass", "yolo"]).pipe(optional),
   result: Schema.Unknown.pipe(optional),
   cost: Schema.Finite,

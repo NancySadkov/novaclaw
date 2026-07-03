@@ -57,6 +57,7 @@ export const SessionTable = sqliteTable(
     system_prompt_override: text(),
     type: text().$type<"interactive" | "sub-agent" | "auto-prompting" | "goal-oriented">(),
     priority: integer(),
+    responder: text().$type<"nova" | "operator">(),
     permission_mode: text().$type<"plan" | "ask" | "surgical" | "bypass" | "yolo">(),
     result: text({ mode: "json" }).$type<unknown>(),
     ...Timestamps,

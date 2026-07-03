@@ -149,6 +149,10 @@ export interface Interface {
     sessionID: SessionSchema.ID
     model: ModelV2.Ref
   }) => Effect.Effect<void, NotFoundError>
+  readonly switchResponder: (input: {
+    sessionID: SessionSchema.ID
+    responder: "nova" | "operator"
+  }) => Effect.Effect<void, NotFoundError>
   readonly prompt: (input: {
     id?: SessionMessage.ID
     sessionID: SessionSchema.ID
@@ -444,6 +448,19 @@ export const layer = Layer.effect(
           timestamp: yield* DateTime.now,
           model: input.model,
         })
+      }),
+      // B10: live control handoff — take over (operator) or hand back (nova). Handing back
+      // to nova WAKES the session so any input queued while the operator held control drains.
+      switchResponder: Effect.fn("V2Session.switchResponder")(function* (input) {
+        const session = yield* result.get(input.sessionID)
+        if ((session.responder ?? "nova") === input.responder) return
+        yield* events.publish(SessionEvent.ResponderSwitched, {
+          sessionID: input.sessionID,
+          messageID: SessionMessage.ID.create(),
+          timestamp: yield* DateTime.now,
+          responder: input.responder,
+        })
+        if (input.responder === "nova") yield* execution.wake(input.sessionID)
       }),
       compact: Effect.fn("V2Session.compact")(function* (input) {
         yield* result.get(input.sessionID)

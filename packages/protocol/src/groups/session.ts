@@ -209,6 +209,23 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
         ),
     )
     .add(
+      HttpApiEndpoint.post("session.switchResponder", "/api/session/:sessionID/responder", {
+        params: { sessionID: Session.ID },
+        payload: Schema.Struct({ responder: Schema.Literals(["nova", "operator"]) }),
+        success: HttpApiSchema.NoContent,
+        error: SessionNotFoundError,
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.switchResponder",
+            summary: "Switch session responder (B10 handoff)",
+            description:
+              "Take control (operator) so Nova stops auto-responding, or hand back (nova) so it resumes and drains queued input.",
+          }),
+        ),
+    )
+    .add(
       HttpApiEndpoint.post("session.prompt", "/api/session/:sessionID/prompt", {
         params: { sessionID: Session.ID },
         payload: Schema.Struct({

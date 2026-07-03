@@ -660,6 +660,19 @@ export const layer = Layer.effect(
       const hasSteer = yield* SessionInput.hasPending(db, input.sessionID, "steer")
       const hasQueue = hasSteer ? false : yield* SessionInput.hasPending(db, input.sessionID, "queue")
       if (!input.force && !hasSteer && !hasQueue) return
+      // B10: live control handoff — when a human operator has taken control, Nova does NOT
+      // auto-respond. Input still QUEUES durably (nothing lost); it drains the moment control
+      // is handed back to nova. Resolve via the config walk so a child inherits the parent's
+      // responder unless it overrides.
+      const handoff = yield* resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, input.sessionID, (id) =>
+        store.get(id as SessionSchema.ID),
+      )
+      if (handoff.responder === "operator") {
+        yield* Effect.logInfo("session under operator control — Nova is not responding", {
+          sessionID: input.sessionID,
+        })
+        return
+      }
       yield* failInterruptedTools(input.sessionID)
       // 1E: track which repeated-call loops we have already redirected this drain, so a
       // persistent loop is nudged once (not every turn). 1N/A2 adds a per-target failure-streak

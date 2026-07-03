@@ -123,3 +123,18 @@ export interface OfflineStatus {
 export function offlineStatus(server: ServerConnection.HttpBase, input: { directory: string }) {
   return call<OfflineStatus>(server, "GET", "shell/offline", input.directory)
 }
+
+// B10 — live control handoff. The V2 session endpoint is NOT in the generated SDK; call it
+// raw with the x-novaclaw-directory header (session-location routing) and tolerate 204.
+export async function switchResponder(
+  server: ServerConnection.HttpBase,
+  input: { directory: string; sessionID: string; responder: "nova" | "operator" },
+): Promise<void> {
+  const url = new URL(`api/session/${input.sessionID}/responder`, server.url.endsWith("/") ? server.url : `${server.url}/`)
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { ...headersFor(server), "x-novaclaw-directory": input.directory },
+    body: JSON.stringify({ responder: input.responder }),
+  })
+  if (!res.ok) throw new Error(`switchResponder failed: ${res.status} ${await res.text().catch(() => "")}`)
+}

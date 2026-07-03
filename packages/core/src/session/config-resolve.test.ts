@@ -12,6 +12,7 @@ import {
 const DEFAULTS: EffectiveConfig = {
   type: "interactive",
   priority: 0,
+  responder: "nova",
   permissionMode: "ask",
   permissionRules: [],
   introspection: false,
@@ -50,6 +51,14 @@ describe("resolveConfig — simple fields (undefined = inherit)", () => {
     expect(resolveConfig(DEFAULTS, [{ systemPromptOverride: "A" }, { systemPromptOverride: "B" }]).systemPromptOverride).toBe(
       "B",
     )
+  })
+
+  test("B10 responder: defaults to nova, inherits down the chain, child can override", () => {
+    expect(resolveConfig(DEFAULTS, []).responder).toBe("nova")
+    // A parent under operator control → a child with no responder inherits "operator".
+    expect(resolveConfig(DEFAULTS, [{ responder: "operator" }, {}]).responder).toBe("operator")
+    // …but the child can hand its own thread back to nova.
+    expect(resolveConfig(DEFAULTS, [{ responder: "operator" }, { responder: "nova" }]).responder).toBe("nova")
   })
 })
 

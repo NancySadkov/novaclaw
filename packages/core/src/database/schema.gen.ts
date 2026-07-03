@@ -209,6 +209,7 @@ export default {
           \`system_prompt_override\` text,
           \`type\` text,
           \`priority\` integer,
+          \`responder\` text,
           \`permission_mode\` text,
           \`result\` text,
           \`time_created\` integer NOT NULL,
