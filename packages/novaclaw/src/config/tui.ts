@@ -229,23 +229,28 @@ export const layer = Layer.effect(
     const directory = yield* CurrentWorkingDirectory
     const npm = yield* Npm.Service
     const data = yield* loadState({ directory })
-    const deps = yield* Effect.forEach(
-      data.dirs,
-      (dir) =>
-        npm
-          .install(dir, {
-            add: [
-              {
-                name: "@novaclaw/plugin",
-                version: InstallationLocal ? undefined : InstallationVersion,
-              },
-            ],
-          })
-          .pipe(Effect.forkScoped),
-      {
-        concurrency: "unbounded",
-      },
-    )
+    // Opt-in only (see Flag.NOVACLAW_INSTALL_PLUGIN_TYPES): the package is not on
+    // npm, so this install 404'd at every boot since the rename. Empty deps keep
+    // waitForDependencies a no-op.
+    const deps = Flag.NOVACLAW_INSTALL_PLUGIN_TYPES
+      ? yield* Effect.forEach(
+          data.dirs,
+          (dir) =>
+            npm
+              .install(dir, {
+                add: [
+                  {
+                    name: "@novaclaw/plugin",
+                    version: InstallationLocal ? undefined : InstallationVersion,
+                  },
+                ],
+              })
+              .pipe(Effect.forkScoped),
+          {
+            concurrency: "unbounded",
+          },
+        )
+      : []
 
     const get = Effect.fn("TuiConfig.get")(() => Effect.succeed(data.config))
     const pluginOrigins = Effect.fn("TuiConfig.pluginOrigins")(() => Effect.succeed(data.pluginOrigins))

@@ -36,6 +36,13 @@ export const Flag = {
   NOVACLAW_SHOW_TTFD: truthy("NOVACLAW_SHOW_TTFD"),
   NOVACLAW_DISABLE_AUTOCOMPACT: truthy("NOVACLAW_DISABLE_AUTOCOMPACT"),
   NOVACLAW_DISABLE_MODELS_FETCH: truthy("NOVACLAW_DISABLE_MODELS_FETCH"),
+  // Opt-IN: npm-install `@novaclaw/plugin` into each `.novaclaw` config dir so user
+  // plugin/tool files can VALUE-import it. Default OFF: the package is not published
+  // to npm (post-rename), so the fetch is a guaranteed 404 at every boot — and a
+  // local-first product should make no registry fetches at startup (OFF-B layer 8).
+  // Type-only imports need no install (bun erases them). Re-enable by default once
+  // the package is published or bundled as a local tarball.
+  NOVACLAW_INSTALL_PLUGIN_TYPES: truthy("NOVACLAW_INSTALL_PLUGIN_TYPES"),
   NOVACLAW_DISABLE_MOUSE: truthy("NOVACLAW_DISABLE_MOUSE"),
   NOVACLAW_FAKE_VCS: env("NOVACLAW_FAKE_VCS"),
   NOVACLAW_SERVER_PASSWORD: env("NOVACLAW_SERVER_PASSWORD"),
