@@ -110,11 +110,16 @@ const live: Layer.Layer<
         ...input,
         // The B3 persona baseline + the B4 user-profile layer (persona → profile →
         // agent prompt) — both skipped for utility (small-model) calls like titles.
+        // Legacy V1 has no `profile` tool, so the profile is injected here (its only
+        // delivery on this path). Sharing is opt-out (`enabled !== false`) so a profile
+        // set before the switch existed still works; an explicit off suppresses it.
         persona: input.small
           ? undefined
           : [
               Persona.resolve(cfg.persona, { notesDir: path.join(Global.Path.data, "notes") }),
-              UserProfile.resolve(cfg.user_profile, { fallbackName: cfg.username }),
+              cfg.user_profile?.enabled !== false
+                ? UserProfile.resolve(cfg.user_profile, { fallbackName: cfg.username })
+                : undefined,
             ]
               .filter((part): part is string => part !== undefined)
               .join("\n\n") || undefined,

@@ -207,13 +207,16 @@ export const Info = Schema.Struct({
   ).annotate({ description: "Affective mode — emotion-modulated sampling + loop-breaking nudges" }),
   user_profile: Schema.optional(
     Schema.Struct({
+      enabled: Schema.optional(Schema.Boolean).annotate({
+        description: "When true, share this profile with the model; off = the profile is not shared (B4)",
+      }),
       name: Schema.optional(Schema.String).annotate({ description: "The user's name" }),
       about: Schema.optional(Schema.String).annotate({
         description: "Background / 'about me' the assistant should know (role, expertise, preferences)",
       }),
     }),
   ).annotate({
-    description: "User profile injected after the persona baseline so the model knows who it is helping (B4)",
+    description: "User profile the model can read (name + background); shared only when enabled (B4)",
   }),
   offline: Schema.optional(Schema.Boolean).annotate({
     description:

@@ -1,4 +1,4 @@
-import { Component, createMemo, createSignal, For, onMount, Show } from "solid-js"
+import { Component, createMemo, createSignal, For, onCleanup, onMount, Show } from "solid-js"
 import {
   DragDropProvider,
   DragDropSensors,
@@ -47,8 +47,9 @@ function applyOrder(apps: HomeApp[], order: string[]): HomeApp[] {
 
 // The sortable wrapper OWNS the grid placement (span classes must live on the
 // grid item, which is now this div, not the tile's inner button). Drag uses the
-// pointer sensor's activation distance, so plain clicks still open the app.
-const SortableTile: Component<{ app: HomeApp }> = (props) => {
+// pointer sensor's activation distance, so plain clicks still open the app. The
+// `shouldSuppressOpen` guard swallows the trailing click a drag-release emits.
+const SortableTile: Component<{ app: HomeApp; shouldSuppressOpen: () => boolean }> = (props) => {
   // eslint-disable-next-line solid/reactivity -- sortable identity is stable per mount
   const sortable = createSortable(props.app.id)
   return (
@@ -63,7 +64,7 @@ const SortableTile: Component<{ app: HomeApp }> = (props) => {
         "opacity-30": sortable.isActiveDraggable,
       }}
     >
-      <AppTile app={props.app} />
+      <AppTile app={props.app} shouldSuppressOpen={props.shouldSuppressOpen} />
     </div>
   )
 }
@@ -104,6 +105,48 @@ export const HomeScreen: Component = () => {
   const [page, setPage] = createSignal(0)
   let scroller: HTMLDivElement | undefined
   const dialog = useDialog()
+
+  // A drag past the sensor's activation threshold still emits a trailing `click` on the tile when the
+  // pointer is released over it — which would OPEN the app the user was only reordering. We detect a
+  // real drag by the pointer's TRAVEL and swallow that one trailing click. We deliberately do NOT arm on
+  // solid-dnd's onDragStart: its pointer sensor also starts a drag after a stationary 250ms hold (zero
+  // movement), and a slow/held tap must still open. `draggedClick` is cleared on the macrotask AFTER
+  // release — the compatibility click fires synchronously first (so it's suppressed), while a later
+  // keyboard (Enter/Space) activation, which has no preceding pointer move, is never swallowed.
+  const DRAG_TRAVEL_PX = 10 // matches solid-dnd's pointer activation distance
+  let pointerOrigin: { x: number; y: number } | null = null
+  let draggedClick = false
+  const shouldSuppressOpen = () => draggedClick
+
+  onMount(() => {
+    if (typeof window === "undefined") return
+    const onDown = (e: PointerEvent) => {
+      pointerOrigin = { x: e.clientX, y: e.clientY }
+      draggedClick = false
+    }
+    const onMove = (e: PointerEvent) => {
+      if (pointerOrigin && Math.hypot(e.clientX - pointerOrigin.x, e.clientY - pointerOrigin.y) > DRAG_TRAVEL_PX)
+        draggedClick = true
+    }
+    const onUp = () => {
+      pointerOrigin = null
+      // Cleared next macrotask: the trailing click (if any) has already fired and been suppressed by now.
+      setTimeout(() => {
+        draggedClick = false
+      }, 0)
+    }
+    // Capture phase + window so we see the whole gesture regardless of pointer capture the sensor sets.
+    window.addEventListener("pointerdown", onDown, true)
+    window.addEventListener("pointermove", onMove, true)
+    window.addEventListener("pointerup", onUp, true)
+    window.addEventListener("pointercancel", onUp, true)
+    onCleanup(() => {
+      window.removeEventListener("pointerdown", onDown, true)
+      window.removeEventListener("pointermove", onMove, true)
+      window.removeEventListener("pointerup", onUp, true)
+      window.removeEventListener("pointercancel", onUp, true)
+    })
+  })
 
   // B5 drag-to-reorder: recompute the full order from the current arrangement,
   // move dragged-before-target, persist. Reordering is always live (pointer
@@ -169,7 +212,7 @@ export const HomeScreen: Component = () => {
                       would overflow a 360px viewport and clip the left column unreachably (centered flex
                       overflow has no start-edge scroll). Tiles are w-full inside their track. */}
                   <div class="grid w-full [grid-template-columns:repeat(4,minmax(0,5rem))] sm:[grid-template-columns:repeat(5,minmax(0,5rem))] md:[grid-template-columns:repeat(6,minmax(0,5rem))] gap-x-4 sm:gap-x-7 gap-y-9 px-4 py-8 pt-2 sm:px-8 max-w-[62rem] justify-center">
-                    <For each={pageApps}>{(app) => <SortableTile app={app} />}</For>
+                    <For each={pageApps}>{(app) => <SortableTile app={app} shouldSuppressOpen={shouldSuppressOpen} />}</For>
                   </div>
                 </div>
               )}

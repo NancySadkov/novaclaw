@@ -7,6 +7,8 @@ import { usePlatform } from "@/context/platform"
 import { useExpertise } from "@/context/expertise"
 import type { ExpertiseLevel } from "@/context/settings"
 import { SettingsGeneralV2 } from "./general"
+import { SettingsProfileV2 } from "./profile"
+import { SettingsAboutV2 } from "./about"
 import { SettingsAppearanceV2 } from "./appearance"
 import { SettingsKeybinds } from "../settings-keybinds"
 import { SettingsModelsV2 } from "./models"
@@ -58,6 +60,12 @@ export const DialogSettings: Component<{
                     <TabsV2.Trigger value="general">
                       <Icon name="sliders" />
                       {language.t("settings.tab.general")}
+                    </TabsV2.Trigger>
+                    {/* Profile sits high — it's a friendly, normal-level "tell the assistant about you"
+                        surface, gated to a tool by the user's own consent switch. */}
+                    <TabsV2.Trigger value="profile">
+                      <Icon name="user" />
+                      {language.t("settings.tab.profile")}
                     </TabsV2.Trigger>
                     {/* Models sits right under General — adding/configuring/importing models is the
                         high-value task while local hardware can't run the best model out of the box. */}
@@ -117,6 +125,10 @@ export const DialogSettings: Component<{
                       <Icon name="reset" />
                       {language.t("settings.tab.recovery")}
                     </TabsV2.Trigger>
+                    <TabsV2.Trigger value="about">
+                      <Icon name="info" />
+                      {language.t("settings.tab.about")}
+                    </TabsV2.Trigger>
                   </div>
                 </div>
               </div>
@@ -129,6 +141,9 @@ export const DialogSettings: Component<{
         </TabsV2.List>
         <TabsV2.Content value="general" class="settings-v2-panel">
           <SettingsGeneralV2 sessionID={props.sessionID} />
+        </TabsV2.Content>
+        <TabsV2.Content value="profile" class="settings-v2-panel">
+          <SettingsProfileV2 />
         </TabsV2.Content>
         <TabsV2.Content value="appearance" class="settings-v2-panel">
           <SettingsAppearanceV2 />
@@ -169,6 +184,9 @@ export const DialogSettings: Component<{
         </Show>
         <TabsV2.Content value="recovery" class="settings-v2-panel">
           <SettingsRecoveryV2 />
+        </TabsV2.Content>
+        <TabsV2.Content value="about" class="settings-v2-panel">
+          <SettingsAboutV2 />
         </TabsV2.Content>
       </TabsV2>
     </Dialog>

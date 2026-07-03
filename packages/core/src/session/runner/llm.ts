@@ -14,7 +14,6 @@ import { AgentV2 } from "../../agent"
 import { Config } from "../../config"
 import { Global } from "../../global"
 import { Persona } from "../../persona"
-import { UserProfile } from "../../user-profile"
 import { Database } from "../../database/database"
 import { EventV2 } from "../../event"
 import { Location } from "../../location"
@@ -146,11 +145,9 @@ export const layer = Layer.effect(
     const personaBaseline = Persona.resolve(Config.latest(configEntries, "persona"), {
       notesDir: path.join(Global.Path.data, "notes"),
     })
-    // B4: the user-profile layer — persona → USER PROFILE → per-session override →
-    // agent-system → baseline. Falls back to the older `username` field for the name.
-    const userProfileBaseline = UserProfile.resolve(Config.latest(configEntries, "user_profile"), {
-      fallbackName: Config.latest(configEntries, "username"),
-    })
+    // B4: the user profile is no longer injected into the system prompt here. When the user enables it,
+    // the model reads it ON DEMAND via the `profile` tool (tool/profile.ts) — keeping local-model
+    // context lean. Disabled = the profile is simply not shared.
     // QE (QE-B): the deterministic 5-step verify loop over the PROVISIONED commands.
     // Default OFF; failures steer the agent to fix and re-run (observation, never a halt).
     const appProcess = yield* AppProcess.Service
@@ -397,7 +394,7 @@ export const layer = Layer.effect(
       const fullRequest = LLM.request({
         model,
         providerOptions: { openai: { promptCacheKey } },
-        system: [personaBaseline, userProfileBaseline, config.systemPromptOverride, agent.info?.system, system.baseline]
+        system: [personaBaseline, config.systemPromptOverride, agent.info?.system, system.baseline]
           .filter((part): part is string => part !== undefined && part.length > 0)
           .map(SystemPart.make),
         messages: [...toLLMMessages(context, model), ...(isLastStep ? [Message.assistant(MAX_STEPS_PROMPT)] : [])],

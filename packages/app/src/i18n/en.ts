@@ -915,10 +915,12 @@ export const dict = {
   "settings.section.server": "Server",
   "settings.section.safety": "Safety",
   "settings.tab.general": "General",
+  "settings.tab.profile": "Profile",
   "settings.tab.appearance": "Appearance",
   "settings.tab.instances": "Instances",
   "settings.tab.shortcuts": "Shortcuts",
   "settings.tab.recovery": "Recovery",
+  "settings.tab.about": "About",
 
   "settings.recovery.row.resetUi.title": "Reset appearance and layout",
   "settings.recovery.row.resetUi.description": "Reset how NovaClaw looks and is laid out back to the defaults — theme, the welcome tour, and view options. Your chats, files, and connected models are kept.",
@@ -1262,7 +1264,7 @@ export const dict = {
   "settings.quality.command.lint.description": "Lint/structure check at the same turn-end gate",
   "settings.systemPrompt.title": "System Prompt",
   "settings.systemPrompt.description":
-    "The assistant's composed prompt, in layers: the persona baseline, your user profile, and project instructions. The shipped base is never forked — clearing a field restores the default.",
+    "The assistant's composed prompt, in layers: the persona baseline and project instructions. The shipped base is never forked — clearing a field restores the default.",
   "settings.systemPrompt.toast.failed": "Saving system-prompt settings failed",
   "settings.systemPrompt.persona.title": "Persona",
   "settings.systemPrompt.persona.enabled.title": "Persona baseline",
@@ -1284,6 +1286,27 @@ export const dict = {
   "settings.systemPrompt.instructions.description":
     "Paths or URLs of instruction files loaded into every session (one per line). AGENTS.md files are discovered automatically.",
   "settings.systemPrompt.instructions.placeholder": "docs/style-guide.md",
+  "settings.profile.title": "Profile",
+  "settings.profile.description":
+    "Tell the assistant who you are. When enabled, it can look your profile up on demand through a tool — your name and background stay out of every prompt until it actually needs them.",
+  "settings.profile.toast.failed": "Saving your profile failed",
+  "settings.profile.enabled.title": "Share my profile with the assistant",
+  "settings.profile.enabled.description":
+    "On when you've filled in your profile: the assistant can call a tool to read the details below on demand. Turn it off to keep them private.",
+  "settings.profile.name.title": "Your name",
+  "settings.profile.name.description": "What the assistant should call you",
+  "settings.profile.name.placeholder": "e.g. Nancy",
+  "settings.profile.about.title": "About you",
+  "settings.profile.about.description":
+    "Anything worth knowing: your role, expertise, the projects you work on, how you like answers.",
+  "settings.profile.about.placeholder": "e.g. systems programmer building a local-LLM agent OS; prefers concise, direct answers",
+  "settings.about.author": "by Nancy Sadkov",
+  "settings.about.credits.title": "Built with open-source software",
+  "settings.about.credits.description":
+    "NovaClaw stands on these projects, used under their respective licenses. Thank you to their authors.",
+  "settings.about.basedOn": "Part of NovaClaw is based on opencode (MIT) — © 2025 opencode.",
+  "settings.about.more":
+    "…and many other open-source packages, each under its own license — see the NOTICE file for the full list.",
   "settings.introspection.title": "Introspection",
   "settings.introspection.description":
     "A judge model periodically checks whether a running session is stuck and, when it is, injects a course-correcting note.",

@@ -91,6 +91,10 @@ export class Info extends Schema.Class<Info>("Config.Info")({
     description: "Persona baseline prepended to every agent's system prompt (B3)",
   }),
   user_profile: Schema.Struct({
+    enabled: Schema.Boolean.pipe(Schema.optional).annotate({
+      description:
+        "When true, the assistant may look up this profile on demand via the `profile` tool (instead of it being absent). Off = the profile is not shared with the model (B4).",
+    }),
     name: Schema.String.pipe(Schema.optional).annotate({ description: "The user's name" }),
     about: Schema.String.pipe(Schema.optional).annotate({
       description: "Background / 'about me' the assistant should know (role, expertise, preferences)",
@@ -98,7 +102,8 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   })
     .pipe(Schema.optional)
     .annotate({
-      description: "User profile injected after the persona baseline so the model knows who it is helping (B4)",
+      description:
+        "User profile the model can read (name + background). Delivered on demand through the `profile` tool when enabled (B4)",
     }),
   introspection: ConfigIntrospection.Info.pipe(Schema.optional).annotate({
     description: "Introspection mode — a judge model periodically checks whether the session is stuck (P2)",

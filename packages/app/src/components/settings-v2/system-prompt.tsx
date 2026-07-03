@@ -11,22 +11,17 @@ import "./settings-v2.css"
 
 // B4 — the System Prompt settings tab. Exposes the composed prompt's EDITABLE
 // layers: (1) persona — rename the agent (Nova→anything) + replace the B3 base
-// prompt wholesale; (2) user profile — name + background injected after the
-// persona so the model knows who it is helping; (3) project instructions — the
-// `instructions[]` paths/URLs already honored by the runtime, surfaced here.
-// The shipped base stays immutable: editing here writes CONFIG overrides
-// (persona.prompt replaces at compose time; clearing the field restores the
-// canonical default). Persisting MUST go through serverSync().updateConfig.
+// prompt wholesale; (2) project instructions — the `instructions[]` paths/URLs
+// already honored by the runtime, surfaced here. (The user profile lives in its
+// own Profile tab now — it's delivered on demand via the `profile` tool, not
+// injected here.) The shipped base stays immutable: editing here writes CONFIG
+// overrides (persona.prompt replaces at compose time; clearing the field
+// restores the canonical default). Persisting MUST go through updateConfig.
 
 interface PersonaConfig {
   enabled?: boolean
   name?: string
   prompt?: string
-}
-
-interface UserProfileConfig {
-  name?: string
-  about?: string
 }
 
 // Placeholder mirrors core/src/persona.ts defaultPrompt() so an empty field
@@ -45,11 +40,9 @@ export const SettingsSystemPromptV2: Component = () => {
   const config = () =>
     serverSync().data.config as {
       persona?: PersonaConfig
-      user_profile?: UserProfileConfig
       instructions?: string[]
     }
   const persona = (): PersonaConfig => config().persona ?? {}
-  const profile = (): UserProfileConfig => config().user_profile ?? {}
   const instructions = (): string[] => config().instructions ?? []
 
   const failed = (error: unknown) =>
@@ -66,13 +59,6 @@ export const SettingsSystemPromptV2: Component = () => {
     const next = { ...persona(), ...patch }
     await serverSync()
       .updateConfig({ persona: next } as never)
-      .catch(failed)
-  }
-
-  async function persistProfile(patch: Partial<UserProfileConfig>) {
-    const next = { ...profile(), ...patch }
-    await serverSync()
-      .updateConfig({ user_profile: next } as never)
       .catch(failed)
   }
 
@@ -134,39 +120,6 @@ export const SettingsSystemPromptV2: Component = () => {
             spellcheck={false}
             onChange={(event) => void persistPersona({ prompt: event.currentTarget.value.trim() })}
             aria-label={language.t("settings.systemPrompt.persona.prompt.title")}
-          />
-        </div>
-
-        <div class="settings-v2-section">
-          <h3 class="settings-v2-section-title">{language.t("settings.systemPrompt.profile.title")}</h3>
-          <SettingsListV2>
-            <SettingsRowV2
-              title={language.t("settings.systemPrompt.profile.name.title")}
-              description={language.t("settings.systemPrompt.profile.name.description")}
-            >
-              <div class="w-full sm:w-[200px]">
-                <TextInputV2
-                  type="text"
-                  appearance="base"
-                  value={profile().name ?? ""}
-                  placeholder={language.t("settings.systemPrompt.profile.name.placeholder")}
-                  spellcheck={false}
-                  autocomplete="off"
-                  onChange={(event) => void persistProfile({ name: event.currentTarget.value.trim() })}
-                  aria-label={language.t("settings.systemPrompt.profile.name.title")}
-                />
-              </div>
-            </SettingsRowV2>
-          </SettingsListV2>
-          <p class="settings-v2-field-description">{language.t("settings.systemPrompt.profile.about.description")}</p>
-          <TextareaV2
-            class="settings-v2-textarea"
-            rows={4}
-            value={profile().about ?? ""}
-            placeholder={language.t("settings.systemPrompt.profile.about.placeholder")}
-            spellcheck={false}
-            onChange={(event) => void persistProfile({ about: event.currentTarget.value.trim() })}
-            aria-label={language.t("settings.systemPrompt.profile.about.title")}
           />
         </div>
 

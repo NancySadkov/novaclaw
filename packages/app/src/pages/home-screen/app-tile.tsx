@@ -18,17 +18,24 @@ const tileStyle = (app: HomeApp) => ({
   "--tile-glow": `color-mix(in oklab, ${app.accent} 55%, transparent)`,
 })
 
-export const AppTile: Component<{ app: HomeApp }> = (props) => (
-  <Show when={props.app.hero} fallback={<RegularTile app={props.app} />}>
-    <HeroTile app={props.app} />
+// `shouldSuppressOpen` lets the home screen swallow the trailing click that a pointer emits when a
+// drag-to-reorder is released over the tile — otherwise reordering an app would also open it.
+export const AppTile: Component<{ app: HomeApp; shouldSuppressOpen?: () => boolean }> = (props) => (
+  <Show when={props.app.hero} fallback={<RegularTile app={props.app} shouldSuppressOpen={props.shouldSuppressOpen} />}>
+    <HeroTile app={props.app} shouldSuppressOpen={props.shouldSuppressOpen} />
   </Show>
 )
 
-const RegularTile: Component<{ app: HomeApp }> = (props) => (
+const openUnlessDragged = (props: { app: HomeApp; shouldSuppressOpen?: () => boolean }) => {
+  if (props.shouldSuppressOpen?.()) return
+  props.app.open()
+}
+
+const RegularTile: Component<{ app: HomeApp; shouldSuppressOpen?: () => boolean }> = (props) => (
   <button
     type="button"
     class="group flex flex-col items-center gap-2.5 w-full max-w-[5rem] select-none focus:outline-none"
-    onClick={() => props.app.open()}
+    onClick={() => openUnlessDragged(props)}
     aria-label={props.app.title}
     title={props.app.subtitle}
   >
@@ -46,11 +53,11 @@ const RegularTile: Component<{ app: HomeApp }> = (props) => (
   </button>
 )
 
-const HeroTile: Component<{ app: HomeApp }> = (props) => (
+const HeroTile: Component<{ app: HomeApp; shouldSuppressOpen?: () => boolean }> = (props) => (
   <button
     type="button"
     class="group flex flex-col w-full h-full select-none focus:outline-none"
-    onClick={() => props.app.open()}
+    onClick={() => openUnlessDragged(props)}
     aria-label={props.app.title}
   >
     {/* The grid span (col-span/row-span) lives on the SortableTile wrapper — this inner button just

@@ -106,6 +106,8 @@ const icons = {
   cpu: `<rect x="5.5" y="5.5" width="9" height="9" rx="1" stroke="currentColor"/><rect x="8.25" y="8.25" width="3.5" height="3.5" rx="0.5" stroke="currentColor"/><path d="M8 5.5V3M12 5.5V3M8 17V14.5M12 17V14.5M14.5 8H17M14.5 12H17M3 8H5.5M3 12H5.5" stroke="currentColor" stroke-linecap="round"/>`,
   "arrow-undo-down": `<path d="M4.08333 11.0859L1.75 8.7526L4.08333 6.41927M2.33333 8.7526L12.5417 8.7526L12.5417 3.21094L7 3.21094" stroke="currentColor" stroke-width="1" stroke-linecap="square"/>`,
   palette: `<path d="M10 3C6.13 3 3 6.13 3 10s3.13 7 7 7c.83 0 1.5-.67 1.5-1.5 0-.39-.15-.74-.39-1.01-.23-.24-.36-.55-.36-.99 0-.83.67-1.5 1.5-1.5H13c2.21 0 4-1.79 4-4 0-3.31-3.13-6-7-6Z" stroke="currentColor" stroke-linejoin="round"/><circle cx="6.75" cy="10" r="1" fill="currentColor"/><circle cx="8.5" cy="6.5" r="1" fill="currentColor"/><circle cx="12.5" cy="7" r="1" fill="currentColor"/>`,
+  user: `<circle cx="10" cy="6.66667" r="3.33333" stroke="currentColor"/><path d="M3.75 16.6667C3.75 13.1499 6.60051 10.4167 10 10.4167C13.3995 10.4167 16.25 13.1499 16.25 16.6667" stroke="currentColor" stroke-linecap="square"/>`,
+  info: `<circle cx="10" cy="10" r="7.5" stroke="currentColor"/><path d="M10 9.16667V13.75" stroke="currentColor" stroke-linecap="square"/><path d="M10 6.45833V6.66667" stroke="currentColor" stroke-linecap="round"/>`,
 }
 
 export type IconName = keyof typeof icons

@@ -9,6 +9,8 @@ export * as UserProfile from "./user-profile"
 
 /** The user_profile block of the user config (V1 + V2 carry the same shape). */
 export interface Config {
+  /** Master switch — when true the profile is shared with the model (V2: via the `profile` tool). */
+  readonly enabled?: boolean
   readonly name?: string
   readonly about?: string
 }
