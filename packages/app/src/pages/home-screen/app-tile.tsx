@@ -49,10 +49,12 @@ const RegularTile: Component<{ app: HomeApp }> = (props) => (
 const HeroTile: Component<{ app: HomeApp }> = (props) => (
   <button
     type="button"
-    class="group col-span-2 md:col-span-3 row-span-2 flex flex-col w-full h-full select-none focus:outline-none"
+    class="group flex flex-col w-full h-full select-none focus:outline-none"
     onClick={() => props.app.open()}
     aria-label={props.app.title}
   >
+    {/* The grid span (col-span/row-span) lives on the SortableTile wrapper — this inner button just
+        fills it (w-full h-full). Don't re-declare the span here (dead classes — L7). */}
     <div
       class="relative flex flex-col items-start justify-between w-full h-full min-h-[11.5rem] rounded-[1.75rem] p-6 shadow-[var(--v2-elevation-floating)] ring-1 ring-white/20 transition-all duration-150 group-hover:-translate-y-1 group-hover:shadow-[0_14px_40px_var(--tile-glow),var(--v2-elevation-floating)] group-active:scale-[0.98] group-focus-visible:ring-2 group-focus-visible:ring-[var(--v2-border-border-focus)] after:absolute after:inset-0 after:rounded-[inherit] after:bg-gradient-to-b after:from-white/25 after:via-white/0 after:to-black/10 after:pointer-events-none"
       style={tileStyle(props.app)}

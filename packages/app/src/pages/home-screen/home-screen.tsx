@@ -52,9 +52,12 @@ const SortableTile: Component<{ app: HomeApp }> = (props) => {
   // eslint-disable-next-line solid/reactivity -- sortable identity is stable per mount
   const sortable = createSortable(props.app.id)
   return (
+    // touch-auto (not touch-none): a touch starting on a tile must still pan the snap pages / vertical
+    // list — the iOS-launcher metaphor. Mouse drag-reorder is unaffected (touch-action ignores mouse);
+    // touch reorder yields to scrolling, which is the right trade for a launcher (uix.md §3.1 L1).
     <div
       use:sortable
-      class="touch-none"
+      class="touch-auto"
       classList={{
         "col-span-2 md:col-span-3 row-span-2": !!props.app.hero,
         "opacity-30": sortable.isActiveDraggable,

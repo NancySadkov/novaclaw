@@ -12,8 +12,9 @@ import type { HomeApp } from "./registry"
 //
 // App-set decisions (2026-07-01, refined 2026-07-02): there is NO "New Chat" tile — new sessions live
 // inside the Chats app, which is the HERO tile (the one eye-anchor; everything else is done through
-// chat with an agent). Models + Devices are Settings tabs, not home apps. Placeholder apps
-// (Notes / Search / Terminal) open a self-documenting panel that teaches the chat-first model.
+// chat with an agent). Models + Devices are Settings tabs, not home apps. Notes / Files / Trash /
+// Processes route to real pages/dialogs; only Search / Terminal remain placeholders (a self-documenting
+// panel that teaches the chat-first model).
 //
 // Tile palette: gold is reserved for the hero (the single warm accent on the cool purple field —
 // that contrast is what guides the eye); every other tile gets a cool hue so none competes.
@@ -87,7 +88,8 @@ export function useBuiltinApps(): () => HomeApp[] {
       id: "trash",
       title: "Trash",
       icon: "trash",
-      accent: "#ef4444",
+      // Cool teal, not the old saturated red — gold is the ONLY warm accent (the hero). uix.md §3/P3.
+      accent: "#14b8a6",
       subtitle: "Restore anything deleted in the last 2 days",
       source: "builtin",
       open: () => navigate("/trash"),
@@ -96,7 +98,8 @@ export function useBuiltinApps(): () => HomeApp[] {
       id: "help",
       title: "Help",
       icon: "help",
-      accent: "#f472b6",
+      // Cool indigo, not the old pink — keeps the single-warm-accent discipline. uix.md §3/P3.
+      accent: "#6366f1",
       subtitle: "A short tour of what NovaClaw can do",
       source: "builtin",
       open: () => void dialog.show(() => <HelpTour />),

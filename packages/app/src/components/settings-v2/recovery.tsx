@@ -18,6 +18,7 @@ import "./settings-v2.css"
 const UI_PREF_TARGETS = [{ key: "settings.v3" }]
 const UI_PREF_RAW_KEYS = [
   HELP_SEEN_KEY,
+  "novaclaw.home.order", // home-screen ORDER_KEY — drag-reorder arrangement is a UI pref, so reset it too (L6)
   "novaclaw-theme-id",
   "novaclaw-color-scheme",
   "novaclaw-theme-css-light",

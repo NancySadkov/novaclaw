@@ -1,5 +1,6 @@
 import { createEffect, createMemo } from "solid-js"
 import { useNavigate } from "@solidjs/router"
+import { isIconName } from "@novaclaw/ui/icon"
 import { useGlobal } from "@/context/global"
 import { ServerConnection, useServer } from "@/context/server"
 import { useTabs } from "@/context/tabs"
@@ -45,7 +46,9 @@ export function useManifestApps(): () => HomeApp[] {
       (manifest): HomeApp => ({
         id: manifest.id,
         title: manifest.title,
-        icon: manifest.icon || DEFAULT_ICON,
+        // Validate the agent-supplied icon against the sprite — an unknown name would render a silent
+        // blank glyph, so fall back to a sensible default instead (L3).
+        icon: manifest.icon && isIconName(manifest.icon) ? manifest.icon : DEFAULT_ICON,
         accent: manifest.accent || DEFAULT_ACCENT,
         ...(manifest.subtitle ? { subtitle: manifest.subtitle } : {}),
         source: "agent",

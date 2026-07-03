@@ -152,7 +152,7 @@ export function NotesPage() {
   return (
     <div class="flex h-full flex-col bg-v2-background-bg-deep text-v2-text-text-base">
       <div class="flex items-center gap-3 border-b border-v2-border-border-base px-4 py-2.5">
-        <Icon name="edit" class="size-5 shrink-0 text-v2-text-text-muted" />
+        <Icon name="edit" size="normal" class="shrink-0 text-v2-text-text-muted" />
         <span class="text-[15px] font-semibold">{language.t("notes.title")}</span>
         <span class="min-w-0 flex-1 truncate text-xs text-v2-text-text-faint">{language.t("notes.hint")}</span>
         <Show when={current()}>

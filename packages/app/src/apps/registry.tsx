@@ -31,9 +31,19 @@ const [apps, setApps] = createSignal<readonly HomeApp[]>([])
 /** The apps registered at runtime (plugins / agents). The home screen merges these after the built-ins. */
 export const registeredApps = apps
 
+// The built-in app ids are reserved — a plugin/agent app can't shadow or duplicate them. Mirrors the
+// server guard (core/app-registry.ts RESERVED_IDS) so the browser path can't sneak one past it (L2).
+const RESERVED_IDS = new Set(["chats", "notes", "files", "processes", "search", "terminal", "trash", "help", "settings"])
+
 /** Register (or replace, by id) a dynamically-contributed app. */
 export function registerApp(app: HomeApp): void {
-  setApps((prev) => [...prev.filter((a) => a.id !== app.id), app])
+  if (RESERVED_IDS.has(app.id)) {
+    console.warn(`[apps] ignoring registerApp("${app.id}") — that id is reserved by a built-in app`)
+    return
+  }
+  // `hero` (the single 2×2 gold anchor) is a built-in privilege — never let a contributed app claim it.
+  const safe = app.hero ? { ...app, hero: false } : app
+  setApps((prev) => [...prev.filter((a) => a.id !== safe.id), safe])
 }
 
 /** Remove a previously registered app. */

@@ -106,6 +106,14 @@ const icons = {
   "arrow-undo-down": `<path d="M4.08333 11.0859L1.75 8.7526L4.08333 6.41927M2.33333 8.7526L12.5417 8.7526L12.5417 3.21094L7 3.21094" stroke="currentColor" stroke-width="1" stroke-linecap="square"/>`,
 }
 
+export type IconName = keyof typeof icons
+
+/** Runtime check that a (possibly untyped, e.g. agent/manifest-sourced) string is a real sprite name.
+ *  Guards against the silent-blank glyph when data supplies an unknown icon. */
+export function isIconName(name: string): name is IconName {
+  return Object.prototype.hasOwnProperty.call(icons, name)
+}
+
 const spriteID = "novaclaw-icon-sprite"
 const symbol = (name: keyof typeof icons) => `novaclaw-icon-${name}`
 let spriteInserted = false

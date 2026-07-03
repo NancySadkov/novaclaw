@@ -180,7 +180,7 @@ export function FilesPage() {
   return (
     <div class="flex h-full flex-col bg-v2-background-bg-deep text-v2-text-text-base">
       <div class="flex items-center gap-3 border-b border-v2-border-border-base px-4 py-2.5">
-        <Icon name="folder-add-left" class="size-5 shrink-0 text-v2-text-text-muted" />
+        <Icon name="folder-add-left" size="normal" class="shrink-0 text-v2-text-text-muted" />
         <span class="text-[15px] font-semibold">{language.t("files.title")}</span>
         <button type="button" class={btn} onClick={up} disabled={!parentDir(dir())}>
           {language.t("files.up")}
@@ -242,7 +242,7 @@ export function FilesPage() {
                       onClick={() => open(entry)}
                     >
                       <Show when={entry.type === "directory"} fallback={<span class="size-4 shrink-0" />}>
-                        <Icon name="folder" class="size-4 shrink-0 text-v2-text-text-muted" />
+                        <Icon name="folder" size="small" class="shrink-0 text-v2-text-text-muted" />
                       </Show>
                       <span class="truncate">{entry.name}</span>
                     </button>
@@ -254,7 +254,7 @@ export function FilesPage() {
                       aria-label={`${language.t("files.delete")} ${entry.name}`}
                       onClick={() => void doTrash(entry)}
                     >
-                      <Icon name="trash" class="size-4" />
+                      <Icon name="trash" size="small" />
                     </button>
                   </div>
                 )}
@@ -266,7 +266,7 @@ export function FilesPage() {
         <div class="flex w-1/2 min-w-0 flex-col">
           <Show when={showTrash()}>
             <div class="flex items-center gap-2 border-b border-v2-border-border-base px-4 py-2">
-              <Icon name="trash" class="size-4 shrink-0 text-v2-text-text-muted" />
+              <Icon name="trash" size="small" class="shrink-0 text-v2-text-text-muted" />
               <span class="min-w-0 flex-1 truncate text-sm font-medium">{language.t("files.trash")}</span>
               <span class="text-xs text-v2-text-text-faint">{language.t("files.trashHint")}</span>
             </div>
@@ -289,7 +289,7 @@ export function FilesPage() {
                     {(entry) => (
                       <div class="flex items-center gap-2 px-4 py-1.5 text-sm hover:bg-v2-background-bg-layer-02">
                         <Show when={entry.type === "directory"} fallback={<span class="size-4 shrink-0" />}>
-                          <Icon name="folder" class="size-4 shrink-0 text-v2-text-text-muted" />
+                          <Icon name="folder" size="small" class="shrink-0 text-v2-text-text-muted" />
                         </Show>
                         <span class="min-w-0 flex-1 truncate" title={entry.originalPath}>
                           {entry.originalPath}
