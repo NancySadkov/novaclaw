@@ -48,6 +48,8 @@ export interface Settings {
     mono: string
     sans: string
     terminal: string
+    // Color-scheme preset id (uix.md §7): "nova" (default gold/purple) | "summer" | "autumn".
+    appTheme: string
   }
   keybinds: Record<string, string>
   permissions: {
@@ -137,6 +139,7 @@ const defaultSettings: Settings = {
     mono: "",
     sans: "",
     terminal: "",
+    appTheme: "nova",
   },
   keybinds: {},
   permissions: {
@@ -308,6 +311,10 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         terminalFont: withFallback(() => store.appearance?.terminal, defaultSettings.appearance.terminal),
         setTerminalFont(value: string) {
           setStore("appearance", "terminal", value.trim() ? value : "")
+        },
+        appTheme: withFallback(() => store.appearance?.appTheme, defaultSettings.appearance.appTheme),
+        setAppTheme(value: string) {
+          setStore("appearance", "appTheme", value)
         },
       },
       keybinds: {

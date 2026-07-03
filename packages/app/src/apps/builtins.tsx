@@ -30,7 +30,9 @@ export function useBuiltinApps(): () => HomeApp[] {
       id: "chats",
       title: "Chats",
       icon: "speech-bubble",
-      accent: "#e7b62f",
+      // The hero's accent IS the preset's primary accent, so the one eye-anchor re-themes with the
+      // color scheme (gold on Nova, amber on Autumn, coral on Summer). uix.md §7.
+      accent: "var(--nc-accent-solid)",
       glyphTone: "dark",
       hero: true,
       subtitle: "Ask anything — your agents do the work",

@@ -1,0 +1,67 @@
+/* Summer preset (uix.md §7) — warm coral on a deep sea-teal field: one warm accent on a cool field,
+   the generalized one-eye-anchor rule. A dark preset (inherits Nova's dark elevation + state-chip
+   recipe); overrides only the hue-bearing tokens + the --nc-* accents. Selected via
+   body[data-new-layout][data-app-theme="summer"] (wins on specificity over the Nova base). */
+body[data-new-layout][data-app-theme="summer"] {
+  color-scheme: dark;
+
+  --nc-accent-solid: #ff7a59;
+  --nc-accent-gradient: linear-gradient(155deg, #ffa284, #ff7a59 55%, #e85a3c);
+  --nc-gold-gradient: var(--nc-accent-gradient);
+  --nc-ink: #0a2420;
+  --nc-aurora:
+    radial-gradient(110% 75% at 12% -8%, rgba(45, 180, 170, 0.26), transparent 62%),
+    radial-gradient(85% 70% at 100% 4%, rgba(255, 122, 89, 0.12), transparent 58%);
+
+  --v2-background-bg-deep: #08211f;
+  --v2-background-bg-base: #0e2e2b;
+  --v2-background-bg-layer-01: #143733;
+  --v2-background-bg-layer-02: #1b433e;
+  --v2-background-bg-layer-03: #235049;
+  --v2-background-bg-layer-04: #2c5d55;
+  --v2-background-bg-inverse: #e6f5f1;
+  --v2-background-bg-contrast: #cdece5;
+  --v2-background-bg-button-neutral: #143733;
+
+  --v2-text-text-base: #e9f6f3;
+  --v2-text-text-muted: #a6ccc5;
+  --v2-text-text-faint: #7ba099;
+  --v2-text-text-inverse: #0a2420;
+  --v2-text-text-contrast: #0a2420;
+  --v2-text-text-accent: #ff9576;
+  --v2-text-text-accent-hover: #ffb49c;
+  --v2-text-text-code-accent: #ff9576;
+
+  --v2-icon-icon-base: #bfe0d9;
+  --v2-icon-icon-muted: #7ba099;
+  --v2-icon-icon-inverse: #0a2420;
+  --v2-icon-icon-contrast: #0d2422;
+  --v2-icon-icon-accent: #ff9576;
+  --v2-icon-icon-accent-hover: #ffb49c;
+
+  --v2-border-border-muted: rgba(160, 230, 215, 0.08);
+  --v2-border-border-base: rgba(160, 230, 215, 0.15);
+  --v2-border-border-strong: rgba(160, 230, 215, 0.26);
+  --v2-border-border-inverse: rgba(8, 33, 31, 0.24);
+
+  --v2-overlay-simple-overlay-hover: rgba(200, 245, 236, 0.08);
+  --v2-overlay-simple-overlay-pressed: rgba(200, 245, 236, 0.14);
+  --v2-overlay-simple-overlay-scrim: rgba(4, 18, 16, 0.6);
+  --v2-overlay-simple-tab-active-scrim: #0e2e2b00;
+  --v2-overlay-simple-tab-hover-scrim: #1b433e00;
+  --v2-overlay-simple-tab-scrim: #08211f00;
+  --v2-overlay-gradient-depth-overlay-depth-top: rgba(233, 246, 243, 0.92);
+  --v2-overlay-gradient-depth-overlay-depth-bot: rgba(233, 246, 243, 0);
+
+  --v2-illustration-illustration-layer-01: #1b433e;
+  --v2-illustration-illustration-layer-02: #235049;
+  --v2-illustration-illustration-layer-03: #2c5d55;
+
+  --surface-base: #0e2e2b;
+  --surface-base-hover: #163b37;
+  --text-base: #e9f6f3;
+  --text-strong: #ffffff;
+  --text-weak: #a6ccc5;
+  --border-weak-base: rgba(160, 230, 215, 0.15);
+  --icon-base: #bfe0d9;
+}

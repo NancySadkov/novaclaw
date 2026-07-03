@@ -42,6 +42,7 @@ import { PermissionProvider } from "@/context/permission"
 import { PromptProvider } from "@/context/prompt"
 import { ServerConnection, ServerProvider, serverName, useServer } from "@/context/server"
 import { SettingsProvider, useSettings } from "@/context/settings"
+import { AppThemeEffect } from "@/context/app-theme"
 import { TerminalProvider } from "@/context/terminal"
 import { TabsProvider, useTabs, type DraftTab } from "@/context/tabs"
 import { SDKProvider, useSDK } from "@/context/sdk"
@@ -302,6 +303,7 @@ function SharedProviders(props: ParentProps) {
   return (
     <>
       <BodyDesignClass />
+      <AppThemeEffect />
       <CommandProvider>
         <HighlightsProvider>{props.children}</HighlightsProvider>
       </CommandProvider>

@@ -31,6 +31,7 @@ import {
 import { playSoundById, SOUND_OPTIONS } from "@/utils/sound"
 import { Link } from "../link"
 import { DialogExpertise } from "./dialog-expertise"
+import { ThemeSwatches } from "./parts/theme-swatches"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 import "./settings-v2.css"
@@ -529,6 +530,13 @@ export const SettingsGeneralV2: Component<{
       <h3 class="settings-v2-section-title">{language.t("settings.general.section.appearance")}</h3>
 
       <SettingsListV2>
+        <SettingsRowV2
+          title={language.t("settings.appearance.theme.title")}
+          description={language.t("settings.appearance.theme.description")}
+        >
+          <ThemeSwatches />
+        </SettingsRowV2>
+
         <SettingsRowV2
           title={language.t("settings.general.row.colorScheme.title")}
           description={language.t("settings.general.row.colorScheme.description")}

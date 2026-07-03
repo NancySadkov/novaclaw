@@ -936,6 +936,12 @@ export const dict = {
   "settings.desktop.wsl.description": "Run the NovaClaw server inside WSL on Windows.",
 
   "settings.general.section.appearance": "Appearance",
+  // Color-scheme presets (uix.md §7).
+  "settings.appearance.theme.title": "Color scheme",
+  "settings.appearance.theme.description": "Pick a palette. Each keeps one warm accent on a cool field.",
+  "settings.appearance.theme.nova": "Nova",
+  "settings.appearance.theme.summer": "Summer",
+  "settings.appearance.theme.autumn": "Autumn",
   "settings.general.section.advanced": "Advanced",
   "settings.general.section.notifications": "System notifications",
   "settings.general.section.updates": "Updates",
