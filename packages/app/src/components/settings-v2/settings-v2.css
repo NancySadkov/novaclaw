@@ -422,6 +422,36 @@
   color: var(--v2-text-text-base);
 }
 
+/* B15 — per-model probe button + result chip */
+.settings-v2-models-row-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.settings-v2-models-probe-result {
+  font-size: 12px;
+  font-weight: 440;
+  line-height: 1;
+  white-space: nowrap;
+  color: var(--v2-text-text-muted);
+}
+
+.settings-v2-models-probe-result[data-status="ok"] {
+  color: var(--v2-state-success-text, #22c55e);
+}
+
+.settings-v2-models-probe-result[data-status="unreachable"],
+.settings-v2-models-probe-result[data-status="auth"],
+.settings-v2-models-probe-result[data-status="error"] {
+  color: var(--v2-state-danger-text, #ef4444);
+}
+
+.settings-v2-models-probe-result[data-status="model-missing"],
+.settings-v2-models-probe-result[data-status="no-url"] {
+  color: var(--v2-state-warning-text, #eab308);
+}
+
 .settings-v2-shortcuts .settings-v2-section {
   gap: 16px;
 }

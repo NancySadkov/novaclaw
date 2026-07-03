@@ -1,13 +1,17 @@
 import { useFilteredList } from "@novaclaw/ui/hooks"
 import { ProviderIcon } from "@novaclaw/ui/provider-icon"
+import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
 import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
-import { type Component, For, Show } from "solid-js"
+import { type Component, For, Show, createMemo, createResource, createSignal } from "solid-js"
+import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
 import { useModels } from "@/context/models"
+import { useServer } from "@/context/server"
 import { popularProviders } from "@/hooks/use-providers"
+import { providerProbe, type ProbeResult } from "@/utils/fs-api"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 import "./settings-v2.css"
@@ -16,9 +20,66 @@ type ModelItem = ReturnType<ReturnType<typeof useModels>["list"]>[number]
 
 const PROVIDER_ICON_SIZE = 16
 
+// B15 — one-line human rendering of a probe outcome (the config-drift killer: "cannot
+// connect" mysteries become "unreachable" / "auth failed" / "not on server" at a glance).
+export function probeLabel(result: ProbeResult, t: (key: string) => string): string {
+  switch (result.status) {
+    case "ok": {
+      const latency = result.latencyMs === undefined ? "" : ` · ${result.latencyMs} ms`
+      const window = result.window === undefined ? "" : ` · ${t("settings.models.probe.window")} ${Math.round(result.window / 1024)}k`
+      return `${t("settings.models.probe.ok")}${latency}${window}`
+    }
+    case "unreachable":
+      return t("settings.models.probe.unreachable")
+    case "auth":
+      return t("settings.models.probe.auth")
+    case "model-missing":
+      return t("settings.models.probe.missing")
+    case "no-url":
+      return t("settings.models.probe.noUrl")
+    case "error":
+      return `${t("settings.models.probe.error")}${result.detail ? ` (${result.detail})` : ""}`
+  }
+}
+
 export const SettingsModelsV2: Component = () => {
   const language = useLanguage()
   const models = useModels()
+  const global = useGlobal()
+  const server = useServer()
+
+  // B15 — probe plumbing. Unlike the global trash store, provider config is DIRECTORY-scoped
+  // (a project's novaclaw.jsonc is only visible when the request routes at that project — the
+  // M4 learning), so prefer the instance directory over home.
+  const conn = createMemo(() => server.current ?? global.servers.list()[0])
+  const ctx = createMemo(() => {
+    const c = conn()
+    return c ? global.ensureServerCtx(c) : undefined
+  })
+  const [routeDir] = createResource(ctx, async (c) => {
+    const p = c.sync.data.path
+    if (p && (p.directory || p.home)) return p.directory || p.home
+    const got = await c.sdk.client.path
+      .get()
+      .then((r) => r.data)
+      .catch(() => undefined)
+    return got?.directory || got?.home || ""
+  })
+  const [probes, setProbes] = createSignal<Record<string, ProbeResult | "probing" | undefined>>({})
+
+  async function probe(key: { providerID: string; modelID: string }) {
+    const cn = conn()
+    const d = routeDir()
+    if (!cn || !d) return
+    const id = `${key.providerID}:${key.modelID}`
+    setProbes((prev) => ({ ...prev, [id]: "probing" }))
+    const result = await providerProbe(cn.http, {
+      directory: d,
+      providerID: key.providerID,
+      modelID: key.modelID,
+    }).catch((error): ProbeResult => ({ status: "error", detail: String(error).slice(0, 120) }))
+    setProbes((prev) => ({ ...prev, [id]: result }))
+  }
 
   const list = useFilteredList<ModelItem>({
     items: (_filter) => models.list(),
@@ -109,9 +170,35 @@ export const SettingsModelsV2: Component = () => {
                     <For each={group.items}>
                       {(item) => {
                         const key = { providerID: item.provider.id, modelID: item.id }
+                        const probeState = () => probes()[`${key.providerID}:${key.modelID}`]
+                        const probeResult = () => {
+                          const state = probeState()
+                          return state && state !== "probing" ? state : undefined
+                        }
                         return (
                           <SettingsRowV2 title={item.name} description="">
-                            <div>
+                            <div class="settings-v2-models-row-actions">
+                              <Show when={probeResult()}>
+                                {(result) => (
+                                  <span
+                                    class="settings-v2-models-probe-result"
+                                    data-status={result().status}
+                                    title={result().detail ?? ""}
+                                  >
+                                    {probeLabel(result(), language.t)}
+                                  </span>
+                                )}
+                              </Show>
+                              <ButtonV2
+                                size="small"
+                                variant="neutral"
+                                disabled={probeState() === "probing"}
+                                onClick={() => void probe(key)}
+                              >
+                                {probeState() === "probing"
+                                  ? language.t("settings.models.probe.probing")
+                                  : language.t("settings.models.probe.test")}
+                              </ButtonV2>
                               <Switch
                                 checked={models.visible(key)}
                                 onChange={(checked) => {

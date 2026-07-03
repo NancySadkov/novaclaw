@@ -104,10 +104,68 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       return true
     })
 
+    // B15 (codehamr A8) — the config-drift killer: one GET {baseURL}/models round trip
+    // validates URL + key + model listing and harvests the server-reported honored window
+    // (vLLM max_model_len). Chosen over a root GET / (hangs on vLLM) and over a hello
+    // completion (costs tokens). Never throws — every failure classifies into the result.
+    const probe = Effect.fn("ProviderHttpApi.probe")(function* (ctx: {
+      params: { providerID: ProviderV2.ID }
+      payload: { modelID?: string | undefined }
+    }) {
+      const config = yield* cfg.get()
+      const entry = config.provider?.[ctx.params.providerID]
+      const options = (entry?.options ?? {}) as Record<string, unknown>
+      const catalog: Record<string, { api?: string }> = yield* ModelsDev.Service.use((s) => s.get()).pipe(
+        Effect.orElseSucceed(() => ({})),
+      )
+      const baseURL =
+        (typeof options.baseURL === "string" ? options.baseURL : undefined) ?? catalog[ctx.params.providerID]?.api
+      if (!baseURL)
+        return {
+          status: "no-url" as const,
+          detail: "No baseURL is configured for this provider and its catalog entry has no API URL.",
+        }
+      const apiKey = typeof options.apiKey === "string" && options.apiKey.length > 0 ? options.apiKey : undefined
+      const url = `${baseURL.replace(/\/+$/, "")}/models`
+      const started = Date.now()
+      const response = yield* Effect.tryPromise(() =>
+        fetch(url, {
+          method: "GET",
+          signal: AbortSignal.timeout(5000),
+          headers: apiKey ? { authorization: `Bearer ${apiKey}` } : {},
+        }),
+      ).pipe(Effect.catch((error) => Effect.succeed(String((error as { cause?: unknown }).cause ?? error))))
+      const latencyMs = Date.now() - started
+      if (typeof response === "string")
+        return { status: "unreachable" as const, latencyMs, detail: response.slice(0, 300) }
+      if (response.status === 401 || response.status === 403)
+        return { status: "auth" as const, latencyMs, detail: `HTTP ${response.status}` }
+      if (!response.ok) return { status: "error" as const, latencyMs, detail: `HTTP ${response.status}` }
+      const body = yield* Effect.tryPromise(() => response.json() as Promise<unknown>).pipe(
+        Effect.orElseSucceed(() => undefined),
+      )
+      const data =
+        typeof body === "object" && body !== null && Array.isArray((body as { data?: unknown }).data)
+          ? ((body as { data: unknown[] }).data as Array<Record<string, unknown>>)
+          : []
+      const models = data.flatMap((item) => (typeof item.id === "string" ? [item.id] : [])).slice(0, 50)
+      const found = ctx.payload.modelID ? data.find((item) => item.id === ctx.payload.modelID) : undefined
+      if (ctx.payload.modelID && !found)
+        return {
+          status: "model-missing" as const,
+          latencyMs,
+          models,
+          detail: `Model "${ctx.payload.modelID}" is not in the server's /models list.`,
+        }
+      const window = found && typeof found.max_model_len === "number" ? found.max_model_len : undefined
+      return { status: "ok" as const, latencyMs, models, ...(window === undefined ? {} : { window }) }
+    })
+
     return handlers
       .handle("list", list)
       .handle("auth", auth)
       .handleRaw("authorize", authorizeRaw)
       .handle("callback", callback)
+      .handle("probe", probe)
   }),
 )

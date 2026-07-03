@@ -66,3 +66,23 @@ export function fsTrashList(server: ServerConnection.HttpBase, input: { director
 export function fsTrashRestore(server: ServerConnection.HttpBase, input: { directory: string; id: string }) {
   return call<{ restoredPath: string }>(server, "POST", "file/trash/restore", input.directory, { id: input.id })
 }
+
+// B15 — provider/model health probe (codehamr A8). One GET {baseURL}/models round trip
+// server-side; classifies ok / unreachable / auth / model-missing and reports the honored
+// context window where the server exposes it (vLLM max_model_len).
+export interface ProbeResult {
+  readonly status: "ok" | "unreachable" | "auth" | "model-missing" | "no-url" | "error"
+  readonly latencyMs?: number
+  readonly window?: number
+  readonly detail?: string
+  readonly models?: readonly string[]
+}
+
+export function providerProbe(
+  server: ServerConnection.HttpBase,
+  input: { directory: string; providerID: string; modelID?: string },
+) {
+  return call<ProbeResult>(server, "POST", `provider/${encodeURIComponent(input.providerID)}/probe`, input.directory, {
+    ...(input.modelID === undefined ? {} : { modelID: input.modelID }),
+  })
+}

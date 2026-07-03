@@ -11,6 +11,26 @@ import { ProviderV2 } from "@novaclaw/core/provider"
 
 const root = "/provider"
 
+// B15 (codehamr A8) — one-shot provider/model health probe. GET {baseURL}/models validates
+// URL + key + model listing in one round trip (a root GET / hangs on vLLM; a completion costs
+// tokens). `window` carries the server-reported max_model_len where present (vLLM) — the
+// HONORED context window, authoritative over config for display.
+export const ProbeResult = Schema.Struct({
+  status: Schema.Union([
+    Schema.Literal("ok"),
+    Schema.Literal("unreachable"),
+    Schema.Literal("auth"),
+    Schema.Literal("model-missing"),
+    Schema.Literal("no-url"),
+    Schema.Literal("error"),
+  ]),
+  latencyMs: Schema.optional(Schema.Number),
+  window: Schema.optional(Schema.Number),
+  detail: Schema.optional(Schema.String),
+  models: Schema.optional(Schema.Array(Schema.String)),
+})
+export type ProbeResult = Schema.Schema.Type<typeof ProbeResult>
+
 const ProviderAuthErrorName = Schema.Union([
   Schema.Literal("BadRequest"),
   Schema.Literal("ProviderAuthOauthMissing"),
@@ -79,6 +99,19 @@ export const ProviderApi = HttpApi.make("provider")
             identifier: "provider.oauth.callback",
             summary: "Handle OAuth callback",
             description: "Handle the OAuth callback from a provider after user authorization.",
+          }),
+        ),
+        HttpApiEndpoint.post("probe", `${root}/:providerID/probe`, {
+          params: { providerID: ProviderV2.ID },
+          query: WorkspaceRoutingQuery,
+          payload: Schema.Struct({ modelID: Schema.optional(Schema.String) }),
+          success: described(ProbeResult, "Provider probe result"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "provider.probe",
+            summary: "Probe a provider endpoint",
+            description:
+              "One-shot health probe: validates the provider URL, key, and (optionally) that a model is listed, in one GET /models round trip. Reports the server's honored context window where available.",
           }),
         ),
       )
