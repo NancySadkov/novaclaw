@@ -50,6 +50,21 @@ export const repairToolJson = (raw: string): string => {
   }
   return "{}"
 }
+
+/**
+ * 1O/A4 — a streamed tool call whose arguments the model server truncated at its output-token limit
+ * arrives as a substantial, started-but-unclosed JSON that `repairToolJson` can only reduce to `{}`.
+ * That is distinct from a genuine zero-argument call, whose raw is empty. Detecting the former lets
+ * the decoder emit a prescriptive "build the file in chunks" recovery instead of a generic
+ * schema-validation miss the model retries forever. Conservative: only fires when the raw looks like
+ * a started object/array AND repair recovered nothing.
+ */
+export const isTruncatedToolArgs = (raw: string): boolean => {
+  const trimmed = (raw ?? "").trim()
+  if (trimmed.length <= 2) return false
+  if (!(trimmed.startsWith("{") || trimmed.startsWith("["))) return false
+  return repairToolJson(trimmed) === "{}"
+}
 const isJson = Schema.is(Schema.Json)
 export const JsonObject = Schema.Record(Schema.String, Schema.Unknown)
 export const optionalArray = <const S extends Schema.Top>(schema: S) => Schema.optional(Schema.Array(schema))

@@ -1,6 +1,6 @@
 export * as Tool from "./tool"
 
-import { ToolDefinition, ToolFailure, ToolOutput, type ToolCall } from "@novaclaw/llm"
+import { ToolDefinition, ToolFailure, ToolOutput, truncatedArgsMessage, truncatedArgsResult, type ToolCall } from "@novaclaw/llm"
 import { Effect, JsonSchema, Schema } from "effect"
 import type { AgentV2 } from "../agent"
 import type { SessionMessage } from "../session/message"
@@ -201,7 +201,15 @@ export const withPermission = <Input extends SchemaType<any>, Output extends Sch
 
 export const permission = (tool: AnyTool, name: string) => runtimeOf(tool).permission ?? name
 export const definition = (name: string, tool: AnyTool) => runtimeOf(tool).definition(name)
-export const settle = (tool: AnyTool, call: ToolCall, context: Context) => runtimeOf(tool).settle(call, context)
+export const settle = (tool: AnyTool, call: ToolCall, context: Context) => {
+  // 1O/A4: a truncated-args sentinel (the decoder's stand-in for a call whose streamed JSON the
+  // server truncated) short-circuits BEFORE the tool's own schema decode, so EVERY tool inherits the
+  // prescriptive "build the file in chunks" recovery instead of a generic "Invalid tool input". The
+  // ToolFailure is lowered into an error-state tool result the model sees (feeds the 1N/A2 streak).
+  const truncated = truncatedArgsMessage(call.input)
+  if (truncated !== undefined) return Effect.fail(new ToolFailure({ message: truncatedArgsResult(call.name, truncated) }))
+  return runtimeOf(tool).settle(call, context)
+}
 
 function runtimeOf(tool: AnyTool) {
   const runtime = runtimes.get(tool)

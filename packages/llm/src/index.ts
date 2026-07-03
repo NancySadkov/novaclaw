@@ -9,6 +9,13 @@ export type {
   Service as LLMClientService,
 } from "./route/client"
 export * from "./schema"
+export {
+  TruncatedArgs,
+  TRUNCATED_ARGS_SENTINEL,
+  truncatedArgsInput,
+  truncatedArgsMessage,
+  truncatedArgsResult,
+} from "./protocols/utils/truncated-args"
 export { Tool, ToolFailure, toDefinitions } from "./tool"
 export { ToolRuntime } from "./tool-runtime"
 export type { DispatchResult as ToolDispatchResult, ToolSettlement } from "./tool-runtime"

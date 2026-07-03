@@ -23,6 +23,7 @@ import { Lifecycle } from "./utils/lifecycle"
 import { ToolSchemaProjection } from "./utils/tool-schema"
 import { ToolStream } from "./utils/tool-stream"
 import { recoverToolCallsFromText, resolveToolName } from "./utils/tool-recovery"
+import { truncatedArgsInput } from "./utils/truncated-args"
 
 const ADAPTER = "openai-chat"
 const IMAGE_MIMES = new Set<string>(ProviderShared.IMAGE_MIMES)
@@ -477,11 +478,16 @@ const step = (state: ParserState, event: OpenAIChatEvent) =>
       events.push(...result.events)
     }
 
-    // Finalize accumulated tool inputs eagerly when finish_reason arrives so
-    // JSON parse failures fail the stream at the boundary rather than at halt.
+    // Finalize accumulated tool inputs eagerly when finish_reason arrives. A JSON parse failure here
+    // is almost always the server truncating a large call at its output-token limit (1O/A4): instead
+    // of failing the stream (a halt), emit the call with a truncated-args sentinel the settle path
+    // lowers into a prescriptive "build the file in chunks" result. The recovered call keeps the loop
+    // going and classifies as a failure for the 1N/A2 streak.
     const finished =
       finishReason !== undefined && state.finishReason === undefined && Object.keys(tools).length > 0
-        ? yield* ToolStream.finishAll(ADAPTER, tools)
+        ? yield* ToolStream.finishAllRecoverable(ADAPTER, tools, () =>
+            truncatedArgsInput("unexpected end of JSON input"),
+          )
         : undefined
 
     return [

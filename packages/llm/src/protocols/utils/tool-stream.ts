@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { LLMError, LLMEvent, type ProviderMetadata, type ToolCall } from "../../schema"
-import { eventError, parseToolInput, type ToolAccumulator } from "../shared"
+import { eventError, isTruncatedToolArgs, parseToolInput, type ToolAccumulator } from "../shared"
 
 type StreamKey = string | number
 
@@ -113,6 +113,12 @@ export const start = <K extends StreamKey>(
  * identity on the first delta instead of a separate start event. OpenAI Chat has
  * this shape: `tool_calls[].index` is the stream key, and `id` / `name` may only
  * appear on the first delta for that index.
+ *
+ * 1O/A4 adjacent hardening: identity is accepted from ANY fragment, and a missing or
+ * EMPTY `id` never halts the stream — some local OpenAI-compatible servers omit or
+ * blank `tool_call_id`, and an empty id that round-trips into history 400s the next
+ * request on strict backends. When the name is known but no non-empty id ever arrives,
+ * a deterministic per-stream id is synthesized from the stream key.
  */
 export const appendOrStart = <K extends StreamKey>(
   route: string,
@@ -122,8 +128,10 @@ export const appendOrStart = <K extends StreamKey>(
   missingToolMessage: string,
 ): AppendOutcome<K> | LLMError => {
   const current = tools[key]
-  const id = delta.id ?? current?.id
-  const name = delta.name ?? current?.name
+  // Once started, identity is pinned to `current` (start/delta events already carry it); before
+  // that, take whatever the fragment offers, treating empty strings as absent.
+  const name = current?.name ?? (delta.name || undefined)
+  const id = current?.id ?? (delta.id || undefined) ?? (name !== undefined ? `call_stream_${String(key)}` : undefined)
   if (!id || !name) return eventError(route, missingToolMessage)
 
   const tool = {
@@ -213,6 +221,43 @@ export const finishAll = <K extends StreamKey>(route: string, tools: State<K>) =
         ),
       ).pipe(Effect.map((events) => events.flat())),
     }
+  })
+
+/**
+ * Like `finishAll`, but a pending call whose accumulated JSON was truncated by the server's
+ * output-token limit (1O/A4 — a substantial started-but-unclosed object that repairs only to `{}`) is
+ * emitted with a fallback input from `onTruncated(name, raw)` instead of the silently-empty `{}` the
+ * normal repair path would produce. Complete calls (and genuine zero-arg calls) finalize normally.
+ * Used by OpenAI Chat so a truncated large `write` surfaces a recoverable, prescriptive tool result.
+ */
+export const finishAllRecoverable = <K extends StreamKey>(
+  route: string,
+  tools: State<K>,
+  onTruncated: (name: string, raw: string) => Record<string, unknown>,
+) =>
+  Effect.gen(function* () {
+    const pending = Object.values<PendingTool | undefined>(tools).filter(
+      (tool): tool is PendingTool => tool !== undefined,
+    )
+    const events: LLMEvent[] = []
+    for (const tool of pending) {
+      const inputEnd = LLMEvent.toolInputEnd({ id: tool.id, name: tool.name, providerMetadata: tool.providerMetadata })
+      if (isTruncatedToolArgs(tool.input)) {
+        events.push(
+          inputEnd,
+          LLMEvent.toolCall({
+            id: tool.id,
+            name: tool.name,
+            input: onTruncated(tool.name, tool.input),
+            providerExecuted: tool.providerExecuted ? true : undefined,
+            providerMetadata: tool.providerMetadata,
+          }),
+        )
+        continue
+      }
+      events.push(inputEnd, yield* toolCall(route, tool))
+    }
+    return { tools: empty<K>(), events }
   })
 
 export * as ToolStream from "./tool-stream"
