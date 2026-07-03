@@ -81,18 +81,32 @@ export const admit = Effect.fn("SessionInput.admit")(function* (
 })
 
 /**
+ * 1N (codehamr A1) — every harness-injected steer carries this provenance prefix. A ~30B model
+ * reads a bare mid-turn injected message as an *empty user turn* and just stops; naming the note as
+ * an automated check (not the user speaking) keeps it acting. Baked into `steer` itself so EVERY
+ * consumer inherits it — doom-loop redirects, forgiving-loop nudges, denial redirects, introspection
+ * and affective interjections. (Our steers already project to a `user`-role message on the wire — see
+ * `to-llm-message.ts` — so codehamr's separate wire-demotion pass is unnecessary here.)
+ */
+export const STEER_PROVENANCE_PREFIX = "[Automated NovaClaw check — not a message from your user.] "
+
+/** Prepend the 1N provenance prefix unless the text already carries it (idempotent). */
+export const applySteerProvenance = (text: string) =>
+  text.startsWith(STEER_PROVENANCE_PREFIX) ? text : STEER_PROVENANCE_PREFIX + text
+
+/**
  * F2 — inject a one-shot **steer** nudge (promoted on the next turn). The shared primitive
  * for harness interjections: doom-loop redirects (1E), forgiving-loop nudges (1D), graceful
  * permission-denial redirects (1J), and introspection/affective interjections (2B/3B). A thin
  * wrapper over `admit` so callers don't re-derive the id / Prompt / delivery each time. Uses a
  * fresh id per call — idempotency (nudge-once) is the caller's concern (e.g. the doom-loop's
- * `nudged` set).
+ * `nudged` set). Prepends `STEER_PROVENANCE_PREFIX` (1N) unless the text already carries it.
  */
 export const steer = (db: DatabaseService, events: EventV2.Interface, sessionID: SessionSchema.ID, text: string) =>
   admit(db, events, {
     id: SessionMessage.ID.create(),
     sessionID,
-    prompt: Prompt.make({ text }),
+    prompt: Prompt.make({ text: applySteerProvenance(text) }),
     delivery: "steer",
   })
 

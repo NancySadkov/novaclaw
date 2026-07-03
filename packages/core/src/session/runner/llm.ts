@@ -42,7 +42,16 @@ import { createLLMEventPublisher } from "./publish-llm-event"
 import { toLLMMessages } from "./to-llm-message"
 import { AdhocGuidance } from "../../adhoc-tools/guidance"
 import { Affective } from "./affective"
-import { detectDoomLoop, redirectMessage } from "./doom-loop"
+import {
+  detectDoomLoop,
+  redirectMessage,
+  detectFailureStreak,
+  failureStreakMessage,
+  detectRunaway,
+  runawayMessage,
+  EMPTY_TURN_RECOVERY,
+  EMPTY_TURN_DIAGNOSTIC,
+} from "./doom-loop"
 import { Introspection } from "./introspection"
 import { MAX_STEPS_PROMPT } from "./max-steps"
 import { ProviderRetry } from "./provider-retry"
@@ -99,6 +108,51 @@ import { llmClient } from "../../effect/app-node-platform"
  * provider turn. Registry definitions are advertised, local tool calls are settled durably, and an
  * explicit loop starts the next provider turn after local settlement. Configured agent step limits bound the loop.
  */
+
+// 1N/A2 — tool calls made since the last user message, each classified failed/ok from its projected
+// state. Scoping to "since the last user message" gives the failure streak + runaway detectors their
+// per-goal reset ("a new user message is a new goal") for free.
+const toolCallsSinceLastUser = (context: readonly SessionMessage.Message[]) => {
+  let lastUserIndex = -1
+  for (let i = context.length - 1; i >= 0; i--) {
+    if (context[i]!.type === "user") {
+      lastUserIndex = i
+      break
+    }
+  }
+  const refs: { name: string; input: string; failed: boolean }[] = []
+  for (let i = lastUserIndex + 1; i < context.length; i++) {
+    const message = context[i]!
+    if (message.type !== "assistant") continue
+    for (const part of message.content) {
+      if (part.type !== "tool") continue
+      refs.push({
+        name: part.name,
+        input: typeof part.state.input === "string" ? part.state.input : JSON.stringify(part.state.input),
+        failed: part.state.status === "error",
+      })
+    }
+  }
+  return refs
+}
+
+// 1N/A3 — a turn is "empty" when its assistant message has no non-empty text AND no tool call
+// (reasoning does not count — a leaked-into-reasoning tool call the server dropped is exactly this
+// case). A turn that recorded an `error` is NOT empty: that is 1D's retry territory, not a stall.
+const isEmptyAssistantTurn = (context: readonly SessionMessage.Message[]) => {
+  let lastAssistant: SessionMessage.Assistant | undefined
+  for (let i = context.length - 1; i >= 0; i--) {
+    const message = context[i]!
+    if (message.type === "assistant") {
+      lastAssistant = message
+      break
+    }
+  }
+  if (!lastAssistant || lastAssistant.error !== undefined) return false
+  const hasText = lastAssistant.content.some((part) => part.type === "text" && part.text.trim() !== "")
+  const hasTool = lastAssistant.content.some((part) => part.type === "tool")
+  return !hasText && !hasTool
+}
 
 export const layer = Layer.effect(
   Service,
@@ -530,8 +584,12 @@ export const layer = Layer.effect(
       if (!input.force && !hasSteer && !hasQueue) return
       yield* failInterruptedTools(input.sessionID)
       // 1E: track which repeated-call loops we have already redirected this drain, so a
-      // persistent loop is nudged once (not every turn).
+      // persistent loop is nudged once (not every turn). 1N/A2 adds a per-target failure-streak
+      // latch + a once-per-drain runaway latch; 1N/A3 a consecutive-empty-turn counter.
       const nudged = new Set<string>()
+      const nudgedTargets = new Set<string>()
+      let runawayNudged = false
+      let consecutiveEmpty = 0
       let promotion: SessionInput.Delivery | undefined = hasSteer ? "steer" : hasQueue ? "queue" : undefined
       let shouldRun = input.force || hasSteer || hasQueue
       while (shouldRun) {
@@ -542,11 +600,12 @@ export const layer = Layer.effect(
           needsContinuation = result.needsContinuation
           step = result.step + 1
           promotion = "steer"
+          const context = yield* getContext(input.sessionID)
           // 1E doom-loop break: only while the model is still acting (made a tool call).
           // If its last few tool calls are byte-identical, inject a one-shot redirect as a
           // steer so the next turn is nudged to change approach.
           if (result.needsContinuation) {
-            const context = yield* getContext(input.sessionID)
+            consecutiveEmpty = 0 // 1N/A3: a tool call is genuine progress — re-arm empty-turn recovery.
             const calls = context.flatMap((message) =>
               message.type === "assistant"
                 ? message.content.flatMap((part) =>
@@ -570,6 +629,24 @@ export const layer = Layer.effect(
               nudged.add(key)
               yield* SessionInput.steer(db, events, input.sessionID, redirectMessage(looping))
             }
+            // 1N/A2: target-keyed failure streak + runaway self-check over the tool calls made
+            // since the last user message. Catches the loops the byte-identical detector misses
+            // (small models always reword) and the plausible non-failing re-read/re-grep runaway.
+            const sinceUser = toolCallsSinceLastUser(context)
+            const streak = detectFailureStreak(sinceUser)
+            if (streak && !nudgedTargets.has(streak.target)) {
+              nudgedTargets.add(streak.target)
+              yield* Effect.logInfo("doom-loop failure streak", { sessionID: input.sessionID, ...streak })
+              yield* SessionInput.steer(db, events, input.sessionID, failureStreakMessage(streak))
+            }
+            if (!runawayNudged && detectRunaway(sinceUser.length)) {
+              runawayNudged = true
+              yield* Effect.logInfo("doom-loop runaway self-check", {
+                sessionID: input.sessionID,
+                toolCalls: sinceUser.length,
+              })
+              yield* SessionInput.steer(db, events, input.sessionID, runawayMessage(sinceUser.length))
+            }
             // P2 (2A): cadence-gated introspection judge — an out-of-band model call that
             // asks "is this agent stuck?"; a YES steers the interjection (2B). Best-effort:
             // never allowed to fail the drain it watches.
@@ -577,6 +654,20 @@ export const layer = Layer.effect(
               yield* introspect(input.sessionID).pipe(
                 Effect.catch((cause) => Effect.logWarning("introspection judge failed", { cause })),
               )
+          } else if (isEmptyAssistantTurn(context)) {
+            // 1N/A3: the turn produced no text AND no tool call — typically a tool call streamed
+            // into the reasoning channel and dropped by the server's parser. Inject ONE synthetic
+            // re-prompt (re-armed on progress above); a SECOND consecutive empty means the re-prompt
+            // isn't working, so stop and surface the server-side fix instead of looping silently.
+            consecutiveEmpty++
+            if (consecutiveEmpty === 1) {
+              yield* Effect.logInfo("empty-turn recovery", { sessionID: input.sessionID })
+              yield* SessionInput.steer(db, events, input.sessionID, EMPTY_TURN_RECOVERY)
+            } else {
+              yield* Effect.logWarning(EMPTY_TURN_DIAGNOSTIC, { sessionID: input.sessionID })
+            }
+          } else {
+            consecutiveEmpty = 0
           }
           if (!needsContinuation) needsContinuation = yield* SessionInput.hasPending(db, input.sessionID, "steer")
         }
