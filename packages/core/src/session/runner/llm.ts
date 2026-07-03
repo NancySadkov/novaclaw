@@ -64,6 +64,7 @@ import { Introspection } from "./introspection"
 import { MAX_STEPS_PROMPT } from "./max-steps"
 import { ProviderRetry } from "./provider-retry"
 import { Quality } from "./quality"
+import { QualityProvision } from "./quality-provision"
 import { Snapshot } from "../../snapshot"
 import { AppProcess } from "../../process"
 import { ChildProcess } from "effect/unstable/process"
@@ -217,6 +218,8 @@ export const layer = Layer.effect(
       if (moods.size >= MAX_MOODS && !moods.has(sessionID)) moods.clear()
       moods.set(sessionID, mood)
     }
+    // QE-A: sessions already nudged to provision quality commands (once per session).
+    const provisionNudged = new Set<string>()
 
     // P2 (2A/2B): the out-of-band judge call. Best-effort by design — ANY failure (judge
     // model unreachable, resolution error, empty reply) is logged and swallowed; the judge
@@ -667,6 +670,17 @@ export const layer = Layer.effect(
       let consecutiveEmpty = 0
       let regrounded = false
       const quality = Quality.initialState()
+      // QE-A: quality mode with NO provisioned commands is inert — steer ONCE per session
+      // to run the provisioner (deterministic manifest scan → verify → write project config).
+      if (
+        qualityConfig.enabled &&
+        !Object.values(qualityConfig.commands).some(Boolean) &&
+        !provisionNudged.has(input.sessionID)
+      ) {
+        provisionNudged.add(input.sessionID)
+        if (provisionNudged.size > 500) provisionNudged.clear()
+        yield* SessionInput.steer(db, events, input.sessionID, QualityProvision.NUDGE)
+      }
       let promotion: SessionInput.Delivery | undefined = hasSteer ? "steer" : hasQueue ? "queue" : undefined
       let shouldRun = input.force || hasSteer || hasQueue
       while (shouldRun) {

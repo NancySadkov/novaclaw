@@ -10,6 +10,7 @@ import { EditTool } from "./edit"
 import { GlobTool } from "./glob"
 import { GrepTool } from "./grep"
 import { JsTool } from "./js"
+import { QualityProvisionTool } from "./quality-provision"
 import { QuestionTool } from "./question"
 import { ReadTool } from "./read"
 import { ReadHexTool } from "./read-hex"
@@ -49,6 +50,7 @@ export const locationLayer = Layer.mergeAll(
   GlobTool.layer,
   GrepTool.layer,
   JsTool.layer,
+  QualityProvisionTool.layer,
   QuestionTool.layer,
   ReadTool.layer.pipe(Layer.provide(ReadToolFileSystem.layer)),
   ReadHexTool.layer,
@@ -78,6 +80,7 @@ export const node = makeLocationNode({
     GlobTool.node,
     GrepTool.node,
     JsTool.node,
+    QualityProvisionTool.node,
     QuestionTool.node,
     ReadTool.node,
     ReadHexTool.node,
