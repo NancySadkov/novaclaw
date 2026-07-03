@@ -447,13 +447,15 @@
   line-height: 1.45;
   padding: 8px 10px;
   border-radius: 8px;
-  border: 1px solid var(--v2-stroke-stroke-base, rgba(255, 255, 255, 0.12));
+  border: 1px solid var(--v2-border-border-base);
   background: var(--v2-background-bg-base, transparent);
   color: var(--v2-text-text-base);
 }
 
 .settings-v2-textarea:focus-visible {
-  outline: 2px solid var(--v2-stroke-stroke-focus, #eab308);
+  /* Real token family is --v2-border-border-* (not the phantom --v2-stroke-*); the focus token IS
+     our gold (#e7b62f), so the ring matches the palette instead of the old yellow-500 fallback. */
+  outline: 2px solid var(--v2-border-border-focus);
   outline-offset: 1px;
 }
 

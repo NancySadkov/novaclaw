@@ -6,6 +6,7 @@ import { type Component, For, Show, createSignal } from "solid-js"
 import { showToast } from "@/utils/toast"
 import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
+import { useConfirm } from "@/components/dialog-confirm"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 import "./settings-v2.css"
@@ -33,6 +34,7 @@ const MAX_MANUAL_CHARS = 8_192
 export const SettingsToolsV2: Component = () => {
   const language = useLanguage()
   const serverSync = useServerSync()
+  const confirm = useConfirm()
 
   const recipes = (): Recipe[] =>
     ((serverSync().data.config as { adhoc_tools?: Recipe[] }).adhoc_tools ?? []) as Recipe[]
@@ -82,6 +84,13 @@ export const SettingsToolsV2: Component = () => {
   }
 
   async function remove(name: string) {
+    const ok = await confirm({
+      title: language.t("settings.tools.confirm.title"),
+      description: language.t("settings.tools.confirm.description", { name }),
+      confirmLabel: language.t("common.delete"),
+      destructive: true,
+    })
+    if (!ok) return
     await persist(recipes().filter((recipe) => recipe.name !== name))
   }
 

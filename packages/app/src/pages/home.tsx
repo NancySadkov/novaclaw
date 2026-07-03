@@ -581,7 +581,14 @@ export function NewHome() {
           class="min-h-0 min-w-0 flex-1 flex flex-col pt-6 lg:pt-12 relative"
           aria-label={language.t("sidebar.project.recentSessions")}
         >
-          <ChatEntry onSubmit={startChat} disabled={!newSessionProject()} />
+          <ChatEntry
+            onSubmit={startChat}
+            disabled={!newSessionProject()}
+            onAddProject={() => {
+              const conn = focusedServer()
+              if (conn) chooseProject(conn)
+            }}
+          />
           <HomeSessionSearch
             value={state.search}
             placeholder={searchPlaceholder()}
@@ -672,8 +679,11 @@ export function NewHome() {
 
 // The greeting entry that leads the Chats main column: type a message and hit Enter (or Start) to
 // begin a new chat. It seeds `startChat`, which opens the real composer pre-filled — no "new session"
-// click. Disabled (with a hint) until a project is available, since a chat needs a working directory.
-function ChatEntry(props: { onSubmit: (prompt: string) => void; disabled?: boolean }) {
+// click. When no project is open yet (O1) it does NOT dead-end at a greyed-out box: it shows a friendly
+// branded CTA that opens the folder picker, so the tour's promised "just start chatting" never fails
+// silently. Strings are i18n'd (C5/O4).
+function ChatEntry(props: { onSubmit: (prompt: string) => void; disabled?: boolean; onAddProject?: () => void }) {
+  const language = useLanguage()
   const [value, setValue] = createSignal("")
   const submit = () => {
     const text = value().trim()
@@ -684,42 +694,70 @@ function ChatEntry(props: { onSubmit: (prompt: string) => void; disabled?: boole
   return (
     <div class="flex w-full shrink-0 flex-col items-center gap-3.5 pb-4">
       {/* The greeting is the page's focal point — sized like a title, not a label. */}
-      <div class="text-[20px] font-semibold tracking-tight text-v2-text-text-base">How can I help you today?</div>
-      <div
-        class="flex w-full items-end gap-2 rounded-[14px] bg-v2-background-bg-layer-02 px-3.5 py-3 shadow-[0_0_0_0.5px_var(--v2-border-border-base)] transition-[box-shadow] duration-[120ms] ease-in-out focus-within:shadow-[0_0_0_1px_var(--v2-border-border-focus),var(--v2-elevation-raised)]"
-        classList={{ "opacity-60": props.disabled }}
-      >
-        <textarea
-          rows={1}
-          data-component="chat-entry-input"
-          class="max-h-40 min-h-6 min-w-0 flex-1 resize-none border-0 bg-transparent py-1 text-[15px] text-v2-text-text-base outline-0 [font-weight:440] placeholder:text-v2-text-text-faint"
-          placeholder={props.disabled ? "Add a project to start chatting" : "Message to start a new chat…"}
-          value={value()}
-          disabled={props.disabled}
-          onInput={(event) => {
-            setValue(event.currentTarget.value)
-            event.currentTarget.style.height = "auto"
-            event.currentTarget.style.height = `${event.currentTarget.scrollHeight}px`
-          }}
-          onKeyDown={(event) => {
-            if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
-              event.preventDefault()
-              submit()
-            }
-          }}
-        />
-        {/* The one gold CTA on the page — the shared gold variant (hover/pressed states intact). */}
-        <ButtonV2
-          data-action="chat-entry-start"
-          variant="gold"
-          size="normal"
-          class="h-7 shrink-0 px-3.5"
-          disabled={props.disabled || !value().trim()}
-          onClick={submit}
-        >
-          Start
-        </ButtonV2>
+      <div class="text-[20px] font-semibold tracking-tight text-v2-text-text-base">
+        {language.t("home.chat.greeting")}
       </div>
+      <Show
+        when={!props.disabled}
+        fallback={
+          <button
+            type="button"
+            data-action="chat-entry-add-project"
+            class="flex w-full items-center gap-3 rounded-[14px] bg-v2-background-bg-layer-02 px-4 py-3.5 text-left shadow-[0_0_0_0.5px_var(--v2-border-border-base)] transition-colors hover:bg-v2-background-bg-layer-03"
+            onClick={() => props.onAddProject?.()}
+          >
+            <div
+              class="flex size-9 shrink-0 items-center justify-center rounded-[0.7rem] ring-1 ring-white/15"
+              style={{
+                "background-image": "linear-gradient(155deg, #f4d06a -8%, #e7b62f 42%, #c99a2e 105%)",
+                "--icon-base": "color-mix(in srgb, var(--nc-ink, #1a1135) 92%, transparent)",
+              }}
+            >
+              <IconV2 name="folder-add-left" />
+            </div>
+            <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+              <span class="text-[14px] font-semibold text-v2-text-text-base">
+                {language.t("home.chat.addProjectTitle")}
+              </span>
+              <span class="text-[12px] text-v2-text-text-muted leading-snug">
+                {language.t("home.chat.addProjectHint")}
+              </span>
+            </div>
+          </button>
+        }
+      >
+        <div class="flex w-full items-end gap-2 rounded-[14px] bg-v2-background-bg-layer-02 px-3.5 py-3 shadow-[0_0_0_0.5px_var(--v2-border-border-base)] transition-[box-shadow] duration-[120ms] ease-in-out focus-within:shadow-[0_0_0_1px_var(--v2-border-border-focus),var(--v2-elevation-raised)]">
+          <textarea
+            rows={1}
+            data-component="chat-entry-input"
+            class="max-h-40 min-h-6 min-w-0 flex-1 resize-none border-0 bg-transparent py-1 text-[15px] text-v2-text-text-base outline-0 [font-weight:440] placeholder:text-v2-text-text-faint"
+            placeholder={language.t("home.chat.placeholder")}
+            value={value()}
+            onInput={(event) => {
+              setValue(event.currentTarget.value)
+              event.currentTarget.style.height = "auto"
+              event.currentTarget.style.height = `${event.currentTarget.scrollHeight}px`
+            }}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+                event.preventDefault()
+                submit()
+              }
+            }}
+          />
+          {/* The one gold CTA on the page — the shared gold variant (hover/pressed states intact). */}
+          <ButtonV2
+            data-action="chat-entry-start"
+            variant="gold"
+            size="normal"
+            class="h-7 shrink-0 px-3.5"
+            disabled={!value().trim()}
+            onClick={submit}
+          >
+            {language.t("home.chat.start")}
+          </ButtonV2>
+        </div>
+      </Show>
     </div>
   )
 }

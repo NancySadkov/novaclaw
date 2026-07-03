@@ -283,6 +283,9 @@ body[data-new-layout] {
   --v2-border-border-base: rgba(181, 158, 255, 0.15);
   --v2-border-border-strong: rgba(181, 158, 255, 0.26);
   --v2-border-border-focus: #e7b62f;
+  /* Inverse border (on light/inverse surfaces) — the upstream default is grey-1000/100 (OS-coupled),
+     which left it un-themed; a deep-violet keeps it in the palette (uix.md §3 P2). */
+  --v2-border-border-inverse: rgba(20, 12, 39, 0.24);
 
   /* Overlays — the defaults are LIGHT-mode (dark-alpha) values: on the purple base a hover overlay
      was near-invisible and a scrim darkened nothing. Remap to light alphas / deep-purple scrim. */
@@ -294,6 +297,11 @@ body[data-new-layout] {
   --v2-overlay-simple-tab-active-scrim: #20174800;
   --v2-overlay-simple-tab-hover-scrim: #2a1f5c00;
   --v2-overlay-simple-tab-scrim: #160f3000;
+  /* Depth-gradient (switch thumb + radio ring highlight) — the upstream default is pure white
+     (--v2-alpha-light-100), the "off-color white over purple" bug uix.md §2/P2 warns about. Retint to
+     the theme's violet-white so the thumb/ring sit IN the palette. */
+  --v2-overlay-gradient-depth-overlay-depth-top: rgba(243, 238, 255, 0.92);
+  --v2-overlay-gradient-depth-overlay-depth-bot: rgba(243, 238, 255, 0);
 
   /* State chips — the light-mode pastels (green-100 backgrounds etc.) clash on deep purple; use the
      dark-mode pairing (deep tinted bg, bright fg) so status colors sit IN the theme, not on it. */
@@ -332,6 +340,9 @@ body[data-new-layout] {
     inset 0px -0.5px 0px 0px rgba(216, 200, 255, 0.1), inset 0px 0px 0px 0.5px rgba(216, 200, 255, 0.16);
   --v2-elevation-switch-on:
     inset 0px -0.5px 0px 0px rgba(216, 200, 255, 0.1), inset 0px 0px 0px 0.5px rgba(216, 200, 255, 0.16);
+  /* Small-element drop (switch thumb) — was OS-coupled (light-mode alpha-dark-40); a deep drop keeps
+     the thumb reading as a raised element on the purple track (uix.md §2/P2). */
+  --v2-elevation-elements: 0px 0.5px 1px 0px rgba(8, 4, 20, 0.5);
 
   /* Illustration layers (empty states) — violet steps instead of grey */
   --v2-illustration-illustration-layer-01: #322568;

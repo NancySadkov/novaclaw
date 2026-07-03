@@ -9,6 +9,8 @@ import type { Config } from "@novaclaw/sdk/v2/client"
 import { useLanguage } from "@/context/language"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
+import { useConfirm } from "@/components/dialog-confirm"
+import { RequiresLevel } from "@/context/expertise"
 import { DialogConnectProvider } from "../dialog-connect-provider"
 import { DialogSelectProvider } from "../dialog-select-provider"
 import { DialogCustomProvider } from "../dialog-custom-provider"
@@ -29,6 +31,7 @@ export const SettingsProvidersV2: Component = () => {
   const serverSdk = useServerSDK()
   const serverSync = useServerSync()
   const providers = useProviders()
+  const confirm = useConfirm()
 
   const connected = createMemo(() => {
     return providers.connected()
@@ -98,6 +101,13 @@ export const SettingsProvidersV2: Component = () => {
   }
 
   const disconnect = async (providerID: string, name: string) => {
+    const ok = await confirm({
+      title: language.t("settings.providers.disconnect.confirm.title", { provider: name }),
+      description: language.t("settings.providers.disconnect.confirm.description"),
+      confirmLabel: language.t("common.disconnect"),
+      destructive: true,
+    })
+    if (!ok) return
     if (isConfigCustom(providerID)) {
       await serverSdk()
         .client.auth.remove({ providerID })
@@ -126,51 +136,62 @@ export const SettingsProvidersV2: Component = () => {
     <>
       <div class="settings-v2-tab-header">
         <h2 class="settings-v2-tab-title">{language.t("settings.providers.title")}</h2>
-        <div style="display:flex;gap:8px;margin-top:12px">
-          <ButtonV2 size="small" variant="neutral" icon="download"
-            onClick={async () => {
-              const cfg = serverSync().data.config
-              const jsonc = generateConfigTemplate(cfg)
-              const api = (window as any).api
-              if (!api?.saveFilePicker || !api?.writeFile) return
-              const path = await api.saveFilePicker({ title: "Export novaclaw.jsonc", defaultPath: "novaclaw.jsonc" })
-              if (!path) return
-              await api.writeFile(path, jsonc)
-              showToast({ variant: "success", icon: "circle-check", title: "Config exported", description: path })
-            }}
-          >Export</ButtonV2>
-          <ButtonV2 size="small" variant="neutral" icon="upload"
-            onClick={async () => {
-              const api = (window as any).api
-              if (!api?.openFilePicker || !api?.readPickedFile) return
-              const result = await api.openFilePicker({ title: "Import novaclaw.jsonc", extensions: ["jsonc", "json"] })
-              if (!result?.files?.length) return
-              const buf = await api.readPickedFile(result.token, result.files[0].path)
-              const content = new TextDecoder().decode(buf)
-              const parsed = parseJSONC(content)
-              if (!parsed) {
-                showToast({ variant: "error", title: "Invalid JSONC", description: "Could not parse the config file." })
-                return
-              }
-              // Persist via the server (updateGlobal patch-merges into the global
-              // novaclaw.jsonc and refetches the config query). A bare set() is a
-              // no-op here: globalStore.config is a getter over the config query.
-              const ok = await serverSync()
-                .updateConfig(parsed as unknown as Config)
-                .then(() => true)
-                .catch((err: unknown) => {
-                  showToast({
-                    variant: "error",
-                    title: "Import failed",
-                    description: err instanceof Error ? err.message : String(err),
-                  })
-                  return false
+        {/* Raw whole-config Export/Import is a Developer affordance (uix.md §6.4); i18n'd, and Import
+            confirms before merging (S3). The v2 sprite has no up/down glyph, so no icon (was rendering
+            a stray "plus" — I2). Desktop-only: window.api is absent on web. */}
+        <RequiresLevel min="developer">
+          <div style="display:flex;gap:8px;margin-top:12px">
+            <ButtonV2 size="small" variant="neutral"
+              onClick={async () => {
+                const cfg = serverSync().data.config
+                const jsonc = generateConfigTemplate(cfg)
+                const api = (window as any).api
+                if (!api?.saveFilePicker || !api?.writeFile) return
+                const path = await api.saveFilePicker({ title: language.t("settings.providers.export.dialogTitle"), defaultPath: "novaclaw.jsonc" })
+                if (!path) return
+                await api.writeFile(path, jsonc)
+                showToast({ variant: "success", icon: "circle-check", title: language.t("settings.providers.export.toast"), description: path })
+              }}
+            >{language.t("settings.providers.export.action")}</ButtonV2>
+            <ButtonV2 size="small" variant="neutral"
+              onClick={async () => {
+                const api = (window as any).api
+                if (!api?.openFilePicker || !api?.readPickedFile) return
+                const result = await api.openFilePicker({ title: language.t("settings.providers.import.dialogTitle"), extensions: ["jsonc", "json"] })
+                if (!result?.files?.length) return
+                const buf = await api.readPickedFile(result.token, result.files[0].path)
+                const content = new TextDecoder().decode(buf)
+                const parsed = parseJSONC(content)
+                if (!parsed) {
+                  showToast({ variant: "error", title: language.t("settings.providers.import.invalid.title"), description: language.t("settings.providers.import.invalid.description") })
+                  return
+                }
+                const proceed = await confirm({
+                  title: language.t("settings.providers.import.confirm.title"),
+                  description: language.t("settings.providers.import.confirm.description"),
+                  confirmLabel: language.t("settings.providers.import.confirm.action"),
                 })
-              if (!ok) return
-              showToast({ variant: "success", icon: "circle-check", title: "Config imported" })
-            }}
-          >Import</ButtonV2>
-        </div>
+                if (!proceed) return
+                // Persist via the server (updateGlobal patch-merges into the global
+                // novaclaw.jsonc and refetches the config query). A bare set() is a
+                // no-op here: globalStore.config is a getter over the config query.
+                const ok = await serverSync()
+                  .updateConfig(parsed as unknown as Config)
+                  .then(() => true)
+                  .catch((err: unknown) => {
+                    showToast({
+                      variant: "error",
+                      title: language.t("settings.providers.import.failed"),
+                      description: err instanceof Error ? err.message : String(err),
+                    })
+                    return false
+                  })
+                if (!ok) return
+                showToast({ variant: "success", icon: "circle-check", title: language.t("settings.providers.import.toast") })
+              }}
+            >{language.t("settings.providers.import.action")}</ButtonV2>
+          </div>
+        </RequiresLevel>
       </div>
 
       <div class="settings-v2-tab-body settings-v2-providers">
@@ -253,33 +274,36 @@ export const SettingsProvidersV2: Component = () => {
               )}
             </For>
 
-            <div class="settings-v2-provider-row" data-component="custom-provider-section">
-              <div class="settings-v2-provider-lead">
-                <ProviderIcon
-                  id="synthetic"
-                  width={PROVIDER_ICON_SIZE}
-                  height={PROVIDER_ICON_SIZE}
-                  class="settings-v2-provider-icon shrink-0"
-                />
-                <div class="settings-v2-provider-copy">
-                  <div class="settings-v2-provider-main">
-                    <span class="settings-v2-provider-name">{language.t("provider.custom.title")}</span>
-                    <Tag>{language.t("settings.providers.tag.custom")}</Tag>
+            {/* Custom (raw base-URL/model) provider setup is a Developer affordance (uix.md §6.4). */}
+            <RequiresLevel min="developer">
+              <div class="settings-v2-provider-row" data-component="custom-provider-section">
+                <div class="settings-v2-provider-lead">
+                  <ProviderIcon
+                    id="synthetic"
+                    width={PROVIDER_ICON_SIZE}
+                    height={PROVIDER_ICON_SIZE}
+                    class="settings-v2-provider-icon shrink-0"
+                  />
+                  <div class="settings-v2-provider-copy">
+                    <div class="settings-v2-provider-main">
+                      <span class="settings-v2-provider-name">{language.t("provider.custom.title")}</span>
+                      <Tag>{language.t("settings.providers.tag.custom")}</Tag>
+                    </div>
+                    <p class="settings-v2-provider-description">{language.t("settings.providers.custom.description")}</p>
                   </div>
-                  <p class="settings-v2-provider-description">{language.t("settings.providers.custom.description")}</p>
                 </div>
+                <ButtonV2
+                  size="normal"
+                  variant="neutral"
+                  icon="plus"
+                  onClick={() => {
+                    dialog.show(() => <DialogCustomProvider back="close" />)
+                  }}
+                >
+                  {language.t("common.connect")}
+                </ButtonV2>
               </div>
-              <ButtonV2
-                size="normal"
-                variant="neutral"
-                icon="plus"
-                onClick={() => {
-                  dialog.show(() => <DialogCustomProvider back="close" />)
-                }}
-              >
-                {language.t("common.connect")}
-              </ButtonV2>
-            </div>
+            </RequiresLevel>
           </SettingsListV2>
 
           <button

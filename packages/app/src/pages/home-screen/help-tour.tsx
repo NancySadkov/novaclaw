@@ -3,66 +3,40 @@ import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { Icon } from "@novaclaw/ui/icon"
 import { useDialog } from "@novaclaw/ui/context/dialog"
+import { useLanguage } from "@/context/language"
 
 // First-run tour of NovaClaw — a friendly, plain-language intro for new users. Auto-opened once by the
 // home screen (guarded by HELP_SEEN_KEY) and reopenable anytime from the Help app tile. Deliberately
 // non-technical: no "sessions", "tokens", or "spawn" jargon on the surface. The steps double as the
-// capability catalog — each one teaches something the user can actually do next.
+// capability catalog — each one teaches something the user can actually do next. Strings are i18n'd
+// (O4); the "Set up your models" step points to Settings, the bootstrap pillar a new user needs (O3).
 export const HELP_SEEN_KEY = "novaclaw.help.seen"
 
 type Step = {
   readonly icon: string
   readonly accent: string
   readonly glyphTone?: "light" | "dark" // "dark" for light accents (gold), same vocabulary as HomeApp
-  readonly title: string
-  readonly body: string
+  readonly key: string // i18n key stem: help.tour.step.<key>.title / .body
 }
 
 const STEPS: readonly Step[] = [
-  {
-    icon: "speech-bubble",
-    accent: "#e7b62f",
-    glyphTone: "dark",
-    title: "Welcome to NovaClaw",
-    body: "Your private AI workspace — an operating system where AI helpers work for you like apps. It runs on your own hardware, so your conversations and data stay with you.",
-  },
-  {
-    icon: "dot-grid",
-    accent: "#8b5cf6",
-    title: "A home screen of apps",
-    body: "Tap a tile to open an app. The big gold tile is Chats — that's where everything starts. Notes keeps your everyday things, Files lets AI work on your folders, and Processes shows what the AI is doing right now.",
-  },
-  {
-    icon: "brain",
-    accent: "#22d3ee",
-    title: "Chat, and let AI help",
-    body: "A helper can break a big job into smaller ones, use tools on your behalf, and hand back the result. It can even draw charts and small visualizations right inside the chat — not just text.",
-  },
-  {
-    icon: "plus",
-    accent: "#34d399",
-    title: "Ask for your own apps",
-    body: "Want something this screen doesn't have? Just ask — “make me a stock prices app on the home screen” — and a helper builds it and pins it as a new tile.",
-  },
-  {
-    icon: "shield",
-    accent: "#3b82f6",
-    title: "Your data is yours — and safe",
-    body: "Notes are shared with your AI helpers so they know your context. When AI edits or removes files, deletions go to a Trash you can restore from — nothing is lost by accident.",
-  },
-  {
-    icon: "check",
-    accent: "#f472b6",
-    title: "You're all set",
-    body: "Open Chats and say hi. Hover any tile for a hint of what it does, and reopen this tour anytime from the Help app.",
-  },
+  { icon: "speech-bubble", accent: "#e7b62f", glyphTone: "dark", key: "welcome" },
+  { icon: "dot-grid", accent: "#8b5cf6", key: "apps" },
+  { icon: "brain", accent: "#22d3ee", key: "chat" },
+  { icon: "plus", accent: "#34d399", key: "build" },
+  { icon: "settings-gear", accent: "#8d8fa6", key: "settings" },
+  { icon: "shield", accent: "#3b82f6", key: "data" },
+  { icon: "check", accent: "#8b5cf6", key: "done" },
 ]
 
 export const HelpTour: Component = () => {
   const dialog = useDialog()
+  const language = useLanguage()
   const [i, setI] = createSignal(0)
   const step = () => STEPS[i()]!
   const last = () => i() === STEPS.length - 1
+  const title = () => language.t(`help.tour.step.${step().key}.title` as Parameters<typeof language.t>[0])
+  const body = () => language.t(`help.tour.step.${step().key}.body` as Parameters<typeof language.t>[0])
 
   return (
     <Dialog size="content">
@@ -82,8 +56,8 @@ export const HelpTour: Component = () => {
         {/* min-h fits the tallest step so the card keeps ONE size across the tour — the Next
             button must not hop under the cursor between steps. */}
         <div class="flex flex-col gap-2 min-h-[8rem]">
-          <span class="text-[17px] font-semibold text-v2-text-text-base">{step().title}</span>
-          <span class="text-sm text-v2-text-text-muted leading-relaxed">{step().body}</span>
+          <span class="text-[17px] font-semibold text-v2-text-text-base">{title()}</span>
+          <span class="text-sm text-v2-text-text-muted leading-relaxed">{body()}</span>
         </div>
         <div class="flex items-center gap-1.5 pt-1">
           <For each={STEPS}>
@@ -101,7 +75,7 @@ export const HelpTour: Component = () => {
             class="text-sm font-medium text-v2-text-text-faint px-2 py-1.5 rounded-lg transition-colors hover:text-v2-text-text-muted"
             onClick={() => dialog.close()}
           >
-            Skip
+            {language.t("help.tour.skip")}
           </button>
           <div class="flex items-center gap-2">
             <button
@@ -110,7 +84,7 @@ export const HelpTour: Component = () => {
               onClick={() => setI(Math.max(0, i() - 1))}
               disabled={i() === 0}
             >
-              Back
+              {language.t("help.tour.back")}
             </button>
             <ButtonV2
               variant="gold"
@@ -118,7 +92,7 @@ export const HelpTour: Component = () => {
               class="px-4"
               onClick={() => (last() ? dialog.close() : setI(i() + 1))}
             >
-              {last() ? "Get started" : "Next"}
+              {last() ? language.t("help.tour.getStarted") : language.t("help.tour.next")}
             </ButtonV2>
           </div>
         </div>
