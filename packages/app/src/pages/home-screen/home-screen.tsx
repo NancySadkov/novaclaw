@@ -1,4 +1,12 @@
 import { Component, createMemo, createSignal, For, onMount, Show } from "solid-js"
+import {
+  DragDropProvider,
+  DragDropSensors,
+  SortableProvider,
+  closestCenter,
+  createSortable,
+  type DragEvent,
+} from "@thisbeyond/solid-dnd"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useBuiltinApps } from "@/apps/builtins"
 import { useManifestApps } from "@/apps/manifest-apps"
@@ -7,6 +15,54 @@ import { AppTile } from "./app-tile"
 import { HelpTour, HELP_SEEN_KEY } from "./help-tour"
 
 const PER_PAGE = 24
+
+// B5: persisted tile order. Saved ids come first (in saved order, unknown ids
+// dropped); apps the layout has never seen append in their natural order — so a
+// newly registered agent app still shows up without wiping the arrangement.
+const ORDER_KEY = "novaclaw.home.order"
+
+function loadOrder(): string[] {
+  try {
+    const parsed: unknown = JSON.parse(localStorage.getItem(ORDER_KEY) ?? "[]")
+    return Array.isArray(parsed) ? parsed.filter((id): id is string => typeof id === "string") : []
+  } catch {
+    return []
+  }
+}
+
+function applyOrder(apps: HomeApp[], order: string[]): HomeApp[] {
+  const byId = new Map(apps.map((app) => [app.id, app]))
+  const out: HomeApp[] = []
+  for (const id of order) {
+    const app = byId.get(id)
+    if (app) {
+      out.push(app)
+      byId.delete(id)
+    }
+  }
+  for (const app of apps) if (byId.has(app.id)) out.push(app)
+  return out
+}
+
+// The sortable wrapper OWNS the grid placement (span classes must live on the
+// grid item, which is now this div, not the tile's inner button). Drag uses the
+// pointer sensor's activation distance, so plain clicks still open the app.
+const SortableTile: Component<{ app: HomeApp }> = (props) => {
+  // eslint-disable-next-line solid/reactivity -- sortable identity is stable per mount
+  const sortable = createSortable(props.app.id)
+  return (
+    <div
+      use:sortable
+      class="touch-none"
+      classList={{
+        "col-span-2 md:col-span-3 row-span-2": !!props.app.hero,
+        "opacity-30": sortable.isActiveDraggable,
+      }}
+    >
+      <AppTile app={props.app} />
+    </div>
+  )
+}
 
 // A friendly time-of-day greeting — the home is a product, not a terminal.
 function greeting(): string {
@@ -25,7 +81,10 @@ function greeting(): string {
 export const HomeScreen: Component = () => {
   const builtins = useBuiltinApps()
   const manifestApps = useManifestApps()
-  const apps = createMemo<HomeApp[]>(() => [...builtins(), ...manifestApps(), ...registeredApps()])
+  const [order, setOrder] = createSignal<string[]>(loadOrder())
+  const apps = createMemo<HomeApp[]>(() =>
+    applyOrder([...builtins(), ...manifestApps(), ...registeredApps()], order()),
+  )
   const pages = createMemo<HomeApp[][]>(() => {
     const all = apps()
     const out: HomeApp[][] = []
@@ -35,6 +94,25 @@ export const HomeScreen: Component = () => {
   const [page, setPage] = createSignal(0)
   let scroller: HTMLDivElement | undefined
   const dialog = useDialog()
+
+  // B5 drag-to-reorder: recompute the full order from the current arrangement,
+  // move dragged-before-target, persist. Reordering is always live (pointer
+  // activation distance keeps taps opening apps) — no separate edit mode.
+  const onDragEnd = (event: DragEvent) => {
+    const { draggable, droppable } = event
+    if (!draggable || !droppable || draggable.id === droppable.id) return
+    const ids = apps().map((app) => app.id)
+    const from = ids.indexOf(String(draggable.id))
+    const to = ids.indexOf(String(droppable.id))
+    if (from < 0 || to < 0) return
+    ids.splice(to, 0, ...ids.splice(from, 1))
+    setOrder(ids)
+    try {
+      localStorage.setItem(ORDER_KEY, JSON.stringify(ids))
+    } catch {
+      // localStorage unavailable — the order still applies for this session.
+    }
+  }
 
   // First run: auto-open the Help tour once (guarded by a localStorage flag); reopenable via the Help app.
   onMount(() => {
@@ -65,25 +143,30 @@ export const HomeScreen: Component = () => {
           Open <span class="text-v2-text-text-accent">Chats</span> and ask — agents can also build new apps for this screen.
         </p>
       </div>
-      <div
-        ref={scroller}
-        onScroll={onScroll}
-        class="flex-1 min-h-0 w-full flex overflow-x-auto overflow-y-hidden snap-x snap-mandatory scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
-      >
-        <For each={pages()}>
-          {(pageApps) => (
-            <div class="snap-center shrink-0 w-full h-full flex items-start justify-center overflow-y-auto pt-6">
-              {/* Explicit minmax(0,5rem) tracks (not auto) so a col-span-2 hero stretches to 2 tracks
-                  + gap, while tracks can still COMPRESS below 5rem on phone widths — fixed tracks
-                  would overflow a 360px viewport and clip the left column unreachably (centered flex
-                  overflow has no start-edge scroll). Tiles are w-full inside their track. */}
-              <div class="grid w-full [grid-template-columns:repeat(4,minmax(0,5rem))] sm:[grid-template-columns:repeat(5,minmax(0,5rem))] md:[grid-template-columns:repeat(6,minmax(0,5rem))] gap-x-4 sm:gap-x-7 gap-y-9 px-4 py-8 pt-2 sm:px-8 max-w-[62rem] justify-center">
-                <For each={pageApps}>{(app) => <AppTile app={app} />}</For>
-              </div>
-            </div>
-          )}
-        </For>
-      </div>
+      <DragDropProvider onDragEnd={onDragEnd} collisionDetector={closestCenter}>
+        <DragDropSensors />
+        <div
+          ref={scroller}
+          onScroll={onScroll}
+          class="flex-1 min-h-0 w-full flex overflow-x-auto overflow-y-hidden snap-x snap-mandatory scroll-smooth [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        >
+          <SortableProvider ids={apps().map((app) => app.id)}>
+            <For each={pages()}>
+              {(pageApps) => (
+                <div class="snap-center shrink-0 w-full h-full flex items-start justify-center overflow-y-auto pt-6">
+                  {/* Explicit minmax(0,5rem) tracks (not auto) so a col-span-2 hero stretches to 2 tracks
+                      + gap, while tracks can still COMPRESS below 5rem on phone widths — fixed tracks
+                      would overflow a 360px viewport and clip the left column unreachably (centered flex
+                      overflow has no start-edge scroll). Tiles are w-full inside their track. */}
+                  <div class="grid w-full [grid-template-columns:repeat(4,minmax(0,5rem))] sm:[grid-template-columns:repeat(5,minmax(0,5rem))] md:[grid-template-columns:repeat(6,minmax(0,5rem))] gap-x-4 sm:gap-x-7 gap-y-9 px-4 py-8 pt-2 sm:px-8 max-w-[62rem] justify-center">
+                    <For each={pageApps}>{(app) => <SortableTile app={app} />}</For>
+                  </div>
+                </div>
+              )}
+            </For>
+          </SortableProvider>
+        </div>
+      </DragDropProvider>
       <Show when={pages().length > 1}>
         <div class="flex items-center gap-2 py-4">
           <For each={pages()}>
