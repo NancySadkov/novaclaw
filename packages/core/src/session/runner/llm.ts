@@ -42,6 +42,7 @@ import { createLLMEventPublisher } from "./publish-llm-event"
 import { toLLMMessages } from "./to-llm-message"
 import { AdhocGuidance } from "../../adhoc-tools/guidance"
 import { Affective } from "./affective"
+import { ContextPack } from "./context-pack"
 import {
   detectDoomLoop,
   redirectMessage,
@@ -325,7 +326,7 @@ export const layer = Layer.effect(
         const wasCalm = Affective.intervention(previous) === undefined
         if (nudge && wasCalm) yield* SessionInput.steer(db, events, session.id, nudge)
       }
-      const request = LLM.request({
+      const fullRequest = LLM.request({
         model,
         providerOptions: { openai: { promptCacheKey } },
         system: [personaBaseline, config.systemPromptOverride, agent.info?.system, system.baseline]
@@ -336,8 +337,26 @@ export const layer = Layer.effect(
         toolChoice: isLastStep ? "none" : undefined,
         ...(affectiveGeneration === undefined ? {} : { generation: affectiveGeneration }),
       })
-      if (yield* compaction.compactIfNeeded({ sessionID: session.id, entries, model, request }))
+      if (yield* compaction.compactIfNeeded({ sessionID: session.id, entries, model, request: fullRequest }))
         return yield* Effect.die(continueAfterCompaction(currentStep))
+      // 1M — the deterministic fail-safe under compaction: pack the outgoing request to the
+      // server's HONORED window so an Ollama-class server never silently front-truncates the
+      // system prompt away. Reached when compaction declined (window unknown, summary model
+      // unavailable, or simply under ITS threshold) — history in the DB stays intact.
+      const packed = ContextPack.packRequest({
+        request: fullRequest,
+        contextSize: model.route.defaults.limits?.context,
+      })
+      if (packed.dropped > 0)
+        yield* Effect.logWarning("context pack evicted history from the outgoing request", {
+          sessionID: session.id,
+          dropped: packed.dropped,
+          keptTokens: packed.estimatedTokens,
+          contextSize: packed.contextSize,
+        })
+      const request = packed.changed
+        ? LLM.request({ ...LLM.requestInput(fullRequest), messages: packed.messages })
+        : fullRequest
       const startSnapshot = yield* snapshots.capture()
       const publisher = createLLMEventPublisher(events, {
         sessionID: session.id,
@@ -486,6 +505,18 @@ export const layer = Layer.effect(
                 files,
               }),
             )
+            // 1M/A6(7) — ctx_pressure tripwire: the server-REPORTED prompt size vs the window.
+            // At ≥95% the real prompt has outgrown the chars/4 estimate; the next request risks
+            // silent server-side truncation. Logs actual-vs-estimate for calibration.
+            const reportedPrompt =
+              stepSettlement.tokens.input + stepSettlement.tokens.cache.read + stepSettlement.tokens.cache.write
+            if (ContextPack.ctxPressure(reportedPrompt, packed.contextSize))
+              yield* Effect.logWarning("ctx_pressure: real prompt near the context window", {
+                sessionID: session.id,
+                reportedPrompt,
+                estimatedTokens: packed.estimatedTokens,
+                contextSize: packed.contextSize,
+              })
           }
           if (publisher.hasProviderError())
             yield* withPublication(publisher.failUnsettledTools("Tool execution interrupted"))

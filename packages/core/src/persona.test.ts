@@ -49,4 +49,12 @@ describe("Persona.resolve", () => {
   test("no notes dir -> no notes line", () => {
     expect(Persona.resolve(undefined)).not.toContain("notes folder")
   })
+
+  // 1M/A6(2) — size pin (codehamr discipline: "bump when it fails, never relax the assertion").
+  // The persona baseline is charged against EVERY turn's context on the qwen floor; growth must be
+  // a deliberate decision, not drift. Currently ~1.4k chars (~350 tokens).
+  test("size pin: the composed baseline stays under 2000 chars", () => {
+    const composed = Persona.resolve(undefined, { notesDir: "C:\\Users\\example\\data\\notes" })!
+    expect(composed.length).toBeLessThan(2000)
+  })
 })
