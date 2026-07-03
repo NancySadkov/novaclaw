@@ -62,7 +62,10 @@ import {
 import { Introspection } from "./introspection"
 import { MAX_STEPS_PROMPT } from "./max-steps"
 import { ProviderRetry } from "./provider-retry"
+import { Quality } from "./quality"
 import { Snapshot } from "../../snapshot"
+import { AppProcess } from "../../process"
+import { ChildProcess } from "effect/unstable/process"
 import { makeLocationNode } from "../../effect/app-node"
 import { llmClient } from "../../effect/app-node-platform"
 
@@ -144,6 +147,55 @@ export const layer = Layer.effect(
     // agent-system → baseline. Falls back to the older `username` field for the name.
     const userProfileBaseline = UserProfile.resolve(Config.latest(configEntries, "user_profile"), {
       fallbackName: Config.latest(configEntries, "username"),
+    })
+    // QE (QE-B): the deterministic 5-step verify loop over the PROVISIONED commands.
+    // Default OFF; failures steer the agent to fix and re-run (observation, never a halt).
+    const appProcess = yield* AppProcess.Service
+    const qualityConfig = Quality.resolve(Config.latest(configEntries, "quality"))
+    const qualityShell =
+      Config.latest(configEntries, "shell") ??
+      (process.platform === "win32" ? (process.env.COMSPEC ?? "cmd.exe") : "/bin/sh")
+    const runQualityCheck = Effect.fn("SessionRunner.qualityCheck")(function* (
+      sessionID: SessionSchema.ID,
+      check: { readonly label: string; readonly command: string; readonly timeoutMs?: number },
+    ) {
+      const command = ChildProcess.make(check.command, [], {
+        cwd: location.directory,
+        shell: qualityShell,
+        stdin: "ignore",
+        detached: process.platform !== "win32",
+        forceKillAfter: Duration.seconds(3),
+      })
+      const result = yield* appProcess
+        .run(command, {
+          combineOutput: true,
+          timeout: Duration.millis(check.timeoutMs ?? 60_000),
+          maxOutputBytes: 32_768,
+        })
+        .pipe(
+          Effect.map((run) => ({ ok: true as const, run })),
+          Effect.catchTag("AppProcessError", (error) => Effect.succeed({ ok: false as const, error })),
+        )
+      const failed = !result.ok
+        ? {
+            output: String(result.error.stderr ?? result.error.message ?? ""),
+            timedOut: /Timed out/i.test(String((result.error.cause as { message?: string } | undefined)?.message ?? "")),
+          }
+        : result.run.exitCode !== 0
+          ? { output: result.run.output?.toString("utf8") ?? "", exit: result.run.exitCode }
+          : undefined
+      if (!failed) {
+        yield* Effect.logDebug("quality check passed", { sessionID, label: check.label })
+        return false
+      }
+      yield* Effect.logInfo("quality check FAILED — steering", { sessionID, label: check.label })
+      yield* SessionInput.steer(
+        db,
+        events,
+        sessionID,
+        Quality.failureMessage({ label: check.label, command: check.command, ...failed }),
+      )
+      return true
     })
     const getSession = Effect.fn("SessionRunner.getSession")(function* (sessionID: SessionSchema.ID) {
       const session = yield* store.get(sessionID)
@@ -590,6 +642,7 @@ export const layer = Layer.effect(
       let runawayNudged = false
       let consecutiveEmpty = 0
       let regrounded = false
+      const quality = Quality.initialState()
       let promotion: SessionInput.Delivery | undefined = hasSteer ? "steer" : hasQueue ? "queue" : undefined
       let shouldRun = input.force || hasSteer || hasQueue
       while (shouldRun) {
@@ -654,6 +707,14 @@ export const layer = Layer.effect(
               yield* introspect(input.sessionID).pipe(
                 Effect.catch((cause) => Effect.logWarning("introspection judge failed", { cause })),
               )
+            // QE-B steps 1–3: per touched file after a write-class tool settles (syntax +
+            // incremental check), whole-module typecheck every Nth write. Best-effort — a
+            // broken check command must never break the drain it guards.
+            if (qualityConfig.enabled)
+              for (const check of Quality.dueMidLoop(qualityConfig, quality, Quality.writeTargets(context)))
+                yield* runQualityCheck(input.sessionID, check).pipe(
+                  Effect.catchCause((cause) => Effect.logWarning("quality check errored", { cause })),
+                )
           } else if (isEmptyAssistantTurn(context)) {
             // 1N/A3: the turn produced no text AND no tool call — typically a tool call streamed
             // into the reasoning channel and dropped by the server's parser. Inject ONE synthetic
@@ -678,6 +739,14 @@ export const layer = Layer.effect(
               yield* Effect.logInfo("finish re-grounding nudge", { sessionID: input.sessionID })
               yield* SessionInput.steer(db, events, input.sessionID, REGROUND_NUDGE)
             }
+            // QE-B steps 4–5: the turn-end gate — test + structural pass, once per drain,
+            // only when the drain actually wrote something. A failure steers; the pending
+            // steer below re-arms continuation so the model fixes it before "done".
+            if (qualityConfig.enabled)
+              for (const check of Quality.dueTurnEnd(qualityConfig, quality))
+                yield* runQualityCheck(input.sessionID, check).pipe(
+                  Effect.catchCause((cause) => Effect.logWarning("quality check errored", { cause })),
+                )
           }
           if (!needsContinuation) needsContinuation = yield* SessionInput.hasPending(db, input.sessionID, "steer")
         }
@@ -712,5 +781,6 @@ export const node = makeLocationNode({
     Config.node,
     Snapshot.node,
     Database.node,
+    AppProcess.node,
   ],
 })

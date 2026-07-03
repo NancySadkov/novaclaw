@@ -57,6 +57,7 @@ export function migrate(info: typeof ConfigV1.Info.Type) {
     affective: info.affective,
     offline: info.offline,
     kb: info.kb,
+    quality: info.quality,
     compaction: info.compaction && {
       auto: info.compaction.auto,
       prune: info.compaction.prune,

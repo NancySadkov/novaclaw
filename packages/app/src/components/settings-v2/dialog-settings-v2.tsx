@@ -14,6 +14,7 @@ import { SettingsIntrospectionV2 } from "./introspection"
 import { SettingsSystemPromptV2 } from "./system-prompt"
 import { SettingsAffectiveV2 } from "./affective"
 import { SettingsToolsV2 } from "./tools"
+import { SettingsQualityV2 } from "./quality"
 import { SettingsRecoveryV2 } from "./recovery"
 
 export const DialogSettings: Component<{
@@ -75,6 +76,10 @@ export const DialogSettings: Component<{
                       <Icon name="code-lines" />
                       {language.t("settings.tools.title")}
                     </TabsV2.Trigger>
+                    <TabsV2.Trigger value="quality">
+                      <Icon name="checklist" />
+                      {language.t("settings.quality.title")}
+                    </TabsV2.Trigger>
                   </div>
                 </div>
 
@@ -121,6 +126,9 @@ export const DialogSettings: Component<{
         </TabsV2.Content>
         <TabsV2.Content value="tools" class="settings-v2-panel">
           <SettingsToolsV2 />
+        </TabsV2.Content>
+        <TabsV2.Content value="quality" class="settings-v2-panel">
+          <SettingsQualityV2 />
         </TabsV2.Content>
         <TabsV2.Content value="recovery" class="settings-v2-panel">
           <SettingsRecoveryV2 />

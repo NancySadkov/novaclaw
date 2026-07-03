@@ -120,6 +120,27 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   })
     .pipe(Schema.optional)
     .annotate({ description: "Knowledge-base facade (KB-A): consumers read this to find the KB endpoint" }),
+  quality: Schema.Struct({
+    enabled: Schema.Boolean.pipe(Schema.optional),
+    cadence: Schema.Finite.pipe(Schema.optional).annotate({
+      description: "Run the whole-module typecheck every N writes (default 2)",
+    }),
+    testTimeout: Schema.Finite.pipe(Schema.optional).annotate({
+      description: "Hard timeout for the test gate in ms (default 300000)",
+    }),
+    commands: Schema.Struct({
+      syntax: Schema.String.pipe(Schema.optional).annotate({ description: "Per-file syntax check ({file} placeholder)" }),
+      check: Schema.String.pipe(Schema.optional).annotate({ description: "Per-file incremental verifier ({file})" }),
+      typecheck: Schema.String.pipe(Schema.optional).annotate({ description: "Whole-module type/compile check" }),
+      test: Schema.String.pipe(Schema.optional).annotate({ description: "Test-gate command" }),
+      lint: Schema.String.pipe(Schema.optional).annotate({ description: "Structural/lint pass" }),
+    }).pipe(Schema.optional),
+  })
+    .pipe(Schema.optional)
+    .annotate({
+      description:
+        "Quality Enforcement mode (QE): provisioned check commands run at write/turn boundaries; failures steer the agent to fix and re-run — per-project override is first-class",
+    }),
   skills: Schema.String.pipe(Schema.Array, Schema.optional).annotate({
     description: "Additional paths or URLs to discover skills from",
   }),

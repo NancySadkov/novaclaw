@@ -226,6 +226,29 @@ export const Info = Schema.Struct({
       }),
     }),
   ).annotate({ description: "Knowledge-base facade (KB-A): consumers read this to find the KB endpoint" }),
+  quality: Schema.optional(
+    Schema.Struct({
+      enabled: Schema.optional(Schema.Boolean),
+      cadence: Schema.optional(Schema.Number).annotate({
+        description: "Run the whole-module typecheck every N writes (default 2)",
+      }),
+      testTimeout: Schema.optional(Schema.Number).annotate({
+        description: "Hard timeout for the test gate in ms (default 300000)",
+      }),
+      commands: Schema.optional(
+        Schema.Struct({
+          syntax: Schema.optional(Schema.String).annotate({ description: "Per-file syntax check ({file})" }),
+          check: Schema.optional(Schema.String).annotate({ description: "Per-file incremental verifier ({file})" }),
+          typecheck: Schema.optional(Schema.String).annotate({ description: "Whole-module type/compile check" }),
+          test: Schema.optional(Schema.String).annotate({ description: "Test-gate command" }),
+          lint: Schema.optional(Schema.String).annotate({ description: "Structural/lint pass" }),
+        }),
+      ),
+    }),
+  ).annotate({
+    description:
+      "Quality Enforcement mode (QE): provisioned check commands run at write/turn boundaries; failures steer the agent to fix and re-run",
+  }),
   compaction: Schema.optional(
     Schema.Struct({
       auto: Schema.optional(Schema.Boolean).annotate({
