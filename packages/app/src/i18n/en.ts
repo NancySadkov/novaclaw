@@ -901,7 +901,9 @@ export const dict = {
   "settings.general.row.shellBundle.provisioning": "Provisioning…",
   "settings.general.row.offline.title": "Offline / airgap mode",
   "settings.general.row.offline.description":
-    "Restrict outbound HTTP to loopback and your configured model-provider hosts (fail-closed); blocks package installs and telemetry export. Restart the server to apply.",
+    "Restrict outbound HTTP to loopback and your configured model-provider hosts (fail-closed); blocks package installs, telemetry export, and the model's own shell egress. Restart the server to apply.",
+  "settings.general.row.offline.active": "airgapped",
+  "settings.general.row.offline.inactive": "layers ready",
   "settings.general.row.reasoningSummaries.title": "Show reasoning summaries",
   "settings.general.row.reasoningSummaries.description": "Display model reasoning summaries in the timeline",
   "settings.general.row.shellToolPartsExpanded.title": "Expand shell tool parts",

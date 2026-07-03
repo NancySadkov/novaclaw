@@ -13,9 +13,9 @@ import "./settings-v2.css"
 // typecheck cadence, and the test-gate timeout. Empty command = that step is
 // skipped ("not everything has an automatic check"). Persist via updateConfig
 // (the golden config-write rule); cleared fields write "" which resolve()
-// treats as unset. QE-A (the model provisioning these commands itself) rides
-// the B11 bundled shell — today you provision them here or in the project
-// novaclaw.jsonc (per-project override is first-class via config layering).
+// treats as unset. QE-A (SHIPPED) lets the model provision these itself via the
+// quality_provision tool (manifest scan → verify → write project novaclaw.jsonc);
+// this tab is the manual path + where you review/override what QE-A wrote.
 
 interface QualityCommands {
   syntax?: string

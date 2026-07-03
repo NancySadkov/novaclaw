@@ -13,7 +13,7 @@ import { usePlatform } from "@/context/platform"
 import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
 import { useServerSDK } from "@/context/server-sdk"
-import { shellProvision, shellStatus, type ShellStatus } from "@/utils/fs-api"
+import { offlineStatus, shellProvision, shellStatus, type OfflineStatus, type ShellStatus } from "@/utils/fs-api"
 import { useUpdaterAction } from "../updater-action"
 import {
   monoDefault,
@@ -174,6 +174,20 @@ export const SettingsGeneralV2: Component<{
       void refetchBundle()
     }
   }
+
+  // OFF-C — the N/9 airgap-layer indicator (refetches when offline mode is toggled).
+  const offlineEnabled = createMemo(() => (serverSync().data.config as { offline?: boolean }).offline === true)
+  const [offline] = createResource(
+    () => (shellConn() && shellRouteDir() ? { conn: shellConn()!, d: shellRouteDir()!, on: offlineEnabled() } : undefined),
+    ({ conn, d }) => offlineStatus(conn.http, { directory: d }).catch(() => undefined),
+  )
+  const offlineLabel = createMemo(() => {
+    const status = offline.latest as OfflineStatus | undefined
+    if (!status) return ""
+    return status.enabled
+      ? `${language.t("settings.general.row.offline.active")} — ${status.active}/${status.total}`
+      : language.t("settings.general.row.offline.inactive")
+  })
 
   const autoOption = { id: "auto", value: "", label: language.t("settings.general.row.shell.autoDefault") }
   // 1K: the default-permission-mode options reuse the composer droplist's labels.
@@ -353,11 +367,11 @@ export const SettingsGeneralV2: Component<{
 
         <SettingsRowV2
           title={language.t("settings.general.row.offline.title")}
-          description={language.t("settings.general.row.offline.description")}
+          description={`${language.t("settings.general.row.offline.description")}${offlineLabel() ? ` — ${offlineLabel()}` : ""}`}
         >
           <div data-action="settings-offline-mode">
             <Switch
-              checked={(serverSync().data.config as { offline?: boolean }).offline === true}
+              checked={offlineEnabled()}
               onChange={(checked) => void serverSync().updateConfig({ offline: checked } as never)}
             />
           </div>

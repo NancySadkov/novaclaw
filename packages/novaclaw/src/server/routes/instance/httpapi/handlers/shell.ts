@@ -1,4 +1,7 @@
+import { Flag } from "@novaclaw/core/flag/flag"
 import { Git } from "@novaclaw/core/git"
+import { Global } from "@novaclaw/core/global"
+import { layerManifest, loadPolicy } from "@novaclaw/core/offline"
 import { Shell } from "@novaclaw/core/shell"
 import { ShellBundle } from "@novaclaw/core/shell-bundle"
 import { which } from "@novaclaw/core/util/which"
@@ -39,6 +42,14 @@ export const shellHandlers = HttpApiBuilder.group(InstanceHttpApi, "shell", (han
         "status",
         Effect.fn("ShellHttpApi.status")(function* () {
           return status()
+        }),
+      )
+      .handle(
+        "offline",
+        Effect.fn("ShellHttpApi.offline")(function* () {
+          // GLOBAL config only (the machine-level chokepoint) — same source + flag-aware
+          // dir as the Offline service, so the status matches what the guard enforces.
+          return layerManifest(loadPolicy({ configDir: Flag.NOVACLAW_CONFIG_DIR ?? Global.Path.config }))
         }),
       )
       .handle(

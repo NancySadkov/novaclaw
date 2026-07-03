@@ -33,6 +33,20 @@ export const ShellStatus = Schema.Struct({
   provisionSupported: Schema.Boolean,
 })
 
+export const OfflineLayer = Schema.Struct({
+  layer: Schema.Finite,
+  name: Schema.String,
+  active: Schema.Boolean,
+  detail: Schema.optional(Schema.String),
+})
+
+export const OfflineStatus = Schema.Struct({
+  enabled: Schema.Boolean,
+  active: Schema.Finite,
+  total: Schema.Finite,
+  layers: Schema.Array(OfflineLayer),
+})
+
 export const ShellApi = HttpApi.make("shell")
   .add(
     HttpApiGroup.make("shell")
@@ -46,6 +60,16 @@ export const ShellApi = HttpApi.make("shell")
             summary: "Shell substrate status",
             description:
               "Which bash/git the agents get (bundled PortableGit, system, or platform fallback) and whether the bundle is provisioned.",
+          }),
+        ),
+        HttpApiEndpoint.get("offline", `${root}/offline`, {
+          query: WorkspaceRoutingQuery,
+          success: described(OfflineStatus, "The N/9 offline-layer posture"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "shell.offline",
+            summary: "Offline layer status",
+            description: "The airgap posture: how many of the 9 offline layers are active, with per-layer detail (OFF-C).",
           }),
         ),
         HttpApiEndpoint.post("provision", `${root}/provision`, {

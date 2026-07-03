@@ -8,6 +8,7 @@ import { Config } from "../config"
 import { makeLocationNode } from "../effect/app-node"
 import { FSUtil } from "../fs-util"
 import { LocationMutation } from "../location-mutation"
+import { Offline } from "../offline"
 import { AppProcess } from "../process"
 import { Shell } from "../shell"
 import { ShellBundle } from "../shell-bundle"
@@ -131,6 +132,9 @@ export const layer = Layer.effectDiscard(
     const config = yield* Config.Service
     const permission = yield* PermissionV2.Service
     const bashJobs = yield* BashJobs.Service
+    // OFF-C: the offline policy is a machine-level snapshot (flag-aware config dir);
+    // consume the shared service so the guard sees the SAME policy as the HttpClient.
+    const offline = yield* Offline.Service
 
     yield* tools
       .register({
@@ -209,10 +213,15 @@ export const layer = Layer.effectDiscard(
               // (no-op for non-MSYS shells — envForBash returns undefined for them).
               const bundleEnv =
                 typeof shell === "string" && Shell.name(shell) === "bash" ? ShellBundle.envForBash(shell) : undefined
+              // OFF-C (layer 9): in offline mode, point the child's HTTP clients (curl/pip/
+              // npm/git) at a dead proxy sink with the allowlist in NO_PROXY, so the model's
+              // own shell fails closed on WAN egress (no-op when offline mode is off).
+              const egress = offline.egressEnv()
+              const childEnv = bundleEnv || egress ? { ...bundleEnv, ...egress } : undefined
               const command = ChildProcess.make(commandText, [], {
                 cwd: target.canonical,
                 shell,
-                ...(bundleEnv ? { env: bundleEnv, extendEnv: true } : {}),
+                ...(childEnv ? { env: childEnv, extendEnv: true } : {}),
                 stdin: "ignore",
                 detached: process.platform !== "win32",
                 forceKillAfter: Duration.seconds(3),
@@ -289,5 +298,6 @@ export const node = makeLocationNode({
     Config.node,
     PermissionV2.node,
     BashJobs.node,
+    Offline.node,
   ],
 })

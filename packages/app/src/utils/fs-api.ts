@@ -111,3 +111,15 @@ export function shellStatus(server: ServerConnection.HttpBase, input: { director
 export function shellProvision(server: ServerConnection.HttpBase, input: { directory: string }) {
   return call<ShellStatus>(server, "POST", "shell/provision", input.directory)
 }
+
+// OFF-C — the N/9 offline-layer posture (the airgap status indicator).
+export interface OfflineStatus {
+  readonly enabled: boolean
+  readonly active: number
+  readonly total: number
+  readonly layers: ReadonlyArray<{ readonly layer: number; readonly name: string; readonly active: boolean; readonly detail?: string }>
+}
+
+export function offlineStatus(server: ServerConnection.HttpBase, input: { directory: string }) {
+  return call<OfflineStatus>(server, "GET", "shell/offline", input.directory)
+}

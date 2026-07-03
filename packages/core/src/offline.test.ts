@@ -4,11 +4,15 @@ import fs from "fs"
 import os from "os"
 import path from "path"
 import {
+  PROXY_SINK,
   checkUrl,
   disabledPolicy,
+  egressEnv,
   hostFromUrl,
   isLoopbackHost,
+  layerManifest,
   loadPolicy,
+  noProxyList,
   parseAllowList,
   providerHostsFromConfig,
 } from "./offline"
@@ -48,6 +52,49 @@ describe("offline pure helpers", () => {
   test("parseAllowList tolerates spacing + empties", () => {
     expect(parseAllowList(" 192.168.178.40 , searx.lan ,")).toEqual(["192.168.178.40", "searx.lan"])
     expect(parseAllowList(undefined)).toEqual([])
+  })
+})
+
+describe("OFF-C egress env (layer 9)", () => {
+  test("disabled policy → no child env overlay (never touch the child)", () => {
+    expect(egressEnv(disabledPolicy)).toBeUndefined()
+  })
+
+  test("enabled policy → *_PROXY sink + allowlist in NO_PROXY (both cases)", () => {
+    const policy = { enabled: true, allowedHosts: new Set(["192.168.178.40", "searx.lan"]) }
+    const env = egressEnv(policy)!
+    expect(env.HTTP_PROXY).toBe(PROXY_SINK)
+    expect(env.https_proxy).toBe(PROXY_SINK)
+    expect(env.ALL_PROXY).toBe(PROXY_SINK)
+    // loopback forms + allowlisted hosts bypass the sink
+    expect(env.NO_PROXY).toContain("127.0.0.1")
+    expect(env.NO_PROXY).toContain("192.168.178.40")
+    expect(env.NO_PROXY).toContain("searx.lan")
+    expect(env.no_proxy).toBe(env.NO_PROXY)
+  })
+
+  test("noProxyList always includes loopback, sorted allowlist appended", () => {
+    expect(noProxyList({ enabled: true, allowedHosts: new Set(["b.lan", "a.lan"]) })).toBe(
+      "localhost,127.0.0.1,::1,a.lan,b.lan",
+    )
+  })
+})
+
+describe("offline layer manifest (N/9 indicator)", () => {
+  test("disabled → 0/9 active", () => {
+    const manifest = layerManifest(disabledPolicy)
+    expect(manifest.enabled).toBe(false)
+    expect(manifest.active).toBe(0)
+    expect(manifest.total).toBe(9)
+    expect(manifest.layers.every((l) => !l.active)).toBe(true)
+  })
+
+  test("enabled → 9/9 active, layer 9 is the process guard", () => {
+    const manifest = layerManifest({ enabled: true, allowedHosts: new Set(["x.lan"]) })
+    expect(manifest.active).toBe(9)
+    expect(manifest.layers[8]!.layer).toBe(9)
+    expect(manifest.layers[8]!.name).toMatch(/process egress/i)
+    expect(manifest.layers[8]!.active).toBe(true)
   })
 })
 

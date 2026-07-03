@@ -117,9 +117,83 @@ export function loadPolicy(input: { configDir: string; env?: Record<string, stri
   return { enabled, allowedHosts }
 }
 
+// ── OFF-C (layer 9): process-level egress guard ─────────────────────────────────────────
+//
+// The model's own bash/curl/python can reach the WAN directly — layers 1-8 only bind OUR
+// HttpClient. OFF-C wraps the child process environment so the shell's HTTP clients
+// (curl, wget, pip, npm, git, most language stdlibs that honor *_PROXY) fail closed:
+//   - HTTP(S)_PROXY point at a dead loopback sink (127.0.0.1:9), so any proxied request
+//     connection-refuses instead of egressing;
+//   - NO_PROXY carries loopback + the allowlisted hosts, so those (the local vLLM, a LAN
+//     SearXNG/KB) bypass the sink and still work;
+//   - a lowercase alias set (curl uses lowercase) mirrors each var.
+// This is best-effort, not a jail: a determined static binary that ignores *_PROXY and
+// opens raw sockets escapes it (a real network namespace / firewall is the OS-level
+// backstop, per-OS, out of scope). It stops the common case — curl/pip/npm/git — cheaply
+// and portably. Loopback stays reachable (the app talking to itself is not egress).
+
+/** The unreachable sink every non-allowlisted request is pointed at. */
+export const PROXY_SINK = "http://127.0.0.1:9"
+
+/** NO_PROXY value: loopback forms + the allowlisted hosts (comma-separated). */
+export function noProxyList(policy: Policy): string {
+  return ["localhost", "127.0.0.1", "::1", ...[...policy.allowedHosts].sort()].join(",")
+}
+
+/**
+ * Child-process env overlay enforcing OFF-C. Returns `undefined` when offline mode is off
+ * (no-op — never touch the child env otherwise). Keys are set in BOTH cases (curl reads
+ * lowercase; most others uppercase).
+ */
+export function egressEnv(policy: Policy): Record<string, string> | undefined {
+  if (!policy.enabled) return undefined
+  const noProxy = noProxyList(policy)
+  return {
+    HTTP_PROXY: PROXY_SINK,
+    HTTPS_PROXY: PROXY_SINK,
+    ALL_PROXY: PROXY_SINK,
+    NO_PROXY: noProxy,
+    http_proxy: PROXY_SINK,
+    https_proxy: PROXY_SINK,
+    all_proxy: PROXY_SINK,
+    no_proxy: noProxy,
+    // pip honors this; git honors http.proxy but also *_PROXY via curl.
+    PIP_PROXY: PROXY_SINK,
+  }
+}
+
+// ── The offline-layer manifest (the "N/9 layers active" indicator) ──────────────────────
+export interface LayerStatus {
+  readonly layer: number
+  readonly name: string
+  readonly active: boolean
+  readonly detail?: string
+}
+
+/** Snapshot the 9-layer offline posture for the UI/status endpoint. */
+export function layerManifest(policy: Policy): { readonly enabled: boolean; readonly active: number; readonly total: number; readonly layers: readonly LayerStatus[] } {
+  const on = policy.enabled
+  const layers: LayerStatus[] = [
+    { layer: 1, name: "HttpClient chokepoint", active: on, detail: "shared Effect HttpClient (LLM, webfetch, probe, share)" },
+    { layer: 2, name: "provider-host allowlist", active: on, detail: on ? `${policy.allowedHosts.size} host(s) + loopback` : undefined },
+    { layer: 3, name: "MCP transport", active: on, detail: "MCP servers ride the chokepoint or their own Offline check" },
+    { layer: 4, name: "OTLP telemetry", active: on, detail: "exporter checks OTEL endpoint against the allowlist" },
+    { layer: 5, name: "share/sync egress", active: on, detail: "share URLs ride the chokepoint" },
+    { layer: 6, name: "auto-update", active: on, detail: "update fetches ride the chokepoint" },
+    { layer: 7, name: "LAN services", active: on, detail: "SearXNG/KB allowed as loopback/LAN hosts" },
+    { layer: 8, name: "npm installs", active: on, detail: "package fetches fail closed (pre-provision or mirror)" },
+    { layer: 9, name: "process egress guard", active: on, detail: on ? "child *_PROXY → dead sink; allowlist in NO_PROXY" : "OFF-C" },
+  ]
+  return { enabled: on, active: on ? layers.length : 0, total: layers.length, layers }
+}
+
 export interface Interface {
   readonly policy: Policy
   readonly check: (url: string) => Verdict
+  /** OFF-C: the child-process env overlay (undefined when offline mode is off). */
+  readonly egressEnv: () => Record<string, string> | undefined
+  /** The N/9 layer manifest for the status surface. */
+  readonly manifest: () => ReturnType<typeof layerManifest>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/Offline") {}
@@ -133,7 +207,12 @@ export const layer = Layer.effect(
       yield* Effect.logInfo("offline mode ACTIVE — HTTP restricted to loopback + provider hosts", {
         allowedHosts: [...policy.allowedHosts],
       })
-    return Service.of({ policy, check: (url) => checkUrl(url, policy) })
+    return Service.of({
+      policy,
+      check: (url) => checkUrl(url, policy),
+      egressEnv: () => egressEnv(policy),
+      manifest: () => layerManifest(policy),
+    })
   }),
 )
 
