@@ -3,6 +3,7 @@ export * as BuiltInTools from "./builtins"
 import { makeLocationNode } from "../effect/app-node"
 import { Layer } from "effect"
 import { BashTool } from "./bash"
+import { BashJobs } from "./bash-jobs"
 import { ApplyPatchTool } from "./apply-patch"
 import { DefineToolTool } from "./define-tool"
 import { EditTool } from "./edit"
@@ -41,7 +42,7 @@ import { WriteHexTool } from "./write-hex"
  */
 export const locationLayer = Layer.mergeAll(
   ApplyPatchTool.layer,
-  BashTool.layer,
+  BashTool.layer.pipe(Layer.provide(BashJobs.layer)),
   DefineToolTool.layer,
   EditTool.layer,
   GlobTool.layer,
