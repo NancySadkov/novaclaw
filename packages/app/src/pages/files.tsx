@@ -45,16 +45,27 @@ export function FilesPage() {
 
   // Resolve a starting directory + the host's filesystem roots (drives on Windows, "/" on POSIX);
   // /path is authoritative — `roots`/`data` postdate the generated SDK type, hence the cast.
-  type PathLike = { home?: string; directory?: string; roots?: readonly string[] }
+  // FS-3: `virtual`/`virtualRoot` postdate the SDK type too; in virtual mode the app-private
+  // root is the start dir and there are no host drives to jump to.
+  type PathLike = {
+    home?: string
+    directory?: string
+    roots?: readonly string[]
+    virtual?: boolean
+    virtualRoot?: string
+  }
+  const shape = (p: PathLike | undefined) =>
+    p?.virtual && p.virtualRoot
+      ? { start: p.virtualRoot, roots: [] as readonly string[] }
+      : { start: p?.home || p?.directory || "", roots: p?.roots ?? [] }
   const [pathInfo] = createResource(ctx, async (c) => {
     const p = c.sync.data.path as PathLike | undefined
-    if (p && (p.home || p.directory) && p.roots?.length)
-      return { start: p.home || p.directory || "", roots: p.roots }
+    if (p && (p.virtual ? p.virtualRoot : (p.home || p.directory) && p.roots?.length)) return shape(p)
     const got = await c.sdk.client.path
       .get()
       .then((r) => r.data as PathLike | undefined)
       .catch(() => undefined)
-    return { start: got?.home || got?.directory || "", roots: got?.roots ?? [] }
+    return shape(got)
   })
   createEffect(() => {
     const s = pathInfo()?.start

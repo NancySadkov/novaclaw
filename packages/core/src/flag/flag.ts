@@ -78,6 +78,10 @@ export const Flag = {
   get NOVACLAW_PURE() {
     return truthy("NOVACLAW_PURE")
   },
+  // FS-3: force the app-private virtual filesystem (phones/sandboxes with no browsable host FS).
+  get NOVACLAW_VIRTUAL_FS() {
+    return truthy("NOVACLAW_VIRTUAL_FS")
+  },
   get NOVACLAW_PERMISSION() {
     return env("NOVACLAW_PERMISSION")
   },

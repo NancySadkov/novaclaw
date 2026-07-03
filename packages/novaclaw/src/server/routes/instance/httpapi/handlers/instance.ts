@@ -5,6 +5,7 @@ import * as InstanceState from "@/effect/instance-state"
 import { Format } from "@/format"
 import { AppRegistry } from "@novaclaw/core/app-registry"
 import { Global } from "@novaclaw/core/global"
+import { VirtualFs } from "@novaclaw/core/virtual-fs"
 import { Vcs } from "@/project/vcs"
 import { Skill } from "@/skill"
 import { Effect } from "effect"
@@ -50,6 +51,9 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
     const getPath = Effect.fn("InstanceHttpApi.path")(function* () {
       const ctx = yield* InstanceState.context
       const roots: string[] = yield* Effect.promise(() => probeRoots())
+      // FS-3: when the host has no browsable FS, provision + advertise the app-private root.
+      const virtual = VirtualFs.enabled()
+      const virtualRoot = virtual ? yield* Effect.promise(() => VirtualFs.ensure()) : undefined
       return {
         home: Global.Path.home,
         state: Global.Path.state,
@@ -58,6 +62,7 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
         worktree: ctx.worktree,
         directory: ctx.directory,
         roots,
+        ...(virtual ? { virtual: true, virtualRoot } : {}),
       }
     })
 

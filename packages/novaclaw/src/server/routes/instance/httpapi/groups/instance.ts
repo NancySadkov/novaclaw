@@ -22,6 +22,10 @@ const PathInfo = Schema.Struct({
   worktree: Schema.String,
   directory: Schema.String,
   roots: Schema.Array(Schema.String),
+  // FS-3: when true the host exposes no browsable FS — the picker/Files use `virtualRoot`
+  // (an app-private directory) instead of `roots`. Optional so old clients ignore it.
+  virtual: Schema.optional(Schema.Boolean),
+  virtualRoot: Schema.optional(Schema.String),
 }).annotate({ identifier: "Path" })
 
 // The persisted home-app registry (B14). Manifests are LAUNCHERS (route/URL/prompt), not code;
