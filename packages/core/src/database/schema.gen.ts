@@ -275,6 +275,25 @@ export default {
       yield* tx.run(`CREATE INDEX \`session_workspace_idx\` ON \`session\` (\`workspace_id\`);`)
       yield* tx.run(`CREATE INDEX \`session_parent_idx\` ON \`session\` (\`parent_id\`);`)
       yield* tx.run(`CREATE INDEX \`todo_session_idx\` ON \`todo\` (\`session_id\`);`)
+      yield* tx.run(`
+        CREATE TABLE \`kb_fact\` (
+          \`id\` text PRIMARY KEY,
+          \`subject\` text NOT NULL,
+          \`predicate\` text NOT NULL,
+          \`object\` text NOT NULL,
+          \`relation\` text NOT NULL,
+          \`source\` text,
+          \`agent\` text,
+          \`confidence\` real,
+          \`valid_from\` integer NOT NULL,
+          \`valid_to\` integer,
+          \`superseded_by\` text,
+          \`time_created\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`CREATE INDEX \`kb_fact_subject_idx\` ON \`kb_fact\` (\`subject\`,\`valid_to\`);`)
+      yield* tx.run(`CREATE INDEX \`kb_fact_predicate_idx\` ON \`kb_fact\` (\`predicate\`,\`valid_to\`);`)
+      yield* tx.run(`CREATE INDEX \`kb_fact_object_idx\` ON \`kb_fact\` (\`object\`,\`valid_to\`);`)
     })
   },
 } satisfies Omit<DatabaseMigration.Migration, "id">

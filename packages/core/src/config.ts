@@ -113,6 +113,13 @@ export class Info extends Schema.Class<Info>("Config.Info")({
     description:
       "Offline/airgap mode (OFF-A): outbound HTTP restricted to loopback + configured provider hosts, fail-closed. GLOBAL config only — the chokepoint is machine-level",
   }),
+  kb: Schema.Struct({
+    url: Schema.String.pipe(Schema.optional).annotate({
+      description: "Base URL of an external KB server implementing the same /kb API; unset = the built-in store",
+    }),
+  })
+    .pipe(Schema.optional)
+    .annotate({ description: "Knowledge-base facade (KB-A): consumers read this to find the KB endpoint" }),
   skills: Schema.String.pipe(Schema.Array, Schema.optional).annotate({
     description: "Additional paths or URLs to discover skills from",
   }),

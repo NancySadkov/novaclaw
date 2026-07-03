@@ -219,6 +219,13 @@ export const Info = Schema.Struct({
     description:
       "Offline/airgap mode (OFF-A): outbound HTTP restricted to loopback + configured provider hosts, fail-closed. Only honored in the GLOBAL config",
   }),
+  kb: Schema.optional(
+    Schema.Struct({
+      url: Schema.optional(Schema.String).annotate({
+        description: "Base URL of an external KB server implementing the same /kb API; unset = the built-in store",
+      }),
+    }),
+  ).annotate({ description: "Knowledge-base facade (KB-A): consumers read this to find the KB endpoint" }),
   compaction: Schema.optional(
     Schema.Struct({
       auto: Schema.optional(Schema.Boolean).annotate({

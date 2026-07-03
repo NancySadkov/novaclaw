@@ -14,6 +14,7 @@ import { EventApi } from "./groups/event"
 import { ExperimentalApi } from "./groups/experimental"
 import { FileApi } from "./groups/file"
 import { InstanceApi } from "./groups/instance"
+import { KbApi } from "./groups/kb"
 import { McpApi } from "./groups/mcp"
 import { PermissionApi } from "./groups/permission"
 import { ProjectApi } from "./groups/project"
@@ -63,6 +64,7 @@ export const InstanceHttpApi = HttpApi.make("novaclaw-instance")
   .addHttpApi(ExperimentalApi)
   .addHttpApi(FileApi)
   .addHttpApi(InstanceApi)
+  .addHttpApi(KbApi)
   .addHttpApi(McpApi)
   .addHttpApi(ProjectApi)
   .addHttpApi(ProjectCopyApi)
