@@ -49,6 +49,8 @@ import {
   failureStreakMessage,
   detectRunaway,
   runawayMessage,
+  toolCallsSinceLastUser,
+  isEmptyAssistantTurn,
   EMPTY_TURN_RECOVERY,
   EMPTY_TURN_DIAGNOSTIC,
 } from "./doom-loop"
@@ -108,51 +110,6 @@ import { llmClient } from "../../effect/app-node-platform"
  * provider turn. Registry definitions are advertised, local tool calls are settled durably, and an
  * explicit loop starts the next provider turn after local settlement. Configured agent step limits bound the loop.
  */
-
-// 1N/A2 — tool calls made since the last user message, each classified failed/ok from its projected
-// state. Scoping to "since the last user message" gives the failure streak + runaway detectors their
-// per-goal reset ("a new user message is a new goal") for free.
-const toolCallsSinceLastUser = (context: readonly SessionMessage.Message[]) => {
-  let lastUserIndex = -1
-  for (let i = context.length - 1; i >= 0; i--) {
-    if (context[i]!.type === "user") {
-      lastUserIndex = i
-      break
-    }
-  }
-  const refs: { name: string; input: string; failed: boolean }[] = []
-  for (let i = lastUserIndex + 1; i < context.length; i++) {
-    const message = context[i]!
-    if (message.type !== "assistant") continue
-    for (const part of message.content) {
-      if (part.type !== "tool") continue
-      refs.push({
-        name: part.name,
-        input: typeof part.state.input === "string" ? part.state.input : JSON.stringify(part.state.input),
-        failed: part.state.status === "error",
-      })
-    }
-  }
-  return refs
-}
-
-// 1N/A3 — a turn is "empty" when its assistant message has no non-empty text AND no tool call
-// (reasoning does not count — a leaked-into-reasoning tool call the server dropped is exactly this
-// case). A turn that recorded an `error` is NOT empty: that is 1D's retry territory, not a stall.
-const isEmptyAssistantTurn = (context: readonly SessionMessage.Message[]) => {
-  let lastAssistant: SessionMessage.Assistant | undefined
-  for (let i = context.length - 1; i >= 0; i--) {
-    const message = context[i]!
-    if (message.type === "assistant") {
-      lastAssistant = message
-      break
-    }
-  }
-  if (!lastAssistant || lastAssistant.error !== undefined) return false
-  const hasText = lastAssistant.content.some((part) => part.type === "text" && part.text.trim() !== "")
-  const hasTool = lastAssistant.content.some((part) => part.type === "tool")
-  return !hasText && !hasTool
-}
 
 export const layer = Layer.effect(
   Service,

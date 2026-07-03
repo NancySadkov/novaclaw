@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test"
+import { SessionInput } from "../input"
+import type { SessionMessage } from "../message"
 import {
   detectDoomLoop,
   redirectMessage,
@@ -8,12 +10,30 @@ import {
   failureStreakMessage,
   detectRunaway,
   runawayMessage,
+  toolCallsSinceLastUser,
+  isEmptyAssistantTurn,
   FAILURE_STREAK_THRESHOLD,
   RUNAWAY_THRESHOLD,
 } from "./doom-loop"
 
 const call = (name: string, input: string) => ({ name, input })
 const fail = (name: string, input: string, failed = true) => ({ name, input, failed })
+
+// Minimal projected-history fixtures — the helpers only read the fields modeled here.
+const userMsg = (text: string) => ({ type: "user", text }) as unknown as SessionMessage.Message
+const steerMsg = (text: string) =>
+  ({ type: "user", text: SessionInput.applySteerProvenance(text) }) as unknown as SessionMessage.Message
+const toolPart = (name: string, input: Record<string, unknown>, failed: boolean) => ({
+  type: "tool",
+  name,
+  state: { status: failed ? "error" : "completed", input },
+})
+const assistantMsg = (
+  parts: ReadonlyArray<Record<string, unknown>>,
+  error?: { message: string },
+) => ({ type: "assistant", content: parts, ...(error ? { error } : {}) }) as unknown as SessionMessage.Message
+const textPart = (text: string) => ({ type: "text", text })
+const reasoningPart = (text: string) => ({ type: "reasoning", text })
 
 describe("detectDoomLoop", () => {
   test("three identical consecutive calls trips it", () => {
@@ -167,5 +187,80 @@ describe("detectRunaway", () => {
     expect(msg).toContain("80")
     expect(msg.toLowerCase()).toContain("if you're still making real progress")
     expect(msg.toLowerCase()).not.toMatch(/^stop\b/)
+  })
+})
+
+describe("toolCallsSinceLastUser", () => {
+  test("scopes to calls after the last real user message", () => {
+    const context = [
+      userMsg("first task"),
+      assistantMsg([toolPart("read", { path: "a" }, false)]),
+      userMsg("second task"),
+      assistantMsg([toolPart("bash", { command: "make" }, true), toolPart("bash", { command: "make" }, true)]),
+    ]
+    const calls = toolCallsSinceLastUser(context)
+    expect(calls.length).toBe(2)
+    expect(calls.every((c) => c.name === "bash" && c.failed)).toBe(true)
+  })
+
+  test("a harness steer does NOT reset the window (the A2 regression)", () => {
+    // Without the steer-prefix check, the doom-loop's own nudge would wipe the very streak
+    // it fired for — the streak/runaway counters must survive harness interjections.
+    const context = [
+      userMsg("do the thing"),
+      assistantMsg([toolPart("bash", { command: "make" }, true)]),
+      steerMsg("Stop repeating that call."),
+      assistantMsg([toolPart("bash", { command: "make" }, true)]),
+    ]
+    expect(toolCallsSinceLastUser(context).length).toBe(2)
+  })
+
+  test("a REAL user message resets the window even after steers", () => {
+    const context = [
+      userMsg("old goal"),
+      assistantMsg([toolPart("bash", { command: "make" }, true)]),
+      steerMsg("nudge"),
+      userMsg("new goal"),
+      assistantMsg([toolPart("read", { path: "x" }, false)]),
+    ]
+    const calls = toolCallsSinceLastUser(context)
+    expect(calls.length).toBe(1)
+    expect(calls[0]!.name).toBe("read")
+  })
+
+  test("classifies error-status parts as failures, completed as successes", () => {
+    const context = [
+      userMsg("go"),
+      assistantMsg([toolPart("edit", { path: "f" }, true), toolPart("edit", { path: "f" }, false)]),
+    ]
+    const calls = toolCallsSinceLastUser(context)
+    expect(calls.map((c) => c.failed)).toEqual([true, false])
+  })
+})
+
+describe("isEmptyAssistantTurn", () => {
+  test("no text and no tool call is empty (reasoning does not count)", () => {
+    expect(isEmptyAssistantTurn([userMsg("go"), assistantMsg([reasoningPart("thinking about tools…")])])).toBe(true)
+    expect(isEmptyAssistantTurn([userMsg("go"), assistantMsg([])])).toBe(true)
+  })
+
+  test("whitespace-only text is still empty", () => {
+    expect(isEmptyAssistantTurn([userMsg("go"), assistantMsg([textPart("  \n ")])])).toBe(true)
+  })
+
+  test("real text is not empty", () => {
+    expect(isEmptyAssistantTurn([userMsg("go"), assistantMsg([textPart("done.")])])).toBe(false)
+  })
+
+  test("a tool call is not empty", () => {
+    expect(isEmptyAssistantTurn([userMsg("go"), assistantMsg([toolPart("read", { path: "a" }, false)])])).toBe(false)
+  })
+
+  test("a turn that recorded an error is NOT empty (1D's territory, not a stall)", () => {
+    expect(isEmptyAssistantTurn([userMsg("go"), assistantMsg([], { message: "provider failed" })])).toBe(false)
+  })
+
+  test("no assistant message at all is not an empty turn", () => {
+    expect(isEmptyAssistantTurn([userMsg("go")])).toBe(false)
   })
 })
