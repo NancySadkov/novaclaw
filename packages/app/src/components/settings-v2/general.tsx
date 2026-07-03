@@ -324,6 +324,7 @@ export const SettingsGeneralV2: Component<{
         </SettingsRowV2>
 
         <SettingsRowV2
+          minLevel="advanced"
           title={language.t("command.permissions.autoaccept.enable")}
           description={language.t("toast.permissions.autoaccept.on.description")}
         >
@@ -333,6 +334,7 @@ export const SettingsGeneralV2: Component<{
         </SettingsRowV2>
 
         <SettingsRowV2
+          minLevel="developer"
           title={language.t("settings.general.row.shell.title")}
           description={language.t("settings.general.row.shell.description")}
         >
@@ -354,6 +356,7 @@ export const SettingsGeneralV2: Component<{
         </SettingsRowV2>
 
         <SettingsRowV2
+          minLevel="developer"
           title={language.t("settings.general.row.shellBundle.title")}
           description={`${language.t("settings.general.row.shellBundle.description")} — ${bundleLabel()}`}
         >
@@ -395,6 +398,7 @@ export const SettingsGeneralV2: Component<{
         </SettingsRowV2>
 
         <SettingsRowV2
+          minLevel="advanced"
           title={language.t("settings.general.row.offline.title")}
           description={`${language.t("settings.general.row.offline.description")}${offlineLabel() ? ` — ${offlineLabel()}` : ""}`}
         >
@@ -419,6 +423,7 @@ export const SettingsGeneralV2: Component<{
         </SettingsRowV2>
 
         <SettingsRowV2
+          minLevel="developer"
           title={language.t("settings.general.row.shellToolPartsExpanded.title")}
           description={language.t("settings.general.row.shellToolPartsExpanded.description")}
         >
@@ -431,6 +436,7 @@ export const SettingsGeneralV2: Component<{
         </SettingsRowV2>
 
         <SettingsRowV2
+          minLevel="developer"
           title={language.t("settings.general.row.editToolPartsExpanded.title")}
           description={language.t("settings.general.row.editToolPartsExpanded.description")}
         >

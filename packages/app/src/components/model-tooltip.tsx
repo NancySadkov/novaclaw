@@ -1,5 +1,6 @@
 import { Show, type Component } from "solid-js"
 import { useLanguage } from "@/context/language"
+import { useExpertise } from "@/context/expertise"
 
 type InputKey = "text" | "image" | "audio" | "video" | "pdf"
 type InputMap = Record<InputKey, boolean>
@@ -25,6 +26,7 @@ type ModelInfo = {
 
 export const ModelTooltip: Component<{ model: ModelInfo; latest?: boolean; free?: boolean }> = (props) => {
   const language = useLanguage()
+  const { atLeast } = useExpertise()
   const sourceName = (model: ModelInfo) => {
     const value = `${model.id} ${model.name}`.toLowerCase()
 
@@ -77,6 +79,10 @@ export const ModelTooltip: Component<{ model: ModelInfo; latest?: boolean; free?
   return (
     <div class="flex flex-col gap-1 py-1">
       <div class="text-13-medium">{title()}</div>
+      {/* Raw model id is a secondary line only at Advanced+ (uix.md §6.4); Normal sees the friendly name. */}
+      <Show when={atLeast("advanced")}>
+        <div class="text-12-regular text-text-invert-base opacity-70 font-mono">{props.model.id}</div>
+      </Show>
       <Show when={inputs()}>
         {(value) => (
           <div class="text-12-regular text-text-invert-base">
