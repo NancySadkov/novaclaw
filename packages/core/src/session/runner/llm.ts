@@ -37,6 +37,7 @@ import { Prompt } from "../prompt"
 import { SessionSchema } from "../schema"
 import { SessionStore } from "../store"
 import { resolveSessionConfig, EFFECTIVE_CONFIG_DEFAULTS } from "../config-resolve"
+import { SessionScheduler } from "../scheduler"
 import { type RunError, Service } from "./index"
 import { SessionRunnerModel } from "./model"
 import { createLLMEventPublisher } from "./publish-llm-event"
@@ -135,6 +136,7 @@ export const layer = Layer.effect(
     const adhocGuidance = yield* AdhocGuidance.Service
     const config = yield* Config.Service
     const snapshots = yield* Snapshot.Service
+    const scheduler = yield* SessionScheduler.Service
     const db = (yield* Database.Service).db
     const configEntries = yield* config.entries()
     const compaction = SessionCompaction.make({ events, llm, config: configEntries })
@@ -485,6 +487,19 @@ export const layer = Layer.effect(
         Effect.ensuring(withPublication(publisher.flush())),
       )
 
+      // Scheduler admission (notes/scheduler.md): interactive dispatches immediately;
+      // batch-class sessions wait for idle device cycles. The slot covers GENERATION
+      // only — released right after the provider stream settles, BEFORE tool
+      // settlement, so a parent blocking on `wait` never holds the device against
+      // its own child. Idempotent release also guards the interrupt/defect exits.
+      const deviceKey = `${model.provider}/${model.id}`
+      const dispatchSlot = {
+        sessionID: session.id as string,
+        deviceKey,
+        sessionClass: SessionScheduler.classForSessionType(config.type),
+        ...(config.priority > 0 ? { priority: config.priority } : {}),
+      }
+      yield* scheduler.admit(dispatchSlot)
       return yield* Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {
           // 1D — the forgiving loop: a TRANSIENT provider failure (local server down or
@@ -511,6 +526,9 @@ export const layer = Layer.effect(
             sawProviderEvent = false
             stream = yield* restore(providerStream).pipe(Effect.exit)
           }
+          // Generation is over (success or not): free the device slot before tool
+          // settlement and everything after.
+          yield* scheduler.release(dispatchSlot)
           const failure =
             stream._tag === "Failure" ? Option.getOrUndefined(Cause.findErrorOption(stream.cause)) : undefined
           if (
@@ -568,6 +586,12 @@ export const layer = Layer.effect(
                 files,
               }),
             )
+            // Scheduler fairness accounting: charge the turn's measured compute to the
+            // EEVDF ledger (uncached input + output — cache reads are nearly free).
+            yield* scheduler.report({
+              ...dispatchSlot,
+              costTokens: stepSettlement.tokens.input + stepSettlement.tokens.output,
+            })
             // 1M/A6(7) — ctx_pressure tripwire: the server-REPORTED prompt size vs the window.
             // At ≥95% the real prompt has outgrown the chars/4 estimate; the next request risks
             // silent server-side truncation. Logs actual-vs-estimate for calibration.
@@ -780,6 +804,7 @@ export const node = makeLocationNode({
     AdhocGuidance.node,
     Config.node,
     Snapshot.node,
+    SessionScheduler.node,
     Database.node,
     AppProcess.node,
   ],
