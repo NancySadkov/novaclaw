@@ -85,9 +85,10 @@ describe("nativeWithParts", () => {
       tokens: { input: 10, output: 5, reasoning: 2 },
       time: { created: 2000, completed: 2500 },
     })
-    // Part ids are the V2 content ids VERBATIM (live-translator parity).
-    expect(assistant.parts[0]).toMatchObject({ id: "reasoning-0", type: "reasoning", text: "thinking..." })
-    expect(assistant.parts[1]).toMatchObject({ id: "text-0", type: "text", text: "the answer" })
+    // Part ids are the prt_v2_ derivation of the V2 content ids (live-translator
+    // parity + the V1 route's response-schema "prt" brand).
+    expect(assistant.parts[0]).toMatchObject({ id: "prt_v2_reasoning-0", type: "reasoning", text: "thinking..." })
+    expect(assistant.parts[1]).toMatchObject({ id: "prt_v2_text-0", type: "text", text: "the answer" })
   })
 
   test("assistant with no preceding user row -> parentID falls back to its own id", () => {
@@ -129,7 +130,7 @@ describe("nativeWithParts", () => {
     ]
     const [item] = nativeWithParts(rows, SES)
     expect(item!.parts[0]).toMatchObject({
-      id: "call_1",
+      id: "prt_v2_call_1",
       type: "tool",
       callID: "call_1",
       tool: "bash",
@@ -142,7 +143,7 @@ describe("nativeWithParts", () => {
       },
     })
     expect(item!.parts[1]).toMatchObject({
-      id: "call_2",
+      id: "prt_v2_call_2",
       type: "tool",
       tool: "read",
       state: { status: "error", error: "boom", time: { start: 2200, end: 2300 } },

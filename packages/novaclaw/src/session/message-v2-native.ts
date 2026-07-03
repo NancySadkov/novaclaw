@@ -19,7 +19,7 @@
 
 import { SessionV1 } from "@novaclaw/schema/session-v1"
 import type { SessionID } from "@novaclaw/schema/session-id"
-import { errorMessage, flattenContent, userFilePartID, userTextPartID } from "@/event-v2-translate"
+import { errorMessage, flattenContent, userFilePartID, userTextPartID, v2PartID } from "@/event-v2-translate"
 import type { WithParts } from "@novaclaw/core/v1/session"
 
 // Raw encoded shapes as stored in session_message.data (id/type live on the row).
@@ -190,7 +190,7 @@ function assistantWithParts(row: RawNativeRow, sessionID: string, parentID: stri
   for (const content of data.content ?? []) {
     if (content.type === "text") {
       parts.push({
-        id: content.id,
+        id: v2PartID(content.id),
         sessionID,
         messageID: row.id,
         type: "text",
@@ -203,7 +203,7 @@ function assistantWithParts(row: RawNativeRow, sessionID: string, parentID: stri
       const start = content.time?.created ?? created
       const end = content.time?.completed
       parts.push({
-        id: content.id,
+        id: v2PartID(content.id),
         sessionID,
         messageID: row.id,
         type: "reasoning",
@@ -214,7 +214,9 @@ function assistantWithParts(row: RawNativeRow, sessionID: string, parentID: stri
     }
     if (content.type === "tool") {
       parts.push({
-        id: content.id,
+        // Part id gets the prt_v2_ derivation (route-schema brand + live parity);
+        // callID stays the RAW V2 id — it is a correlation field, not a PartID.
+        id: v2PartID(content.id),
         sessionID,
         messageID: row.id,
         type: "tool",

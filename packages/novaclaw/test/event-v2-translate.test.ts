@@ -238,9 +238,11 @@ describe("event-v2-translate / golden per-event shapes", () => {
     expect(startedEnv.type).toBe("message.part.updated")
     const startPart = (startedEnv.properties as any).part
     expect(startPart).toMatchObject({ type: "text", text: "", sessionID: SES, messageID: MSG })
-    // The legacy part id is the V2 textID verbatim (NOT a minted prt_…) so the live
-    // part and the fetched part (server-session, same V2 id) dedup to one bubble.
-    expect(startPart.id).toBe("txt-1")
+    // The legacy part id is the DETERMINISTIC prt_v2_ derivation of the V2 textID
+    // (F0): the stored-history fetch mapper applies the same derivation, so the
+    // live part and the fetched part dedup to one bubble — and the prt prefix
+    // satisfies the V1 message route's response-schema brand.
+    expect(startPart.id).toBe("prt_v2_txt-1")
     expect(startPart.time).toEqual({ start: 1100 })
     const partID = startPart.id
 
@@ -292,10 +294,11 @@ describe("event-v2-translate / golden per-event shapes", () => {
 
     const part = (envs[1]!.properties as any).part
     expect(part).toMatchObject({ type: "text", text: "hello world", sessionID: SES, messageID: "msg_user1" })
-    // F0: DETERMINISTIC id derived from the message id (was a minted prt_… id).
-    // Every translator instance + the stored-history fetch mapper agree on it,
-    // so re-delivery/fetch overlap can never duplicate the user bubble.
-    expect(part.id).toBe("msg_user1-text")
+    // F0: DETERMINISTIC id derived from the message id (was a minted random prt_…
+    // id). Every translator instance + the stored-history fetch mapper agree on
+    // it, so re-delivery/fetch overlap can never duplicate the user bubble. The
+    // prt_v2_ prefix satisfies the V1 message route's response-schema brand.
+    expect(part.id).toBe("prt_v2_msg_user1-text")
   })
 
   test("prompted part ids are deterministic across translator instances (F0)", () => {
@@ -369,8 +372,9 @@ describe("event-v2-translate / tool lifecycle", () => {
     expect(pendingPart).toMatchObject({ type: "tool", callID: "call-1", tool: "bash" })
     expect(pendingPart.state.status).toBe("pending")
     const partID = pendingPart.id
-    // The legacy tool part id is the V2 callID verbatim so it dedups with the fetch.
-    expect(partID).toBe("call-1")
+    // The legacy tool part id is the prt_v2_ derivation of the V2 callID (F0) so
+    // it dedups with the fetch mapper's identically-derived id.
+    expect(partID).toBe("prt_v2_call-1")
 
     // input.ended itself is not a streaming target -> []
     expect(t.translate(toolInputEnded("call-1", '{"command":"ls"}'))).toEqual([])
@@ -578,18 +582,26 @@ describe("event-v2-translate / round-trip through the desktop reducer", () => {
     feed(textEnded("txt-1", "hello", 1130))
     feed(stepEnded())
 
-    // fetch writer: client.session.messages returns the SAME assistant part under its
-    // V2 id "txt-1" (this is what the desktop stores from the fetch).
+    // fetch writer: the message route now serves the projected V2 part under the
+    // SAME prt_v2_ derivation (message-v2-native.ts applies v2PartID to the stored
+    // content id) — this is what the desktop stores from the fetch.
     apply({
       type: "message.part.updated",
       properties: {
-        part: { id: "txt-1", sessionID: SES, messageID: MSG, type: "text", text: "hello", time: { start: 1100, end: 1130 } },
+        part: {
+          id: "prt_v2_txt-1",
+          sessionID: SES,
+          messageID: MSG,
+          type: "text",
+          text: "hello",
+          time: { start: 1100, end: 1130 },
+        },
       },
     })
 
     const textParts = (store.part[MSG] ?? []).filter((p: any) => p.type === "text")
     expect(textParts).toHaveLength(1) // one part, not two -> a single rendered bubble
-    expect((textParts[0] as any).id).toBe("txt-1")
+    expect((textParts[0] as any).id).toBe("prt_v2_txt-1")
     expect((textParts[0] as any).text).toBe("hello")
   })
 
@@ -750,11 +762,12 @@ describe("event-v2-translate / interleaving", () => {
     const partA = (only(t.translate(textA)).properties as any).part
     const partB = (only(t.translate(textB)).properties as any).part
 
-    // The part id is the V2 textID verbatim, so the SAME textID across two sessions
-    // yields the same part id — but parts are scoped per messageID, so they never
-    // collide, and each dedups with its own session's fetched part (the bug fix).
-    expect(partA.id).toBe("txt")
-    expect(partB.id).toBe("txt")
+    // The part id is the deterministic prt_v2_ derivation of the V2 textID, so the
+    // SAME textID across two sessions yields the same part id — but parts are
+    // scoped per messageID, so they never collide, and each dedups with its own
+    // session's fetched part (the bug fix).
+    expect(partA.id).toBe("prt_v2_txt")
+    expect(partB.id).toBe("prt_v2_txt")
     expect(partA.messageID).toBe("msg_A")
     expect(partB.messageID).toBe("msg_B")
   })

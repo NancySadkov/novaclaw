@@ -35,16 +35,21 @@ import type { SessionID } from "@novaclaw/schema/session-id"
 
 export type LegacyEnvelope = { type: string; properties: unknown }
 
-// Deterministic part ids for a user prompt's projected parts (F0). Both the live
-// `prompted` projection below AND the stored-history fetch mapper
-// (session/message-v2-native.ts) derive the SAME ids from the message id, so a
-// fetch overlapping the live stream collapses into one part instead of
-// duplicating the user bubble. (Previously the live path minted random
-// PartID.ascending() ids — non-deterministic per translator instance, which
-// multiplied user bubbles when more than one bridge instance was alive.)
-export const userTextPartID = (messageID: string): SessionV1.PartID => `${messageID}-text` as SessionV1.PartID
+// Deterministic part ids (F0). Both the LIVE projection below AND the
+// stored-history fetch mapper (session/message-v2-native.ts) derive the SAME id
+// from the V2 identity, so a fetch overlapping the live stream collapses into
+// one part instead of duplicating bubbles — and every id is `prt`-prefixed
+// because the V1 message route's RESPONSE schema enforces the brand (a raw V2
+// id like `text-0` fails response encode and 400s the whole transcript fetch;
+// caught live in the F0 QA). The derivation is pure prefixing, so it stays
+// deterministic across translator instances and server restarts.
+// (Previously the user-prompt path minted random PartID.ascending() ids —
+// non-deterministic per translator instance, which multiplied user bubbles when
+// more than one bridge instance was alive.)
+export const v2PartID = (v2id: string): SessionV1.PartID => `prt_v2_${v2id}` as SessionV1.PartID
+export const userTextPartID = (messageID: string): SessionV1.PartID => `prt_v2_${messageID}-text` as SessionV1.PartID
 export const userFilePartID = (messageID: string, index: number): SessionV1.PartID =>
-  `${messageID}-file-${index}` as SessionV1.PartID
+  `prt_v2_${messageID}-file-${index}` as SessionV1.PartID
 
 // The event delivered to the bridge `listen` callback. We type it structurally
 // (rather than depend on the bridge's exact Payload import) so the translator
@@ -138,19 +143,17 @@ export function createTranslator() {
     return state
   }
 
-  // Reuse the V2 stream id (textID/reasoningID/callID) VERBATIM as the legacy part
-  // id. The V2 store persists each content part under this same id (message-updater:
-  // `id: event.data.textID`) and the desktop's `client.session.messages` fetch returns
-  // it unchanged, so emitting the SAME id here collapses the live-translated part and
-  // the fetched part into ONE (the client dedups parts by id) instead of rendering the
-  // assistant text twice. Previously we minted a random `prt_…`, which never matched
-  // the fetched id → two parts → duplicate bubble. The V2 id is not "prt"-prefixed, so
-  // parts below are built STRUCTURALLY (not via `*.make`, whose brand check rejects a
-  // non-"prt" id); the client stores non-"prt" fetched ids the same way, so this is safe.
-  const textPartID = (_state: SessionState, textID: string): SessionV1.PartID => textID as SessionV1.PartID
+  // Derive the legacy part id DETERMINISTICALLY from the V2 stream id
+  // (textID/reasoningID/callID) via `v2PartID` (prt_v2_<id>). The stored-history
+  // fetch mapper applies the SAME derivation to the persisted content ids, so the
+  // live-translated part and the fetched part collapse into ONE (the client
+  // dedups parts by id) instead of rendering the assistant text twice. Previously
+  // we emitted the raw V2 id verbatim — fine on the event bus, but the V1 message
+  // route's response schema rejects non-"prt" ids, so the fetch path forced the
+  // prefix and the live path must match it exactly.
+  const textPartID = (_state: SessionState, textID: string): SessionV1.PartID => v2PartID(textID)
 
-  const reasoningPartID = (_state: SessionState, reasoningID: string): SessionV1.PartID =>
-    reasoningID as SessionV1.PartID
+  const reasoningPartID = (_state: SessionState, reasoningID: string): SessionV1.PartID => v2PartID(reasoningID)
 
   // Build the v1 Assistant Info row. step.started supplies zeroed cost/tokens;
   // step.ended/step.failed override via the `extra` overlay.
@@ -394,7 +397,7 @@ export function createTranslator() {
         let entry = state.tools.get(callID)
         if (!entry) {
           entry = {
-            partID: callID as SessionV1.PartID,
+            partID: v2PartID(callID),
             tool: data.name,
             raw: "",
             input: {},
@@ -434,7 +437,7 @@ export function createTranslator() {
           // tool.called without a prior input.started: synthesize an entry so
           // every ToolPart still carries a stable partID + tool name.
           entry = {
-            partID: callID as SessionV1.PartID,
+            partID: v2PartID(callID),
             tool: data.tool,
             raw: "",
             input: {},
