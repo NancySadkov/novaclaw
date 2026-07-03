@@ -1,7 +1,8 @@
-import { Component, For } from "solid-js"
+import { Component, For, createMemo } from "solid-js"
 import { createStore } from "solid-js/store"
 import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
+import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { useDialog } from "@novaclaw/ui/context/dialog"
@@ -12,9 +13,10 @@ import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 
 // The per-model config the dialog reads from / writes back to provider.<id>.models.<id> in
-// novaclaw.jsonc. Sampling knobs live under `options` (passed to the model API); limits, capability
-// flags, and modalities describe the model. We are "far from Plug&Play for LLMs" (owner), so every
-// knob is exposed — but each carries a friendly name + one-line explanation.
+// novaclaw.jsonc. Sampling knobs live under `options`; limits, capability flags, and modalities
+// describe the model. We're "far from Plug&Play for LLMs" (owner), so every knob is exposed — but
+// with a NAMED-PRESET droplist beside each raw field, so a user needn't know that e.g.
+// repetition_penalty 1.02 is already a meaningful nudge (expert knowledge → taxonomic labels).
 type ModelConfig = {
   reasoning?: boolean
   tool_call?: boolean
@@ -25,15 +27,31 @@ type ModelConfig = {
 }
 
 const MODALITIES = ["text", "image", "audio"] as const
-// Sampling params in display order. Each is a number the user may leave blank (= model/provider default).
 const SAMPLING = ["temperature", "top_p", "top_k", "min_p", "repetition_penalty", "presence_penalty", "frequency_penalty"] as const
+type FieldKey = (typeof SAMPLING)[number] | "context" | "maxTokens"
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+
+// Presets per field. `{}` = "use the default" (blank). `word` is a shared i18n intensity term; `size`
+// is a literal unit label (context/output are token counts, not intensities). The number is the value.
+type RawPreset = { num?: number; word?: string; size?: string }
+const PRESETS: Record<FieldKey, RawPreset[]> = {
+  temperature: [{}, { word: "precise", num: 0 }, { word: "focused", num: 0.3 }, { word: "balanced", num: 0.7 }, { word: "creative", num: 1 }, { word: "wild", num: 1.3 }],
+  top_p: [{}, { word: "off", num: 1 }, { word: "focused", num: 0.9 }, { word: "balanced", num: 0.95 }, { word: "diverse", num: 0.8 }],
+  top_k: [{}, { word: "off", num: 0 }, { word: "tight", num: 20 }, { word: "balanced", num: 40 }, { word: "wide", num: 100 }],
+  min_p: [{}, { word: "off", num: 0 }, { word: "light", num: 0.05 }, { word: "balanced", num: 0.1 }, { word: "strong", num: 0.2 }],
+  repetition_penalty: [{}, { word: "off", num: 1 }, { word: "gentle", num: 1.02 }, { word: "light", num: 1.05 }, { word: "moderate", num: 1.1 }, { word: "strong", num: 1.2 }],
+  presence_penalty: [{}, { word: "off", num: 0 }, { word: "light", num: 0.3 }, { word: "moderate", num: 0.6 }, { word: "strong", num: 1 }],
+  frequency_penalty: [{}, { word: "off", num: 0 }, { word: "light", num: 0.3 }, { word: "moderate", num: 0.6 }, { word: "strong", num: 1 }],
+  context: [{}, { size: "4K", num: 4096 }, { size: "8K", num: 8192 }, { size: "16K", num: 16384 }, { size: "32K", num: 32768 }, { size: "64K", num: 65536 }, { size: "128K", num: 131072 }, { size: "256K", num: 262144 }],
+  maxTokens: [{}, { size: "512", num: 512 }, { size: "1K", num: 1024 }, { size: "2K", num: 2048 }, { size: "4K", num: 4096 }, { size: "8K", num: 8192 }, { size: "16K", num: 16384 }, { size: "32K", num: 32768 }],
+}
+
+type Opt = { id: string; num: number | undefined; label: string }
 
 export const DialogModelConfig: Component<{
   providerID: string
   modelID: string
   modelName: string
-  // Catalog spec, so a brand-new/unconfigured model opens with sane defaults rather than blanks.
   defaults?: ModelConfig
 }> = (props) => {
   const dialog = useDialog()
@@ -81,6 +99,14 @@ export const DialogModelConfig: Component<{
     return Number.isFinite(n) ? n : undefined
   }
 
+  const optLabel = (p: RawPreset): string => {
+    if (p.num === undefined) return tk("settings.models.config.preset.default")
+    if (p.word) return `${tk(`settings.models.config.preset.${p.word}`)} (${p.num})`
+    if (p.size) return p.size
+    return String(p.num)
+  }
+  const optId = (p: RawPreset) => (p.num === undefined ? "default" : String(p.num))
+
   const save = async () => {
     const options: Record<string, number> = {}
     for (const k of SAMPLING) {
@@ -101,8 +127,6 @@ export const DialogModelConfig: Component<{
       modalities: { input, output },
       options,
     }
-    // Reconstruct the whole provider entry (preserving npm/options.baseURL + other models) with just
-    // this model replaced — the same shape the custom-provider flow writes, safe against merge depth.
     const provider = providerCfg()
     const patch = {
       provider: {
@@ -111,11 +135,7 @@ export const DialogModelConfig: Component<{
     }
     try {
       await serverSync().updateConfig(patch as never)
-      showToast({
-        variant: "success",
-        icon: "circle-check",
-        title: language.t("settings.models.config.toast.saved"),
-      })
+      showToast({ variant: "success", icon: "circle-check", title: language.t("settings.models.config.toast.saved") })
       dialog.close()
     } catch (error) {
       showToast({
@@ -125,22 +145,62 @@ export const DialogModelConfig: Component<{
     }
   }
 
-  const numInput = (field: keyof typeof form) => (
-    <div class="w-[128px] shrink-0">
-      <TextInputV2
-        type="text"
-        appearance="base"
-        inputmode="decimal"
-        value={form[field] as string}
-        onInput={(event) => setForm(field as never, event.currentTarget.value as never)}
-        placeholder={tk("settings.models.config.defaultPlaceholder")}
-        spellcheck={false}
-        autocorrect="off"
-        autocomplete="off"
-        autocapitalize="off"
-        aria-label={tk(`settings.models.config.${String(field)}.name`)}
-      />
-    </div>
+  // A named-preset droplist + a raw input for one numeric field. The droplist teaches typical values
+  // by name; the input allows any exact value and reflects back as "Custom" when it matches no preset.
+  const PresetField = (p: { field: FieldKey }) => {
+    const options = createMemo<Opt[]>(() =>
+      PRESETS[p.field].map((preset) => ({ id: optId(preset), num: preset.num, label: optLabel(preset) })),
+    )
+    const currentNum = () => num(form[p.field])
+    const matched = () => options().find((o) => o.num === currentNum())
+    const customOpt = (): Opt | undefined =>
+      currentNum() !== undefined && !matched()
+        ? { id: "custom", num: currentNum(), label: `${tk("settings.models.config.preset.custom")} (${currentNum()})` }
+        : undefined
+    const allOptions = () => {
+      const extra = customOpt()
+      return extra ? [...options(), extra] : options()
+    }
+    const current = () => matched() ?? customOpt() ?? options()[0]
+    return (
+      <div class="flex items-center gap-2 justify-end">
+        <SelectV2<Opt>
+          appearance="inline"
+          aria-label={tk(`settings.models.config.${p.field}.name`)}
+          options={allOptions()}
+          current={current()}
+          value={(o) => o.id}
+          label={(o) => o.label}
+          placement="bottom-end"
+          gutter={6}
+          onSelect={(o) => o && setForm(p.field, o.num === undefined ? "" : String(o.num))}
+        />
+        <div class="w-[76px] shrink-0">
+          <TextInputV2
+            type="text"
+            appearance="base"
+            inputmode="decimal"
+            value={form[p.field]}
+            onInput={(event) => setForm(p.field, event.currentTarget.value)}
+            placeholder={tk("settings.models.config.defaultPlaceholder")}
+            spellcheck={false}
+            autocorrect="off"
+            autocomplete="off"
+            autocapitalize="off"
+            aria-label={tk(`settings.models.config.${p.field}.name`)}
+          />
+        </div>
+      </div>
+    )
+  }
+
+  const paramRow = (field: FieldKey) => (
+    <SettingsRowV2
+      title={tk(`settings.models.config.${field}.name`)}
+      description={tk(`settings.models.config.${field}.desc`)}
+    >
+      <PresetField field={field} />
+    </SettingsRowV2>
   )
 
   const modalityRow = (dir: "in" | "out") => (
@@ -172,7 +232,9 @@ export const DialogModelConfig: Component<{
     </SettingsRowV2>
   )
 
-  const section = (key: string) => <h3 class="settings-v2-section-title mt-1">{tk(`settings.models.config.section.${key}`)}</h3>
+  const section = (key: string) => (
+    <h3 class="settings-v2-section-title mt-1">{tk(`settings.models.config.section.${key}`)}</h3>
+  )
 
   return (
     <Dialog size="content">
@@ -189,32 +251,13 @@ export const DialogModelConfig: Component<{
         <div class="flex flex-col gap-4 max-h-[62vh] overflow-y-auto -mx-1 px-1">
           {section("sampling")}
           <SettingsListV2>
-            <For each={SAMPLING}>
-              {(k) => (
-                <SettingsRowV2
-                  title={tk(`settings.models.config.${k}.name`)}
-                  description={tk(`settings.models.config.${k}.desc`)}
-                >
-                  {numInput(k)}
-                </SettingsRowV2>
-              )}
-            </For>
+            <For each={SAMPLING}>{(k) => paramRow(k)}</For>
           </SettingsListV2>
 
           {section("limits")}
           <SettingsListV2>
-            <SettingsRowV2
-              title={tk("settings.models.config.context.name")}
-              description={tk("settings.models.config.context.desc")}
-            >
-              {numInput("context")}
-            </SettingsRowV2>
-            <SettingsRowV2
-              title={tk("settings.models.config.maxTokens.name")}
-              description={tk("settings.models.config.maxTokens.desc")}
-            >
-              {numInput("maxTokens")}
-            </SettingsRowV2>
+            {paramRow("context")}
+            {paramRow("maxTokens")}
           </SettingsListV2>
 
           {section("capabilities")}

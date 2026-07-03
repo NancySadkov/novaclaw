@@ -17,7 +17,6 @@ import { DialogModelTier } from "./dialog-model-tier"
 import { DialogModelConfig } from "./dialog-model-config"
 import { DialogNewModel } from "./dialog-new-model"
 import { ConfigExportImport } from "./config-io"
-import { DialogSelectProvider } from "../dialog-select-provider"
 import { useConfirm } from "@/components/dialog-confirm"
 import "./settings-v2.css"
 
@@ -92,12 +91,9 @@ export const SettingsModelsV2: Component = () => {
     const cn = conn()
     const d = routeDir()
     if (!cn || !d) return
-    dialog.show(() => <DialogNewModel http={cn.http} directory={d} />)
+    // push (not show) so the dialog STACKS over Settings instead of disposing it — see dialog.tsx.
+    dialog.push(() => <DialogNewModel http={cn.http} directory={d} />)
   }
-
-  // Connect a known cloud provider (Anthropic/OpenAI/Google/…) via its OAuth/API-key flow — the
-  // Providers tab folded into Models (todo.md merge item a).
-  const openConnect = () => dialog.show(() => <DialogSelectProvider />)
 
   const removeModel = async (key: { providerID: string; modelID: string }, name: string) => {
     const ok = await confirm({
@@ -140,9 +136,6 @@ export const SettingsModelsV2: Component = () => {
           <h2 class="settings-v2-tab-title">{language.t("settings.models.title")}</h2>
           <div class="flex items-center gap-2 flex-wrap justify-end">
             <ConfigExportImport />
-            <ButtonV2 size="small" variant="ghost-muted" onClick={openConnect}>
-              {language.t("settings.models.connect")}
-            </ButtonV2>
             <ButtonV2 size="small" variant="neutral" onClick={openNewModel}>
               {language.t("settings.models.new.open")}
             </ButtonV2>
@@ -185,7 +178,7 @@ export const SettingsModelsV2: Component = () => {
                                 variant="neutral"
                                 aria-label={language.t("settings.models.tier.pick")}
                                 onClick={() =>
-                                  dialog.show(() => (
+                                  dialog.push(() => (
                                     <DialogModelTier
                                       modelName={item.name}
                                       current={models.tier.get(key)}
@@ -201,7 +194,7 @@ export const SettingsModelsV2: Component = () => {
                                 variant="ghost-muted"
                                 aria-label={language.t("settings.models.config.open")}
                                 onClick={() =>
-                                  dialog.show(() => (
+                                  dialog.push(() => (
                                     <DialogModelConfig
                                       providerID={key.providerID}
                                       modelID={key.modelID}

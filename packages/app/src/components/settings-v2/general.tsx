@@ -291,7 +291,8 @@ export const SettingsGeneralV2: Component<{
 
   // Dynamic i18n keys (level name/blurb) need the loose-key cast the translator otherwise forbids.
   const tk = (key: string) => language.t(key as Parameters<typeof language.t>[0])
-  const openExpertise = () => dialog.show(() => <DialogExpertise />)
+  // push (not show) so it STACKS over Settings instead of disposing it — see ui/context/dialog.tsx.
+  const openExpertise = () => dialog.push(() => <DialogExpertise />)
 
   const GeneralSection = () => (
     <div class="settings-v2-section">
