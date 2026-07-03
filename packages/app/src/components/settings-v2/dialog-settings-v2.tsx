@@ -10,6 +10,7 @@ import { SettingsProvidersV2 } from "./providers"
 import { SettingsModelsV2 } from "./models"
 import "./settings-v2.css"
 import { SettingsServersV2 } from "./servers"
+import { SettingsIntrospectionV2 } from "./introspection"
 import { SettingsRecoveryV2 } from "./recovery"
 
 export const DialogSettings: Component<{
@@ -55,6 +56,10 @@ export const DialogSettings: Component<{
                       <Icon name="models" />
                       {language.t("settings.models.title")}
                     </TabsV2.Trigger>
+                    <TabsV2.Trigger value="introspection">
+                      <Icon name="eye" />
+                      {language.t("settings.introspection.title")}
+                    </TabsV2.Trigger>
                   </div>
                 </div>
 
@@ -89,6 +94,9 @@ export const DialogSettings: Component<{
         </TabsV2.Content>
         <TabsV2.Content value="models" class="settings-v2-panel">
           <SettingsModelsV2 />
+        </TabsV2.Content>
+        <TabsV2.Content value="introspection" class="settings-v2-panel">
+          <SettingsIntrospectionV2 />
         </TabsV2.Content>
         <TabsV2.Content value="recovery" class="settings-v2-panel">
           <SettingsRecoveryV2 />

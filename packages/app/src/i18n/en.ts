@@ -1019,6 +1019,26 @@ export const dict = {
   "settings.models.probe.noUrl": "No URL configured",
   "settings.models.probe.error": "Error",
   "settings.models.probe.window": "window",
+  "settings.introspection.title": "Introspection",
+  "settings.introspection.description":
+    "A judge model periodically checks whether a running session is stuck and, when it is, injects a course-correcting note.",
+  "settings.introspection.toast.failed": "Saving introspection settings failed",
+  "settings.introspection.row.enabled.title": "Enable introspection",
+  "settings.introspection.row.enabled.description": "Ask the judge model during long turns whether the agent is stuck.",
+  "settings.introspection.row.cadence.title": "Cadence",
+  "settings.introspection.row.cadence.description": "Judge every N continuation steps within a turn.",
+  "settings.introspection.row.model.title": "Judge model",
+  "settings.introspection.row.model.description": "Model that judges, as provider/model. Empty = same as the session's model.",
+  "settings.introspection.row.model.placeholder": "same as active model",
+  "settings.introspection.row.generate.title": "Generate the interjection",
+  "settings.introspection.row.generate.description":
+    "Let the judge model write the interjection from context instead of using the fixed text below.",
+  "settings.introspection.row.prompt.title": "Introspection prompt",
+  "settings.introspection.row.prompt.description":
+    "The question the judge is asked about the recent context. Empty = the default stuck/looping check.",
+  "settings.introspection.row.interjection.title": "Interjection",
+  "settings.introspection.row.interjection.description":
+    "Text injected into the session when the judge answers YES. Empty = the default redirect.",
   "settings.agents.title": "Agents",
   "settings.agents.description": "Agent settings will be configurable here.",
   "settings.commands.title": "Commands",

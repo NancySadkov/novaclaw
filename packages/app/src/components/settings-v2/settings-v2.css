@@ -422,6 +422,41 @@
   color: var(--v2-text-text-base);
 }
 
+/* 2D — introspection tab */
+.settings-v2-tab-description {
+  font-size: 13px;
+  font-weight: 440;
+  line-height: 1.4;
+  color: var(--v2-text-text-muted);
+  margin: 0;
+}
+
+.settings-v2-field-description {
+  font-size: 12px;
+  font-weight: 440;
+  line-height: 1.4;
+  color: var(--v2-text-text-muted);
+  margin: 0 0 8px;
+}
+
+.settings-v2-textarea {
+  width: 100%;
+  min-height: 90px;
+  resize: vertical;
+  font-size: 13px;
+  line-height: 1.45;
+  padding: 8px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--v2-stroke-stroke-base, rgba(255, 255, 255, 0.12));
+  background: var(--v2-background-bg-base, transparent);
+  color: var(--v2-text-text-base);
+}
+
+.settings-v2-textarea:focus-visible {
+  outline: 2px solid var(--v2-stroke-stroke-focus, #eab308);
+  outline-offset: 1px;
+}
+
 /* B15 — per-model probe button + result chip */
 .settings-v2-models-row-actions {
   display: flex;
