@@ -27,7 +27,8 @@ import { eq } from "drizzle-orm"
 import { inArray } from "drizzle-orm"
 import { lt } from "drizzle-orm"
 import { or } from "drizzle-orm"
-import { MessageTable, PartTable, SessionTable } from "@novaclaw/core/session/sql"
+import { MessageTable, PartTable, SessionMessageTable, SessionTable } from "@novaclaw/core/session/sql"
+import { nativeWithParts } from "@/session/message-v2-native"
 import { ProviderError } from "@/provider/error"
 import { iife } from "@/util/iife"
 import { errorMessage } from "@/util/error"
@@ -94,6 +95,18 @@ const part = (row: typeof PartTable.$inferSelect) =>
 
 const older = (row: Cursor) =>
   or(lt(MessageTable.time_created, row.time), and(eq(MessageTable.time_created, row.time), lt(MessageTable.id, row.id)))
+
+// Same cursor semantics against the V2-native session_message table (F0 merge).
+// Both id spaces are `msg_`-prefixed strings; the brands differ (v1 MessageID vs
+// SessionMessage.ID) but the lexicographic comparison is identical.
+const olderNative = (row: Cursor) =>
+  or(
+    lt(SessionMessageTable.time_created, row.time),
+    and(
+      eq(SessionMessageTable.time_created, row.time),
+      lt(SessionMessageTable.id, row.id as unknown as typeof SessionMessageTable.$inferSelect.id),
+    ),
+  )
 
 function hydrate(db: Database.Interface["db"], rows: (typeof MessageTable.$inferSelect)[]) {
   const ids = rows.map((row) => row.id)
@@ -440,7 +453,27 @@ export const page = Effect.fn("MessageV2.page")(function* (input: {
     .limit(input.limit + 1)
     .all()
     .pipe(Effect.orDie)
-  if (rows.length === 0) {
+
+  // F0: V2-native turns persist to the disjoint session_message table (core
+  // projector), not Message/Part — without this branch a V2 session's transcript
+  // is EMPTY after a reload. Read the same page window there, project the rows
+  // into the v1 WithParts shape (message-v2-native.ts mirrors the live
+  // translator's ids/shapes), and merge by (time_created, id) descending. Only
+  // user/assistant rows have a v1 rendering target; filtering in SQL keeps the
+  // page window honest.
+  const nativeWhere = before
+    ? and(eq(SessionMessageTable.session_id, input.sessionID), olderNative(before))
+    : eq(SessionMessageTable.session_id, input.sessionID)
+  const nativeRows = yield* db
+    .select()
+    .from(SessionMessageTable)
+    .where(and(nativeWhere, inArray(SessionMessageTable.type, ["user", "assistant"])))
+    .orderBy(desc(SessionMessageTable.time_created), desc(SessionMessageTable.id))
+    .limit(input.limit + 1)
+    .all()
+    .pipe(Effect.orDie)
+
+  if (rows.length === 0 && nativeRows.length === 0) {
     const row = yield* db
       .select({ id: SessionTable.id })
       .from(SessionTable)
@@ -454,16 +487,70 @@ export const page = Effect.fn("MessageV2.page")(function* (input: {
     }
   }
 
-  const more = rows.length > input.limit
-  const slice = more ? rows.slice(0, input.limit) : rows
-  const items = yield* hydrate(db, slice)
+  // Merge the two descending row lists, newest first (ties: higher id first).
+  type Tagged =
+    | { kind: "v1"; id: string; time: number; row: (typeof rows)[number] }
+    | { kind: "v2"; id: string; time: number; row: (typeof nativeRows)[number] }
+  const merged: Tagged[] = [
+    ...rows.map((row): Tagged => ({ kind: "v1", id: row.id, time: row.time_created, row })),
+    ...nativeRows.map((row): Tagged => ({ kind: "v2", id: row.id, time: row.time_created, row })),
+  ].sort((a, b) => (a.time === b.time ? (a.id < b.id ? 1 : -1) : b.time - a.time))
+
+  const more = merged.length > input.limit
+  const slice = more ? merged.slice(0, input.limit) : merged
+
+  const v1Rows = slice.flatMap((item) => (item.kind === "v1" ? [item.row] : []))
+  const v1Items = yield* hydrate(db, v1Rows)
+  const v1ById = new Map(v1Items.map((item) => [item.info.id as string, item]))
+  const v2Items = nativeWithParts(
+    slice.flatMap((item) => (item.kind === "v2" ? [item.row] : [])),
+    input.sessionID,
+  )
+  const v2ById = new Map(v2Items.map((item) => [item.info.id as string, item]))
+
+  const items = slice.flatMap((item) => {
+    const found = item.kind === "v1" ? v1ById.get(item.id) : v2ById.get(item.id)
+    return found ? [found] : []
+  })
   items.reverse()
   const tail = slice.at(-1)
   return {
     items,
     more,
-    cursor: more && tail ? cursor.encode({ id: tail.id, time: tail.time_created }) : undefined,
+    cursor: more && tail ? cursor.encode({ id: tail.id as MessageID, time: tail.time }) : undefined,
   }
+})
+
+/**
+ * F0 routing predicates. Since the history merge, `page` returns BOTH legacy and
+ * projected V2-native rows — so the promptAsync V2-eligibility gate can no longer
+ * use it ("has any page rows" would flip a V2 session back to V1 on its second
+ * prompt). These query each table directly:
+ * - a session with LEGACY rows is pinned to the V1 runner (never reroute);
+ * - a session with NATIVE rows is pinned to V2 (legacy ops must not write into it).
+ */
+export const hasLegacyRows = Effect.fn("MessageV2.hasLegacyRows")(function* (sessionID: SessionID) {
+  const { db } = yield* Database.Service
+  const row = yield* db
+    .select({ id: MessageTable.id })
+    .from(MessageTable)
+    .where(eq(MessageTable.session_id, sessionID))
+    .limit(1)
+    .get()
+    .pipe(Effect.orDie)
+  return row !== undefined
+})
+
+export const hasNativeRows = Effect.fn("MessageV2.hasNativeRows")(function* (sessionID: SessionID) {
+  const { db } = yield* Database.Service
+  const row = yield* db
+    .select({ id: SessionMessageTable.id })
+    .from(SessionMessageTable)
+    .where(eq(SessionMessageTable.session_id, sessionID))
+    .limit(1)
+    .get()
+    .pipe(Effect.orDie)
+  return row !== undefined
 })
 
 export function stream(sessionID: SessionID) {

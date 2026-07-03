@@ -7,7 +7,13 @@
 // ConfigProvider, which snapshots `process.env` on first read (process-wide).
 // That gives env-var control whole-process granularity, NOT per-test. So this
 // whole file runs with the flag ON (set at module top, before any import that
-// could trigger a config read) and exercises:
+// could trigger a config read).
+// ⚠️ RUN THIS FILE STANDALONE (`bun test test/server/httpapi-session-v2.test.ts`).
+// In a whole-dir batch, an alphabetically-earlier server suite builds the shared
+// layers first — under the preload's pinned flag=false (the legacy suites' view)
+// — and the shared memoMap serves that flag-OFF stack to this file too, failing
+// case (a). Verified pre-existing on clean HEAD (2026-07-03), not a regression.
+// It exercises:
 //   (a) flag ON + fresh session + a prompt WITH a model -> routes to V2.
 //   (c) flag ON + a session that already has a legacy message -> STAYS legacy
 //       (isNewSession is false).
@@ -40,6 +46,8 @@ import { testProviderConfig } from "../lib/test-provider"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { ModelV2 } from "@novaclaw/core/model"
 import { Database } from "@novaclaw/core/database/database"
+import { MessageTable } from "@novaclaw/core/session/sql"
+import { eq } from "drizzle-orm"
 import { httpApiLayer } from "./httpapi-layer"
 
 const noopBootstrap = Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))
@@ -101,10 +109,30 @@ function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
 }
 
-// Count legacy v1 message rows via MessageV2.page (reads the legacy `message`
-// table — disjoint from V2's `session_message`). This IS the isNewSession probe.
-// store.provide discharges the instance-scoped Database/Session requirements.
+// Count legacy v1 `message` rows DIRECTLY (drizzle over MessageTable). Since the
+// F0 history merge, MessageV2.page also returns projected `session_message` rows,
+// so it can no longer serve as the legacy-row probe — the routing gate itself
+// moved to MessageV2.hasLegacyRows for the same reason.
+// store.provide discharges the instance-scoped Database requirement.
 function legacyMessageCount(directory: string, sessionID: string) {
+  return InstanceStore.Service.use((store) =>
+    store.provide(
+      { directory },
+      Effect.gen(function* () {
+        const { db } = yield* Database.Service
+        const rows = yield* db
+          .select({ id: MessageTable.id })
+          .from(MessageTable)
+          .where(eq(MessageTable.session_id, SessionID.make(sessionID)))
+          .all()
+        return rows.length
+      }).pipe(Effect.orElseSucceed(() => 0)),
+    ),
+  )
+}
+
+// The merged page view (legacy + projected V2-native rows) — what clients fetch.
+function pagedMessageCount(directory: string, sessionID: string) {
   return InstanceStore.Service.use((store) =>
     store.provide(
       { directory },
@@ -205,15 +233,21 @@ describe("promptAsync V2 reroute (experimentalNativeSession ON)", () => {
 
           const ready = yield* Deferred.make<void>()
           const sawPrompted = yield* Deferred.make<void>()
+          const sawPromptedAgain = yield* Deferred.make<void>()
           const sawBusy = yield* Deferred.make<void>()
           const sawIdle = yield* Deferred.make<void>()
 
+          let promptedCount = 0
           yield* Effect.promise(async () => {
             for await (const event of events.stream) {
               const payload = record(record(event).payload ?? event)
               const type = payload.type
               if (type === "server.connected") Deferred.doneUnsafe(ready, Effect.void)
-              if (type === "session.next.prompted") Deferred.doneUnsafe(sawPrompted, Effect.void)
+              if (type === "session.next.prompted") {
+                promptedCount++
+                if (promptedCount === 1) Deferred.doneUnsafe(sawPrompted, Effect.void)
+                if (promptedCount >= 2) Deferred.doneUnsafe(sawPromptedAgain, Effect.void)
+              }
               if (type === "session.status" && record(record(payload.properties).status).type === "busy")
                 Deferred.doneUnsafe(sawBusy, Effect.void)
               if (type === "session.idle") Deferred.doneUnsafe(sawIdle, Effect.void)
@@ -244,6 +278,56 @@ describe("promptAsync V2 reroute (experimentalNativeSession ON)", () => {
           // 3. routing proof: zero legacy message rows (V2 writes only session_message).
           const legacy = yield* legacyMessageCount(directory, sessionID)
           expect(legacy).toBe(0)
+
+          // F0 stickiness: a SECOND prompt on the (now row-bearing) V2 session must
+          // still route V2 — hasLegacyRows stays false because V2 writes only
+          // session_message. Before the gate moved off MessageV2.page, the merged
+          // page view would have flipped this session back to legacy here.
+          const second = yield* Effect.promise(() =>
+            sdk.session.promptAsync({
+              sessionID,
+              agent: "build",
+              model: { providerID: "test", modelID: "test-model" },
+              parts: [{ type: "text", text: "v2 again" }],
+            }),
+          )
+          expect(second.response.status).toBe(204)
+          yield* awaitWithTimeout(
+            Deferred.await(sawPromptedAgain),
+            "second prompt did not route to V2 — F0 stickiness broken",
+            "10 seconds",
+          )
+
+          // F0 history merge: the client-facing page view (GET /session/:id/message)
+          // now serves the V2-native transcript (projected session_message rows) —
+          // a reload no longer renders an empty session.
+          const paged = yield* pollWithTimeout(
+            pagedMessageCount(directory, sessionID).pipe(Effect.map((n) => (n > 0 ? n : undefined))),
+            "merged page view returned no V2-native rows",
+            "10 seconds",
+          )
+          expect(paged).toBeGreaterThan(0)
+          // ...while the LEGACY table stays empty (the merge is read-side only).
+          expect(yield* legacyMessageCount(directory, sessionID)).toBe(0)
+
+          // F0 guard: a legacy-only op (summarize runs on the legacy engine) must
+          // NOT write v1 rows into a V2-native session — it would silently flip
+          // the session back to the V1 runner. Expect a legible 400.
+          const summarizeStatus = yield* Effect.promise(async () => {
+            try {
+              const result = await sdk.session.summarize({
+                sessionID,
+                providerID: "test",
+                modelID: "test-model",
+              })
+              return result.response.status
+            } catch (error) {
+              const status = (error as { response?: { status?: number }; status?: number } | undefined)
+              return status?.response?.status ?? status?.status
+            }
+          })
+          expect(summarizeStatus).toBe(400)
+          expect(yield* legacyMessageCount(directory, sessionID)).toBe(0)
         }),
       ),
     30_000,
@@ -288,11 +372,12 @@ describe("promptAsync V2 reroute (experimentalNativeSession ON)", () => {
     ),
   )
 
-  // Concrete routing-predicate assertions for (b)/(c): isNewSession is a pure
-  // function of the legacy message table. A fresh session is new; one with a
-  // legacy message is not. (Flag-OFF (b) means this predicate is never consulted
-  // — the `&&` short-circuits — so flag-OFF always takes the legacy path.)
-  it.live("isNewSession predicate: fresh = new, seeded = not new", () =>
+  // Concrete routing-predicate assertions for (b)/(c): v2Eligible is a pure
+  // function of the legacy message table (MessageV2.hasLegacyRows). A fresh
+  // session is eligible; one with a legacy message is not. (Flag-OFF (b) means
+  // this predicate is never consulted — the `&&` short-circuits — so flag-OFF
+  // always takes the legacy path.)
+  it.live("v2Eligible predicate: fresh = eligible, seeded = pinned legacy", () =>
     withFakeLlm(({ sdk, directory }) =>
       Effect.gen(function* () {
         const fresh = yield* Effect.promise(() => sdk.session.create({ title: "fresh" }))

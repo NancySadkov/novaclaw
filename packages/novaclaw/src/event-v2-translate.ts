@@ -35,6 +35,17 @@ import type { SessionID } from "@novaclaw/schema/session-id"
 
 export type LegacyEnvelope = { type: string; properties: unknown }
 
+// Deterministic part ids for a user prompt's projected parts (F0). Both the live
+// `prompted` projection below AND the stored-history fetch mapper
+// (session/message-v2-native.ts) derive the SAME ids from the message id, so a
+// fetch overlapping the live stream collapses into one part instead of
+// duplicating the user bubble. (Previously the live path minted random
+// PartID.ascending() ids — non-deterministic per translator instance, which
+// multiplied user bubbles when more than one bridge instance was alive.)
+export const userTextPartID = (messageID: string): SessionV1.PartID => `${messageID}-text` as SessionV1.PartID
+export const userFilePartID = (messageID: string, index: number): SessionV1.PartID =>
+  `${messageID}-file-${index}` as SessionV1.PartID
+
 // The event delivered to the bridge `listen` callback. We type it structurally
 // (rather than depend on the bridge's exact Payload import) so the translator
 // stays a pure, dependency-light function. `data` is the decoded event payload
@@ -56,7 +67,9 @@ function toMillis(timestamp: unknown): number {
 // Flatten V2 ToolContent[] into a single legacy `output` string by joining the
 // text-typed entries. (File-typed entries carry no inline text.) This mirrors
 // the role the legacy `ToolStateCompleted.output` plays: a flat rendered blob.
-function flattenContent(content: ReadonlyArray<LLM.ToolContent> | undefined): string {
+// Exported: the stored-history mapper (session/message-v2-native.ts) must
+// flatten identically or a mid-turn fetch renders different output than live.
+export function flattenContent(content: ReadonlyArray<LLM.ToolContent> | undefined): string {
   if (!content) return ""
   return content
     .filter((item): item is Extract<LLM.ToolContent, { type: "text" }> => item.type === "text")
@@ -66,7 +79,7 @@ function flattenContent(content: ReadonlyArray<LLM.ToolContent> | undefined): st
 
 // V2 UnknownError is `{ type: "unknown", message }`. Be defensive and also
 // accept `{ data: { message } }` / `{ message }` shapes. Never return the object.
-function errorMessage(error: unknown): string {
+export function errorMessage(error: unknown): string {
   if (typeof error === "string") return error
   if (error && typeof error === "object") {
     const e = error as { message?: unknown; data?: { message?: unknown } }
@@ -519,28 +532,33 @@ export function createTranslator() {
         const out: LegacyEnvelope[] = [messageUpdated(userInfo({ sessionID, messageID, created }))]
         // The text part. Always emit it (even empty) so the user row has a
         // renderable body and an ordering anchor, matching the assistant path
-        // where the role row precedes its parts.
-        const textPart = SessionV1.TextPart.make({
-          id: SessionV1.PartID.ascending(),
+        // where the role row precedes its parts. Deterministic id (not a minted
+        // prt_… id): the stored-history fetch derives the same one, and every
+        // translator instance agrees, so re-delivery cannot duplicate the bubble.
+        // Built structurally — the id is not "prt"-prefixed (same rationale as
+        // textPartID above).
+        const textPart = {
+          id: userTextPartID(messageID),
           sessionID: sessionID as SessionID,
           messageID,
           type: "text",
           text: prompt.text ?? "",
           time: { start: created, end: created },
-        })
+        } as unknown as ReturnType<typeof SessionV1.TextPart.make>
         out.push(partUpdated(sessionID, textPart, created))
         // File attachments, if any. V2 FileAttachment is {uri, mime, name?};
         // v1 FilePart is {url, mime, filename?}.
+        let fileIndex = 0
         for (const file of prompt.files ?? []) {
-          const filePart = SessionV1.FilePart.make({
-            id: SessionV1.PartID.ascending(),
+          const filePart = {
+            id: userFilePartID(messageID, fileIndex++),
             sessionID: sessionID as SessionID,
             messageID,
             type: "file",
             mime: file.mime ?? "application/octet-stream",
             url: file.uri,
             ...(file.name ?? file.filename ? { filename: file.name ?? file.filename } : {}),
-          } as Parameters<typeof SessionV1.FilePart.make>[0])
+          } as unknown as ReturnType<typeof SessionV1.FilePart.make>
           out.push(partUpdated(sessionID, filePart, created))
         }
         return out

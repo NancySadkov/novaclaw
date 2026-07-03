@@ -196,6 +196,23 @@ export const layer = Layer.effectDiscard(
     const config = yield* ConfigService
     const permission = yield* PermissionV2.Service
 
+    // F0 parity + local-first: V1 advertises websearch only when a search
+    // provider is explicitly enabled (exa/parallel flags); V2 used to ALWAYS
+    // advertise it and coin-flip exa-vs-parallel with no key — silent WAN
+    // egress by default. Register only when the user enabled or configured a
+    // provider; otherwise the tool is absent (searxng over MCP or an ad-hoc
+    // recipe is the local-first alternative).
+    const enabled =
+      config.enableExa ||
+      config.enableParallel ||
+      config.provider !== undefined ||
+      config.exaApiKey !== undefined ||
+      config.parallelApiKey !== undefined
+    if (!enabled) {
+      yield* Effect.logDebug("websearch tool not registered: no search provider enabled/configured")
+      return
+    }
+
     yield* tools
       .register({
         [name]: Tool.make({

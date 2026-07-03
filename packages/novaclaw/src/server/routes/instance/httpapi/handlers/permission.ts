@@ -5,6 +5,7 @@ import { Location } from "@novaclaw/core/location"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { InstanceRef, WorkspaceRef } from "@/effect/instance-ref"
 import { Permission } from "@/permission"
+import { PermissionV2Project } from "@/permission/v2-project"
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
@@ -15,8 +16,37 @@ export const permissionHandlers = HttpApiBuilder.group(InstanceHttpApi, "permiss
     const svc = yield* Permission.Service
     const locations = yield* LocationServiceMap.Service
 
+    // F0: pending V2 asks live in the per-location PermissionV2 instance, not the V1 service.
+    // Without merging them here, a reload mid-ask loses the dock (the live `permission.asked`
+    // projection reached the client pre-reload, but bootstrap rebuilds from THIS list). The
+    // mapping is the shared PermissionV2Project helper so live projection and bootstrap agree.
+    // The two pending maps are disjoint by construction — no dedup needed.
+    const listV2 = Effect.fn("PermissionHttpApi.listV2")(function* () {
+      const ctx = yield* InstanceRef
+      if (!ctx) return []
+      const workspaceID = yield* WorkspaceRef
+      const layer = locations.get(
+        Location.Ref.make({ directory: AbsolutePath.make(ctx.directory), workspaceID }),
+      )
+      return yield* Effect.gen(function* () {
+        const v2 = yield* PermissionV2.Service
+        const pending = yield* v2.list()
+        return pending.map(PermissionV2Project.toV1Request)
+      }).pipe(
+        Effect.provide(layer),
+        // Bootstrap must never fail because a location failed to boot — log and serve V1-only.
+        Effect.catchCause((cause) =>
+          Effect.logWarning("permission bootstrap: V2 pending-ask list failed", cause).pipe(
+            Effect.as([] as ReturnType<typeof PermissionV2Project.toV1Request>[]),
+          ),
+        ),
+      )
+    })
+
     const list = Effect.fn("PermissionHttpApi.list")(function* () {
-      return yield* svc.list()
+      const v1 = yield* svc.list()
+      const v2 = yield* listV2()
+      return [...v1, ...v2]
     })
 
     // 1K: a V2-native session's ask is pending in the per-location PermissionV2 instance, not the

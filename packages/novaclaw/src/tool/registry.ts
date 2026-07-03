@@ -69,6 +69,13 @@ export interface Interface {
   readonly ids: () => Effect.Effect<string[]>
   readonly all: () => Effect.Effect<Tool.Def[]>
   readonly named: () => Effect.Effect<{ task: TaskDef; read: ReadDef }>
+  /**
+   * F0: does this instance contribute CUSTOM tools (config-dir {tool,tools}/*.{js,ts}
+   * files or plugin `tool:` maps)? Those only exist on the V1 path — the promptAsync
+   * V2 reroute falls back to legacy when true, so custom-tool users never silently
+   * lose their tools to the V2 default.
+   */
+  readonly hasCustom: () => Effect.Effect<boolean>
   readonly tools: (model: {
     providerID: ProviderV2.ID
     modelID: ModelV2.ID
@@ -306,7 +313,12 @@ export const layer = Layer.effect(
       return { task: s.task, read: s.read }
     })
 
-    return Service.of({ ids, all, named, tools })
+    const hasCustom: Interface["hasCustom"] = Effect.fn("ToolRegistry.hasCustom")(function* () {
+      const s = yield* InstanceState.get(state)
+      return s.custom.length > 0
+    })
+
+    return Service.of({ ids, all, named, hasCustom, tools })
   }),
 )
 

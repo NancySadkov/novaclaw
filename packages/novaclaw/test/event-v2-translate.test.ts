@@ -292,7 +292,18 @@ describe("event-v2-translate / golden per-event shapes", () => {
 
     const part = (envs[1]!.properties as any).part
     expect(part).toMatchObject({ type: "text", text: "hello world", sessionID: SES, messageID: "msg_user1" })
-    expect(part.id.startsWith("prt")).toBe(true)
+    // F0: DETERMINISTIC id derived from the message id (was a minted prt_… id).
+    // Every translator instance + the stored-history fetch mapper agree on it,
+    // so re-delivery/fetch overlap can never duplicate the user bubble.
+    expect(part.id).toBe("msg_user1-text")
+  })
+
+  test("prompted part ids are deterministic across translator instances (F0)", () => {
+    const a = createTranslator().translate(prompted({ messageID: "msg_user1", text: "hi" }))
+    const b = createTranslator().translate(prompted({ messageID: "msg_user1", text: "hi" }))
+    const idOf = (envs: ReturnType<ReturnType<typeof createTranslator>["translate"]>) =>
+      (envs[1]!.properties as any).part.id
+    expect(idOf(a)).toBe(idOf(b))
   })
 
   test("prompted with file attachments -> file parts (uri->url, no mime required)", () => {

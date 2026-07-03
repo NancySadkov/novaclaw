@@ -5,6 +5,8 @@ import { ExternalToolSource } from "@novaclaw/core/tool/external-tool-source"
 import { McpExternal } from "@novaclaw/core/tool/mcp-external"
 import { makeLocationNode } from "@novaclaw/core/effect/app-node"
 import { Location } from "@novaclaw/core/location"
+import { PermissionV2 } from "@novaclaw/core/permission"
+import { Tool } from "@novaclaw/core/tool/tool"
 import { InstanceRef } from "@/effect/instance-ref"
 import type { InstanceContext } from "@/project/instance-context"
 import { MCP } from "."
@@ -25,6 +27,34 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const mcp = yield* MCP.Service
     const location = yield* Location.Service
+    const permission = yield* PermissionV2.Service
+
+    // F0: per-call permission ask for MCP tools on the V2 path (V1 parity —
+    // session/tools.ts asks `{permission: key, patterns: ["*"], always: ["*"]}`
+    // before every MCP call). Action = the tool name; the evaluate fallback for
+    // an unmatched action is "ask", so the first call asks and "allow always"
+    // persists — exactly the V1 UX. A denial/rejection lowers into the tool
+    // result via denialMessage (1J), never a halt.
+    const gate = (name: string) => (context: Tool.Context) =>
+      permission
+        .assert({
+          sessionID: context.sessionID,
+          action: name,
+          resources: ["*"],
+          save: ["*"],
+          source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
+          agent: context.agent,
+        })
+        .pipe(
+          Effect.mapError(
+            (error) =>
+              new Tool.Failure({
+                message:
+                  PermissionV2.denialMessage(error) ??
+                  `Permission check failed for MCP tool '${name}': ${String(error)}`,
+              }),
+          ),
+        )
     // Minimal instance context: MCP only reads `directory`. `project` is unused on this path.
     const instance = {
       directory: location.directory,
@@ -53,7 +83,10 @@ export const layer = Layer.effect(
           if (key === current.key) return current.entries
           const entries = new Map<string, ExternalToolSource.Entry>()
           for (const [name, tool] of Object.entries(tools))
-            entries.set(name, { identity: {}, tool: McpExternal.fromMcpTool(tool as McpExternal.AiSdkTool) })
+            entries.set(name, {
+              identity: {},
+              tool: McpExternal.fromMcpTool(tool as McpExternal.AiSdkTool, { gate: gate(name) }),
+            })
           yield* Ref.set(cache, { key, entries })
           return entries
         }),
@@ -61,4 +94,8 @@ export const layer = Layer.effect(
   }),
 )
 
-export const node = makeLocationNode({ service: ExternalToolSource.Service, layer, deps: [MCP.node, Location.node] })
+export const node = makeLocationNode({
+  service: ExternalToolSource.Service,
+  layer,
+  deps: [MCP.node, Location.node, PermissionV2.node],
+})

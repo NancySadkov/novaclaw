@@ -1,6 +1,6 @@
 // Novaclaw publish boundary for core events. Attach routed instance location
 // so direct EventV2 consumers can isolate directory/workspace streams.
-import { LayerNode } from "@novaclaw/core/effect/layer-node"
+import { Node } from "@novaclaw/core/effect/app-node"
 import { InstanceRef, WorkspaceRef } from "@/effect/instance-ref"
 import { GlobalBus } from "@/bus/global"
 import { EventV2 } from "@novaclaw/core/event"
@@ -9,13 +9,19 @@ import { Location } from "@novaclaw/core/location"
 import { Project } from "@novaclaw/core/project"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { createTranslator } from "@/event-v2-translate"
+import { PermissionV2Project } from "@/permission/v2-project"
 import { Context, Effect, Layer } from "effect"
 
 export class Service extends Context.Service<Service, EventV2.Interface>()("@novaclaw/EventV2Bridge") {}
 
-// More than one bridge instance can be alive (the MCP-injected location-service graph builds its
-// own), so every bridge's listener sees every event. The v1 permission projection must publish
-// exactly ONCE per source event — dedup on the event id, module-level so all instances share it.
+// The bridge node is GLOBAL-tagged (F0): buildLocationServiceMap hoists global nodes out of the
+// per-location Layer.fresh subtree, so the location graphs (MCP et al.) share the app graph's
+// single bridge instance via the shared memoMap — exactly how EventV2.node itself stays a single
+// bus. Before the tag, one fresh bridge (and listener) booted per location entry, and every
+// translated legacy envelope was emitted once per instance: message.part.delta is append-only in
+// the client reducer, so streamed text duplicated (N+1)x. The id-dedup below remains as
+// belt-and-suspenders for the permission projection (it must publish exactly ONCE per source
+// event even if an extra instance ever appears again).
 const projectedPermissionEvents = new Set<string>()
 const PROJECTED_CAP = 10_000
 function shouldProject(id: string): boolean {
@@ -66,34 +72,21 @@ export const layer = Layer.effect(
         })
         // ADDITIVE v1 projection (1K): a V2-native session's permission ask must reach the
         // unchanged desktop/web/CLI clients, which only understand the legacy
-        // "permission.asked" vocabulary. Publishing the mapped V1 event back onto EventV2 (NOT
-        // just GlobalBus) is deliberate: the /event SSE the web app consumes streams EventV2
-        // envelopes directly, and this generic listener then also mirrors the published event to
-        // GlobalBus for the desktop. Field mapping: action->permission, resources->patterns,
-        // save->always, source->tool. The reply travels back through the V1 reply route, which
-        // falls back to PermissionV2 when the ask is pending there (handlers/permission.ts).
+        // "permission.asked" vocabulary. NB (corrected in F0): the web app consumes the GLOBAL
+        // /global/event SSE (GlobalBus), not the per-instance /event EventV2 SSE — web, desktop
+        // AND TUI all render through GlobalBus. Publishing the mapped V1 event back onto EventV2
+        // (not just GlobalBus) still matters: this generic listener then mirrors it to GlobalBus,
+        // and direct /event consumers (generated effect client) see it too. Field mapping:
+        // action->permission, resources->patterns, save->always, source->tool — kept in sync with
+        // the GET /permission bootstrap merge via PermissionV2Project (permission/v2-project.ts).
+        // The reply travels back through the V1 reply route, which falls back to PermissionV2 when
+        // the ask is pending there (handlers/permission.ts).
         // Re-entrancy is bounded: the projected V1 event matches neither branch below.
         if (event.type === "permission.v2.asked" && shouldProject(event.id)) {
-          const request = event.data as {
-            id: string
-            sessionID: string
-            action: string
-            resources: readonly string[]
-            save?: readonly string[]
-            metadata?: Record<string, unknown>
-            source?: { type: "tool"; messageID: string; callID: string }
-          }
+          const request = event.data as PermissionV2Project.V2RequestLike
           yield* events.publish(
             PermissionV1.Event.Asked,
-            {
-              id: request.id,
-              sessionID: request.sessionID,
-              permission: request.action,
-              patterns: request.resources,
-              metadata: request.metadata ?? {},
-              always: request.save ?? [],
-              tool: request.source ? { messageID: request.source.messageID, callID: request.source.callID } : undefined,
-            } as unknown as typeof PermissionV1.Event.Asked.Type["data"],
+            PermissionV2Project.toV1Request(request) as unknown as typeof PermissionV1.Event.Asked.Type["data"],
             { location: event.location },
           )
         }
@@ -158,6 +151,6 @@ export const layer = Layer.effect(
 
 export const defaultLayer = layer.pipe(Layer.provide(EventV2.defaultLayer))
 
-export const node = LayerNode.make({ service: Service, layer: layer, deps: [EventV2.node] })
+export const node = Node.makeGlobalNode({ service: Service, layer: layer, deps: [EventV2.node] })
 
 export * as EventV2Bridge from "./event-v2-bridge"

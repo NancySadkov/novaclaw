@@ -19,6 +19,7 @@ import { SessionStatus } from "@/session/status"
 import { SessionSummary } from "@/session/summary"
 import { Todo } from "@/session/todo"
 import { MessageID, PartID, SessionID } from "@/session/schema"
+import { ToolRegistry } from "@/tool/registry"
 import { NamedError } from "@novaclaw/core/util/error"
 import { Cause, Effect, Option, Schema, Scope } from "effect"
 import * as Stream from "effect/Stream"
@@ -39,7 +40,7 @@ import {
   SummarizePayload,
   UpdatePayload,
 } from "../groups/session"
-import { PermissionNotFoundError } from "../errors"
+import { InvalidRequestError, PermissionNotFoundError } from "../errors"
 import * as SessionError from "./session-errors"
 
 const tryParseJson = (text: string) =>
@@ -80,16 +81,14 @@ export const toV2Prompt = (payload: typeof PromptPayload.Type): typeof PromptInp
   })
 }
 
-// new = zero legacy message rows. This is enforced structurally: a V2 turn
-// writes only to `session_message` (disjoint from the legacy `message`/`part`
-// tables MessageV2.page reads), so a session stays "new" across prompt→abort
-// even after a V2 turn has run. We never reroute a session that already has a
-// legacy v1 message — that path stays on the legacy runner.
-const isNewSession = (sid: SessionID) =>
-  Effect.gen(function* () {
-    const page = yield* MessageV2.page({ sessionID: sid, limit: 1 })
-    return page.items.length === 0
-  })
+// F0: V2-eligible = zero LEGACY message rows. This is enforced structurally: a
+// V2 turn writes only to `session_message` (disjoint from the legacy
+// `message`/`part` tables), so a V2-native session stays eligible forever, while
+// a session with ANY legacy v1 row (old sessions; legacy-only ops) is pinned to
+// the legacy runner. NB: this can no longer be MessageV2.page — since the F0
+// history merge, page ALSO returns projected V2-native rows, which would flip a
+// V2 session back to V1 on its second prompt.
+const v2Eligible = (sid: SessionID) => Effect.map(MessageV2.hasLegacyRows(sid), (has) => !has)
 
 export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", (handlers) =>
   Effect.gen(function* () {
@@ -104,6 +103,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     const statusSvc = yield* SessionStatus.Service
     const sessionV2 = yield* SessionV2.Service
     const flags = yield* RuntimeFlags.Service
+    const toolRegistry = yield* ToolRegistry.Service
     const todoSvc = yield* Todo.Service
     const summary = yield* SessionSummary.Service
     const events = yield* EventV2Bridge.Service
@@ -277,20 +277,37 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     })
 
     const abort = Effect.fn("SessionHttpApi.abort")(function* (ctx: { params: { sessionID: SessionID } }) {
-      // Symmetric with promptAsync: a flag-ON new session may be running a V2
-      // turn, so interrupt the V2 runner. We ALSO call the legacy cancel
+      // Symmetric with promptAsync: a flag-ON V2-eligible session may be running
+      // a V2 turn, so interrupt the V2 runner. We ALSO call the legacy cancel
       // unconditionally — it is a harmless no-op when there is no V1 runner and
       // guards against an orphaned V1 background job (SAFETY). We do NOT emit
       // idle here: the V2 turn fiber's `ensuring` owns the idle transition.
-      // isNewSession fails (NotFoundError) for a session with no rows at all;
-      // abort must stay total (it tolerates missing sessions), so treat any
-      // failure as "not eligible" and fall through to the legacy cancel.
+      // Abort must stay total (it tolerates missing sessions): v2Eligible no
+      // longer fails for a missing session (plain row check), so the interrupt
+      // itself absorbs its typed not-found failure and falls through to cancel.
       const eligible =
         flags.experimentalNativeSession &&
-        (yield* isNewSession(ctx.params.sessionID).pipe(Effect.orElseSucceed(() => false)))
-      if (eligible) yield* sessionV2.interrupt(ctx.params.sessionID)
+        (yield* v2Eligible(ctx.params.sessionID).pipe(Effect.orElseSucceed(() => false)))
+      if (eligible) yield* sessionV2.interrupt(ctx.params.sessionID).pipe(Effect.orElseSucceed(() => undefined))
       yield* promptSvc.cancel(ctx.params.sessionID)
       return true
+    })
+
+    // F0 guard: these ops run on the LEGACY engine and write v1 message rows. On
+    // a V2-native session that would flip v2Eligible false, silently rerouting
+    // every later prompt to the V1 runner — a mixed transcript across two
+    // disjoint storage systems with no backfill. Reject with a legible 400
+    // instead; each op gains a V2 port later (todo.md F0 scope).
+    const requireLegacyCapable = Effect.fn("SessionHttpApi.requireLegacyCapable")(function* (
+      sessionID: SessionID,
+      op: string,
+    ) {
+      const native = yield* MessageV2.hasNativeRows(sessionID).pipe(Effect.orDie)
+      if (!native) return
+      return yield* new InvalidRequestError({
+        message: `'${op}' is not available on a native (V2) session yet: it runs on the legacy engine and would split this session's history across two runtimes. Use a fresh session for '${op}', or start the server with NOVACLAW_EXPERIMENTAL_NATIVE_SESSION=false to run sessions on the legacy engine.`,
+        kind: "native_session_op_unavailable",
+      })
     })
 
     const init = Effect.fn("SessionHttpApi.init")(function* (ctx: {
@@ -298,6 +315,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       payload: typeof InitPayload.Type
     }) {
       yield* requireSession(ctx.params.sessionID)
+      yield* requireLegacyCapable(ctx.params.sessionID, "init")
       yield* promptSvc
         .command({
           sessionID: ctx.params.sessionID,
@@ -334,6 +352,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       payload: typeof SummarizePayload.Type
     }) {
       yield* revertSvc.cleanup(yield* requireSession(ctx.params.sessionID))
+      yield* requireLegacyCapable(ctx.params.sessionID, "summarize")
       const messages = yield* SessionError.mapStorageNotFound(session.messages({ sessionID: ctx.params.sessionID }))
       const defaultAgent = yield* agentSvc.defaultAgent()
       const currentAgent = messages.findLast((message) => message.info.role === "user")?.info.agent ?? defaultAgent
@@ -356,6 +375,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       payload: typeof PromptPayload.Type
     }) {
       yield* requireSession(ctx.params.sessionID)
+      yield* requireLegacyCapable(ctx.params.sessionID, "prompt")
       const message = yield* promptSvc
         .prompt({
           ...ctx.payload,
@@ -383,20 +403,32 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       payload: typeof PromptPayload.Type
     }) {
       const current = yield* requireSession(ctx.params.sessionID)
-      // `&&` order is load-bearing: the flag short-circuits BEFORE isNewSession
-      // so a flag-OFF request never touches MessageV2.page. A session is eligible
-      // only if it has zero legacy message rows (new-sessions-only reroute).
+      // `&&` order is load-bearing: the flag short-circuits BEFORE the row check
+      // so a flag-OFF request never touches the DB. A session is eligible only if
+      // it has zero LEGACY message rows (old v1 sessions never reroute; V2-native
+      // sessions stay V2 forever — see v2Eligible).
       // The model must also be resolvable for the (single) V2 turn: the per-turn
       // payload model, else the session's own model. Without one the V2 runner
       // throws ModelNotSelectedError, so a model-less turn FALLS THROUGH to legacy.
       const hasModel = ctx.payload.model !== undefined || current.model !== undefined
-      // requireSession already proved the session exists, so isNewSession's
-      // NotFoundError can't fire here; orDie keeps it off the handler's typed
-      // error channel (the route only declares BadRequest/NotFound).
+      // F0: custom tools (config-dir {tool,tools}/*.{js,ts} + plugin `tool:` maps)
+      // exist only on the V1 path — when this instance contributes any, stay on
+      // legacy so those tools never silently vanish (V2 plugin-tool parity is a
+      // documented F0 gap). A failing custom-tool load also stays legacy: that is
+      // exactly the pre-flip behavior, and the V1 path will surface the error.
+      const customTools =
+        flags.experimentalNativeSession && hasModel
+          ? yield* toolRegistry.hasCustom().pipe(Effect.catchCause(() => Effect.succeed(true)))
+          : false
+      if (customTools && flags.experimentalNativeSession)
+        yield* Effect.logInfo("promptAsync: custom/plugin tools present — session stays on the legacy engine", {
+          sessionID: ctx.params.sessionID,
+        })
       const useV2 =
         flags.experimentalNativeSession &&
         hasModel &&
-        (yield* isNewSession(ctx.params.sessionID).pipe(Effect.orDie))
+        !customTools &&
+        (yield* v2Eligible(ctx.params.sessionID).pipe(Effect.orDie))
 
       if (!useV2) {
         // Legacy path — unchanged.
@@ -466,6 +498,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       payload: typeof CommandPayload.Type
     }) {
       yield* requireSession(ctx.params.sessionID)
+      yield* requireLegacyCapable(ctx.params.sessionID, "command")
       return yield* promptSvc
         .command({ ...ctx.payload, sessionID: ctx.params.sessionID })
         .pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
@@ -476,6 +509,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       payload: typeof ShellPayload.Type
     }) {
       yield* requireSession(ctx.params.sessionID)
+      yield* requireLegacyCapable(ctx.params.sessionID, "shell")
       return yield* SessionError.mapBusy(promptSvc.shell({ ...ctx.payload, sessionID: ctx.params.sessionID }))
     })
 
