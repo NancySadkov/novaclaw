@@ -886,6 +886,9 @@ export const dict = {
     "Place the title bar and session tabs at the bottom of the screen on mobile",
   "settings.general.row.showCustomAgents.title": "Custom agents",
   "settings.general.row.showCustomAgents.description": "Show the agent picker in the composer",
+  "settings.general.row.offline.title": "Offline / airgap mode",
+  "settings.general.row.offline.description":
+    "Restrict outbound HTTP to loopback and your configured model-provider hosts (fail-closed); blocks package installs and telemetry export. Restart the server to apply.",
   "settings.general.row.reasoningSummaries.title": "Show reasoning summaries",
   "settings.general.row.reasoningSummaries.description": "Display model reasoning summaries in the timeline",
   "settings.general.row.shellToolPartsExpanded.title": "Expand shell tool parts",

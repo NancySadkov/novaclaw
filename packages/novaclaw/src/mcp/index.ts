@@ -22,6 +22,8 @@ import { NamedError } from "@novaclaw/core/util/error"
 import { InstallationVersion } from "@novaclaw/core/installation/version"
 import { withTimeout } from "@/util/timeout"
 import { FSUtil } from "@novaclaw/core/fs-util"
+import { Global } from "@novaclaw/core/global"
+import { Offline } from "@novaclaw/core/offline"
 import { McpOAuthPendingProvider, McpOAuthProvider, OAUTH_CALLBACK_PATH } from "./oauth-provider"
 import { McpOAuthCallback } from "./oauth-callback"
 import { McpAuth } from "./auth"
@@ -236,6 +238,20 @@ export const layer = Layer.effect(
         return {
           client: undefined as MCPClient | undefined,
           status: { status: "failed" as const, error: `Invalid MCP URL for "${key}"` },
+        }
+      }
+      // OFF-B (layer 6): the MCP SDK runs its own fetch, so the OFF-A HttpClient
+      // chokepoint cannot see these connections. In offline mode a remote MCP
+      // endpoint must pass the same host policy (loopback/LAN allowlist) or the
+      // server is marked failed with the legible how-to-allow message.
+      {
+        const offline = Offline.loadPolicy({ configDir: Global.make().config })
+        const verdict = Offline.checkUrl(url.toString(), offline)
+        if (!verdict.allowed) {
+          return {
+            client: undefined as MCPClient | undefined,
+            status: { status: "failed" as const, error: verdict.message },
+          }
         }
       }
       let authProvider: McpOAuthProvider | undefined

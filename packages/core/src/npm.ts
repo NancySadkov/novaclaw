@@ -11,6 +11,7 @@ import { makeGlobalNode } from "./effect/app-node"
 import { filesystem } from "./effect/app-node-platform"
 import { makeRuntime } from "./effect/runtime"
 import { NpmConfig } from "./npm-config"
+import { loadPolicy } from "./offline"
 
 export class InstallFailedError extends Schema.TaggedErrorClass<InstallFailedError>()("NpmInstallFailedError", {
   add: Schema.Array(Schema.String).pipe(Schema.optional),
@@ -76,8 +77,19 @@ export const layer = Layer.effect(
     const fs = yield* FileSystem.FileSystem
     const flock = yield* EffectFlock.Service
     const directory = (pkg: string) => path.join(global.cache, "packages", sanitize(pkg))
+    // OFF-B (layer 8): no package-registry fetches in offline mode — installs must be
+    // pre-provisioned or come from a local mirror. Snapshot at layer init, same as the
+    // OFF-A HttpClient chokepoint (npm runs its own transport, so the chokepoint can't see it).
+    const offline = loadPolicy({ configDir: global.config })
     const reify = (input: { dir: string; add?: string[] }) =>
       Effect.gen(function* () {
+        if (offline.enabled)
+          return yield* new InstallFailedError({
+            add: input.add,
+            dir: input.dir,
+            cause:
+              "offline mode: package installs are blocked (fail-closed). Provision dependencies BEFORE going airgapped, or point npm at a local registry mirror and turn offline mode off for the install.",
+          })
         yield* flock.acquire(`npm-install:${input.dir}`)
         const { Arborist } = yield* Effect.promise(() => import("@npmcli/arborist"))
         const add = input.add ?? []

@@ -264,6 +264,18 @@ export const SettingsGeneralV2: Component<{
         </SettingsRowV2>
 
         <SettingsRowV2
+          title={language.t("settings.general.row.offline.title")}
+          description={language.t("settings.general.row.offline.description")}
+        >
+          <div data-action="settings-offline-mode">
+            <Switch
+              checked={(serverSync().data.config as { offline?: boolean }).offline === true}
+              onChange={(checked) => void serverSync().updateConfig({ offline: checked } as never)}
+            />
+          </div>
+        </SettingsRowV2>
+
+        <SettingsRowV2
           title={language.t("settings.general.row.reasoningSummaries.title")}
           description={language.t("settings.general.row.reasoningSummaries.description")}
         >
