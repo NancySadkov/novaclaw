@@ -59,6 +59,12 @@ export const DialogSettings: Component<{
                       <Icon name="sliders" />
                       {language.t("settings.tab.general")}
                     </TabsV2.Trigger>
+                    {/* Models sits right under General — adding/configuring/importing models is the
+                        high-value task while local hardware can't run the best model out of the box. */}
+                    <TabsV2.Trigger value="models">
+                      <Icon name="cpu" />
+                      {language.t("settings.models.title")}
+                    </TabsV2.Trigger>
                     <TabsV2.Trigger value="appearance">
                       <Icon name="palette" />
                       {language.t("settings.tab.appearance")}
@@ -70,10 +76,6 @@ export const DialogSettings: Component<{
                     <TabsV2.Trigger value="servers">
                       <Icon name="share" />
                       {language.t("settings.tab.instances")}
-                    </TabsV2.Trigger>
-                    <TabsV2.Trigger value="models">
-                      <Icon name="cpu" />
-                      {language.t("settings.models.title")}
                     </TabsV2.Trigger>
                     <Show when={tabVisible("system-prompt")}>
                       <TabsV2.Trigger value="system-prompt">

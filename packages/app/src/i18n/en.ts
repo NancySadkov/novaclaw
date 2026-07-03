@@ -937,6 +937,9 @@ export const dict = {
   "settings.desktop.wsl.description": "Run the NovaClaw server inside WSL on Windows.",
 
   "settings.general.section.appearance": "Appearance",
+  // The Appearance tab's visual section (color scheme/theme/fonts) — "Visual", since the tab title is
+  // already "Appearance" and the tab also holds Sound Effects.
+  "settings.appearance.section.visual": "Visual",
   // Color-scheme presets (uix.md §7).
   "settings.appearance.theme.title": "Color scheme",
   "settings.appearance.theme.description": "Pick a color palette. Each pairs one warm highlight color with a calm background.",

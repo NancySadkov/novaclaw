@@ -103,7 +103,7 @@ export const SettingsAppearanceV2: Component = () => {
 
   const AppearanceSection = () => (
     <div class="settings-v2-section">
-      <h3 class="settings-v2-section-title">{language.t("settings.general.section.appearance")}</h3>
+      <h3 class="settings-v2-section-title">{language.t("settings.appearance.section.visual")}</h3>
 
       <SettingsListV2>
         <SettingsRowV2
