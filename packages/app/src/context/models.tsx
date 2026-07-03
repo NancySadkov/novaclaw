@@ -9,11 +9,16 @@ import { Persist, persisted } from "@/utils/persist"
 export type ModelKey = { providerID: string; modelID: string }
 
 type Visibility = "show" | "hide"
+// Rough capability class (by parameter count) the user assigns — or "guess" to let NovaClaw
+// estimate it later by probing (see notes/guesstimation.md). Kept client-side like `variant`;
+// wiring it into the system prompt is future work.
+export type ModelTier = "guess" | "micro" | "tiny" | "small" | "medium" | "large" | "frontier"
 type User = ModelKey & { visibility: Visibility; favorite?: boolean }
 type Store = {
   user: User[]
   recent: ModelKey[]
   variant?: Record<string, string | undefined>
+  tier?: Record<string, ModelTier>
 }
 
 const RECENT_LIMIT = 5
@@ -145,6 +150,17 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
       setStore("variant", key, value)
     }
 
+    const tierKey = (model: ModelKey) => `${model.providerID}/${model.modelID}`
+    const getTier = (model: ModelKey): ModelTier => store.tier?.[tierKey(model)] ?? "guess"
+    const setTier = (model: ModelKey, value: ModelTier) => {
+      const key = tierKey(model)
+      if (!store.tier) {
+        setStore("tier", { [key]: value })
+        return
+      }
+      setStore("tier", key, value)
+    }
+
     const [recentModels] = createResource(
       async () => {
         const recent = store.recent
@@ -167,6 +183,10 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
       variant: {
         get: getVariant,
         set: setVariant,
+      },
+      tier: {
+        get: getTier,
+        set: setTier,
       },
     }
   },

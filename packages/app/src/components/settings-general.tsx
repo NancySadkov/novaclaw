@@ -6,7 +6,6 @@ import { Switch } from "@novaclaw/ui/switch"
 import { TextField } from "@novaclaw/ui/text-field"
 import { Tooltip } from "@novaclaw/ui/tooltip"
 import { useTheme, type ColorScheme } from "@novaclaw/ui/theme/context"
-import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useParams } from "@solidjs/router"
 import { useLanguage } from "@/context/language"
 import { usePermission } from "@/context/permission"
@@ -86,7 +85,6 @@ export const SettingsGeneral: Component = () => {
   const language = useLanguage()
   const permission = usePermission()
   const platform = usePlatform()
-  const dialog = useDialog()
   const params = useParams()
   const settings = useSettings()
 
@@ -300,18 +298,6 @@ export const SettingsGeneral: Component = () => {
         </SettingsRow>
 
         <SettingsRow
-          title={language.t("settings.general.row.reasoningSummaries.title")}
-          description={language.t("settings.general.row.reasoningSummaries.description")}
-        >
-          <div data-action="settings-feed-reasoning-summaries">
-            <Switch
-              checked={settings.general.showReasoningSummaries()}
-              onChange={(checked) => settings.general.setShowReasoningSummaries(checked)}
-            />
-          </div>
-        </SettingsRow>
-
-        <SettingsRow
           title={language.t("settings.general.row.shellToolPartsExpanded.title")}
           description={language.t("settings.general.row.shellToolPartsExpanded.description")}
         >
@@ -335,28 +321,6 @@ export const SettingsGeneral: Component = () => {
           </div>
         </SettingsRow>
 
-        {/* Dev-channel only, mirroring the V2 dialog's gate — the layout flip is a developer escape
-            hatch, and gating only ONE dialog creates a prod one-way door into whichever layout the
-            other dialog can still reach. */}
-        <Show when={import.meta.env.VITE_NOVACLAW_CHANNEL !== "prod"}>
-          <SettingsRow
-            title={language.t("settings.general.row.newLayoutDesigns.title")}
-            description={language.t("settings.general.row.newLayoutDesigns.description")}
-          >
-            <div data-action="settings-new-layout-designs">
-              <Switch
-                checked={settings.general.newLayoutDesigns()}
-                onChange={(checked) => {
-                  settings.general.setNewLayoutDesigns(checked)
-                  if (!checked) return
-                  void import("@/components/settings-v2").then((module) => {
-                    dialog.show(() => <module.DialogSettings />)
-                  })
-                }}
-              />
-            </div>
-          </SettingsRow>
-        </Show>
       </SettingsList>
     </div>
   )

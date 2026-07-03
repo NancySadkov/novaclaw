@@ -1,5 +1,5 @@
 export const dict: Record<string, string> = {
-  "ui.sessionReview.title": "Session changes",
+  "ui.sessionReview.title": "Chat changes",
   "ui.sessionReview.title.git": "Git changes",
   "ui.sessionReview.title.branch": "Branch changes",
   "ui.sessionReview.title.lastTurn": "Last turn changes",
@@ -13,7 +13,7 @@ export const dict: Record<string, string> = {
   "ui.sessionReview.change.modified": "Modified",
   "ui.sessionReview.image.loading": "Loading...",
   "ui.sessionReview.image.placeholder": "Image",
-  "ui.sessionReview.largeDiff.title": "Diff too large to render",
+  "ui.sessionReview.largeDiff.title": "These changes are too large to show automatically",
   "ui.sessionReview.largeDiff.meta": "Limit: {{limit}} changed lines. Current: {{current}} changed lines.",
   "ui.sessionReview.largeDiff.renderAnyway": "Render anyway",
   "ui.sessionReview.openFile": "Open file",
@@ -50,7 +50,7 @@ export const dict: Record<string, string> = {
   "ui.sessionTurn.retry.inSeconds": "in {{seconds}}s",
   "ui.sessionTurn.retry.attempt": "attempt #{{attempt}}",
   "ui.sessionTurn.retry.attemptLine": "{{line}} - attempt #{{attempt}}",
-  "ui.sessionTurn.retry.geminiHot": "gemini is way too hot right now",
+  "ui.sessionTurn.retry.geminiHot": "This model is busy right now — retrying in a moment",
   "ui.sessionTurn.error.freeUsageExceeded": "Free usage exceeded",
   "ui.sessionTurn.error.addCredits": "Add credits",
 
@@ -59,8 +59,7 @@ export const dict: Record<string, string> = {
     "Subscribe to NovaClaw Go for reliable access to the best open-source models, starting at $5/month.",
   "dialog.usageExceeded.freeTier.actionLabel": "Subscribe",
   "dialog.usageExceeded.accountRateLimit.title": "Go limit reached",
-  "dialog.usageExceeded.accountRateLimit.description":
-    "Usage limit reached. To continue using this model now, enable usage from your available balance",
+  "dialog.usageExceeded.accountRateLimit.description": "You've reached your usage limit. To keep going now, turn on pay-as-you-go from your balance.",
   "dialog.usageExceeded.accountRateLimit.actionLabel": "Open settings",
 
   "ui.sessionTurn.status.delegating": "Delegating work",
@@ -82,7 +81,7 @@ export const dict: Record<string, string> = {
   "ui.messagePart.option.typeOwnAnswer": "Type your own answer",
   "ui.messagePart.review.title": "Review your answers",
   "ui.messagePart.questions.dismissed": "Questions dismissed",
-  "ui.messagePart.compaction": "Session compacted",
+  "ui.messagePart.compaction": "Earlier messages summarized",
   "ui.messagePart.context.read.one": "{{count}} read",
   "ui.messagePart.context.read.other": "{{count}} reads",
   "ui.messagePart.context.search.one": "{{count}} search",
@@ -113,8 +112,8 @@ export const dict: Record<string, string> = {
   "ui.tool.read": "Read",
   "ui.tool.loaded": "Loaded",
   "ui.tool.list": "List",
-  "ui.tool.glob": "Glob",
-  "ui.tool.grep": "Grep",
+  "ui.tool.glob": "Find files",
+  "ui.tool.grep": "Search files",
   "ui.tool.task": "Task",
   "ui.tool.webfetch": "Webfetch",
   "ui.tool.websearch": "Web Search",
@@ -152,7 +151,7 @@ export const dict: Record<string, string> = {
   "ui.permission.denyOnce": "Deny",
   "ui.permission.denyFile": "Deny file",
   "ui.permission.denyAlways": "Deny always",
-  "ui.permission.reason.placeholder": "Optional: tell the model why, or what to do instead (sent on deny)",
+  "ui.permission.reason.placeholder": "Optional — tell the model why, or what to do instead. This note is sent only when you deny.",
 
   "ui.message.expand": "Expand message",
   "ui.message.collapse": "Collapse message",

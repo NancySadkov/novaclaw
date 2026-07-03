@@ -578,9 +578,6 @@ export const dict = {
     "Wählen Sie, ob Folgefragen sofort steuern oder in einer Warteschlange warten",
   "settings.general.row.followup.option.queue": "Warteschlange",
   "settings.general.row.followup.option.steer": "Steuern",
-  "settings.general.row.reasoningSummaries.title": "Reasoning-Zusammenfassungen anzeigen",
-  "settings.general.row.reasoningSummaries.description":
-    "Zusammenfassungen des Modell-Reasonings in der Timeline anzeigen",
   "settings.general.row.shellToolPartsExpanded.title": "Shell-Tool-Abschnitte ausklappen",
   "settings.general.row.shellToolPartsExpanded.description":
     "Shell-Tool-Abschnitte standardmäßig in der Timeline ausgeklappt anzeigen",

@@ -575,9 +575,6 @@ export const dict = {
     "Choisissez si les messages de suivi dirigent immédiatement ou attendent dans une file d'attente",
   "settings.general.row.followup.option.queue": "File d'attente",
   "settings.general.row.followup.option.steer": "Diriger",
-  "settings.general.row.reasoningSummaries.title": "Afficher les résumés de raisonnement",
-  "settings.general.row.reasoningSummaries.description":
-    "Afficher les résumés de raisonnement du modèle dans la chronologie",
   "settings.general.row.shellToolPartsExpanded.title": "Développer les parties de l'outil shell",
   "settings.general.row.shellToolPartsExpanded.description":
     "Afficher les parties de l'outil shell développées par défaut dans la chronologie",

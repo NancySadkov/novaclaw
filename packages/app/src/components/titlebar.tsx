@@ -19,6 +19,7 @@ import { useSettings } from "@/context/settings"
 import { WindowsAppMenu } from "./windows-app-menu"
 import { applyPath, backPath, forwardPath } from "./titlebar-history"
 import { TitlebarTabStrip } from "@/components/titlebar-tab-strip"
+import { NovaClawWordmark } from "@/components/brand"
 import { makeEventListener } from "@solid-primitives/event-listener"
 import { createMediaQuery } from "@solid-primitives/media"
 import { readSessionTabsRemovedDetail, SESSION_TABS_REMOVED_EVENT } from "@/components/titlebar-session-events"
@@ -425,7 +426,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                   "md:pl-4": !mac(),
                 }}
               >
-                <ChannelIndicator />
+                <BrandBadge />
                 {/* Session-nav (app menu + Home + Chats) is hidden on the launcher ("/") — you launch
                     apps from the tiles there; the nav returns inside a chat/session. */}
                 <Show when={location.pathname !== "/"}>
@@ -640,7 +641,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                       </div>
                     </Show>
                     <div id="novaclaw-titlebar-left" class="flex items-center gap-3 min-w-0 px-2" />
-                    <ChannelIndicator />
+                    <BrandBadge />
                   </div>
                 </div>
               </div>
@@ -727,14 +728,8 @@ function TitlebarUpdateIconButton(props: { state: TitlebarUpdatePillState }) {
   )
 }
 
-function ChannelIndicator() {
-  return (
-    <>
-      {["beta", "dev"].includes(import.meta.env.VITE_NOVACLAW_CHANNEL) && (
-        <div class="bg-icon-interactive-base text-[#FFF] font-medium px-2 rounded-sm uppercase font-mono">
-          {import.meta.env.VITE_NOVACLAW_CHANNEL.toUpperCase()}
-        </div>
-      )}
-    </>
-  )
+// The top-left brand badge. Replaces the old channel chip ("DEV"/"BETA") with the stylized
+// NovaClaw wordmark + version, so screenshots advertise the app and show which build they are.
+function BrandBadge() {
+  return <NovaClawWordmark showVersion class="shrink-0 px-1 text-[13px] leading-none" />
 }

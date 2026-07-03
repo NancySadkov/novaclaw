@@ -627,8 +627,6 @@ export const dict = {
   "settings.general.row.followup.description": "Vælg om opfølgende forespørgsler skal styre straks eller vente i kø",
   "settings.general.row.followup.option.queue": "Kø",
   "settings.general.row.followup.option.steer": "Styr",
-  "settings.general.row.reasoningSummaries.title": "Vis tænkeoversigter",
-  "settings.general.row.reasoningSummaries.description": "Vis model tænkeoversigter i tidslinjen",
 
   "settings.general.row.shellToolPartsExpanded.title": "Udvid shell-værktøjsdele",
   "settings.general.row.shellToolPartsExpanded.description": "Vis shell-værktøjsdele udvidet som standard i tidslinjen",

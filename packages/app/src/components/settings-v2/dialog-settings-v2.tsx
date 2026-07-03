@@ -78,7 +78,7 @@ export const DialogSettings: Component<{
                       {language.t("settings.providers.title")}
                     </TabsV2.Trigger>
                     <TabsV2.Trigger value="models">
-                      <Icon name="models" />
+                      <Icon name="cpu" />
                       {language.t("settings.models.title")}
                     </TabsV2.Trigger>
                     <Show when={tabVisible("system-prompt")}>

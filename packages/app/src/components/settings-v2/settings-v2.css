@@ -489,6 +489,37 @@
   color: var(--v2-state-warning-text, #eab308);
 }
 
+/* Capability-tier picker — rich, educational dropdown options (name + size range + capabilities). */
+.settings-v2-tier-option {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  max-width: 340px;
+}
+
+.settings-v2-tier-option-head {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.settings-v2-tier-option-name {
+  font-weight: 560;
+}
+
+.settings-v2-tier-option-range {
+  font-size: 11px;
+  color: var(--v2-text-text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+.settings-v2-tier-option-blurb {
+  font-size: 12px;
+  line-height: 1.35;
+  color: var(--v2-text-text-muted);
+  white-space: normal;
+}
+
 .settings-v2-shortcuts .settings-v2-section {
   gap: 16px;
 }

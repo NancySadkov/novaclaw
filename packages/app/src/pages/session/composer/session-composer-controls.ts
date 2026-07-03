@@ -14,6 +14,7 @@ import { serverName, ServerConnection, useServer } from "@/context/server"
 import { useSDK } from "@/context/sdk"
 import { switchMode } from "@/utils/fs-api"
 import { useSettings } from "@/context/settings"
+import { useExpertise } from "@/context/expertise"
 import { useSync } from "@/context/sync"
 import { useTabs } from "@/context/tabs"
 import { useProviders } from "@/hooks/use-providers"
@@ -28,6 +29,7 @@ export function createPromptInputController(input: {
   const local = useLocal()
   const providers = useProviders()
   const settings = useSettings()
+  const expertise = useExpertise()
   const sync = useSync()
   const sdk = useSDK()
   const server = useServer()
@@ -42,7 +44,11 @@ export function createPromptInputController(input: {
       options: local.agent.list().map((agent) => agent.name),
       current: local.agent.current()?.name ?? "",
       loading: agentsQuery.isLoading,
-      visible: settings.visibility.customAgents(),
+      // The agent picker (plan/build/custom agents) reads like a second "permission mode" box next to
+      // the real one, which confused users. It's an Advanced concept — hide it at Normal so the default
+      // composer shows a single mode control (the permission-mode picker). `settings.visibility.*` is a
+      // frozen always-true legacy shim (see context/settings.tsx), so gate on expertise instead.
+      visible: expertise.atLeast("advanced"),
       select: local.agent.set,
     },
     model: {

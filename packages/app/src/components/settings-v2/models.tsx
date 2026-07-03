@@ -2,9 +2,7 @@ import { useFilteredList } from "@novaclaw/ui/hooks"
 import { ProviderIcon } from "@novaclaw/ui/provider-icon"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { Switch } from "@novaclaw/ui/v2/switch-v2"
-import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
-import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
-import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
+import { useDialog } from "@novaclaw/ui/context/dialog"
 import { type Component, For, Show, createMemo, createResource, createSignal } from "solid-js"
 import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
@@ -14,6 +12,8 @@ import { popularProviders } from "@/hooks/use-providers"
 import { providerProbe, type ProbeResult } from "@/utils/fs-api"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
+import { DialogModelTier } from "./dialog-model-tier"
+import { DialogModelConfig } from "./dialog-model-config"
 import "./settings-v2.css"
 
 type ModelItem = ReturnType<ReturnType<typeof useModels>["list"]>[number]
@@ -47,6 +47,9 @@ export const SettingsModelsV2: Component = () => {
   const models = useModels()
   const global = useGlobal()
   const server = useServer()
+  const dialog = useDialog()
+  // Dynamic tier i18n keys need the loose-key cast the typed translator otherwise forbids.
+  const tk = (key: string) => language.t(key as Parameters<typeof language.t>[0])
 
   // B15 — probe plumbing. Unlike the global trash store, provider config is DIRECTORY-scoped
   // (a project's novaclaw.jsonc is only visible when the request routes at that project — the
@@ -105,32 +108,8 @@ export const SettingsModelsV2: Component = () => {
 
   return (
     <>
-      <div class="settings-v2-tab-header settings-v2-tab-header--stacked">
+      <div class="settings-v2-tab-header">
         <h2 class="settings-v2-tab-title">{language.t("settings.models.title")}</h2>
-        <div class="settings-v2-tab-search">
-          <TextInputV2
-            type="search"
-            appearance="base"
-            value={list.filter()}
-            onInput={(event) => list.onInput(event.currentTarget.value)}
-            placeholder={language.t("dialog.model.search.placeholder")}
-            spellcheck={false}
-            autocorrect="off"
-            autocomplete="off"
-            autocapitalize="off"
-            aria-label={language.t("dialog.model.search.placeholder")}
-          />
-          <Show when={list.filter()}>
-            <IconButtonV2
-              type="button"
-              variant="ghost-muted"
-              size="small"
-              class="settings-v2-tab-search-clear"
-              icon={<IconV2 name="close" size="large" class="text-v2-icon-icon-muted" />}
-              onClick={() => list.clear()}
-            />
-          </Show>
-        </div>
       </div>
 
       <div class="settings-v2-tab-body settings-v2-models">
@@ -148,9 +127,6 @@ export const SettingsModelsV2: Component = () => {
             fallback={
               <div class="settings-v2-models-status">
                 <span>{language.t("dialog.model.empty")}</span>
-                <Show when={list.filter()}>
-                  <span class="settings-v2-models-status-filter">&quot;{list.filter()}&quot;</span>
-                </Show>
               </div>
             }
           >
@@ -178,6 +154,45 @@ export const SettingsModelsV2: Component = () => {
                         return (
                           <SettingsRowV2 title={item.name} description="">
                             <div class="settings-v2-models-row-actions">
+                              <ButtonV2
+                                size="small"
+                                variant="neutral"
+                                aria-label={language.t("settings.models.tier.pick")}
+                                onClick={() =>
+                                  dialog.show(() => (
+                                    <DialogModelTier
+                                      modelName={item.name}
+                                      current={models.tier.get(key)}
+                                      onSelect={(tier) => models.tier.set(key, tier)}
+                                    />
+                                  ))
+                                }
+                              >
+                                {tk(`settings.models.tier.${models.tier.get(key)}.name`)}
+                              </ButtonV2>
+                              <ButtonV2
+                                size="small"
+                                variant="ghost-muted"
+                                aria-label={language.t("settings.models.config.open")}
+                                onClick={() =>
+                                  dialog.show(() => (
+                                    <DialogModelConfig
+                                      providerID={key.providerID}
+                                      modelID={key.modelID}
+                                      modelName={item.name}
+                                      defaults={{
+                                        reasoning: (item as { reasoning?: boolean }).reasoning,
+                                        tool_call: (item as { tool_call?: boolean }).tool_call,
+                                        limit: (item as { limit?: { context?: number; output?: number } }).limit,
+                                        modalities: (item as { modalities?: { input?: string[]; output?: string[] } })
+                                          .modalities,
+                                      }}
+                                    />
+                                  ))
+                                }
+                              >
+                                {language.t("settings.models.config.open")}
+                              </ButtonV2>
                               <Show when={probeResult()}>
                                 {(result) => (
                                   <span

@@ -150,7 +150,7 @@ export const HomeScreen: Component = () => {
       <div class="flex flex-col items-center gap-1 pt-10 pb-2 px-6 text-center select-none">
         <h1 class="text-[26px] font-semibold tracking-tight text-v2-text-text-base [text-shadow:0_1px_3px_rgba(0,0,0,0.4)]">{greeting()}</h1>
         <p class="text-[13px] font-medium text-v2-text-text-muted">
-          Open <span class="text-v2-text-text-accent">Chats</span> and ask — agents can also build new apps for this screen.
+          Open <span class="text-v2-text-text-accent">Chats</span> and ask — the AI can even build new apps for this screen.
         </p>
       </div>
       <DragDropProvider onDragEnd={onDragEnd} collisionDetector={closestCenter}>

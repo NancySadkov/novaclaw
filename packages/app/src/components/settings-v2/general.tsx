@@ -412,18 +412,6 @@ export const SettingsGeneralV2: Component<{
         </SettingsRowV2>
 
         <SettingsRowV2
-          title={language.t("settings.general.row.reasoningSummaries.title")}
-          description={language.t("settings.general.row.reasoningSummaries.description")}
-        >
-          <div data-action="settings-feed-reasoning-summaries">
-            <Switch
-              checked={settings.general.showReasoningSummaries()}
-              onChange={(checked) => settings.general.setShowReasoningSummaries(checked)}
-            />
-          </div>
-        </SettingsRowV2>
-
-        <SettingsRowV2
           minLevel="developer"
           title={language.t("settings.general.row.shellToolPartsExpanded.title")}
           description={language.t("settings.general.row.shellToolPartsExpanded.description")}
@@ -448,28 +436,6 @@ export const SettingsGeneralV2: Component<{
             />
           </div>
         </SettingsRowV2>
-
-        {/* Dev-channel only: the product ships the new layout — flipping back to the legacy shell is a
-            developer escape hatch, not a user setting (vision: settings = bootstrap · manage · reset). */}
-        <Show when={import.meta.env.VITE_NOVACLAW_CHANNEL !== "prod"}>
-          <SettingsRowV2
-            title={language.t("settings.general.row.newLayoutDesigns.title")}
-            description={language.t("settings.general.row.newLayoutDesigns.description")}
-          >
-            <div data-action="settings-new-layout-designs">
-              <Switch
-                checked={settings.general.newLayoutDesigns()}
-                onChange={(checked) => {
-                  settings.general.setNewLayoutDesigns(checked)
-                  if (checked) return
-                  void import("@/components/dialog-settings").then((module) => {
-                    dialog.show(() => <module.DialogSettings />)
-                  })
-                }}
-              />
-            </div>
-          </SettingsRowV2>
-        </Show>
 
         <Show when={mobile() && import.meta.env.VITE_NOVACLAW_CHANNEL !== "prod"}>
           <SettingsRowV2
