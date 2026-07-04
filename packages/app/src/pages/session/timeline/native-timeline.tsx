@@ -16,11 +16,11 @@ import { nextPinned } from "./native-scroll"
  *
  * Removed once the render flip lands and native becomes the sole path (S4-v3 tail).
  */
-// F1e THE FLIP — native is the DEFAULT in DEV builds only (dogfooding), so the dev app
-// renders the native `SessionMessage[]` path by default while PROD stays on the V1
-// `MessageTimeline`. `__novaNativeRender(false)` (below) flips back instantly. The full
-// F-d (prod default + dropping this toggle) + F-e (deleting V1 render) await owner sign-off.
-const [nativeRenderEnabled, setNativeRenderEnabled] = createSignal(import.meta.env.DEV === true)
+// F1e THE FLIP (F-d, owner-approved 2026-07-05) — native `SessionMessage[]` is now the
+// DEFAULT render everywhere (dev + prod); the V1 `MessageTimeline` is reachable only via
+// the DEV `__novaNativeRender(false)` toggle as a transition-safety fallback. F-e removes
+// the toggle + deletes the V1 render tree next.
+const [nativeRenderEnabled, setNativeRenderEnabled] = createSignal(true)
 export { nativeRenderEnabled }
 
 if (import.meta.env.DEV && typeof window !== "undefined") {
