@@ -68,7 +68,10 @@ const notify: Platform["notify"] = async (title, description, href) => {
 
   const notification = new Notification(title, {
     body: description ?? "",
-    icon: "https://novaclaw.app/favicon-96x96-v3.png",
+    // Local-first (AGENTS.md: no data egress): load the bundled favicon from our own origin
+    // (packages/app/public/) rather than fetching novaclaw.app every time a notification fires —
+    // no network round-trip, and it still renders offline.
+    icon: "/favicon-96x96-v3.png",
   })
 
   notification.onclick = () => {
