@@ -37,6 +37,14 @@ import { SessionRevert } from "./session/revert"
 import { Revert } from "@novaclaw/schema/revert"
 import { FSUtil } from "./fs-util"
 import { SessionDurable } from "@novaclaw/schema/durable-event-manifest"
+import { Config } from "./config"
+import { AppProcess } from "./process"
+import { Shell } from "./shell"
+import { ChildProcess } from "effect/unstable/process"
+import { Identifier } from "./id/id"
+
+// The V2 `shell` op caps captured output at the same 1 MB in-memory limit the bash tool uses.
+const SHELL_MAX_OUTPUT_BYTES = 1024 * 1024
 
 export const RevertState = Revert.State
 export type RevertState = Revert.State
@@ -169,7 +177,7 @@ export interface Interface {
     sessionID: SessionSchema.ID
     command: string
     resume?: boolean
-  }) => Effect.Effect<void, OperationUnavailableError>
+  }) => Effect.Effect<SessionMessage.ID, NotFoundError>
   readonly skill: (input: {
     id?: EventV2.ID
     sessionID: SessionSchema.ID
@@ -423,8 +431,60 @@ export const layer = Layer.effect(
           }),
         ),
       ),
-      shell: Effect.fn("V2Session.shell")(function* () {
-        return yield* new OperationUnavailableError({ operation: "shell" })
+      // The `!command` shell op: run one command to completion and record it as a
+      // SessionMessage.Shell (Started opens the message, Ended fills its output — the
+      // projector + message-updater build the rendered message from those two events).
+      // Unlike the V1 path there is no user/assistant bookkeeping and no streaming
+      // (there is no Shell.Delta event); output is delivered whole in Ended. The
+      // process runs against the session's Location (cwd + configured shell); the
+      // spawner is provided directly so this does not depend on it being in the
+      // Location output context.
+      shell: Effect.fn("V2Session.shell")(function* (input) {
+        const session = yield* result.get(input.sessionID)
+        const messageID = SessionMessage.ID.create()
+        const callID = Identifier.ascending("tool")
+        yield* events.publish(SessionEvent.Shell.Started, {
+          sessionID: input.sessionID,
+          messageID,
+          callID,
+          command: input.command,
+          timestamp: yield* DateTime.now,
+        })
+        const output = yield* Effect.gen(function* () {
+          const config = yield* Config.Service
+          const loc = yield* Location.Service
+          const appProcess = yield* AppProcess.Service
+          const entries = yield* config.entries()
+          const configuredShell = (
+            Object.assign({}, ...entries.flatMap((entry) => (entry.type === "document" ? [entry.info] : []))) as {
+              shell?: string
+            }
+          ).shell
+          const shellPath = Shell.preferred(configuredShell)
+          const command = ChildProcess.make(shellPath, Shell.args(shellPath, input.command, loc.directory), {
+            cwd: loc.directory,
+            extendEnv: true,
+            env: { TERM: "dumb" },
+            stdin: "ignore",
+            forceKillAfter: Duration.seconds(3),
+          })
+          const run = yield* appProcess.run(command, {
+            combineOutput: true,
+            maxOutputBytes: SHELL_MAX_OUTPUT_BYTES,
+          })
+          return run.output?.toString("utf8") ?? ""
+        }).pipe(
+          Effect.provide(locations.get(session.location)),
+          Effect.provide(AppProcess.defaultLayer),
+          Effect.orDie,
+        )
+        yield* events.publish(SessionEvent.Shell.Ended, {
+          sessionID: input.sessionID,
+          callID,
+          output,
+          timestamp: yield* DateTime.now,
+        })
+        return messageID
       }),
       skill: Effect.fn("V2Session.skill")(function* () {
         return yield* new OperationUnavailableError({ operation: "skill" })

@@ -317,8 +317,44 @@ describe("SessionV2.create", () => {
           Effect.map((error) => (error instanceof SessionV2.OperationUnavailableError ? error.operation : "not-found")),
         )
 
-      expect(yield* unavailable(session.shell({ sessionID: created.id, command: "pwd" }))).toBe("shell")
       expect(yield* unavailable(session.skill({ sessionID: created.id, skill: "review" }))).toBe("skill")
+    }),
+  )
+
+  it.live("runs a shell command and records it as a shell message", () =>
+    Effect.gen(function* () {
+      const dir = yield* Effect.acquireRelease(
+        Effect.promise(() => tmpdir()),
+        (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+      )
+      const session = yield* SessionV2.Service
+      const created = yield* session.create({
+        location: Location.Ref.make({ directory: AbsolutePath.make(dir.path) }),
+      })
+
+      const messageID = yield* session.shell({ sessionID: created.id, command: "echo novaclaw-shell-smoke" })
+
+      // Started opens the shell message (carrying the command + its messageID); Ended fills
+      // the whole output — there is no streaming/Delta event, so both are already durable.
+      const shellEvents = Array.from(
+        yield* session.events({ sessionID: created.id }).pipe(
+          Stream.filter(
+            (event) =>
+              event.type === SessionEvent.Shell.Started.type || event.type === SessionEvent.Shell.Ended.type,
+          ),
+          Stream.take(2),
+          Stream.runCollect,
+        ),
+      )
+      const started = shellEvents.find((event) => event.type === SessionEvent.Shell.Started.type)?.data as
+        | { command: string; messageID: string }
+        | undefined
+      const ended = shellEvents.find((event) => event.type === SessionEvent.Shell.Ended.type)?.data as
+        | { output: string }
+        | undefined
+      expect(started?.command).toBe("echo novaclaw-shell-smoke")
+      expect(started?.messageID).toBe(messageID)
+      expect(ended?.output).toContain("novaclaw-shell-smoke")
     }),
   )
 
