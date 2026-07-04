@@ -69,7 +69,11 @@ const itCommand = testEffect(
             Layer.mock(CommandV2.Service, {
               get: (name: string) =>
                 Effect.succeed(
-                  name === "greet" ? CommandV2.Info.make({ name: "greet", template: commandTemplate }) : undefined,
+                  name === "greet"
+                    ? CommandV2.Info.make({ name: "greet", template: commandTemplate })
+                    : name === "review"
+                      ? CommandV2.Info.make({ name: "review", template: "Review the change", agent: "plan" })
+                      : undefined,
                 ),
             }),
           ],
@@ -508,6 +512,25 @@ describe("SessionV2.command", () => {
       // `` !`echo bot` `` substitution runs to "bot"; the expanded text is submitted as the prompt.
       const admitted = yield* session.command({ sessionID: created.id, command: "greet", arguments: "world" })
       expect(admitted.prompt.text).toBe("Hi world from bot")
+    }),
+  )
+
+  itCommand.live("applies the command's declared agent override before submitting", () =>
+    Effect.gen(function* () {
+      // A real dir so the Location graph (config discovery) boots when resolving the command.
+      const dir = yield* Effect.acquireRelease(
+        Effect.promise(() => tmpdir()),
+        (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+      )
+      const session = yield* SessionV2.Service
+      const created = yield* session.create({
+        location: Location.Ref.make({ directory: AbsolutePath.make(dir.path) }),
+      })
+
+      // The "review" command declares agent "plan"; running it switches the session's agent
+      // (persisted, like promptAsync) in addition to submitting the expanded prompt.
+      yield* session.command({ sessionID: created.id, command: "review", arguments: "" })
+      expect(yield* session.get(created.id)).toMatchObject({ agent: "plan" })
     }),
   )
 })

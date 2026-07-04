@@ -539,13 +539,13 @@ export const layer = Layer.effect(
       // the model turn then rides the normal runner (V1 `SessionPrompt.command` likewise just
       // delegates to `prompt()`). CommandV2 + the shell machinery are location services, so
       // both resolve via the session's Location. Covers arg substitution + `` !`shell` ``
-      // substitution + submit; the cmd.agent/cmd.model override and the subtask branch remain
+      // substitution + the cmd.agent/cmd.model override + submit; the subtask branch remains
       // residue (see todo.md F1a SLICE 5). A missing command dies — the caller validates existence.
       command: Effect.fn("V2Session.command")(function* (input) {
         const session = yield* result.get(input.sessionID)
         // Resolve the command and run any `` !`cmd` `` substitutions in the Location scope; the
         // shell run mirrors the `shell` op (configured shell + cwd; AppProcess provided directly).
-        const template = yield* Effect.gen(function* () {
+        const resolved = yield* Effect.gen(function* () {
           const commands = yield* CommandV2.Service
           const cmd = yield* commands.get(input.command)
           if (!cmd) return yield* Effect.die(new Error(`Command not found: ${input.command}`))
@@ -581,12 +581,30 @@ export const layer = Layer.effect(
             let index = 0
             text = text.replace(COMMAND_BASH_REGEX, () => results[index++])
           }
-          return text.trim()
+          return { text: text.trim(), agent: cmd.agent, model: cmd.model }
         }).pipe(Effect.provide(locations.get(session.location)), Effect.provide(AppProcess.defaultLayer), Effect.orDie)
+        // A command may declare its own agent/model; switch the session to them BEFORE the turn
+        // (persisted, mirroring how promptAsync applies a per-turn model/agent) so the command
+        // runs under its declared config. Residue: V1's per-turn (non-persisted) override + the
+        // subtask branch's separate agent handling.
+        if (resolved.agent)
+          yield* events.publish(SessionEvent.AgentSwitched, {
+            sessionID: input.sessionID,
+            messageID: SessionMessage.ID.create(),
+            timestamp: yield* DateTime.now,
+            agent: resolved.agent,
+          })
+        if (resolved.model)
+          yield* events.publish(SessionEvent.ModelSwitched, {
+            sessionID: input.sessionID,
+            messageID: SessionMessage.ID.create(),
+            timestamp: yield* DateTime.now,
+            model: resolved.model,
+          })
         // Submit as a fresh prompt (mirrors the `prompt` op's admit + wake; a command is a
         // genuine user turn, so it is queued, not steer-prefixed — cf. SLICE 8's steer caveat).
         const messageID = input.id ?? SessionMessage.ID.create()
-        const prompt = resolvePrompt({ text: template })
+        const prompt = resolvePrompt({ text: resolved.text })
         const delivery = "queue" as const
         const expected = { sessionID: input.sessionID, messageID, prompt, delivery }
         const admitted = yield* SessionInput.admit(db, events, {
