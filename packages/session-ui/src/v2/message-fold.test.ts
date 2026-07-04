@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { SessionMessage, V2Event } from "@novaclaw/sdk/v2"
-import { activeAssistant, applySessionNextEvent, findAssistant, prependMessage } from "./message-fold"
+import { activeAssistant, appendMessage, applySessionNextEvent, findAssistant } from "./message-fold"
 
 // The raw event bus delivers `{ type, properties }`; the fold consumes the typed
 // `{ type, data }` shape (as the deleted TUI adapter did). These fixtures build the
@@ -20,20 +20,20 @@ const prompted = (sessionID: string, messageID: string, text: string, ts = 1) =>
 const stepStarted = (sessionID: string, assistantMessageID: string, ts = 2) =>
   ev("session.next.step.started", { timestamp: ts, sessionID, assistantMessageID, agent: "build", model: MODEL })
 
-describe("prependMessage", () => {
-  test("prepends newest-first and dedups by id", () => {
+describe("appendMessage", () => {
+  test("appends oldest-first and dedups by id", () => {
     const messages: SessionMessage[] = []
     const a = { id: "msg_a", type: "system", text: "a", time: { created: 1 } } as SessionMessage
     const b = { id: "msg_b", type: "system", text: "b", time: { created: 2 } } as SessionMessage
-    prependMessage(messages, a)
-    prependMessage(messages, b)
-    prependMessage(messages, a) // duplicate id — ignored
-    expect(messages.map((m) => m.id)).toEqual(["msg_b", "msg_a"])
+    appendMessage(messages, a)
+    appendMessage(messages, b)
+    appendMessage(messages, a) // duplicate id — ignored
+    expect(messages.map((m) => m.id)).toEqual(["msg_a", "msg_b"])
   })
 })
 
 describe("applySessionNextEvent", () => {
-  test("prompted → user message at the front", () => {
+  test("prompted → user message", () => {
     const messages = fold([], prompted("s", "msg_u", "hello"))
     expect(messages).toHaveLength(1)
     const user = messages[0]!
@@ -127,15 +127,18 @@ describe("applySessionNextEvent", () => {
     expect(tool.type).toBe("tool")
     if (tool.type === "tool") {
       expect(tool.state.status).toBe("completed")
-      if (tool.state.status === "completed") expect(tool.state.structured).toEqual({ ok: true })
+      if (tool.state.status === "completed") {
+        expect(tool.state.structured).toEqual({ ok: true })
+        expect(tool.state.outputPaths).toEqual([]) // defaulted when the event omits it (matches core updater)
+      }
     }
     // A settled assistant is no longer the active one.
     expect(activeAssistant(messages)).toBeUndefined()
   })
 
-  test("orders newest-first and completes the prior assistant on a new step", () => {
+  test("orders oldest-first and completes the prior assistant on a new step", () => {
     const messages = fold([], prompted("s", "msg_u", "hi", 1), stepStarted("s", "msg_a1", 2), stepStarted("s", "msg_a2", 5))
-    expect(messages.map((m) => m.id)).toEqual(["msg_a2", "msg_a1", "msg_u"])
+    expect(messages.map((m) => m.id)).toEqual(["msg_u", "msg_a1", "msg_a2"])
     expect(findAssistant(messages, "msg_a1")!.time.completed).toBe(5) // superseded → completed
     expect(findAssistant(messages, "msg_a2")!.time.completed).toBeUndefined() // still active
     expect(activeAssistant(messages)!.id).toBe("msg_a2")
@@ -149,8 +152,9 @@ describe("applySessionNextEvent", () => {
       stepStarted("s", "msg_a"),
       stepStarted("s", "msg_a"),
     )
-    expect(messages).toHaveLength(2)
-    expect(messages.map((m) => m.id)).toEqual(["msg_a", "msg_u"])
+    expect(messages.map((m) => m.id)).toEqual(["msg_u", "msg_a"])
+    // The replayed step.started must NOT have re-completed the active assistant.
+    expect(activeAssistant(messages)!.id).toBe("msg_a")
   })
 
   test("shell start → ended records output and completion", () => {
@@ -202,7 +206,10 @@ describe("applySessionNextEvent", () => {
     )
     const reasoning = findAssistant(messages, "msg_a")!.content[0]!
     expect(reasoning.type).toBe("reasoning")
-    if (reasoning.type === "reasoning") expect(reasoning.text).toBe("think")
+    if (reasoning.type === "reasoning") {
+      expect(reasoning.text).toBe("think")
+      expect(reasoning.time?.completed).toBe(6)
+    }
   })
 
   test("tool.failed transitions a running tool to error", () => {
@@ -242,7 +249,7 @@ describe("applySessionNextEvent", () => {
     }
   })
 
-  test("compaction.ended prepends a compaction message", () => {
+  test("compaction.ended appends a compaction message", () => {
     const messages = fold(
       [],
       ev("session.next.compaction.ended", {

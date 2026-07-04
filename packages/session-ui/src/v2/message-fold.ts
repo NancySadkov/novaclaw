@@ -9,47 +9,63 @@ import type {
 } from "@novaclaw/sdk/v2"
 
 /**
- * Pure fold of the native V2 `session.next.*` event stream into a flat
+ * Client-side fold of the native V2 `session.next.*` event stream into a flat
  * `SessionMessage[]` — the strategy-B replacement for the V1 `message`/`part`
- * reducer (see `notes/f1e.md` in novaclaw-plan). Ported from the deleted TUI
- * `packages/tui/src/context/data.tsx` (git `caa938453^`), the reference
- * implementation, retyped against the generated `@novaclaw/sdk/v2` client.
+ * reducer (F1e).
  *
- * **Ordering: newest-first** — index 0 is the most recent message. New top-level
- * messages are prepended; an assistant's `content[]` is appended in arrival order.
- * The render layer owns display order.
+ * **Canonical counterpart:** `packages/core/src/session/message-updater.ts`
+ * (`SessionMessageUpdater.update` + its `memory()` adapter) folds the SAME
+ * `session.next.*` state machine on the DB projector and is exhaustive over the
+ * event union. This module deliberately mirrors that logic on the **generated SDK
+ * wire types** (`@novaclaw/sdk/v2`: `time.created` is a `number`, ids are plain
+ * strings) rather than reusing the core updater, because the client consumes wire
+ * JSON from the SSE/fetch path and feeds SDK-typed render components — reusing the
+ * core version would drag a per-event decode/encode boundary plus the Effect/immer
+ * runtime into the browser reducer (the deleted TUI `data.tsx` split it the same way).
+ * ⚠️ **Drift caution:** a new `session.next.*` event must be handled in BOTH this
+ * fold and the core `SessionMessageUpdater`.
  *
- * Every function **mutates `messages` (and its nested objects) in place**, so a
- * caller can drive it from inside a solid-js `produce` draft. The module has no
- * runtime dependencies (the type imports are erased) and is unit-testable on plain
- * arrays. Callers route by `event.data.sessionID` and pass that session's array.
+ * **Ordering: oldest-first** (index 0 = oldest, last = newest) — matches the core
+ * `memory()` adapter (which appends) and `server-session.ts` (ascending sort), so this
+ * store is a drop-in for the existing render order. Assistant `content[]` is appended
+ * in arrival order.
+ *
+ * **Intentional client divergences from the core updater** (both safe): (1) an
+ * idempotent `step.started` guard — the client may replay events across a mid-turn
+ * reload, so a duplicate must not re-complete the active assistant; (2) it applies
+ * `session.next.tool.input.delta` to stream tool input live, whereas core no-ops it
+ * (input deltas aren't durable, so the projector only needs `tool.input.ended`).
+ *
+ * Every function **mutates `messages` (and its nested objects) in place**, so a caller
+ * can drive it from inside a solid-js `produce` draft. No runtime deps (types erased);
+ * unit-testable on plain arrays. Callers route by `event.data.sessionID`.
  */
 
-/** Insert `item` at the front unless a message with the same id already exists (idempotent → mid-turn-reload safe). */
-export function prependMessage(messages: SessionMessage[], item: SessionMessage): void {
+/** Append `item` unless a message with the same id already exists (idempotent → mid-turn-reload safe). */
+export function appendMessage(messages: SessionMessage[], item: SessionMessage): void {
   if (messages.some((existing) => existing.id === item.id)) return
-  messages.unshift(item)
+  messages.push(item)
 }
 
-/** The most recent assistant message that has not finished (no `time.completed`). */
+/** The latest assistant message, returned only while it is still streaming (no `time.completed`). */
 export function activeAssistant(messages: SessionMessage[]): SessionMessageAssistant | undefined {
-  const item = messages.find((message) => message.type === "assistant" && !message.time.completed)
-  return item?.type === "assistant" ? item : undefined
+  const item = messages.findLast((message) => message.type === "assistant")
+  return item?.type === "assistant" && !item.time.completed ? item : undefined
 }
 
-/** The assistant message with the given id, if present. */
+/** The assistant message with the given id (latest, if ids somehow repeat), if present. */
 export function findAssistant(messages: SessionMessage[], messageID: string): SessionMessageAssistant | undefined {
-  const item = messages.find((message) => message.type === "assistant" && message.id === messageID)
+  const item = messages.findLast((message) => message.type === "assistant" && message.id === messageID)
   return item?.type === "assistant" ? item : undefined
 }
 
-/** The shell message for the given callID, if present. */
+/** The latest shell message for the given callID, if present. */
 export function activeShell(messages: SessionMessage[], callID: string): SessionMessageShell | undefined {
-  const item = messages.find((message) => message.type === "shell" && message.callID === callID)
+  const item = messages.findLast((message) => message.type === "shell" && message.callID === callID)
   return item?.type === "shell" ? item : undefined
 }
 
-/** The last tool part of the active/target assistant (optionally matching a callID). */
+/** The last tool part of the target assistant (optionally matching a callID). */
 export function latestTool(
   assistant: SessionMessageAssistant | undefined,
   callID?: string,
@@ -83,13 +99,14 @@ export function latestReasoning(
 /**
  * Fold one `session.next.*` event into `messages` (the event's session array).
  * Non-transcript events (`prompt.admitted`, `moved`, `completed`, `retried`,
- * `compaction.started`/`delta`, `revert.*`) and non-`session.next` events are no-ops
- * here — they belong to the session-info / revert stores handled in later F1e slices.
+ * `responder/mode.switched`, `compaction.started`/`delta`, `revert.*`) and non-`session.next`
+ * events are no-ops here — they belong to the session-info / revert stores handled in later
+ * F1e slices, exactly as the core updater routes them to the session row.
  */
 export function applySessionNextEvent(messages: SessionMessage[], event: V2Event): void {
   switch (event.type) {
     case "session.next.agent.switched":
-      prependMessage(messages, {
+      appendMessage(messages, {
         id: event.data.messageID,
         type: "agent-switched",
         agent: event.data.agent,
@@ -97,7 +114,7 @@ export function applySessionNextEvent(messages: SessionMessage[], event: V2Event
       })
       break
     case "session.next.model.switched":
-      prependMessage(messages, {
+      appendMessage(messages, {
         id: event.data.messageID,
         type: "model-switched",
         model: event.data.model,
@@ -105,7 +122,7 @@ export function applySessionNextEvent(messages: SessionMessage[], event: V2Event
       })
       break
     case "session.next.prompted":
-      prependMessage(messages, {
+      appendMessage(messages, {
         id: event.data.messageID,
         type: "user",
         text: event.data.prompt.text,
@@ -115,7 +132,7 @@ export function applySessionNextEvent(messages: SessionMessage[], event: V2Event
       })
       break
     case "session.next.context.updated":
-      prependMessage(messages, {
+      appendMessage(messages, {
         id: event.data.messageID,
         type: "system",
         text: event.data.text,
@@ -123,7 +140,7 @@ export function applySessionNextEvent(messages: SessionMessage[], event: V2Event
       })
       break
     case "session.next.synthetic":
-      prependMessage(messages, {
+      appendMessage(messages, {
         id: event.data.messageID,
         type: "synthetic",
         sessionID: event.data.sessionID,
@@ -132,7 +149,7 @@ export function applySessionNextEvent(messages: SessionMessage[], event: V2Event
       })
       break
     case "session.next.shell.started":
-      prependMessage(messages, {
+      appendMessage(messages, {
         id: event.data.messageID,
         type: "shell",
         callID: event.data.callID,
@@ -149,10 +166,11 @@ export function applySessionNextEvent(messages: SessionMessage[], event: V2Event
       break
     }
     case "session.next.step.started": {
+      // Client idempotency: a replayed step.started must not re-complete the active assistant.
       if (messages.some((message) => message.id === event.data.assistantMessageID)) break
       const current = activeAssistant(messages)
       if (current) current.time.completed = event.data.timestamp
-      prependMessage(messages, {
+      appendMessage(messages, {
         id: event.data.assistantMessageID,
         type: "assistant",
         agent: event.data.agent,
@@ -170,7 +188,12 @@ export function applySessionNextEvent(messages: SessionMessage[], event: V2Event
       assistant.finish = event.data.finish
       assistant.cost = event.data.cost
       assistant.tokens = event.data.tokens
-      if (event.data.snapshot) assistant.snapshot = { ...assistant.snapshot, end: event.data.snapshot }
+      if (event.data.snapshot || event.data.files)
+        assistant.snapshot = {
+          ...assistant.snapshot,
+          end: event.data.snapshot,
+          files: event.data.files ? [...event.data.files] : undefined,
+        }
       break
     }
     case "session.next.step.failed": {
@@ -208,6 +231,7 @@ export function applySessionNextEvent(messages: SessionMessage[], event: V2Event
       })
       break
     case "session.next.tool.input.delta": {
+      // Client-only: stream the pending tool input live (core no-ops this — not durable).
       const match = latestTool(findAssistant(messages, event.data.assistantMessageID), event.data.callID)
       if (match?.state.status === "pending") match.state.input += event.data.delta
       break
@@ -240,7 +264,7 @@ export function applySessionNextEvent(messages: SessionMessage[], event: V2Event
         input: match.state.input,
         structured: event.data.structured,
         content: [...event.data.content],
-        outputPaths: event.data.outputPaths,
+        outputPaths: event.data.outputPaths ? [...event.data.outputPaths] : [],
         result: event.data.result,
       }
       match.provider = {
@@ -276,6 +300,7 @@ export function applySessionNextEvent(messages: SessionMessage[], event: V2Event
         id: event.data.reasoningID,
         text: "",
         providerMetadata: event.data.providerMetadata,
+        time: { created: event.data.timestamp },
       })
       break
     case "session.next.reasoning.delta": {
@@ -287,12 +312,13 @@ export function applySessionNextEvent(messages: SessionMessage[], event: V2Event
       const match = latestReasoning(findAssistant(messages, event.data.assistantMessageID), event.data.reasoningID)
       if (match) {
         match.text = event.data.text
+        match.time = { created: match.time?.created ?? event.data.timestamp, completed: event.data.timestamp }
         if (event.data.providerMetadata !== undefined) match.providerMetadata = event.data.providerMetadata
       }
       break
     }
     case "session.next.compaction.ended":
-      prependMessage(messages, {
+      appendMessage(messages, {
         id: event.data.messageID,
         type: "compaction",
         reason: event.data.reason,
