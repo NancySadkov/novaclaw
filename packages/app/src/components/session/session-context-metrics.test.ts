@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { Message } from "@novaclaw/sdk/v2/client"
+import type { SessionMessage } from "@novaclaw/sdk/v2/client"
 import { getSessionContext, getSessionTokenTotal } from "./session-context-metrics"
 
 const assistant = (
@@ -11,9 +11,9 @@ const assistant = (
 ) => {
   return {
     id,
-    role: "assistant",
-    providerID,
-    modelID,
+    type: "assistant",
+    model: { providerID, id: modelID, variant: "default" },
+    content: [],
     cost,
     tokens: {
       input: tokens.input,
@@ -25,16 +25,16 @@ const assistant = (
       },
     },
     time: { created: 1 },
-  } as unknown as Message
+  } as unknown as SessionMessage
 }
 
 const user = (id: string) => {
   return {
     id,
-    role: "user",
-    cost: 0,
+    type: "user",
+    text: "",
     time: { created: 1 },
-  } as unknown as Message
+  } as unknown as SessionMessage
 }
 
 describe("getSessionContext", () => {

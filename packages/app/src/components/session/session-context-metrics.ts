@@ -1,4 +1,4 @@
-import type { AssistantMessage, Message, Session } from "@novaclaw/sdk/v2/client"
+import type { SessionMessage, SessionMessageAssistant, Session } from "@novaclaw/sdk/v2/client"
 
 type Provider = {
   id: string
@@ -14,7 +14,7 @@ type Model = {
 }
 
 type Context = {
-  message: AssistantMessage
+  message: SessionMessageAssistant
   provider?: Provider
   model?: Model
   providerLabel: string
@@ -24,25 +24,26 @@ type Context = {
   usage: number | null
 }
 
-const tokenTotal = (msg: AssistantMessage) => {
-  return msg.tokens.input + msg.tokens.output + msg.tokens.reasoning + msg.tokens.cache.read + msg.tokens.cache.write
+const tokenTotal = (msg: SessionMessageAssistant) => {
+  const t = msg.tokens
+  return t ? t.input + t.output + t.reasoning + t.cache.read + t.cache.write : 0
 }
 
-const lastAssistantWithTokens = (messages: Message[]) => {
+const lastAssistantWithTokens = (messages: readonly SessionMessage[]) => {
   for (let i = messages.length - 1; i >= 0; i--) {
     const msg = messages[i]
-    if (msg.role !== "assistant") continue
+    if (msg?.type !== "assistant") continue
     if (tokenTotal(msg) <= 0) continue
     return msg
   }
 }
 
-const build = (messages: Message[] = [], providers: Provider[] = []): Context | undefined => {
+const build = (messages: readonly SessionMessage[] = [], providers: Provider[] = []): Context | undefined => {
   const message = lastAssistantWithTokens(messages)
   if (!message) return undefined
 
-  const provider = providers.find((item) => item.id === message.providerID)
-  const model = provider?.models[message.modelID]
+  const provider = providers.find((item) => item.id === message.model.providerID)
+  const model = provider?.models[message.model.id]
   const limit = model?.limit.context
   const total = tokenTotal(message)
 
@@ -50,15 +51,15 @@ const build = (messages: Message[] = [], providers: Provider[] = []): Context | 
     message,
     provider,
     model,
-    providerLabel: provider?.name ?? message.providerID,
-    modelLabel: model?.name ?? message.modelID,
+    providerLabel: provider?.name ?? message.model.providerID,
+    modelLabel: model?.name ?? message.model.id,
     limit,
-    input: message.tokens.input,
+    input: message.tokens?.input ?? 0,
     usage: limit ? Math.round((total / limit) * 100) : null,
   }
 }
 
-export function getSessionContext(messages: Message[] = [], providers: Provider[] = []) {
+export function getSessionContext(messages: readonly SessionMessage[] = [], providers: Provider[] = []) {
   return build(messages, providers)
 }
 

@@ -1,6 +1,7 @@
 import { createMemo, createEffect, on, onCleanup, For, Show } from "solid-js"
 import type { JSX } from "solid-js"
 import { useSync } from "@/context/sync"
+import { useServerSync } from "@/context/server-sync"
 import { checksum } from "@novaclaw/core/util/encode"
 import { findLast } from "@novaclaw/core/util/array"
 import { same } from "@/utils/same"
@@ -93,6 +94,7 @@ const emptyUserMessages: UserMessage[] = []
 
 export function SessionContextTab() {
   const sync = useSync()
+  const serverSync = useServerSync()
   const language = useLanguage()
   const sdk = useSDK()
   const providers = useProviders(() => sdk().directory)
@@ -134,7 +136,12 @@ export function SessionContextTab() {
       }),
   )
 
-  const ctx = createMemo(() => getSessionContext(messages(), [...providers.all().values()]))
+  // S5: the context metric reads the native SessionMessage store (the last assistant's token
+  // usage). The raw-message viewer + parts breakdown below still read the V1 store — a later slice.
+  const nativeMessages = createMemo(() =>
+    params.id ? (serverSync().nativeMessages.messages(params.id) ?? []) : [],
+  )
+  const ctx = createMemo(() => getSessionContext(nativeMessages(), [...providers.all().values()]))
   const tokens = createMemo(() => info()?.tokens)
   const formatter = createMemo(() => createSessionContextFormatter(language.intl()))
 
