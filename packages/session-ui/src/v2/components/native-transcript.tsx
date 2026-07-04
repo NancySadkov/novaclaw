@@ -135,28 +135,19 @@ function AssistantMessage(props: { message: SessionMessageAssistant }) {
 }
 
 function ToolPart(props: { part: SessionMessageAssistantTool }) {
-  const output = () => {
-    const state = props.part.state
-    if (state.status === "completed" || state.status === "running" || state.status === "error")
-      return toolContentText(state.content)
-    return ""
-  }
+  const meta = () => toolMeta(props.part)
   return (
     <Switch>
+      <Match when={props.part.name === "todowrite"}>
+        <TodoTool part={props.part} />
+      </Match>
       <Match when={props.part.state.status === "error" && props.part.state}>
         {(state) => (
           <ToolErrorCardV2
             data-slot="native-tool"
-            title={props.part.name}
+            title={meta().title}
             subtitle={state().error.message}
-            suffix={
-              <div data-slot="native-tool-io">
-                <pre data-slot="native-tool-input">{toolInputText(props.part.state)}</pre>
-                <Show when={output()}>
-                  <pre data-slot="native-tool-output">{output()}</pre>
-                </Show>
-              </div>
-            }
+            suffix={<ToolBody part={props.part} />}
           />
         )}
       </Match>
@@ -164,17 +155,84 @@ function ToolPart(props: { part: SessionMessageAssistantTool }) {
         <BasicToolV2
           data-slot="native-tool"
           status={props.part.state.status}
-          trigger={{ title: props.part.name, subtitle: props.part.state.status }}
+          trigger={{
+            title: meta().title,
+            subtitle: meta().subtitle,
+            args: meta().args,
+            changes: meta().changes,
+          }}
         >
-          <div data-slot="native-tool-io">
+          <ToolBody part={props.part} />
+        </BasicToolV2>
+      </Match>
+    </Switch>
+  )
+}
+
+/** `todowrite` → an inline checklist (the one tool whose payload reads best expanded). */
+function TodoTool(props: { part: SessionMessageAssistantTool }) {
+  const todos = () => {
+    const raw = toolInput(props.part.state).todos ?? structuredTodos(props.part.state)
+    return Array.isArray(raw) ? (raw as Array<{ content?: string; status?: string }>) : []
+  }
+  const done = () => todos().filter((t) => t.status === "completed").length
+  return (
+    <BasicToolV2
+      data-slot="native-tool"
+      status={props.part.state.status}
+      defaultOpen
+      trigger={{ title: "Todos", subtitle: todos().length ? `${done()}/${todos().length}` : undefined }}
+    >
+      <ul data-slot="native-todos">
+        <For each={todos()}>
+          {(todo) => (
+            <li data-slot="native-todo" data-status={todo.status ?? "pending"}>
+              <span data-slot="native-todo-mark" aria-hidden="true">
+                {todo.status === "completed" ? "✓" : todo.status === "in_progress" ? "◐" : "○"}
+              </span>
+              <span data-slot="native-todo-content">{todo.content}</span>
+            </li>
+          )}
+        </For>
+      </ul>
+    </BasicToolV2>
+  )
+}
+
+/** Tool-card body: a real unified diff for file edits, else input args + textual output. */
+function ToolBody(props: { part: SessionMessageAssistantTool }) {
+  const output = () => {
+    const state = props.part.state
+    if (state.status === "completed" || state.status === "running" || state.status === "error")
+      return toolContentText(state.content)
+    return ""
+  }
+  return (
+    <div data-slot="native-tool-io">
+      <Show
+        when={filePatches(props.part.state)}
+        fallback={
+          <>
             <pre data-slot="native-tool-input">{toolInputText(props.part.state)}</pre>
             <Show when={output()}>
               <pre data-slot="native-tool-output">{output()}</pre>
             </Show>
-          </div>
-        </BasicToolV2>
-      </Match>
-    </Switch>
+          </>
+        }
+      >
+        {(patches) => <For each={patches()}>{(patch) => <DiffView patch={patch} />}</For>}
+      </Show>
+    </div>
+  )
+}
+
+/** Minimal unified-diff colorizer (add/del/hunk/meta lines) — full syntax highlight is later polish. */
+function DiffView(props: { patch: string }) {
+  const lines = () => props.patch.split("\n")
+  return (
+    <pre data-slot="native-tool-diff">
+      <For each={lines()}>{(line) => <div data-diff-line={diffLineKind(line)}>{line.length ? line : " "}</div>}</For>
+    </pre>
   )
 }
 
@@ -230,6 +288,127 @@ function SwitchMarker(props: { label: string }) {
 
 function formatModel(model: ModelRef): string {
   return model.variant ? `${model.providerID}/${model.id} · ${model.variant}` : `${model.providerID}/${model.id}`
+}
+
+interface ToolMeta {
+  title: string
+  subtitle?: string
+  args?: string[]
+  changes?: { additions: number; deletions: number }
+}
+
+/** Per-tool label/subtitle/args/changes, ported from the V1 `getToolInfo` switch. */
+function toolMeta(part: SessionMessageAssistantTool): ToolMeta {
+  const input = toolInput(part.state)
+  switch (part.name) {
+    case "read": {
+      const args: string[] = []
+      const offset = num(input.offset)
+      const limit = num(input.limit)
+      if (offset !== undefined) args.push(`offset ${offset}`)
+      if (limit !== undefined) args.push(`limit ${limit}`)
+      return { title: "Read", subtitle: basename(input.filePath), args }
+    }
+    case "list":
+      return { title: "List", subtitle: basename(input.path) ?? str(input.path) }
+    case "glob":
+      return { title: "Find files", subtitle: str(input.pattern) }
+    case "grep":
+      return { title: "Search", subtitle: str(input.pattern) }
+    case "webfetch":
+      return { title: "Fetch", subtitle: str(input.url) }
+    case "websearch":
+      return { title: "Web search", subtitle: str(input.query) }
+    case "task":
+      return {
+        title: str(input.subagent_type) ? cap(str(input.subagent_type)!) : "Task",
+        subtitle: str(input.description),
+      }
+    case "bash":
+      return { title: "Shell", subtitle: str(input.command) }
+    case "edit":
+      return { title: "Edit", subtitle: basename(input.filePath), changes: diffStat(part.state) }
+    case "write":
+      return { title: "Write", subtitle: basename(input.filePath), changes: diffStat(part.state) }
+    case "apply_patch": {
+      const files = Array.isArray(input.files) ? input.files.length : undefined
+      return {
+        title: "Patch",
+        subtitle: files ? `${files} file${files > 1 ? "s" : ""}` : undefined,
+        changes: diffStat(part.state),
+      }
+    }
+    case "question":
+      return { title: "Question" }
+    case "skill":
+      return { title: str(input.name) ?? "Skill" }
+    default:
+      return { title: part.name }
+  }
+}
+
+function toolInput(state: SessionMessageAssistantTool["state"]): Record<string, unknown> {
+  return state.status === "pending" ? {} : ((state.input ?? {}) as Record<string, unknown>)
+}
+
+/** The `{ file, patch, additions, deletions }[]` a file-mutating tool records in `structured`. */
+function structuredFiles(
+  state: SessionMessageAssistantTool["state"],
+): Array<{ patch?: string; additions?: number; deletions?: number }> | undefined {
+  if (state.status !== "completed" && state.status !== "error") return undefined
+  const files = (state.structured as { files?: unknown }).files
+  return Array.isArray(files) ? (files as Array<{ patch?: string; additions?: number; deletions?: number }>) : undefined
+}
+
+function filePatches(state: SessionMessageAssistantTool["state"]): string[] | undefined {
+  const patches = structuredFiles(state)
+    ?.map((f) => f.patch)
+    .filter((p): p is string => typeof p === "string" && p.length > 0)
+  return patches && patches.length ? patches : undefined
+}
+
+function structuredTodos(state: SessionMessageAssistantTool["state"]): unknown {
+  return state.status === "pending" ? undefined : (state.structured as { todos?: unknown }).todos
+}
+
+function diffStat(state: SessionMessageAssistantTool["state"]): { additions: number; deletions: number } | undefined {
+  const files = structuredFiles(state)
+  if (!files?.length) return undefined
+  let additions = 0
+  let deletions = 0
+  for (const f of files) {
+    additions += f.additions ?? 0
+    deletions += f.deletions ?? 0
+  }
+  return additions || deletions ? { additions, deletions } : undefined
+}
+
+function diffLineKind(line: string): "meta" | "hunk" | "add" | "del" | "ctx" {
+  if (line.startsWith("+++") || line.startsWith("---") || line.startsWith("Index:") || line.startsWith("===="))
+    return "meta"
+  if (line.startsWith("@@")) return "hunk"
+  if (line.startsWith("+")) return "add"
+  if (line.startsWith("-")) return "del"
+  return "ctx"
+}
+
+function str(v: unknown): string | undefined {
+  return typeof v === "string" && v.length ? v : undefined
+}
+
+function num(v: unknown): number | undefined {
+  return typeof v === "number" ? v : undefined
+}
+
+function basename(p: unknown): string | undefined {
+  const s = str(p)
+  if (!s) return undefined
+  const parts = s.split(/[\\/]/).filter(Boolean)
+  return parts[parts.length - 1] ?? s
+}
+
+function cap(s: string): string {
+  return s.length ? s[0]!.toUpperCase() + s.slice(1) : s
 }
 
 function toolContentText(content: readonly LlmToolContent[]): string {
