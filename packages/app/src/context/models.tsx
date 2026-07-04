@@ -141,6 +141,15 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
       update(model, state ? "show" : "hide")
     }
 
+    // Models the user explicitly marked visible ("show") in the Models tab AND that are still
+    // available (connected, not removed) — a deliberate "use this" signal. The default-model
+    // fallback prefers these so a curated setup never resolves to a hidden/removed/stale entry.
+    const shown = createMemo(() =>
+      available()
+        .filter((m) => visibility().get(modelKey({ providerID: m.provider.id, modelID: m.id })) === "show")
+        .map((m) => ({ providerID: m.provider.id, modelID: m.id }) satisfies ModelKey),
+    )
+
     const push = (model: ModelKey) => {
       const uniq = uniqueBy([model, ...store.recent], (x) => `${x.providerID}:${x.modelID}`)
       if (uniq.length > RECENT_LIMIT) uniq.pop()
@@ -190,6 +199,7 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
       list,
       find,
       visible,
+      shown,
       setVisibility,
       recent: {
         list: () => recentModels()!,

@@ -163,19 +163,30 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       }
     }
 
+    // A fallback candidate must be usable AND not curated out: the user's model-tab visibility ("hide")
+    // and delete ("removed") settings gate what the picker may auto-select. Without this, the default
+    // resolves to the first raw model of the first connected provider — which can be a stale/dead entry
+    // the user hid (e.g. a provider pointed at an endpoint that no longer serves that model), sending
+    // every new chat's first turn to a 404.
+    const usableFallback = (model: ModelKey) => validModel(model) && !!models.find(model) && models.visible(model)
+
     const defaultModel = () => {
+      // Prefer a model the user explicitly marked visible ("show") — a deliberate "this is my model"
+      // signal — so a curated single-model setup resolves to it immediately (before recents hydrate).
+      for (const model of models.shown()) if (validModel(model)) return model
+
       const defaults = providers.default()
       for (const provider of providers.connected()) {
         const configured = defaults[provider.id]
         if (configured) {
           const model = { providerID: provider.id, modelID: configured }
-          if (validModel(model)) return model
+          if (usableFallback(model)) return model
         }
 
-        const first = Object.values(provider.models)[0]
-        if (!first) continue
-        const model = { providerID: provider.id, modelID: first.id }
-        if (validModel(model)) return model
+        for (const entry of Object.values(provider.models)) {
+          const model = { providerID: provider.id, modelID: entry.id }
+          if (usableFallback(model)) return model
+        }
       }
     }
 
