@@ -4,33 +4,12 @@ import { useServerSync } from "@/context/server-sync"
 import { nextPinned } from "./native-scroll"
 
 /**
- * F1e S4-v3 — DEV-only A/B harness for the native `SessionMessage[]` render path.
- *
- * `NativeTimeline` renders the parallel native store (`nativeMessages`) through
- * `NativeTranscript` INSTEAD of the V1 virtualized `MessageTimeline`, gated on the
- * `nativeRenderEnabled` signal so it can be toggled live in the web preview without a
- * reload (V1 stays the default; nothing here ships enabled). Toggle from the preview:
- *
- *   window.__novaNativeRender()      // flip
- *   window.__novaNativeRender(true)  // force native on
- *
- * Removed once the render flip lands and native becomes the sole path (S4-v3 tail).
+ * F1e — the native `SessionMessage[]` timeline: the SOLE render path (F-d/F-e, owner-approved
+ * 2026-07-05, replacing the deleted V1 `MessageTimeline`). Reads the native store
+ * (`nativeMessages`) through `NativeTranscript` and owns chat auto-scroll — pin-to-bottom while
+ * the user is at the bottom + a scroll-to-bottom button. (Hash-scroll deep-link + history
+ * pagination + virtualization are deferred long-session hardening.)
  */
-// F1e THE FLIP (F-d, owner-approved 2026-07-05) — native `SessionMessage[]` is now the
-// DEFAULT render everywhere (dev + prod); the V1 `MessageTimeline` is reachable only via
-// the DEV `__novaNativeRender(false)` toggle as a transition-safety fallback. F-e removes
-// the toggle + deletes the V1 render tree next.
-const [nativeRenderEnabled, setNativeRenderEnabled] = createSignal(true)
-export { nativeRenderEnabled }
-
-if (import.meta.env.DEV && typeof window !== "undefined") {
-  ;(window as unknown as { __novaNativeRender?: (on?: boolean) => boolean }).__novaNativeRender = (on) => {
-    const next = on ?? !nativeRenderEnabled()
-    setNativeRenderEnabled(next)
-    return next
-  }
-}
-
 export function NativeTimeline(props: { sessionID: string }) {
   const serverSync = useServerSync()
   const messages = createMemo(() => serverSync().nativeMessages.messages(props.sessionID) ?? [])
