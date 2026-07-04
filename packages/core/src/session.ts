@@ -39,6 +39,7 @@ import { FSUtil } from "./fs-util"
 import { SessionDurable } from "@novaclaw/schema/durable-event-manifest"
 import { Config } from "./config"
 import { CommandV2 } from "./command"
+import { SessionSpawner } from "./session/spawner"
 import { AppProcess } from "./process"
 import { Shell } from "./shell"
 import { ChildProcess } from "effect/unstable/process"
@@ -146,6 +147,13 @@ type CommandInput = {
   id?: SessionMessage.ID
 }
 
+// A command either submits its expanded template as a prompt to THIS session, or — when it
+// resolves to a subagent (agent.mode "subagent" or cmd.subtask) — spawns a CHILD session that
+// runs it. The two dispatch paths return different things, so `command` is a discriminated union.
+type CommandResult =
+  | { readonly type: "prompt"; readonly admitted: SessionInput.Admitted }
+  | { readonly type: "subtask"; readonly childID: SessionSchema.ID }
+
 export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("Session.NotFoundError", {
   sessionID: SessionSchema.ID,
 }) {}
@@ -229,7 +237,7 @@ export interface Interface {
     skill: string
     resume?: boolean
   }) => Effect.Effect<void, OperationUnavailableError>
-  readonly command: (input: CommandInput) => Effect.Effect<SessionInput.Admitted, NotFoundError | PromptConflictError>
+  readonly command: (input: CommandInput) => Effect.Effect<CommandResult, NotFoundError | PromptConflictError>
   readonly compact: (input: CompactInput) => Effect.Effect<void, NotFoundError | OperationUnavailableError>
   readonly wait: (id: SessionSchema.ID) => Effect.Effect<void, NotFoundError | OperationUnavailableError>
   readonly active: Effect.Effect<ReadonlySet<SessionSchema.ID>>
@@ -537,10 +545,11 @@ export const layer = Layer.effect(
       }),
       // The `/command` op: expand a saved slash-command template and submit it as a prompt —
       // the model turn then rides the normal runner (V1 `SessionPrompt.command` likewise just
-      // delegates to `prompt()`). CommandV2 + the shell machinery are location services, so
-      // both resolve via the session's Location. Covers arg substitution + `` !`shell` ``
-      // substitution + the cmd.agent/cmd.model override + submit; the subtask branch remains
-      // residue (see todo.md F1a SLICE 5). A missing command dies — the caller validates existence.
+      // delegates to `prompt()`). CommandV2 + the shell machinery + SessionSpawner are location
+      // services, resolved via the session's Location. Covers arg substitution + `` !`shell` ``
+      // substitution + cmd.agent/cmd.model override + the subtask (command-as-subagent) branch +
+      // submit — returning a discriminated `CommandResult` (prompt vs subtask). A missing command
+      // dies (the caller validates existence); a spawn-quota trip dies for now (residue).
       command: Effect.fn("V2Session.command")(function* (input) {
         const session = yield* result.get(input.sessionID)
         // Resolve the command and run any `` !`cmd` `` substitutions in the Location scope; the
@@ -581,12 +590,32 @@ export const layer = Layer.effect(
             let index = 0
             text = text.replace(COMMAND_BASH_REGEX, () => results[index++])
           }
-          return { text: text.trim(), agent: cmd.agent, model: cmd.model }
+          text = text.trim()
+          // Command-as-subagent: when the resolved agent runs in "subagent" mode (or cmd.subtask
+          // is set), SPAWN a child session to run the expanded command instead of prompting this
+          // one — the command's agent/model go to the CHILD (not a session switch). SessionSpawner
+          // + AgentV2 are location services, resolved in this same scope.
+          const agents = yield* AgentV2.Service
+          const agentName = cmd.agent ?? session.agent
+          const agentInfo = agentName ? yield* agents.get(AgentV2.ID.make(agentName)) : undefined
+          const isSubtask = (agentInfo?.mode === "subagent" && cmd.subtask !== false) || cmd.subtask === true
+          if (isSubtask) {
+            const spawner = yield* SessionSpawner.Service
+            // SpawnLimitError (quota) is caught by the block's orDie for now; surfacing it is residue.
+            const childID = yield* spawner.spawn({
+              parentID: input.sessionID,
+              text,
+              ...(cmd.agent ? { agent: AgentV2.ID.make(cmd.agent) } : {}),
+              ...(cmd.model ? { model: cmd.model } : {}),
+            })
+            return { kind: "subtask" as const, childID }
+          }
+          return { kind: "prompt" as const, text, agent: cmd.agent, model: cmd.model }
         }).pipe(Effect.provide(locations.get(session.location)), Effect.provide(AppProcess.defaultLayer), Effect.orDie)
-        // A command may declare its own agent/model; switch the session to them BEFORE the turn
-        // (persisted, mirroring how promptAsync applies a per-turn model/agent) so the command
-        // runs under its declared config. Residue: V1's per-turn (non-persisted) override + the
-        // subtask branch's separate agent handling.
+        if (resolved.kind === "subtask") return { type: "subtask" as const, childID: resolved.childID }
+        // Prompt path only: a command may declare its own agent/model — switch the session to them
+        // BEFORE the turn (persisted, mirroring how promptAsync applies a per-turn model/agent) so
+        // the command runs under its declared config. Residue: V1's per-turn (non-persisted) override.
         if (resolved.agent)
           yield* events.publish(SessionEvent.AgentSwitched, {
             sessionID: input.sessionID,
@@ -622,7 +651,7 @@ export const layer = Layer.effect(
         if (!SessionInput.equivalent(admitted, expected))
           return yield* new PromptConflictError({ sessionID: input.sessionID, messageID })
         yield* execution.wake(admitted.sessionID)
-        return admitted
+        return { type: "prompt" as const, admitted }
       }),
       switchAgent: Effect.fn("V2Session.switchAgent")(function* (input) {
         yield* result.get(input.sessionID)

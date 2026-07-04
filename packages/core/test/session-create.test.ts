@@ -73,7 +73,9 @@ const itCommand = testEffect(
                     ? CommandV2.Info.make({ name: "greet", template: commandTemplate })
                     : name === "review"
                       ? CommandV2.Info.make({ name: "review", template: "Review the change", agent: "plan" })
-                      : undefined,
+                      : name === "spawn"
+                        ? CommandV2.Info.make({ name: "spawn", template: "Do the subtask", subtask: true })
+                        : undefined,
                 ),
             }),
           ],
@@ -510,8 +512,9 @@ describe("SessionV2.command", () => {
 
       // "Hi $1 from !`echo bot`" with args "world" -> "$1" resolves to "world" and the
       // `` !`echo bot` `` substitution runs to "bot"; the expanded text is submitted as the prompt.
-      const admitted = yield* session.command({ sessionID: created.id, command: "greet", arguments: "world" })
-      expect(admitted.prompt.text).toBe("Hi world from bot")
+      const result = yield* session.command({ sessionID: created.id, command: "greet", arguments: "world" })
+      expect(result.type).toBe("prompt")
+      if (result.type === "prompt") expect(result.admitted.prompt.text).toBe("Hi world from bot")
     }),
   )
 
@@ -531,6 +534,28 @@ describe("SessionV2.command", () => {
       // (persisted, like promptAsync) in addition to submitting the expanded prompt.
       yield* session.command({ sessionID: created.id, command: "review", arguments: "" })
       expect(yield* session.get(created.id)).toMatchObject({ agent: "plan" })
+    }),
+  )
+
+  itCommand.live("spawns a child session for a subtask command", () =>
+    Effect.gen(function* () {
+      const dir = yield* Effect.acquireRelease(
+        Effect.promise(() => tmpdir()),
+        (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+      )
+      const session = yield* SessionV2.Service
+      const created = yield* session.create({
+        location: Location.Ref.make({ directory: AbsolutePath.make(dir.path) }),
+      })
+
+      // The "spawn" command sets subtask: true, so it spawns a CHILD session (not a prompt to
+      // this one). The result is the discriminated "subtask" case carrying the child's id.
+      const result = yield* session.command({ sessionID: created.id, command: "spawn", arguments: "" })
+      expect(result.type).toBe("subtask")
+      if (result.type === "subtask") {
+        expect(result.childID.startsWith("ses_")).toBe(true)
+        expect(result.childID).not.toBe(created.id)
+      }
     }),
   )
 })
