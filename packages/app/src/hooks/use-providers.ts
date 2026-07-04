@@ -17,14 +17,9 @@ export function useProviders(directory?: Accessor<string | undefined>) {
   const providers = () => {
     const value = dir()
     const projectStore = value ? serverSync().child(value)[0] : undefined
-    if (directory)
-      return selectProviderCatalog({
-        explicit: true,
-        directory: value,
-        catalog: projectStore && { ready: projectStore.provider_ready, providers: projectStore.provider },
-      })
+    // Always offer the global catalog as the fallback; selectProviderCatalog prefers the
+    // directory-specific one once it is ready, but never leaves the picker empty while it loads.
     return selectProviderCatalog({
-      explicit: false,
       directory: value,
       catalog: projectStore && { ready: projectStore.provider_ready, providers: projectStore.provider },
       global: serverSync().data.provider,

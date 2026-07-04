@@ -7,36 +7,12 @@ const catalog = (id: string): NormalizedProviderListResponse => ({
   connected: [id],
   default: { [id]: `${id}-model` },
 })
+const empty: NormalizedProviderListResponse = { all: new Map(), connected: [], default: {} }
 
-test("selects the ready catalog for an explicit directory", () => {
+test("uses the ready directory catalog when it has connected providers", () => {
   const directory = catalog("directory")
-
   expect(
     selectProviderCatalog({
-      explicit: true,
-      directory: "/repo",
-      catalog: { ready: true, providers: directory },
-    }),
-  ).toBe(directory)
-})
-
-test("returns an empty catalog while an explicit directory is unresolved", () => {
-  expect(selectProviderCatalog({ explicit: true })).toEqual({ all: new Map(), connected: [], default: {} })
-  expect(
-    selectProviderCatalog({
-      explicit: true,
-      directory: "/repo",
-      catalog: { ready: false, providers: catalog("directory") },
-    }),
-  ).toEqual({ all: new Map(), connected: [], default: {} })
-})
-
-test("uses the route catalog when it is ready", () => {
-  const directory = catalog("directory")
-
-  expect(
-    selectProviderCatalog({
-      explicit: false,
       directory: "/repo",
       catalog: { ready: true, providers: directory },
       global: catalog("global"),
@@ -44,16 +20,29 @@ test("uses the route catalog when it is ready", () => {
   ).toBe(directory)
 })
 
-test("falls back to the global catalog for route consumers", () => {
+test("falls back to global while the directory catalog is unready", () => {
   const global = catalog("global")
-
-  expect(selectProviderCatalog({ explicit: false, global })).toBe(global)
   expect(
-    selectProviderCatalog({
-      explicit: false,
-      directory: "/repo",
-      catalog: { ready: false, providers: catalog("directory") },
-      global,
-    }),
+    selectProviderCatalog({ directory: "/repo", catalog: { ready: false, providers: catalog("directory") }, global }),
   ).toBe(global)
+})
+
+test("falls back to global when a ready directory catalog has no connected providers", () => {
+  // The "/" root lists providers in `all` but marks none connected — connections are resolved
+  // globally, so the picker must use the global catalog rather than blank out.
+  const global = catalog("global")
+  const root: NormalizedProviderListResponse = { ...catalog("root"), connected: [] }
+  expect(selectProviderCatalog({ directory: "/", catalog: { ready: true, providers: root }, global })).toBe(global)
+})
+
+test("falls back to global when there is no directory", () => {
+  const global = catalog("global")
+  expect(selectProviderCatalog({ global })).toBe(global)
+})
+
+test("returns an empty catalog when nothing is available", () => {
+  expect(selectProviderCatalog({})).toEqual(empty)
+  expect(selectProviderCatalog({ directory: "/repo", catalog: { ready: false, providers: catalog("d") } })).toEqual(
+    empty,
+  )
 })
