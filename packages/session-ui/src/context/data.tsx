@@ -1,4 +1,4 @@
-import type { Message, Session, Part, SnapshotFileDiff, SessionStatus, Provider } from "@novaclaw/sdk/v2"
+import type { Session, SnapshotFileDiff, SessionStatus, Provider } from "@novaclaw/sdk/v2"
 import { createSimpleContext } from "@novaclaw/ui/context"
 import { PreloadMultiFileDiffResult } from "@pierre/diffs/ssr"
 
@@ -25,15 +25,6 @@ type Data = {
   }
   session_diff_preload?: {
     [sessionID: string]: PreloadMultiFileDiffResult<any>[]
-  }
-  message: {
-    [sessionID: string]: Message[]
-  }
-  part: {
-    [messageID: string]: Part[]
-  }
-  part_text_accum_delta?: {
-    [partID: string]: string
   }
 }
 
