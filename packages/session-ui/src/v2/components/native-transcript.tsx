@@ -1,4 +1,4 @@
-import { For, Show, Switch, Match } from "solid-js"
+import { createMemo, For, Show, Switch, Match } from "solid-js"
 import type {
   LlmToolContent,
   ModelRef,
@@ -31,10 +31,22 @@ import "./native-transcript.css"
  * first cut (name · status · collapsible input/output) — full per-tool fidelity
  * (diffs, file previews, todo, question) lands in later S4-v3 increments.
  */
+const isSwitchMarker = (m: SessionMessage) => m.type === "agent-switched" || m.type === "model-switched"
+
 export function NativeTranscript(props: { messages: readonly SessionMessage[]; class?: string }) {
+  // The native store captures the session's initial agent/model as `*-switched` messages,
+  // but those are setup state (V1 shows them in the header, not the transcript). Drop the
+  // LEADING run of switch markers; a switch that lands mid-conversation still renders as a
+  // divider, which is the informative case.
+  const visible = createMemo(() => {
+    const messages = props.messages
+    const firstReal = messages.findIndex((m) => !isSwitchMarker(m))
+    if (firstReal <= 0) return messages as SessionMessage[]
+    return (messages as SessionMessage[]).filter((m, i) => i >= firstReal || !isSwitchMarker(m))
+  })
   return (
     <div data-component="native-transcript" class={props.class}>
-      <For each={props.messages as SessionMessage[]}>{(message) => <NativeMessage message={message} />}</For>
+      <For each={visible()}>{(message) => <NativeMessage message={message} />}</For>
     </div>
   )
 }
