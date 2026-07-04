@@ -32,3 +32,6 @@ UPCOMING_CHANGELOG.md
 logs/
 *.bun-build
 tsconfig.tsbuildinfo
+
+# Internal working notes — must never enter the app repo (it is disjoint from the plan repo)
+notes/
