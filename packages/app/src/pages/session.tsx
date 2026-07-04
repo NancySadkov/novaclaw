@@ -61,6 +61,7 @@ import {
   shouldShowFileTree,
 } from "@/pages/session/helpers"
 import { MessageTimeline } from "@/pages/session/timeline/message-timeline"
+import { NativeTimeline, nativeRenderEnabled } from "@/pages/session/timeline/native-timeline"
 import { createTimelineModel } from "@/pages/session/timeline/model"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
 import { useSessionLayout } from "@/pages/session/session-layout"
@@ -1748,6 +1749,7 @@ export default function Page() {
                 <Match when={params.id}>
                   <Show when={messagesReady() ? params.id : undefined} keyed>
                     {(_id) => (
+                      <Show when={nativeRenderEnabled()} fallback={
                       <MessageTimeline
                         actions={actions}
                         scroll={ui.scroll}
@@ -1784,6 +1786,9 @@ export default function Page() {
                           scrollToEnd = fn
                         }}
                       />
+                      }>
+                        <NativeTimeline sessionID={_id} />
+                      </Show>
                     )}
                   </Show>
                 </Match>

@@ -1,0 +1,134 @@
+/*
+ * F1e S4-v3 — native transcript renderer styles. Deliberately lightweight: this is the
+ * parallel A/B render behind a dev toggle, not yet the polished V1 look. Uses the v2
+ * design tokens so it reads correctly in the noble-purple theme.
+ */
+
+[data-component="native-transcript"] {
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+  padding: 1rem;
+  font-family: var(--font-family-sans);
+  font-size: var(--font-size-base);
+  line-height: var(--line-height-normal);
+  color: var(--v2-text-text-base);
+}
+
+/* user */
+[data-slot="native-user"] {
+  display: flex;
+  justify-content: flex-end;
+}
+[data-slot="native-user-bubble"] {
+  max-width: 85%;
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.75rem;
+  background: var(--v2-background-bg-layer-02);
+  border: 1px solid var(--v2-border-border-muted);
+}
+[data-slot="native-user-attachments"] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem;
+  margin-top: 0.375rem;
+}
+[data-slot="native-chip"] {
+  padding: 0.0625rem 0.375rem;
+  border-radius: 0.375rem;
+  font-size: var(--font-size-small);
+  background: var(--v2-background-bg-layer-01);
+  color: var(--v2-text-text-muted);
+}
+
+/* assistant */
+[data-slot="native-assistant"] {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+[data-slot="native-assistant-text"] {
+  color: var(--v2-text-text-base);
+}
+[data-slot="native-reasoning"],
+[data-slot="native-notice"] {
+  color: var(--v2-text-text-muted);
+  font-size: var(--font-size-small);
+  border-left: 2px solid var(--v2-border-border-muted);
+  padding-left: 0.625rem;
+}
+[data-slot="native-reasoning"] > summary,
+[data-slot="native-notice"] > summary {
+  cursor: pointer;
+  color: var(--v2-text-text-faint);
+  user-select: none;
+}
+[data-slot="native-reasoning-body"],
+[data-slot="native-notice-body"] {
+  margin-top: 0.375rem;
+}
+
+/* tool */
+[data-slot="native-tool"] {
+  margin: 0.125rem 0;
+}
+[data-slot="native-tool-io"] {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+[data-slot="native-tool-input"],
+[data-slot="native-tool-output"],
+[data-slot="native-shell-output"] {
+  margin: 0;
+  padding: 0.5rem 0.625rem;
+  border-radius: 0.5rem;
+  background: var(--v2-background-bg-layer-01);
+  color: var(--v2-text-text-muted);
+  font-size: var(--font-size-small);
+  white-space: pre-wrap;
+  overflow-x: auto;
+  max-height: 24rem;
+}
+
+/* shell */
+[data-slot="native-shell"] {
+  display: flex;
+  flex-direction: column;
+  gap: 0.375rem;
+}
+[data-slot="native-shell-command"] {
+  font-family: var(--font-family-mono, monospace);
+  font-size: var(--font-size-small);
+  color: var(--v2-text-text-base);
+}
+
+/* error */
+[data-slot="native-error"] {
+  padding: 0.5rem 0.75rem;
+  border-radius: 0.5rem;
+  border: 1px solid var(--v2-state-fg-danger);
+  color: var(--v2-state-fg-danger);
+  font-size: var(--font-size-small);
+}
+
+/* compaction + switch markers */
+[data-slot="native-compaction-divider"],
+[data-slot="native-switch-marker"] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  text-align: center;
+  color: var(--v2-text-text-faint);
+  font-size: var(--font-size-small);
+}
+[data-slot="native-switch-marker"]::before,
+[data-slot="native-switch-marker"]::after,
+[data-slot="native-compaction-divider"]::before,
+[data-slot="native-compaction-divider"]::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--v2-border-border-muted);
+}
