@@ -15,6 +15,9 @@ import { ProjectTable } from "@novaclaw/core/project/sql"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
+import { CommandV2 } from "@novaclaw/core/command"
+import { LocationServiceMap } from "@novaclaw/core/location-service-map"
+import { buildLocationServiceMap } from "@novaclaw/core/location-services"
 import { SessionV1 } from "@novaclaw/core/v1/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
 import { SessionProjector } from "@novaclaw/core/session/projector"
@@ -46,6 +49,35 @@ const it = testEffect(
 )
 const location = Location.Ref.make({ directory: AbsolutePath.make("/project") })
 const id = SessionV2.ID.create()
+
+// A command-injecting harness for SessionV2.command: the location graph's CommandV2 is
+// otherwise config-populated (empty here), so replace its node with a fixed command via a
+// buildLocationServiceMap replacement. The template exercises both an `$1` positional arg
+// and a `` !`echo` `` shell substitution.
+const commandTemplate = "Hi $1 from !`echo bot`"
+const itCommand = testEffect(
+  AppNodeBuilder.build(
+    LayerNode.group([Database.node, EventV2.node, SessionProjector.node, SessionStore.node, SessionV2.node]),
+    [
+      [ProjectV2.node, projects],
+      [SessionExecution.node, SessionExecution.noopLayer],
+      [
+        LocationServiceMap.node,
+        buildLocationServiceMap([
+          [
+            CommandV2.node,
+            Layer.mock(CommandV2.Service, {
+              get: (name: string) =>
+                Effect.succeed(
+                  name === "greet" ? CommandV2.Info.make({ name: "greet", template: commandTemplate }) : undefined,
+                ),
+            }),
+          ],
+        ]),
+      ],
+    ],
+  ),
+)
 
 describe("SessionV2.create", () => {
   it.effect("creates a fresh projected session when the ID is omitted", () =>
@@ -456,6 +488,26 @@ describe("SessionV2.create", () => {
             Effect.map((error) => error._tag),
           ),
       ).toBe("Session.NotFoundError")
+    }),
+  )
+})
+
+describe("SessionV2.command", () => {
+  itCommand.live("expands a command template (args + shell) and submits it as a prompt", () =>
+    Effect.gen(function* () {
+      const dir = yield* Effect.acquireRelease(
+        Effect.promise(() => tmpdir()),
+        (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+      )
+      const session = yield* SessionV2.Service
+      const created = yield* session.create({
+        location: Location.Ref.make({ directory: AbsolutePath.make(dir.path) }),
+      })
+
+      // "Hi $1 from !`echo bot`" with args "world" -> "$1" resolves to "world" and the
+      // `` !`echo bot` `` substitution runs to "bot"; the expanded text is submitted as the prompt.
+      const admitted = yield* session.command({ sessionID: created.id, command: "greet", arguments: "world" })
+      expect(admitted.prompt.text).toBe("Hi world from bot")
     }),
   )
 })
