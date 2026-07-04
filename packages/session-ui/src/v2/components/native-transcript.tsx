@@ -105,6 +105,16 @@ function UserMessage(props: { message: SessionMessageUser }) {
 // ── assistant ────────────────────────────────────────────────────────────────────
 
 function AssistantMessage(props: { message: SessionMessageAssistant }) {
+  // While the turn is in flight but nothing has streamed yet (the model is thinking before
+  // its first token), show a "working" indicator — otherwise a slow turn reads as a blank.
+  const working = () =>
+    !props.message.time.completed &&
+    !props.message.content.some(
+      (c) =>
+        (c.type === "text" && c.text.trim().length > 0) ||
+        (c.type === "reasoning" && c.text.trim().length > 0) ||
+        c.type === "tool",
+    )
   return (
     <div data-slot="native-assistant">
       <For each={props.message.content}>
@@ -135,6 +145,12 @@ function AssistantMessage(props: { message: SessionMessageAssistant }) {
           </Switch>
         )}
       </For>
+      <Show when={working()}>
+        <div data-slot="native-working" aria-live="polite">
+          <span data-slot="native-working-dot" />
+          <span>Working…</span>
+        </div>
+      </Show>
       <Show when={props.message.snapshot?.files?.length}>
         <ChangedFilesStrip files={props.message.snapshot!.files!} />
       </Show>

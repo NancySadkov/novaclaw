@@ -50,6 +50,38 @@
 [data-slot="native-assistant-text"] {
   color: var(--v2-text-text-base);
 }
+
+/* in-flight "working" indicator (shown until the first token streams) */
+[data-slot="native-working"] {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  color: var(--v2-text-text-muted);
+  font-size: var(--font-size-small);
+}
+[data-slot="native-working-dot"] {
+  width: 0.5rem;
+  height: 0.5rem;
+  border-radius: 50%;
+  background: var(--v2-text-text-muted);
+  animation: native-working-pulse 1s ease-in-out infinite;
+}
+@keyframes native-working-pulse {
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: scale(0.8);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  [data-slot="native-working-dot"] {
+    animation: none;
+  }
+}
 [data-slot="native-reasoning"],
 [data-slot="native-notice"] {
   color: var(--v2-text-text-muted);
