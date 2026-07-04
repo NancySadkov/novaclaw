@@ -53,6 +53,8 @@ const SHELL_MAX_OUTPUT_BYTES = 1024 * 1024
 const COMMAND_ARGS_REGEX = /(?:\[Image\s+\d+\]|"[^"]*"|'[^']*'|[^\s"']+)/gi
 const COMMAND_PLACEHOLDER_REGEX = /\$(\d+)/g
 const COMMAND_QUOTE_TRIM_REGEX = /^["']|["']$/g
+// `` !`cmd` `` inline shell substitution in a command template — each match's output replaces it.
+const COMMAND_BASH_REGEX = /!`([^`]+)`/g
 
 /**
  * Expand a slash-command template against a raw argument string: substitute `$1`..`$N`
@@ -535,18 +537,52 @@ export const layer = Layer.effect(
       }),
       // The `/command` op: expand a saved slash-command template and submit it as a prompt —
       // the model turn then rides the normal runner (V1 `SessionPrompt.command` likewise just
-      // delegates to `prompt()`). CommandV2 is a direct location-graph service, so it resolves
-      // via the session's Location. First cut covers arg substitution + submit; `` !`shell` ``
-      // substitution, the cmd.agent/cmd.model override, and the subtask branch are residue
-      // (see todo.md F1a SLICE 5). A missing command dies — the caller validates existence.
+      // delegates to `prompt()`). CommandV2 + the shell machinery are location services, so
+      // both resolve via the session's Location. Covers arg substitution + `` !`shell` ``
+      // substitution + submit; the cmd.agent/cmd.model override and the subtask branch remain
+      // residue (see todo.md F1a SLICE 5). A missing command dies — the caller validates existence.
       command: Effect.fn("V2Session.command")(function* (input) {
         const session = yield* result.get(input.sessionID)
-        const cmd = yield* Effect.gen(function* () {
+        // Resolve the command and run any `` !`cmd` `` substitutions in the Location scope; the
+        // shell run mirrors the `shell` op (configured shell + cwd; AppProcess provided directly).
+        const template = yield* Effect.gen(function* () {
           const commands = yield* CommandV2.Service
-          return yield* commands.get(input.command)
-        }).pipe(Effect.provide(locations.get(session.location)))
-        if (!cmd) return yield* Effect.die(new Error(`Command not found: ${input.command}`))
-        const template = expandCommandTemplate(cmd.template, input.arguments)
+          const cmd = yield* commands.get(input.command)
+          if (!cmd) return yield* Effect.die(new Error(`Command not found: ${input.command}`))
+          let text = expandCommandTemplate(cmd.template, input.arguments)
+          const bashMatches = [...text.matchAll(COMMAND_BASH_REGEX)]
+          if (bashMatches.length > 0) {
+            const config = yield* Config.Service
+            const loc = yield* Location.Service
+            const appProcess = yield* AppProcess.Service
+            const entries = yield* config.entries()
+            const configuredShell = (
+              Object.assign({}, ...entries.flatMap((entry) => (entry.type === "document" ? [entry.info] : []))) as {
+                shell?: string
+              }
+            ).shell
+            const shellPath = Shell.preferred(configuredShell)
+            const results = yield* Effect.forEach(bashMatches, (match) =>
+              Effect.gen(function* () {
+                const command = ChildProcess.make(shellPath, Shell.args(shellPath, match[1], loc.directory), {
+                  cwd: loc.directory,
+                  extendEnv: true,
+                  env: { TERM: "dumb" },
+                  stdin: "ignore",
+                  forceKillAfter: Duration.seconds(3),
+                })
+                const run = yield* appProcess.run(command, {
+                  combineOutput: true,
+                  maxOutputBytes: SHELL_MAX_OUTPUT_BYTES,
+                })
+                return run.output?.toString("utf8").trim() ?? ""
+              }),
+            )
+            let index = 0
+            text = text.replace(COMMAND_BASH_REGEX, () => results[index++])
+          }
+          return text.trim()
+        }).pipe(Effect.provide(locations.get(session.location)), Effect.provide(AppProcess.defaultLayer), Effect.orDie)
         // Submit as a fresh prompt (mirrors the `prompt` op's admit + wake; a command is a
         // genuine user turn, so it is queued, not steer-prefixed — cf. SLICE 8's steer caveat).
         const messageID = input.id ?? SessionMessage.ID.create()
