@@ -20,32 +20,6 @@ Options:
       --pure        run without external plugins                                           [boolean]"
 `;
 
-exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw attach --help 1`] = `
-"novaclaw attach <url>
-
-attach to a running novaclaw server
-
-Positionals:
-  url  http://localhost:4096                                                     [string] [required]
-
-Options:
-  -h, --help          show help                                                            [boolean]
-  -v, --version       show version number                                                  [boolean]
-      --print-logs    print logs to stderr                                                 [boolean]
-      --log-level     log level                 [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure          run without external plugins                                         [boolean]
-      --dir           directory to run in                                                   [string]
-  -c, --continue      continue the last session                                            [boolean]
-  -s, --session       session id to continue                                                [string]
-      --fork          fork the session when continuing (use with --continue or --session)  [boolean]
-  -p, --password      basic auth password (defaults to NOVACLAW_SERVER_PASSWORD)            [string]
-  -u, --username      basic auth username (defaults to NOVACLAW_SERVER_USERNAME or 'novaclaw')
-                                                                                            [string]
-      --mini          start the minimal interactive interface             [boolean] [default: false]
-      --no-replay     disable mini session history replay on resume and after resize       [boolean]
-      --replay-limit  cap visible mini replay to the newest N messages                      [number]"
-`;
-
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw run --help 1`] = `
 "novaclaw run [message..]
 
@@ -281,16 +255,14 @@ Options:
 `;
 
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw import --help 1`] = `
-"⠀                                ▄     
-█▀▀█ █▀▀█ █▀▀█ █▀▀▄ █▀▀▀ █▀▀█ █▀▀█ █▀▀█
-█  █ █  █ █▀▀▀ █  █ █    █  █ █  █ █▀▀▀
-▀▀▀▀ █▀▀▀ ▀▀▀▀ ▀  ▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀ ▀▀▀▀
+"                                         
+█▀▀▄ █▀▀█ █  █ █▀▀█ █▀▀▀ █    █▀▀█ █   █
+█  █ █  █ █  █ █▀▀█ █    █    █▀▀█ █ █ █
+▀  ▀ ▀▀▀▀  ▀▀  ▀  ▀ ▀▀▀▀ ▀▀▀▀ ▀  ▀ ▀▀▀▀▀
 
 Commands:
   novaclaw completion          generate shell completion script
   novaclaw mcp                 manage MCP (Model Context Protocol) servers
-  novaclaw [project]           start novaclaw tui                                          [default]
-  novaclaw attach <url>        attach to a running novaclaw server
   novaclaw run [message..]     run novaclaw with a message
   novaclaw debug               debugging and troubleshooting tools
   novaclaw providers           manage AI providers and credentials                   [aliases: auth]
@@ -307,31 +279,12 @@ Commands:
   novaclaw plugin <module>     install plugin and update config                      [aliases: plug]
   novaclaw db                  database tools
 
-Positionals:
-  project  path to start novaclaw in                                                        [string]
-
 Options:
-  -h, --help          show help                                                            [boolean]
-  -v, --version       show version number                                                  [boolean]
-      --print-logs    print logs to stderr                                                 [boolean]
-      --log-level     log level                 [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
-      --pure          run without external plugins                                         [boolean]
-      --port          port to listen on                                        [number] [default: 0]
-      --hostname      hostname to listen on                          [string] [default: "127.0.0.1"]
-      --mdns          enable mDNS service discovery (defaults hostname to 0.0.0.0)
-                                                                          [boolean] [default: false]
-      --mdns-domain   custom domain name for mDNS service (default: novaclaw.local)
-                                                                [string] [default: "novaclaw.local"]
-      --cors          additional domains to allow for CORS                     [array] [default: []]
-  -m, --model         model to use in the format of provider/model                          [string]
-  -c, --continue      continue the last session                                            [boolean]
-  -s, --session       session id to continue                                                [string]
-      --fork          fork the session when continuing (use with --continue or --session)  [boolean]
-      --prompt        prompt to use                                                         [string]
-      --agent         agent to use                                                          [string]
-      --mini          start the minimal interactive interface             [boolean] [default: false]
-      --no-replay     disable mini session history replay on resume and after resize       [boolean]
-      --replay-limit  cap visible mini replay to the newest N messages                      [number]
+  -h, --help        show help                                                              [boolean]
+  -v, --version     show version number                                                    [boolean]
+      --print-logs  print logs to stderr                                                   [boolean]
+      --log-level   log level                   [string] [choices: "DEBUG", "INFO", "WARN", "ERROR"]
+      --pure        run without external plugins                                           [boolean]
 "
 `;
 

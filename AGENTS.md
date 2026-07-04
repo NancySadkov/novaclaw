@@ -12,8 +12,10 @@ through a shell-like UI (task manager, launcher, apps).
 1. **The agentic OS kernel** — sessions as threads (spawn/exit/wait, config inheritance,
    scheduling), durable session storage, the model-agnostic LLM path, tools, permissions,
    and the extension seams (MCP, plugins, the app registry).
-2. **A user-friendly UI** — the desktop app, web app, and TUI that make driving agents
-   pleasant for non-experts.
+2. **A user-friendly HTML UI** — the desktop (Electron) and web apps that make driving agents
+   pleasant for non-experts. NovaClaw is **HTML-UI-only**: there is no interactive terminal UI, and
+   the CLI is **headless-only** (`serve`, one-shot `run`, health, tests). See the plan repo's
+   AGENTS.md → *Identity & mission*.
 
 Everything else is deliberately **not** kernel: LSP servers, code indexers, editor
 integrations, and similar developer services are things an **agent sets up for itself** when
@@ -42,10 +44,8 @@ dependencies.
 │   ├── plugin/                # public plugin API surface
 │   ├── app/                   # SolidJS web app; also the desktop renderer (apps/ = home-app registry)
 │   ├── desktop/               # Electron desktop app (electron-vite + electron-builder)
-│   ├── tui/                   # terminal UI (@opentui/solid)
-│   ├── session-ui/            # session message rendering shared by app/TUI
+│   ├── session-ui/            # session message rendering shared by the app
 │   ├── ui/                    # shared Solid component library, themes, icons, i18n styles
-│   ├── cli/                   # standalone CLI binary packaging (bin: lildax)
 │   ├── effect-drizzle-sqlite/ # Effect wrapper for drizzle-orm over SQLite
 │   ├── effect-sqlite-node/    # Effect SQLite client for the Node runtime (Electron)
 │   ├── http-recorder/         # record/replay HTTP/WS cassettes for provider tests
@@ -82,8 +82,8 @@ bun run prebuild && bun run build && bun run package:win
 # Web app (packages/app)
 bun run dev                    # Vite on :3000; connects to a server on :4096
 
-# TUI
-bun run dev                    # from packages/tui
+# Headless CLI (packages/novaclaw) — no interactive TUI; serve / one-shot run / health / tests
+bun run --conditions=browser src/index.ts serve --port 4096
 ```
 
 - **Typecheck:** `bun turbo typecheck` from the repo root, or `bun typecheck` from a package
@@ -106,7 +106,7 @@ bun run dev                    # from packages/tui
   (`session-recovery`, `fix-scroll-state`, `regenerate-sdk`).
 - Commits/PR titles: conventional style `type(scope): summary` with types `feat`, `fix`,
   `docs`, `chore`, `refactor`, `test`; scopes are optional package/area names such as `core`,
-  `novaclaw`, `tui`, `app`, `desktop`, `sdk`, `plugin`.
+  `novaclaw`, `app`, `desktop`, `sdk`, `plugin`.
 
 ## Style Guide
 

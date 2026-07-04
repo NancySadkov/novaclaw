@@ -44,7 +44,6 @@ function normalize(text: string): string {
 // top-level help on `--help` and exits 1; not a real novaclaw command.
 const TOP_LEVEL = [
   "mcp",
-  "attach",
   "run",
   "debug",
   "providers", // aliased to `auth`
@@ -97,7 +96,7 @@ describe("novaclaw CLI help-text snapshots", () => {
         const topLevel = yield* novaclaw.spawn(["--help"], { env: SNAPSHOT_ENV })
         expect(topLevel.exitCode).toBe(0)
         expect(topLevel.stderr.endsWith("\n")).toBe(true)
-        expect(topLevel.stderr).toContain("--mini")
+        expect(topLevel.stderr).not.toContain("--mini")
         expect(topLevel.stderr).not.toContain("--thinking")
         expect(topLevel.stderr).not.toContain("--variant")
         expect(topLevel.stderr).not.toContain("--demo")

@@ -1,3 +1,6 @@
+// SDK helper: validate a `-s <session>` id against a server (decode + session.get).
+// Relocated out of the removed cli/tui/ dir when the TUI was retired; used by the
+// headless CLI path and the server SDK tests.
 import { createNovaclawClient } from "@novaclaw/sdk/v2"
 import { SessionID } from "@/session/schema"
 import { Schema } from "effect"

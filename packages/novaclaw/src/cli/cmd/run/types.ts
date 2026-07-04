@@ -12,7 +12,6 @@
 //       → footer.ts queues commits and patches the footer view
 //         → OpenTUI split-footer renderer writes to terminal
 import type { NovaclawClient, PermissionRequest, QuestionRequest, ToolPart } from "@novaclaw/sdk/v2"
-import type { TuiConfig } from "@novaclaw/tui/config"
 
 export type RunFilePart = {
   type: "file"
@@ -285,8 +284,6 @@ export type PermissionReply = Parameters<NovaclawClient["permission"]["reply"]>[
 export type QuestionReply = Parameters<NovaclawClient["question"]["reply"]>[0]
 
 export type QuestionReject = Parameters<NovaclawClient["question"]["reject"]>[0]
-
-export type RunTuiConfig = Pick<TuiConfig.Resolved, "keybinds" | "leader_timeout" | "diff_style">
 
 // Lifecycle phase of a scrollback entry. "start" opens the entry, "progress"
 // appends content (coalesced in the footer queue), "final" closes it.
