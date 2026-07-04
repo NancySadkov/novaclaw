@@ -38,6 +38,7 @@ import { Revert } from "@novaclaw/schema/revert"
 import { FSUtil } from "./fs-util"
 import { SessionDurable } from "@novaclaw/schema/durable-event-manifest"
 import { Config } from "./config"
+import { CommandV2 } from "./command"
 import { AppProcess } from "./process"
 import { Shell } from "./shell"
 import { ChildProcess } from "effect/unstable/process"
@@ -45,6 +46,41 @@ import { Identifier } from "./id/id"
 
 // The V2 `shell` op caps captured output at the same 1 MB in-memory limit the bash tool uses.
 const SHELL_MAX_OUTPUT_BYTES = 1024 * 1024
+
+// Argument tokenizer + placeholder matchers for slash-command templates (ported from the V1
+// SessionPrompt.command path). `$1`..`$N` are positional, the highest-numbered placeholder
+// soaks up all trailing args, and `$ARGUMENTS` is the whole raw string.
+const COMMAND_ARGS_REGEX = /(?:\[Image\s+\d+\]|"[^"]*"|'[^']*'|[^\s"']+)/gi
+const COMMAND_PLACEHOLDER_REGEX = /\$(\d+)/g
+const COMMAND_QUOTE_TRIM_REGEX = /^["']|["']$/g
+
+/**
+ * Expand a slash-command template against a raw argument string: substitute `$1`..`$N`
+ * (the highest placeholder receives all remaining args) and `$ARGUMENTS`; when the template
+ * has no placeholders at all, append the raw arguments. Pure + exported for direct testing.
+ * (Residue vs the V1 path: `` !`shell` `` command substitution, agent/model override, and the
+ * subtask branch are not yet handled here — see todo.md F1a SLICE 5.)
+ */
+export function expandCommandTemplate(template: string, argumentsRaw: string): string {
+  const raw = argumentsRaw.match(COMMAND_ARGS_REGEX) ?? []
+  const args = raw.map((arg) => arg.replace(COMMAND_QUOTE_TRIM_REGEX, ""))
+  const placeholders = template.match(COMMAND_PLACEHOLDER_REGEX) ?? []
+  let last = 0
+  for (const item of placeholders) {
+    const value = Number(item.slice(1))
+    if (value > last) last = value
+  }
+  const withArgs = template.replaceAll(COMMAND_PLACEHOLDER_REGEX, (_, index) => {
+    const position = Number(index)
+    const argIndex = position - 1
+    if (argIndex >= args.length) return ""
+    return position === last ? args.slice(argIndex).join(" ") : args[argIndex]
+  })
+  const usesArgumentsPlaceholder = template.includes("$ARGUMENTS")
+  let out = withArgs.replaceAll("$ARGUMENTS", argumentsRaw)
+  if (placeholders.length === 0 && !usesArgumentsPlaceholder && argumentsRaw.trim()) out = out + "\n\n" + argumentsRaw
+  return out.trim()
+}
 
 export const RevertState = Revert.State
 export type RevertState = Revert.State
@@ -99,6 +135,13 @@ type CreateInput = {
 type CompactInput = {
   sessionID: SessionSchema.ID
   prompt?: Prompt
+}
+
+type CommandInput = {
+  sessionID: SessionSchema.ID
+  command: string
+  arguments: string
+  id?: SessionMessage.ID
 }
 
 export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("Session.NotFoundError", {
@@ -184,6 +227,7 @@ export interface Interface {
     skill: string
     resume?: boolean
   }) => Effect.Effect<void, OperationUnavailableError>
+  readonly command: (input: CommandInput) => Effect.Effect<SessionInput.Admitted, NotFoundError | PromptConflictError>
   readonly compact: (input: CompactInput) => Effect.Effect<void, NotFoundError | OperationUnavailableError>
   readonly wait: (id: SessionSchema.ID) => Effect.Effect<void, NotFoundError | OperationUnavailableError>
   readonly active: Effect.Effect<ReadonlySet<SessionSchema.ID>>
@@ -488,6 +532,43 @@ export const layer = Layer.effect(
       }),
       skill: Effect.fn("V2Session.skill")(function* () {
         return yield* new OperationUnavailableError({ operation: "skill" })
+      }),
+      // The `/command` op: expand a saved slash-command template and submit it as a prompt —
+      // the model turn then rides the normal runner (V1 `SessionPrompt.command` likewise just
+      // delegates to `prompt()`). CommandV2 is a direct location-graph service, so it resolves
+      // via the session's Location. First cut covers arg substitution + submit; `` !`shell` ``
+      // substitution, the cmd.agent/cmd.model override, and the subtask branch are residue
+      // (see todo.md F1a SLICE 5). A missing command dies — the caller validates existence.
+      command: Effect.fn("V2Session.command")(function* (input) {
+        const session = yield* result.get(input.sessionID)
+        const cmd = yield* Effect.gen(function* () {
+          const commands = yield* CommandV2.Service
+          return yield* commands.get(input.command)
+        }).pipe(Effect.provide(locations.get(session.location)))
+        if (!cmd) return yield* Effect.die(new Error(`Command not found: ${input.command}`))
+        const template = expandCommandTemplate(cmd.template, input.arguments)
+        // Submit as a fresh prompt (mirrors the `prompt` op's admit + wake; a command is a
+        // genuine user turn, so it is queued, not steer-prefixed — cf. SLICE 8's steer caveat).
+        const messageID = input.id ?? SessionMessage.ID.create()
+        const prompt = resolvePrompt({ text: template })
+        const delivery = "queue" as const
+        const expected = { sessionID: input.sessionID, messageID, prompt, delivery }
+        const admitted = yield* SessionInput.admit(db, events, {
+          id: messageID,
+          sessionID: input.sessionID,
+          prompt,
+          delivery,
+        }).pipe(
+          Effect.catchDefect((defect) =>
+            defect instanceof SessionInput.LifecycleConflict
+              ? new PromptConflictError({ sessionID: input.sessionID, messageID })
+              : Effect.die(defect),
+          ),
+        )
+        if (!SessionInput.equivalent(admitted, expected))
+          return yield* new PromptConflictError({ sessionID: input.sessionID, messageID })
+        yield* execution.wake(admitted.sessionID)
+        return admitted
       }),
       switchAgent: Effect.fn("V2Session.switchAgent")(function* (input) {
         yield* result.get(input.sessionID)
