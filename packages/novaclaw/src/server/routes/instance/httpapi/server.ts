@@ -103,7 +103,7 @@ import { tuiHandlers } from "./handlers/tui"
 import { handlers } from "@novaclaw/server/handlers"
 import { buildLocationServiceMap } from "@novaclaw/core/location-services"
 import { ExternalToolSource } from "@novaclaw/core/tool/external-tool-source"
-import { McpExternalToolSource } from "@/mcp/external-tool-source"
+import { AggregateExternalToolSource } from "@/tool/external-tool-source"
 import { layer as locationLayer } from "@novaclaw/server/location"
 import { sessionLocationLayer } from "@novaclaw/server/middleware/session-location"
 import { PtyEnvironment } from "@novaclaw/server/pty-environment"
@@ -124,7 +124,7 @@ export const context = Context.makeUnsafe<unknown>(new Map())
 // ONE location-service map for the whole server (module-level so every Layer.provide sees the
 // same reference and Effect memoization builds it once). The V2 runner and the HTTP routes MUST
 // share per-location service instances — PermissionV2's pending-ask map lives in one of them.
-const sharedLocationServiceMap = buildLocationServiceMap([[ExternalToolSource.node, McpExternalToolSource.node]])
+const sharedLocationServiceMap = buildLocationServiceMap([[ExternalToolSource.node, AggregateExternalToolSource.node]])
 
 const cors = (corsOptions?: CorsOptions) =>
   HttpRouter.middleware(

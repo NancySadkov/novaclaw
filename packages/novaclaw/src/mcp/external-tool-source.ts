@@ -22,77 +22,82 @@ import { MCP } from "."
 // field MCP/McpAuth read). `Effect.catchCause` keeps a missing-context defect from breaking
 // a session. Entries are cached and rebuilt only when the MCP tool-NAME set changes, so
 // identities stay stable within a turn (the registry's stale-call guard compares them).
-export const layer = Layer.effect(
-  ExternalToolSource.Service,
-  Effect.gen(function* () {
-    const mcp = yield* MCP.Service
-    const location = yield* Location.Service
-    const permission = yield* PermissionV2.Service
+// The Interface-producing Effect, factored out of `layer` so the V2
+// `ExternalToolSource` aggregator (`tool/external-tool-source.ts`) can merge MCP
+// entries with config-dir custom tools WITHOUT re-deriving the MCP adapter or the
+// per-call permission gate. Yields the same MCP/Location/PermissionV2 services the
+// aggregator already depends on, so calling it from the aggregator's layer resolves
+// against the shared location context.
+export const make = Effect.gen(function* () {
+  const mcp = yield* MCP.Service
+  const location = yield* Location.Service
+  const permission = yield* PermissionV2.Service
 
-    // F0: per-call permission ask for MCP tools on the V2 path (V1 parity —
-    // session/tools.ts asks `{permission: key, patterns: ["*"], always: ["*"]}`
-    // before every MCP call). Action = the tool name; the evaluate fallback for
-    // an unmatched action is "ask", so the first call asks and "allow always"
-    // persists — exactly the V1 UX. A denial/rejection lowers into the tool
-    // result via denialMessage (1J), never a halt.
-    const gate = (name: string) => (context: Tool.Context) =>
-      permission
-        .assert({
-          sessionID: context.sessionID,
-          action: name,
-          resources: ["*"],
-          save: ["*"],
-          source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
-          agent: context.agent,
-        })
-        .pipe(
-          Effect.mapError(
-            (error) =>
-              new Tool.Failure({
-                message:
-                  PermissionV2.denialMessage(error) ??
-                  `Permission check failed for MCP tool '${name}': ${String(error)}`,
-              }),
-          ),
-        )
-    // Minimal instance context: MCP only reads `directory`. `project` is unused on this path.
-    const instance = {
-      directory: location.directory,
-      worktree: location.directory,
-      project: {},
-    } as unknown as InstanceContext
-    const cache = yield* Ref.make<{ key: string; entries: Map<string, ExternalToolSource.Entry> }>({
-      key: " uninitialized",
-      entries: new Map(),
-    })
-    return ExternalToolSource.Service.of({
-      entries: () =>
-        Effect.gen(function* () {
-          const tools = yield* mcp
-            .tools()
-            .pipe(
-              Effect.provideService(InstanceRef, instance),
-              Effect.catchCause((cause) =>
-                Effect.logDebug("MCP tools unavailable for V2 location " + location.directory + ": " + Cause.pretty(cause)).pipe(
-                  Effect.map(() => ({}) as Record<string, unknown>),
-                ),
+  // F0: per-call permission ask for MCP tools on the V2 path (V1 parity —
+  // session/tools.ts asks `{permission: key, patterns: ["*"], always: ["*"]}`
+  // before every MCP call). Action = the tool name; the evaluate fallback for
+  // an unmatched action is "ask", so the first call asks and "allow always"
+  // persists — exactly the V1 UX. A denial/rejection lowers into the tool
+  // result via denialMessage (1J), never a halt.
+  const gate = (name: string) => (context: Tool.Context) =>
+    permission
+      .assert({
+        sessionID: context.sessionID,
+        action: name,
+        resources: ["*"],
+        save: ["*"],
+        source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
+        agent: context.agent,
+      })
+      .pipe(
+        Effect.mapError(
+          (error) =>
+            new Tool.Failure({
+              message:
+                PermissionV2.denialMessage(error) ??
+                `Permission check failed for MCP tool '${name}': ${String(error)}`,
+            }),
+        ),
+      )
+  // Minimal instance context: MCP only reads `directory`. `project` is unused on this path.
+  const instance = {
+    directory: location.directory,
+    worktree: location.directory,
+    project: {},
+  } as unknown as InstanceContext
+  const cache = yield* Ref.make<{ key: string; entries: Map<string, ExternalToolSource.Entry> }>({
+    key: " uninitialized",
+    entries: new Map(),
+  })
+  return ExternalToolSource.Service.of({
+    entries: () =>
+      Effect.gen(function* () {
+        const tools = yield* mcp
+          .tools()
+          .pipe(
+            Effect.provideService(InstanceRef, instance),
+            Effect.catchCause((cause) =>
+              Effect.logDebug("MCP tools unavailable for V2 location " + location.directory + ": " + Cause.pretty(cause)).pipe(
+                Effect.map(() => ({}) as Record<string, unknown>),
               ),
-            )
-          const key = Object.keys(tools).sort().join(" ")
-          const current = yield* Ref.get(cache)
-          if (key === current.key) return current.entries
-          const entries = new Map<string, ExternalToolSource.Entry>()
-          for (const [name, tool] of Object.entries(tools))
-            entries.set(name, {
-              identity: {},
-              tool: McpExternal.fromMcpTool(tool as McpExternal.AiSdkTool, { gate: gate(name) }),
-            })
-          yield* Ref.set(cache, { key, entries })
-          return entries
-        }),
-    })
-  }),
-)
+            ),
+          )
+        const key = Object.keys(tools).sort().join(" ")
+        const current = yield* Ref.get(cache)
+        if (key === current.key) return current.entries
+        const entries = new Map<string, ExternalToolSource.Entry>()
+        for (const [name, tool] of Object.entries(tools))
+          entries.set(name, {
+            identity: {},
+            tool: McpExternal.fromMcpTool(tool as McpExternal.AiSdkTool, { gate: gate(name) }),
+          })
+        yield* Ref.set(cache, { key, entries })
+        return entries
+      }),
+  })
+})
+
+export const layer = Layer.effect(ExternalToolSource.Service, make)
 
 export const node = makeLocationNode({
   service: ExternalToolSource.Service,
