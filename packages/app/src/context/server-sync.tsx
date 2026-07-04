@@ -1,4 +1,4 @@
-import type { Config, NovaclawClient, Path, Project, ProviderAuthResponse } from "@novaclaw/sdk/v2/client"
+import type { Config, NovaclawClient, Path, Project, ProviderAuthResponse, V2Event } from "@novaclaw/sdk/v2/client"
 import { showToast } from "@/utils/toast"
 import { getFilename } from "@novaclaw/core/util/path"
 import { type Accessor, batch, createMemo, getOwner, onCleanup, onMount, untrack } from "solid-js"
@@ -39,6 +39,7 @@ import type { ServerScope } from "@/utils/server-scope"
 import { persisted } from "@/utils/persist"
 import { toggleMcp } from "./global-sync/mcp"
 import { createServerSession } from "./server-session"
+import { createNativeMessageStore } from "./global-sync/message-v2-store"
 
 type GlobalStore = {
   ready: boolean
@@ -188,6 +189,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
   })
 
   const session = createServerSession(serverSDK.client)
+  const nativeMessages = createNativeMessageStore(serverSDK.client)
 
   const children = createChildStoreManager({
     owner,
@@ -354,6 +356,13 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
 
     session.apply(event)
 
+    // F1e (strategy B, parallel): also fold the raw session.next.* events into the native store.
+    // The bridge emits them non-sync alongside the v1 translation, so they already arrive here;
+    // adapt the bus envelope { type, properties } -> the fold's { type, data }. The store ignores
+    // non-session.next.* events. Nothing renders from it yet — the V1 path above stays authoritative.
+    const rawEvent = event as { type: string; properties?: unknown }
+    nativeMessages.apply({ type: rawEvent.type, data: rawEvent.properties } as unknown as V2Event)
+
     // B14: a home-app manifest was registered (agent tool -> EventV2 bridge, or POST /app ->
     // GlobalBus) — refetch the persisted list regardless of which directory the event rode in on.
     // (The event union in the generated SDK predates app.registered — hence the cast.)
@@ -465,6 +474,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     updateConfig: updateConfigMutation.mutateAsync,
     project: projectApi,
     session,
+    nativeMessages,
     mcp: {
       toggle: async (directory: string, name: string) => {
         const key = directoryKey(directory)
