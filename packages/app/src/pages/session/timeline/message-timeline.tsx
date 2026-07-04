@@ -69,6 +69,7 @@ import { useTabs } from "@/context/tabs"
 import { legacySessionHref, requireServerKey, sessionHref } from "@/utils/session-route"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
+import { useServerSync } from "@/context/server-sync"
 import { notifySessionTabsRemoved } from "@/components/titlebar-session-events"
 import { sessionTitle } from "@/utils/session-title"
 import { scheduleConnectedMeasure } from "./measure"
@@ -261,6 +262,7 @@ export function MessageTimeline(props: {
   const serverSDK = useServerSDK()
   const sdk = useSDK()
   const sync = useSync()
+  const serverSync = useServerSync()
   const settings = useSettings()
   const tabs = useTabs()
   const dialog = useDialog()
@@ -274,6 +276,14 @@ export function MessageTimeline(props: {
 
   const [listRoot, setListRoot] = createSignal<HTMLDivElement>()
   const sessionID = createMemo(() => params.id)
+
+  // F1e S4-v2: bootstrap the parallel native-V2 store for the opened session (fetch + idempotent
+  // merge). Runs ALONGSIDE the V1 store — nothing renders from it yet (S4-v3 flips the render); this
+  // just populates history so the native transcript is complete when the flip lands.
+  createEffect(() => {
+    const sid = sessionID()
+    if (sid) void serverSync().nativeMessages.load(sid)
+  })
   const sessionStatus = createMemo(() => {
     const id = sessionID()
     if (!id) return idle
@@ -797,6 +807,7 @@ export function MessageTimeline(props: {
           }),
         )
         sync().session.evict(sessionID)
+        serverSync().nativeMessages.evict(sessionID)
         navigateAfterSessionRemoval(sessionID, session.parentID, nextSession?.id)
         notifySessionTabsRemoved({ directory: sdk().directory, sessionIDs: [sessionID] })
       })
@@ -867,6 +878,7 @@ export function MessageTimeline(props: {
 
     for (const id of removed) {
       sync().session.evict(id)
+      serverSync().nativeMessages.evict(id)
     }
     notifySessionTabsRemoved({ directory: sdk().directory, sessionIDs: [...removed] })
     return true
