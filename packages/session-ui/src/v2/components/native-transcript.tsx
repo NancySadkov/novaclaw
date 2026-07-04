@@ -115,6 +115,13 @@ function AssistantMessage(props: { message: SessionMessageAssistant }) {
         (c.type === "reasoning" && c.text.trim().length > 0) ||
         c.type === "tool",
     )
+  // The assistant's prose (text parts only — reasoning/tool output isn't "the answer").
+  const copyableText = () =>
+    props.message.content
+      .filter((c): c is Extract<typeof c, { type: "text" }> => c.type === "text")
+      .map((c) => c.text)
+      .join("\n")
+      .trim()
   return (
     <div data-slot="native-assistant">
       <For each={props.message.content}>
@@ -169,6 +176,18 @@ function AssistantMessage(props: { message: SessionMessageAssistant }) {
             </div>
           </Show>
         )}
+      </Show>
+      <Show when={props.message.time.completed && copyableText()}>
+        <div data-slot="native-msg-actions">
+          <button
+            type="button"
+            data-slot="native-copy"
+            aria-label="Copy message"
+            onClick={() => void navigator.clipboard?.writeText(copyableText())}
+          >
+            Copy
+          </button>
+        </div>
       </Show>
     </div>
   )
