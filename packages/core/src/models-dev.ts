@@ -135,10 +135,14 @@ export const layer = Layer.effect(
       ),
     )
 
-    const source = Flag.NOVACLAW_MODELS_URL || "https://models.dev"
+    // Local-first (AGENTS.md: no data egress, no paid-API "provider zoo"): there is NO default
+    // catalog source. models.dev loads only when the user opts in with an explicit NOVACLAW_MODELS_URL
+    // (an advanced/cloud Device); otherwise the catalog is empty and providers come from the user's
+    // config (local endpoints).
+    const source = Flag.NOVACLAW_MODELS_URL
     const filepath = path.join(
       Global.Path.cache,
-      source === "https://models.dev" ? "models.json" : `models-${Hash.fast(source)}.json`,
+      !source || source === "https://models.dev" ? "models.json" : `models-${Hash.fast(source)}.json`,
     )
     const ttl = Duration.minutes(5)
     const lockKey = `models-dev:${filepath}`
@@ -193,6 +197,14 @@ export const layer = Layer.effect(
     })
 
     const populate = Effect.gen(function* () {
+      // An explicit local fixture path (tests / offline snapshot) always wins.
+      if (Flag.NOVACLAW_MODELS_PATH) {
+        const fixture = yield* loadFromDisk
+        return fixture ?? {}
+      }
+      // Local-first default: with no catalog source configured, ship an empty catalog — no fetch,
+      // and no read of any stale models.dev cache. Set NOVACLAW_MODELS_URL to opt in.
+      if (!source) return {}
       const fromDisk = yield* loadFromDisk
       if (fromDisk) return fromDisk
       const snapshot = yield* loadSnapshot
@@ -213,6 +225,7 @@ export const layer = Layer.effect(
     const get = (): Effect.Effect<Record<string, Provider>> => cachedGet
 
     const refresh = Effect.fn("ModelsDev.refresh")(function* (force = false) {
+      if (!source) return // local-first default: no catalog source → nothing to fetch
       if (!force && (yield* fresh())) return
       yield* Effect.scoped(
         Effect.gen(function* () {
@@ -230,7 +243,7 @@ export const layer = Layer.effect(
       )
     })
 
-    if (!Flag.NOVACLAW_DISABLE_MODELS_FETCH && !process.argv.includes("--get-yargs-completions")) {
+    if (source && !Flag.NOVACLAW_DISABLE_MODELS_FETCH && !process.argv.includes("--get-yargs-completions")) {
       // Schedule.spaced runs the effect once, then waits between completions.
       yield* Effect.forkScoped(refresh().pipe(Effect.repeat(Schedule.spaced("60 minutes")), Effect.ignore))
     }

@@ -18,13 +18,18 @@ import path from "path"
 // bun process.
 const ORIGINAL_MODELS_PATH = Flag.NOVACLAW_MODELS_PATH
 const ORIGINAL_DISABLE_FETCH = Flag.NOVACLAW_DISABLE_MODELS_FETCH
+const ORIGINAL_MODELS_URL = Flag.NOVACLAW_MODELS_URL
 beforeAll(() => {
   Flag.NOVACLAW_MODELS_PATH = undefined
   Flag.NOVACLAW_DISABLE_MODELS_FETCH = true
+  // These tests drive the models.dev cache/fetch path, so give them an explicit source. The
+  // local-first default is now an empty catalog with NO source configured — covered by its own test.
+  Flag.NOVACLAW_MODELS_URL = "https://models.dev"
 })
 afterAll(() => {
   Flag.NOVACLAW_MODELS_PATH = ORIGINAL_MODELS_PATH
   Flag.NOVACLAW_DISABLE_MODELS_FETCH = ORIGINAL_DISABLE_FETCH
+  Flag.NOVACLAW_MODELS_URL = ORIGINAL_MODELS_URL
 })
 
 const cacheFile = path.join(Global.Path.cache, "models.json")
@@ -147,6 +152,34 @@ describe("ModelsDev Service", () => {
       const result = yield* provided(
         state,
         ModelsDev.Service.use((s) => s.get()),
+      )
+      expect(result).toEqual({})
+      const final = yield* Ref.get(state)
+      expect(final.calls).toEqual([])
+    }),
+  )
+
+  it.live("get() ships an empty catalog with no fetch when no source is configured (local-first default)", () =>
+    Effect.gen(function* () {
+      // Even with a stale cache on disk AND fetch enabled, no NOVACLAW_MODELS_URL means no catalog
+      // and no network — the models.dev "provider zoo" is opt-in only.
+      yield* writeCache(fixture)
+      const state = yield* Ref.make(initialState)
+      const result = yield* Effect.acquireUseRelease(
+        Effect.sync(() => {
+          Flag.NOVACLAW_MODELS_URL = undefined
+          Flag.NOVACLAW_DISABLE_MODELS_FETCH = false
+        }),
+        () =>
+          provided(
+            state,
+            ModelsDev.Service.use((s) => s.get()),
+          ),
+        () =>
+          Effect.sync(() => {
+            Flag.NOVACLAW_MODELS_URL = "https://models.dev"
+            Flag.NOVACLAW_DISABLE_MODELS_FETCH = true
+          }),
       )
       expect(result).toEqual({})
       const final = yield* Ref.get(state)
