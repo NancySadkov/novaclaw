@@ -62,6 +62,8 @@ type State = {
   builtin: Tool.Def[]
   task: TaskDef
   read: ReadDef
+  /** How many of `custom` came from plugin `tool:` maps (not config-dir files). */
+  pluginToolCount: number
 }
 
 export interface Interface {
@@ -69,12 +71,13 @@ export interface Interface {
   readonly all: () => Effect.Effect<Tool.Def[]>
   readonly named: () => Effect.Effect<{ task: TaskDef; read: ReadDef }>
   /**
-   * F0: does this instance contribute CUSTOM tools (config-dir {tool,tools}/*.{js,ts}
-   * files or plugin `tool:` maps)? Those only exist on the V1 path — the promptAsync
-   * V2 reroute falls back to legacy when true, so custom-tool users never silently
-   * lose their tools to the V2 default.
+   * F1a: does this instance contribute plugin `tool:` map tools (from loaded
+   * `@novaclaw/plugin` plugins)? Config-dir {tool,tools}/*.{js,ts} tools now run on
+   * the V2 engine (the `ExternalToolSource` aggregator, SLICE 1), so ONLY plugin-map
+   * tools still force the promptAsync reroute onto legacy — their V2 bridge is not
+   * built yet, and a plugin-tool user must not silently lose them to the V2 default.
    */
-  readonly hasCustom: () => Effect.Effect<boolean>
+  readonly hasPluginTools: () => Effect.Effect<boolean>
   readonly tools: (model: {
     providerID: ProviderV2.ID
     modelID: ModelV2.ID
@@ -183,10 +186,12 @@ export const layer = Layer.effect(
           }
         }
 
+        let pluginToolCount = 0
         const plugins = yield* plugin.list()
         for (const p of plugins) {
           for (const [id, def] of Object.entries(p.tool ?? {})) {
             custom.push(fromPlugin(id, def))
+            pluginToolCount++
           }
         }
 
@@ -232,6 +237,7 @@ export const layer = Layer.effect(
           ],
           task: tool.task,
           read: tool.read,
+          pluginToolCount,
         }
       }),
     )
@@ -307,12 +313,12 @@ export const layer = Layer.effect(
       return { task: s.task, read: s.read }
     })
 
-    const hasCustom: Interface["hasCustom"] = Effect.fn("ToolRegistry.hasCustom")(function* () {
+    const hasPluginTools: Interface["hasPluginTools"] = Effect.fn("ToolRegistry.hasPluginTools")(function* () {
       const s = yield* InstanceState.get(state)
-      return s.custom.length > 0
+      return s.pluginToolCount > 0
     })
 
-    return Service.of({ ids, all, named, hasCustom, tools })
+    return Service.of({ ids, all, named, hasPluginTools, tools })
   }),
 )
 

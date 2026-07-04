@@ -411,23 +411,23 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       // payload model, else the session's own model. Without one the V2 runner
       // throws ModelNotSelectedError, so a model-less turn FALLS THROUGH to legacy.
       const hasModel = ctx.payload.model !== undefined || current.model !== undefined
-      // F0: custom tools (config-dir {tool,tools}/*.{js,ts} + plugin `tool:` maps)
-      // exist only on the V1 path — when this instance contributes any, stay on
-      // legacy so those tools never silently vanish (V2 plugin-tool parity is a
-      // documented F0 gap). A failing custom-tool load also stays legacy: that is
+      // F1a: config-dir {tool,tools}/*.{js,ts} custom tools now run on V2 (the
+      // ExternalToolSource aggregator, SLICE 1). Only plugin `tool:` map tools still
+      // lack a V2 bridge — when this instance contributes any, stay on legacy so they
+      // never silently vanish. A failing plugin-tool load also stays legacy: that is
       // exactly the pre-flip behavior, and the V1 path will surface the error.
-      const customTools =
+      const pluginTools =
         flags.experimentalNativeSession && hasModel
-          ? yield* toolRegistry.hasCustom().pipe(Effect.catchCause(() => Effect.succeed(true)))
+          ? yield* toolRegistry.hasPluginTools().pipe(Effect.catchCause(() => Effect.succeed(true)))
           : false
-      if (customTools && flags.experimentalNativeSession)
-        yield* Effect.logInfo("promptAsync: custom/plugin tools present — session stays on the legacy engine", {
+      if (pluginTools && flags.experimentalNativeSession)
+        yield* Effect.logInfo("promptAsync: plugin tools present — session stays on the legacy engine", {
           sessionID: ctx.params.sessionID,
         })
       const useV2 =
         flags.experimentalNativeSession &&
         hasModel &&
-        !customTools &&
+        !pluginTools &&
         (yield* v2Eligible(ctx.params.sessionID).pipe(Effect.orDie))
 
       if (!useV2) {

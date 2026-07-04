@@ -8,6 +8,7 @@ import { Effect, Layer } from "effect"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { Config } from "@novaclaw/core/config"
 import { Location } from "@novaclaw/core/location"
+import { Project } from "@novaclaw/core/project"
 import { PermissionV2 } from "@novaclaw/core/permission"
 import { ExternalToolSource } from "@novaclaw/core/tool/external-tool-source"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
@@ -44,7 +45,10 @@ describe("AggregateExternalToolSource — config-dir custom tools (F1a SLICE 1)"
       Config.Service,
       Config.Service.of({ entries: () => Effect.succeed([new Config.Directory({ type: "directory", path: root })]) }),
     )
-    const locationMock = Layer.mock(Location.Service, { directory: root })
+    const locationMock = Layer.mock(Location.Service, {
+      directory: root,
+      project: { id: Project.ID.make("prj_slice1"), directory: root },
+    })
     const permissionMock = Layer.mock(PermissionV2.Service, { assert: () => Effect.void })
     const base = Layer.mergeAll(configMock, locationMock, permissionMock)
 
