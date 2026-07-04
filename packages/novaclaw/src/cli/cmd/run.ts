@@ -1,18 +1,17 @@
 import type { PermissionV1 } from "@novaclaw/core/v1/permission"
 import { FSUtil } from "@novaclaw/core/fs-util"
-// CLI entry point for `novaclaw run` and `novaclaw --mini`.
+// CLI entry point for `novaclaw run` — the headless, non-interactive runner.
 //
-// Handles three modes:
-//   1. Non-interactive (default): sends a single prompt, streams events to
-//      stdout, and exits when the session goes idle.
-//   2. Interactive local (`novaclaw --mini`): boots the split-footer direct mode
-//      with an in-process server (no external HTTP).
-//   3. Interactive attach (`novaclaw --mini --attach`): connects to a running
-//      novaclaw server and runs interactive mode against it.
+// Sends a single prompt, streams the session's events to stdout, and exits when
+// the session goes idle. The prompt is delivered via the async `promptAsync`
+// endpoint (the V2/V1 router), so the process blocks on the idle event from the
+// event stream rather than on a synchronous response body. With `--attach` it
+// drives a running novaclaw server; otherwise it runs an in-process one.
 //
-// Also supports `--command` for slash-command execution, `--format json` for
-// raw event streaming, `--continue` / `--session` for session resumption,
-// and `--fork` for forking before continuing.
+// Also supports `--command` for slash-command execution (still the blocking
+// legacy endpoint — there is no async variant), `--format json` for raw event
+// streaming, `--continue` / `--session` for session resumption, and `--fork`
+// for forking before continuing.
 import type { Argv } from "yargs"
 import path from "path"
 import { pathToFileURL } from "url"
@@ -705,8 +704,14 @@ export const RunCommand = effectCmd({
           console.error(e)
           process.exitCode = 1
         })
+        // Wait for the turn to finish: the async prompt/command endpoints return
+        // before the turn runs, so completion is the `session.status idle` event
+        // that `loop()` breaks on (`completed`). This holds for both local and
+        // --attach runs — previously the blocking `prompt` call was itself the
+        // wait, so attach could skip it; with `promptAsync` the idle event is the
+        // only completion signal, so we must always await it or the process
+        // exits before the (possibly remote) turn has run.
         async function finish() {
-          if (args.attach) return
           const error = await completed
           if (error) process.exitCode = 1
         }
@@ -730,7 +735,14 @@ export const RunCommand = effectCmd({
         }
 
         const model = pick(args.model)
-        const result = await client.session.prompt({
+        // Deliver via the async endpoint (the V2/V1 router). It returns 204
+        // immediately; the turn's completion is signalled by the `session.status
+        // idle` event that `loop()` breaks on, and turn-level failures arrive as
+        // `session.error` events. `result.error` here carries only request-level
+        // (e.g. 400/404) failures. The blocking `session.prompt` endpoint is
+        // legacy-only and 400s on native V2 sessions, so the headless runner must
+        // use `promptAsync` to reach the V2 engine.
+        const result = await client.session.promptAsync({
           sessionID,
           agent,
           model,
