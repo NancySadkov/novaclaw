@@ -1,7 +1,8 @@
 import { Popover as Kobalte } from "@kobalte/core/popover"
-import { Component, ComponentProps, createMemo, JSX, Show, ValidComponent } from "solid-js"
+import { type Accessor, Component, ComponentProps, createMemo, JSX, Show, ValidComponent } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLocal } from "@/context/local"
+import { useServer, type ServerConnection } from "@/context/server"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { popularProviders } from "@/hooks/use-providers"
 import { Button } from "@novaclaw/ui/button"
@@ -18,6 +19,28 @@ const isFree = (provider: string, cost: { input: number } | undefined) =>
   provider === "novaclaw" && (!cost || cost.input === 0)
 
 type ModelState = ReturnType<typeof useLocal>["model"]
+
+// The model-picker "+" opens the local-first add-model flow: paste an OpenAI-compatible endpoint and
+// NovaClaw probes it (server-side GET /models) to discover the served models to pick from. Cloud
+// providers are no longer offered here — they live in Settings → Providers, an explicit Advanced path,
+// per the local-first vision. Falls back to the provider directory only when there is no live server
+// to probe against.
+function openAddModel(
+  dialog: ReturnType<typeof useDialog>,
+  http: ServerConnection.HttpBase | undefined,
+  directory: Accessor<string | undefined>,
+) {
+  const dir = directory()
+  if (http && dir) {
+    void import("./settings-v2/dialog-new-model").then((x) => {
+      dialog.show(() => <x.DialogNewModel http={http} directory={dir} />)
+    })
+    return
+  }
+  void import("./dialog-select-provider").then((x) => {
+    dialog.show(() => <x.DialogSelectProvider directory={directory} />)
+  })
+}
 
 const ModelList: Component<{
   provider?: string
@@ -107,6 +130,7 @@ export function ModelSelectorPopover(props: {
   })
   const dialog = useDialog()
   const local = useLocal()
+  const server = useServer()
   const directory = () => decode64(local.slug())
 
   const close = (dismiss: Dismiss) => {
@@ -123,9 +147,7 @@ export function ModelSelectorPopover(props: {
 
   const handleConnectProvider = () => {
     close("provider")
-    void import("./dialog-select-provider").then((x) => {
-      dialog.show(() => <x.DialogSelectProvider directory={directory} />)
-    })
+    openAddModel(dialog, server.current?.http, directory)
   }
   const language = useLanguage()
 
@@ -204,12 +226,11 @@ export const DialogSelectModel: Component<{ provider?: string; model?: ModelStat
   const dialog = useDialog()
   const language = useLanguage()
   const local = useLocal()
+  const server = useServer()
   const directory = () => decode64(local.slug())
 
   const provider = () => {
-    void import("./dialog-select-provider").then((x) => {
-      dialog.show(() => <x.DialogSelectProvider directory={directory} />)
-    })
+    openAddModel(dialog, server.current?.http, directory)
   }
 
   const manage = () => {
