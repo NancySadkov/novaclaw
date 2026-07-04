@@ -329,3 +329,39 @@ export function applySessionNextEvent(messages: SessionMessage[], event: V2Event
       break
   }
 }
+
+// ── Merging fetched history pages into the live store ──────────────────────────
+
+function isInFlightAssistant(message: SessionMessage): boolean {
+  return message.type === "assistant" && !message.time.completed
+}
+
+/** Oldest-first order, matching `server-session.ts` `cmpMessage` (time.created asc, then id asc). */
+function compareOldestFirst(a: SessionMessage, b: SessionMessage): number {
+  return a.time.created - b.time.created || (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+}
+
+/**
+ * Merge a fetched native history page into the current live-folded list (both
+ * oldest-first), returning a new sorted array. Used to bootstrap, page older history,
+ * and reconcile after a reconnect — `applySessionNextEvent` handles the live stream
+ * between merges.
+ *
+ * Rule: the fetched page is authoritative for the settled messages it contains, but a
+ * `current` entry is kept when it is (a) the live **in-flight assistant** — its streamed
+ * content is ahead of the last-persisted fetched copy, so fetched would clobber live
+ * deltas — or (b) absent from the page (an in-flight tail the snapshot predates, or an
+ * older page not re-fetched). Result is sorted oldest-first.
+ *
+ * Known limitation (deferred to the render-cutover slice): a full refresh does not drop
+ * a message the server deleted that `current` still holds — server-side removals arrive
+ * as `revert.*` events folded separately, so this is safe for the parallel store.
+ */
+export function mergeNativeMessages(current: SessionMessage[], fetched: SessionMessage[]): SessionMessage[] {
+  const byId = new Map<string, SessionMessage>()
+  for (const message of fetched) byId.set(message.id, message)
+  for (const message of current) {
+    if (!byId.has(message.id) || isInFlightAssistant(message)) byId.set(message.id, message)
+  }
+  return [...byId.values()].sort(compareOldestFirst)
+}

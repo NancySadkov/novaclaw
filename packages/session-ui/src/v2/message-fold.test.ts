@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { SessionMessage, V2Event } from "@novaclaw/sdk/v2"
-import { activeAssistant, appendMessage, applySessionNextEvent, findAssistant } from "./message-fold"
+import { activeAssistant, appendMessage, applySessionNextEvent, findAssistant, mergeNativeMessages } from "./message-fold"
 
 // The raw event bus delivers `{ type, properties }`; the fold consumes the typed
 // `{ type, data }` shape (as the deleted TUI adapter did). These fixtures build the
@@ -19,6 +19,18 @@ const prompted = (sessionID: string, messageID: string, text: string, ts = 1) =>
   ev("session.next.prompted", { timestamp: ts, sessionID, messageID, prompt: { text, files: [], agents: [] } })
 const stepStarted = (sessionID: string, assistantMessageID: string, ts = 2) =>
   ev("session.next.step.started", { timestamp: ts, sessionID, assistantMessageID, agent: "build", model: MODEL })
+
+const userMsg = (id: string, created: number, text = "hi") =>
+  ({ id, type: "user", text, time: { created } }) as SessionMessage
+const assistantMsg = (id: string, created: number, opts?: { completed?: number; text?: string }) =>
+  ({
+    id,
+    type: "assistant",
+    agent: "build",
+    model: MODEL,
+    content: opts?.text !== undefined ? [{ type: "text", id: `${id}-t`, text: opts.text }] : [],
+    time: { created, completed: opts?.completed },
+  }) as SessionMessage
 
 describe("appendMessage", () => {
   test("appends oldest-first and dedups by id", () => {
@@ -277,5 +289,41 @@ describe("applySessionNextEvent", () => {
       ev("session.status", { sessionID: "s", status: { type: "idle" } }),
     )
     expect(messages).toHaveLength(0)
+  })
+})
+
+describe("mergeNativeMessages", () => {
+  test("bootstrap: sorts a fetched page oldest-first", () => {
+    const result = mergeNativeMessages([], [userMsg("msg_2", 2), userMsg("msg_1", 1)])
+    expect(result.map((m) => m.id)).toEqual(["msg_1", "msg_2"])
+  })
+
+  test("loadMore: unions an older page ahead of the current tail", () => {
+    const current = [assistantMsg("msg_9", 9, { completed: 9 })]
+    const older = [userMsg("msg_1", 1), assistantMsg("msg_2", 2, { completed: 2 })]
+    expect(mergeNativeMessages(current, older).map((m) => m.id)).toEqual(["msg_1", "msg_2", "msg_9"])
+  })
+
+  test("settled conflict: the fetched copy wins", () => {
+    const current = [assistantMsg("msg_a", 1, { completed: 1, text: "stale" })]
+    const fetched = [assistantMsg("msg_a", 1, { completed: 1, text: "fresh" })]
+    const merged = mergeNativeMessages(current, fetched)
+    expect(merged).toHaveLength(1)
+    const a = merged[0]!
+    if (a.type === "assistant" && a.content[0]?.type === "text") expect(a.content[0].text).toBe("fresh")
+  })
+
+  test("in-flight assistant: the current copy wins (live deltas preserved over a lagging fetch)", () => {
+    const current = [assistantMsg("msg_a", 1, { text: "Hello (live)" })] // no completed → in-flight
+    const fetched = [assistantMsg("msg_a", 1, { text: "" })] // persisted copy lags, still in-flight
+    const merged = mergeNativeMessages(current, fetched)
+    const a = merged[0]!
+    if (a.type === "assistant" && a.content[0]?.type === "text") expect(a.content[0].text).toBe("Hello (live)")
+  })
+
+  test("current-only in-flight tail is preserved when the fetch page omits it", () => {
+    const current = [userMsg("msg_1", 1), assistantMsg("msg_2", 2)] // assistant streaming, not yet persisted
+    const fetched = [userMsg("msg_1", 1)] // snapshot predates the assistant
+    expect(mergeNativeMessages(current, fetched).map((m) => m.id)).toEqual(["msg_1", "msg_2"])
   })
 })
