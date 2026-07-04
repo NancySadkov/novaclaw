@@ -123,13 +123,45 @@ function AssistantMessage(props: { message: SessionMessageAssistant }) {
           </Switch>
         )}
       </For>
+      <Show when={props.message.snapshot?.files?.length}>
+        <ChangedFilesStrip files={props.message.snapshot!.files!} />
+      </Show>
       <Show when={props.message.error}>
         {(err) => (
-          <div data-slot="native-error" role="alert">
-            {err().message}
-          </div>
+          <Show
+            when={!isInterrupted(err().message)}
+            fallback={
+              <div data-slot="native-interrupted-divider">
+                <span>Interrupted</span>
+              </div>
+            }
+          >
+            <div data-slot="native-error" role="alert">
+              {err().message}
+            </div>
+          </Show>
         )}
       </Show>
+    </div>
+  )
+}
+
+/** Turn-level summary of the files this assistant step touched (`snapshot.files`). */
+function ChangedFilesStrip(props: { files: readonly string[] }) {
+  return (
+    <div data-slot="native-changed-files">
+      <div data-slot="native-changed-files-head">
+        {props.files.length} file{props.files.length > 1 ? "s" : ""} changed
+      </div>
+      <div data-slot="native-changed-files-list">
+        <For each={props.files as string[]}>
+          {(file) => (
+            <span data-slot="native-changed-file" title={file}>
+              {file}
+            </span>
+          )}
+        </For>
+      </div>
     </div>
   )
 }
@@ -410,6 +442,16 @@ function questionSubtitle(count: number, answered: boolean): string | undefined 
   if (count === 0) return undefined
   if (answered) return "Answered"
   return `${count} question${count > 1 ? "s" : ""}`
+}
+
+/**
+ * A turn that was aborted surfaces natively as a plain `{ type:"unknown" }` error whose
+ * message the runner sets to "Provider turn interrupted" / "Tool execution interrupted"
+ * (the native schema dropped V1's `MessageAbortedError` name), so match on that phrasing
+ * to show an "Interrupted" divider rather than a loud error box.
+ */
+function isInterrupted(message: string | undefined): boolean {
+  return typeof message === "string" && /interrupted/i.test(message)
 }
 
 /** The `{ file, patch, additions, deletions }[]` a file-mutating tool records in `structured`. */

@@ -195,6 +195,49 @@
   color: var(--v2-text-text-base);
 }
 
+/* turn-level changed-files strip */
+[data-slot="native-changed-files"] {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  margin-top: 0.25rem;
+  padding: 0.5rem 0.625rem;
+  border-radius: 0.5rem;
+  background: var(--v2-background-bg-layer-01);
+}
+[data-slot="native-changed-files-head"] {
+  color: var(--v2-text-text-faint);
+  font-size: var(--font-size-small);
+}
+[data-slot="native-changed-files-list"] {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+}
+[data-slot="native-changed-file"] {
+  font-family: var(--font-family-mono, monospace);
+  font-size: var(--font-size-small);
+  color: var(--v2-text-text-muted);
+}
+
+/* interrupted divider */
+[data-slot="native-interrupted-divider"] {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  text-align: center;
+  color: var(--v2-state-fg-danger);
+  font-size: var(--font-size-small);
+}
+[data-slot="native-interrupted-divider"]::before,
+[data-slot="native-interrupted-divider"]::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: color-mix(in oklab, var(--v2-state-fg-danger) 40%, transparent);
+}
+
 /* error */
 [data-slot="native-error"] {
   padding: 0.5rem 0.75rem;
