@@ -158,6 +158,31 @@
   font-weight: 500;
 }
 
+/* tool: question ask-card */
+[data-slot="native-question-answers"] {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+[data-slot="native-question-item"] {
+  display: flex;
+  flex-direction: column;
+  gap: 0.125rem;
+}
+[data-slot="native-question-text"] {
+  color: var(--v2-text-text-muted);
+  font-size: var(--font-size-small);
+}
+[data-slot="native-answer-text"] {
+  color: var(--v2-text-text-base);
+}
+[data-slot="native-question-dismissed"] {
+  display: flex;
+  justify-content: flex-end;
+  color: var(--v2-text-text-faint);
+  font-size: var(--font-size-small);
+}
+
 /* shell */
 [data-slot="native-shell"] {
   display: flex;

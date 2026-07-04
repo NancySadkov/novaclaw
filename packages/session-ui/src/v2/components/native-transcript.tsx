@@ -141,6 +141,9 @@ function ToolPart(props: { part: SessionMessageAssistantTool }) {
       <Match when={props.part.name === "todowrite"}>
         <TodoTool part={props.part} />
       </Match>
+      <Match when={props.part.name === "question"}>
+        <QuestionTool part={props.part} />
+      </Match>
       <Match when={props.part.state.status === "error" && props.part.state}>
         {(state) => (
           <ToolErrorCardV2
@@ -196,6 +199,54 @@ function TodoTool(props: { part: SessionMessageAssistantTool }) {
         </For>
       </ul>
     </BasicToolV2>
+  )
+}
+
+/**
+ * `question` → the ask-card. The interactive ask lives in a dialog (S6), so the
+ * transcript only shows the resolved outcome: the answered Q&A, or a subtle
+ * "dismissed" notice on rejection — pending/running asks are hidden (V1 parity).
+ */
+function QuestionTool(props: { part: SessionMessageAssistantTool }) {
+  const state = () => props.part.state
+  const questions = () => {
+    const raw = toolInput(state()).questions
+    return Array.isArray(raw) ? (raw as Array<{ question?: string }>) : []
+  }
+  const answers = () => {
+    const s = state()
+    if (s.status !== "completed") return []
+    const raw = (s.structured as { answers?: unknown }).answers
+    return Array.isArray(raw) ? (raw as string[][]) : []
+  }
+  const answered = () => answers().length > 0
+  const dismissed = () => state().status === "error" && /dismissed this question/i.test(toolErrorMessage(state()) ?? "")
+
+  return (
+    <Switch>
+      <Match when={dismissed()}>
+        <div data-slot="native-question-dismissed">Questions dismissed</div>
+      </Match>
+      <Match when={state().status !== "pending" && state().status !== "running"}>
+        <BasicToolV2
+          data-slot="native-tool"
+          status={state().status}
+          defaultOpen={answered()}
+          trigger={{ title: "Questions", subtitle: questionSubtitle(questions().length, answered()) }}
+        >
+          <div data-slot="native-question-answers">
+            <For each={questions()}>
+              {(q, i) => (
+                <div data-slot="native-question-item">
+                  <div data-slot="native-question-text">{q.question}</div>
+                  <div data-slot="native-answer-text">{(answers()[i()] ?? []).join(", ") || "No answer"}</div>
+                </div>
+              )}
+            </For>
+          </div>
+        </BasicToolV2>
+      </Match>
+    </Switch>
   )
 }
 
@@ -349,6 +400,16 @@ function toolMeta(part: SessionMessageAssistantTool): ToolMeta {
 
 function toolInput(state: SessionMessageAssistantTool["state"]): Record<string, unknown> {
   return state.status === "pending" ? {} : ((state.input ?? {}) as Record<string, unknown>)
+}
+
+function toolErrorMessage(state: SessionMessageAssistantTool["state"]): string | undefined {
+  return state.status === "error" ? state.error.message : undefined
+}
+
+function questionSubtitle(count: number, answered: boolean): string | undefined {
+  if (count === 0) return undefined
+  if (answered) return "Answered"
+  return `${count} question${count > 1 ? "s" : ""}`
 }
 
 /** The `{ file, patch, additions, deletions }[]` a file-mutating tool records in `structured`. */
