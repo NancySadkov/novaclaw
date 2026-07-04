@@ -13,7 +13,7 @@ import { useLanguage } from "@/context/language"
 import { getAvatarColors, type LocalProject, useLayout } from "@/context/layout"
 import { useNotification } from "@/context/notification"
 import { usePermission } from "@/context/permission"
-import { messageAgentColor } from "@/utils/agent"
+import { sessionAgentColor } from "@/utils/agent"
 import { sessionTitle } from "@/utils/session-title"
 import { sessionPermissionRequest } from "../session/composer/session-request-tree"
 import { childSessionOnPath, getProjectAvatarSource, hasProjectPermissions } from "./helpers"
@@ -168,9 +168,7 @@ export const SessionItem = (props: SessionItemProps): JSX.Element => {
     return serverSync().session.data.session_working(props.session.id)
   })
 
-  const tint = createMemo(() =>
-    messageAgentColor(serverSync().session.data.message[props.session.id], sessionStore.agent),
-  )
+  const tint = createMemo(() => sessionAgentColor(props.session.agent, sessionStore.agent))
   const tooltip = createMemo(() => props.showTooltip ?? (props.mobile || !props.sidebarExpanded()))
   const currentChild = createMemo(() => {
     if (!props.showChild) return

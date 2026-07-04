@@ -29,6 +29,7 @@ import {
 import { useLayout } from "@/context/layout"
 import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
+import { useServerSync } from "@/context/server-sync"
 import { useComments } from "@/context/comments"
 import { Button } from "@novaclaw/ui/button"
 import { DockShellForm, DockTray } from "@novaclaw/ui/dock-surface"
@@ -206,6 +207,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const sdk = useSDK()
 
   const sync = useSync()
+  const serverSync = useServerSync()
   const files = useFile()
   const prompt = props.state ?? usePrompt()
   const layout = useLayout()
@@ -398,9 +400,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const hasUserPrompt = createMemo(() => {
     const sessionID = props.controls.session.id
     if (!sessionID) return false
-    const messages = sync().data.message[sessionID]
+    const messages = serverSync().nativeMessages.messages(sessionID)
     if (!messages) return false
-    return messages.some((m) => m.role === "user")
+    return messages.some((m) => m.type === "user")
   })
 
   const history = props.history ?? createPersistedPromptInputHistory()

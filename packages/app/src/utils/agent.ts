@@ -31,14 +31,15 @@ export function agentColor(name: string, custom?: string) {
   return defaults[name] ?? defaults[name.toLowerCase()] ?? tone(name.toLowerCase())
 }
 
-export function messageAgentColor(
-  list: readonly { role: string; agent?: string }[] | undefined,
+/**
+ * The tint color for a session's agent. Replaces the V1 `messageAgentColor` (which walked
+ * the message list for the last user message's `agent` field) — native user messages don't
+ * carry `agent`, so derive the color from the session's current agent directly (F1e S5).
+ */
+export function sessionAgentColor(
+  agent: string | undefined,
   agents: readonly { name: string; color?: string }[],
 ) {
-  if (!list) return undefined
-  for (let i = list.length - 1; i >= 0; i--) {
-    const item = list[i]
-    if (item.role !== "user" || !item.agent) continue
-    return agentColor(item.agent, agents.find((agent) => agent.name === item.agent)?.color)
-  }
+  if (!agent) return undefined
+  return agentColor(agent, agents.find((a) => a.name === agent)?.color)
 }

@@ -22,7 +22,7 @@ import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
 import { focusTerminalById } from "@/pages/session/helpers"
 import { useSessionLayout } from "@/pages/session/session-layout"
-import { messageAgentColor } from "@/utils/agent"
+import { sessionAgentColor } from "@/utils/agent"
 import { decode64 } from "@/utils/base64"
 import { Persist, persisted } from "@/utils/persist"
 import { StatusPopover, StatusPopoverV2 } from "../status-popover"
@@ -234,7 +234,7 @@ export function SessionHeader() {
   )
   const opening = createMemo(() => openRequest.app !== undefined)
   const tint = createMemo(() =>
-    messageAgentColor(params.id ? sync().data.message[params.id] : undefined, sync().data.agent),
+    sessionAgentColor(params.id ? sync().session.get(params.id)?.agent : undefined, sync().data.agent),
   )
   const v2ActionsState = createMemo<SessionHeaderV2ActionsState>(() => ({
     statusVisible: status(),
