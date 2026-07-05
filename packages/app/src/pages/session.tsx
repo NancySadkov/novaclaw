@@ -281,11 +281,19 @@ export default function Page() {
 
   createEffect(
     on(
-      () => lastUserMessage()?.id,
+      () => info()?.model?.id,
       () => {
-        const msg = lastUserMessage()
-        if (!msg) return
-        syncSessionModel(local, msg)
+        const session = info()
+        if (!session?.agent || !session.model) return
+        syncSessionModel(local, {
+          sessionID: session.id,
+          agent: session.agent,
+          model: {
+            providerID: session.model.providerID,
+            modelID: session.model.id,
+            variant: session.model.variant,
+          },
+        })
       },
     ),
   )
@@ -354,7 +362,9 @@ export default function Page() {
     return open
   }, desktopReviewOpen())
 
-  const turnDiffs = createMemo(() => list(lastUserMessage()?.summary?.diffs))
+  // Native: the session-changes review reads the session record's summary diffs
+  // (`info().summary.diffs`), not a per-user-message summary (native user messages carry none).
+  const turnDiffs = createMemo(() => list(info()?.summary?.diffs))
   const nogit = createMemo(() => {
     const project = sync().project
     return !!project && project.vcs !== "git"

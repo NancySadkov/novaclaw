@@ -1,19 +1,14 @@
 import { describe, expect, test } from "bun:test"
-import type { UserMessage } from "@novaclaw/sdk/v2"
-import { resetSessionModel, syncSessionModel } from "./session-model-helpers"
+import { resetSessionModel, syncSessionModel, type SessionModelSeed } from "./session-model-helpers"
 
-const message = (input?: { agent?: string; model?: UserMessage["model"] }) =>
-  ({
-    id: "msg",
-    sessionID: "session",
-    role: "user",
-    time: { created: 1 },
-    agent: input?.agent ?? "build",
-    model: input?.model ?? { providerID: "anthropic", modelID: "claude-sonnet-4" },
-  }) as UserMessage
+const seed = (input?: Partial<SessionModelSeed>): SessionModelSeed => ({
+  sessionID: input?.sessionID ?? "session",
+  agent: input?.agent ?? "build",
+  model: input?.model ?? { providerID: "anthropic", modelID: "claude-sonnet-4" },
+})
 
 describe("syncSessionModel", () => {
-  test("restores the last message through session state", () => {
+  test("forwards the session model/agent seed to restore", () => {
     const calls: unknown[] = []
 
     syncSessionModel(
@@ -25,12 +20,10 @@ describe("syncSessionModel", () => {
           reset() {},
         },
       },
-      message({ model: { providerID: "anthropic", modelID: "claude-sonnet-4", variant: "high" } }),
+      seed({ model: { providerID: "anthropic", modelID: "claude-sonnet-4", variant: "high" } }),
     )
 
-    expect(calls).toEqual([
-      message({ model: { providerID: "anthropic", modelID: "claude-sonnet-4", variant: "high" } }),
-    ])
+    expect(calls).toEqual([seed({ model: { providerID: "anthropic", modelID: "claude-sonnet-4", variant: "high" } })])
   })
 })
 
