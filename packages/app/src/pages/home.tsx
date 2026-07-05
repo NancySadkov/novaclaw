@@ -1479,8 +1479,8 @@ function HomeSessionRow(props: {
               class="ml-auto shrink-0 flex items-center gap-1 rounded-[4px] bg-v2-background-bg-layer-01 px-1.5 py-0.5 text-[11px] leading-none text-v2-text-text-muted [font-weight:530]"
               title={`+${c().additions} −${c().deletions} · ${c().files} changed`}
             >
-              <span>+{c().additions}</span>
-              <span>−{c().deletions}</span>
+              <span class="text-v2-state-fg-success">+{c().additions}</span>
+              <span class="text-v2-state-fg-danger">−{c().deletions}</span>
             </span>
           )}
         </Show>
