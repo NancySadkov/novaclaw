@@ -141,7 +141,7 @@ export const dict = {
   "command.language.cycle": "Cycle language",
   "command.language.set": "Use language: {{language}}",
 
-  "command.session.new": "New chat",
+  "command.session.new": "New Agent",
   "command.file.open": "Open file",
   "command.tab.close": "Close tab",
   "command.context.addSelection": "Add selection to context",
