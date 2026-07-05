@@ -35,6 +35,26 @@ export function NativeTimeline(props: { sessionID: string }) {
     if (sid) void serverSync().nativeMessages.load(sid)
   })
 
+  // Self-heal missed live events: the SSE event stream can drop a turn's events when it
+  // reconnects during a heartbeat gap (an idle tab that then submits) — including the
+  // `step.started` that creates the assistant message, so the reply never renders live. When
+  // the session settles back to idle (turn complete), reconcile the native store from the
+  // server so the completed reply still renders without a manual reload. Idempotent — the
+  // history fetch + `mergeNativeMessages` dedups against what streamed in.
+  let prevWorking: { sid: string; working: boolean } | undefined
+  createEffect(() => {
+    const sid = props.sessionID
+    if (!sid) {
+      prevWorking = undefined
+      return
+    }
+    const working = serverSync().session.data.session_working(sid)
+    if (prevWorking?.sid === sid && prevWorking.working && !working) {
+      void serverSync().nativeMessages.load(sid).catch(() => {})
+    }
+    prevWorking = { sid, working }
+  })
+
   // A new turn changes the list length — the store array proxy is reference-stable on
   // push, so track `.length`, not the array. Stick synchronously; the ResizeObserver
   // below then re-sticks once the new/streamed content actually lays out.
