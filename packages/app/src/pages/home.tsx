@@ -588,14 +588,18 @@ export function NewHome() {
           class="min-h-0 min-w-0 flex-1 flex flex-col pt-6 lg:pt-12 relative"
           aria-label={language.t("sidebar.project.recentSessions")}
         >
-          <ChatEntry
-            onSubmit={startChat}
+          {/* Telegram-style: New chat pinned at the top of the list (no greeting "type to start"). */}
+          <ButtonV2
+            data-action="home-new-session"
+            variant="ghost-muted"
+            size="normal"
+            icon="edit"
             disabled={!newSessionProject()}
-            onAddProject={() => {
-              const conn = focusedServer()
-              if (conn) chooseProject(conn)
-            }}
-          />
+            class="w-full justify-start !h-11 px-3 [font-weight:530] rounded-[10px] bg-v2-background-bg-layer-01"
+            onClick={openNewSession}
+          >
+            {language.t("command.session.new")}
+          </ButtonV2>
           <HomeSessionSearch
             value={state.search}
             placeholder={searchPlaceholder()}
@@ -619,20 +623,6 @@ export function NewHome() {
             viewportRef={sessionHeaderOpacity.setViewport}
             onScroll={(event) => sessionHeaderOpacity.update(event.currentTarget.scrollTop)}
           >
-            <Show when={groups().length > 0 && newSessionProject()}>
-              <div class="pointer-events-none absolute top-3 right-3 z-20 flex">
-                <ButtonV2
-                  data-action="home-new-session"
-                  variant="ghost-muted"
-                  size="normal"
-                  icon="edit"
-                  class="pointer-events-auto h-7 px-2 [font-weight:530]"
-                  onClick={openNewSession}
-                >
-                  {language.t("command.session.new")}
-                </ButtonV2>
-              </div>
-            </Show>
             <Show
               when={!sessionLoad.isLoading}
               fallback={
