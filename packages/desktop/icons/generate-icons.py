@@ -3,26 +3,21 @@
 
 One command, one dependency (Pillow):  python packages/desktop/icons/generate-icons.py
 
-Source of truth is the shipped brand mark at packages/app/public/novaclaw-logo.png
-(transparent-background square PNG). It is upscaled once to a 1024 master, then every
-target — the PNG sizes, the multi-resolution Windows icon.ico, and the multi-resolution
-macOS icon.icns — is derived from that master. The same mark is written into all three
-channel folders (dev / prod / beta).
+Source of truth is logo-source-1024.png in this folder (the high-resolution NovaClaw
+brand mark, 1024x1024 transparent PNG). Every target — the PNG sizes, the multi-resolution
+Windows icon.ico, and the multi-resolution macOS icon.icns — is a crisp downscale from it.
+The same mark is written into all three channel folders (dev / prod / beta).
 
 electron-builder.config.ts consumes icon.ico (Windows app + installer), icon.icns
 (macOS), and the loose PNG sizes (Linux) out of resources/icons/<channel>.
 
-NOTE ON QUALITY: the source logo is low resolution (~186 px) with the wordmark baked in,
-so the 512/1024 renders are soft and the text stops being legible below ~96 px. Replacing
-this source with a high-resolution / text-free icon master (just the diamond mark) and
-re-running this script is the clean upgrade path.
+To change the icon: replace logo-source-1024.png with a new 1024x1024 mark and re-run.
 """
 from pathlib import Path
 from PIL import Image
 
-ROOT = Path(__file__).resolve().parents[3]          # …/novaclaw
-SRC = ROOT / "packages/app/public/novaclaw-logo.png"
 ICONS = Path(__file__).resolve().parent             # …/packages/desktop/icons
+SRC = ICONS / "logo-source-1024.png"
 CHANNELS = ["dev", "prod", "beta"]
 
 # filename -> square edge in px
@@ -72,7 +67,7 @@ def main() -> None:
         master.save(d / "icon.ico", format="ICO", sizes=[(s, s) for s in ICO_SIZES])
         master.save(d / "icon.icns", format="ICNS")           # Pillow embeds the standard set
         print(f"  {ch}: {len(PNG_TARGETS)} PNGs + icon.ico ({len(ICO_SIZES)} sizes) + icon.icns")
-    print(f"done — source {SRC.relative_to(ROOT)}")
+    print(f"done - source {SRC.name}")
 
 
 if __name__ == "__main__":

@@ -12,20 +12,21 @@ set derived from the NovaClaw brand mark:
 
 ## Regenerate
 
-Source of truth: the shipped brand mark at `packages/app/public/novaclaw-logo.png`. To rebuild
-every file in every channel from it (requires Python + Pillow — `pip install pillow`):
+Source of truth: `logo-source-1024.png` in this folder (the high-res NovaClaw mark, 1024×1024
+transparent PNG). To rebuild every file in every channel from it (requires Python + Pillow —
+`pip install pillow`):
 
 ```sh
 python packages/desktop/icons/generate-icons.py
 ```
 
-The script upscales the logo to a 1024 master and derives all sizes + the multi-res `.ico`/`.icns`
-from it. Change the logo (or point the script at a new source) and re-run — no other tooling.
+The script derives all sizes + the multi-res `.ico`/`.icns` as crisp downscales from the master.
+To change the icon, replace `logo-source-1024.png` with a new 1024×1024 mark and re-run — no
+other tooling.
 
-> **Quality note.** The current source logo is low-resolution (~186 px) with the wordmark baked
-> in, so the 512/1024 renders are soft and the text is illegible below ~96 px. The clean upgrade
-> is a high-resolution, text-free icon master (the diamond mark alone); drop it in as the source
-> and re-run the script.
+> **Note.** The mark has the "NovaClaw" wordmark baked in, so at the very small sizes (16–32 px)
+> the text isn't legible — the diamond silhouette still reads. A dedicated small-size glyph (the
+> claw/diamond alone) could be added later for the tiny sizes if wanted.
 
 ## Leftovers
 
