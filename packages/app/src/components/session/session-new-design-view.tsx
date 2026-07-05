@@ -16,7 +16,6 @@ export function NewSessionDesignView(props: { children: JSX.Element }) {
             draggable={false}
             class="mx-auto size-40 rounded-2xl select-none"
           />
-          <div class="mt-6 text-center text-[15px] font-medium text-v2-text-text-muted">How can I help you today?</div>
           <div class="mt-6">{props.children}</div>
         </div>
       </div>
