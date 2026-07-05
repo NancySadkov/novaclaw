@@ -216,6 +216,9 @@ function formatError(error: unknown, t: Translator): string {
 
 interface ErrorPageProps {
   error: unknown
+  /** When provided (root ErrorBoundary), a "Try again" button resets the boundary and re-renders in place —
+   *  recovering from a TRANSIENT fault without a full reload/restart. The "never breaks in your hands" promise. */
+  reset?: () => void
 }
 
 export const ErrorPage: Component<ErrorPageProps> = (props) => {
@@ -307,7 +310,12 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
           </Show>
         </div>
         <div class="flex flex-row items-center justify-center gap-3 flex-wrap max-w-64">
-          <Button size="large" onClick={platform.restart}>
+          <Show when={props.reset}>
+            <Button size="large" onClick={() => props.reset?.()}>
+              {language.t("error.page.action.retry")}
+            </Button>
+          </Show>
+          <Button size="large" variant={props.reset ? "ghost" : undefined} onClick={platform.restart}>
             {language.t("error.page.action.restart")}
           </Button>
           <Show when={platform.platform === "desktop" && platform.exportDebugLogs}>

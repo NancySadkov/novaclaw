@@ -616,6 +616,7 @@ export const dict = {
   "error.page.details.label": "Error Details",
   "error.page.details.show": "Show technical details",
   "error.page.details.hide": "Hide technical details",
+  "error.page.action.retry": "Try again",
   "error.page.action.restart": "Restart",
   "error.page.action.exportLogs": "Export Logs",
   "error.page.action.checking": "Checking...",

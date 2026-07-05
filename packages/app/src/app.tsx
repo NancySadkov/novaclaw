@@ -401,8 +401,8 @@ export function AppBaseProviders(props: ParentProps<{ locale?: Locale }>) {
         <LanguageProvider locale={props.locale}>
           <UiI18nBridge>
             <ErrorBoundary
-              fallback={(error) => {
-                return <ErrorPage error={error} />
+              fallback={(error, reset) => {
+                return <ErrorPage error={error} reset={reset} />
               }}
             >
               <QueryProvider>
