@@ -86,4 +86,41 @@ describe("toV2Prompt", () => {
     expect(out.agents).toEqual([{ name: "build" }])
     expect(decodePrompt(out)).toBeDefined()
   })
+
+  // F1e S5: the composer's inline @-mention span must survive the wire so the native
+  // user message stays faithful (fork/undo/command reconstruct the Prompt from it).
+  test("file part with source → carries {start,end,text}", () => {
+    const out = toV2Prompt(payload([
+      { type: "text", text: "look at @src/a.ts" },
+      {
+        type: "file",
+        mime: "text/plain",
+        url: "file:///repo/src/a.ts",
+        filename: "a.ts",
+        source: { type: "file", path: "/repo/src/a.ts", text: { value: "@src/a.ts", start: 8, end: 17 } },
+      },
+    ]))
+    expect(out.files).toEqual([
+      { uri: "file:///repo/src/a.ts", name: "a.ts", source: { start: 8, end: 17, text: "@src/a.ts" } },
+    ])
+    expect(decodePrompt(out).files?.[0]?.source).toEqual({ start: 8, end: 17, text: "@src/a.ts" })
+  })
+
+  test("agent part with source → carries {start,end,text}", () => {
+    const out = toV2Prompt(payload([
+      { type: "text", text: "ask @build please" },
+      { type: "agent", name: "build", source: { value: "@build", start: 4, end: 10 } },
+    ]))
+    expect(out.agents).toEqual([{ name: "build", source: { start: 4, end: 10, text: "@build" } }])
+    expect(decodePrompt(out).agents?.[0]?.source).toEqual({ start: 4, end: 10, text: "@build" })
+  })
+
+  test("file/agent parts without source omit it (no empty source key)", () => {
+    const out = toV2Prompt(payload([
+      { type: "file", mime: "text/plain", url: "u", filename: "f" },
+      { type: "agent", name: "build" },
+    ]))
+    expect("source" in (out.files![0] as object)).toBe(false)
+    expect("source" in (out.agents![0] as object)).toBe(false)
+  })
 })

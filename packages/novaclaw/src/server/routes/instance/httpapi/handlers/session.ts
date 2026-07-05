@@ -51,23 +51,40 @@ const tryParseJson = (text: string) =>
 
 // Map a legacy PromptPayload (the v1 wire shape) onto the V2 PromptInput.Prompt
 // the V2 session admits. Concatenate text parts (newline-joined), carry file
-// parts as {uri, name} (the V2 FileAttachment has NO mime), and agent parts as
-// {name}. Subtask + any other part types are dropped (V2 has no inline subtask
-// prompt-part). Exported for unit testing.
+// parts as {uri, name} (the V2 FileAttachment has NO mime — resolvePrompt derives
+// it downstream) and agent parts as {name}. Each carries its inline @-mention
+// `source` span ({start,end,text}) when present so the native user message stays
+// faithful: fork/undo/command reconstruct the composer Prompt from it (F1e S5).
+// All three FilePartSource variants (file/symbol/resource) share `.text`. Subtask
+// + any other part types are dropped (V2 has no inline subtask prompt-part).
+// Exported for unit testing.
+type V2File = NonNullable<(typeof PromptInput.Prompt.Type)["files"]>[number]
+type V2Agent = NonNullable<(typeof PromptInput.Prompt.Type)["agents"]>[number]
 export const toV2Prompt = (payload: typeof PromptPayload.Type): typeof PromptInput.Prompt.Type => {
   const texts: string[] = []
-  const files: Array<{ uri: string; name?: string }> = []
-  const agents: Array<{ name: string }> = []
+  const files: V2File[] = []
+  const agents: V2Agent[] = []
   for (const part of payload.parts) {
     switch (part.type) {
       case "text":
         texts.push(part.text)
         break
       case "file":
-        files.push(part.filename ? { uri: part.url, name: part.filename } : { uri: part.url })
+        files.push({
+          uri: part.url,
+          ...(part.filename ? { name: part.filename } : {}),
+          ...(part.source
+            ? { source: { start: part.source.text.start, end: part.source.text.end, text: part.source.text.value } }
+            : {}),
+        })
         break
       case "agent":
-        agents.push({ name: part.name })
+        agents.push({
+          name: part.name,
+          ...(part.source
+            ? { source: { start: part.source.start, end: part.source.end, text: part.source.value } }
+            : {}),
+        })
         break
       default:
         // subtask + unknown → dropped
