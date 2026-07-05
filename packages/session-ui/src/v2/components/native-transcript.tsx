@@ -380,9 +380,31 @@ function ShellMessage(props: { message: SessionMessageShell }) {
 }
 
 function NoticeMessage(props: { kind: "system" | "synthetic"; text: string }) {
+  // `synthetic` currently carries only runtime FAILURE notices (e.g. a pre-turn model error emitted
+  // by the runner) — render it VISIBLE so the user actually sees why a turn didn't run, rather than
+  // a collapsed "System note". `system` (injected context) stays a collapsed "Context" note.
+  if (props.kind === "synthetic")
+    return (
+      <div
+        data-slot="native-notice-visible"
+        data-kind="synthetic"
+        role="status"
+        style={{
+          margin: "0.5rem 0",
+          padding: "0.625rem 0.875rem",
+          "border-radius": "8px",
+          border: "1px solid var(--v2-border-border-muted)",
+          background: "var(--v2-background-bg-layer-01)",
+          color: "var(--v2-text-text-base)",
+          "font-size": "0.85rem",
+        }}
+      >
+        <Markdown text={props.text} />
+      </div>
+    )
   return (
-    <details data-slot="native-notice" data-kind={props.kind}>
-      <summary>{props.kind === "synthetic" ? "System note" : "Context"}</summary>
+    <details data-slot="native-notice" data-kind="system">
+      <summary>Context</summary>
       <div data-slot="native-notice-body">
         <Markdown text={props.text} />
       </div>

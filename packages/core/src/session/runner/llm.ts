@@ -355,7 +355,27 @@ export const layer = Layer.effect(
       }
       const system =
         initialized ?? (yield* SessionContextEpoch.prepare(db, events, loadSystemContext(agent), session.id))
-      const model = yield* models.resolve({ ...session, model: config.model as typeof session.model })
+      const model = yield* models.resolve({ ...session, model: config.model as typeof session.model }).pipe(
+        // Surface a pre-turn model failure IN THE CHAT, not just the server log. Model resolution
+        // runs before any assistant row exists, so `step.failed` (which carries its error on an
+        // assistant message) can't convey it — the turn would otherwise fail silently. Emit a calm
+        // Synthetic notice so the transcript shows WHY the turn didn't run, then let it fail as
+        // before. Best-effort (`Effect.ignore`): a publish hiccup must not mask the real error.
+        Effect.tapError((error) =>
+          Effect.gen(function* () {
+            const reason =
+              "providerID" in error
+                ? `the selected model \`${error.providerID}/${error.modelID}\` is unavailable`
+                : "no model is selected"
+            yield* events.publish(SessionEvent.Synthetic, {
+              sessionID: session.id,
+              messageID: SessionMessage.ID.create(),
+              timestamp: yield* DateTime.now,
+              text: `⚠️ This turn couldn't run — ${reason}. Pick an available model in Settings, or check that its backend is running.`,
+            })
+          }).pipe(Effect.ignore),
+        ),
+      )
       const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)
       const context = entries.map((entry) => entry.message)
       const isLastStep = agent.info?.steps !== undefined && currentStep >= agent.info.steps
