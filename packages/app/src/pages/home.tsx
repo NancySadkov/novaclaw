@@ -460,11 +460,22 @@ export function NewHome() {
     setSelection({ server: ServerConnection.key(conn), directory })
   }
 
+  // The shared default scratch cwd (server-provisioned under `<data>/scratch`) — lets "New Agent"
+  // work with no project picked, so every agent always has a folder for basic work. Read off
+  // PathInfo with a cast (the SDK type lags this field, same as `virtualRoot`).
+  const scratchDir = createMemo(() => (focusedSync().data.path as { scratchDir?: string } | undefined)?.scratchDir)
+  // "New Agent" is enabled whenever a server is connected and we have SOME cwd — a picked project
+  // or the always-provisioned scratch dir. No more "pick a project first" dead-end.
+  const canNewSession = createMemo(() => !!focusedServer() && (!!selectedProject() || !!scratchDir()))
+
   function openNewSession() {
     const conn = focusedServer()
-    const project = newSessionProject()
-    if (!conn || !project) return
-    openProjectNewSession(conn, project.worktree)
+    if (!conn) return
+    // Default a folder-less "New Agent" to the safe shared scratch dir — a basic chat shouldn't
+    // land in a real project. An explicitly-selected project overrides.
+    const directory = selectedProject()?.worktree ?? scratchDir()
+    if (!directory) return
+    openProjectNewSession(conn, directory)
   }
 
   function openProjectNewSession(conn: ServerConnection.Any, directory: string) {
@@ -594,7 +605,7 @@ export function NewHome() {
             variant="ghost-muted"
             size="normal"
             icon="edit"
-            disabled={!newSessionProject()}
+            disabled={!canNewSession()}
             class="w-full justify-start !h-11 px-3 [font-weight:530] rounded-[10px] bg-v2-background-bg-layer-01"
             onClick={openNewSession}
           >
@@ -633,7 +644,7 @@ export function NewHome() {
             >
               <Show
                 when={groups().length > 0}
-                fallback={<HomeSessionsEmpty onNewSession={newSessionProject() ? openNewSession : undefined} />}
+                fallback={<HomeSessionsEmpty onNewSession={canNewSession() ? openNewSession : undefined} />}
               >
                 <div ref={sessionHeaderOpacity.setContentRef} class="flex flex-col pt-3 pr-3 pb-16">
                   <For each={groups()}>

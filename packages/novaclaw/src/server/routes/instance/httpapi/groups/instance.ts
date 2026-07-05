@@ -26,6 +26,10 @@ const PathInfo = Schema.Struct({
   // (an app-private directory) instead of `roots`. Optional so old clients ignore it.
   virtual: Schema.optional(Schema.Boolean),
   virtualRoot: Schema.optional(Schema.String),
+  // The shared default working directory for folder-less agents ("New Agent" with no project).
+  // A real app-managed dir under `<data>/scratch`; the client uses it as the cwd when no folder
+  // is picked. Optional so old clients ignore it.
+  scratchDir: Schema.optional(Schema.String),
 }).annotate({ identifier: "Path" })
 
 // The persisted home-app registry (B14). Manifests are LAUNCHERS (route/URL/prompt), not code;

@@ -6,6 +6,7 @@ import { Format } from "@/format"
 import { AppRegistry } from "@novaclaw/core/app-registry"
 import { Global } from "@novaclaw/core/global"
 import { VirtualFs } from "@novaclaw/core/virtual-fs"
+import { Scratch } from "@novaclaw/core/scratch"
 import { Vcs } from "@/project/vcs"
 import { Skill } from "@/skill"
 import { Effect } from "effect"
@@ -54,6 +55,9 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
       // FS-3: when the host has no browsable FS, provision + advertise the app-private root.
       const virtual = VirtualFs.enabled()
       const virtualRoot = virtual ? yield* Effect.promise(() => VirtualFs.ensure()) : undefined
+      // The shared default cwd for folder-less agents ("New Agent" with no project). Provisioned
+      // always (idempotent) so the client can always start an agent without picking a folder.
+      const scratchDir = yield* Effect.promise(() => Scratch.ensure())
       return {
         home: Global.Path.home,
         state: Global.Path.state,
@@ -62,6 +66,7 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
         worktree: ctx.worktree,
         directory: ctx.directory,
         roots,
+        scratchDir,
         ...(virtual ? { virtual: true, virtualRoot } : {}),
       }
     })
