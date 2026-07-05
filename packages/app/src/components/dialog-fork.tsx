@@ -1,14 +1,14 @@
 import { Component, createMemo } from "solid-js"
 import { useNavigate, useParams } from "@solidjs/router"
-import { useSync } from "@/context/sync"
+import { useServerSync } from "@/context/server-sync"
 import { useSDK } from "@/context/sdk"
-import { usePrompt } from "@/context/prompt"
+import { usePrompt, DEFAULT_PROMPT } from "@/context/prompt"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { Dialog } from "@novaclaw/ui/dialog"
 import { List } from "@novaclaw/ui/list"
 import { showToast } from "@/utils/toast"
-import { extractPromptFromParts } from "@/utils/prompt"
-import type { TextPart as SDKTextPart } from "@novaclaw/sdk/v2/client"
+import { promptFromUserMessage } from "@/utils/prompt"
+import type { SessionMessageUser } from "@novaclaw/sdk/v2/client"
 import { base64Encode } from "@novaclaw/core/util/encode"
 import { useLanguage } from "@/context/language"
 
@@ -25,29 +25,32 @@ function formatTime(date: Date): string {
 export const DialogFork: Component = () => {
   const params = useParams()
   const navigate = useNavigate()
-  const sync = useSync()
+  const serverSync = useServerSync()
   const sdk = useSDK()
   const prompt = usePrompt()
   const dialog = useDialog()
   const language = useLanguage()
 
+  // F1e S5: fork reads the native SessionMessage[] store (a user message carries its
+  // prompt text directly) and reconstructs the restored composer prompt from it.
+  const userMessage = (sessionID: string, id: string) =>
+    (serverSync().nativeMessages.messages(sessionID) ?? []).find(
+      (m): m is SessionMessageUser => m.type === "user" && m.id === id,
+    )
+
   const messages = createMemo((): ForkableMessage[] => {
     const sessionID = params.id
     if (!sessionID) return []
 
-    const msgs = sync().data.message[sessionID] ?? []
+    const msgs = serverSync().nativeMessages.messages(sessionID) ?? []
     const result: ForkableMessage[] = []
 
     for (const message of msgs) {
-      if (message.role !== "user") continue
-
-      const parts = sync().data.part[message.id] ?? []
-      const textPart = parts.find((x): x is SDKTextPart => x.type === "text" && !x.synthetic && !x.ignored)
-      if (!textPart) continue
+      if (message.type !== "user") continue
 
       result.push({
         id: message.id,
-        text: textPart.text.replace(/\n/g, " ").slice(0, 200),
+        text: message.text.replace(/\n/g, " ").slice(0, 200),
         time: formatTime(new Date(message.time.created)),
       })
     }
@@ -61,11 +64,13 @@ export const DialogFork: Component = () => {
     const sessionID = params.id
     if (!sessionID) return
 
-    const parts = sync().data.part[item.id] ?? []
-    const restored = extractPromptFromParts(parts, {
-      directory: sdk().directory,
-      attachmentName: language.t("common.attachment"),
-    })
+    const message = userMessage(sessionID, item.id)
+    const restored = message
+      ? promptFromUserMessage(message, {
+          directory: sdk().directory,
+          attachmentName: language.t("common.attachment"),
+        })
+      : DEFAULT_PROMPT
     const dir = base64Encode(sdk().directory)
 
     sdk()

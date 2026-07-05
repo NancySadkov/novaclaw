@@ -8,6 +8,7 @@ import { useLayout } from "@/context/layout"
 import { useLocal } from "@/context/local"
 import { usePermission } from "@/context/permission"
 import { usePrompt } from "@/context/prompt"
+import { useServerSync } from "@/context/server-sync"
 import { useSDK } from "@/context/sdk"
 import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
@@ -15,8 +16,9 @@ import { useTerminal } from "@/context/terminal"
 import { showToast } from "@/utils/toast"
 import { findLast } from "@novaclaw/core/util/array"
 import { createSessionTabs } from "@/pages/session/helpers"
-import { extractPromptFromParts } from "@/utils/prompt"
+import { promptFromUserMessage } from "@/utils/prompt"
 import { UserMessage } from "@novaclaw/sdk/v2"
+import type { SessionMessageUser } from "@novaclaw/sdk/v2/client"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { useTabs } from "@/context/tabs"
 import { requireServerKey } from "@/utils/session-route"
@@ -47,6 +49,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const sdk = useSDK()
   const settings = useSettings()
   const sync = useSync()
+  const serverSync = useServerSync()
   const terminal = useTerminal()
   const sessionTabs = useTabs()
   const layout = useLayout()
@@ -305,7 +308,10 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     const messages = userMessages()
     const message = findLast(messages, (x) => !revert || x.id < revert)
     if (!message) return
-    const parts = sync().data.part[message.id]
+    // F1e S5: reconstruct the undone turn's prompt from the native SessionMessage store.
+    const native = (serverSync().nativeMessages.messages(sessionID) ?? []).find(
+      (m): m is SessionMessageUser => m.type === "user" && m.id === message.id,
+    )
 
     if (sync().data.session_working(sessionID)) {
       await client.session.abort({ sessionID }).catch(() => {})
@@ -316,7 +322,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       prompt: promptSession,
       request: () => client.session.revert({ sessionID, messageID: message.id }),
       updatePrompt: (promptSession) => {
-        if (parts) promptSession.set(extractPromptFromParts(parts, { directory }))
+        if (native) promptSession.set(promptFromUserMessage(native, { directory }))
       },
       updateViewport: () => setActiveMessage(findLast(messages, (x) => x.id < message.id)),
     })

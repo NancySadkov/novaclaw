@@ -1,4 +1,5 @@
 import type { Project, UserMessage } from "@novaclaw/sdk/v2"
+import type { SessionMessageUser } from "@novaclaw/sdk/v2/client"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { createQuery, skipToken, useMutation, useQueryClient } from "@tanstack/solid-query"
 import {
@@ -35,7 +36,7 @@ import { useComments } from "@/context/comments"
 import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
-import { usePrompt } from "@/context/prompt"
+import { usePrompt, DEFAULT_PROMPT } from "@/context/prompt"
 import { usePlatform } from "@/context/platform"
 import { useSDK } from "@/context/sdk"
 import { useServerSDK } from "@/context/server-sdk"
@@ -73,7 +74,7 @@ import { useSessionHashScroll } from "@/pages/session/use-session-hash-scroll"
 import { Identifier } from "@/utils/id"
 import { diffs as list } from "@/utils/diffs"
 import { Persist, persisted } from "@/utils/persist"
-import { extractPromptFromParts } from "@/utils/prompt"
+import { promptFromUserMessage } from "@/utils/prompt"
 import { formatServerError } from "@/utils/server-errors"
 import { legacySessionHref, requireServerKey, sessionHref } from "@/utils/session-route"
 import { createSessionOwnership } from "./session/session-ownership"
@@ -1257,11 +1258,24 @@ export default function Page() {
     ),
   )
 
-  const draft = (id: string) =>
-    extractPromptFromParts(sync().data.part[id] ?? [], {
+  // F1e S5: reconstruct a user turn's composer prompt from the native SessionMessage
+  // store (undo/rollback restore). The user message lives in the open session (params.id).
+  const nativeUser = (id: string) => {
+    const sid = params.id
+    if (!sid) return undefined
+    return (serverSync().nativeMessages.messages(sid) ?? []).find(
+      (m): m is SessionMessageUser => m.type === "user" && m.id === id,
+    )
+  }
+
+  const draft = (id: string) => {
+    const msg = nativeUser(id)
+    if (!msg) return DEFAULT_PROMPT
+    return promptFromUserMessage(msg, {
       directory: sdk().directory,
       attachmentName: language.t("common.attachment"),
     })
+  }
 
   const line = (id: string) => {
     const text = draft(id)

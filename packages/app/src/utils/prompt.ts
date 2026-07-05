@@ -1,4 +1,3 @@
-import type { AgentPart as MessageAgentPart, FilePart, Part, TextPart } from "@novaclaw/sdk/v2"
 import type { SessionMessageUser } from "@novaclaw/sdk/v2/client"
 import type { AgentPart, FileAttachmentPart, ImageAttachmentPart, Prompt } from "@/context/prompt"
 
@@ -57,9 +56,8 @@ function makeToRelative(directory?: string) {
 }
 
 // Weave the plain prompt text and its inline file/agent mentions (with images
-// appended) back into the editor's ContentPart[] shape. Shared by both the V1
-// (extractPromptFromParts) and native V2 (promptFromUserMessage) reconstructors —
-// the two differ only in how they build `inline`/`images` from their message shape.
+// appended) back into the editor's ContentPart[] shape, consumed by the native
+// promptFromUserMessage reconstructor below.
 function weavePrompt(text: string, inline: Inline[], images: ImageAttachmentPart[]): Prompt {
   inline.sort((a, b) => {
     if (a.start !== b.start) return a.start - b.start
@@ -135,79 +133,6 @@ function weavePrompt(text: string, inline: Inline[], images: ImageAttachmentPart
 
   if (images.length === 0) return result
   return [...result, ...images]
-}
-
-/**
- * Extract prompt content from V1 message parts for restoring into the prompt input.
- * Used by undo/fork/command on legacy (V1) sessions. The native path is
- * promptFromUserMessage below.
- */
-export function extractPromptFromParts(parts: Part[], opts?: { directory?: string; attachmentName?: string }): Prompt {
-  const textPart = parts
-    .filter((part): part is TextPart => part.type === "text")
-    .filter((part) => !part.synthetic && !part.ignored)
-    .reduce((best: TextPart | undefined, part) => {
-      if (!best) return part
-      if (part.text.length > best.text.length) return part
-      return best
-    }, undefined)
-  const text = textPart?.text ?? ""
-  const attachmentName = opts?.attachmentName ?? "attachment"
-  const toRelative = makeToRelative(opts?.directory)
-
-  const inline: Inline[] = []
-  const images: ImageAttachmentPart[] = []
-
-  for (const part of parts) {
-    if (part.type === "file") {
-      const filePart = part as FilePart
-      const sourceText = filePart.source?.text
-      if (sourceText) {
-        const value = sourceText.value
-        const start = sourceText.start
-        const end = sourceText.end
-        let path = value
-        if (value.startsWith("@")) path = value.slice(1)
-        if (!value.startsWith("@") && filePart.source && "path" in filePart.source) {
-          path = filePart.source.path
-        }
-        inline.push({
-          type: "file",
-          start,
-          end,
-          value,
-          path: toRelative(path),
-          selection: selectionFromFileUrl(filePart.url),
-        })
-        continue
-      }
-
-      if (filePart.url.startsWith("data:")) {
-        images.push({
-          type: "image",
-          id: filePart.id,
-          filename: filePart.filename ?? attachmentName,
-          mime: filePart.mime,
-          dataUrl: filePart.url,
-        })
-      }
-    }
-
-    if (part.type === "agent") {
-      const agentPart = part as MessageAgentPart
-      const source = agentPart.source
-      if (!source) continue
-      inline.push({
-        type: "agent",
-        start: source.start,
-        end: source.end,
-        value: source.value,
-        name: agentPart.name,
-      })
-    }
-  }
-
-  return weavePrompt(text, inline, images)
 }
 
 /**
