@@ -335,10 +335,32 @@ export const layer = Layer.effect(
       // walk, so a child session inherits its parent's unless overridden. Behavior-preserving at the
       // root (the chain is just [session] -> config.* === session.*). config.* carry the real branded
       // values (they flow from session.* through the walk; only the static type is widened -> cast).
+      // Surface ANY pre-turn setup failure (config / agent / context-prep / model) IN THE CHAT, not just
+      // the server log — these run before any assistant row exists, so `step.failed` (which carries its
+      // error on an assistant message) can't convey them; the turn would otherwise fail silently. Emit a
+      // calm Synthetic notice explaining WHY, then let the error propagate. Best-effort (`Effect.ignore`).
+      const surfacePreTurnFailure = (error: unknown) =>
+        Effect.gen(function* () {
+          const modelRef =
+            error !== null && typeof error === "object" && "providerID" in error && "modelID" in error
+              ? `${(error as { providerID: string }).providerID}/${(error as { modelID: string }).modelID}`
+              : undefined
+          const text = modelRef
+            ? `⚠️ This turn couldn't run — the selected model \`${modelRef}\` is unavailable. Pick an available model in Settings, or check that its backend is running.`
+            : `⚠️ This turn couldn't run — ${error instanceof Error && error.message ? error.message : "an unexpected error occurred"}.`
+          yield* events.publish(SessionEvent.Synthetic, {
+            sessionID: session.id,
+            messageID: SessionMessage.ID.create(),
+            timestamp: yield* DateTime.now,
+            text,
+          })
+        }).pipe(Effect.ignore)
       const config = yield* resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, session.id, (id) =>
         store.get(id as SessionSchema.ID),
-      )
-      const agent = yield* agents.select(config.agent as typeof session.agent)
+      ).pipe(Effect.tapError(surfacePreTurnFailure))
+      const agent = yield* agents
+        .select(config.agent as typeof session.agent)
+        .pipe(Effect.tapError(surfacePreTurnFailure))
       const initialized = yield* SessionContextEpoch.initialize(db, loadSystemContext(agent), session.id)
       const toolFibers = yield* FiberSet.make<void, ToolOutputStore.Error>()
       let needsContinuation = false
@@ -354,28 +376,13 @@ export const layer = Layer.effect(
         if (promoted > 0) currentStep = 1
       }
       const system =
-        initialized ?? (yield* SessionContextEpoch.prepare(db, events, loadSystemContext(agent), session.id))
-      const model = yield* models.resolve({ ...session, model: config.model as typeof session.model }).pipe(
-        // Surface a pre-turn model failure IN THE CHAT, not just the server log. Model resolution
-        // runs before any assistant row exists, so `step.failed` (which carries its error on an
-        // assistant message) can't convey it — the turn would otherwise fail silently. Emit a calm
-        // Synthetic notice so the transcript shows WHY the turn didn't run, then let it fail as
-        // before. Best-effort (`Effect.ignore`): a publish hiccup must not mask the real error.
-        Effect.tapError((error) =>
-          Effect.gen(function* () {
-            const reason =
-              "providerID" in error
-                ? `the selected model \`${error.providerID}/${error.modelID}\` is unavailable`
-                : "no model is selected"
-            yield* events.publish(SessionEvent.Synthetic, {
-              sessionID: session.id,
-              messageID: SessionMessage.ID.create(),
-              timestamp: yield* DateTime.now,
-              text: `⚠️ This turn couldn't run — ${reason}. Pick an available model in Settings, or check that its backend is running.`,
-            })
-          }).pipe(Effect.ignore),
-        ),
-      )
+        initialized ??
+        (yield* SessionContextEpoch.prepare(db, events, loadSystemContext(agent), session.id).pipe(
+          Effect.tapError(surfacePreTurnFailure),
+        ))
+      const model = yield* models
+        .resolve({ ...session, model: config.model as typeof session.model })
+        .pipe(Effect.tapError(surfacePreTurnFailure))
       const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)
       const context = entries.map((entry) => entry.message)
       const isLastStep = agent.info?.steps !== undefined && currentStep >= agent.info.steps
