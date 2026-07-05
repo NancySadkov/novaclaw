@@ -17,7 +17,6 @@ import { showToast } from "@/utils/toast"
 import { findLast } from "@novaclaw/core/util/array"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { promptFromUserMessage } from "@/utils/prompt"
-import { UserMessage } from "@novaclaw/sdk/v2"
 import type { SessionMessageUser } from "@novaclaw/sdk/v2/client"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { useTabs } from "@/context/tabs"
@@ -26,7 +25,7 @@ import { createSessionOwnership } from "./session-ownership"
 
 export type SessionCommandContext = {
   navigateMessageByOffset: (offset: number) => void
-  setActiveMessage: (message: UserMessage | undefined) => void
+  setActiveMessage: (message: { id: string } | undefined) => void
   focusInput: () => void
   review?: () => boolean
 }
@@ -97,9 +96,9 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
   const messages = () => {
     const id = params.id
     if (!id) return []
-    return sync().data.message[id] ?? []
+    return serverSync().nativeMessages.messages(id) ?? []
   }
-  const userMessages = () => messages().filter((m) => m.role === "user") as UserMessage[]
+  const userMessages = () => messages().filter((m): m is SessionMessageUser => m.type === "user")
   const visibleUserMessages = () => {
     const revert = info()?.revert?.messageID
     if (!revert) return userMessages()
@@ -308,10 +307,6 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     const messages = userMessages()
     const message = findLast(messages, (x) => !revert || x.id < revert)
     if (!message) return
-    // F1e S5: reconstruct the undone turn's prompt from the native SessionMessage store.
-    const native = (serverSync().nativeMessages.messages(sessionID) ?? []).find(
-      (m): m is SessionMessageUser => m.type === "user" && m.id === message.id,
-    )
 
     if (sync().data.session_working(sessionID)) {
       await client.session.abort({ sessionID }).catch(() => {})
@@ -322,7 +317,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       prompt: promptSession,
       request: () => client.session.revert({ sessionID, messageID: message.id }),
       updatePrompt: (promptSession) => {
-        if (native) promptSession.set(promptFromUserMessage(native, { directory }))
+        promptSession.set(promptFromUserMessage(message, { directory }))
       },
       updateViewport: () => setActiveMessage(findLast(messages, (x) => x.id < message.id)),
     })

@@ -423,7 +423,7 @@ export default function Page() {
     return "main"
   })
 
-  const setActiveMessage = (message: UserMessage | undefined) => {
+  const setActiveMessage = (message: { id: string } | undefined) => {
     messageMark = scrollMark
     setStore("messageId", message?.id)
   }
