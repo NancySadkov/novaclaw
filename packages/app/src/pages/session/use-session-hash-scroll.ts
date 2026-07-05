@@ -8,9 +8,6 @@ export const useSessionHashScroll = (input: {
   sessionID: () => string | undefined
   messagesReady: () => boolean
   visibleUserMessages: () => readonly SessionMessageUser[]
-  historyMore: () => boolean
-  historyLoading: () => boolean
-  loadMore: (sessionID: string) => Promise<void>
   currentMessageId: () => string | undefined
   pendingMessage: () => string | undefined
   setPendingMessage: (value: string | undefined) => void
@@ -169,21 +166,6 @@ export const useSessionHashScroll = (input: {
     input.autoScroll.pause()
     cancel()
     queue(() => scrollToMessage(msg, "auto"))
-  })
-
-  createEffect(() => {
-    const sessionID = input.sessionID()
-    if (!sessionID || !input.messagesReady()) return
-
-    visibleUserMessages()
-
-    let targetId = input.pendingMessage()
-    if (!targetId && !clearing) targetId = messageIdFromHash(location.hash)
-    if (!targetId) return
-    if (messageById().has(targetId)) return
-    if (!input.historyMore() || input.historyLoading()) return
-
-    void input.loadMore(sessionID)
   })
 
   onMount(() => {

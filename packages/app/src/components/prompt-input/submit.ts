@@ -1,9 +1,9 @@
-import type { Message, Session } from "@novaclaw/sdk/v2/client"
+import type { Session } from "@novaclaw/sdk/v2/client"
 import { showToast } from "@/utils/toast"
 import { base64Encode } from "@novaclaw/core/util/encode"
 import { Binary } from "@novaclaw/core/util/binary"
 import { useNavigate, useParams, useSearchParams } from "@solidjs/router"
-import { batch, type Accessor } from "solid-js"
+import { type Accessor } from "solid-js"
 import { useTabs } from "@/context/tabs"
 import { useServerSync, type ServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
@@ -104,7 +104,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
   }
 
   const messageID = input.messageID ?? Identifier.ascending("message")
-  const { requestParts, optimisticParts } = buildRequestParts({
+  const { requestParts } = buildRequestParts({
     prompt: input.draft.prompt,
     context: input.draft.context,
     images,
@@ -114,41 +114,11 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
     sessionDirectory: input.draft.sessionDirectory,
   })
 
-  const message: Message = {
-    id: messageID,
-    sessionID: input.draft.sessionID,
-    role: "user",
-    time: { created: Date.now() },
-    agent: input.draft.agent,
-    model: { ...input.draft.model, variant: input.draft.variant },
-  }
-
-  const add = () =>
-    input.sync.session.optimistic.add({
-      directory: input.draft.sessionDirectory,
-      sessionID: input.draft.sessionID,
-      message,
-      parts: optimisticParts,
-    })
-
-  const remove = () =>
-    input.sync.session.optimistic.remove({
-      directory: input.draft.sessionDirectory,
-      sessionID: input.draft.sessionID,
-      messageID,
-    })
-
-  batch(() => {
-    setBusy()
-    add()
-  })
+  setBusy()
 
   try {
     if (!(await wait())) {
-      batch(() => {
-        setIdle()
-        remove()
-      })
+      setIdle()
       return false
     }
 
@@ -162,10 +132,7 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
     })
     return true
   } catch (err) {
-    batch(() => {
-      setIdle()
-      remove()
-    })
+    setIdle()
     throw err
   }
 }
@@ -501,14 +468,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     const commentItems = context.filter((item) => item.type === "file" && !!item.comment?.trim())
     const messageID = Identifier.ascending("message")
 
-    const removeOptimisticMessage = () => {
-      sync().session.optimistic.remove({
-        directory: sessionDirectory,
-        sessionID: session.id,
-        messageID,
-      })
-    }
-
     for (const item of commentItems) submission.target().context.remove(item.key)
     clearInput()
 
@@ -525,7 +484,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         if (sessionDirectory === projectDirectory) {
           sync().set("session_status", session.id, { type: "idle" })
         }
-        removeOptimisticMessage()
         if (restoreInput()) restoreCommentItems(submission.target(), commentItems)
       }
 
@@ -587,7 +545,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
         title: language.t("prompt.toast.promptSendFailed.title"),
         description: errorMessage(err),
       })
-      removeOptimisticMessage()
       if (restoreInput()) restoreCommentItems(submission.target(), commentItems)
     })
   }

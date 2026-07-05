@@ -704,10 +704,13 @@ export default function LegacyLayout(props: ParentProps) {
 
   async function prefetchMessages(directory: string, sessionID: string, token: number) {
     await serverSync()
-      .session.prefetch(sessionID, prefetchChunk)
+      .nativeMessages.load(sessionID, { limit: prefetchChunk })
       .catch(() => {})
     if (prefetchToken.value !== token) return
-    for (const stale of markPrefetched(directory, sessionID)) serverSync().session.evict(stale)
+    for (const stale of markPrefetched(directory, sessionID)) {
+      serverSync().session.evict(stale)
+      serverSync().nativeMessages.evict(stale)
+    }
   }
 
   const pumpPrefetch = (directory: string) => {
@@ -733,9 +736,6 @@ export default function LegacyLayout(props: ParentProps) {
   const prefetchSession = (session: Session, priority: "high" | "low" = "low") => {
     const directory = session.directory
     if (!directory) return
-
-    const cached = untrack(() => !serverSync().session.shouldPrefetch(session.id, prefetchChunk))
-    if (cached) return
 
     const q = queueFor(directory)
     if (q.inflight.has(session.id)) return

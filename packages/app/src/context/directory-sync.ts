@@ -1,5 +1,5 @@
 import { Binary } from "@novaclaw/core/util/binary"
-import type { Message, Part, Session } from "@novaclaw/sdk/v2/client"
+import type { Session } from "@novaclaw/sdk/v2/client"
 import { createMemo } from "solid-js"
 import { produce, reconcile, type SetStoreFunction } from "solid-js/store"
 import type { createServerSdkContext } from "./server-sdk"
@@ -14,9 +14,6 @@ const sessionFields = new Set([
   "todo",
   "permission",
   "question",
-  "message",
-  "part",
-  "part_text_accum_delta",
 ])
 
 export const createDirSyncContext = (
@@ -81,42 +78,12 @@ export const createDirSyncContext = (
         const session = serverSync.session.get(sessionID)
         if (session?.directory === directory) return session
       },
-      optimistic: {
-        add(input: { directory?: string; sessionID: string; message: Message; parts: Part[] }) {
-          serverSync.session.optimistic.add(input)
-        },
-        remove(input: { directory?: string; sessionID: string; messageID: string }) {
-          serverSync.session.optimistic.remove(input)
-        },
-      },
-      addOptimisticMessage(input: {
-        sessionID: string
-        messageID: string
-        parts: Part[]
-        agent: string
-        model: { providerID: string; modelID: string }
-        variant?: string
-      }) {
-        serverSync.session.optimistic.add({
-          sessionID: input.sessionID,
-          message: {
-            id: input.messageID,
-            sessionID: input.sessionID,
-            role: "user",
-            time: { created: Date.now() },
-            agent: input.agent,
-            model: { ...input.model, variant: input.variant },
-          },
-          parts: input.parts,
-        })
-      },
       async sync(sessionID: string, options?: { force?: boolean }) {
         await serverSync.session.sync(sessionID, options)
         index(sessionID)
       },
       diff: serverSync.session.diff,
       todo: serverSync.session.todo,
-      history: serverSync.session.history,
       evict(sessionID: string) {
         serverSync.session.evict(sessionID)
       },
