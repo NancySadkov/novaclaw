@@ -1436,6 +1436,13 @@ function HomeSessionRow(props: {
   const language = useLanguage()
   const title = createMemo(() => sessionTitle(props.record.session.title) || props.record.session.id)
   const showProjectName = () => props.showProjectName && props.record.projectName
+  // Changes badge (Chat-UI slice d): a row whose agent has actual file changes in its folder shows
+  // +add −del, sourced from Session.summary (populated in the list query). No badge when nothing changed.
+  const changes = createMemo(() => {
+    const summary = props.record.session.summary
+    if (!summary || (summary.files ?? 0) <= 0) return undefined
+    return { files: summary.files ?? 0, additions: summary.additions ?? 0, deletions: summary.deletions ?? 0 }
+  })
 
   return (
     <div
@@ -1464,6 +1471,18 @@ function HomeSessionRow(props: {
           <span class="min-w-0 flex-[1_1_auto] overflow-hidden text-ellipsis whitespace-nowrap text-v2-text-text-muted [font-weight:440]">
             {props.record.projectName}
           </span>
+        </Show>
+        <Show when={changes()}>
+          {(c) => (
+            <span
+              data-slot="home-session-changes"
+              class="ml-auto shrink-0 flex items-center gap-1 rounded-[4px] bg-v2-background-bg-layer-01 px-1.5 py-0.5 text-[11px] leading-none text-v2-text-text-muted [font-weight:530]"
+              title={`+${c().additions} −${c().deletions} · ${c().files} changed`}
+            >
+              <span>+{c().additions}</span>
+              <span>−{c().deletions}</span>
+            </span>
+          )}
         </Show>
       </button>
       <Show when={SHOW_HOME_SESSION_ARCHIVE}>
