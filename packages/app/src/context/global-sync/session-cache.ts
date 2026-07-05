@@ -1,6 +1,4 @@
 import type {
-  Message,
-  Part,
   PermissionRequest,
   QuestionRequest,
   SessionStatus,
@@ -14,28 +12,15 @@ type SessionCache = {
   session_status: Record<string, SessionStatus | undefined>
   session_diff: Record<string, SnapshotFileDiff[] | undefined>
   todo: Record<string, Todo[] | undefined>
-  message: Record<string, Message[] | undefined>
-  part: Record<string, Part[] | undefined>
   permission: Record<string, PermissionRequest[] | undefined>
   question: Record<string, QuestionRequest[] | undefined>
-  part_text_accum_delta: Record<string, string | undefined>
 }
 
 export function dropSessionCaches(store: SessionCache, sessionIDs: Iterable<string>) {
   const stale = new Set(Array.from(sessionIDs).filter(Boolean))
   if (stale.size === 0) return
 
-  for (const key of Object.keys(store.part)) {
-    const parts = store.part[key]
-    if (!parts?.some((part) => stale.has(part?.sessionID ?? ""))) continue
-    for (const part of parts) {
-      delete store.part_text_accum_delta[part.id]
-    }
-    delete store.part[key]
-  }
-
   for (const sessionID of stale) {
-    delete store.message[sessionID]
     delete store.todo[sessionID]
     delete store.session_diff[sessionID]
     delete store.session_status[sessionID]

@@ -3,8 +3,6 @@ import type {
   Command,
   Config,
   McpStatus,
-  Message,
-  Part,
   Path,
   PermissionRequest,
   QuestionRequest,
@@ -64,15 +62,6 @@ export type State = {
   }
   vcs: VcsInfo | undefined
   limit: number
-  message: {
-    [sessionID: string]: Message[]
-  }
-  part: {
-    [messageID: string]: Part[]
-  }
-  part_text_accum_delta: {
-    [partID: string]: string
-  }
 }
 
 export type VcsCache = {

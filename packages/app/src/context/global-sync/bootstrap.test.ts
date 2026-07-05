@@ -37,9 +37,6 @@ describe("bootstrapDirectory", () => {
       mcp: {},
       vcs: undefined,
       limit: 5,
-      message: {},
-      part: {},
-      part_text_accum_delta: {},
     })
 
     await bootstrapDirectory({
