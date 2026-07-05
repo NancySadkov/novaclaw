@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import type { PermissionRequest, QuestionRequest, Session } from "@novaclaw/sdk/v2/client"
-import { todoDockAtBoundary, todoState } from "./session-composer-state"
+import { todoDockAtBoundary, todoState } from "./session-composer-todo"
 import { sessionPermissionRequest, sessionQuestionRequest } from "./session-request-tree"
 
 const session = (input: { id: string; parentID?: string }) =>

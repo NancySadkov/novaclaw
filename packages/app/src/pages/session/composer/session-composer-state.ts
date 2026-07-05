@@ -10,19 +10,7 @@ import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import type { PermissionReply } from "./session-permission-dock"
 import { sessionPermissionRequest, sessionQuestionRequest } from "./session-request-tree"
-
-export const todoState = (input: {
-  count: number
-  done: boolean
-  live: boolean
-}): "hide" | "clear" | "open" | "close" => {
-  if (input.count === 0) return "hide"
-  if (!input.live) return "clear"
-  if (!input.done) return "open"
-  return "close"
-}
-
-export const todoDockAtBoundary = (state: ReturnType<typeof todoState>) => state === "open"
+import { todoDockAtBoundary, todoState } from "./session-composer-todo"
 
 const idle = { type: "idle" as const }
 
