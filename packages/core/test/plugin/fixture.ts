@@ -1,6 +1,7 @@
 import { AgentV2 } from "@novaclaw/core/agent"
 import { AISDK } from "@novaclaw/core/aisdk"
 import { Catalog } from "@novaclaw/core/catalog"
+import { CatalogStore } from "@novaclaw/core/catalog-store"
 import { CommandV2 } from "@novaclaw/core/command"
 import { Credential } from "@novaclaw/core/credential"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
@@ -40,6 +41,7 @@ export const PluginTestLayer = AppNodeBuilder.build(
     AgentV2.node,
     AISDK.node,
     Catalog.node,
+    CatalogStore.node,
     CommandV2.node,
     Integration.node,
     Reference.node,

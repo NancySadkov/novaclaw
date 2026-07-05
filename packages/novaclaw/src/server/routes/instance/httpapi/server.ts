@@ -3,6 +3,9 @@ import { HttpApiBuilder, OpenApi } from "effect/unstable/httpapi"
 import { HttpMiddleware, HttpRouter, HttpServer, HttpServerResponse } from "effect/unstable/http"
 import * as Socket from "effect/unstable/socket/Socket"
 import { FSUtil } from "@novaclaw/core/fs-util"
+import { CatalogSeed } from "@novaclaw/core/catalog-seed"
+import { CatalogStore } from "@novaclaw/core/catalog-store"
+import { Global } from "@novaclaw/core/global"
 import * as Observability from "@novaclaw/core/observability"
 import { Account } from "@/account/account"
 import { Agent } from "@/agent/agent"
@@ -222,6 +225,8 @@ type RouteRequirements =
 const app = LayerNode.group([
   Npm.node,
   FSUtil.node,
+  Global.node,
+  CatalogStore.node,
   Database.node,
   Auth.node,
   Account.node,
@@ -278,6 +283,17 @@ const app = LayerNode.group([
   PtyTicket.node,
 ])
 
+// Settings → SQLite: seed the instance-wide `CatalogStore` from the launch directory's novaclaw.jsonc
+// ONCE at server startup, BEFORE any location boots — so every dir (incl. the shared scratch dir) sees the
+// same providers, rather than a scratch-first access finding an empty catalog. Best-effort: a seed failure
+// must never block startup. See core/catalog-seed.ts + memory `settings-in-sqlite-jsonc-export-only`.
+const catalogSeedStartup = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const global = yield* Global.Service
+    yield* CatalogSeed.seedFromDirectory(global.config, process.cwd()).pipe(Effect.ignore)
+  }),
+)
+
 export function createRoutes(
   corsOptions?: CorsOptions,
 ): Layer.Layer<never, EffectConfig.ConfigError, RouteRequirements> {
@@ -318,6 +334,7 @@ export function createRoutes(
     // settled over HTTP (the reply route would look in the wrong instance's pending map).
     Layer.provide(sharedLocationServiceMap),
 
+    Layer.provideMerge(catalogSeedStartup),
     Layer.provide(LayerNode.compile(app)),
   )
 }

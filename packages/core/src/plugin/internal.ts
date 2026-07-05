@@ -6,6 +6,7 @@ import type { PluginContext } from "@novaclaw/plugin/v2/effect"
 import { Effect, Layer, Scope } from "effect"
 import { AgentV2 } from "../agent"
 import { Catalog } from "../catalog"
+import { CatalogStore } from "../catalog-store"
 import { CommandV2 } from "../command"
 import { Config } from "../config"
 import { ConfigAgentPlugin } from "../config/plugin/agent"
@@ -37,6 +38,7 @@ import { VariantPlugin } from "./variant"
 export type Requirements =
   | AgentV2.Service
   | Catalog.Service
+  | CatalogStore.Service
   | CommandV2.Service
   | Config.Service
   | EventV2.Service
@@ -63,6 +65,7 @@ export function define<R>(plugin: Plugin<R>) {
 const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const catalog = yield* Catalog.Service
+    const catalogStore = yield* CatalogStore.Service
     const commands = yield* CommandV2.Service
     const plugin = yield* PluginV2.Service
     const integration = yield* Integration.Service
@@ -86,6 +89,7 @@ const layer = Layer.effectDiscard(
             .effect(context)
             .pipe(
               Effect.provideService(Catalog.Service, catalog),
+              Effect.provideService(CatalogStore.Service, catalogStore),
               Effect.provideService(CommandV2.Service, commands),
               Effect.provideService(Integration.Service, integration),
               Effect.provideService(AgentV2.Service, agents),
@@ -136,6 +140,7 @@ export const node = makeLocationNode({
   layer,
   deps: [
     Catalog.node,
+    CatalogStore.node,
     CommandV2.node,
     PluginV2.node,
     Integration.node,

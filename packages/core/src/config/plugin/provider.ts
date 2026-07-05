@@ -2,7 +2,9 @@ export * as ConfigProviderPlugin from "./provider"
 
 import { define } from "../../plugin/internal"
 import { Effect } from "effect"
+import { CatalogStore } from "../../catalog-store"
 import { Config } from "../../config"
+import { ConfigProvider } from "../provider"
 import { ModelV2 } from "../../model"
 import { ProviderV2 } from "../../provider"
 
@@ -10,6 +12,7 @@ export const Plugin = define({
   id: "config-provider",
   effect: Effect.fn(function* (ctx) {
     const config = yield* Config.Service
+    const store = yield* CatalogStore.Service
     yield* ctx.integration.transform(
       Effect.fn(function* (integrations) {
         const files = (yield* config.entries()).filter((entry): entry is Config.Document => entry.type === "document")
@@ -40,16 +43,32 @@ export const Plugin = define({
 
     yield* ctx.catalog.transform(
       Effect.fn(function* (catalog) {
-        const entries = yield* config.entries()
-        const files = entries.filter((entry): entry is Config.Document => entry.type === "document")
-        const configuredDefault = Config.latest(entries, "model")
-        if (configuredDefault !== undefined) {
-          const model = ModelV2.parse(configuredDefault)
+        // Transitional jsonc seed (one-time): import an existing novaclaw.jsonc into the instance-wide
+        // store the first time it is empty, so an existing config carries over. jsonc is import/export
+        // only — this is the sole remaining runtime jsonc read for the catalog and is removed in
+        // migration step 8 (once the settings UI writes the store directly).
+        if (yield* store.isEmpty()) {
+          const entries = yield* config.entries()
+          const files = entries.filter((entry): entry is Config.Document => entry.type === "document")
+          const layers: Record<string, ConfigProvider.Info[]> = {}
+          for (const file of files)
+            for (const [id, item] of Object.entries(file.info.providers ?? {})) (layers[id] ??= []).push(item)
+          for (const [id, providerLayers] of Object.entries(layers))
+            yield* store.setLayers(ProviderV2.ID.make(id), providerLayers)
+          const configuredDefault = Config.latest(entries, "model")
+          if (configuredDefault !== undefined) yield* store.setDefaultIfEmpty(configuredDefault)
+        }
+
+        // Populate the catalog from the instance-wide store (the source of truth). Global store + this
+        // per-location transform ⇒ every location (incl. the scratch dir) sees the same providers.
+        const storedDefault = yield* store.getDefault()
+        if (storedDefault !== undefined) {
+          const model = ModelV2.parse(storedDefault)
           catalog.model.default.set(model.providerID, model.modelID)
         }
-        for (const file of files) {
-          for (const [id, item] of Object.entries(file.info.providers ?? {})) {
-            const providerID = id
+        for (const [id, itemLayers] of Object.entries(yield* store.providers())) {
+          const providerID = ProviderV2.ID.make(id)
+          for (const item of itemLayers) {
             catalog.provider.update(providerID, (provider) => {
               if (item.name !== undefined) provider.name = item.name
               if (item.api !== undefined) provider.api = { ...item.api }
@@ -58,8 +77,8 @@ export const Plugin = define({
                 Object.assign(provider.request.body, item.request.body)
               }
             })
-            for (const [id, config] of Object.entries(item.models ?? {})) {
-              catalog.model.update(providerID, id, (model) => {
+            for (const [modelID, config] of Object.entries(item.models ?? {})) {
+              catalog.model.update(providerID, modelID, (model) => {
                 if (config.family !== undefined) model.family = config.family
                 if (config.name !== undefined) model.name = config.name
                 if (config.api !== undefined) model.api = { ...model.api, ...config.api }
