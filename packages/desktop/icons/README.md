@@ -27,8 +27,3 @@ other tooling.
 > **Note.** The mark has the "NovaClaw" wordmark baked in, so at the very small sizes (16–32 px)
 > the text isn't legible — the diamond silhouette still reads. A dedicated small-size glyph (the
 > claw/diamond alone) could be added later for the tiny sizes if wanted.
-
-## Leftovers
-
-The `android/` and `ios/` subfolders are stale Tauri assets (still OpenCode-branded) — the app
-ships as Electron and does not use them. Safe to delete in a future cleanup.
