@@ -1,4 +1,4 @@
-import type { Message, Part } from "@novaclaw/sdk/v2/client"
+import type { SessionMessage, SessionMessageAssistant } from "@novaclaw/sdk/v2/client"
 
 export type SessionContextBreakdownKey = "system" | "user" | "assistant" | "tool" | "other"
 
@@ -9,27 +9,29 @@ export type SessionContextBreakdownSegment = {
   percent: number
 }
 
+type AssistantContent = SessionMessageAssistant["content"][number]
+
 const estimateTokens = (chars: number) => Math.ceil(chars / 4)
 const toPercent = (tokens: number, input: number) => (tokens / input) * 100
 const toPercentLabel = (tokens: number, input: number) => Math.round(toPercent(tokens, input) * 10) / 10
 
-const charsFromUserPart = (part: Part) => {
-  if (part.type === "text") return part.text.length
-  if (part.type === "file") return part.source?.text.value.length ?? 0
-  if (part.type === "agent") return part.source?.value.length ?? 0
-  return 0
-}
+// A native user message keeps the full prompt in `text` (inline @-mentions included; `files`/`agents`
+// carry only their source positions), so `text.length` captures the turn without double-counting.
+const charsFromUser = (message: Extract<SessionMessage, { type: "user" }>) => message.text.length
 
-const charsFromAssistantPart = (part: Part) => {
-  if (part.type === "text") return { assistant: part.text.length, tool: 0 }
-  if (part.type === "reasoning") return { assistant: part.text.length, tool: 0 }
-  if (part.type !== "tool") return { assistant: 0, tool: 0 }
+const charsFromAssistantContent = (content: AssistantContent): { assistant: number; tool: number } => {
+  if (content.type === "text") return { assistant: content.text.length, tool: 0 }
+  if (content.type === "reasoning") return { assistant: content.text.length, tool: 0 }
 
-  const input = Object.keys(part.state.input).length * 16
-  if (part.state.status === "pending") return { assistant: 0, tool: input + part.state.raw.length }
-  if (part.state.status === "completed") return { assistant: 0, tool: input + part.state.output.length }
-  if (part.state.status === "error") return { assistant: 0, tool: input + part.state.error.length }
-  return { assistant: 0, tool: input }
+  const state = content.state
+  if (state.status === "pending") return { assistant: 0, tool: state.input.length }
+
+  const input = Object.keys(state.input).length * 16
+  if (state.status === "error") return { assistant: 0, tool: input + state.error.message.length }
+
+  // running | completed — sum the text of the tool's output content (file refs carry no length here).
+  const output = state.content.reduce((sum, item) => sum + (item.type === "text" ? item.text.length : 0), 0)
+  return { assistant: 0, tool: input + output }
 }
 
 const build = (
@@ -68,8 +70,7 @@ const build = (
 }
 
 export function estimateSessionContextBreakdown(args: {
-  messages: Message[]
-  parts: Record<string, Part[] | undefined>
+  messages: readonly SessionMessage[]
   input: number
   systemPrompt?: string
 }) {
@@ -77,16 +78,12 @@ export function estimateSessionContextBreakdown(args: {
 
   const counts = args.messages.reduce(
     (acc, msg) => {
-      const parts = args.parts[msg.id] ?? []
-      if (msg.role === "user") {
-        const user = parts.reduce((sum, part) => sum + charsFromUserPart(part), 0)
-        return { ...acc, user: acc.user + user }
-      }
+      if (msg.type === "user") return { ...acc, user: acc.user + charsFromUser(msg) }
+      if (msg.type !== "assistant") return acc
 
-      if (msg.role !== "assistant") return acc
-      const assistant = parts.reduce(
-        (sum, part) => {
-          const next = charsFromAssistantPart(part)
+      const assistant = msg.content.reduce(
+        (sum, content) => {
+          const next = charsFromAssistantContent(content)
           return {
             assistant: sum.assistant + next.assistant,
             tool: sum.tool + next.tool,

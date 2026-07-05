@@ -1,34 +1,31 @@
 import { describe, expect, test } from "bun:test"
-import type { Message, Part } from "@novaclaw/sdk/v2/client"
+import type { SessionMessage } from "@novaclaw/sdk/v2/client"
 import { estimateSessionContextBreakdown } from "./session-context-breakdown"
 
-const user = (id: string) => {
-  return {
+const user = (id: string, text: string): SessionMessage =>
+  ({
     id,
-    role: "user",
+    type: "user",
+    text,
     time: { created: 1 },
-  } as unknown as Message
-}
+  }) as unknown as SessionMessage
 
-const assistant = (id: string) => {
-  return {
+const assistant = (id: string, text: string): SessionMessage =>
+  ({
     id,
-    role: "assistant",
+    type: "assistant",
+    agent: "build",
+    model: { providerID: "dgx-spark", modelID: "qwen3.6-35b" },
+    content: [{ type: "text", id: `${id}-t`, text }],
     time: { created: 1 },
-  } as unknown as Message
-}
+  }) as unknown as SessionMessage
 
 describe("estimateSessionContextBreakdown", () => {
   test("estimates tokens and keeps remaining tokens as other", () => {
-    const messages = [user("u1"), assistant("a1")]
-    const parts = {
-      u1: [{ type: "text", text: "hello world" }] as unknown as Part[],
-      a1: [{ type: "text", text: "assistant response" }] as unknown as Part[],
-    }
+    const messages = [user("u1", "hello world"), assistant("a1", "assistant response")]
 
     const output = estimateSessionContextBreakdown({
       messages,
-      parts,
       input: 20,
       systemPrompt: "system prompt",
     })
@@ -41,15 +38,10 @@ describe("estimateSessionContextBreakdown", () => {
   })
 
   test("scales segments when estimates exceed input", () => {
-    const messages = [user("u1"), assistant("a1")]
-    const parts = {
-      u1: [{ type: "text", text: "x".repeat(400) }] as unknown as Part[],
-      a1: [{ type: "text", text: "y".repeat(400) }] as unknown as Part[],
-    }
+    const messages = [user("u1", "x".repeat(400)), assistant("a1", "y".repeat(400))]
 
     const output = estimateSessionContextBreakdown({
       messages,
-      parts,
       input: 10,
       systemPrompt: "z".repeat(200),
     })

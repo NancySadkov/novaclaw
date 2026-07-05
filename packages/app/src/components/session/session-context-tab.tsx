@@ -4,14 +4,13 @@ import { useSync } from "@/context/sync"
 import { useServerSync } from "@/context/server-sync"
 import { checksum } from "@novaclaw/core/util/encode"
 import { findLast } from "@novaclaw/core/util/array"
-import { same } from "@/utils/same"
 import { Icon } from "@novaclaw/ui/icon"
 import { Accordion } from "@novaclaw/ui/accordion"
 import { StickyAccordionHeader } from "@novaclaw/ui/sticky-accordion-header"
 import { File } from "@novaclaw/session-ui/file"
 import { Markdown } from "@novaclaw/session-ui/markdown"
 import { ScrollView } from "@novaclaw/ui/scroll-view"
-import type { Message, Part, UserMessage } from "@novaclaw/sdk/v2/client"
+import type { SessionMessage } from "@novaclaw/sdk/v2/client"
 import { useLanguage } from "@/context/language"
 import { useProviders } from "@/hooks/use-providers"
 import { useSDK } from "@/context/sdk"
@@ -37,12 +36,13 @@ function Stat(props: { label: string; value: JSX.Element }) {
   )
 }
 
-function RawMessageContent(props: { message: Message; getParts: (id: string) => Part[]; onRendered: () => void }) {
+function RawMessageContent(props: { message: SessionMessage; onRendered: () => void }) {
   const file = createMemo(() => {
-    const parts = props.getParts(props.message.id)
-    const contents = JSON.stringify({ message: props.message, parts }, null, 2)
+    // Native SessionMessages are self-contained — assistant `content[]`, user files/agents, tool
+    // state are all inline, so the whole message serializes without a separate parts lookup.
+    const contents = JSON.stringify(props.message, null, 2)
     return {
-      name: `${props.message.role}-${props.message.id}.json`,
+      name: `${props.message.type}-${props.message.id}.json`,
       contents,
       cacheKey: checksum(contents),
     }
@@ -60,8 +60,7 @@ function RawMessageContent(props: { message: Message; getParts: (id: string) => 
 }
 
 function RawMessage(props: {
-  message: Message
-  getParts: (id: string) => Part[]
+  message: SessionMessage
   onRendered: () => void
   time: (value: number | undefined) => string
 }) {
@@ -71,7 +70,7 @@ function RawMessage(props: {
         <Accordion.Trigger>
           <div class="flex items-center justify-between gap-2 w-full">
             <div class="min-w-0 truncate">
-              {props.message.role} <span class="text-text-base">• {props.message.id}</span>
+              {props.message.type} <span class="text-text-base">• {props.message.id}</span>
             </div>
             <div class="flex items-center gap-3">
               <div class="shrink-0 text-12-regular text-text-weak">{props.time(props.message.time.created)}</div>
@@ -82,15 +81,14 @@ function RawMessage(props: {
       </StickyAccordionHeader>
       <Accordion.Content class="bg-background-base">
         <div class="p-3">
-          <RawMessageContent message={props.message} getParts={props.getParts} onRendered={props.onRendered} />
+          <RawMessageContent message={props.message} onRendered={props.onRendered} />
         </div>
       </Accordion.Content>
     </Accordion.Item>
   )
 }
 
-const emptyMessages: Message[] = []
-const emptyUserMessages: UserMessage[] = []
+const emptyMessages: SessionMessage[] = []
 
 export function SessionContextTab() {
   const sync = useSync()
@@ -102,31 +100,11 @@ export function SessionContextTab() {
 
   const info = createMemo(() => (params.id ? sync().session.get(params.id) : undefined))
 
-  const messages = createMemo(
-    () => {
-      const id = params.id
-      if (!id) return emptyMessages
-      return (sync().data.message[id] ?? []) as Message[]
-    },
-    emptyMessages,
-    { equals: same },
-  )
-
-  const userMessages = createMemo(
-    () => messages().filter((m) => m.role === "user") as UserMessage[],
-    emptyUserMessages,
-    { equals: same },
-  )
-
-  const visibleUserMessages = createMemo(
-    () => {
-      const revert = info()?.revert?.messageID
-      if (!revert) return userMessages()
-      return userMessages().filter((m) => m.id < revert)
-    },
-    emptyUserMessages,
-    { equals: same },
-  )
+  const messages = createMemo<readonly SessionMessage[]>(() => {
+    const id = params.id
+    if (!id) return emptyMessages
+    return serverSync().nativeMessages.messages(id) ?? emptyMessages
+  })
 
   const usd = createMemo(
     () =>
@@ -136,12 +114,7 @@ export function SessionContextTab() {
       }),
   )
 
-  // S5: the context metric reads the native SessionMessage store (the last assistant's token
-  // usage). The raw-message viewer + parts breakdown below still read the V1 store — a later slice.
-  const nativeMessages = createMemo(() =>
-    params.id ? (serverSync().nativeMessages.messages(params.id) ?? []) : [],
-  )
-  const ctx = createMemo(() => getSessionContext(nativeMessages(), [...providers.all().values()]))
+  const ctx = createMemo(() => getSessionContext(messages(), [...providers.all().values()]))
   const tokens = createMemo(() => info()?.tokens)
   const formatter = createMemo(() => createSessionContextFormatter(language.intl()))
 
@@ -151,8 +124,8 @@ export function SessionContextTab() {
 
   const counts = createMemo(() => {
     const all = messages()
-    const user = all.reduce((count, x) => count + (x.role === "user" ? 1 : 0), 0)
-    const assistant = all.reduce((count, x) => count + (x.role === "assistant" ? 1 : 0), 0)
+    const user = all.reduce((count, x) => count + (x.type === "user" ? 1 : 0), 0)
+    const assistant = all.reduce((count, x) => count + (x.type === "assistant" ? 1 : 0), 0)
     return {
       all: all.length,
       user,
@@ -160,11 +133,13 @@ export function SessionContextTab() {
     }
   })
 
+  // Native transcripts carry the injected/updated system context as `system` messages
+  // (from `session.next.context.updated`); surface the most recent one. The full resolved base
+  // prompt is server-side session state (F1e deep-tail #2) — sourcing it needs a dedicated endpoint.
   const systemPrompt = createMemo(() => {
-    const msg = findLast(visibleUserMessages(), (m) => !!m.system)
-    const system = msg?.system
-    if (!system) return
-    const trimmed = system.trim()
+    const msg = findLast(messages(), (m) => m.type === "system")
+    const system = msg?.type === "system" ? msg.text : undefined
+    const trimmed = system?.trim()
     if (!trimmed) return
     return trimmed
   })
@@ -189,7 +164,6 @@ export function SessionContextTab() {
         if (!c?.input) return []
         return estimateSessionContextBreakdown({
           messages: messages(),
-          parts: sync().data.part as Record<string, Part[] | undefined>,
           input: c.input,
           systemPrompt: systemPrompt(),
         })
@@ -230,7 +204,6 @@ export function SessionContextTab() {
   let scroll: HTMLDivElement | undefined
   let frame: number | undefined
   let pending: { x: number; y: number } | undefined
-  const getParts = (id: string) => (sync().data.part[id] ?? []) as Part[]
 
   const restoreScroll = () => {
     const el = scroll
@@ -338,9 +311,7 @@ export function SessionContextTab() {
           <div class="text-12-regular text-text-weak">{language.t("context.rawMessages.title")}</div>
           <Accordion multiple>
             <For each={messages()}>
-              {(message) => (
-                <RawMessage message={message} getParts={getParts} onRendered={restoreScroll} time={formatter().time} />
-              )}
+              {(message) => <RawMessage message={message} onRendered={restoreScroll} time={formatter().time} />}
             </For>
           </Accordion>
         </div>
