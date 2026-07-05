@@ -37,6 +37,9 @@ type ErrorNotification = NotificationBase & {
 
 export type Notification = TurnCompleteNotification | ErrorNotification
 
+// Stable empty result for the graceful-degradation path (a not-yet-connected server).
+const NO_NOTIFICATIONS: Notification[] = []
+
 type NotificationIndex = {
   session: {
     all: Record<string, Notification[]>
@@ -176,24 +179,34 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
 
     onCleanup(() => states.forEach((value) => value.dispose()))
 
-    const selected = () => ensure(activeServer())
+    // A server-scoped notification state exists only once its connection is registered in
+    // global.servers.list(). If activeServer() points at a not-yet-connected instance (e.g. a
+    // fresh page-load / deep-link of /server/{key}/session/{id} before the connection settles),
+    // DEGRADE to an empty state instead of throwing — the reactive list() re-runs these reads, so
+    // the UI recovers when the instance comes online. A reconnecting server must never fault the app.
+    const selected = (): NotificationState | undefined => {
+      const key = activeServer()
+      const conn = global.servers.list().find((item) => ServerConnection.key(item) === key)
+      if (!conn) return undefined
+      return ensure(key)
+    }
 
     return {
-      ready: () => selected().ready(),
+      ready: () => selected()?.ready() ?? false,
       ensureServerState: ensure,
       session: {
-        all: (session: string) => selected().session.all(session),
-        unseen: (session: string) => selected().session.unseen(session),
-        unseenCount: (session: string) => selected().session.unseenCount(session),
-        unseenHasError: (session: string) => selected().session.unseenHasError(session),
-        markViewed: (session: string) => selected().session.markViewed(session),
+        all: (session: string) => selected()?.session.all(session) ?? NO_NOTIFICATIONS,
+        unseen: (session: string) => selected()?.session.unseen(session) ?? NO_NOTIFICATIONS,
+        unseenCount: (session: string) => selected()?.session.unseenCount(session) ?? 0,
+        unseenHasError: (session: string) => selected()?.session.unseenHasError(session) ?? false,
+        markViewed: (session: string) => selected()?.session.markViewed(session),
       },
       project: {
-        all: (directory: string) => selected().project.all(directory),
-        unseen: (directory: string) => selected().project.unseen(directory),
-        unseenCount: (directory: string) => selected().project.unseenCount(directory),
-        unseenHasError: (directory: string) => selected().project.unseenHasError(directory),
-        markViewed: (directory: string) => selected().project.markViewed(directory),
+        all: (directory: string) => selected()?.project.all(directory) ?? NO_NOTIFICATIONS,
+        unseen: (directory: string) => selected()?.project.unseen(directory) ?? NO_NOTIFICATIONS,
+        unseenCount: (directory: string) => selected()?.project.unseenCount(directory) ?? 0,
+        unseenHasError: (directory: string) => selected()?.project.unseenHasError(directory) ?? false,
+        markViewed: (directory: string) => selected()?.project.markViewed(directory),
       },
     }
   },
