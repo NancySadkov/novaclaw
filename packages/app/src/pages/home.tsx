@@ -345,17 +345,24 @@ export function NewHome() {
         prefetched.add(key)
         createRoot((dispose) => {
           try {
-            const directory = ctx.sync.ensureDirSyncContext(record.session.directory)
-            void directory.session
-              .sync(record.session.id)
+            // F1e S5: warm the markdown cache from the native SessionMessage store (user prompt
+            // text + assistant text content) — the V1 message/part store is being torn down.
+            void ctx.sync.nativeMessages
+              .load(record.session.id)
               .then(() => {
+                const messages = ctx.sync.nativeMessages.messages(record.session.id) ?? []
                 return Promise.all(
-                  (ctx.sync.session.data.message[record.session.id] ?? []).flatMap((message) =>
-                    (ctx.sync.session.data.part[message.id] ?? []).flatMap((part) => {
-                      if (part.type !== "text" || !part.text) return []
-                      return preloadMarkdown(part.text, part.id, marked)
-                    }),
-                  ),
+                  messages.flatMap((message) => {
+                    if (message.type === "user") {
+                      return message.text ? preloadMarkdown(message.text, message.id, marked) : []
+                    }
+                    if (message.type !== "assistant") return []
+                    return message.content.flatMap((content) =>
+                      content.type === "text" && content.text
+                        ? preloadMarkdown(content.text, content.id, marked)
+                        : [],
+                    )
+                  }),
                 )
               })
               .catch(() => {})
