@@ -4,7 +4,6 @@ import { createStore } from "solid-js/store"
 import { useLocal } from "@/context/local"
 import { useServer, type ServerConnection } from "@/context/server"
 import { useDialog } from "@novaclaw/ui/context/dialog"
-import { popularProviders } from "@/hooks/use-providers"
 import { Button } from "@novaclaw/ui/button"
 import { IconButton } from "@novaclaw/ui/icon-button"
 import { Tag } from "@novaclaw/ui/tag"
@@ -67,16 +66,11 @@ const ModelList: Component<{
       key={(x) => `${x.provider.id}:${x.id}`}
       items={models}
       current={model.current()}
+      // Models-primary (notes/entities.md / todo "no first-class providers"): a FLAT model list —
+      // a provider is just where a model is served from, shown as the row's muted suffix, never a
+      // grouping header. (The popularProviders group ordering was opencode cloud residue.)
       filterKeys={["provider.name", "name", "id"]}
       sortBy={(a, b) => a.name.localeCompare(b.name)}
-      groupBy={(x) => x.provider.name}
-      sortGroupsBy={(a, b) => {
-        const aProvider = a.items[0].provider.id
-        const bProvider = b.items[0].provider.id
-        if (popularProviders.includes(aProvider) && !popularProviders.includes(bProvider)) return -1
-        if (!popularProviders.includes(aProvider) && popularProviders.includes(bProvider)) return 1
-        return popularProviders.indexOf(aProvider) - popularProviders.indexOf(bProvider)
-      }}
       itemWrapper={(item, node) => (
         <Tooltip
           class="w-full"
@@ -104,6 +98,7 @@ const ModelList: Component<{
           <Show when={i.latest}>
             <Tag>{language.t("model.tag.latest")}</Tag>
           </Show>
+          <span class="ml-auto shrink-0 truncate text-11-regular text-text-weak-base">{i.provider.name}</span>
         </div>
       )}
     </List>

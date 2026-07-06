@@ -28,7 +28,7 @@ const decodeV1Info = Schema.decodeUnknownOption(ConfigV1.Info, DECODE_OPTIONS)
 export const seedFromDirectory = (globalConfigDir: string, directory: string) =>
   Effect.gen(function* () {
     const store = yield* CatalogStore.Service
-    if (!(yield* store.isEmpty())) return
+    const providersSeeded = !(yield* store.isEmpty())
     const fs = yield* FSUtil.Service
 
     const decodeText = (text: string | undefined) => {
@@ -64,12 +64,19 @@ export const seedFromDirectory = (globalConfigDir: string, directory: string) =>
     if (inline) infos.push(inline)
     if (infos.length === 0) return
 
-    const layers: Record<string, ConfigProvider.Info[]> = {}
-    for (const info of infos)
-      for (const [id, item] of Object.entries(info.providers ?? {})) (layers[id] ??= []).push(item)
-    for (const [id, providerLayers] of Object.entries(layers))
-      yield* store.setLayers(ProviderV2.ID.make(id), providerLayers)
+    // Provider layers import only ONCE (idempotence gate) — a user's later store edits must win.
+    if (!providersSeeded) {
+      const layers: Record<string, ConfigProvider.Info[]> = {}
+      for (const info of infos)
+        for (const [id, item] of Object.entries(info.providers ?? {})) (layers[id] ??= []).push(item)
+      for (const [id, providerLayers] of Object.entries(layers))
+        yield* store.setLayers(ProviderV2.ID.make(id), providerLayers)
+    }
 
+    // The default-model import must NOT hide behind the providers gate: an instance whose store
+    // was seeded before the config gained a `model` would otherwise freeze default-less forever —
+    // model resolution then silently falls back to the FIRST catalog entry. setDefaultIfEmpty
+    // still protects an explicit user-set default from being clobbered.
     let defaultModel: string | undefined
     for (const info of infos) if (info.model !== undefined) defaultModel = info.model
     if (defaultModel !== undefined) yield* store.setDefaultIfEmpty(defaultModel)
