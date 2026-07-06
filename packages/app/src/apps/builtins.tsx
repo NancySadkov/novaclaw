@@ -1,6 +1,7 @@
 import { useNavigate } from "@solidjs/router"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { DialogProcesses } from "@/components/dialog-processes"
+import { useChatsAttention } from "@/apps/chats-attention"
 import { useSettingsDialog } from "@/components/settings-dialog"
 import { AppPlaceholder } from "@/pages/home-screen/app-placeholder"
 import { HelpTour } from "@/pages/home-screen/help-tour"
@@ -22,6 +23,7 @@ export function useBuiltinApps(): () => HomeApp[] {
   const navigate = useNavigate()
   const dialog = useDialog()
   const openSettings = useSettingsDialog()
+  const chatsAttention = useChatsAttention()
   const comingSoon = (app: Omit<HomeApp, "open" | "source">) => () =>
     void dialog.show(() => <AppPlaceholder title={app.title} icon={app.icon} accent={app.accent} subtitle={app.subtitle} />)
 
@@ -38,6 +40,8 @@ export function useBuiltinApps(): () => HomeApp[] {
       subtitle: "Ask anything — your agents do the work",
       source: "builtin",
       open: () => navigate("/chats"),
+      // Chats wanting attention (pending permission/question + unseen) — uix-improvement slice 2.
+      badge: () => chatsAttention().length || undefined,
     },
     {
       id: "notes",

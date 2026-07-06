@@ -22,6 +22,12 @@ export interface HomeApp {
   readonly glyphTone?: "light" | "dark"
   /** Hide this tile below the given expertise level (uix.md §6.4 — e.g. Terminal is Developer-only). */
   readonly minLevel?: ExpertiseLevel
+  /**
+   * Reactive attention count for the tile's badge (evaluated in the tile's render scope, so it
+   * may close over signals/memos). Render a badge when > 0 — the iOS vocabulary for "this app
+   * wants you". Built-in example: Chats = chats with a pending permission/question or unseen output.
+   */
+  readonly badge?: () => number | undefined
 }
 
 // A plain module-level signal is the whole registry — global reactive state, no provider to wire.

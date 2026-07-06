@@ -31,6 +31,23 @@ const openUnlessDragged = (props: { app: HomeApp; shouldSuppressOpen?: () => boo
   props.app.open()
 }
 
+// The iOS-vocabulary attention badge (uix-improvement slice 2): a count pill on the tile corner when
+// the app's reactive `badge()` accessor reports > 0 (e.g. Chats waiting on the user). Read here — not
+// in the apps memo — so a count change re-renders only the badge, never the launcher grid.
+const TileBadge: Component<{ app: HomeApp }> = (props) => {
+  const count = () => props.app.badge?.() ?? 0
+  return (
+    <Show when={count() > 0}>
+      <span
+        data-slot="app-tile-badge"
+        class="pointer-events-none absolute -right-1.5 -top-1.5 z-10 flex h-5 min-w-5 items-center justify-center rounded-full bg-v2-state-fg-danger px-1.5 text-[11px] font-semibold leading-none text-white shadow-[0_1px_4px_rgba(0,0,0,0.35)]"
+      >
+        {count() > 9 ? "9+" : count()}
+      </span>
+    </Show>
+  )
+}
+
 const RegularTile: Component<{ app: HomeApp; shouldSuppressOpen?: () => boolean }> = (props) => (
   <button
     type="button"
@@ -46,6 +63,7 @@ const RegularTile: Component<{ app: HomeApp; shouldSuppressOpen?: () => boolean 
       style={tileStyle(props.app)}
     >
       <Icon name={props.app.icon as ComponentProps<typeof Icon>["name"]} size="2xl" />
+      <TileBadge app={props.app} />
     </div>
     <span class="text-[13px] font-medium leading-tight text-v2-text-text-base/90 truncate max-w-full text-center [text-shadow:0_1px_2px_rgba(0,0,0,0.35)]">
       {props.app.title}
@@ -67,6 +85,7 @@ const HeroTile: Component<{ app: HomeApp; shouldSuppressOpen?: () => boolean }> 
       style={tileStyle(props.app)}
     >
       <Icon name={props.app.icon as ComponentProps<typeof Icon>["name"]} size="3xl" />
+      <TileBadge app={props.app} />
       <div
         class="flex flex-col items-start gap-1 text-left"
         style={{ color: props.app.glyphTone === "dark" ? "color-mix(in srgb, var(--nc-ink, #1a1135) 94%, transparent)" : "#ffffff" }}

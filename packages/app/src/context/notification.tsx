@@ -37,8 +37,9 @@ type ErrorNotification = NotificationBase & {
 
 export type Notification = TurnCompleteNotification | ErrorNotification
 
-// Stable empty result for the graceful-degradation path (a not-yet-connected server).
+// Stable empty results for the graceful-degradation path (a not-yet-connected server).
 const NO_NOTIFICATIONS: Notification[] = []
+const NO_SESSION_IDS: string[] = []
 
 type NotificationIndex = {
   session: {
@@ -199,6 +200,7 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
         unseen: (session: string) => selected()?.session.unseen(session) ?? NO_NOTIFICATIONS,
         unseenCount: (session: string) => selected()?.session.unseenCount(session) ?? 0,
         unseenHasError: (session: string) => selected()?.session.unseenHasError(session) ?? false,
+        unseenSessionIds: () => selected()?.session.unseenSessionIds() ?? NO_SESSION_IDS,
         markViewed: (session: string) => selected()?.session.markViewed(session),
       },
       project: {
@@ -397,8 +399,25 @@ function createServerNotificationState(input: {
     })
   }
 
+  // A deleted session must take its notifications with it — a lingering unseen entry for a chat
+  // that no longer exists reads as a phantom on every attention aggregate (the launcher badge,
+  // unseenSessionIds) with no way left to mark it viewed. Purge list + index in one batch.
+  const purgeSession = (sessionID: string) => {
+    const removed = store.list.filter((notification) => notification.session === sessionID)
+    if (!removed.length) return
+    batch(() => {
+      removed.forEach((notification) => removeFromIndex(notification))
+      setStore("list", (list) => list.filter((notification) => notification.session !== sessionID))
+    })
+  }
+
   const unsub = serverSDK().event.listen((e) => {
     const event = e.details
+    if (event.type === "session.deleted") {
+      const sessionID = event.properties.info?.id
+      if (sessionID) purgeSession(sessionID)
+      return
+    }
     if (event.type !== "session.idle" && event.type !== "session.error") return
 
     const directory = e.name
@@ -428,6 +447,11 @@ function createServerNotificationState(input: {
       },
       unseenHasError(session: string) {
         return index.session.unseenHasError[session] ?? false
+      },
+      // Sessions with unseen notifications — the aggregate the launcher badge / attention
+      // surfaces need (per-key accessors can't enumerate). Reactive via the index store.
+      unseenSessionIds() {
+        return Object.keys(index.session.unseenCount).filter((session) => (index.session.unseenCount[session] ?? 0) > 0)
       },
       markViewed(session: string) {
         const unseen = index.session.unseen[session] ?? empty
