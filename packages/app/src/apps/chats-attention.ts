@@ -6,22 +6,28 @@ import { createMemo } from "solid-js"
 import { useNotification } from "@/context/notification"
 import { usePermission } from "@/context/permission"
 import { useServerSync } from "@/context/server-sync"
-import { attentionSessionIds } from "./attention-ids"
+import { attentionSets } from "./attention-ids"
 
-export { attentionSessionIds } from "./attention-ids"
+export { attentionSessionIds, attentionSets } from "./attention-ids"
 
-/** Reactive ids of chats wanting attention on the active server. */
-export function useChatsAttention(): () => string[] {
+/** Reactive attention tiers (waiting-on-user · unseen) for the active server. */
+export function useChatsAttentionSets(): () => { waiting: string[]; unseen: string[] } {
   const serverSync = useServerSync()
   const notification = useNotification()
   const permission = usePermission()
   return createMemo(() => {
     const data = serverSync().session.data
-    return attentionSessionIds({
+    return attentionSets({
       permission: data.permission,
       question: data.question,
       unseen: notification.session.unseenSessionIds(),
       countsAsk: (ask) => !permission.autoResponds(ask, data.info[ask.sessionID]?.directory),
     })
   })
+}
+
+/** Reactive ids of chats wanting attention on the active server (both tiers, deduped). */
+export function useChatsAttention(): () => string[] {
+  const sets = useChatsAttentionSets()
+  return createMemo(() => [...sets().waiting, ...sets().unseen])
 }

@@ -2,6 +2,7 @@ import { createEffect, Suspense, type ParentProps } from "solid-js"
 import { useNavigate } from "@solidjs/router"
 import { DebugBar } from "@/components/debug-bar"
 import { Titlebar, type TitlebarUpdate } from "@/components/titlebar"
+import { useJumpToAttentionCommand } from "@/apps/jump-to-attention"
 import { usePlatform } from "@/context/platform"
 import { setNavigate } from "@/utils/notification-click"
 import { setV2Toast, ToastRegion } from "@/utils/toast"
@@ -10,6 +11,8 @@ export default function NewLayout(props: ParentProps) {
   const platform = usePlatform()
   const navigate = useNavigate()
   setNavigate(navigate)
+  // Always-live from anywhere in the shell: mod+j → the chat that needs you (uix-improvement slice 3).
+  useJumpToAttentionCommand()
 
   createEffect(() => setV2Toast(true))
 

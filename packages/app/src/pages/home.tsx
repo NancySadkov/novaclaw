@@ -70,6 +70,7 @@ import { preloadMarkdown } from "@novaclaw/session-ui/markdown-cache"
 import { archiveHomeSession } from "./home-session-archive"
 import { homeSessionTimeLabel } from "./home-session-meta"
 import { usePermission } from "@/context/permission"
+import { useChatsAttentionSets } from "@/apps/chats-attention"
 import { sessionPermissionRequest, sessionQuestionRequest } from "@/pages/session/composer/session-request-tree"
 import { showToast } from "@/utils/toast"
 
@@ -333,7 +334,32 @@ export function NewHome() {
     return allRecords().filter((record) => matchesHomeSessionSearch(record, query))
   })
   const searchOpen = createMemo(() => state.searchFocused && search().length > 0)
-  const groups = createMemo(() => groupSessions(records(), language))
+  // Pinned "Needs attention" cluster (uix-improvement slice 3): chats waiting on the user first,
+  // then unseen — lifted OUT of the day groups so the thing that needs you is always on top.
+  const chatsAttention = useChatsAttentionSets()
+  const attentionRecords = createMemo(() => {
+    if (selection().server !== server.key) return []
+    const sets = chatsAttention()
+    const rank = new Map<string, number>()
+    sets.waiting.forEach((id) => rank.set(id, 0))
+    sets.unseen.forEach((id) => rank.set(id, 1))
+    return records()
+      .filter((record) => rank.has(record.session.id))
+      .sort((a, b) => {
+        const tier = rank.get(a.session.id)! - rank.get(b.session.id)!
+        if (tier !== 0) return tier
+        const at = a.session.time.updated ?? a.session.time.created
+        const bt = b.session.time.updated ?? b.session.time.created
+        return bt - at
+      })
+  })
+  const groups = createMemo(() => {
+    const pinned = new Set(attentionRecords().map((record) => record.session.id))
+    return groupSessions(
+      records().filter((record) => !pinned.has(record.session.id)),
+      language,
+    )
+  })
   const sessionHeaderOpacity = useHomeSessionHeaderOpacity(groups)
   const prefetched = new Set<string>()
 
@@ -646,10 +672,34 @@ export function NewHome() {
               }
             >
               <Show
-                when={groups().length > 0}
+                when={groups().length > 0 || attentionRecords().length > 0}
                 fallback={<HomeSessionsEmpty onNewSession={canNewSession() ? openNewSession : undefined} />}
               >
                 <div ref={sessionHeaderOpacity.setContentRef} class="flex flex-col pt-3 pr-3 pb-16">
+                  <Show when={attentionRecords().length > 0}>
+                    <HomeSessionGroupHeader
+                      title={language.t("home.sessions.group.attention")}
+                      titleOpacity={1}
+                      // A callback no-op, NOT `undefined`: Solid compiles a plain ref prop into an
+                      // assignment, and forwarding undefined becomes `window.undefined = el` (crash).
+                      ref={() => {}}
+                      elevated
+                    />
+                    <div data-slot="home-attention-cluster" class="flex min-w-0 flex-col gap-px pt-4 mb-6">
+                      <For each={attentionRecords()}>
+                        {(record) => (
+                          <HomeSessionRow
+                            record={record}
+                            showProjectName={!selectedProject()}
+                            server={selection().server}
+                            activeServer={selection().server === server.key}
+                            openSession={openSession}
+                            archiveSession={archiveSession}
+                          />
+                        )}
+                      </For>
+                    </div>
+                  </Show>
                   <For each={groups()}>
                     {(group, index) => (
                       <>
@@ -1439,9 +1489,14 @@ function HomeSessionAttention(props: { session: Session; activeServer: boolean }
   const permission = usePermission()
   const serverSync = useServerSync()
 
+  // Created in component init (NOT inside a memo) exactly like the sidebar's SessionItem — child()
+  // may bootstrap the directory store, and store creation must not run inside a tracked computation.
+  // Default bootstrap: a fresh /chats load must seed the pending permission/question state for the
+  // directories on screen, or the pill (and the page-level attention cluster reading the same store)
+  // only ever appears from live events.
+  const [childStore] = serverSync().child(props.session.directory)
   const waiting = createMemo(() => {
     if (!props.activeServer) return false
-    const [childStore] = serverSync().child(props.session.directory, { bootstrap: false })
     const data = serverSync().session.data
     const ask = sessionPermissionRequest(
       childStore.session,
