@@ -411,7 +411,25 @@ export const layer = Layer.effectDiscard(
     yield* events.project(SessionEvent.Shell.Started, (event) => run(db, event))
     yield* events.project(SessionEvent.Shell.Ended, (event) => run(db, event))
     yield* events.project(SessionEvent.Step.Started, (event) => run(db, event))
-    yield* events.project(SessionEvent.Step.Ended, (event) => run(db, event))
+    // Session-level usage rollup for the NATIVE engine: fold each completed step's tokens/cost
+    // into the session row. The V1 engine kept Session.tokens/cost via its step-finish part
+    // projections, which never fire for session.next.* events — without this a native session's
+    // record reports 0 forever (Processes token counts, the chat info sheet, cost).
+    yield* events.project(SessionEvent.Step.Ended, (event) =>
+      run(db, event).pipe(
+        Effect.andThen(
+          applyUsage(db, event.data.sessionID, {
+            cost: event.data.cost,
+            tokens: {
+              input: event.data.tokens.input,
+              output: event.data.tokens.output,
+              reasoning: event.data.tokens.reasoning,
+              cache: { read: event.data.tokens.cache.read, write: event.data.tokens.cache.write },
+            },
+          }),
+        ),
+      ),
+    )
     yield* events.project(SessionEvent.Step.Failed, (event) => run(db, event))
     yield* events.project(SessionEvent.Text.Started, (event) => run(db, event))
     yield* events.project(SessionEvent.Text.Ended, (event) => run(db, event))

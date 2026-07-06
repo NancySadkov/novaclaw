@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { homeSessionTimeLabel, subtreeRows } from "./home-session-meta"
+import { homeSessionTimeLabel, subtreeRows, tokenTotals } from "./home-session-meta"
 
 describe("homeSessionTimeLabel", () => {
   const noon = new Date("2026-07-06T12:00:00").getTime()
@@ -48,5 +48,16 @@ describe("subtreeRows", () => {
   test("skips archived children and tolerates cycles", () => {
     const sessions = [s("a", "root", 5, 99), s("b", "root", 4), s("root", "b", 1)]
     expect(subtreeRows(sessions, "root").map((row) => row.session.id)).toEqual(["b"])
+  })
+})
+
+describe("tokenTotals", () => {
+  test("sums usage across sessions and derives the total", () => {
+    const totals = tokenTotals([
+      { tokens: { input: 100, output: 20, reasoning: 5, cache: { read: 50, write: 10 } } },
+      { tokens: { input: 1, output: 2, reasoning: 3, cache: { read: 4, write: 5 } } },
+      {},
+    ])
+    expect(totals).toEqual({ input: 101, output: 22, reasoning: 8, cacheRead: 54, cacheWrite: 15, total: 131 })
   })
 })

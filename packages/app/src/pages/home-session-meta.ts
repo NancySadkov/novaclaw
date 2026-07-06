@@ -6,6 +6,34 @@ type SessionLike = {
   time: { created: number; updated?: number; archived?: number }
 }
 
+export type TokenTotals = {
+  input: number
+  output: number
+  reasoning: number
+  cacheRead: number
+  cacheWrite: number
+  /** input + output + reasoning — the "how much work happened" figure. */
+  total: number
+}
+
+/** Sum token usage across sessions (a chat + its sub-agent threads for the rollup). */
+export function tokenTotals(
+  sessions: readonly { tokens?: { input: number; output: number; reasoning: number; cache: { read: number; write: number } } }[],
+): TokenTotals {
+  const out = { input: 0, output: 0, reasoning: 0, cacheRead: 0, cacheWrite: 0, total: 0 }
+  for (const session of sessions) {
+    const tokens = session.tokens
+    if (!tokens) continue
+    out.input += tokens.input ?? 0
+    out.output += tokens.output ?? 0
+    out.reasoning += tokens.reasoning ?? 0
+    out.cacheRead += tokens.cache?.read ?? 0
+    out.cacheWrite += tokens.cache?.write ?? 0
+  }
+  out.total = out.input + out.output + out.reasoning
+  return out
+}
+
 /**
  * A root's subtask subtree as depth-ordered rows (children indented under their parent,
  * newest first per level), skipping archived sessions. The Chats list day-groups ROOTS only;

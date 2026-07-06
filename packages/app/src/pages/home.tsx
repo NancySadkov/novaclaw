@@ -71,6 +71,7 @@ import { archiveHomeSession } from "./home-session-archive"
 import { homeSessionTimeLabel, subtreeRows } from "./home-session-meta"
 import { usePermission } from "@/context/permission"
 import { useChatsAttentionSets } from "@/apps/chats-attention"
+import { DialogSessionInfo } from "@/components/dialog-session-info"
 import { sessionPermissionRequest, sessionQuestionRequest } from "@/pages/session/composer/session-request-tree"
 import { showToast } from "@/utils/toast"
 
@@ -1582,6 +1583,7 @@ function HomeSessionRow(props: {
   archiveSession: (session: Session) => Promise<void>
 }) {
   const language = useLanguage()
+  const dialog = useDialog()
   const title = createMemo(() => sessionTitle(props.record.session.title) || props.record.session.id)
   const showProjectName = () => props.showProjectName && props.record.projectName
   // Changes badge (Chat-UI slice d): a row whose agent has actual file changes in its folder shows
@@ -1656,8 +1658,24 @@ function HomeSessionRow(props: {
           </span>
         </span>
       </button>
-      <Show when={SHOW_HOME_SESSION_ARCHIVE}>
-        <div class="hover-reveal absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-1 group-hover/session:opacity-100 focus-within:opacity-100">
+      <div class="hover-reveal absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-1 group-hover/session:opacity-100 focus-within:opacity-100">
+        <TooltipV2 class="flex shrink-0 items-center" placement="bottom" value={language.t("home.session.info")}>
+          <IconButtonV2
+            data-action="home-session-info"
+            variant="ghost-muted"
+            size="large"
+            icon={<Icon name="info" size="small" />}
+            aria-label={language.t("home.session.info")}
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              void dialog.show(() => (
+                <DialogSessionInfo session={props.record.session} projectName={props.record.projectName} />
+              ))
+            }}
+          />
+        </TooltipV2>
+        <Show when={SHOW_HOME_SESSION_ARCHIVE}>
           <TooltipV2 class="flex shrink-0 items-center" placement="bottom" value={language.t("common.archive")}>
             <IconButtonV2
               data-action="home-session-archive"
@@ -1672,8 +1690,8 @@ function HomeSessionRow(props: {
               }}
             />
           </TooltipV2>
-        </div>
-      </Show>
+        </Show>
+      </div>
     </div>
     <For each={children()}>
       {(row) => (
