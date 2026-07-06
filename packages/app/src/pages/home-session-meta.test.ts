@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { homeSessionTimeLabel } from "./home-session-meta"
+import { homeSessionTimeLabel, subtreeRows } from "./home-session-meta"
 
 describe("homeSessionTimeLabel", () => {
   const noon = new Date("2026-07-06T12:00:00").getTime()
@@ -20,5 +20,33 @@ describe("homeSessionTimeLabel", () => {
     const label = homeSessionTimeLabel(lastMonth, "en", noon)
     expect(label).toContain("Jun")
     expect(label).not.toMatch(/\d{1,2}:\d{2}/)
+  })
+})
+
+describe("subtreeRows", () => {
+  const s = (id: string, parentID: string | undefined, updated: number, archived?: number) => ({
+    id,
+    parentID,
+    time: { created: updated, updated, archived },
+  })
+
+  test("depth-orders descendants under the root, newest first per level", () => {
+    const sessions = [
+      s("root", undefined, 10),
+      s("a", "root", 5),
+      s("b", "root", 8),
+      s("a1", "a", 6),
+      s("other", "elsewhere", 9),
+    ]
+    expect(subtreeRows(sessions, "root").map((row) => `${row.session.id}@${row.depth}`)).toEqual([
+      "b@1",
+      "a@1",
+      "a1@2",
+    ])
+  })
+
+  test("skips archived children and tolerates cycles", () => {
+    const sessions = [s("a", "root", 5, 99), s("b", "root", 4), s("root", "b", 1)]
+    expect(subtreeRows(sessions, "root").map((row) => row.session.id)).toEqual(["b"])
   })
 })

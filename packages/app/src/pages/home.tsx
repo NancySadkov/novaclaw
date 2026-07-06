@@ -68,7 +68,7 @@ import { Persist, persisted } from "@/utils/persist"
 import { useMarked } from "@novaclaw/ui/context/marked"
 import { preloadMarkdown } from "@novaclaw/session-ui/markdown-cache"
 import { archiveHomeSession } from "./home-session-archive"
-import { homeSessionTimeLabel } from "./home-session-meta"
+import { homeSessionTimeLabel, subtreeRows } from "./home-session-meta"
 import { usePermission } from "@/context/permission"
 import { useChatsAttentionSets } from "@/apps/chats-attention"
 import { sessionPermissionRequest, sessionQuestionRequest } from "@/pages/session/composer/session-request-tree"
@@ -312,6 +312,11 @@ export function NewHome() {
           focusedSync().project.loadSessions(directory, { limit: HOME_SESSION_LIMIT }),
         ),
       )
+      // Threads tree (uix-improvement slice 4): the roots-only list never carries child sessions;
+      // hydrate them per directory (best-effort — the roots already rendered).
+      void Promise.all(
+        projectDirectories().map((directory) => focusedSync().project.loadChildSessions(directory)),
+      )
       return null
     },
   }))
@@ -340,18 +345,31 @@ export function NewHome() {
   const attentionRecords = createMemo(() => {
     if (selection().server !== server.key) return []
     const sets = chatsAttention()
+    if (!sets.waiting.length && !sets.unseen.length) return []
     const rank = new Map<string, number>()
     sets.waiting.forEach((id) => rank.set(id, 0))
     sets.unseen.forEach((id) => rank.set(id, 1))
+    // A record pins when it OR any session in its subtask subtree wants attention (a waiting
+    // child bubbles to its root — the list shows roots).
+    const recordRank = (record: HomeSessionRecord) => {
+      let best = rank.get(record.session.id)
+      const [childStore] = sync().child(record.session.directory, { bootstrap: false })
+      for (const row of subtreeRows(childStore.session, record.session.id)) {
+        const tier = rank.get(row.session.id)
+        if (tier !== undefined && (best === undefined || tier < best)) best = tier
+      }
+      return best
+    }
     return records()
-      .filter((record) => rank.has(record.session.id))
+      .map((record) => ({ record, tier: recordRank(record) }))
+      .filter((item): item is { record: HomeSessionRecord; tier: number } => item.tier !== undefined)
       .sort((a, b) => {
-        const tier = rank.get(a.session.id)! - rank.get(b.session.id)!
-        if (tier !== 0) return tier
-        const at = a.session.time.updated ?? a.session.time.created
-        const bt = b.session.time.updated ?? b.session.time.created
+        if (a.tier !== b.tier) return a.tier - b.tier
+        const at = a.record.session.time.updated ?? a.record.session.time.created
+        const bt = b.record.session.time.updated ?? b.record.session.time.created
         return bt - at
       })
+      .map((item) => item.record)
   })
   const groups = createMemo(() => {
     const pinned = new Set(attentionRecords().map((record) => record.session.id))
@@ -1577,8 +1595,18 @@ function HomeSessionRow(props: {
     const time = props.record.session.time
     return homeSessionTimeLabel(time.updated ?? time.created, language.intl())
   })
+  // Subtask subtree (uix-improvement slice 4): a root's child agents nest under it, indented —
+  // the spawned-process structure is visible without a separate view. Children come from the
+  // directory child store (the roots-only home query never carries them).
+  const serverSyncForChildren = useServerSync()
+  const children = createMemo(() =>
+    props.activeServer
+      ? subtreeRows(serverSyncForChildren().child(props.record.session.directory, { bootstrap: false })[0].session, props.record.session.id)
+      : [],
+  )
 
   return (
+    <>
     <div
       class="group/session relative flex h-10 min-w-0 items-center rounded-[6px]"
       classList={{ group: !!showProjectName() }}
@@ -1647,6 +1675,31 @@ function HomeSessionRow(props: {
         </div>
       </Show>
     </div>
+    <For each={children()}>
+      {(row) => (
+        <button
+          type="button"
+          data-component="home-session-child-row"
+          class={`${HOME_ROW} h-8 min-w-0 flex-none gap-2 py-2 pr-10`}
+          style={{ "padding-left": `${12 + row.depth * 16}px` }}
+          onClick={() => props.openSession(row.session)}
+        >
+          <span aria-hidden="true" class="shrink-0 text-[12px] leading-none text-v2-text-text-faint">
+            └
+          </span>
+          <span class="min-w-0 flex-[1_1_auto] overflow-hidden text-ellipsis whitespace-nowrap text-left text-[13px] text-v2-text-text-muted [font-weight:470]">
+            {sessionTitle(row.session.title) || row.session.id}
+          </span>
+          <span class="ml-auto flex shrink-0 items-center gap-2">
+            <HomeSessionAttention session={row.session} activeServer={props.activeServer} />
+            <span class="shrink-0 text-[11px] leading-none tabular-nums text-v2-text-text-faint [font-weight:440]">
+              {homeSessionTimeLabel(row.session.time.updated ?? row.session.time.created, language.intl())}
+            </span>
+          </span>
+        </button>
+      )}
+    </For>
+  </>
   )
 }
 

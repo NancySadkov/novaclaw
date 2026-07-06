@@ -1,4 +1,39 @@
-// Pure helpers for the Chats-list row meta (uix-improvement slice 1).
+// Pure helpers for the Chats-list row meta (uix-improvement slices 1 + 4).
+
+type SessionLike = {
+  id: string
+  parentID?: string
+  time: { created: number; updated?: number; archived?: number }
+}
+
+/**
+ * A root's subtask subtree as depth-ordered rows (children indented under their parent,
+ * newest first per level), skipping archived sessions. The Chats list day-groups ROOTS only;
+ * children always render under their root regardless of their own updated day.
+ */
+export function subtreeRows<T extends SessionLike>(sessions: readonly T[], rootID: string): { session: T; depth: number }[] {
+  const byParent = new Map<string, T[]>()
+  for (const session of sessions) {
+    if (!session.parentID || session.time.archived) continue
+    const list = byParent.get(session.parentID) ?? []
+    list.push(session)
+    byParent.set(session.parentID, list)
+  }
+  const rows: { session: T; depth: number }[] = []
+  const visit = (parentID: string, depth: number, seen: Set<string>) => {
+    const children = (byParent.get(parentID) ?? [])
+      .slice()
+      .sort((a, b) => (b.time.updated ?? b.time.created) - (a.time.updated ?? a.time.created))
+    for (const child of children) {
+      if (seen.has(child.id)) continue
+      seen.add(child.id)
+      rows.push({ session: child, depth })
+      visit(child.id, depth + 1, seen)
+    }
+  }
+  visit(rootID, 1, new Set([rootID]))
+  return rows
+}
 
 /**
  * Compact per-row timestamp for the day-grouped Chats list: the day is already conveyed

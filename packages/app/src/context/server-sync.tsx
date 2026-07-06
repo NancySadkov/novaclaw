@@ -17,6 +17,7 @@ import {
   loadProvidersQuery,
 } from "./global-sync/bootstrap"
 import { loadPersistedApps } from "@/apps/persisted"
+import { mergeSession } from "./global-sync/bootstrap"
 import { createChildStoreManager } from "./global-sync/child-store"
 import { applyDirectoryEvent, applyGlobalEvent } from "./global-sync/event-reducer"
 import { estimateRootSessionTotal, loadRootSessionsWithFallback } from "./global-sync/session-load"
@@ -307,6 +308,30 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     return promise
   }
 
+  // Hydrate a directory's CHILD sessions into its store (uix-improvement slice 4). The roots-only
+  // list (`loadSessions`) never carries them, so on a fresh load the Chats threads tree would only
+  // fill from live spawn events. Best-effort: children are progressive enhancement over the roots
+  // list; `loadSessions`' reconcile preserves child rows already in the store.
+  async function loadChildSessions(directory: string, options?: { limit?: number }) {
+    const key = directoryKey(directory)
+    children.pin(key)
+    try {
+      const [, setStore] = children.child(directory, { bootstrap: false })
+      const result = await serverSDK.client.session.list({ directory, limit: options?.limit ?? 200 })
+      const nonRoot = (result.data ?? []).filter((s) => !!s?.id && !!s.parentID && !s.time?.archived)
+      if (nonRoot.length) {
+        batch(() => {
+          nonRoot.forEach((s) => mergeSession(setStore, s))
+          nonRoot.forEach(session.remember)
+        })
+      }
+    } catch {
+      // Non-fatal: the roots list already rendered; children fill in on the next live event.
+    } finally {
+      children.unpin(key)
+    }
+  }
+
   async function bootstrapInstance(directory: string) {
     const key = directoryKey(directory)
     if (!key) return
@@ -436,6 +461,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
 
   const projectApi = {
     loadSessions,
+    loadChildSessions,
     meta(directory: string, patch: ProjectMeta) {
       children.projectMeta(directory, patch)
     },

@@ -143,7 +143,7 @@ function projectID(directory: string, projects: Project[]) {
   return projects.find((project) => project.worktree === directory || project.sandboxes?.includes(directory))?.id
 }
 
-function mergeSession(setStore: SetStoreFunction<State>, session: Session) {
+export function mergeSession(setStore: SetStoreFunction<State>, session: Session) {
   setStore("session", (list) => {
     const next = list.slice()
     const idx = next.findIndex((item) => item.id >= session.id)
