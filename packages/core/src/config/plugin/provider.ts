@@ -16,10 +16,15 @@ export const Plugin = define({
     yield* ctx.integration.transform(
       Effect.fn(function* (integrations) {
         const files = (yield* config.entries()).filter((entry): entry is Config.Document => entry.type === "document")
+        // `env: []` must count as ABSENT: an env method with zero names can never produce a
+        // credential, but its mere existence creates an integration record — and a provider
+        // with an integration record and no connections drops out of catalog availability
+        // (catalog.ts `available`). V1 configs commonly carry `env: []` for keyless/local
+        // endpoints, which would silently disable the provider.
         const configuredIntegrations = new Set(
           files.flatMap((file) =>
             Object.entries(file.info.providers ?? {}).flatMap(([id, provider]) =>
-              provider.env === undefined ? [] : [id],
+              provider.env === undefined || provider.env.length === 0 ? [] : [id],
             ),
           ),
         )
@@ -30,7 +35,7 @@ export const Plugin = define({
             integrations.update(integrationID, (integration) => {
               integration.name = item.name ?? integration.name
             })
-            if (item.env !== undefined) {
+            if (item.env !== undefined && item.env.length > 0) {
               integrations.method.update({
                 integrationID,
                 method: { type: "env", names: [...item.env] },

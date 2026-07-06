@@ -6,6 +6,7 @@ import { Effect, Option, Schema } from "effect"
 import { CatalogStore } from "./catalog-store"
 import { Config } from "./config"
 import { ConfigProvider } from "./config/provider"
+import { Flag } from "./flag/flag"
 import { FSUtil } from "./fs-util"
 import { ProviderV2 } from "./provider"
 import { ConfigV1 } from "./v1/config/config"
@@ -30,18 +31,21 @@ export const seedFromDirectory = (globalConfigDir: string, directory: string) =>
     if (!(yield* store.isEmpty())) return
     const fs = yield* FSUtil.Service
 
+    const decodeText = (text: string | undefined) => {
+      if (!text) return undefined
+      const errors: ParseError[] = []
+      const input: unknown = parse(text, errors, { allowTrailingComma: true })
+      if (errors.length) return undefined
+      return Option.getOrUndefined(
+        ConfigMigrateV1.isV1(input)
+          ? decodeV1Info(input).pipe(Option.map(ConfigMigrateV1.migrate), Option.flatMap(decodeInfo))
+          : decodeInfo(input),
+      )
+    }
+
     const loadInfo = (filepath: string) =>
       Effect.gen(function* () {
-        const text = yield* fs.readFileStringSafe(filepath)
-        if (!text) return undefined
-        const errors: ParseError[] = []
-        const input: unknown = parse(text, errors, { allowTrailingComma: true })
-        if (errors.length) return undefined
-        return Option.getOrUndefined(
-          ConfigMigrateV1.isV1(input)
-            ? decodeV1Info(input).pipe(Option.map(ConfigMigrateV1.migrate), Option.flatMap(decodeInfo))
-            : decodeInfo(input),
-        )
+        return decodeText(yield* fs.readFileStringSafe(filepath))
       })
 
     // Global config first (general), then the target directory (specific — wins on conflicts), matching
@@ -52,6 +56,12 @@ export const seedFromDirectory = (globalConfigDir: string, directory: string) =>
         const info = yield* loadInfo(path.join(dir, name))
         if (info) infos.push(info)
       }
+    // NOVACLAW_CONFIG_CONTENT is a first-class config source (the SDK's server launcher passes app
+    // config exclusively through it, and headless/test embeddings rely on it). Without importing it
+    // here, such an instance boots with an EMPTY catalog and every V2 turn fails model resolution.
+    // Appended last = most specific (mirrors the V1 loader treating it as a "local" source).
+    const inline = decodeText(Flag.NOVACLAW_CONFIG_CONTENT)
+    if (inline) infos.push(inline)
     if (infos.length === 0) return
 
     const layers: Record<string, ConfigProvider.Info[]> = {}

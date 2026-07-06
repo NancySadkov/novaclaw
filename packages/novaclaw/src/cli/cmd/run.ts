@@ -568,111 +568,177 @@ export const RunCommand = effectCmd({
         // to stdout/UI. `client` is passed explicitly because attach mode may
         // rebind the SDK to the session's directory after the subscription is
         // created, and replies issued from inside the loop must use that client.
+        //
+        // F1e S7-prep: the loop consumes the NATIVE `session.next.*` / `permission.v2.*`
+        // vocab (terminal events carry full values — text.ended/reasoning.ended/
+        // tool.success — so no delta folding is needed). The V1 projections it used to
+        // read (`message.part.updated`, `permission.asked`, `session.error`) are no
+        // longer consumed, unblocking the S7 translator/projection delete. Tool
+        // rendering still rides run/tool.ts, fed a minimal ToolPart-shaped adapter.
         async function loop(client: NovaclawClient, events: Awaited<ReturnType<typeof sdk.event.subscribe>>) {
           const toggles = new Map<string, boolean>()
+          // callID -> name+input captured at tool.called, joined with tool.success/failed.
+          const calls = new Map<string, { tool: string; input: Record<string, unknown> }>()
           let error: string | undefined
 
+          // Flatten native ToolContent[] into the flat output blob run/tool.ts renders
+          // (text entries only — file entries carry no inline text).
+          const flatten = (content: ReadonlyArray<{ type: string; text?: string }> | undefined) =>
+            (content ?? [])
+              .filter((item) => item.type === "text")
+              .map((item) => item.text ?? "")
+              .join("")
+
+          const toolPart = (input: { callID: string; state: Record<string, unknown> & { status: string } }): ToolPart => {
+            const entry = calls.get(input.callID)
+            const name = entry?.tool ?? "unknown"
+            return {
+              type: "tool",
+              id: input.callID,
+              callID: input.callID,
+              sessionID,
+              tool: name,
+              state: {
+                input: entry?.input ?? {},
+                title: name,
+                ...input.state,
+              },
+            } as unknown as ToolPart
+          }
+
+          const fail = (message: string, raw: unknown) => {
+            error = error ? error + EOL + message : message
+            if (emit("error", { error: raw })) return
+            UI.error(message)
+          }
+
+          const errorMessage = (err: unknown, fallback: string) => {
+            if (err && typeof err === "object" && "message" in err) {
+              const value = String((err as { message: unknown }).message)
+              if (value) return value
+            }
+            return fallback
+          }
+
           for await (const event of events.stream) {
-            if (
-              event.type === "message.updated" &&
-              event.properties.sessionID === sessionID &&
-              event.properties.info.role === "assistant" &&
-              args.format !== "json" &&
-              toggles.get("start") !== true
-            ) {
-              UI.empty()
-              UI.println(`> ${event.properties.info.agent} · ${event.properties.info.modelID}`)
-              UI.empty()
-              toggles.set("start", true)
+            if (process.env["NOVACLAW_RUN_DEBUG_EVENTS"]) console.error("EVT", event.type)
+            const scoped = (event as { properties?: { sessionID?: string } }).properties
+            if (scoped?.sessionID !== sessionID) continue
+
+            if (event.type === "session.next.step.started") {
+              if (emit("step_start", { step: { agent: event.properties.agent, model: event.properties.model } })) {
+                continue
+              }
+              if (args.format !== "json" && toggles.get("start") !== true) {
+                UI.empty()
+                UI.println(`> ${event.properties.agent} · ${event.properties.model.id}`)
+                UI.empty()
+                toggles.set("start", true)
+              }
             }
 
-            if (event.type === "message.part.updated") {
-              const part = event.properties.part
-              if (part.sessionID !== sessionID) continue
+            if (event.type === "session.next.step.ended") {
+              const { timestamp: _t, sessionID: _s, assistantMessageID: _m, ...step } = event.properties
+              if (emit("step_finish", { step })) continue
+            }
 
-              if (part.type === "tool" && (part.state.status === "completed" || part.state.status === "error")) {
-                if (emit("tool_use", { part })) continue
-                if (part.state.status === "completed") {
-                  await tool(part)
-                  continue
-                }
-                await toolError(part)
-                UI.error(part.state.error)
+            if (event.type === "session.next.tool.called") {
+              calls.set(event.properties.callID, {
+                tool: event.properties.tool,
+                input: event.properties.input,
+              })
+              if (event.properties.tool === "task" && args.format !== "json") {
+                if (toggles.get(event.properties.callID) === true) continue
+                await tool(toolPart({ callID: event.properties.callID, state: { status: "running" } }))
+                toggles.set(event.properties.callID, true)
               }
+            }
 
+            if (event.type === "session.next.tool.success") {
+              const output = flatten(event.properties.content)
               if (
-                part.type === "tool" &&
-                part.tool === "task" &&
-                part.state.status === "running" &&
-                args.format !== "json"
+                emit("tool_use", {
+                  tool: calls.get(event.properties.callID)?.tool ?? "unknown",
+                  callID: event.properties.callID,
+                  input: calls.get(event.properties.callID)?.input ?? {},
+                  output,
+                  structured: event.properties.structured,
+                })
               ) {
-                if (toggles.get(part.id) === true) continue
-                await tool(part)
-                toggles.set(part.id, true)
+                continue
               }
-
-              if (part.type === "step-start") {
-                if (emit("step_start", { part })) continue
-              }
-
-              if (part.type === "step-finish") {
-                if (emit("step_finish", { part })) continue
-              }
-
-              if (part.type === "text" && part.time?.end) {
-                if (emit("text", { part })) continue
-                const text = part.text.trim()
-                if (!text) continue
-                if (!process.stdout.isTTY) {
-                  process.stdout.write(text + EOL)
-                  continue
-                }
-                UI.empty()
-                UI.println(text)
-                UI.empty()
-              }
-
-              if (part.type === "reasoning" && part.time?.end && thinking) {
-                if (emit("reasoning", { part })) continue
-                const text = part.text.trim()
-                if (!text) continue
-                const line = `Thinking: ${text}`
-                if (process.stdout.isTTY) {
-                  UI.empty()
-                  UI.println(`${UI.Style.TEXT_DIM}\u001b[3m${line}\u001b[0m${UI.Style.TEXT_NORMAL}`)
-                  UI.empty()
-                  continue
-                }
-                process.stdout.write(line + EOL)
-              }
+              await tool(
+                toolPart({
+                  callID: event.properties.callID,
+                  state: { status: "completed", output, metadata: event.properties.structured },
+                }),
+              )
             }
 
-            if (event.type === "session.error") {
-              const props = event.properties
-              if (props.sessionID !== sessionID || !props.error) continue
-              let err = String(props.error.name)
-              if ("data" in props.error && props.error.data && "message" in props.error.data) {
-                err = String(props.error.data.message)
+            if (event.type === "session.next.tool.failed") {
+              const message = errorMessage(event.properties.error, "tool failed")
+              if (
+                emit("tool_use", {
+                  tool: calls.get(event.properties.callID)?.tool ?? "unknown",
+                  callID: event.properties.callID,
+                  input: calls.get(event.properties.callID)?.input ?? {},
+                  error: event.properties.error,
+                })
+              ) {
+                continue
               }
-              error = error ? error + EOL + err : err
-              if (emit("error", { error: props.error })) continue
-              UI.error(err)
+              await toolError(toolPart({ callID: event.properties.callID, state: { status: "error", error: message } }))
+              UI.error(message)
             }
 
-            if (
-              event.type === "session.status" &&
-              event.properties.sessionID === sessionID &&
-              event.properties.status.type === "idle"
-            ) {
+            if (event.type === "session.next.text.ended") {
+              if (emit("text", { text: event.properties.text })) continue
+              const text = event.properties.text.trim()
+              if (!text) continue
+              if (!process.stdout.isTTY) {
+                process.stdout.write(text + EOL)
+                continue
+              }
+              UI.empty()
+              UI.println(text)
+              UI.empty()
+            }
+
+            if (event.type === "session.next.reasoning.ended" && thinking) {
+              if (emit("reasoning", { text: event.properties.text })) continue
+              const text = event.properties.text.trim()
+              if (!text) continue
+              const line = `Thinking: ${text}`
+              if (process.stdout.isTTY) {
+                UI.empty()
+                UI.println(`${UI.Style.TEXT_DIM}\u001b[3m${line}\u001b[0m${UI.Style.TEXT_NORMAL}`)
+                UI.empty()
+                continue
+              }
+              process.stdout.write(line + EOL)
+            }
+
+            // Turn-level failures: step.failed carries the mid-turn error; a pre-turn
+            // setup failure (model resolution &c.) surfaces as a synthetic notice.
+            if (event.type === "session.next.step.failed") {
+              fail(errorMessage(event.properties.error, "turn failed"), event.properties.error)
+            }
+
+            if (event.type === "session.next.synthetic") {
+              const text = event.properties.text.trim()
+              if (text) fail(text, { message: text })
+            }
+
+            if (event.type === "session.status" && event.properties.status.type === "idle") {
               break
             }
 
-            if (event.type === "permission.asked") {
+            if (event.type === "permission.v2.asked") {
               const permission = event.properties
-              if (permission.sessionID !== sessionID) continue
 
               if (args["dangerously-skip-permissions"]) {
-                await client.permission.reply({
+                await client.v2.session.permission.reply({
+                  sessionID,
                   requestID: permission.id,
                   reply: "once",
                 })
@@ -680,9 +746,10 @@ export const RunCommand = effectCmd({
                 UI.println(
                   UI.Style.TEXT_WARNING_BOLD + "!",
                   UI.Style.TEXT_NORMAL +
-                    `permission requested: ${permission.permission} (${permission.patterns.join(", ")}); auto-rejecting`,
+                    `permission requested: ${permission.action} (${permission.resources.join(", ")}); auto-rejecting`,
                 )
-                await client.permission.reply({
+                await client.v2.session.permission.reply({
+                  sessionID,
                   requestID: permission.id,
                   reply: "reject",
                 })
@@ -738,10 +805,11 @@ export const RunCommand = effectCmd({
         // Deliver via the async endpoint (the V2/V1 router). It returns 204
         // immediately; the turn's completion is signalled by the `session.status
         // idle` event that `loop()` breaks on, and turn-level failures arrive as
-        // `session.error` events. `result.error` here carries only request-level
-        // (e.g. 400/404) failures. The blocking `session.prompt` endpoint is
-        // legacy-only and 400s on native V2 sessions, so the headless runner must
-        // use `promptAsync` to reach the V2 engine.
+        // `session.next.step.failed` / `session.next.synthetic` events.
+        // `result.error` here carries only request-level (e.g. 400/404) failures.
+        // The blocking `session.prompt` endpoint is legacy-only and 400s on native
+        // V2 sessions, so the headless runner must use `promptAsync` to reach the
+        // V2 engine.
         const result = await client.session.promptAsync({
           sessionID,
           agent,

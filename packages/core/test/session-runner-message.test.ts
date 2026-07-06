@@ -139,6 +139,51 @@ Recent work
     ])
   })
 
+  // Providers reject non-image media (openai-chat: "does not support media type text/plain"),
+  // so a text/* data: attachment must lower as inline TEXT — the native successor to V1's
+  // prompt-time text-file inlining. Non-data URIs and non-text mimes stay media parts.
+  test("inlines text/* data: attachments as text content", () => {
+    const user = (value: string, file: FileAttachment) =>
+      SessionMessage.User.make({
+        id: id(value),
+        type: "user",
+        text: "Read the attachment",
+        files: [file],
+        time: { created },
+      })
+    const messages = toLLMMessages(
+      [
+        user(
+          "base64",
+          FileAttachment.make({
+            uri: `data:text/plain;base64,${Buffer.from("hello attachment").toString("base64")}`,
+            mime: "text/plain",
+            name: "note.txt",
+          }),
+        ),
+        user(
+          "percent",
+          FileAttachment.make({ uri: "data:text/markdown,hello%20markdown", mime: "text/markdown", name: "note.md" }),
+        ),
+        user(
+          "file-uri",
+          FileAttachment.make({ uri: "file:///project/note.txt", mime: "text/plain", name: "note.txt" }),
+        ),
+      ],
+      model,
+    )
+
+    expect(messages[0]?.content[1]).toEqual({ type: "text", text: "[Attached file note.txt]\nhello attachment" })
+    expect(messages[1]?.content[1]).toEqual({ type: "text", text: "[Attached file note.md]\nhello markdown" })
+    // A file:// text attachment cannot be read in this pure lowering — stays media (residue).
+    expect(messages[2]?.content[1]).toEqual({
+      type: "media",
+      mediaType: "text/plain",
+      data: "file:///project/note.txt",
+      filename: "note.txt",
+    })
+  })
+
   test("replays durable tool media into canonical tool messages without structured base64", () => {
     const messages = toLLMMessages(
       [

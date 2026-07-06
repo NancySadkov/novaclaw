@@ -5,6 +5,7 @@ import path from "path"
 import { type ParseError, parse } from "jsonc-parser"
 import { Context, Effect, Layer, Option, Schema } from "effect"
 import { Permission } from "@novaclaw/schema/permission"
+import { Flag } from "./flag/flag"
 import { FSUtil } from "./fs-util"
 import { Global } from "./global"
 import { Location } from "./location"
@@ -257,9 +258,33 @@ export const layer = Layer.effect(
       Effect.map((configs) => configs.filter((config): config is Document => config !== undefined)),
     )
     const supplementary = yield* Effect.forEach(directories, loadDirectory).pipe(Effect.orDie)
+    // NOVACLAW_CONFIG_CONTENT is a first-class inline config source — the SDK's server launcher
+    // passes app config exclusively through it, and headless/test embeddings rely on it. Mirrors
+    // the V1 loader (which merges it as a "local" source after every file source): applied LAST =
+    // most specific. Without this, such an instance sees none of its configured agents/permissions
+    // on the V2 path. (catalog-seed.ts imports the same source for the provider catalog.)
+    const inline = (() => {
+      const text = Flag.NOVACLAW_CONFIG_CONTENT
+      if (!text) return undefined
+      const errors: ParseError[] = []
+      const input: unknown = parse(text, errors, { allowTrailingComma: true })
+      if (errors.length) return undefined
+      const info = Option.getOrUndefined(
+        ConfigMigrateV1.isV1(input)
+          ? decodeV1Info(input).pipe(Option.map(ConfigMigrateV1.migrate), Option.flatMap(decodeInfo))
+          : decodeInfo(input),
+      )
+      if (!info) return undefined
+      return new Document({ type: "document", path: "NOVACLAW_CONFIG_CONTENT", info })
+    })()
     // Apply general settings first and more specific settings last:
-    // global config, project files, then `.novaclaw` files.
-    const configs = [...(supplementary[0] ?? []), ...direct, ...supplementary.slice(1).flat()]
+    // global config, project files, then `.novaclaw` files, then the inline env config.
+    const configs = [
+      ...(supplementary[0] ?? []),
+      ...direct,
+      ...supplementary.slice(1).flat(),
+      ...(inline ? [inline] : []),
+    ]
     // Rules use the opposite order so a user-global rule can override a
     // repository rule. Statement order inside each file stays unchanged.
     yield* policy.load(

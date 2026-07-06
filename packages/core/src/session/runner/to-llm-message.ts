@@ -18,6 +18,34 @@ const media = (file: FileAttachment): ContentPart => ({
   metadata: file.description === undefined ? undefined : { description: file.description },
 })
 
+// Decode a data: URI's payload to text (base64 or percent-encoded). Returns undefined
+// for any other URI scheme or a malformed data URI.
+const textFromDataUri = (uri: string): string | undefined => {
+  const match = /^data:([^,]*),([\s\S]*)$/.exec(uri)
+  if (!match) return undefined
+  try {
+    if (/;base64$/i.test(match[1]!)) return Buffer.from(match[2]!, "base64").toString("utf-8")
+    return decodeURIComponent(match[2]!)
+  } catch {
+    return undefined
+  }
+}
+
+// A text/* attachment must reach the model as TEXT — providers reject non-image media
+// (openai-chat: "does not support media type text/plain"). The V1 engine inlined text
+// attachments at prompt resolution; natively the attachment rides the message record and
+// is inlined here at lowering. Only data: URIs can be decoded in this pure function —
+// a text file:// attachment still lowers as media (resolve-time materialization residue).
+const attachment = (file: FileAttachment): ContentPart => {
+  if (file.mime.toLowerCase().startsWith("text/")) {
+    const text = textFromDataUri(file.uri)
+    if (text !== undefined) {
+      return { type: "text", text: `[Attached file${file.name ? ` ${file.name}` : ""}]\n${text}` }
+    }
+  }
+  return media(file)
+}
+
 const toolInput = (tool: SessionMessage.AssistantTool) => {
   if (tool.state.status !== "pending") return tool.state.input
   try {
@@ -132,7 +160,7 @@ function toLLMMessage(message: SessionMessage.Message, model: Model): Message[] 
         Message.make({
           id: message.id,
           role: "user",
-          content: [{ type: "text", text: message.text }, ...(message.files ?? []).map(media)],
+          content: [{ type: "text", text: message.text }, ...(message.files ?? []).map(attachment)],
           metadata: {
             ...message.metadata,
             ...(message.agents?.length ? { agents: message.agents } : {}),
