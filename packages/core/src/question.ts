@@ -90,6 +90,31 @@ export const layer = Layer.effect(
       ),
     )
 
+    // A deleted session takes its pending questions with it: nothing can answer them once the
+    // session is gone, and an orphaned request would pollute pending lists/attention badges
+    // forever. Publish Rejected per question so clients clear their stores (mirrors
+    // PermissionV2's session-deleted sweep).
+    const rejectSessionPending = (sessionID: string) =>
+      Effect.uninterruptible(
+        Effect.gen(function* () {
+          for (const [id, item] of pending) {
+            if (String(item.request.sessionID) !== sessionID) continue
+            yield* events.publish(Event.Rejected, {
+              sessionID: item.request.sessionID,
+              requestID: item.request.id,
+            })
+            yield* Deferred.fail(item.deferred, new RejectedError())
+            pending.delete(id)
+          }
+        }),
+      )
+    const unsubscribe = yield* events.listen((event) =>
+      event.type === "session.deleted"
+        ? rejectSessionPending(String((event.data as { sessionID?: string }).sessionID ?? ""))
+        : Effect.void,
+    )
+    yield* Effect.addFinalizer(() => unsubscribe)
+
     const ask = Effect.fn("QuestionV2.ask")((input: AskInput) =>
       Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {

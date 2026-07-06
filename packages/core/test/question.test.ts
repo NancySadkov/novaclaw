@@ -5,6 +5,7 @@ import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { EventV2 } from "@novaclaw/core/event"
 import { QuestionV2 } from "@novaclaw/core/question"
 import { SessionV2 } from "@novaclaw/core/session"
+import { SessionV1 } from "@novaclaw/core/v1/session"
 import { testEffect } from "./lib/effect"
 
 const questions = AppNodeBuilder.build(LayerNode.group([EventV2.node, QuestionV2.node]))
@@ -86,6 +87,41 @@ describe("QuestionV2", () => {
       expect(yield* service.reject(unknown).pipe(Effect.flip)).toEqual(
         new QuestionV2.NotFoundError({ requestID: unknown }),
       )
+    }),
+  )
+
+  // Mirrors PermissionV2's session-deleted sweep: a deleted session's pending questions can never
+  // be answered, so they reject (publishing Rejected so clients clear their stores).
+  it.effect("rejects a deleted session's pending questions and publishes Rejected", () =>
+    Effect.gen(function* () {
+      const service = yield* QuestionV2.Service
+      const events = yield* EventV2.Service
+      const published: EventV2.Payload[] = []
+      const unsubscribe = yield* events.listen((event) =>
+        Effect.sync(() => {
+          if (event.type === QuestionV2.Event.Rejected.type) published.push(event)
+        }),
+      )
+      yield* Effect.addFinalizer(() => unsubscribe)
+      const { fiber, request } = yield* waitForAsk(service, { sessionID, questions: [question] })
+
+      yield* events.publish(SessionV1.Event.Deleted, {
+        sessionID,
+        info: {
+          id: sessionID,
+          slug: "test",
+          projectID: "test",
+          directory: "/project",
+          title: "test",
+          version: "test",
+          time: { created: 0, updated: 0 },
+        },
+      } as never)
+
+      const exit = yield* Fiber.await(fiber)
+      expect(Exit.isFailure(exit)).toBe(true)
+      expect(yield* service.list()).toEqual([])
+      expect(published.map((event) => event.data)).toEqual([{ sessionID, requestID: request.id }])
     }),
   )
 

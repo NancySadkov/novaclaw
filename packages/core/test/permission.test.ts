@@ -15,6 +15,7 @@ import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { SessionStore } from "@novaclaw/core/session/store"
+import { SessionV1 } from "@novaclaw/core/v1/session"
 import { eq } from "drizzle-orm"
 import { location } from "./fixture/location"
 import { testEffect } from "./lib/effect"
@@ -265,6 +266,44 @@ describe("PermissionV2", () => {
     }),
   )
 
+  // A deleted session must take its pending asks with it: the V2 session-scoped reply route can
+  // never settle them once the session row is gone, so without the sweep they orphan forever.
+  it.effect("rejects a deleted session's pending asks and publishes Replied", () =>
+    Effect.gen(function* () {
+      yield* setup()
+      const { service, fiber, request } = yield* waitForRequest()
+      expect(yield* service.list()).toEqual([request])
+
+      const events = yield* EventV2.Service
+      const replied = yield* Deferred.make<{ requestID: string; reply: string }>()
+      const unsubscribe = yield* events.listen((event) =>
+        event.type === PermissionV2.Event.Replied.type
+          ? Deferred.succeed(replied, event.data as { requestID: string; reply: string }).pipe(Effect.asVoid)
+          : Effect.void,
+      )
+      yield* Effect.addFinalizer(() => unsubscribe)
+
+      yield* events.publish(SessionV1.Event.Deleted, {
+        sessionID: request.sessionID,
+        info: {
+          id: request.sessionID,
+          slug: "test",
+          projectID: Project.ID.global,
+          directory: "/project",
+          title: "test",
+          version: "test",
+          time: { created: 0, updated: 0 },
+        },
+      } as never)
+
+      expect(yield* Deferred.await(replied)).toMatchObject({ requestID: request.id, reply: "reject" })
+      const exit = yield* Fiber.await(fiber)
+      expect(exit._tag).toBe("Failure")
+      expect(yield* service.list()).toEqual([])
+      expect(yield* service.get(request.id)).toBeUndefined()
+    }),
+  )
+
   it.effect("stores and removes saved resources for a project", () =>
     Effect.gen(function* () {
       yield* setup()
@@ -288,7 +327,9 @@ describe("PermissionV2", () => {
       ).toMatchObject([{ action: "read", resource: "src/*" }])
       const saved = yield* PermissionSaved.Service
       const id = (yield* saved.list())[0]!.id
-      expect(yield* saved.list()).toEqual([{ id, projectID: Project.ID.global, action: "read", resource: "src/*" }])
+      expect(yield* saved.list()).toEqual([
+        { id, projectID: Project.ID.global, action: "read", resource: "src/*", effect: "allow" },
+      ])
       yield* service.assert(assertion({ id: PermissionV2.ID.create("per_next"), resources: ["src/next.ts"] }))
       yield* saved.remove(id)
       expect(yield* saved.list()).toEqual([])

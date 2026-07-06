@@ -186,6 +186,37 @@ export const layer = Layer.effect(
       ),
     )
 
+    // Reject every pending ask belonging to a session, publishing Replied so clients clear
+    // their stores. Used by the deny-cascade below and by the session-deleted sweep: once the
+    // session row is gone the V2 session-scoped reply route can never settle these (it 404s on
+    // the missing session), so an orphaned ask would pollute pending lists and attention badges
+    // forever with no way to dismiss it.
+    const rejectSessionPending = (sessionID: string) =>
+      EffectRuntime.uninterruptible(
+        EffectRuntime.gen(function* () {
+          for (const [id, item] of pending) {
+            if (String(item.request.sessionID) !== sessionID) continue
+            yield* events.publish(Event.Replied, {
+              sessionID: item.request.sessionID,
+              requestID: item.request.id,
+              reply: "reject",
+            })
+            yield* Deferred.fail(item.deferred, new RejectedError())
+            pending.delete(id)
+          }
+        }),
+      )
+
+    // A deleted session takes its pending asks with it. `session.deleted` is the session-level
+    // V1 event the engine still emits for every delete (kept through F1g), so this covers both
+    // engines with one subscription.
+    const unsubscribe = yield* events.listen((event) =>
+      event.type === "session.deleted"
+        ? rejectSessionPending(String((event.data as { sessionID?: string }).sessionID ?? ""))
+        : EffectRuntime.void,
+    )
+    yield* EffectRuntime.addFinalizer(() => unsubscribe)
+
     const savedRules = EffectRuntime.fnUntraced(function* () {
       return (yield* saved.list({ projectID: location.project.id })).map(
         (item): Permission.Rule => ({ action: item.action, resource: item.resource, effect: item.effect ?? "allow" }),
@@ -316,16 +347,8 @@ export const layer = Layer.effect(
               input.message ? new CorrectedError({ feedback: input.message }) : new RejectedError(),
             )
             pending.delete(input.requestID)
-            for (const [id, item] of pending) {
-              if (item.request.sessionID !== existing.request.sessionID) continue
-              yield* events.publish(Event.Replied, {
-                sessionID: item.request.sessionID,
-                requestID: item.request.id,
-                reply: "reject",
-              })
-              yield* Deferred.fail(item.deferred, new RejectedError())
-              pending.delete(id)
-            }
+            // The deny cascades: the session's other queued asks reject too.
+            yield* rejectSessionPending(String(existing.request.sessionID))
             return
           }
 
