@@ -68,6 +68,9 @@ import { Persist, persisted } from "@/utils/persist"
 import { useMarked } from "@novaclaw/ui/context/marked"
 import { preloadMarkdown } from "@novaclaw/session-ui/markdown-cache"
 import { archiveHomeSession } from "./home-session-archive"
+import { homeSessionTimeLabel } from "./home-session-meta"
+import { usePermission } from "@/context/permission"
+import { sessionPermissionRequest, sessionQuestionRequest } from "@/pages/session/composer/session-request-tree"
 import { showToast } from "@/utils/toast"
 
 const HOME_SESSION_LIMIT = 64
@@ -1425,6 +1428,78 @@ function HomeSessionGroupHeader(props: {
   )
 }
 
+// Attention + activity on a Chats row (uix-improvement slice 1) — the sidebar-dot vocabulary
+// (sidebar-items.tsx SessionRow) made explicit on the hero list. Priority order: a chat waiting
+// on the USER (pending permission/question, incl. child sessions) shows a labeled amber pill;
+// agent activity shows a spinner; an unseen error a red dot; other unseen output a blue dot.
+// Active server only — other servers' session/notification stores aren't synced client-side.
+function HomeSessionAttention(props: { session: Session; activeServer: boolean }) {
+  const language = useLanguage()
+  const notification = useNotification()
+  const permission = usePermission()
+  const serverSync = useServerSync()
+
+  const waiting = createMemo(() => {
+    if (!props.activeServer) return false
+    const [childStore] = serverSync().child(props.session.directory, { bootstrap: false })
+    const data = serverSync().session.data
+    const ask = sessionPermissionRequest(
+      childStore.session,
+      data.permission,
+      props.session.id,
+      (item) => !permission.autoResponds(item, props.session.directory),
+    )
+    if (ask) return true
+    return !!sessionQuestionRequest(childStore.session, data.question, props.session.id)
+  })
+  const working = createMemo(() => {
+    if (!props.activeServer || waiting()) return false
+    return serverSync().session.data.session_working(props.session.id)
+  })
+  const hasError = createMemo(() => props.activeServer && notification.session.unseenHasError(props.session.id))
+  const unseen = createMemo(() => props.activeServer && notification.session.unseenCount(props.session.id) > 0)
+
+  return (
+    <Switch>
+      <Match when={waiting()}>
+        <span
+          data-slot="home-session-attention"
+          data-kind="waiting"
+          class="shrink-0 flex items-center rounded-full bg-v2-state-bg-warning px-1.5 py-0.5 text-[11px] leading-none text-v2-state-fg-warning [font-weight:530]"
+        >
+          {language.t("home.sessions.attention.waiting")}
+        </span>
+      </Match>
+      <Match when={working()}>
+        <span
+          data-slot="home-session-attention"
+          data-kind="working"
+          class="shrink-0 flex items-center"
+          title={language.t("home.sessions.attention.working")}
+        >
+          <Spinner class="size-[13px] text-v2-icon-icon-muted" />
+        </span>
+      </Match>
+      <Match when={hasError()}>
+        <span
+          data-slot="home-session-attention"
+          data-kind="error"
+          class="shrink-0 size-1.5 rounded-full bg-v2-state-fg-danger"
+          title={language.t("home.sessions.attention.error")}
+        />
+      </Match>
+      <Match when={unseen()}>
+        <span
+          data-slot="home-session-attention"
+          data-kind="unseen"
+          class="shrink-0 size-1.5 rounded-full bg-v2-state-fg-info"
+          title={language.t("home.sessions.attention.unseen")}
+        />
+      </Match>
+    </Switch>
+  )
+}
+
 function HomeSessionRow(props: {
   record: HomeSessionRecord
   showProjectName: boolean
@@ -1442,6 +1517,10 @@ function HomeSessionRow(props: {
     const summary = props.record.session.summary
     if (!summary || (summary.files ?? 0) <= 0) return undefined
     return { files: summary.files ?? 0, additions: summary.additions ?? 0, deletions: summary.deletions ?? 0 }
+  })
+  const timeLabel = createMemo(() => {
+    const time = props.record.session.time
+    return homeSessionTimeLabel(time.updated ?? time.created, language.intl())
   })
 
   return (
@@ -1472,18 +1551,27 @@ function HomeSessionRow(props: {
             {props.record.projectName}
           </span>
         </Show>
-        <Show when={changes()}>
-          {(c) => (
-            <span
-              data-slot="home-session-changes"
-              class="ml-auto shrink-0 flex items-center gap-1 rounded-[4px] bg-v2-background-bg-layer-01 px-1.5 py-0.5 text-[11px] leading-none text-v2-text-text-muted [font-weight:530]"
-              title={`+${c().additions} −${c().deletions} · ${c().files} changed`}
-            >
-              <span class="text-v2-state-fg-success">+{c().additions}</span>
-              <span class="text-v2-state-fg-danger">−{c().deletions}</span>
-            </span>
-          )}
-        </Show>
+        <span class="ml-auto flex shrink-0 items-center gap-2">
+          <HomeSessionAttention session={props.record.session} activeServer={props.activeServer} />
+          <Show when={changes()}>
+            {(c) => (
+              <span
+                data-slot="home-session-changes"
+                class="shrink-0 flex items-center gap-1 rounded-[4px] bg-v2-background-bg-layer-01 px-1.5 py-0.5 text-[11px] leading-none text-v2-text-text-muted [font-weight:530]"
+                title={`+${c().additions} −${c().deletions} · ${c().files} changed`}
+              >
+                <span class="text-v2-state-fg-success">+{c().additions}</span>
+                <span class="text-v2-state-fg-danger">−{c().deletions}</span>
+              </span>
+            )}
+          </Show>
+          <span
+            data-slot="home-session-time"
+            class="shrink-0 text-[11px] leading-none tabular-nums text-v2-text-text-faint [font-weight:440]"
+          >
+            {timeLabel()}
+          </span>
+        </span>
       </button>
       <Show when={SHOW_HOME_SESSION_ARCHIVE}>
         <div class="hover-reveal absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-1 group-hover/session:opacity-100 focus-within:opacity-100">

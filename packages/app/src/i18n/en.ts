@@ -713,6 +713,10 @@ export const dict = {
   "home.sessions.group.today": "Today",
   "home.sessions.group.yesterday": "Yesterday",
   "home.sessions.group.older": "Older",
+  "home.sessions.attention.waiting": "Waiting for you",
+  "home.sessions.attention.working": "Working",
+  "home.sessions.attention.error": "Something went wrong",
+  "home.sessions.attention.unseen": "New activity",
 
   "session.tab.session": "Chat",
   "session.tab.review": "Review",
