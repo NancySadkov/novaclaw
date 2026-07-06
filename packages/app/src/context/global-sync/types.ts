@@ -4,7 +4,7 @@ import type {
   Config,
   McpStatus,
   Path,
-  PermissionRequest,
+  PermissionV2Request,
   QuestionRequest,
   Session,
   SessionStatus,
@@ -51,7 +51,7 @@ export type State = {
     [sessionID: string]: Todo[]
   }
   permission: {
-    [sessionID: string]: PermissionRequest[]
+    [sessionID: string]: PermissionV2Request[]
   }
   question: {
     [sessionID: string]: QuestionRequest[]

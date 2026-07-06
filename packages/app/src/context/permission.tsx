@@ -1,7 +1,7 @@
 import { type Accessor, createEffect, createMemo, onCleanup } from "solid-js"
 import { createStore, produce } from "solid-js/store"
 import { createSimpleContext } from "@novaclaw/ui/context"
-import type { PermissionRequest } from "@novaclaw/sdk/v2/client"
+import type { PermissionV2Request } from "@novaclaw/sdk/v2/client"
 import { Persist, persisted } from "@/utils/persist"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "./server-sync"
@@ -118,21 +118,22 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
       }
     }
 
-    // The /permission reply route (not the deprecated per-session respond): it also settles asks
-    // pending in the V2 permission service (1K bridge), which auto-accept must cover too.
+    // F1e S6: replies go through the native V2 session-scoped reply route
+    // (`/api/session/{sid}/permission/{rid}/reply`); the V1 /permission reply + its
+    // V2 fallback are no longer consumed by the app (they retire with S7).
     const respond: PermissionRespondFn = (input) => {
       serverSDK()
-        .client.permission.reply({
+        .client.v2.session.permission.reply({
+          sessionID: input.sessionID,
           requestID: input.permissionID,
           reply: input.response,
-          directory: input.directory,
         })
         .catch(() => {
           responded.delete(input.permissionID)
         })
     }
 
-    function respondOnce(permission: PermissionRequest, directory?: string) {
+    function respondOnce(permission: PermissionV2Request, directory?: string) {
       const now = Date.now()
       const hit = responded.has(permission.id)
       responded.delete(permission.id)
@@ -156,7 +157,7 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
       return isDirectoryAutoAccepting(store.autoAccept, directory)
     }
 
-    function shouldAutoRespond(permission: PermissionRequest, directory?: string) {
+    function shouldAutoRespond(permission: PermissionV2Request, directory?: string) {
       const session = directory ? serverSync().child(directory, { bootstrap: false })[0].session : []
       return autoRespondsPermission(store.autoAccept, session, permission, directory)
     }
@@ -170,7 +171,7 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
 
     const unsubscribe = serverSDK().event.listen((e) => {
       const event = e.details
-      if (event?.type !== "permission.asked") return
+      if (event?.type !== "permission.v2.asked") return
 
       const perm = event.properties
       if (!shouldAutoRespond(perm, e.name)) return
@@ -188,10 +189,10 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
       )
 
       serverSDK()
-        .client.permission.list({ directory })
+        .client.v2.permission.request.list({ location: { directory } })
         .then((x) => {
           if (!isAutoAcceptingDirectory(directory)) return
-          for (const perm of x.data ?? []) {
+          for (const perm of x.data?.data ?? []) {
             if (!perm?.id) continue
             if (!shouldAutoRespond(perm, directory)) continue
             respondOnce(perm, directory)
@@ -220,11 +221,11 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
       )
 
       serverSDK()
-        .client.permission.list({ directory })
+        .client.v2.permission.request.list({ location: { directory } })
         .then((x) => {
           if (enableVersion.get(key) !== version) return
           if (!isAutoAccepting(sessionID, directory)) return
-          for (const perm of x.data ?? []) {
+          for (const perm of x.data?.data ?? []) {
             if (!perm?.id) continue
             if (!shouldAutoRespond(perm, directory)) continue
             respondOnce(perm, directory)
@@ -248,7 +249,7 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
     return {
       ready,
       respond,
-      autoResponds(permission: PermissionRequest, directory?: string) {
+      autoResponds(permission: PermissionV2Request, directory?: string) {
         return shouldAutoRespond(permission, directory)
       },
       isAutoAccepting,

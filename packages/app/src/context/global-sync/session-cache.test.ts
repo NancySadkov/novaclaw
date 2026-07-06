@@ -1,5 +1,11 @@
 import { describe, expect, test } from "bun:test"
-import type { PermissionRequest, QuestionRequest, SessionStatus, SnapshotFileDiff, Todo } from "@novaclaw/sdk/v2/client"
+import type {
+  PermissionV2Request,
+  QuestionRequest,
+  SessionStatus,
+  SnapshotFileDiff,
+  Todo,
+} from "@novaclaw/sdk/v2/client"
 import { dropSessionCaches, pickSessionCacheEvictions } from "./session-cache"
 
 describe("app session cache", () => {
@@ -8,13 +14,13 @@ describe("app session cache", () => {
       session_status: Record<string, SessionStatus | undefined>
       session_diff: Record<string, SnapshotFileDiff[] | undefined>
       todo: Record<string, Todo[] | undefined>
-      permission: Record<string, PermissionRequest[] | undefined>
+      permission: Record<string, PermissionV2Request[] | undefined>
       question: Record<string, QuestionRequest[] | undefined>
     } = {
       session_status: { ses_1: { type: "busy" } as SessionStatus },
       session_diff: { ses_1: [] },
       todo: { ses_1: [] as Todo[], ses_keep: [] as Todo[] },
-      permission: { ses_1: [] as PermissionRequest[] },
+      permission: { ses_1: [] as PermissionV2Request[] },
       question: { ses_1: [] as QuestionRequest[] },
     }
 

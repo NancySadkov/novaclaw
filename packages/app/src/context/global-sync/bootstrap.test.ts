@@ -60,7 +60,7 @@ describe("bootstrapDirectory", () => {
             return { data: [] }
           },
         },
-        permission: { list: async () => ({ data: [] }) },
+        v2: { permission: { request: { list: async () => ({ data: { data: [] } }) } } },
         question: { list: async () => ({ data: [] }) },
         mcp: {
           status: async () => {

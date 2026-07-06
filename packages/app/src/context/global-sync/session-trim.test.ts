@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { PermissionRequest, Session } from "@novaclaw/sdk/v2/client"
+import type { PermissionV2Request, Session } from "@novaclaw/sdk/v2/client"
 import { trimSessions } from "./session-trim"
 
 const session = (input: { id: string; parentID?: string; created: number; updated?: number; archived?: number }) =>
@@ -43,7 +43,7 @@ describe("trimSessions", () => {
     const result = trimSessions(list, {
       limit: 2,
       permission: {
-        "child-kept-by-permission": [{ id: "perm-1" } as PermissionRequest],
+        "child-kept-by-permission": [{ id: "perm-1" } as PermissionV2Request],
       },
       now,
     })

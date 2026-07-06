@@ -1,7 +1,7 @@
 import { Binary } from "@novaclaw/core/util/binary"
 import { produce, reconcile, type SetStoreFunction, type Store } from "solid-js/store"
 import type {
-  PermissionRequest,
+  PermissionV2Request,
   Project,
   QuestionRequest,
   Session,
@@ -18,8 +18,8 @@ const SESSION_CONTENT_EVENTS = new Set([
   "session.diff",
   "todo.updated",
   "session.status",
-  "permission.asked",
-  "permission.replied",
+  "permission.v2.asked",
+  "permission.v2.replied",
   "question.asked",
   "question.replied",
   "question.rejected",
@@ -200,8 +200,10 @@ export function applyDirectoryEvent(input: {
       if (input.vcsCache) input.vcsCache.setStore("value", next)
       break
     }
-    case "permission.asked": {
-      const permission = event.properties as PermissionRequest
+    // F1e S6: the app folds the native `permission.v2.*` vocab (raw EventV2 stream); the
+    // V1 `permission.asked/replied` projection is ignored here and retires in S7.
+    case "permission.v2.asked": {
+      const permission = event.properties as PermissionV2Request
       const permissions = input.store.permission[permission.sessionID]
       if (!permissions) {
         input.setStore("permission", permission.sessionID, [permission])
@@ -221,7 +223,7 @@ export function applyDirectoryEvent(input: {
       )
       break
     }
-    case "permission.replied": {
+    case "permission.v2.replied": {
       const props = event.properties as { sessionID: string; requestID: string }
       const permissions = input.store.permission[props.sessionID]
       if (!permissions) break

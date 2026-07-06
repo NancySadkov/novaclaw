@@ -1,5 +1,5 @@
 import { For, Show, createSignal } from "solid-js"
-import type { PermissionRequest } from "@novaclaw/sdk/v2"
+import type { PermissionV2Request } from "@novaclaw/sdk/v2"
 import { Button } from "@novaclaw/ui/button"
 import { DockPrompt } from "@novaclaw/session-ui/dock-prompt"
 import { Icon } from "@novaclaw/ui/icon"
@@ -9,7 +9,7 @@ import { useLanguage } from "@/context/language"
 export type PermissionReply = "allow-once" | "allow-file" | "allow-always" | "deny-once" | "deny-file" | "deny-always"
 
 export function SessionPermissionDock(props: {
-  request: PermissionRequest
+  request: PermissionV2Request
   responding: boolean
   onDecide: (reply: PermissionReply, message?: string) => void
 }) {
@@ -17,7 +17,7 @@ export function SessionPermissionDock(props: {
   const [reason, setReason] = createSignal("")
 
   const toolDescription = () => {
-    const key = `settings.permissions.tool.${props.request.permission}.description`
+    const key = `settings.permissions.tool.${props.request.action}.description`
     const value = language.t(key as Parameters<typeof language.t>[0])
     if (value === key) return ""
     return value
@@ -93,11 +93,11 @@ export function SessionPermissionDock(props: {
         </div>
       </Show>
 
-      <Show when={props.request.patterns.length > 0}>
+      <Show when={props.request.resources.length > 0}>
         <div data-slot="permission-row">
           <span data-slot="permission-spacer" aria-hidden="true" />
           <div data-slot="permission-patterns">
-            <For each={props.request.patterns}>
+            <For each={props.request.resources}>
               {(pattern) => <code class="text-12-regular text-text-base break-all">{pattern}</code>}
             </For>
           </div>

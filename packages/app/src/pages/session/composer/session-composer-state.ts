@@ -1,6 +1,6 @@
 import { createEffect, createMemo, on, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
-import type { PermissionRequest, QuestionRequest, Todo } from "@novaclaw/sdk/v2"
+import type { PermissionV2Request, QuestionRequest, Todo } from "@novaclaw/sdk/v2"
 import { useParams } from "@solidjs/router"
 import { showToast } from "@/utils/toast"
 import { useServerSync } from "@/context/server-sync"
@@ -26,7 +26,7 @@ export function createSessionComposerController(options?: { closeMs?: number | (
     return sessionQuestionRequest(sync().data.session, sync().data.question, params.id)
   })
 
-  const permissionRequest = createMemo((): PermissionRequest | undefined => {
+  const permissionRequest = createMemo((): PermissionV2Request | undefined => {
     return sessionPermissionRequest(sync().data.session, sync().data.permission, params.id, (item) => {
       return !permission.autoResponds(item, sdk().directory)
     })
@@ -64,9 +64,9 @@ export function createSessionComposerController(options?: { closeMs?: number | (
     return store.responding === perm.id
   })
 
-  // 1K: six verdict-scope replies + an optional deny reason. Uses the /permission reply route
-  // (the deprecated per-session respond route has no `message` channel); the generated SDK type
-  // still lags the nine-literal union, hence the cast (golden rule: never edit sdk/gen).
+  // 1K: six verdict-scope replies + an optional deny reason. F1e S6: rides the native V2
+  // session-scoped reply route; the generated SDK type still lags the nine-literal union the
+  // server schema accepts, hence the cast (golden rule: never edit sdk/gen).
   const decide = (reply: PermissionReply, message?: string) => {
     const perm = permissionRequest()
     if (!perm) return
@@ -74,7 +74,12 @@ export function createSessionComposerController(options?: { closeMs?: number | (
 
     setStore("responding", perm.id)
     sdk()
-      .client.permission.reply({ requestID: perm.id, reply: reply as unknown as "once", message })
+      .client.v2.session.permission.reply({
+        sessionID: perm.sessionID,
+        requestID: perm.id,
+        reply: reply as unknown as "once",
+        message,
+      })
       .catch((err: unknown) => {
         const description = err instanceof Error ? err.message : String(err)
         showToast({ title: language.t("common.requestFailed"), description })

@@ -406,7 +406,7 @@ export default function LegacyLayout(props: ParentProps) {
         if (
           e.details?.type === "question.replied" ||
           e.details?.type === "question.rejected" ||
-          e.details?.type === "permission.replied"
+          e.details?.type === "permission.v2.replied"
         ) {
           const props = e.details.properties as { sessionID: string }
           const sessionKey = `${e.name}:${props.sessionID}`
@@ -414,15 +414,16 @@ export default function LegacyLayout(props: ParentProps) {
           return
         }
 
-        if (e.details?.type !== "permission.asked" && e.details?.type !== "question.asked") return
+        if (e.details?.type !== "permission.v2.asked" && e.details?.type !== "question.asked") return
         const title =
-          e.details.type === "permission.asked"
+          e.details.type === "permission.v2.asked"
             ? language.t("notification.permission.title")
             : language.t("notification.question.title")
-        const icon = e.details.type === "permission.asked" ? ("checklist" as const) : ("bubble-5" as const)
+        const icon = e.details.type === "permission.v2.asked" ? ("checklist" as const) : ("bubble-5" as const)
         const directory = e.name
         const props = e.details.properties
-        if (e.details.type === "permission.asked" && permission.autoResponds(e.details.properties, directory)) return
+        if (e.details.type === "permission.v2.asked" && permission.autoResponds(e.details.properties, directory))
+          return
 
         const [store] = serverSync().child(directory, { bootstrap: false })
         const session = store.session.find((s) => s.id === props.sessionID)
@@ -431,7 +432,7 @@ export default function LegacyLayout(props: ParentProps) {
         const sessionTitle = session?.title ?? language.t("command.session.new")
         const projectName = getFilename(directory)
         const description =
-          e.details.type === "permission.asked"
+          e.details.type === "permission.v2.asked"
             ? language.t("notification.permission.description", { sessionTitle, projectName })
             : language.t("notification.question.description", { sessionTitle, projectName })
         const href = `/${base64Encode(directory)}/session/${props.sessionID}`
@@ -441,7 +442,7 @@ export default function LegacyLayout(props: ParentProps) {
         if (now - lastAlerted < cooldownMs) return
         alertedAtBySession.set(sessionKey, now)
 
-        if (e.details.type === "permission.asked") {
+        if (e.details.type === "permission.v2.asked") {
           if (settings.sounds.permissionsEnabled()) {
             void playSoundById(settings.sounds.permissions())
           }

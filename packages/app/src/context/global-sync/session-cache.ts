@@ -1,5 +1,5 @@
 import type {
-  PermissionRequest,
+  PermissionV2Request,
   QuestionRequest,
   SessionStatus,
   SnapshotFileDiff,
@@ -12,7 +12,7 @@ type SessionCache = {
   session_status: Record<string, SessionStatus | undefined>
   session_diff: Record<string, SnapshotFileDiff[] | undefined>
   todo: Record<string, Todo[] | undefined>
-  permission: Record<string, PermissionRequest[] | undefined>
+  permission: Record<string, PermissionV2Request[] | undefined>
   question: Record<string, QuestionRequest[] | undefined>
 }
 

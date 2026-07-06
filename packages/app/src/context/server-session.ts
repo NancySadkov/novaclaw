@@ -1,7 +1,7 @@
 import { retry } from "@novaclaw/core/util/retry"
 import type {
   NovaclawClient,
-  PermissionRequest,
+  PermissionV2Request,
   QuestionRequest,
   Session,
   SessionStatus,
@@ -34,7 +34,7 @@ export function createServerSession(client: NovaclawClient, options?: { retry?: 
     session_status: {} as Record<string, SessionStatus>,
     session_diff: {} as Record<string, SnapshotFileDiff[]>,
     todo: {} as Record<string, Todo[]>,
-    permission: {} as Record<string, PermissionRequest[]>,
+    permission: {} as Record<string, PermissionV2Request[]>,
     question: {} as Record<string, QuestionRequest[]>,
     session_working(id: string) {
       return (this.session_status[id]?.type ?? "idle") !== "idle"
@@ -268,8 +268,9 @@ export function createServerSession(client: NovaclawClient, options?: { retry?: 
         setData("session_status", props.sessionID, reconcile(props.status))
         return
       }
-      case "permission.asked": {
-        const permission = event.properties as PermissionRequest
+      // F1e S6: native `permission.v2.*` vocab; the V1 projection is ignored (retires in S7).
+      case "permission.v2.asked": {
+        const permission = event.properties as PermissionV2Request
         const permissions = data.permission[permission.sessionID]
         if (!permissions) {
           setData("permission", permission.sessionID, [permission])
@@ -285,7 +286,7 @@ export function createServerSession(client: NovaclawClient, options?: { retry?: 
           )
         return
       }
-      case "permission.replied": {
+      case "permission.v2.replied": {
         const props = event.properties as { sessionID: string; requestID: string }
         setData(
           "permission",

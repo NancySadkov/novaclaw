@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { PermissionRequest, QuestionRequest, Session } from "@novaclaw/sdk/v2/client"
+import type { PermissionV2Request, QuestionRequest, Session } from "@novaclaw/sdk/v2/client"
 import { todoDockAtBoundary, todoState } from "./session-composer-todo"
 import { sessionPermissionRequest, sessionQuestionRequest } from "./session-request-tree"
 
@@ -13,7 +13,7 @@ const permission = (id: string, sessionID: string) =>
   ({
     id,
     sessionID,
-  }) as PermissionRequest
+  }) as PermissionV2Request
 
 const question = (id: string, sessionID: string) =>
   ({

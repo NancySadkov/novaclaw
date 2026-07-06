@@ -2,7 +2,7 @@ import type {
   Config,
   NovaclawClient,
   Path,
-  PermissionRequest,
+  PermissionV2Request,
   Project,
   ProviderAuthResponse,
   QuestionRequest,
@@ -279,10 +279,13 @@ export async function bootstrapDirectory(input: {
       input.mcp && (() => retry(() => input.sdk.command.list().then((x) => input.setStore("command", x.data ?? [])))),
       () =>
         retry(() =>
-          input.sdk.permission.list().then((x) => {
-            const ids = (x.data ?? []).map((perm) => perm?.sessionID).filter((id): id is string => !!id)
+          // F1e S6: pending asks bootstrap from the native V2 request list (the V1 /permission
+          // merge route is no longer consumed by the app; it retires with S7).
+          input.sdk.v2.permission.request.list({ location: { directory: input.directory } }).then((x) => {
+            const pending = x.data?.data ?? []
+            const ids = pending.map((perm) => perm?.sessionID).filter((id): id is string => !!id)
             const grouped = groupBySession(
-              (x.data ?? []).filter((perm): perm is PermissionRequest => !!perm?.id && !!perm.sessionID),
+              pending.filter((perm): perm is PermissionV2Request => !!perm?.id && !!perm.sessionID),
             )
             const warm = input.session
               ? Promise.all(ids.map((sessionID) => input.session!.resolve(sessionID))).then(() => undefined)

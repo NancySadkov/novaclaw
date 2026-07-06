@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { PermissionRequest, Project, QuestionRequest, Session } from "@novaclaw/sdk/v2/client"
+import type { PermissionV2Request, Project, QuestionRequest, Session } from "@novaclaw/sdk/v2/client"
 import { createStore } from "solid-js/store"
 import type { State } from "./types"
 import { applyDirectoryEvent, applyGlobalEvent } from "./event-reducer"
@@ -19,11 +19,11 @@ const permissionRequest = (id: string, sessionID: string, title = id) =>
   ({
     id,
     sessionID,
-    permission: title,
-    patterns: ["*"],
+    action: title,
+    resources: ["*"],
     metadata: {},
-    always: [],
-  }) as PermissionRequest
+    save: [],
+  }) as PermissionV2Request
 
 const questionRequest = (id: string, sessionID: string, title = id) =>
   ({
@@ -279,7 +279,7 @@ describe("applyDirectoryEvent", () => {
     )
 
     applyDirectoryEvent({
-      event: { type: "permission.asked", properties: permissionRequest("perm_2", sessionID) },
+      event: { type: "permission.v2.asked", properties: permissionRequest("perm_2", sessionID) },
       store,
       setStore,
       push() {},
@@ -288,16 +288,16 @@ describe("applyDirectoryEvent", () => {
     expect(store.permission[sessionID]?.map((x) => x.id)).toEqual(["perm_1", "perm_2", "perm_3"])
 
     applyDirectoryEvent({
-      event: { type: "permission.asked", properties: permissionRequest("perm_2", sessionID, "updated") },
+      event: { type: "permission.v2.asked", properties: permissionRequest("perm_2", sessionID, "updated") },
       store,
       setStore,
       push() {},
       directory: "/tmp",
     })
-    expect(store.permission[sessionID]?.find((x) => x.id === "perm_2")?.permission).toBe("updated")
+    expect(store.permission[sessionID]?.find((x) => x.id === "perm_2")?.action).toBe("updated")
 
     applyDirectoryEvent({
-      event: { type: "permission.replied", properties: { sessionID, requestID: "perm_2" } },
+      event: { type: "permission.v2.replied", properties: { sessionID, requestID: "perm_2" } },
       store,
       setStore,
       push() {},
