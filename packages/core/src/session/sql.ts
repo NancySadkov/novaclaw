@@ -122,6 +122,21 @@ export const TodoTable = sqliteTable(
   ],
 )
 
+// The ECS tag component on the session entity (notes/entities.md T0): a sparse two-column store —
+// organization over chat processes lives here, never as structure on the session row itself.
+export const SessionTagTable = sqliteTable(
+  "session_tag",
+  {
+    session_id: text()
+      .$type<SessionSchema.ID>()
+      .notNull()
+      .references(() => SessionTable.id, { onDelete: "cascade" }),
+    tag: text().notNull(),
+    ...Timestamps,
+  },
+  (table) => [primaryKey({ columns: [table.session_id, table.tag] }), index("session_tag_tag_idx").on(table.tag)],
+)
+
 export const SessionMessageTable = sqliteTable(
   "session_message",
   {

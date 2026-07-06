@@ -338,6 +338,22 @@ export function NewHome() {
     return allRecords().filter((record) => matchesHomeSessionSearch(record, query))
   })
   const searchOpen = createMemo(() => state.searchFocused && search().length > 0)
+  // Tags component (notes/entities.md T0): the tag filter over chat processes. The universe is the
+  // tags of the currently listed roots; picking one narrows the list (attention cluster included).
+  const [selectedTag, setSelectedTag] = createSignal<string | undefined>()
+  const tagUniverse = createMemo(() => {
+    if (selection().server !== server.key) return []
+    const map = sync().session.data.tag
+    const universe = new Set<string>()
+    for (const record of records()) for (const tag of map[record.session.id] ?? []) universe.add(tag)
+    return [...universe].sort()
+  })
+  const visibleRecords = createMemo(() => {
+    const tag = selectedTag()
+    if (!tag) return records()
+    const map = sync().session.data.tag
+    return records().filter((record) => (map[record.session.id] ?? []).includes(tag))
+  })
   // Pinned "Needs attention" cluster (uix-improvement slice 3): chats waiting on the user first,
   // then unseen — lifted OUT of the day groups so the thing that needs you is always on top.
   const chatsAttention = useChatsAttentionSets()
@@ -359,7 +375,7 @@ export function NewHome() {
       }
       return best
     }
-    return records()
+    return visibleRecords()
       .map((record) => ({ record, tier: recordRank(record) }))
       .filter((item): item is { record: HomeSessionRecord; tier: number } => item.tier !== undefined)
       .sort((a, b) => {
@@ -373,7 +389,7 @@ export function NewHome() {
   const groups = createMemo(() => {
     const pinned = new Set(attentionRecords().map((record) => record.session.id))
     return groupSessions(
-      records().filter((record) => !pinned.has(record.session.id)),
+      visibleRecords().filter((record) => !pinned.has(record.session.id)),
       language,
     )
   })
@@ -675,6 +691,36 @@ export function NewHome() {
             onClose={closeSearch}
             onSelect={selectSearchSession}
           />
+          <Show when={tagUniverse().length > 0}>
+            <div data-slot="home-tag-filter" class="mt-3 flex min-w-0 flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                class="rounded-full px-2 py-1 text-[12px] leading-none [font-weight:500] transition-colors"
+                classList={{
+                  "bg-v2-background-bg-layer-02 text-v2-text-text-base": selectedTag() === undefined,
+                  "text-v2-text-text-muted hover:bg-v2-background-bg-layer-01": selectedTag() !== undefined,
+                }}
+                onClick={() => setSelectedTag(undefined)}
+              >
+                {language.t("home.sessions.filter.all")}
+              </button>
+              <For each={tagUniverse()}>
+                {(tag) => (
+                  <button
+                    type="button"
+                    class="rounded-full px-2 py-1 text-[12px] leading-none [font-weight:500] transition-colors"
+                    classList={{
+                      "bg-v2-background-bg-layer-02 text-v2-text-text-base": selectedTag() === tag,
+                      "text-v2-text-text-muted hover:bg-v2-background-bg-layer-01": selectedTag() !== tag,
+                    }}
+                    onClick={() => setSelectedTag((current) => (current === tag ? undefined : tag))}
+                  >
+                    {tag}
+                  </button>
+                )}
+              </For>
+            </div>
+          </Show>
           <ScrollView
             class="mt-3 -mr-3 min-h-0 flex-1 relative"
             viewportRef={sessionHeaderOpacity.setViewport}
@@ -1604,6 +1650,10 @@ function HomeSessionRow(props: {
       ? subtreeRows(serverSyncForChildren().child(props.record.session.directory, { bootstrap: false })[0].session, props.record.session.id)
       : [],
   )
+  // Tags component (notes/entities.md T0): the chat's tag chips from the instance-wide tag map.
+  const rowTags = createMemo(() =>
+    props.activeServer ? (serverSyncForChildren().session.data.tag[props.record.session.id] ?? []) : [],
+  )
 
   return (
     <>
@@ -1635,6 +1685,20 @@ function HomeSessionRow(props: {
           </span>
         </Show>
         <span class="ml-auto flex shrink-0 items-center gap-2">
+          <Show when={rowTags().length > 0}>
+            <span data-slot="home-session-tags" class="flex shrink-0 items-center gap-1">
+              <For each={rowTags().slice(0, 2)}>
+                {(tag) => (
+                  <span class="rounded-full bg-v2-background-bg-layer-01 px-1.5 py-0.5 text-[11px] leading-none text-v2-text-text-muted [font-weight:470]">
+                    {tag}
+                  </span>
+                )}
+              </For>
+              <Show when={rowTags().length > 2}>
+                <span class="text-[11px] leading-none text-v2-text-text-faint">+{rowTags().length - 2}</span>
+              </Show>
+            </span>
+          </Show>
           <HomeSessionAttention session={props.record.session} activeServer={props.activeServer} />
           <Show when={changes()}>
             {(c) => (

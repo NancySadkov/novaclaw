@@ -7,6 +7,7 @@ import { Credential } from "@novaclaw/core/credential"
 import { PermissionSaved } from "@novaclaw/core/permission/saved"
 import { PtyTicket } from "@novaclaw/core/pty/ticket"
 import { SessionV2 } from "@novaclaw/core/session"
+import { SessionTags } from "@novaclaw/core/session/tags"
 import { SessionExecution } from "@novaclaw/core/session/execution"
 import { LocationServiceMap } from "@novaclaw/core/location-service-map"
 import { SessionExecutionLocal } from "@novaclaw/core/session/execution/local"
@@ -29,6 +30,7 @@ const applicationServices = LayerNode.group([
   httpClient,
   ToolOutputStore.cleanupNode,
   SessionV2.node,
+  SessionTags.node,
   PermissionSaved.node,
   PtyTicket.node,
   Credential.node,

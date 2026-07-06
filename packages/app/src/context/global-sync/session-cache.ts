@@ -14,6 +14,8 @@ type SessionCache = {
   todo: Record<string, Todo[] | undefined>
   permission: Record<string, PermissionV2Request[] | undefined>
   question: Record<string, QuestionRequest[] | undefined>
+  /** Only on the server-session store (the tags component map); absent on the directory stores. */
+  tag?: Record<string, string[] | undefined>
 }
 
 export function dropSessionCaches(store: SessionCache, sessionIDs: Iterable<string>) {
@@ -26,6 +28,7 @@ export function dropSessionCaches(store: SessionCache, sessionIDs: Iterable<stri
     delete store.session_status[sessionID]
     delete store.permission[sessionID]
     delete store.question[sessionID]
+    if (store.tag) delete store.tag[sessionID]
   }
 }
 

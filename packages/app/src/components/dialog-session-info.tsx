@@ -1,8 +1,9 @@
-import { Component, createMemo, Show } from "solid-js"
+import { Component, createMemo, createSignal, For, Show } from "solid-js"
 import type { Session } from "@novaclaw/sdk/v2/client"
 import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
 import { Icon } from "@novaclaw/ui/icon"
 import { useLanguage } from "@/context/language"
+import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
 import { subtreeRows, tokenTotals } from "@/pages/home-session-meta"
 import { sessionTitle } from "@/utils/session-title"
@@ -26,7 +27,26 @@ const Row: Component<{ label: string; value: string; mono?: boolean }> = (props)
 
 export const DialogSessionInfo: Component<{ session: Session; projectName?: string }> = (props) => {
   const language = useLanguage()
+  const serverSDK = useServerSDK()
   const serverSync = useServerSync()
+
+  // Tags component (notes/entities.md T0): edit the chat's tag set inline. Writes replace the full
+  // set (idempotent PUT); the store updates reactively via the `session.tags.updated` event.
+  const tags = createMemo(() => serverSync().session.data.tag[props.session.id] ?? [])
+  const [draft, setDraft] = createSignal("")
+  const saveTags = (next: string[]) => {
+    void serverSDK()
+      .client.v2.session.tags.set({ sessionID: props.session.id, tags: next })
+      .catch(() => undefined)
+  }
+  const addTag = () => {
+    const value = draft().trim()
+    if (!value) return
+    setDraft("")
+    if (tags().includes(value)) return
+    saveTags([...tags(), value])
+  }
+  const removeTag = (tag: string) => saveTags(tags().filter((item) => item !== tag))
   const number = createMemo(() => new Intl.NumberFormat(language.intl()))
   const when = createMemo(
     () => new Intl.DateTimeFormat(language.intl(), { dateStyle: "medium", timeStyle: "short" }),
@@ -69,6 +89,44 @@ export const DialogSessionInfo: Component<{ session: Session; projectName?: stri
         </div>
         <div class="flex flex-col pt-1">
           <Row label={language.t("session.info.folder")} value={props.session.directory} mono />
+          <div class="flex items-baseline gap-3 py-1.5">
+            <span class="w-28 shrink-0 text-[12px] text-v2-text-text-faint [font-weight:470]">
+              {language.t("session.info.tags")}
+            </span>
+            <div class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+              <For each={tags()}>
+                {(tag) => (
+                  <span
+                    data-slot="session-info-tag"
+                    class="flex items-center gap-1 rounded-full bg-v2-background-bg-layer-01 px-2 py-0.5 text-[12px] leading-none text-v2-text-text-base [font-weight:470]"
+                  >
+                    {tag}
+                    <button
+                      type="button"
+                      class="text-v2-text-text-faint hover:text-v2-text-text-base"
+                      aria-label={`${language.t("common.remove")} ${tag}`}
+                      onClick={() => removeTag(tag)}
+                    >
+                      ×
+                    </button>
+                  </span>
+                )}
+              </For>
+              <input
+                data-slot="session-info-tag-input"
+                type="text"
+                class="min-w-[10ch] flex-1 bg-transparent text-[12px] text-v2-text-text-base outline-none placeholder:text-v2-text-text-faint"
+                placeholder={language.t("session.info.tags.placeholder")}
+                value={draft()}
+                onInput={(event) => setDraft(event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  if (event.key !== "Enter") return
+                  event.preventDefault()
+                  addTag()
+                }}
+              />
+            </div>
+          </div>
           <Show when={props.session.agent}>
             <Row label={language.t("session.info.agent")} value={props.session.agent!} />
           </Show>

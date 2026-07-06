@@ -36,6 +36,9 @@ export function createServerSession(client: NovaclawClient, options?: { retry?: 
     todo: {} as Record<string, Todo[]>,
     permission: {} as Record<string, PermissionV2Request[]>,
     question: {} as Record<string, QuestionRequest[]>,
+    // The tags component (notes/entities.md T0): sessionID → tags, fed by `session.tags.updated`
+    // events + the /api/tag bootstrap. Organization over chats — replaces project grouping.
+    tag: {} as Record<string, string[]>,
     session_working(id: string) {
       return (this.session_status[id]?.type ?? "idle") !== "idle"
     },
@@ -253,6 +256,11 @@ export function createServerSession(client: NovaclawClient, options?: { retry?: 
         evict([sessionID])
         return
       }
+      case "session.tags.updated": {
+        const props = event.properties as { sessionID: string; tags: string[] }
+        setData("tag", props.sessionID, [...props.tags])
+        return
+      }
       case "session.diff": {
         const props = event.properties as { sessionID: string; diff: SnapshotFileDiff[] }
         setData("session_diff", props.sessionID, reconcile(cleanDiffs(props.diff), { key: "file" }))
@@ -332,6 +340,14 @@ export function createServerSession(client: NovaclawClient, options?: { retry?: 
     }
   }
 
+  // Bootstrap the instance-wide tag map (live updates arrive via `session.tags.updated`).
+  const loadTags = () =>
+    retry(() => client.v2.session.tags.all())
+      .then((result) => {
+        setData("tag", reconcile((result.data?.data ?? {}) as Record<string, string[]>))
+      })
+      .catch(() => undefined)
+
   return {
     data,
     set: setData,
@@ -339,6 +355,7 @@ export function createServerSession(client: NovaclawClient, options?: { retry?: 
     peek: (sessionID: string) => data.info[sessionID],
     remember,
     resolve,
+    loadTags,
     lineage: {
       peek: peekLineage,
       async resolve(sessionID: string) {

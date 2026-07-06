@@ -19,6 +19,8 @@ export type Event =
   | EventSessionNextCompleted
   | EventSessionNextAgentSwitched
   | EventSessionNextModelSwitched
+  | EventSessionNextResponderSwitched
+  | EventSessionNextModeSwitched
   | EventSessionNextMoved
   | EventSessionNextPrompted
   | EventSessionNextPromptAdmitted
@@ -54,6 +56,7 @@ export type Event =
   | EventSessionError
   | EventInstallationUpdated
   | EventInstallationUpdateAvailable
+  | EventAppRegistered
   | EventFileEdited
   | EventReferenceUpdated
   | EventPermissionV2Asked
@@ -69,6 +72,7 @@ export type Event =
   | EventQuestionV2Replied
   | EventQuestionV2Rejected
   | EventTodoUpdated
+  | EventSessionTagsUpdated
   | EventPermissionAsked
   | EventPermissionReplied
   | EventTuiPromptAppend2
@@ -202,6 +206,10 @@ export type Session = {
     variant?: string
   }
   systemPromptOverride?: string
+  type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
+  priority?: number
+  responder?: "nova" | "operator"
+  permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
   result?: unknown
   version: string
   metadata?: {
@@ -693,6 +701,9 @@ export type SessionStatus =
   | {
       type: "busy"
     }
+  | {
+      type: "exited"
+    }
 
 export type QuestionOption = {
   /**
@@ -847,6 +858,26 @@ export type GlobalEvent = {
           sessionID: string
           messageID: string
           model: ModelRef
+        }
+      }
+    | {
+        id: string
+        type: "session.next.responder.switched"
+        properties: {
+          timestamp: number
+          sessionID: string
+          messageID: string
+          responder: "nova" | "operator"
+        }
+      }
+    | {
+        id: string
+        type: "session.next.mode.switched"
+        properties: {
+          timestamp: number
+          sessionID: string
+          messageID: string
+          permissionMode: "plan" | "ask" | "surgical" | "bypass" | "yolo"
         }
       }
     | {
@@ -1252,6 +1283,14 @@ export type GlobalEvent = {
       }
     | {
         id: string
+        type: "app.registered"
+        properties: {
+          id: string
+          title: string
+        }
+      }
+    | {
+        id: string
         type: "file.edited"
         properties: {
           file: string
@@ -1379,6 +1418,14 @@ export type GlobalEvent = {
       }
     | {
         id: string
+        type: "session.tags.updated"
+        properties: {
+          sessionID: string
+          tags: Array<string>
+        }
+      }
+    | {
+        id: string
         type: "permission.asked"
         properties: {
           id: string
@@ -1401,7 +1448,16 @@ export type GlobalEvent = {
         properties: {
           sessionID: string
           requestID: string
-          reply: "once" | "always" | "reject"
+          reply:
+            | "once"
+            | "always"
+            | "reject"
+            | "allow-once"
+            | "allow-file"
+            | "allow-always"
+            | "deny-once"
+            | "deny-file"
+            | "deny-always"
         }
       }
     | {
@@ -1615,6 +1671,8 @@ export type GlobalEvent = {
     | SyncEventSessionNextCompleted
     | SyncEventSessionNextAgentSwitched
     | SyncEventSessionNextModelSwitched
+    | SyncEventSessionNextResponderSwitched
+    | SyncEventSessionNextModeSwitched
     | SyncEventSessionNextMoved
     | SyncEventSessionNextPrompted
     | SyncEventSessionNextPromptAdmitted
@@ -1988,6 +2046,72 @@ export type Config = {
     max_lines?: number
     max_bytes?: number
   }
+  persona?: {
+    enabled?: boolean
+    name?: string
+    prompt?: string
+  }
+  introspection?: {
+    enabled?: boolean
+    /**
+     * Judge every N continuation steps within a turn drain (default: 3)
+     */
+    cadence?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    model?: string
+    prompt?: string
+    interjection?: string
+    generateInterjection?: boolean
+  }
+  adhoc_tools?: Array<{
+    /**
+     * Tool name (lowercase slug) listed in the system prompt
+     */
+    name: string
+    /**
+     * One-line description shown beside the name (the model decides from this alone)
+     */
+    description: string
+    /**
+     * Free-text manual the model pulls on demand: the API shape plus 1-2 curl/shell examples
+     */
+    manual: string
+    enabled?: boolean
+  }>
+  affective?: {
+    enabled?: boolean
+    /**
+     * Calm-baseline temperature when the model config sets none (default: 0.7)
+     */
+    temperature?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    extended?: boolean
+  }
+  user_profile?: {
+    enabled?: boolean
+    name?: string
+    about?: string
+  }
+  offline?: boolean
+  kb?: {
+    url?: string
+  }
+  quality?: {
+    enabled?: boolean
+    /**
+     * Run the whole-module typecheck every N writes (default 2)
+     */
+    cadence?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    /**
+     * Hard timeout for the test gate in ms (default 300000)
+     */
+    testTimeout?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    commands?: {
+      syntax?: string
+      check?: string
+      typecheck?: string
+      test?: string
+      lint?: string
+    }
+  }
   compaction?: {
     auto?: boolean
     prune?: boolean
@@ -2003,6 +2127,13 @@ export type Config = {
     continue_loop_on_deny?: boolean
     mcp_timeout?: number
     policies?: Array<ConfigV2ExperimentalPolicy>
+  }
+}
+
+export type NotFoundError = {
+  name: "NotFoundError"
+  data: {
+    message: string
   }
 }
 
@@ -2214,6 +2345,7 @@ export type GlobalSession = {
     archived?: number
   }
   permission?: PermissionRuleset
+  permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
   revert?: {
     messageID: string
     partID?: string
@@ -2268,12 +2400,24 @@ export type File = {
   status: "added" | "deleted" | "modified"
 }
 
+export type TrashEntry = {
+  id: string
+  originalPath: string
+  trashedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  type: "file" | "directory"
+}
+
 export type Path = {
   home: string
   state: string
   config: string
+  data: string
   worktree: string
   directory: string
+  roots: Array<string>
+  virtual?: boolean
+  virtualRoot?: string
+  scratchDir?: string
 }
 
 export type VcsInfo = {
@@ -2341,6 +2485,27 @@ export type FormatterStatus = {
   name: string
   extensions: Array<string>
   enabled: boolean
+}
+
+export type AppManifest = {
+  id: string
+  title: string
+  icon?: string
+  accent?: string
+  subtitle?: string
+  open: {
+    type: "route" | "url" | "prompt"
+    value: string
+  }
+  createdAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  updatedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type AppRegisterError = {
+  name: "AppRegisterError"
+  data: {
+    message: string
+  }
 }
 
 export type McpStatusConnected = {
@@ -2546,6 +2711,7 @@ export type Session1 = {
     archived?: number
   }
   permission?: PermissionRuleset
+  permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
   revert?: {
     messageID: string
     partID?: string
@@ -2599,18 +2765,12 @@ export type Session2 = {
     archived?: number
   }
   permission?: PermissionRuleset
+  permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
   revert?: {
     messageID: string
     partID?: string
     snapshot?: string
     diff?: string
-  }
-}
-
-export type NotFoundError = {
-  name: "NotFoundError"
-  data: {
-    message: string
   }
 }
 
@@ -2659,6 +2819,7 @@ export type Session3 = {
     archived?: number
   }
   permission?: PermissionRuleset
+  permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
   revert?: {
     messageID: string
     partID?: string
@@ -2712,6 +2873,7 @@ export type Session4 = {
     archived?: number
   }
   permission?: PermissionRuleset
+  permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
   revert?: {
     messageID: string
     partID?: string
@@ -2765,6 +2927,7 @@ export type Session5 = {
     archived?: number
   }
   permission?: PermissionRuleset
+  permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
   revert?: {
     messageID: string
     partID?: string
@@ -2818,6 +2981,7 @@ export type Session6 = {
     archived?: number
   }
   permission?: PermissionRuleset
+  permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
   revert?: {
     messageID: string
     partID?: string
@@ -2871,6 +3035,7 @@ export type Session7 = {
     archived?: number
   }
   permission?: PermissionRuleset
+  permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
   revert?: {
     messageID: string
     partID?: string
@@ -2978,6 +3143,7 @@ export type Session8 = {
     archived?: number
   }
   permission?: PermissionRuleset
+  permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
   revert?: {
     messageID: string
     partID?: string
@@ -3031,6 +3197,7 @@ export type Session9 = {
     archived?: number
   }
   permission?: PermissionRuleset
+  permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
   revert?: {
     messageID: string
     partID?: string
@@ -3133,14 +3300,14 @@ export type InvalidCursorError = {
   message: string
 }
 
-export type SessionActive = {
-  type: "running"
-}
-
 export type SessionNotFoundError = {
   _tag: "SessionNotFoundError"
   sessionID: string
   message: string
+}
+
+export type SessionActive = {
+  type: "running"
 }
 
 export type PromptInput = {
@@ -3178,6 +3345,8 @@ export type SessionDurableEvent =
   | SessionNextCompleted
   | SessionNextAgentSwitched
   | SessionNextModelSwitched
+  | SessionNextResponderSwitched
+  | SessionNextModeSwitched
   | SessionNextMoved
   | SessionNextPrompted
   | SessionNextPromptAdmitted
@@ -3306,6 +3475,8 @@ export type V2Event =
   | SessionNextCompleted
   | SessionNextAgentSwitched
   | SessionNextModelSwitched
+  | SessionNextResponderSwitched
+  | SessionNextModeSwitched
   | SessionNextMoved
   | SessionNextPrompted
   | SessionNextPromptAdmitted
@@ -3341,6 +3512,7 @@ export type V2Event =
   | SessionError
   | InstallationUpdated
   | InstallationUpdateAvailable
+  | AppRegistered
   | FileEdited
   | ReferenceUpdated
   | PermissionV2Asked
@@ -3356,6 +3528,7 @@ export type V2Event =
   | QuestionV2Replied
   | QuestionV2Rejected
   | TodoUpdated
+  | SessionTagsUpdated
   | PermissionAsked
   | PermissionReplied
   | TuiPromptAppend
@@ -3564,7 +3737,16 @@ export type PermissionV2Source = {
   callID: string
 }
 
-export type PermissionV2Reply = "once" | "always" | "reject"
+export type PermissionV2Reply =
+  | "once"
+  | "always"
+  | "reject"
+  | "allow-once"
+  | "allow-file"
+  | "allow-always"
+  | "deny-once"
+  | "deny-file"
+  | "deny-always"
 
 export type QuestionV2Option = {
   /**
@@ -3783,6 +3965,40 @@ export type SyncEventSessionNextModelSwitched = {
       sessionID: string
       messageID: string
       model: ModelRef
+    }
+  }
+}
+
+export type SyncEventSessionNextResponderSwitched = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "session.next.responder.switched.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      timestamp: number
+      sessionID: string
+      messageID: string
+      responder: "nova" | "operator"
+    }
+  }
+}
+
+export type SyncEventSessionNextModeSwitched = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "session.next.mode.switched.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      timestamp: number
+      sessionID: string
+      messageID: string
+      permissionMode: "plan" | "ask" | "surgical" | "bypass" | "yolo"
     }
   }
 }
@@ -4299,6 +4515,46 @@ export type ConfigV2ExperimentalPolicy = {
   resource: string
 }
 
+export type KbStats = {
+  active: number
+  retracted: number
+  total: number
+  core: number
+  staged: number
+  backend: string
+}
+
+export type KbFact = {
+  id: string
+  subject: string
+  predicate: string
+  object: string
+  relation: "core" | "staged"
+  source?: string
+  agent?: string
+  confidence?: number
+  validFrom: number
+  validTo?: number
+  supersededBy?: string
+  timeCreated: number
+}
+
+export type KbAddInput = {
+  subject: string
+  predicate: string
+  object: string
+  relation?: "core" | "staged"
+  source?: string
+  agent?: string
+  confidence?: number
+}
+
+export type KbUpdateInput = {
+  object?: string
+  confidence?: number
+  source?: string
+}
+
 export type ProjectDirectories = Array<{
   directory: string
   strategy?: string
@@ -4364,6 +4620,10 @@ export type SessionV2Info = {
   agent?: string
   model?: ModelRef
   systemPromptOverride?: string
+  type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
+  priority?: number
+  responder?: "nova" | "operator"
+  permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
   result?: unknown
   cost: number
   tokens: {
@@ -4675,6 +4935,46 @@ export type SessionNextModelSwitched = {
     sessionID: string
     messageID: string
     model: ModelRef
+  }
+}
+
+export type SessionNextResponderSwitched = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.next.responder.switched"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    timestamp: number
+    sessionID: string
+    messageID: string
+    responder: "nova" | "operator"
+  }
+}
+
+export type SessionNextModeSwitched = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.next.mode.switched"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    timestamp: number
+    sessionID: string
+    messageID: string
+    permissionMode: "plan" | "ask" | "surgical" | "bypass" | "yolo"
   }
 }
 
@@ -5473,6 +5773,7 @@ export type PermissionSavedInfo = {
   projectID: string
   action: string
   resource: string
+  effect?: "allow" | "deny"
 }
 
 export type FileSystemEntry = {
@@ -5875,6 +6176,24 @@ export type InstallationUpdateAvailable = {
   }
 }
 
+export type AppRegistered = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "app.registered"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    id: string
+    title: string
+  }
+}
+
 export type FileEdited = {
   id: string
   metadata?: {
@@ -6152,6 +6471,24 @@ export type TodoUpdated = {
   }
 }
 
+export type SessionTagsUpdated = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.tags.updated"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    sessionID: string
+    tags: Array<string>
+  }
+}
+
 export type PermissionAsked = {
   id: string
   metadata?: {
@@ -6195,7 +6532,16 @@ export type PermissionReplied = {
   data: {
     sessionID: string
     requestID: string
-    reply: "once" | "always" | "reject"
+    reply:
+      | "once"
+      | "always"
+      | "reject"
+      | "allow-once"
+      | "allow-file"
+      | "allow-always"
+      | "deny-once"
+      | "deny-file"
+      | "deny-always"
   }
 }
 
@@ -6739,6 +7085,28 @@ export type EventSessionNextModelSwitched = {
   }
 }
 
+export type EventSessionNextResponderSwitched = {
+  id: string
+  type: "session.next.responder.switched"
+  properties: {
+    timestamp: number
+    sessionID: string
+    messageID: string
+    responder: "nova" | "operator"
+  }
+}
+
+export type EventSessionNextModeSwitched = {
+  id: string
+  type: "session.next.mode.switched"
+  properties: {
+    timestamp: number
+    sessionID: string
+    messageID: string
+    permissionMode: "plan" | "ask" | "surgical" | "bypass" | "yolo"
+  }
+}
+
 export type EventSessionNextMoved = {
   id: string
   type: "session.next.moved"
@@ -7175,6 +7543,15 @@ export type EventInstallationUpdateAvailable = {
   }
 }
 
+export type EventAppRegistered = {
+  id: string
+  type: "app.registered"
+  properties: {
+    id: string
+    title: string
+  }
+}
+
 export type EventFileEdited = {
   id: string
   type: "file.edited"
@@ -7317,6 +7694,15 @@ export type EventTodoUpdated = {
   }
 }
 
+export type EventSessionTagsUpdated = {
+  id: string
+  type: "session.tags.updated"
+  properties: {
+    sessionID: string
+    tags: Array<string>
+  }
+}
+
 export type EventPermissionAsked = {
   id: string
   type: "permission.asked"
@@ -7342,7 +7728,16 @@ export type EventPermissionReplied = {
   properties: {
     sessionID: string
     requestID: string
-    reply: "once" | "always" | "reject"
+    reply:
+      | "once"
+      | "always"
+      | "reject"
+      | "allow-once"
+      | "allow-file"
+      | "allow-always"
+      | "deny-once"
+      | "deny-file"
+      | "deny-always"
   }
 }
 
@@ -7865,6 +8260,111 @@ export type EventSubscribeResponses = {
 }
 
 export type EventSubscribeResponse = EventSubscribeResponses[keyof EventSubscribeResponses]
+
+export type AdhocListData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/adhoc/session/{sessionID}"
+}
+
+export type AdhocListErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type AdhocListError = AdhocListErrors[keyof AdhocListErrors]
+
+export type AdhocListResponses = {
+  /**
+   * The session's model-defined recipes
+   */
+  200: Array<{
+    name: string
+    description: string
+    manual: string
+    enabled?: boolean
+  }>
+}
+
+export type AdhocListResponse = AdhocListResponses[keyof AdhocListResponses]
+
+export type AdhocDiscardData = {
+  body?: never
+  path: {
+    sessionID: string
+    name: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/adhoc/session/{sessionID}/{name}"
+}
+
+export type AdhocDiscardErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type AdhocDiscardError = AdhocDiscardErrors[keyof AdhocDiscardErrors]
+
+export type AdhocDiscardResponses = {
+  /**
+   * Whether a recipe was removed
+   */
+  200: {
+    removed: boolean
+  }
+}
+
+export type AdhocDiscardResponse = AdhocDiscardResponses[keyof AdhocDiscardResponses]
+
+export type AdhocPromoteData = {
+  body?: never
+  path: {
+    sessionID: string
+    name: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/adhoc/session/{sessionID}/{name}/promote"
+}
+
+export type AdhocPromoteErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type AdhocPromoteError = AdhocPromoteErrors[keyof AdhocPromoteErrors]
+
+export type AdhocPromoteResponses = {
+  /**
+   * The config file written
+   */
+  200: {
+    promoted: string
+  }
+}
+
+export type AdhocPromoteResponse = AdhocPromoteResponses[keyof AdhocPromoteResponses]
 
 export type ConfigGetData = {
   body?: never
@@ -8485,6 +8985,39 @@ export type FileReadResponses = {
 
 export type FileReadResponse = FileReadResponses[keyof FileReadResponses]
 
+export type FileWriteData = {
+  body?: {
+    path: string
+    content: string
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/file/content"
+}
+
+export type FileWriteErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type FileWriteError = FileWriteErrors[keyof FileWriteErrors]
+
+export type FileWriteResponses = {
+  /**
+   * File written
+   */
+  200: {
+    ok: true
+  }
+}
+
+export type FileWriteResponse = FileWriteResponses[keyof FileWriteResponses]
+
 export type FileStatusData = {
   body?: never
   path?: never
@@ -8512,6 +9045,128 @@ export type FileStatusResponses = {
 }
 
 export type FileStatusResponse = FileStatusResponses[keyof FileStatusResponses]
+
+export type FileMkdirData = {
+  body?: {
+    path: string
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/file/mkdir"
+}
+
+export type FileMkdirErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type FileMkdirError = FileMkdirErrors[keyof FileMkdirErrors]
+
+export type FileMkdirResponses = {
+  /**
+   * Directory created
+   */
+  200: {
+    ok: true
+  }
+}
+
+export type FileMkdirResponse = FileMkdirResponses[keyof FileMkdirResponses]
+
+export type FileTrashListData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/file/trash"
+}
+
+export type FileTrashListErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type FileTrashListError = FileTrashListErrors[keyof FileTrashListErrors]
+
+export type FileTrashListResponses = {
+  /**
+   * Trash entries
+   */
+  200: Array<TrashEntry>
+}
+
+export type FileTrashListResponse = FileTrashListResponses[keyof FileTrashListResponses]
+
+export type FileTrashData = {
+  body?: {
+    path: string
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/file/trash"
+}
+
+export type FileTrashErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type FileTrashError = FileTrashErrors[keyof FileTrashErrors]
+
+export type FileTrashResponses = {
+  /**
+   * Trashed entry
+   */
+  200: TrashEntry
+}
+
+export type FileTrashResponse = FileTrashResponses[keyof FileTrashResponses]
+
+export type FileTrashRestoreData = {
+  body?: {
+    id: string
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/file/trash/restore"
+}
+
+export type FileTrashRestoreErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type FileTrashRestoreError = FileTrashRestoreErrors[keyof FileTrashRestoreErrors]
+
+export type FileTrashRestoreResponses = {
+  /**
+   * Restored path
+   */
+  200: {
+    restoredPath: string
+  }
+}
+
+export type FileTrashRestoreResponse = FileTrashRestoreResponses[keyof FileTrashRestoreResponses]
 
 export type InstanceDisposeData = {
   body?: never
@@ -8831,6 +9486,320 @@ export type FormatterStatusResponses = {
 }
 
 export type FormatterStatusResponse = FormatterStatusResponses[keyof FormatterStatusResponses]
+
+export type AppListData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/app"
+}
+
+export type AppListErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type AppListError = AppListErrors[keyof AppListErrors]
+
+export type AppListResponses = {
+  /**
+   * Persisted home-app manifests
+   */
+  200: Array<AppManifest>
+}
+
+export type AppListResponse = AppListResponses[keyof AppListResponses]
+
+export type AppRegisterData = {
+  body?: {
+    id?: string
+    title: string
+    icon?: string
+    accent?: string
+    subtitle?: string
+    open: {
+      type: "route" | "url" | "prompt"
+      value: string
+    }
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/app"
+}
+
+export type AppRegisterErrors = {
+  /**
+   * AppRegisterError | InvalidRequestError
+   */
+  400: AppRegisterError | InvalidRequestError
+}
+
+export type AppRegisterError2 = AppRegisterErrors[keyof AppRegisterErrors]
+
+export type AppRegisterResponses = {
+  /**
+   * The persisted manifest
+   */
+  200: AppManifest
+}
+
+export type AppRegisterResponse = AppRegisterResponses[keyof AppRegisterResponses]
+
+export type KbStatsData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/kb/stats"
+}
+
+export type KbStatsErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type KbStatsError = KbStatsErrors[keyof KbStatsErrors]
+
+export type KbStatsResponses = {
+  /**
+   * KB stats + backend identity
+   */
+  200: KbStats
+}
+
+export type KbStatsResponse = KbStatsResponses[keyof KbStatsResponses]
+
+export type KbQueryData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+    subject?: string
+    predicate?: string
+    object?: string
+    relation?: "core" | "staged"
+    includeRetracted?: "true" | "false"
+    limit?: string
+  }
+  url: "/kb/fact"
+}
+
+export type KbQueryErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type KbQueryError = KbQueryErrors[keyof KbQueryErrors]
+
+export type KbQueryResponses = {
+  /**
+   * Matching facts
+   */
+  200: Array<KbFact>
+}
+
+export type KbQueryResponse = KbQueryResponses[keyof KbQueryResponses]
+
+export type KbAddData = {
+  body?: KbAddInput
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/kb/fact"
+}
+
+export type KbAddErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type KbAddError = KbAddErrors[keyof KbAddErrors]
+
+export type KbAddResponses = {
+  /**
+   * The stored fact (with id + provenance timestamps)
+   */
+  200: KbFact
+}
+
+export type KbAddResponse = KbAddResponses[keyof KbAddResponses]
+
+export type KbUpdateData = {
+  body?: KbUpdateInput
+  path: {
+    id: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/kb/fact/{id}/update"
+}
+
+export type KbUpdateErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type KbUpdateError = KbUpdateErrors[keyof KbUpdateErrors]
+
+export type KbUpdateResponses = {
+  /**
+   * The replacing fact
+   */
+  200: KbFact
+}
+
+export type KbUpdateResponse = KbUpdateResponses[keyof KbUpdateResponses]
+
+export type KbRetractData = {
+  body?: never
+  path: {
+    id: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/kb/fact/{id}/retract"
+}
+
+export type KbRetractErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+  /**
+   * NotFoundError
+   */
+  404: NotFoundError
+}
+
+export type KbRetractError = KbRetractErrors[keyof KbRetractErrors]
+
+export type KbRetractResponses = {
+  /**
+   * The retracted fact (valid_to stamped)
+   */
+  200: KbFact
+}
+
+export type KbRetractResponse = KbRetractResponses[keyof KbRetractResponses]
+
+export type KbPopulateData = {
+  body?: {
+    facts: Array<KbAddInput>
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/kb/populate"
+}
+
+export type KbPopulateErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type KbPopulateError = KbPopulateErrors[keyof KbPopulateErrors]
+
+export type KbPopulateResponses = {
+  /**
+   * Bulk-load result
+   */
+  200: {
+    inserted: number
+  }
+}
+
+export type KbPopulateResponse = KbPopulateResponses[keyof KbPopulateResponses]
+
+export type KbBackupData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/kb/backup"
+}
+
+export type KbBackupErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type KbBackupError = KbBackupErrors[keyof KbBackupErrors]
+
+export type KbBackupResponses = {
+  /**
+   * Every fact, including retracted (the audit trail)
+   */
+  200: Array<KbFact>
+}
+
+export type KbBackupResponse = KbBackupResponses[keyof KbBackupResponses]
+
+export type KbClearData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/kb/clear"
+}
+
+export type KbClearErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type KbClearError = KbClearErrors[keyof KbClearErrors]
+
+export type KbClearResponses = {
+  /**
+   * Rows deleted
+   */
+  200: {
+    deleted: number
+  }
+}
+
+export type KbClearResponse = KbClearResponses[keyof KbClearResponses]
 
 export type McpStatusData = {
   body?: never
@@ -9667,7 +10636,16 @@ export type PermissionListResponse = PermissionListResponses[keyof PermissionLis
 
 export type PermissionReplyData = {
   body?: {
-    reply: "once" | "always" | "reject"
+    reply:
+      | "once"
+      | "always"
+      | "reject"
+      | "allow-once"
+      | "allow-file"
+      | "allow-always"
+      | "deny-once"
+      | "deny-file"
+      | "deny-always"
     message?: string
   }
   path: {
@@ -9840,6 +10818,46 @@ export type ProviderOauthCallbackResponses = {
 
 export type ProviderOauthCallbackResponse = ProviderOauthCallbackResponses[keyof ProviderOauthCallbackResponses]
 
+export type ProviderProbeData = {
+  body?: {
+    modelID?: string
+    baseURL?: string
+    apiKey?: string
+  }
+  path: {
+    providerID: string
+  }
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/provider/{providerID}/probe"
+}
+
+export type ProviderProbeErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ProviderProbeError = ProviderProbeErrors[keyof ProviderProbeErrors]
+
+export type ProviderProbeResponses = {
+  /**
+   * Provider probe result
+   */
+  200: {
+    status: "ok" | "unreachable" | "auth" | "model-missing" | "no-url" | "error"
+    latencyMs?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    window?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    detail?: string
+    models?: Array<string>
+  }
+}
+
+export type ProviderProbeResponse = ProviderProbeResponses[keyof ProviderProbeResponses]
+
 export type SessionListData = {
   body?: never
   path?: never
@@ -9888,6 +10906,7 @@ export type SessionCreateData = {
       [key: string]: unknown
     }
     permission?: PermissionRuleset
+    permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
     workspaceID?: string
   }
   path?: never
@@ -10773,7 +11792,16 @@ export type SessionUnrevertResponse = SessionUnrevertResponses[keyof SessionUnre
 
 export type PermissionRespondData = {
   body?: {
-    response: "once" | "always" | "reject"
+    response:
+      | "once"
+      | "always"
+      | "reject"
+      | "allow-once"
+      | "allow-file"
+      | "allow-always"
+      | "deny-once"
+      | "deny-file"
+      | "deny-always"
   }
   path: {
     sessionID: string
@@ -10879,6 +11907,126 @@ export type PartUpdateResponses = {
 }
 
 export type PartUpdateResponse = PartUpdateResponses[keyof PartUpdateResponses]
+
+export type ShellStatusData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/shell/status"
+}
+
+export type ShellStatusErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ShellStatusError = ShellStatusErrors[keyof ShellStatusErrors]
+
+export type ShellStatusResponses = {
+  /**
+   * The agent shell substrate on this machine
+   */
+  200: {
+    platform: string
+    agentShell: string
+    bash: string
+    git: string
+    bundle: {
+      root: string
+      bash: string
+      git: string
+      version?: string
+      provisionedAt?: number
+    }
+    provisionSupported: boolean
+  }
+}
+
+export type ShellStatusResponse = ShellStatusResponses[keyof ShellStatusResponses]
+
+export type ShellOfflineData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/shell/offline"
+}
+
+export type ShellOfflineErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ShellOfflineError = ShellOfflineErrors[keyof ShellOfflineErrors]
+
+export type ShellOfflineResponses = {
+  /**
+   * The N/9 offline-layer posture
+   */
+  200: {
+    enabled: boolean
+    active: number
+    total: number
+    layers: Array<{
+      layer: number
+      name: string
+      active: boolean
+      detail?: string
+    }>
+  }
+}
+
+export type ShellOfflineResponse = ShellOfflineResponses[keyof ShellOfflineResponses]
+
+export type ShellProvisionData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/shell/provision"
+}
+
+export type ShellProvisionErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+}
+
+export type ShellProvisionError = ShellProvisionErrors[keyof ShellProvisionErrors]
+
+export type ShellProvisionResponses = {
+  /**
+   * Status after provisioning
+   */
+  200: {
+    platform: string
+    agentShell: string
+    bash: string
+    git: string
+    bundle: {
+      root: string
+      bash: string
+      git: string
+      version?: string
+      provisionedAt?: number
+    }
+    provisionSupported: boolean
+  }
+}
+
+export type ShellProvisionResponse = ShellProvisionResponses[keyof ShellProvisionResponses]
 
 export type SyncStartData = {
   body?: never
@@ -11781,6 +12929,9 @@ export type V2SessionCreateData = {
     agent?: string
     model?: ModelRef
     systemPromptOverride?: string
+    type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
+    priority?: number
+    permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
     location?: LocationRef
   }
   path?: never
@@ -11811,6 +12962,76 @@ export type V2SessionCreateResponses = {
 }
 
 export type V2SessionCreateResponse = V2SessionCreateResponses[keyof V2SessionCreateResponses]
+
+export type V2SessionTagsSetData = {
+  body: {
+    tags: Array<string>
+  }
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/tags"
+}
+
+export type V2SessionTagsSetErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+}
+
+export type V2SessionTagsSetError = V2SessionTagsSetErrors[keyof V2SessionTagsSetErrors]
+
+export type V2SessionTagsSetResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2SessionTagsSetResponse = V2SessionTagsSetResponses[keyof V2SessionTagsSetResponses]
+
+export type V2SessionTagsAllData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/tag"
+}
+
+export type V2SessionTagsAllErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2SessionTagsAllError = V2SessionTagsAllErrors[keyof V2SessionTagsAllErrors]
+
+export type V2SessionTagsAllResponses = {
+  /**
+   * Success
+   */
+  200: {
+    data: {
+      [key: string]: Array<string>
+    }
+  }
+}
+
+export type V2SessionTagsAllResponse = V2SessionTagsAllResponses[keyof V2SessionTagsAllResponses]
 
 export type V2SessionActiveData = {
   body?: never
@@ -11955,6 +13176,81 @@ export type V2SessionSwitchModelResponses = {
 }
 
 export type V2SessionSwitchModelResponse = V2SessionSwitchModelResponses[keyof V2SessionSwitchModelResponses]
+
+export type V2SessionSwitchResponderData = {
+  body: {
+    responder: "nova" | "operator"
+  }
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/responder"
+}
+
+export type V2SessionSwitchResponderErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+}
+
+export type V2SessionSwitchResponderError = V2SessionSwitchResponderErrors[keyof V2SessionSwitchResponderErrors]
+
+export type V2SessionSwitchResponderResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2SessionSwitchResponderResponse =
+  V2SessionSwitchResponderResponses[keyof V2SessionSwitchResponderResponses]
+
+export type V2SessionSwitchModeData = {
+  body: {
+    permissionMode: "plan" | "ask" | "surgical" | "bypass" | "yolo"
+  }
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/mode"
+}
+
+export type V2SessionSwitchModeErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+}
+
+export type V2SessionSwitchModeError = V2SessionSwitchModeErrors[keyof V2SessionSwitchModeErrors]
+
+export type V2SessionSwitchModeResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2SessionSwitchModeResponse = V2SessionSwitchModeResponses[keyof V2SessionSwitchModeResponses]
 
 export type V2SessionPromptData = {
   body: {

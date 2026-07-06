@@ -1,4 +1,5 @@
 import { SessionV2 } from "@novaclaw/core/session"
+import { SessionTags } from "@novaclaw/core/session/tags"
 import { DateTime, Effect, Stream } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
@@ -19,8 +20,22 @@ const DefaultSessionHistoryLimit = 50
 export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handlers) =>
   Effect.gen(function* () {
     const session = yield* SessionV2.Service
+    const tags = yield* SessionTags.Service
 
     return handlers
+      .handle(
+        "session.tags.set",
+        Effect.fn(function* (ctx) {
+          yield* tags.set(ctx.params.sessionID, ctx.payload.tags)
+          return HttpApiSchema.NoContent.make()
+        }),
+      )
+      .handle(
+        "session.tags.all",
+        Effect.fn(function* () {
+          return { data: yield* tags.all() }
+        }),
+      )
       .handle(
         "session.list",
         Effect.fn(function* (ctx) {

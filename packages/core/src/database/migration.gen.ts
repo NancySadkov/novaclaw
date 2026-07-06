@@ -47,5 +47,6 @@ export const migrations = (
     import("./migration/20260703120000_add_kb_fact"),
     import("./migration/20260703140000_add_session_responder"),
     import("./migration/20260705120000_add_catalog"),
+    import("./migration/20260706220000_add_session_tag"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]

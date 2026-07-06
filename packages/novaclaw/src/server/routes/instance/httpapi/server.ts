@@ -66,6 +66,7 @@ import { PtyTicket } from "@novaclaw/core/pty/ticket"
 import { Ripgrep } from "@novaclaw/core/ripgrep"
 import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionV2 } from "@novaclaw/core/session"
+import { SessionTags } from "@novaclaw/core/session/tags"
 import * as SessionExecutionLocal from "@novaclaw/core/session/execution/local"
 import { lazy } from "@/util/lazy"
 import { CorsConfig, isAllowedCorsOrigin, type CorsOptions } from "@novaclaw/server/cors"
@@ -277,6 +278,7 @@ const app = LayerNode.group([
   InstanceStore.node,
   httpClient,
   EventV2.node,
+  SessionTags.node,
   Kb.node,
   ProjectV2.node,
   ProjectCopy.node,

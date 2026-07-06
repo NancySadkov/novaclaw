@@ -113,7 +113,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     project: [],
     provider_auth: {},
     get path() {
-      const EMPTY = { state: "", config: "", worktree: "", directory: "", home: "" }
+      const EMPTY = { state: "", config: "", data: "", roots: [], worktree: "", directory: "", home: "" }
       if (pathQuery.isLoading) return EMPTY
       return pathQuery.data ?? EMPTY
     },
@@ -190,6 +190,8 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
   })
 
   const session = createServerSession(serverSDK.client)
+  // Tags component bootstrap (notes/entities.md T0) — instance-wide, once per server connection.
+  void session.loadTags()
   const nativeMessages = createNativeMessageStore(serverSDK.client)
 
   const children = createChildStoreManager({

@@ -150,6 +150,35 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
       ),
     )
     .add(
+      // Tags component (notes/entities.md T0): replace the chat's full tag set. Full-set PUT keeps
+      // it idempotent and matches the `session.tags.updated` event, which also carries the list.
+      HttpApiEndpoint.put("session.tags.set", "/api/session/:sessionID/tags", {
+        params: { sessionID: Session.ID },
+        payload: Schema.Struct({ tags: Schema.Array(Schema.String) }),
+        success: HttpApiSchema.NoContent,
+        error: SessionNotFoundError,
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.tags.set",
+            summary: "Set session tags",
+            description: "Replace the chat's tag set — tags organize chat processes; tag a root to organize its thread tree.",
+          }),
+        ),
+    )
+    .add(
+      HttpApiEndpoint.get("session.tags.all", "/api/tag", {
+        success: Schema.Struct({ data: Schema.Record(Schema.String, Schema.Array(Schema.String)) }),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.session.tags.all",
+          summary: "List all session tags",
+          description: "The instance-wide tag map: session id → tags. The client store's bootstrap source.",
+        }),
+      ),
+    )
+    .add(
       HttpApiEndpoint.get("session.active", "/api/session/active", {
         success: Schema.Struct({ data: Schema.Record(Session.ID, SessionActive) }),
       }).annotateMerge(
