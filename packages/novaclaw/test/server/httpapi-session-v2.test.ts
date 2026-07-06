@@ -1,7 +1,8 @@
 // F0.2 integration coverage: the flag-gated, new-sessions-only reroute of the
 // legacy promptAsync handler onto SessionV2, wrapped in a SessionStatus
-// busy/idle bracket, with the F0.1 V2->v1 translator (extended for the user's
-// own prompt) rendering the turn for unchanged clients.
+// busy/idle bracket. Clients render the turn from the RAW `session.next.*`
+// stream + the native message endpoint (the S7 vocabulary — the F0-era V2→v1
+// translator is deleted).
 //
 // FLAG CONTROL: RuntimeFlags reads `experimentalNativeSession` from the Effect
 // ConfigProvider, which snapshots `process.env` on first read (process-wide).
@@ -131,7 +132,9 @@ function legacyMessageCount(directory: string, sessionID: string) {
   )
 }
 
-// The merged page view (legacy + projected V2-native rows) — what clients fetch.
+// S7: the legacy WithParts page serves V1 Message/Part rows ONLY — the F0-era merge of
+// projected V2-native rows retired with the V1 render vocab. A V2-native session's transcript
+// is fetched from the native `GET /api/session/{id}/message` instead.
 function pagedMessageCount(directory: string, sessionID: string) {
   return InstanceStore.Service.use((store) =>
     store.provide(
@@ -203,11 +206,9 @@ describe("promptAsync V2 reroute (experimentalNativeSession ON)", () => {
   // not the legacy `provider.*` config that `testProviderConfig` populates, so
   // `test/test-model` is unavailable to the V2 runner here and the turn settles
   // via the error path. That is actually a STRONGER assertion for the bracket:
-  // idle fires on error too. The translator's user/assistant RENDER correctness
-  // is covered separately by event-v2-translate.test.ts (real desktop-reducer
-  // round-trip) — note the translated v1 envelopes go to GlobalBus (the legacy
-  // client transport), not this experimental /event stream, so they are
-  // deliberately not asserted here.
+  // idle fires on error too. Render correctness of the native vocabulary is
+  // covered by the app's message-fold tests (session-ui v2/message-fold) — the
+  // S7 delete removed the V1 translator this note used to reference.
   it.live(
     "fresh session + model routes promptAsync to V2 (prompted on stream, busy→idle bracket, zero legacy rows)",
     () =>
@@ -298,16 +299,22 @@ describe("promptAsync V2 reroute (experimentalNativeSession ON)", () => {
             "10 seconds",
           )
 
-          // F0 history merge: the client-facing page view (GET /session/:id/message)
-          // now serves the V2-native transcript (projected session_message rows) —
-          // a reload no longer renders an empty session.
-          const paged = yield* pollWithTimeout(
-            pagedMessageCount(directory, sessionID).pipe(Effect.map((n) => (n > 0 ? n : undefined))),
-            "merged page view returned no V2-native rows",
+          // S7: the client-facing NATIVE endpoint (GET /api/session/:id/message) serves the
+          // V2 transcript — a reload renders from it (the app's native store bootstrap).
+          const native = yield* pollWithTimeout(
+            Effect.promise(() => sdk.v2.session.messages({ sessionID })).pipe(
+              Effect.map((response) => {
+                const count = response.data?.data?.length ?? 0
+                return count > 0 ? count : undefined
+              }),
+            ),
+            "native message endpoint returned no rows",
             "10 seconds",
           )
-          expect(paged).toBeGreaterThan(0)
-          // ...while the LEGACY table stays empty (the merge is read-side only).
+          expect(native).toBeGreaterThan(0)
+          // ...while the LEGACY WithParts page stays EMPTY for a native session (S7 dropped
+          // the F0-era read-side merge) and the legacy table stays empty too.
+          expect(yield* pagedMessageCount(directory, sessionID)).toBe(0)
           expect(yield* legacyMessageCount(directory, sessionID)).toBe(0)
 
           // F0 guard: a legacy-only op (summarize runs on the legacy engine) must

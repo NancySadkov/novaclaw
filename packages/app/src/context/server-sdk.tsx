@@ -17,58 +17,10 @@ const isAbortError = (error: unknown) =>
 const isStreamClosed = (error: unknown, signal?: AbortSignal) => isAbortError(error) || signal?.aborted === true
 type QueuedServerEvent = { directory: string; payload: Event }
 
-const coalescedKey = (event: QueuedServerEvent) => {
-  if (event.payload.type === "message.part.updated") {
-    const part = event.payload.properties.part
-    return `message.part.updated:${event.directory}:${part.messageID}:${part.id}`
-  }
-  return undefined
-}
-
-export function enqueueServerEvent(queue: QueuedServerEvent[], event: QueuedServerEvent) {
-  const key = coalescedKey(event)
-  const previous = queue[queue.length - 1]
-  if (key && previous && coalescedKey(previous) === key) {
-    queue[queue.length - 1] = event
-    return false
-  }
-  queue.push(event)
-  return true
-}
-
-export function coalesceServerEvents(events: QueuedServerEvent[]) {
-  const output: QueuedServerEvent[] = []
-  events.forEach((event) => {
-    if (event.payload.type !== "message.part.delta") {
-      output.push(event)
-      return
-    }
-    const props = event.payload.properties
-    const previous = output[output.length - 1]
-    if (
-      !previous ||
-      previous.payload.type !== "message.part.delta" ||
-      previous.directory !== event.directory ||
-      previous.payload.properties.messageID !== props.messageID ||
-      previous.payload.properties.partID !== props.partID ||
-      previous.payload.properties.field !== props.field
-    ) {
-      output.push({
-        directory: event.directory,
-        payload: { ...event.payload, properties: { ...props } },
-      })
-      return
-    }
-    output[output.length - 1] = {
-      directory: event.directory,
-      payload: {
-        ...event.payload,
-        properties: { ...props, delta: previous.payload.properties.delta + props.delta },
-      },
-    }
-  })
-  return output
-}
+// S7: the V1 `message.part.updated`/`message.part.delta` coalescing retired with the translated
+// vocabulary — the stream carries raw `session.next.*` events now, batched per frame by the
+// queue/flush below. If delta churn ever matters, coalesce consecutive
+// `session.next.text.delta`/`reasoning.delta` here in the NATIVE vocab.
 
 export function resumeStreamAfterPageShow(event: PageTransitionEvent, start: () => unknown) {
   if (!event.persisted) return
@@ -121,9 +73,8 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
     queue.length = 0
 
     last = Date.now()
-    const output = coalesceServerEvents(events)
     batch(() => {
-      output.forEach((event) => emitter.emit(event.directory, event.payload))
+      events.forEach((event) => emitter.emit(event.directory, event.payload))
     })
 
     buffer.length = 0
@@ -194,7 +145,8 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
             if (event.payload.type !== "sync") {
               const directory = event.directory ?? "global"
               const payload = event.payload as Event
-              if (enqueueServerEvent(queue, { directory, payload })) schedule()
+              queue.push({ directory, payload })
+              schedule()
             }
 
             if (Date.now() - yielded < STREAM_YIELD_MS) continue

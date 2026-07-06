@@ -189,9 +189,9 @@ export function applyDirectoryEvent(input: {
       input.setStore("session_status", props.sessionID, reconcile(props.status))
       break
     }
-    // F1e S5: V1 `message.*` / `message.part.*` events are ignored here — the native
-    // SessionMessage store (`serverSync().nativeMessages`, fed from `session.next.*`) is the
-    // sole transcript path. The V1 emit itself retires with the render vocab in S7.
+    // F1e S5/S7: the native SessionMessage store (`serverSync().nativeMessages`, fed from
+    // `session.next.*`) is the sole transcript path — the server no longer emits a translated
+    // V1 `message.*` vocabulary at all (the bridge projections retired in S7).
     case "vcs.branch.updated": {
       const props = event.properties as { branch?: string }
       if (input.store.vcs?.branch === props.branch) break
