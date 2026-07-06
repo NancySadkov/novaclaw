@@ -1,6 +1,5 @@
 import { useNavigate } from "@solidjs/router"
 import { useDialog } from "@novaclaw/ui/context/dialog"
-import { DialogProcesses } from "@/components/dialog-processes"
 import { useChatsAttention } from "@/apps/chats-attention"
 import { useSettingsDialog } from "@/components/settings-dialog"
 import { AppPlaceholder } from "@/pages/home-screen/app-placeholder"
@@ -61,15 +60,10 @@ export function useBuiltinApps(): () => HomeApp[] {
       source: "builtin",
       open: () => navigate("/files"),
     },
-    {
-      id: "processes",
-      title: "Processes",
-      icon: "status",
-      accent: "#22d3ee",
-      subtitle: "What your agents are doing right now",
-      source: "builtin",
-      open: () => void dialog.show(() => <DialogProcesses />),
-    },
+    // Processes RETIRED (uix-improvement slice 6): Chats absorbed the user-facing view (threads
+    // tree, status pills-as-attention, tokens in the info sheet). The Developer `ps` — kill /
+    // suspend, scheduler snapshot, raw ids — lands in the future Debug app (todo.md → Make UIX
+    // perfect). The "processes" id stays RESERVED so a plugin can't squat it meanwhile.
     {
       id: "search",
       title: "Search",
