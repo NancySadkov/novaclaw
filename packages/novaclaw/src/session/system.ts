@@ -18,7 +18,8 @@ import { Permission } from "@/permission"
 import { Skill } from "@/skill"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { Location } from "@novaclaw/core/location"
-import { LocationServiceMap, locationServiceMapLayer } from "@novaclaw/core/location-services"
+import { LocationServiceMap } from "@novaclaw/core/location-services"
+import { ServerLocationServiceMap } from "@/location-service-map"
 import { Reference } from "@novaclaw/core/reference"
 import { MCP } from "@/mcp"
 import { PermissionV1 } from "@novaclaw/core/v1/permission"
@@ -128,22 +129,18 @@ export const layer = Layer.effect(
   }),
 )
 
+// ⚠️ The map MUST be the ONE server-wide instance (ServerLocationServiceMap) — a private map
+// here splits per-location state (pending permission asks) from the V2 runner's locations.
 export const defaultLayer = layer.pipe(
   Layer.provide(Skill.defaultLayer),
   Layer.provide(MCP.defaultLayer),
-  Layer.provide(locationServiceMapLayer),
+  Layer.provide(ServerLocationServiceMap.layer),
 )
-
-const locationServiceMapNode = LayerNode.make({
-  service: LocationServiceMap.Service,
-  layer: locationServiceMapLayer,
-  deps: [],
-})
 
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [Skill.node, MCP.node, locationServiceMapNode],
+  deps: [Skill.node, MCP.node, ServerLocationServiceMap.node],
 })
 
 export * as SystemPrompt from "./system"

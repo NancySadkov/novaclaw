@@ -3,12 +3,21 @@ import { Context, Deferred, Effect, Exit, Fiber, Layer, Scope } from "effect"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { EventV2 } from "@novaclaw/core/event"
+import { Location } from "@novaclaw/core/location"
 import { QuestionV2 } from "@novaclaw/core/question"
+import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionV1 } from "@novaclaw/core/v1/session"
+import { location } from "./fixture/location"
 import { testEffect } from "./lib/effect"
 
-const questions = AppNodeBuilder.build(LayerNode.group([EventV2.node, QuestionV2.node]))
+const locationLayer = Layer.succeed(
+  Location.Service,
+  Location.Service.of(location({ directory: AbsolutePath.make("/project") })),
+)
+const questions = AppNodeBuilder.build(LayerNode.group([EventV2.node, QuestionV2.node]), [
+  [Location.node, locationLayer],
+])
 const it = testEffect(questions)
 
 const sessionID = SessionV2.ID.make("ses_question_test")

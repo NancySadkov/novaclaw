@@ -1,6 +1,7 @@
 import * as InstanceState from "@/effect/instance-state"
 import { FileSystem } from "@novaclaw/core/filesystem"
-import { LocationServiceMap, locationServiceMapLayer } from "@novaclaw/core/location-services"
+import { LocationServiceMap } from "@novaclaw/core/location-services"
+import { ServerLocationServiceMap } from "@/location-service-map"
 import { Ripgrep } from "@novaclaw/core/ripgrep"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { Location } from "@novaclaw/core/location"
@@ -180,4 +181,4 @@ export const fileHandlers = HttpApiBuilder.group(InstanceHttpApi, "file", (handl
       .handle("trashList", trashList)
       .handle("trashRestore", trashRestore)
   }),
-).pipe(Layer.provide(locationServiceMapLayer))
+).pipe(Layer.provide(ServerLocationServiceMap.layer))

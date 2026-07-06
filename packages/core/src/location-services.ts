@@ -87,28 +87,46 @@ export const locationServices = LayerNode.group([
 export type LocationServices = LayerNode.Output<typeof locationServices>
 export type LocationError = LayerNode.Error<typeof locationServices>
 
+// The LayerMap keys refs by STRUCTURAL equality, which is key-set-sensitive: a ref built with
+// an explicit `workspaceID: undefined` key is NOT equal to one that omits the key, and extra
+// fields (a full Location.Info passed where a Ref is expected) split the cache the same way.
+// A split key boots a PARALLEL location graph for the same directory — duplicating per-location
+// STATE (PermissionV2's pending asks above all). Canonicalize every ref at the map boundary.
+const canonicalRef = (ref: Location.Ref): Location.Ref =>
+  ref.workspaceID === undefined
+    ? ({ directory: ref.directory } as Location.Ref)
+    : ({ directory: ref.directory, workspaceID: ref.workspaceID } as Location.Ref)
+
 export function buildLocationServiceMap(
   replacements: LayerNode.Replacements = [],
 ): Layer.Layer<LocationServiceMap.Service> {
   return Layer.effect(
     LocationServiceMap.Service,
-    LayerMap.make(
-      (ref: Location.Ref) => {
-        const allReplacements = replacements.concat([[Location.node, Location.boundNode(ref)]])
-        const location = LayerNode.hoist(locationServices, Node.tags.values.global, allReplacements)
+    Effect.map(
+      LayerMap.make(
+        (ref: Location.Ref) => {
+          const allReplacements = replacements.concat([[Location.node, Location.boundNode(ref)]])
+          const location = LayerNode.hoist(locationServices, Node.tags.values.global, allReplacements)
 
-        return LayerNode.compile(location.node).pipe(
-          Layer.fresh,
-          Layer.tap(() =>
-            Effect.logInfo("booting location services", {
-              directory: ref.directory,
-              workspaceID: ref.workspaceID,
-            }),
-          ),
-          Layer.provide(LayerNode.compile(location.hoisted)),
-        )
-      },
-      { idleTimeToLive: "60 minutes" },
+          return LayerNode.compile(location.node).pipe(
+            Layer.fresh,
+            Layer.tap(() =>
+              Effect.logInfo("booting location services", {
+                directory: ref.directory,
+                workspaceID: ref.workspaceID,
+              }),
+            ),
+            Layer.provide(LayerNode.compile(location.hoisted)),
+          )
+        },
+        { idleTimeToLive: "60 minutes" },
+      ),
+      (map) => ({
+        ...map,
+        get: (ref) => map.get(canonicalRef(ref)),
+        contextEffect: (ref) => map.contextEffect(canonicalRef(ref)),
+        invalidate: (ref) => map.invalidate(canonicalRef(ref)),
+      }),
     ),
   )
 }

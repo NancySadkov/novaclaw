@@ -236,13 +236,10 @@ describe("novaclaw run (non-interactive subprocess)", () => {
     60_000,
   )
 
-  // ⚠️ SKIPPED (F1e S7-prep, 2026-07-06): on the NATIVE engine the deny path hangs — the CLI loop
-  // never observes the runner-origin `permission.v2.asked` on the per-instance /event stream (an
-  // HTTP-created ask DOES appear there, verified live), so the auto-reject never settles the turn.
-  // Suspected: the runner's ask publish lacks the event location the /event directory filter
-  // requires (the global stream has a ctx-directory fallback; /event does not). Tracked in
-  // notes/f1e.md → S7-prep residue; unskip with that fix.
-  cliIt.skip(
+  // The deny path rides the per-instance /event stream: PermissionV2 stamps its events with the
+  // service's own location (permission.ts eventLocation) so a runner-origin ask survives the
+  // stream's directory filter even when the publishing fiber lacks Location.Service in context.
+  cliIt.concurrent(
     "rejects requested permissions by default and allows them with the dangerous flag",
     ({ home, llm, novaclaw }) =>
       Effect.gen(function* () {
@@ -251,7 +248,10 @@ describe("novaclaw run (non-interactive subprocess)", () => {
         const denied = yield* novaclaw.run("request permission", { permission: { bash: "ask" } })
         novaclaw.expectExit(denied, 0)
         expect(denied.stderr).toContain("permission requested: bash")
-        expect(denied.stdout).toBe("")
+        // Native 1J semantics: the rejection is the TOOL's result (denial as observation, never a
+        // halt), so the turn continues and the model's follow-up text still prints. V1 aborted the
+        // whole turn here (empty stdout) — that vocabulary retires with the engine.
+        expect(denied.stdout).toContain("continued after rejection")
 
         yield* llm.reset
         yield* llm.tool("bash", { command: "rm -f allowed-file", description: "Remove a test file" })

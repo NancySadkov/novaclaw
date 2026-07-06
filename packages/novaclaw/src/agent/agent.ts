@@ -27,7 +27,8 @@ import * as OtelTracer from "@effect/opentelemetry/Tracer"
 import { AbsolutePath, type DeepMutable } from "@novaclaw/core/schema"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { ModelV2 } from "@novaclaw/core/model"
-import { LocationServiceMap, locationServiceMapLayer } from "@novaclaw/core/location-services"
+import { LocationServiceMap } from "@novaclaw/core/location-services"
+import { ServerLocationServiceMap } from "@/location-service-map"
 import { Reference } from "@novaclaw/core/reference"
 import { Location } from "@novaclaw/core/location"
 import { PluginV2 } from "@novaclaw/core/plugin"
@@ -438,25 +439,21 @@ export const layer = Layer.effect(
   }),
 )
 
+// ⚠️ The map MUST be the ONE server-wide instance (ServerLocationServiceMap) — a private map
+// here splits per-location state (pending permission asks) from the V2 runner's locations.
 export const defaultLayer = layer.pipe(
   Layer.provide(Plugin.defaultLayer),
   Layer.provide(Provider.defaultLayer),
   Layer.provide(Auth.defaultLayer),
   Layer.provide(Config.defaultLayer),
   Layer.provide(Skill.defaultLayer),
-  Layer.provide(locationServiceMapLayer),
+  Layer.provide(ServerLocationServiceMap.layer),
 )
-
-const locationServiceMapNode = LayerNode.make({
-  service: LocationServiceMap.Service,
-  layer: locationServiceMapLayer,
-  deps: [],
-})
 
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [Config.node, Auth.node, Plugin.node, Skill.node, Provider.node, locationServiceMapNode],
+  deps: [Config.node, Auth.node, Plugin.node, Skill.node, Provider.node, ServerLocationServiceMap.node],
 })
 
 export * as Agent from "./agent"

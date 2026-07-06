@@ -174,6 +174,15 @@ export const layer = Layer.effect(
     const saved = yield* PermissionSaved.Service
     const pending = new Map<ID, Pending>()
 
+    // Asked/Replied must carry this service's location EXPLICITLY: publishes can run on fibers
+    // without Location.Service in context (tool settlement, the session-deleted sweep), and the
+    // per-instance /event stream drops location-less events — the CLI deny path hung on exactly
+    // that (a runner-origin ask never reached the subscriber).
+    const eventLocation: Location.Ref = {
+      directory: location.directory,
+      ...(location.workspaceID === undefined ? {} : { workspaceID: location.workspaceID }),
+    }
+
     yield* EffectRuntime.addFinalizer(() =>
       EffectRuntime.forEach(pending.values(), (item) => Deferred.fail(item.deferred, new RejectedError()), {
         discard: true,
@@ -196,11 +205,15 @@ export const layer = Layer.effect(
         EffectRuntime.gen(function* () {
           for (const [id, item] of pending) {
             if (String(item.request.sessionID) !== sessionID) continue
-            yield* events.publish(Event.Replied, {
-              sessionID: item.request.sessionID,
-              requestID: item.request.id,
-              reply: "reject",
-            })
+            yield* events.publish(
+              Event.Replied,
+              {
+                sessionID: item.request.sessionID,
+                requestID: item.request.id,
+                reply: "reject",
+              },
+              { location: eventLocation },
+            )
             yield* Deferred.fail(item.deferred, new RejectedError())
             pending.delete(id)
           }
@@ -284,7 +297,7 @@ export const layer = Layer.effect(
           if (pending.has(request.id)) return yield* EffectRuntime.die(`Duplicate pending permission ID: ${request.id}`)
           pending.set(request.id, item)
           yield* events
-            .publish(Event.Asked, request)
+            .publish(Event.Asked, request, { location: eventLocation })
             .pipe(EffectRuntime.onError(() => EffectRuntime.sync(() => pending.delete(request.id))))
           return item
         }),
@@ -324,11 +337,15 @@ export const layer = Layer.effect(
         EffectRuntime.gen(function* () {
           const existing = pending.get(input.requestID)
           if (!existing) return yield* new NotFoundError({ requestID: input.requestID })
-          yield* events.publish(Event.Replied, {
-            sessionID: existing.request.sessionID,
-            requestID: existing.request.id,
-            reply: input.reply,
-          })
+          yield* events.publish(
+            Event.Replied,
+            {
+              sessionID: existing.request.sessionID,
+              requestID: existing.request.id,
+              reply: input.reply,
+            },
+            { location: eventLocation },
+          )
 
           const { verdict, scope } = normalizeReply(input.reply)
           const persisted = savedResources(existing.request, scope)
@@ -379,11 +396,15 @@ export const layer = Layer.effect(
               )
             )
               continue
-            yield* events.publish(Event.Replied, {
-              sessionID: item.request.sessionID,
-              requestID: item.request.id,
-              reply: "always",
-            })
+            yield* events.publish(
+              Event.Replied,
+              {
+                sessionID: item.request.sessionID,
+                requestID: item.request.id,
+                reply: "always",
+              },
+              { location: eventLocation },
+            )
             yield* Deferred.succeed(item.deferred, undefined)
             pending.delete(id)
           }

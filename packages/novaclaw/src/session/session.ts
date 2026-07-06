@@ -14,7 +14,7 @@ import { makeRuntime } from "@novaclaw/core/effect/runtime"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { SessionV2 } from "@novaclaw/core/session"
 import * as SessionExecutionLocal from "@novaclaw/core/session/execution/local"
-import { locationServiceMapLayer } from "@novaclaw/core/location-services"
+import { ServerLocationServiceMap } from "@/location-service-map"
 
 import { NotFoundError } from "@/storage/storage"
 import { eq } from "drizzle-orm"
@@ -961,6 +961,8 @@ export const layer: Layer.Layer<
   }),
 )
 
+// ⚠️ The map MUST be the ONE server-wide instance (ServerLocationServiceMap) — a private map
+// here splits per-location state (pending permission asks) from the V2 runner's locations.
 export const defaultLayer = layer.pipe(
   Layer.provide(BackgroundJob.defaultLayer),
   Layer.provide(Database.defaultLayer),
@@ -968,7 +970,7 @@ export const defaultLayer = layer.pipe(
   Layer.provide(
     SessionV2.defaultLayer.pipe(
       Layer.provide(SessionExecutionLocal.defaultLayer),
-      Layer.provide(locationServiceMapLayer),
+      Layer.provide(ServerLocationServiceMap.layer),
     ),
   ),
   Layer.provide(RuntimeFlags.defaultLayer),

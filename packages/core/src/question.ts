@@ -4,6 +4,7 @@ import { makeLocationNode } from "./effect/app-node"
 import { Context, Deferred, Effect, Layer, Schema } from "effect"
 import { Question } from "@novaclaw/schema/question"
 import { EventV2 } from "./event"
+import { Location } from "./location"
 import { SessionSchema } from "./session/schema"
 
 export const ID = Question.ID
@@ -76,7 +77,17 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const events = yield* EventV2.Service
+    const location = yield* Location.Service
     const pending = new Map<ID, Pending>()
+
+    // Asked/Replied/Rejected must carry this service's location EXPLICITLY: publishes can run
+    // on fibers without Location.Service in context (tool settlement, the session-deleted
+    // sweep), and the per-instance /event stream drops location-less events (mirrors
+    // PermissionV2's eventLocation).
+    const eventLocation: Location.Ref = {
+      directory: location.directory,
+      ...(location.workspaceID === undefined ? {} : { workspaceID: location.workspaceID }),
+    }
 
     yield* Effect.addFinalizer(() =>
       Effect.forEach(pending.values(), (item) => Deferred.fail(item.deferred, new RejectedError()), {
@@ -99,10 +110,14 @@ export const layer = Layer.effect(
         Effect.gen(function* () {
           for (const [id, item] of pending) {
             if (String(item.request.sessionID) !== sessionID) continue
-            yield* events.publish(Event.Rejected, {
-              sessionID: item.request.sessionID,
-              requestID: item.request.id,
-            })
+            yield* events.publish(
+              Event.Rejected,
+              {
+                sessionID: item.request.sessionID,
+                requestID: item.request.id,
+              },
+              { location: eventLocation },
+            )
             yield* Deferred.fail(item.deferred, new RejectedError())
             pending.delete(id)
           }
@@ -122,7 +137,7 @@ export const layer = Layer.effect(
           const deferred = yield* Deferred.make<ReadonlyArray<Answer>, RejectedError>()
           const request: Request = { id, ...input }
           pending.set(id, { request, deferred })
-          return yield* events.publish(Event.Asked, request).pipe(
+          return yield* events.publish(Event.Asked, request, { location: eventLocation }).pipe(
             Effect.andThen(restore(Deferred.await(deferred))),
             Effect.ensuring(
               Effect.sync(() => {
@@ -139,11 +154,15 @@ export const layer = Layer.effect(
         Effect.gen(function* () {
           const existing = pending.get(input.requestID)
           if (!existing) return yield* new NotFoundError({ requestID: input.requestID })
-          yield* events.publish(Event.Replied, {
-            sessionID: existing.request.sessionID,
-            requestID: existing.request.id,
-            answers: input.answers.map((answer) => [...answer]),
-          })
+          yield* events.publish(
+            Event.Replied,
+            {
+              sessionID: existing.request.sessionID,
+              requestID: existing.request.id,
+              answers: input.answers.map((answer) => [...answer]),
+            },
+            { location: eventLocation },
+          )
           yield* Deferred.succeed(existing.deferred, input.answers)
           pending.delete(input.requestID)
         }),
@@ -155,10 +174,14 @@ export const layer = Layer.effect(
         Effect.gen(function* () {
           const existing = pending.get(requestID)
           if (!existing) return yield* new NotFoundError({ requestID })
-          yield* events.publish(Event.Rejected, {
-            sessionID: existing.request.sessionID,
-            requestID: existing.request.id,
-          })
+          yield* events.publish(
+            Event.Rejected,
+            {
+              sessionID: existing.request.sessionID,
+              requestID: existing.request.id,
+            },
+            { location: eventLocation },
+          )
           yield* Deferred.fail(existing.deferred, new RejectedError())
           pending.delete(requestID)
         }),
@@ -175,4 +198,4 @@ export const layer = Layer.effect(
 
 export const locationLayer = layer
 
-export const node = makeLocationNode({ service: Service, layer, deps: [EventV2.node] })
+export const node = makeLocationNode({ service: Service, layer, deps: [EventV2.node, Location.node] })

@@ -6,7 +6,8 @@ import { Pty } from "@novaclaw/core/pty"
 import { PtyProtocol } from "@novaclaw/core/pty/protocol"
 import { PtyID } from "@novaclaw/core/pty/schema"
 import { PtyTicket } from "@novaclaw/core/pty/ticket"
-import { LocationServiceMap, locationServiceMapLayer } from "@novaclaw/core/location-services"
+import { LocationServiceMap } from "@novaclaw/core/location-services"
+import { ServerLocationServiceMap } from "@/location-service-map"
 import { Location } from "@novaclaw/core/location"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { Shell } from "@novaclaw/core/shell"
@@ -158,7 +159,7 @@ export const ptyHandlers = HttpApiBuilder.group(InstanceHttpApi, "pty", (handler
       .handle("remove", remove)
       .handle("connectToken", connectToken)
   }),
-).pipe(Layer.provide(locationServiceMapLayer))
+).pipe(Layer.provide(ServerLocationServiceMap.layer))
 
 export const ptyConnectHandlers = HttpApiBuilder.group(PtyConnectApi, "pty-connect", (handlers) =>
   Effect.gen(function* () {
@@ -270,4 +271,4 @@ export const ptyConnectHandlers = HttpApiBuilder.group(PtyConnectApi, "pty-conne
       }),
     )
   }),
-).pipe(Layer.provide(locationServiceMapLayer))
+).pipe(Layer.provide(ServerLocationServiceMap.layer))
