@@ -35,6 +35,7 @@ import { SessionEvent } from "./session/event"
 import { SessionInput } from "./session/input"
 import { Snapshot } from "./snapshot"
 import { SessionRevert } from "./session/revert"
+import { SessionPatch } from "./session/patch"
 import { PermissionV1 } from "./v1/permission"
 import { Revert } from "@novaclaw/schema/revert"
 import { FSUtil } from "./fs-util"
@@ -374,35 +375,16 @@ export const layer = Layer.effect(
       )
 
     // F1c — the shared V1-store setter shape (setTitle/setMetadata/setArchived/setPermission):
-    // read the raw row (the V2 Info can't seed the full legacy payload — no slug/version/
-    // share/summary/metadata/permission), merge, publish the full-info legacy
-    // `session.updated`; the projector rewrites the whole row from it and the app's
-    // `session.updated` reducer keeps working unchanged. `merge` returning undefined skips
-    // the publish (dedup for no-op updates).
+    // the cycle-free `SessionPatch.patchSessionRecord` (read row -> v1InfoFromRow -> merge ->
+    // full-info legacy `session.updated` publish; also used by the runner's auto-title), with
+    // the missing-row case mapped onto this service's NotFoundError.
     const patchRecord = (
       sessionID: SessionSchema.ID,
       merge: (info: SessionV1.SessionInfo) => SessionV1.SessionInfo | undefined,
     ): Effect.Effect<void, NotFoundError> =>
       Effect.gen(function* () {
-        const row = yield* db
-          .select()
-          .from(SessionTable)
-          .where(eq(SessionTable.id, sessionID))
-          .get()
-          .pipe(Effect.orDie)
-        if (!row) return yield* new NotFoundError({ sessionID })
-        const next = merge(v1InfoFromRow(row))
-        if (!next) return
-        yield* events.publish(
-          SessionV1.Event.Updated,
-          { sessionID, info: next },
-          {
-            location: Location.Ref.make({
-              directory: AbsolutePath.make(row.directory),
-              workspaceID: row.workspace_id ?? undefined,
-            }),
-          },
-        )
+        const found = yield* SessionPatch.patchSessionRecord({ db, events }, sessionID, merge)
+        if (!found) return yield* new NotFoundError({ sessionID })
       })
 
     // F1c-2 — session removal on the core engine. Interrupt any active run (idle

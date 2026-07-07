@@ -76,6 +76,10 @@ const client = Layer.succeed(
   LLMClient.Service.of({
     prepare: () => Effect.die("unused"),
     stream: ((request: LLMRequest) => {
+      // The runner's post-drain auto-title probe (recognizable by its title-generator system
+      // prompt): answer out-of-band with an empty stream — it cleans to "no title", writes
+      // nothing, and leaves scripted turn responses + request assertions untouched.
+      if (JSON.stringify(request.system ?? []).includes("You are a title generator")) return Stream.empty
       requests.push(request)
       if (responseStream) {
         const stream = responseStream

@@ -34,8 +34,11 @@ import { SessionHistory } from "../history"
 import { SessionInput } from "../input"
 import { SessionMessage } from "../message"
 import { Prompt } from "../prompt"
+import { SessionPatch } from "../patch"
 import { SessionSchema } from "../schema"
 import { SessionStore } from "../store"
+import { SessionTitle } from "../title"
+import { SessionV1 } from "../../v1/session"
 import { resolveSessionConfig, EFFECTIVE_CONFIG_DEFAULTS } from "../config-resolve"
 import { SessionScheduler } from "../scheduler"
 import { type RunError, Service } from "./index"
@@ -111,7 +114,9 @@ import { llmClient } from "../../effect/app-node-platform"
  * - Post-run maintenance
  *   - [ ] Settle final status and expose durable output events to replayable consumers.
  *   - [ ] Coalesce streamed deltas and add covering projected-history indexes.
- *   - [ ] Update title, summaries, compaction state, and cleanup in bounded background work.
+ *   - [x] Auto-title after the drain settles (SessionTitle; owner directive — the title
+ *     grounds the user and the model across compactions, generated while the user reads).
+ *   - [ ] Update summaries, compaction state, and cleanup in bounded background work.
  *
  * Use `llm.stream(request)` for each provider turn. Keep tool execution and continuation here.
  * Durable continuation recovery remains a separate future slice with an explicit retry policy.
@@ -274,6 +279,43 @@ export const layer = Layer.effect(
       yield* Effect.logInfo("introspection interjecting", { sessionID })
       yield* SessionInput.steer(db, events, sessionID, interjection)
     })
+    // Auto-title (owner directive): runs right AFTER the drain settles — the user is busy
+    // reading the response, the model is idle — because the title grounds BOTH the user (the
+    // chat list) and the model across compactions (the title survives them). Fires only while
+    // the title is still a creation default, so a user rename is never clobbered and a failed
+    // attempt simply retries at the next drain end. Seeds from the first REAL user message
+    // (harness steers carry the 1N provenance prefix and never title a session).
+    const generateTitle = Effect.fn("SessionRunner.generateTitle")(function* (sessionID: SessionSchema.ID) {
+      const session = yield* getSession(sessionID)
+      if (!SessionTitle.isDefault(session.title)) return
+      const text = SessionTitle.firstRealUserText(yield* getContext(sessionID))
+      if (!text) return
+      const model = yield* models.resolve(session)
+      const chunks: string[] = []
+      yield* llm
+        .stream(
+          LLM.request({
+            model,
+            system: [SystemPart.make(SessionTitle.SYSTEM)],
+            messages: [Message.user(text)],
+            tools: [],
+            // Room for a `<think>` block on reasoning models; `clean` strips it after.
+            generation: { maxTokens: 512 },
+          }),
+        )
+        .pipe(
+          Stream.runForEach((event) => {
+            if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
+            return Effect.void
+          }),
+        )
+      const title = SessionTitle.clean(chunks.join(""))
+      if (!title) return
+      yield* SessionPatch.patchSessionRecord({ db, events }, sessionID, (info) =>
+        SessionV1.SessionInfo.make({ ...info, title, time: { ...info.time, updated: Date.now() } }),
+      )
+    })
+
     const failInterruptedTools = Effect.fn("SessionRunner.failInterruptedTools")(function* (
       sessionID: SessionSchema.ID,
     ) {
@@ -888,6 +930,13 @@ export const layer = Layer.effect(
         shouldRun = yield* SessionInput.hasPending(db, input.sessionID, "queue")
         promotion = shouldRun ? "queue" : undefined
       }
+      // Post-run maintenance: auto-title while the user reads the response. Best-effort —
+      // it must never fail the drain it follows.
+      yield* generateTitle(input.sessionID).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("auto-title failed", { sessionID: input.sessionID, cause }),
+        ),
+      )
     })
 
     return Service.of({
