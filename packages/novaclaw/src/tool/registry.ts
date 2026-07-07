@@ -62,22 +62,12 @@ type State = {
   builtin: Tool.Def[]
   task: TaskDef
   read: ReadDef
-  /** How many of `custom` came from plugin `tool:` maps (not config-dir files). */
-  pluginToolCount: number
 }
 
 export interface Interface {
   readonly ids: () => Effect.Effect<string[]>
   readonly all: () => Effect.Effect<Tool.Def[]>
   readonly named: () => Effect.Effect<{ task: TaskDef; read: ReadDef }>
-  /**
-   * F1a: does this instance contribute plugin `tool:` map tools (from loaded
-   * `@novaclaw/plugin` plugins)? Config-dir {tool,tools}/*.{js,ts} tools now run on
-   * the V2 engine (the `ExternalToolSource` aggregator, SLICE 1), so ONLY plugin-map
-   * tools still force the promptAsync reroute onto legacy — their V2 bridge is not
-   * built yet, and a plugin-tool user must not silently lose them to the V2 default.
-   */
-  readonly hasPluginTools: () => Effect.Effect<boolean>
   readonly tools: (model: {
     providerID: ProviderV2.ID
     modelID: ModelV2.ID
@@ -186,12 +176,18 @@ export const layer = Layer.effect(
           }
         }
 
-        let pluginToolCount = 0
+        // Legacy plugin `tool:` maps (the V1 Hooks API) load for the V1 engine only —
+        // they no longer force the promptAsync route onto legacy, and the V2 engine
+        // does not see them (F1a plugin-tool parity: V2 plugins register tools via
+        // `ctx.tool.register`). Warn so a plugin author notices instead of silently
+        // losing the tool on native sessions.
         const plugins = yield* plugin.list()
         for (const p of plugins) {
           for (const [id, def] of Object.entries(p.tool ?? {})) {
             custom.push(fromPlugin(id, def))
-            pluginToolCount++
+            yield* Effect.logWarning(
+              `plugin tool '${id}' uses the legacy Hooks 'tool:' map — it does NOT run on the native engine; migrate the plugin to the V2 plugin API (ctx.tool.register)`,
+            )
           }
         }
 
@@ -237,7 +233,6 @@ export const layer = Layer.effect(
           ],
           task: tool.task,
           read: tool.read,
-          pluginToolCount,
         }
       }),
     )
@@ -313,12 +308,7 @@ export const layer = Layer.effect(
       return { task: s.task, read: s.read }
     })
 
-    const hasPluginTools: Interface["hasPluginTools"] = Effect.fn("ToolRegistry.hasPluginTools")(function* () {
-      const s = yield* InstanceState.get(state)
-      return s.pluginToolCount > 0
-    })
-
-    return Service.of({ ids, all, named, hasPluginTools, tools })
+    return Service.of({ ids, all, named, tools })
   }),
 )
 

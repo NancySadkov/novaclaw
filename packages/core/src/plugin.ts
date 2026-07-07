@@ -15,6 +15,7 @@ import { PluginHost } from "./plugin/host"
 import { Reference } from "./reference"
 import { SkillV2 } from "./skill"
 import { State } from "./state"
+import { PluginTools } from "./tool/plugin-tools"
 
 export const ID = Plugin.ID
 export type ID = typeof ID.Type
@@ -150,6 +151,7 @@ export const locationLayer = layer.pipe(
   Layer.provideMerge(Integration.locationLayer),
   Layer.provideMerge(Reference.locationLayer),
   Layer.provideMerge(SkillV2.locationLayer),
+  Layer.provideMerge(PluginTools.layer),
 )
 
 export const node = makeLocationNode({
@@ -164,5 +166,6 @@ export const node = makeLocationNode({
     Integration.node,
     Reference.node,
     SkillV2.node,
+    PluginTools.node,
   ],
 })

@@ -491,10 +491,11 @@ describe("tool.registry", () => {
     }),
   )
 
-  // F1a SLICE 2: config-dir {tool,tools}/*.{js,ts} tools now run on V2 (the
-  // ExternalToolSource aggregator, SLICE 1), so they must NOT trip the plugin-tool
-  // routing signal — only plugin `tool:` maps still force the promptAsync legacy fallback.
-  it.instance("hasPluginTools is false for a config-dir tool (routes to V2)", () =>
+  // F1a: custom tools are no longer a legacy-routing signal (`hasPluginTools` is
+  // retired — the promptAsync router never consults the V1 registry). These cases
+  // pin that the V1 registry still LOADS both custom-tool shapes for the sessions
+  // that still run on the V1 engine (until F1b/F1f).
+  it.instance("loads a config-dir tool into the V1 registry", () =>
     Effect.gen(function* () {
       const test = yield* TestInstance
       const tool = path.join(test.directory, ".novaclaw", "tool")
@@ -506,16 +507,14 @@ describe("tool.registry", () => {
         ),
       )
       const registry = yield* ToolRegistry.Service
-      expect(yield* registry.ids()).toContain("greet") // the config-dir tool IS present…
-      expect(yield* registry.hasPluginTools()).toBe(false) // …but it does not force legacy
+      expect(yield* registry.ids()).toContain("greet")
     }),
   )
 
-  withBrokenPlugin.instance("hasPluginTools is true for a plugin `tool:` map (stays on legacy)", () =>
+  withBrokenPlugin.instance("still loads a legacy plugin `tool:` map for the V1 engine", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service
       expect(yield* registry.ids()).toContain("broken_plugin_tool")
-      expect(yield* registry.hasPluginTools()).toBe(true)
     }),
   )
 })

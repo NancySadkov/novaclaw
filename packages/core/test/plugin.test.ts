@@ -1,8 +1,10 @@
 import { describe, expect } from "bun:test"
 import { Effect, Exit, Fiber } from "effect"
 import { define } from "@novaclaw/plugin/v2/effect"
+import { tool } from "@novaclaw/plugin"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { PluginV2 } from "@novaclaw/core/plugin"
+import { PluginTools } from "@novaclaw/core/tool/plugin-tools"
 import { testEffect } from "./lib/effect"
 import { PluginTestLayer } from "./plugin/fixture"
 
@@ -66,6 +68,44 @@ describe("PluginV2", () => {
 
       yield* plugins.remove(PluginV2.ID.make("managed"))
       expect(yield* agents.get(AgentV2.ID.make("configured"))).toBeUndefined()
+    }),
+  )
+
+  // F1a plugin-tool parity: a V2 plugin registers a model-facing tool through
+  // `ctx.tool.register`; the registration lives in the `PluginTools` store (where the
+  // novaclaw ExternalToolSource aggregator picks it up) and dies with the plugin.
+  it.effect("registers and unregisters plugin tools with the plugin lifetime", () =>
+    Effect.gen(function* () {
+      const plugins = yield* PluginV2.Service
+      const store = yield* PluginTools.Service
+
+      const greeter = tool({
+        description: "Greet someone",
+        args: {},
+        execute: async () => "hello",
+      })
+
+      const withTool = define({
+        id: "with-tool",
+        effect: (ctx) => ctx.tool.register("greeter", greeter).pipe(Effect.asVoid),
+      })
+
+      yield* plugins.add(PluginV2.ID.make("with-tool"), withTool.effect)
+      const registered = yield* store.entries()
+      expect([...registered.keys()]).toContain("greeter")
+      expect(registered.get("greeter")?.definition).toBe(greeter)
+      const identity = registered.get("greeter")?.identity
+
+      // Replacing the plugin re-registers: the tool survives with a FRESH identity
+      // (the old registration's scope closed, so its stale-call guard token retired).
+      yield* plugins.add(PluginV2.ID.make("with-tool"), withTool.effect)
+      const replaced = yield* store.entries()
+      expect([...replaced.keys()]).toContain("greeter")
+      expect(replaced.get("greeter")?.identity).not.toBe(identity)
+
+      // Removing the plugin removes its tools.
+      yield* plugins.remove(PluginV2.ID.make("with-tool"))
+      expect((yield* store.entries()).size).toBe(0)
     }),
   )
 })

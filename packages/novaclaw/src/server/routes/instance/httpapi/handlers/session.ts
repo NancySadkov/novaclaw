@@ -20,7 +20,6 @@ import { SessionStatus } from "@/session/status"
 import { SessionSummary } from "@/session/summary"
 import { Todo } from "@/session/todo"
 import { MessageID, PartID, SessionID } from "@/session/schema"
-import { ToolRegistry } from "@/tool/registry"
 import { NamedError } from "@novaclaw/core/util/error"
 import { Cause, Effect, Option, Schema, Scope } from "effect"
 import * as Stream from "effect/Stream"
@@ -121,7 +120,6 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     const statusSvc = yield* SessionStatus.Service
     const sessionV2 = yield* SessionV2.Service
     const flags = yield* RuntimeFlags.Service
-    const toolRegistry = yield* ToolRegistry.Service
     const todoSvc = yield* Todo.Service
     const summary = yield* SessionSummary.Service
     const events = yield* EventV2Bridge.Service
@@ -474,23 +472,14 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       // payload model, else the session's own model. Without one the V2 runner
       // throws ModelNotSelectedError, so a model-less turn FALLS THROUGH to legacy.
       const hasModel = ctx.payload.model !== undefined || current.model !== undefined
-      // F1a: config-dir {tool,tools}/*.{js,ts} custom tools now run on V2 (the
-      // ExternalToolSource aggregator, SLICE 1). Only plugin `tool:` map tools still
-      // lack a V2 bridge — when this instance contributes any, stay on legacy so they
-      // never silently vanish. A failing plugin-tool load also stays legacy: that is
-      // exactly the pre-flip behavior, and the V1 path will surface the error.
-      const pluginTools =
-        flags.experimentalNativeSession && hasModel
-          ? yield* toolRegistry.hasPluginTools().pipe(Effect.catchCause(() => Effect.succeed(true)))
-          : false
-      if (pluginTools && flags.experimentalNativeSession)
-        yield* Effect.logInfo("promptAsync: plugin tools present — session stays on the legacy engine", {
-          sessionID: ctx.params.sessionID,
-        })
+      // F1a: custom tools no longer force the legacy engine — config-dir
+      // {tool,tools}/*.{js,ts} tools ride the V2 ExternalToolSource aggregator
+      // (SLICE 1), and V2 plugins register tools natively via `ctx.tool.register`
+      // (plugin-tool parity). The legacy V1 `tool:` Hooks map has no V2 bridge and
+      // is not a routing signal — it dies with the V1 engine (F1f).
       const useV2 =
         flags.experimentalNativeSession &&
         hasModel &&
-        !pluginTools &&
         (yield* v2Eligible(ctx.params.sessionID).pipe(Effect.orDie))
 
       if (!useV2) {
