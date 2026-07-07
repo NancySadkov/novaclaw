@@ -26,7 +26,6 @@ import { QuestionApi } from "./groups/question"
 import { SessionApi } from "./groups/session"
 import { ShellApi } from "./groups/shell"
 import { SyncApi } from "./groups/sync"
-import { TuiApi } from "./groups/tui"
 import { WorkspaceApi } from "./groups/workspace"
 import { makeApi } from "@novaclaw/protocol/api"
 import { LocationMiddleware } from "@novaclaw/server/location"
@@ -78,7 +77,6 @@ export const InstanceHttpApi = HttpApi.make("novaclaw-instance")
   .addHttpApi(SessionApi)
   .addHttpApi(ShellApi)
   .addHttpApi(SyncApi)
-  .addHttpApi(TuiApi)
   .addHttpApi(WorkspaceApi)
   .middleware(SchemaErrorMiddleware)
 

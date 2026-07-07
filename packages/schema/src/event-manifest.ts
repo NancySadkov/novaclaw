@@ -27,7 +27,6 @@ import { SessionStatusEvent } from "./session-status-event"
 import { SessionTags } from "./session-tags"
 import { SessionTodo } from "./session-todo"
 import { SessionV1 } from "./session-v1"
-import { TuiEvent } from "./tui-event"
 import { VcsEvent } from "./vcs-event"
 import { WorkspaceEvent } from "./workspace-event"
 import { WorktreeEvent } from "./worktree-event"
@@ -71,7 +70,6 @@ export const Definitions = Event.inventory(
   ...SessionTodo.Event.Definitions,
   ...SessionTags.Event.Definitions,
   ...PermissionV1.Event.Definitions,
-  ...TuiEvent.Definitions,
   ...McpEvent.Definitions,
   ...LegacyEvent.Definitions,
   ...Project.Event.Definitions,

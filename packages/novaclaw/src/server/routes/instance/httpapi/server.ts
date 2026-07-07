@@ -103,7 +103,6 @@ import { questionHandlers } from "./handlers/question"
 import { sessionHandlers } from "./handlers/session"
 import { shellHandlers } from "./handlers/shell"
 import { syncHandlers } from "./handlers/sync"
-import { tuiHandlers } from "./handlers/tui"
 import { handlers } from "@novaclaw/server/handlers"
 import { ServerLocationServiceMap } from "@/location-service-map"
 import { layer as locationLayer } from "@novaclaw/server/location"
@@ -182,7 +181,6 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
     sessionHandlers,
     shellHandlers,
     syncHandlers,
-    tuiHandlers,
     workspaceHandlers,
   ]),
 )

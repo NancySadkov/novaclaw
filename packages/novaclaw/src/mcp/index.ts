@@ -28,7 +28,6 @@ import { McpOAuthPendingProvider, McpOAuthProvider, OAUTH_CALLBACK_PATH } from "
 import { McpOAuthCallback } from "./oauth-callback"
 import { McpAuth } from "./auth"
 import { EventV2Bridge } from "@/event-v2-bridge"
-import { TuiEvent } from "@/server/tui-event"
 import open from "open"
 import { Cause, Effect, Exit, Layer, Context, Schema, Stream } from "effect"
 import { EffectBridge } from "@/effect/bridge"
@@ -303,30 +302,24 @@ export const layer = Layer.effect(
               error instanceof UnauthorizedError || (authProvider && lastError.message.includes("OAuth"))
 
             if (isAuthError) {
+              // The auth state lands in `lastStatus`, which the Settings UI surfaces as the
+              // server's MCP status. (These used to also publish a TuiEvent toast — the TUI
+              // HTTP control surface died with the TUI; the web app never consumed it.)
               if (lastError.message.includes("registration") || lastError.message.includes("client_id")) {
                 lastStatus = {
                   status: "needs_client_registration" as const,
                   error: "Server does not support dynamic client registration. Please provide clientId in config.",
                 }
-                return events
-                  .publish(TuiEvent.ToastShow, {
-                    title: "MCP Authentication Required",
-                    message: `Server "${key}" requires a pre-registered client ID. Add clientId to your config.`,
-                    variant: "warning",
-                    duration: 8000,
-                  })
-                  .pipe(Effect.ignore, Effect.as(undefined))
+                return Effect.logWarning("MCP server requires a pre-registered client ID", { server: key }).pipe(
+                  Effect.as(undefined),
+                )
               } else {
                 pendingOAuthTransports.set(key, { transport })
                 lastStatus = { status: "needs_auth" as const }
-                return events
-                  .publish(TuiEvent.ToastShow, {
-                    title: "MCP Authentication Required",
-                    message: `Server "${key}" requires authentication. Run: novaclaw mcp auth ${key}`,
-                    variant: "warning",
-                    duration: 8000,
-                  })
-                  .pipe(Effect.ignore, Effect.as(undefined))
+                return Effect.logWarning("MCP server requires authentication", {
+                  server: key,
+                  hint: `novaclaw mcp auth ${key}`,
+                }).pipe(Effect.as(undefined))
               }
             }
 
