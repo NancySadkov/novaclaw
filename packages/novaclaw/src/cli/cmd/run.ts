@@ -24,7 +24,7 @@ import { Filesystem } from "@/util/filesystem"
 import { createNovaclawClient, type NovaclawClient, type ToolPart } from "@novaclaw/sdk/v2"
 import { FormatError, FormatUnknownError } from "../error"
 
-type ModelInput = Parameters<NovaclawClient["session"]["prompt"]>[0]["model"]
+type ModelInput = Parameters<NovaclawClient["session"]["promptAsync"]>[0]["model"]
 
 function pick(value: string | undefined): ModelInput | undefined {
   if (!value) return undefined

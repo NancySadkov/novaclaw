@@ -91,7 +91,6 @@ export const SessionPaths = {
   share: `${root}/:sessionID/share`,
   init: `${root}/:sessionID/init`,
   summarize: `${root}/:sessionID/summarize`,
-  prompt: `${root}/:sessionID/message`,
   promptAsync: `${root}/:sessionID/prompt_async`,
   command: `${root}/:sessionID/command`,
   shell: `${root}/:sessionID/shell`,
@@ -310,19 +309,6 @@ export const SessionApi = HttpApi.make("session")
             identifier: "session.summarize",
             summary: "Summarize session",
             description: "Generate a concise summary of the session using AI compaction to preserve key information.",
-          }),
-        ),
-        HttpApiEndpoint.post("prompt", SessionPaths.prompt, {
-          params: { sessionID: SessionID },
-          query: WorkspaceRoutingQuery,
-          payload: PromptPayload,
-          success: described(SessionV1.WithParts, "Created message"),
-          error: [HttpApiError.BadRequest, ApiNotFoundError, InvalidRequestError],
-        }).annotateMerge(
-          OpenApi.annotations({
-            identifier: "session.prompt",
-            summary: "Send message",
-            description: "Create and send a new message to a session, streaming the AI response.",
           }),
         ),
         HttpApiEndpoint.post("promptAsync", SessionPaths.promptAsync, {

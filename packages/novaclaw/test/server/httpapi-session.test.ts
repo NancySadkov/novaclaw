@@ -7,7 +7,6 @@ import path from "node:path"
 import { Cause, Config, Effect, Exit, Layer } from "effect"
 import { HttpClient, HttpClientRequest, HttpClientResponse, HttpRouter, HttpServer } from "effect/unstable/http"
 import { layerWebSocketConstructorGlobal } from "effect/unstable/socket/Socket"
-import { CrossSpawnSpawner } from "@novaclaw/core/cross-spawn-spawner"
 import { Flag } from "@novaclaw/core/flag/flag"
 import { Ripgrep } from "@novaclaw/core/ripgrep"
 import { registerAdapter } from "../../src/control-plane/adapters"
@@ -31,9 +30,7 @@ import { ProviderV2 } from "@novaclaw/core/provider"
 import * as DateTime from "effect/DateTime"
 import { eq } from "drizzle-orm"
 import { resetDatabase } from "../fixture/db"
-import { disposeAllInstances, provideInstanceEffect, TestInstance, tmpdirScoped } from "../fixture/fixture"
-import { TestLLMServer } from "../lib/llm-server"
-import { testProviderConfig } from "../lib/test-provider"
+import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { pollWithTimeout, testEffect } from "../lib/effect"
 
 const originalWorkspaces = Flag.NOVACLAW_EXPERIMENTAL_WORKSPACES
@@ -294,7 +291,7 @@ describe("session HttpApi", () => {
         expect(remove.status).toBe(404)
         expect(yield* responseJson(remove)).toEqual(missingSessionBody)
 
-        const prompt = yield* request(pathFor(SessionPaths.prompt, { sessionID: missingSession }), {
+        const prompt = yield* request(pathFor(SessionPaths.promptAsync, { sessionID: missingSession }), {
           headers: { ...headers, "content-type": "application/json" },
           method: "POST",
           body: JSON.stringify({ agent: "build", noReply: true, parts: [{ type: "text", text: "hello" }] }),
@@ -396,44 +393,10 @@ describe("session HttpApi", () => {
     { git: true, config: { formatter: false } },
   )
 
-  it.live("uses the persisted session directory for prompt requests", () =>
-    Effect.gen(function* () {
-      const llm = yield* TestLLMServer
-      yield* llm.text("ok", { usage: { input: 1, output: 1 } })
-
-      const config = testProviderConfig(llm.url)
-      const sessionDirectory = yield* tmpdirScoped({ git: true, config })
-      const requestDirectory = yield* tmpdirScoped({ git: true, config })
-      const session = yield* createSession({ title: "directory regression" }).pipe(
-        provideInstanceEffect(sessionDirectory),
-      )
-
-      const response = yield* request(
-        `${pathFor(SessionPaths.prompt, { sessionID: session.id })}?directory=${encodeURIComponent(requestDirectory)}`,
-        {
-          method: "POST",
-          headers: { "content-type": "application/json" },
-          body: JSON.stringify({
-            agent: "build",
-            model: { providerID: "test", modelID: "test-model" },
-            parts: [{ type: "text", text: "which directory?" }],
-          }),
-        },
-      )
-
-      expect(response.status).toBe(200)
-      yield* responseJson(response)
-
-      const messages = yield* Session.use
-        .messages({ sessionID: session.id })
-        .pipe(provideInstanceEffect(sessionDirectory), Effect.orDie)
-      const assistant = messages.find((message) => message.info.role === "assistant")
-      expect(assistant?.info.role === "assistant" ? assistant.info.path : undefined).toEqual({
-        cwd: sessionDirectory,
-        root: sessionDirectory,
-      })
-    }).pipe(Effect.provide(TestLLMServer.layer), Effect.provide(CrossSpawnSpawner.defaultLayer)),
-  )
+  // (F1a SLICE 8) The it.live "uses the persisted session directory for prompt requests"
+  // regression test was deleted WITH its vehicle, the blocking `prompt` route: the V2 path
+  // resolves the turn's location from the session row by construction, and the promptAsync
+  // V1 fallback retires at F1b.
 
   it.instance(
     "returns v2 public request errors for cursor and workspace query failures",

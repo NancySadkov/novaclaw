@@ -18,12 +18,10 @@ import { MessageV2 } from "../../src/session/message-v2"
 import type { Config } from "@/config/config"
 import { Session as SessionNs } from "@/session/session"
 import { errorMessage } from "../../src/util/error"
-import { TestLLMServer } from "../lib/llm-server"
 import path from "path"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, TestInstance, tmpdirScoped } from "../fixture/fixture"
 import { awaitWithTimeout, pollWithTimeout, testEffect } from "../lib/effect"
-import { testProviderConfig } from "../lib/test-provider"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { ModelV2 } from "@novaclaw/core/model"
 import { Database } from "@novaclaw/core/database/database"
@@ -50,7 +48,6 @@ type Sdk = ReturnType<typeof createNovaclawClient>
 type SdkResult = { response: Response; data?: unknown; error?: unknown }
 type Captured = { status: number; data?: unknown; error?: unknown }
 type ProjectFixture = { sdk: Sdk; directory: string }
-type LlmProjectFixture = ProjectFixture & { llm: TestLLMServer["Service"] }
 type TestServices =
   | FSUtil.Service
   | ChildProcessSpawner.ChildProcessSpawner
@@ -249,52 +246,12 @@ function withStandardProject<A, E>(
   return withProject(serverPath, { setup: writeStandardFiles }, run)
 }
 
-function withFakeLlm<A, E>(serverPath: ServerPath, run: (input: LlmProjectFixture) => Effect.Effect<A, E, TestScope>) {
-  return Effect.gen(function* () {
-    const llm = yield* TestLLMServer
-    return yield* withProject(serverPath, { config: testProviderConfig(llm.url) }, (input) => run({ ...input, llm }))
-  }).pipe(Effect.provide(TestLLMServer.layer))
-}
-
-function withFakeLlmProject<A, E>(
-  serverPath: ServerPath,
-  options: { setup?: (dir: string) => Effect.Effect<void, E, TestServices> },
-  run: (input: LlmProjectFixture) => Effect.Effect<A, E, TestScope>,
-) {
-  return Effect.gen(function* () {
-    const llm = yield* TestLLMServer
-    return yield* withProject(
-      serverPath,
-      {
-        config: testProviderConfig(llm.url),
-        setup: options.setup,
-      },
-      (input) => run({ ...input, llm }),
-    )
-  }).pipe(Effect.provide(TestLLMServer.layer))
-}
-
 function writeStandardFiles(dir: string) {
   return FSUtil.Service.use((fs) =>
     Effect.all([
       fs.writeWithDirs(path.join(dir, "hello.txt"), "hello"),
       fs.writeWithDirs(path.join(dir, "needle.ts"), "export const needle = 'sdk-parity'\n"),
     ]).pipe(Effect.asVoid),
-  )
-}
-
-function writeProjectSkill(dir: string) {
-  return FSUtil.Service.use((fs) =>
-    fs.writeWithDirs(
-      path.join(dir, ".novaclaw", "skills", "project-rest-skill", "SKILL.md"),
-      `---
-name: project-rest-skill
-description: A project skill visible to REST API prompts.
----
-
-# Project REST Skill
-`,
-    ),
   )
 }
 
@@ -733,19 +690,14 @@ describe("HttpApi SDK", () => {
     ),
   )
 
-  serverPathParity("matches generated SDK prompt no-reply routes", (serverPath) =>
+  // F1a SLICE 8: the blocking `session.prompt` route (POST …/message) is retired — the
+  // async route is THE prompt surface. The no-reply case persists the user message
+  // without a model turn, so `messages` is the observable result.
+  serverPathParity("matches generated SDK promptAsync no-reply route", (serverPath) =>
     withStandardProject(serverPath, ({ sdk }) =>
       Effect.gen(function* () {
         const session = yield* capture(() => sdk.session.create({ title: "prompt" }))
         const sessionID = String(record(session.data).id)
-        const prompt = yield* capture(() =>
-          sdk.session.prompt({
-            sessionID,
-            agent: "build",
-            noReply: true,
-            parts: [{ type: "text", text: "hello" }],
-          }),
-        )
         const asyncPrompt = yield* capture(() =>
           sdk.session.promptAsync({
             sessionID,
@@ -757,8 +709,7 @@ describe("HttpApi SDK", () => {
         const messages = yield* capture(() => sdk.session.messages({ sessionID }))
 
         return {
-          statuses: statuses({ session, prompt, asyncPrompt, messages }),
-          promptRole: record(record(prompt.data).info).role,
+          statuses: statuses({ session, asyncPrompt, messages }),
           messageCount: array(messages.data).length,
           messageTexts: array(messages.data)
             .flatMap((item) => array(record(item).parts))
@@ -766,69 +717,6 @@ describe("HttpApi SDK", () => {
             .filter((text): text is string => typeof text === "string")
             .sort(),
         }
-      }),
-    ),
-  )
-
-  serverPathParity("matches generated SDK prompt streaming through fake LLM", (serverPath) =>
-    withFakeLlm(serverPath, ({ sdk, llm }) =>
-      Effect.gen(function* () {
-        yield* llm.text("fake world", { usage: { input: 11, output: 7 } })
-        const session = yield* capture(() =>
-          sdk.session.create({
-            title: "llm prompt",
-            permission: [{ permission: "*", pattern: "*", action: "allow" }],
-          }),
-        )
-        const sessionID = String(record(session.data).id)
-        const prompt = yield* capture(() =>
-          sdk.session.prompt({
-            sessionID,
-            agent: "build",
-            model: { providerID: "test", modelID: "test-model" },
-            parts: [{ type: "text", text: "hello llm" }],
-          }),
-        )
-        const messages = yield* capture(() => sdk.session.messages({ sessionID }))
-        const inputs = yield* llm.inputs
-
-        return {
-          statuses: statuses({ session, prompt, messages }),
-          calls: inputs.length,
-          requestedModel: inputs[0]?.model,
-          responseText: JSON.stringify(prompt.data).includes("fake world"),
-          persistedText: JSON.stringify(messages.data).includes("fake world"),
-          userText: JSON.stringify(messages.data).includes("hello llm"),
-        }
-      }),
-    ),
-  )
-
-  httpapi(
-    "includes project skills in REST API prompt context",
-    withFakeLlmProject("default", { setup: writeProjectSkill }, ({ sdk, llm }) =>
-      Effect.gen(function* () {
-        yield* llm.text("skill context ok", { usage: { input: 11, output: 7 } })
-        const session = yield* capture(() =>
-          sdk.session.create({
-            title: "project skill prompt",
-            permission: [{ permission: "*", pattern: "*", action: "allow" }],
-          }),
-        )
-        const sessionID = String(record(session.data).id)
-        const prompt = yield* capture(() =>
-          sdk.session.prompt({
-            sessionID,
-            agent: "build",
-            model: { providerID: "test", modelID: "test-model" },
-            parts: [{ type: "text", text: "hello skill context" }],
-          }),
-        )
-        const inputs = yield* llm.inputs
-
-        expect(session.status).toBe(200)
-        expect(prompt.status).toBe(200)
-        expect(JSON.stringify(inputs[0])).toContain("project-rest-skill")
       }),
     ),
   )

@@ -11,7 +11,7 @@ for await (const file of input) {
   console.log("processing", file)
   const session = await client.session.create()
   tasks.push(
-    client.session.prompt({
+    client.session.promptAsync({
       path: { id: session.data.id },
       body: {
         parts: [
@@ -35,7 +35,7 @@ await Promise.all(
   input.map(async (file) => {
     const session = await client.session.create()
     console.log("processing", file)
-    await client.session.prompt({
+    await client.session.promptAsync({
       path: { id: session.data.id },
       body: {
         parts: [

@@ -11214,58 +11214,6 @@ export type SessionMessagesResponses = {
 
 export type SessionMessagesResponse2 = SessionMessagesResponses[keyof SessionMessagesResponses]
 
-export type SessionPromptData = {
-  body?: {
-    messageID?: string
-    model?: {
-      providerID: string
-      modelID: string
-    }
-    agent?: string
-    noReply?: boolean
-    tools?: {
-      [key: string]: boolean
-    }
-    format?: OutputFormat
-    system?: string
-    variant?: string
-    parts: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
-  }
-  path: {
-    sessionID: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/session/{sessionID}/message"
-}
-
-export type SessionPromptErrors = {
-  /**
-   * BadRequest | InvalidRequestError
-   */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-  /**
-   * NotFoundError
-   */
-  404: NotFoundError
-}
-
-export type SessionPromptError = SessionPromptErrors[keyof SessionPromptErrors]
-
-export type SessionPromptResponses = {
-  /**
-   * Created message
-   */
-  200: {
-    info: AssistantMessage
-    parts: Array<Part>
-  }
-}
-
-export type SessionPromptResponse = SessionPromptResponses[keyof SessionPromptResponses]
-
 export type SessionDeleteMessageData = {
   body?: never
   path: {

@@ -479,7 +479,7 @@ describe("workspace HttpApi", () => {
       expect(warped.status).toBe(204)
 
       try {
-        const response = yield* requestDefault(`http://localhost/session/${session.id}/message`, dir, {
+        const response = yield* requestDefault(`http://localhost/session/${session.id}/prompt_async`, dir, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ parts: [{ type: "text", text: "hello" }] }),
@@ -487,10 +487,12 @@ describe("workspace HttpApi", () => {
 
         const responseBody = yield* response.text
         expect({ status: response.status, body: responseBody }).toMatchObject({ status: 200 })
-        expect(JSON.parse(responseBody)).toEqual({ proxied: true, path: `/base/session/${session.id}/message` })
-        expect(proxied.filter((item) => new URL(item.url).pathname === `/base/session/${session.id}/message`)).toEqual([
+        expect(JSON.parse(responseBody)).toEqual({ proxied: true, path: `/base/session/${session.id}/prompt_async` })
+        expect(
+          proxied.filter((item) => new URL(item.url).pathname === `/base/session/${session.id}/prompt_async`),
+        ).toEqual([
           expect.objectContaining({
-            url: `http://127.0.0.1:${remote.port}/base/session/${session.id}/message`,
+            url: `http://127.0.0.1:${remote.port}/base/session/${session.id}/prompt_async`,
             method: "POST",
           }),
         ])

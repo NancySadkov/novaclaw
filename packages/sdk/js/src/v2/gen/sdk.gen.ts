@@ -239,8 +239,6 @@ import type {
   SessionMessagesResponses,
   SessionPromptAsyncErrors,
   SessionPromptAsyncResponses,
-  SessionPromptErrors,
-  SessionPromptResponses,
   SessionRevertErrors,
   SessionRevertResponses,
   SessionShareErrors,
@@ -4428,66 +4426,6 @@ export class Session2 extends HeyApiClient {
       url: "/session/{sessionID}/message",
       ...options,
       ...params,
-    })
-  }
-
-  /**
-   * Send message
-   *
-   * Create and send a new message to a session, streaming the AI response.
-   */
-  public prompt<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      directory?: string
-      workspace?: string
-      messageID?: string
-      model?: {
-        providerID: string
-        modelID: string
-      }
-      agent?: string
-      noReply?: boolean
-      tools?: {
-        [key: string]: boolean
-      }
-      format?: OutputFormat
-      system?: string
-      variant?: string
-      parts?: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "sessionID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "body", key: "messageID" },
-            { in: "body", key: "model" },
-            { in: "body", key: "agent" },
-            { in: "body", key: "noReply" },
-            { in: "body", key: "tools" },
-            { in: "body", key: "format" },
-            { in: "body", key: "system" },
-            { in: "body", key: "variant" },
-            { in: "body", key: "parts" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<SessionPromptResponses, SessionPromptErrors, ThrowOnError>({
-      url: "/session/{sessionID}/message",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
     })
   }
 

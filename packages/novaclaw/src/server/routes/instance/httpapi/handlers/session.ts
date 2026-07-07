@@ -22,7 +22,6 @@ import { Todo } from "@/session/todo"
 import { MessageID, PartID, SessionID } from "@/session/schema"
 import { NamedError } from "@novaclaw/core/util/error"
 import { Cause, Effect, Option, Schema, Scope } from "effect"
-import * as Stream from "effect/Stream"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder, HttpApiError, HttpApiSchema } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
@@ -309,23 +308,6 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return true
     })
 
-    // F0 guard (now the blocking one-shot `prompt` ONLY — command/shell/init/summarize all route
-    // natively below): the op runs on the LEGACY engine and writes v1 message rows. On a V2-native
-    // session that would flip v2Eligible false, silently rerouting every later prompt to the V1
-    // runner — a mixed transcript across two disjoint storage systems with no backfill. Reject
-    // with a legible 400 instead; the blocking route itself retires with F1a SLICE 8 / F1b.
-    const requireLegacyCapable = Effect.fn("SessionHttpApi.requireLegacyCapable")(function* (
-      sessionID: SessionID,
-      op: string,
-    ) {
-      const native = yield* MessageV2.hasNativeRows(sessionID).pipe(Effect.orDie)
-      if (!native) return
-      return yield* new InvalidRequestError({
-        message: `'${op}' is not available on a native (V2) session yet: it runs on the legacy engine and would split this session's history across two runtimes. Use a fresh session for '${op}', or start the server with NOVACLAW_EXPERIMENTAL_NATIVE_SESSION=false to run sessions on the legacy engine.`,
-        kind: "native_session_op_unavailable",
-      })
-    })
-
     // Native routing predicate for the op handlers below: a session with native rows runs its
     // ops on the V2 engine (its cores shipped in F1a SLICE 5/6); fresh + legacy sessions keep
     // the V1 path byte-identical until F1b flips the router wholesale.
@@ -417,22 +399,9 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return true
     })
 
-    const prompt = Effect.fn("SessionHttpApi.prompt")(function* (ctx: {
-      params: { sessionID: SessionID }
-      payload: typeof PromptPayload.Type
-    }) {
-      yield* requireSession(ctx.params.sessionID)
-      yield* requireLegacyCapable(ctx.params.sessionID, "prompt")
-      const message = yield* promptSvc
-        .prompt({
-          ...ctx.payload,
-          sessionID: ctx.params.sessionID,
-        })
-        .pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
-      return HttpServerResponse.stream(Stream.make(JSON.stringify(message)).pipe(Stream.encodeText), {
-        contentType: "application/json",
-      })
-    })
+    // F1a SLICE 8: the blocking one-shot `prompt` route (POST …/message) is RETIRED — it ran the
+    // whole turn on the LEGACY engine and streamed back a SessionV1.WithParts body. Every consumer
+    // rides `promptAsync` + the event stream now; the last requireLegacyCapable guard went with it.
 
     // Mirror the legacy catchCause: log + publish a v1 session error event so
     // unchanged clients still surface a failed async turn. Shared by both paths.
@@ -698,7 +667,6 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("share", share)
       .handle("unshare", unshare)
       .handle("summarize", summarize)
-      .handle("prompt", prompt)
       .handle("promptAsync", promptAsync)
       .handle("command", command)
       .handle("shell", shell)

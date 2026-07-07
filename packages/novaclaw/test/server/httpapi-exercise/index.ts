@@ -1432,41 +1432,6 @@ const scenarios: Scenario[] = [
       }),
     ),
   http.protected
-    .post("/session/{sessionID}/message", "session.prompt")
-    .preserveDatabase()
-    .withLlm()
-    .seeded((ctx) =>
-      Effect.gen(function* () {
-        const session = yield* ctx.session({ title: "LLM prompt session" })
-        yield* ctx.llmText("fake assistant")
-        yield* ctx.llmText("fake assistant")
-        return session
-      }),
-    )
-    .at((ctx) => ({
-      path: route("/session/{sessionID}/message", { sessionID: ctx.state.id }),
-      headers: ctx.headers(),
-      body: {
-        agent: "build",
-        model: { providerID: "test", modelID: "test-model" },
-        parts: [{ type: "text", text: "hello llm" }],
-      },
-    }))
-    .jsonEffect(
-      200,
-      (body, ctx) =>
-        Effect.gen(function* () {
-          object(body)
-          check(isRecord(body.info) && body.info.role === "assistant", "prompt should return assistant message")
-          check(
-            Array.isArray(body.parts) && body.parts.some((part) => isRecord(part) && part.text === "fake assistant"),
-            "assistant message should use fake LLM text",
-          )
-          yield* ctx.llmWait(1)
-        }),
-      "status",
-    ),
-  http.protected
     .post("/session/{sessionID}/prompt_async", "session.prompt_async")
     .preserveDatabase()
     .withLlm()
