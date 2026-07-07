@@ -35,6 +35,7 @@ import { SessionEvent } from "./session/event"
 import { SessionInput } from "./session/input"
 import { Snapshot } from "./snapshot"
 import { SessionRevert } from "./session/revert"
+import { PermissionV1 } from "./v1/permission"
 import { Revert } from "@novaclaw/schema/revert"
 import { FSUtil } from "./fs-util"
 import { SessionDurable } from "@novaclaw/schema/durable-event-manifest"
@@ -220,6 +221,15 @@ export interface Interface {
     permissionMode: "plan" | "ask" | "surgical" | "bypass" | "yolo"
   }) => Effect.Effect<void, NotFoundError>
   readonly setTitle: (input: { sessionID: SessionSchema.ID; title: string }) => Effect.Effect<void, NotFoundError>
+  readonly setMetadata: (input: {
+    sessionID: SessionSchema.ID
+    metadata: Record<string, unknown>
+  }) => Effect.Effect<void, NotFoundError>
+  readonly setArchived: (input: { sessionID: SessionSchema.ID; time?: number }) => Effect.Effect<void, NotFoundError>
+  readonly setPermission: (input: {
+    sessionID: SessionSchema.ID
+    permission: PermissionV1.Ruleset
+  }) => Effect.Effect<void, NotFoundError>
   readonly remove: (sessionID: SessionSchema.ID) => Effect.Effect<void, NotFoundError>
   readonly prompt: (input: {
     id?: SessionMessage.ID
@@ -362,6 +372,38 @@ export const layer = Layer.effect(
             }),
         ),
       )
+
+    // F1c — the shared V1-store setter shape (setTitle/setMetadata/setArchived/setPermission):
+    // read the raw row (the V2 Info can't seed the full legacy payload — no slug/version/
+    // share/summary/metadata/permission), merge, publish the full-info legacy
+    // `session.updated`; the projector rewrites the whole row from it and the app's
+    // `session.updated` reducer keeps working unchanged. `merge` returning undefined skips
+    // the publish (dedup for no-op updates).
+    const patchRecord = (
+      sessionID: SessionSchema.ID,
+      merge: (info: SessionV1.SessionInfo) => SessionV1.SessionInfo | undefined,
+    ): Effect.Effect<void, NotFoundError> =>
+      Effect.gen(function* () {
+        const row = yield* db
+          .select()
+          .from(SessionTable)
+          .where(eq(SessionTable.id, sessionID))
+          .get()
+          .pipe(Effect.orDie)
+        if (!row) return yield* new NotFoundError({ sessionID })
+        const next = merge(v1InfoFromRow(row))
+        if (!next) return
+        yield* events.publish(
+          SessionV1.Event.Updated,
+          { sessionID, info: next },
+          {
+            location: Location.Ref.make({
+              directory: AbsolutePath.make(row.directory),
+              workspaceID: row.workspace_id ?? undefined,
+            }),
+          },
+        )
+      })
 
     // F1c-2 — session removal on the core engine. Interrupt any active run (idle
     // interruption is a no-op; V1 never interrupted and left a runner fiber writing into a
@@ -745,38 +787,44 @@ export const layer = Layer.effect(
           permissionMode: input.permissionMode,
         })
       }),
-      // F1c-1 — the first V1-store op rebuilt on core. Publishes the full-info legacy
-      // `session.updated` (the session-level V1 event the V2 engine keeps emitting) so the
-      // projector's row write and the app's `session.updated` reducer work unchanged; the
-      // V2 Info can't seed the payload (no slug/version/share/summary), so the raw row does.
-      setTitle: Effect.fn("V2Session.setTitle")(function* (input) {
-        const row = yield* db
-          .select()
-          .from(SessionTable)
-          .where(eq(SessionTable.id, input.sessionID))
-          .get()
-          .pipe(Effect.orDie)
-        if (!row) return yield* new NotFoundError({ sessionID: input.sessionID })
-        if (row.title === input.title) return
-        const info = v1InfoFromRow(row)
-        yield* events.publish(
-          SessionV1.Event.Updated,
-          {
-            sessionID: input.sessionID,
-            info: SessionV1.SessionInfo.make({
-              ...info,
-              title: input.title,
-              time: { ...info.time, updated: Date.now() },
-            }),
-          },
-          {
-            location: Location.Ref.make({
-              directory: AbsolutePath.make(row.directory),
-              workspaceID: row.workspace_id ?? undefined,
-            }),
-          },
-        )
-      }),
+      // F1c-1 — rename on the core engine. Unchanged titles dedup to no event.
+      setTitle: Effect.fn("V2Session.setTitle")((input) =>
+        patchRecord(input.sessionID, (info) =>
+          info.title === input.title
+            ? undefined
+            : SessionV1.SessionInfo.make({
+                ...info,
+                title: input.title,
+                time: { ...info.time, updated: Date.now() },
+              }),
+        ),
+      ),
+      // F1c-4 — the remaining update-handler setters. V1 parity: metadata/permission replace
+      // wholesale and bump time.updated; archiving does not bump time.updated (and clearing
+      // `archived` is not a wire capability — the projector skips undefined columns).
+      setMetadata: Effect.fn("V2Session.setMetadata")((input) =>
+        patchRecord(input.sessionID, (info) =>
+          SessionV1.SessionInfo.make({
+            ...info,
+            metadata: input.metadata,
+            time: { ...info.time, updated: Date.now() },
+          }),
+        ),
+      ),
+      setArchived: Effect.fn("V2Session.setArchived")((input) =>
+        patchRecord(input.sessionID, (info) =>
+          SessionV1.SessionInfo.make({ ...info, time: { ...info.time, archived: input.time } }),
+        ),
+      ),
+      setPermission: Effect.fn("V2Session.setPermission")((input) =>
+        patchRecord(input.sessionID, (info) =>
+          SessionV1.SessionInfo.make({
+            ...info,
+            permission: [...input.permission],
+            time: { ...info.time, updated: Date.now() },
+          }),
+        ),
+      ),
       remove: Effect.fn("V2Session.remove")(removeRecord),
       // F1a SLICE 7 — manual compaction DELEGATES to the runner: mark the one-shot
       // SessionCompactionRequest and wake the session; the runner consumes the marker at the top

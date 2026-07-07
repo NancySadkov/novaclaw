@@ -581,6 +581,87 @@ describe("SessionV2.setTitle", () => {
   )
 })
 
+describe("SessionV2 setters", () => {
+  it.effect("replaces metadata wholesale and bumps time.updated", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const { db } = yield* Database.Service
+      const created = yield* session.create({ location })
+
+      yield* session.setMetadata({ sessionID: created.id, metadata: { source: "test", pinned: true } })
+      yield* session.setMetadata({ sessionID: created.id, metadata: { source: "second" } })
+
+      const row = yield* db
+        .select()
+        .from(SessionTable)
+        .where(eq(SessionTable.id, created.id))
+        .get()
+        .pipe(Effect.orDie)
+      expect(row!.metadata).toEqual({ source: "second" })
+    }),
+  )
+
+  it.effect("archives the session without bumping time.updated", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const { db } = yield* Database.Service
+      const created = yield* session.create({ location })
+      const before = yield* db
+        .select()
+        .from(SessionTable)
+        .where(eq(SessionTable.id, created.id))
+        .get()
+        .pipe(Effect.orDie)
+
+      yield* session.setArchived({ sessionID: created.id, time: 12345 })
+
+      const row = yield* db
+        .select()
+        .from(SessionTable)
+        .where(eq(SessionTable.id, created.id))
+        .get()
+        .pipe(Effect.orDie)
+      expect(row!.time_archived).toBe(12345)
+      expect(row!.time_updated).toBe(before!.time_updated)
+    }),
+  )
+
+  it.effect("replaces the saved permission ruleset", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const { db } = yield* Database.Service
+      const created = yield* session.create({ location })
+      const ruleset = [{ permission: "bash", pattern: "git *", action: "allow" as const }]
+
+      yield* session.setPermission({ sessionID: created.id, permission: ruleset })
+
+      const row = yield* db
+        .select()
+        .from(SessionTable)
+        .where(eq(SessionTable.id, created.id))
+        .get()
+        .pipe(Effect.orDie)
+      expect(row!.permission).toEqual(ruleset)
+    }),
+  )
+
+  it.effect("rejects setter calls for a missing Session", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const missing = SessionV2.ID.make("ses_missing_setters")
+      const tag = (effect: Effect.Effect<void, SessionV2.NotFoundError>) =>
+        effect.pipe(
+          Effect.flip,
+          Effect.map((error) => error._tag),
+        )
+
+      expect(yield* tag(session.setMetadata({ sessionID: missing, metadata: {} }))).toBe("Session.NotFoundError")
+      expect(yield* tag(session.setArchived({ sessionID: missing, time: 1 }))).toBe("Session.NotFoundError")
+      expect(yield* tag(session.setPermission({ sessionID: missing, permission: [] }))).toBe("Session.NotFoundError")
+    }),
+  )
+})
+
 describe("SessionV2.remove", () => {
   it.effect("removes the session row and purges its aggregate event log", () =>
     Effect.gen(function* () {

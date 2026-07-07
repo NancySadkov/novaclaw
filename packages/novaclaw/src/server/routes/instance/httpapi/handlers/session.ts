@@ -235,22 +235,28 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       payload: typeof UpdatePayload.Type
     }) {
       const current = yield* requireSession(ctx.params.sessionID)
+      // F1c: every update op routes to the core engine (V1 parity: the same full-info
+      // `session.updated` publish; the projector writes the row before the re-read below).
       if (ctx.payload.title !== undefined) {
-        // F1c: rename routes to the core engine (V1 parity: same full-info `session.updated`
-        // publish; the projector writes the row before the re-read below returns it).
         yield* sessionV2.setTitle({ sessionID: ctx.params.sessionID, title: ctx.payload.title }).pipe(Effect.orDie)
       }
       if (ctx.payload.metadata !== undefined) {
-        yield* session.setMetadata({ sessionID: ctx.params.sessionID, metadata: ctx.payload.metadata })
+        yield* sessionV2
+          .setMetadata({ sessionID: ctx.params.sessionID, metadata: ctx.payload.metadata })
+          .pipe(Effect.orDie)
       }
       if (ctx.payload.permission !== undefined) {
-        yield* session.setPermission({
-          sessionID: ctx.params.sessionID,
-          permission: Permission.merge(current.permission ?? [], ctx.payload.permission),
-        })
+        yield* sessionV2
+          .setPermission({
+            sessionID: ctx.params.sessionID,
+            permission: Permission.merge(current.permission ?? [], ctx.payload.permission),
+          })
+          .pipe(Effect.orDie)
       }
       if (ctx.payload.time?.archived !== undefined) {
-        yield* session.setArchived({ sessionID: ctx.params.sessionID, time: ctx.payload.time.archived })
+        yield* sessionV2
+          .setArchived({ sessionID: ctx.params.sessionID, time: ctx.payload.time.archived })
+          .pipe(Effect.orDie)
       }
       return yield* requireSession(ctx.params.sessionID)
     })
