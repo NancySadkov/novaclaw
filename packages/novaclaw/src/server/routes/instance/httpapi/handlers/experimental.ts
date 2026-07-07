@@ -1,5 +1,4 @@
 import { Account } from "@/account/account"
-import { Agent } from "@/agent/agent"
 import { BackgroundJob } from "@/background/job"
 import { Config } from "@/config/config"
 import { InstanceState } from "@/effect/instance-state"
@@ -9,10 +8,13 @@ import { Project } from "@/project/project"
 import type { SessionID } from "@/session/schema"
 import { Database } from "@novaclaw/core/database/database"
 import { SessionV1Read } from "@novaclaw/core/session/v1-read"
-import { ToolJsonSchema } from "@/tool/json-schema"
-import { ToolRegistry } from "@/tool/registry"
+import { ToolRegistry } from "@novaclaw/core/tool/registry"
+import { LocationServiceMap } from "@novaclaw/core/location-services"
+import { ServerLocationServiceMap } from "@/location-service-map"
+import { Location } from "@novaclaw/core/location"
+import { AbsolutePath } from "@novaclaw/core/schema"
 import { Worktree } from "@/worktree"
-import { Effect, Option } from "effect"
+import { Effect, Layer, Option } from "effect"
 import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
 import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
@@ -27,12 +29,23 @@ function mapWorktreeError<A, R>(self: Effect.Effect<A, Worktree.Error, R>) {
 export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "experimental", (handlers) =>
   Effect.gen(function* () {
     const account = yield* Account.Service
-    const agents = yield* Agent.Service
     const config = yield* Config.Service
     const mcp = yield* MCP.Service
     const project = yield* Project.Service
-    const registry = yield* ToolRegistry.Service
+    const locations = yield* LocationServiceMap.Service
     const worktreeSvc = yield* Worktree.Service
+
+    // F1f: tool enumeration rides the core V2 ToolRegistry (materialize().definitions), resolved
+    // per-request from the instance directory's location services (core registry is location-scoped;
+    // cf. handlers/file.ts). Lists the effective built-in + MCP tool set.
+    const toolDefinitions = Effect.fn("ExperimentalHttpApi.toolDefinitions")(function* () {
+      const directory = (yield* InstanceState.context).directory
+      return yield* ToolRegistry.Service.pipe(
+        Effect.flatMap((registry) => registry.materialize()),
+        Effect.map((material) => material.definitions),
+        Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory) }))),
+      )
+    })
     const background = yield* BackgroundJob.Service
     const flags = yield* RuntimeFlags.Service
     const { db } = yield* Database.Service
@@ -92,21 +105,18 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       return true
     })
 
-    const tool = Effect.fn("ExperimentalHttpApi.tool")(function* (ctx: { query: typeof ToolListQuery.Type }) {
-      const list = yield* registry.tools({
-        providerID: ctx.query.provider,
-        modelID: ctx.query.model,
-        agent: yield* agents.defaultInfo(),
-      })
-      return list.map((item) => ({
-        id: item.id,
-        description: item.description,
-        parameters: ToolJsonSchema.fromTool(item),
+    const tool = Effect.fn("ExperimentalHttpApi.tool")(function* (_ctx: { query: typeof ToolListQuery.Type }) {
+      const definitions = yield* toolDefinitions()
+      return definitions.map((def) => ({
+        id: def.name,
+        description: def.description,
+        parameters: def.inputSchema,
       }))
     })
 
     const toolIDs = Effect.fn("ExperimentalHttpApi.toolIDs")(function* () {
-      return yield* registry.ids()
+      const definitions = yield* toolDefinitions()
+      return definitions.map((def) => def.name)
     })
 
     const worktree = Effect.fn("ExperimentalHttpApi.worktree")(function* () {
@@ -191,4 +201,4 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       .handle("sessionBackground", sessionBackground)
       .handle("resource", resource)
   }),
-)
+).pipe(Layer.provide(ServerLocationServiceMap.layer))
