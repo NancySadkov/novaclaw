@@ -29,10 +29,12 @@ import { ToolOutputStore } from "../../tool-output-store"
 import { SessionContextEpoch } from "../context-epoch"
 import { SessionCompaction } from "../compaction"
 import { SessionCompactionRequest } from "../compaction-request"
+import { SessionChanges } from "../changes"
 import { SessionEvent } from "../event"
 import { SessionHistory } from "../history"
 import { SessionInput } from "../input"
 import { SessionMessage } from "../message"
+import { SessionMessageRead } from "../message-read"
 import { Prompt } from "../prompt"
 import { SessionPatch } from "../patch"
 import { SessionSchema } from "../schema"
@@ -313,6 +315,28 @@ export const layer = Layer.effect(
       if (!title) return
       yield* SessionPatch.patchSessionRecord({ db, events }, sessionID, (info) =>
         SessionV1.SessionInfo.make({ ...info, title, time: { ...info.time, updated: Date.now() } }),
+      )
+    })
+
+    // The session-changes summary (the app's "Changes" review + the chats badge reads
+    // `SessionInfo.summary` — F1e re-pointed it to the record; V1 wrote per-user-message
+    // diffs the native transcript doesn't carry, and NOTHING wrote the record field until
+    // this landed). Recomputed after each drain from the FULL transcript's cumulative
+    // snapshot boundaries (the packed runner context may have compacted the first
+    // `snapshot.start` away, so read the store, not the context) and patched onto the
+    // record only when it actually changed — the app updates live off `session.updated`.
+    const refreshChangesSummary = Effect.fn("SessionRunner.refreshChangesSummary")(function* (
+      sessionID: SessionSchema.ID,
+    ) {
+      const messages = yield* SessionMessageRead.list(db, { sessionID, order: "asc" })
+      const { from, to } = SessionChanges.boundaries(messages)
+      if (!from || !to || from === to) return
+      const diff = yield* snapshots.diff({ from: Snapshot.ID.make(from), to: Snapshot.ID.make(to) })
+      const summary = SessionChanges.summary(diff)
+      yield* SessionPatch.patchSessionRecord({ db, events }, sessionID, (info) =>
+        SessionChanges.equal(info.summary, summary)
+          ? undefined
+          : SessionV1.SessionInfo.make({ ...info, summary, time: { ...info.time, updated: Date.now() } }),
       )
     })
 
@@ -930,8 +954,14 @@ export const layer = Layer.effect(
         shouldRun = yield* SessionInput.hasPending(db, input.sessionID, "queue")
         promotion = shouldRun ? "queue" : undefined
       }
-      // Post-run maintenance: auto-title while the user reads the response. Best-effort —
-      // it must never fail the drain it follows.
+      // Post-run maintenance — best-effort, must never fail the drain it follows:
+      // the changes summary first (one git tree-diff; feeds the Changes review/badge),
+      // then the auto-title (an LLM call) while the user reads the response.
+      yield* refreshChangesSummary(input.sessionID).pipe(
+        Effect.catchCause((cause) =>
+          Effect.logWarning("changes-summary refresh failed", { sessionID: input.sessionID, cause }),
+        ),
+      )
       yield* generateTitle(input.sessionID).pipe(
         Effect.catchCause((cause) =>
           Effect.logWarning("auto-title failed", { sessionID: input.sessionID, cause }),

@@ -17,7 +17,6 @@ import { ModelV2 } from "@novaclaw/core/model"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { PromptInput } from "@novaclaw/schema/prompt-input"
 import { SessionStatus } from "@/session/status"
-import { SessionSummary } from "@/session/summary"
 import { Todo } from "@/session/todo"
 import { MessageID, PartID, SessionID } from "@/session/schema"
 import { NamedError } from "@novaclaw/core/util/error"
@@ -105,7 +104,6 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     const sessionV2 = yield* SessionV2.Service
     const { db } = yield* Database.Service
     const todoSvc = yield* Todo.Service
-    const summary = yield* SessionSummary.Service
     const events = yield* EventV2Bridge.Service
     const scope = yield* Scope.Scope
 
@@ -164,7 +162,13 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID }
       query: typeof DiffQuery.Type
     }) {
-      return yield* summary.diff({ sessionID: ctx.params.sessionID, messageID: ctx.query.messageID })
+      // F1f: served from the session record's drain-end changes summary (the runner's
+      // refreshChangesSummary). The V1 SessionSummary.diff read per-USER-MESSAGE summaries
+      // only the dead V1 engine ever wrote — a `messageID` query returns [] exactly as it
+      // did for every native transcript (the app never sends one).
+      if (ctx.query.messageID) return []
+      const info = yield* SessionV1Read.get(db, ctx.params.sessionID)
+      return [...(info?.summary?.diffs ?? [])]
     })
 
     const messages = Effect.fn("SessionHttpApi.messages")(function* (ctx: {

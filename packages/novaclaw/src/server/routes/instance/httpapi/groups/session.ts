@@ -7,7 +7,6 @@ import { SessionWire as Session } from "@/session/wire"
 import { SessionPrompt } from "@/session/prompt"
 import { SessionRevert } from "@/session/revert"
 import { SessionStatus } from "@/session/status"
-import { SessionSummary } from "@/session/summary"
 import { Todo } from "@/session/todo"
 import { MessageID, PartID, SessionID } from "@/session/schema"
 import { Snapshot } from "@/snapshot"
@@ -36,9 +35,12 @@ export const ListQuery = Schema.Struct({
   search: Schema.optional(Schema.String),
   limit: Schema.optional(Schema.NumberFromString),
 })
+// F1f: the messageID field is inlined (was SessionSummary.DiffInput minus sessionID — the V1
+// summary module is engine-internal now). Kept on the wire for compatibility; native
+// transcripts have no per-message summary, so a messageID query answers [].
 export const DiffQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,
-  ...Struct.omit(SessionSummary.DiffInput.fields, ["sessionID"]),
+  messageID: Schema.optional(MessageID),
 })
 export const MessagesQuery = Schema.Struct({
   ...WorkspaceRoutingQueryFields,
