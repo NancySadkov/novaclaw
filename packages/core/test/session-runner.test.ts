@@ -58,6 +58,58 @@ import { ProviderV2 } from "@novaclaw/core/provider"
 import { Cause, DateTime, Deferred, Effect, Exit, Fiber, Layer, Schema, Stream } from "effect"
 import { asc, eq } from "drizzle-orm"
 import { testEffect } from "./lib/effect"
+import * as nodeFs from "node:fs"
+import * as nodeOs from "node:os"
+import * as nodePath from "node:path"
+
+// ── Windows singleton guard (do not remove) ─────────────────────────────────────────────────────
+// This suite can enter a runaway busy-loop on Windows-from-source: a fiber inside the per-test
+// Effect runtime spins under the virtual TestClock, and Bun's per-test timeout cannot cancel it
+// (the work lives in an un-abortable JS Promise), so the process pegs a CPU core until force-killed.
+// Repeated invocations then PILE UP — nothing reaps the orphaned bun and there is no mutual
+// exclusion. On win32 ONLY, refuse to start a second run while another instance holds the lock (it
+// may be wedged — kill it, don't add another); a stale lock (holder PID dead) is stolen. The real
+// fix is the runaway loop itself; until then, per plan-executor-contract.md, don't run this locally.
+if (process.platform === "win32") {
+  const lockPath = nodePath.join(nodeOs.tmpdir(), "novaclaw-session-runner-test.lock")
+  const alive = (pid: number) => {
+    if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) return false
+    try {
+      process.kill(pid, 0)
+      return true
+    } catch (e) {
+      return (e as { code?: string })?.code === "EPERM" // EPERM = exists but unsignalable → alive
+    }
+  }
+  try {
+    const holder = Number(nodeFs.readFileSync(lockPath, "utf8").trim())
+    if (alive(holder)) {
+      console.error(
+        `\n[session-runner.test.ts] REFUSING TO START — pid ${holder} is already running this suite.\n` +
+          `It can wedge on Windows (runaway loop at ~100% CPU); a second run would pile up. Kill pid\n` +
+          `${holder}, or delete the lock if it is truly stale:\n  ${lockPath}\n`,
+      )
+      process.exit(1)
+    }
+  } catch {
+    // no lock / unreadable → fall through and acquire
+  }
+  try {
+    nodeFs.writeFileSync(lockPath, String(process.pid))
+    const release = () => {
+      try {
+        if (Number(nodeFs.readFileSync(lockPath, "utf8").trim()) === process.pid) nodeFs.unlinkSync(lockPath)
+      } catch {
+        // best effort
+      }
+    }
+    process.once("exit", release)
+    process.once("SIGINT", () => (release(), process.exit(130)))
+    process.once("SIGTERM", () => (release(), process.exit(143)))
+  } catch {
+    // can't write the lock (e.g. read-only tmp) → proceed unguarded rather than block a legit run
+  }
+}
 
 const requests: LLMRequest[] = []
 let response: LLMEvent[] = []
