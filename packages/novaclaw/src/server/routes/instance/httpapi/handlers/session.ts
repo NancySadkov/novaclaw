@@ -311,11 +311,11 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return true
     })
 
-    // F0 guard (now `summarize`/`prompt` only — command/shell/init route natively below): these
-    // ops run on the LEGACY engine and write v1 message rows. On a V2-native session that would
-    // flip v2Eligible false, silently rerouting every later prompt to the V1 runner — a mixed
-    // transcript across two disjoint storage systems with no backfill. Reject with a legible 400
-    // instead; `summarize` gains its V2 port with the runner-force compaction build (F1a SLICE 7).
+    // F0 guard (now the blocking one-shot `prompt` ONLY — command/shell/init/summarize all route
+    // natively below): the op runs on the LEGACY engine and writes v1 message rows. On a V2-native
+    // session that would flip v2Eligible false, silently rerouting every later prompt to the V1
+    // runner — a mixed transcript across two disjoint storage systems with no backfill. Reject
+    // with a legible 400 instead; the blocking route itself retires with F1a SLICE 8 / F1b.
     const requireLegacyCapable = Effect.fn("SessionHttpApi.requireLegacyCapable")(function* (
       sessionID: SessionID,
       op: string,
@@ -392,8 +392,16 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID }
       payload: typeof SummarizePayload.Type
     }) {
+      yield* requireSession(ctx.params.sessionID)
+      if (yield* isNativeSession(ctx.params.sessionID)) {
+        // F1a SLICE 7 wiring: the V2 compact marks the runner's one-shot compaction request and
+        // wakes the session; the runner's compact-only cycle emits Compaction.Started/Ended with
+        // reason "manual". The V2 path compacts with the SESSION's own model — the payload's
+        // model choice is a V1-only affordance (residue: honor it if a per-op override is wanted).
+        yield* sessionV2.compact({ sessionID: ctx.params.sessionID }).pipe(Effect.orDie)
+        return true
+      }
       yield* revertSvc.cleanup(yield* requireSession(ctx.params.sessionID))
-      yield* requireLegacyCapable(ctx.params.sessionID, "summarize")
       const messages = yield* SessionError.mapStorageNotFound(session.messages({ sessionID: ctx.params.sessionID }))
       const defaultAgent = yield* agentSvc.defaultAgent()
       const currentAgent = messages.findLast((message) => message.info.role === "user")?.info.agent ?? defaultAgent

@@ -28,6 +28,7 @@ import { ToolRegistry } from "../../tool/registry"
 import { ToolOutputStore } from "../../tool-output-store"
 import { SessionContextEpoch } from "../context-epoch"
 import { SessionCompaction } from "../compaction"
+import { SessionCompactionRequest } from "../compaction-request"
 import { SessionEvent } from "../event"
 import { SessionHistory } from "../history"
 import { SessionInput } from "../input"
@@ -137,6 +138,7 @@ export const layer = Layer.effect(
     const config = yield* Config.Service
     const snapshots = yield* Snapshot.Service
     const scheduler = yield* SessionScheduler.Service
+    const compactionRequests = yield* SessionCompactionRequest.Service
     const db = (yield* Database.Service).db
     const configEntries = yield* config.entries()
     const compaction = SessionCompaction.make({ events, llm, config: configEntries })
@@ -677,10 +679,68 @@ export const layer = Layer.effect(
       )
     })
 
+    // F1a SLICE 7 — the manual-compaction cycle (consume-side of SessionCompactionRequest).
+    // Runs the SAME pre-turn assembly as runTurnAttempt (config walk → agent → context epoch →
+    // model → history) but hands the entries straight to the compactor and drains NO turn — it
+    // lives in the runner because only the runner holds the shared LLMClient (the OFF-C offline
+    // chokepoint) and the model resolution. Failures surface as a calm Synthetic notice (the
+    // "never breaks" rule: an invisible no-op compact is a broken button) and never fail the drain.
+    const runManualCompaction = Effect.fn("SessionRunner.manualCompaction")(function* (
+      sessionID: SessionSchema.ID,
+    ) {
+      const session = yield* getSession(sessionID)
+      if (session.location.directory !== location.directory || session.location.workspaceID !== location.workspaceID)
+        return
+      const config = yield* resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, session.id, (id) =>
+        store.get(id as SessionSchema.ID),
+      )
+      const agent = yield* agents.select(config.agent as typeof session.agent)
+      const system =
+        (yield* SessionContextEpoch.initialize(db, loadSystemContext(agent), session.id)) ??
+        (yield* SessionContextEpoch.prepare(db, events, loadSystemContext(agent), session.id))
+      const model = yield* models.resolve({ ...session, model: config.model as typeof session.model })
+      const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)
+      // The compactor reads only `generation?.maxTokens` (else the model's own output limit)
+      // from the request — a minimal envelope is enough.
+      const request = LLM.request({ model, messages: [], tools: [] })
+      const compacted = yield* compaction.compactAfterOverflow(
+        { sessionID: session.id, entries, model, request },
+        "manual",
+      )
+      yield* Effect.logInfo("manual compaction settled", { sessionID: session.id, compacted })
+      if (!compacted)
+        yield* events.publish(SessionEvent.Synthetic, {
+          sessionID: session.id,
+          messageID: SessionMessage.ID.create(),
+          timestamp: yield* DateTime.now,
+          text: "⚠️ Compaction didn't run — the conversation is still small enough that there is nothing to fold up, or the summary model was unavailable.",
+        })
+    })
+
     const run = Effect.fn("SessionRunner.run")(function* (input: {
       readonly sessionID: SessionSchema.ID
       readonly force: boolean
     }) {
+      // A manual compaction request is consumed FIRST: it may ride a wake with no pending input
+      // (the early return below must not skip it), it must not force a model turn itself, and
+      // when input IS pending the drain proceeds over the freshly compacted history.
+      if (yield* compactionRequests.consume(input.sessionID))
+        yield* runManualCompaction(input.sessionID).pipe(
+          Effect.catchCause((cause: Cause.Cause<unknown>) =>
+            Effect.logError("manual compaction failed", { sessionID: input.sessionID, cause }).pipe(
+              Effect.andThen(
+                Effect.gen(function* () {
+                  yield* events.publish(SessionEvent.Synthetic, {
+                    sessionID: input.sessionID,
+                    messageID: SessionMessage.ID.create(),
+                    timestamp: yield* DateTime.now,
+                    text: "⚠️ Compaction couldn't run — see the server log for details.",
+                  })
+                }).pipe(Effect.ignore),
+              ),
+            ),
+          ),
+        )
       const hasSteer = yield* SessionInput.hasPending(db, input.sessionID, "steer")
       const hasQueue = hasSteer ? false : yield* SessionInput.hasPending(db, input.sessionID, "queue")
       if (!input.force && !hasSteer && !hasQueue) return
@@ -856,6 +916,7 @@ export const node = makeLocationNode({
     Config.node,
     Snapshot.node,
     SessionScheduler.node,
+    SessionCompactionRequest.node,
     Database.node,
     AppProcess.node,
   ],

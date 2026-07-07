@@ -1145,6 +1145,60 @@ describe("SessionRunnerLLM", () => {
     }),
   )
 
+  // F1a SLICE 7 — runner-force manual compaction: SessionV2.compact marks the one-shot
+  // SessionCompactionRequest and wakes the session; the runner consumes the marker at the top
+  // of its drain and runs a compact-only cycle (ONE provider request — the summary — and NO
+  // model turn), publishing Compaction.Started/Ended with reason "manual".
+  it.effect("manual compact runs a compact-only cycle with reason manual and drains no turn", () =>
+    Effect.gen(function* () {
+      yield* setup
+      const session = yield* SessionV2.Service
+      const events = yield* EventV2.Service
+      // Two completed turns so the history exceeds the keep window (1_000 tokens) and a head exists.
+      response = fragmentFixture("text", "text-first", ["Earlier answer"]).completeEvents
+      yield* session.prompt({
+        sessionID,
+        prompt: Prompt.make({ text: "Earlier question ".repeat(180) }),
+        resume: false,
+      })
+      yield* session.resume(sessionID)
+      response = fragmentFixture("text", "text-second", ["Recent answer"]).completeEvents
+      yield* session.prompt({
+        sessionID,
+        prompt: Prompt.make({ text: "Recent exact request ".repeat(180) }),
+        resume: false,
+      })
+      yield* session.resume(sessionID)
+
+      const started = yield* Deferred.make<{ reason: string }>()
+      const ended = yield* Deferred.make<{ reason: string; text: string }>()
+      const unsubscribe = yield* events.listen((event) => {
+        if (event.type === SessionEvent.Compaction.Started.type)
+          return Deferred.succeed(started, event.data as { reason: string }).pipe(Effect.asVoid)
+        if (event.type === SessionEvent.Compaction.Ended.type)
+          return Deferred.succeed(ended, event.data as { reason: string; text: string }).pipe(Effect.asVoid)
+        return Effect.void
+      })
+      yield* Effect.addFinalizer(() => unsubscribe)
+
+      currentModel = compactModel
+      requests.length = 0
+      responses = [fragmentFixture("text", "text-manual-summary", ["## Goal\n- Manual summary"]).completeEvents]
+      yield* session.compact({ sessionID })
+
+      expect((yield* Deferred.await(started)).reason).toBe("manual")
+      const endedData = yield* Deferred.await(ended)
+      expect(endedData.reason).toBe("manual")
+      expect(endedData.text).toBe("## Goal\n- Manual summary")
+      // Exactly ONE provider request — the summary. No model turn followed (no pending input).
+      expect(requests).toHaveLength(1)
+      expect(userTexts(requests[0])[0]).toContain("anchored summary")
+      // The projected context folds to [compaction, assistant] like the auto path.
+      const context = yield* (yield* SessionStore.Service).context(sessionID)
+      expect(context[0]).toMatchObject({ type: "compaction", summary: "## Goal\n- Manual summary" })
+    }),
+  )
+
   it.effect("forces one compaction and retries after provider context overflow", () =>
     Effect.gen(function* () {
       const session = yield* setupOverflowRecovery

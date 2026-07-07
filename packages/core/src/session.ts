@@ -26,6 +26,7 @@ import path from "path"
 import { fromRow } from "./session/info"
 import { SessionRunner } from "./session/runner/index"
 import { SessionStore } from "./session/store"
+import { SessionCompactionRequest } from "./session/compaction-request"
 import { SessionExecution } from "./session/execution"
 import { makeGlobalNode } from "./effect/app-node"
 import { LocationServiceMap } from "./location-service-map"
@@ -346,6 +347,7 @@ export const layer = Layer.effect(
     const execution = yield* SessionExecution.Service
     const store = yield* SessionStore.Service
     const locations = yield* LocationServiceMap.Service
+    const compactionRequests = yield* SessionCompactionRequest.Service
     const decodeMessage = Schema.decodeUnknownEffect(SessionMessage.Message)
     const isDurableSessionEvent = Schema.is(SessionEvent.Durable)
     const decode = (row: typeof SessionMessageTable.$inferSelect) =>
@@ -701,9 +703,17 @@ export const layer = Layer.effect(
           permissionMode: input.permissionMode,
         })
       }),
+      // F1a SLICE 7 — manual compaction DELEGATES to the runner: mark the one-shot
+      // SessionCompactionRequest and wake the session; the runner consumes the marker at the top
+      // of its drain and runs the compact-only cycle in its own context (it holds the shared
+      // LLMClient — the OFF-C chokepoint — plus model resolution and the history assembly; an
+      // inline build here was reverted on exactly that wiring constraint). Progress surfaces as
+      // durable Compaction.Started/Ended events with reason "manual".
+      // First cut ignores `input.prompt` (extra summary guidance) — residue.
       compact: Effect.fn("V2Session.compact")(function* (input) {
         yield* result.get(input.sessionID)
-        return yield* new OperationUnavailableError({ operation: "compact" })
+        yield* compactionRequests.request(input.sessionID)
+        yield* execution.wake(input.sessionID)
       }),
       wait: Effect.fn("V2Session.wait")(function* (sessionID) {
         // K1 de-stub: join on completion, same semantics as the wait TOOL — poll the session's
@@ -759,6 +769,7 @@ export const defaultLayer = layer.pipe(
   Layer.provide(EventV2.defaultLayer),
   Layer.provide(Database.defaultLayer),
   Layer.provide(ProjectV2.defaultLayer),
+  Layer.provide(SessionCompactionRequest.defaultLayer),
   Layer.orDie,
 )
 
@@ -787,5 +798,6 @@ export const node = makeGlobalNode({
     SessionStore.node,
     LocationServiceMap.node,
     SessionProjector.node,
+    SessionCompactionRequest.node,
   ],
 })
