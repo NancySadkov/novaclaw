@@ -140,6 +140,11 @@ type CreateInput = {
   // F1c fork: a fork seeds its record from the source (title + cloned metadata).
   title?: string
   metadata?: Record<string, unknown>
+  // F1c create: the caller's explicit saved ruleset. Deliberately NOT merged with the
+  // permission-mode overlay here (V1 baked MODE_RULES into the saved rules at create; the V2
+  // runner applies the overlay from `permissionMode` at runtime, so baking would make the
+  // create-time mode stick across later mode switches).
+  permission?: PermissionV1.Ruleset
 }
 
 type CompactInput = {
@@ -330,6 +335,7 @@ export const createSessionRecord = (
       systemPromptOverride: input.systemPromptOverride,
       type: input.type,
       priority: input.priority,
+      permission: input.permission ? [...input.permission] : undefined,
       permissionMode: input.permissionMode,
       cost: 0,
       tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },

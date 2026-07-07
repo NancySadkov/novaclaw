@@ -13,6 +13,9 @@ import { SessionMessage } from "@novaclaw/core/session/message"
 import { SessionV1Read } from "@novaclaw/core/session/v1-read"
 import { Database } from "@novaclaw/core/database/database"
 import { InstanceState } from "@/effect/instance-state"
+import { AgentV2 } from "@novaclaw/core/agent"
+import { Location } from "@novaclaw/core/location"
+import { AbsolutePath } from "@novaclaw/core/schema"
 import { ModelV2 } from "@novaclaw/core/model"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { PromptInput } from "@novaclaw/schema/prompt-input"
@@ -212,7 +215,38 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     })
 
     const create = Effect.fn("SessionHttpApi.create")(function* (ctx: { payload?: Session.CreateInput }) {
-      return yield* shareSvc.create(ctx.payload)
+      // F1c: create routes to the core engine. Two deliberate V1 deltas: (1) the auto-share
+      // fork is DROPPED (decision ④ — share posts transcripts to upstream's console and dies
+      // with F1f); (2) the permission-mode ruleset is NOT baked into the saved `permission`
+      // (the V2 runner applies the MODE_RULES overlay from `permissionMode` at runtime, so
+      // baking would make the create-time mode stick across later mode switches).
+      const instance = yield* InstanceState.context
+      const workspace = yield* InstanceState.workspaceID
+      const payload = ctx.payload
+      const created = yield* sessionV2.create({
+        parentID: payload?.parentID,
+        agent: payload?.agent ? AgentV2.ID.make(payload.agent) : undefined,
+        model: payload?.model
+          ? ModelV2.Ref.make({
+              id: ModelV2.ID.make(payload.model.id),
+              providerID: ProviderV2.ID.make(payload.model.providerID),
+              variant: payload.model.variant ? ModelV2.VariantID.make(payload.model.variant) : undefined,
+            })
+          : undefined,
+        title: payload?.title,
+        metadata: payload?.metadata,
+        permission: payload?.permission ? [...payload.permission] : undefined,
+        permissionMode: payload?.permissionMode,
+        location: Location.Ref.make({
+          directory: AbsolutePath.make(instance.directory),
+          workspaceID: payload?.workspaceID ?? workspace,
+        }),
+      })
+      // The record was just projected synchronously — a missing row here is a defect,
+      // not a 404 (the create route's error union has no NotFound).
+      const info = yield* SessionV1Read.get(db, created.id)
+      if (!info) return yield* Effect.die(new Error(`created session missing: ${created.id}`))
+      return info
     })
 
     const createRaw = Effect.fn("SessionHttpApi.createRaw")(function* (ctx: {
