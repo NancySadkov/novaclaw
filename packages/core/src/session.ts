@@ -23,7 +23,7 @@ import { InstallationVersion } from "./installation/version"
 import { Slug } from "./util/slug"
 import { ProjectTable } from "./project/sql"
 import path from "path"
-import { fromRow } from "./session/info"
+import { fromRow, v1InfoFromRow } from "./session/info"
 import { SessionRunner } from "./session/runner/index"
 import { SessionStore } from "./session/store"
 import { SessionCompactionRequest } from "./session/compaction-request"
@@ -219,6 +219,7 @@ export interface Interface {
     sessionID: SessionSchema.ID
     permissionMode: "plan" | "ask" | "surgical" | "bypass" | "yolo"
   }) => Effect.Effect<void, NotFoundError>
+  readonly setTitle: (input: { sessionID: SessionSchema.ID; title: string }) => Effect.Effect<void, NotFoundError>
   readonly prompt: (input: {
     id?: SessionMessage.ID
     sessionID: SessionSchema.ID
@@ -702,6 +703,38 @@ export const layer = Layer.effect(
           timestamp: yield* DateTime.now,
           permissionMode: input.permissionMode,
         })
+      }),
+      // F1c-1 — the first V1-store op rebuilt on core. Publishes the full-info legacy
+      // `session.updated` (the session-level V1 event the V2 engine keeps emitting) so the
+      // projector's row write and the app's `session.updated` reducer work unchanged; the
+      // V2 Info can't seed the payload (no slug/version/share/summary), so the raw row does.
+      setTitle: Effect.fn("V2Session.setTitle")(function* (input) {
+        const row = yield* db
+          .select()
+          .from(SessionTable)
+          .where(eq(SessionTable.id, input.sessionID))
+          .get()
+          .pipe(Effect.orDie)
+        if (!row) return yield* new NotFoundError({ sessionID: input.sessionID })
+        if (row.title === input.title) return
+        const info = v1InfoFromRow(row)
+        yield* events.publish(
+          SessionV1.Event.Updated,
+          {
+            sessionID: input.sessionID,
+            info: SessionV1.SessionInfo.make({
+              ...info,
+              title: input.title,
+              time: { ...info.time, updated: Date.now() },
+            }),
+          },
+          {
+            location: Location.Ref.make({
+              directory: AbsolutePath.make(row.directory),
+              workspaceID: row.workspace_id ?? undefined,
+            }),
+          },
+        )
       }),
       // F1a SLICE 7 — manual compaction DELEGATES to the runner: mark the one-shot
       // SessionCompactionRequest and wake the session; the runner consumes the marker at the top

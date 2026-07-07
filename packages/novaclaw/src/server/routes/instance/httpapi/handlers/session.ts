@@ -232,7 +232,9 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     }) {
       const current = yield* requireSession(ctx.params.sessionID)
       if (ctx.payload.title !== undefined) {
-        yield* session.setTitle({ sessionID: ctx.params.sessionID, title: ctx.payload.title })
+        // F1c: rename routes to the core engine (V1 parity: same full-info `session.updated`
+        // publish; the projector writes the row before the re-read below returns it).
+        yield* sessionV2.setTitle({ sessionID: ctx.params.sessionID, title: ctx.payload.title }).pipe(Effect.orDie)
       }
       if (ctx.payload.metadata !== undefined) {
         yield* session.setMetadata({ sessionID: ctx.params.sessionID, metadata: ctx.payload.metadata })

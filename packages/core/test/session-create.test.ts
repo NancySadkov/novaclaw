@@ -498,6 +498,89 @@ describe("SessionV2.create", () => {
   )
 })
 
+describe("SessionV2.setTitle", () => {
+  it.effect("sets the title through the durable legacy Updated event", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const created = yield* session.create({ location })
+
+      yield* session.setTitle({ sessionID: created.id, title: "Renamed session" })
+
+      expect(yield* session.get(created.id)).toMatchObject({ title: "Renamed session" })
+      const { db } = yield* Database.Service
+      expect(
+        yield* db.select().from(EventTable).where(eq(EventTable.aggregate_id, created.id)).all().pipe(Effect.orDie),
+      ).toMatchObject([
+        { type: EventV2.versionedType(SessionV1.Event.Created.type, 1) },
+        {
+          type: EventV2.versionedType(SessionV1.Event.Updated.type, 1),
+          data: { sessionID: created.id, info: { title: "Renamed session" } },
+        },
+      ])
+    }),
+  )
+
+  it.effect("preserves every other session column through a title update", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const { db } = yield* Database.Service
+      const created = yield* session.create({
+        location,
+        agent: AgentV2.ID.make("build"),
+        model: ModelV2.Ref.make({ id: ModelV2.ID.make("sonnet"), providerID: ProviderV2.ID.anthropic }),
+      })
+      const before = yield* db
+        .select()
+        .from(SessionTable)
+        .where(eq(SessionTable.id, created.id))
+        .get()
+        .pipe(Effect.orDie)
+
+      yield* session.setTitle({ sessionID: created.id, title: "Renamed" })
+
+      // The Updated projector rewrites the WHOLE row from the published info — a lossy
+      // row -> SessionInfo mapping would surface here as any other column changing.
+      const after = yield* db
+        .select()
+        .from(SessionTable)
+        .where(eq(SessionTable.id, created.id))
+        .get()
+        .pipe(Effect.orDie)
+      expect(after).toEqual({ ...before!, title: "Renamed", time_updated: after!.time_updated })
+      expect(after!.time_updated).toBeGreaterThanOrEqual(before!.time_updated)
+    }),
+  )
+
+  it.effect("ignores a title update when the title is unchanged", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const created = yield* session.create({ location })
+
+      yield* session.setTitle({ sessionID: created.id, title: "Once" })
+      yield* session.setTitle({ sessionID: created.id, title: "Once" })
+
+      const { db } = yield* Database.Service
+      expect(
+        yield* db.select().from(EventTable).where(eq(EventTable.aggregate_id, created.id)).all().pipe(Effect.orDie),
+      ).toHaveLength(2)
+    }),
+  )
+
+  it.effect("rejects a title update for a missing Session", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const missing = SessionV2.ID.make("ses_missing_set_title")
+
+      expect(
+        yield* session.setTitle({ sessionID: missing, title: "Nope" }).pipe(
+          Effect.flip,
+          Effect.map((error) => error._tag),
+        ),
+      ).toBe("Session.NotFoundError")
+    }),
+  )
+})
+
 describe("SessionV2.command", () => {
   itCommand.live("expands a command template (args + shell) and submits it as a prompt", () =>
     Effect.gen(function* () {
