@@ -1,7 +1,8 @@
 import { AccountID, OrgID } from "@/account/schema"
 import { MCP } from "@/mcp"
 
-import { Session } from "@/session/session"
+// F1f-prep: the route group declares only the WIRE schemas — no dependency on the V1 service file.
+import { SessionWire as Session } from "@/session/wire"
 import { SessionID } from "@/session/schema"
 import { Worktree } from "@/worktree"
 import { NonNegativeInt } from "@novaclaw/core/schema"

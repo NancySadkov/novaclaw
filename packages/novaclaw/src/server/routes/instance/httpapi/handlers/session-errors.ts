@@ -1,5 +1,5 @@
 import type { NotFoundError as StorageNotFoundError } from "@/storage/storage"
-import type { Session } from "@/session/session"
+import type { SessionWire as Session } from "@/session/wire"
 import { Effect } from "effect"
 import * as ApiError from "../errors"
 

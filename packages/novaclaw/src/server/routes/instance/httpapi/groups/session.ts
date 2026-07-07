@@ -2,7 +2,8 @@ import { PermissionV1 } from "@novaclaw/core/v1/permission"
 import { Permission } from "@/permission"
 import { SessionV1 } from "@novaclaw/core/v1/session"
 
-import { Session } from "@/session/session"
+// F1f-prep: the route group declares only the WIRE schemas — no dependency on the V1 service file.
+import { SessionWire as Session } from "@/session/wire"
 import { SessionPrompt } from "@/session/prompt"
 import { SessionRevert } from "@/session/revert"
 import { SessionStatus } from "@/session/status"
