@@ -13,6 +13,11 @@
   font-size: var(--font-size-base);
   line-height: var(--line-height-normal);
   color: var(--v2-text-text-base);
+  /* The app shell root is select-none (layout-new.tsx); conversation content must be
+     copyable, so selection is re-enabled for the whole transcript here (chrome like
+     the copy button and fold summaries opts back out below). */
+  -webkit-user-select: text;
+  user-select: text;
 }
 
 /* user */
@@ -58,6 +63,9 @@
   margin-top: 0.125rem;
   opacity: 0;
   transition: opacity 0.15s ease;
+  /* chrome, not content — keep it out of drag-selections of the conversation */
+  -webkit-user-select: none;
+  user-select: none;
 }
 [data-slot="native-assistant"]:hover [data-slot="native-msg-actions"],
 [data-slot="native-msg-actions"]:focus-within {
