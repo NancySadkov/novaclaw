@@ -608,20 +608,18 @@ describe("session HttpApi", () => {
   )
 
   it.instance(
-    "returns v2 public unavailable errors for unfinished session mutations",
+    "accepts v2 session compact (SLICE 7: manual compaction is real)",
     () =>
       Effect.gen(function* () {
         const test = yield* TestInstance
         const headers = { "x-novaclaw-directory": test.directory }
-        const session = yield* createSession({ title: "v2 unavailable" })
+        const session = yield* createSession({ title: "v2 compact" })
 
+        // F1a SLICE 7 de-stubbed compact (OperationUnavailableError → the runner's one-shot
+        // manual-compaction marker), so the typed route accepts with NoContent instead of the
+        // old 503 ServiceUnavailableError.
         const compact = yield* request(`/api/session/${session.id}/compact`, { method: "POST", headers })
-        expect(compact.status).toBe(503)
-        expect(yield* responseJson(compact)).toEqual({
-          _tag: "ServiceUnavailableError",
-          message: "Session compact is not available yet",
-          service: "session.compact",
-        })
+        expect(compact.status).toBe(204)
 
         // NB: `wait` is no longer a stub (K1 de-stubbed it into a ~2-minute join on the session's
         // result — asserting the old instant 503 here would block the suite). The join semantics

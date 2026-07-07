@@ -1,28 +1,14 @@
-// F0.2 integration coverage: the flag-gated, new-sessions-only reroute of the
-// legacy promptAsync handler onto SessionV2, wrapped in a SessionStatus
-// busy/idle bracket. Clients render the turn from the RAW `session.next.*`
-// stream + the native message endpoint (the S7 vocabulary — the F0-era V2→v1
-// translator is deleted).
-//
-// FLAG CONTROL: RuntimeFlags reads `experimentalNativeSession` from the Effect
-// ConfigProvider, which snapshots `process.env` on first read (process-wide).
-// That gives env-var control whole-process granularity, NOT per-test. So this
-// whole file runs with the flag ON (set at module top, before any import that
-// could trigger a config read).
-// ⚠️ RUN THIS FILE STANDALONE (`bun test test/server/httpapi-session-v2.test.ts`).
-// In a whole-dir batch, an alphabetically-earlier server suite builds the shared
-// layers first — under the preload's pinned flag=false (the legacy suites' view)
-// — and the shared memoMap serves that flag-OFF stack to this file too, failing
-// case (a). Verified pre-existing on clean HEAD (2026-07-03), not a regression.
+// F1b integration coverage: promptAsync routes EVERY session to the V2 native
+// engine (the F0-era experimentalNativeSession flag + the zero-legacy-rows
+// eligibility gate are deleted — there is ONE engine), wrapped in a
+// SessionStatus busy/idle bracket. Clients render the turn from the RAW
+// `session.next.*` stream + the native message endpoint (the S7 vocabulary).
 // It exercises:
-//   (a) flag ON + fresh session + a prompt WITH a model -> routes to V2.
-//   (c) flag ON + a session that already has a legacy message -> STAYS legacy
-//       (isNewSession is false).
-// The flag-OFF case (b) — legacy path, byte-identical behavior — is covered by
-// the broader server suite (httpapi-sdk.test.ts et al.) which runs with the
-// flag OFF by default and stays green. We additionally assert the routing
-// predicate decision here so (b)/(c) are concrete, not implied.
-process.env.NOVACLAW_EXPERIMENTAL_NATIVE_SESSION = "true"
+//   (a) fresh session + a prompt WITH a model -> runs on V2 (session.next.*
+//       on the stream; zero legacy rows; busy→idle bracket; native ops OK).
+//   (b) a session with pre-existing LEGACY rows ALSO routes V2 — its new turns
+//       write only session_message (the pre-F0 history lapses from the native
+//       fetch, owner decision ①).
 
 import { afterEach, describe, expect } from "bun:test"
 import { SessionV1 } from "@novaclaw/core/v1/session"
@@ -37,7 +23,6 @@ import { InstanceBootstrap } from "../../src/project/bootstrap-service"
 import { InstanceStore } from "../../src/project/instance-store"
 import { MessageID, PartID, SessionID } from "../../src/session/schema"
 import { MessageV2 } from "../../src/session/message-v2"
-import { RuntimeFlags } from "../../src/effect/runtime-flags"
 import { Session as SessionNs } from "@/session/session"
 import { TestLLMServer } from "../lib/llm-server"
 import { resetDatabase } from "../fixture/db"
@@ -183,14 +168,7 @@ afterEach(async () => {
   await resetDatabase()
 })
 
-describe("promptAsync V2 reroute (experimentalNativeSession ON)", () => {
-  it.live("the flag is actually ON in this process", () =>
-    Effect.gen(function* () {
-      const flags = yield* RuntimeFlags.Service
-      expect(flags.experimentalNativeSession).toBe(true)
-    }).pipe(Effect.provide(RuntimeFlags.defaultLayer)),
-  )
-
+describe("promptAsync routes to the V2 native engine (F1b: one engine)", () => {
   // Case (a): fresh session + a prompt WITH a model -> routes to V2, wrapped in
   // the busy/idle bracket. We assert the OBSERVABLE V2-routing contract over the
   // instance /event stream (which carries the raw V2 `session.next.*` events plus
@@ -280,10 +258,8 @@ describe("promptAsync V2 reroute (experimentalNativeSession ON)", () => {
           const legacy = yield* legacyMessageCount(directory, sessionID)
           expect(legacy).toBe(0)
 
-          // F0 stickiness: a SECOND prompt on the (now row-bearing) V2 session must
-          // still route V2 — hasLegacyRows stays false because V2 writes only
-          // session_message. Before the gate moved off MessageV2.page, the merged
-          // page view would have flipped this session back to legacy here.
+          // A SECOND prompt on the (now row-bearing) V2 session runs V2 too —
+          // V2 writes only session_message, never legacy rows.
           const second = yield* Effect.promise(() =>
             sdk.session.promptAsync({
               sessionID,
@@ -293,11 +269,7 @@ describe("promptAsync V2 reroute (experimentalNativeSession ON)", () => {
             }),
           )
           expect(second.response.status).toBe(204)
-          yield* awaitWithTimeout(
-            Deferred.await(sawPromptedAgain),
-            "second prompt did not route to V2 — F0 stickiness broken",
-            "10 seconds",
-          )
+          yield* awaitWithTimeout(Deferred.await(sawPromptedAgain), "second prompt did not route to V2", "10 seconds")
 
           // S7: the client-facing NATIVE endpoint (GET /api/session/:id/message) serves the
           // V2 transcript — a reload renders from it (the app's native store bootstrap).
@@ -317,84 +289,66 @@ describe("promptAsync V2 reroute (experimentalNativeSession ON)", () => {
           expect(yield* pagedMessageCount(directory, sessionID)).toBe(0)
           expect(yield* legacyMessageCount(directory, sessionID)).toBe(0)
 
-          // F0 guard: a legacy-only op (summarize runs on the legacy engine) must
-          // NOT write v1 rows into a V2-native session — it would silently flip
-          // the session back to the V1 runner. Expect a legible 400.
+          // F1a SLICE 7 + F1b: summarize routes NATIVELY (SessionV2.compact marks the
+          // runner's one-shot compaction request) — no 400, and no legacy rows ever.
           const summarizeStatus = yield* Effect.promise(async () => {
-            try {
-              const result = await sdk.session.summarize({
-                sessionID,
-                providerID: "test",
-                modelID: "test-model",
-              })
-              return result.response.status
-            } catch (error) {
-              const status = (error as { response?: { status?: number }; status?: number } | undefined)
-              return status?.response?.status ?? status?.status
-            }
+            const result = await sdk.session.summarize({
+              sessionID,
+              providerID: "test",
+              modelID: "test-model",
+            })
+            return result.response.status
           })
-          expect(summarizeStatus).toBe(400)
+          expect(summarizeStatus).toBe(200)
           expect(yield* legacyMessageCount(directory, sessionID)).toBe(0)
         }),
       ),
     30_000,
   )
 
-  // Case (c): flag ON but the session already has a legacy message -> isNewSession
-  // is false -> STAYS legacy. The legacy runner writes legacy `message` rows, so
-  // the legacy count GROWS past the single seeded row.
-  it.live("session with a pre-existing legacy message stays on the legacy path", () =>
+  // Case (b): a session that already has LEGACY rows (a pre-F0 transcript) also
+  // routes V2 — the eligibility gate is gone. The V2 turn writes ONLY
+  // session_message: the legacy count stays at the seed, and the native
+  // endpoint serves the new turn.
+  it.live("session with a pre-existing legacy message routes to V2 too", () =>
     withFakeLlm(({ sdk, directory, llm }) =>
       Effect.gen(function* () {
-        yield* llm.text("legacy hello back", { usage: { input: 5, output: 3 } })
+        yield* llm.text("native hello back", { usage: { input: 5, output: 3 } })
 
         const session = yield* Effect.promise(() =>
-          sdk.session.create({ title: "stays legacy", permission: [{ permission: "*", pattern: "*", action: "allow" }] }),
+          sdk.session.create({
+            title: "legacy seeds route V2",
+            permission: [{ permission: "*", pattern: "*", action: "allow" }],
+          }),
         )
         const sessionID = String(record(session.data).id)
         yield* seedLegacyMessage(directory, sessionID)
-
-        const before = yield* legacyMessageCount(directory, sessionID)
-        expect(before).toBe(1) // not new
+        expect(yield* legacyMessageCount(directory, sessionID)).toBe(1)
 
         const prompt = yield* Effect.promise(() =>
           sdk.session.promptAsync({
             sessionID,
             agent: "build",
             model: { providerID: "test", modelID: "test-model" },
-            parts: [{ type: "text", text: "go legacy" }],
+            parts: [{ type: "text", text: "run native" }],
           }),
         )
         expect(prompt.response.status).toBe(204)
 
-        // Legacy path writes a NEW user (+ assistant) legacy message row; the
-        // count grows past the seed. (V2 would have left it at 1.)
-        const grown = yield* pollWithTimeout(
-          legacyMessageCount(directory, sessionID).pipe(Effect.map((n) => (n > 1 ? n : undefined))),
-          "legacy path did not write a new legacy message row",
-          "10 seconds",
+        // The turn lands in session_message (native endpoint gains rows)...
+        const native = yield* pollWithTimeout(
+          Effect.promise(() => sdk.v2.session.messages({ sessionID })).pipe(
+            Effect.map((response) => {
+              const count = response.data?.data?.length ?? 0
+              return count > 0 ? count : undefined
+            }),
+          ),
+          "native message endpoint returned no rows for the legacy-seeded session",
+          "15 seconds",
         )
-        expect(grown).toBeGreaterThan(1)
-      }),
-    ),
-  )
-
-  // Concrete routing-predicate assertions for (b)/(c): v2Eligible is a pure
-  // function of the legacy message table (MessageV2.hasLegacyRows). A fresh
-  // session is eligible; one with a legacy message is not. (Flag-OFF (b) means
-  // this predicate is never consulted — the `&&` short-circuits — so flag-OFF
-  // always takes the legacy path.)
-  it.live("v2Eligible predicate: fresh = eligible, seeded = pinned legacy", () =>
-    withFakeLlm(({ sdk, directory }) =>
-      Effect.gen(function* () {
-        const fresh = yield* Effect.promise(() => sdk.session.create({ title: "fresh" }))
-        const freshID = String(record(fresh.data).id)
-        expect(yield* legacyMessageCount(directory, freshID)).toBe(0)
-
-        const seeded = yield* Effect.promise(() => sdk.session.create({ title: "seeded" }))
-        const seededID = String(record(seeded.data).id)
-        yield* seedLegacyMessage(directory, seededID)
-        expect(yield* legacyMessageCount(directory, seededID)).toBe(1)
+        expect(native).toBeGreaterThan(0)
+        // ...and the legacy table NEVER grows past the seed (no V1 writes remain).
+        expect(yield* legacyMessageCount(directory, sessionID)).toBe(1)
       }),
     ),
   )

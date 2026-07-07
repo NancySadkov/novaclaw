@@ -79,10 +79,6 @@ delete process.env["NOVACLAW_SERVER_PASSWORD"]
 delete process.env["NOVACLAW_SERVER_USERNAME"]
 delete process.env["NOVACLAW_EXPERIMENTAL"]
 delete process.env["NOVACLAW_ENABLE_EXPERIMENTAL_MODELS"]
-// F0: native-session is default-ON in production; the broad server suites test the
-// LEGACY flows and pin it OFF here. The V2 suite (httpapi-session-v2.test.ts) sets
-// "true" at its module top, which runs after this preload and wins.
-process.env["NOVACLAW_EXPERIMENTAL_NATIVE_SESSION"] = "false"
 delete process.env["OTEL_EXPORTER_OTLP_ENDPOINT"]
 delete process.env["OTEL_EXPORTER_OTLP_HEADERS"]
 delete process.env["OTEL_RESOURCE_ATTRIBUTES"]

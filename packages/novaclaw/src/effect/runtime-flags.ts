@@ -48,14 +48,9 @@ export class Service extends ConfigService.Service<Service>()("@novaclaw/Runtime
   outputTokenMax: positiveInteger("NOVACLAW_EXPERIMENTAL_OUTPUT_TOKEN_MAX"),
   bashDefaultTimeoutMs: positiveInteger("NOVACLAW_EXPERIMENTAL_BASH_DEFAULT_TIMEOUT_MS"),
   experimentalNativeLlm: bool("NOVACLAW_EXPERIMENTAL_NATIVE_LLM"),
-  // F0 (default-ON since 2026-07-03): the V2 session stack (SessionV2 + SessionRunner)
-  // IS the default prompt path for new sessions with a resolvable model. The env var is
-  // the OFF-switch: NOVACLAW_EXPERIMENTAL_NATIVE_SESSION=false (or 0/no/off, lowercase)
-  // routes new sessions to the legacy V1 engine. Deliberately decoupled from the
-  // NOVACLAW_EXPERIMENTAL umbrella (umbrella-on previously implied flag-on, so umbrella
-  // users see no change). Existing sessions with legacy rows never reroute; custom/plugin
-  // tools force the legacy path per-instance (see handlers/session.ts promptAsync).
-  experimentalNativeSession: Config.boolean("NOVACLAW_EXPERIMENTAL_NATIVE_SESSION").pipe(Config.withDefault(true)),
+  // F1b (2026-07-07): the V2 native session IS the engine — the F0-era
+  // NOVACLAW_EXPERIMENTAL_NATIVE_SESSION off-switch is deleted; there is no route
+  // back to the legacy V1 prompt stack (it is removed wholesale in F1f).
   experimentalWebSockets: bool("NOVACLAW_EXPERIMENTAL_WEBSOCKETS"),
   client: Config.string("NOVACLAW_CLIENT").pipe(Config.withDefault("cli")),
 }) {}

@@ -66,11 +66,6 @@ function isolatedEnv(home: string, configJson: string): Record<string, string> {
     XDG_STATE_HOME: path.join(home, ".local/state"),
     XDG_CACHE_HOME: path.join(home, ".cache"),
     NOVACLAW_CONFIG_CONTENT: configJson,
-    // The spawn merges process.env, which carries the preload's legacy pin
-    // (NOVACLAW_EXPERIMENTAL_NATIVE_SESSION=false, aimed at the in-process server
-    // suites). The CLI subprocess must run the PRODUCTION default — the native V2
-    // engine — which is also the only vocab the run loop consumes (F1e S7-prep).
-    NOVACLAW_EXPERIMENTAL_NATIVE_SESSION: "true",
     NOVACLAW_DISABLE_PROJECT_CONFIG: "1",
     NOVACLAW_PURE: "1",
     NOVACLAW_DISABLE_AUTOUPDATE: "1",
