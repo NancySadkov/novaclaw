@@ -161,6 +161,20 @@ export const Synthetic = Event.define({
 })
 export type Synthetic = typeof Synthetic.Type
 
+// F1c fork: one full projected message RECORDED into a session's transcript as a single
+// durable event — how a fork copies the source transcript prefix into the NEW aggregate.
+// Self-contained (the whole message rides the event), so replaying a forked session
+// rebuilds its transcript without reaching into the source aggregate.
+export const MessageRecorded = Event.define({
+  type: "session.next.message.recorded",
+  ...options,
+  schema: {
+    ...Base,
+    message: SessionMessage.Message,
+  },
+})
+export type MessageRecorded = typeof MessageRecorded.Type
+
 export namespace Shell {
   export const Started = Event.define({
     type: "session.next.shell.started",
@@ -497,6 +511,7 @@ export const DurableDefinitions = Event.inventory(
   PromptAdmitted,
   ContextUpdated,
   Synthetic,
+  MessageRecorded,
   Shell.Started,
   Shell.Ended,
   Step.Started,
@@ -531,6 +546,7 @@ export const Definitions = Event.inventory(
   PromptAdmitted,
   ContextUpdated,
   Synthetic,
+  MessageRecorded,
   Shell.Started,
   Shell.Ended,
   Step.Started,

@@ -265,12 +265,24 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID }
       payload?: typeof ForkPayload.Type
     }) {
-      return yield* SessionError.mapStorageNotFound(
-        session.fork({
+      yield* requireSession(ctx.params.sessionID)
+      // F1c: fork routes to the core engine — the V1 fork copied only the legacy message
+      // store, which native sessions never write, so post-F1b a fork silently lost its
+      // transcript. An unknown anchor message is a client error (the app only offers real
+      // transcript messages), not a server fault.
+      const forked = yield* sessionV2
+        .fork({
           sessionID: ctx.params.sessionID,
-          messageID: ctx.payload?.messageID,
-        }),
-      )
+          messageID: ctx.payload?.messageID ? SessionMessage.ID.make(ctx.payload.messageID) : undefined,
+        })
+        .pipe(
+          Effect.catch((error) =>
+            error._tag === "Session.MessageNotFoundError"
+              ? Effect.fail(new HttpApiError.BadRequest({}))
+              : Effect.die(error),
+          ),
+        )
+      return yield* requireSession(forked.id)
     })
 
     const forkRaw = Effect.fn("SessionHttpApi.forkRaw")(function* (ctx: {

@@ -980,4 +980,31 @@ describe("session HttpApi", () => {
       }),
     { git: true, config: { formatter: false } },
   )
+
+  it.instance(
+    "forks a session through the core engine",
+    () =>
+      Effect.gen(function* () {
+        const test = yield* TestInstance
+        const headers = { "x-novaclaw-directory": test.directory, "content-type": "application/json" }
+        const session = yield* createSession({ title: "fork source" })
+
+        const forked = yield* requestJson<Session.Info>(pathFor(SessionPaths.fork, { sessionID: session.id }), {
+          method: "POST",
+          headers,
+        })
+        expect(forked.id).not.toBe(session.id)
+        expect(forked.title).toBe("fork source (fork #1)")
+
+        // An unknown anchor message is a client error, not a silent whole-copy (V1 compared
+        // ULIDs blindly; the core engine validates the anchor exists in the transcript).
+        const missing = yield* request(pathFor(SessionPaths.fork, { sessionID: session.id }), {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ messageID: MessageID.ascending() }),
+        })
+        expect(missing.status).toBe(400)
+      }),
+    { git: true, config: { formatter: false } },
+  )
 })

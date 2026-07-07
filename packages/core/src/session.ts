@@ -36,6 +36,7 @@ import { SessionInput } from "./session/input"
 import { Snapshot } from "./snapshot"
 import { SessionRevert } from "./session/revert"
 import { SessionPatch } from "./session/patch"
+import { SessionTitle } from "./session/title"
 import { PermissionV1 } from "./v1/permission"
 import { Revert } from "@novaclaw/schema/revert"
 import { FSUtil } from "./fs-util"
@@ -136,6 +137,9 @@ type CreateInput = {
   priority?: number
   permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
   location: Location.Ref
+  // F1c fork: a fork seeds its record from the source (title + cloned metadata).
+  title?: string
+  metadata?: Record<string, unknown>
 }
 
 type CompactInput = {
@@ -231,6 +235,11 @@ export interface Interface {
     sessionID: SessionSchema.ID
     permission: PermissionV1.Ruleset
   }) => Effect.Effect<void, NotFoundError>
+  readonly children: (sessionID: SessionSchema.ID) => Effect.Effect<SessionSchema.Info[], NotFoundError>
+  readonly fork: (input: {
+    sessionID: SessionSchema.ID
+    messageID?: SessionMessage.ID
+  }) => Effect.Effect<SessionSchema.Info, NotFoundError | MessageNotFoundError | MessageDecodeError>
   readonly remove: (sessionID: SessionSchema.ID) => Effect.Effect<void, NotFoundError>
   readonly prompt: (input: {
     id?: SessionMessage.ID
@@ -308,7 +317,8 @@ export const createSessionRecord = (
       directory: input.location.directory,
       path: path.relative(project.directory, input.location.directory).replaceAll("\\", "/"),
       workspaceID: input.location.workspaceID ? WorkspaceV2.ID.make(input.location.workspaceID) : undefined,
-      title: `New session - ${new Date(now).toISOString()}`,
+      title: input.title ?? `New session - ${new Date(now).toISOString()}`,
+      metadata: input.metadata,
       agent: input.agent,
       model: input.model
         ? {
@@ -807,6 +817,99 @@ export const layer = Layer.effect(
           }),
         ),
       ),
+      children: Effect.fn("V2Session.children")(function* (sessionID) {
+        yield* result.get(sessionID)
+        const rows = yield* db
+          .select()
+          .from(SessionTable)
+          .where(eq(SessionTable.parent_id, sessionID))
+          .orderBy(asc(SessionTable.time_created))
+          .all()
+          .pipe(Effect.orDie)
+        return rows.map(fromRow)
+      }),
+      // F1c — fork on the core engine, and a REPAIR: the V1 fork copied only the LEGACY
+      // message store, which native sessions never write, so post-F1b a fork silently lost
+      // its transcript. Copies the native transcript strictly BEFORE `messageID` (V1 parity;
+      // everything when omitted) into a fresh ROOT session as self-contained MessageRecorded
+      // durable events — the forked aggregate replays without reaching into its source.
+      // Deliberate V1 delta: the fork keeps the source's agent/model/permissionMode (V1
+      // dropped them, demoting a fork to the default model mid-conversation).
+      fork: Effect.fn("V2Session.fork")(function* (input) {
+        const row = yield* db
+          .select()
+          .from(SessionTable)
+          .where(eq(SessionTable.id, input.sessionID))
+          .get()
+          .pipe(Effect.orDie)
+        if (!row) return yield* new NotFoundError({ sessionID: input.sessionID })
+        let boundary: number | undefined
+        if (input.messageID !== undefined) {
+          const anchor = yield* db
+            .select({ seq: SessionMessageTable.seq })
+            .from(SessionMessageTable)
+            .where(
+              and(eq(SessionMessageTable.session_id, input.sessionID), eq(SessionMessageTable.id, input.messageID)),
+            )
+            .get()
+            .pipe(Effect.orDie)
+          if (!anchor)
+            return yield* new SessionRevert.MessageNotFoundError({
+              sessionID: input.sessionID,
+              messageID: input.messageID,
+            })
+          boundary = anchor.seq
+        }
+        const source = v1InfoFromRow(row)
+        const location = Location.Ref.make({
+          directory: AbsolutePath.make(row.directory),
+          workspaceID: row.workspace_id ?? undefined,
+        })
+        const forked = yield* createSessionRecord(
+          { db, events, projects, store },
+          {
+            location,
+            title: SessionTitle.forked(source.title),
+            metadata: source.metadata ? structuredClone({ ...source.metadata }) : undefined,
+            agent: source.agent ? AgentV2.ID.make(source.agent) : undefined,
+            model: source.model
+              ? ModelV2.Ref.make({
+                  id: source.model.id,
+                  providerID: source.model.providerID,
+                  variant: source.model.variant ? ModelV2.VariantID.make(source.model.variant) : undefined,
+                })
+              : undefined,
+            permissionMode: source.permissionMode,
+          },
+        )
+        const sourceRows = yield* db
+          .select()
+          .from(SessionMessageTable)
+          .where(
+            boundary === undefined
+              ? eq(SessionMessageTable.session_id, input.sessionID)
+              : and(eq(SessionMessageTable.session_id, input.sessionID), lt(SessionMessageTable.seq, boundary)),
+          )
+          .orderBy(asc(SessionMessageTable.seq))
+          .all()
+          .pipe(Effect.orDie)
+        for (const messageRow of sourceRows) {
+          const message = yield* decode(messageRow)
+          const copied = {
+            ...message,
+            id: SessionMessage.ID.create(),
+            // Only the Synthetic variant embeds its sessionID in the message body.
+            ...("sessionID" in message ? { sessionID: forked.id } : {}),
+          } as SessionMessage.Message
+          yield* events.publish(
+            SessionEvent.MessageRecorded,
+            { sessionID: forked.id, timestamp: yield* DateTime.now, message: copied },
+            { location },
+          )
+        }
+        const fresh = yield* store.get(forked.id)
+        return fresh ?? forked
+      }),
       remove: Effect.fn("V2Session.remove")(removeRecord),
       // F1a SLICE 7 — manual compaction DELEGATES to the runner: mark the one-shot
       // SessionCompactionRequest and wake the session; the runner consumes the marker at the top

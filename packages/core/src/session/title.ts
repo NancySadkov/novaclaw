@@ -77,6 +77,13 @@ export function firstRealUserText(context: readonly SessionMessage.Message[]): s
   return undefined
 }
 
+/** V1-parity forked-session title: "X (fork #N)" increments N; anything else gains "(fork #1)". */
+export function forked(title: string): string {
+  const match = title.match(/^(.+) \(fork #(\d+)\)$/)
+  if (match) return `${match[1]} (fork #${parseInt(match[2], 10) + 1})`
+  return `${title} (fork #1)`
+}
+
 /**
  * Normalize raw model output into a usable title (V1 parity): drop `<think>` blocks, take the
  * first non-empty line, cap at 100 characters. Returns undefined when nothing usable remains.

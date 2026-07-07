@@ -408,6 +408,9 @@ export const layer = Layer.effectDiscard(
     )
     yield* events.project(SessionEvent.ContextUpdated, (event) => run(db, event))
     yield* events.project(SessionEvent.Synthetic, (event) => run(db, event))
+    // F1c fork: a copied transcript message arrives as ONE self-contained durable event —
+    // insert it verbatim (seq = the event's aggregate seq, so copy order is transcript order).
+    yield* events.project(SessionEvent.MessageRecorded, (event) => insertMessage(db, event, event.data.message))
     yield* events.project(SessionEvent.Shell.Started, (event) => run(db, event))
     yield* events.project(SessionEvent.Shell.Ended, (event) => run(db, event))
     yield* events.project(SessionEvent.Step.Started, (event) => run(db, event))

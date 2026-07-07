@@ -20,6 +20,7 @@ import { LocationServiceMap } from "@novaclaw/core/location-service-map"
 import { buildLocationServiceMap } from "@novaclaw/core/location-services"
 import { SessionV1 } from "@novaclaw/core/v1/session"
 import { Prompt } from "@novaclaw/core/session/prompt"
+import { SessionMessage } from "@novaclaw/core/session/message"
 import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionExecution } from "@novaclaw/core/session/execution"
 import { SessionInput } from "@novaclaw/core/session/input"
@@ -658,6 +659,145 @@ describe("SessionV2 setters", () => {
       expect(yield* tag(session.setMetadata({ sessionID: missing, metadata: {} }))).toBe("Session.NotFoundError")
       expect(yield* tag(session.setArchived({ sessionID: missing, time: 1 }))).toBe("Session.NotFoundError")
       expect(yield* tag(session.setPermission({ sessionID: missing, permission: [] }))).toBe("Session.NotFoundError")
+    }),
+  )
+})
+
+describe("SessionV2.children", () => {
+  it.effect("lists the direct children of a parent session", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const parent = yield* session.create({ location })
+      const first = yield* session.create({ location, parentID: parent.id })
+      const second = yield* session.create({ location, parentID: parent.id })
+      const grandchild = yield* session.create({ location, parentID: first.id })
+
+      const children = yield* session.children(parent.id)
+
+      expect(children.map((child) => child.id).sort()).toEqual([first.id, second.id].sort())
+      expect(children.map((child) => child.id)).not.toContain(grandchild.id)
+    }),
+  )
+
+  it.effect("rejects listing children of a missing session", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+
+      expect(
+        yield* session.children(SessionV2.ID.make("ses_missing_children")).pipe(
+          Effect.flip,
+          Effect.map((error) => error._tag),
+        ),
+      ).toBe("Session.NotFoundError")
+    }),
+  )
+})
+
+describe("SessionV2.fork", () => {
+  const seedTurns = (sessionID: SessionV2.ID, texts: string[]) =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const events = yield* EventV2.Service
+      const { db } = yield* Database.Service
+      for (const text of texts) {
+        yield* session.prompt({ sessionID, prompt: Prompt.make({ text }), resume: false })
+        yield* SessionInput.promoteSteers(db, events, sessionID, Number.MAX_SAFE_INTEGER)
+      }
+    })
+
+  it.effect("copies the whole transcript into a fresh root session with fresh message IDs", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const created = yield* session.create({
+        location,
+        agent: AgentV2.ID.make("build"),
+        model: ModelV2.Ref.make({ id: ModelV2.ID.make("sonnet"), providerID: ProviderV2.ID.anthropic }),
+      })
+      yield* seedTurns(created.id, ["First", "Second"])
+
+      const forked = yield* session.fork({ sessionID: created.id })
+
+      expect(forked.id).not.toBe(created.id)
+      expect(forked.parentID).toBeUndefined()
+      expect(forked.title).toBe(`${created.title} (fork #1)`)
+      // The fork keeps the source's agent/model (deliberate V1 delta — V1 dropped them).
+      expect(forked).toMatchObject({ agent: created.agent, model: created.model })
+      const sourceMessages = yield* session.messages({ sessionID: created.id })
+      const forkMessages = yield* session.messages({ sessionID: forked.id })
+      expect(forkMessages.map((message) => (message.type === "user" ? message.text : message.type))).toEqual(
+        sourceMessages.map((message) => (message.type === "user" ? message.text : message.type)),
+      )
+      const sourceIDs = new Set(sourceMessages.map((message) => message.id))
+      for (const message of forkMessages) expect(sourceIDs.has(message.id)).toBe(false)
+    }),
+  )
+
+  it.effect("copies strictly before the anchor message (V1 parity)", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const created = yield* session.create({ location })
+      yield* seedTurns(created.id, ["First", "Second"])
+      const anchor = (yield* session.messages({ sessionID: created.id })).find(
+        (message) => message.type === "user" && message.text === "Second",
+      )
+
+      const forked = yield* session.fork({ sessionID: created.id, messageID: anchor!.id })
+
+      const forkMessages = yield* session.messages({ sessionID: forked.id })
+      expect(forkMessages.map((message) => (message.type === "user" ? message.text : message.type))).toEqual([
+        "First",
+      ])
+    }),
+  )
+
+  it.effect("records the copied transcript as durable events on the fork aggregate", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const { db } = yield* Database.Service
+      const created = yield* session.create({ location })
+      yield* seedTurns(created.id, ["First"])
+
+      const forked = yield* session.fork({ sessionID: created.id })
+
+      expect(
+        (yield* db
+          .select()
+          .from(EventTable)
+          .where(eq(EventTable.aggregate_id, forked.id))
+          .orderBy(asc(EventTable.seq))
+          .all()
+          .pipe(Effect.orDie)).map((event) => event.type),
+      ).toEqual([
+        EventV2.versionedType(SessionV1.Event.Created.type, 1),
+        EventV2.versionedType(SessionEvent.MessageRecorded.type, 1),
+      ])
+    }),
+  )
+
+  it.effect("rejects an unknown anchor message", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const created = yield* session.create({ location })
+
+      expect(
+        yield* session.fork({ sessionID: created.id, messageID: SessionMessage.ID.create() }).pipe(
+          Effect.flip,
+          Effect.map((error) => error._tag),
+        ),
+      ).toBe("Session.MessageNotFoundError")
+    }),
+  )
+
+  it.effect("rejects forking a missing session", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+
+      expect(
+        yield* session.fork({ sessionID: SessionV2.ID.make("ses_missing_fork") }).pipe(
+          Effect.flip,
+          Effect.map((error) => error._tag),
+        ),
+      ).toBe("Session.NotFoundError")
     }),
   )
 })

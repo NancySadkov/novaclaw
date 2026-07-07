@@ -57,6 +57,17 @@ describe("SessionTitle.firstRealUserText", () => {
   })
 })
 
+describe("SessionTitle.forked", () => {
+  it("appends the first fork marker", () => {
+    expect(SessionTitle.forked("Parser bug fix")).toBe("Parser bug fix (fork #1)")
+  })
+
+  it("increments an existing fork marker", () => {
+    expect(SessionTitle.forked("Parser bug fix (fork #1)")).toBe("Parser bug fix (fork #2)")
+    expect(SessionTitle.forked("Parser bug fix (fork #41)")).toBe("Parser bug fix (fork #42)")
+  })
+})
+
 describe("SessionTitle.clean", () => {
   it("strips think blocks and takes the first non-empty line", () => {
     expect(SessionTitle.clean("<think>reasoning\nhere</think>\n\nParser bug fix\nextra")).toBe("Parser bug fix")

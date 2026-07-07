@@ -123,6 +123,9 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
         )
       },
       "session.next.moved": () => Effect.void,
+      // F1c fork: a copied transcript message has its own dedicated projector branch
+      // (a verbatim insert with the event's aggregate seq) — nothing for this updater to do.
+      "session.next.message.recorded": () => Effect.void,
       // B10: responder handoff is a control signal, not a transcript message — the
       // projector writes the session column; nothing to append to the message log.
       "session.next.responder.switched": () => Effect.void,
