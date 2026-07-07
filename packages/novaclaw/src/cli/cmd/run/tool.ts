@@ -15,6 +15,7 @@
 import os from "os"
 import path from "path"
 import stripAnsi from "strip-ansi"
+import { Schema } from "effect"
 import type { ToolPart } from "@novaclaw/sdk/v2"
 import type * as Tool from "@/tool/tool"
 import type { ApplyPatchTool } from "@/tool/apply_patch"
@@ -23,11 +24,9 @@ import type { EditTool } from "@/tool/edit"
 import type { GlobTool } from "@/tool/glob"
 import type { GrepTool } from "@/tool/grep"
 import type { InvalidTool } from "@/tool/invalid"
-import type { PlanExitTool } from "@/tool/plan"
 import type { QuestionTool } from "@/tool/question"
 import type { ReadTool } from "@/tool/read"
 import type { SkillTool } from "@/tool/skill"
-import type { TaskTool } from "@/tool/task"
 import type { TodoWriteTool } from "@/tool/todo"
 import type { WebFetchTool } from "@/tool/webfetch"
 import { webSearchProviderLabel, type WebSearchTool } from "@/tool/websearch"
@@ -35,6 +34,22 @@ import type { WriteTool } from "@/tool/write"
 import { LANGUAGE_EXTENSIONS } from "@/util/language"
 import * as Locale from "@/util/locale"
 import type { RunEntryBody, StreamCommit, ToolSnapshot } from "./types"
+
+// F1f: the V1 `task` and `plan_exit` tools are deleted with the V1 engine tree. These run-output
+// display rules only need each tool's parameter/metadata SHAPE for type-safe formatting, so carry
+// a local stub (mirrors the tools' `Parameters`). Re-point to the core tools if/when native
+// `task`/`plan_exit` land.
+const TaskParameters = Schema.Struct({
+  description: Schema.String,
+  prompt: Schema.String,
+  subagent_type: Schema.String,
+  task_id: Schema.optional(Schema.String),
+  command: Schema.optional(Schema.String),
+  background: Schema.optional(Schema.Boolean),
+})
+type TaskToolInfo = Tool.Info<typeof TaskParameters>
+const PlanExitParameters = Schema.Struct({})
+type PlanExitToolInfo = Tool.Info<typeof PlanExitParameters>
 
 export type ToolView = {
   output: boolean
@@ -97,7 +112,7 @@ type ToolDefs = {
   edit: typeof EditTool
   apply_patch: typeof ApplyPatchTool
   batch: Tool.Info
-  task: typeof TaskTool
+  task: TaskToolInfo
   todowrite: typeof TodoWriteTool
   question: typeof QuestionTool
   read: typeof ReadTool
@@ -107,7 +122,7 @@ type ToolDefs = {
   webfetch: typeof WebFetchTool
   websearch: typeof WebSearchTool
   skill: typeof SkillTool
-  plan_exit: typeof PlanExitTool
+  plan_exit: PlanExitToolInfo
 }
 
 type ToolName = keyof ToolDefs
@@ -361,7 +376,7 @@ function runWebSearch(p: ToolProps<typeof WebSearchTool>): ToolInline {
   }
 }
 
-function runTask(p: ToolProps<typeof TaskTool>): ToolInline {
+function runTask(p: ToolProps<TaskToolInfo>): ToolInline {
   const kind = Locale.titlecase(p.input.subagent_type || "unknown")
   const desc = p.input.description
   const icon = p.frame.status === "error" ? "✗" : p.frame.status === "running" ? "•" : "✓"
@@ -440,7 +455,7 @@ function runBatch(p: ToolProps): ToolInline {
   }
 }
 
-function runPlanExit(p: ToolProps<typeof PlanExitTool>): ToolInline {
+function runPlanExit(p: ToolProps<PlanExitToolInfo>): ToolInline {
   return {
     icon: "→",
     title: text(p.frame.state.title) || "Switching to build agent",
@@ -538,7 +553,7 @@ function snapPatch(p: ToolProps<typeof ApplyPatchTool>): ToolSnapshot | undefine
   }
 }
 
-function snapTask(p: ToolProps<typeof TaskTool>): ToolSnapshot {
+function snapTask(p: ToolProps<TaskToolInfo>): ToolSnapshot {
   const kind = Locale.titlecase(p.input.subagent_type || "general")
   const desc = p.input.description
   const title = text(p.frame.state.title)
@@ -722,7 +737,7 @@ function scrollPatchFinal(p: ToolProps<typeof ApplyPatchTool>): string {
   return patchLine(files[0]!)
 }
 
-function scrollTaskStart(_: ToolProps<typeof TaskTool>): string {
+function scrollTaskStart(_: ToolProps<TaskToolInfo>): string {
   return ""
 }
 
@@ -744,7 +759,7 @@ function taskResult(output: string): string | undefined {
   return next || undefined
 }
 
-function scrollTaskFinal(p: ToolProps<typeof TaskTool>): string {
+function scrollTaskFinal(p: ToolProps<TaskToolInfo>): string {
   if (p.frame.status === "error") {
     return fail(p.frame)
   }
@@ -940,7 +955,7 @@ function permBash(p: ToolPermissionProps<typeof BashTool>): ToolPermissionInfo {
   }
 }
 
-function permTask(p: ToolPermissionProps<typeof TaskTool>): ToolPermissionInfo {
+function permTask(p: ToolPermissionProps<TaskToolInfo>): ToolPermissionInfo {
   const type = p.input.subagent_type || "general"
   const desc = p.input.description
   return {
