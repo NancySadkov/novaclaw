@@ -581,6 +581,74 @@ describe("SessionV2.setTitle", () => {
   )
 })
 
+describe("SessionV2.remove", () => {
+  it.effect("removes the session row and purges its aggregate event log", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const { db } = yield* Database.Service
+      const created = yield* session.create({ location })
+
+      yield* session.remove(created.id)
+
+      expect(yield* session.get(created.id).pipe(Effect.flip, Effect.map((error) => error._tag))).toBe(
+        "Session.NotFoundError",
+      )
+      expect(
+        yield* db.select().from(SessionTable).where(eq(SessionTable.id, created.id)).all().pipe(Effect.orDie),
+      ).toHaveLength(0)
+      expect(
+        yield* db.select().from(EventTable).where(eq(EventTable.aggregate_id, created.id)).all().pipe(Effect.orDie),
+      ).toHaveLength(0)
+    }),
+  )
+
+  it.effect("removes children recursively with the parent", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const { db } = yield* Database.Service
+      const parent = yield* session.create({ location })
+      const child = yield* session.create({ location, parentID: parent.id })
+      const grandchild = yield* session.create({ location, parentID: child.id })
+
+      yield* session.remove(parent.id)
+
+      expect(yield* session.list()).toHaveLength(0)
+      for (const id of [parent.id, child.id, grandchild.id]) {
+        expect(
+          yield* db.select().from(EventTable).where(eq(EventTable.aggregate_id, id)).all().pipe(Effect.orDie),
+        ).toHaveLength(0)
+      }
+    }),
+  )
+
+  it.effect("allows re-creating a session under a removed ID", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const created = yield* session.create({ id, location })
+
+      yield* session.remove(created.id)
+      const recreated = yield* session.create({ id, location })
+
+      expect(recreated.id).toBe(created.id)
+      expect(yield* session.list()).toHaveLength(1)
+    }),
+  )
+
+  it.effect("rejects removing a missing Session", () =>
+    Effect.gen(function* () {
+      const session = yield* SessionV2.Service
+      const missing = SessionV2.ID.make("ses_missing_remove")
+
+      expect(
+        yield* session.remove(missing).pipe(
+          Effect.flip,
+          Effect.map((error) => error._tag),
+        ),
+      ).toBe("Session.NotFoundError")
+    }),
+  )
+})
+
 describe("SessionV2.command", () => {
   itCommand.live("expands a command template (args + shell) and submits it as a prompt", () =>
     Effect.gen(function* () {

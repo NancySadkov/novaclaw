@@ -222,7 +222,11 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     })
 
     const remove = Effect.fn("SessionHttpApi.remove")(function* (ctx: { params: { sessionID: SessionID } }) {
-      yield* SessionError.mapStorageNotFound(session.remove(ctx.params.sessionID))
+      // F1c: delete routes to the core engine (interrupts an active run, recurses children,
+      // publishes the legacy `session.deleted`, purges the aggregate log). V1's background-job
+      // sweep is not reproduced — post-F1b nothing tags BackgroundJobs with session metadata.
+      yield* requireSession(ctx.params.sessionID)
+      yield* sessionV2.remove(ctx.params.sessionID).pipe(Effect.orDie)
       return true
     })
 

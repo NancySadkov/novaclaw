@@ -220,6 +220,7 @@ export interface Interface {
     permissionMode: "plan" | "ask" | "surgical" | "bypass" | "yolo"
   }) => Effect.Effect<void, NotFoundError>
   readonly setTitle: (input: { sessionID: SessionSchema.ID; title: string }) => Effect.Effect<void, NotFoundError>
+  readonly remove: (sessionID: SessionSchema.ID) => Effect.Effect<void, NotFoundError>
   readonly prompt: (input: {
     id?: SessionMessage.ID
     sessionID: SessionSchema.ID
@@ -361,6 +362,46 @@ export const layer = Layer.effect(
             }),
         ),
       )
+
+    // F1c-2 — session removal on the core engine. Interrupt any active run (idle
+    // interruption is a no-op; V1 never interrupted and left a runner fiber writing into a
+    // purged aggregate), depth-first over children, then publish the full-info legacy
+    // `session.deleted` (its projector row-delete cascades messages/parts/todos/tags via FK)
+    // and purge the aggregate's event log. V1's background-job sweep has no core successor:
+    // post-F1b nothing tags BackgroundJobs with session metadata (only the unreachable V1
+    // task tool did); native BashJobs are in-memory and die with the location (1H residue).
+    const removeRecord = (sessionID: SessionSchema.ID): Effect.Effect<void, NotFoundError> =>
+      Effect.gen(function* () {
+        const row = yield* db
+          .select()
+          .from(SessionTable)
+          .where(eq(SessionTable.id, sessionID))
+          .get()
+          .pipe(Effect.orDie)
+        if (!row) return yield* new NotFoundError({ sessionID })
+        yield* Effect.uninterruptible(execution.interrupt(sessionID))
+        const children = yield* db
+          .select({ id: SessionTable.id })
+          .from(SessionTable)
+          .where(eq(SessionTable.parent_id, sessionID))
+          .all()
+          .pipe(Effect.orDie)
+        for (const child of children) {
+          // A concurrent removal already won the race for this child — fine, keep going.
+          yield* removeRecord(child.id).pipe(Effect.catchTag("Session.NotFoundError", () => Effect.void))
+        }
+        yield* events.publish(
+          SessionV1.Event.Deleted,
+          { sessionID, info: v1InfoFromRow(row) },
+          {
+            location: Location.Ref.make({
+              directory: AbsolutePath.make(row.directory),
+              workspaceID: row.workspace_id ?? undefined,
+            }),
+          },
+        )
+        yield* events.remove(sessionID)
+      })
 
     const result = Service.of({
       create: Effect.fn("V2Session.create")((input) => createSessionRecord({ db, events, projects, store }, input)),
@@ -736,6 +777,7 @@ export const layer = Layer.effect(
           },
         )
       }),
+      remove: Effect.fn("V2Session.remove")(removeRecord),
       // F1a SLICE 7 — manual compaction DELEGATES to the runner: mark the one-shot
       // SessionCompactionRequest and wake the session; the runner consumes the marker at the top
       // of its drain and runs the compact-only cycle in its own context (it holds the shared
