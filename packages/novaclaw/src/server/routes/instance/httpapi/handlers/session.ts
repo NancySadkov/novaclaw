@@ -17,7 +17,7 @@ import { ModelV2 } from "@novaclaw/core/model"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { PromptInput } from "@novaclaw/schema/prompt-input"
 import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
-import { Todo } from "@/session/todo"
+import { SessionTodo } from "@novaclaw/core/session/todo"
 import { MessageID, PartID, SessionID } from "@/session/schema"
 import { NamedError } from "@novaclaw/core/util/error"
 import { Cause, Effect, Option, Schema, Scope } from "effect"
@@ -102,7 +102,6 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     const permissionSvc = yield* Permission.Service
     const sessionV2 = yield* SessionV2.Service
     const { db } = yield* Database.Service
-    const todoSvc = yield* Todo.Service
     const events = yield* EventV2Bridge.Service
     const scope = yield* Scope.Scope
 
@@ -164,7 +163,9 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
 
     const todo = Effect.fn("SessionHttpApi.todo")(function* (ctx: { params: { sessionID: SessionID } }) {
       yield* requireSession(ctx.params.sessionID)
-      return yield* todoSvc.get(ctx.params.sessionID)
+      // F1f: the todo route reads the shared TodoTable via the core deps-taking seam (both the V1
+      // Todo.Service and core SessionTodo read the same table); drops the last V1 Todo consumer here.
+      return yield* SessionTodo.readTodos(db, ctx.params.sessionID)
     })
 
     const diff = Effect.fn("SessionHttpApi.diff")(function* (ctx: {

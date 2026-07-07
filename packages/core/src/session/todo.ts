@@ -23,6 +23,27 @@ export interface Interface {
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/SessionTodo") {}
 
+/**
+ * Deps-taking read seam (cf. `SessionV1Read` / `SessionMessageRead`): the todo list is a plain
+ * `TodoTable` read by `session_id` with NO Location dependency, so a caller holding `db` can serve
+ * it without resolving the location-scoped `Service`. The F1f httpapi todo route uses this instead
+ * of the V1 `Todo.Service` (both read the same table).
+ */
+export const readTodos = (
+  db: Database.Interface["db"],
+  sessionID: SessionSchema.ID,
+): Effect.Effect<ReadonlyArray<Info>> =>
+  db
+    .select()
+    .from(TodoTable)
+    .where(eq(TodoTable.session_id, sessionID))
+    .orderBy(asc(TodoTable.position))
+    .all()
+    .pipe(
+      Effect.orDie,
+      Effect.map((rows) => rows.map((row) => ({ content: row.content, status: row.status, priority: row.priority }))),
+    )
+
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -57,18 +78,7 @@ export const layer = Layer.effect(
     })
 
     const get = Effect.fn("SessionTodo.get")(function* (sessionID: SessionSchema.ID) {
-      const rows = yield* db
-        .select()
-        .from(TodoTable)
-        .where(eq(TodoTable.session_id, sessionID))
-        .orderBy(asc(TodoTable.position))
-        .all()
-        .pipe(Effect.orDie)
-      return rows.map((row) => ({
-        content: row.content,
-        status: row.status,
-        priority: row.priority,
-      }))
+      return yield* readTodos(db, sessionID)
     })
 
     return Service.of({ update, get })
