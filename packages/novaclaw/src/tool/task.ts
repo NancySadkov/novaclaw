@@ -8,7 +8,7 @@ import { SessionID, MessageID } from "../session/schema"
 import { MessageV2 } from "../session/message-v2"
 import { Agent } from "../agent/agent"
 import { deriveSubagentSessionPermission } from "../agent/subagent-permissions"
-import type { SessionPrompt } from "../session/prompt"
+import type { SessionWire } from "../session/wire"
 import { Config } from "@/config/config"
 import { Effect, Exit, Schema, Scope } from "effect"
 import { EffectBridge } from "@/effect/bridge"
@@ -17,8 +17,8 @@ import { Database } from "@novaclaw/core/database/database"
 
 export interface TaskPromptOps {
   cancel(sessionID: SessionID): Effect.Effect<void>
-  resolvePromptParts(template: string): Effect.Effect<SessionPrompt.PromptInput["parts"]>
-  prompt(input: SessionPrompt.PromptInput): Effect.Effect<SessionV1.WithParts>
+  resolvePromptParts(template: string): Effect.Effect<SessionWire.PromptInput["parts"]>
+  prompt(input: SessionWire.PromptInput): Effect.Effect<SessionV1.WithParts>
 }
 
 const id = "task"

@@ -3,6 +3,7 @@ export * as SessionWire from "./wire"
 import { Schema, Types } from "effect"
 import { NonNegativeInt, optional } from "@novaclaw/core/schema"
 import { PermissionV1 } from "@novaclaw/core/v1/permission"
+import { SessionV1 } from "@novaclaw/core/v1/session"
 import { ProjectV2 } from "@novaclaw/core/project"
 import { WorkspaceV2 } from "@novaclaw/core/workspace"
 import { ProviderV2 } from "@novaclaw/core/provider"
@@ -151,6 +152,75 @@ export const MessagesInput = Schema.Struct({
   sessionID: SessionID,
   limit: Schema.optional(NonNegativeInt),
 })
+
+// F1f: the prompt/command/shell/revert WIRE PAYLOADS, extracted verbatim from the (deleted) V1
+// `session/prompt.ts` + `session/revert.ts` so the route group and the V1 `task` tool can declare
+// them without importing the engine. Shapes are byte-identical — the HTTP/OpenAPI contract is unchanged.
+const ModelRef = Schema.Struct({
+  providerID: ProviderV2.ID,
+  modelID: ModelV2.ID,
+})
+export const PromptInput = Schema.Struct({
+  sessionID: SessionID,
+  messageID: Schema.optional(MessageID),
+  model: Schema.optional(ModelRef),
+  agent: Schema.optional(Schema.String),
+  noReply: Schema.optional(Schema.Boolean),
+  tools: Schema.optional(Schema.Record(Schema.String, Schema.Boolean)).annotate({
+    description:
+      "@deprecated tools and permissions have been merged, you can set permissions on the session itself now",
+  }),
+  format: Schema.optional(SessionV1.Format),
+  system: Schema.optional(Schema.String),
+  variant: Schema.optional(Schema.String),
+  parts: Schema.Array(
+    Schema.Union([
+      SessionV1.TextPartInput,
+      SessionV1.FilePartInput,
+      SessionV1.AgentPartInput,
+      SessionV1.SubtaskPartInput,
+    ]).annotate({ discriminator: "type" }),
+  ),
+})
+export type PromptInput = Schema.Schema.Type<typeof PromptInput>
+export const ShellInput = Schema.Struct({
+  sessionID: SessionID,
+  messageID: Schema.optional(MessageID),
+  agent: Schema.String,
+  model: Schema.optional(ModelRef),
+  command: Schema.String,
+})
+export type ShellInput = Schema.Schema.Type<typeof ShellInput>
+export const CommandInput = Schema.Struct({
+  messageID: Schema.optional(MessageID),
+  sessionID: SessionID,
+  agent: Schema.optional(Schema.String),
+  model: Schema.optional(Schema.String),
+  arguments: Schema.String,
+  command: Schema.String,
+  variant: Schema.optional(Schema.String),
+  parts: Schema.optional(
+    Schema.Array(
+      Schema.Union([
+        Schema.Struct({
+          id: Schema.optional(PartID),
+          type: Schema.Literal("file"),
+          mime: Schema.String,
+          filename: Schema.optional(Schema.String),
+          url: Schema.String,
+          source: Schema.optional(SessionV1.FilePartSource),
+        }),
+      ]).annotate({ discriminator: "type" }),
+    ),
+  ),
+})
+export type CommandInput = Schema.Schema.Type<typeof CommandInput>
+export const RevertInput = Schema.Struct({
+  sessionID: SessionID,
+  messageID: MessageID,
+  partID: Schema.optional(PartID),
+})
+export type RevertInput = Schema.Schema.Type<typeof RevertInput>
 
 export class BusyError extends Schema.TaggedErrorClass<BusyError>()("SessionBusyError", {
   sessionID: SessionID,

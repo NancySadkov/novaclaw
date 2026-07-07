@@ -4,8 +4,6 @@ import { SessionV1 } from "@novaclaw/core/v1/session"
 
 // F1f-prep: the route group declares only the WIRE schemas — no dependency on the V1 service file.
 import { SessionWire as Session } from "@/session/wire"
-import { SessionPrompt } from "@/session/prompt"
-import { SessionRevert } from "@/session/revert"
 import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
 import { Todo } from "@/session/todo"
 import { MessageID, PartID, SessionID } from "@/session/schema"
@@ -69,10 +67,10 @@ export const SummarizePayload = Schema.Struct({
   modelID: ModelV2.ID,
   auto: Schema.optional(Schema.Boolean),
 })
-export const PromptPayload = Schema.Struct(Struct.omit(SessionPrompt.PromptInput.fields, ["sessionID"]))
-export const CommandPayload = Schema.Struct(Struct.omit(SessionPrompt.CommandInput.fields, ["sessionID"]))
-export const ShellPayload = Schema.Struct(Struct.omit(SessionPrompt.ShellInput.fields, ["sessionID"]))
-export const RevertPayload = Schema.Struct(Struct.omit(SessionRevert.RevertInput.fields, ["sessionID"]))
+export const PromptPayload = Schema.Struct(Struct.omit(Session.PromptInput.fields, ["sessionID"]))
+export const CommandPayload = Schema.Struct(Struct.omit(Session.CommandInput.fields, ["sessionID"]))
+export const ShellPayload = Schema.Struct(Struct.omit(Session.ShellInput.fields, ["sessionID"]))
+export const RevertPayload = Schema.Struct(Struct.omit(Session.RevertInput.fields, ["sessionID"]))
 export const PermissionResponsePayload = Schema.Struct({
   response: PermissionV1.Reply,
 })
