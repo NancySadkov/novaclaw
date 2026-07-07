@@ -1,9 +1,9 @@
 import { Effect } from "effect"
 import { effectCmd } from "../effect-cmd"
-import { Session } from "@/session/session"
-import { NotFoundError } from "@/storage/storage"
 import { Database } from "@novaclaw/core/database/database"
 import { SessionTable } from "@novaclaw/core/session/sql"
+import { v1InfoFromRow } from "@novaclaw/core/session/info"
+import { SessionMessageRead } from "@novaclaw/core/session/message-read"
 import { Project } from "@/project/project"
 import { InstanceRef } from "@/effect/instance-ref"
 
@@ -82,7 +82,7 @@ export const StatsCommand = effectCmd({
 
 const getAllSessions = Effect.fnUntraced(function* () {
   const { db } = yield* Database.Service
-  return (yield* db.select().from(SessionTable).all().pipe(Effect.orDie)).map((row) => Session.fromRow(row))
+  return (yield* db.select().from(SessionTable).all().pipe(Effect.orDie)).map((row) => v1InfoFromRow(row))
 })
 
 const aggregateSessionStats = Effect.fn("Cli.stats.aggregate")(function* (
@@ -90,7 +90,7 @@ const aggregateSessionStats = Effect.fn("Cli.stats.aggregate")(function* (
   projectFilter?: string,
   currentProject?: Project.Info,
 ) {
-  const svc = yield* Session.Service
+  const { db } = yield* Database.Service
   const sessions = yield* getAllSessions()
   const MS_IN_DAY = 24 * 60 * 60 * 1000
 
@@ -164,9 +164,11 @@ const aggregateSessionStats = Effect.fn("Cli.stats.aggregate")(function* (
     filteredSessions,
     (session) =>
       Effect.gen(function* () {
-        const messages = yield* svc
-          .messages({ sessionID: session.id })
-          .pipe(Effect.catchIf(NotFoundError.isInstance, () => Effect.succeed([])))
+        // F1c-0 — the native transcript (a decode failure counts the session as empty, the
+        // same degrade V1 applied to a missing message store).
+        const messages = yield* SessionMessageRead.list(db, { sessionID: session.id }).pipe(
+          Effect.catchTag("Session.MessageDecodeError", () => Effect.succeed([])),
+        )
 
         const sessionCost = session.cost ?? 0
         const sessionTokens = session.tokens ?? { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } }
@@ -181,8 +183,8 @@ const aggregateSessionStats = Effect.fn("Cli.stats.aggregate")(function* (
         > = {}
 
         for (const message of messages) {
-          if (message.info.role === "assistant") {
-            const modelKey = `${message.info.providerID}/${message.info.modelID}`
+          if (message.type === "assistant") {
+            const modelKey = `${message.model.providerID}/${message.model.id}`
             if (!sessionModelUsage[modelKey]) {
               sessionModelUsage[modelKey] = {
                 messages: 0,
@@ -191,20 +193,19 @@ const aggregateSessionStats = Effect.fn("Cli.stats.aggregate")(function* (
               }
             }
             sessionModelUsage[modelKey].messages++
-            sessionModelUsage[modelKey].cost += message.info.cost || 0
+            sessionModelUsage[modelKey].cost += message.cost || 0
 
-            if (message.info.tokens) {
-              sessionModelUsage[modelKey].tokens.input += message.info.tokens.input || 0
-              sessionModelUsage[modelKey].tokens.output +=
-                (message.info.tokens.output || 0) + (message.info.tokens.reasoning || 0)
-              sessionModelUsage[modelKey].tokens.cache.read += message.info.tokens.cache?.read || 0
-              sessionModelUsage[modelKey].tokens.cache.write += message.info.tokens.cache?.write || 0
+            if (message.tokens) {
+              sessionModelUsage[modelKey].tokens.input += message.tokens.input || 0
+              sessionModelUsage[modelKey].tokens.output += (message.tokens.output || 0) + (message.tokens.reasoning || 0)
+              sessionModelUsage[modelKey].tokens.cache.read += message.tokens.cache?.read || 0
+              sessionModelUsage[modelKey].tokens.cache.write += message.tokens.cache?.write || 0
             }
-          }
 
-          for (const part of message.parts) {
-            if (part.type === "tool" && part.tool) {
-              sessionToolUsage[part.tool] = (sessionToolUsage[part.tool] || 0) + 1
+            for (const item of message.content) {
+              if (item.type === "tool" && item.name) {
+                sessionToolUsage[item.name] = (sessionToolUsage[item.name] || 0) + 1
+              }
             }
           }
         }

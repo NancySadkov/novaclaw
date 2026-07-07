@@ -46,6 +46,8 @@ import { Installation } from "@/installation"
 import { ShareNext } from "@/share/share-next"
 import { SessionShare } from "@/share/session"
 import { Npm } from "@novaclaw/core/npm"
+import { ProjectV2 } from "@novaclaw/core/project"
+import { SessionStore } from "@novaclaw/core/session/store"
 import { memoMap } from "@novaclaw/core/effect/memo-map"
 import { BackgroundJob } from "@/background/job"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -91,6 +93,12 @@ export const AppLayer = Layer.mergeAll(
   ToolRegistry.defaultLayer,
   Format.defaultLayer,
   Project.defaultLayer,
+  // F1c-0 — the cycle-free core deps the CLI session commands ride (createSessionRecord/
+  // removeSessionRecord/SessionV1Read take {db, events, projects, store} as plain values;
+  // Database + EventV2Bridge are already in this graph, these two complete the set) — the
+  // CLI stays off the full `SessionV2` layer, whose graph needs `LocationServiceMap`.
+  ProjectV2.defaultLayer,
+  SessionStore.defaultLayer,
   Vcs.defaultLayer,
   Workspace.defaultLayer,
   Worktree.appLayer,

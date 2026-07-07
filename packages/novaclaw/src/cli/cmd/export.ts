@@ -1,12 +1,20 @@
-import { Session } from "@/session/session"
 import { SessionV1 } from "@novaclaw/core/v1/session"
-import { MessageV2 } from "../../session/message-v2"
+import { Database } from "@novaclaw/core/database/database"
+import { SessionMessage } from "@novaclaw/core/session/message"
+import { SessionMessageRead } from "@novaclaw/core/session/message-read"
+import { SessionV1Read } from "@novaclaw/core/session/v1-read"
+import { InstanceRef } from "@/effect/instance-ref"
 import { SessionID } from "../../session/schema"
 import { effectCmd, fail } from "../effect-cmd"
 import { UI } from "../ui"
 import * as prompts from "@clack/prompts"
 import { EOL } from "os"
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
+
+// F1c-0 — export serves the NATIVE transcript (`session_message`, the F1e wire vocabulary);
+// the legacy message/part shape is no longer read here (pre-F0 legacy-only transcripts export
+// empty per decision ①). The sanitizer below is the redaction walk over the flat
+// `SessionMessage` union, replacing the V1 part walk.
 
 function redact(kind: string, id: string, value: string) {
   return value.trim() ? `[redacted:${kind}:${id}]` : value
@@ -17,14 +25,10 @@ function data(kind: string, id: string, value: Record<string, unknown> | undefin
   return Object.keys(value).length ? { redacted: `${kind}:${id}` } : value
 }
 
-function span(id: string, value: { value: string; start: number; end: number }) {
-  return {
-    ...value,
-    value: redact("file-text", id, value.value),
-  }
-}
-
-function diff(kind: string, diffs: { file?: string; patch?: string }[] | undefined) {
+function diff<T extends { readonly file?: string; readonly patch?: string }>(
+  kind: string,
+  diffs: readonly T[] | undefined,
+) {
   return diffs?.map((item, i) => ({
     ...item,
     file: item.file === undefined ? undefined : redact(`${kind}-file`, String(i), item.file),
@@ -32,190 +36,139 @@ function diff(kind: string, diffs: { file?: string; patch?: string }[] | undefin
   }))
 }
 
-function source(part: SessionV1.FilePart) {
-  if (!part.source) return part.source
-  if (part.source.type === "symbol") {
-    return {
-      ...part.source,
-      path: redact("file-path", part.id, part.source.path),
-      name: redact("file-symbol", part.id, part.source.name),
-      text: span(part.id, part.source.text),
-    }
-  }
-  if (part.source.type === "resource") {
-    return {
-      ...part.source,
-      clientName: redact("file-client", part.id, part.source.clientName),
-      uri: redact("file-uri", part.id, part.source.uri),
-      text: span(part.id, part.source.text),
-    }
-  }
+type Attachment = NonNullable<SessionMessage.User["files"]>[number]
+type ToolContentItem = SessionMessage.ToolStateCompleted["content"][number]
+
+function attachment(kind: string, id: string, file: Attachment): Attachment {
   return {
-    ...part.source,
-    path: redact("file-path", part.id, part.source.path),
-    text: span(part.id, part.source.text),
+    ...file,
+    uri: redact(`${kind}-uri`, id, file.uri),
+    name: file.name === undefined ? undefined : redact(`${kind}-name`, id, file.name),
+    description: file.description === undefined ? undefined : redact(`${kind}-description`, id, file.description),
+    source:
+      file.source === undefined ? undefined : { ...file.source, text: redact(`${kind}-text`, id, file.source.text) },
   }
 }
 
-function filepart(part: SessionV1.FilePart): SessionV1.FilePart {
+function toolContent(id: string, item: ToolContentItem): ToolContentItem {
+  if (item.type === "text") return { ...item, text: redact("tool-content", id, item.text) }
   return {
-    ...part,
-    url: redact("file-url", part.id, part.url),
-    filename: part.filename === undefined ? undefined : redact("file-name", part.id, part.filename),
-    source: source(part),
+    ...item,
+    uri: redact("tool-content-uri", id, item.uri),
+    name: item.name === undefined ? undefined : redact("tool-content-name", id, item.name),
   }
 }
 
-function part(part: SessionV1.Part): SessionV1.Part {
-  switch (part.type) {
+function toolState(id: string, state: SessionMessage.ToolState): SessionMessage.ToolState {
+  switch (state.status) {
+    case "pending":
+      return { ...state, input: redact("tool-input", id, state.input) }
+    case "running":
+      return {
+        ...state,
+        input: data("tool-input", id, state.input) ?? state.input,
+        structured: data("tool-structured", id, state.structured) ?? state.structured,
+        content: state.content.map((item) => toolContent(id, item)),
+      }
+    case "completed":
+      return {
+        ...state,
+        input: data("tool-input", id, state.input) ?? state.input,
+        structured: data("tool-structured", id, state.structured) ?? state.structured,
+        content: state.content.map((item) => toolContent(id, item)),
+        attachments: state.attachments?.map((file) => attachment("tool-attachment", id, file)),
+        outputPaths: state.outputPaths?.map((item, i) => redact("tool-output-path", `${id}-${i}`, item)),
+        result: state.result === undefined ? undefined : { redacted: `tool-result:${id}` },
+      }
+    case "error":
+      return {
+        ...state,
+        input: data("tool-input", id, state.input) ?? state.input,
+        structured: data("tool-structured", id, state.structured) ?? state.structured,
+        content: state.content.map((item) => toolContent(id, item)),
+        error: { ...state.error, message: redact("tool-error", id, state.error.message) },
+        result: state.result === undefined ? undefined : { redacted: `tool-result:${id}` },
+      }
+  }
+}
+
+function assistantContent(item: SessionMessage.AssistantContent): SessionMessage.AssistantContent {
+  switch (item.type) {
     case "text":
-      return {
-        ...part,
-        text: redact("text", part.id, part.text),
-        metadata: data("text-metadata", part.id, part.metadata),
-      }
+      return { ...item, text: redact("text", item.id, item.text) }
     case "reasoning":
-      return {
-        ...part,
-        text: redact("reasoning", part.id, part.text),
-        metadata: data("reasoning-metadata", part.id, part.metadata),
-      }
-    case "file":
-      return filepart(part)
-    case "subtask":
-      return {
-        ...part,
-        prompt: redact("subtask-prompt", part.id, part.prompt),
-        description: redact("subtask-description", part.id, part.description),
-        command: part.command === undefined ? undefined : redact("subtask-command", part.id, part.command),
-      }
+      return { ...item, text: redact("reasoning", item.id, item.text) }
     case "tool":
-      return {
-        ...part,
-        metadata: data("tool-metadata", part.id, part.metadata),
-        state:
-          part.state.status === "pending"
-            ? {
-                ...part.state,
-                input: data("tool-input", part.id, part.state.input) ?? part.state.input,
-                raw: redact("tool-raw", part.id, part.state.raw),
-              }
-            : part.state.status === "running"
-              ? {
-                  ...part.state,
-                  input: data("tool-input", part.id, part.state.input) ?? part.state.input,
-                  title: part.state.title === undefined ? undefined : redact("tool-title", part.id, part.state.title),
-                  metadata: data("tool-state-metadata", part.id, part.state.metadata),
-                }
-              : part.state.status === "completed"
-                ? {
-                    ...part.state,
-                    input: data("tool-input", part.id, part.state.input) ?? part.state.input,
-                    output: redact("tool-output", part.id, part.state.output),
-                    title: redact("tool-title", part.id, part.state.title),
-                    metadata: data("tool-state-metadata", part.id, part.state.metadata) ?? part.state.metadata,
-                    attachments: part.state.attachments?.map(filepart),
-                  }
-                : {
-                    ...part.state,
-                    input: data("tool-input", part.id, part.state.input) ?? part.state.input,
-                    metadata: data("tool-state-metadata", part.id, part.state.metadata),
-                  },
-      }
-    case "patch":
-      return {
-        ...part,
-        hash: redact("patch", part.id, part.hash),
-        files: part.files.map((item: string, i: number) => redact("patch-file", `${part.id}-${i}`, item)),
-      }
-    case "snapshot":
-      return {
-        ...part,
-        snapshot: redact("snapshot", part.id, part.snapshot),
-      }
-    case "step-start":
-      return {
-        ...part,
-        snapshot: part.snapshot === undefined ? undefined : redact("snapshot", part.id, part.snapshot),
-      }
-    case "step-finish":
-      return {
-        ...part,
-        snapshot: part.snapshot === undefined ? undefined : redact("snapshot", part.id, part.snapshot),
-      }
-    case "agent":
-      return {
-        ...part,
-        source: !part.source
-          ? part.source
-          : {
-              ...part.source,
-              value: redact("agent-source", part.id, part.source.value),
-            },
-      }
-    default:
-      return part
+      return { ...item, state: toolState(item.id, item.state) }
   }
 }
 
-const partFn = part
+export function sanitizeMessage(msg: SessionMessage.Message): SessionMessage.Message {
+  const metadata = data("message-metadata", msg.id, msg.metadata)
+  switch (msg.type) {
+    case "user":
+      return {
+        ...msg,
+        metadata,
+        text: redact("text", msg.id, msg.text),
+        files: msg.files?.map((file) => attachment("file", msg.id, file)),
+        agents: msg.agents?.map((agent) => ({
+          ...agent,
+          source:
+            agent.source === undefined
+              ? undefined
+              : { ...agent.source, text: redact("agent-source", msg.id, agent.source.text) },
+        })),
+      }
+    case "synthetic":
+    case "system":
+      return { ...msg, metadata, text: redact("text", msg.id, msg.text) }
+    case "shell":
+      return {
+        ...msg,
+        metadata,
+        command: redact("shell-command", msg.id, msg.command),
+        output: redact("shell-output", msg.id, msg.output),
+      }
+    case "assistant":
+      return {
+        ...msg,
+        metadata,
+        content: msg.content.map(assistantContent),
+        error: msg.error === undefined ? undefined : { ...msg.error, message: redact("error", msg.id, msg.error.message) },
+      }
+    case "compaction":
+      return {
+        ...msg,
+        metadata,
+        summary: redact("compaction-summary", msg.id, msg.summary),
+        recent: redact("compaction-recent", msg.id, msg.recent),
+      }
+    case "agent-switched":
+    case "model-switched":
+      return { ...msg, metadata }
+  }
+}
 
-function sanitize(data: { info: Session.Info; messages: SessionV1.WithParts[] }) {
+export function sanitizeInfo(info: SessionV1.SessionInfo) {
   return {
-    info: {
-      ...data.info,
-      title: redact("session-title", data.info.id, data.info.title),
-      directory: redact("session-directory", data.info.id, data.info.directory),
-      summary: !data.info.summary
-        ? data.info.summary
-        : {
-            ...data.info.summary,
-            diffs: diff("session-diff", data.info.summary.diffs),
-          },
-      revert: !data.info.revert
-        ? data.info.revert
-        : {
-            ...data.info.revert,
-            snapshot:
-              data.info.revert.snapshot === undefined
-                ? undefined
-                : redact("revert-snapshot", data.info.id, data.info.revert.snapshot),
-            diff:
-              data.info.revert.diff === undefined
-                ? undefined
-                : redact("revert-diff", data.info.id, data.info.revert.diff),
-          },
-    },
-    messages: data.messages.map((msg) => ({
-      info:
-        msg.info.role === "user"
-          ? {
-              ...msg.info,
-              system: msg.info.system === undefined ? undefined : redact("system", msg.info.id, msg.info.system),
-              summary: !msg.info.summary
-                ? msg.info.summary
-                : {
-                    ...msg.info.summary,
-                    title:
-                      msg.info.summary.title === undefined
-                        ? undefined
-                        : redact("summary-title", msg.info.id, msg.info.summary.title),
-                    body:
-                      msg.info.summary.body === undefined
-                        ? undefined
-                        : redact("summary-body", msg.info.id, msg.info.summary.body),
-                    diffs: diff("message-diff", msg.info.summary.diffs),
-                  },
-            }
-          : {
-              ...msg.info,
-              path: {
-                cwd: redact("cwd", msg.info.id, msg.info.path.cwd),
-                root: redact("root", msg.info.id, msg.info.path.root),
-              },
-            },
-      parts: msg.parts.map(partFn),
-    })),
+    ...info,
+    title: redact("session-title", info.id, info.title),
+    directory: redact("session-directory", info.id, info.directory),
+    summary: !info.summary
+      ? info.summary
+      : {
+          ...info.summary,
+          diffs: diff("session-diff", info.summary.diffs),
+        },
+    revert: !info.revert
+      ? info.revert
+      : {
+          ...info.revert,
+          snapshot:
+            info.revert.snapshot === undefined ? undefined : redact("revert-snapshot", info.id, info.revert.snapshot),
+          diff: info.revert.diff === undefined ? undefined : redact("revert-diff", info.id, info.revert.diff),
+        },
   }
 }
 
@@ -237,16 +190,22 @@ export const ExportCommand = effectCmd({
   }),
 })
 
+// The export wire shape: the native message encoding (millis timestamps), the same vocabulary
+// the HTTP transcript route serves.
+const encodeMessages = Schema.encodeSync(Schema.Array(SessionMessage.Message))
+
 const run = Effect.fn("Cli.export.body")(function* (args: { sessionID?: string; sanitize?: boolean }) {
-  const svc = yield* Session.Service
+  const { db } = yield* Database.Service
   let sessionID = args.sessionID ? SessionID.make(args.sessionID) : undefined
   process.stderr.write(`Exporting session: ${sessionID ?? "latest"}\n`)
 
   if (!sessionID) {
+    const ctx = yield* InstanceRef
+    if (!ctx) return
     UI.empty()
     prompts.intro("Export session", { output: process.stderr })
 
-    const sessions = yield* svc.list()
+    const sessions = [...(yield* SessionV1Read.list(db, { projectID: ctx.project.id }))]
 
     if (sessions.length === 0) {
       prompts.log.error("No sessions found", { output: process.stderr })
@@ -278,15 +237,19 @@ const run = Effect.fn("Cli.export.body")(function* (args: { sessionID?: string; 
     prompts.outro("Exporting session...", { output: process.stderr })
   }
 
-  // Match legacy try/catch — catches both typed failures and defects
-  // (Session.Service.get throws NotFoundError as a defect, not a typed E).
-  return yield* Effect.gen(function* () {
-    const sessionInfo = yield* svc.get(sessionID!)
-    const messages = yield* svc.messages({ sessionID: sessionInfo.id })
+  const sessionInfo = yield* SessionV1Read.get(db, sessionID)
+  if (!sessionInfo) return yield* fail(`Session not found: ${sessionID}`)
+  const messages = yield* SessionMessageRead.list(db, { sessionID: sessionInfo.id, order: "asc" }).pipe(
+    Effect.catchTag("Session.MessageDecodeError", (error) =>
+      fail(`Failed to decode message ${error.messageID} in session ${error.sessionID}`),
+    ),
+  )
 
-    const exportData = { info: sessionInfo, messages }
+  const exportData = {
+    info: args.sanitize ? sanitizeInfo(sessionInfo) : sessionInfo,
+    messages: encodeMessages(args.sanitize ? messages.map(sanitizeMessage) : messages),
+  }
 
-    process.stdout.write(JSON.stringify(args.sanitize ? sanitize(exportData) : exportData, null, 2))
-    process.stdout.write(EOL)
-  }).pipe(Effect.catchCause(() => fail(`Session not found: ${sessionID!}`)))
+  process.stdout.write(JSON.stringify(exportData, null, 2))
+  process.stdout.write(EOL)
 })

@@ -2,14 +2,18 @@ import type { Argv } from "yargs"
 import { Effect } from "effect"
 import { cmd } from "./cmd"
 import { effectCmd, fail } from "../effect-cmd"
-import { Session } from "@/session/session"
+import { Database } from "@novaclaw/core/database/database"
+import { removeSessionRecord } from "@novaclaw/core/session"
+import { SessionV1Read } from "@novaclaw/core/session/v1-read"
+import { SessionV1 } from "@novaclaw/core/v1/session"
+import { EventV2Bridge } from "@/event-v2-bridge"
+import { InstanceRef } from "@/effect/instance-ref"
 import { SessionID } from "../../session/schema"
 import { UI } from "../ui"
 import { Locale } from "@/util/locale"
 import { Flag } from "@novaclaw/core/flag/flag"
 import { Filesystem } from "@/util/filesystem"
 import { Process } from "@/util/process"
-import { NotFoundError } from "@/storage/storage"
 import { EOL } from "os"
 import path from "path"
 import { which } from "@novaclaw/core/util/which"
@@ -58,11 +62,15 @@ export const SessionDeleteCommand = effectCmd({
       demandOption: true,
     }),
   handler: Effect.fn("Cli.session.delete")(function* (args) {
-    const svc = yield* Session.Service
+    // F1c-0 — the core record removal seam (the same body `SessionV2.remove` runs). No
+    // execution interrupt to inject here: the CLI process holds no runner for the session
+    // (V1's remove never interrupted either).
+    const { db } = yield* Database.Service
+    const events = yield* EventV2Bridge.Service
     const sessionID = SessionID.make(args.sessionID)
-    yield* svc
-      .remove(sessionID)
-      .pipe(Effect.catchIf(NotFoundError.isInstance, () => fail(`Session not found: ${args.sessionID}`)))
+    yield* removeSessionRecord({ db, events }, sessionID).pipe(
+      Effect.catchTag("Session.NotFoundError", () => fail(`Session not found: ${args.sessionID}`)),
+    )
     UI.println(UI.Style.TEXT_SUCCESS_BOLD + `Session ${args.sessionID} deleted` + UI.Style.TEXT_NORMAL)
   }),
 })
@@ -84,7 +92,12 @@ export const SessionListCommand = effectCmd({
         default: "table",
       }),
   handler: Effect.fn("Cli.session.list")(function* (args) {
-    const sessions = yield* Session.Service.use((svc) => svc.list({ roots: true, limit: args.maxCount }))
+    // F1c-0 — the core row-faithful read, with V1's ambient project scoping made explicit
+    // (the HTTP list handler resolves it the same way).
+    const ctx = yield* InstanceRef
+    if (!ctx) return
+    const { db } = yield* Database.Service
+    const sessions = yield* SessionV1Read.list(db, { projectID: ctx.project.id, roots: true, limit: args.maxCount })
 
     if (sessions.length === 0) return
 
@@ -115,7 +128,7 @@ export const SessionListCommand = effectCmd({
   }),
 })
 
-function formatSessionTable(sessions: Session.Info[]): string {
+function formatSessionTable(sessions: SessionV1.SessionInfo[]): string {
   const lines: string[] = []
 
   const maxIdWidth = Math.max(20, ...sessions.map((s) => s.id.length))
@@ -134,7 +147,7 @@ function formatSessionTable(sessions: Session.Info[]): string {
   return lines.join(EOL)
 }
 
-function formatSessionJSON(sessions: Session.Info[]): string {
+function formatSessionJSON(sessions: SessionV1.SessionInfo[]): string {
   const jsonData = sessions.map((session) => ({
     id: session.id,
     title: session.title,

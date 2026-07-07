@@ -1,11 +1,20 @@
 import { PermissionV1 } from "@novaclaw/core/v1/permission"
 import { EOL } from "os"
-import { SessionV1 } from "@novaclaw/core/v1/session"
 import { basename } from "path"
-import { Cause, Effect } from "effect"
+import { Cause, DateTime, Effect } from "effect"
 import { Agent } from "../../../agent/agent"
 import { Provider } from "@/provider/provider"
-import { Session } from "@/session/session"
+import { Database } from "@novaclaw/core/database/database"
+import { createSessionRecord } from "@novaclaw/core/session"
+import { SessionEvent } from "@novaclaw/core/session/event"
+import { SessionMessage } from "@novaclaw/core/session/message"
+import { SessionStore } from "@novaclaw/core/session/store"
+import { ProjectV2 } from "@novaclaw/core/project"
+import { ModelV2 } from "@novaclaw/core/model"
+import { ProviderV2 } from "@novaclaw/core/provider"
+import { Location } from "@novaclaw/core/location"
+import { AbsolutePath } from "@novaclaw/core/schema"
+import { EventV2Bridge } from "@/event-v2-bridge"
 import { MessageID, PartID } from "../../../session/schema"
 import { ToolRegistry } from "@/tool/registry"
 import { Permission } from "../../../permission"
@@ -126,9 +135,20 @@ const createToolContext = Effect.fn("Cli.debug.agent.createToolContext")(functio
   agent: Agent.Info,
   ctx: InstanceContext,
 ) {
-  const sessionSvc = yield* Session.Service
-  const session = yield* sessionSvc.create({ title: `Debug tool run (${agent.name})` })
-  const messageID = MessageID.ascending()
+  // F1c-0 — the debug session rides the core record seams: `createSessionRecord` persists the
+  // session (cycle-free: no `SessionV2` layer / `LocationServiceMap` in the CLI graph), and the
+  // placeholder assistant message is recorded as the self-contained native
+  // `session.next.message.recorded` durable event (the fork-copy vocabulary) instead of a V1
+  // message-store write.
+  const { db } = yield* Database.Service
+  const events = yield* EventV2Bridge.Service
+  const projects = yield* ProjectV2.Service
+  const store = yield* SessionStore.Service
+  const location = Location.Ref.make({ directory: AbsolutePath.make(ctx.directory) })
+  const session = yield* createSessionRecord(
+    { db, events, projects, store },
+    { location, title: `Debug tool run (${agent.name})` },
+  )
   const model = agent.model
     ? agent.model
     : yield* Effect.gen(function* () {
@@ -148,31 +168,34 @@ const createToolContext = Effect.fn("Cli.debug.agent.createToolContext")(functio
           }),
         )
       })
-  const now = Date.now()
-  const message: SessionV1.Assistant = {
+  const messageID = SessionMessage.ID.create()
+  const message: SessionMessage.Assistant = {
     id: messageID,
-    sessionID: session.id,
-    role: "assistant",
-    time: { created: now },
-    parentID: messageID,
-    modelID: model.modelID,
-    providerID: model.providerID,
-    mode: "debug",
+    type: "assistant",
     agent: agent.name,
-    path: {
-      cwd: ctx.directory,
-      root: ctx.worktree,
-    },
+    model: ModelV2.Ref.make({
+      id: ModelV2.ID.make(model.modelID),
+      providerID: ProviderV2.ID.make(model.providerID),
+    }),
+    content: [],
     cost: 0,
     tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    time: { created: yield* DateTime.now },
   }
-  yield* sessionSvc.updateMessage(message)
+  yield* events.publish(
+    SessionEvent.MessageRecorded,
+    { sessionID: session.id, timestamp: yield* DateTime.now, message },
+    { location },
+  )
 
-  const ruleset = Permission.merge(agent.permission, session.permission ?? [])
+  // A fresh record carries no saved session ruleset (the V2 create only stores one when the
+  // caller passes it — this create doesn't), so the agent's own rules are the whole set.
+  const ruleset = Permission.merge(agent.permission, [])
 
   return {
     sessionID: session.id,
-    messageID,
+    // The native message ID coerces into the V1 tool-context brand (both are "msg"-prefixed).
+    messageID: MessageID.make(messageID),
     callID: PartID.ascending(),
     agent: agent.name,
     abort: new AbortController().signal,
