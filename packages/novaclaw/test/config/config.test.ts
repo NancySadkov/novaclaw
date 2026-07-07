@@ -700,19 +700,6 @@ it.instance("handles command configuration", () =>
   }),
 )
 
-it.instance("migrates autoshare to share field", () =>
-  Effect.gen(function* () {
-    const test = yield* TestInstance
-    yield* writeConfigEffect(test.directory, {
-      $schema: "https://novaclaw.app/config.json",
-      autoshare: true,
-    })
-    const config = yield* Config.use.get()
-    expect(config.share).toBe("auto")
-    expect(config.autoshare).toBe(true)
-  }),
-)
-
 it.instance("migrates mode field to agent field", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
@@ -1175,15 +1162,15 @@ it.instance(
     yield* writeManagedSettingsEffect({
       $schema: "https://novaclaw.app/config.json",
       model: "managed/model",
-      share: "disabled",
+      default_agent: "managed-agent",
     })
 
     const config = yield* Config.use.get()
     expect(config.model).toBe("managed/model")
-    expect(config.share).toBe("disabled")
+    expect(config.default_agent).toBe("managed-agent")
     expect(config.username).toBe("testuser")
   }),
-  { config: { model: "user/model", share: "auto", username: "testuser" } },
+  { config: { model: "user/model", default_agent: "user-agent", username: "testuser" } },
 )
 
 it.instance(
@@ -1947,7 +1934,7 @@ test("parseManagedPlist strips MDM metadata keys", async () => {
           PayloadUUID: "AAAA-BBBB-CCCC",
           PayloadVersion: 1,
           _manualProfile: true,
-          share: "disabled",
+          default_agent: "mdm-agent",
           model: "mdm/model",
         }),
       ),
@@ -1955,7 +1942,7 @@ test("parseManagedPlist strips MDM metadata keys", async () => {
     ),
     "test:mobileconfig",
   )
-  expect(config.share).toBe("disabled")
+  expect(config.default_agent).toBe("mdm-agent")
   expect(config.model).toBe("mdm/model")
   // MDM keys must not leak into the parsed config
   expect((config as any).PayloadUUID).toBeUndefined()

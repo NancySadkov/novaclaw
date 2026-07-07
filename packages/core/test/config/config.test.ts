@@ -346,8 +346,11 @@ describe("Config", () => {
             expect(documents[0]?.info.model).toBe("anthropic/claude")
             expect(documents[0]?.info.default_agent).toBe("reviewer")
             expect(documents[0]?.info.autoupdate).toBe("notify")
-            expect(documents[0]?.info.share).toBe("disabled")
-            expect(documents[0]?.info.enterprise).toEqual({ url: "https://share.example.com" })
+            // F1f decision ④: the share feature is deleted. Old files still carry
+            // `share`/`enterprise` (this fixture does, above) — they must decode as ignored
+            // unknown keys, never surface on the Info.
+            expect(documents[0]?.info).not.toHaveProperty("share")
+            expect(documents[0]?.info).not.toHaveProperty("enterprise")
             expect(documents[0]?.info.username).toBe("test-user")
             expect(documents[0]?.info.permissions).toEqual([
               { action: "bash", resource: "*", effect: "ask" },
@@ -589,7 +592,9 @@ describe("Config", () => {
             expect(documents[0]?.info.shell).toBe("/bin/zsh")
             expect(documents[0]?.info.default_agent).toBe("reviewer")
             expect(documents[0]?.info.snapshots).toBe(false)
-            expect(documents[0]?.info.share).toBe("auto")
+            // ④ share removal: the V1 fixture's `autoshare: true` is now an ignored unknown
+            // key — the migrated V2 Info carries no share field.
+            expect(documents[0]?.info).not.toHaveProperty("share")
             expect(documents[0]?.info.permissions).toEqual([
               { action: "bash", resource: "*", effect: "ask" },
               { action: "edit", resource: "*.md", effect: "allow" },

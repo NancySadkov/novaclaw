@@ -2,7 +2,6 @@ import { Layer, ManagedRuntime } from "effect"
 
 import { Plugin } from "@/plugin"
 import { Format } from "@/format"
-import { ShareNext } from "@/share/share-next"
 import { Vcs } from "@/project/vcs"
 import { Snapshot } from "@/snapshot"
 import { Config } from "@/config/config"
@@ -12,7 +11,6 @@ import { memoMap } from "@novaclaw/core/effect/memo-map"
 export const BootstrapLayer = Layer.mergeAll(
   Config.defaultLayer,
   Plugin.defaultLayer,
-  ShareNext.defaultLayer,
   Format.defaultLayer,
   Vcs.defaultLayer,
   Snapshot.defaultLayer,

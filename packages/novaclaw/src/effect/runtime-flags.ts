@@ -14,7 +14,6 @@ const enabledByExperimental = (name: string) =>
   )
 
 export class Service extends ConfigService.Service<Service>()("@novaclaw/RuntimeFlags", {
-  autoShare: bool("NOVACLAW_AUTO_SHARE"),
   pure: bool("NOVACLAW_PURE"),
   disableDefaultPlugins: bool("NOVACLAW_DISABLE_DEFAULT_PLUGINS"),
   disableEmbeddedWebUi: bool("NOVACLAW_DISABLE_EMBEDDED_WEB_UI"),

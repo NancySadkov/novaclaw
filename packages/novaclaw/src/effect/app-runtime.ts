@@ -43,8 +43,6 @@ import { Vcs } from "@/project/vcs"
 import { Workspace } from "@/control-plane/workspace"
 import { Worktree } from "@/worktree"
 import { Installation } from "@/installation"
-import { ShareNext } from "@/share/share-next"
-import { SessionShare } from "@/share/session"
 import { Npm } from "@novaclaw/core/npm"
 import { ProjectV2 } from "@novaclaw/core/project"
 import { SessionStore } from "@novaclaw/core/session/store"
@@ -103,8 +101,6 @@ export const AppLayer = Layer.mergeAll(
   Workspace.defaultLayer,
   Worktree.appLayer,
   Installation.defaultLayer,
-  ShareNext.defaultLayer,
-  SessionShare.defaultLayer,
 ).pipe(
   Layer.provideMerge(Ripgrep.defaultLayer),
   Layer.provideMerge(InstanceLayer.layer),

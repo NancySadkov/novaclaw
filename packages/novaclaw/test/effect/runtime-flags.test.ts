@@ -9,14 +9,6 @@ const fromConfig = (input: Record<string, unknown>) =>
 const readFlags = RuntimeFlags.Service.useSync((flags) => flags)
 
 describe("RuntimeFlags", () => {
-  it.effect("defaultLayer defaults autoShare to false", () =>
-    Effect.gen(function* () {
-      const flags = yield* readFlags.pipe(Effect.provide(fromConfig({})))
-
-      expect(flags.autoShare).toBe(false)
-    }),
-  )
-
   it.effect("defaultLayer parses plugin flags from the active ConfigProvider", () =>
     Effect.gen(function* () {
       const flags = yield* readFlags.pipe(
@@ -24,7 +16,6 @@ describe("RuntimeFlags", () => {
           fromConfig({
             NOVACLAW_PURE: "true",
             NOVACLAW_DISABLE_DEFAULT_PLUGINS: "true",
-            NOVACLAW_AUTO_SHARE: "true",
             NOVACLAW_DISABLE_EMBEDDED_WEB_UI: "true",
             NOVACLAW_DISABLE_EXTERNAL_SKILLS: "true",
             NOVACLAW_EXPERIMENTAL: "true",
@@ -38,7 +29,6 @@ describe("RuntimeFlags", () => {
       )
 
       expect(flags.pure).toBe(true)
-      expect(flags.autoShare).toBe(true)
       expect(flags.disableDefaultPlugins).toBe(true)
       expect(flags.disableEmbeddedWebUi).toBe(true)
       expect(flags.disableExternalSkills).toBe(true)
@@ -87,7 +77,6 @@ describe("RuntimeFlags", () => {
       )
 
       expect(flags.pure).toBe(false)
-      expect(flags.autoShare).toBe(false)
       expect(flags.disableDefaultPlugins).toBe(true)
       expect(flags.disableEmbeddedWebUi).toBe(false)
       expect(flags.disableExternalSkills).toBe(false)

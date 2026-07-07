@@ -1,5 +1,0 @@
-export { AccountTable, AccountStateTable, ControlAccountTable } from "@novaclaw/core/account/sql"
-export { ProjectTable } from "@novaclaw/core/project/sql"
-export { SessionTable, MessageTable, PartTable, TodoTable } from "@novaclaw/core/session/sql"
-export { SessionShareTable } from "@novaclaw/core/share/sql"
-export { WorkspaceTable } from "@novaclaw/core/control-plane/workspace.sql"
