@@ -343,7 +343,9 @@ export const SessionApi = HttpApi.make("session")
           params: { sessionID: SessionID },
           query: WorkspaceRoutingQuery,
           payload: CommandPayload,
-          success: described(SessionV1.WithParts, "Created message"),
+          // No body: the turn's progress rides the event stream (no client read the old
+          // created-message body; the native path is async like prompt_async).
+          success: described(HttpApiSchema.NoContent, "Command accepted"),
           error: [HttpApiError.BadRequest, ApiNotFoundError, InvalidRequestError],
         }).annotateMerge(
           OpenApi.annotations({
@@ -356,13 +358,14 @@ export const SessionApi = HttpApi.make("session")
           params: { sessionID: SessionID },
           query: WorkspaceRoutingQuery,
           payload: ShellPayload,
-          success: described(SessionV1.WithParts, "Created message"),
+          // No body: the executed command renders from the session's events.
+          success: described(HttpApiSchema.NoContent, "Shell command executed"),
           error: [HttpApiError.BadRequest, ApiNotFoundError, SessionBusyError, InvalidRequestError],
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "session.shell",
             summary: "Run shell command",
-            description: "Execute a shell command within the session context and return the AI's response.",
+            description: "Execute a shell command within the session context; its output renders in the transcript.",
           }),
         ),
         HttpApiEndpoint.post("revert", SessionPaths.revert, {

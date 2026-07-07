@@ -617,6 +617,254 @@
         ]
       }
     },
+    "/adhoc/session/{sessionID}": {
+      "get": {
+        "tags": ["adhoc"],
+        "operationId": "adhoc.list",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The session's model-defined recipes",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "name": {
+                        "type": "string"
+                      },
+                      "description": {
+                        "type": "string"
+                      },
+                      "manual": {
+                        "type": "string"
+                      },
+                      "enabled": {
+                        "type": "boolean"
+                      }
+                    },
+                    "required": ["name", "description", "manual"],
+                    "additionalProperties": false
+                  },
+                  "description": "The session's model-defined recipes"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "The ad-hoc tool recipes the model defined in this session.",
+        "summary": "List session recipes (4E)",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.adhoc.list({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/adhoc/session/{sessionID}/{name}": {
+      "delete": {
+        "tags": ["adhoc"],
+        "operationId": "adhoc.discard",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Whether a recipe was removed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "removed": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": ["removed"],
+                  "additionalProperties": false,
+                  "description": "Whether a recipe was removed"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Throw away one session-defined recipe by name.",
+        "summary": "Discard a session recipe (4E)",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.adhoc.discard({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/adhoc/session/{sessionID}/{name}/promote": {
+      "post": {
+        "tags": ["adhoc"],
+        "operationId": "adhoc.promote",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "name",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The config file written",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "promoted": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["promoted"],
+                  "additionalProperties": false,
+                  "description": "The config file written"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Write a session-defined recipe into the project novaclaw.jsonc adhoc_tools (comment-preserving), making it permanent.",
+        "summary": "Promote a session recipe to project config (4E)",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.adhoc.promote({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/config": {
       "get": {
         "tags": ["config"],
@@ -2097,6 +2345,86 @@
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.file.read({\n  ...\n})"
           }
         ]
+      },
+      "put": {
+        "tags": ["file"],
+        "operationId": "file.write",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "File written",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [true]
+                    }
+                  },
+                  "required": ["ok"],
+                  "additionalProperties": false,
+                  "description": "File written"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Write text content to a file under the routed directory (parents created).",
+        "summary": "Write file",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  },
+                  "content": {
+                    "type": "string"
+                  }
+                },
+                "required": ["path", "content"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.file.write({\n  ...\n})"
+          }
+        ]
       }
     },
     "/file/status": {
@@ -2153,6 +2481,289 @@
           {
             "lang": "js",
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.file.status({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/file/mkdir": {
+      "post": {
+        "tags": ["file"],
+        "operationId": "file.mkdir",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Directory created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean",
+                      "enum": [true]
+                    }
+                  },
+                  "required": ["ok"],
+                  "additionalProperties": false,
+                  "description": "Directory created"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Create a directory (recursive) under the routed directory.",
+        "summary": "Create directory",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  }
+                },
+                "required": ["path"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.file.mkdir({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/file/trash": {
+      "post": {
+        "tags": ["file"],
+        "operationId": "file.trash",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Trashed entry",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrashEntry"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Safe-delete: move a file or directory into the dated Trash store (restorable, TTL ~2 days).",
+        "summary": "Trash file or directory",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "path": {
+                    "type": "string"
+                  }
+                },
+                "required": ["path"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.file.trash({\n  ...\n})"
+          }
+        ]
+      },
+      "get": {
+        "tags": ["file"],
+        "operationId": "file.trash.list",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Trash entries",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/TrashEntry"
+                  },
+                  "description": "Trash entries"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "List trashed entries, newest first (expired entries are purged lazily).",
+        "summary": "List trash",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.file.trash.list({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/file/trash/restore": {
+      "post": {
+        "tags": ["file"],
+        "operationId": "file.trash.restore",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Restored path",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "restoredPath": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["restoredPath"],
+                  "additionalProperties": false,
+                  "description": "Restored path"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Restore a trashed entry to its original path (collision-safe suffix if occupied).",
+        "summary": "Restore from trash",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.file.trash.restore({\n  ...\n})"
           }
         ]
       }
@@ -2837,6 +3448,742 @@
           {
             "lang": "js",
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.formatter.status({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/app": {
+      "get": {
+        "tags": ["instance"],
+        "operationId": "app.list",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Persisted home-app manifests",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/AppManifest"
+                  },
+                  "description": "Persisted home-app manifests"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "List persisted home-app manifests (agent- or user-registered launchers).",
+        "summary": "List home apps",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.app.list({\n  ...\n})"
+          }
+        ]
+      },
+      "post": {
+        "tags": ["instance"],
+        "operationId": "app.register",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The persisted manifest",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AppManifest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "AppRegisterError | InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/AppRegisterError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Register (or update, by id) a home-app manifest: a launcher tile opening a route, URL, or chat prompt.",
+        "summary": "Register a home app",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "title": {
+                    "type": "string"
+                  },
+                  "icon": {
+                    "type": "string"
+                  },
+                  "accent": {
+                    "type": "string"
+                  },
+                  "subtitle": {
+                    "type": "string"
+                  },
+                  "open": {
+                    "type": "object",
+                    "properties": {
+                      "type": {
+                        "type": "string",
+                        "enum": ["route", "url", "prompt"]
+                      },
+                      "value": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["type", "value"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["title", "open"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.app.register({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/kb/stats": {
+      "get": {
+        "tags": ["kb"],
+        "operationId": "kb.stats",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "KB stats + backend identity",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KbStats"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Fact counts (active/retracted, core/staged) and the serving backend's identity.",
+        "summary": "KB stats",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.kb.stats({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/kb/fact": {
+      "get": {
+        "tags": ["kb"],
+        "operationId": "kb.query",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "subject",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "predicate",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "object",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "relation",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["core", "staged"]
+            },
+            "required": false
+          },
+          {
+            "name": "includeRetracted",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": ["true", "false"]
+            },
+            "required": false
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Matching facts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/KbFact"
+                  },
+                  "description": "Matching facts"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Query facts by exact subject/predicate/object/relation match. Active facts only unless includeRetracted=true.",
+        "summary": "Query facts",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.kb.query({\n  ...\n})"
+          }
+        ]
+      },
+      "post": {
+        "tags": ["kb"],
+        "operationId": "kb.add",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The stored fact (with id + provenance timestamps)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KbFact"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Store one fact with provenance (source, agent, confidence). Defaults to the 'staged' relation — agent-written facts stay distinguishable from the curated core forever.",
+        "summary": "Add a fact",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KbAddInput"
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.kb.add({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/kb/fact/{id}/update": {
+      "post": {
+        "tags": ["kb"],
+        "operationId": "kb.update",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The replacing fact",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KbFact"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Never a destructive overwrite: stamps valid_to + superseded_by on the old fact and inserts the replacement — the audit chain stays intact.",
+        "summary": "Update a fact (dated move)",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/KbUpdateInput"
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.kb.update({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/kb/fact/{id}/retract": {
+      "post": {
+        "tags": ["kb"],
+        "operationId": "kb.retract",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The retracted fact (valid_to stamped)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/KbFact"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "NotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/NotFoundError"
+                }
+              }
+            }
+          }
+        },
+        "description": "A 'death' is a valid_to stamp, not a delete — the fact stays queryable with includeRetracted.",
+        "summary": "Retract a fact (dated move)",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.kb.retract({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/kb/populate": {
+      "post": {
+        "tags": ["kb"],
+        "operationId": "kb.populate",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Bulk-load result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "inserted": {
+                      "type": "number"
+                    }
+                  },
+                  "required": ["inserted"],
+                  "additionalProperties": false,
+                  "description": "Bulk-load result"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Load a prepared dataset (KB-B) or a batch of agent-staged facts in one call.",
+        "summary": "Bulk-load facts",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "facts": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/KbAddInput"
+                    }
+                  }
+                },
+                "required": ["facts"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.kb.populate({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/kb/backup": {
+      "get": {
+        "tags": ["kb"],
+        "operationId": "kb.backup",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Every fact, including retracted (the audit trail)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/KbFact"
+                  },
+                  "description": "Every fact, including retracted (the audit trail)"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Full export including retracted rows — exists precisely so clear() is safe.",
+        "summary": "Export the dataset",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.kb.backup({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/kb/clear": {
+      "post": {
+        "tags": ["kb"],
+        "operationId": "kb.clear",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Rows deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "deleted": {
+                      "type": "number"
+                    }
+                  },
+                  "required": ["deleted"],
+                  "additionalProperties": false,
+                  "description": "Rows deleted"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "The only true delete. Take a backup first.",
+        "summary": "Clear the KB",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.kb.clear({\n  ...\n})"
           }
         ]
       }
@@ -4823,7 +6170,17 @@
                 "properties": {
                   "reply": {
                     "type": "string",
-                    "enum": ["once", "always", "reject"]
+                    "enum": [
+                      "once",
+                      "always",
+                      "reject",
+                      "allow-once",
+                      "allow-file",
+                      "allow-always",
+                      "deny-once",
+                      "deny-file",
+                      "deny-always"
+                    ]
                   },
                   "message": {
                     "type": "string"
@@ -5163,6 +6520,153 @@
         ]
       }
     },
+    "/provider/{providerID}/probe": {
+      "post": {
+        "tags": ["provider"],
+        "operationId": "provider.probe",
+        "parameters": [
+          {
+            "name": "providerID",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          },
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Provider probe result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "status": {
+                      "type": "string",
+                      "enum": ["ok", "unreachable", "auth", "model-missing", "no-url", "error"]
+                    },
+                    "latencyMs": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["NaN"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["-Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
+                    },
+                    "window": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["NaN"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["-Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
+                    },
+                    "detail": {
+                      "type": "string"
+                    },
+                    "models": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    }
+                  },
+                  "required": ["status"],
+                  "additionalProperties": false,
+                  "description": "Provider probe result"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "One-shot health probe: validates the provider URL, key, and (optionally) that a model is listed, in one GET /models round trip. Reports the server's honored context window where available.",
+        "summary": "Probe a provider endpoint",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "modelID": {
+                    "type": "string"
+                  },
+                  "baseURL": {
+                    "type": "string"
+                  },
+                  "apiKey": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.provider.probe({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/session": {
       "get": {
         "tags": ["session"],
@@ -5366,6 +6870,10 @@
                   },
                   "permission": {
                     "$ref": "#/components/schemas/PermissionRuleset"
+                  },
+                  "permissionMode": {
+                    "type": "string",
+                    "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
                   },
                   "workspaceID": {
                     "type": "string",
@@ -6139,6 +7647,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
                     }
                   ]
                 }
@@ -6658,6 +8169,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
                     }
                   ]
                 }
@@ -6926,6 +8440,9 @@
                     },
                     {
                       "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
                     }
                   ]
                 }
@@ -7150,27 +8667,8 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Created message",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "required": ["info", "parts"],
-                  "properties": {
-                    "info": {
-                      "$ref": "#/components/schemas/AssistantMessage"
-                    },
-                    "parts": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/Part"
-                      }
-                    }
-                  }
-                }
-              }
-            }
+          "204": {
+            "description": "Command accepted"
           },
           "400": {
             "description": "BadRequest | InvalidRequestError",
@@ -7180,6 +8678,9 @@
                   "anyOf": [
                     {
                       "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
                     },
                     {
                       "$ref": "#/components/schemas/InvalidRequestError"
@@ -7304,29 +8805,8 @@
           }
         ],
         "responses": {
-          "200": {
-            "description": "Created message",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "info": {
-                      "$ref": "#/components/schemas/Message"
-                    },
-                    "parts": {
-                      "type": "array",
-                      "items": {
-                        "$ref": "#/components/schemas/Part"
-                      }
-                    }
-                  },
-                  "required": ["info", "parts"],
-                  "additionalProperties": false,
-                  "description": "Created message"
-                }
-              }
-            }
+          "204": {
+            "description": "Shell command executed"
           },
           "400": {
             "description": "BadRequest | InvalidRequestError",
@@ -7336,6 +8816,9 @@
                   "anyOf": [
                     {
                       "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
                     },
                     {
                       "$ref": "#/components/schemas/InvalidRequestError"
@@ -7366,7 +8849,7 @@
             }
           }
         },
-        "description": "Execute a shell command within the session context and return the AI's response.",
+        "description": "Execute a shell command within the session context; its output renders in the transcript.",
         "summary": "Run shell command",
         "requestBody": {
           "content": {
@@ -7711,7 +9194,17 @@
                 "properties": {
                   "response": {
                     "type": "string",
-                    "enum": ["once", "always", "reject"]
+                    "enum": [
+                      "once",
+                      "always",
+                      "reject",
+                      "allow-once",
+                      "allow-file",
+                      "allow-always",
+                      "deny-once",
+                      "deny-file",
+                      "deny-always"
+                    ]
                   }
                 },
                 "required": ["response"],
@@ -7926,6 +9419,295 @@
           {
             "lang": "js",
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.part.update({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/shell/status": {
+      "get": {
+        "tags": ["shell"],
+        "operationId": "shell.status",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The agent shell substrate on this machine",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "platform": {
+                      "type": "string"
+                    },
+                    "agentShell": {
+                      "type": "string"
+                    },
+                    "bash": {
+                      "type": "string"
+                    },
+                    "git": {
+                      "type": "string"
+                    },
+                    "bundle": {
+                      "type": "object",
+                      "properties": {
+                        "root": {
+                          "type": "string"
+                        },
+                        "bash": {
+                          "type": "string"
+                        },
+                        "git": {
+                          "type": "string"
+                        },
+                        "version": {
+                          "type": "string"
+                        },
+                        "provisionedAt": {
+                          "type": "number"
+                        }
+                      },
+                      "required": ["root", "bash", "git"],
+                      "additionalProperties": false
+                    },
+                    "provisionSupported": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": ["platform", "agentShell", "bash", "git", "bundle", "provisionSupported"],
+                  "additionalProperties": false,
+                  "description": "The agent shell substrate on this machine"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Which bash/git the agents get (bundled PortableGit, system, or platform fallback) and whether the bundle is provisioned.",
+        "summary": "Shell substrate status",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.shell.status({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/shell/offline": {
+      "get": {
+        "tags": ["shell"],
+        "operationId": "shell.offline",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The N/9 offline-layer posture",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": {
+                      "type": "boolean"
+                    },
+                    "active": {
+                      "type": "number"
+                    },
+                    "total": {
+                      "type": "number"
+                    },
+                    "layers": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "layer": {
+                            "type": "number"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "active": {
+                            "type": "boolean"
+                          },
+                          "detail": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["layer", "name", "active"],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": ["enabled", "active", "total", "layers"],
+                  "additionalProperties": false,
+                  "description": "The N/9 offline-layer posture"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "The airgap posture: how many of the 9 offline layers are active, with per-layer detail (OFF-C).",
+        "summary": "Offline layer status",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.shell.offline({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/shell/provision": {
+      "post": {
+        "tags": ["shell"],
+        "operationId": "shell.provision",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Status after provisioning",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "platform": {
+                      "type": "string"
+                    },
+                    "agentShell": {
+                      "type": "string"
+                    },
+                    "bash": {
+                      "type": "string"
+                    },
+                    "git": {
+                      "type": "string"
+                    },
+                    "bundle": {
+                      "type": "object",
+                      "properties": {
+                        "root": {
+                          "type": "string"
+                        },
+                        "bash": {
+                          "type": "string"
+                        },
+                        "git": {
+                          "type": "string"
+                        },
+                        "version": {
+                          "type": "string"
+                        },
+                        "provisionedAt": {
+                          "type": "number"
+                        }
+                      },
+                      "required": ["root", "bash", "git"],
+                      "additionalProperties": false
+                    },
+                    "provisionSupported": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": ["platform", "agentShell", "bash", "git", "bundle", "provisionSupported"],
+                  "additionalProperties": false,
+                  "description": "Status after provisioning"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Download + verify + extract the pinned PortableGit bundle (bash + git) into the data dir. Windows-only; fails closed in offline mode (provision before going airgapped).",
+        "summary": "Provision the bundled shell",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.shell.provision({\n  ...\n})"
           }
         ]
       }
@@ -10052,6 +11834,17 @@
                   "systemPromptOverride": {
                     "type": "string"
                   },
+                  "type": {
+                    "type": "string",
+                    "enum": ["interactive", "sub-agent", "auto-prompting", "goal-oriented"]
+                  },
+                  "priority": {
+                    "type": "number"
+                  },
+                  "permissionMode": {
+                    "type": "string",
+                    "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
+                  },
                   "location": {
                     "$ref": "#/components/schemas/LocationRef"
                   }
@@ -10066,6 +11859,155 @@
           {
             "lang": "js",
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.session.create({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/session/{sessionID}/tags": {
+      "put": {
+        "tags": ["sessions"],
+        "operationId": "v2.session.tags.set",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^ses"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SessionNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SessionNotFoundError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SessionNotFoundError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Replace the chat's tag set — tags organize chat processes; tag a root to organize its thread tree.",
+        "summary": "Set session tags",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "tags": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": ["tags"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.session.tags.set({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/tag": {
+      "get": {
+        "tags": ["sessions"],
+        "operationId": "v2.session.tags.all",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "data": {
+                      "type": "object",
+                      "additionalProperties": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    }
+                  },
+                  "required": ["data"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "The instance-wide tag map: session id → tags. The client store's bootstrap source.",
+        "summary": "List all session tags",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.session.tags.all({\n  ...\n})"
           }
         ]
       }
@@ -10382,6 +12324,178 @@
         ]
       }
     },
+    "/api/session/{sessionID}/responder": {
+      "post": {
+        "tags": ["sessions"],
+        "operationId": "v2.session.switchResponder",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^ses"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SessionNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SessionNotFoundError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SessionNotFoundError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Take control (operator) so Nova stops auto-responding, or hand back (nova) so it resumes and drains queued input.",
+        "summary": "Switch session responder (B10 handoff)",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "responder": {
+                    "type": "string",
+                    "enum": ["nova", "operator"]
+                  }
+                },
+                "required": ["responder"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.session.switchResponder({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/session/{sessionID}/mode": {
+      "post": {
+        "tags": ["sessions"],
+        "operationId": "v2.session.switchMode",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^ses"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SessionNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SessionNotFoundError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SessionNotFoundError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Change the permission mode mid-session; the MODE_RULES overlay applies from the next turn.",
+        "summary": "Switch session permission mode (1K)",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "permissionMode": {
+                    "type": "string",
+                    "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
+                  }
+                },
+                "required": ["permissionMode"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.session.switchMode({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/session/{sessionID}/prompt": {
       "post": {
         "tags": ["sessions"],
@@ -10648,7 +12762,7 @@
             }
           }
         },
-        "description": "Wait for a session agent loop to become idle.",
+        "description": "Block until the session completes via exit() (its result is recorded). Times out after ~2 minutes with 503 — re-call to continue waiting.",
         "summary": "Wait for session",
         "x-codeSamples": [
           {
@@ -15184,6 +17298,12 @@
             "$ref": "#/components/schemas/EventSessionNextModelSwitched"
           },
           {
+            "$ref": "#/components/schemas/EventSessionNextResponderSwitched"
+          },
+          {
+            "$ref": "#/components/schemas/EventSessionNextModeSwitched"
+          },
+          {
             "$ref": "#/components/schemas/EventSessionNextMoved"
           },
           {
@@ -15289,6 +17409,9 @@
             "$ref": "#/components/schemas/EventInstallationUpdate-available"
           },
           {
+            "$ref": "#/components/schemas/EventAppRegistered"
+          },
+          {
             "$ref": "#/components/schemas/EventFileEdited"
           },
           {
@@ -15332,6 +17455,9 @@
           },
           {
             "$ref": "#/components/schemas/EventTodoUpdated"
+          },
+          {
+            "$ref": "#/components/schemas/EventSessionTagsUpdated"
           },
           {
             "$ref": "#/components/schemas/EventPermissionAsked"
@@ -15739,6 +17865,21 @@
           },
           "systemPromptOverride": {
             "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["interactive", "sub-agent", "auto-prompting", "goal-oriented"]
+          },
+          "priority": {
+            "type": "number"
+          },
+          "responder": {
+            "type": "string",
+            "enum": ["nova", "operator"]
+          },
+          "permissionMode": {
+            "type": "string",
+            "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
           },
           "result": {},
           "version": {
@@ -17219,6 +19360,17 @@
             },
             "required": ["type"],
             "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["exited"]
+              }
+            },
+            "required": ["type"],
+            "additionalProperties": false
           }
         ]
       },
@@ -17689,6 +19841,80 @@
                       }
                     },
                     "required": ["timestamp", "sessionID", "messageID", "model"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["id", "type", "properties"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^evt_"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": ["session.next.responder.switched"]
+                  },
+                  "properties": {
+                    "type": "object",
+                    "properties": {
+                      "timestamp": {
+                        "type": "number"
+                      },
+                      "sessionID": {
+                        "type": "string",
+                        "pattern": "^ses"
+                      },
+                      "messageID": {
+                        "type": "string",
+                        "pattern": "^msg_"
+                      },
+                      "responder": {
+                        "type": "string",
+                        "enum": ["nova", "operator"]
+                      }
+                    },
+                    "required": ["timestamp", "sessionID", "messageID", "responder"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["id", "type", "properties"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^evt_"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": ["session.next.mode.switched"]
+                  },
+                  "properties": {
+                    "type": "object",
+                    "properties": {
+                      "timestamp": {
+                        "type": "number"
+                      },
+                      "sessionID": {
+                        "type": "string",
+                        "pattern": "^ses"
+                      },
+                      "messageID": {
+                        "type": "string",
+                        "pattern": "^msg_"
+                      },
+                      "permissionMode": {
+                        "type": "string",
+                        "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
+                      }
+                    },
+                    "required": ["timestamp", "sessionID", "messageID", "permissionMode"],
                     "additionalProperties": false
                   }
                 },
@@ -19117,6 +21343,34 @@
                   },
                   "type": {
                     "type": "string",
+                    "enum": ["app.registered"]
+                  },
+                  "properties": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "title": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["id", "title"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["id", "type", "properties"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^evt_"
+                  },
+                  "type": {
+                    "type": "string",
                     "enum": ["file.edited"]
                   },
                   "properties": {
@@ -19568,6 +21822,38 @@
                   },
                   "type": {
                     "type": "string",
+                    "enum": ["session.tags.updated"]
+                  },
+                  "properties": {
+                    "type": "object",
+                    "properties": {
+                      "sessionID": {
+                        "type": "string",
+                        "pattern": "^ses"
+                      },
+                      "tags": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      }
+                    },
+                    "required": ["sessionID", "tags"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["id", "type", "properties"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^evt_"
+                  },
+                  "type": {
+                    "type": "string",
                     "enum": ["permission.asked"]
                   },
                   "properties": {
@@ -19644,7 +21930,17 @@
                       },
                       "reply": {
                         "type": "string",
-                        "enum": ["once", "always", "reject"]
+                        "enum": [
+                          "once",
+                          "always",
+                          "reject",
+                          "allow-once",
+                          "allow-file",
+                          "allow-always",
+                          "deny-once",
+                          "deny-file",
+                          "deny-always"
+                        ]
                       }
                     },
                     "required": ["sessionID", "requestID", "reply"],
@@ -20344,6 +22640,12 @@
               },
               {
                 "$ref": "#/components/schemas/SyncEventSessionNextModelSwitched"
+              },
+              {
+                "$ref": "#/components/schemas/SyncEventSessionNextResponderSwitched"
+              },
+              {
+                "$ref": "#/components/schemas/SyncEventSessionNextModeSwitched"
               },
               {
                 "$ref": "#/components/schemas/SyncEventSessionNextMoved"
@@ -21317,6 +23619,232 @@
             },
             "additionalProperties": false
           },
+          "persona": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "name": {
+                "type": "string"
+              },
+              "prompt": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "introspection": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "cadence": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ],
+                "description": "Judge every N continuation steps within a turn drain (default: 3)"
+              },
+              "model": {
+                "type": "string"
+              },
+              "prompt": {
+                "type": "string"
+              },
+              "interjection": {
+                "type": "string"
+              },
+              "generateInterjection": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          },
+          "adhoc_tools": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Tool name (lowercase slug) listed in the system prompt"
+                },
+                "description": {
+                  "type": "string",
+                  "description": "One-line description shown beside the name (the model decides from this alone)"
+                },
+                "manual": {
+                  "type": "string",
+                  "description": "Free-text manual the model pulls on demand: the API shape plus 1-2 curl/shell examples"
+                },
+                "enabled": {
+                  "type": "boolean"
+                }
+              },
+              "required": ["name", "description", "manual"],
+              "additionalProperties": false
+            }
+          },
+          "affective": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "temperature": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ],
+                "description": "Calm-baseline temperature when the model config sets none (default: 0.7)"
+              },
+              "extended": {
+                "type": "boolean"
+              }
+            },
+            "additionalProperties": false
+          },
+          "user_profile": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "name": {
+                "type": "string"
+              },
+              "about": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "offline": {
+            "type": "boolean"
+          },
+          "kb": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "quality": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              },
+              "cadence": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ],
+                "description": "Run the whole-module typecheck every N writes (default 2)"
+              },
+              "testTimeout": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ],
+                "description": "Hard timeout for the test gate in ms (default 300000)"
+              },
+              "commands": {
+                "type": "object",
+                "properties": {
+                  "syntax": {
+                    "type": "string"
+                  },
+                  "check": {
+                    "type": "string"
+                  },
+                  "typecheck": {
+                    "type": "string"
+                  },
+                  "test": {
+                    "type": "string"
+                  },
+                  "lint": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
           "compaction": {
             "type": "object",
             "properties": {
@@ -21377,6 +23905,25 @@
           }
         },
         "additionalProperties": false
+      },
+      "NotFoundError": {
+        "type": "object",
+        "required": ["name", "data"],
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": ["NotFoundError"]
+          },
+          "data": {
+            "type": "object",
+            "required": ["message"],
+            "properties": {
+              "message": {
+                "type": "string"
+              }
+            }
+          }
+        }
       },
       "Model": {
         "type": "object",
@@ -21979,6 +24526,10 @@
           "permission": {
             "$ref": "#/components/schemas/PermissionRuleset"
           },
+          "permissionMode": {
+            "type": "string",
+            "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
+          },
           "revert": {
             "type": "object",
             "properties": {
@@ -22159,6 +24710,46 @@
         "required": ["path", "added", "removed", "status"],
         "additionalProperties": false
       },
+      "TrashEntry": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "originalPath": {
+            "type": "string"
+          },
+          "trashedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "type": {
+            "type": "string",
+            "enum": ["file", "directory"]
+          }
+        },
+        "required": ["id", "originalPath", "trashedAt", "type"],
+        "additionalProperties": false
+      },
       "Path": {
         "type": "object",
         "properties": {
@@ -22171,14 +24762,32 @@
           "config": {
             "type": "string"
           },
+          "data": {
+            "type": "string"
+          },
           "worktree": {
             "type": "string"
           },
           "directory": {
             "type": "string"
+          },
+          "roots": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "virtual": {
+            "type": "boolean"
+          },
+          "virtualRoot": {
+            "type": "string"
+          },
+          "scratchDir": {
+            "type": "string"
           }
         },
-        "required": ["home", "state", "config", "worktree", "directory"],
+        "required": ["home", "state", "config", "data", "worktree", "directory", "roots"],
         "additionalProperties": false
       },
       "VcsInfo": {
@@ -22373,6 +24982,109 @@
           }
         },
         "required": ["name", "extensions", "enabled"],
+        "additionalProperties": false
+      },
+      "AppManifest": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "icon": {
+            "type": "string"
+          },
+          "accent": {
+            "type": "string"
+          },
+          "subtitle": {
+            "type": "string"
+          },
+          "open": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["route", "url", "prompt"]
+              },
+              "value": {
+                "type": "string"
+              }
+            },
+            "required": ["type", "value"],
+            "additionalProperties": false
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          }
+        },
+        "required": ["id", "title", "open", "createdAt", "updatedAt"],
+        "additionalProperties": false
+      },
+      "AppRegisterError": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": ["AppRegisterError"]
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": ["message"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["name", "data"],
         "additionalProperties": false
       },
       "MCPStatusConnected": {
@@ -22976,6 +25688,10 @@
           "permission": {
             "$ref": "#/components/schemas/PermissionRuleset"
           },
+          "permissionMode": {
+            "type": "string",
+            "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
+          },
           "revert": {
             "type": "object",
             "properties": {
@@ -23145,6 +25861,10 @@
           "permission": {
             "$ref": "#/components/schemas/PermissionRuleset"
           },
+          "permissionMode": {
+            "type": "string",
+            "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
+          },
           "revert": {
             "type": "object",
             "properties": {
@@ -23169,25 +25889,6 @@
         },
         "required": ["id", "slug", "projectID", "directory", "title", "version", "time"],
         "additionalProperties": false
-      },
-      "NotFoundError": {
-        "type": "object",
-        "required": ["name", "data"],
-        "properties": {
-          "name": {
-            "type": "string",
-            "enum": ["NotFoundError"]
-          },
-          "data": {
-            "type": "object",
-            "required": ["message"],
-            "properties": {
-              "message": {
-                "type": "string"
-              }
-            }
-          }
-        }
       },
       "Session3": {
         "type": "object",
@@ -23332,6 +26033,10 @@
           },
           "permission": {
             "$ref": "#/components/schemas/PermissionRuleset"
+          },
+          "permissionMode": {
+            "type": "string",
+            "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
           },
           "revert": {
             "type": "object",
@@ -23502,6 +26207,10 @@
           "permission": {
             "$ref": "#/components/schemas/PermissionRuleset"
           },
+          "permissionMode": {
+            "type": "string",
+            "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
+          },
           "revert": {
             "type": "object",
             "properties": {
@@ -23670,6 +26379,10 @@
           },
           "permission": {
             "$ref": "#/components/schemas/PermissionRuleset"
+          },
+          "permissionMode": {
+            "type": "string",
+            "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
           },
           "revert": {
             "type": "object",
@@ -23840,6 +26553,10 @@
           "permission": {
             "$ref": "#/components/schemas/PermissionRuleset"
           },
+          "permissionMode": {
+            "type": "string",
+            "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
+          },
           "revert": {
             "type": "object",
             "properties": {
@@ -24008,6 +26725,10 @@
           },
           "permission": {
             "$ref": "#/components/schemas/PermissionRuleset"
+          },
+          "permissionMode": {
+            "type": "string",
+            "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
           },
           "revert": {
             "type": "object",
@@ -24340,6 +27061,10 @@
           "permission": {
             "$ref": "#/components/schemas/PermissionRuleset"
           },
+          "permissionMode": {
+            "type": "string",
+            "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
+          },
           "revert": {
             "type": "object",
             "properties": {
@@ -24508,6 +27233,10 @@
           },
           "permission": {
             "$ref": "#/components/schemas/PermissionRuleset"
+          },
+          "permissionMode": {
+            "type": "string",
+            "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
           },
           "revert": {
             "type": "object",
@@ -24822,17 +27551,6 @@
         "required": ["_tag", "message"],
         "additionalProperties": false
       },
-      "SessionActive": {
-        "type": "object",
-        "properties": {
-          "type": {
-            "type": "string",
-            "enum": ["running"]
-          }
-        },
-        "required": ["type"],
-        "additionalProperties": false
-      },
       "SessionNotFoundError": {
         "type": "object",
         "properties": {
@@ -24848,6 +27566,17 @@
           }
         },
         "required": ["_tag", "sessionID", "message"],
+        "additionalProperties": false
+      },
+      "SessionActive": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["running"]
+          }
+        },
+        "required": ["type"],
         "additionalProperties": false
       },
       "PromptInput": {
@@ -24953,6 +27682,12 @@
           },
           {
             "$ref": "#/components/schemas/SessionNextModelSwitched"
+          },
+          {
+            "$ref": "#/components/schemas/SessionNextResponderSwitched"
+          },
+          {
+            "$ref": "#/components/schemas/SessionNextModeSwitched"
           },
           {
             "$ref": "#/components/schemas/SessionNextMoved"
@@ -25338,6 +28073,12 @@
             "$ref": "#/components/schemas/SessionNextModelSwitched"
           },
           {
+            "$ref": "#/components/schemas/SessionNextResponderSwitched"
+          },
+          {
+            "$ref": "#/components/schemas/SessionNextModeSwitched"
+          },
+          {
             "$ref": "#/components/schemas/SessionNextMoved"
           },
           {
@@ -25443,6 +28184,9 @@
             "$ref": "#/components/schemas/InstallationUpdate-available"
           },
           {
+            "$ref": "#/components/schemas/AppRegistered"
+          },
+          {
             "$ref": "#/components/schemas/FileEdited"
           },
           {
@@ -25486,6 +28230,9 @@
           },
           {
             "$ref": "#/components/schemas/TodoUpdated"
+          },
+          {
+            "$ref": "#/components/schemas/SessionTagsUpdated"
           },
           {
             "$ref": "#/components/schemas/PermissionAsked"
@@ -26066,7 +28813,17 @@
       },
       "PermissionV2Reply": {
         "type": "string",
-        "enum": ["once", "always", "reject"]
+        "enum": [
+          "once",
+          "always",
+          "reject",
+          "allow-once",
+          "allow-file",
+          "allow-always",
+          "deny-once",
+          "deny-file",
+          "deny-always"
+        ]
       },
       "QuestionV2Option": {
         "type": "object",
@@ -26716,6 +29473,122 @@
                   }
                 },
                 "required": ["timestamp", "sessionID", "messageID", "model"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["type", "id", "seq", "aggregateID", "data"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["type", "id", "syncEvent"],
+        "additionalProperties": false
+      },
+      "SyncEventSessionNextResponderSwitched": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["sync"]
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "syncEvent": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["session.next.responder.switched.1"]
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^evt_"
+              },
+              "seq": {
+                "type": "number"
+              },
+              "aggregateID": {
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "timestamp": {
+                    "type": "number"
+                  },
+                  "sessionID": {
+                    "type": "string",
+                    "pattern": "^ses"
+                  },
+                  "messageID": {
+                    "type": "string",
+                    "pattern": "^msg_"
+                  },
+                  "responder": {
+                    "type": "string",
+                    "enum": ["nova", "operator"]
+                  }
+                },
+                "required": ["timestamp", "sessionID", "messageID", "responder"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["type", "id", "seq", "aggregateID", "data"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["type", "id", "syncEvent"],
+        "additionalProperties": false
+      },
+      "SyncEventSessionNextModeSwitched": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["sync"]
+          },
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "syncEvent": {
+            "type": "object",
+            "properties": {
+              "type": {
+                "type": "string",
+                "enum": ["session.next.mode.switched.1"]
+              },
+              "id": {
+                "type": "string",
+                "pattern": "^evt_"
+              },
+              "seq": {
+                "type": "number"
+              },
+              "aggregateID": {
+                "type": "string"
+              },
+              "data": {
+                "type": "object",
+                "properties": {
+                  "timestamp": {
+                    "type": "number"
+                  },
+                  "sessionID": {
+                    "type": "string",
+                    "pattern": "^ses"
+                  },
+                  "messageID": {
+                    "type": "string",
+                    "pattern": "^msg_"
+                  },
+                  "permissionMode": {
+                    "type": "string",
+                    "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
+                  }
+                },
+                "required": ["timestamp", "sessionID", "messageID", "permissionMode"],
                 "additionalProperties": false
               }
             },
@@ -28413,6 +31286,123 @@
         "required": ["action", "effect", "resource"],
         "additionalProperties": false
       },
+      "KbStats": {
+        "type": "object",
+        "properties": {
+          "active": {
+            "type": "number"
+          },
+          "retracted": {
+            "type": "number"
+          },
+          "total": {
+            "type": "number"
+          },
+          "core": {
+            "type": "number"
+          },
+          "staged": {
+            "type": "number"
+          },
+          "backend": {
+            "type": "string"
+          }
+        },
+        "required": ["active", "retracted", "total", "core", "staged", "backend"],
+        "additionalProperties": false
+      },
+      "KbFact": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^fct_"
+          },
+          "subject": {
+            "type": "string"
+          },
+          "predicate": {
+            "type": "string"
+          },
+          "object": {
+            "type": "string"
+          },
+          "relation": {
+            "type": "string",
+            "enum": ["core", "staged"]
+          },
+          "source": {
+            "type": "string"
+          },
+          "agent": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "number"
+          },
+          "validFrom": {
+            "type": "number"
+          },
+          "validTo": {
+            "type": "number"
+          },
+          "supersededBy": {
+            "type": "string"
+          },
+          "timeCreated": {
+            "type": "number"
+          }
+        },
+        "required": ["id", "subject", "predicate", "object", "relation", "validFrom", "timeCreated"],
+        "additionalProperties": false
+      },
+      "KbAddInput": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "string",
+            "minLength": 1
+          },
+          "predicate": {
+            "type": "string",
+            "minLength": 1
+          },
+          "object": {
+            "type": "string",
+            "minLength": 1
+          },
+          "relation": {
+            "type": "string",
+            "enum": ["core", "staged"]
+          },
+          "source": {
+            "type": "string"
+          },
+          "agent": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "number"
+          }
+        },
+        "required": ["subject", "predicate", "object"],
+        "additionalProperties": false
+      },
+      "KbUpdateInput": {
+        "type": "object",
+        "properties": {
+          "object": {
+            "type": "string"
+          },
+          "confidence": {
+            "type": "number"
+          },
+          "source": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": false
+      },
       "ProjectDirectories": {
         "type": "array",
         "items": {
@@ -28600,6 +31590,21 @@
           },
           "systemPromptOverride": {
             "type": "string"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["interactive", "sub-agent", "auto-prompting", "goal-oriented"]
+          },
+          "priority": {
+            "type": "number"
+          },
+          "responder": {
+            "type": "string",
+            "enum": ["nova", "operator"]
+          },
+          "permissionMode": {
+            "type": "string",
+            "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
           },
           "result": {},
           "cost": {
@@ -29484,6 +32489,124 @@
               }
             },
             "required": ["timestamp", "sessionID", "messageID", "model"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "data"],
+        "additionalProperties": false
+      },
+      "SessionNextResponderSwitched": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.next.responder.switched"]
+          },
+          "durable": {
+            "type": "object",
+            "properties": {
+              "aggregateID": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": ["aggregateID", "seq", "version"],
+            "additionalProperties": false
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationRef"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "messageID": {
+                "type": "string",
+                "pattern": "^msg_"
+              },
+              "responder": {
+                "type": "string",
+                "enum": ["nova", "operator"]
+              }
+            },
+            "required": ["timestamp", "sessionID", "messageID", "responder"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "data"],
+        "additionalProperties": false
+      },
+      "SessionNextModeSwitched": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.next.mode.switched"]
+          },
+          "durable": {
+            "type": "object",
+            "properties": {
+              "aggregateID": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": ["aggregateID", "seq", "version"],
+            "additionalProperties": false
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationRef"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "messageID": {
+                "type": "string",
+                "pattern": "^msg_"
+              },
+              "permissionMode": {
+                "type": "string",
+                "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
+              }
+            },
+            "required": ["timestamp", "sessionID", "messageID", "permissionMode"],
             "additionalProperties": false
           }
         },
@@ -32030,6 +35153,10 @@
           },
           "resource": {
             "type": "string"
+          },
+          "effect": {
+            "type": "string",
+            "enum": ["allow", "deny"]
           }
         },
         "required": ["id", "projectID", "action", "resource"],
@@ -33158,6 +36285,56 @@
         "required": ["id", "type", "data"],
         "additionalProperties": false
       },
+      "AppRegistered": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["app.registered"]
+          },
+          "durable": {
+            "type": "object",
+            "properties": {
+              "aggregateID": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": ["aggregateID", "seq", "version"],
+            "additionalProperties": false
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationRef"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "title"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "data"],
+        "additionalProperties": false
+      },
       "FileEdited": {
         "type": "object",
         "properties": {
@@ -33939,6 +37116,60 @@
         "required": ["id", "type", "data"],
         "additionalProperties": false
       },
+      "SessionTagsUpdated": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.tags.updated"]
+          },
+          "durable": {
+            "type": "object",
+            "properties": {
+              "aggregateID": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": ["aggregateID", "seq", "version"],
+            "additionalProperties": false
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationRef"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "tags": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": ["sessionID", "tags"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "data"],
+        "additionalProperties": false
+      },
       "PermissionAsked": {
         "type": "object",
         "properties": {
@@ -34068,7 +37299,17 @@
               },
               "reply": {
                 "type": "string",
-                "enum": ["once", "always", "reject"]
+                "enum": [
+                  "once",
+                  "always",
+                  "reject",
+                  "allow-once",
+                  "allow-file",
+                  "allow-always",
+                  "deny-once",
+                  "deny-file",
+                  "deny-always"
+                ]
               }
             },
             "required": ["sessionID", "requestID", "reply"],
@@ -35579,6 +38820,80 @@
         "required": ["id", "type", "properties"],
         "additionalProperties": false
       },
+      "EventSessionNextResponderSwitched": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.next.responder.switched"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "messageID": {
+                "type": "string",
+                "pattern": "^msg_"
+              },
+              "responder": {
+                "type": "string",
+                "enum": ["nova", "operator"]
+              }
+            },
+            "required": ["timestamp", "sessionID", "messageID", "responder"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventSessionNextModeSwitched": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.next.mode.switched"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "timestamp": {
+                "type": "number"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "messageID": {
+                "type": "string",
+                "pattern": "^msg_"
+              },
+              "permissionMode": {
+                "type": "string",
+                "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
+              }
+            },
+            "required": ["timestamp", "sessionID", "messageID", "permissionMode"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
       "EventSessionNextMoved": {
         "type": "object",
         "properties": {
@@ -36984,6 +40299,34 @@
         "required": ["id", "type", "properties"],
         "additionalProperties": false
       },
+      "EventAppRegistered": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["app.registered"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "string"
+              },
+              "title": {
+                "type": "string"
+              }
+            },
+            "required": ["id", "title"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
       "EventFileEdited": {
         "type": "object",
         "properties": {
@@ -37435,6 +40778,38 @@
         "required": ["id", "type", "properties"],
         "additionalProperties": false
       },
+      "EventSessionTagsUpdated": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["session.tags.updated"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              },
+              "tags": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": ["sessionID", "tags"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
       "EventPermissionAsked": {
         "type": "object",
         "properties": {
@@ -37520,7 +40895,17 @@
               },
               "reply": {
                 "type": "string",
-                "enum": ["once", "always", "reject"]
+                "enum": [
+                  "once",
+                  "always",
+                  "reject",
+                  "allow-once",
+                  "allow-file",
+                  "allow-always",
+                  "deny-once",
+                  "deny-file",
+                  "deny-always"
+                ]
               }
             },
             "required": ["sessionID", "requestID", "reply"],
@@ -38180,6 +41565,10 @@
       "description": "Instance event stream route."
     },
     {
+      "name": "adhoc",
+      "description": "4E: review/discard/promote session-defined ad-hoc tool recipes."
+    },
+    {
       "name": "config",
       "description": "Experimental HttpApi config routes."
     },
@@ -38194,6 +41583,10 @@
     {
       "name": "instance",
       "description": "Experimental HttpApi instance read routes."
+    },
+    {
+      "name": "kb",
+      "description": "Knowledge-base facade (KB-A): stable CRUD/populate/backup API over a swappable fact store."
     },
     {
       "name": "mcp",
@@ -38226,6 +41619,10 @@
     {
       "name": "session",
       "description": "Experimental HttpApi session routes."
+    },
+    {
+      "name": "shell",
+      "description": "B11 bundled-shell substrate: status + provisioner."
     },
     {
       "name": "sync",

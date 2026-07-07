@@ -4905,7 +4905,7 @@ export class Session2 extends HeyApiClient {
   /**
    * Run shell command
    *
-   * Execute a shell command within the session context and return the AI's response.
+   * Execute a shell command within the session context; its output renders in the transcript.
    */
   public shell<ThrowOnError extends boolean = false>(
     parameters: {

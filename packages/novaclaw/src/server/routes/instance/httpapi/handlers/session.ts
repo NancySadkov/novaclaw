@@ -13,6 +13,7 @@ import { SessionRevert } from "@/session/revert"
 import { SessionRunState } from "@/session/run-state"
 import { SessionV2 } from "@novaclaw/core/session"
 import { ModelV2 } from "@novaclaw/core/model"
+import { ProviderV2 } from "@novaclaw/core/provider"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { PromptInput } from "@novaclaw/schema/prompt-input"
 import { SessionStatus } from "@/session/status"
@@ -310,11 +311,11 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return true
     })
 
-    // F0 guard: these ops run on the LEGACY engine and write v1 message rows. On
-    // a V2-native session that would flip v2Eligible false, silently rerouting
-    // every later prompt to the V1 runner — a mixed transcript across two
-    // disjoint storage systems with no backfill. Reject with a legible 400
-    // instead; each op gains a V2 port later (todo.md F0 scope).
+    // F0 guard (now `summarize`/`prompt` only — command/shell/init route natively below): these
+    // ops run on the LEGACY engine and write v1 message rows. On a V2-native session that would
+    // flip v2Eligible false, silently rerouting every later prompt to the V1 runner — a mixed
+    // transcript across two disjoint storage systems with no backfill. Reject with a legible 400
+    // instead; `summarize` gains its V2 port with the runner-force compaction build (F1a SLICE 7).
     const requireLegacyCapable = Effect.fn("SessionHttpApi.requireLegacyCapable")(function* (
       sessionID: SessionID,
       op: string,
@@ -327,12 +328,35 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       })
     })
 
+    // Native routing predicate for the op handlers below: a session with native rows runs its
+    // ops on the V2 engine (its cores shipped in F1a SLICE 5/6); fresh + legacy sessions keep
+    // the V1 path byte-identical until F1b flips the router wholesale.
+    const isNativeSession = (sessionID: SessionID) => MessageV2.hasNativeRows(sessionID).pipe(Effect.orDie)
+
     const init = Effect.fn("SessionHttpApi.init")(function* (ctx: {
       params: { sessionID: SessionID }
       payload: typeof InitPayload.Type
     }) {
       yield* requireSession(ctx.params.sessionID)
-      yield* requireLegacyCapable(ctx.params.sessionID, "init")
+      if (yield* isNativeSession(ctx.params.sessionID)) {
+        // init ≡ the built-in `init` command (V1 does exactly this against its own command op).
+        yield* sessionV2
+          .switchModel({
+            sessionID: ctx.params.sessionID,
+            model: { id: ctx.payload.modelID, providerID: ctx.payload.providerID },
+          })
+          .pipe(Effect.orDie)
+        const result = yield* sessionV2
+          .command({
+            sessionID: ctx.params.sessionID,
+            command: Command.Default.INIT,
+            arguments: "",
+            id: ctx.payload.messageID as unknown as Parameters<typeof sessionV2.command>[0]["id"],
+          })
+          .pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
+        if (result.type === "prompt") yield* forkV2Turn(ctx.params.sessionID)
+        return true
+      }
       yield* promptSvc
         .command({
           sessionID: ctx.params.sessionID,
@@ -415,6 +439,20 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         })
       })
 
+    // The async V2 turn bracket shared by promptAsync/command/init: busy is published BEFORE the
+    // fork so the client sees it synchronously; `resume` JOINS the live run (settles on success,
+    // error, AND interrupt); `ensuring(idle)` is the SOLE turn-terminal on the V2 path — a
+    // missing idle hangs the client spinner forever.
+    const forkV2Turn = (sessionID: SessionID) =>
+      Effect.gen(function* () {
+        const v2Turn = sessionV2.resume(sessionID).pipe(
+          Effect.catchCause((cause) => reportAsyncFailure(sessionID, cause)),
+          Effect.ensuring(statusSvc.set(sessionID, { type: "idle" })),
+        )
+        yield* statusSvc.set(sessionID, { type: "busy" })
+        yield* v2Turn.pipe(Effect.forkIn(scope, { startImmediately: true }))
+      })
+
     const promptAsync = Effect.fn("SessionHttpApi.promptAsync")(function* (ctx: {
       params: { sessionID: SessionID }
       payload: typeof PromptPayload.Type
@@ -476,9 +514,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
           })
           .pipe(Effect.orDie)
       if (ctx.payload.agent)
-        yield* sessionV2
-          .switchAgent({ sessionID: ctx.params.sessionID, agent: ctx.payload.agent })
-          .pipe(Effect.orDie)
+        yield* sessionV2.switchAgent({ sessionID: ctx.params.sessionID, agent: ctx.payload.agent }).pipe(Effect.orDie)
 
       const sessionID = ctx.params.sessionID
       const v2Turn = Effect.gen(function* () {
@@ -515,10 +551,57 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       payload: typeof CommandPayload.Type
     }) {
       yield* requireSession(ctx.params.sessionID)
-      yield* requireLegacyCapable(ctx.params.sessionID, "command")
-      return yield* promptSvc
+      if (yield* isNativeSession(ctx.params.sessionID)) {
+        // F1a SLICE 5 HTTP wiring: the V2 command op (expand + `` !`shell` `` substitution +
+        // subtask branch) admits the turn itself; the model turn rides the forked bracket.
+        // File attachments have no V2 command lowering yet (SLICE 5 residue) — reject legibly
+        // instead of silently dropping a user attachment.
+        if (ctx.payload.parts?.length)
+          return yield* new InvalidRequestError({
+            message:
+              "A command with file attachments is not available on a native (V2) session yet — send the attachment as a regular message instead.",
+            kind: "native_session_op_unavailable",
+          })
+        // Per-turn agent/model parity with promptAsync: apply them to the session before the
+        // turn (V2 persists the switch; V1's non-persisted per-turn semantics is SLICE 5 residue).
+        if (ctx.payload.model) {
+          const [providerID, ...rest] = ctx.payload.model.split("/")
+          const modelID = rest.join("/")
+          if (!providerID || !modelID) return yield* new HttpApiError.BadRequest({})
+          yield* sessionV2
+            .switchModel({
+              sessionID: ctx.params.sessionID,
+              model: {
+                id: ModelV2.ID.make(modelID),
+                providerID: ProviderV2.ID.make(providerID),
+                ...(ctx.payload.variant ? { variant: ModelV2.VariantID.make(ctx.payload.variant) } : {}),
+              },
+            })
+            .pipe(Effect.orDie)
+        }
+        if (ctx.payload.agent)
+          yield* sessionV2.switchAgent({ sessionID: ctx.params.sessionID, agent: ctx.payload.agent }).pipe(Effect.orDie)
+        const result = yield* sessionV2
+          .command({
+            sessionID: ctx.params.sessionID,
+            command: ctx.payload.command,
+            arguments: ctx.payload.arguments,
+            ...(ctx.payload.messageID
+              ? { id: ctx.payload.messageID as unknown as Parameters<typeof sessionV2.command>[0]["id"] }
+              : {}),
+          })
+          .pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
+        // A subtask command spawned a child (surfaced via session.created events); only the
+        // prompt kind runs a turn on THIS session.
+        if (result.type === "prompt") yield* forkV2Turn(ctx.params.sessionID)
+        return HttpApiSchema.NoContent.make()
+      }
+      // Legacy sessions: unchanged blocking behavior. The created-message body was dropped from
+      // the response schema — no client read it (the CLI checks only `error`; the app ignores it).
+      yield* promptSvc
         .command({ ...ctx.payload, sessionID: ctx.params.sessionID })
         .pipe(Effect.mapError(() => new HttpApiError.BadRequest({})))
+      return HttpApiSchema.NoContent.make()
     })
 
     const shell = Effect.fn("SessionHttpApi.shell")(function* (ctx: {
@@ -526,8 +609,14 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       payload: typeof ShellPayload.Type
     }) {
       yield* requireSession(ctx.params.sessionID)
-      yield* requireLegacyCapable(ctx.params.sessionID, "shell")
-      return yield* SessionError.mapBusy(promptSvc.shell({ ...ctx.payload, sessionID: ctx.params.sessionID }))
+      if (yield* isNativeSession(ctx.params.sessionID)) {
+        // F1a SLICE 6 HTTP wiring: run one command to completion against the session's Location;
+        // the transcript renders from the durable Shell.Started/Ended events (no model turn).
+        yield* sessionV2.shell({ sessionID: ctx.params.sessionID, command: ctx.payload.command }).pipe(Effect.orDie)
+        return HttpApiSchema.NoContent.make()
+      }
+      yield* SessionError.mapBusy(promptSvc.shell({ ...ctx.payload, sessionID: ctx.params.sessionID }))
+      return HttpApiSchema.NoContent.make()
     })
 
     const revert = Effect.fn("SessionHttpApi.revert")(function* (ctx: {

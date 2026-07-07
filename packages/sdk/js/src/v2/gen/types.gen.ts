@@ -11652,12 +11652,9 @@ export type SessionCommandError = SessionCommandErrors[keyof SessionCommandError
 
 export type SessionCommandResponses = {
   /**
-   * Created message
+   * Command accepted
    */
-  200: {
-    info: AssistantMessage
-    parts: Array<Part>
-  }
+  204: void
 }
 
 export type SessionCommandResponse = SessionCommandResponses[keyof SessionCommandResponses]
@@ -11701,12 +11698,9 @@ export type SessionShellError = SessionShellErrors[keyof SessionShellErrors]
 
 export type SessionShellResponses = {
   /**
-   * Created message
+   * Shell command executed
    */
-  200: {
-    info: Message
-    parts: Array<Part>
-  }
+  204: void
 }
 
 export type SessionShellResponse = SessionShellResponses[keyof SessionShellResponses]
