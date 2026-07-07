@@ -2,11 +2,12 @@ import { WorkspaceV2 } from "@novaclaw/core/workspace"
 import type { Target } from "@/control-plane/types"
 import { Workspace } from "@/control-plane/workspace"
 import { WorkspaceAdapterRuntime } from "@/control-plane/workspace-adapter-runtime"
-import { Session } from "@/session/session"
+import { Database } from "@novaclaw/core/database/database"
+import { SessionV1 } from "@novaclaw/core/v1/session"
+import { SessionV1Read } from "@novaclaw/core/session/v1-read"
 import { HttpApiProxy } from "./proxy"
 import * as Fence from "@/server/shared/fence"
 import { getWorkspaceRouteSessionID, isLocalWorkspaceRoute, workspaceProxyURL } from "@/server/shared/workspace-routing"
-import { NotFoundError } from "@/storage/storage"
 import { Flag } from "@novaclaw/core/flag/flag"
 import { Context, Data, Effect, Layer, Option, Schema } from "effect"
 import { HttpClient, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
@@ -50,11 +51,13 @@ export class WorkspaceRouteContext extends Context.Service<
   }
 >()("@novaclaw/ExperimentalHttpApiWorkspaceRouteContext") {}
 
+// F1c: the per-request session lookup reads the raw row via core `SessionV1Read` (Database is a
+// global singleton resolved at layer build), so the middleware no longer REQUIRES the V1
+// Session.Service from the route context.
 export class WorkspaceRoutingMiddleware extends HttpApiMiddleware.Service<
   WorkspaceRoutingMiddleware,
   {
     provides: WorkspaceRouteContext
-    requires: Session.Service
   }
 >()("@novaclaw/ExperimentalHttpApiWorkspaceRouting") {}
 
@@ -159,7 +162,7 @@ function planWorkspaceRequest(
 
 function planRequest(
   request: HttpServerRequest.HttpServerRequest,
-  session?: Session.Info,
+  session?: SessionV1.SessionInfo,
 ): Effect.Effect<RequestPlan, never, Workspace.Service> {
   return Effect.gen(function* () {
     const url = requestURL(request)
@@ -210,25 +213,18 @@ function routeWorkspace<E>(
 }
 
 function routeHttpApiWorkspace<E>(
+  db: Database.Interface["db"],
   client: HttpClient.HttpClient,
   effect: Effect.Effect<HttpServerResponse.HttpServerResponse, E, WorkspaceRouteContext>,
 ): Effect.Effect<
   HttpServerResponse.HttpServerResponse,
   E,
-  Session.Service | Workspace.Service | HttpServerRequest.HttpServerRequest | Socket.WebSocketConstructor
+  Workspace.Service | HttpServerRequest.HttpServerRequest | Socket.WebSocketConstructor
 > {
   return Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest
     const sessionID = getWorkspaceRouteSessionID(requestURL(request))
-    const session = sessionID
-      ? yield* Session.Service.use((svc) => svc.get(sessionID)).pipe(
-          Effect.catchIf(
-            (error): error is NotFoundError => NotFoundError.isInstance(error),
-            () => Effect.succeed(undefined),
-          ),
-          Effect.catchDefect(() => Effect.succeed(undefined)),
-        )
-      : undefined
+    const session = sessionID ? yield* SessionV1Read.get(db, sessionID) : undefined
     const plan = yield* planRequest(request, session)
     return yield* routeWorkspace(client, effect, plan)
   })
@@ -240,8 +236,9 @@ export const workspaceRoutingLayer = Layer.effect(
     const makeWebSocket = yield* Socket.WebSocketConstructor
     const workspace = yield* Workspace.Service
     const client = yield* HttpClient.HttpClient
+    const { db } = yield* Database.Service
     return WorkspaceRoutingMiddleware.of((effect) =>
-      routeHttpApiWorkspace(client, effect).pipe(
+      routeHttpApiWorkspace(db, client, effect).pipe(
         Effect.provideService(Socket.WebSocketConstructor, makeWebSocket),
         Effect.provideService(Workspace.Service, workspace),
       ),

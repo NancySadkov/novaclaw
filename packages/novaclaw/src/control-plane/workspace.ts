@@ -21,11 +21,12 @@ import { WorkspaceTable } from "@novaclaw/core/control-plane/workspace.sql"
 import { getAdapter, registeredAdapters } from "./adapters"
 import { type Target, type WorkspaceInfo, WorkspaceInfo as WorkspaceInfoSchema } from "./types"
 import { WorkspaceV2 } from "@novaclaw/core/workspace"
-import { Session } from "@/session/session"
+import { SessionV2 } from "@novaclaw/core/session"
+import { SessionPatch } from "@novaclaw/core/session/patch"
+import { SessionV1 } from "@novaclaw/core/v1/session"
 import { SessionPrompt } from "@/session/prompt"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { SessionID } from "@/session/schema"
-import { NotFoundError } from "@/storage/storage"
 import { errorData } from "@/util/error"
 import { waitEvent } from "./util"
 import { WorkspaceRef } from "@/effect/instance-ref"
@@ -154,7 +155,6 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const auth = yield* Auth.Service
-    const session = yield* Session.Service
     const prompt = yield* SessionPrompt.Service
     const http = yield* HttpClient.HttpClient
     const events = yield* EventV2Bridge.Service
@@ -162,6 +162,12 @@ export const layer = Layer.effect(
     const flags = yield* RuntimeFlags.Service
     const fs = yield* FSUtil.Service
     const { db } = yield* Database.Service
+    // F1c: session-warp writes the workspace pointer through the core patch seam (full-info
+    // legacy `session.updated`; V1 parity — no time bump), not the V1 Session.Service.
+    const setSessionWorkspace = (input: { sessionID: SessionV1.SessionInfo["id"]; workspaceID?: WorkspaceV2.ID }) =>
+      SessionPatch.patchSessionRecord({ db, events }, input.sessionID, (info) =>
+        SessionV1.SessionInfo.make({ ...info, workspaceID: input.workspaceID }),
+      ).pipe(Effect.asVoid)
     const connections = new Map<WorkspaceV2.ID, ConnectionStatus>()
     const syncFibers = yield* FiberMap.make<WorkspaceV2.ID, void, SyncLoopError>()
 
@@ -621,7 +627,7 @@ export const layer = Layer.effect(
         }
 
         if (input.workspaceID === null) {
-          yield* session.setWorkspace({ sessionID: input.sessionID, workspaceID: undefined })
+          yield* setSessionWorkspace({ sessionID: input.sessionID, workspaceID: undefined })
 
           return
         }
@@ -637,7 +643,7 @@ export const layer = Layer.effect(
         const target = yield* WorkspaceAdapterRuntime.target(space)
 
         if (target.type === "local") {
-          yield* session.setWorkspace({ sessionID: input.sessionID, workspaceID: input.workspaceID })
+          yield* setSessionWorkspace({ sessionID: input.sessionID, workspaceID: input.workspaceID })
 
           return
         }
@@ -709,7 +715,7 @@ export const layer = Layer.effect(
           })
         }
 
-        yield* session.setWorkspace({ sessionID: input.sessionID, workspaceID: input.workspaceID })
+        yield* setSessionWorkspace({ sessionID: input.sessionID, workspaceID: input.workspaceID })
       })
     })
 
@@ -790,10 +796,15 @@ export const layer = Layer.effect(
         .all()
         .pipe(Effect.orDie)
       const sessionIDs = new Set(sessions.map((sessionInfo) => sessionInfo.id))
+      // F1c: the session sweep runs on the core engine's record removal (same Deleted event +
+      // log purge; no interrupt hook here, matching the V1 remove this replaces — the dying
+      // workspace's instance is being torn down with it).
       yield* Effect.forEach(
         sessions.filter((sessionInfo) => !sessionInfo.parentID || !sessionIDs.has(sessionInfo.parentID)),
         (sessionInfo) =>
-          session.remove(sessionInfo.id).pipe(Effect.catchIf(NotFoundError.isInstance, () => Effect.void)),
+          SessionV2.removeSessionRecord({ db, events }, sessionInfo.id).pipe(
+            Effect.catchTag("Session.NotFoundError", () => Effect.void),
+          ),
         { discard: true },
       )
 
@@ -887,7 +898,6 @@ export const layer = Layer.effect(
 
 export const defaultLayer = layer.pipe(
   Layer.provide(Auth.defaultLayer),
-  Layer.provide(Session.defaultLayer),
   Layer.provide(SessionPrompt.defaultLayer),
   Layer.provide(Project.defaultLayer),
   Layer.provide(Vcs.defaultLayer),
@@ -963,7 +973,6 @@ export const node = LayerNode.make({
   layer: layer,
   deps: [
     Auth.node,
-    Session.node,
     SessionPrompt.node,
     httpClient,
     EventV2Bridge.node,

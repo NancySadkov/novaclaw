@@ -366,6 +366,50 @@ export const createSessionRecord = (
     return created
   })
 
+/**
+ * Remove a session RECORD tree from CYCLE-FREE primitives (the `createSessionRecord` seam
+ * pattern): run the injected `interrupt` first (the SessionV2 layer passes the execution
+ * coordinator; the workspace control-plane's session sweep has none — matching the V1 remove
+ * it replaces there), depth-first over children, publish the full-info legacy
+ * `session.deleted` (its projector row-delete cascades messages/parts/todos/tags via FK),
+ * then purge the aggregate's event log.
+ */
+export const removeSessionRecord = (
+  deps: {
+    readonly db: Database.Interface["db"]
+    readonly events: EventV2.Interface
+    readonly interrupt?: (sessionID: SessionSchema.ID) => Effect.Effect<void>
+  },
+  sessionID: SessionSchema.ID,
+): Effect.Effect<void, NotFoundError> =>
+  Effect.gen(function* () {
+    const { db, events } = deps
+    const row = yield* db.select().from(SessionTable).where(eq(SessionTable.id, sessionID)).get().pipe(Effect.orDie)
+    if (!row) return yield* new NotFoundError({ sessionID })
+    if (deps.interrupt) yield* deps.interrupt(sessionID)
+    const children = yield* db
+      .select({ id: SessionTable.id })
+      .from(SessionTable)
+      .where(eq(SessionTable.parent_id, sessionID))
+      .all()
+      .pipe(Effect.orDie)
+    for (const child of children) {
+      // A concurrent removal already won the race for this child — fine, keep going.
+      yield* removeSessionRecord(deps, child.id).pipe(Effect.catchTag("Session.NotFoundError", () => Effect.void))
+    }
+    yield* events.publish(
+      SessionV1.Event.Deleted,
+      { sessionID, info: v1InfoFromRow(row) },
+      {
+        location: Location.Ref.make({
+          directory: AbsolutePath.make(row.directory),
+          workspaceID: row.workspace_id ?? undefined,
+        }),
+      },
+    )
+    yield* events.remove(sessionID)
+  })
+
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -403,45 +447,17 @@ export const layer = Layer.effect(
         if (!found) return yield* new NotFoundError({ sessionID })
       })
 
-    // F1c-2 — session removal on the core engine. Interrupt any active run (idle
-    // interruption is a no-op; V1 never interrupted and left a runner fiber writing into a
-    // purged aggregate), depth-first over children, then publish the full-info legacy
-    // `session.deleted` (its projector row-delete cascades messages/parts/todos/tags via FK)
-    // and purge the aggregate's event log. V1's background-job sweep has no core successor:
-    // post-F1b nothing tags BackgroundJobs with session metadata (only the unreachable V1
-    // task tool did); native BashJobs are in-memory and die with the location (1H residue).
+    // F1c-2 — session removal on the core engine (body: `removeSessionRecord`). The layer
+    // injects the execution interrupt (idle interruption is a no-op; V1 never interrupted and
+    // left a runner fiber writing into a purged aggregate). V1's background-job sweep has no
+    // core successor: post-F1b nothing tags BackgroundJobs with session metadata (only the
+    // unreachable V1 task tool did); native BashJobs are in-memory and die with the location
+    // (1H residue).
     const removeRecord = (sessionID: SessionSchema.ID): Effect.Effect<void, NotFoundError> =>
-      Effect.gen(function* () {
-        const row = yield* db
-          .select()
-          .from(SessionTable)
-          .where(eq(SessionTable.id, sessionID))
-          .get()
-          .pipe(Effect.orDie)
-        if (!row) return yield* new NotFoundError({ sessionID })
-        yield* Effect.uninterruptible(execution.interrupt(sessionID))
-        const children = yield* db
-          .select({ id: SessionTable.id })
-          .from(SessionTable)
-          .where(eq(SessionTable.parent_id, sessionID))
-          .all()
-          .pipe(Effect.orDie)
-        for (const child of children) {
-          // A concurrent removal already won the race for this child — fine, keep going.
-          yield* removeRecord(child.id).pipe(Effect.catchTag("Session.NotFoundError", () => Effect.void))
-        }
-        yield* events.publish(
-          SessionV1.Event.Deleted,
-          { sessionID, info: v1InfoFromRow(row) },
-          {
-            location: Location.Ref.make({
-              directory: AbsolutePath.make(row.directory),
-              workspaceID: row.workspace_id ?? undefined,
-            }),
-          },
-        )
-        yield* events.remove(sessionID)
-      })
+      removeSessionRecord(
+        { db, events, interrupt: (id) => Effect.uninterruptible(execution.interrupt(id)) },
+        sessionID,
+      )
 
     const result = Service.of({
       create: Effect.fn("V2Session.create")((input) => createSessionRecord({ db, events, projects, store }, input)),

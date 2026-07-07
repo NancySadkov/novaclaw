@@ -22,7 +22,7 @@ import { Workspace } from "../../src/control-plane/workspace"
 import { InstanceRef, WorkspaceRef } from "../../src/effect/instance-ref"
 import { InstanceLayer } from "../../src/project/instance-layer"
 import { Project } from "../../src/project/project"
-import { Session } from "../../src/session/session"
+import { Database } from "@novaclaw/core/database/database"
 import {
   InstanceContextMiddleware,
   instanceContextLayer,
@@ -64,7 +64,12 @@ const it = testEffect(
 
 const instanceContextTestLayer = Layer.mergeAll(
   instanceContextLayer,
-  workspaceRoutingLayer.pipe(Layer.provide(Socket.layerWebSocketConstructorGlobal)),
+  workspaceRoutingLayer.pipe(
+    Layer.provide(Socket.layerWebSocketConstructorGlobal),
+    // F1c: the routing middleware reads the session row via core SessionV1Read (Database),
+    // not the V1 Session.Service.
+    Layer.provide(Database.defaultLayer),
+  ),
 )
 
 const localAdapter = (directory: string): WorkspaceAdapter => ({
@@ -133,7 +138,6 @@ const serveProbes = (input: {
       ),
     ),
     Layer.provide(instanceContextTestLayer),
-    Layer.provide(Layer.mock(Session.Service)({})),
     HttpRouter.serve,
     Layer.build,
   )
