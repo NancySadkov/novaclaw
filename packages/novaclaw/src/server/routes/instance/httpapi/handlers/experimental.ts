@@ -6,7 +6,6 @@ import { InstanceState } from "@/effect/instance-state"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { MCP } from "@/mcp"
 import { Project } from "@/project/project"
-import { Session } from "@/session/session"
 import type { SessionID } from "@/session/schema"
 import { Database } from "@novaclaw/core/database/database"
 import { SessionV1Read } from "@novaclaw/core/session/v1-read"
@@ -34,7 +33,6 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
     const project = yield* Project.Service
     const registry = yield* ToolRegistry.Service
     const worktreeSvc = yield* Worktree.Service
-    const sessions = yield* Session.Service
     const background = yield* BackgroundJob.Service
     const flags = yield* RuntimeFlags.Service
     const { db } = yield* Database.Service
