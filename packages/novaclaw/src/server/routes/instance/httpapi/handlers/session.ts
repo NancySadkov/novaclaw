@@ -7,9 +7,9 @@ import { SessionShare } from "@/share/session"
 import { Session } from "@/session/session"
 import { MessageV2 } from "@/session/message-v2"
 import { SessionPrompt } from "@/session/prompt"
-import { SessionRevert } from "@/session/revert"
 import { SessionRunState } from "@/session/run-state"
 import { SessionV2 } from "@novaclaw/core/session"
+import { SessionMessage } from "@novaclaw/core/session/message"
 import { ModelV2 } from "@novaclaw/core/model"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { PromptInput } from "@novaclaw/schema/prompt-input"
@@ -99,7 +99,6 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     const session = yield* Session.Service
     const shareSvc = yield* SessionShare.Service
     const promptSvc = yield* SessionPrompt.Service
-    const revertSvc = yield* SessionRevert.Service
     const runState = yield* SessionRunState.Service
     const permissionSvc = yield* Permission.Service
     const statusSvc = yield* SessionStatus.Service
@@ -498,17 +497,39 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return HttpApiSchema.NoContent.make()
     })
 
+    // Revert/unrevert route to the NATIVE staged-revert (core SessionV2.revert),
+    // not the legacy V1 revertSvc. The V1 service scanned the message store for
+    // `part.type === "patch"` parts, which only the (deleted) V1 processor ever
+    // emitted — so on a V2 session it truncated messages WITHOUT rolling back any
+    // files. The native `stage` restores the working tree to each message's
+    // pre-change snapshot (`snapshot.start`) and publishes RevertEvent.Staged; the
+    // projector writes SessionTable.revert, which the V1 Session.Info returned below
+    // reads back (one row, two schemas) — so the response contract is unchanged.
+    // Message-granular only: a payload `partID` (V1 part-level revert; the app never
+    // sends one) is ignored.
     const revert = Effect.fn("SessionHttpApi.revert")(function* (ctx: {
       params: { sessionID: SessionID }
       payload: typeof RevertPayload.Type
     }) {
       yield* requireSession(ctx.params.sessionID)
-      return yield* SessionError.mapBusy(revertSvc.revert({ sessionID: ctx.params.sessionID, ...ctx.payload }))
+      yield* SessionError.mapBusy(runState.assertNotBusy(ctx.params.sessionID))
+      yield* sessionV2.revert
+        .stage({ sessionID: ctx.params.sessionID, messageID: SessionMessage.ID.make(ctx.payload.messageID) })
+        .pipe(
+          // Reverting to a message the native engine doesn't know is a no-op that
+          // returns the unchanged session (V1 parity: `if (!rev) return session`) —
+          // the app only ever reverts to a real transcript message.
+          Effect.catchTag("Session.MessageNotFoundError", () => Effect.void),
+          Effect.orDie,
+        )
+      return yield* requireSession(ctx.params.sessionID)
     })
 
     const unrevert = Effect.fn("SessionHttpApi.unrevert")(function* (ctx: { params: { sessionID: SessionID } }) {
       yield* requireSession(ctx.params.sessionID)
-      return yield* SessionError.mapBusy(revertSvc.unrevert({ sessionID: ctx.params.sessionID }))
+      yield* SessionError.mapBusy(runState.assertNotBusy(ctx.params.sessionID))
+      yield* sessionV2.revert.clear(ctx.params.sessionID).pipe(Effect.orDie)
+      return yield* requireSession(ctx.params.sessionID)
     })
 
     const permissionRespond = Effect.fn("SessionHttpApi.permissionRespond")(function* (ctx: {
