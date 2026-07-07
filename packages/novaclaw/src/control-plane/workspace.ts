@@ -24,7 +24,6 @@ import { WorkspaceV2 } from "@novaclaw/core/workspace"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionPatch } from "@novaclaw/core/session/patch"
 import { SessionV1 } from "@novaclaw/core/v1/session"
-import { SessionPrompt } from "@/session/prompt"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { SessionID } from "@/session/schema"
 import { errorData } from "@/util/error"
@@ -155,7 +154,6 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const auth = yield* Auth.Service
-    const prompt = yield* SessionPrompt.Service
     const http = yield* HttpClient.HttpClient
     const events = yield* EventV2Bridge.Service
     const vcs = yield* Vcs.Service
@@ -586,9 +584,11 @@ export const layer = Layer.effect(
                   }),
                 ),
               )
-            } else {
-              yield* prompt.cancel(input.sessionID)
             }
+            // F1f: the local-warp branch called the V1 prompt.cancel here — a no-op since
+            // F1b (nothing populates the V1 runner map). Interrupting an ACTIVE native turn
+            // before a local warp is tracked F1b-flip residue: it needs SessionExecution
+            // reachable from this graph (unbound global node — binding recon pending).
 
             // "claim" this session so any future events coming from
             // the old workspace are ignored
@@ -898,7 +898,6 @@ export const layer = Layer.effect(
 
 export const defaultLayer = layer.pipe(
   Layer.provide(Auth.defaultLayer),
-  Layer.provide(SessionPrompt.defaultLayer),
   Layer.provide(Project.defaultLayer),
   Layer.provide(Vcs.defaultLayer),
   Layer.provide(FSUtil.defaultLayer),
@@ -973,7 +972,6 @@ export const node = LayerNode.make({
   layer: layer,
   deps: [
     Auth.node,
-    SessionPrompt.node,
     httpClient,
     EventV2Bridge.node,
     Vcs.node,

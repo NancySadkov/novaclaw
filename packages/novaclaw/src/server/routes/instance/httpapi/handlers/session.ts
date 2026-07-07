@@ -5,8 +5,6 @@ import { Command } from "@/command"
 import { Permission } from "@/permission"
 import { Session } from "@/session/session"
 import { MessageV2 } from "@/session/message-v2"
-import { SessionPrompt } from "@/session/prompt"
-import { SessionRunState } from "@/session/run-state"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionMessage } from "@novaclaw/core/session/message"
 import { SessionV1Read } from "@novaclaw/core/session/v1-read"
@@ -102,8 +100,6 @@ export const toV2Prompt = (payload: typeof PromptPayload.Type): typeof PromptInp
 export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", (handlers) =>
   Effect.gen(function* () {
     const session = yield* Session.Service
-    const promptSvc = yield* SessionPrompt.Service
-    const runState = yield* SessionRunState.Service
     const permissionSvc = yield* Permission.Service
     const statusSvc = yield* SessionStatus.Service
     const sessionV2 = yield* SessionV2.Service
@@ -112,6 +108,14 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     const summary = yield* SessionSummary.Service
     const events = yield* EventV2Bridge.Service
     const scope = yield* Scope.Scope
+
+    // F1f: the V1 runState.assertNotBusy guard read the V1 runner map, which nothing has
+    // populated since F1b — it was a dead guard while a NATIVE turn could still be draining.
+    // Guard on the V2 execution set instead; the BusyError wire contract is unchanged.
+    const assertIdle = Effect.fn("SessionHttpApi.assertIdle")(function* (sessionID: SessionID) {
+      const active = yield* sessionV2.active
+      if (active.has(sessionID)) return yield* new Session.BusyError({ sessionID })
+    })
 
     const list = Effect.fn("SessionHttpApi.list")(function* (ctx: { query: typeof ListQuery.Type }) {
       // F1c read-sweep B: the project scoping V1 resolved ambiently (InstanceState inside the
@@ -346,12 +350,11 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
 
     const abort = Effect.fn("SessionHttpApi.abort")(function* (ctx: { params: { sessionID: SessionID } }) {
       // F1b: every session runs V2 turns — interrupt the V2 runner unconditionally
-      // (the interrupt absorbs its typed not-found failure; abort stays total). We
-      // ALSO call the legacy cancel — a harmless no-op with no V1 runner, guarding
-      // against an orphaned V1 background job until F1f deletes the engine. We do
+      // (the interrupt absorbs its typed not-found failure; abort stays total). We do
       // NOT emit idle here: the V2 turn fiber's `ensuring` owns the idle transition.
+      // (F1f: the belt-and-braces legacy promptSvc.cancel is gone — it was a no-op
+      // with no V1 runner ever populated post-F1b.)
       yield* sessionV2.interrupt(ctx.params.sessionID).pipe(Effect.orElseSucceed(() => undefined))
-      yield* promptSvc.cancel(ctx.params.sessionID)
       return true
     })
 
@@ -562,7 +565,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       payload: typeof RevertPayload.Type
     }) {
       yield* requireSession(ctx.params.sessionID)
-      yield* SessionError.mapBusy(runState.assertNotBusy(ctx.params.sessionID))
+      yield* SessionError.mapBusy(assertIdle(ctx.params.sessionID))
       yield* sessionV2.revert
         .stage({ sessionID: ctx.params.sessionID, messageID: SessionMessage.ID.make(ctx.payload.messageID) })
         .pipe(
@@ -577,7 +580,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
 
     const unrevert = Effect.fn("SessionHttpApi.unrevert")(function* (ctx: { params: { sessionID: SessionID } }) {
       yield* requireSession(ctx.params.sessionID)
-      yield* SessionError.mapBusy(runState.assertNotBusy(ctx.params.sessionID))
+      yield* SessionError.mapBusy(assertIdle(ctx.params.sessionID))
       yield* sessionV2.revert.clear(ctx.params.sessionID).pipe(Effect.orDie)
       return yield* requireSession(ctx.params.sessionID)
     })
@@ -604,7 +607,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       params: { sessionID: SessionID; messageID: MessageID }
     }) {
       yield* requireSession(ctx.params.sessionID)
-      yield* SessionError.mapBusy(runState.assertNotBusy(ctx.params.sessionID))
+      yield* SessionError.mapBusy(assertIdle(ctx.params.sessionID))
       yield* session.removeMessage(ctx.params)
       return true
     })
