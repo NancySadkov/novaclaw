@@ -16,7 +16,7 @@ import { AbsolutePath } from "@novaclaw/core/schema"
 import { ModelV2 } from "@novaclaw/core/model"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { PromptInput } from "@novaclaw/schema/prompt-input"
-import { SessionStatus } from "@/session/status"
+import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
 import { Todo } from "@/session/todo"
 import { MessageID, PartID, SessionID } from "@/session/schema"
 import { NamedError } from "@novaclaw/core/util/error"
@@ -100,12 +100,18 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
   Effect.gen(function* () {
     const session = yield* Session.Service
     const permissionSvc = yield* Permission.Service
-    const statusSvc = yield* SessionStatus.Service
     const sessionV2 = yield* SessionV2.Service
     const { db } = yield* Database.Service
     const todoSvc = yield* Todo.Service
     const events = yield* EventV2Bridge.Service
     const scope = yield* Scope.Scope
+
+    // F1f: busy/idle formerly rode V1 SessionStatus.set, which also kept an in-memory map for the
+    // /status snapshot. /status now reads sessionV2.active (below), so the map is gone — publish the
+    // session.status event directly. This bracket stays the SOLE busy/idle source on the V2 path
+    // (the V2→v1 translator emits no turn-terminal); a missing idle hangs the client spinner.
+    const publishStatus = (sessionID: SessionID, status: SessionStatusEvent.Info) =>
+      events.publish(SessionStatusEvent.Status, { sessionID, status })
 
     // F1f: the V1 runState.assertNotBusy guard read the V1 runner map, which nothing has
     // populated since F1b — it was a dead guard while a NATIVE turn could still be draining.
@@ -132,7 +138,10 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     })
 
     const status = Effect.fn("SessionHttpApi.status")(function* () {
-      return Object.fromEntries(yield* statusSvc.list())
+      // F1f: the /status snapshot reads the native execution set (busy = actively draining).
+      // Idle sessions are absent, matching the V1 map that dropped idle entries.
+      const active = yield* sessionV2.active
+      return Object.fromEntries(Array.from(active, (id) => [id, { type: "busy" as const }]))
     })
 
     // F1c read-sweep: session-level reads come from core in the LEGACY wire shape
@@ -423,9 +432,9 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       Effect.gen(function* () {
         const v2Turn = sessionV2.resume(sessionID).pipe(
           Effect.catchCause((cause) => reportAsyncFailure(sessionID, cause)),
-          Effect.ensuring(statusSvc.set(sessionID, { type: "idle" })),
+          Effect.ensuring(publishStatus(sessionID, { type: "idle" })),
         )
-        yield* statusSvc.set(sessionID, { type: "busy" })
+        yield* publishStatus(sessionID, { type: "busy" })
         yield* v2Turn.pipe(Effect.forkIn(scope, { startImmediately: true }))
       })
 
@@ -484,10 +493,10 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         // Load-bearing: the V2→v1 translator emits NO turn-terminal, so this
         // bracket is the SOLE busy/idle source on the V2 path. A missing idle
         // hangs the client spinner forever. ensuring fires on success/error/interrupt.
-        Effect.ensuring(statusSvc.set(sessionID, { type: "idle" })),
+        Effect.ensuring(publishStatus(sessionID, { type: "idle" })),
       )
       // Publish busy BEFORE the fork so the client sees it synchronously.
-      yield* statusSvc.set(sessionID, { type: "busy" })
+      yield* publishStatus(sessionID, { type: "busy" })
       yield* v2Turn.pipe(Effect.forkIn(scope, { startImmediately: true }))
       return HttpApiSchema.NoContent.make()
     })

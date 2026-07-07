@@ -6,7 +6,7 @@ import { SessionV1 } from "@novaclaw/core/v1/session"
 import { SessionWire as Session } from "@/session/wire"
 import { SessionPrompt } from "@/session/prompt"
 import { SessionRevert } from "@/session/revert"
-import { SessionStatus } from "@/session/status"
+import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
 import { Todo } from "@/session/todo"
 import { MessageID, PartID, SessionID } from "@/session/schema"
 import { Snapshot } from "@/snapshot"
@@ -47,7 +47,7 @@ export const MessagesQuery = Schema.Struct({
   limit: Schema.optional(Schema.NumberFromString.check(Schema.isInt(), Schema.isGreaterThanOrEqualTo(0))),
   before: Schema.optional(Schema.String),
 })
-export const StatusMap = Schema.Record(Schema.String, SessionStatus.Info)
+export const StatusMap = Schema.Record(Schema.String, SessionStatusEvent.Info)
 export const UpdatePayload = Schema.Struct({
   title: Schema.optional(Schema.String),
   metadata: Schema.optional(Session.Metadata),
