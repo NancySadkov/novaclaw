@@ -8,6 +8,8 @@ import { MCP } from "@/mcp"
 import { Project } from "@/project/project"
 import { Session } from "@/session/session"
 import type { SessionID } from "@/session/schema"
+import { Database } from "@novaclaw/core/database/database"
+import { SessionV1Read } from "@novaclaw/core/session/v1-read"
 import { ToolJsonSchema } from "@/tool/json-schema"
 import { ToolRegistry } from "@/tool/registry"
 import { Worktree } from "@/worktree"
@@ -35,6 +37,7 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
     const sessions = yield* Session.Service
     const background = yield* BackgroundJob.Service
     const flags = yield* RuntimeFlags.Service
+    const { db } = yield* Database.Service
 
     const capabilities = Effect.fn("ExperimentalHttpApi.capabilities")(function* () {
       return { backgroundSubagents: flags.experimentalBackgroundSubagents }
@@ -137,7 +140,8 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
 
     const session = Effect.fn("ExperimentalHttpApi.session")(function* (ctx: { query: typeof SessionListQuery.Type }) {
       const limit = ctx.query.limit ?? 100
-      const all = yield* sessions.listGlobal({
+      // F1c read-sweep B: the global list serves from core (row-faithful V1 wire shape).
+      const all = yield* SessionV1Read.listGlobal(db, {
         directory: ctx.query.directory,
         roots: ctx.query.roots,
         start: ctx.query.start,

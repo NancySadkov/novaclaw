@@ -12,6 +12,7 @@ import { SessionV2 } from "@novaclaw/core/session"
 import { SessionMessage } from "@novaclaw/core/session/message"
 import { SessionV1Read } from "@novaclaw/core/session/v1-read"
 import { Database } from "@novaclaw/core/database/database"
+import { InstanceState } from "@/effect/instance-state"
 import { ModelV2 } from "@novaclaw/core/model"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { PromptInput } from "@novaclaw/schema/prompt-input"
@@ -112,7 +113,11 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
     const scope = yield* Scope.Scope
 
     const list = Effect.fn("SessionHttpApi.list")(function* (ctx: { query: typeof ListQuery.Type }) {
-      return yield* session.list({
+      // F1c read-sweep B: the project scoping V1 resolved ambiently (InstanceState inside the
+      // service) is resolved HERE and passed explicitly — core takes only data.
+      const instance = yield* InstanceState.context
+      return yield* SessionV1Read.list(db, {
+        projectID: instance.project.id,
         directory: ctx.query.scope === "project" ? undefined : ctx.query.directory,
         scope: ctx.query.scope,
         path: ctx.query.path,
