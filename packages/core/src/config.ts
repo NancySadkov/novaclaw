@@ -25,6 +25,7 @@ import { ConfigPersona } from "./config/persona"
 import { ConfigPlugin } from "./config/plugin"
 import { ConfigProvider } from "./config/provider"
 import { ConfigReference } from "./config/reference"
+import { ConfigServer } from "./config/server"
 import { ConfigToolOutput } from "./config/tool-output"
 import { ConfigWatcher } from "./config/watcher"
 import { ConfigV1 } from "./v1/config/config"
@@ -50,6 +51,9 @@ export class Info extends Schema.Class<Info>("Config.Info")({
     }),
   username: Schema.String.pipe(Schema.optional).annotate({
     description: "Username displayed in conversations and used for telemetry identity",
+  }),
+  server: ConfigServer.Info.pipe(Schema.optional).annotate({
+    description: "Server configuration for `novaclaw serve` and web commands (port/hostname/mDNS/CORS)",
   }),
   permissions: Permission.Ruleset.pipe(Schema.optional).annotate({
     description: "Ordered tool permission rules applied to agent tool use",
@@ -154,6 +158,15 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   }),
   experimental: ConfigExperimental.Experimental.pipe(Schema.optional),
   providers: Schema.Record(Schema.String, ConfigProvider.Info).pipe(Schema.optional),
+  // Transitional — dies with the models-primary data model (a model is just a URL; there is
+  // no first-class provider entity). Promoted into V2 (F1d D2) because the Settings UI and the
+  // `/provider` filter still read these by name today.
+  disabled_providers: Schema.String.pipe(Schema.Array, Schema.optional).annotate({
+    description: "Providers to disable that would otherwise load automatically",
+  }),
+  enabled_providers: Schema.String.pipe(Schema.Array, Schema.optional).annotate({
+    description: "When set, ONLY these providers are enabled; all others are ignored",
+  }),
 }) {}
 
 export class Document extends Schema.Class<Document>("Config.Document")({

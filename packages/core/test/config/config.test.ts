@@ -73,6 +73,98 @@ describe("Config", () => {
       expect(ConfigMigrateV1.isV1({ reference: {} })).toBe(true)
       expect(ConfigMigrateV1.isV1({ shell: "/bin/zsh", model: "anthropic/claude" })).toBe(false)
       expect(ConfigMigrateV1.isV1({ references: {} })).toBe(false)
+      // F1d: server + provider-lists are now V2-native (D1/D2) — a V2 file carrying them must
+      // NOT be re-migrated, so they no longer discriminate a V1 file.
+      expect(ConfigMigrateV1.isV1({ server: { port: 4096 } })).toBe(false)
+      expect(ConfigMigrateV1.isV1({ disabled_providers: ["openai"] })).toBe(false)
+      expect(ConfigMigrateV1.isV1({ enabled_providers: ["anthropic"] })).toBe(false)
+    }),
+  )
+
+  it.effect("migrate covers every v1 key — no silent field loss (F1d guard)", () =>
+    Effect.sync(() => {
+      // A ConfigV1.Info with EVERY top-level field present. Doubles as the per-key sample below;
+      // its key set MUST equal the schema's, so a newly added ConfigV1.Info field forces an
+      // explicit disposition here (carried by migrate, or listed in DROPPED).
+      const FULL: Record<string, unknown> = {
+        $schema: "https://novaclaw.app/config.json",
+        shell: "/bin/zsh",
+        logLevel: "INFO",
+        server: { port: 4096, hostname: "0.0.0.0", mdns: true, mdnsDomain: "x.local", cors: ["https://a"] },
+        command: { review: { template: "t" } },
+        skills: { paths: ["./s"], urls: ["https://s/"] },
+        references: { docs: { path: "../docs" } },
+        reference: { legacy: { path: "../legacy" } },
+        watcher: { ignore: ["node_modules"] },
+        snapshot: false,
+        plugin: ["p", ["@o/p", { a: 1 }]],
+        autoupdate: "notify",
+        disabled_providers: ["openai"],
+        enabled_providers: ["anthropic"],
+        model: "anthropic/claude",
+        small_model: "anthropic/haiku",
+        default_agent: "build",
+        username: "nancy",
+        mode: { build: { prompt: "b" } },
+        agent: { reviewer: { prompt: "r" } },
+        provider: { custom: { models: {} } },
+        mcp: { local: { type: "local", command: ["node"] } },
+        formatter: { prettier: { command: ["prettier"], extensions: [".ts"] } },
+        instructions: ["./AGENTS.md"],
+        layout: "stretch",
+        permission: { bash: "ask" },
+        tools: { write: false },
+        attachment: { image: { auto_resize: false } },
+        tool_output: { max_lines: 100 },
+        persona: { enabled: true, name: "Nova" },
+        introspection: { enabled: true },
+        adhoc_tools: [{ name: "x", description: "d", manual: "m" }],
+        affective: { enabled: true },
+        user_profile: { enabled: true, name: "n" },
+        offline: true,
+        kb: { url: "http://kb" },
+        quality: { enabled: true },
+        compaction: { auto: true, preserve_recent_tokens: 2000, reserved: 1000 },
+        experimental: { policies: [], mcp_timeout: 5000 },
+      }
+      const v1Keys = Object.keys(ConfigV1.Info.fields)
+      expect(new Set(Object.keys(FULL))).toEqual(new Set(v1Keys))
+
+      const dropped = ConfigMigrateV1.DROPPED as readonly string[]
+      for (const key of v1Keys) {
+        // Migrate the key in ISOLATION so merge-pairs (reference/references, mode/agent,
+        // permission/tools) each still register on their own, and a dropped key registers as
+        // producing nothing.
+        const migrated = ConfigMigrateV1.migrate({ [key]: FULL[key] } as never)
+        const carried = Object.values(migrated).some((value) => value !== undefined)
+        if (dropped.includes(key)) {
+          expect(carried, `${key} is in DROPPED but migrate() still carried it`).toBe(false)
+        } else {
+          expect(carried, `${key} is neither carried by migrate() nor in DROPPED — silent loss`).toBe(true)
+        }
+      }
+    }),
+  )
+
+  it.effect("carries the F1d-promoted fields (server, disabled/enabled_providers) through migrate + decode", () =>
+    Effect.sync(() => {
+      const info = Schema.decodeUnknownSync(Config.Info)(
+        ConfigMigrateV1.migrate({
+          server: { port: 4096, hostname: "0.0.0.0", mdns: true, mdnsDomain: "nova.local", cors: ["https://x"] },
+          disabled_providers: ["openai"],
+          enabled_providers: ["anthropic", "google"],
+        }),
+        { errors: "all" },
+      )
+      expect(info.server).toEqual({
+        port: 4096,
+        hostname: "0.0.0.0",
+        mdns: true,
+        mdnsDomain: "nova.local",
+        cors: ["https://x"],
+      })
+      expect(info.disabled_providers).toEqual(["openai"])
+      expect(info.enabled_providers).toEqual(["anthropic", "google"])
     }),
   )
 

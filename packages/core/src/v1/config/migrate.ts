@@ -7,16 +7,22 @@ import { ConfigPermissionV1 } from "./permission"
 import { ConfigProviderV1 } from "./provider"
 import { ConfigProviderOptionsV1 } from "./provider-options"
 
+// V1-ONLY top-level keys: their presence means a file was authored against the V1 schema and
+// must be run through migrate() before decoding as V2. A key belongs here iff it exists in
+// ConfigV1.Info but NOT in the V2 Config.Info (either dropped, or spelled differently in V2).
+// ⚠️ F1d TRAP: `server`, `disabled_providers`, `enabled_providers` were promoted into V2
+// (D1/D2) — they are now V2-native, so they LEFT this set. A V2 file carrying `server:` must
+// not be re-migrated. `autoshare` also left: the share feature is gone (④), so it is no longer
+// a ConfigV1.Info key. The rest below are V1-only because V2 renames them (command→commands,
+// reference→references, snapshot→snapshots, plugin→plugins, mode/agent→agents,
+// provider→providers, permission→permissions, attachment→attachments) or drops them
+// (logLevel, small_model, layout — see DROPPED).
 const keys = new Set([
   "logLevel",
-  "server",
   "command",
   "reference",
   "snapshot",
   "plugin",
-  "autoshare",
-  "disabled_providers",
-  "enabled_providers",
   "small_model",
   "mode",
   "agent",
@@ -26,6 +32,13 @@ const keys = new Set([
   "attachment",
   "layout",
 ])
+
+// V1 top-level keys intentionally NOT carried into V2 (F1d D3/D4): logging is env/flag-driven
+// (`logLevel`); layout is dead (always stretch); `small_model`'s only reader was the V1
+// provider `getSmallModel`, dead residue post-F1b. The V2 loader decodes with
+// `onExcessProperty: "ignore"`, so these fall away on read — no active deletion needed. The
+// config key-coverage guard test asserts this list stays exhaustive against ConfigV1.Info.
+export const DROPPED = ["logLevel", "small_model", "layout"] as const
 
 export function isV1(input: unknown) {
   if (typeof input !== "object" || input === null || Array.isArray(input)) return false
@@ -40,6 +53,10 @@ export function migrate(info: typeof ConfigV1.Info.Type) {
     default_agent: info.default_agent,
     autoupdate: info.autoupdate,
     username: info.username,
+    // Promoted into V2 verbatim (F1d D1/D2) — carried through unchanged.
+    server: info.server,
+    disabled_providers: info.disabled_providers,
+    enabled_providers: info.enabled_providers,
     permissions: permissions(info.permission, info.tools),
     agents: agents(info),
     snapshots: info.snapshot,
