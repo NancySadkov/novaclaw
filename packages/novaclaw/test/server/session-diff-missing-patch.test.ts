@@ -65,7 +65,7 @@ describe("session diff with missing patch (#26574)", () => {
   )
 
   it.instance(
-    "GET /session/<id>/diff returns requested turn diffs",
+    "GET /session/<id>/diff?messageID=<id> returns [] (per-message diffs are not surfaced)",
     () =>
       Effect.gen(function* () {
         const test = yield* TestInstance
@@ -88,8 +88,11 @@ describe("session diff with missing patch (#26574)", () => {
           test.directory,
         )
 
+        // F1f: a messageID query returns [] for every native transcript — the V1
+        // per-USER-message diff store (seeded above) is intentionally not surfaced,
+        // and the app never sends a messageID to this route.
         expect(response.status).toBe(200)
-        expect(yield* response.json).toEqual([{ file: "turn.ts", additions: 1, deletions: 0, status: "modified" }])
+        expect(yield* response.json).toEqual([])
       }),
     { git: true, config: { formatter: false } },
   )
