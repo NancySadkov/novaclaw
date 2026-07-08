@@ -544,7 +544,17 @@ export const layerWith = (options?: LayerOptions) =>
             db
               .select()
               .from(EventTable)
-              .where(and(eq(EventTable.aggregate_id, aggregateID), gt(EventTable.seq, after)))
+              // Filter to the CURRENT durable manifest (as `readAggregate` does): rows whose type
+              // has been RETIRED from the manifest are skipped, not decoded. Without this, an old
+              // event row of a removed type would make `decodeSerializedEvent` throw and kill the
+              // aggregate's durable stream (the F1g legacy message/part retirement relies on this).
+              .where(
+                and(
+                  eq(EventTable.aggregate_id, aggregateID),
+                  gt(EventTable.seq, after),
+                  inArray(EventTable.type, Array.from(Durable.keys())),
+                ),
+              )
               .orderBy(asc(EventTable.seq))
               .all(),
           ),

@@ -518,6 +518,38 @@ describe("EventV2", () => {
     }),
   )
 
+  it.effect("skips durable rows whose type has been retired from the manifest", () =>
+    Effect.gen(function* () {
+      const events = yield* EventV2.Service
+      const { db } = yield* Database.Service
+      const aggregateID = Session.ID.create()
+
+      // A real durable row at seq 0 ...
+      yield* events.publish(DurableMessage, durableData(aggregateID, "zero"))
+      // ... a raw row at seq 1 whose type is NOT in the durable manifest (a retired
+      // legacy type — the F1g message/part removal leaves exactly these behind) ...
+      yield* db
+        .insert(EventTable)
+        .values([{ id: EventV2.ID.create(), aggregate_id: aggregateID, seq: 1, type: "test.retired.legacy.1", data: {} }])
+        .run()
+        .pipe(Effect.orDie)
+      yield* db
+        .update(EventSequenceTable)
+        .set({ seq: 1 })
+        .where(eq(EventSequenceTable.aggregate_id, aggregateID))
+        .run()
+        .pipe(Effect.orDie)
+      // ... and another real durable row at seq 2.
+      yield* events.publish(DurableMessage, durableData(aggregateID, "two"))
+
+      // The durable stream must SKIP the retired seq-1 row (previously
+      // `decodeSerializedEvent` threw InvalidDurableEvent and killed the stream) and
+      // still deliver the surrounding seq-0 and seq-2 events.
+      const collected = yield* events.durable({ aggregateID }).pipe(Stream.take(2), Stream.runCollect)
+      expect(Array.from(collected).map((event) => event.durable?.seq)).toEqual([0, 2])
+    }),
+  )
+
   it.effect("uses custom sync aggregate field", () =>
     Effect.gen(function* () {
       const events = yield* EventV2.Service
