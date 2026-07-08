@@ -11,7 +11,7 @@ import { RequiresLevel } from "@/context/expertise"
 // window.api (the file pickers) is absent on web, so the buttons no-op there.
 function generateConfigTemplate(current: Record<string, unknown>): string {
   const out: Record<string, unknown> = { $schema: "https://novaclaw.app/config.json" }
-  for (const key of ["model", "shell", "default_agent", "small_model", "username", "provider", "mcp", "agent", "permission"]) {
+  for (const key of ["model", "shell", "default_agent", "username", "providers", "mcp", "agents", "permissions"]) {
     if (current[key] !== undefined) out[key] = current[key]
   }
   return JSON.stringify(out, null, 2) + "\n"

@@ -86,21 +86,22 @@ export const DialogNewModel: Component<{
       const providerID = form.providerID.trim()
       const key = form.apiKey.trim()
       if (key) await serverSDK().client.auth.set({ providerID, auth: { type: "api", key } })
+      // F1d: config is V2 now — author the `providers` (not `provider`) shape: the endpoint URL lives
+      // on `api.url`, and the openai-compatible SDK package on `api.package`.
       const cfg = serverSync().data.config as {
         disabled_providers?: string[]
-        provider?: Record<string, { options?: Record<string, unknown>; models?: Record<string, unknown> }>
+        providers?: Record<string, { name?: string; models?: Record<string, unknown> }>
       }
       const disabled = (cfg.disabled_providers ?? []).filter((id) => id !== providerID)
-      const existing = cfg.provider?.[providerID] ?? {}
+      const existing = cfg.providers?.[providerID] ?? {}
       const modelsObj: Record<string, { name: string }> = { ...(existing.models as Record<string, { name: string }>) }
       for (const id of ids) modelsObj[id] = { name: id }
       await serverSync().updateConfig({
-        provider: {
+        providers: {
           [providerID]: {
             ...existing,
-            npm: OPENAI_COMPATIBLE,
+            api: { type: "aisdk", package: OPENAI_COMPATIBLE, url: form.baseURL.trim() },
             name: form.name.trim() || providerID,
-            options: { ...(existing.options ?? {}), baseURL: form.baseURL.trim() },
             models: modelsObj,
           },
         },

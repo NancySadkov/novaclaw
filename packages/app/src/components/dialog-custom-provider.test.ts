@@ -28,11 +28,10 @@ describe("validateCustomProvider", () => {
       name: "Custom Provider",
       key: undefined,
       config: {
-        npm: "@ai-sdk/openai-compatible",
+        api: { type: "aisdk", package: "@ai-sdk/openai-compatible", url: "https://api.example.com" },
         name: "Custom Provider",
         env: ["CUSTOM_PROVIDER_KEY"],
-        options: {
-          baseURL: "https://api.example.com",
+        request: {
           headers: {
             "X-Test": "enabled",
           },

@@ -133,9 +133,9 @@ export function DialogCustomProvider(props: Props) {
       }
 
       await serverSync().updateConfig({
-        provider: { [result.providerID]: result.config },
+        providers: { [result.providerID]: result.config },
         disabled_providers: nextDisabled,
-      })
+      } as never)
       return result
     },
     onSuccess: (result) => {

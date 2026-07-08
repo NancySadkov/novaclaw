@@ -136,14 +136,13 @@ export function validateCustomProvider(input: ValidateArgs) {
       providerID,
       name,
       key,
+      // F1d: V2 provider shape — `api.package`/`api.url` (was npm/options.baseURL) and
+      // `request.headers` (was options.headers).
       config: {
-        npm: OPENAI_COMPATIBLE,
+        api: { type: "aisdk" as const, package: OPENAI_COMPATIBLE, url: baseURL },
         name,
         ...(env ? { env: [env] } : {}),
-        options: {
-          baseURL,
-          ...(Object.keys(headerConfig).length ? { headers: headerConfig } : {}),
-        },
+        ...(Object.keys(headerConfig).length ? { request: { headers: headerConfig } } : {}),
         models: modelConfig,
       },
     },

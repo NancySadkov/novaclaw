@@ -71,9 +71,14 @@ export const SettingsProvidersV2: Component = () => {
   const note = (id: string) => PROVIDER_NOTES.find((item) => item.match(id))?.key
 
   const isConfigCustom = (providerID: string) => {
-    const provider = serverSync().data.config.provider?.[providerID]
+    // V2 config: the SDK package lives on `api.package` (V1 spelled it `npm`).
+    const provider = (
+      serverSync().data.config as {
+        providers?: Record<string, { api?: { package?: string }; models?: Record<string, unknown> }>
+      }
+    ).providers?.[providerID]
     if (!provider) return false
-    if (provider.npm !== "@ai-sdk/openai-compatible") return false
+    if (provider.api?.package !== "@ai-sdk/openai-compatible") return false
     if (!provider.models || Object.keys(provider.models).length === 0) return false
     return true
   }
