@@ -1,7 +1,8 @@
 import { Config } from "@/config/config"
+import { Config as ConfigV2 } from "@novaclaw/core/config"
 import { Provider } from "@/provider/provider"
 import * as InstanceState from "@/effect/instance-state"
-import { Effect } from "effect"
+import { Effect, Schema } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
 import { markInstanceForDisposal } from "../lifecycle"
@@ -12,7 +13,10 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
     const configSvc = yield* Config.Service
 
     const get = Effect.fn("ConfigHttpApi.get")(function* () {
-      return yield* configSvc.get()
+      // The success schema is the `Config.Info` Schema.Class, so the response must be a class
+      // INSTANCE — the service returns a plain merged object (with the derived `plugin_origins`),
+      // so decode it (excess `plugin_origins` is ignored) before returning.
+      return Schema.decodeUnknownSync(ConfigV2.Info)(yield* configSvc.get())
     })
 
     const update = Effect.fn("ConfigHttpApi.update")(function* (ctx) {

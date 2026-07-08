@@ -91,13 +91,13 @@ describe("config HttpApi", () => {
       )
 
       expect(response.status).toBe(200)
+      // V2: the V1 provider/model `status` migrates away (active → no `disabled`); assert the
+      // provider + model survive the config round-trip under the V2 `providers` key.
       expect(yield* Effect.promise(() => response.json())).toMatchObject({
-        provider: {
+        providers: {
           omniroute: {
             models: {
-              "gpt-4o": {
-                status: "active",
-              },
+              "gpt-4o": {},
             },
           },
         },

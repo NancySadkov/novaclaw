@@ -1,4 +1,5 @@
 import { Config } from "@/config/config"
+import { Config as ConfigV2 } from "@novaclaw/core/config"
 import { GlobalBus, type GlobalEvent as GlobalBusEvent } from "@/bus/global"
 import { EffectBridge } from "@/effect/bridge"
 import { EventV2 } from "@novaclaw/core/event"
@@ -79,14 +80,16 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
       return yield* eventResponse()
     })
 
+    // The `Config.Info` success schema is a Schema.Class, so responses must be class INSTANCES — the
+    // service returns plain merged objects (with derived `plugin_origins`); decode before returning.
     const configGet = Effect.fn("GlobalHttpApi.configGet")(function* () {
-      return yield* config.getGlobal()
+      return Schema.decodeUnknownSync(ConfigV2.Info)(yield* config.getGlobal())
     })
 
     const configUpdate = Effect.fn("GlobalHttpApi.configUpdate")(function* (ctx) {
       const result = yield* config.updateGlobal(ctx.payload)
       if (result.changed) bridge.fork(disposeAllInstancesAndEmitGlobalDisposed({ swallowErrors: true }))
-      return result.info
+      return Schema.decodeUnknownSync(ConfigV2.Info)(result.info)
     })
 
     const dispose = Effect.fn("GlobalHttpApi.dispose")(function* () {
