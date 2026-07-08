@@ -15,6 +15,7 @@ import eventSourcedSessionInputMigration from "@novaclaw/core/database/migration
 import contextEpochAgentMigration from "@novaclaw/core/database/migration/20260605042240_add_context_epoch_agent"
 import simplifyIntegrationCredentialsMigration from "@novaclaw/core/database/migration/20260611192811_lush_chimera"
 import simplifySessionInputMigration from "@novaclaw/core/database/migration/20260622202450_simplify_session_input"
+import dropLegacyMessagePartMigration from "@novaclaw/core/database/migration/20260708000000_drop_legacy_message_part"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
@@ -247,12 +248,8 @@ describe("DatabaseMigration", () => {
         yield* db.run(
           sql`INSERT INTO session (id, project_id, workspace_id, slug, directory, title, version, time_created, time_updated) VALUES ('session', 'global', 'workspace', 'session', '/project', 'Before', 'test', 1, 1)`,
         )
-        yield* db.run(
-          sql`INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES ('message', 'session', 1, 1, '{}')`,
-        )
-        yield* db.run(
-          sql`INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES ('part', 'message', 'session', 1, 1, '{}')`,
-        )
+        // F1g: the legacy message/part tables are dropped by the full chain, so canonical V1 state
+        // is witnessed by the session row + session_message/input/context_epoch instead.
         yield* db.run(sql`INSERT INTO event_sequence (aggregate_id, seq) VALUES ('session', 9)`)
         yield* db.run(
           sql`INSERT INTO event (id, aggregate_id, seq, type, data) VALUES ('event', 'session', 9, 'session.updated.1', '{}')`,
@@ -294,8 +291,6 @@ describe("DatabaseMigration", () => {
             SELECT
               (SELECT title FROM session WHERE id = 'session') AS title,
               (SELECT workspace_id FROM session WHERE id = 'session') AS workspaceID,
-              (SELECT COUNT(*) FROM message WHERE id = 'message') AS messages,
-              (SELECT COUNT(*) FROM part WHERE id = 'part') AS parts,
               (SELECT COUNT(*) FROM workspace) AS workspaces,
               (SELECT COUNT(*) FROM session_input) AS sessionInputs,
               (SELECT COUNT(*) FROM session_message) AS sessionMessages,
@@ -306,8 +301,6 @@ describe("DatabaseMigration", () => {
         ).toEqual({
           title: "After",
           workspaceID: null,
-          messages: 1,
-          parts: 1,
           workspaces: 0,
           sessionInputs: 0,
           sessionMessages: 0,
@@ -315,6 +308,51 @@ describe("DatabaseMigration", () => {
           seq: 0,
           eventType: "session.updated.1",
         })
+      }),
+    )
+  })
+
+  // F1g P5 gate: the drop migration removes the legacy message/part/session_share tables while
+  // leaving session-LEVEL data intact (owner decision ①: message rows lapse, no backfill).
+  test("drops legacy message/part/session_share while preserving the session row", async () => {
+    await run(
+      Effect.gen(function* () {
+        const db = yield* makeDb
+        // Mimic the pre-drop on-disk shape: a session plus its legacy transcript + share row.
+        yield* db.run(sql`CREATE TABLE session (id text PRIMARY KEY, title text NOT NULL)`)
+        yield* db.run(
+          sql`CREATE TABLE message (id text PRIMARY KEY, session_id text NOT NULL, time_created integer NOT NULL, time_updated integer NOT NULL, data text NOT NULL)`,
+        )
+        yield* db.run(
+          sql`CREATE TABLE part (id text PRIMARY KEY, message_id text NOT NULL, session_id text NOT NULL, time_created integer NOT NULL, time_updated integer NOT NULL, data text NOT NULL)`,
+        )
+        yield* db.run(
+          sql`CREATE TABLE session_share (session_id text PRIMARY KEY, id text NOT NULL, secret text NOT NULL, url text NOT NULL, time_created integer NOT NULL, time_updated integer NOT NULL)`,
+        )
+        yield* db.run(sql`CREATE INDEX message_session_time_created_id_idx ON message (session_id, time_created, id)`)
+        yield* db.run(sql`CREATE INDEX part_message_id_id_idx ON part (message_id, id)`)
+        yield* db.run(sql`CREATE INDEX part_session_idx ON part (session_id)`)
+        yield* db.run(sql`INSERT INTO session (id, title) VALUES ('session', 'Kept')`)
+        yield* db.run(sql`INSERT INTO message (id, session_id, time_created, time_updated, data) VALUES ('m', 'session', 1, 1, '{}')`)
+        yield* db.run(
+          sql`INSERT INTO part (id, message_id, session_id, time_created, time_updated, data) VALUES ('p', 'm', 'session', 1, 1, '{}')`,
+        )
+        yield* db.run(
+          sql`INSERT INTO session_share (session_id, id, secret, url, time_created, time_updated) VALUES ('session', 's', 'x', 'u', 1, 1)`,
+        )
+
+        yield* DatabaseMigration.applyOnly(db, [dropLegacyMessagePartMigration])
+
+        const tableNames = (
+          yield* db.all<{ name: string }>(
+            sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name IN ('message', 'part', 'session_share', 'session')`,
+          )
+        ).map((row) => row.name)
+        expect(tableNames).toEqual(["session"])
+        // Session-level data survives; the legacy transcript lapses with its tables.
+        expect(yield* db.all(sql`SELECT id, title FROM session`)).toEqual([{ id: "session", title: "Kept" }])
+        // Re-running is a no-op (DROP ... IF EXISTS).
+        yield* DatabaseMigration.applyOnly(db, [dropLegacyMessagePartMigration])
       }),
     )
   })

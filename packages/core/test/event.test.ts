@@ -10,6 +10,7 @@ import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventSequenceTable, EventTable } from "@novaclaw/core/event/sql"
 import { Location } from "@novaclaw/core/location"
+import { ProjectV2 } from "@novaclaw/core/project"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { WorkspaceV2 } from "@novaclaw/core/workspace"
 import { eq } from "drizzle-orm"
@@ -72,10 +73,23 @@ const VersionedMessage = EventV2.define({
   },
 })
 
-const DurableMessage = SessionV1.Event.MessageRemoved
+// F1g: SessionV1.Event.MessageRemoved retired with the legacy message/part tables. These tests
+// need a durable, session-aggregated event that is STILL IN THE MANIFEST — `readAfter` skips rows
+// whose type left `Durable` (app `01bbfe8d4`), so a test-local def would be filtered out on read.
+// The surviving session-LEVEL `session.updated` fits (aggregate = sessionID, no `timestamp` field
+// to complicate exact round-trip equality); the `text` distinguisher rides `slug`/`title`.
+const DurableMessage = SessionV1.Event.Updated
 const durableData = (sessionID: Session.ID, text: string) => ({
   sessionID,
-  messageID: SessionV1.MessageID.ascending(`msg_${text}`),
+  info: {
+    id: sessionID,
+    slug: text,
+    projectID: ProjectV2.ID.global,
+    directory: "/project",
+    title: text,
+    version: "test",
+    time: { created: 1, updated: 1 },
+  },
 })
 
 const it = testEffect(

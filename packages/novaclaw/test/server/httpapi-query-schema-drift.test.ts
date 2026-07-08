@@ -20,7 +20,6 @@ import { InstancePaths, VcsDiffQuery } from "../../src/server/routes/instance/ht
 import { WorkspacePaths } from "../../src/server/routes/instance/httpapi/groups/workspace"
 import {
   ListQuery as SessionListQuery,
-  MessagesQuery,
   SessionPaths,
 } from "../../src/server/routes/instance/httpapi/groups/session"
 import { PtyPaths } from "../../src/server/routes/instance/httpapi/groups/pty"
@@ -47,7 +46,6 @@ type OpenApiOperation = { readonly parameters?: readonly OpenApiParameter[] }
 
 const openApiDriftRoutes = [
   { method: "get", path: SessionPaths.list, query: SessionListQuery },
-  { method: "get", path: SessionPaths.messages, query: MessagesQuery },
   { method: "get", path: FilePaths.findFile, query: FindFileQuery },
   { method: "get", path: FilePaths.findText, query: FindTextQuery },
   { method: "get", path: FilePaths.list, query: FileQuery },
@@ -64,12 +62,6 @@ const numericSdkQueryParams = [
   { method: "get", path: FilePaths.findFile, name: "limit", schema: { type: "integer", minimum: 1, maximum: 200 } },
   { method: "get", path: SessionPaths.list, name: "start", schema: { type: "number" } },
   { method: "get", path: SessionPaths.list, name: "limit", schema: { type: "number" } },
-  {
-    method: "get",
-    path: SessionPaths.messages,
-    name: "limit",
-    schema: { type: "integer", minimum: 0, maximum: Number.MAX_SAFE_INTEGER },
-  },
   { method: "get", path: "/api/session/:sessionID/message", name: "limit", schema: { type: "number" } },
 ] satisfies Array<{ method: Method; path: string; name: string; schema: OpenApiSchema }>
 
@@ -85,8 +77,6 @@ const queryParamPatterns = [
 
 const pathParamPatterns = [
   { method: "get", path: SessionPaths.get, name: "sessionID", pattern: "^ses" },
-  { method: "get", path: SessionPaths.message, name: "messageID", pattern: "^msg" },
-  { method: "patch", path: SessionPaths.updatePart, name: "partID", pattern: "^prt" },
   { method: "post", path: SessionPaths.permissions, name: "permissionID", pattern: "^per" },
   { method: "post", path: "/permission/:requestID/reply", name: "requestID", pattern: "^per" },
   { method: "post", path: "/question/:requestID/reply", name: "requestID", pattern: "^que" },
@@ -245,17 +235,6 @@ describe("httpapi query schema drift", () => {
     withTmp({ config: { formatter: false } }, (tmp) =>
       Effect.gen(function* () {
         const url = `/session?${routingParams(tmp.path)}`
-        const response = yield* request(url)
-        expectNotSchemaRejection(response.status, url)
-      }),
-    ),
-  )
-
-  it.live(
-    "session messages accepts directory and workspace",
-    withTmp({ config: { formatter: false } }, (tmp) =>
-      Effect.gen(function* () {
-        const url = `/session/${SessionID.descending()}/message?limit=80&${routingParams(tmp.path)}`
         const response = yield* request(url)
         expectNotSchemaRejection(response.status, url)
       }),

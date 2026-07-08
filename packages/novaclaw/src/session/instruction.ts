@@ -11,7 +11,6 @@ import { Flag } from "@novaclaw/core/flag/flag"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { withTransientReadRetry } from "@/util/effect-http-client"
 import { Global } from "@novaclaw/core/global"
-import type { MessageV2 } from "./message-v2"
 import type { MessageID } from "./schema"
 
 function extract(messages: SessionV1.WithParts[]) {

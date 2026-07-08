@@ -1,6 +1,5 @@
 import { afterEach, describe, expect } from "bun:test"
 import { ConfigV1 } from "@novaclaw/core/v1/config/config"
-import { SessionV1 } from "@novaclaw/core/v1/session"
 import { Deferred, Effect, Layer } from "effect"
 import type * as Scope from "effect/Scope"
 import { HttpServer } from "effect/unstable/http"
@@ -12,18 +11,13 @@ import { createNovaclawClient } from "@novaclaw/sdk/v2"
 import { validateSession } from "../../src/cli/validate-session"
 import { InstanceBootstrap } from "../../src/project/bootstrap-service"
 import { InstanceStore } from "../../src/project/instance-store"
-import { MessageID, PartID, SessionID } from "../../src/session/schema"
-import { MessageV2 } from "../../src/session/message-v2"
 
 import type { Config } from "@/config/config"
-import { Session as SessionNs } from "@/session/session"
 import { errorMessage } from "../../src/util/error"
 import path from "path"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, TestInstance, tmpdirScoped } from "../fixture/fixture"
 import { awaitWithTimeout, pollWithTimeout, testEffect } from "../lib/effect"
-import { ProviderV2 } from "@novaclaw/core/provider"
-import { ModelV2 } from "@novaclaw/core/model"
 import { Database } from "@novaclaw/core/database/database"
 import { httpApiLayer } from "./httpapi-layer"
 
@@ -173,10 +167,6 @@ function statuses(input: Record<string, Captured>) {
   return Object.fromEntries(Object.entries(input).map(([key, value]) => [key, value.status]))
 }
 
-function firstPartText(value: unknown) {
-  return record(array(record(value).parts)[0]).text
-}
-
 function sessionTitles(value: unknown) {
   return array(value)
     .map((item) => record(item).title)
@@ -252,36 +242,6 @@ function writeStandardFiles(dir: string) {
       fs.writeWithDirs(path.join(dir, "hello.txt"), "hello"),
       fs.writeWithDirs(path.join(dir, "needle.ts"), "export const needle = 'sdk-parity'\n"),
     ]).pipe(Effect.asVoid),
-  )
-}
-
-function seedMessage(directory: string, sessionID: string) {
-  const id = SessionID.make(sessionID)
-  return InstanceStore.Service.use((store) =>
-    store.provide(
-      { directory },
-      SessionNs.Service.use((svc) =>
-        Effect.gen(function* () {
-          const message = yield* svc.updateMessage({
-            id: MessageID.ascending(),
-            sessionID: id,
-            role: "user",
-            time: { created: Date.now() },
-            agent: "test",
-            model: { providerID: ProviderV2.ID.make("test"), modelID: ModelV2.ID.make("test") },
-            tools: {},
-          } satisfies SessionV1.User)
-          const part = yield* svc.updatePart({
-            id: PartID.ascending(),
-            sessionID: id,
-            messageID: message.id,
-            type: "text",
-            text: "seeded message",
-          })
-          return { message, part }
-        }),
-      ).pipe(Effect.provide(SessionNs.defaultLayer)),
-    ),
   )
 }
 
@@ -535,12 +495,9 @@ describe("HttpApi SDK", () => {
         const children = yield* capture(() => sdk.session.children({ sessionID: parentID }))
         const todo = yield* capture(() => sdk.session.todo({ sessionID: parentID }))
         const status = yield* capture(() => sdk.session.status())
-        const messages = yield* capture(() => sdk.session.messages({ sessionID: parentID }))
+        // F1g: the V1 session.messages route (WithParts) is gone — native transcripts are read via
+        // sdk.v2.session.messages (covered by httpapi-session-v2). Session-level SDK routes remain.
         const missingGet = yield* capture(() => sdk.session.get({ sessionID: "ses_missing" }))
-        const missingMessages = yield* capture(() => sdk.session.messages({ sessionID: "ses_missing", limit: 2 }))
-        const invalidCursor = yield* capture(() =>
-          sdk.session.messages({ sessionID: parentID, limit: 2, before: "bad" }),
-        )
         const deleted = yield* capture(() => sdk.session.delete({ sessionID: childID }))
         const getDeleted = yield* capture(() => sdk.session.get({ sessionID: childID }))
 
@@ -555,10 +512,7 @@ describe("HttpApi SDK", () => {
             children,
             todo,
             status,
-            messages,
             missingGet,
-            missingMessages,
-            invalidCursor,
             deleted,
             getDeleted,
           }),
@@ -568,158 +522,16 @@ describe("HttpApi SDK", () => {
           allTitles: sessionTitles(all.data),
           childCount: array(children.data).length,
           todoCount: array(todo.data).length,
-          messageCount: array(messages.data).length,
         }
       }),
     ),
   )
 
-  serverPathParity("matches generated SDK session message and part routes", (serverPath) =>
-    withStandardProject(serverPath, ({ sdk, directory }) =>
-      Effect.gen(function* () {
-        const session = yield* capture(() => sdk.session.create({ title: "messages" }))
-        const sessionID = String(record(session.data).id)
-        const seeded = yield* seedMessage(directory, sessionID)
-        const list = yield* capture(() => sdk.session.messages({ sessionID }))
-        const page = yield* capture(() => sdk.session.messages({ sessionID, limit: 1 }))
-        const message = yield* capture(() => sdk.session.message({ sessionID, messageID: seeded.message.id }))
-        const partUpdate = yield* capture(() =>
-          sdk.part.update({
-            sessionID,
-            messageID: seeded.message.id,
-            partID: seeded.part.id,
-            part: { ...seeded.part, text: "updated message" } as NonNullable<
-              Parameters<Sdk["part"]["update"]>[0]["part"]
-            >,
-          }),
-        )
-        const updated = yield* capture(() => sdk.session.message({ sessionID, messageID: seeded.message.id }))
-        const partDelete = yield* capture(() =>
-          sdk.part.delete({ sessionID, messageID: seeded.message.id, partID: seeded.part.id }),
-        )
-        const withoutPart = yield* capture(() => sdk.session.message({ sessionID, messageID: seeded.message.id }))
-        const deleteMessage = yield* capture(() =>
-          sdk.session.deleteMessage({ sessionID, messageID: seeded.message.id }),
-        )
-        const missingMessage = yield* capture(() => sdk.session.message({ sessionID, messageID: seeded.message.id }))
-
-        return {
-          statuses: statuses({
-            session,
-            list,
-            page,
-            message,
-            partUpdate,
-            updated,
-            partDelete,
-            withoutPart,
-            deleteMessage,
-            missingMessage,
-          }),
-          listCount: array(list.data).length,
-          pageCount: array(page.data).length,
-          initialText: firstPartText(message.data),
-          updatedText: firstPartText(updated.data),
-          partCountAfterDelete: array(record(withoutPart.data).parts).length,
-        }
-      }),
-    ),
-  )
-
-  // Regression: EventV2 must publish on the same ProjectBus the /event handler
-  // subscribes to, AND the /event stream must forward handler ALS/context into the
-  // body-pump fiber. Drives the full SDK → /event → Session.updatePart → sync.run →
-  // bus.publish → SDK subscriber path. Goes red if either the publisher uses a
-  // different bus instance (Bug 2 / pre-#27825) or the stream loses context (Bug 1 /
-  // pre-#27425).
-  serverPathParity("streams sync-backed part updates to /event subscribers", (serverPath) =>
-    withStandardProject(serverPath, ({ sdk, directory }) =>
-      Effect.gen(function* () {
-        const session = yield* capture(() => sdk.session.create({ title: "sync-backed part event" }))
-        const sessionID = String(record(session.data).id)
-        const seeded = yield* seedMessage(directory, sessionID)
-
-        const controller = new AbortController()
-        yield* Effect.addFinalizer(() => Effect.sync(() => controller.abort()))
-        const events = yield* call(() => sdk.event.subscribe(undefined, { signal: controller.signal }))
-        yield* Effect.addFinalizer(() =>
-          call(async () => void (await events.stream.return?.(undefined))).pipe(Effect.ignore),
-        )
-
-        const ready = yield* Deferred.make<void>()
-        const received = yield* Deferred.make<unknown>()
-
-        yield* call(async () => {
-          for await (const event of events.stream) {
-            const payload = record(event).payload ?? event
-            const type = record(payload).type
-            if (type === "server.connected") {
-              Deferred.doneUnsafe(ready, Effect.void)
-              continue
-            }
-            if (type === MessageV2.Event.PartUpdated.type) {
-              Deferred.doneUnsafe(received, Effect.succeed(payload))
-              return
-            }
-          }
-        }).pipe(Effect.forkScoped)
-
-        yield* awaitWithTimeout(Deferred.await(ready), "timed out waiting for /event server.connected", "2 seconds")
-
-        const updated = yield* capture(() =>
-          sdk.part.update({
-            sessionID,
-            messageID: seeded.message.id,
-            partID: seeded.part.id,
-            part: { ...seeded.part, text: "updated via sync" } as NonNullable<
-              Parameters<Sdk["part"]["update"]>[0]["part"]
-            >,
-          }),
-        )
-        expect(updated.status).toBe(200)
-
-        const event = yield* awaitWithTimeout(
-          Deferred.await(received),
-          "timed out waiting for message.part.updated bus payload over /event",
-          "5 seconds",
-        )
-        const properties = record(record(event).properties)
-        expect(record(properties.part)).toMatchObject({ id: seeded.part.id, type: "text" })
-        return { type: record(event).type, partType: record(properties.part).type }
-      }),
-    ),
-  )
-
-  // F1a SLICE 8: the blocking `session.prompt` route (POST …/message) is retired — the
-  // async route is THE prompt surface. The no-reply case persists the user message
-  // without a model turn, so `messages` is the observable result.
-  serverPathParity("matches generated SDK promptAsync no-reply route", (serverPath) =>
-    withStandardProject(serverPath, ({ sdk }) =>
-      Effect.gen(function* () {
-        const session = yield* capture(() => sdk.session.create({ title: "prompt" }))
-        const sessionID = String(record(session.data).id)
-        const asyncPrompt = yield* capture(() =>
-          sdk.session.promptAsync({
-            sessionID,
-            agent: "build",
-            noReply: true,
-            parts: [{ type: "text", text: "async hello" }],
-          }),
-        )
-        const messages = yield* capture(() => sdk.session.messages({ sessionID }))
-
-        return {
-          statuses: statuses({ session, asyncPrompt, messages }),
-          messageCount: array(messages.data).length,
-          messageTexts: array(messages.data)
-            .flatMap((item) => array(record(item).parts))
-            .map((part) => record(part).text)
-            .filter((text): text is string => typeof text === "string")
-            .sort(),
-        }
-      }),
-    ),
-  )
+  // F1g: three SDK parity suites retired with the V1 message/part routes they exercised —
+  // "session message and part routes" (messages/message/part.update/part.delete/deleteMessage),
+  // "streams sync-backed part updates" (Session.updatePart → message.part.updated event), and the
+  // promptAsync no-reply observation via sdk.session.messages. Native transcript reads are covered
+  // by httpapi-session-v2 (sdk.v2.session.messages); promptAsync routing by the same suite's Case (a).
 
   serverPathParity("matches generated SDK TUI validation and command routes", (serverPath) =>
     withStandardProject(serverPath, ({ sdk }) =>

@@ -21,19 +21,13 @@ import { CrossSpawnSpawner } from "@novaclaw/core/cross-spawn-spawner"
 import { createNovaclawClient } from "@novaclaw/sdk/v2"
 import { InstanceBootstrap } from "../../src/project/bootstrap-service"
 import { InstanceStore } from "../../src/project/instance-store"
-import { MessageID, PartID, SessionID } from "../../src/session/schema"
-import { MessageV2 } from "../../src/session/message-v2"
-import { Session as SessionNs } from "@/session/session"
+import { SessionID } from "../../src/session/schema"
 import { TestLLMServer } from "../lib/llm-server"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, tmpdirScoped } from "../fixture/fixture"
 import { awaitWithTimeout, pollWithTimeout, testEffect } from "../lib/effect"
 import { testProviderConfig } from "../lib/test-provider"
-import { ProviderV2 } from "@novaclaw/core/provider"
-import { ModelV2 } from "@novaclaw/core/model"
 import { Database } from "@novaclaw/core/database/database"
-import { MessageTable } from "@novaclaw/core/session/sql"
-import { eq } from "drizzle-orm"
 import { httpApiLayer } from "./httpapi-layer"
 
 const noopBootstrap = Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))
@@ -95,73 +89,10 @@ function record(value: unknown): Record<string, unknown> {
   return value && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
 }
 
-// Count legacy v1 `message` rows DIRECTLY (drizzle over MessageTable). Since the
-// F0 history merge, MessageV2.page also returns projected `session_message` rows,
-// so it can no longer serve as the legacy-row probe — the routing gate itself
-// moved to MessageV2.hasLegacyRows for the same reason.
-// store.provide discharges the instance-scoped Database requirement.
-function legacyMessageCount(directory: string, sessionID: string) {
-  return InstanceStore.Service.use((store) =>
-    store.provide(
-      { directory },
-      Effect.gen(function* () {
-        const { db } = yield* Database.Service
-        const rows = yield* db
-          .select({ id: MessageTable.id })
-          .from(MessageTable)
-          .where(eq(MessageTable.session_id, SessionID.make(sessionID)))
-          .all()
-        return rows.length
-      }).pipe(Effect.orElseSucceed(() => 0)),
-    ),
-  )
-}
-
-// S7: the legacy WithParts page serves V1 Message/Part rows ONLY — the F0-era merge of
-// projected V2-native rows retired with the V1 render vocab. A V2-native session's transcript
-// is fetched from the native `GET /api/session/{id}/message` instead.
-function pagedMessageCount(directory: string, sessionID: string) {
-  return InstanceStore.Service.use((store) =>
-    store.provide(
-      { directory },
-      MessageV2.page({ sessionID: SessionID.make(sessionID), limit: 50 }).pipe(
-        Effect.map((page) => page.items.length),
-        Effect.orElseSucceed(() => 0),
-      ),
-    ),
-  )
-}
-
-// Seed a legacy v1 user message + part — makes the session "not new".
-function seedLegacyMessage(directory: string, sessionID: string) {
-  const id = SessionID.make(sessionID)
-  return InstanceStore.Service.use((store) =>
-    store.provide(
-      { directory },
-      SessionNs.Service.use((svc) =>
-        Effect.gen(function* () {
-          const message = yield* svc.updateMessage({
-            id: MessageID.ascending(),
-            sessionID: id,
-            role: "user",
-            time: { created: Date.now() },
-            agent: "test",
-            model: { providerID: ProviderV2.ID.make("test"), modelID: ModelV2.ID.make("test") },
-            tools: {},
-          } satisfies SessionV1.User)
-          yield* svc.updatePart({
-            id: PartID.ascending(),
-            sessionID: id,
-            messageID: message.id,
-            type: "text",
-            text: "seed",
-          })
-          return message
-        }),
-      ).pipe(Effect.provide(SessionNs.defaultLayer)),
-    ),
-  )
-}
+// F1g: the legacy-row probes (legacyMessageCount over MessageTable, pagedMessageCount over
+// MessageV2.page) and seedLegacyMessage retired with the `message`/`part` tables. "V2 writes only
+// session_message" is now structural — there is no legacy table to write into — so the native
+// message endpoint alone proves the transcript landed.
 
 afterEach(async () => {
   await disposeAllInstances()
@@ -254,12 +185,7 @@ describe("promptAsync routes to the V2 native engine (F1b: one engine)", () => {
           // 2. idle ALWAYS settles the turn (here via the error path).
           yield* awaitWithTimeout(Deferred.await(sawIdle), "no idle (spinner would hang forever)", "15 seconds")
 
-          // 3. routing proof: zero legacy message rows (V2 writes only session_message).
-          const legacy = yield* legacyMessageCount(directory, sessionID)
-          expect(legacy).toBe(0)
-
-          // A SECOND prompt on the (now row-bearing) V2 session runs V2 too —
-          // V2 writes only session_message, never legacy rows.
+          // A SECOND prompt on the (now row-bearing) V2 session runs V2 too.
           const second = yield* Effect.promise(() =>
             sdk.session.promptAsync({
               sessionID,
@@ -284,13 +210,9 @@ describe("promptAsync routes to the V2 native engine (F1b: one engine)", () => {
             "10 seconds",
           )
           expect(native).toBeGreaterThan(0)
-          // ...while the LEGACY WithParts page stays EMPTY for a native session (S7 dropped
-          // the F0-era read-side merge) and the legacy table stays empty too.
-          expect(yield* pagedMessageCount(directory, sessionID)).toBe(0)
-          expect(yield* legacyMessageCount(directory, sessionID)).toBe(0)
 
           // F1a SLICE 7 + F1b: summarize routes NATIVELY (SessionV2.compact marks the
-          // runner's one-shot compaction request) — no 400, and no legacy rows ever.
+          // runner's one-shot compaction request) — no 400.
           const summarizeStatus = yield* Effect.promise(async () => {
             const result = await sdk.session.summarize({
               sessionID,
@@ -300,56 +222,12 @@ describe("promptAsync routes to the V2 native engine (F1b: one engine)", () => {
             return result.response.status
           })
           expect(summarizeStatus).toBe(200)
-          expect(yield* legacyMessageCount(directory, sessionID)).toBe(0)
         }),
       ),
     30_000,
   )
 
-  // Case (b): a session that already has LEGACY rows (a pre-F0 transcript) also
-  // routes V2 — the eligibility gate is gone. The V2 turn writes ONLY
-  // session_message: the legacy count stays at the seed, and the native
-  // endpoint serves the new turn.
-  it.live("session with a pre-existing legacy message routes to V2 too", () =>
-    withFakeLlm(({ sdk, directory, llm }) =>
-      Effect.gen(function* () {
-        yield* llm.text("native hello back", { usage: { input: 5, output: 3 } })
-
-        const session = yield* Effect.promise(() =>
-          sdk.session.create({
-            title: "legacy seeds route V2",
-            permission: [{ permission: "*", pattern: "*", action: "allow" }],
-          }),
-        )
-        const sessionID = String(record(session.data).id)
-        yield* seedLegacyMessage(directory, sessionID)
-        expect(yield* legacyMessageCount(directory, sessionID)).toBe(1)
-
-        const prompt = yield* Effect.promise(() =>
-          sdk.session.promptAsync({
-            sessionID,
-            agent: "build",
-            model: { providerID: "test", modelID: "test-model" },
-            parts: [{ type: "text", text: "run native" }],
-          }),
-        )
-        expect(prompt.response.status).toBe(204)
-
-        // The turn lands in session_message (native endpoint gains rows)...
-        const native = yield* pollWithTimeout(
-          Effect.promise(() => sdk.v2.session.messages({ sessionID })).pipe(
-            Effect.map((response) => {
-              const count = response.data?.data?.length ?? 0
-              return count > 0 ? count : undefined
-            }),
-          ),
-          "native message endpoint returned no rows for the legacy-seeded session",
-          "15 seconds",
-        )
-        expect(native).toBeGreaterThan(0)
-        // ...and the legacy table NEVER grows past the seed (no V1 writes remain).
-        expect(yield* legacyMessageCount(directory, sessionID)).toBe(1)
-      }),
-    ),
-  )
+  // F1g: Case (b) ("a session with pre-existing LEGACY rows also routes V2") retired with the
+  // `message`/`part` tables — legacy transcripts can no longer be seeded, and the one-engine
+  // routing it proved is covered by Case (a) above.
 })

@@ -27,7 +27,6 @@ import { or } from "drizzle-orm"
 import type { SQL } from "drizzle-orm"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { ProjectTable } from "@novaclaw/core/project/sql"
-import { MessageV2 } from "./message-v2"
 import { InstanceState } from "@/effect/instance-state"
 import { ProjectV2 } from "@novaclaw/core/project"
 import { WorkspaceV2 } from "@novaclaw/core/workspace"
@@ -106,16 +105,6 @@ export function fromRow(row: SessionRow): Info {
   }
 }
 
-function getForkedTitle(title: string): string {
-  const match = title.match(/^(.+) \(fork #(\d+)\)$/)
-  if (match) {
-    const base = match[1]
-    const num = parseInt(match[2], 10)
-    return `${base} (fork #${num + 1})`
-  }
-  return `${title} (fork #1)`
-}
-
 function sessionPath(worktree: string, cwd: string) {
   return path.relative(path.resolve(worktree), cwd).replaceAll("\\", "/")
 }
@@ -158,6 +147,11 @@ export const Event = {
 
 export type NotFound = NotFoundError
 
+// F1g: the message surface (messages/fork/findMessage/updateMessage/updatePart/removeMessage/
+// removePart) rode the legacy `message`/`part` tables and is GONE — the app reads native
+// transcripts via `client.v2.session.messages` and every session WRITE op is core-routed (F1c).
+// The session-LEVEL CRUD survives on SessionTable (dead in production — the HTTP routes use
+// SessionV1Read/sessionV2 — but kept until the V1 Session service is retired wholesale).
 export interface Interface {
   readonly list: (input?: ListInput) => Effect.Effect<Info[]>
   readonly listGlobal: (input?: GlobalListInput) => Effect.Effect<GlobalInfo[]>
@@ -170,22 +164,11 @@ export interface Interface {
     permission?: PermissionV1.Ruleset
     workspaceID?: WorkspaceV2.ID
   }) => Effect.Effect<Info>
-  readonly fork: (input: { sessionID: SessionID; messageID?: MessageID }) => Effect.Effect<Info, NotFound>
   readonly get: (id: SessionID) => Effect.Effect<Info, NotFound>
   readonly setTitle: (input: { sessionID: SessionID; title: string }) => Effect.Effect<void>
   readonly setArchived: (input: { sessionID: SessionID; time?: number }) => Effect.Effect<void>
   readonly setWorkspace: (input: { sessionID: SessionID; workspaceID: Info["workspaceID"] }) => Effect.Effect<void>
-  readonly messages: (input: { sessionID: SessionID; limit?: number }) => Effect.Effect<SessionV1.WithParts[], NotFound>
   readonly remove: (sessionID: SessionID) => Effect.Effect<void, NotFound>
-  readonly updateMessage: <T extends SessionV1.Info>(msg: T) => Effect.Effect<T>
-  readonly removeMessage: (input: { sessionID: SessionID; messageID: MessageID }) => Effect.Effect<MessageID>
-  readonly removePart: (input: { sessionID: SessionID; messageID: MessageID; partID: PartID }) => Effect.Effect<PartID>
-  readonly updatePart: <T extends SessionV1.Part>(part: T) => Effect.Effect<T>
-  /** Finds the first message matching the predicate, searching newest-first. */
-  readonly findMessage: (
-    sessionID: SessionID,
-    predicate: (msg: SessionV1.WithParts) => boolean,
-  ) => Effect.Effect<Option.Option<SessionV1.WithParts>, NotFound>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/Session") {}
@@ -351,22 +334,6 @@ export const layer: Layer.Layer<
       }
     })
 
-    const updateMessage = <T extends SessionV1.Info>(msg: T): Effect.Effect<T> =>
-      Effect.gen(function* () {
-        yield* events.publish(SessionV1.Event.MessageUpdated, { sessionID: msg.sessionID, info: msg })
-        return msg
-      }).pipe(Effect.withSpan("Session.updateMessage"))
-
-    const updatePart = <T extends SessionV1.Part>(part: T): Effect.Effect<T> =>
-      Effect.gen(function* () {
-        yield* events.publish(SessionV1.Event.PartUpdated, {
-          sessionID: part.sessionID,
-          part: structuredClone(part),
-          time: Date.now(),
-        })
-        return part
-      }).pipe(Effect.withSpan("Session.updatePart"))
-
     const create = Effect.fn("Session.create")(function* (input?: {
       parentID?: SessionID
       title?: string
@@ -391,49 +358,6 @@ export const layer: Layer.Layer<
         permissionMode: input?.permissionMode,
         workspaceID: input?.workspaceID ?? workspace,
       })
-    })
-
-    const fork = Effect.fn("Session.fork")(function* (input: { sessionID: SessionID; messageID?: MessageID }) {
-      const ctx = yield* InstanceState.context
-      const original = yield* get(input.sessionID)
-      const title = getForkedTitle(original.title)
-      const session = yield* createNext({
-        directory: ctx.directory,
-        path: sessionPath(ctx.worktree, ctx.directory),
-        workspaceID: original.workspaceID,
-        title,
-        metadata: structuredClone(original.metadata),
-      })
-      const msgs = yield* messages({ sessionID: input.sessionID })
-      const idMap = new Map<string, MessageID>()
-
-      for (const msg of msgs) {
-        if (input.messageID && msg.info.id >= input.messageID) break
-        const newID = MessageID.ascending()
-        idMap.set(msg.info.id, newID)
-
-        const parentID = msg.info.role === "assistant" && msg.info.parentID ? idMap.get(msg.info.parentID) : undefined
-        const cloned = yield* updateMessage({
-          ...msg.info,
-          sessionID: session.id,
-          id: newID,
-          ...(parentID && { parentID }),
-        })
-
-        for (const part of msg.parts) {
-          const p: SessionV1.Part = {
-            ...part,
-            id: PartID.ascending(),
-            messageID: cloned.id,
-            sessionID: session.id,
-          }
-          if (p.type === "compaction" && p.tail_start_id) {
-            p.tail_start_id = idMap.get(p.tail_start_id)
-          }
-          yield* updatePart(p)
-        }
-      }
-      return session
     })
 
     const patch = (sessionID: SessionID, info: Patch) =>
@@ -468,90 +392,15 @@ export const layer: Layer.Layer<
       )
     })
 
-    const messages: Interface["messages"] = Effect.fn("Session.messages")(function* (input) {
-      if (input.limit) {
-        return (yield* MessageV2.page({ sessionID: input.sessionID, limit: input.limit }).pipe(
-          Effect.provideService(Database.Service, database),
-        )).items
-      }
-
-      const size = 50
-      const result = [] as SessionV1.WithParts[]
-      let before: string | undefined
-      while (true) {
-        const page = yield* MessageV2.page({ sessionID: input.sessionID, limit: size, before }).pipe(
-          Effect.provideService(Database.Service, database),
-        )
-        if (page.items.length === 0) break
-        for (let i = page.items.length - 1; i >= 0; i--) {
-          const item = page.items[i]
-          if (item) result.push(item)
-        }
-        if (!page.more || !page.cursor) break
-        before = page.cursor
-      }
-      return result.reverse()
-    })
-
-    const removeMessage = Effect.fn("Session.removeMessage")(function* (input: {
-      sessionID: SessionID
-      messageID: MessageID
-    }) {
-      yield* events.publish(SessionV1.Event.MessageRemoved, {
-        sessionID: input.sessionID,
-        messageID: input.messageID,
-      })
-      return input.messageID
-    })
-
-    const removePart = Effect.fn("Session.removePart")(function* (input: {
-      sessionID: SessionID
-      messageID: MessageID
-      partID: PartID
-    }) {
-      yield* events.publish(SessionV1.Event.PartRemoved, {
-        sessionID: input.sessionID,
-        messageID: input.messageID,
-        partID: input.partID,
-      })
-      return input.partID
-    })
-
-    /** Finds the first message matching the predicate, searching newest-first. */
-    const findMessage: Interface["findMessage"] = Effect.fn("Session.findMessage")(function* (sessionID, predicate) {
-      const size = 50
-      let before: string | undefined
-      while (true) {
-        const page = yield* MessageV2.page({ sessionID, limit: size, before }).pipe(
-          Effect.provideService(Database.Service, database),
-        )
-        if (page.items.length === 0) break
-        for (let i = page.items.length - 1; i >= 0; i--) {
-          const item = page.items[i]
-          if (item && predicate(item)) return Option.some(item)
-        }
-        if (!page.more || !page.cursor) break
-        before = page.cursor
-      }
-      return Option.none<SessionV1.WithParts>()
-    })
-
     return Service.of({
       list,
       listGlobal,
       create,
-      fork,
       get,
       setTitle,
       setArchived,
       setWorkspace,
-      messages,
       remove,
-      updateMessage,
-      removeMessage,
-      removePart,
-      updatePart,
-      findMessage,
     })
   }),
 )

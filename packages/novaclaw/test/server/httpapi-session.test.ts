@@ -74,28 +74,6 @@ function createSession(input?: Session.CreateInput) {
   return Session.use.create(input)
 }
 
-function createTextMessage(sessionID: SessionIDType, text: string) {
-  return Effect.gen(function* () {
-    const svc = yield* Session.Service
-    const info = yield* svc.updateMessage({
-      id: MessageID.ascending(),
-      role: "user",
-      sessionID,
-      agent: "build",
-      model: { providerID: ProviderV2.ID.make("test"), modelID: ModelV2.ID.make("test") },
-      time: { created: Date.now() },
-    })
-    const part = yield* svc.updatePart({
-      id: PartID.ascending(),
-      sessionID,
-      messageID: info.id,
-      type: "text",
-      text,
-    })
-    return { info, part }
-  })
-}
-
 const localAdapter = (directory: string): WorkspaceAdapter => ({
   name: "Local Test",
   description: "Create a local test workspace",
@@ -280,10 +258,6 @@ describe("session HttpApi", () => {
         expect(todo.status).toBe(404)
         expect(yield* responseJson(todo)).toEqual(missingSessionBody)
 
-        const messages = yield* request(pathFor(SessionPaths.messages, { sessionID: missingSession }), { headers })
-        expect(messages.status).toBe(404)
-        expect(yield* responseJson(messages)).toEqual(missingSessionBody)
-
         const remove = yield* request(pathFor(SessionPaths.remove, { sessionID: missingSession }), {
           headers,
           method: "DELETE",
@@ -305,18 +279,6 @@ describe("session HttpApi", () => {
         })
         expect(abort.status).toBe(200)
         expect(yield* responseJson(abort)).toBe(true)
-
-        const session = yield* createSession({ title: "missing message" })
-        const missingMessage = MessageID.ascending()
-        const message = yield* request(
-          pathFor(SessionPaths.message, { sessionID: session.id, messageID: missingMessage }),
-          { headers },
-        )
-        expect(message.status).toBe(404)
-        expect(yield* responseJson(message)).toEqual({
-          name: "NotFoundError",
-          data: { message: `Message not found: ${missingMessage}` },
-        })
       }),
     { git: true, config: { formatter: false } },
   )
@@ -329,8 +291,6 @@ describe("session HttpApi", () => {
         const headers = { "x-novaclaw-directory": test.directory }
         const parent = yield* createSession({ title: "parent" })
         const child = yield* createSession({ title: "child", parentID: parent.id })
-        const message = yield* createTextMessage(parent.id, "hello")
-        yield* createTextMessage(parent.id, "world")
 
         const listed = yield* requestJson<Session.Info[]>(`${SessionPaths.list}?roots=true`, { headers })
         expect(listed.map((item) => item.id)).toContain(parent.id)
@@ -355,32 +315,6 @@ describe("session HttpApi", () => {
         expect(
           yield* requestJson<unknown[]>(pathFor(SessionPaths.diff, { sessionID: parent.id }), { headers }),
         ).toEqual([])
-
-        const messages = yield* request(`${pathFor(SessionPaths.messages, { sessionID: parent.id })}?limit=1`, {
-          headers,
-        })
-        const messagePage = yield* json<SessionV1.WithParts[]>(messages)
-        const nextCursor = messages.headers["x-next-cursor"]
-        expect(nextCursor).toBeTruthy()
-        expect(messagePage[0]?.parts[0]).toMatchObject({ type: "text" })
-
-        expect(
-          (yield* request(`${pathFor(SessionPaths.messages, { sessionID: parent.id })}?before=${nextCursor}`, {
-            headers,
-          })).status,
-        ).toBe(400)
-        expect(
-          (yield* request(`${pathFor(SessionPaths.messages, { sessionID: parent.id })}?limit=1&before=invalid`, {
-            headers,
-          })).status,
-        ).toBe(400)
-
-        expect(
-          yield* requestJson<SessionV1.WithParts>(
-            pathFor(SessionPaths.message, { sessionID: parent.id, messageID: message.info.id }),
-            { headers },
-          ),
-        ).toMatchObject({ info: { id: message.info.id } })
 
         yield* insertLegacyAssistantMessage(parent.id)
 
@@ -775,15 +709,17 @@ describe("session HttpApi", () => {
           headers: { "x-novaclaw-directory": test.directory, "content-type": "application/json" },
           body: JSON.stringify({ title: "workspace session" }),
         })
-        const messages = yield* request(
-          `${pathFor(SessionPaths.messages, { sessionID: created.id })}?workspace=${workspace.id}`,
+        // F1g: the workspace-routing check rides a surviving session-scoped GET (the V1 messages
+        // route it used is gone).
+        const sessionGet = yield* request(
+          `${pathFor(SessionPaths.get, { sessionID: created.id })}?workspace=${workspace.id}`,
           {
             headers: { "x-novaclaw-directory": test.directory },
           },
         )
 
         expect(created).toMatchObject({ id: created.id, workspaceID: workspace.id })
-        expect(messages.status).toBe(200)
+        expect(sessionGet.status).toBe(200)
         expect(yield* getWorkspaceID(created.id)).toEqual({ workspaceID: workspace.id })
       }),
     { git: true, config: { formatter: false } },
@@ -845,96 +781,11 @@ describe("session HttpApi", () => {
     { git: true, config: { formatter: false } },
   )
 
-  it.instance(
-    "serves paginated message link headers",
-    () =>
-      Effect.gen(function* () {
-        const test = yield* TestInstance
-        const headers = { "x-novaclaw-directory": test.directory }
-        const session = yield* createSession({ title: "messages" })
-        yield* createTextMessage(session.id, "first")
-        yield* createTextMessage(session.id, "second")
-        const route = `${pathFor(SessionPaths.messages, { sessionID: session.id })}?limit=1`
-
-        const response = yield* request(route, { headers })
-
-        expect(response.headers["x-next-cursor"]).toBeTruthy()
-        expect(response.headers["link"]).toContain("limit=1")
-        expect(response.headers["access-control-expose-headers"]?.toLowerCase()).toContain("x-next-cursor")
-      }),
-    { git: true, config: { formatter: false } },
-  )
-
-  it.instance(
-    "serves message mutation routes",
-    () =>
-      Effect.gen(function* () {
-        const test = yield* TestInstance
-        const headers = { "x-novaclaw-directory": test.directory, "content-type": "application/json" }
-        const session = yield* createSession({ title: "messages" })
-        const first = yield* createTextMessage(session.id, "first")
-        const second = yield* createTextMessage(session.id, "second")
-
-        const updated = yield* requestJson<SessionV1.Part>(
-          pathFor(SessionPaths.updatePart, {
-            sessionID: session.id,
-            messageID: first.info.id,
-            partID: first.part.id,
-          }),
-          {
-            method: "PATCH",
-            headers,
-            body: JSON.stringify({ ...first.part, text: "updated" }),
-          },
-        )
-        expect(updated).toMatchObject({ id: first.part.id, type: "text", text: "updated" })
-
-        expect(
-          yield* requestJson<boolean>(
-            pathFor(SessionPaths.deletePart, {
-              sessionID: session.id,
-              messageID: first.info.id,
-              partID: first.part.id,
-            }),
-            { method: "DELETE", headers },
-          ),
-        ).toBe(true)
-
-        expect(
-          yield* requestJson<boolean>(
-            pathFor(SessionPaths.deleteMessage, { sessionID: session.id, messageID: second.info.id }),
-            { method: "DELETE", headers },
-          ),
-        ).toBe(true)
-      }),
-    { git: true, config: { formatter: false } },
-  )
-
-  it.instance(
-    "rejects part updates whose path and body ids disagree",
-    () =>
-      Effect.gen(function* () {
-        const test = yield* TestInstance
-        const headers = { "x-novaclaw-directory": test.directory, "content-type": "application/json" }
-        const session = yield* createSession({ title: "part mismatch" })
-        const message = yield* createTextMessage(session.id, "first")
-        const response = yield* request(
-          pathFor(SessionPaths.updatePart, {
-            sessionID: session.id,
-            messageID: message.info.id,
-            partID: message.part.id,
-          }),
-          {
-            method: "PATCH",
-            headers,
-            body: JSON.stringify({ ...message.part, id: PartID.ascending() }),
-          },
-        )
-
-        expect(response.status).toBe(400)
-      }),
-    { git: true, config: { formatter: false } },
-  )
+  // F1g: the "serves paginated message link headers", "serves message mutation routes", and
+  // "rejects part updates whose path and body ids disagree" suites rode the deleted V1 message/part
+  // routes (messages/updatePart/deletePart/deleteMessage) + the retired Session.updateMessage/
+  // updatePart seed. Native transcript reads/pagination are covered by the "returns v2 public
+  // request errors for cursor and workspace query failures" suite (GET /api/session/:id/message).
 
   it.instance(
     "serves remaining non-LLM session mutation routes",

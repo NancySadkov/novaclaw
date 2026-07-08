@@ -5,7 +5,9 @@ import { SessionV1 } from "../src/v1/session"
 describe("legacy event schema compatibility", () => {
   test("Core references canonical SessionV1 definitions", () => {
     expect(SessionV1.Event.Created).toBe(Wire.Event.Created)
-    expect(SessionV1.Event.PartUpdated).toBe(Wire.Event.PartUpdated)
+    // F1g: the message/part events retired with the legacy tables; a surviving session-level
+    // event still proves core re-exports the canonical schema definitions by identity.
+    expect(SessionV1.Event.Updated).toBe(Wire.Event.Updated)
   })
 
   test("Core retains NamedError constructor identity", () => {

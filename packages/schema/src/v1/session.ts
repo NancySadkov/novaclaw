@@ -599,52 +599,7 @@ const events = {
       info: SessionInfo,
     },
   }),
-  MessageUpdated: define({
-    type: "message.updated",
-    ...options,
-    schema: {
-      sessionID: SessionID,
-      info: Info,
-    },
-  }),
-  MessageRemoved: define({
-    type: "message.removed",
-    ...options,
-    schema: {
-      sessionID: SessionID,
-      messageID: MessageID,
-    },
-  }),
-  PartUpdated: define({
-    type: "message.part.updated",
-    ...options,
-    schema: {
-      sessionID: SessionID,
-      part: Part,
-      time: Schema.Finite,
-    },
-  }),
-  PartRemoved: define({
-    type: "message.part.removed",
-    ...options,
-    schema: {
-      sessionID: SessionID,
-      messageID: MessageID,
-      partID: PartID,
-    },
-  }),
 }
-
-export const PartDelta = define({
-  type: "message.part.delta",
-  schema: {
-    sessionID: SessionID,
-    messageID: MessageID,
-    partID: PartID,
-    field: Schema.String,
-    delta: Schema.String,
-  },
-})
 
 export const Diff = define({
   type: "session.diff",
@@ -664,19 +619,10 @@ export const Error = define({
 
 export const Event = {
   ...events,
-  PartDelta,
   Diff,
   Error,
-  Definitions: inventory(
-    events.Created,
-    events.Updated,
-    events.Deleted,
-    events.MessageUpdated,
-    events.MessageRemoved,
-    events.PartUpdated,
-    events.PartRemoved,
-    PartDelta,
-    Diff,
-    Error,
-  ),
+  // F1g: the message/part events (message.updated/removed, message.part.updated/removed/delta)
+  // retired with the legacy `message`/`part` tables. `durable()` tolerates their old rows in the
+  // event log (skip-on-decode, app `01bbfe8d4`). The session-LEVEL events survive (V2 emits them).
+  Definitions: inventory(events.Created, events.Updated, events.Deleted, Diff, Error),
 }

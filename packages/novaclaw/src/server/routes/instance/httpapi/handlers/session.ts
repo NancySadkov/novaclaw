@@ -1,10 +1,8 @@
 import { PermissionV1 } from "@novaclaw/core/v1/permission"
-import { SessionV1 } from "@novaclaw/core/v1/session"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Command } from "@/command"
 import { Permission } from "@/permission"
 import { Session } from "@/session/session"
-import { MessageV2 } from "@/session/message-v2"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionMessage } from "@novaclaw/core/session/message"
 import { SessionV1Read } from "@novaclaw/core/session/v1-read"
@@ -18,9 +16,9 @@ import { ProviderV2 } from "@novaclaw/core/provider"
 import { PromptInput } from "@novaclaw/schema/prompt-input"
 import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
 import { SessionTodo } from "@novaclaw/core/session/todo"
-import { MessageID, PartID, SessionID } from "@/session/schema"
+import { SessionID } from "@/session/schema"
 import { NamedError } from "@novaclaw/core/util/error"
-import { Cause, Effect, Option, Schema, Scope } from "effect"
+import { Cause, Effect, Schema, Scope } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder, HttpApiError, HttpApiSchema } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
@@ -30,7 +28,6 @@ import {
   ForkPayload,
   InitPayload,
   ListQuery,
-  MessagesQuery,
   PermissionResponsePayload,
   PromptPayload,
   RevertPayload,
@@ -179,55 +176,6 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       if (ctx.query.messageID) return []
       const info = yield* SessionV1Read.get(db, ctx.params.sessionID)
       return [...(info?.summary?.diffs ?? [])]
-    })
-
-    const messages = Effect.fn("SessionHttpApi.messages")(function* (ctx: {
-      params: { sessionID: SessionID }
-      query: typeof MessagesQuery.Type
-    }) {
-      if (ctx.query.before && ctx.query.limit === undefined) return yield* new HttpApiError.BadRequest({})
-      if (ctx.query.before) {
-        const before = ctx.query.before
-        yield* Effect.try({
-          try: () => MessageV2.cursor.decode(before),
-          catch: () => new HttpApiError.BadRequest({}),
-        })
-      }
-      yield* requireSession(ctx.params.sessionID)
-      if (ctx.query.limit === undefined || ctx.query.limit === 0) {
-        return yield* SessionError.mapStorageNotFound(session.messages({ sessionID: ctx.params.sessionID }))
-      }
-
-      const page = yield* SessionError.mapStorageNotFound(
-        MessageV2.page({
-          sessionID: ctx.params.sessionID,
-          limit: ctx.query.limit,
-          before: ctx.query.before,
-        }),
-      )
-      if (!page.cursor) return page.items
-
-      const request = yield* HttpServerRequest.HttpServerRequest
-      // toURL() honors the Host + x-forwarded-proto headers, so the Link
-      // header echoes the real origin instead of a hard-coded localhost.
-      const url = Option.getOrElse(HttpServerRequest.toURL(request), () => new URL(request.url, "http://localhost"))
-      url.searchParams.set("limit", ctx.query.limit.toString())
-      url.searchParams.set("before", page.cursor)
-      return HttpServerResponse.jsonUnsafe(page.items, {
-        headers: {
-          "Access-Control-Expose-Headers": "Link, X-Next-Cursor",
-          Link: `<${url.toString()}>; rel="next"`,
-          "X-Next-Cursor": page.cursor,
-        },
-      })
-    })
-
-    const message = Effect.fn("SessionHttpApi.message")(function* (ctx: {
-      params: { sessionID: SessionID; messageID: MessageID }
-    }) {
-      return yield* SessionError.mapStorageNotFound(
-        MessageV2.get({ sessionID: ctx.params.sessionID, messageID: ctx.params.messageID }),
-      )
     })
 
     const create = Effect.fn("SessionHttpApi.create")(function* (ctx: { payload?: Session.CreateInput }) {
@@ -617,39 +565,6 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       return true
     })
 
-    const deleteMessage = Effect.fn("SessionHttpApi.deleteMessage")(function* (ctx: {
-      params: { sessionID: SessionID; messageID: MessageID }
-    }) {
-      yield* requireSession(ctx.params.sessionID)
-      yield* SessionError.mapBusy(assertIdle(ctx.params.sessionID))
-      yield* session.removeMessage(ctx.params)
-      return true
-    })
-
-    const deletePart = Effect.fn("SessionHttpApi.deletePart")(function* (ctx: {
-      params: { sessionID: SessionID; messageID: MessageID; partID: PartID }
-    }) {
-      yield* requireSession(ctx.params.sessionID)
-      yield* session.removePart(ctx.params)
-      return true
-    })
-
-    const updatePart = Effect.fn("SessionHttpApi.updatePart")(function* (ctx: {
-      params: { sessionID: SessionID; messageID: MessageID; partID: PartID }
-      payload: typeof SessionV1.Part.Type
-    }) {
-      yield* requireSession(ctx.params.sessionID)
-      const payload = ctx.payload as SessionV1.Part
-      if (
-        payload.id !== ctx.params.partID ||
-        payload.messageID !== ctx.params.messageID ||
-        payload.sessionID !== ctx.params.sessionID
-      ) {
-        return yield* new HttpApiError.BadRequest({})
-      }
-      return yield* session.updatePart(payload)
-    })
-
     return handlers
       .handle("list", list)
       .handle("status", status)
@@ -657,8 +572,6 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("children", children)
       .handle("todo", todo)
       .handle("diff", diff)
-      .handle("messages", messages)
-      .handle("message", message)
       .handleRaw("create", createRaw)
       .handle("remove", remove)
       .handle("update", update)
@@ -672,8 +585,5 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
       .handle("revert", revert)
       .handle("unrevert", unrevert)
       .handle("permissionRespond", permissionRespond)
-      .handle("deleteMessage", deleteMessage)
-      .handle("deletePart", deletePart)
-      .handle("updatePart", updatePart)
   }),
 )
