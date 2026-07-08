@@ -924,7 +924,7 @@ it.instance(
         yield* mcp.add("timeout-server", {
           type: "local",
           command: ["echo", "test"],
-          timeout: 2500,
+          timeout: { request: 2500 },
         })
         yield* mcp.getPrompt("timeout-server", "test")
         yield* mcp.readResource("timeout-server", "test://resource")
@@ -1231,7 +1231,7 @@ it.instance(
         const addResult = yield* mcp.add("hanging-server", {
           type: "local",
           command: ["node", "fake.js"],
-          timeout: 100,
+          timeout: { request: 100 },
         })
 
         const serverStatus = (addResult.status as any)["hanging-server"] ?? addResult.status
@@ -1260,7 +1260,7 @@ it.instance(
         const addResult = yield* mcp.add("hanging-remote", {
           type: "remote",
           url: "http://localhost:9999/mcp",
-          timeout: 100,
+          timeout: { request: 100 },
           oauth: false,
         })
 
@@ -1290,7 +1290,7 @@ it.instance(
         const addResult = yield* mcp.add("fail-remote", {
           type: "remote",
           url: "http://localhost:9999/mcp",
-          timeout: 5000,
+          timeout: { request: 5000 },
           oauth: false,
         })
 

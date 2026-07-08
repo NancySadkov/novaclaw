@@ -78,6 +78,17 @@ describe("Config", () => {
       expect(ConfigMigrateV1.isV1({ server: { port: 4096 } })).toBe(false)
       expect(ConfigMigrateV1.isV1({ disabled_providers: ["openai"] })).toBe(false)
       expect(ConfigMigrateV1.isV1({ enabled_providers: ["anthropic"] })).toBe(false)
+      // F1d: shape-changed fields that keep their V1 name — detected by their V1-shaped VALUE, since
+      // key-presence alone can't discriminate (else a V1 file with only e.g. a flat `mcp` decodes as
+      // V2 and silently loses it).
+      expect(ConfigMigrateV1.isV1({ mcp: { myserver: { type: "remote", url: "https://x" } } })).toBe(true)
+      expect(ConfigMigrateV1.isV1({ mcp: { servers: { myserver: { type: "remote", url: "https://x" } } } })).toBe(false)
+      expect(ConfigMigrateV1.isV1({ compaction: { preserve_recent_tokens: 2000 } })).toBe(true)
+      expect(ConfigMigrateV1.isV1({ compaction: { auto: true } })).toBe(false)
+      expect(ConfigMigrateV1.isV1({ skills: { paths: ["./s"] } })).toBe(true)
+      expect(ConfigMigrateV1.isV1({ skills: ["./s"] })).toBe(false)
+      expect(ConfigMigrateV1.isV1({ experimental: { mcp_timeout: 5000 } })).toBe(true)
+      expect(ConfigMigrateV1.isV1({ experimental: { policies: [] } })).toBe(false)
     }),
   )
 

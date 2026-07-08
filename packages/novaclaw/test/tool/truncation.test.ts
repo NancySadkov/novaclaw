@@ -1,5 +1,4 @@
 import { describe, test, expect } from "bun:test"
-import { ConfigV1 } from "@novaclaw/core/v1/config/config"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { filesystem } from "@novaclaw/core/effect/app-node-platform"
 import { FSUtil } from "@novaclaw/core/fs-util"
@@ -18,11 +17,11 @@ const ROOT = path.resolve(import.meta.dir, "..", "..")
 
 const it = testEffect(LayerNode.compile(LayerNode.group([Truncate.node, FSUtil.node, filesystem])))
 
-const configuredLayer = (cfg: ConfigV1.Info) =>
+const configuredLayer = (cfg: Config.Info) =>
   LayerNode.compile(LayerNode.group([Truncate.node, FSUtil.node, filesystem, Config.node]), [
     [Config.node, TestConfig.layer({ get: () => Effect.succeed(cfg) })],
   ])
-const configuredIt = (cfg: ConfigV1.Info) => testEffect(configuredLayer(cfg))
+const configuredIt = (cfg: Config.Info) => testEffect(configuredLayer(cfg))
 
 describe("Truncate", () => {
   describe("output", () => {

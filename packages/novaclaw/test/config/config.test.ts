@@ -374,7 +374,7 @@ it.instance("updates config and preserves empty shell sentinel", () =>
       "config.json",
     )
 
-    yield* Config.Service.use((svc) => svc.update(ConfigParse.schema(ConfigV1.Info, { shell: "" }, "test:config")))
+    yield* Config.Service.use((svc) => svc.update({ shell: "" }))
 
     const writtenConfig = yield* FSUtil.use.readJson(path.join(test.directory, "config.json"))
     expect(writtenConfig).toMatchObject({ shell: "" })
@@ -887,9 +887,7 @@ Nested command template`,
 it.instance("updates config and writes to file", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
-    yield* Config.Service.use((svc) =>
-      svc.update(ConfigParse.schema(ConfigV1.Info, { model: "updated/model" }, "test:config")),
-    )
+    yield* Config.Service.use((svc) => svc.update({ model: "updated/model" }))
 
     const writtenConfig = yield* FSUtil.use.readJson(path.join(test.directory, "config.json"))
     expect(writtenConfig).toMatchObject({ model: "updated/model" })
@@ -1364,15 +1362,15 @@ it.instance("project config can override MCP server enabled status", () =>
     )
 
     const config = yield* Config.use.get()
-    expect(config.mcp?.jira).toEqual({
+    expect(config.mcp?.servers?.jira).toEqual({
       type: "remote",
       url: "https://jira.example.com/mcp",
-      enabled: true,
+      disabled: false,
     })
-    expect(config.mcp?.wiki).toEqual({
+    expect(config.mcp?.servers?.wiki).toEqual({
       type: "remote",
       url: "https://wiki.example.com/mcp",
-      enabled: false,
+      disabled: true,
     })
   }),
 )
@@ -1409,10 +1407,10 @@ it.instance("MCP config deep merges preserving base config properties", () =>
     )
 
     const config = yield* Config.use.get()
-    expect(config.mcp?.myserver).toEqual({
+    expect(config.mcp?.servers?.myserver).toEqual({
       type: "remote",
       url: "https://myserver.example.com/mcp",
-      enabled: true,
+      disabled: false,
       headers: {
         "X-Custom-Header": "value",
       },
@@ -1450,7 +1448,7 @@ it.instance("local .novaclaw config can override MCP from project config", () =>
     )
 
     const config = yield* Config.use.get()
-    expect(config.mcp?.docs?.enabled).toBe(true)
+    expect(config.mcp?.servers?.docs?.disabled).toBe(false)
   }),
 )
 
@@ -1466,7 +1464,7 @@ remoteProjectOverride.it.instance(
     Effect.gen(function* () {
       const config = yield* Config.use.get()
       expect(remoteProjectOverride.seen.wellKnown).toBe("https://example.com/.well-known/novaclaw")
-      expect(config.mcp?.jira?.enabled).toBe(true)
+      expect(config.mcp?.servers?.jira?.disabled).toBe(false)
     }),
   {
     git: true,
@@ -1512,7 +1510,7 @@ test("remote well-known config can use FetchHttpClient layer", async () => {
           Effect.gen(function* () {
             const config = yield* svc.get()
             expect(fetchedUrl).toBe(`${server.url.origin}/.well-known/novaclaw`)
-            expect(config.mcp?.jira?.enabled).toBe(true)
+            expect(config.mcp?.servers?.jira?.disabled).toBe(false)
           }),
         ),
       { git: true },
@@ -1556,7 +1554,7 @@ templatedHeaderWellKnown.it.instance("wellknown remote_config supports templated
     expect(templatedHeaderWellKnown.seen.wellKnown).toBe("https://example.com/.well-known/novaclaw")
     expect(templatedHeaderWellKnown.seen.remote).toBe("https://config.example.com/novaclaw.json")
     expect(templatedHeaderWellKnown.seen.authorization).toBe("Bearer test-token")
-    expect(config.mcp?.confluence?.enabled).toBe(true)
+    expect(config.mcp?.servers?.confluence?.disabled).toBe(false)
   }),
 )
 
@@ -1576,7 +1574,7 @@ remotePrecedenceWellKnown.it.instance(
     Effect.gen(function* () {
       const config = yield* Config.use.get()
       expect(remotePrecedenceWellKnown.seen.remote).toBe("https://config.example.com/test-token/novaclaw.json")
-      expect(config.mcp?.confluence?.enabled).toBe(true)
+      expect(config.mcp?.servers?.confluence?.disabled).toBe(false)
     }),
 )
 
@@ -1617,7 +1615,7 @@ nullConfigWellKnown.it.instance("wellknown config null is treated as absent", ()
   Effect.gen(function* () {
     const config = yield* Config.use.get()
     expect(nullConfigWellKnown.seen.remote).toBe("https://config.example.com/novaclaw.json")
-    expect(config.mcp?.confluence?.enabled).toBe(true)
+    expect(config.mcp?.servers?.confluence?.disabled).toBe(false)
   }),
 )
 

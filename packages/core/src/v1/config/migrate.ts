@@ -40,9 +40,28 @@ const keys = new Set([
 // config key-coverage guard test asserts this list stays exhaustive against ConfigV1.Info.
 export const DROPPED = ["logLevel", "small_model", "layout"] as const
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+// Some fields keep their V1 NAME in V2 but changed SHAPE, so key-presence alone can't tell V1 from V2.
+// Detect a V1-shaped value for each:
+//  - `mcp`: V1 is a flat `{ <serverName>: … }` record; V2 nests everything under `timeout`/`servers`.
+//  - `compaction`: `preserve_recent_tokens`/`reserved` are V1-only (V2 spells them `keep.tokens`/`buffer`).
+//  - `skills`: V1 is `{ paths, urls }` (an object); V2 is a flat `string[]`.
+//  - `experimental`: V1 carries `mcp_timeout`/`batch_tool`/… ; V2 keeps only `policies`.
+function hasV1ShapedField(input: Record<string, unknown>) {
+  const { mcp, compaction, skills, experimental } = input
+  if (isRecord(mcp) && Object.keys(mcp).some((key) => key !== "timeout" && key !== "servers")) return true
+  if (isRecord(compaction) && ("preserve_recent_tokens" in compaction || "reserved" in compaction)) return true
+  if (isRecord(skills)) return true
+  if (isRecord(experimental) && Object.keys(experimental).some((key) => key !== "policies")) return true
+  return false
+}
+
 export function isV1(input: unknown) {
-  if (typeof input !== "object" || input === null || Array.isArray(input)) return false
-  return Object.keys(input).some((key) => keys.has(key))
+  if (!isRecord(input)) return false
+  return Object.keys(input).some((key) => keys.has(key)) || hasV1ShapedField(input)
 }
 
 export function migrate(info: typeof ConfigV1.Info.Type) {

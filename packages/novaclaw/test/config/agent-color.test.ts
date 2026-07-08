@@ -12,8 +12,8 @@ it.instance(
   () =>
     Effect.gen(function* () {
       const cfg = yield* Config.use.get()
-      expect(cfg.agent?.["build"]?.color).toBe("#FFA500")
-      expect(cfg.agent?.["plan"]?.color).toBe("primary")
+      expect(cfg.agents?.["build"]?.color).toBe("#FFA500")
+      expect(cfg.agents?.["plan"]?.color).toBe("primary")
     }),
   {
     git: true,

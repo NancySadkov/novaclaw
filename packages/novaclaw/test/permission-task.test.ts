@@ -150,7 +150,7 @@ describe("permission.task with real config files", () => {
     () =>
       Effect.gen(function* () {
         const config = yield* load
-        const ruleset = Permission.fromConfig(config.permission ?? {})
+        const ruleset = (config.permissions ?? []).map((r) => ({ permission: r.action, pattern: r.resource, action: r.effect }))
         // general and orchestrator-fast should be allowed, code-reviewer denied
         expect(Permission.evaluate("task", "general", ruleset).action).toBe("allow")
         expect(Permission.evaluate("task", "orchestrator-fast", ruleset).action).toBe("allow")
@@ -174,7 +174,7 @@ describe("permission.task with real config files", () => {
     () =>
       Effect.gen(function* () {
         const config = yield* load
-        const ruleset = Permission.fromConfig(config.permission ?? {})
+        const ruleset = (config.permissions ?? []).map((r) => ({ permission: r.action, pattern: r.resource, action: r.effect }))
         // general and code-reviewer should be ask, orchestrator-* denied
         expect(Permission.evaluate("task", "general", ruleset).action).toBe("ask")
         expect(Permission.evaluate("task", "code-reviewer", ruleset).action).toBe("ask")
@@ -198,7 +198,7 @@ describe("permission.task with real config files", () => {
     () =>
       Effect.gen(function* () {
         const config = yield* load
-        const ruleset = Permission.fromConfig(config.permission ?? {})
+        const ruleset = (config.permissions ?? []).map((r) => ({ permission: r.action, pattern: r.resource, action: r.effect }))
         expect(Permission.evaluate("task", "general", ruleset).action).toBe("allow")
         expect(Permission.evaluate("task", "code-reviewer", ruleset).action).toBe("deny")
         // Unspecified agents default to "ask"
@@ -222,7 +222,7 @@ describe("permission.task with real config files", () => {
     () =>
       Effect.gen(function* () {
         const config = yield* load
-        const ruleset = Permission.fromConfig(config.permission ?? {})
+        const ruleset = (config.permissions ?? []).map((r) => ({ permission: r.action, pattern: r.resource, action: r.effect }))
 
         // Verify task permissions
         expect(Permission.evaluate("task", "general", ruleset).action).toBe("allow")
@@ -260,7 +260,7 @@ describe("permission.task with real config files", () => {
     () =>
       Effect.gen(function* () {
         const config = yield* load
-        const ruleset = Permission.fromConfig(config.permission ?? {})
+        const ruleset = (config.permissions ?? []).map((r) => ({ permission: r.action, pattern: r.resource, action: r.effect }))
 
         // Last matching rule wins - "*" deny is last, so all agents are denied
         expect(Permission.evaluate("task", "general", ruleset).action).toBe("deny")
@@ -291,7 +291,7 @@ describe("permission.task with real config files", () => {
     () =>
       Effect.gen(function* () {
         const config = yield* load
-        const ruleset = Permission.fromConfig(config.permission ?? {})
+        const ruleset = (config.permissions ?? []).map((r) => ({ permission: r.action, pattern: r.resource, action: r.effect }))
 
         // Evaluate uses findLast - "general" allow comes after "*" deny
         expect(Permission.evaluate("task", "general", ruleset).action).toBe("allow")

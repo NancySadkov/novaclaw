@@ -10,7 +10,7 @@ import { testEffect } from "../lib/effect"
 const it = testEffect(LayerNode.compile(Image.node, [[Config.node, TestConfig.layer()]]))
 const tiny = testEffect(
   LayerNode.compile(Image.node, [
-    [Config.node, TestConfig.layer({ get: () => Effect.succeed({ attachment: { image: { max_base64_bytes: 1 } } }) })],
+    [Config.node, TestConfig.layer({ get: () => Effect.succeed({ attachments: { image: { max_base64_bytes: 1 } } }) })],
   ]),
 )
 

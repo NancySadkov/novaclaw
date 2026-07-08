@@ -167,7 +167,7 @@ async function resolveLoadedPlugins(config: Info, filepath: string) {
 // accumulator (mergeDeep + field assignments), so the working type is a deep-mutable V2 Info.
 // `core/src/v1/config/**` survives as the permanent on-read upgrader: each source that is a V1 file
 // is migrated to V2 on read (see loadAsV2).
-type Info = DeepMutable<typeof ConfigV2.Info.Type> & {
+export type Info = DeepMutable<typeof ConfigV2.Info.Type> & {
   // plugin_origins is derived state, not a persisted config field. It keeps each winning plugin spec together
   // with the file and scope it came from so later runtime code can make location-sensitive decisions.
   // Kept in the V1 `Spec` shape (a tuple/string) that the plugin loader (`plugin/index.ts`) consumes;
