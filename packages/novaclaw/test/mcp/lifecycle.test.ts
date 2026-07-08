@@ -814,10 +814,15 @@ it.instance(
       Effect.gen(function* () {
         const countBefore = clientCreateCount
 
+        // `add()` receives its entry RAW (no config migration), so it must use the
+        // V2 field `disabled` — which `create()` checks (`mcp.disabled === true`).
+        // The static config below intentionally uses the V1 field `enabled: false`
+        // to exercise the boot path where the V1→V2 migration converts it to
+        // `disabled: true`. Both paths must skip connecting (no client created).
         yield* mcp.add("disabled-server", {
           type: "local",
           command: ["echo", "test"],
-          enabled: false,
+          disabled: true,
         } as any)
 
         // No client should have been created
