@@ -4,10 +4,13 @@ import { Config } from "@/config/config"
 import { serviceUse } from "@novaclaw/core/effect/service-use"
 import { Provider } from "@/provider/provider"
 
-import { generateObject, streamObject, type ModelMessage } from "ai"
 import { Truncate } from "@/tool/truncate"
-import { Auth } from "../auth"
-import { ProviderTransform } from "@/provider/transform"
+import { LLM, LLMError, Message, SystemPart } from "@novaclaw/llm"
+import { Catalog } from "@novaclaw/core/catalog"
+import { Integration } from "@novaclaw/core/integration"
+import { SessionRunnerModel } from "@novaclaw/core/session/runner/model"
+import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
+import { llmClient } from "@novaclaw/core/effect/app-node-platform"
 
 import PROMPT_GENERATE from "./generate.txt"
 import PROMPT_COMPACTION from "./prompt/compaction.txt"
@@ -22,8 +25,6 @@ import { Plugin } from "@/plugin"
 import { Skill } from "../skill"
 import { Effect, Context, Layer, Schema } from "effect"
 import { InstanceState } from "@/effect/instance-state"
-import * as Option from "effect/Option"
-import * as OtelTracer from "@effect/opentelemetry/Tracer"
 import { AbsolutePath, type DeepMutable } from "@novaclaw/core/schema"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { ModelV2 } from "@novaclaw/core/model"
@@ -62,6 +63,47 @@ const GeneratedAgent = Schema.Struct({
   systemPrompt: Schema.String,
 })
 
+// Raised when `generate` can't find a usable model — either the requested
+// `provider/model` isn't in the catalog, or no default model is configured.
+export class ModelUnconfiguredError extends Schema.TaggedErrorClass<ModelUnconfiguredError>()(
+  "Agent.ModelUnconfiguredError",
+  { requested: Schema.optional(Schema.String) },
+) {
+  override get message() {
+    return this.requested ? `Requested model is not available: ${this.requested}` : "No model is configured"
+  }
+}
+
+// Raised when the model's response can't be parsed/decoded into the agent config
+// JSON shape (`{ identifier, whenToUse, systemPrompt }`).
+export class GenerateOutputError extends Schema.TaggedErrorClass<GenerateOutputError>()(
+  "Agent.GenerateOutputError",
+  { detail: Schema.String },
+) {
+  override get message() {
+    return `The model did not return a valid agent configuration: ${this.detail}`
+  }
+}
+
+export type GenerateError =
+  | ModelUnconfiguredError
+  | GenerateOutputError
+  | SessionRunnerModel.UnsupportedApiError
+  | Integration.AuthorizationError
+  | LLMError
+
+// Small-model tolerant JSON extraction: strip a ```json fence if present, else
+// take the outermost `{...}` block — so a stray reasoning preamble or fences
+// (despite the "return ONLY the JSON" instruction) still parse.
+const extractJsonObject = (text: string): string => {
+  const trimmed = text.trim()
+  const fence = trimmed.match(/```(?:json)?\s*([\s\S]*?)\s*```/i)
+  const body = (fence ? fence[1] : trimmed).trim()
+  const start = body.indexOf("{")
+  const end = body.lastIndexOf("}")
+  return start !== -1 && end > start ? body.slice(start, end + 1) : body
+}
+
 export interface Interface {
   readonly get: (agent: string) => Effect.Effect<Info>
   readonly list: () => Effect.Effect<Info[]>
@@ -76,7 +118,7 @@ export interface Interface {
       whenToUse: string
       systemPrompt: string
     },
-    Provider.DefaultModelError
+    GenerateError
   >
 }
 
@@ -90,10 +132,8 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const config = yield* Config.Service
-    const auth = yield* Auth.Service
     const plugin = yield* Plugin.Service
     const skill = yield* Skill.Service
-    const provider = yield* Provider.Service
     const locations = yield* LocationServiceMap.Service
 
     const state = yield* InstanceState.make<State>(
@@ -376,70 +416,79 @@ export const layer = Layer.effect(
         description: string
         model?: { providerID: ProviderV2.ID; modelID: ModelV2.ID }
       }) {
-        const cfg = yield* config.get()
-        const model = input.model ?? (yield* provider.defaultModel())
-        const resolved = yield* provider.getModel(model.providerID, model.modelID)
-        const language = yield* provider.getLanguage(resolved)
-        // F1d: `experimental.openTelemetry` was dropped in V2 (AI-SDK OTel telemetry retires with the
-        // AI-SDK removal). Telemetry is off here.
-        const tracer = undefined
-
+        const directory = yield* InstanceState.directory
         const system = [PROMPT_GENERATE]
-        yield* plugin.trigger("experimental.chat.system.transform", { model: resolved }, { system })
         const existing = yield* InstanceState.useEffect(state, (s) => s.list())
 
-        // TODO: clean this up so provider specific logic doesnt bleed over
-        const authInfo = yield* auth.get(model.providerID).pipe(Effect.orDie)
-        const isOpenaiOauth = model.providerID === "openai" && authInfo?.type === "oauth"
+        // Resolve the target model natively from the V2 catalog + integration
+        // credentials and run one structured generation through `@novaclaw/llm`
+        // (a forced `generate_object` tool call). The V1 provider layer's AI-SDK
+        // `generateObject`/`LanguageModelV3` path is gone. Location-scoped
+        // services (Catalog, Integration) plus the hoisted global LLMClient come
+        // from the instance-directory's location graph.
+        return yield* Effect.gen(function* () {
+          const catalog = yield* Catalog.Service
+          const integrations = yield* Integration.Service
 
-        const params = {
-          experimental_telemetry: {
-            isEnabled: false,
-            tracer,
-            metadata: {
-              userId: cfg.username ?? "unknown",
-            },
-          },
-          temperature: 0.3,
-          messages: [
-            ...(isOpenaiOauth
-              ? []
-              : system.map(
-                  (item): ModelMessage => ({
-                    role: "system",
-                    content: item,
-                  }),
-                )),
-            {
-              role: "user",
-              content: `Create an agent configuration based on this request: "${input.description}".\n\nIMPORTANT: The following identifiers already exist and must NOT be used: ${existing.map((i) => i.name).join(", ")}\n  Return ONLY the JSON object, no other text, do not wrap in backticks`,
-            },
-          ],
-          model: language,
-          schema: Object.assign(
-            Schema.toStandardSchemaV1(GeneratedAgent),
-            Schema.toStandardJSONSchemaV1(GeneratedAgent),
-          ),
-        } satisfies Parameters<typeof generateObject>[0]
-
-        if (isOpenaiOauth) {
-          return yield* Effect.promise(async () => {
-            const result = streamObject({
-              ...params,
-              providerOptions: ProviderTransform.providerOptions(resolved, {
-                instructions: system.join("\n"),
-                store: false,
-              }),
-              onError: () => {},
+          const selected = input.model
+            ? (yield* catalog.model.available()).find(
+                (m) => m.providerID === input.model!.providerID && m.id === input.model!.modelID,
+              )
+            : yield* Effect.gen(function* () {
+                const preferred = yield* catalog.model.default()
+                if (preferred && SessionRunnerModel.supported(preferred)) return preferred
+                return (yield* catalog.model.available()).find(SessionRunnerModel.supported)
+              })
+          if (!selected)
+            return yield* new ModelUnconfiguredError({
+              requested: input.model ? `${input.model.providerID}/${input.model.modelID}` : undefined,
             })
-            for await (const part of result.fullStream) {
-              if (part.type === "error") throw part.error
-            }
-            return result.object
-          })
-        }
 
-        return yield* Effect.promise(() => generateObject(params).then((r) => r.object))
+          // Let plugins customize the agent-generation system prompt.
+          yield* plugin.trigger("experimental.chat.system.transform", { model: selected as any }, { system })
+
+          const provider = yield* catalog.provider.get(selected.providerID)
+          const connection = yield* integrations.connection.active(
+            provider?.integrationID ?? Integration.ID.make(selected.providerID),
+          )
+          const credential = connection ? yield* integrations.connection.resolve(connection) : undefined
+          const model = yield* SessionRunnerModel.fromCatalogModel(selected, credential)
+
+          // One-shot text generation + JSON parse rather than a forced synthetic
+          // tool call: the canonical qwen vLLM build 500s on a forced `tool_choice`
+          // (guided decoding), so we prompt for the JSON object (the system prompt
+          // already instructs "return ONLY the JSON") and parse the response.
+          const response = yield* LLM.generate(
+            LLM.request({
+              model,
+              system: system.map((content) => SystemPart.make(content)),
+              messages: [
+                Message.user(
+                  `Create an agent configuration based on this request: "${input.description}".\n\nIMPORTANT: The following identifiers already exist and must NOT be used: ${existing
+                    .map((i) => i.name)
+                    .join(", ")}\n  Return ONLY the JSON object, no other text, do not wrap in backticks`,
+                ),
+              ],
+              generation: { temperature: 0.3 },
+            }),
+          )
+
+          const parsed = yield* Effect.try({
+            try: () => JSON.parse(extractJsonObject(response.text)) as unknown,
+            catch: (error) =>
+              new GenerateOutputError({ detail: error instanceof Error ? error.message : String(error) }),
+          })
+          return yield* Schema.decodeUnknownEffect(GeneratedAgent)(parsed).pipe(
+            Effect.mapError((error) => new GenerateOutputError({ detail: String(error) })),
+          )
+        }).pipe(
+          // Catalog + Integration come from the instance-directory's location graph;
+          // LLMClient is a global service the location graph consumes internally but
+          // does not re-export, so provide its self-contained node chain (which keeps
+          // the OFF-A offline HttpClient guard) directly for this one call.
+          Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory) }))),
+          Effect.provide(AppNodeBuilder.build(llmClient)),
+        )
       }),
     })
   }),
@@ -449,8 +498,6 @@ export const layer = Layer.effect(
 // here splits per-location state (pending permission asks) from the V2 runner's locations.
 export const defaultLayer = layer.pipe(
   Layer.provide(Plugin.defaultLayer),
-  Layer.provide(Provider.defaultLayer),
-  Layer.provide(Auth.defaultLayer),
   Layer.provide(Config.defaultLayer),
   Layer.provide(Skill.defaultLayer),
   Layer.provide(ServerLocationServiceMap.layer),
@@ -459,7 +506,7 @@ export const defaultLayer = layer.pipe(
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [Config.node, Auth.node, Plugin.node, Skill.node, Provider.node, ServerLocationServiceMap.node],
+  deps: [Config.node, Plugin.node, Skill.node, ServerLocationServiceMap.node],
 })
 
 export * as Agent from "./agent"
