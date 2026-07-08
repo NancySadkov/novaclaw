@@ -1,4 +1,8 @@
 import { Agent } from "@/agent/agent"
+import { LocationServiceMap } from "@novaclaw/core/location-services"
+import { ServerLocationServiceMap } from "@/location-service-map"
+import { Location } from "@novaclaw/core/location"
+import { AbsolutePath } from "@novaclaw/core/schema"
 import { GlobalBus } from "@/bus/global"
 import { Command } from "@/command"
 import * as InstanceState from "@/effect/instance-state"
@@ -9,7 +13,7 @@ import { VirtualFs } from "@novaclaw/core/virtual-fs"
 import { Scratch } from "@novaclaw/core/scratch"
 import { Vcs } from "@/project/vcs"
 import { Skill } from "@/skill"
-import { Effect } from "effect"
+import { Effect, Layer } from "effect"
 import fs from "fs/promises"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
@@ -38,7 +42,7 @@ function probeRoots(): Promise<string[]> {
 
 export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance", (handlers) =>
   Effect.gen(function* () {
-    const agent = yield* Agent.Service
+    const locations = yield* LocationServiceMap.Service
     const command = yield* Command.Service
     const format = yield* Format.Service
     const skill = yield* Skill.Service
@@ -111,8 +115,15 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
       return yield* command.list()
     })
 
+    // F1 reconciliation: list from the authoritative V2 store (`AgentV2`, what the
+    // runner reads — a superset incl. PLUGIN-registered agents), projected onto the
+    // V1 wire shape. Reading the old novaclaw `Agent.Service` here made plugin agents
+    // run but never appear. `AgentV2` is location-scoped → resolve via the shared map.
     const getAgent = Effect.fn("InstanceHttpApi.agent")(function* () {
-      return yield* agent.list()
+      const directory = (yield* InstanceState.context).directory
+      return yield* Agent.listV2.pipe(
+        Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory) }))),
+      )
     })
 
     const getSkill = Effect.fn("InstanceHttpApi.skill")(function* () {
@@ -162,4 +173,4 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
       .handle("appList", listApp)
       .handle("appRegister", registerApp)
   }),
-)
+).pipe(Layer.provide(ServerLocationServiceMap.layer))

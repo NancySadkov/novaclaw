@@ -28,6 +28,7 @@ import { InstanceState } from "@/effect/instance-state"
 import { AbsolutePath, type DeepMutable } from "@novaclaw/core/schema"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { ModelV2 } from "@novaclaw/core/model"
+import { AgentV2 } from "@novaclaw/core/agent"
 import { LocationServiceMap } from "@novaclaw/core/location-services"
 import { ServerLocationServiceMap } from "@/location-service-map"
 import { Reference } from "@novaclaw/core/reference"
@@ -56,6 +57,52 @@ export const Info = Schema.Struct({
   steps: Schema.optional(Schema.Finite),
 }).annotate({ identifier: "Agent" })
 export type Info = DeepMutable<Schema.Schema.Type<typeof Info>>
+
+// Built-in agent ids — mirrors the `native: true` set the `agents` map defines
+// below. Used to restore the V1 `native` flag when projecting a V2 agent.
+const NATIVE_IDS = new Set(["build", "plan", "general", "explore", "compaction", "title", "summary"])
+
+// Project an authoritative V2 `AgentV2.Info` onto this legacy V1 `Info` wire shape.
+// V2 (`@novaclaw/v2/Agent`) is the store the RUNNER reads and is a SUPERSET —
+// built-ins + config agents + PLUGIN-registered agents — so listing through this
+// projection is what makes plugin-contributed agents visible in `/agent` + the CLI
+// (they run today but never appeared, because those read this V1-shaped store).
+export function fromV2(info: AgentV2.Info): Info {
+  const body = info.request?.body ?? {}
+  const topP = body["top_p"]
+  const temperature = body["temperature"]
+  return {
+    name: info.id,
+    description: info.description,
+    mode: info.mode,
+    native: NATIVE_IDS.has(info.id) || undefined,
+    hidden: info.hidden,
+    topP: typeof topP === "number" ? topP : undefined,
+    temperature: typeof temperature === "number" ? temperature : undefined,
+    color: info.color,
+    permission: (info.permissions ?? []).map((r) => ({ permission: r.action, pattern: r.resource, action: r.effect })),
+    model: info.model ? { modelID: info.model.id, providerID: info.model.providerID } : undefined,
+    variant: info.model?.variant,
+    prompt: info.system,
+    options: body,
+    steps: info.steps,
+  }
+}
+
+// List all agents from the authoritative V2 store, projected onto the V1 shape.
+// Runs INSIDE a location context (needs `AgentV2` + `PluginV2`). The V2 agent store
+// is populated by the built-in `agent` (built-ins) and `config-agent` (config +
+// markdown) plugins during location startup, so a freshly-resolved location races
+// an empty read — await those plugins first (same pattern as the reference wait in
+// the state builder below). External-plugin agents rely on the location being fully
+// booted (the serve path), which the runner also depends on.
+export const listV2 = Effect.gen(function* () {
+  const plugins = yield* PluginV2.Service
+  yield* plugins.wait(PluginV2.ID.make("agent"))
+  yield* plugins.wait(PluginV2.ID.make("config-agent"))
+  const agents = yield* AgentV2.Service.use((svc) => svc.all())
+  return agents.map(fromV2)
+})
 
 const GeneratedAgent = Schema.Struct({
   identifier: Schema.String,

@@ -233,9 +233,21 @@ const AgentCreateCommand = effectCmd({
 const AgentListCommand = effectCmd({
   command: "list",
   describe: "list all available agents",
+  // Lists the authoritative V2 agent store (incl. plugin-registered agents),
+  // projected onto the V1 shape. Resolves the location-scoped `AgentV2` for the
+  // cwd via the core location-service map (cf. cli/cmd/debug/v2.ts) — no instance.
+  instance: false,
   handler: Effect.fn("Cli.agent.list")(function* () {
     const { Agent } = yield* Effect.promise(() => import("../../agent/agent"))
-    const agents = yield* Agent.Service.use((svc) => svc.list())
+    const { LocationServiceMap, locationServiceMapLayer } = yield* Effect.promise(
+      () => import("@novaclaw/core/location-services"),
+    )
+    const { Location } = yield* Effect.promise(() => import("@novaclaw/core/location"))
+    const { AbsolutePath } = yield* Effect.promise(() => import("@novaclaw/core/schema"))
+    const agents = yield* Agent.listV2.pipe(
+      Effect.provide(LocationServiceMap.Service.get(Location.Ref.make({ directory: AbsolutePath.make(process.cwd()) }))),
+      Effect.provide(locationServiceMapLayer),
+    )
     const sortedAgents = agents.sort((a, b) => {
       if (a.native !== b.native) {
         return a.native ? -1 : 1
