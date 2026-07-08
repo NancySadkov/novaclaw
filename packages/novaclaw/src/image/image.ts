@@ -72,7 +72,7 @@ export const layer = Layer.effect(
     )
 
     const normalize = Effect.fn("Image.normalize")(function* (input: SessionV1.FilePart) {
-      const image = (yield* config.get()).attachment?.image
+      const image = (yield* config.get()).attachments?.image
       const info = {
         autoResize: image?.auto_resize ?? AUTO_RESIZE,
         maxWidth: image?.max_width ?? MAX_WIDTH,

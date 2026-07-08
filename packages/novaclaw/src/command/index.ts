@@ -87,7 +87,7 @@ export const layer = Layer.effect(
         hints: hints(PROMPT_REVIEW),
       }
 
-      for (const [name, command] of Object.entries(cfg.command ?? {})) {
+      for (const [name, command] of Object.entries(cfg.commands ?? {})) {
         commands[name] = {
           name,
           agent: command.agent,

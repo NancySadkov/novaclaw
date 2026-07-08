@@ -381,7 +381,7 @@ export const ProvidersLoginCommand = effectCmd({
       existingProviders: providers,
       disabled,
       enabled,
-      providerNames: Object.fromEntries(Object.entries(config.provider ?? {}).map(([id, p]) => [id, p.name])),
+      providerNames: Object.fromEntries(Object.entries(config.providers ?? {}).map(([id, p]) => [id, p.name])),
     })
     const options = [
       ...pipe(

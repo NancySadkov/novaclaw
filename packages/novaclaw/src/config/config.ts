@@ -191,7 +191,7 @@ function entryToSpec(entry: PluginEntry): ConfigPluginV1.Spec {
 // Dir-discovered agents (`{agent,agents,mode,modes}/**/*.md`) parse as V1 shapes; map each to V2 via
 // the shared `migrateAgent`, then strip undefined fields (JSON round-trip) so they deep-merge cleanly
 // into the V2 `result.agents` record instead of overwriting siblings with `undefined`.
-function migrateDirAgents(record: Record<string, ConfigAgentV1.Info>): Record<string, unknown> {
+function migrateDirAgents(record: Record<string, ConfigAgentV1.Info>): NonNullable<Info["agents"]> {
   const migrated = Object.fromEntries(
     Object.entries(record).map(([name, info]) => [name, ConfigMigrateV1.migrateAgent(info)]),
   )
@@ -558,7 +558,7 @@ export const layer = Layer.effect(
           // Auto-discovered plugins under `.novaclaw/plugin(s)` are already local files, so ConfigPlugin.load
           // returns normalized Specs (plain file-URL strings) and we only need to attach origin metadata here.
           const list = yield* Effect.promise(() => ConfigPlugin.load(dir))
-          yield* mergePluginOrigins(dir, list)
+          yield* mergePluginOrigins(dir, list.map(specToEntry))
         }
 
         if (process.env.NOVACLAW_CONFIG_CONTENT) {

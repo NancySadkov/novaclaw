@@ -1,5 +1,5 @@
 import type { Argv, InferredOptionTypes } from "yargs"
-import { ConfigV1 } from "@novaclaw/core/v1/config/config"
+import { Config as ConfigV2 } from "@novaclaw/core/config"
 import type { Config } from "@/config/config"
 import { Effect } from "effect"
 
@@ -59,7 +59,7 @@ export const resolveNetworkOptions = Effect.fn("Cli.resolveNetworkOptions")(func
   return resolveNetworkOptionsNoConfig(args, config)
 })
 
-export function resolveNetworkOptionsNoConfig(args: NetworkOptions, config?: ConfigV1.Info) {
+export function resolveNetworkOptionsNoConfig(args: NetworkOptions, config?: ConfigV2.Info) {
   const portExplicitlySet = hasArg("--port")
   const hostnameExplicitlySet = hasArg("--hostname")
   const mdnsExplicitlySet = hasBooleanArg("--mdns")
