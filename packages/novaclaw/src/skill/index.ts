@@ -208,7 +208,11 @@ const discoverSkills = Effect.fnUntraced(function* (
   }
 
   const cfg = yield* config.get()
-  for (const item of cfg.skills?.paths ?? []) {
+  // V2 `skills` is one flat array (V1 spelled it `{paths, urls}`, migrated as [...paths, ...urls]).
+  // Split it back: http(s) entries are pull-able skill sources, the rest are local directory paths.
+  const skills = cfg.skills ?? []
+  const isSkillUrl = (item: string) => /^https?:\/\//i.test(item)
+  for (const item of skills.filter((entry) => !isSkillUrl(entry))) {
     const expanded = item.startsWith("~/") ? path.join(global.home, item.slice(2)) : item
     const dir = path.isAbsolute(expanded) ? expanded : path.join(directory, expanded)
     if (!(yield* fsys.isDir(dir))) {
@@ -219,7 +223,7 @@ const discoverSkills = Effect.fnUntraced(function* (
     yield* scan(state, dir, SKILL_PATTERN)
   }
 
-  for (const url of cfg.skills?.urls ?? []) {
+  for (const url of skills.filter(isSkillUrl)) {
     const pulledDirs = yield* discovery.pull(url)
     for (const dir of pulledDirs) {
       yield* scan(state, dir, SKILL_PATTERN)

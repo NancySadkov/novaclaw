@@ -1,6 +1,7 @@
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import os from "os"
-import { ConfigV1 } from "@novaclaw/core/v1/config/config"
+import { Config as ConfigV2 } from "@novaclaw/core/config"
+import type { DeepMutable } from "@novaclaw/core/schema"
 import fuzzysort from "fuzzysort"
 import { Config } from "@/config/config"
 import { mapValues, mergeDeep, omit, pickBy, sortBy } from "remeda"
@@ -123,7 +124,7 @@ type CustomLoader = (provider: Info) => Effect.Effect<{
 
 type CustomDep = {
   auth: (id: string) => Effect.Effect<Auth.Info | undefined>
-  config: () => Effect.Effect<ConfigV1.Info>
+  config: () => Effect.Effect<DeepMutable<typeof ConfigV2.Info.Type>>
   env: () => Effect.Effect<Record<string, string | undefined>>
   get: (key: string) => Effect.Effect<string | undefined>
 }
@@ -162,7 +163,7 @@ function custom(dep: CustomDep): Record<string, CustomLoader> {
       const ok =
         hasKey ||
         Boolean(yield* dep.auth(input.id)) ||
-        Boolean((yield* dep.config()).provider?.["novaclaw"]?.options?.apiKey)
+        Boolean((yield* dep.config()).providers?.["novaclaw"]?.request?.body?.apiKey)
 
       if (!ok) {
         for (const [key, value] of Object.entries(input.models)) {
@@ -904,8 +905,11 @@ export const layer = Layer.effect(
         // load plugins first so config() hook runs before reading cfg.provider
         const plugins = yield* plugin.list()
 
-        // now read config providers - includes any modifications from plugin config() hook
-        const configProviders = Object.entries(cfg.provider ?? {})
+        // now read config providers - includes any modifications from plugin config() hook.
+        // F1d: config is V2 now, so this reads the V2 `providers` shape (ConfigProvider.Info) — the
+        // fields are mapped into the V1-shaped provider `database` below. This layer is metadata-only
+        // (the runtime resolves models through the V2 Catalog, not here).
+        const configProviders = Object.entries(cfg.providers ?? {})
         const disabled = new Set(cfg.disabled_providers ?? [])
         const enabled = cfg.enabled_providers ? new Set(cfg.enabled_providers) : null
 
@@ -949,23 +953,32 @@ export const layer = Layer.effect(
             id: ProviderV2.ID.make(providerID),
             name: provider.name ?? existing?.name ?? providerID,
             env: provider.env ?? existing?.env ?? [],
-            options: mergeDeep(existing?.options ?? {}, provider.options ?? {}),
+            options: mergeDeep(existing?.options ?? {}, {
+              ...(provider.api?.settings ?? {}),
+              ...(provider.request?.body ?? {}),
+            }),
             source: "config",
             models: existing?.models ?? {},
           }
+          const providerPkg = provider.api?.type === "aisdk" ? provider.api.package : undefined
 
           for (const [modelID, model] of Object.entries(provider.models ?? {})) {
-            const existingModel = parsed.models[model.id ?? modelID]
-            const apiID = model.id ?? existingModel?.api.id ?? modelID
+            // V2 config model `api` is a union whose members variously carry id/package/url.
+            const modelApi = model.api
+            const modelApiId = modelApi?.id
+            const modelPkg = modelApi && "type" in modelApi && modelApi.type === "aisdk" ? modelApi.package : undefined
+            const modelUrl = modelApi && "url" in modelApi ? modelApi.url : undefined
+            const existingModel = parsed.models[modelApiId ?? modelID]
+            const apiID = modelApiId ?? existingModel?.api.id ?? modelID
             const apiNpm =
-              model.provider?.npm ??
-              provider.npm ??
+              modelPkg ??
+              providerPkg ??
               existingModel?.api.npm ??
               modelsDev[providerID]?.npm ??
               "@ai-sdk/openai-compatible"
             const name = iife(() => {
               if (model.name) return model.name
-              if (model.id && model.id !== modelID) return modelID
+              if (modelApiId && modelApiId !== modelID) return modelID
               return existingModel?.name ?? modelID
             })
             const parsedModel: Model = {
@@ -973,60 +986,72 @@ export const layer = Layer.effect(
               api: {
                 id: apiID,
                 npm: apiNpm,
-                url: model.provider?.api ?? provider?.api ?? existingModel?.api.url ?? modelsDev[providerID]?.api ?? "",
+                url: modelUrl ?? provider.api?.url ?? existingModel?.api.url ?? modelsDev[providerID]?.api ?? "",
               },
-              status: model.status ?? existingModel?.status ?? "active",
+              status: model.disabled ? "deprecated" : (existingModel?.status ?? "active"),
               name,
               providerID: ProviderV2.ID.make(providerID),
               capabilities: {
-                temperature: model.temperature ?? existingModel?.capabilities.temperature ?? false,
-                reasoning: model.reasoning ?? existingModel?.capabilities.reasoning ?? false,
-                attachment: model.attachment ?? existingModel?.capabilities.attachment ?? false,
-                toolcall: model.tool_call ?? existingModel?.capabilities.toolcall ?? true,
+                // V2 config Capabilities carries only `tools` + input/output modality arrays; the
+                // temperature/reasoning/attachment/interleaved flags have no V2 config source, so they
+                // fall back to the ModelsDev/existing entry (custom models never set them).
+                temperature: existingModel?.capabilities.temperature ?? false,
+                reasoning: existingModel?.capabilities.reasoning ?? false,
+                attachment: existingModel?.capabilities.attachment ?? false,
+                toolcall: model.capabilities?.tools ?? existingModel?.capabilities.toolcall ?? true,
                 input: {
-                  text: model.modalities?.input?.includes("text") ?? existingModel?.capabilities.input.text ?? true,
-                  audio: model.modalities?.input?.includes("audio") ?? existingModel?.capabilities.input.audio ?? false,
-                  image: model.modalities?.input?.includes("image") ?? existingModel?.capabilities.input.image ?? false,
-                  video: model.modalities?.input?.includes("video") ?? existingModel?.capabilities.input.video ?? false,
-                  pdf: model.modalities?.input?.includes("pdf") ?? existingModel?.capabilities.input.pdf ?? false,
+                  text: model.capabilities?.input?.includes("text") ?? existingModel?.capabilities.input.text ?? true,
+                  audio:
+                    model.capabilities?.input?.includes("audio") ?? existingModel?.capabilities.input.audio ?? false,
+                  image:
+                    model.capabilities?.input?.includes("image") ?? existingModel?.capabilities.input.image ?? false,
+                  video:
+                    model.capabilities?.input?.includes("video") ?? existingModel?.capabilities.input.video ?? false,
+                  pdf: model.capabilities?.input?.includes("pdf") ?? existingModel?.capabilities.input.pdf ?? false,
                 },
                 output: {
-                  text: model.modalities?.output?.includes("text") ?? existingModel?.capabilities.output.text ?? true,
+                  text: model.capabilities?.output?.includes("text") ?? existingModel?.capabilities.output.text ?? true,
                   audio:
-                    model.modalities?.output?.includes("audio") ?? existingModel?.capabilities.output.audio ?? false,
+                    model.capabilities?.output?.includes("audio") ?? existingModel?.capabilities.output.audio ?? false,
                   image:
-                    model.modalities?.output?.includes("image") ?? existingModel?.capabilities.output.image ?? false,
+                    model.capabilities?.output?.includes("image") ?? existingModel?.capabilities.output.image ?? false,
                   video:
-                    model.modalities?.output?.includes("video") ?? existingModel?.capabilities.output.video ?? false,
-                  pdf: model.modalities?.output?.includes("pdf") ?? existingModel?.capabilities.output.pdf ?? false,
+                    model.capabilities?.output?.includes("video") ?? existingModel?.capabilities.output.video ?? false,
+                  pdf: model.capabilities?.output?.includes("pdf") ?? existingModel?.capabilities.output.pdf ?? false,
                 },
                 interleaved:
-                  model.interleaved ??
                   existingModel?.capabilities.interleaved ??
                   (!existingModel && apiNpm === "@ai-sdk/openai-compatible" && apiID.includes("deepseek")
                     ? { field: "reasoning_content" }
                     : false),
               },
-              cost: {
-                input: model?.cost?.input ?? existingModel?.cost?.input ?? 0,
-                output: model?.cost?.output ?? existingModel?.cost?.output ?? 0,
-                cache: {
-                  read: model?.cost?.cache_read ?? existingModel?.cost?.cache.read ?? 0,
-                  write: model?.cost?.cache_write ?? existingModel?.cost?.cache.write ?? 0,
-                },
-              },
-              options: mergeDeep(existingModel?.options ?? {}, model.options ?? {}),
+              cost: iife(() => {
+                // V2 config `cost` is a single Cost or an array of tiers; use the base (non-tier) entry.
+                const base = Array.isArray(model.cost) ? (model.cost.find((c) => !c.tier) ?? model.cost[0]) : model.cost
+                return {
+                  input: base?.input ?? existingModel?.cost?.input ?? 0,
+                  output: base?.output ?? existingModel?.cost?.output ?? 0,
+                  cache: {
+                    read: base?.cache?.read ?? existingModel?.cost?.cache.read ?? 0,
+                    write: base?.cache?.write ?? existingModel?.cost?.cache.write ?? 0,
+                  },
+                }
+              }),
+              options: mergeDeep(existingModel?.options ?? {}, model.request?.body ?? {}),
               limit: {
                 context: model.limit?.context ?? existingModel?.limit?.context ?? 0,
                 input: model.limit?.input ?? existingModel?.limit?.input,
                 output: model.limit?.output ?? existingModel?.limit?.output ?? 0,
               },
-              headers: mergeDeep(existingModel?.headers ?? {}, model.headers ?? {}),
+              headers: mergeDeep(existingModel?.headers ?? {}, model.request?.headers ?? {}),
               family: model.family ?? existingModel?.family ?? "",
-              release_date: model.release_date ?? existingModel?.release_date ?? "",
+              // V2 config models carry no release date; keep any known one from the ModelsDev entry.
+              release_date: existingModel?.release_date ?? "",
               variants: {},
             }
-            const merged = mergeDeep(ProviderTransform.variants(parsedModel), model.variants ?? {})
+            // V2 config variants are an array [{ id, headers?, body? }]; the database keeps a record keyed by id.
+            const configVariants = Object.fromEntries((model.variants ?? []).map((variant) => [variant.id, variant.body ?? {}]))
+            const merged = mergeDeep(ProviderTransform.variants(parsedModel), configVariants)
             parsedModel.variants = mapValues(
               pickBy(merged, (v) => !v.disabled),
               (v) => omit(v, ["disabled"]),
@@ -1107,7 +1132,8 @@ export const layer = Layer.effect(
           const partial: Partial<Info> = { source: "config" }
           if (provider.env) partial.env = provider.env
           if (provider.name) partial.name = provider.name
-          if (provider.options) partial.options = provider.options
+          const opts = { ...(provider.api?.settings ?? {}), ...(provider.request?.body ?? {}) }
+          if (Object.keys(opts).length) partial.options = opts
           mergeProvider(providerID, partial)
         }
 
@@ -1118,7 +1144,7 @@ export const layer = Layer.effect(
             continue
           }
 
-          const configProvider = cfg.provider?.[providerID]
+          const configProvider = cfg.providers?.[providerID]
 
           for (const [modelID, model] of Object.entries(provider.models)) {
             model.api.id = model.api.id ?? model.id ?? modelID
@@ -1132,19 +1158,18 @@ export const layer = Layer.effect(
               delete provider.models[modelID]
             if (model.status === "alpha" && !runtimeFlags.enableExperimentalModels) delete provider.models[modelID]
             if (model.status === "deprecated") delete provider.models[modelID]
-            if (
-              (configProvider?.blacklist && configProvider.blacklist.includes(modelID)) ||
-              (configProvider?.whitelist && !configProvider.whitelist.includes(modelID))
-            )
-              delete provider.models[modelID]
+            // (V1 per-provider model blacklist/whitelist was dropped by the V2 config migration — a V2
+            // config expresses model exclusion via a model's own `disabled` flag instead.)
 
             if (!model.variants || Object.keys(model.variants).length === 0) {
               model.variants = mapValues(ProviderTransform.variants(model), (v) => v)
             }
 
+            // V2 config variants are an array [{ id, headers?, body? }]; project to a record for the merge.
             const configVariants = configProvider?.models?.[modelID]?.variants
-            if (configVariants && model.variants) {
-              const merged = mergeDeep(model.variants, configVariants)
+            if (configVariants?.length && model.variants) {
+              const variantRecord = Object.fromEntries(configVariants.map((variant) => [variant.id, variant.body ?? {}]))
+              const merged = mergeDeep(model.variants, variantRecord)
               model.variants = mapValues(
                 pickBy(merged, (v) => !v.disabled),
                 (v) => omit(v, ["disabled"]),
@@ -1377,15 +1402,8 @@ export const layer = Layer.effect(
     })
 
     const getSmallModel = Effect.fn("Provider.getSmallModel")(function* (providerID: ProviderV2.ID) {
-      const cfg = yield* config.get()
-
-      if (cfg.small_model) {
-        const parsed = parseModel(cfg.small_model)
-        return yield* getModel(parsed.providerID, parsed.modelID).pipe(
-          Effect.catchTag("ProviderModelNotFoundError", () => Effect.succeed(undefined)),
-        )
-      }
-
+      // F1d: the `small_model` config override was dropped (V2 has no such field); the only reader of
+      // getSmallModel is tests. The family-priority heuristic below stands in unchanged.
       const s = yield* InstanceState.get(state)
       const provider = s.providers[providerID]
       if (!provider) return undefined
@@ -1465,7 +1483,7 @@ export const layer = Layer.effect(
         return { providerID: entry.providerID, modelID: entry.modelID }
       }
 
-      const configured = Object.keys(cfg.provider ?? {})
+      const configured = Object.keys(cfg.providers ?? {})
       const provider = Object.values(s.providers).find((p) => configured.length === 0 || configured.includes(p.id))
       if (!provider) return yield* new NoProvidersError()
       const [model] = sort(Object.values(provider.models))
