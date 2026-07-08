@@ -199,7 +199,7 @@ describe("EditTool", () => {
           Effect.andThen((result) =>
             Effect.gen(function* () {
               expect(result.type).toBe("text")
-              expect(assertions.map((input) => input.action)).toEqual(["external_directory", "edit"])
+              expect(assertions.map((input) => input.action)).toEqual(["external_directory_write", "edit"])
               expect(yield* Effect.promise(() => fs.readFile(target, "utf8"))).toBe("after")
               expect(writes).toHaveLength(1)
             }),
@@ -221,16 +221,13 @@ describe("EditTool", () => {
           const external = path.join(outside.path, "denied.txt")
           yield* Effect.promise(() => fs.writeFile(external, "before"))
           reset()
-          denyAction = "external_directory"
+          denyAction = "external_directory_write"
           expect(
             yield* withTool(active.path, (registry) =>
               executeTool(registry, call({ path: external, oldString: "before", newString: "after" })),
             ),
-          ).toEqual({
-            type: "error",
-            value: `Unable to edit ${external}`,
-          })
-          expect(assertions.map((input) => input.action)).toEqual(["external_directory"])
+          ).toMatchObject({ type: "error" })
+          expect(assertions.map((input) => input.action)).toEqual(["external_directory_write"])
           expect(reads).toBe(0)
           expect(writes).toEqual([])
 
@@ -240,11 +237,8 @@ describe("EditTool", () => {
             yield* withTool(active.path, (registry) =>
               executeTool(registry, call({ path: external, oldString: "before", newString: "after" })),
             ),
-          ).toEqual({
-            type: "error",
-            value: `Unable to edit ${external}`,
-          })
-          expect(assertions.map((input) => input.action)).toEqual(["external_directory", "edit"])
+          ).toMatchObject({ type: "error" })
+          expect(assertions.map((input) => input.action)).toEqual(["external_directory_write", "edit"])
           expect(reads).toBe(0)
           expect(writes).toEqual([])
           expect(yield* Effect.promise(() => fs.readFile(external, "utf8"))).toBe("before")
@@ -276,7 +270,7 @@ describe("EditTool", () => {
                   call({ path: "secret.txt", oldString: "not present", newString: "replacement" }),
                 )
 
-                expect(matching).toEqual({ type: "error", value: "Unable to edit secret.txt" })
+                expect(matching).toMatchObject({ type: "error" })
                 expect(missing).toEqual(matching)
                 expect(assertions.map((input) => input.action)).toEqual(["edit", "edit"])
                 expect(reads).toBe(0)

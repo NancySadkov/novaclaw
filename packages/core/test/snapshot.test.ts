@@ -67,17 +67,20 @@ describe("Snapshot", () => {
     ),
   )
 
-  testEffect(Layer.empty).live("treats capture outside Git as unavailable", () =>
+  testEffect(Layer.empty).live("shadow-tracks capture even outside Git (B11)", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),
       (tmp) =>
         Effect.gen(function* () {
+          // B11: a non-git folder still gets a SHADOW repo so the git-substrate undo
+          // (per-turn snapshots + revert) covers any opened folder, not just git checkouts —
+          // capture is available and returns a tree id (it is refused only for FS-root / home).
           expect(
             yield* Effect.gen(function* () {
               const snapshot = yield* Snapshot.Service
               return yield* snapshot.capture()
             }).pipe(Effect.provide(snapshotLayer(tmp.path, tmp.path))),
-          ).toBeUndefined()
+          ).toBeDefined()
         }),
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
     ),

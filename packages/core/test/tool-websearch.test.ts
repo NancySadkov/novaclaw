@@ -71,7 +71,9 @@ const requests: Request[] = []
 const assertions: PermissionV2.AssertInput[] = []
 let responseBody = payload("search results")
 let makeResponse = () => new Response(responseBody, { status: 200 })
-let config: WebSearchTool.Config = { enableExa: false, enableParallel: false }
+// The tool registers only when a provider is enabled, and that gate is read at LAYER-BUILD
+// time (before a test body runs), so the default here must enable a provider.
+let config: WebSearchTool.Config = { provider: "exa", enableExa: true, enableParallel: false }
 
 beforeEach(() => {
   responseBody = payload("search results")
@@ -141,7 +143,7 @@ describe("WebSearchTool registration", () => {
       requests.length = 0
       assertions.length = 0
       responseBody = payload("exa results")
-      config = { provider: "exa", enableExa: false, enableParallel: false }
+      config = { provider: "exa", enableExa: true, enableParallel: false }
       const registry = yield* ToolRegistry.Service
 
       expect((yield* toolDefinitions(registry)).map((tool) => tool.name)).toEqual(["websearch"])

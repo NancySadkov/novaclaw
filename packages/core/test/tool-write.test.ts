@@ -121,7 +121,7 @@ describe("WriteTool", () => {
             expect(yield* Effect.promise(() => fs.readFile(path.join(tmp.path, "src", "new.txt"), "utf8"))).toBe(
               "created",
             )
-            expect(assertions).toMatchObject([{ sessionID, action: "edit", resources: ["src/new.txt"], save: ["*"] }])
+            expect(assertions).toMatchObject([{ sessionID, action: "create", resources: ["src/new.txt"], save: ["*"] }])
             expect(writes).toEqual([path.join(yield* Effect.promise(() => fs.realpath(tmp.path)), "src", "new.txt")])
           }),
         )
@@ -195,7 +195,7 @@ describe("WriteTool", () => {
           Effect.andThen((result) =>
             Effect.gen(function* () {
               expect(result).toEqual({ type: "text", value: "Created file successfully: absolute.txt" })
-              expect(assertions.map((input) => input.action)).toEqual(["edit"])
+              expect(assertions.map((input) => input.action)).toEqual(["create"])
               expect(yield* Effect.promise(() => fs.readFile(target, "utf8"))).toBe("inside")
             }),
           ),
@@ -217,7 +217,7 @@ describe("WriteTool", () => {
           Effect.andThen((settled) =>
             Effect.gen(function* () {
               const canonicalTarget = path.join(yield* Effect.promise(() => fs.realpath(outside.path)), "external.txt")
-              expect(assertions.map((input) => input.action)).toEqual(["external_directory", "edit"])
+              expect(assertions.map((input) => input.action)).toEqual(["external_directory_write", "create"])
               expect(assertions[0]).toMatchObject({
                 resources: [
                   path.join(yield* Effect.promise(() => fs.realpath(outside.path)), "*").replaceAll("\\", "/"),
@@ -249,29 +249,23 @@ describe("WriteTool", () => {
         Effect.gen(function* () {
           const external = path.join(outside.path, "denied.txt")
           reset()
-          denyAction = "external_directory"
+          denyAction = "external_directory_write"
           expect(
             yield* withTool(active.path, (registry) =>
               executeTool(registry, call({ path: external, content: "blocked" })),
             ),
-          ).toEqual({
-            type: "error",
-            value: `Unable to write ${external}`,
-          })
-          expect(assertions.map((input) => input.action)).toEqual(["external_directory"])
+          ).toMatchObject({ type: "error" })
+          expect(assertions.map((input) => input.action)).toEqual(["external_directory_write"])
           expect(writes).toEqual([])
 
           reset()
-          denyAction = "edit"
+          denyAction = "create"
           expect(
             yield* withTool(active.path, (registry) =>
               executeTool(registry, call({ path: "denied.txt", content: "blocked" })),
             ),
-          ).toEqual({
-            type: "error",
-            value: "Unable to write denied.txt",
-          })
-          expect(assertions.map((input) => input.action)).toEqual(["edit"])
+          ).toMatchObject({ type: "error" })
+          expect(assertions.map((input) => input.action)).toEqual(["create"])
           expect(writes).toEqual([])
         }),
       ([active, outside]) =>

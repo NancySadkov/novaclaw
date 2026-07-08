@@ -247,7 +247,7 @@ describe("ApplyPatchTool", () => {
                     call(`*** Begin Patch\n*** Update File: ${target}\n@@\n-before\n+after\n*** End Patch`),
                   ),
                 ).toMatchObject({ type: "text" })
-                expect(assertions.map((input) => input.action)).toEqual(["external_directory", "edit"])
+                expect(assertions.map((input) => input.action)).toEqual(["external_directory_write", "edit"])
                 expect(readsBeforeEditApproval).toBe(0)
                 expect(yield* Effect.promise(() => fs.readFile(target, "utf8"))).toBe("after\n")
               }),
@@ -283,7 +283,7 @@ describe("ApplyPatchTool", () => {
                     ),
                   ),
                 ).toMatchObject({ type: "text" })
-                expect(assertions.map((input) => input.action)).toEqual(["external_directory", "edit"])
+                expect(assertions.map((input) => input.action)).toEqual(["external_directory_write", "edit"])
                 expect(assertions[0]?.resources).toEqual([
                   path.join(yield* Effect.promise(() => fs.realpath(outside.path)), "*").replaceAll("\\", "/"),
                 ])

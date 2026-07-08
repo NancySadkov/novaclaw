@@ -2,7 +2,7 @@ import fs from "fs/promises"
 import { realpathSync } from "node:fs"
 import path from "path"
 import { describe, expect, test } from "bun:test"
-import { Effect, Layer } from "effect"
+import { Effect, Layer, Stream } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { Config } from "@novaclaw/core/config"
@@ -41,7 +41,7 @@ let result: AppProcess.RunResult = {
   stdoutTruncated: false,
   stderrTruncated: false,
 }
-let runFailure: AppProcess.AppProcessError | undefined
+let hang = false
 let afterPermission = (_input: PermissionV2.AssertInput): Effect.Effect<void> => Effect.void
 
 const permission = Layer.succeed(
@@ -64,11 +64,19 @@ const permission = Layer.succeed(
 const appProcess = Layer.succeed(
   AppProcess.Service,
   AppProcess.Service.of({
-    run: (command: ChildProcess.Command, options?: AppProcess.RunOptions) =>
-      Effect.suspend(() => {
+    // BashJobs consumes AppProcess.spawn (a streaming handle), not run: stream the mocked
+    // output through `all` and settle `exitCode` from `result`. `hang` leaves exitCode pending
+    // so BashJobs.wait times out (the long-running-job path).
+    spawn: (command: ChildProcess.Command) =>
+      Effect.sync(() => {
         if (command._tag !== "StandardCommand") throw new Error("expected standard command")
-        runs.push({ command: command.command, cwd: command.options.cwd, shell: command.options.shell, options })
-        return runFailure ? Effect.fail(runFailure) : Effect.succeed(result)
+        runs.push({ command: command.command, cwd: command.options.cwd, shell: command.options.shell })
+        return {
+          all: Stream.fromIterable([new Uint8Array(result.output)]),
+          stdout: Stream.fromIterable([new Uint8Array(result.stdout)]),
+          stderr: Stream.fromIterable([new Uint8Array(result.stderr)]),
+          exitCode: hang ? Effect.never : Effect.succeed(result.exitCode),
+        }
       }),
   } as unknown as AppProcess.Interface),
 )
@@ -83,7 +91,7 @@ const reset = () => {
   assertions.length = 0
   runs.length = 0
   denyAction = undefined
-  runFailure = undefined
+  hang = false
   afterPermission = () => Effect.void
   result = {
     command: "mock",
@@ -168,10 +176,6 @@ describe("BashTool", () => {
               },
             })
             expect(runs).toMatchObject([{ command: "pwd", cwd: realpathSync(tmp.path) }])
-            expect(runs[0]?.options).toMatchObject({
-              combineOutput: true,
-              maxOutputBytes: BashTool.MAX_CAPTURE_BYTES,
-            })
             expect(assertions).toMatchObject([{ sessionID, action: "bash", resources: ["pwd"], save: ["pwd"] }])
           }),
         )
@@ -270,7 +274,7 @@ describe("BashTool", () => {
         ).pipe(
           Effect.andThen(
             Effect.sync(() => {
-              expect(assertions.map((item) => item.action)).toEqual(["external_directory", "bash"])
+              expect(assertions.map((item) => item.action)).toEqual(["external_directory_write", "bash"])
               expect(assertions[0]).toMatchObject({
                 resources: [path.join(realpathSync(outside.path), "*").replaceAll("\\", "/")],
               })
@@ -292,11 +296,11 @@ describe("BashTool", () => {
       ([active, outside]) =>
         Effect.gen(function* () {
           reset()
-          denyAction = "external_directory"
+          denyAction = "external_directory_write"
           yield* withTool(active.path, (registry) =>
             executeTool(registry, call({ command: "pwd", workdir: outside.path })),
           )
-          expect(assertions.map((item) => item.action)).toEqual(["external_directory"])
+          expect(assertions.map((item) => item.action)).toEqual(["external_directory_write"])
           expect(runs).toEqual([])
 
           reset()
@@ -374,7 +378,8 @@ describe("BashTool", () => {
       Effect.promise(() => tmpdir()),
       (tmp) => {
         reset()
-        result = { ...result, outputTruncated: true }
+        // BashJobs truncates by BYTES (maxOutputBytes), so stream just past the cap.
+        result = { ...result, output: Buffer.alloc(BashTool.MAX_CAPTURE_BYTES + 16, 0x78) }
         return withTool(tmp.path, (registry) => settleTool(registry, call({ command: "verbose" }))).pipe(
           Effect.andThen((settled) =>
             Effect.sync(() => {
@@ -397,13 +402,13 @@ describe("BashTool", () => {
       Effect.promise(() => tmpdir()),
       (tmp) => {
         reset()
-        runFailure = new AppProcess.AppProcessError({ command: "sleep", cause: new Error("Timed out") })
+        hang = true // exitCode never settles → BashJobs.wait times out
         return withTool(tmp.path, (registry) => settleTool(registry, call({ command: "sleep 60", timeout: 10 }))).pipe(
           Effect.andThen((settled) =>
             Effect.sync(() => {
               expect(settled.output?.content[1]).toMatchObject({
                 type: "text",
-                text: expect.stringContaining("Command timed out"),
+                text: expect.stringContaining("Still running after the soft deadline"),
               })
               expect(settled.output?.structured).toMatchObject({
                 timeout: true,
