@@ -23,7 +23,6 @@ import { Permission } from "@/permission"
 import { Todo } from "@/session/todo"
 import { Session } from "@/session/session"
 import { Instruction } from "@/session/instruction"
-import { LLM } from "@/session/llm"
 import { MCP } from "@/mcp"
 import { McpAuth } from "@/mcp/auth"
 import { Command } from "@/command"
@@ -69,7 +68,6 @@ export const AppLayer = Layer.mergeAll(
   RuntimeFlags.defaultLayer,
   EventV2Bridge.defaultLayer,
   Instruction.defaultLayer,
-  LLM.defaultLayer,
   MCP.defaultLayer,
   McpAuth.defaultLayer,
   Command.defaultLayer,

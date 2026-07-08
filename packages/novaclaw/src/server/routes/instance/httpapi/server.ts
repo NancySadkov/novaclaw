@@ -31,7 +31,6 @@ import { ProviderAuth } from "@/provider/auth"
 import { Provider } from "@/provider/provider"
 import { Question } from "@/question"
 import { Instruction } from "@/session/instruction"
-import { LLM } from "@/session/llm"
 import { Session } from "@/session/session"
 import { Todo } from "@/session/todo"
 import { Skill } from "@/skill"
@@ -244,7 +243,6 @@ const app = LayerNode.group([
   RuntimeFlags.node,
   EventV2Bridge.node,
   Instruction.node,
-  LLM.node,
   MCP.node,
   McpAuth.node,
   Command.node,
