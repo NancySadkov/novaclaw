@@ -25,15 +25,14 @@ import { inArray } from "drizzle-orm"
 import { lt } from "drizzle-orm"
 import { or } from "drizzle-orm"
 import type { SQL } from "drizzle-orm"
-import { PartTable, SessionTable } from "@novaclaw/core/session/sql"
+import { SessionTable } from "@novaclaw/core/session/sql"
 import { ProjectTable } from "@novaclaw/core/project/sql"
 import { MessageV2 } from "./message-v2"
 import { InstanceState } from "@/effect/instance-state"
-import { Snapshot } from "@/snapshot"
 import { ProjectV2 } from "@novaclaw/core/project"
 import { WorkspaceV2 } from "@novaclaw/core/workspace"
 import { SessionID, MessageID, PartID } from "./schema"
-import { BusyError, GlobalInfo, Info, Metadata, Model, PermissionMode, ProjectInfo, SetMetadataInput } from "./wire"
+import { BusyError, GlobalInfo, Info, Metadata, Model, PermissionMode, ProjectInfo } from "./wire"
 
 import { Effect, Layer, Option, Context, Schema } from "effect"
 import { RuntimeFlags } from "@/effect/runtime-flags"
@@ -172,47 +171,16 @@ export interface Interface {
     workspaceID?: WorkspaceV2.ID
   }) => Effect.Effect<Info>
   readonly fork: (input: { sessionID: SessionID; messageID?: MessageID }) => Effect.Effect<Info, NotFound>
-  readonly touch: (sessionID: SessionID) => Effect.Effect<void>
   readonly get: (id: SessionID) => Effect.Effect<Info, NotFound>
   readonly setTitle: (input: { sessionID: SessionID; title: string }) => Effect.Effect<void>
   readonly setArchived: (input: { sessionID: SessionID; time?: number }) => Effect.Effect<void>
-  readonly setMetadata: (input: typeof SetMetadataInput.Type) => Effect.Effect<void>
-  readonly setAgentModel: (input: {
-    sessionID: SessionID
-    agent: string
-    model: NonNullable<Info["model"]>
-    time: number
-  }) => Effect.Effect<void>
-  readonly setPermission: (input: { sessionID: SessionID; permission: PermissionV1.Ruleset }) => Effect.Effect<void>
-  readonly setRevert: (input: {
-    sessionID: SessionID
-    revert: Info["revert"]
-    summary: Info["summary"]
-  }) => Effect.Effect<void>
-  readonly clearRevert: (sessionID: SessionID) => Effect.Effect<void>
-  readonly setSummary: (input: { sessionID: SessionID; summary: Info["summary"] }) => Effect.Effect<void>
-  readonly setShare: (input: { sessionID: SessionID; share: Info["share"] }) => Effect.Effect<void>
   readonly setWorkspace: (input: { sessionID: SessionID; workspaceID: Info["workspaceID"] }) => Effect.Effect<void>
-  readonly diff: (sessionID: SessionID) => Effect.Effect<Snapshot.FileDiff[]>
   readonly messages: (input: { sessionID: SessionID; limit?: number }) => Effect.Effect<SessionV1.WithParts[], NotFound>
-  readonly children: (parentID: SessionID) => Effect.Effect<Info[]>
   readonly remove: (sessionID: SessionID) => Effect.Effect<void, NotFound>
   readonly updateMessage: <T extends SessionV1.Info>(msg: T) => Effect.Effect<T>
   readonly removeMessage: (input: { sessionID: SessionID; messageID: MessageID }) => Effect.Effect<MessageID>
   readonly removePart: (input: { sessionID: SessionID; messageID: MessageID; partID: PartID }) => Effect.Effect<PartID>
-  readonly getPart: (input: {
-    sessionID: SessionID
-    messageID: MessageID
-    partID: PartID
-  }) => Effect.Effect<SessionV1.Part | undefined>
   readonly updatePart: <T extends SessionV1.Part>(part: T) => Effect.Effect<T>
-  readonly updatePartDelta: (input: {
-    sessionID: SessionID
-    messageID: MessageID
-    partID: PartID
-    field: string
-    delta: string
-  }) => Effect.Effect<void>
   /** Finds the first message matching the predicate, searching newest-first. */
   readonly findMessage: (
     sessionID: SessionID,
@@ -399,28 +367,6 @@ export const layer: Layer.Layer<
         return part
       }).pipe(Effect.withSpan("Session.updatePart"))
 
-    const getPart: Interface["getPart"] = Effect.fn("Session.getPart")(function* (input) {
-      const row = yield* db
-        .select()
-        .from(PartTable)
-        .where(
-          and(
-            eq(PartTable.session_id, input.sessionID),
-            eq(PartTable.message_id, input.messageID),
-            eq(PartTable.id, input.partID),
-          ),
-        )
-        .get()
-        .pipe(Effect.orDie)
-      if (!row) return
-      return {
-        ...row.data,
-        id: row.id,
-        sessionID: row.session_id,
-        messageID: row.message_id,
-      } as SessionV1.Part
-    })
-
     const create = Effect.fn("Session.create")(function* (input?: {
       parentID?: SessionID
       title?: string
@@ -505,69 +451,12 @@ export const layer: Layer.Layer<
         yield* events.publish(SessionV1.Event.Updated, { sessionID, info: next })
       })
 
-    const touch = Effect.fn("Session.touch")(function* (sessionID: SessionID) {
-      yield* patch(sessionID, { time: { updated: Date.now() } }).pipe(Effect.orDie)
-    })
-
     const setTitle = Effect.fn("Session.setTitle")(function* (input: { sessionID: SessionID; title: string }) {
       yield* patch(input.sessionID, { title: input.title }).pipe(Effect.orDie)
     })
 
     const setArchived = Effect.fn("Session.setArchived")(function* (input: { sessionID: SessionID; time?: number }) {
       yield* patch(input.sessionID, { time: { archived: input.time } }).pipe(Effect.orDie)
-    })
-
-    const setMetadata = Effect.fn("Session.setMetadata")(function* (input: typeof SetMetadataInput.Type) {
-      yield* patch(input.sessionID, { metadata: input.metadata, time: { updated: Date.now() } }).pipe(Effect.orDie)
-    })
-
-    const setAgentModel = Effect.fn("Session.setAgentModel")(function* (input: {
-      sessionID: SessionID
-      agent: string
-      model: NonNullable<Info["model"]>
-      time: number
-    }) {
-      yield* patch(input.sessionID, {
-        agent: input.agent,
-        model: input.model,
-        time: { updated: input.time },
-      }).pipe(Effect.orDie)
-    })
-
-    const setPermission = Effect.fn("Session.setPermission")(function* (input: {
-      sessionID: SessionID
-      permission: PermissionV1.Ruleset
-    }) {
-      yield* patch(input.sessionID, { permission: [...input.permission], time: { updated: Date.now() } }).pipe(
-        Effect.orDie,
-      )
-    })
-
-    const setRevert = Effect.fn("Session.setRevert")(function* (input: {
-      sessionID: SessionID
-      revert: Info["revert"]
-      summary: Info["summary"]
-    }) {
-      yield* patch(input.sessionID, {
-        summary: input.summary,
-        time: { updated: Date.now() },
-        revert: input.revert,
-      }).pipe(Effect.orDie)
-    })
-
-    const clearRevert = Effect.fn("Session.clearRevert")(function* (sessionID: SessionID) {
-      yield* patch(sessionID, { time: { updated: Date.now() }, revert: null }).pipe(Effect.orDie)
-    })
-
-    const setSummary = Effect.fn("Session.setSummary")(function* (input: {
-      sessionID: SessionID
-      summary: Info["summary"]
-    }) {
-      yield* patch(input.sessionID, { time: { updated: Date.now() }, summary: input.summary }).pipe(Effect.orDie)
-    })
-
-    const setShare = Effect.fn("Session.setShare")(function* (input: { sessionID: SessionID; share: Info["share"] }) {
-      yield* patch(input.sessionID, { share: input.share ?? null, time: { updated: Date.now() } }).pipe(Effect.orDie)
     })
 
     const setWorkspace = Effect.fn("Session.setWorkspace")(function* (input: {
@@ -577,11 +466,6 @@ export const layer: Layer.Layer<
       yield* patch(input.sessionID, { workspaceID: input.workspaceID, time: { updated: Date.now() } }).pipe(
         Effect.orDie,
       )
-    })
-
-    const diff = Effect.fn("Session.diff")(function* (sessionID: SessionID) {
-      void sessionID
-      return [] as Snapshot.FileDiff[]
     })
 
     const messages: Interface["messages"] = Effect.fn("Session.messages")(function* (input) {
@@ -633,16 +517,6 @@ export const layer: Layer.Layer<
       return input.partID
     })
 
-    const updatePartDelta = Effect.fnUntraced(function* (input: {
-      sessionID: SessionID
-      messageID: MessageID
-      partID: PartID
-      field: string
-      delta: string
-    }) {
-      yield* events.publish(MessageV2.Event.PartDelta, input)
-    })
-
     /** Finds the first message matching the predicate, searching newest-first. */
     const findMessage: Interface["findMessage"] = Effect.fn("Session.findMessage")(function* (sessionID, predicate) {
       const size = 50
@@ -667,28 +541,16 @@ export const layer: Layer.Layer<
       listGlobal,
       create,
       fork,
-      touch,
       get,
       setTitle,
       setArchived,
-      setMetadata,
-      setAgentModel,
-      setPermission,
-      setRevert,
-      clearRevert,
-      setSummary,
-      setShare,
       setWorkspace,
-      diff,
       messages,
-      children,
       remove,
       updateMessage,
       removeMessage,
       removePart,
       updatePart,
-      getPart,
-      updatePartDelta,
       findMessage,
     })
   }),
