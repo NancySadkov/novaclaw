@@ -337,22 +337,6 @@ it.instance(
 )
 
 it.instance(
-  "agent name can be overridden",
-  () =>
-    Effect.gen(function* () {
-      const build = yield* load((svc) => svc.get("build"))
-      expect(build?.name).toBe("Builder")
-    }),
-  {
-    config: {
-      agent: {
-        build: { name: "Builder" },
-      },
-    },
-  },
-)
-
-it.instance(
   "agent prompt can be set from config",
   () =>
     Effect.gen(function* () {

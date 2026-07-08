@@ -72,9 +72,12 @@ const appProcess = Layer.succeed(
         if (command._tag !== "StandardCommand") throw new Error("expected standard command")
         runs.push({ command: command.command, cwd: command.options.cwd, shell: command.options.shell })
         return {
-          all: Stream.fromIterable([new Uint8Array(result.output)]),
-          stdout: Stream.fromIterable([new Uint8Array(result.stdout)]),
-          stderr: Stream.fromIterable([new Uint8Array(result.stderr)]),
+          // result.{output,stdout,stderr} are Node Buffers (already Uint8Arrays); stream
+          // them directly — `new Uint8Array(Buffer)` trips the @types/node Buffer-generic
+          // overload. The mock is force-cast below, so a Stream<Buffer> chunk is fine.
+          all: Stream.fromIterable([result.output]),
+          stdout: Stream.fromIterable([result.stdout]),
+          stderr: Stream.fromIterable([result.stderr]),
           exitCode: hang ? Effect.never : Effect.succeed(result.exitCode),
         }
       }),
