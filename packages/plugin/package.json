@@ -20,7 +20,6 @@
     "dist"
   ],
   "dependencies": {
-    "@ai-sdk/provider": "3.0.8",
     "@novaclaw/sdk": "workspace:*",
     "effect": "catalog:",
     "zod": "catalog:"

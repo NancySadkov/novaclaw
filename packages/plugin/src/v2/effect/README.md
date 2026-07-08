@@ -58,29 +58,6 @@ ctx.reference.transform
 ctx.skill.transform
 ```
 
-## Runtime Hooks
-
-Runtime hooks intercept live operations rather than rebuilding domain state:
-
-```ts
-yield *
-  ctx.aisdk.sdk(
-    Effect.fn(function* (event) {
-      if (event.package !== "@ai-sdk/xai") return
-      const mod = yield* Effect.promise(() => import("@ai-sdk/xai"))
-      event.sdk = mod.createXai(event.options)
-    }),
-  )
-
-yield *
-  ctx.aisdk.language((event) => {
-    if (event.model.providerID !== "xai") return
-    event.language = event.sdk.responses(event.model.api.id)
-  })
-```
-
-Hooks run sequentially in registration order. Later hooks observe mutations made by earlier hooks.
-
 ## Reloading A Domain
 
 When data captured by a transform changes, reload the affected domain:

@@ -59,23 +59,6 @@ ctx.reference.transform
 ctx.skill.transform
 ```
 
-## Runtime Hooks
-
-Runtime hooks intercept live operations:
-
-```ts
-await ctx.aisdk.sdk(async (event) => {
-  if (event.package !== "@ai-sdk/xai") return
-  const mod = await import("@ai-sdk/xai")
-  event.sdk = mod.createXai(event.options)
-})
-
-await ctx.aisdk.language((event) => {
-  if (event.model.providerID !== "xai") return
-  event.language = event.sdk.responses(event.model.api.id)
-})
-```
-
 ## Reloading A Domain
 
 When data captured by a transform changes, reload the affected domain:

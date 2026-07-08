@@ -1,7 +1,7 @@
 import { PermissionV1 } from "@novaclaw/core/v1/permission"
 import { Effect, Schema } from "effect"
 import { SessionV1 } from "@novaclaw/core/v1/session"
-import type { JSONSchema7 } from "@ai-sdk/provider"
+import type { JSONSchema7 } from "json-schema"
 import type { Permission } from "../permission"
 import type { SessionID, MessageID } from "../session/schema"
 import * as Truncate from "./truncate"

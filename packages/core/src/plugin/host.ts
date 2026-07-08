@@ -3,7 +3,6 @@ export * as PluginHost from "./host"
 import type { PluginContext as Interface } from "@novaclaw/plugin/v2/effect"
 import { Effect, Schema } from "effect"
 import { AgentV2 } from "../agent"
-import { AISDK } from "../aisdk"
 import { Catalog } from "../catalog"
 import { CommandV2 } from "../command"
 import { Credential } from "../credential"
@@ -20,7 +19,6 @@ const mutable = <T>(value: T) => value as DeepMutable<T>
 
 export const make = Effect.fn("PluginHost.make")(function* (plugin: PluginV2.Interface) {
   const agents = yield* AgentV2.Service
-  const aisdk = yield* AISDK.Service
   const catalog = yield* Catalog.Service
   const commands = yield* CommandV2.Service
   const integration = yield* Integration.Service
@@ -42,34 +40,6 @@ export const make = Effect.fn("PluginHost.make")(function* (plugin: PluginV2.Int
             remove: (id) => draft.remove(AgentV2.ID.make(id)),
           }),
         ),
-    },
-    aisdk: {
-      sdk: (callback) =>
-        aisdk.hook.sdk((event) => {
-          const output = {
-            model: mutable(event.model),
-            package: event.package,
-            options: event.options,
-            sdk: event.sdk,
-          }
-          const result = callback(output)
-          return Effect.suspend(() => (Effect.isEffect(result) ? result : Effect.void)).pipe(
-            Effect.tap(() => Effect.sync(() => (event.sdk = output.sdk))),
-          )
-        }),
-      language: (callback) =>
-        aisdk.hook.language((event) => {
-          const output = {
-            model: mutable(event.model),
-            sdk: event.sdk,
-            options: event.options,
-            language: event.language,
-          }
-          const result = callback(output)
-          return Effect.suspend(() => (Effect.isEffect(result) ? result : Effect.void)).pipe(
-            Effect.tap(() => Effect.sync(() => (event.language = output.language))),
-          )
-        }),
     },
     catalog: {
       reload: catalog.reload,

@@ -8,7 +8,7 @@
 // in F1f). No Effect, no services — safe to import from either engine.
 
 import { type ToolDefinition } from "@novaclaw/plugin"
-import type { JSONSchema7, JSONSchema7Definition } from "@ai-sdk/provider"
+import type { JSONSchema7, JSONSchema7Definition } from "json-schema"
 import z from "zod"
 
 export function isZodType(value: unknown): value is z.ZodType {

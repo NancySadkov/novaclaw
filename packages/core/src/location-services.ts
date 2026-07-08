@@ -1,7 +1,6 @@
 import { Effect, Layer, LayerMap } from "effect"
 import { AdhocGuidance } from "./adhoc-tools/guidance"
 import { AgentV2 } from "./agent"
-import { AISDK } from "./aisdk"
 import { Catalog } from "./catalog"
 import { CommandV2 } from "./command"
 import { Config } from "./config"
@@ -51,7 +50,6 @@ export const locationServices = LayerNode.group([
   Reference.node,
   Integration.node,
   Catalog.node,
-  AISDK.node,
   PluginV2.node,
   PluginInternal.node,
   ProjectCopy.node,

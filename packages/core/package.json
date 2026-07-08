@@ -61,9 +61,6 @@
     "drizzle-kit": "catalog:"
   },
   "dependencies": {
-    "@ai-sdk/openai-compatible": "2.0.41",
-    "@ai-sdk/provider": "3.0.8",
-    "@ai-sdk/provider-utils": "4.0.23",
     "@effect/opentelemetry": "catalog:",
     "@effect/platform-node": "catalog:",
     "@effect/sql-sqlite-bun": "catalog:",

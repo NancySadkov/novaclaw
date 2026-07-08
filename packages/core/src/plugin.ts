@@ -5,7 +5,6 @@ import { Context, Deferred, Effect, Exit, Layer, Scope } from "effect"
 import type { Plugin as PluginRuntime } from "@novaclaw/plugin/v2/effect"
 import { Plugin } from "@novaclaw/schema/plugin"
 import { AgentV2 } from "./agent"
-import { AISDK } from "./aisdk"
 import { Catalog } from "./catalog"
 import { CommandV2 } from "./command"
 import { EventV2 } from "./event"
@@ -145,7 +144,6 @@ export const layer = Layer.effect(
 
 export const locationLayer = layer.pipe(
   Layer.provideMerge(AgentV2.locationLayer),
-  Layer.provideMerge(AISDK.locationLayer),
   Layer.provideMerge(Catalog.locationLayer),
   Layer.provideMerge(CommandV2.locationLayer),
   Layer.provideMerge(Integration.locationLayer),
@@ -160,7 +158,6 @@ export const node = makeLocationNode({
   deps: [
     EventV2.node,
     AgentV2.node,
-    AISDK.node,
     Catalog.node,
     CommandV2.node,
     Integration.node,

@@ -48,12 +48,6 @@ export function fromPromise(plugin: Plugin) {
             transform: transform(host.agent),
             reload: () => run(host.agent.reload()),
           },
-          aisdk: {
-            sdk: (callback) =>
-              register(host.aisdk.sdk((event) => Effect.promise(() => Promise.resolve(callback(event))))),
-            language: (callback) =>
-              register(host.aisdk.language((event) => Effect.promise(() => Promise.resolve(callback(event))))),
-          },
           catalog: {
             transform: transform(host.catalog),
             reload: () => run(host.catalog.reload()),
