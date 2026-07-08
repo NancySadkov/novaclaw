@@ -1,5 +1,5 @@
 import { cmd } from "./cmd"
-import { ConfigV1 } from "@novaclaw/core/v1/config/config"
+import { Config as ConfigV2 } from "@novaclaw/core/config"
 import { effectCmd } from "../effect-cmd"
 import { Cause } from "effect"
 import { Client } from "@modelcontextprotocol/sdk/client/index.js"
@@ -43,23 +43,19 @@ function getAuthStatusText(status: MCP.AuthStatus): string {
   }
 }
 
-type McpEntry = NonNullable<ConfigV1.Info["mcp"]>[string]
+// V2 nests servers under `mcp.servers`; every server carries a `type`.
+type McpEntry = NonNullable<NonNullable<ConfigV2.Info["mcp"]>["servers"]>[string]
 
-type McpConfigured = ConfigMCPV1.Info
-function isMcpConfigured(config: McpEntry): config is McpConfigured {
-  return typeof config === "object" && config !== null && "type" in config
-}
-
-type McpRemote = Extract<McpConfigured, { type: "remote" }>
+type McpRemote = Extract<McpEntry, { type: "remote" }>
 function isMcpRemote(config: McpEntry): config is McpRemote {
-  return isMcpConfigured(config) && config.type === "remote"
+  return config.type === "remote"
 }
 
-function configuredServers(config: ConfigV1.Info) {
-  return Object.entries(config.mcp ?? {}).filter((entry): entry is [string, McpConfigured] => isMcpConfigured(entry[1]))
+function configuredServers(config: ConfigV2.Info): [string, McpEntry][] {
+  return Object.entries(config.mcp?.servers ?? {})
 }
 
-function oauthServers(config: ConfigV1.Info) {
+function oauthServers(config: ConfigV2.Info) {
   return configuredServers(config).filter(
     (entry): entry is [string, McpRemote] => isMcpRemote(entry[1]) && entry[1].oauth !== false,
   )
@@ -182,7 +178,7 @@ export const McpAuthCommand = effectCmd({
     prompts.intro("MCP OAuth Authentication")
 
     const { config, auth } = yield* authState()
-    const mcpServers = config.mcp ?? {}
+    const mcpServers = config.mcp?.servers ?? {}
     const servers = oauthServers(config)
 
     if (servers.length === 0) {
@@ -669,7 +665,7 @@ export const McpDebugCommand = effectCmd({
     const config = yield* Config.Service.use((cfg) => cfg.get())
     const mcp = yield* MCP.Service
     const auth = yield* McpAuth.Service
-    const serverConfig = config.mcp?.[args.name]
+    const serverConfig = config.mcp?.servers?.[args.name]
     const authInfo =
       serverConfig && isMcpRemote(serverConfig) && serverConfig.oauth !== false
         ? yield* Effect.all({
@@ -769,10 +765,10 @@ export const McpDebugCommand = effectCmd({
             serverName,
             serverConfig.url,
             {
-              clientId: oauthConfig?.clientId,
-              clientSecret: oauthConfig?.clientSecret,
+              clientId: oauthConfig?.client_id,
+              clientSecret: oauthConfig?.client_secret,
               scope: oauthConfig?.scope,
-              redirectUri: oauthConfig?.redirectUri,
+              redirectUri: oauthConfig?.redirect_uri,
             },
             {
               onRedirect: async () => {},
