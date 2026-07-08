@@ -100,7 +100,7 @@ export const layer = Layer.effect(
       Effect.fn("Agent.state")(function* (ctx) {
         const cfg = yield* config.get()
         const skillDirs = yield* skill.dirs()
-        const referenceDirs = Object.keys(cfg.references ?? cfg.reference ?? {}).length
+        const referenceDirs = Object.keys(cfg.references ?? {}).length
           ? yield* Effect.gen(function* () {
               yield* (yield* PluginV2.Service).wait(PluginV2.ID.make("core/config-reference"))
               return (yield* (yield* Reference.Service).list()).map((reference) => reference.path)
@@ -136,7 +136,9 @@ export const layer = Layer.effect(
           },
         })
 
-        const user = Permission.fromConfig(cfg.permission ?? {})
+        // V2 config `permissions` is an ordered Ruleset ({action,resource,effect}); the V1 agent service
+        // works in the {permission,pattern,action} ruleset shape, so remap the fields.
+        const user = (cfg.permissions ?? []).map((r) => ({ permission: r.action, pattern: r.resource, action: r.effect }))
 
         const agents: Record<string, Info> = {
           build: {
@@ -265,8 +267,8 @@ export const layer = Layer.effect(
           },
         }
 
-        for (const [key, value] of Object.entries(cfg.agent ?? {})) {
-          if (value.disable) {
+        for (const [key, value] of Object.entries(cfg.agents ?? {})) {
+          if (value.disabled) {
             delete agents[key]
             continue
           }
@@ -279,19 +281,23 @@ export const layer = Layer.effect(
               options: {},
               native: false,
             }
+          // V2 ConfigAgent.Info: prompt→system, disable→disabled, permission(dict)→permissions(ruleset),
+          // and options/temperature/top_p are folded into request.body (no top-level name — it is the key).
           if (value.model) item.model = Provider.parseModel(value.model)
           item.variant = value.variant ?? item.variant
-          item.prompt = value.prompt ?? item.prompt
+          item.prompt = value.system ?? item.prompt
           item.description = value.description ?? item.description
-          item.temperature = value.temperature ?? item.temperature
-          item.topP = value.top_p ?? item.topP
+          item.temperature = (value.request?.body?.temperature as number | undefined) ?? item.temperature
+          item.topP = (value.request?.body?.top_p as number | undefined) ?? item.topP
           item.mode = value.mode ?? item.mode
           item.color = value.color ?? item.color
           item.hidden = value.hidden ?? item.hidden
-          item.name = value.name ?? item.name
           item.steps = value.steps ?? item.steps
-          item.options = mergeDeep(item.options, value.options ?? {})
-          item.permission = Permission.merge(item.permission, Permission.fromConfig(value.permission ?? {}))
+          item.options = mergeDeep(item.options, value.request?.body ?? {})
+          item.permission = Permission.merge(
+            item.permission,
+            (value.permissions ?? []).map((r) => ({ permission: r.action, pattern: r.resource, action: r.effect })),
+          )
         }
 
         // Ensure Truncate.GLOB is allowed unless explicitly configured
@@ -374,9 +380,9 @@ export const layer = Layer.effect(
         const model = input.model ?? (yield* provider.defaultModel())
         const resolved = yield* provider.getModel(model.providerID, model.modelID)
         const language = yield* provider.getLanguage(resolved)
-        const tracer = cfg.experimental?.openTelemetry
-          ? Option.getOrUndefined(yield* Effect.serviceOption(OtelTracer.OtelTracer))
-          : undefined
+        // F1d: `experimental.openTelemetry` was dropped in V2 (AI-SDK OTel telemetry retires with the
+        // AI-SDK removal). Telemetry is off here.
+        const tracer = undefined
 
         const system = [PROMPT_GENERATE]
         yield* plugin.trigger("experimental.chat.system.transform", { model: resolved }, { system })
@@ -388,7 +394,7 @@ export const layer = Layer.effect(
 
         const params = {
           experimental_telemetry: {
-            isEnabled: cfg.experimental?.openTelemetry,
+            isEnabled: false,
             tracer,
             metadata: {
               userId: cfg.username ?? "unknown",
