@@ -113,8 +113,15 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       payload: { modelID?: string | undefined; baseURL?: string | undefined; apiKey?: string | undefined }
     }) {
       const config = yield* cfg.get()
-      const entry = config.provider?.[ctx.params.providerID]
-      const options = (entry?.options ?? {}) as Record<string, unknown>
+      const entry = config.providers?.[ctx.params.providerID]
+      // V2 provider config has no flat `options`: the endpoint URL lives on `api.url`, and any extra
+      // settings/apiKey are under api.settings / request.body. Flatten them into the shape this probe
+      // reads (baseURL, apiKey).
+      const options = {
+        ...(entry?.api?.settings ?? {}),
+        ...(entry?.request?.body ?? {}),
+        ...(entry?.api?.url ? { baseURL: entry.api.url } : {}),
+      } as Record<string, unknown>
       const catalog: Record<string, { api?: string }> = yield* ModelsDev.Service.use((s) => s.get()).pipe(
         Effect.orElseSucceed(() => ({})),
       )

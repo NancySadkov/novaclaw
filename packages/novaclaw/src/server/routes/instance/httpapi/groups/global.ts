@@ -1,4 +1,4 @@
-import { ConfigV1 } from "@novaclaw/core/v1/config/config"
+import { Config as ConfigV2 } from "@novaclaw/core/config"
 import { EventV2 } from "@novaclaw/core/event"
 import { EventManifest } from "@/event-manifest"
 import { InstanceDisposed } from "@/server/event"
@@ -92,7 +92,7 @@ export const GlobalApi = HttpApi.make("global").add(
         }),
       ),
       HttpApiEndpoint.get("configGet", GlobalPaths.config, {
-        success: described(ConfigV1.Info, "Get global config info"),
+        success: described(ConfigV2.Info, "Get global config info"),
       }).annotateMerge(
         OpenApi.annotations({
           identifier: "global.config.get",
@@ -101,8 +101,8 @@ export const GlobalApi = HttpApi.make("global").add(
         }),
       ),
       HttpApiEndpoint.patch("configUpdate", GlobalPaths.config, {
-        payload: ConfigV1.Info,
-        success: described(ConfigV1.Info, "Successfully updated global config"),
+        payload: ConfigV2.Info,
+        success: described(ConfigV2.Info, "Successfully updated global config"),
         error: HttpApiError.BadRequest,
       }).annotateMerge(
         OpenApi.annotations({
