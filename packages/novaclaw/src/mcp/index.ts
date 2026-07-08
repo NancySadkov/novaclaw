@@ -1,7 +1,7 @@
 import path from "node:path"
 import { pathToFileURL } from "node:url"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
-import { type Tool } from "ai"
+import { McpExternal } from "@novaclaw/core/tool/mcp-external"
 import { ConfigV1 } from "@novaclaw/core/v1/config/config"
 import { serviceUse } from "@novaclaw/core/effect/service-use"
 import { Client, type ClientOptions } from "@modelcontextprotocol/sdk/client/index.js"
@@ -165,7 +165,7 @@ export interface Interface {
   readonly status: () => Effect.Effect<Record<string, Status>>
   readonly clients: () => Effect.Effect<Record<string, MCPClient>>
   readonly instructions: () => Effect.Effect<ServerInstructions[]>
-  readonly tools: () => Effect.Effect<Record<string, Tool>>
+  readonly tools: () => Effect.Effect<Record<string, McpExternal.AiSdkTool>>
   readonly prompts: () => Effect.Effect<Record<string, PromptInfo & { client: string }>>
   readonly resources: (clientName?: string) => Effect.Effect<Record<string, ResourceInfo & { client: string }>>
   readonly resourceTemplates: (
@@ -671,7 +671,7 @@ export const layer = Layer.effect(
     }
 
     const tools = Effect.fn("MCP.tools")(function* () {
-      const result: Record<string, Tool> = {}
+      const result: Record<string, McpExternal.AiSdkTool> = {}
       const s = yield* InstanceState.get(state)
 
       const cfg = yield* cfgSvc.get()

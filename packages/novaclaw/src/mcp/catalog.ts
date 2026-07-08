@@ -5,7 +5,7 @@ import {
   ToolSchema,
   type Tool as MCPToolDef,
 } from "@modelcontextprotocol/sdk/types.js"
-import { dynamicTool, jsonSchema, type JSONSchema7, type Tool } from "ai"
+import { McpExternal } from "@novaclaw/core/tool/mcp-external"
 import { Effect } from "effect"
 
 const DEFAULT_TIMEOUT = 30_000
@@ -39,18 +39,24 @@ export function defs(client: Client, timeout?: number) {
   return listTools(client, timeout ?? DEFAULT_TIMEOUT).pipe(Effect.catch(() => Effect.void))
 }
 
-export function convertTool(mcpTool: MCPToolDef, client: Client, timeout?: number): Tool {
-  const inputSchema: JSONSchema7 = {
-    ...(mcpTool.inputSchema as JSONSchema7),
-    type: "object",
-    properties: (mcpTool.inputSchema.properties ?? {}) as JSONSchema7["properties"],
+// Adapt an MCP tool def into the structural `McpExternal.AiSdkTool` shape the V2
+// `ExternalToolSource` bridge consumes (`fromMcpTool` unwraps `inputSchema` and
+// re-shapes the raw MCP `CallToolResult` into the `{ structured, content }`
+// contract). Previously an AI-SDK `dynamicTool`; a plain object drops the `ai`
+// dependency without changing the downstream contract — `fromMcpTool` reads
+// `inputSchema` directly and calls `execute(args, { toolCallId, messages })`.
+export function convertTool(mcpTool: MCPToolDef, client: Client, timeout?: number): McpExternal.AiSdkTool {
+  const inputSchema = {
+    ...(mcpTool.inputSchema as Record<string, unknown>),
+    type: "object" as const,
+    properties: mcpTool.inputSchema.properties ?? {},
     additionalProperties: false,
   }
 
-  return dynamicTool({
+  return {
     description: mcpTool.description ?? "",
-    inputSchema: jsonSchema(inputSchema),
-    execute: async (args: unknown, options) => {
+    inputSchema,
+    execute: async (args: unknown, options: { abortSignal?: AbortSignal }) => {
       const result = await client.callTool(
         {
           name: mcpTool.name,
@@ -78,7 +84,7 @@ export function convertTool(mcpTool: MCPToolDef, client: Client, timeout?: numbe
         content: [{ type: "text" as const, text: JSON.stringify(result.structuredContent) }],
       }
     },
-  })
+  }
 }
 
 export function fetch<T extends { name: string }>(
