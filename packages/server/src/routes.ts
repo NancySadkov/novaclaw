@@ -26,6 +26,7 @@ import { sessionLocationLayer } from "./middleware/session-location"
 
 const applicationServices = LayerNode.group([
   Database.node,
+  Database.maintenanceNode,
   EventV2.node,
   httpClient,
   ToolOutputStore.cleanupNode,

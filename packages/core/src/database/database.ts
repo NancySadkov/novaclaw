@@ -2,7 +2,7 @@ export * as Database from "./database"
 
 import { EffectDrizzleSqlite } from "@novaclaw/effect-drizzle-sqlite"
 import { layer as sqliteLayer } from "#sqlite"
-import { Context, Effect, Layer } from "effect"
+import { Context, Duration, Effect, Layer, Schedule } from "effect"
 import { Global } from "../global"
 import { Flag } from "../flag/flag"
 import { isAbsolute, join } from "path"
@@ -61,3 +61,25 @@ export const defaultLayer = Layer.unwrap(
 ).pipe(Layer.provide(Global.defaultLayer))
 
 export const node = makeGlobalNode({ service: Service, layer: layerFromPath(path()), deps: [] })
+
+// Periodically truncate the WAL so the `-wal` sidecar doesn't grow without bound
+// during long-lived write bursts (only a PASSIVE checkpoint runs at boot otherwise).
+// TRUNCATE resets the WAL file to zero once no reader needs it; it fails harmlessly
+// (BUSY) if a reader is mid-checkpoint, so errors are swallowed and retried next tick.
+// Its own global node so it runs only where wired (the serve), not short-lived CLI/
+// test contexts — mirrors ToolOutputStore.cleanupNode.
+//
+// NOTE: this bounds the WAL, NOT the main DB file. Reclaiming freed pages from the
+// main file (VACUUM) is deliberately NOT done here — `auto_vacuum` won't engage
+// post-write without a converting VACUUM, and an unguarded full VACUUM rewrites +
+// briefly locks the whole file. A guarded reclamation (freelist-gated incremental
+// vacuum) is the tracked follow-up; see the SQLite-growth task.
+export const maintenanceLayer = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const { db } = yield* Service
+    const checkpoint = db.run("PRAGMA wal_checkpoint(TRUNCATE)").pipe(Effect.catchCause(() => Effect.void))
+    yield* checkpoint.pipe(Effect.repeat(Schedule.spaced(Duration.hours(1))), Effect.forkScoped)
+  }),
+)
+
+export const maintenanceNode = makeGlobalNode({ name: "database-maintenance", layer: maintenanceLayer, deps: [node] })
