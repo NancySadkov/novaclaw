@@ -285,7 +285,7 @@ async function check(map: (dir: string) => string) {
       directory: map(tmp.path),
       fn: async (ctx) => {
         const cfg = await load(ctx)
-        expect(cfg.snapshot).toBe(true)
+        expect(cfg.snapshots).toBe(true)
         expect(ctx.directory).toBe(Filesystem.resolve(tmp.path))
         expect(ctx.project.id).not.toBe(ProjectV2.ID.global)
       },
@@ -605,7 +605,7 @@ const accountTokenIt = configIt({
 accountTokenIt.instance("resolves env templates in account config with account token", () =>
   Effect.gen(function* () {
     const config = yield* Config.use.get()
-    expect(config.provider?.["novaclaw"]?.options?.apiKey).toBe("st_test_token")
+    expect(config.providers?.["novaclaw"]?.request?.body?.apiKey).toBe("st_test_token")
   }),
 )
 
@@ -644,11 +644,11 @@ it.instance("handles agent configuration", () =>
       },
     })
     const config = yield* Config.use.get()
-    expect(config.agent?.["test_agent"]).toEqual(
+    expect(config.agents?.["test_agent"]).toEqual(
       expect.objectContaining({
         model: "test/model",
-        temperature: 0.7,
         description: "test agent",
+        request: { body: { temperature: 0.7 } },
       }),
     )
   }),
@@ -668,13 +668,13 @@ it.instance("treats agent variant as model-scoped setting (not provider option)"
       },
     })
     const config = yield* Config.use.get()
-    const agent = config.agent?.["test_agent"]
+    const agent = config.agents?.["test_agent"]
 
     expect(agent?.variant).toBe("xhigh")
-    expect(agent?.options).toMatchObject({
+    expect(agent?.request?.body).toMatchObject({
       max_tokens: 123,
     })
-    expect(agent?.options).not.toHaveProperty("variant")
+    expect(agent?.request?.body).not.toHaveProperty("variant")
   }),
 )
 
@@ -692,7 +692,7 @@ it.instance("handles command configuration", () =>
       },
     })
     const config = yield* Config.use.get()
-    expect(config.command?.["test_command"]).toEqual({
+    expect(config.commands?.["test_command"]).toEqual({
       template: "test template",
       description: "test command",
       agent: "test_agent",
@@ -713,12 +713,10 @@ it.instance("migrates mode field to agent field", () =>
       },
     })
     const config = yield* Config.use.get()
-    expect(config.agent?.["test_mode"]).toEqual({
+    expect(config.agents?.["test_mode"]).toEqual({
       model: "test/model",
-      temperature: 0.5,
       mode: "primary",
-      options: {},
-      permission: {},
+      request: { body: { temperature: 0.5 } },
     })
   }),
 )
@@ -735,7 +733,7 @@ it.instance("accepts the deprecated reference field", () =>
       },
     })
     const config = yield* Config.use.get()
-    expect(config.reference).toEqual({
+    expect(config.references).toEqual({
       local: { path: "../library" },
       sdk: { repository: "github.com/example/sdk", branch: "main" },
       shorthand: "github.com/example/docs",
@@ -755,11 +753,10 @@ Test agent prompt`,
     )
 
     const config = yield* Config.use.get()
-    expect(config.agent?.["test"]).toEqual(
+    expect(config.agents?.["test"]).toEqual(
       expect.objectContaining({
-        name: "test",
         model: "test/model",
-        prompt: "Test agent prompt",
+        system: "Test agent prompt",
       }),
     )
   }),
@@ -780,7 +777,7 @@ Ordered permissions`,
     )
 
     const config = yield* Config.use.get()
-    expect(Object.keys(config.agent?.ordered?.permission ?? {})).toEqual(["bash", "*", "edit"])
+    expect((config.agents?.["ordered"]?.permissions ?? []).map((rule) => rule.action)).toEqual(["bash", "*", "edit"])
   }),
 )
 
@@ -807,18 +804,16 @@ Nested agent prompt`,
 
     const config = yield* Config.use.get()
 
-    expect(config.agent?.["helper"]).toMatchObject({
-      name: "helper",
+    expect(config.agents?.["helper"]).toMatchObject({
       model: "test/model",
       mode: "subagent",
-      prompt: "Helper agent prompt",
+      system: "Helper agent prompt",
     })
 
-    expect(config.agent?.["nested/child"]).toMatchObject({
-      name: "nested/child",
+    expect(config.agents?.["nested/child"]).toMatchObject({
       model: "test/model",
       mode: "subagent",
-      prompt: "Nested agent prompt",
+      system: "Nested agent prompt",
     })
   }),
 )
@@ -844,12 +839,12 @@ Nested command template`,
 
     const config = yield* Config.use.get()
 
-    expect(config.command?.["hello"]).toEqual({
+    expect(config.commands?.["hello"]).toEqual({
       description: "Test command",
       template: "Hello from singular command",
     })
 
-    expect(config.command?.["nested/child"]).toEqual({
+    expect(config.commands?.["nested/child"]).toEqual({
       description: "Nested command",
       template: "Nested command template",
     })
@@ -877,12 +872,12 @@ Nested command template`,
 
     const config = yield* Config.use.get()
 
-    expect(config.command?.["hello"]).toEqual({
+    expect(config.commands?.["hello"]).toEqual({
       description: "Test command",
       template: "Hello from plural commands",
     })
 
-    expect(config.command?.["nested/child"]).toEqual({
+    expect(config.commands?.["nested/child"]).toEqual({
       description: "Nested command",
       template: "Nested command template",
     })
@@ -969,7 +964,7 @@ it.instance("resolves scoped npm plugins in config", () =>
     yield* writeConfigEffect(test.directory, { plugin: ["@scope/plugin"] })
 
     const config = yield* Config.use.get()
-    expect(config.plugin ?? []).toContain("@scope/plugin")
+    expect(config.plugins ?? []).toContain("@scope/plugin")
   }),
 )
 
@@ -980,7 +975,7 @@ it.effect("merges plugin arrays from global and local configs", () =>
       local: { plugin: ["local-plugin-1"] },
     },
     Effect.gen(function* () {
-      const plugins = (yield* Config.use.get()).plugin ?? []
+      const plugins = ((yield* Config.use.get()).plugins ?? []).map((p) => (typeof p === "string" ? p : p.package))
 
       expect(plugins.some((p) => p.includes("global-plugin-1"))).toBe(true)
       expect(plugins.some((p) => p.includes("global-plugin-2"))).toBe(true)
@@ -1024,11 +1019,10 @@ Helper subagent prompt`,
     )
 
     const config = yield* Config.use.get()
-    expect(config.agent?.["helper"]).toMatchObject({
-      name: "helper",
+    expect(config.agents?.["helper"]).toMatchObject({
       model: "test/model",
       mode: "subagent",
-      prompt: "Helper subagent prompt",
+      system: "Helper subagent prompt",
     })
   }),
 )
@@ -1068,7 +1062,7 @@ it.effect("deduplicates duplicate plugins from global and local configs", () =>
       local: { plugin: ["duplicate-plugin", "local-plugin-1"] },
     },
     Effect.gen(function* () {
-      const plugins = (yield* Config.use.get()).plugin ?? []
+      const plugins = ((yield* Config.use.get()).plugins ?? []).map((p) => (typeof p === "string" ? p : p.package))
 
       expect(plugins.some((p) => p.includes("global-plugin-1"))).toBe(true)
       expect(plugins.some((p) => p.includes("local-plugin-1"))).toBe(true)
@@ -1090,15 +1084,17 @@ it.effect("keeps plugin origins aligned with merged plugin list", () =>
     },
     Effect.gen(function* () {
       const config = yield* Config.use.get()
-      const plugins = config.plugin ?? []
+      const plugins = config.plugins ?? []
       const origins = config.plugin_origins ?? []
-      const names = plugins.map((item) => ConfigPlugin.pluginSpecifier(item))
+      const names = plugins.map((item) => (typeof item === "string" ? item : item.package))
 
       expect(names).toContain("shared-plugin@2.0.0")
       expect(names).not.toContain("shared-plugin@1.0.0")
       expect(names).toContain("global-only@1.0.0")
       expect(names).toContain("local-only@1.0.0")
-      expect(origins.map((item) => item.spec)).toEqual(plugins)
+      // plugin_origins stays in the V1 Spec shape; the persisted `plugins` are its V2-entry projection —
+      // so align them by identity rather than deep-equality.
+      expect(origins.map((item) => ConfigPlugin.pluginSpecifier(item.spec))).toEqual(names)
       expect(origins.find((item) => ConfigPlugin.pluginSpecifier(item.spec) === "shared-plugin@2.0.0")?.scope).toBe(
         "local",
       )
@@ -1117,10 +1113,10 @@ it.instance("migrates legacy tools config to permissions - allow", () =>
     })
 
     const config = yield* Config.use.get()
-    expect(config.agent?.["test"]?.permission).toEqual({
-      bash: "allow",
-      read: "allow",
-    })
+    expect(config.agents?.["test"]?.permissions).toEqual([
+      { action: "bash", resource: "*", effect: "allow" },
+      { action: "read", resource: "*", effect: "allow" },
+    ])
   }),
 )
 
@@ -1133,10 +1129,10 @@ it.instance("migrates legacy tools config to permissions - deny", () =>
     })
 
     const config = yield* Config.use.get()
-    expect(config.agent?.["test"]?.permission).toEqual({
-      bash: "deny",
-      webfetch: "deny",
-    })
+    expect(config.agents?.["test"]?.permissions).toEqual([
+      { action: "bash", resource: "*", effect: "deny" },
+      { action: "webfetch", resource: "*", effect: "deny" },
+    ])
   }),
 )
 
@@ -1149,7 +1145,7 @@ it.instance("migrates legacy write tool to edit permission", () =>
     })
 
     const config = yield* Config.use.get()
-    expect(config.agent?.["test"]?.permission).toEqual({ edit: "allow" })
+    expect(config.agents?.["test"]?.permissions).toEqual([{ action: "edit", resource: "*", effect: "allow" }])
   }),
 )
 
@@ -1217,7 +1213,7 @@ it.instance("migrates legacy edit tool to edit permission", () =>
     })
 
     const config = yield* Config.use.get()
-    expect(config.agent?.["test"]?.permission).toEqual({ edit: "deny" })
+    expect(config.agents?.["test"]?.permissions).toEqual([{ action: "edit", resource: "*", effect: "deny" }])
   }),
 )
 
@@ -1230,7 +1226,7 @@ it.instance("migrates legacy patch tool to edit permission", () =>
     })
 
     const config = yield* Config.use.get()
-    expect(config.agent?.["test"]?.permission).toEqual({ edit: "allow" })
+    expect(config.agents?.["test"]?.permissions).toEqual([{ action: "edit", resource: "*", effect: "allow" }])
   }),
 )
 
@@ -1243,12 +1239,12 @@ it.instance("migrates mixed legacy tools config", () =>
     })
 
     const config = yield* Config.use.get()
-    expect(config.agent?.["test"]?.permission).toEqual({
-      bash: "allow",
-      edit: "allow",
-      read: "deny",
-      webfetch: "allow",
-    })
+    expect(config.agents?.["test"]?.permissions).toEqual([
+      { action: "bash", resource: "*", effect: "allow" },
+      { action: "edit", resource: "*", effect: "allow" },
+      { action: "read", resource: "*", effect: "deny" },
+      { action: "webfetch", resource: "*", effect: "allow" },
+    ])
   }),
 )
 
@@ -1261,10 +1257,12 @@ it.instance("merges legacy tools with existing permission config", () =>
     })
 
     const config = yield* Config.use.get()
-    expect(config.agent?.["test"]?.permission).toEqual({
-      glob: "allow",
-      bash: "allow",
-    })
+    // normalize() builds the agent permission from tools first, then Object.assigns the explicit
+    // permission dict — so bash precedes glob in the migrated Ruleset.
+    expect(config.agents?.["test"]?.permissions).toEqual([
+      { action: "bash", resource: "*", effect: "allow" },
+      { action: "glob", resource: "*", effect: "allow" },
+    ])
   }),
 )
 
@@ -1290,7 +1288,7 @@ it.instance("permission config preserves user key order", () =>
     })
 
     const config = yield* Config.use.get()
-    expect(Object.keys(config.permission!)).toEqual([
+    expect((config.permissions ?? []).map((rule) => rule.action)).toEqual([
       "*",
       "edit",
       "write",
@@ -1780,9 +1778,9 @@ describe("deduplicatePluginOrigins", () => {
           "export default {}",
         )
 
-        const plugins = (yield* Config.use.get()).plugin ?? []
-        expect(plugins.some((p) => ConfigPlugin.pluginSpecifier(p) === "my-plugin@1.0.0")).toBe(true)
-        expect(plugins.some((p) => ConfigPlugin.pluginSpecifier(p).startsWith("file://"))).toBe(true)
+        const plugins = ((yield* Config.use.get()).plugins ?? []).map((p) => (typeof p === "string" ? p : p.package))
+        expect(plugins.some((p) => p === "my-plugin@1.0.0")).toBe(true)
+        expect(plugins.some((p) => p.startsWith("file://"))).toBe(true)
       }),
     ),
   )

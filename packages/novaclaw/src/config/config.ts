@@ -23,8 +23,11 @@ import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/
 import { EffectFlock } from "@novaclaw/core/util/effect-flock"
 import { containsPath, type InstanceContext } from "../project/instance-context"
 import { ConfigV1 } from "@novaclaw/core/v1/config/config"
-import { RemoteAuthError } from "@novaclaw/core/v1/config/error"
-import { ConfigPermissionV1 } from "@novaclaw/core/v1/config/permission"
+import { Config as ConfigV2 } from "@novaclaw/core/config"
+import { ConfigMigrateV1 } from "@novaclaw/core/v1/config/migrate"
+import { ConfigAgentV1 } from "@novaclaw/core/v1/config/agent"
+import type { DeepMutable } from "@novaclaw/core/schema"
+import { InvalidError, RemoteAuthError } from "@novaclaw/core/v1/config/error"
 import { ConfigPluginV1 } from "@novaclaw/core/v1/config/plugin"
 import { ConfigAgent } from "./agent"
 import { ConfigCommand } from "./command"
@@ -47,6 +50,18 @@ function mergeConfigConcatArrays(target: Info, source: Info): Info {
   if (target.instructions && source.instructions) {
     merged.instructions = Array.from(new Set([...target.instructions, ...source.instructions]))
   }
+  // V2 `permissions` is an ordered Ruleset array (V1 spelled it as a per-key dict that mergeDeep
+  // merged key-by-key). mergeDeep REPLACES arrays, which would silently drop earlier sources' rules,
+  // so concat instead — general (target) first, more-specific (source) appended. This reproduces the
+  // core V2 model (config/plugin/agent.ts flatMaps documents in the same general→specific order), so
+  // the shared Permission.evaluate sees an identically-ordered ruleset. Rule objects aren't dedupable.
+  if (target.permissions && source.permissions) {
+    merged.permissions = [...target.permissions, ...source.permissions]
+  }
+  // V2 `skills` is a flat array (V1 spelled it `{paths,urls}`); concat + dedup like instructions.
+  if (target.skills && source.skills) {
+    merged.skills = Array.from(new Set([...target.skills, ...source.skills]))
+  }
   return merged
 }
 
@@ -60,6 +75,44 @@ function normalizeLoadedConfig(data: unknown) {
   delete copy.tui
   delete copy.lsp
   return copy
+}
+
+// Decode one already-parsed config source as V2 `Config.Info`. A V1-shaped source (detected by a
+// V1-only top-level key) is decoded as V1, migrated, then re-decoded as V2 — the permanent on-read
+// upgrade path (`core/src/v1/config/migrate`). Each of the ~8 sources can independently be a V1 or
+// V2 file. The result is a PLAIN object with no `undefined`-valued keys: `migrate()` emits every V2
+// key (many undefined) and decodes to a Schema.Class instance, but the service's mergeDeep pipeline
+// needs plain, undefined-free records — remeda treats a class instance / an explicit `undefined` as
+// atomic and would replace instead of merge. JSON round-trip normalises both (migrate output is
+// already plain + JSON-safe).
+function loadAsV2(parsed: unknown, source: string): Info {
+  if (ConfigMigrateV1.isV1(parsed)) {
+    const migrated = ConfigMigrateV1.migrate(ConfigParse.schema(ConfigV1.Info, parsed, source))
+    ConfigParse.schema(ConfigV2.Info, migrated, source) // validate the upgrade (throws with source context)
+    return JSON.parse(JSON.stringify(migrated)) as Info
+  }
+  // Native V2 source: reject unknown top-level keys, matching the V1 loader's strictness (a typo'd
+  // `permision`/`modell` silently ignored would be a real footgun). `ConfigParse.schema` can't do this
+  // for `Config.Info` because its extra-key guard only fires for plain-object schemas, not Schema.Class.
+  if (isRecord(parsed)) {
+    const known = new Set(Object.keys(ConfigV2.Info.fields))
+    const extra = Object.keys(parsed).filter((key) => !known.has(key))
+    if (extra.length) {
+      throw new InvalidError({
+        path: source,
+        issues: [
+          {
+            code: "unrecognized_keys",
+            keys: extra,
+            path: [],
+            message: `Unrecognized key${extra.length === 1 ? "" : "s"}: ${extra.join(", ")}`,
+          },
+        ],
+      })
+    }
+  }
+  ConfigParse.schema(ConfigV2.Info, parsed, source) // validate a natively-authored V2 source
+  return parsed as Info
 }
 
 async function substituteWellKnownRemoteConfig(input: {
@@ -99,20 +152,50 @@ async function substituteWellKnownRemoteConfig(input: {
   return { url, headers }
 }
 
-async function resolveLoadedPlugins<T extends { plugin?: ConfigPluginV1.Spec[] }>(config: T, filepath: string) {
-  if (!config.plugin) return config
-  for (let i = 0; i < config.plugin.length; i++) {
+async function resolveLoadedPlugins(config: Info, filepath: string) {
+  if (!config.plugins) return config
+  for (let i = 0; i < config.plugins.length; i++) {
     // Normalize path-like plugin specs while we still know which config file declared them.
     // This prevents `./plugin.ts` from being reinterpreted relative to some later merge location.
-    config.plugin[i] = await ConfigPlugin.resolvePluginSpec(config.plugin[i], filepath)
+    // Resolve in the V1 `Spec` domain the resolver understands, then convert back to a V2 entry.
+    config.plugins[i] = specToEntry(await ConfigPlugin.resolvePluginSpec(entryToSpec(config.plugins[i]), filepath))
   }
   return config
 }
 
-type Info = ConfigV1.Info & {
+// F1d: the service now authors + serves V2 `Config.Info` shapes. Internally it MUTATES a merged
+// accumulator (mergeDeep + field assignments), so the working type is a deep-mutable V2 Info.
+// `core/src/v1/config/**` survives as the permanent on-read upgrader: each source that is a V1 file
+// is migrated to V2 on read (see loadAsV2).
+type Info = DeepMutable<typeof ConfigV2.Info.Type> & {
   // plugin_origins is derived state, not a persisted config field. It keeps each winning plugin spec together
   // with the file and scope it came from so later runtime code can make location-sensitive decisions.
+  // Kept in the V1 `Spec` shape (a tuple/string) that the plugin loader (`plugin/index.ts`) consumes;
+  // the persisted `plugins` (V2 entries) is derived from it.
   plugin_origins?: ConfigPlugin.Origin[]
+}
+
+// V2 plugin entry shape (mirror of core `ConfigPlugin.Plugin`, kept local to avoid the name clash with
+// this package's `ConfigPlugin` origin helpers).
+type PluginEntry = string | { package: string; options?: Record<string, unknown> }
+
+function specToEntry(spec: ConfigPluginV1.Spec): PluginEntry {
+  return Array.isArray(spec) ? { package: spec[0], ...(spec[1] ? { options: spec[1] } : {}) } : spec
+}
+
+function entryToSpec(entry: PluginEntry): ConfigPluginV1.Spec {
+  if (typeof entry === "string") return entry
+  return entry.options ? [entry.package, entry.options] : entry.package
+}
+
+// Dir-discovered agents (`{agent,agents,mode,modes}/**/*.md`) parse as V1 shapes; map each to V2 via
+// the shared `migrateAgent`, then strip undefined fields (JSON round-trip) so they deep-merge cleanly
+// into the V2 `result.agents` record instead of overwriting siblings with `undefined`.
+function migrateDirAgents(record: Record<string, ConfigAgentV1.Info>): Record<string, unknown> {
+  const migrated = Object.fromEntries(
+    Object.entries(record).map(([name, info]) => [name, ConfigMigrateV1.migrateAgent(info)]),
+  )
+  return JSON.parse(JSON.stringify(migrated))
 }
 
 type State = {
@@ -224,8 +307,8 @@ export const layer = Layer.effect(
             : { text, type: "virtual", ...options, env },
         ),
       )
-      const parsed = ConfigParse.jsonc(expanded, source)
-      const data = ConfigParse.schema(ConfigV1.Info, normalizeLoadedConfig(parsed), source)
+      const parsed = normalizeLoadedConfig(ConfigParse.jsonc(expanded, source))
+      const data = loadAsV2(parsed, source)
       if (!("path" in options)) return data
 
       yield* Effect.promise(() => resolveLoadedPlugins(data, options.path))
@@ -329,9 +412,11 @@ export const layer = Layer.effect(
 
         const mergePluginOrigins = Effect.fnUntraced(function* (
           source: string,
-          // mergePluginOrigins receives raw Specs from one config source, before provenance for this merge step
-          // is attached.
-          list: ConfigPluginV1.Spec[] | undefined,
+          // Receives the V2 `plugins` entries from one config source (or already-normalized Specs from
+          // the dir loader — plain file-URL strings, which are valid entries), before provenance for this
+          // merge step is attached. Converted into the V1 `Spec` shape the origin dedup + downstream
+          // plugin loader (`plugin/index.ts`) consume; `plugin_origins` stays Spec-shaped on purpose.
+          list: PluginEntry[] | undefined,
           // Scope can be inferred from the source path, but some callers already know whether the config should
           // behave as global or local and can pass that explicitly.
           kind?: ConfigPlugin.Scope,
@@ -342,15 +427,15 @@ export const layer = Layer.effect(
           // keeping the winning source/scope metadata for downstream installs, writes, and diagnostics.
           const plugins = ConfigPlugin.deduplicatePluginOrigins([
             ...(result.plugin_origins ?? []),
-            ...list.map((spec) => ({ spec, source, scope: hit })),
+            ...list.map((entry) => ({ spec: entryToSpec(entry), source, scope: hit })),
           ])
-          result.plugin = plugins.map((item) => item.spec)
+          result.plugins = plugins.map((item) => specToEntry(item.spec))
           result.plugin_origins = plugins
         })
 
         const merge = (source: string, next: Info, kind?: ConfigPlugin.Scope) => {
           result = mergeConfigConcatArrays(result, next)
-          return mergePluginOrigins(source, next.plugin, kind)
+          return mergePluginOrigins(source, next.plugins, kind)
         }
 
         for (const [key, value] of Object.entries(auth)) {
@@ -409,9 +494,8 @@ export const layer = Layer.effect(
           }
         }
 
-        result.agent = result.agent || {}
-        result.mode = result.mode || {}
-        result.plugin = result.plugin || []
+        result.agents = result.agents || {}
+        result.plugins = result.plugins || []
 
         const directories = yield* ConfigPaths.directories(ctx.directory, ctx.worktree)
 
@@ -427,9 +511,8 @@ export const layer = Layer.effect(
               const source = path.join(dir, file)
               yield* Effect.logDebug(`loading config from ${source}`)
               yield* merge(source, yield* loadFile(source, authEnv))
-              result.agent ??= {}
-              result.mode ??= {}
-              result.plugin ??= []
+              result.agents ??= {}
+              result.plugins ??= []
             }
           }
 
@@ -461,11 +544,19 @@ export const layer = Layer.effect(
             deps.push(dep)
           }
 
-          result.command = mergeDeep(result.command ?? {}, yield* Effect.promise(() => ConfigCommand.load(dir)))
-          result.agent = mergeDeep(result.agent ?? {}, yield* Effect.promise(() => ConfigAgent.load(dir)))
-          result.agent = mergeDeep(result.agent ?? {}, yield* Effect.promise(() => ConfigAgent.loadMode(dir)))
+          // ConfigCommand.load returns V1 command shapes that are identical to V2 ConfigCommand.Info.
+          result.commands = mergeDeep(result.commands ?? {}, yield* Effect.promise(() => ConfigCommand.load(dir)))
+          result.agents = mergeDeep(
+            result.agents ?? {},
+            migrateDirAgents(yield* Effect.promise(() => ConfigAgent.load(dir))),
+          )
+          // loadMode already tags each agent `mode: "primary"`; migrateAgent preserves it.
+          result.agents = mergeDeep(
+            result.agents ?? {},
+            migrateDirAgents(yield* Effect.promise(() => ConfigAgent.loadMode(dir))),
+          )
           // Auto-discovered plugins under `.novaclaw/plugin(s)` are already local files, so ConfigPlugin.load
-          // returns normalized Specs and we only need to attach origin metadata here.
+          // returns normalized Specs (plain file-URL strings) and we only need to attach origin metadata here.
           const list = yield* Effect.promise(() => ConfigPlugin.load(dir))
           yield* mergePluginOrigins(dir, list)
         }
@@ -503,7 +594,7 @@ export const layer = Layer.effect(
                 dir: path.dirname(source),
                 source,
               })
-              for (const providerID of Object.keys(next.provider ?? {})) {
+              for (const providerID of Object.keys(next.providers ?? {})) {
                 consoleManagedProviders.add(providerID)
               }
               yield* merge(source, next, "global")
@@ -538,34 +629,19 @@ export const layer = Layer.effect(
           )
         }
 
-        for (const [name, mode] of Object.entries(result.mode ?? {})) {
-          result.agent = mergeDeep(result.agent ?? {}, {
-            [name]: {
-              ...mode,
-              mode: "primary" as const,
-            },
-          })
-        }
+        // F1d: the V1 `mode`→`agent` and `tools`→`permission` fold-ups are gone — `migrate()` performs
+        // both per-source (V2 `agents`/`permissions`) as each source is loaded, and neither `mode` nor
+        // `tools` exists on a V2 result.
 
         if (Flag.NOVACLAW_PERMISSION) {
           try {
-            result.permission = mergeDeep(result.permission ?? {}, JSON.parse(Flag.NOVACLAW_PERMISSION))
+            // A V1-shaped permission dict on the env; migrate it to a V2 Ruleset and append — the env is
+            // the most-specific source, so its rules come last (see mergeConfigConcatArrays ordering).
+            const rules = ConfigMigrateV1.migrate({ permission: JSON.parse(Flag.NOVACLAW_PERMISSION) }).permissions
+            if (rules?.length) result.permissions = [...(result.permissions ?? []), ...rules]
           } catch (err) {
             yield* Effect.logWarning("NOVACLAW_PERMISSION contains invalid JSON, skipping", { err })
           }
-        }
-
-        if (result.tools) {
-          const perms: Record<string, ConfigPermissionV1.Action> = {}
-          for (const [tool, enabled] of Object.entries(result.tools)) {
-            const action: ConfigPermissionV1.Action = enabled ? "allow" : "deny"
-            if (tool === "write" || tool === "edit" || tool === "patch") {
-              perms.edit = action
-              continue
-            }
-            perms[tool] = action
-          }
-          result.permission = mergeDeep(perms, result.permission ?? {})
         }
 
         if (!result.username) {
@@ -642,8 +718,12 @@ export const layer = Layer.effect(
 
       let next: Info
       let changed: boolean
-      if (!file.endsWith(".jsonc")) {
-        const existing = ConfigParse.schema(ConfigV1.Info, ConfigParse.jsonc(before, file), file)
+      const parsedBefore = ConfigParse.jsonc(before, file)
+      // A JSON file, or a legacy V1 .jsonc: rewrite as V2 JSON. loadAsV2 migrates a V1 body to V2 first,
+      // so patching V2 keys can never produce a hybrid file. For a V1 .jsonc this is a one-way ratchet —
+      // comments/formatting are lost this once; every subsequent write patches the V2 file in place.
+      if (!file.endsWith(".jsonc") || ConfigMigrateV1.isV1(parsedBefore)) {
+        const existing = loadAsV2(parsedBefore, file)
         const merged = mergeDeep(writable(existing), patch)
         const serialized = JSON.stringify(merged, null, 2)
         changed = serialized !== before
@@ -651,7 +731,7 @@ export const layer = Layer.effect(
         next = merged
       } else {
         const updated = patchJsonc(before, patch)
-        next = ConfigParse.schema(ConfigV1.Info, ConfigParse.jsonc(updated, file), file)
+        next = loadAsV2(ConfigParse.jsonc(updated, file), file)
         changed = updated !== before
         if (changed) yield* fs.writeFileString(file, updated).pipe(Effect.orDie)
       }
