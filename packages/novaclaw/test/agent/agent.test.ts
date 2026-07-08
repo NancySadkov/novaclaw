@@ -103,11 +103,7 @@ it.instance(
     }),
   {
     config: {
-      permission: {
-        task: {
-          general: "allow",
-        },
-      },
+      permissions: [{ action: "task", resource: "general", effect: "allow" }],
     },
   },
 )
@@ -200,12 +196,11 @@ it.instance(
     }),
   {
     config: {
-      agent: {
+      agents: {
         my_custom_agent: {
           model: "openai/gpt-4",
           description: "My custom agent",
-          temperature: 0.5,
-          top_p: 0.9,
+          request: { body: { temperature: 0.5, top_p: 0.9 } },
         },
       },
     },
@@ -227,11 +222,11 @@ it.instance(
     }),
   {
     config: {
-      agent: {
+      agents: {
         build: {
           model: "anthropic/claude-3",
           description: "Custom build agent",
-          temperature: 0.7,
+          request: { body: { temperature: 0.7 } },
           color: "#FF0000",
         },
       },
@@ -251,8 +246,8 @@ it.instance(
     }),
   {
     config: {
-      agent: {
-        explore: { disable: true },
+      agents: {
+        explore: { disabled: true },
       },
     },
   },
@@ -271,13 +266,9 @@ it.instance(
     }),
   {
     config: {
-      agent: {
+      agents: {
         build: {
-          permission: {
-            bash: {
-              "rm -rf *": "deny",
-            },
-          },
+          permissions: [{ action: "bash", resource: "rm -rf *", effect: "deny" }],
         },
       },
     },
@@ -294,9 +285,7 @@ it.instance(
     }),
   {
     config: {
-      permission: {
-        bash: "deny",
-      },
+      permissions: [{ action: "bash", resource: "*", effect: "deny" }],
     },
   },
 )
@@ -312,9 +301,9 @@ it.instance(
     }),
   {
     config: {
-      agent: {
+      agents: {
         build: { steps: 50 },
-        plan: { maxSteps: 100 },
+        plan: { steps: 100 },
       },
     },
   },
@@ -329,7 +318,7 @@ it.instance(
     }),
   {
     config: {
-      agent: {
+      agents: {
         explore: { mode: "primary" },
       },
     },
@@ -345,8 +334,8 @@ it.instance(
     }),
   {
     config: {
-      agent: {
-        build: { prompt: "Custom system prompt" },
+      agents: {
+        build: { system: "Custom system prompt" },
       },
     },
   },
@@ -362,10 +351,9 @@ it.instance(
     }),
   {
     config: {
-      agent: {
+      agents: {
         build: {
-          random_property: "hello",
-          another_random: 123,
+          request: { body: { random_property: "hello", another_random: 123 } },
         },
       },
     },
@@ -382,12 +370,9 @@ it.instance(
     }),
   {
     config: {
-      agent: {
+      agents: {
         build: {
-          options: {
-            custom_option: true,
-            another_option: "value",
-          },
+          request: { body: { custom_option: true, another_option: "value" } },
         },
       },
     },
@@ -407,7 +392,7 @@ it.instance(
     }),
   {
     config: {
-      agent: {
+      agents: {
         agent_a: {
           description: "Agent A",
           mode: "subagent",
@@ -432,7 +417,7 @@ it.instance(
   {
     config: {
       default_agent: "plan",
-      agent: {
+      agents: {
         zebra: {
           description: "Zebra",
           mode: "subagent",
@@ -478,12 +463,12 @@ it.instance(
     }),
   {
     config: {
-      agent: {
+      agents: {
         build: {
-          tools: {
-            bash: false,
-            read: false,
-          },
+          permissions: [
+            { action: "bash", resource: "*", effect: "deny" },
+            { action: "read", resource: "*", effect: "deny" },
+          ],
         },
       },
     },
@@ -499,11 +484,9 @@ it.instance(
     }),
   {
     config: {
-      agent: {
+      agents: {
         build: {
-          tools: {
-            write: false,
-          },
+          permissions: [{ action: "edit", resource: "*", effect: "deny" }],
         },
       },
     },
@@ -521,9 +504,7 @@ it.instance(
     }),
   {
     config: {
-      permission: {
-        external_directory: "deny",
-      },
+      permissions: [{ action: "external_directory", resource: "*", effect: "deny" }],
     },
   },
 )
@@ -549,11 +530,9 @@ it.instance(
     }),
   {
     config: {
-      agent: {
+      agents: {
         build: {
-          permission: {
-            external_directory: "deny",
-          },
+          permissions: [{ action: "external_directory", resource: "*", effect: "deny" }],
         },
       },
     },
@@ -570,12 +549,10 @@ it.instance(
     }),
   {
     config: {
-      permission: {
-        external_directory: {
-          "*": "deny",
-          [Truncate.GLOB]: "deny",
-        },
-      },
+      permissions: [
+        { action: "external_directory", resource: "*", effect: "deny" },
+        { action: "external_directory", resource: Truncate.GLOB, effect: "deny" },
+      ],
     },
   },
 )
@@ -672,7 +649,7 @@ it.instance(
   {
     config: {
       default_agent: "my_custom",
-      agent: {
+      agents: {
         my_custom: {
           description: "My custom agent",
         },
@@ -721,8 +698,8 @@ it.instance(
     }),
   {
     config: {
-      agent: {
-        build: { disable: true },
+      agents: {
+        build: { disabled: true },
       },
     },
   },
@@ -733,9 +710,9 @@ it.instance(
   () => expectDefaultAgentError("no primary visible agent found"),
   {
     config: {
-      agent: {
-        build: { disable: true },
-        plan: { disable: true },
+      agents: {
+        build: { disabled: true },
+        plan: { disabled: true },
       },
     },
   },

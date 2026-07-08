@@ -1,5 +1,6 @@
 import { test, expect, describe, afterEach, beforeEach, spyOn } from "bun:test"
-import { ConfigV1 } from "@novaclaw/core/v1/config/config"
+import { Config as ConfigV2 } from "@novaclaw/core/config"
+import { ConfigPermission } from "@novaclaw/core/config/permission"
 import { Cause, Effect, Exit, Layer, Option } from "effect"
 import { NamedError } from "@novaclaw/core/util/error"
 import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/unstable/http"
@@ -36,7 +37,7 @@ import { Global } from "@novaclaw/core/global"
 import { ProjectV2 } from "@novaclaw/core/project"
 import { Filesystem } from "@/util/filesystem"
 import { ConfigPlugin } from "@/config/plugin"
-import { ConfigPluginV1 } from "@novaclaw/core/v1/config/plugin"
+import { ConfigPluginSpec } from "@novaclaw/core/config/plugin-spec"
 import { AccountTest } from "../fake/account"
 import { AuthTest } from "../fake/auth"
 import { NpmTest } from "../fake/npm"
@@ -272,14 +273,14 @@ function withProcessEnvs<A, E, R>(entries: Record<string, string | undefined>, e
 async function check(map: (dir: string) => string) {
   if (process.platform !== "win32") return
   await using globalTmp = await tmpdir()
-  await using tmp = await tmpdir({ git: true, config: { snapshot: true } })
+  await using tmp = await tmpdir({ git: true, config: { snapshots: true } })
   const prev = Global.Path.config
   ;(Global.Path as { config: string }).config = globalTmp.path
   await clear()
   try {
     await writeConfig(globalTmp.path, {
       $schema: "https://novaclaw.app/config.json",
-      snapshot: false,
+      snapshots: false,
     })
     await withTestInstance({
       directory: map(tmp.path),
@@ -399,7 +400,7 @@ it.effect("updates global config and omits empty shell key in jsonc", () =>
 
       const file = path.join(dir, "novaclaw.jsonc")
       const writtenConfig = yield* FSUtil.use.readFileString(file)
-      const parsed = ConfigParse.schema(ConfigV1.Info, ConfigParse.jsonc(writtenConfig, file), file)
+      const parsed = ConfigParse.schema(ConfigV2.Info, ConfigParse.jsonc(writtenConfig, file), file)
       expect(writtenConfig).not.toContain('"shell"')
       expect(parsed.shell).toBeUndefined()
       expect(parsed.model).toBe("test/model")
@@ -424,7 +425,7 @@ it.instance(
     const config = yield* Config.use.get()
     expect("lsp" in config).toBe(false)
   }),
-  { config: { lsp: true } as unknown as Partial<ConfigV1.Info> },
+  { config: { lsp: true } as unknown as Partial<Config.Info> },
 )
 
 test("loads project config from Git Bash and MSYS2 paths on Windows", async () => {
@@ -595,7 +596,7 @@ const accountTokenIt = configIt({
     config: () =>
       Effect.succeed(
         Option.some({
-          provider: { novaclaw: { options: { apiKey: "{env:NOVACLAW_CONSOLE_TOKEN}" } } },
+          providers: { novaclaw: { request: { body: { apiKey: "{env:NOVACLAW_CONSOLE_TOKEN}" } } } },
         }),
       ),
     token: () => Effect.succeed(Option.some(AccessToken.make("st_test_token"))),
@@ -635,11 +636,11 @@ it.instance("handles agent configuration", () =>
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
       $schema: "https://novaclaw.app/config.json",
-      agent: {
+      agents: {
         test_agent: {
           model: "test/model",
-          temperature: 0.7,
           description: "test agent",
+          request: { body: { temperature: 0.7 } },
         },
       },
     })
@@ -659,11 +660,11 @@ it.instance("treats agent variant as model-scoped setting (not provider option)"
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
       $schema: "https://novaclaw.app/config.json",
-      agent: {
+      agents: {
         test_agent: {
           model: "openai/gpt-5.2",
           variant: "xhigh",
-          max_tokens: 123,
+          request: { body: { max_tokens: 123 } },
         },
       },
     })
@@ -683,7 +684,7 @@ it.instance("handles command configuration", () =>
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
       $schema: "https://novaclaw.app/config.json",
-      command: {
+      commands: {
         test_command: {
           template: "test template",
           description: "test command",
@@ -700,33 +701,12 @@ it.instance("handles command configuration", () =>
   }),
 )
 
-it.instance("migrates mode field to agent field", () =>
-  Effect.gen(function* () {
-    const test = yield* TestInstance
-    yield* writeConfigEffect(test.directory, {
-      $schema: "https://novaclaw.app/config.json",
-      mode: {
-        test_mode: {
-          model: "test/model",
-          temperature: 0.5,
-        },
-      },
-    })
-    const config = yield* Config.use.get()
-    expect(config.agents?.["test_mode"]).toEqual({
-      model: "test/model",
-      mode: "primary",
-      request: { body: { temperature: 0.5 } },
-    })
-  }),
-)
-
 it.instance("accepts the deprecated reference field", () =>
   Effect.gen(function* () {
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
       $schema: "https://novaclaw.app/config.json",
-      reference: {
+      references: {
         local: { path: "../library" },
         sdk: { repository: "github.com/example/sdk", branch: "main" },
         shorthand: "github.com/example/docs",
@@ -959,7 +939,7 @@ it.instance("resolves scoped npm plugins in config", () =>
       ),
     )
     yield* FSUtil.use.writeWithDirs(path.join(pluginDir, "index.js"), "export default {}\n")
-    yield* writeConfigEffect(test.directory, { plugin: ["@scope/plugin"] })
+    yield* writeConfigEffect(test.directory, { plugins: ["@scope/plugin"] })
 
     const config = yield* Config.use.get()
     expect(config.plugins ?? []).toContain("@scope/plugin")
@@ -969,8 +949,8 @@ it.instance("resolves scoped npm plugins in config", () =>
 it.effect("merges plugin arrays from global and local configs", () =>
   withConfigTree(
     {
-      global: { plugin: ["global-plugin-1", "global-plugin-2"] },
-      local: { plugin: ["local-plugin-1"] },
+      global: { plugins: ["global-plugin-1", "global-plugin-2"] },
+      local: { plugins: ["local-plugin-1"] },
     },
     Effect.gen(function* () {
       const plugins = ((yield* Config.use.get()).plugins ?? []).map((p) => (typeof p === "string" ? p : p.package))
@@ -988,7 +968,7 @@ it.effect("merges plugin arrays from global and local configs", () =>
 it.effect("global config remains global when project config is disabled", () =>
   withConfigTree(
     {
-      global: { model: "global/model", plugin: ["global-plugin"] },
+      global: { model: "global/model", plugins: ["global-plugin"] },
       project: { model: "project/model" },
       local: { model: "local/model" },
     },
@@ -1056,8 +1036,8 @@ it.effect("deduplicates duplicate instructions from global and local configs", (
 it.effect("deduplicates duplicate plugins from global and local configs", () =>
   withConfigTree(
     {
-      global: { plugin: ["duplicate-plugin", "global-plugin-1"] },
-      local: { plugin: ["duplicate-plugin", "local-plugin-1"] },
+      global: { plugins: ["duplicate-plugin", "global-plugin-1"] },
+      local: { plugins: ["duplicate-plugin", "local-plugin-1"] },
     },
     Effect.gen(function* () {
       const plugins = ((yield* Config.use.get()).plugins ?? []).map((p) => (typeof p === "string" ? p : p.package))
@@ -1077,8 +1057,10 @@ it.effect("deduplicates duplicate plugins from global and local configs", () =>
 it.effect("keeps plugin origins aligned with merged plugin list", () =>
   withConfigTree(
     {
-      global: { plugin: [["shared-plugin@1.0.0", { source: "global" }], "global-only@1.0.0"] },
-      local: { plugin: [["shared-plugin@2.0.0", { source: "local" }], "local-only@1.0.0"] },
+      global: {
+        plugins: [{ package: "shared-plugin@1.0.0", options: { source: "global" } }, "global-only@1.0.0"],
+      },
+      local: { plugins: [{ package: "shared-plugin@2.0.0", options: { source: "local" } }, "local-only@1.0.0"] },
     },
     Effect.gen(function* () {
       const config = yield* Config.use.get()
@@ -1098,53 +1080,6 @@ it.effect("keeps plugin origins aligned with merged plugin list", () =>
       )
     }),
   ),
-)
-
-// Legacy tools migration tests
-
-it.instance("migrates legacy tools config to permissions - allow", () =>
-  Effect.gen(function* () {
-    const test = yield* TestInstance
-    yield* writeConfigEffect(test.directory, {
-      $schema: "https://novaclaw.app/config.json",
-      agent: { test: { tools: { bash: true, read: true } } },
-    })
-
-    const config = yield* Config.use.get()
-    expect(config.agents?.["test"]?.permissions).toEqual([
-      { action: "bash", resource: "*", effect: "allow" },
-      { action: "read", resource: "*", effect: "allow" },
-    ])
-  }),
-)
-
-it.instance("migrates legacy tools config to permissions - deny", () =>
-  Effect.gen(function* () {
-    const test = yield* TestInstance
-    yield* writeConfigEffect(test.directory, {
-      $schema: "https://novaclaw.app/config.json",
-      agent: { test: { tools: { bash: false, webfetch: false } } },
-    })
-
-    const config = yield* Config.use.get()
-    expect(config.agents?.["test"]?.permissions).toEqual([
-      { action: "bash", resource: "*", effect: "deny" },
-      { action: "webfetch", resource: "*", effect: "deny" },
-    ])
-  }),
-)
-
-it.instance("migrates legacy write tool to edit permission", () =>
-  Effect.gen(function* () {
-    const test = yield* TestInstance
-    yield* writeConfigEffect(test.directory, {
-      $schema: "https://novaclaw.app/config.json",
-      agent: { test: { tools: { write: true } } },
-    })
-
-    const config = yield* Config.use.get()
-    expect(config.agents?.["test"]?.permissions).toEqual([{ action: "edit", resource: "*", effect: "allow" }])
-  }),
 )
 
 // Managed settings tests
@@ -1202,68 +1137,6 @@ it.instance(
   { config: { model: "user/model" } },
 )
 
-it.instance("migrates legacy edit tool to edit permission", () =>
-  Effect.gen(function* () {
-    const test = yield* TestInstance
-    yield* writeConfigEffect(test.directory, {
-      $schema: "https://novaclaw.app/config.json",
-      agent: { test: { tools: { edit: false } } },
-    })
-
-    const config = yield* Config.use.get()
-    expect(config.agents?.["test"]?.permissions).toEqual([{ action: "edit", resource: "*", effect: "deny" }])
-  }),
-)
-
-it.instance("migrates legacy patch tool to edit permission", () =>
-  Effect.gen(function* () {
-    const test = yield* TestInstance
-    yield* writeConfigEffect(test.directory, {
-      $schema: "https://novaclaw.app/config.json",
-      agent: { test: { tools: { patch: true } } },
-    })
-
-    const config = yield* Config.use.get()
-    expect(config.agents?.["test"]?.permissions).toEqual([{ action: "edit", resource: "*", effect: "allow" }])
-  }),
-)
-
-it.instance("migrates mixed legacy tools config", () =>
-  Effect.gen(function* () {
-    const test = yield* TestInstance
-    yield* writeConfigEffect(test.directory, {
-      $schema: "https://novaclaw.app/config.json",
-      agent: { test: { tools: { bash: true, write: true, read: false, webfetch: true } } },
-    })
-
-    const config = yield* Config.use.get()
-    expect(config.agents?.["test"]?.permissions).toEqual([
-      { action: "bash", resource: "*", effect: "allow" },
-      { action: "edit", resource: "*", effect: "allow" },
-      { action: "read", resource: "*", effect: "deny" },
-      { action: "webfetch", resource: "*", effect: "allow" },
-    ])
-  }),
-)
-
-it.instance("merges legacy tools with existing permission config", () =>
-  Effect.gen(function* () {
-    const test = yield* TestInstance
-    yield* writeConfigEffect(test.directory, {
-      $schema: "https://novaclaw.app/config.json",
-      agent: { test: { permission: { glob: "allow" }, tools: { bash: true } } },
-    })
-
-    const config = yield* Config.use.get()
-    // normalize() builds the agent permission from tools first, then Object.assigns the explicit
-    // permission dict — so bash precedes glob in the migrated Ruleset.
-    expect(config.agents?.["test"]?.permissions).toEqual([
-      { action: "bash", resource: "*", effect: "allow" },
-      { action: "glob", resource: "*", effect: "allow" },
-    ])
-  }),
-)
-
 it.instance("permission config preserves user key order", () =>
   // Permission precedence follows the order users write in config, so parsing
   // must not canonicalise known keys ahead of wildcard or custom keys.
@@ -1271,18 +1144,18 @@ it.instance("permission config preserves user key order", () =>
     const test = yield* TestInstance
     yield* writeConfigEffect(test.directory, {
       $schema: "https://novaclaw.app/config.json",
-      permission: {
-        "*": "deny",
-        edit: "ask",
-        write: "ask",
-        external_directory: "ask",
-        read: "allow",
-        todowrite: "allow",
-        "thoughts_*": "allow",
-        "reasoning_model_*": "allow",
-        "tools_*": "allow",
-        "pr_comments_*": "allow",
-      },
+      permissions: [
+        { action: "*", resource: "*", effect: "deny" },
+        { action: "edit", resource: "*", effect: "ask" },
+        { action: "write", resource: "*", effect: "ask" },
+        { action: "external_directory", resource: "*", effect: "ask" },
+        { action: "read", resource: "*", effect: "allow" },
+        { action: "todowrite", resource: "*", effect: "allow" },
+        { action: "thoughts_*", resource: "*", effect: "allow" },
+        { action: "reasoning_model_*", resource: "*", effect: "allow" },
+        { action: "tools_*", resource: "*", effect: "allow" },
+        { action: "pr_comments_*", resource: "*", effect: "allow" },
+      ],
     })
 
     const config = yield* Config.use.get()
@@ -1301,27 +1174,10 @@ it.instance("permission config preserves user key order", () =>
   }),
 )
 
-test("config parser preserves permission order while rejecting unknown top-level keys", () => {
-  const config = ConfigParse.schema(
-    ConfigV1.Info,
-    {
-      permission: {
-        bash: "allow",
-        "*": "deny",
-        edit: "ask",
-      },
-    },
-    "test",
-  )
+test("config parser preserves permission dict key order", () => {
+  const permission = ConfigParse.schema(ConfigPermission.Info, { bash: "allow", "*": "deny", edit: "ask" }, "test")
 
-  expect(Object.keys(config.permission!)).toEqual(["bash", "*", "edit"])
-  try {
-    ConfigParse.schema(ConfigV1.Info, { invalid_field: true }, "test")
-    throw new Error("expected config parse to fail")
-  } catch (err) {
-    const error = err as { data?: { issues?: Array<{ code?: string; keys?: string[]; path?: string[] }> } }
-    expect(error.data?.issues?.[0]).toMatchObject({ code: "unrecognized_keys", keys: ["invalid_field"], path: [] })
-  }
+  expect(Object.keys(permission)).toEqual(["bash", "*", "edit"])
 })
 
 // MCP config merging tests
@@ -1333,15 +1189,17 @@ it.instance("project config can override MCP server enabled status", () =>
     yield* writeConfigEffect(test.directory, {
       $schema: "https://novaclaw.app/config.json",
       mcp: {
-        jira: {
-          type: "remote",
-          url: "https://jira.example.com/mcp",
-          enabled: false,
-        },
-        wiki: {
-          type: "remote",
-          url: "https://wiki.example.com/mcp",
-          enabled: false,
+        servers: {
+          jira: {
+            type: "remote",
+            url: "https://jira.example.com/mcp",
+            disabled: true,
+          },
+          wiki: {
+            type: "remote",
+            url: "https://wiki.example.com/mcp",
+            disabled: true,
+          },
         },
       },
     })
@@ -1351,10 +1209,12 @@ it.instance("project config can override MCP server enabled status", () =>
       {
         $schema: "https://novaclaw.app/config.json",
         mcp: {
-          jira: {
-            type: "remote",
-            url: "https://jira.example.com/mcp",
-            enabled: true,
+          servers: {
+            jira: {
+              type: "remote",
+              url: "https://jira.example.com/mcp",
+              disabled: false,
+            },
           },
         },
       },
@@ -1381,12 +1241,14 @@ it.instance("MCP config deep merges preserving base config properties", () =>
     yield* writeConfigEffect(test.directory, {
       $schema: "https://novaclaw.app/config.json",
       mcp: {
-        myserver: {
-          type: "remote",
-          url: "https://myserver.example.com/mcp",
-          enabled: false,
-          headers: {
-            "X-Custom-Header": "value",
+        servers: {
+          myserver: {
+            type: "remote",
+            url: "https://myserver.example.com/mcp",
+            disabled: true,
+            headers: {
+              "X-Custom-Header": "value",
+            },
           },
         },
       },
@@ -1396,10 +1258,12 @@ it.instance("MCP config deep merges preserving base config properties", () =>
       {
         $schema: "https://novaclaw.app/config.json",
         mcp: {
-          myserver: {
-            type: "remote",
-            url: "https://myserver.example.com/mcp",
-            enabled: true,
+          servers: {
+            myserver: {
+              type: "remote",
+              url: "https://myserver.example.com/mcp",
+              disabled: false,
+            },
           },
         },
       },
@@ -1424,10 +1288,12 @@ it.instance("local .novaclaw config can override MCP from project config", () =>
     yield* writeConfigEffect(test.directory, {
       $schema: "https://novaclaw.app/config.json",
       mcp: {
-        docs: {
-          type: "remote",
-          url: "https://docs.example.com/mcp",
-          enabled: false,
+        servers: {
+          docs: {
+            type: "remote",
+            url: "https://docs.example.com/mcp",
+            disabled: true,
+          },
         },
       },
     })
@@ -1437,10 +1303,12 @@ it.instance("local .novaclaw config can override MCP from project config", () =>
       {
         $schema: "https://novaclaw.app/config.json",
         mcp: {
-          docs: {
-            type: "remote",
-            url: "https://docs.example.com/mcp",
-            enabled: true,
+          servers: {
+            docs: {
+              type: "remote",
+              url: "https://docs.example.com/mcp",
+              disabled: false,
+            },
           },
         },
       },
@@ -1454,7 +1322,7 @@ it.instance("local .novaclaw config can override MCP from project config", () =>
 
 const remoteProjectOverride = wellKnown({
   config: {
-    mcp: { jira: { type: "remote", url: "https://jira.example.com/mcp", enabled: false } },
+    mcp: { servers: { jira: { type: "remote", url: "https://jira.example.com/mcp", disabled: true } } },
   },
 })
 
@@ -1468,14 +1336,14 @@ remoteProjectOverride.it.instance(
     }),
   {
     git: true,
-    config: { mcp: { jira: { type: "remote", url: "https://jira.example.com/mcp", enabled: true } } },
+    config: { mcp: { servers: { jira: { type: "remote", url: "https://jira.example.com/mcp", disabled: false } } } },
   },
 )
 
 const trailingSlashWellKnown = wellKnown({
   authUrl: "https://example.com/",
   config: {
-    mcp: { slack: { type: "remote", url: "https://slack.example.com/mcp", enabled: true } },
+    mcp: { servers: { slack: { type: "remote", url: "https://slack.example.com/mcp", disabled: false } } },
   },
 })
 
@@ -1495,7 +1363,7 @@ test("remote well-known config can use FetchHttpClient layer", async () => {
       return new Response(
         JSON.stringify({
           config: {
-            mcp: { jira: { type: "remote", url: "https://jira.example.com/mcp", enabled: true } },
+            mcp: { servers: { jira: { type: "remote", url: "https://jira.example.com/mcp", disabled: false } } },
           },
         }),
         { status: 200, headers: { "content-type": "application/json" } },
@@ -1544,7 +1412,7 @@ const templatedHeaderWellKnown = wellKnown({
     headers: { Authorization: "Bearer {env:TEST_TOKEN}" },
   },
   remote: {
-    mcp: { confluence: { type: "remote", url: "https://confluence.example.com/mcp", enabled: true } },
+    mcp: { servers: { confluence: { type: "remote", url: "https://confluence.example.com/mcp", disabled: false } } },
   },
 })
 
@@ -1560,11 +1428,11 @@ templatedHeaderWellKnown.it.instance("wellknown remote_config supports templated
 
 const remotePrecedenceWellKnown = wellKnown({
   config: {
-    mcp: { confluence: { type: "remote", url: "https://confluence.example.com/mcp", enabled: false } },
+    mcp: { servers: { confluence: { type: "remote", url: "https://confluence.example.com/mcp", disabled: true } } },
   },
   remoteConfig: { url: "https://config.example.com/{env:TEST_TOKEN}/novaclaw.json" },
   remote: {
-    config: { mcp: { confluence: { type: "remote", url: "https://confluence.example.com/mcp", enabled: true } } },
+    config: { mcp: { servers: { confluence: { type: "remote", url: "https://confluence.example.com/mcp", disabled: false } } } },
   },
 })
 
@@ -1584,7 +1452,7 @@ const envIsolationWellKnown = wellKnown({
     headers: { Authorization: "Bearer {env:TEST_TOKEN}" },
   },
   remote: {
-    mcp: { confluence: { type: "remote", url: "https://confluence.example.com/mcp", enabled: true } },
+    mcp: { servers: { confluence: { type: "remote", url: "https://confluence.example.com/mcp", disabled: false } } },
   },
 })
 
@@ -1607,7 +1475,7 @@ const nullConfigWellKnown = wellKnown({
     remote_config: { url: "https://config.example.com/novaclaw.json" },
   },
   remote: {
-    mcp: { confluence: { type: "remote", url: "https://confluence.example.com/mcp", enabled: true } },
+    mcp: { servers: { confluence: { type: "remote", url: "https://confluence.example.com/mcp", disabled: false } } },
   },
 })
 
@@ -1721,7 +1589,7 @@ describe("resolvePluginSpec", () => {
 })
 
 describe("deduplicatePluginOrigins", () => {
-  const dedupe = (plugins: ConfigPluginV1.Spec[]) =>
+  const dedupe = (plugins: ConfigPluginSpec.Spec[]) =>
     ConfigPlugin.deduplicatePluginOrigins(
       plugins.map((spec) => ({
         spec,
@@ -1768,7 +1636,7 @@ describe("deduplicatePluginOrigins", () => {
 
   it.effect("loads auto-discovered local plugins as file urls", () =>
     withConfigTree(
-      { global: { plugin: ["my-plugin@1.0.0"] } },
+      { global: { plugins: ["my-plugin@1.0.0"] } },
       Effect.gen(function* () {
         const test = yield* TestInstance
         yield* FSUtil.use.writeWithDirs(
@@ -1920,7 +1788,7 @@ describe("NOVACLAW_CONFIG_CONTENT token substitution", () => {
 
 test("parseManagedPlist strips MDM metadata keys", async () => {
   const config = ConfigParse.schema(
-    ConfigV1.Info,
+    ConfigV2.Info,
     ConfigParse.jsonc(
       await ConfigManaged.parseManagedPlist(
         JSON.stringify({
@@ -1948,7 +1816,7 @@ test("parseManagedPlist strips MDM metadata keys", async () => {
 
 test("parseManagedPlist parses server settings", async () => {
   const config = ConfigParse.schema(
-    ConfigV1.Info,
+    ConfigV2.Info,
     ConfigParse.jsonc(
       await ConfigManaged.parseManagedPlist(
         JSON.stringify({
@@ -1967,38 +1835,35 @@ test("parseManagedPlist parses server settings", async () => {
 })
 
 test("parseManagedPlist parses permission rules", async () => {
+  const rules = [
+    { action: "*", resource: "*", effect: "ask" as const },
+    { action: "bash", resource: "*", effect: "ask" as const },
+    { action: "bash", resource: "rm -rf *", effect: "deny" as const },
+    { action: "bash", resource: "curl *", effect: "deny" as const },
+    { action: "grep", resource: "*", effect: "allow" as const },
+    { action: "glob", resource: "*", effect: "allow" as const },
+    { action: "webfetch", resource: "*", effect: "ask" as const },
+    { action: "~/.ssh/*", resource: "*", effect: "deny" as const },
+  ]
   const config = ConfigParse.schema(
-    ConfigV1.Info,
+    ConfigV2.Info,
     ConfigParse.jsonc(
       await ConfigManaged.parseManagedPlist(
         JSON.stringify({
           $schema: "https://novaclaw.app/config.json",
-          permission: {
-            "*": "ask",
-            bash: { "*": "ask", "rm -rf *": "deny", "curl *": "deny" },
-            grep: "allow",
-            glob: "allow",
-            webfetch: "ask",
-            "~/.ssh/*": "deny",
-          },
+          permissions: rules,
         }),
       ),
       "test:mobileconfig",
     ),
     "test:mobileconfig",
   )
-  expect(config.permission?.["*"]).toBe("ask")
-  expect(config.permission?.grep).toBe("allow")
-  expect(config.permission?.webfetch).toBe("ask")
-  expect(config.permission?.["~/.ssh/*"]).toBe("deny")
-  const bash = config.permission?.bash as Record<string, string>
-  expect(bash?.["rm -rf *"]).toBe("deny")
-  expect(bash?.["curl *"]).toBe("deny")
+  expect(config.permissions).toEqual(rules)
 })
 
 test("parseManagedPlist parses enabled_providers", async () => {
   const config = ConfigParse.schema(
-    ConfigV1.Info,
+    ConfigV2.Info,
     ConfigParse.jsonc(
       await ConfigManaged.parseManagedPlist(
         JSON.stringify({
@@ -2015,7 +1880,7 @@ test("parseManagedPlist parses enabled_providers", async () => {
 
 test("parseManagedPlist handles empty config", async () => {
   const config = ConfigParse.schema(
-    ConfigV1.Info,
+    ConfigV2.Info,
     ConfigParse.jsonc(
       await ConfigManaged.parseManagedPlist(JSON.stringify({ $schema: "https://novaclaw.app/config.json" })),
       "test:mobileconfig",

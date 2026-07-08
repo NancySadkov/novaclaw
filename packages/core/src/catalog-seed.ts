@@ -9,15 +9,10 @@ import { ConfigProvider } from "./config/provider"
 import { Flag } from "./flag/flag"
 import { FSUtil } from "./fs-util"
 import { ProviderV2 } from "./provider"
-import { ConfigV1 } from "./v1/config/config"
-import { ConfigMigrateV1 } from "./v1/config/migrate"
 
 const NAMES = ["config.json", "novaclaw.json", "novaclaw.jsonc"]
 const DECODE_OPTIONS = { errors: "all", onExcessProperty: "ignore", propertyOrder: "original" } as const
 const decodeInfo = Schema.decodeUnknownOption(Config.Info, DECODE_OPTIONS)
-// Existing configs use the V1 shape (e.g. `provider` singular) — migrate before decoding, exactly as
-// config.ts does when it loads a location's config.
-const decodeV1Info = Schema.decodeUnknownOption(ConfigV1.Info, DECODE_OPTIONS)
 
 // Settings → SQLite migration: the transitional jsonc IMPORT. Reads providers/models/default from the
 // global config dir + a target directory's `novaclaw.jsonc` and writes them into the instance-wide
@@ -36,11 +31,7 @@ export const seedFromDirectory = (globalConfigDir: string, directory: string) =>
       const errors: ParseError[] = []
       const input: unknown = parse(text, errors, { allowTrailingComma: true })
       if (errors.length) return undefined
-      return Option.getOrUndefined(
-        ConfigMigrateV1.isV1(input)
-          ? decodeV1Info(input).pipe(Option.map(ConfigMigrateV1.migrate), Option.flatMap(decodeInfo))
-          : decodeInfo(input),
-      )
+      return Option.getOrUndefined(decodeInfo(input))
     }
 
     const loadInfo = (filepath: string) =>

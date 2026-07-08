@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test"
 import { Schema } from "effect"
-import { ConfigProviderV1 } from "@novaclaw/core/v1/config/provider"
 import { CatalogModelStatus, ModelStatus } from "@/provider/model-status"
 import { ModelsDev } from "@novaclaw/core/models-dev"
 import { ProviderCatalogView } from "@/provider/catalog-view"
@@ -13,7 +12,6 @@ describe("provider model status schemas", () => {
   })
 
   test("accepts active status across public provider schemas", () => {
-    expect(Schema.decodeUnknownSync(ConfigProviderV1.Model)({ status: "active" }).status).toBe("active")
     expect(
       Schema.decodeUnknownSync(ModelsDev.Model)({
         id: "test-model",

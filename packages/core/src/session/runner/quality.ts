@@ -36,7 +36,7 @@ export interface Config {
 
 export const DEFAULTS: Config = { enabled: false, cadence: 2, testTimeout: 300_000, commands: {} }
 
-/** Raw config block as it appears on ConfigV1.Info / V2 Info (all optional). */
+/** Raw config block as it appears on `Config.Info` (all optional). */
 export interface RawConfig {
   readonly enabled?: boolean
   readonly cadence?: number

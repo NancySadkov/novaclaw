@@ -1,5 +1,4 @@
 import { $ } from "bun"
-import { ConfigV1 } from "@novaclaw/core/v1/config/config"
 import * as fs from "fs/promises"
 import os from "os"
 import path from "path"
@@ -73,7 +72,7 @@ async function stop(dir: string) {
 
 type TmpDirOptions<T> = {
   git?: boolean
-  config?: Partial<ConfigV1.Info>
+  config?: Partial<Config.Info>
   init?: (dir: string) => Promise<T>
   dispose?: (dir: string) => Promise<T>
 }
@@ -117,7 +116,7 @@ export async function tmpdir<T>(options?: TmpDirOptions<T>) {
 /** Effectful scoped tmpdir. Cleaned up when the scope closes. Make sure these stay in sync */
 export function tmpdirScoped<E = never, R = never>(options?: {
   git?: boolean
-  config?: Partial<ConfigV1.Info> | (() => Partial<ConfigV1.Info>)
+  config?: Partial<Config.Info> | (() => Partial<Config.Info>)
   init?: (directory: string) => Effect.Effect<void, E, R>
 }) {
   return Effect.gen(function* () {
@@ -178,7 +177,7 @@ export const disposeAllInstancesEffect = InstanceStore.Service.use((store) => st
 
 export function provideTmpdirInstance<A, E, R>(
   self: (path: string) => Effect.Effect<A, E, R>,
-  options?: { git?: boolean; config?: Partial<ConfigV1.Info> | (() => Partial<ConfigV1.Info>) },
+  options?: { git?: boolean; config?: Partial<Config.Info> | (() => Partial<Config.Info>) },
 ) {
   return Effect.gen(function* () {
     const path = yield* tmpdirScoped(options)
@@ -197,7 +196,7 @@ export const requireInstance = Effect.gen(function* () {
 export const withTmpdirInstance =
   <E2 = never, R2 = never>(options?: {
     git?: boolean
-    config?: Partial<ConfigV1.Info> | (() => Partial<ConfigV1.Info>)
+    config?: Partial<Config.Info> | (() => Partial<Config.Info>)
     init?: (directory: string) => Effect.Effect<void, E2, R2>
   }) =>
   <A, E, R>(self: Effect.Effect<A, E, R>) =>
@@ -208,7 +207,7 @@ export const withTmpdirInstance =
 
 export function provideTmpdirServer<A, E, R>(
   self: (input: { dir: string; llm: TestLLMServer["Service"] }) => Effect.Effect<A, E, R>,
-  options?: { git?: boolean; config?: (url: string) => Partial<ConfigV1.Info> },
+  options?: { git?: boolean; config?: (url: string) => Partial<Config.Info> },
 ): Effect.Effect<
   A,
   E | PlatformError.PlatformError,

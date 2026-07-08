@@ -1,4 +1,4 @@
-export * as ConfigPermissionV1 from "./permission"
+export * as ConfigPermission from "./permission"
 
 import { Schema, SchemaGetter } from "effect"
 
@@ -47,3 +47,30 @@ export const Info = InputSchema.pipe(
 ).annotate({ identifier: "PermissionConfig" })
 type _Info = Schema.Schema.Type<typeof InputObject>
 export type Info = { -readonly [K in keyof _Info]: _Info[K] }
+
+function normalizeAction(action: string) {
+  return action === "write" || action === "patch" ? "edit" : action
+}
+
+// Lower the ergonomic permission dict (used in config authoring and inline `Permission.fromConfig`
+// calls) into the ordered V2 `Permission.Ruleset` shape consumed by `Config.Info.permissions` and
+// each agent's `permissions`. An optional legacy `tools` map (a `{ tool: boolean }` allow/deny record)
+// is expanded first; write/patch collapse onto `edit`.
+export function ruleset(info?: Info, tools?: Readonly<Record<string, boolean>>) {
+  const rules: Array<{ action: string; resource: string; effect: Action }> = globalThis.Object.entries(
+    tools ?? {},
+  ).map(([action, enabled]) => ({
+    action: normalizeAction(action),
+    resource: "*",
+    effect: enabled ? ("allow" as const) : ("deny" as const),
+  }))
+  for (const [action, rule] of globalThis.Object.entries(info ?? {})) {
+    if (!rule) continue
+    if (typeof rule === "string") {
+      rules.push({ action, resource: "*", effect: rule })
+      continue
+    }
+    rules.push(...globalThis.Object.entries(rule).map(([resource, effect]) => ({ action, resource, effect })))
+  }
+  return rules.length ? rules : undefined
+}

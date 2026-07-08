@@ -1,5 +1,4 @@
 import { test, type TestOptions } from "bun:test"
-import { ConfigV1 } from "@novaclaw/core/v1/config/config"
 import { Cause, Duration, Effect, Exit, Layer } from "effect"
 import * as Scope from "effect/Scope"
 import * as TestClock from "effect/testing/TestClock"
@@ -12,7 +11,7 @@ import { InstanceStore } from "@/project/instance-store"
 type Body<A, E, R> = Effect.Effect<A, E, R> | (() => Effect.Effect<A, E, R>)
 type InstanceOptions<E, R> = {
   git?: boolean
-  config?: Partial<ConfigV1.Info> | (() => Partial<ConfigV1.Info>)
+  config?: Partial<Config.Info> | (() => Partial<Config.Info>)
   init?: (directory: string) => Effect.Effect<void, E, R>
 }
 

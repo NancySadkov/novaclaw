@@ -1,5 +1,5 @@
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
-import { ConfigPermissionV1 } from "@novaclaw/core/v1/config/permission"
+import { ConfigPermission } from "@novaclaw/core/config/permission"
 import { InstanceState } from "@/effect/instance-state"
 import { Wildcard } from "@novaclaw/core/util/wildcard"
 import { Deferred, Effect, Layer, Context } from "effect"
@@ -224,7 +224,7 @@ function expand(pattern: string): string {
   return pattern
 }
 
-export function fromConfig(permission: ConfigPermissionV1.Info) {
+export function fromConfig(permission: ConfigPermission.Info) {
   const ruleset: PermissionV1.Rule[] = []
   for (const [key, value] of Object.entries(permission)) {
     if (typeof value === "string") {

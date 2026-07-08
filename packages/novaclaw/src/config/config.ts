@@ -15,20 +15,19 @@ import { InstallationLocal, InstallationVersion } from "@novaclaw/core/installat
 import { existsSync } from "fs"
 import { Account } from "@/account/account"
 import { isRecord } from "@/util/record"
-import type { ConsoleState } from "@novaclaw/core/v1/config/console-state"
+import type { ConsoleState } from "@novaclaw/core/config/console-state"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { InstanceState } from "@/effect/instance-state"
 import { Context, Duration, Effect, Exit, Fiber, Layer, Option, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
 import { EffectFlock } from "@novaclaw/core/util/effect-flock"
 import { containsPath, type InstanceContext } from "../project/instance-context"
-import { ConfigV1 } from "@novaclaw/core/v1/config/config"
 import { Config as ConfigV2 } from "@novaclaw/core/config"
-import { ConfigMigrateV1 } from "@novaclaw/core/v1/config/migrate"
-import { ConfigAgentV1 } from "@novaclaw/core/v1/config/agent"
+import { ConfigAgentMarkdown } from "@novaclaw/core/config/agent-markdown"
+import { ConfigPermission } from "@novaclaw/core/config/permission"
 import type { DeepMutable } from "@novaclaw/core/schema"
-import { InvalidError, RemoteAuthError } from "@novaclaw/core/v1/config/error"
-import { ConfigPluginV1 } from "@novaclaw/core/v1/config/plugin"
+import { InvalidError, RemoteAuthError } from "@novaclaw/core/config/error"
+import { ConfigPluginSpec } from "@novaclaw/core/config/plugin-spec"
 import { ConfigAgent } from "./agent"
 import { ConfigCommand } from "./command"
 import { ConfigManaged } from "./managed"
@@ -38,6 +37,12 @@ import { ConfigPlugin } from "./plugin"
 import { ConfigVariable } from "./variable"
 import { Npm } from "@novaclaw/core/npm"
 import { withTransientReadRetry } from "@/util/effect-http-client"
+
+// The `.well-known/novaclaw` payload shape: an inline `config` and/or a pointer to a `remote_config`.
+const WellKnown = Schema.Struct({
+  config: Schema.optional(Schema.Json),
+  remote_config: Schema.optional(Schema.Json),
+})
 
 // Custom merge function that concatenates array fields instead of replacing them
 // Keep remeda's deep conditional merge type out of hot config-loading paths; TS profiling showed it dominates here.
@@ -77,23 +82,12 @@ function normalizeLoadedConfig(data: unknown) {
   return copy
 }
 
-// Decode one already-parsed config source as V2 `Config.Info`. A V1-shaped source (detected by a
-// V1-only top-level key) is decoded as V1, migrated, then re-decoded as V2 — the permanent on-read
-// upgrade path (`core/src/v1/config/migrate`). Each of the ~8 sources can independently be a V1 or
-// V2 file. The result is a PLAIN object with no `undefined`-valued keys: `migrate()` emits every V2
-// key (many undefined) and decodes to a Schema.Class instance, but the service's mergeDeep pipeline
-// needs plain, undefined-free records — remeda treats a class instance / an explicit `undefined` as
-// atomic and would replace instead of merge. JSON round-trip normalises both (migrate output is
-// already plain + JSON-safe).
+// Validate one already-parsed config source as V2 `Config.Info` and return it as a plain record. Every
+// source is authored directly as V2 now (the whole-config V1→V2 migrator was retired in F1-config).
+// Reject unknown top-level keys — a typo'd `permision`/`modell` silently ignored would be a real
+// footgun. `ConfigParse.schema` can't do this for `Config.Info` because its extra-key guard only fires
+// for plain-object schemas, not a Schema.Class.
 function loadAsV2(parsed: unknown, source: string): Info {
-  if (ConfigMigrateV1.isV1(parsed)) {
-    const migrated = ConfigMigrateV1.migrate(ConfigParse.schema(ConfigV1.Info, parsed, source))
-    ConfigParse.schema(ConfigV2.Info, migrated, source) // validate the upgrade (throws with source context)
-    return JSON.parse(JSON.stringify(migrated)) as Info
-  }
-  // Native V2 source: reject unknown top-level keys, matching the V1 loader's strictness (a typo'd
-  // `permision`/`modell` silently ignored would be a real footgun). `ConfigParse.schema` can't do this
-  // for `Config.Info` because its extra-key guard only fires for plain-object schemas, not Schema.Class.
   if (isRecord(parsed)) {
     const known = new Set(Object.keys(ConfigV2.Info.fields))
     const extra = Object.keys(parsed).filter((key) => !known.has(key))
@@ -163,14 +157,14 @@ async function resolveLoadedPlugins(config: Info, filepath: string) {
   return config
 }
 
-// F1d: the service now authors + serves V2 `Config.Info` shapes. Internally it MUTATES a merged
-// accumulator (mergeDeep + field assignments), so the working type is a deep-mutable V2 Info.
-// `core/src/v1/config/**` survives as the permanent on-read upgrader: each source that is a V1 file
-// is migrated to V2 on read (see loadAsV2).
+// The service authors + serves V2 `Config.Info` shapes. Internally it MUTATES a merged accumulator
+// (mergeDeep + field assignments), so the working type is a deep-mutable V2 Info. Every config source
+// is authored directly as V2 (the whole-config V1→V2 migrator was retired in F1-config; only the flat
+// markdown-agent frontmatter still lowers, via `ConfigAgentMarkdown.lower`).
 export type Info = DeepMutable<typeof ConfigV2.Info.Type> & {
   // plugin_origins is derived state, not a persisted config field. It keeps each winning plugin spec together
   // with the file and scope it came from so later runtime code can make location-sensitive decisions.
-  // Kept in the V1 `Spec` shape (a tuple/string) that the plugin loader (`plugin/index.ts`) consumes;
+  // Kept in the resolver `Spec` shape (a tuple/string) that the plugin loader (`plugin/index.ts`) consumes;
   // the persisted `plugins` (V2 entries) is derived from it.
   plugin_origins?: ConfigPlugin.Origin[]
 }
@@ -179,21 +173,22 @@ export type Info = DeepMutable<typeof ConfigV2.Info.Type> & {
 // this package's `ConfigPlugin` origin helpers).
 type PluginEntry = string | { package: string; options?: Record<string, unknown> }
 
-function specToEntry(spec: ConfigPluginV1.Spec): PluginEntry {
+function specToEntry(spec: ConfigPluginSpec.Spec): PluginEntry {
   return Array.isArray(spec) ? { package: spec[0], ...(spec[1] ? { options: spec[1] } : {}) } : spec
 }
 
-function entryToSpec(entry: PluginEntry): ConfigPluginV1.Spec {
+function entryToSpec(entry: PluginEntry): ConfigPluginSpec.Spec {
   if (typeof entry === "string") return entry
   return entry.options ? [entry.package, entry.options] : entry.package
 }
 
-// Dir-discovered agents (`{agent,agents,mode,modes}/**/*.md`) parse as V1 shapes; map each to V2 via
-// the shared `migrateAgent`, then strip undefined fields (JSON round-trip) so they deep-merge cleanly
-// into the V2 `result.agents` record instead of overwriting siblings with `undefined`.
-function migrateDirAgents(record: Record<string, ConfigAgentV1.Info>): NonNullable<Info["agents"]> {
+// Dir-discovered agents (`{agent,agents,mode,modes}/**/*.md`) parse as the flat markdown authoring
+// shape; lower each to the canonical `ConfigAgent.Info` via `ConfigAgentMarkdown.lower`, then strip
+// undefined fields (JSON round-trip) so they deep-merge cleanly into the V2 `result.agents` record
+// instead of overwriting siblings with `undefined`.
+function migrateDirAgents(record: Record<string, ConfigAgentMarkdown.Info>): NonNullable<Info["agents"]> {
   const migrated = Object.fromEntries(
-    Object.entries(record).map(([name, info]) => [name, ConfigMigrateV1.migrateAgent(info)]),
+    Object.entries(record).map(([name, info]) => [name, ConfigAgentMarkdown.lower(info)]),
   )
   return JSON.parse(JSON.stringify(migrated))
 }
@@ -444,7 +439,7 @@ export const layer = Layer.effect(
             authEnv[value.key] = value.token
             const wellknownURL = `${url}/.well-known/novaclaw`
             yield* Effect.logDebug("fetching remote config", { url: wellknownURL })
-            const wellknown = yield* fetchRemoteJson(wellknownURL, undefined, ConfigV1.WellKnown, url)
+            const wellknown = yield* fetchRemoteJson(wellknownURL, undefined, WellKnown, url)
             const remote = yield* Effect.promise(() =>
               substituteWellKnownRemoteConfig({
                 value: wellknown.remote_config,
@@ -637,7 +632,7 @@ export const layer = Layer.effect(
           try {
             // A V1-shaped permission dict on the env; migrate it to a V2 Ruleset and append — the env is
             // the most-specific source, so its rules come last (see mergeConfigConcatArrays ordering).
-            const rules = ConfigMigrateV1.migrate({ permission: JSON.parse(Flag.NOVACLAW_PERMISSION) }).permissions
+            const rules = ConfigPermission.ruleset(JSON.parse(Flag.NOVACLAW_PERMISSION))
             if (rules?.length) result.permissions = [...(result.permissions ?? []), ...rules]
           } catch (err) {
             yield* Effect.logWarning("NOVACLAW_PERMISSION contains invalid JSON, skipping", { err })
@@ -719,10 +714,9 @@ export const layer = Layer.effect(
       let next: Info
       let changed: boolean
       const parsedBefore = ConfigParse.jsonc(before, file)
-      // A JSON file, or a legacy V1 .jsonc: rewrite as V2 JSON. loadAsV2 migrates a V1 body to V2 first,
-      // so patching V2 keys can never produce a hybrid file. For a V1 .jsonc this is a one-way ratchet —
-      // comments/formatting are lost this once; every subsequent write patches the V2 file in place.
-      if (!file.endsWith(".jsonc") || ConfigMigrateV1.isV1(parsedBefore)) {
+      // A plain `.json` file is rewritten wholesale; a `.jsonc` is patched in place so comments and
+      // formatting survive. Every source is authored as V2 now, so patching V2 keys always stays V2.
+      if (!file.endsWith(".jsonc")) {
         const existing = loadAsV2(parsedBefore, file)
         const merged = mergeDeep(writable(existing), patch)
         const serialized = JSON.stringify(merged, null, 2)

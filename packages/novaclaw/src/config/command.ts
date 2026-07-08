@@ -3,15 +3,15 @@ export * as ConfigCommand from "./command"
 import path from "path"
 import { Cause, Exit, Schema } from "effect"
 import { Glob } from "@novaclaw/core/util/glob"
-import { ConfigCommandV1 } from "@novaclaw/core/v1/config/command"
+import { ConfigCommand as CoreConfigCommand } from "@novaclaw/core/config/command"
 import { configEntryNameFromPath } from "./entry-name"
-import { InvalidError } from "@novaclaw/core/v1/config/error"
+import { InvalidError } from "@novaclaw/core/config/error"
 import * as ConfigMarkdown from "./markdown"
 
-const decodeInfo = Schema.decodeUnknownExit(ConfigCommandV1.Info)
+const decodeInfo = Schema.decodeUnknownExit(CoreConfigCommand.Info)
 
 export async function load(dir: string) {
-  const result: Record<string, ConfigCommandV1.Info> = {}
+  const result: Record<string, CoreConfigCommand.Info> = {}
   for (const item of await Glob.scan("{command,commands}/**/*.md", {
     cwd: dir,
     absolute: true,

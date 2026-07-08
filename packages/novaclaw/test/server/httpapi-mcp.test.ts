@@ -70,10 +70,12 @@ describe("mcp HttpApi", () => {
     {
       config: {
         mcp: {
-          demo: {
-            type: "local",
-            command: ["echo", "demo"],
-            enabled: false,
+          servers: {
+            demo: {
+              type: "local",
+              command: ["echo", "demo"],
+              disabled: true,
+            },
           },
         },
       },
@@ -94,7 +96,7 @@ describe("mcp HttpApi", () => {
             config: {
               type: "local",
               command: ["echo", "added"],
-              enabled: false,
+              disabled: true,
             },
           }),
         })
@@ -116,10 +118,12 @@ describe("mcp HttpApi", () => {
     {
       config: {
         mcp: {
-          demo: {
-            type: "local",
-            command: ["echo", "demo"],
-            enabled: false,
+          servers: {
+            demo: {
+              type: "local",
+              command: ["echo", "demo"],
+              disabled: true,
+            },
           },
         },
       },
@@ -145,10 +149,12 @@ describe("mcp HttpApi", () => {
     {
       config: {
         mcp: {
-          demo: {
-            type: "local",
-            command: ["echo", "demo"],
-            enabled: false,
+          servers: {
+            demo: {
+              type: "local",
+              command: ["echo", "demo"],
+              disabled: true,
+            },
           },
         },
       },
@@ -178,10 +184,12 @@ describe("mcp HttpApi", () => {
       config: {
         formatter: false,
         mcp: {
-          demo: {
-            type: "local",
-            command: ["echo", "demo"],
-            enabled: false,
+          servers: {
+            demo: {
+              type: "local",
+              command: ["echo", "demo"],
+              disabled: true,
+            },
           },
         },
       },

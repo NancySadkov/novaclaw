@@ -580,9 +580,11 @@ it.instance(
   {
     config: {
       mcp: {
-        "disc-server": {
-          type: "local",
-          command: ["echo", "test"],
+        servers: {
+          "disc-server": {
+            type: "local",
+            command: ["echo", "test"],
+          },
         },
       },
     },
@@ -618,9 +620,11 @@ it.instance(
   {
     config: {
       mcp: {
-        "reconn-server": {
-          type: "local",
-          command: ["echo", "test"],
+        servers: {
+          "reconn-server": {
+            type: "local",
+            command: ["echo", "test"],
+          },
         },
       },
     },
@@ -708,13 +712,15 @@ it.instance(
   {
     config: {
       mcp: {
-        "good-server": {
-          type: "local",
-          command: ["echo", "good"],
-        },
-        "bad-server": {
-          type: "local",
-          command: ["echo", "bad"],
+        servers: {
+          "good-server": {
+            type: "local",
+            command: ["echo", "good"],
+          },
+          "bad-server": {
+            type: "local",
+            command: ["echo", "bad"],
+          },
         },
       },
     },
@@ -814,11 +820,10 @@ it.instance(
       Effect.gen(function* () {
         const countBefore = clientCreateCount
 
-        // `add()` receives its entry RAW (no config migration), so it must use the
-        // V2 field `disabled` — which `create()` checks (`mcp.disabled === true`).
-        // The static config below intentionally uses the V1 field `enabled: false`
-        // to exercise the boot path where the V1→V2 migration converts it to
-        // `disabled: true`. Both paths must skip connecting (no client created).
+        // `add()` receives its entry RAW, so it must use the V2 field `disabled`
+        // — which `create()` checks (`mcp.disabled === true`). The static config
+        // below is authored directly as V2 (`disabled: true`) as well. Both paths
+        // must skip connecting (no client created).
         yield* mcp.add("disabled-server", {
           type: "local",
           command: ["echo", "test"],
@@ -835,10 +840,12 @@ it.instance(
   {
     config: {
       mcp: {
-        "disabled-server": {
-          type: "local",
-          command: ["echo", "test"],
-          enabled: false,
+        servers: {
+          "disabled-server": {
+            type: "local",
+            command: ["echo", "test"],
+            disabled: true,
+          },
         },
       },
     },
@@ -873,9 +880,11 @@ it.instance(
   {
     config: {
       mcp: {
-        "prompt-server": {
-          type: "local",
-          command: ["echo", "test"],
+        servers: {
+          "prompt-server": {
+            type: "local",
+            command: ["echo", "test"],
+          },
         },
       },
     },
@@ -909,9 +918,11 @@ it.instance(
   {
     config: {
       mcp: {
-        "resource-server": {
-          type: "local",
-          command: ["echo", "test"],
+        servers: {
+          "resource-server": {
+            type: "local",
+            command: ["echo", "test"],
+          },
         },
       },
     },
@@ -938,7 +949,7 @@ it.instance(
         expect(serverState.readResourceTimeout).toBe(2500)
       }),
     ),
-  { config: { mcp: {}, experimental: { mcp_timeout: 5000 } } },
+  { config: { mcp: { timeout: { request: 5000 } } } },
 )
 
 it.instance(
@@ -1042,9 +1053,11 @@ it.instance(
   {
     config: {
       mcp: {
-        "prompt-disc-server": {
-          type: "local",
-          command: ["echo", "test"],
+        servers: {
+          "prompt-disc-server": {
+            type: "local",
+            command: ["echo", "test"],
+          },
         },
       },
     },
@@ -1140,9 +1153,11 @@ it.instance(
   {
     config: {
       mcp: {
-        "fail-connect": {
-          type: "local",
-          command: ["echo", "test"],
+        servers: {
+          "fail-connect": {
+            type: "local",
+            command: ["echo", "test"],
+          },
         },
       },
     },
@@ -1211,9 +1226,11 @@ it.instance(
   {
     config: {
       mcp: {
-        "my.special-server": {
-          type: "local",
-          command: ["echo", "test"],
+        servers: {
+          "my.special-server": {
+            type: "local",
+            command: ["echo", "test"],
+          },
         },
       },
     },

@@ -2,13 +2,13 @@ import path from "path"
 import fs from "fs/promises"
 import { describe, expect } from "bun:test"
 import { Effect, Layer, Schema } from "effect"
-import { FastCheck } from "effect/testing"
 import { Config } from "@novaclaw/core/config"
+import { ConfigAgent } from "@novaclaw/core/config/agent"
+import { ConfigAgentMarkdown } from "@novaclaw/core/config/agent-markdown"
+import { ConfigPermission } from "@novaclaw/core/config/permission"
 import { ConfigProvider } from "@novaclaw/core/config/provider"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
-import { ConfigMigrateV1 } from "@novaclaw/core/v1/config/migrate"
-import { ConfigV1 } from "@novaclaw/core/v1/config/config"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { Global } from "@novaclaw/core/global"
 import { Location } from "@novaclaw/core/location"
@@ -66,183 +66,37 @@ describe("Config", () => {
     }),
   )
 
-  it.effect("detects v1 configuration from any v1-only top-level key", () =>
+  it.effect("lowers flat markdown-agent frontmatter into the canonical ConfigAgent shape", () =>
     Effect.sync(() => {
-      expect(ConfigMigrateV1.isV1({ snapshot: false })).toBe(true)
-      expect(ConfigMigrateV1.isV1({ snapshot: false, agents: {} })).toBe(true)
-      expect(ConfigMigrateV1.isV1({ reference: {} })).toBe(true)
-      expect(ConfigMigrateV1.isV1({ shell: "/bin/zsh", model: "anthropic/claude" })).toBe(false)
-      expect(ConfigMigrateV1.isV1({ references: {} })).toBe(false)
-      // F1d: server + provider-lists are now V2-native (D1/D2) — a V2 file carrying them must
-      // NOT be re-migrated, so they no longer discriminate a V1 file.
-      expect(ConfigMigrateV1.isV1({ server: { port: 4096 } })).toBe(false)
-      expect(ConfigMigrateV1.isV1({ disabled_providers: ["openai"] })).toBe(false)
-      expect(ConfigMigrateV1.isV1({ enabled_providers: ["anthropic"] })).toBe(false)
-      // F1d: shape-changed fields that keep their V1 name — detected by their V1-shaped VALUE, since
-      // key-presence alone can't discriminate (else a V1 file with only e.g. a flat `mcp` decodes as
-      // V2 and silently loses it).
-      expect(ConfigMigrateV1.isV1({ mcp: { myserver: { type: "remote", url: "https://x" } } })).toBe(true)
-      expect(ConfigMigrateV1.isV1({ mcp: { servers: { myserver: { type: "remote", url: "https://x" } } } })).toBe(false)
-      expect(ConfigMigrateV1.isV1({ compaction: { preserve_recent_tokens: 2000 } })).toBe(true)
-      expect(ConfigMigrateV1.isV1({ compaction: { auto: true } })).toBe(false)
-      expect(ConfigMigrateV1.isV1({ skills: { paths: ["./s"] } })).toBe(true)
-      expect(ConfigMigrateV1.isV1({ skills: ["./s"] })).toBe(false)
-      expect(ConfigMigrateV1.isV1({ experimental: { mcp_timeout: 5000 } })).toBe(true)
-      expect(ConfigMigrateV1.isV1({ experimental: { policies: [] } })).toBe(false)
+      const parsed = Schema.decodeUnknownSync(ConfigAgentMarkdown.Info, { errors: "all", propertyOrder: "original" })({
+        model: "dgx-spark/qwen3.6-35b",
+        temperature: 0.2,
+        top_p: 0.8,
+        prompt: "be terse",
+        disable: true,
+        tools: { bash: false },
+      })
+      const lowered = ConfigAgentMarkdown.lower(parsed)
+      expect(lowered.request).toEqual({ body: { temperature: 0.2, top_p: 0.8 } })
+      expect(lowered.system).toBe("be terse")
+      expect(lowered.disabled).toBe(true)
+      expect(lowered.permissions).toEqual([{ action: "bash", resource: "*", effect: "deny" }])
+      // The lowered object must decode cleanly as the canonical ConfigAgent.Info.
+      Schema.decodeUnknownSync(ConfigAgent.Info)(JSON.parse(JSON.stringify(lowered)))
     }),
   )
 
-  it.effect("migrate covers every v1 key — no silent field loss (F1d guard)", () =>
+  it.effect("lowers a permission dict + tools map into an ordered ruleset", () =>
     Effect.sync(() => {
-      // A ConfigV1.Info with EVERY top-level field present. Doubles as the per-key sample below;
-      // its key set MUST equal the schema's, so a newly added ConfigV1.Info field forces an
-      // explicit disposition here (carried by migrate, or listed in DROPPED).
-      const FULL: Record<string, unknown> = {
-        $schema: "https://novaclaw.app/config.json",
-        shell: "/bin/zsh",
-        logLevel: "INFO",
-        server: { port: 4096, hostname: "0.0.0.0", mdns: true, mdnsDomain: "x.local", cors: ["https://a"] },
-        command: { review: { template: "t" } },
-        skills: { paths: ["./s"], urls: ["https://s/"] },
-        references: { docs: { path: "../docs" } },
-        reference: { legacy: { path: "../legacy" } },
-        watcher: { ignore: ["node_modules"] },
-        snapshot: false,
-        plugin: ["p", ["@o/p", { a: 1 }]],
-        autoupdate: "notify",
-        disabled_providers: ["openai"],
-        enabled_providers: ["anthropic"],
-        model: "anthropic/claude",
-        small_model: "anthropic/haiku",
-        default_agent: "build",
-        username: "nancy",
-        mode: { build: { prompt: "b" } },
-        agent: { reviewer: { prompt: "r" } },
-        provider: { custom: { models: {} } },
-        mcp: { local: { type: "local", command: ["node"] } },
-        formatter: { prettier: { command: ["prettier"], extensions: [".ts"] } },
-        instructions: ["./AGENTS.md"],
-        layout: "stretch",
-        permission: { bash: "ask" },
-        tools: { write: false },
-        attachment: { image: { auto_resize: false } },
-        tool_output: { max_lines: 100 },
-        persona: { enabled: true, name: "Nova" },
-        introspection: { enabled: true },
-        adhoc_tools: [{ name: "x", description: "d", manual: "m" }],
-        affective: { enabled: true },
-        user_profile: { enabled: true, name: "n" },
-        offline: true,
-        kb: { url: "http://kb" },
-        quality: { enabled: true },
-        compaction: { auto: true, preserve_recent_tokens: 2000, reserved: 1000 },
-        experimental: { policies: [], mcp_timeout: 5000 },
-      }
-      const v1Keys = Object.keys(ConfigV1.Info.fields)
-      expect(new Set(Object.keys(FULL))).toEqual(new Set(v1Keys))
-
-      const dropped = ConfigMigrateV1.DROPPED as readonly string[]
-      for (const key of v1Keys) {
-        // Migrate the key in ISOLATION so merge-pairs (reference/references, mode/agent,
-        // permission/tools) each still register on their own, and a dropped key registers as
-        // producing nothing.
-        const migrated = ConfigMigrateV1.migrate({ [key]: FULL[key] } as never)
-        const carried = Object.values(migrated).some((value) => value !== undefined)
-        if (dropped.includes(key)) {
-          expect(carried, `${key} is in DROPPED but migrate() still carried it`).toBe(false)
-        } else {
-          expect(carried, `${key} is neither carried by migrate() nor in DROPPED — silent loss`).toBe(true)
-        }
-      }
-    }),
-  )
-
-  it.effect("carries the F1d-promoted fields (server, disabled/enabled_providers) through migrate + decode", () =>
-    Effect.sync(() => {
-      const info = Schema.decodeUnknownSync(Config.Info)(
-        ConfigMigrateV1.migrate({
-          server: { port: 4096, hostname: "0.0.0.0", mdns: true, mdnsDomain: "nova.local", cors: ["https://x"] },
-          disabled_providers: ["openai"],
-          enabled_providers: ["anthropic", "google"],
-        }),
-        { errors: "all" },
-      )
-      expect(info.server).toEqual({
-        port: 4096,
-        hostname: "0.0.0.0",
-        mdns: true,
-        mdnsDomain: "nova.local",
-        cors: ["https://x"],
-      })
-      expect(info.disabled_providers).toEqual(["openai"])
-      expect(info.enabled_providers).toEqual(["anthropic", "google"])
-    }),
-  )
-
-  it.effect("migrates arbitrary v1 configuration into valid v2 configuration", () =>
-    Effect.sync(() => {
-      FastCheck.assert(
-        FastCheck.property(Schema.toArbitrary(ConfigV1.Info), (info) => {
-          Schema.decodeUnknownSync(Config.Info)(ConfigMigrateV1.migrate(info), { errors: "all" })
-        }),
-        { numRuns: 100 },
-      )
-    }),
-  )
-
-  it.effect("migrates v1 provider setup options into AISDK settings", () =>
-    Effect.sync(() => {
-      const migrated = ConfigMigrateV1.migrate({
-        provider: {
-          bedrock: {
-            npm: "@ai-sdk/amazon-bedrock",
-            options: {
-              headers: { "x-test": "1" },
-              body: { trace: true },
-              region: "us-east-1",
-              profile: "dev",
-            },
-          },
-        },
-      })
-
-      expect(migrated.providers?.bedrock?.api).toEqual({
-        type: "aisdk",
-        package: "@ai-sdk/amazon-bedrock",
-        settings: { region: "us-east-1", profile: "dev" },
-      })
-      expect(migrated.providers?.bedrock?.request).toEqual({
-        headers: { "x-test": "1" },
-        body: { trace: true },
-      })
-    }),
-  )
-
-  it.effect("migrates v1 command configuration", () =>
-    Effect.sync(() => {
-      expect(
-        ConfigMigrateV1.migrate({
-          command: {
-            review: {
-              template: "Review changes",
-              description: "Review code",
-              agent: "reviewer",
-              model: "anthropic/claude",
-              variant: "high",
-              subtask: true,
-            },
-          },
-        }).commands,
-      ).toEqual({
-        review: {
-          template: "Review changes",
-          description: "Review code",
-          agent: "reviewer",
-          model: "anthropic/claude",
-          variant: "high",
-          subtask: true,
-        },
-      })
+      expect(ConfigPermission.ruleset({ bash: "deny", edit: { "*": "allow" } })).toEqual([
+        { action: "bash", resource: "*", effect: "deny" },
+        { action: "edit", resource: "*", effect: "allow" },
+      ])
+      // A legacy `tools` allow/deny map expands first; write collapses onto edit.
+      expect(ConfigPermission.ruleset(undefined, { write: false })).toEqual([
+        { action: "edit", resource: "*", effect: "deny" },
+      ])
+      expect(ConfigPermission.ruleset(undefined, undefined)).toBeUndefined()
     }),
   )
 
@@ -559,222 +413,6 @@ describe("Config", () => {
             expect(documents).toHaveLength(1)
             expect(documents[0]?.info.model).toBe("anthropic/claude")
             expect(documents[0]?.info).not.toHaveProperty("lsp")
-          }).pipe(Effect.provide(testLayer(tmp.path)))
-        }),
-      ),
-    ),
-  )
-
-  it.live("migrates the deprecated reference key into references", () =>
-    Effect.acquireRelease(
-      Effect.promise(() => tmpdir()),
-      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
-    ).pipe(
-      Effect.flatMap((tmp) =>
-        Effect.gen(function* () {
-          yield* Effect.promise(() =>
-            fs.writeFile(
-              path.join(tmp.path, "novaclaw.json"),
-              JSON.stringify({
-                reference: {
-                  local: { path: "../library" },
-                  sdk: { repository: "github.com/example/sdk", branch: "main" },
-                  shorthand: "github.com/example/docs",
-                },
-              }),
-            ),
-          )
-
-          return yield* Effect.gen(function* () {
-            const config = yield* Config.Service
-            const documents = (yield* config.entries()).filter((entry) => entry.type === "document")
-
-            expect(documents).toHaveLength(1)
-            expect(documents[0]?.info.references).toEqual({
-              local: { path: "../library" },
-              sdk: { repository: "github.com/example/sdk", branch: "main" },
-              shorthand: "github.com/example/docs",
-            })
-          }).pipe(Effect.provide(testLayer(tmp.path)))
-        }),
-      ),
-    ),
-  )
-
-  it.live("migrates v1 configuration when a v1-only key is present", () =>
-    Effect.acquireRelease(
-      Effect.promise(() => tmpdir()),
-      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
-    ).pipe(
-      Effect.flatMap((tmp) =>
-        Effect.gen(function* () {
-          yield* Effect.promise(() =>
-            fs.writeFile(
-              path.join(tmp.path, "novaclaw.json"),
-              JSON.stringify({
-                shell: "/bin/zsh",
-                default_agent: "reviewer",
-                snapshot: false,
-                autoshare: true,
-                permission: {
-                  bash: "ask",
-                  edit: { "*.md": "allow", "*": "deny" },
-                  question: "deny",
-                },
-                agent: {
-                  reviewer: {
-                    prompt: "Review changes.",
-                    disable: true,
-                    temperature: 0.2,
-                    permission: { read: "allow" },
-                  },
-                },
-                plugin: [
-                  "novaclaw-helicone-session",
-                  ["@my-org/audit-plugin", { endpoint: "https://audit.example.com" }],
-                ],
-                skills: { paths: ["./skills"], urls: ["https://example.com/.well-known/skills/"] },
-                references: {
-                  docs: { path: "../docs", description: "Use for product documentation", hidden: true },
-                },
-                attachment: { image: { auto_resize: false, max_width: 1200 } },
-                provider: {
-                  custom: {
-                    options: { apiKey: "secret" },
-                    models: {
-                      model: {
-                        options: { reasoningEffort: "high" },
-                        variants: { fast: { temperature: 0.2 } },
-                      },
-                    },
-                  },
-                  openai: {
-                    npm: "@ai-sdk/openai",
-                    options: { apiKey: "secret", organization: "org" },
-                    models: {
-                      model: {
-                        options: { temperature: 0.3, reasoningEffort: "high", serviceTier: "priority" },
-                        variants: { high: { reasoningEffort: "high", reasoningSummary: "auto" } },
-                      },
-                    },
-                  },
-                  anthropic: {
-                    npm: "@ai-sdk/anthropic",
-                    models: {
-                      model: {
-                        options: {
-                          effort: "high",
-                          taskBudget: 4096,
-                          metadata: { userId: "user-1" },
-                        },
-                      },
-                    },
-                  },
-                },
-                compaction: { auto: true, tail_turns: 3, preserve_recent_tokens: 2000, reserved: 10000 },
-                experimental: { mcp_timeout: 5000 },
-                mcp: {
-                  local: { type: "local", command: ["node", "server.js"], enabled: false, timeout: 10000 },
-                  remote: {
-                    type: "remote",
-                    url: "https://mcp.example.com",
-                    oauth: { clientId: "client", callbackPort: 19876 },
-                    timeout: 20000,
-                  },
-                },
-              }),
-            ),
-          )
-
-          return yield* Effect.gen(function* () {
-            const config = yield* Config.Service
-            const documents = (yield* config.entries()).filter((entry) => entry.type === "document")
-
-            expect(documents).toHaveLength(1)
-            expect(documents[0]?.info).toBeInstanceOf(Config.Info)
-            expect(documents[0]?.info.shell).toBe("/bin/zsh")
-            expect(documents[0]?.info.default_agent).toBe("reviewer")
-            expect(documents[0]?.info.snapshots).toBe(false)
-            // ④ share removal: the V1 fixture's `autoshare: true` is now an ignored unknown
-            // key — the migrated V2 Info carries no share field.
-            expect(documents[0]?.info).not.toHaveProperty("share")
-            expect(documents[0]?.info.permissions).toEqual([
-              { action: "bash", resource: "*", effect: "ask" },
-              { action: "edit", resource: "*.md", effect: "allow" },
-              { action: "edit", resource: "*", effect: "deny" },
-              { action: "question", resource: "*", effect: "deny" },
-            ])
-            expect(documents[0]?.info.agents?.reviewer).toMatchObject({
-              system: "Review changes.",
-              disabled: true,
-              request: { body: { temperature: 0.2 } },
-              permissions: [{ action: "read", resource: "*", effect: "allow" }],
-            })
-            expect(documents[0]?.info.plugins).toEqual([
-              "novaclaw-helicone-session",
-              { package: "@my-org/audit-plugin", options: { endpoint: "https://audit.example.com" } },
-            ])
-            expect(documents[0]?.info.skills).toEqual(["./skills", "https://example.com/.well-known/skills/"])
-            expect(documents[0]?.info.references).toEqual({
-              docs: { path: "../docs", description: "Use for product documentation", hidden: true },
-            })
-            expect(documents[0]?.info.attachments).toEqual({ image: { auto_resize: false, max_width: 1200 } })
-            expect(documents[0]?.info.providers?.custom).toMatchObject({
-              request: { body: { apiKey: "secret" } },
-              models: {
-                model: {
-                  request: { body: { reasoningEffort: "high" } },
-                  variants: [{ id: "fast", body: { temperature: 0.2 } }],
-                },
-              },
-            })
-            expect(documents[0]?.info.providers?.openai).toMatchObject({
-              api: { settings: {} },
-              request: { headers: { Authorization: "Bearer secret", "OpenAI-Organization": "org" } },
-              models: {
-                model: {
-                  request: {
-                    body: { temperature: 0.3, reasoning: { effort: "high" }, service_tier: "priority" },
-                  },
-                  variants: [{ id: "high", body: { reasoning: { effort: "high", summary: "auto" } } }],
-                },
-              },
-            })
-            expect(documents[0]?.info.providers?.anthropic).toMatchObject({
-              models: {
-                model: {
-                  request: {
-                    body: {
-                      output_config: { effort: "high", task_budget: 4096 },
-                      metadata: { user_id: "user-1" },
-                    },
-                  },
-                },
-              },
-            })
-            expect(documents[0]?.info.compaction).toEqual({
-              auto: true,
-              prune: undefined,
-              keep: { tokens: 2000 },
-              buffer: 10000,
-            })
-            expect(documents[0]?.info.mcp).toMatchObject({
-              timeout: { request: 5000 },
-              servers: {
-                local: {
-                  type: "local",
-                  command: ["node", "server.js"],
-                  disabled: true,
-                  timeout: { request: 10000 },
-                },
-                remote: {
-                  type: "remote",
-                  url: "https://mcp.example.com",
-                  oauth: { client_id: "client", callback_port: 19876 },
-                  timeout: { request: 20000 },
-                },
-              },
-            })
           }).pipe(Effect.provide(testLayer(tmp.path)))
         }),
       ),

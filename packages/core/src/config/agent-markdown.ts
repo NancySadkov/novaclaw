@@ -1,8 +1,13 @@
-export * as ConfigAgentV1 from "./agent"
+export * as ConfigAgentMarkdown from "./agent-markdown"
 
 import { Schema, SchemaGetter } from "effect"
-import { PositiveInt } from "../../schema"
-import { ConfigPermissionV1 } from "./permission"
+import { PositiveInt } from "../schema"
+import { ConfigPermission } from "./permission"
+
+// The friendly frontmatter authoring schema for markdown agents (`{agent,agents,mode,modes}/**/*.md`).
+// It stays flat + ergonomic (`prompt`, `temperature`, `top_p`, `tools`) and is LOWERED via `lower()`
+// into the canonical `ConfigAgent.Info` (V2) shape the kernel consumes. This is an authoring surface,
+// not a persisted config duality — a new agent field lands once on `ConfigAgent.Info`.
 
 const Color = Schema.Union([
   Schema.String.check(Schema.isPattern(/^#[0-9a-fA-F]{6}$/)),
@@ -35,7 +40,7 @@ const AgentSchema = Schema.StructWithRest(
       description: "Maximum number of agentic iterations before forcing text-only response",
     }),
     maxSteps: Schema.optional(PositiveInt).annotate({ description: "@deprecated Use 'steps' field instead." }),
-    permission: Schema.optional(ConfigPermissionV1.Info),
+    permission: Schema.optional(ConfigPermission.Info),
   }),
   [Schema.Record(Schema.String, Schema.Any)],
 )
@@ -65,7 +70,7 @@ const normalize = (agent: Schema.Schema.Type<typeof AgentSchema>): Schema.Schema
     if (!KNOWN_KEYS.has(key)) options[key] = value
   }
 
-  const permission: ConfigPermissionV1.Info = {}
+  const permission: ConfigPermission.Info = {}
   for (const [tool, enabled] of Object.entries(agent.tools ?? {})) {
     const action = enabled ? "allow" : "deny"
     if (tool === "write" || tool === "edit" || tool === "patch") {
@@ -87,3 +92,27 @@ export const Info = AgentSchema.pipe(
   }),
 ).annotate({ identifier: "AgentConfig" })
 export type Info = Schema.Schema.Type<typeof Info>
+
+// Lower a parsed markdown-agent frontmatter into the canonical `ConfigAgent.Info` (V2) shape: flat
+// `temperature`/`top_p`/`options` fold into `request.body`, `prompt` becomes `system`, `disable`
+// becomes `disabled`, and the permission dict lowers to an ordered ruleset.
+export function lower(info: Info) {
+  const body = {
+    ...info.options,
+    ...(info.temperature === undefined ? {} : { temperature: info.temperature }),
+    ...(info.top_p === undefined ? {} : { top_p: info.top_p }),
+  }
+  return {
+    model: info.model,
+    variant: info.variant,
+    request: Object.keys(body).length ? { body } : undefined,
+    system: info.prompt,
+    description: info.description,
+    mode: info.mode,
+    hidden: info.hidden,
+    color: info.color,
+    steps: info.steps,
+    disabled: info.disable,
+    permissions: ConfigPermission.ruleset(info.permission),
+  }
+}

@@ -9,14 +9,14 @@ import {
   type PluginSource,
 } from "./shared"
 import { ConfigPlugin } from "@/config/plugin"
-import { ConfigPluginV1 } from "@novaclaw/core/v1/config/plugin"
+import { ConfigPluginSpec } from "@novaclaw/core/config/plugin-spec"
 import { InstallationVersion } from "@novaclaw/core/installation/version"
 
 export namespace PluginLoader {
   // A normalized plugin declaration derived from config before any filesystem or npm work happens.
   export type Plan = {
     spec: string
-    options: ConfigPluginV1.Options | undefined
+    options: ConfigPluginSpec.Options | undefined
     deprecated: boolean
   }
 
@@ -74,7 +74,7 @@ export namespace PluginLoader {
   }
 
   // Normalize a config item into the loader's internal representation.
-  function plan(item: ConfigPluginV1.Spec): Plan {
+  function plan(item: ConfigPluginSpec.Spec): Plan {
     const spec = ConfigPlugin.pluginSpecifier(item)
     return { spec, options: ConfigPlugin.pluginOptions(item), deprecated: isDeprecatedPlugin(spec) }
   }

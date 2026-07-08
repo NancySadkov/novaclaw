@@ -1,5 +1,5 @@
 import { NamedError } from "@novaclaw/core/util/error"
-import { ConfigErrorV1 } from "@novaclaw/core/v1/config/error"
+import { ConfigError } from "@novaclaw/core/config/error"
 import { Cause, Effect } from "effect"
 import { HttpRouter, HttpServerError, HttpServerRespondable, HttpServerResponse } from "effect/unstable/http"
 
@@ -17,10 +17,10 @@ export const errorLayer = HttpRouter.middleware<{ handles: unknown }>()((effect)
 
       const error = defect.defect
       if (
-        ConfigErrorV1.JsonError.isInstance(error) ||
-        ConfigErrorV1.InvalidError.isInstance(error) ||
-        ConfigErrorV1.FrontmatterError.isInstance(error) ||
-        ConfigErrorV1.DirectoryTypoError.isInstance(error)
+        ConfigError.JsonError.isInstance(error) ||
+        ConfigError.InvalidError.isInstance(error) ||
+        ConfigError.FrontmatterError.isInstance(error) ||
+        ConfigError.DirectoryTypoError.isInstance(error)
       ) {
         return Effect.succeed(HttpServerResponse.jsonUnsafe(error.toObject(), { status: 400 }))
       }

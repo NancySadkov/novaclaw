@@ -9,15 +9,14 @@ import { ConfigAgent } from "../agent"
 import { ConfigMarkdown } from "../markdown"
 import { FSUtil } from "../../fs-util"
 import { ModelV2 } from "../../model"
-import { ConfigAgentV1 } from "../../v1/config/agent"
-import { ConfigMigrateV1 } from "../../v1/config/migrate"
+import { ConfigAgentMarkdown } from "../agent-markdown"
 
 const legacySources = [
   { pattern: "{agent,agents}/**/*.md", primary: false },
   { pattern: "{mode,modes}/*.md", primary: true },
 ] as const
 const decodeAgent = Schema.decodeUnknownOption(ConfigAgent.Info)
-const decodeLegacyAgent = Schema.decodeUnknownOption(ConfigAgentV1.Info)
+const decodeMarkdownAgent = Schema.decodeUnknownOption(ConfigAgentMarkdown.Info)
 const decodeConfig = Schema.decodeUnknownOption(Config.Info)
 const agentKeys = new Set([
   "model",
@@ -122,12 +121,14 @@ function decode(file: { directory: string; filepath: string; primary: boolean },
     .replace(/^(agent|agents|mode|modes)\//, "")
     .replace(/\.md$/, "")
   const body = markdown.content.trim()
-  const legacy = Object.keys(markdown.data).some((key) => !agentKeys.has(key))
+  // Frontmatter using only canonical `ConfigAgent` keys decodes directly; anything flat/ergonomic
+  // (`prompt`, `temperature`, `top_p`, `tools`, …) goes through the markdown authoring schema + `lower`.
+  const markdownShaped = Object.keys(markdown.data).some((key) => !agentKeys.has(key))
   const agent = Option.getOrUndefined(
-    legacy
+    markdownShaped
       ? Option.map(
-          decodeLegacyAgent({ name, ...markdown.data, prompt: body }, { errors: "all", propertyOrder: "original" }),
-          ConfigMigrateV1.migrateAgent,
+          decodeMarkdownAgent({ name, ...markdown.data, prompt: body }, { errors: "all", propertyOrder: "original" }),
+          ConfigAgentMarkdown.lower,
         )
       : decodeAgent({ ...markdown.data, system: body }, { errors: "all", propertyOrder: "original" }),
   )

@@ -185,10 +185,12 @@ describe("experimental HttpApi", () => {
       config: {
         formatter: false,
         mcp: {
-          demo: {
-            type: "local",
-            command: ["echo", "demo"],
-            enabled: false,
+          servers: {
+            demo: {
+              type: "local",
+              command: ["echo", "demo"],
+              disabled: true,
+            },
           },
         },
       },

@@ -159,12 +159,10 @@ describe("permission.task with real config files", () => {
     {
       git: true,
       config: {
-        permission: {
-          task: {
-            "*": "allow",
-            "code-reviewer": "deny",
-          },
-        },
+        permissions: [
+          { action: "task", resource: "*", effect: "allow" },
+          { action: "task", resource: "code-reviewer", effect: "deny" },
+        ],
       },
     },
   )
@@ -183,12 +181,10 @@ describe("permission.task with real config files", () => {
     {
       git: true,
       config: {
-        permission: {
-          task: {
-            "*": "ask",
-            "orchestrator-*": "deny",
-          },
-        },
+        permissions: [
+          { action: "task", resource: "*", effect: "ask" },
+          { action: "task", resource: "orchestrator-*", effect: "deny" },
+        ],
       },
     },
   )
@@ -207,12 +203,10 @@ describe("permission.task with real config files", () => {
     {
       git: true,
       config: {
-        permission: {
-          task: {
-            general: "allow",
-            "code-reviewer": "deny",
-          },
-        },
+        permissions: [
+          { action: "task", resource: "general", effect: "allow" },
+          { action: "task", resource: "code-reviewer", effect: "deny" },
+        ],
       },
     },
   )
@@ -243,14 +237,12 @@ describe("permission.task with real config files", () => {
     {
       git: true,
       config: {
-        permission: {
-          bash: "allow",
-          edit: "ask",
-          task: {
-            "*": "deny",
-            general: "allow",
-          },
-        },
+        permissions: [
+          { action: "bash", resource: "*", effect: "allow" },
+          { action: "edit", resource: "*", effect: "ask" },
+          { action: "task", resource: "*", effect: "deny" },
+          { action: "task", resource: "general", effect: "allow" },
+        ],
       },
     },
   )
@@ -275,13 +267,11 @@ describe("permission.task with real config files", () => {
     {
       git: true,
       config: {
-        permission: {
-          task: {
-            general: "allow",
-            "code-reviewer": "allow",
-            "*": "deny",
-          },
-        },
+        permissions: [
+          { action: "task", resource: "general", effect: "allow" },
+          { action: "task", resource: "code-reviewer", effect: "allow" },
+          { action: "task", resource: "*", effect: "deny" },
+        ],
       },
     },
   )
@@ -307,12 +297,10 @@ describe("permission.task with real config files", () => {
     {
       git: true,
       config: {
-        permission: {
-          task: {
-            "*": "deny",
-            general: "allow",
-          },
-        },
+        permissions: [
+          { action: "task", resource: "*", effect: "deny" },
+          { action: "task", resource: "general", effect: "allow" },
+        ],
       },
     },
   )

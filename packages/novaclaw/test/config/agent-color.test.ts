@@ -18,7 +18,7 @@ it.instance(
   {
     git: true,
     config: {
-      agent: {
+      agents: {
         build: { color: "#FFA500" },
         plan: { color: "primary" },
       },
@@ -38,7 +38,7 @@ it.instance(
   {
     git: true,
     config: {
-      agent: {
+      agents: {
         plan: { color: "#A855F7" },
         build: { color: "accent" },
       },

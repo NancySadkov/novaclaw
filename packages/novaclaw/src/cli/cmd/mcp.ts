@@ -12,7 +12,6 @@ import { MCP } from "../../mcp"
 import { McpAuth } from "../../mcp/auth"
 import { McpOAuthProvider } from "../../mcp/oauth-provider"
 import { Config } from "@/config/config"
-import { ConfigMCPV1 } from "@novaclaw/core/v1/config/mcp"
 import { InstanceRef } from "@/effect/instance-ref"
 import { InstallationVersion } from "@novaclaw/core/installation/version"
 import path from "path"
@@ -405,14 +404,40 @@ async function resolveConfigPath(baseDir: string, global = false) {
   return candidates[0]
 }
 
-async function addMcpToConfig(name: string, mcpConfig: ConfigMCPV1.Info, configPath: string) {
+// The V2 config authoring shape for one MCP server entry (`mcp.servers.<name>`). Only serialized to
+// jsonc here, so a plain structural literal is enough (no decode). Mirrors `ConfigMCP.Local`/`Remote`.
+type McpServerWrite =
+  | {
+      type: "local"
+      command: string[]
+      cwd?: string
+      environment?: Record<string, string>
+      disabled?: boolean
+    }
+  | {
+      type: "remote"
+      url: string
+      headers?: Record<string, string>
+      oauth?:
+        | false
+        | {
+            client_id?: string
+            client_secret?: string
+            scope?: string
+            callback_port?: number
+            redirect_uri?: string
+          }
+      disabled?: boolean
+    }
+
+async function addMcpToConfig(name: string, mcpConfig: McpServerWrite, configPath: string) {
   let text = "{}"
   if (await Filesystem.exists(configPath)) {
     text = await Filesystem.readText(configPath)
   }
 
-  // Use jsonc-parser to modify while preserving comments
-  const edits = modify(text, ["mcp", name], mcpConfig, {
+  // Use jsonc-parser to modify while preserving comments. V2 nests servers under `mcp.servers`.
+  const edits = modify(text, ["mcp", "servers", name], mcpConfig, {
     formattingOptions: { tabSize: 2, insertSpaces: true },
   })
   const result = applyEdits(text, edits)
@@ -478,7 +503,7 @@ export const McpAddCommand = effectCmd({
           )
         const environment = entries(args.env ?? [], "environment variable")
         const headers = entries(args.header ?? [], "HTTP header")
-        const mcpConfig: ConfigMCPV1.Info = args.url
+        const mcpConfig: McpServerWrite = args.url
           ? {
               type: "remote",
               url: args.url,
@@ -560,7 +585,7 @@ export const McpAddCommand = effectCmd({
         })
         if (prompts.isCancel(command)) throw new UI.CancelledError()
 
-        const mcpConfig: ConfigMCPV1.Info = {
+        const mcpConfig: McpServerWrite = {
           type: "local",
           command: command.split(" "),
         }
@@ -590,7 +615,7 @@ export const McpAddCommand = effectCmd({
         })
         if (prompts.isCancel(useOAuth)) throw new UI.CancelledError()
 
-        let mcpConfig: ConfigMCPV1.Info
+        let mcpConfig: McpServerWrite
 
         if (useOAuth) {
           const hasClientId = await prompts.confirm({
@@ -625,8 +650,8 @@ export const McpAddCommand = effectCmd({
               type: "remote",
               url,
               oauth: {
-                clientId,
-                ...(clientSecret && { clientSecret }),
+                client_id: clientId,
+                ...(clientSecret && { client_secret: clientSecret }),
               },
             }
           } else {

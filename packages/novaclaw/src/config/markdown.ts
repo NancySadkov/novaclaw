@@ -1,5 +1,5 @@
 import { Filesystem } from "@/util/filesystem"
-import { FrontmatterError } from "@novaclaw/core/v1/config/error"
+import { FrontmatterError } from "@novaclaw/core/config/error"
 import { ConfigMarkdown as ConfigMarkdownCore } from "@novaclaw/core/config/markdown"
 
 export const FILE_REGEX = /(?<![\w`])@(\.?[^\s`,.]*(?:\.[^\s`,.]+)*)/g

@@ -4,8 +4,7 @@ import { Schema } from "effect"
 import { PositiveInt } from "../schema"
 
 // Runtime server configuration for `novaclaw serve` / web (port, hostname, mDNS, CORS).
-// F1d D1: promoted verbatim from ConfigServerV1 so `Config.Info` owns real runtime config
-// instead of it being a V1-only field dropped on migration.
+// F1d D1: this is the canonical runtime server config owned by `Config.Info`.
 export class Info extends Schema.Class<Info>("ConfigV2.Server")({
   port: PositiveInt.pipe(Schema.optional).annotate({ description: "Port to listen on" }),
   hostname: Schema.String.pipe(Schema.optional).annotate({ description: "Hostname to listen on" }),

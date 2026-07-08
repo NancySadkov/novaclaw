@@ -28,8 +28,6 @@ import { ConfigReference } from "./config/reference"
 import { ConfigServer } from "./config/server"
 import { ConfigToolOutput } from "./config/tool-output"
 import { ConfigWatcher } from "./config/watcher"
-import { ConfigV1 } from "./v1/config/config"
-import { ConfigMigrateV1 } from "./v1/config/migrate"
 
 export class Info extends Schema.Class<Info>("Config.Info")({
   $schema: Schema.optional(Schema.String).annotate({
@@ -205,7 +203,6 @@ export const layer = Layer.effect(
     const names = ["config.json", "novaclaw.json", "novaclaw.jsonc"]
     const decodeOptions = { errors: "all", onExcessProperty: "ignore", propertyOrder: "original" } as const
     const decodeInfo = Schema.decodeUnknownOption(Info, decodeOptions)
-    const decodeV1Info = Schema.decodeUnknownOption(ConfigV1.Info, decodeOptions)
 
     const loadFile = Effect.fnUntraced(function* (filepath: string) {
       const text = yield* fs.readFileStringSafe(filepath)
@@ -215,11 +212,7 @@ export const layer = Layer.effect(
       const input: unknown = parse(text, errors, { allowTrailingComma: true })
       if (errors.length) return
 
-      const info = Option.getOrUndefined(
-        ConfigMigrateV1.isV1(input)
-          ? decodeV1Info(input).pipe(Option.map(ConfigMigrateV1.migrate), Option.flatMap(decodeInfo))
-          : decodeInfo(input),
-      )
+      const info = Option.getOrUndefined(decodeInfo(input))
       if (!info) return
       return new Document({ type: "document", path: filepath, info })
     })
@@ -272,11 +265,7 @@ export const layer = Layer.effect(
       const errors: ParseError[] = []
       const input: unknown = parse(text, errors, { allowTrailingComma: true })
       if (errors.length) return undefined
-      const info = Option.getOrUndefined(
-        ConfigMigrateV1.isV1(input)
-          ? decodeV1Info(input).pipe(Option.map(ConfigMigrateV1.migrate), Option.flatMap(decodeInfo))
-          : decodeInfo(input),
-      )
+      const info = Option.getOrUndefined(decodeInfo(input))
       if (!info) return undefined
       return new Document({ type: "document", path: "NOVACLAW_CONFIG_CONTENT", info })
     })()

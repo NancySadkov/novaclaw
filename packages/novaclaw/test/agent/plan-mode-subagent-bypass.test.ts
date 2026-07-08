@@ -92,13 +92,11 @@ it.instance(
     }),
   {
     config: {
-      agent: {
+      agents: {
         my_subagent: {
           description: "A user-defined subagent",
           mode: "subagent",
-          permission: {
-            edit: "allow",
-          },
+          permissions: [{ action: "edit", resource: "*", effect: "allow" }],
         },
       },
     },

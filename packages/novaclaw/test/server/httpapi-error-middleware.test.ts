@@ -1,7 +1,7 @@
 import { NodeHttpServer, NodeServices } from "@effect/platform-node"
 import { NamedError } from "@novaclaw/core/util/error"
 import { describe, expect } from "bun:test"
-import { ConfigErrorV1 } from "@novaclaw/core/v1/config/error"
+import { ConfigError } from "@novaclaw/core/config/error"
 import { Effect, Layer } from "effect"
 import { HttpClient, HttpClientRequest, HttpRouter } from "effect/unstable/http"
 import { errorLayer } from "../../src/server/routes/instance/httpapi/middleware/error"
@@ -55,7 +55,7 @@ describe("HttpApi error middleware", () => {
 
   it.live("returns invalid config defects as structured client errors", () =>
     Effect.gen(function* () {
-      const configError = new ConfigErrorV1.InvalidError({
+      const configError = new ConfigError.InvalidError({
         path: "/tmp/novaclaw.json",
         issues: [{ message: "Expected object", path: ["provider", "anthropic", "options"] }],
       })
