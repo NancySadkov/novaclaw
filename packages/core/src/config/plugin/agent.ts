@@ -9,28 +9,13 @@ import { ConfigAgent } from "../agent"
 import { ConfigMarkdown } from "../markdown"
 import { FSUtil } from "../../fs-util"
 import { ModelV2 } from "../../model"
-import { ConfigAgentMarkdown } from "../agent-markdown"
 
-const legacySources = [
+const markdownSources = [
   { pattern: "{agent,agents}/**/*.md", primary: false },
   { pattern: "{mode,modes}/*.md", primary: true },
 ] as const
 const decodeAgent = Schema.decodeUnknownOption(ConfigAgent.Info)
-const decodeMarkdownAgent = Schema.decodeUnknownOption(ConfigAgentMarkdown.Info)
 const decodeConfig = Schema.decodeUnknownOption(Config.Info)
-const agentKeys = new Set([
-  "model",
-  "variant",
-  "request",
-  "system",
-  "description",
-  "mode",
-  "hidden",
-  "color",
-  "steps",
-  "disabled",
-  "permissions",
-])
 
 export const Plugin = define({
   id: "config-agent",
@@ -100,7 +85,7 @@ export const Plugin = define({
 })
 
 function discover(fs: FSUtil.Interface, directory: string) {
-  return Effect.forEach(legacySources, (source) =>
+  return Effect.forEach(markdownSources, (source) =>
     fs
       .glob(source.pattern, { cwd: directory, absolute: true, dot: true, symlink: true })
       .pipe(
@@ -121,16 +106,10 @@ function decode(file: { directory: string; filepath: string; primary: boolean },
     .replace(/^(agent|agents|mode|modes)\//, "")
     .replace(/\.md$/, "")
   const body = markdown.content.trim()
-  // Frontmatter using only canonical `ConfigAgent` keys decodes directly; anything flat/ergonomic
-  // (`prompt`, `temperature`, `top_p`, `tools`, …) goes through the markdown authoring schema + `lower`.
-  const markdownShaped = Object.keys(markdown.data).some((key) => !agentKeys.has(key))
+  // Markdown agents are authored with canonical `ConfigAgent` frontmatter keys; the file body is the
+  // system prompt. Frontmatter carrying any unknown key fails to decode and the agent is skipped.
   const agent = Option.getOrUndefined(
-    markdownShaped
-      ? Option.map(
-          decodeMarkdownAgent({ name, ...markdown.data, prompt: body }, { errors: "all", propertyOrder: "original" }),
-          ConfigAgentMarkdown.lower,
-        )
-      : decodeAgent({ ...markdown.data, system: body }, { errors: "all", propertyOrder: "original" }),
+    decodeAgent({ ...markdown.data, system: body }, { errors: "all", propertyOrder: "original" }),
   )
   if (!agent) return
   const info = Option.getOrUndefined(

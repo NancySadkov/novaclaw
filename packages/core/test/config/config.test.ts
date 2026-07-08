@@ -1,10 +1,8 @@
 import path from "path"
 import fs from "fs/promises"
 import { describe, expect } from "bun:test"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, Layer } from "effect"
 import { Config } from "@novaclaw/core/config"
-import { ConfigAgent } from "@novaclaw/core/config/agent"
-import { ConfigAgentMarkdown } from "@novaclaw/core/config/agent-markdown"
 import { ConfigPermission } from "@novaclaw/core/config/permission"
 import { ConfigProvider } from "@novaclaw/core/config/provider"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
@@ -63,26 +61,6 @@ describe("Config", () => {
 
       expect(Config.latest(entries, "model")).toBe("openrouter/openai/gpt-5.5")
       expect(Config.latest(entries, "default_agent")).toBeUndefined()
-    }),
-  )
-
-  it.effect("lowers flat markdown-agent frontmatter into the canonical ConfigAgent shape", () =>
-    Effect.sync(() => {
-      const parsed = Schema.decodeUnknownSync(ConfigAgentMarkdown.Info, { errors: "all", propertyOrder: "original" })({
-        model: "dgx-spark/qwen3.6-35b",
-        temperature: 0.2,
-        top_p: 0.8,
-        prompt: "be terse",
-        disable: true,
-        tools: { bash: false },
-      })
-      const lowered = ConfigAgentMarkdown.lower(parsed)
-      expect(lowered.request).toEqual({ body: { temperature: 0.2, top_p: 0.8 } })
-      expect(lowered.system).toBe("be terse")
-      expect(lowered.disabled).toBe(true)
-      expect(lowered.permissions).toEqual([{ action: "bash", resource: "*", effect: "deny" }])
-      // The lowered object must decode cleanly as the canonical ConfigAgent.Info.
-      Schema.decodeUnknownSync(ConfigAgent.Info)(JSON.parse(JSON.stringify(lowered)))
     }),
   )
 

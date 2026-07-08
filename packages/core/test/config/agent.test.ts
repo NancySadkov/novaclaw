@@ -196,7 +196,7 @@ describe("ConfigAgentPlugin.Plugin", () => {
     }),
   )
 
-  it.live("loads legacy file-based agents from config directories", () =>
+  it.live("loads file-based agents from config directories", () =>
     Effect.acquireRelease(
       Effect.promise(() => tmpdir()),
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
@@ -211,9 +211,13 @@ describe("ConfigAgentPlugin.Plugin", () => {
               `---
 model: openrouter/openai/gpt-5
 description: Markdown description
-temperature: 0.5
-tools:
-  write: false
+request:
+  body:
+    temperature: 0.5
+permissions:
+  - action: edit
+    resource: "*"
+    effect: deny
 ---
 Review carefully.`,
             )

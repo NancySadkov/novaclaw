@@ -23,7 +23,6 @@ import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/
 import { EffectFlock } from "@novaclaw/core/util/effect-flock"
 import { containsPath, type InstanceContext } from "../project/instance-context"
 import { Config as ConfigV2 } from "@novaclaw/core/config"
-import { ConfigAgentMarkdown } from "@novaclaw/core/config/agent-markdown"
 import { ConfigPermission } from "@novaclaw/core/config/permission"
 import type { DeepMutable } from "@novaclaw/core/schema"
 import { InvalidError, RemoteAuthError } from "@novaclaw/core/config/error"
@@ -158,9 +157,9 @@ async function resolveLoadedPlugins(config: Info, filepath: string) {
 }
 
 // The service authors + serves V2 `Config.Info` shapes. Internally it MUTATES a merged accumulator
-// (mergeDeep + field assignments), so the working type is a deep-mutable V2 Info. Every config source
-// is authored directly as V2 (the whole-config V1→V2 migrator was retired in F1-config; only the flat
-// markdown-agent frontmatter still lowers, via `ConfigAgentMarkdown.lower`).
+// (mergeDeep + field assignments), so the working type is a deep-mutable V2 Info. Every config source —
+// jsonc files AND markdown-agent frontmatter — is authored directly as V2 (the V1 config migrator was
+// retired in F1-config; no on-read migration remains).
 export type Info = DeepMutable<typeof ConfigV2.Info.Type> & {
   // plugin_origins is derived state, not a persisted config field. It keeps each winning plugin spec together
   // with the file and scope it came from so later runtime code can make location-sensitive decisions.
@@ -182,15 +181,11 @@ function entryToSpec(entry: PluginEntry): ConfigPluginSpec.Spec {
   return entry.options ? [entry.package, entry.options] : entry.package
 }
 
-// Dir-discovered agents (`{agent,agents,mode,modes}/**/*.md`) parse as the flat markdown authoring
-// shape; lower each to the canonical `ConfigAgent.Info` via `ConfigAgentMarkdown.lower`, then strip
-// undefined fields (JSON round-trip) so they deep-merge cleanly into the V2 `result.agents` record
-// instead of overwriting siblings with `undefined`.
-function migrateDirAgents(record: Record<string, ConfigAgentMarkdown.Info>): NonNullable<Info["agents"]> {
-  const migrated = Object.fromEntries(
-    Object.entries(record).map(([name, info]) => [name, ConfigAgentMarkdown.lower(info)]),
-  )
-  return JSON.parse(JSON.stringify(migrated))
+// Dir-discovered agents (`{agent,agents,mode,modes}/**/*.md`) already parse as canonical V2
+// `ConfigAgent.Info`; strip undefined fields (JSON round-trip) so they deep-merge cleanly into the V2
+// `result.agents` record instead of overwriting siblings with `undefined`.
+function dirAgents(record: Awaited<ReturnType<typeof ConfigAgent.load>>): NonNullable<Info["agents"]> {
+  return JSON.parse(JSON.stringify(record))
 }
 
 type State = {
@@ -543,12 +538,12 @@ export const layer = Layer.effect(
           result.commands = mergeDeep(result.commands ?? {}, yield* Effect.promise(() => ConfigCommand.load(dir)))
           result.agents = mergeDeep(
             result.agents ?? {},
-            migrateDirAgents(yield* Effect.promise(() => ConfigAgent.load(dir))),
+            dirAgents(yield* Effect.promise(() => ConfigAgent.load(dir))),
           )
           // loadMode already tags each agent `mode: "primary"`; migrateAgent preserves it.
           result.agents = mergeDeep(
             result.agents ?? {},
-            migrateDirAgents(yield* Effect.promise(() => ConfigAgent.loadMode(dir))),
+            dirAgents(yield* Effect.promise(() => ConfigAgent.loadMode(dir))),
           )
           // Auto-discovered plugins under `.novaclaw/plugin(s)` are already local files, so ConfigPlugin.load
           // returns normalized Specs (plain file-URL strings) and we only need to attach origin metadata here.
