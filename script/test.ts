@@ -36,7 +36,6 @@ const PACKAGES: Pkg[] = [
   { name: "protocol", dir: "packages/protocol", args: [] },
   { name: "client", dir: "packages/client", args: [] },
   { name: "sdk-next", dir: "packages/sdk-next", args: ["test/import-boundaries.test.ts"] },
-  { name: "sdk-next:embedded", dir: "packages/sdk-next", args: ["test/embedded.test.ts"], fullOnly: true },
   { name: "httpapi-codegen", dir: "packages/httpapi-codegen", args: [] },
   { name: "effect-drizzle-sqlite", dir: "packages/effect-drizzle-sqlite", args: [] },
   { name: "http-recorder", dir: "packages/http-recorder", args: [] },

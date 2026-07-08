@@ -589,37 +589,10 @@ describe("plugin.loader.shared", () => {
     ),
   )
 
-  it.live("skips legacy codex and copilot auth plugin specs", () =>
-    withTmp(
-      async (dir) => {
-        await Bun.write(
-          path.join(dir, "novaclaw.json"),
-          JSON.stringify(
-            {
-              plugin: ["novaclaw-openai-codex-auth@1.0.0", "novaclaw-copilot-auth@1.0.0", "regular-plugin@1.0.0"],
-            },
-            null,
-            2,
-          ),
-        )
-      },
-      (_tmp) =>
-        Effect.gen(function* () {
-          const install = spyOn(Npm, "add").mockResolvedValue({ directory: "", entrypoint: undefined })
-
-          try {
-            yield* load(_tmp.path)
-
-            const pkgs = install.mock.calls.map((call) => call[0])
-            expect(pkgs).toContain("regular-plugin@1.0.0")
-            expect(pkgs).not.toContain("novaclaw-openai-codex-auth@1.0.0")
-            expect(pkgs).not.toContain("novaclaw-copilot-auth@1.0.0")
-          } finally {
-            install.mockRestore()
-          }
-        }),
-    ),
-  )
+  // (Removed) A "skips legacy codex/copilot auth plugin specs" case lived here. Those branded
+  // providers were removed entirely (Copilot decision ③, "no affiliated bloat"), and there is no
+  // special-case skip filter for them — a stale branded auth plugin is handled by the general
+  // "install fails → skip" path below. Don't re-add provider-specific skip assertions.
 
   it.live("skips broken plugin when install fails", () =>
     withTmp(
