@@ -21,6 +21,7 @@ const promoted: Array<{ directory: string; sessionID: string }> = []
 const sentShell: string[] = []
 const syncedDirectories: string[] = []
 const promotedDrafts: Array<{ draftID: string; server: string; sessionId: string }> = []
+const promptedVariants: Array<string | undefined> = []
 
 let params: { id?: string } = {}
 let search: { draftId?: string } = {}
@@ -64,7 +65,10 @@ const clientFor = (directory: string) => {
         return { data: undefined }
       },
       prompt: async () => ({ data: undefined }),
-      promptAsync: async () => ({ data: undefined }),
+      promptAsync: async (body: { variant?: string }) => {
+        promptedVariants.push(body?.variant)
+        return { data: undefined }
+      },
       command: async () => ({ data: undefined }),
       abort: async () => ({ data: undefined }),
     },
@@ -244,6 +248,7 @@ beforeEach(() => {
   optimisticSeeded.length = 0
   promoted.length = 0
   promotedDrafts.length = 0
+  promptedVariants.length = 0
   params = {}
   search = {}
   sentShell.length = 0
@@ -372,14 +377,12 @@ describe("prompt submit worktree selection", () => {
     const event = { preventDefault: () => undefined } as unknown as Event
 
     await submit.handleSubmit(event)
+    // The send is fire-and-forget (`void sendFollowupDraft`), so let its microtasks settle.
+    await new Promise((resolve) => setTimeout(resolve, 0))
 
-    expect(optimistic).toHaveLength(1)
-    expect(optimistic[0]).toMatchObject({
-      message: {
-        agent: "agent",
-        model: { providerID: "provider", modelID: "model", variant: "high" },
-      },
-    })
+    // The optimistic-prompt render moved to session.tsx; submit.ts's remaining job is that the
+    // selected model variant reaches the sent prompt (draft.variant → promptAsync).
+    expect(promptedVariants).toEqual(["high"])
   })
 
   test("seeds new sessions before optimistic prompts are added", async () => {
@@ -407,7 +410,8 @@ describe("prompt submit worktree selection", () => {
 
     await submit.handleSubmit(event)
 
+    // submit.ts seeds the new session into the selected worktree's store before sending; the
+    // optimistic-prompt add and its seed-first ordering now live in session.tsx.
     expect(storedSessions["/repo/worktree-a"]).toEqual([{ id: "session-1", title: "New session 1" }])
-    expect(optimisticSeeded).toEqual([true])
   })
 })

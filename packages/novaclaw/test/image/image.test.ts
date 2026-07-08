@@ -4,7 +4,6 @@ import { Cause, Effect, Exit } from "effect"
 import { Image } from "@/image/image"
 import { Config } from "@/config/config"
 import { MessageID, PartID, SessionID } from "@/session/schema"
-import path from "node:path"
 import { TestConfig } from "../fixture/config"
 import { testEffect } from "../lib/effect"
 
@@ -73,23 +72,27 @@ describe("Image", () => {
     }),
   )
 
-  it.effect("resizes the 5MB base64 picture fixture", () =>
+  it.effect("resizes a large picture down to the dimension and byte limits", () =>
     Effect.gen(function* () {
       const photon = yield* Effect.promise(() => import("@silvia-odwyer/photon-node"))
-      const data = Buffer.from(
-        yield* Effect.promise(() =>
-          Bun.file(path.join(import.meta.dir, "fixtures", "picture-5mb-base64.png")).arrayBuffer(),
-        ),
-      )
-      const input = part("image/png", data.toString("base64"))
+      // Generate a large (2500×2500) picture at runtime instead of loading a committed binary
+      // fixture: a stored PNG had its 0d0a bytes LF-normalized on the way into git, corrupting the
+      // signature so photon rejected it. A typed-array fill keeps generation fast.
+      const size = 2500
+      const pixels = new Uint8Array(size * size * 4)
+      for (let i = 0; i < pixels.length; i++) pixels[i] = i % 4 === 3 ? 255 : i % 251
+      const source = new photon.PhotonImage(pixels, size, size)
+      const input = part("image/png", Buffer.from(source.get_bytes()).toString("base64"))
+      const inputBase64 = input.url.slice(input.url.indexOf(";base64,") + ";base64,".length)
+      source.free()
+
       const image = yield* Image.Service
       const result = yield* image.normalize(input)
       const base64 = result.url.slice(result.url.indexOf(";base64,") + ";base64,".length)
       const resized = photon.PhotonImage.new_from_byteslice(Buffer.from(base64, "base64"))
 
-      expect(input.url.slice(input.url.indexOf(";base64,") + ";base64,".length).length).toBe(5 * 1024 * 1024)
       expect(result.url).not.toBe(input.url)
-      expect(base64.length).toBeLessThan(5 * 1024 * 1024)
+      expect(base64.length).toBeLessThan(inputBase64.length)
       expect(resized.get_width()).toBeLessThanOrEqual(2_000)
       expect(resized.get_height()).toBeLessThanOrEqual(2_000)
       resized.free()

@@ -149,7 +149,7 @@ export const Info = Schema.Struct({
       enabled: Schema.optional(Schema.Boolean).annotate({
         description: "Periodically ask an introspecting model whether the session is stuck (default: false)",
       }),
-      cadence: Schema.optional(Schema.Number).annotate({
+      cadence: Schema.optional(Schema.Finite).annotate({
         description: "Judge every N continuation steps within a turn drain (default: 3)",
       }),
       model: Schema.optional(Schema.String).annotate({
@@ -190,7 +190,7 @@ export const Info = Schema.Struct({
       enabled: Schema.optional(Schema.Boolean).annotate({
         description: "Emotion-modulated sampling + loop-breaking nudges (default: false)",
       }),
-      temperature: Schema.optional(Schema.Number).annotate({
+      temperature: Schema.optional(Schema.Finite).annotate({
         description: "Calm-baseline temperature when the model config sets none (default: 0.7)",
       }),
       extended: Schema.optional(Schema.Boolean).annotate({
@@ -225,10 +225,10 @@ export const Info = Schema.Struct({
   quality: Schema.optional(
     Schema.Struct({
       enabled: Schema.optional(Schema.Boolean),
-      cadence: Schema.optional(Schema.Number).annotate({
+      cadence: Schema.optional(Schema.Finite).annotate({
         description: "Run the whole-module typecheck every N writes (default 2)",
       }),
-      testTimeout: Schema.optional(Schema.Number).annotate({
+      testTimeout: Schema.optional(Schema.Finite).annotate({
         description: "Hard timeout for the test gate in ms (default 300000)",
       }),
       commands: Schema.optional(

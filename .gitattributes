@@ -1,1 +1,11 @@
 packages/core/src/database/migration.gen.ts linguist-generated
+
+# Binary assets must never be line-ending normalized (a corrupted PNG test fixture cost us).
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.webp binary
+*.gif binary
+*.ico binary
+*.woff binary
+*.woff2 binary
