@@ -1,5 +1,5 @@
 import { ProviderAuth } from "@/provider/auth"
-import { Provider } from "@/provider/provider"
+import { ProviderCatalogView } from "@/provider/catalog-view"
 
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
@@ -57,7 +57,7 @@ export const ProviderApi = HttpApi.make("provider")
       .add(
         HttpApiEndpoint.get("list", root, {
           query: WorkspaceRoutingQuery,
-          success: described(Provider.ListResult, "List of providers"),
+          success: described(ProviderCatalogView.ListResult, "List of providers"),
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "provider.list",

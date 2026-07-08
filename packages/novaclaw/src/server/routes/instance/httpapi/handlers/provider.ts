@@ -1,10 +1,15 @@
 import { ProviderAuth } from "@/provider/auth"
 import { Config } from "@/config/config"
 import { ModelsDev } from "@novaclaw/core/models-dev"
-import { Provider } from "@/provider/provider"
+import { ProviderCatalogView } from "@/provider/catalog-view"
+import { Catalog } from "@novaclaw/core/catalog"
+import { LocationServiceMap } from "@novaclaw/core/location-services"
+import { ServerLocationServiceMap } from "@/location-service-map"
+import { Location } from "@novaclaw/core/location"
+import { AbsolutePath } from "@novaclaw/core/schema"
+import { InstanceState } from "@/effect/instance-state"
 
-import { mapValues } from "remeda"
-import { Effect, Schema } from "effect"
+import { Effect, Layer, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
@@ -34,28 +39,26 @@ function mapProviderAuthError<A, R>(self: Effect.Effect<A, ProviderAuth.Error, R
 export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider", (handlers) =>
   Effect.gen(function* () {
     const cfg = yield* Config.Service
-    const provider = yield* Provider.Service
+    const locations = yield* LocationServiceMap.Service
     const svc = yield* ProviderAuth.Service
 
+    // F1-final: the provider catalog now comes from the V2 `Catalog` (config +
+    // ModelsDev, seeded into CatalogStore), projected onto the V1 wire shape the
+    // Models-UI consumes. `Catalog` is location-scoped, so resolve it through the
+    // shared location-service map for the instance directory (cf. experimental.ts).
     const list = Effect.fn("ProviderHttpApi.list")(function* () {
-      const config = yield* cfg.get()
-      const all = yield* ModelsDev.Service.use((s) => s.get())
-      const disabled = new Set(config.disabled_providers ?? [])
-      const enabled = config.enabled_providers ? new Set(config.enabled_providers) : undefined
-      const filtered: Record<string, (typeof all)[string]> = {}
-      for (const [key, value] of Object.entries(all)) {
-        if ((enabled ? enabled.has(key) : true) && !disabled.has(key)) filtered[key] = value
-      }
-      const connected = yield* provider.list()
-      const providers = Object.assign(
-        mapValues(filtered, (item) => Provider.fromModelsDevProvider(item)),
-        connected,
-      )
-      return {
-        all: Object.values(providers).map(Provider.toPublicInfo),
-        default: Provider.defaultModelIDs(providers),
-        connected: Object.keys(connected),
-      }
+      const directory = (yield* InstanceState.context).directory
+      return yield* Effect.gen(function* () {
+        const catalog = yield* Catalog.Service
+        const providers = yield* catalog.provider.all()
+        const models = yield* catalog.model.all()
+        const available = yield* catalog.provider.available()
+        return ProviderCatalogView.listResult({
+          providers,
+          models,
+          connected: available.map((p) => p.id),
+        })
+      }).pipe(Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory) }))))
     })
 
     const auth = Effect.fn("ProviderHttpApi.auth")(function* () {
@@ -181,4 +184,4 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       .handle("callback", callback)
       .handle("probe", probe)
   }),
-)
+).pipe(Layer.provide(ServerLocationServiceMap.layer))

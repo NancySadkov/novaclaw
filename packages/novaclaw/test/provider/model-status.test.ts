@@ -3,7 +3,7 @@ import { Schema } from "effect"
 import { ConfigProviderV1 } from "@novaclaw/core/v1/config/provider"
 import { CatalogModelStatus, ModelStatus } from "@/provider/model-status"
 import { ModelsDev } from "@novaclaw/core/models-dev"
-import { Provider } from "@/provider/provider"
+import { ProviderCatalogView } from "@/provider/catalog-view"
 
 describe("provider model status schemas", () => {
   test("keeps catalog status separate from normalized provider status", () => {
@@ -27,7 +27,7 @@ describe("provider model status schemas", () => {
       }).status,
     ).toBeUndefined()
     expect(
-      Schema.decodeUnknownSync(Provider.Model)({
+      Schema.decodeUnknownSync(ProviderCatalogView.Model)({
         id: "test-model",
         providerID: "test-provider",
         api: {

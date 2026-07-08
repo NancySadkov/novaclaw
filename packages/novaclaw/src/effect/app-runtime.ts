@@ -13,7 +13,6 @@ import { Storage } from "@/storage/storage"
 import { Snapshot } from "@/snapshot"
 import { Plugin } from "@/plugin"
 import { ModelsDev } from "@novaclaw/core/models-dev"
-import { Provider } from "@/provider/provider"
 import { ProviderAuth } from "@/provider/auth"
 import { Agent } from "@/agent/agent"
 import { Skill } from "@/skill"
@@ -54,7 +53,6 @@ export const AppLayer = Layer.mergeAll(
   Snapshot.defaultLayer,
   Plugin.defaultLayer,
   ModelsDev.defaultLayer,
-  Provider.defaultLayer,
   ProviderAuth.defaultLayer,
   Agent.defaultLayer,
   Skill.defaultLayer,

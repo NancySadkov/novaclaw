@@ -14,7 +14,6 @@ import { Plugin } from "../../src/plugin"
 import { AccountTest } from "../fake/account"
 import { AuthTest } from "../fake/auth"
 import { NpmTest } from "../fake/npm"
-import { ProviderTest } from "../fake/provider"
 import { SkillTest } from "../fake/skill"
 import { testEffect } from "../lib/effect"
 import { PLUGIN_AGENT } from "../fixture/agent-plugin.constants"
@@ -24,7 +23,6 @@ import { PLUGIN_AGENT } from "../fixture/agent-plugin.constants"
 // to verify plugin → config hook → Agent.list.
 const pluginUrl = pathToFileURL(path.join(import.meta.dir, "..", "fixture", "agent-plugin.ts")).href
 
-const provider = ProviderTest.fake()
 const configLayer = Config.layer.pipe(
   Layer.provide(FSUtil.defaultLayer),
   Layer.provide(Env.defaultLayer),
@@ -42,7 +40,6 @@ const agentLayer = Agent.layer.pipe(
   Layer.provide(configLayer),
   Layer.provide(AuthTest.empty),
   Layer.provide(SkillTest.empty),
-  Layer.provide(provider.layer),
   Layer.provide(pluginLayer),
   Layer.provide(locationServiceMapLayer),
   Layer.provide(RuntimeFlags.layer({ disableDefaultPlugins: true })),

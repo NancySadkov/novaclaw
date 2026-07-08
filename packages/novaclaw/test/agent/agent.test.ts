@@ -11,7 +11,6 @@ import { Global } from "@novaclaw/core/global"
 import { Permission } from "../../src/permission"
 import { PermissionV1 } from "@novaclaw/core/v1/permission"
 import { Plugin } from "../../src/plugin"
-import { Provider } from "../../src/provider/provider"
 import { Skill } from "../../src/skill"
 import { Truncate } from "../../src/tool/truncate"
 import { LocationServiceMap, locationServiceMapLayer } from "@novaclaw/core/location-services"
@@ -19,7 +18,6 @@ import { LocationServiceMap, locationServiceMapLayer } from "@novaclaw/core/loca
 const agentLayer = (flags: Partial<RuntimeFlags.Info> = {}) =>
   Agent.layer.pipe(
     Layer.provide(Plugin.defaultLayer),
-    Layer.provide(Provider.defaultLayer),
     Layer.provide(Auth.defaultLayer),
     Layer.provide(Config.defaultLayer),
     Layer.provide(Skill.defaultLayer),

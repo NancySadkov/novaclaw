@@ -1,6 +1,6 @@
 import { Config } from "@/config/config"
 import { Config as ConfigV2 } from "@novaclaw/core/config"
-import { Provider } from "@/provider/provider"
+import { ProviderCatalogView } from "@/provider/catalog-view"
 import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { Authorization } from "../middleware/authorization"
 import { InstanceContextMiddleware } from "../middleware/instance-context"
@@ -37,7 +37,7 @@ export const ConfigApi = HttpApi.make("config")
         ),
         HttpApiEndpoint.get("providers", `${root}/providers`, {
           query: WorkspaceRoutingQuery,
-          success: described(Provider.ConfigProvidersResult, "List of providers"),
+          success: described(ProviderCatalogView.ConfigProvidersResult, "List of providers"),
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "config.providers",
