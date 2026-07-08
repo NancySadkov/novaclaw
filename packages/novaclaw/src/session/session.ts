@@ -6,11 +6,8 @@ import { SessionV1 } from "@novaclaw/core/v1/session"
 import { serviceUse } from "@novaclaw/core/effect/service-use"
 import path from "path"
 import { BackgroundJob } from "@/background/job"
-import { Decimal } from "decimal.js"
-import type { ProviderMetadata, Usage } from "@novaclaw/llm"
 import { InstallationVersion } from "@novaclaw/core/installation/version"
 import { Database } from "@novaclaw/core/database/database"
-import { makeRuntime } from "@novaclaw/core/effect/runtime"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { SessionV2 } from "@novaclaw/core/session"
 import * as SessionExecutionLocal from "@novaclaw/core/session/execution/local"
@@ -31,7 +28,6 @@ import type { SQL } from "drizzle-orm"
 import { PartTable, SessionTable } from "@novaclaw/core/session/sql"
 import { ProjectTable } from "@novaclaw/core/project/sql"
 import { MessageV2 } from "./message-v2"
-import type { InstanceContext } from "../project/instance-context"
 import { InstanceState } from "@/effect/instance-state"
 import { Snapshot } from "@/snapshot"
 import { ProjectV2 } from "@novaclaw/core/project"
@@ -39,24 +35,13 @@ import { WorkspaceV2 } from "@novaclaw/core/workspace"
 import { SessionID, MessageID, PartID } from "./schema"
 import { BusyError, GlobalInfo, Info, Metadata, Model, PermissionMode, ProjectInfo, SetMetadataInput } from "./wire"
 
-import type { Provider } from "@/provider/provider"
-import { Global } from "@novaclaw/core/global"
 import { Effect, Layer, Option, Context, Schema } from "effect"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { ModelV2 } from "@novaclaw/core/model"
-import { SessionMessage } from "@novaclaw/schema/session-message"
-
-const runtime = makeRuntime(Database.Service, Database.defaultLayer)
 
 const parentTitlePrefix = "New session - "
 const childTitlePrefix = "Child session - "
-
-export function isDefaultTitle(title: string) {
-  return new RegExp(
-    `^(${parentTitlePrefix}|${childTitlePrefix})\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}\\.\\d{3}Z$`,
-  ).test(title)
-}
 
 type SessionRow = typeof SessionTable.$inferSelect
 
@@ -122,48 +107,6 @@ export function fromRow(row: SessionRow): Info {
   }
 }
 
-export function toRow(info: Info) {
-  return {
-    id: info.id,
-    project_id: info.projectID,
-    workspace_id: info.workspaceID,
-    parent_id: info.parentID,
-    slug: info.slug,
-    directory: info.directory,
-    path: info.path,
-    title: info.title,
-    agent: info.agent,
-    model: info.model,
-    version: info.version,
-    share_url: info.share?.url,
-    summary_additions: info.summary?.additions,
-    summary_deletions: info.summary?.deletions,
-    summary_files: info.summary?.files,
-    summary_diffs: info.summary?.diffs,
-    metadata: info.metadata,
-    cost: info.cost ?? 0,
-    tokens_input: (info.tokens ?? EmptyTokens).input,
-    tokens_output: (info.tokens ?? EmptyTokens).output,
-    tokens_reasoning: (info.tokens ?? EmptyTokens).reasoning,
-    tokens_cache_read: (info.tokens ?? EmptyTokens).cache.read,
-    tokens_cache_write: (info.tokens ?? EmptyTokens).cache.write,
-    revert: info.revert
-      ? {
-          messageID: SessionMessage.ID.make(info.revert.messageID),
-          partID: info.revert.partID,
-          snapshot: info.revert.snapshot,
-          diff: info.revert.diff,
-        }
-      : null,
-    permission: info.permission,
-    permission_mode: info.permissionMode,
-    time_created: info.time.created,
-    time_updated: info.time.updated,
-    time_compacting: info.time.compacting,
-    time_archived: info.time.archived,
-  }
-}
-
 function getForkedTitle(title: string): string {
   const match = title.match(/^(.+) \(fork #(\d+)\)$/)
   if (match) {
@@ -212,80 +155,6 @@ export const Event = {
   Deleted: SessionV1.Event.Deleted,
   Diff: SessionV1.Event.Diff,
   Error: SessionV1.Event.Error,
-}
-
-export function plan(input: { slug: string; time: { created: number } }, instance: InstanceContext) {
-  const base = instance.project.vcs
-    ? path.join(instance.worktree, ".novaclaw", "plans")
-    : path.join(Global.Path.data, "plans")
-  return path.join(base, [input.time.created, input.slug].join("-") + ".md")
-}
-
-export const getUsage = (input: { model: Provider.Model; usage: Usage; metadata?: ProviderMetadata }) => {
-  const safe = (value: number) => {
-    if (!Number.isFinite(value)) return 0
-    return Math.max(0, value)
-  }
-  const inputTokens = safe(input.usage.inputTokens ?? 0)
-  const outputTokens = safe(input.usage.outputTokens ?? 0)
-  const reasoningTokens = safe(input.usage.reasoningTokens ?? 0)
-
-  const cacheReadInputTokens = safe(input.usage.cacheReadInputTokens ?? 0)
-  const cacheWriteInputTokens = safe(
-    Number(
-      input.usage.cacheWriteInputTokens ??
-        input.metadata?.["anthropic"]?.["cacheCreationInputTokens"] ??
-        // google-vertex-anthropic returns metadata under "vertex" key
-        // (AnthropicMessagesLanguageModel custom provider key from 'vertex.anthropic.messages')
-        input.metadata?.["vertex"]?.["cacheCreationInputTokens"] ??
-        // @ts-expect-error
-        input.metadata?.["bedrock"]?.["usage"]?.["cacheWriteInputTokens"] ??
-        // @ts-expect-error
-        input.metadata?.["venice"]?.["usage"]?.["cacheCreationInputTokens"] ??
-        0,
-    ),
-  )
-
-  // AI SDK v6 normalized inputTokens to include cached tokens across all providers
-  // (including Anthropic/Bedrock which previously excluded them). Always subtract cache
-  // tokens to get the non-cached input count for separate cost calculation.
-  const adjustedInputTokens = safe(inputTokens - cacheReadInputTokens - cacheWriteInputTokens)
-
-  const total = input.usage.totalTokens
-
-  const tokens = {
-    total,
-    input: adjustedInputTokens,
-    output: safe(outputTokens - reasoningTokens),
-    reasoning: reasoningTokens,
-    cache: {
-      write: cacheWriteInputTokens,
-      read: cacheReadInputTokens,
-    },
-  }
-
-  const contextTokens = inputTokens
-  const costInfo =
-    input.model.cost?.tiers
-      ?.filter((item) => item.tier.type === "context" && contextTokens > item.tier.size)
-      .sort((a, b) => b.tier.size - a.tier.size)[0] ??
-    (input.model.cost?.experimentalOver200K && contextTokens > 200_000
-      ? input.model.cost.experimentalOver200K
-      : input.model.cost)
-  return {
-    cost: safe(
-      new Decimal(0)
-        .add(new Decimal(tokens.input).mul(costInfo?.input ?? 0).div(1_000_000))
-        .add(new Decimal(tokens.output).mul(costInfo?.output ?? 0).div(1_000_000))
-        .add(new Decimal(tokens.cache.read).mul(costInfo?.cache?.read ?? 0).div(1_000_000))
-        .add(new Decimal(tokens.cache.write).mul(costInfo?.cache?.write ?? 0).div(1_000_000))
-        // TODO: update models.dev to have better pricing model, for now:
-        // charge reasoning tokens at the same rate as output tokens
-        .add(new Decimal(tokens.reasoning).mul(costInfo?.output ?? 0).div(1_000_000))
-        .toNumber(),
-    ),
-    tokens,
-  }
 }
 
 export type NotFound = NotFoundError
@@ -910,76 +779,6 @@ function listByProject(
       Effect.orDie,
       Effect.map((rows) => rows.map(fromRow)),
     )
-}
-
-export function* listGlobal(input?: {
-  directory?: string
-  roots?: boolean
-  start?: number
-  cursor?: number
-  search?: string
-  limit?: number
-  archived?: boolean
-}) {
-  const conditions: SQL[] = []
-
-  if (input?.directory) {
-    conditions.push(eq(SessionTable.directory, input.directory))
-  }
-  if (input?.roots) {
-    conditions.push(isNull(SessionTable.parent_id))
-  }
-  if (input?.start) {
-    conditions.push(gte(SessionTable.time_updated, input.start))
-  }
-  if (input?.cursor) {
-    conditions.push(lt(SessionTable.time_updated, input.cursor))
-  }
-  if (input?.search) {
-    conditions.push(like(SessionTable.title, `%${input.search}%`))
-  }
-  if (!input?.archived) {
-    conditions.push(isNull(SessionTable.time_archived))
-  }
-
-  const limit = input?.limit ?? 100
-
-  const rows = runtime.runSync(({ db }) => {
-    const query =
-      conditions.length > 0
-        ? db
-            .select()
-            .from(SessionTable)
-            .where(and(...conditions))
-        : db.select().from(SessionTable)
-    return query.orderBy(desc(SessionTable.time_updated), desc(SessionTable.id)).limit(limit).all().pipe(Effect.orDie)
-  })
-
-  const ids = [...new Set(rows.map((row) => row.project_id))]
-  const projects = new Map<string, ProjectInfo>()
-
-  if (ids.length > 0) {
-    const items = runtime.runSync(({ db }) =>
-      db
-        .select({ id: ProjectTable.id, name: ProjectTable.name, worktree: ProjectTable.worktree })
-        .from(ProjectTable)
-        .where(inArray(ProjectTable.id, ids))
-        .all()
-        .pipe(Effect.orDie),
-    )
-    for (const item of items) {
-      projects.set(item.id, {
-        id: item.id,
-        name: item.name ?? undefined,
-        worktree: item.worktree,
-      })
-    }
-  }
-
-  for (const row of rows) {
-    const project = projects.get(row.project_id) ?? null
-    yield { ...fromRow(row), project }
-  }
 }
 
 export const node = LayerNode.make({
