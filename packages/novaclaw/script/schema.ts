@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 
 import { Config } from "@/config/config"
-import { ConfigV1 } from "@novaclaw/core/v1/config/config"
+import { Config as ConfigV2 } from "@novaclaw/core/config"
 import { Schema } from "effect"
 
 type JsonSchema = Record<string, unknown>
@@ -54,7 +54,7 @@ function restoreModelRefs(value: unknown, key?: string): unknown {
   if (!isRecord(value)) return value
 
   const schema = Object.fromEntries(Object.entries(value).map(([name, item]) => [name, restoreModelRefs(item, name)]))
-  if ((key === "model" || key === "small_model") && schema.type === "string") {
+  if (key === "model" && schema.type === "string") {
     return { ...schema, $ref: MODEL_REF }
   }
   return schema
@@ -67,4 +67,4 @@ function isRecord(value: unknown): value is JsonSchema {
 const configFile = process.argv[2]
 
 console.log(configFile)
-await Bun.write(configFile, JSON.stringify(generateEffect(ConfigV1.Info), null, 2))
+await Bun.write(configFile, JSON.stringify(generateEffect(ConfigV2.Info), null, 2))
