@@ -1,5 +1,6 @@
 import { describe, expect } from "bun:test"
 import { Effect, FileSystem, Option } from "effect"
+import { join } from "node:path"
 import { write, type Output } from "../src"
 import { it } from "./effect"
 
@@ -14,9 +15,11 @@ describe("HttpApiCodegen.write", () => {
     return Effect.gen(function* () {
       yield* write(output, "/generated")
 
+      // Paths are written with the OS-native separator (write() uses node:path join);
+      // build the expected paths the same way so the assertion holds on every platform.
       expect(writes).toEqual([
-        { path: "/generated/session.ts", content: "export const session = {}\n" },
-        { path: "/generated/.httpapi-codegen.json", content: '[\n  "session.ts"\n]\n' },
+        { path: join("/generated", "session.ts"), content: "export const session = {}\n" },
+        { path: join("/generated", ".httpapi-codegen.json"), content: '[\n  "session.ts"\n]\n' },
       ])
     }).pipe(
       Effect.provideService(
@@ -55,7 +58,7 @@ describe("HttpApiCodegen.write", () => {
           writeFileString: () => Effect.void,
         }),
       ),
-      Effect.tap(() => Effect.sync(() => expect(removed).toEqual(["/generated/old.ts"]))),
+      Effect.tap(() => Effect.sync(() => expect(removed).toEqual([join("/generated", "old.ts")]))),
     )
   })
 

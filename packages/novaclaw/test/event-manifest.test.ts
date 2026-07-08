@@ -6,10 +6,13 @@ import { EventManifest } from "@/event-manifest"
 
 describe("public event manifest", () => {
   test("contains every latest public wire type once", () => {
+    // These three identity checks are this test's real job: novaclaw's `@/event-manifest`
+    // must re-export the SAME manifest objects as `@novaclaw/schema`, not a fork. The exact
+    // counts are owned + pinned by the schema package's manifest test (single source of truth);
+    // re-asserting a literal size here only drifts out of sync (it did — was 88, schema is 89).
     expect(EventManifest.Definitions).toBe(SchemaEventManifest.Definitions)
     expect(EventManifest.Latest).toBe(SchemaEventManifest.Latest)
     expect(EventManifest.Durable).toBe(SchemaEventManifest.Durable)
-    expect(EventManifest.Latest.size).toBe(88)
     expect(EventManifest.Latest.get("session.next.step.ended")).toBe(SessionEvent.Step.Ended)
     expect(EventManifest.Latest.get("todo.updated")).toBe(Todo.Event.Updated)
     expect(EventManifest.Latest.has("ide.installed")).toBe(false)
