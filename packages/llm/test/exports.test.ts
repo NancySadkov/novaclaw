@@ -10,7 +10,6 @@ import {
   OpenRouter,
   XAI,
 } from "@novaclaw/llm/providers"
-import * as GitHubCopilot from "@novaclaw/llm/providers/github-copilot"
 import { OpenAIChat, OpenAICompatibleChat, OpenAIResponses } from "@novaclaw/llm/protocols"
 import * as AnthropicMessages from "@novaclaw/llm/protocols/anthropic-messages"
 
@@ -47,9 +46,6 @@ describe("public exports", () => {
     expect(XAI.provider.chat).toBe(XAI.chat)
     expect(XAI.configure({ apiKey: "fixture" }).responses("grok-4.3").route.id).toBe("openai-responses")
     expect(XAI.configure({ apiKey: "fixture" }).chat("grok-4.3").route.id).toBe("openai-compatible-chat")
-    expect(
-      GitHubCopilot.configure({ baseURL: "https://api.githubcopilot.test", apiKey: "fixture" }).model,
-    ).toBeFunction()
   })
 
   test("protocol barrels expose supported low-level routes", () => {

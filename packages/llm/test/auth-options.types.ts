@@ -7,7 +7,6 @@ import * as AmazonBedrock from "../src/providers/amazon-bedrock"
 import * as Anthropic from "../src/providers/anthropic"
 import * as Azure from "../src/providers/azure"
 import * as Cloudflare from "../src/providers/cloudflare"
-import * as GitHubCopilot from "../src/providers/github-copilot"
 import * as Google from "../src/providers/google"
 import * as OpenAI from "../src/providers/openai"
 import * as OpenAICompatible from "../src/providers/openai-compatible"
@@ -162,7 +161,3 @@ OpenAICompatible.deepseek.configure({ apiKey: "deepseek-key" }).model("deepseek-
 Cloudflare.CloudflareWorkersAI.configure({ accountId: "account", apiKey: "cf-key" }).model("@cf/meta/llama")
 // @ts-expect-error Cloudflare Workers AI model selectors only accept model ids.
 Cloudflare.CloudflareWorkersAI.configure({ accountId: "account", apiKey: "cf-key" }).model("@cf/meta/llama", {})
-
-GitHubCopilot.configure({ baseURL: "https://copilot.test", apiKey: "copilot-key" }).model("gpt-4.1")
-// @ts-expect-error GitHub Copilot model selectors only accept model ids.
-GitHubCopilot.configure({ baseURL: "https://copilot.test", apiKey: "copilot-key" }).model("gpt-4.1", {})

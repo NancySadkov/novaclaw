@@ -29,8 +29,6 @@ export function sanitizeSurrogates(content: string) {
 // Maps npm package to the key the AI SDK expects for providerOptions
 function sdkKey(npm: string): string | undefined {
   switch (npm) {
-    case "@ai-sdk/github-copilot":
-      return "copilot"
     case "@ai-sdk/azure":
       return "azure"
     case "@ai-sdk/openai":
@@ -336,9 +334,6 @@ function applyCaching(msgs: ModelMessage[], model: Provider.Model): ModelMessage
     },
     openaiCompatible: {
       cache_control: { type: "ephemeral" },
-    },
-    copilot: {
-      copilot_cache_control: { type: "ephemeral" },
     },
     alibaba: {
       cacheControl: { type: "ephemeral" },
@@ -816,32 +811,6 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
         openaiCompatibleReasoningEfforts(model.api.id).map((effort) => [effort, { reasoningEffort: effort }]),
       )
 
-    case "@ai-sdk/github-copilot":
-      if (model.id.includes("gemini")) {
-        // currently github copilot only returns thinking
-        return {}
-      }
-      if (model.id.includes("claude")) {
-        return Object.fromEntries(WIDELY_SUPPORTED_EFFORTS.map((effort) => [effort, { reasoningEffort: effort }]))
-      }
-      const copilotEfforts = iife(() => {
-        if (id.includes("5.1-codex-max") || id.includes("5.2") || id.includes("5.3"))
-          return [...WIDELY_SUPPORTED_EFFORTS, "xhigh"]
-        const arr = [...WIDELY_SUPPORTED_EFFORTS]
-        if (id.includes("gpt-5") && model.release_date >= "2025-12-04") arr.push("xhigh")
-        return arr
-      })
-      return Object.fromEntries(
-        copilotEfforts.map((effort) => [
-          effort,
-          {
-            reasoningEffort: effort,
-            reasoningSummary: "auto",
-            include: INCLUDE_ENCRYPTED_REASONING,
-          },
-        ]),
-      )
-
     case "@ai-sdk/cerebras":
     // https://v5.ai-sdk.dev/providers/ai-sdk-providers/cerebras
     case "@ai-sdk/togetherai":
@@ -896,14 +865,7 @@ export function variants(model: Provider.Model): Record<string, Record<string, a
     case "@ai-sdk/google-vertex/anthropic":
       // https://v5.ai-sdk.dev/providers/ai-sdk-providers/google-vertex#anthropic-provider
       if (adaptiveEfforts) {
-        let efforts = [...adaptiveEfforts]
-        if (model.providerID === "github-copilot") {
-          if (model.api.id.includes("opus-4.7")) {
-            efforts = ["medium"]
-          }
-          // Efforts currently supported are: low, medium, high
-          efforts = efforts.filter((v) => v !== "max" && v !== "xhigh")
-        }
+        const efforts = [...adaptiveEfforts]
         return Object.fromEntries(
           efforts.map((effort) => [
             effort,
@@ -1082,7 +1044,6 @@ export function options(input: {
   if (
     input.model.providerID === "openai" ||
     input.model.api.npm === "@ai-sdk/openai" ||
-    input.model.api.npm === "@ai-sdk/github-copilot" ||
     input.model.api.npm === "@ai-sdk/amazon-bedrock/mantle"
   ) {
     result["store"] = false
@@ -1177,7 +1138,6 @@ export function options(input: {
       if (
         input.model.api.npm === "@ai-sdk/openai" ||
         input.model.api.npm === "@ai-sdk/azure" ||
-        input.model.api.npm === "@ai-sdk/github-copilot" ||
         input.model.api.npm === "@ai-sdk/amazon-bedrock/mantle"
       ) {
         result["reasoningSummary"] = "auto"
@@ -1223,11 +1183,7 @@ export function options(input: {
 
 export function smallOptions(model: Provider.Model) {
   const small = Object.values(model.variants ?? {})[0] ?? {}
-  if (
-    model.providerID === "openai" ||
-    model.api.npm === "@ai-sdk/openai" ||
-    model.api.npm === "@ai-sdk/github-copilot"
-  ) {
+  if (model.providerID === "openai" || model.api.npm === "@ai-sdk/openai") {
     const base = { store: false }
     return mergeDeep(base, small)
   }
@@ -1495,7 +1451,7 @@ export function schema(model: Provider.Model, schema: JSONSchema7): JSONSchema7 
       // Gemini requires a single `type`, not a JSON Schema type array such as
       // `["number","string"]` (emitted by some MCP servers). Plain `@ai-sdk/google`
       // rewrites these into an `anyOf` of single-type schemas, but OpenAI-compatible
-      // transports (e.g. GitHub Copilot proxying to Gemini) forward them verbatim
+      // transports proxying to Gemini forward them verbatim
       // and the backend rejects the array form. Mirror the SDK: split non-null
       // types into `anyOf`, and lift `null` into `nullable`.
       if (Array.isArray(result.type)) {

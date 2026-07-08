@@ -86,9 +86,6 @@ export const Info = Schema.Struct({
       Schema.Struct({
         apiKey: Schema.optional(Schema.String),
         baseURL: Schema.optional(Schema.String),
-        enterpriseUrl: Schema.optional(Schema.String).annotate({
-          description: "GitHub Enterprise URL for copilot authentication",
-        }),
         setCacheKey: Schema.optional(Schema.Boolean).annotate({
           description: "Enable promptCacheKey for this provider (default false)",
         }),

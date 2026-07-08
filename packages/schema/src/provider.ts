@@ -13,7 +13,6 @@ export const ID = Schema.String.pipe(
     openai: schema.make("openai"),
     google: schema.make("google"),
     googleVertex: schema.make("google-vertex"),
-    githubCopilot: schema.make("github-copilot"),
     amazonBedrock: schema.make("amazon-bedrock"),
     azure: schema.make("azure"),
     openrouter: schema.make("openrouter"),
