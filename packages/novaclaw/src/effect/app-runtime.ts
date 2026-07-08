@@ -27,7 +27,6 @@ import { MCP } from "@/mcp"
 import { McpAuth } from "@/mcp/auth"
 import { Command } from "@/command"
 import { Truncate } from "@/tool/truncate"
-import { ToolRegistry } from "@/tool/registry"
 import { Format } from "@/format"
 import { InstanceLayer } from "@/project/instance-layer"
 import { Project } from "@/project/project"
@@ -72,7 +71,6 @@ export const AppLayer = Layer.mergeAll(
   McpAuth.defaultLayer,
   Command.defaultLayer,
   Truncate.defaultLayer,
-  ToolRegistry.defaultLayer,
   Format.defaultLayer,
   Project.defaultLayer,
   // F1c-0 — the cycle-free core deps the CLI session commands ride (createSessionRecord/

@@ -1,215 +1,23 @@
-import { PermissionV1 } from "@novaclaw/core/v1/permission"
 import { EOL } from "os"
 import { basename } from "path"
-import { Cause, DateTime, Effect } from "effect"
+import { Effect } from "effect"
 import { Agent } from "../../../agent/agent"
-import { Provider } from "@/provider/provider"
-import { Database } from "@novaclaw/core/database/database"
-import { createSessionRecord } from "@novaclaw/core/session"
-import { SessionEvent } from "@novaclaw/core/session/event"
-import { SessionMessage } from "@novaclaw/core/session/message"
-import { SessionStore } from "@novaclaw/core/session/store"
-import { ProjectV2 } from "@novaclaw/core/project"
-import { ModelV2 } from "@novaclaw/core/model"
-import { ProviderV2 } from "@novaclaw/core/provider"
-import { Location } from "@novaclaw/core/location"
-import { AbsolutePath } from "@novaclaw/core/schema"
-import { EventV2Bridge } from "@/event-v2-bridge"
-import { MessageID, PartID } from "../../../session/schema"
-import { ToolRegistry } from "@/tool/registry"
-import { Permission } from "../../../permission"
-import { iife } from "../../../util/iife"
 import { fail } from "../../effect-cmd"
 import { InstanceRef } from "@/effect/instance-ref"
-import type { InstanceContext } from "@/project/instance-context"
 
-export const debugAgent = Effect.fn("Cli.debug.agent")(function* (args: {
-  name: string
-  tool?: string
-  params?: string
-}) {
+// F1f: `debug agent` now dumps the resolved agent CONFIG only. Its former `--tool` enumerate/execute
+// was the last consumer of the V1 `ToolRegistry` + the duplicate-of-core V1 tool cluster (both
+// retired). The effective tool set is available via the core-backed `GET /experimental/tool[/ids]`
+// route (P2a), or by running a real turn; tool enablement is implied by the agent's `permission`.
+export const debugAgent = Effect.fn("Cli.debug.agent")(function* (args: { name: string }) {
   const ctx = yield* InstanceRef
   if (!ctx) return
-  return yield* run(args, ctx)
-})
-
-const run = Effect.fn("Cli.debug.agent.body")(function* (
-  args: { name: string; tool?: string; params?: string },
-  ctx: InstanceContext,
-) {
-  const agentName = args.name
-  const agent = yield* Agent.Service.use((svc) => svc.get(agentName))
+  const agent = yield* Agent.Service.use((svc) => svc.get(args.name))
   if (!agent) {
     process.stderr.write(
-      `Agent ${agentName} not found, run '${basename(process.execPath)} agent list' to get an agent list` + EOL,
+      `Agent ${args.name} not found, run '${basename(process.execPath)} agent list' to get an agent list` + EOL,
     )
     return yield* fail("", 1)
   }
-  const availableTools = yield* getAvailableTools(agent)
-  const resolvedTools = resolveTools(agent, availableTools)
-  const toolID = args.tool
-  if (toolID) {
-    const tool = availableTools.find((item) => item.id === toolID)
-    if (!tool) {
-      process.stderr.write(`Tool ${toolID} not found for agent ${agentName}` + EOL)
-      return yield* fail("", 1)
-    }
-    if (resolvedTools[toolID] === false) {
-      process.stderr.write(`Tool ${toolID} is disabled for agent ${agentName}` + EOL)
-      return yield* fail("", 1)
-    }
-    const params = parseToolParams(args.params)
-    const toolCtx = yield* createToolContext(agent, ctx)
-    const result = yield* tool.execute(params, toolCtx)
-    process.stdout.write(JSON.stringify({ tool: toolID, input: params, result }, null, 2) + EOL)
-    return
-  }
-
-  const output = {
-    ...agent,
-    tools: resolvedTools,
-  }
-  process.stdout.write(JSON.stringify(output, null, 2) + EOL)
-})
-
-const getAvailableTools = Effect.fn("Cli.debug.agent.getAvailableTools")(function* (agent: Agent.Info) {
-  const provider = yield* Provider.Service
-  const registry = yield* ToolRegistry.Service
-  const model =
-    agent.model ??
-    (yield* provider.defaultModel().pipe(
-      Effect.matchCauseEffect({
-        onSuccess: Effect.succeed,
-        onFailure: (cause) => {
-          const error = Cause.squash(cause) as Provider.DefaultModelError
-          if (error instanceof Provider.ModelNotFoundError) {
-            return fail(`Model not found: ${error.providerID}/${error.modelID}`)
-          }
-          if (error instanceof Provider.NoModelsError) return fail(`No models found for provider ${error.providerID}`)
-          return fail("No providers found")
-        },
-      }),
-    ))
-  return yield* registry.tools({ ...model, agent })
-})
-
-function resolveTools(agent: Agent.Info, availableTools: { id: string }[]) {
-  const disabled = Permission.disabled(
-    availableTools.map((tool) => tool.id),
-    agent.permission,
-  )
-  const resolved: Record<string, boolean> = {}
-  for (const tool of availableTools) {
-    resolved[tool.id] = !disabled.has(tool.id)
-  }
-  return resolved
-}
-
-function parseToolParams(input?: string) {
-  if (!input) return {}
-  const trimmed = input.trim()
-  if (trimmed.length === 0) return {}
-
-  const parsed = iife(() => {
-    try {
-      return JSON.parse(trimmed)
-    } catch (jsonError) {
-      try {
-        return new Function(`return (${trimmed})`)()
-      } catch (evalError) {
-        throw new Error(
-          `Failed to parse --params. Use JSON or a JS object literal. JSON error: ${jsonError}. Eval error: ${evalError}.`,
-          { cause: evalError },
-        )
-      }
-    }
-  })
-
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
-    throw new Error("Tool params must be an object.")
-  }
-  return parsed as Record<string, unknown>
-}
-
-const createToolContext = Effect.fn("Cli.debug.agent.createToolContext")(function* (
-  agent: Agent.Info,
-  ctx: InstanceContext,
-) {
-  // F1c-0 — the debug session rides the core record seams: `createSessionRecord` persists the
-  // session (cycle-free: no `SessionV2` layer / `LocationServiceMap` in the CLI graph), and the
-  // placeholder assistant message is recorded as the self-contained native
-  // `session.next.message.recorded` durable event (the fork-copy vocabulary) instead of a V1
-  // message-store write.
-  const { db } = yield* Database.Service
-  const events = yield* EventV2Bridge.Service
-  const projects = yield* ProjectV2.Service
-  const store = yield* SessionStore.Service
-  const location = Location.Ref.make({ directory: AbsolutePath.make(ctx.directory) })
-  const session = yield* createSessionRecord(
-    { db, events, projects, store },
-    { location, title: `Debug tool run (${agent.name})` },
-  )
-  const model = agent.model
-    ? agent.model
-    : yield* Effect.gen(function* () {
-        const provider = yield* Provider.Service
-        return yield* provider.defaultModel().pipe(
-          Effect.matchCauseEffect({
-            onSuccess: Effect.succeed,
-            onFailure: (cause) => {
-              const error = Cause.squash(cause) as Provider.DefaultModelError
-              if (error instanceof Provider.ModelNotFoundError) {
-                return fail(`Model not found: ${error.providerID}/${error.modelID}`)
-              }
-              if (error instanceof Provider.NoModelsError)
-                return fail(`No models found for provider ${error.providerID}`)
-              return fail("No providers found")
-            },
-          }),
-        )
-      })
-  const messageID = SessionMessage.ID.create()
-  const message: SessionMessage.Assistant = {
-    id: messageID,
-    type: "assistant",
-    agent: agent.name,
-    model: ModelV2.Ref.make({
-      id: ModelV2.ID.make(model.modelID),
-      providerID: ProviderV2.ID.make(model.providerID),
-    }),
-    content: [],
-    cost: 0,
-    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-    time: { created: yield* DateTime.now },
-  }
-  yield* events.publish(
-    SessionEvent.MessageRecorded,
-    { sessionID: session.id, timestamp: yield* DateTime.now, message },
-    { location },
-  )
-
-  // A fresh record carries no saved session ruleset (the V2 create only stores one when the
-  // caller passes it — this create doesn't), so the agent's own rules are the whole set.
-  const ruleset = Permission.merge(agent.permission, [])
-
-  return {
-    sessionID: session.id,
-    // The native message ID coerces into the V1 tool-context brand (both are "msg"-prefixed).
-    messageID: MessageID.make(messageID),
-    callID: PartID.ascending(),
-    agent: agent.name,
-    abort: new AbortController().signal,
-    messages: [],
-    metadata: () => Effect.void,
-    ask(req: Omit<PermissionV1.Request, "id" | "sessionID" | "tool">) {
-      return Effect.sync(() => {
-        for (const pattern of req.patterns) {
-          const rule = Permission.evaluate(req.permission, pattern, ruleset)
-          if (rule.action === "deny") {
-            throw new PermissionV1.DeniedError({ ruleset })
-          }
-        }
-      })
-    },
-  }
+  process.stdout.write(JSON.stringify(agent, null, 2) + EOL)
 })
