@@ -218,7 +218,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       const check: JhStep.Check = draft.check ?? { type: "artifact_present" }
       // Budget is seeded by the prior and fixed for this leaf (telemetry is recorded but does not
       // self-escalate the budget mid-leaf — else a trivial-prior leaf could never exhaust; see ledger).
-      const budget = JhBudget.budgetFor(draft.difficulty_prior, JhBudget.emptyTelemetry)
+      const budget = JhBudget.budgetFor(draft.difficulty_prior ?? undefined, JhBudget.emptyTelemetry)
       for (;;) {
         updateTelemetry(node.id, (t) => ({ ...t, attempts: t.attempts + 1 }))
         emit({ type: "action", step: node.id, tool: currentTool })
