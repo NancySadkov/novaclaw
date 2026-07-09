@@ -123,16 +123,23 @@ describe("JhEngine.runTask", () => {
   })
 
   test("4. budget exhaustion → forced decomposition (no forced_split log)", async () => {
+    // stuck needs the SAME error STUCK_REPEATS (3) times → 3 compile failures before the forced decompose.
+    const writeAtom = reply(atomObj({ tool: "write_file", difficulty_prior: "trivial", args: { path: "f.c", content: "x" }, check: { type: "compile", command: "gcc" }, produces: [{ id: "f", type: "file" }] }))
     const d = scriptedDeps({
       replies: [
-        reply(atomObj({ tool: "write_file", difficulty_prior: "trivial", args: { path: "f.c", content: "x" }, check: { type: "compile", command: "gcc" }, produces: [{ id: "f", type: "file" }] })),
-        "```\nfix\n```",
+        writeAtom,
+        writeAtom, // recovery attempt 2
+        writeAtom, // recovery attempt 3 (3rd identical compile fail → stuck)
         reply(compoundObj([atomObj({ goal: "g1", produces: [{ id: "g1", type: "note" }] }), atomObj({ goal: "g2", produces: [{ id: "g2", type: "note" }] })])),
         reply(atomObj({ goal: "g1", produces: [{ id: "g1", type: "note" }] })),
         reply(atomObj({ goal: "g2", produces: [{ id: "g2", type: "note" }] })),
       ],
-      observations: [okObs({ f: "x" }), okObs({ f: "y" }), okObs({ g1: "x" }), okObs({ g2: "x" })],
-      runResults: [{ exitCode: 1, output: "e", timedOut: false }, { exitCode: 1, output: "e", timedOut: false }],
+      observations: [okObs({ f: "x" }), okObs({ f: "y" }), okObs({ f: "z" }), okObs({ g1: "x" }), okObs({ g2: "x" })],
+      runResults: [
+        { exitCode: 1, output: "e", timedOut: false },
+        { exitCode: 1, output: "e", timedOut: false },
+        { exitCode: 1, output: "e", timedOut: false },
+      ],
     })
     const r = await run(d)
     expect(r.status).toBe("done")

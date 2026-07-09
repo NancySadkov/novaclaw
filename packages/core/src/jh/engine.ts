@@ -87,6 +87,9 @@ const stripSubsteps = (d: JhStep.StepDraft): Omit<JhStep.StepDraft, "substeps"> 
 // error (e.g. an environment problem like a compiler PATH needs several distinct fixes) — up to this hard
 // cap. A REPEATED error (a stuck loop) ends it immediately at the budget. (afpro's changing-vs-stuck rule.)
 const EXPLORE_CAP = 15
+// A leaf is "stuck" only when the SAME error recurs this many times (afpro changing-vs-stuck) — a single
+// repeat is not enough; a weak model often needs a few shots at the same mistake before variance breaks it.
+const STUCK_REPEATS = 3
 // The root soft-decompose retries this many times: a weak model insists atomic on some draws but yields a
 // proper plan on others (temperature variance), so a couple of retries reliably gets a decomposition.
 const SOFT_DECOMPOSE_ATTEMPTS = 3
@@ -317,7 +320,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       // Budget is seeded by the prior and fixed for this leaf (telemetry is recorded but does not
       // self-escalate the budget mid-leaf — else a trivial-prior leaf could never exhaust; see ledger).
       const budget = JhBudget.budgetFor(draft.difficulty_prior ?? undefined, JhBudget.emptyTelemetry)
-      const seenErrors = new Set<string>() // distinct verify-failure signatures seen for THIS leaf
+      const errorCounts = new Map<string, number>() // verify-failure signature → how many times seen (THIS leaf)
       for (;;) {
         updateTelemetry(node.id, (t) => ({ ...t, attempts: t.attempts + 1 }))
         emit({ type: "action", step: node.id, tool: currentTool })
@@ -361,11 +364,14 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         }
 
         updateTelemetry(node.id, (t) => ({ ...t, verifierFails: t.verifierFails + 1 }))
-        // Past the budget, keep exploring only while errors stay NOVEL and under the cap; a repeated error
-        // (stuck) or the cap ends the leaf.
+        // Past the budget, keep exploring while the error keeps CHANGING (real progress) and under the cap.
+        // "stuck" = the SAME error signature seen STUCK_REPEATS times (afpro changing-vs-stuck) — NOT merely a
+        // 2nd occurrence: a weak model that repeats one mistake once (e.g. a PATH-less gcc) still deserves a
+        // few more shots; temperature variance breaks the loop (iters 23–24 blocked after just 2 repeats).
         const sig = errorSig(vr.detail)
-        const stuck = sig === "" || seenErrors.has(sig)
-        seenErrors.add(sig)
+        const seen = (errorCounts.get(sig) ?? 0) + 1
+        errorCounts.set(sig, seen)
+        const stuck = seen >= STUCK_REPEATS
         const attempts = telemetryOf(node.id).attempts
         if (attempts > budget && (stuck || attempts >= EXPLORE_CAP)) {
           if (node.depth < maxDepth) {
