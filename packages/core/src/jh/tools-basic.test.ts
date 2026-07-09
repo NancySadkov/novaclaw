@@ -45,6 +45,13 @@ describe("JhBasicTools.basicExecutor", () => {
     expect((await runTool("run", { command: "exit 3" }, [], cwd)).ok).toBe(false)
   })
 
+  test("run with a non-zero exit + no output → a CRASH message naming the exit code (not an empty error)", async () => {
+    const r = await runTool("run", { command: "exit 42" }, [], tmp())
+    expect(r.ok).toBe(false)
+    expect(r.output).toContain("42") // the exit code is surfaced
+    expect(r.output.toLowerCase()).toContain("crash") // + the source-bug directive, so the model doesn't just re-run
+  })
+
   test("note passes text through to a note produce", async () => {
     const obs = await runTool("note", { text: "the choice" }, [ref("n", "note")], tmp())
     expect(obs.ok).toBe(true)

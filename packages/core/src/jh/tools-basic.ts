@@ -100,7 +100,13 @@ export function basicExecutor(runner: JhProcessRunner.Runner): Executor {
             Effect.map((r) =>
               obs(
                 r.exitCode === 0 && !r.timedOut,
-                r.timedOut ? `timed out\n${r.output}` : r.output,
+                r.timedOut
+                  ? `timed out\n${r.output}`
+                  : r.exitCode === 0
+                    ? r.output
+                    : // a non-zero exit with no output is a runtime CRASH — tell the model it's a source bug, not a
+                      // command to re-run (else it re-runs the same crashing binary; iter 23).
+                      `command exited with non-zero code ${r.exitCode}${r.output.trim() ? `\n${r.output}` : " and produced NO output — this is a runtime CRASH (a bug in the program's logic: out-of-bounds array, integer overflow, or a bad pointer). Fix the SOURCE code and recompile; do NOT just re-run the same binary."}`,
                 assignFirst(input.produces, (ref) => ref.type === "command_output", r.output),
               ),
             ),
