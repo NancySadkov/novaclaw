@@ -14,6 +14,7 @@ function scriptedDeps(opts: {
   replies: string[]
   observations?: JhBasicTools.Observation[]
   runResults?: JhProcessRunner.RunResult[]
+  runByCommand?: (command: string) => JhProcessRunner.RunResult
   fileExists?: (rel: string, cwd: string) => boolean
   trigger?: JhBudget.SplitTrigger
   limits?: { maxDepth: number; maxTotalSteps: number }
@@ -40,8 +41,9 @@ function scriptedDeps(opts: {
     correct: () => nextReply(),
     executor: { run: () => Effect.succeed(observations.shift() ?? { ok: false, output: "no scripted observation", artifacts: new Map() }) },
     runner: {
-      run: () => {
+      run: (input: { command: string; cwd: string; timeoutMs: number }) => {
         runnerCalls++
+        if (opts.runByCommand) return Effect.succeed(opts.runByCommand(input.command))
         return Effect.succeed(runResults.shift() ?? { exitCode: 0, output: "", timedOut: false })
       },
     },
@@ -426,5 +428,22 @@ describe("JhEngine.runTask", () => {
     expect(verifs.some((e) => "ok" in e && e.ok === false && String((e as { detail?: unknown }).detail).includes("goal not yet achieved"))).toBe(true)
     // and the root was NOT committed on that false-done
     expect(types(r)).not.toContain("committed")
+  })
+
+  test("25. recovery that corrects the command ALSO moves the check (no stale-check re-fail)", async () => {
+    // iter 19: action fixed `pi.exe`→`.\\pi.exe` (ran ok) but the frozen check kept running `pi.exe` → fail.
+    const d = scriptedDeps({
+      replies: [
+        reply(atomObj({ tool: "run", args: { command: "pi.exe" }, check: { type: "run", command: "pi.exe" }, produces: [] })),
+        reply(atomObj({ tool: "run", args: { command: ".\\pi.exe" }, check: { type: "run", command: ".\\pi.exe" }, produces: [] })), // recovery corrects BOTH command and check
+      ],
+      observations: [okObs(), okObs()],
+      // command-sensitive: bare `pi.exe` is "not recognized" (exit 1); `.\pi.exe` runs (exit 0)
+      runByCommand: (cmd) => (cmd.includes(".\\pi.exe") ? { exitCode: 0, output: "Pi", timedOut: false } : { exitCode: 1, output: "'pi.exe' is not recognized", timedOut: false }),
+    })
+    const r = await run(d)
+    expect(r.status).toBe("done") // the corrected check runs `.\pi.exe` and passes — no infinite stale-check fail
+    expect(types(r)).toContain("committed")
+    expect(types(r).filter((t) => t === "introspected").length).toBe(2)
   })
 })

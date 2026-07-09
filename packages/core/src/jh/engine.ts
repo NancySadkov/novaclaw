@@ -296,7 +296,10 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       let draft = initialDraft
       let currentTool = draft.tool ?? ""
       let currentArgs: Readonly<Record<string, unknown>> = draft.args ?? {}
-      const check: JhStep.Check = draft.check ?? { type: "artifact_present" }
+      // `let`, not `const`: the recovery loop can correct the command — the CHECK must move with it, else
+      // a fixed action re-runs against a stale check forever (iter 19: action `.\pi.exe` ok, but the frozen
+      // check still ran `pi.exe` → "not recognized" every time).
+      let check: JhStep.Check = draft.check ?? { type: "artifact_present" }
       // Budget is seeded by the prior and fixed for this leaf (telemetry is recorded but does not
       // self-escalate the budget mid-leaf — else a trivial-prior leaf could never exhaust; see ledger).
       const budget = JhBudget.budgetFor(draft.difficulty_prior ?? undefined, JhBudget.emptyTelemetry)
@@ -382,6 +385,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
             draft = parsed.draft
             currentTool = parsed.draft.tool ?? currentTool
             currentArgs = parsed.draft.args ?? currentArgs
+            if (parsed.draft.check) check = parsed.draft.check // the corrected command's check moves WITH it
             tree = JhTree.fill(tree, node.id, stripSubsteps(parsed.draft))
             emit({ type: "introspected", step: node.id })
           }
