@@ -346,4 +346,16 @@ describe("JhEngine.runTask", () => {
     expect(r.status).toBe("blocked")
     expect(r.reason).toBe("budget")
   })
+
+  test("19. duplicate_produce is TOLERATED — only dangling consumes blocks a decomposition", async () => {
+    const dup = compoundObj([atomObj({ goal: "a", produces: [{ id: "shared", type: "note" }] }), atomObj({ goal: "b", produces: [{ id: "shared", type: "note" }] })])
+    const d = scriptedDeps({
+      replies: [reply(dup), reply(atomObj({ produces: [{ id: "shared", type: "note" }] })), reply(atomObj({ produces: [{ id: "shared", type: "note" }] }))],
+      observations: [okObs({ shared: "x" }), okObs({ shared: "y" })],
+    })
+    const r = await run(d)
+    expect(r.status).toBe("done")
+    expect(types(r)).toContain("expanded")
+    expect(types(r)).not.toContain("dataflow_rejected")
+  })
 })
