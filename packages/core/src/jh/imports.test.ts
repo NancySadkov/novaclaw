@@ -21,7 +21,8 @@ function violationFor(filename: string, spec: string): string | undefined {
     return NODE_ALLOWED.has(filename) ? undefined : `node: import "${spec}" not allowed in ${filename}`
   }
   if (spec.startsWith("drizzle-orm")) {
-    return filename === "sql.ts" ? undefined : `drizzle-orm import "${spec}" only allowed in sql.ts (got ${filename})`
+    // sql.ts declares the tables; store.ts (the DB seam) needs the query helpers (eq/asc).
+    return filename === "sql.ts" || filename === "store.ts" ? undefined : `drizzle-orm import "${spec}" only allowed in sql.ts/store.ts (got ${filename})`
   }
   if (spec.startsWith("../database/")) {
     return filename === "store.ts" ? undefined : `../database import "${spec}" only allowed in store.ts (got ${filename})`
