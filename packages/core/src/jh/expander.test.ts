@@ -36,6 +36,14 @@ describe("introspectPrompt", () => {
     expect(p.user).toContain("REMINDER_XYZ")
     expect(p.system).not.toContain("REMINDER_XYZ")
   })
+
+  test("environment description is injected into the system prompt when provided", () => {
+    const p = JhExpander.introspectPrompt({ ...base, environment: "FRESH shell; set PATH inside each command" })
+    expect(p.system).toContain("Execution environment:")
+    expect(p.system).toContain("FRESH shell; set PATH inside each command")
+    // absent when not provided
+    expect(JhExpander.introspectPrompt(base).system).not.toContain("Execution environment:")
+  })
 })
 
 describe("parseReply", () => {

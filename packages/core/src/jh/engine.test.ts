@@ -315,4 +315,35 @@ describe("JhEngine.runTask", () => {
     expect(r.status).toBe("done")
     expect(types(r)).toContain("research_flagged")
   })
+
+  test("18. exploration budget: NOVEL errors extend past the prior budget until convergence", async () => {
+    const d = scriptedDeps({
+      replies: [
+        reply(atomObj({ tool: "write_file", difficulty_prior: "trivial", args: { path: "f.c", content: "v0" }, check: { type: "compile", command: "gcc" }, produces: [{ id: "f", type: "file" }] })),
+        "```\nv1\n```",
+        "```\nv2\n```",
+      ],
+      observations: [okObs({ f: "v0" }), okObs({ f: "v1" }), okObs({ f: "v2" })],
+      runResults: [
+        { exitCode: 1, output: "error A: missing header", timedOut: false },
+        { exitCode: 1, output: "error B: undefined symbol", timedOut: false },
+        { exitCode: 0, output: "", timedOut: false },
+      ],
+    })
+    const r = await run(d)
+    expect(r.status).toBe("done")
+    expect(r.state.telemetry.get("root")?.attempts).toBe(3) // trivial=1 would exhaust at 2 WITHOUT the extension
+  })
+
+  test("18b. stuck: a REPEATED error ends the leaf at the budget (no runaway)", async () => {
+    const d = scriptedDeps({
+      replies: [reply(atomObj({ tool: "write_file", difficulty_prior: "trivial", args: { path: "f.c", content: "x" }, check: { type: "compile", command: "gcc" }, produces: [{ id: "f", type: "file" }] })), "```\nfix\n```"],
+      observations: [okObs({ f: "x" }), okObs({ f: "y" })],
+      runResults: [{ exitCode: 1, output: "same error", timedOut: false }, { exitCode: 1, output: "same error", timedOut: false }],
+      limits: { maxDepth: 0, maxTotalSteps: 64 },
+    })
+    const r = await run(d)
+    expect(r.status).toBe("blocked")
+    expect(r.reason).toBe("budget")
+  })
 })

@@ -43,6 +43,9 @@ export interface Deps {
   readonly fileExists: (relPath: string, cwd: string) => boolean
   readonly cwd: string
   readonly toolNames: ReadonlyArray<string>
+  /** Harness-owned execution-environment description injected into every introspection (shell, cwd,
+   *  fresh-shell/PATH mechanics) — the model needs to know how `run` commands actually execute. */
+  readonly environment?: string
   readonly limits: { readonly maxDepth: number; readonly maxTotalSteps: number }
   readonly trigger: JhBudget.SplitTrigger
   readonly onLog?: (entry: JhLog.Sequenced) => void
@@ -66,6 +69,12 @@ const stripSubsteps = (d: JhStep.StepDraft): Omit<JhStep.StepDraft, "substeps"> 
   const { substeps, ...rest } = d
   return rest
 }
+
+// A leaf may retry past its difficulty budget WHILE it is exploring productively — each failure a NOVEL
+// error (e.g. an environment problem like a compiler PATH needs several distinct fixes) — up to this hard
+// cap. A REPEATED error (a stuck loop) ends it immediately at the budget. (afpro's changing-vs-stuck rule.)
+const EXPLORE_CAP = 6
+const errorSig = (detail: string): string => detail.slice(0, 160).trim()
 
 export function runTask(deps: Deps, task: { readonly goal: string }, resume?: State): Effect.Effect<Report> {
   const { maxDepth, maxTotalSteps } = deps.limits
@@ -126,6 +135,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       allowDecomposition: opts.allowDecomposition ?? cur.depth < maxDepth,
       mustDecompose: opts.mustDecompose ?? false,
       formatReminder: opts.formatReminder,
+      environment: deps.environment,
     })
   }
 
@@ -219,6 +229,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       // Budget is seeded by the prior and fixed for this leaf (telemetry is recorded but does not
       // self-escalate the budget mid-leaf — else a trivial-prior leaf could never exhaust; see ledger).
       const budget = JhBudget.budgetFor(draft.difficulty_prior ?? undefined, JhBudget.emptyTelemetry)
+      const seenErrors = new Set<string>() // distinct verify-failure signatures seen for THIS leaf
       for (;;) {
         updateTelemetry(node.id, (t) => ({ ...t, attempts: t.attempts + 1 }))
         emit({ type: "action", step: node.id, tool: currentTool })
@@ -250,7 +261,13 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         }
 
         updateTelemetry(node.id, (t) => ({ ...t, verifierFails: t.verifierFails + 1 }))
-        if (telemetryOf(node.id).attempts > budget) {
+        // Past the budget, keep exploring only while errors stay NOVEL and under the cap; a repeated error
+        // (stuck) or the cap ends the leaf.
+        const sig = errorSig(vr.detail)
+        const stuck = sig === "" || seenErrors.has(sig)
+        seenErrors.add(sig)
+        const attempts = telemetryOf(node.id).attempts
+        if (attempts > budget && (stuck || attempts >= EXPLORE_CAP)) {
           if (node.depth < maxDepth) {
             yield* forceDecompose(node, "budget")
           } else {

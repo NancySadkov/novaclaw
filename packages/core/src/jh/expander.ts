@@ -41,8 +41,11 @@ export function introspectPrompt(input: {
   readonly allowDecomposition: boolean
   readonly mustDecompose: boolean
   readonly formatReminder?: string
+  /** Harness-owned execution-environment description (shell, cwd, fresh-shell/PATH mechanics). */
+  readonly environment?: string
 }): PromptPair {
   const toolTable = input.toolNames.map((n) => `  - ${TOOL_ARGS[n] ?? `${n}{...}`}`).join("\n")
+  const environmentBlock = input.environment ? ["", "Execution environment:", input.environment] : []
   const system = [
     "You are the planning/expansion component of a deterministic execution harness. You do NOT do the whole task — you fill a small fixed schema for the CURRENT step only, and the harness runs the loop.",
     "",
@@ -68,6 +71,7 @@ export function introspectPrompt(input: {
     "",
     "Available tools (an atomic step calls exactly ONE):",
     toolTable,
+    ...environmentBlock,
     "",
     "Every step object needs at least `goal`, `size`, and `success`; a compound step also needs `substeps`. OMIT any field you are not using — do NOT write `null`.",
     "",
