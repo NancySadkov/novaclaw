@@ -693,6 +693,8 @@ export const dict = {
   "help.tour.step.welcome.body": "Your private AI workspace — an operating system where AI helpers work for you like apps. It runs on your own hardware, so your conversations and data stay with you.",
   "help.tour.step.apps.title": "A home screen of apps",
   "help.tour.step.apps.body": "Tap a tile to open an app. The big gold tile is Chats — that’s where everything starts. Notes keeps your everyday things, Files lets AI work on your folders, and Processes shows what the AI is doing right now.",
+  "help.tour.step.home.title": "The logo is your Home button",
+  "help.tour.step.home.body": "See the NovaClaw logo in the top-left corner? Click it anytime to jump back to this home screen — from any chat or app. Think of it as your Start button.",
   "help.tour.step.chat.title": "Chat, and let AI help",
   "help.tour.step.chat.body": "A helper can break a big job into smaller ones, use tools on your behalf, and hand back the result. It can even draw charts and small visualizations right inside the chat — not just text.",
   "help.tour.step.build.title": "Ask for your own apps",

@@ -67,7 +67,6 @@ import { homeSessionTimeLabel, subtreeRows } from "./home-session-meta"
 import { usePermission } from "@/context/permission"
 import { useChatsAttentionSets } from "@/apps/chats-attention"
 import { DialogSessionInfo } from "@/components/dialog-session-info"
-import { useModels } from "@/context/models"
 import { sessionPermissionRequest, sessionQuestionRequest } from "@/pages/session/composer/session-request-tree"
 import { showToast } from "@/utils/toast"
 
@@ -488,114 +487,6 @@ export function NewHome() {
     setSelection({ server: ServerConnection.key(conn), directory })
   }
 
-  // The shared default scratch cwd (server-provisioned under `<data>/scratch`) — lets "New Agent"
-  // work with no project picked, so every agent always has a folder for basic work. Read off
-  // PathInfo with a cast (the SDK type lags this field, same as `virtualRoot`).
-  const scratchDir = createMemo(() => (focusedSync().data.path as { scratchDir?: string } | undefined)?.scratchDir)
-  // "New Agent" is enabled whenever a server is connected and we have SOME cwd — a picked project
-  // or the always-provisioned scratch dir. No more "pick a project first" dead-end.
-  const canNewSession = createMemo(() => !!focusedServer() && (!!selectedProject() || !!scratchDir()))
-
-  function openNewSession() {
-    const conn = focusedServer()
-    if (!conn) return
-    // Default a folder-less "New Agent" to the safe shared scratch dir — a basic chat shouldn't
-    // land in a real project. An explicitly-selected project overrides.
-    const directory = selectedProject()?.worktree ?? scratchDir()
-    if (!directory) return
-    openProjectNewSession(conn, directory)
-  }
-
-  // T1 spawn box (notes/entities.md): type a prompt, Enter — the agent spawns IMMEDIATELY (create
-  // session + async prompt + open), no draft/composer detour. Folder = the safe scratch dir unless
-  // the user overrides via the folder chip.
-  const [targetFolder, setTargetFolder] = createSignal<string | undefined>()
-  const [spawning, setSpawning] = createSignal(false)
-  const spawnFolder = createMemo(() => targetFolder() ?? scratchDir())
-  const spawnFolderLabel = createMemo(() => {
-    const folder = targetFolder()
-    if (!folder) return language.t("home.newAgent.folder.scratch")
-    return displayName({ worktree: folder })
-  })
-
-  function pickSpawnFolder() {
-    const conn = focusedServer()
-    if (!conn) return
-    pickDirectory({
-      server: conn,
-      title: language.t("command.project.open"),
-      onSelect: (result) => {
-        const directory = Array.isArray(result) ? result[0] : result
-        if (directory) setTargetFolder(directory)
-      },
-    })
-  }
-
-  // The spawn turn must carry an explicit model: the prompt_async router sends MODEL-LESS turns
-  // down the legacy V1 path (F1 residue (e)), which never reaches the native render. Resolution
-  // order favors the USER's living choices over stale config: the model they last used → their
-  // curated "shown" models → the config default → the first per-provider default.
-  const models = useModels()
-  const spawnModel = createMemo(() => {
-    // usable = still connected/available AND not hidden by the user (a disabled default like an
-    // unserved cloud model must never win just because it lingers in `recent` or config).
-    const usable = (key: { providerID: string; modelID: string }) => !!models.find(key) && models.visible(key)
-    const recent = models.recent.list().find(usable)
-    if (recent) return { providerID: recent.providerID, modelID: recent.modelID }
-    const shown = models.shown()[0]
-    if (shown) return { providerID: shown.providerID, modelID: shown.modelID }
-    const configured = (focusedSync().data.config as { model?: string }).model
-    if (configured) {
-      const [providerID, ...rest] = configured.split("/")
-      if (providerID && rest.length) {
-        const key = { providerID, modelID: rest.join("/") }
-        if (usable(key)) return key
-      }
-    }
-    const first = models.list().find((m) => models.visible({ providerID: m.provider.id, modelID: m.id }))
-    return first ? { providerID: first.provider.id, modelID: first.id } : undefined
-  })
-
-  async function spawnAgent(prompt: string) {
-    const text = prompt.trim()
-    const conn = focusedServer()
-    const directory = spawnFolder()
-    if (!text || !conn || !directory || spawning()) return
-    setSpawning(true)
-    try {
-      const ctx = global.ensureServerCtx(conn)
-      const created = await ctx.sdk.client.v2.session.create({ location: { directory } })
-      const sessionID = created.data?.data.id
-      if (created.error || !sessionID) throw created.error ?? new Error("session create returned no id")
-      const admitted = await ctx.sdk.client.session.promptAsync({
-        sessionID,
-        model: spawnModel(),
-        parts: [{ type: "text", text }],
-      })
-      if (admitted.error) throw admitted.error
-      ctx.projects.open(directory)
-      ctx.projects.touch(directory)
-      startTransition(() => {
-        const tab = tabs.addSessionTab({ server: ServerConnection.key(conn), sessionId: sessionID })
-        tabs.select(tab)
-      })
-    } catch (error) {
-      showToast({
-        title: language.t("common.requestFailed"),
-        description: errorMessage(error, language.t("common.requestFailed")),
-      })
-    } finally {
-      setSpawning(false)
-    }
-  }
-
-  function openProjectNewSession(conn: ServerConnection.Any, directory: string) {
-    const ctx = global.ensureServerCtx(conn)
-    ctx.projects.open(directory)
-    ctx.projects.touch(directory)
-    tabs.newDraft({ server: ServerConnection.key(conn), directory })
-  }
-
   // Start a chat straight from the typed greeting entry: open a draft on the focused project and
   // hand the composer the seed prompt (newDraft appends ?prompt=), so the user never clicks "new session".
   function startChat(prompt: string) {
@@ -692,15 +583,6 @@ export function NewHome() {
           <div class="flex justify-center pb-5 pt-1 select-none">
             <Logo class="w-36 text-v2-text-text-base" />
           </div>
-          <HomeNewAgentEntry
-            disabled={!canNewSession()}
-            folderLabel={spawnFolderLabel()}
-            folderOverridden={targetFolder() !== undefined}
-            spawning={spawning()}
-            onPickFolder={pickSpawnFolder}
-            onResetFolder={() => setTargetFolder(undefined)}
-            onSubmit={(prompt) => void spawnAgent(prompt)}
-          />
           <div class="mt-3 flex min-w-0 items-start gap-2">
             <Show when={tagUniverse().length > 0}>
               <div data-slot="home-tag-filter" class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
@@ -765,7 +647,7 @@ export function NewHome() {
             >
               <Show
                 when={groups().length > 0 || attentionRecords().length > 0 || flatSorted().length > 0}
-                fallback={<HomeSessionsEmpty onNewSession={canNewSession() ? openNewSession : undefined} />}
+                fallback={<HomeSessionsEmpty onNewSession={() => navigate("/")} />}
               >
                 <div ref={sessionHeaderOpacity.setContentRef} class="flex flex-col pt-3 pr-3 pb-16">
                   <Show
@@ -846,73 +728,6 @@ export function NewHome() {
           </ScrollView>
         </section>
       </div>
-    </div>
-  )
-}
-
-// T1 spawn box (notes/entities.md): the Chats app's one creation affordance — type what the agent
-// should do, hit Enter, and it spawns immediately in the target folder (scratch by default; the
-// folder chip overrides). No draft, no second click.
-function HomeNewAgentEntry(props: {
-  disabled: boolean
-  folderLabel: string
-  folderOverridden: boolean
-  spawning: boolean
-  onPickFolder: () => void
-  onResetFolder: () => void
-  onSubmit: (prompt: string) => void
-}) {
-  const language = useLanguage()
-  const [value, setValue] = createSignal("")
-  const submit = () => {
-    const text = value().trim()
-    if (!text || props.disabled || props.spawning) return
-    props.onSubmit(text)
-    setValue("")
-  }
-  return (
-    <div
-      data-slot="home-new-agent"
-      class="flex w-full items-center gap-2 rounded-[10px] bg-v2-background-bg-layer-01 px-3 py-2.5 ring-1 ring-v2-border-border-base transition-shadow focus-within:ring-2 focus-within:ring-[var(--v2-border-border-focus)]"
-    >
-      <Icon name="edit" size="small" class="shrink-0 text-v2-icon-icon-muted" />
-      <input
-        data-slot="home-new-agent-input"
-        type="text"
-        class="min-w-0 flex-1 bg-transparent text-[14px] text-v2-text-text-base outline-none placeholder:text-v2-text-text-faint"
-        placeholder={language.t("home.newAgent.placeholder")}
-        disabled={props.disabled || props.spawning}
-        value={value()}
-        onInput={(event) => setValue(event.currentTarget.value)}
-        onKeyDown={(event) => {
-          if (event.key !== "Enter") return
-          event.preventDefault()
-          submit()
-        }}
-      />
-      <Show when={props.spawning}>
-        <Spinner class="size-4 shrink-0 text-v2-icon-icon-muted" />
-      </Show>
-      <button
-        type="button"
-        data-slot="home-new-agent-folder"
-        class="flex shrink-0 items-center gap-1 rounded-full bg-v2-background-bg-layer-02 px-2 py-1 text-[11px] leading-none text-v2-text-text-muted transition-colors hover:text-v2-text-text-base"
-        title={language.t("home.newAgent.folder.pick")}
-        onClick={props.onPickFolder}
-      >
-        <Icon name="folder" size="small" />
-        {props.folderLabel}
-      </button>
-      <Show when={props.folderOverridden}>
-        <button
-          type="button"
-          aria-label={language.t("home.newAgent.folder.reset")}
-          class="shrink-0 text-[13px] leading-none text-v2-text-text-faint hover:text-v2-text-text-base"
-          onClick={props.onResetFolder}
-        >
-          ×
-        </button>
-      </Show>
     </div>
   )
 }

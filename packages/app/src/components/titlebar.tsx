@@ -429,33 +429,11 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                 <BrandBadge />
                 {/* Session-nav (app menu + Home + Chats) is hidden on the launcher ("/") — you launch
                     apps from the tiles there; the nav returns inside a chat/session. */}
+                {/* Home lives on the brand badge now (Start-button style) — no separate Home button. */}
                 <Show when={location.pathname !== "/"}>
                   <Show when={windows() || linux()}>
                     <WindowsAppMenu command={command} platform={platform} variant="v2" />
                   </Show>
-                <TooltipV2
-                  placement="bottom"
-                  value={
-                    <>
-                      {language.t("home.title")}
-                      <KeybindV2 keys={command.keybindParts("home.toggle")} variant="neutral" />
-                    </>
-                  }
-                  class="shrink-0"
-                >
-                  <IconButtonV2
-                    type="button"
-                    variant="ghost-muted"
-                    size="large"
-                    class="!w-9 shrink-0"
-                    icon={<IconV2 name="grid-plus" />}
-                    state={layout.route().type === "home" ? "pressed" : undefined}
-                    onClick={() => navigate("/")}
-                    aria-label={language.t("home.title")}
-                    aria-pressed={layout.route().type === "home"}
-                  />
-                </TooltipV2>
-
                   <TooltipV2 placement="bottom" value={language.t("nav.chats")} class="shrink-0">
                     <IconButtonV2
                       type="button"
@@ -728,8 +706,37 @@ function TitlebarUpdateIconButton(props: { state: TitlebarUpdatePillState }) {
   )
 }
 
-// The top-left brand badge. Replaces the old channel chip ("DEV"/"BETA") with the stylized
-// NovaClaw wordmark + version, so screenshots advertise the app and show which build they are.
+// The top-left brand badge doubles as the Home button — click the NovaClaw logo + version to return
+// to the home launcher from anywhere (Windows Start / macOS Apple-menu metaphor). This replaces the
+// separate Home nav button; the first-run tour calls it out (help.tour.step.home).
 function BrandBadge() {
-  return <NovaClawWordmark showVersion class="shrink-0 px-1 text-[13px] leading-none" />
+  const navigate = useNavigate()
+  const location = useLocation()
+  const language = useLanguage()
+  const command = useCommand()
+  const isHome = () => location.pathname === "/"
+  return (
+    <TooltipV2
+      placement="bottom"
+      value={
+        <>
+          {language.t("home.title")}
+          <KeybindV2 keys={command.keybindParts("home.toggle")} variant="neutral" />
+        </>
+      }
+      class="shrink-0"
+    >
+      <button
+        type="button"
+        data-component="brand-home-button"
+        onClick={() => navigate("/")}
+        aria-label={language.t("home.title")}
+        aria-pressed={isHome()}
+        class="flex shrink-0 items-center rounded-md py-0.5 pl-1 pr-1.5 transition-colors hover:bg-v2-background-bg-layer-02 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[var(--v2-border-border-focus)]"
+        classList={{ "bg-v2-background-bg-layer-01": isHome() }}
+      >
+        <NovaClawWordmark showVersion class="text-[13px] leading-none" />
+      </button>
+    </TooltipV2>
+  )
 }

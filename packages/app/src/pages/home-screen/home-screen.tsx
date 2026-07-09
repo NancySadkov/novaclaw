@@ -14,6 +14,7 @@ import { useExpertise } from "@/context/expertise"
 import { registeredApps, type HomeApp } from "@/apps/registry"
 import { AppTile } from "./app-tile"
 import { HelpTour, HELP_SEEN_KEY } from "./help-tour"
+import { NewAgentBar } from "./new-agent-bar"
 
 const PER_PAGE = 24
 
@@ -190,11 +191,15 @@ export const HomeScreen: Component = () => {
 
   return (
     <div class="flex flex-col items-center w-full h-full min-h-0" tabindex={0} onKeyDown={onKey}>
-      <div class="flex flex-col items-center gap-1 pt-10 pb-2 px-6 text-center select-none">
+      <div class="flex flex-col items-center gap-1 pt-10 pb-3 px-6 text-center select-none">
         <h1 class="text-[26px] font-semibold tracking-tight text-v2-text-text-base [text-shadow:0_1px_3px_rgba(0,0,0,0.4)]">{greeting()}</h1>
         <p class="text-[13px] font-medium text-v2-text-text-muted">
-          Open <span class="text-v2-text-text-accent">Chats</span> and ask — the AI can even build new apps for this screen.
+          Tell an agent what to do below — it can even build new apps for this screen.
         </p>
+      </div>
+      {/* The primary action: spawn a new agent right from the launcher, above the app tiles. */}
+      <div class="w-full max-w-[42rem] shrink-0 px-6 pb-4">
+        <NewAgentBar />
       </div>
       <DragDropProvider onDragEnd={onDragEnd} collisionDetector={closestCenter}>
         <DragDropSensors />

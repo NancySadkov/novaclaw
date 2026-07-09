@@ -22,6 +22,7 @@ type Step = {
 const STEPS: readonly Step[] = [
   { icon: "speech-bubble", accent: "#e7b62f", glyphTone: "dark", key: "welcome" },
   { icon: "dot-grid", accent: "#8b5cf6", key: "apps" },
+  { icon: "grid-plus", accent: "#a78bfa", key: "home" },
   { icon: "brain", accent: "#22d3ee", key: "chat" },
   { icon: "plus", accent: "#34d399", key: "build" },
   { icon: "settings-gear", accent: "#8d8fa6", key: "settings" },
