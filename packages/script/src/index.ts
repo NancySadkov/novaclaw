@@ -50,10 +50,13 @@ const VERSION = await (async () => {
 const bot = ["actions-user", "novaclaw", "novaclaw-agent[bot]"]
 const teamPath = path.resolve(import.meta.dir, "../../../.github/TEAM_MEMBERS")
 const team = [
+  // `.github/TEAM_MEMBERS` was removed in the opencode detach (it's upstream infra); tolerate its
+  // absence so importing this build-tooling module never throws (it broke `predev`/build-node.ts).
   ...(await Bun.file(teamPath)
     .text()
     .then((x) => x.split(/\r?\n/).map((x) => x.trim()))
-    .then((x) => x.filter((x) => x && !x.startsWith("#")))),
+    .then((x) => x.filter((x) => x && !x.startsWith("#")))
+    .catch(() => [] as string[])),
   ...bot,
 ]
 
