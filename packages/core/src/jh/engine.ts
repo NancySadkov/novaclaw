@@ -374,6 +374,28 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         const stuck = seen >= STUCK_REPEATS
         const attempts = telemetryOf(node.id).attempts
         if (attempts > budget && (stuck || attempts >= EXPLORE_CAP)) {
+          const parentID = JhTree.get(tree, node.id)?.parent
+          // NEVER DEAD-END (owner E2): a stuck NON-root leaf under verifyGoal does not block its ancestors.
+          // Best-effort-commit it and GROW a fix sibling on its parent — a FRESH node whose goal is "fix the
+          // source", which reframes a weak model away from re-running the same broken binary (iter 26). The
+          // parent/root goal-check is the real backstop; this only stops at the global step budget.
+          if (deps.verifyGoal && parentID !== undefined && JhTree.size(tree) < maxTotalSteps) {
+            tree = JhTree.setStatus(tree, node.id, "committed")
+            emit({ type: "committed", step: node.id })
+            const fixDraft: JhStep.StepDraft = {
+              goal: `The previous attempt at "${node.draft.goal}" did not pass its check — ${errorSig(vr.detail)}. Do the next single action to fix it: if the program's OUTPUT is WRONG or it crashed, EDIT the source code to fix the bug, RECOMPILE, then re-run and verify — do NOT just re-run the same binary.`,
+              size: "atomic",
+              success: node.draft.success ?? "the step's goal is met",
+            }
+            const appended = JhTree.appendChild(tree, parentID, fixDraft, maxDepth)
+            if (!(appended instanceof JhTree.AttachError)) {
+              tree = appended
+              emit({ type: "expanded", step: parentID, children: JhTree.get(tree, parentID)!.children.length })
+            }
+            bubble(node.id)
+            yield* checkpoint()
+            return
+          }
           if (node.depth < maxDepth) {
             yield* forceDecompose(node, "budget")
           } else {

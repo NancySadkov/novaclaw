@@ -501,4 +501,27 @@ describe("JhEngine.runTask", () => {
     const rootVerifs = r.state.log.filter((e) => e.type === "verification" && "step" in e && (e as { step?: string }).step === r.state.tree.root)
     expect(rootVerifs.map((e) => (e as { ok?: boolean }).ok)).toEqual([false, true])
   })
+
+  test("28. a stuck NON-root leaf GROWS a fix sibling instead of dead-ending its ancestors (verifyGoal)", async () => {
+    // iter 26: a run leaf re-ran the same wrong binary 3× and blocked → cascaded up. Under verifyGoal it must
+    // best-effort-commit and extend its parent with a fix node; the root goal-check is the backstop.
+    const runAtom = (cmd: string) => reply(atomObj({ goal: `run ${cmd}`, tool: "run", args: { command: cmd }, check: { type: "run", command: cmd, expect: "PI" }, produces: [], difficulty_prior: "trivial" }))
+    const d = scriptedDeps({
+      replies: [
+        reply(compoundObj([atomObj({ goal: "run a", tool: "run", args: { command: "a" }, check: { type: "run", command: "a", expect: "PI" }, produces: [], difficulty_prior: "trivial" })])),
+        runAtom("a"), // root.1 introspect
+        runAtom("a"), // recovery (re-run) after fail 1
+        runAtom("a"), // recovery (re-run) after fail 2 → fail 3 = stuck → extend
+        runAtom("b"), // the appended fix node root.2 introspect → runs `b` which is correct
+        `{"achieved": true}`, // root goal-check → done
+      ],
+      observations: [okObs(), okObs(), okObs(), okObs()],
+      runByCommand: (cmd) => (cmd === "b" ? { exitCode: 0, output: "PI=3.14", timedOut: false } : { exitCode: 0, output: "wrong", timedOut: false }),
+      verifyGoal: true,
+    })
+    const r = await run(d)
+    expect(r.status).toBe("done") // NOT blocked — the leaf extended instead of dead-ending
+    expect(JhTree.get(r.state.tree, r.state.tree.root)?.children.length).toBe(2) // root.1 + grown fix sibling root.2
+    expect(types(r)).not.toContain("blocked")
+  })
 })
