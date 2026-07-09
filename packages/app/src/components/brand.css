@@ -1,6 +1,6 @@
 [data-component="novaclaw-wordmark"] {
   display: inline-flex;
-  align-items: baseline;
+  align-items: center;
   gap: 0.4em;
   font-family: var(--font-sans, ui-sans-serif, system-ui, sans-serif);
   line-height: 1;
@@ -8,15 +8,14 @@
   user-select: none;
 }
 
-[data-component="novaclaw-wordmark"] [data-slot="novaclaw-wordmark-name"] {
-  font-weight: 680;
-  letter-spacing: -0.015em;
-  /* The gold accent gradient (falls back to the Nova recipe if the token is absent). */
-  background: var(--nc-accent-gradient, linear-gradient(155deg, #f4d06a, #e7b62f 55%, #c99a2e));
-  -webkit-background-clip: text;
-  background-clip: text;
-  -webkit-text-fill-color: transparent;
-  color: transparent;
+[data-component="novaclaw-wordmark"] [data-slot="novaclaw-wordmark-logo"] {
+  /* The logo is square (icon + wordmark); size its height off the caller's font-size so it
+     scales like the old text wordmark did. Width follows the square aspect. */
+  height: 2.1em;
+  width: auto;
+  display: block;
+  flex-shrink: 0;
+  object-fit: contain;
 }
 
 [data-component="novaclaw-wordmark"] [data-slot="novaclaw-wordmark-version"] {

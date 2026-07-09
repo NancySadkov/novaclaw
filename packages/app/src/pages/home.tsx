@@ -8,14 +8,11 @@ import {
   createSignal,
   For,
   Match,
-  on,
   onCleanup,
-  onMount,
   Show,
   startTransition,
   Switch,
 } from "solid-js"
-import { makeEventListener } from "@solid-primitives/event-listener"
 import { createStore, produce } from "solid-js/store"
 import { useQuery } from "@tanstack/solid-query"
 import { Button } from "@novaclaw/ui/button"
@@ -39,7 +36,7 @@ import { useDirectoryPicker } from "@/components/directory-picker"
 import { useSettingsCommand } from "@/components/settings-dialog"
 import { DialogSelectServer, useServerManagementController } from "@/components/dialog-select-server"
 import { DialogServerV2 } from "@/components/settings-v2/dialog-server-v2"
-import { ServerConnection, serverName, useServer } from "@/context/server"
+import { ServerConnection, useServer } from "@/context/server"
 import { sessionHasOpenTab, useTabs } from "@/context/tabs"
 import { useServerSync, type ServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
@@ -58,7 +55,6 @@ import { SessionTabAvatar } from "@/pages/layout/session-tab-avatar"
 import { sessionTitle } from "@/utils/session-title"
 import { pathKey } from "@/utils/path-key"
 import { useGlobal } from "@/context/global"
-import { useCommand } from "@/context/command"
 import { Binary } from "@novaclaw/core/util/binary"
 import { ServerRowMenu } from "@/components/server/server-row-menu"
 import { ServerHealthIndicator } from "@/components/server/server-row"
@@ -100,14 +96,6 @@ type HomeSessionGroup = {
   sessions: HomeSessionRecord[]
 }
 
-const HOME_SESSION_SEARCH_RESULTS_ID = "home-session-search-results"
-const HOME_SEARCH_RESULT_ROW =
-  "flex h-10 w-full shrink-0 cursor-default items-center gap-2 border-0 py-3 pl-[18px] pr-6 text-left transition-[background-color] duration-[120ms] ease-in-out hover:bg-v2-overlay-simple-overlay-hover focus-visible:bg-v2-overlay-simple-overlay-hover focus-visible:outline-none"
-const HOME_SEARCH_RESULT_TITLE =
-  "min-w-0 overflow-hidden text-ellipsis whitespace-nowrap text-[13px] leading-4 tracking-[-0.04px] text-v2-text-text-base [font-weight:530]"
-const HOME_SEARCH_RESULT_META =
-  "min-w-0 flex-[1_1_auto] overflow-hidden text-ellipsis whitespace-nowrap text-[13px] leading-4 tracking-[-0.04px] text-v2-text-text-muted [font-weight:440]"
-
 let pendingHomeNavigation: { server: ServerConnection.Key; href: string } | undefined
 
 function buildHomeSessionRecords(input: {
@@ -134,14 +122,6 @@ function buildHomeSessionRecords(input: {
         projectName: displayName(project),
       }
     })
-}
-
-function matchesHomeSessionSearch(record: HomeSessionRecord, query: string) {
-  return `${record.session.title} ${record.projectName}`.toLowerCase().includes(query)
-}
-
-function homeSessionSearchKey(record: HomeSessionRecord) {
-  return `${pathKey(record.session.directory)}:${record.session.id}`
 }
 
 function useHomeSessionHeaderOpacity(groups: () => HomeSessionGroup[]) {
@@ -256,15 +236,9 @@ export function NewHome() {
   const language = useLanguage()
   const global = useGlobal()
   const tabs = useTabs()
-  const command = useCommand()
   const notification = useNotification()
   const marked = useMarked()
   const openSettings = useSettingsCommand()
-  let focusSessionSearch: (() => void) | undefined
-  const [state, setState] = createStore({
-    search: "",
-    searchFocused: false,
-  })
   const selection = layout.home.selection
 
   const focusedServer = createMemo(
@@ -289,20 +263,6 @@ export function NewHome() {
     const project = selectedProject()
     if (!project) return projects().flatMap(directories)
     return directories(project)
-  })
-  const search = createMemo(() => state.search.trim())
-  const searchPlaceholder = createMemo(() => {
-    const project = selectedProject()
-    if (project) {
-      return language.t("home.sessions.search.placeholder.scoped", { scope: displayName(project) })
-    }
-    if (global.servers.list().length > 1) {
-      const conn = focusedServer()
-      if (conn) {
-        return language.t("home.sessions.search.placeholder.scoped", { scope: serverName(conn) })
-      }
-    }
-    return language.t("home.sessions.search.placeholder")
   })
   const sessionLoad = useQuery(() => ({
     queryKey: ["home", "sessions", selection().server, ...projectDirectories()] as const,
@@ -333,12 +293,6 @@ export function NewHome() {
     }),
   )
   const records = createMemo(() => allRecords().slice(0, HOME_SESSION_LIMIT))
-  const searchResults = createMemo(() => {
-    const query = search().toLowerCase()
-    if (!query) return []
-    return allRecords().filter((record) => matchesHomeSessionSearch(record, query))
-  })
-  const searchOpen = createMemo(() => state.searchFocused && search().length > 0)
   // Tags component (notes/entities.md T0): the tag filter over chat processes. The universe is the
   // tags of the currently listed roots; picking one narrows the list (attention cluster included).
   const [selectedTag, setSelectedTag] = createSignal<string | undefined>()
@@ -471,26 +425,6 @@ export function NewHome() {
   function setSelection(next: HomeProjectSelection) {
     layout.home.setSelection(next)
   }
-
-  function closeSearch() {
-    setState("search", "")
-    setState("searchFocused", false)
-  }
-
-  function selectSearchSession(session: Session) {
-    openSession(session)
-    closeSearch()
-  }
-
-  command.register("home", () => [
-    {
-      id: "home.sessions.search.focus",
-      title: searchPlaceholder(),
-      keybind: "mod+f",
-      hidden: true,
-      onSelect: () => focusSessionSearch?.(),
-    },
-  ])
 
   createEffect(() => {
     const list = global.servers.list()
@@ -766,24 +700,6 @@ export function NewHome() {
             onPickFolder={pickSpawnFolder}
             onResetFolder={() => setTargetFolder(undefined)}
             onSubmit={(prompt) => void spawnAgent(prompt)}
-          />
-          <HomeSessionSearch
-            value={state.search}
-            placeholder={searchPlaceholder()}
-            open={searchOpen()}
-            loading={sessionLoad.isLoading}
-            results={searchResults()}
-            showProjectName={!selectedProject()}
-            server={selection().server}
-            activeServer={selection().server === server.key}
-            noResultsLabel={language.t("home.sessions.search.noResults", { query: search() })}
-            bindFocus={(focus) => {
-              focusSessionSearch = focus
-            }}
-            onInput={(value) => setState("search", value)}
-            onFocus={() => setState("searchFocused", true)}
-            onClose={closeSearch}
-            onSelect={selectSearchSession}
           />
           <div class="mt-3 flex min-w-0 items-start gap-2">
             <Show when={tagUniverse().length > 0}>
@@ -1115,266 +1031,6 @@ function HomeSessionLeading(props: {
         revealProjectOnHover={props.revealProjectOnHover}
       />
     </div>
-  )
-}
-
-function HomeSessionSearch(props: {
-  value: string
-  placeholder: string
-  open: boolean
-  loading: boolean
-  results: HomeSessionRecord[]
-  showProjectName: boolean
-  server: ServerConnection.Key
-  activeServer: boolean
-  noResultsLabel: string
-  bindFocus: (focus: () => void) => void
-  onInput: (value: string) => void
-  onFocus: () => void
-  onClose: () => void
-  onSelect: (session: Session) => void
-}) {
-  const language = useLanguage()
-  const [store, setStore] = createStore({ active: "" })
-  let root: HTMLDivElement | undefined
-  let input: HTMLInputElement | undefined
-  let listRef: HTMLDivElement | undefined
-
-  const focusInput = () => {
-    input?.focus()
-    props.onFocus()
-  }
-
-  onMount(() => {
-    props.bindFocus(focusInput)
-  })
-
-  const syncActive = (results: HomeSessionRecord[]) => {
-    if (results.length === 0) {
-      setStore("active", "")
-      return
-    }
-    if (!results.some((record) => homeSessionSearchKey(record) === store.active)) {
-      setStore("active", homeSessionSearchKey(results[0]))
-    }
-  }
-
-  createEffect(() => syncActive(props.results))
-
-  createEffect(
-    on(
-      () => props.value,
-      () => syncActive(props.results),
-    ),
-  )
-
-  const scrollActiveIntoView = () => {
-    const key = store.active
-    if (!key || !listRef) return
-    const element = listRef.querySelector<HTMLElement>(`[data-key="${key}"]`)
-    element?.scrollIntoView({ block: "nearest" })
-  }
-
-  const moveActive = (delta: number) => {
-    const results = props.results
-    if (results.length === 0) return
-    const index = results.findIndex((record) => homeSessionSearchKey(record) === store.active)
-    const start = index === -1 ? 0 : index
-    const next = (start + delta + results.length) % results.length
-    setStore("active", homeSessionSearchKey(results[next]))
-    scrollActiveIntoView()
-  }
-
-  const selectActive = () => {
-    const record = props.results.find((item) => homeSessionSearchKey(item) === store.active)
-    if (!record) return
-    props.onSelect(record.session)
-  }
-
-  onCleanup(
-    makeEventListener(document, "pointerdown", (event) => {
-      if (!props.open) return
-      const target = event.target
-      if (!(target instanceof Node)) return
-      if (root?.contains(target)) return
-      props.onClose()
-    }),
-  )
-
-  return (
-    <div class="w-full">
-      <div ref={root} data-component="home-session-search" class="relative z-30 w-full">
-        <Show when={props.open}>
-          <div
-            data-component="home-session-search-panel"
-            class="absolute flex flex-col overflow-hidden rounded-[12px] bg-v2-background-bg-base shadow-[var(--v2-elevation-floating)]"
-            style={{
-              top: "-6px",
-              left: "-6px",
-              width: "calc(100% + 12px)",
-            }}
-          >
-            <div class="flex flex-col pt-9">
-              <div id={HOME_SESSION_SEARCH_RESULTS_ID} role="listbox" class="flex flex-col gap-4 pt-4">
-                <Show
-                  when={!props.loading}
-                  fallback={
-                    <div class="flex items-center justify-center px-4 py-3 text-v2-text-text-muted [font-weight:440]">
-                      <Spinner class="size-4" />
-                    </div>
-                  }
-                >
-                  <Show
-                    when={props.results.length > 0}
-                    fallback={
-                      <p class="my-1.5 px-4 pb-2 text-[13px] leading-4 tracking-[-0.04px] text-v2-text-text-muted [font-weight:440]">
-                        {props.noResultsLabel}
-                      </p>
-                    }
-                  >
-                    <div class="flex flex-col">
-                      <p class="my-1.5 pl-[18px] pr-6 text-[13px] leading-4 tracking-[-0.04px] text-v2-text-text-muted [font-weight:440]">
-                        {language.t("home.sessions.search.sessions")}
-                      </p>
-                      <ScrollView class="max-h-80" viewportRef={(el) => (listRef = el)}>
-                        <div class="flex flex-col gap-px pb-2">
-                          <For each={props.results}>
-                            {(record) => (
-                              <HomeSessionSearchResultRow
-                                record={record}
-                                showProjectName={props.showProjectName}
-                                server={props.server}
-                                activeServer={props.activeServer}
-                                selected={store.active === homeSessionSearchKey(record)}
-                                onHighlight={() => setStore("active", homeSessionSearchKey(record))}
-                                onSelect={(session) => props.onSelect(session)}
-                              />
-                            )}
-                          </For>
-                        </div>
-                      </ScrollView>
-                    </div>
-                  </Show>
-                </Show>
-              </div>
-            </div>
-          </div>
-        </Show>
-        <label
-          class="relative z-20 flex h-9 w-full items-center gap-2 rounded-[6px] bg-v2-background-bg-layer-02 py-1 pl-3 pr-2 text-v2-icon-icon-muted transition-[background-color,box-shadow] duration-[120ms] ease-in-out"
-          classList={{
-            "focus-within:shadow-[0_0_0_0.5px_var(--v2-border-border-focus),var(--v2-elevation-raised)]": !props.open,
-            "shadow-[0_0_0_0.5px_var(--v2-border-border-focus)]": props.open,
-          }}
-        >
-          <IconV2 name="magnifying-glass" />
-          <input
-            ref={input}
-            class="relative z-20 min-w-0 flex-1 border-0 bg-transparent text-v2-text-text-base outline-0 [font-weight:440] placeholder:text-v2-text-text-faint"
-            value={props.value}
-            placeholder={props.placeholder}
-            aria-label={props.placeholder}
-            aria-expanded={props.open}
-            aria-controls={HOME_SESSION_SEARCH_RESULTS_ID}
-            aria-autocomplete="list"
-            aria-activedescendant={
-              store.active && props.open ? `home-session-search-option-${store.active}` : undefined
-            }
-            onFocus={() => props.onFocus()}
-            onInput={(event) => props.onInput(event.currentTarget.value)}
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                event.preventDefault()
-                props.onClose()
-                input?.blur()
-                return
-              }
-              if (!props.open || props.results.length === 0) return
-              if (event.altKey || event.metaKey) return
-              if (event.key === "ArrowDown") {
-                event.preventDefault()
-                moveActive(1)
-                return
-              }
-              if (event.key === "ArrowUp") {
-                event.preventDefault()
-                moveActive(-1)
-                return
-              }
-              if (event.key === "Enter" && !event.isComposing) {
-                event.preventDefault()
-                selectActive()
-              }
-            }}
-          />
-          <Show when={props.value}>
-            <IconButtonV2
-              type="button"
-              variant="ghost-muted"
-              size="small"
-              class="relative z-20 shrink-0"
-              icon={<IconV2 name="close" size="large" class="text-v2-icon-icon-muted" />}
-              aria-label={props.placeholder}
-              onClick={() => {
-                props.onClose()
-                input?.focus()
-              }}
-            />
-          </Show>
-        </label>
-      </div>
-    </div>
-  )
-}
-
-function HomeSessionSearchResultRow(props: {
-  record: HomeSessionRecord
-  showProjectName: boolean
-  server: ServerConnection.Key
-  activeServer: boolean
-  selected: boolean
-  onHighlight: () => void
-  onSelect: (session: Session) => void
-}) {
-  const title = createMemo(() => sessionTitle(props.record.session.title) || props.record.session.id)
-  const showProjectName = () => props.showProjectName && props.record.projectName
-
-  const key = () => homeSessionSearchKey(props.record)
-
-  return (
-    <button
-      type="button"
-      id={`home-session-search-option-${key()}`}
-      data-key={key()}
-      data-component="home-session-search-row"
-      role="option"
-      aria-selected={props.selected}
-      classList={{
-        [HOME_SEARCH_RESULT_ROW]: true,
-        "bg-v2-overlay-simple-overlay-hover": props.selected,
-        group: !!showProjectName(),
-      }}
-      onMouseEnter={() => props.onHighlight()}
-      onClick={() => props.onSelect(props.record.session)}
-    >
-      <HomeSessionLeading
-        project={props.record.project}
-        session={props.record.session}
-        server={props.server}
-        activeServer={props.activeServer}
-        revealProjectOnHover={!!showProjectName()}
-      />
-      <div class="flex min-w-0 flex-1 items-center gap-1.5">
-        <span
-          class={`${HOME_SEARCH_RESULT_TITLE} ${showProjectName() ? "max-w-[min(70%,480px)] flex-[0_1_auto]" : "flex-[1_1_auto]"}`}
-        >
-          {title()}
-        </span>
-        <Show when={showProjectName()}>
-          <span class={HOME_SEARCH_RESULT_META}>{props.record.projectName}</span>
-        </Show>
-      </div>
-    </button>
   )
 }
 
