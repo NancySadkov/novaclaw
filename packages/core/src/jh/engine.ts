@@ -347,9 +347,10 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
           `  result/error: ${vr.detail}`,
           "The working-directory files with their CURRENT contents are shown above. Emit exactly ONE atomic Step for the SINGLE next action that makes real progress toward the goal:",
           "- SOURCE-CODE error (a compile/runtime error in a file) → write_file with the COMPLETE corrected source (edit the code shown above).",
-          "- The goal needs a file that a COMMAND produces (e.g. the compiled .exe) → `run` that command (remember: every gcc call needs the `set PATH=…/bin;%PATH% &&` prefix; the .exe lands in the working directory).",
+          "- The program RAN but produced WRONG output (e.g. expected '3.14159', got '3.0') → the SOURCE ALGORITHM is buggy. write_file the corrected source (fix the logic in the code above). NOTE: after ANY source edit the compiled .exe is STALE — your very next steps must RECOMPILE (a `run` gcc step) and then re-run, before checking output again.",
+          "- The goal needs a file a COMMAND produces (e.g. the compiled .exe) → `run` that command (every gcc call needs the `set PATH=…/bin;%PATH% &&` prefix; the .exe lands in the working directory).",
           "- The command itself was wrong (missing PATH, wrong path/filename, bad shell syntax) → a corrected `run` command.",
-          "Do NOT repeat the exact action that just failed.",
+          "Do NOT repeat the exact action that just failed — if re-running gave the same wrong result, the SOURCE must change.",
         ].join("\n")
         const ex = yield* Effect.exit(deps.introspect(buildPrompt(node.id, { extraContext: recovery })))
         if (Exit.isSuccess(ex)) {
