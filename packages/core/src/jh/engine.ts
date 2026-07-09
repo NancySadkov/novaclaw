@@ -243,7 +243,10 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       const parsed = JhExpander.parseReply(ex.value)
       const subs = parsed.ok && parsed.draft.size === "needs_decomposition" ? parsed.draft.substeps : undefined
       if (!subs || subs.length === 0) return false
-      if (JhDataflow.validate(subs, deps.artifacts.ids()).some((i) => i.code === "dangling_consumes")) return false
+      // Attach a structurally-valid plan REGARDLESS of declared dataflow: for file-based work the real
+      // dependency is the file on disk (cwd), not the artifact store — a weak model's consumes/produces
+      // ids are an unreliable proxy, and a dangling DECLARATION doesn't mean the step will fail (§9/§12).
+      // Execution + the verify-gate are the real checks.
       const attached = JhTree.attach(tree, node.id, subs, maxDepth)
       if (attached instanceof JhTree.AttachError) return false
       tree = attached
