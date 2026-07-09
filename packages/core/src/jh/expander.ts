@@ -17,9 +17,9 @@ export interface PromptPair {
 }
 
 const TOOL_ARGS: Record<string, string> = {
-  write_file: "write_file{path, content}",
+  write_file: "write_file{path, content} — OVERWRITES the whole file; give a file's COMPLETE content in ONE call (a later write_file to the same path erases the earlier one — never build a file across multiple write_file calls)",
   read_file: "read_file{path}",
-  run: "run{command}",
+  run: "run{command} — execute a shell command (compile, run a program, etc.)",
   note: "note{text}",
 }
 
