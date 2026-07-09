@@ -50,6 +50,10 @@ export interface Deps {
    *  atomic write_file with a trivial check — a "false done"). Off by default; the session's Strict
    *  switch turns it on for weak models. */
   readonly forceRootDecompose?: boolean
+  /** Filesystem ground truth: names of the files currently in the working directory. Injected into every
+   *  introspection so a step knows what actually exists (weak models mis-coordinate filenames across
+   *  steps — the declared-dataflow ids are an unreliable proxy for the real files on disk). */
+  readonly listFiles?: () => ReadonlyArray<string>
   readonly limits: { readonly maxDepth: number; readonly maxTotalSteps: number }
   readonly trigger: JhBudget.SplitTrigger
   readonly onLog?: (entry: JhLog.Sequenced) => void
@@ -131,7 +135,10 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       })
     const ancestorGoals = JhTree.ancestors(tree, nodeId).map((n) => n.draft.goal)
     const base = JhContext.assemble({ taskGoal: task.goal, ancestorGoals, stepGoal: goalOf(nodeId), direct, transitive })
-    return extra ? `${base}\n\n${extra}` : base
+    const files = deps.listFiles?.() ?? []
+    const fileLine = deps.listFiles ? `\n\nFiles currently in the working directory: ${files.length ? files.join(", ") : "(none yet)"}` : ""
+    const full = `${base}${fileLine}`
+    return extra ? `${full}\n\n${extra}` : full
   }
   const buildPrompt = (
     nodeId: JhStep.StepID,
