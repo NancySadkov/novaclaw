@@ -118,7 +118,7 @@ export function goalCheckPrompt(input: { readonly goal: string; readonly workspa
   const system = [
     "You are the completion checker of a deterministic execution harness.",
     "Given ONE step's GOAL, the CURRENT working-directory files, and the most recent program OUTPUT, judge whether THIS STEP's OWN goal is objectively achieved. Judge ONLY what this goal asks for — no more, no less:",
-    "  - a goal to WRITE or EDIT a source file → achieved once that file holds the required content.",
+    "  - a goal to WRITE or EDIT a source file → achieved once the file exists with SUBSTANTIAL content toward the goal (a full function body / program body, not an empty stub or a file cut off mid-token). Do NOT reject it for SUSPECTED compile errors, undefined names, or logic bugs — a later COMPILE step reports those precisely and the harness fixes them; your only job here is that a real, non-truncated source was written.",
     "  - a goal to COMPILE/BUILD → achieved once the compiled output exists on disk (e.g. an .exe/.o is listed, even shown as a <compiled binary …> placeholder).",
     "  - a goal to RUN / produce a correct RESULT → achieved only if the program actually ran AND the shown output is CORRECT. If the goal names an expected value (e.g. digits of a constant), CHECK the output against what you know to be the true value — a program that runs but prints wrong digits is NOT achieved.",
     "Do NOT demand steps this goal does not ask for — a 'compile' goal does NOT require also running. But do NOT accept a mere source file when the goal asks for a built or correct artifact, and do NOT accept an empty/absent output when the goal asks for a computed result.",
