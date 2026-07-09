@@ -48,6 +48,25 @@ describe("extractJsonObject", () => {
     if (!r.ok) expect(r.failure.reason).toBe("no_json")
   })
 
+  test("invalid backslash escapes healed — stray backslashes (§12 file-write wall)", () => {
+    // \o \z \q are all invalid JSON escapes → doubled to literal backslashes. (A path with \b/\t/\n
+    // is genuinely ambiguous — those are VALID escapes — which is why the harness steers paths to
+    // forward slashes; the repair only rescues unambiguous invalid escapes.)
+    const r = JhExtract.extractJsonObject('{"cmd": "type C:\\opt\\zz\\qq"}')
+    expect(value(r).cmd).toBe("type C:\\opt\\zz\\qq")
+  })
+
+  test("invalid C escapes healed but valid escapes preserved", () => {
+    const r = JhExtract.extractJsonObject('{"content": "char z = \'\\0\'; printf(\\"hi\\\\n\\");\\n\\ttab"}')
+    // \0 (invalid) becomes literal backslash-zero; \\n and \n and \t (valid) are preserved
+    expect(value(r).content).toBe('char z = \'\\0\'; printf("hi\\n");\n\ttab')
+  })
+
+  test("already-correct escaped backslashes are NOT corrupted", () => {
+    const r = JhExtract.extractJsonObject('{"path": "C:\\\\already\\\\escaped"}')
+    expect(value(r).path).toBe("C:\\already\\escaped")
+  })
+
   test("balanced but invalid JSON (single quotes) → invalid_json, NOT healed", () => {
     const r = JhExtract.extractJsonObject("{'a': 1}")
     expect(r.ok).toBe(false)
