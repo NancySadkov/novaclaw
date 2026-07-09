@@ -83,7 +83,7 @@ const stripSubsteps = (d: JhStep.StepDraft): Omit<JhStep.StepDraft, "substeps"> 
 // A leaf may retry past its difficulty budget WHILE it is exploring productively — each failure a NOVEL
 // error (e.g. an environment problem like a compiler PATH needs several distinct fixes) — up to this hard
 // cap. A REPEATED error (a stuck loop) ends it immediately at the budget. (afpro's changing-vs-stuck rule.)
-const EXPLORE_CAP = 6
+const EXPLORE_CAP = 15
 // The root soft-decompose retries this many times: a weak model insists atomic on some draws but yields a
 // proper plan on others (temperature variance), so a couple of retries reliably gets a decomposition.
 const SOFT_DECOMPOSE_ATTEMPTS = 3
@@ -352,7 +352,21 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
             }
           }
         } else {
-          const ex = yield* Effect.exit(deps.introspect(buildPrompt(node.id, { extraContext: `### previous attempt failed\n${vr.detail}` })))
+          // DIRECTIVE recovery: the leaf is a bounded free-form loop — pick the SINGLE next action toward
+          // the goal, and it may SWITCH the action (e.g. a compile-error ⇒ a write_file that fixes the
+          // source it can see in the workspace context; once it switches to write_file the corrector loop
+          // above then iterates the edit). This is what turns a "compile" leaf into the write→compile→fix
+          // loop without backtracking.
+          const failedCmd = typeof currentArgs.command === "string" ? currentArgs.command : JSON.stringify(currentArgs)
+          const recovery = [
+            "The previous action did NOT achieve this step's goal:",
+            `  action: ${currentTool} — ${failedCmd}`,
+            `  result/error: ${vr.detail}`,
+            "The working-directory files with their CURRENT contents are shown above. Emit exactly ONE atomic Step for the SINGLE next action that makes progress:",
+            "- If this is a SOURCE-CODE error (compile/runtime error in a file), emit a write_file with the COMPLETE corrected source (edit the code above).",
+            "- If the COMMAND was wrong (missing PATH prefix, wrong path/filename, wrong shell syntax), emit a corrected run command.",
+          ].join("\n")
+          const ex = yield* Effect.exit(deps.introspect(buildPrompt(node.id, { extraContext: recovery })))
           if (Exit.isSuccess(ex)) {
             const parsed = JhExpander.parseReply(ex.value)
             if (parsed.ok && parsed.draft.size === "atomic" && JhStep.structuralIssues(parsed.draft).filter((i) => i.severity === "error").length === 0) {
