@@ -395,6 +395,17 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     // (The event union in the generated SDK predates app.registered — hence the cast.)
     if ((event.type as string) === "app.registered") void loadPersistedApps(serverSDK.server.http)
 
+    // The instance catalog (providers/models) is seeded a beat AFTER the server starts accepting
+    // connections, so the very first `/provider` fetch at cold start can land empty — and with
+    // refetchOnMount disabled it stays stuck (this blanked Settings → Models and the home model list
+    // while directory catalogs, fetched later, still populated the in-session picker). Re-pull every
+    // provider query (global + per-directory) whenever the catalog changes or the event stream
+    // (re)connects; by then the catalog is ready. `catalog.updated` can fire before we subscribe, so
+    // `server.connected` — always delivered to us on connect — is the reliable belt-and-suspenders.
+    if ((event.type as string) === "catalog.updated" || (event.type as string) === "server.connected") {
+      void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[2] === "providers" })
+    }
+
     if (directory === "global") {
       applyGlobalEvent({
         event,
