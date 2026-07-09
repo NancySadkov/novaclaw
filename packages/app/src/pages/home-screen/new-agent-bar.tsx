@@ -3,6 +3,7 @@ import { Icon } from "@novaclaw/ui/icon"
 import { Spinner } from "@novaclaw/ui/spinner"
 import { ServerConnection, useServer } from "@/context/server"
 import { useGlobal } from "@/context/global"
+import { useServerSync } from "@/context/server-sync"
 import { useModels } from "@/context/models"
 import { useTabs } from "@/context/tabs"
 import { useLanguage } from "@/context/language"
@@ -18,6 +19,7 @@ import { showToast } from "@/utils/toast"
 export function NewAgentBar() {
   const server = useServer()
   const global = useGlobal()
+  const sync = useServerSync()
   const models = useModels()
   const tabs = useTabs()
   const language = useLanguage()
@@ -28,9 +30,13 @@ export function NewAgentBar() {
     const c = conn()
     return c ? global.ensureServerCtx(c) : undefined
   })
+  // Path/config come from the active server's sync — prefer the resolved ctx sync, but fall back to the
+  // top-level `useServerSync()` (the current server) so a not-yet-warm ctx never yields an undefined
+  // path. Mirrors the proven resolution in home.tsx (`focusedServerCtx()?.sync ?? sync()`).
+  const activeSync = () => ctx()?.sync ?? sync()
   // The always-provisioned scratch cwd (server-provided under `<data>/scratch`) — lets a new agent work
   // with no project picked. Read off PathInfo with a cast (the SDK type lags this field).
-  const scratchDir = createMemo(() => (ctx()?.sync.data.path as { scratchDir?: string } | undefined)?.scratchDir)
+  const scratchDir = createMemo(() => (activeSync().data.path as { scratchDir?: string } | undefined)?.scratchDir)
 
   const [targetFolder, setTargetFolder] = createSignal<string | undefined>()
   const [spawning, setSpawning] = createSignal(false)
@@ -50,7 +56,7 @@ export function NewAgentBar() {
     if (recent) return { providerID: recent.providerID, modelID: recent.modelID }
     const shown = models.shown()[0]
     if (shown) return { providerID: shown.providerID, modelID: shown.modelID }
-    const configured = (ctx()?.sync.data.config as { model?: string } | undefined)?.model
+    const configured = (activeSync().data.config as { model?: string } | undefined)?.model
     if (configured) {
       const [providerID, ...rest] = configured.split("/")
       if (providerID && rest.length) {
@@ -111,7 +117,16 @@ export function NewAgentBar() {
   const [value, setValue] = createSignal("")
   const submit = () => {
     const text = value().trim()
-    if (!text || !canSpawn() || spawning()) return
+    if (!text || spawning()) return
+    // Never silently no-op: if the server/scratch dir isn't ready yet, tell the user instead of
+    // eating the Enter (which reads as "nothing happens").
+    if (!canSpawn()) {
+      showToast({
+        title: language.t("common.requestFailed"),
+        description: "Still connecting to your workspace — try again in a moment.",
+      })
+      return
+    }
     void spawn(text)
     setValue("")
   }

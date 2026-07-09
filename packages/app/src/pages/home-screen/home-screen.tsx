@@ -191,11 +191,17 @@ export const HomeScreen: Component = () => {
 
   return (
     <div class="flex flex-col items-center w-full h-full min-h-0" tabindex={0} onKeyDown={onKey}>
-      <div class="flex flex-col items-center gap-1 pt-10 pb-3 px-6 text-center select-none">
-        <h1 class="text-[26px] font-semibold tracking-tight text-v2-text-text-base [text-shadow:0_1px_3px_rgba(0,0,0,0.4)]">{greeting()}</h1>
-        <p class="text-[13px] font-medium text-v2-text-text-muted">
-          Tell an agent what to do below — it can even build new apps for this screen.
-        </p>
+      {/* The logo anchors the home screen (it doubles as the titlebar Home button). */}
+      <div class="flex flex-col items-center gap-2.5 pt-9 pb-3 px-6 text-center select-none">
+        <img
+          src="/logo.png"
+          alt="NovaClaw"
+          draggable={false}
+          class="size-16 select-none [filter:drop-shadow(0_1px_4px_rgba(0,0,0,0.45))]"
+        />
+        <h1 class="text-[26px] font-semibold tracking-tight text-v2-text-text-base [text-shadow:0_1px_3px_rgba(0,0,0,0.4)]">
+          {greeting()}
+        </h1>
       </div>
       {/* The primary action: spawn a new agent right from the launcher, above the app tiles. */}
       <div class="w-full max-w-[42rem] shrink-0 px-6 pb-4">

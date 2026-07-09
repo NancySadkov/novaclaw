@@ -1,4 +1,4 @@
-import { Component, type ComponentProps, createSignal, For } from "solid-js"
+import { Component, type ComponentProps, createSignal, For, Show } from "solid-js"
 import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { Icon } from "@novaclaw/ui/icon"
@@ -16,13 +16,14 @@ type Step = {
   readonly icon: string
   readonly accent: string
   readonly glyphTone?: "light" | "dark" // "dark" for light accents (gold), same vocabulary as HomeApp
+  readonly image?: string // when set, the badge shows this image (e.g. the logo) instead of an icon
   readonly key: string // i18n key stem: help.tour.step.<key>.title / .body
 }
 
 const STEPS: readonly Step[] = [
   { icon: "speech-bubble", accent: "#e7b62f", glyphTone: "dark", key: "welcome" },
   { icon: "dot-grid", accent: "#8b5cf6", key: "apps" },
-  { icon: "grid-plus", accent: "#a78bfa", key: "home" },
+  { icon: "grid-plus", accent: "#a78bfa", image: "/logo.png", key: "home" },
   { icon: "brain", accent: "#22d3ee", key: "chat" },
   { icon: "plus", accent: "#34d399", key: "build" },
   { icon: "settings-gear", accent: "#8d8fa6", key: "settings" },
@@ -42,18 +43,29 @@ export const HelpTour: Component = () => {
   return (
     <Dialog size="content">
       <div class="flex flex-col items-center gap-5 px-8 py-10 min-w-[24rem] max-w-[30rem] text-center">
-        <div
-          class="flex items-center justify-center size-[4.5rem] rounded-[1.375rem] shadow-[var(--v2-elevation-floating)] ring-1 ring-white/15"
-          style={{
-            "background-image": `linear-gradient(155deg, color-mix(in oklab, ${step().accent} 88%, white) -8%, ${step().accent} 42%, color-mix(in oklab, ${step().accent} 58%, black) 105%)`,
-            "--icon-base":
-              step().glyphTone === "dark"
-                ? "color-mix(in srgb, var(--nc-ink, #1a1135) 92%, transparent)"
-                : "rgba(255,255,255,0.96)",
-          }}
+        <Show
+          when={step().image}
+          fallback={
+            <div
+              class="flex items-center justify-center size-[4.5rem] rounded-[1.375rem] shadow-[var(--v2-elevation-floating)] ring-1 ring-white/15"
+              style={{
+                "background-image": `linear-gradient(155deg, color-mix(in oklab, ${step().accent} 88%, white) -8%, ${step().accent} 42%, color-mix(in oklab, ${step().accent} 58%, black) 105%)`,
+                "--icon-base":
+                  step().glyphTone === "dark"
+                    ? "color-mix(in srgb, var(--nc-ink, #1a1135) 92%, transparent)"
+                    : "rgba(255,255,255,0.96)",
+              }}
+            >
+              <Icon name={step().icon as ComponentProps<typeof Icon>["name"]} size="2xl" />
+            </div>
+          }
         >
-          <Icon name={step().icon as ComponentProps<typeof Icon>["name"]} size="2xl" />
-        </div>
+          {(image) => (
+            <div class="flex size-[4.5rem] items-center justify-center rounded-[1.375rem] bg-v2-background-bg-layer-02 shadow-[var(--v2-elevation-floating)] ring-1 ring-white/15">
+              <img src={image()} alt="" draggable={false} class="size-14 select-none" />
+            </div>
+          )}
+        </Show>
         {/* min-h fits the tallest step so the card keeps ONE size across the tour — the Next
             button must not hop under the cursor between steps. */}
         <div class="flex flex-col gap-2 min-h-[8rem]">
