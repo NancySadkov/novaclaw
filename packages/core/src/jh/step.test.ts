@@ -74,6 +74,21 @@ describe("StepDraft codec", () => {
     expect(deepLeaf?.goal).toBe("leaf three")
   })
 
+  test("TOLERANCE: null-valued optional fields decode (small models emit `null` for absent fields)", () => {
+    const draft = decode({ goal: "g", size: "atomic", tool: "note", args: {}, substeps: null, consumes: null, check: null, difficulty_prior: null, research_needed: null })
+    expect(draft.substeps).toBeNull()
+    expect(draft.check).toBeNull()
+    // downstream `?? default` collapses null and undefined
+    expect(draft.substeps ?? []).toEqual([])
+    expect(draft.check ?? { type: "artifact_present" }).toEqual({ type: "artifact_present" })
+  })
+
+  test("TOLERANCE: `success` is optional (it is human legibility; the gate is `check` — D4)", () => {
+    const draft = decode({ goal: "g", size: "needs_decomposition", substeps: [{ goal: "a", size: "atomic", tool: "note", args: {} }] })
+    expect(draft.success).toBeUndefined()
+    expect(draft.substeps?.[0]?.goal).toBe("a")
+  })
+
   test("codec REJECTS missing goal, size:'huge', and an unknown check type", () => {
     expect(() => decode({ size: "atomic", success: "s", tool: "note", args: {} })).toThrow()
     expect(() => decode({ goal: "g", size: "huge", success: "s" })).toThrow()

@@ -57,34 +57,38 @@ export type Size = typeof Size.Type
 export const DifficultyPrior = Schema.Literals(["trivial", "moderate", "hard"])
 export type DifficultyPrior = typeof DifficultyPrior.Type
 
-// The model-emitted Step (jh.md §4 + D11's `args`). Recursive via substeps.
+// The model-emitted Step (jh.md §4 + D11's `args`). Recursive via substeps. TOLERANCE (jh.md §12,
+// measured on qwen 2026-07-09): every optional field also accepts `null` — small models emit
+// `"substeps": null` for absent fields instead of omitting them — and `success` is OPTIONAL (it is
+// human legibility; the machine gate is `check` per D4, and weak models frequently drop it). Downstream
+// `?? default` handles both null and undefined uniformly.
 export interface StepDraft {
   readonly goal: string
-  readonly research_needed?: boolean
-  readonly consumes?: ReadonlyArray<ArtifactRef>
-  readonly produces?: ReadonlyArray<ArtifactRef>
+  readonly research_needed?: boolean | null
+  readonly consumes?: ReadonlyArray<ArtifactRef> | null
+  readonly produces?: ReadonlyArray<ArtifactRef> | null
   readonly tool?: string | null
-  readonly args?: Readonly<Record<string, unknown>>
+  readonly args?: Readonly<Record<string, unknown>> | null
   readonly size: "atomic" | "needs_decomposition"
-  readonly difficulty_prior?: DifficultyPrior
-  readonly success: string
-  readonly check?: Check
-  readonly assumptions?: ReadonlyArray<string>
-  readonly substeps?: ReadonlyArray<StepDraft>
+  readonly difficulty_prior?: DifficultyPrior | null
+  readonly success?: string | null
+  readonly check?: Check | null
+  readonly assumptions?: ReadonlyArray<string> | null
+  readonly substeps?: ReadonlyArray<StepDraft> | null
 }
 export const StepDraft = Schema.Struct({
   goal: Schema.String,
-  research_needed: Schema.optional(Schema.Boolean),
-  consumes: Schema.optional(Schema.Array(ArtifactRef)),
-  produces: Schema.optional(Schema.Array(ArtifactRef)),
+  research_needed: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  consumes: Schema.optional(Schema.NullOr(Schema.Array(ArtifactRef))),
+  produces: Schema.optional(Schema.NullOr(Schema.Array(ArtifactRef))),
   tool: Schema.optional(Schema.NullOr(Schema.String)),
-  args: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+  args: Schema.optional(Schema.NullOr(Schema.Record(Schema.String, Schema.Unknown))),
   size: Size,
-  difficulty_prior: Schema.optional(DifficultyPrior),
-  success: Schema.String,
-  check: Schema.optional(Check),
-  assumptions: Schema.optional(Schema.Array(Schema.String)),
-  substeps: Schema.optional(Schema.Array(Schema.suspend((): Schema.Codec<StepDraft> => StepDraft))),
+  difficulty_prior: Schema.optional(Schema.NullOr(DifficultyPrior)),
+  success: Schema.optional(Schema.NullOr(Schema.String)),
+  check: Schema.optional(Schema.NullOr(Check)),
+  assumptions: Schema.optional(Schema.NullOr(Schema.Array(Schema.String))),
+  substeps: Schema.optional(Schema.NullOr(Schema.Array(Schema.suspend((): Schema.Codec<StepDraft> => StepDraft)))),
 })
 
 export const ARTIFACT_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/
@@ -131,10 +135,10 @@ export function structuralIssues(draft: StepDraft, path: string = ""): ReadonlyA
     if (!hasTool(draft)) {
       issues.push({ severity: "error", code: "atomic_missing_tool", path })
     }
-    if (draft.args === undefined) {
+    if (draft.args == null) {
       issues.push({ severity: "error", code: "atomic_missing_args", path })
     }
-    if (draft.check === undefined) {
+    if (draft.check == null) {
       // The engine substitutes an `artifact_present` check, so this is a warning, not an error.
       issues.push({ severity: "warning", code: "atomic_missing_check", path })
     }
@@ -147,7 +151,7 @@ export function structuralIssues(draft: StepDraft, path: string = ""): ReadonlyA
     }
   }
 
-  const checkRefs = (refs: ReadonlyArray<ArtifactRef> | undefined, which: "consumes" | "produces") => {
+  const checkRefs = (refs: ReadonlyArray<ArtifactRef> | null | undefined, which: "consumes" | "produces") => {
     refs?.forEach((ref, i) => {
       if (!ARTIFACT_ID_PATTERN.test(ref.id)) {
         issues.push({
