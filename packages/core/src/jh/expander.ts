@@ -117,8 +117,12 @@ export function stepJsonSchema(): object {
 export function goalCheckPrompt(input: { readonly goal: string; readonly workspace: string }): PromptPair {
   const system = [
     "You are the completion checker of a deterministic execution harness.",
-    "Given a step's GOAL and the CURRENT working-directory files (with contents), judge whether the goal is FULLY and OBJECTIVELY achieved by the state on disk — not merely 'a file was written'. A build/verify goal is only achieved if the program was actually compiled, run, AND its output verified correct.",
-    'Output EXACTLY ONE ```json object: {"achieved": true|false, "missing": "one short phrase — what still must happen, empty if achieved"}. Nothing else.',
+    "Given ONE step's GOAL and the CURRENT working-directory files, judge whether THIS STEP's OWN goal is objectively achieved by the state on disk. Judge ONLY what this goal asks for — no more, no less:",
+    "  - a goal to WRITE or EDIT a source file → achieved once that file holds the required content.",
+    "  - a goal to COMPILE/BUILD → achieved once the compiled output exists on disk (e.g. an .exe/.o is listed, even shown as a <compiled binary …> placeholder).",
+    "  - a goal to RUN and produce/verify output → achieved once the program has run and its output is correct.",
+    "Do NOT demand steps this goal does not ask for — a 'compile' goal does NOT require also running or verifying. But do NOT accept a mere source file when the goal itself asks for a built or correct artifact.",
+    'Output EXACTLY ONE ```json object: {"achieved": true|false, "missing": "one short phrase — what THIS goal still needs, empty if achieved"}. Nothing else.',
   ].join("\n")
   const user = `# Goal\n${input.goal}\n\n# Working directory\n${input.workspace}\n\nIs the goal fully achieved? Output one json object.`
   return { system, user }
