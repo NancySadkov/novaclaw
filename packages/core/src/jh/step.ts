@@ -108,6 +108,24 @@ export interface StructuralIssue {
   readonly detail?: string
 }
 
+/**
+ * Pre-decode shape tolerance (jh.md §12, measured on qwen 2026-07-09): small models emit a single
+ * `{id,type}` object where an array is expected (`produces`/`consumes`/`assumptions`) and occasionally a
+ * lone `substeps` object. Coerce those to one-element arrays so the codec accepts them; recurse into
+ * substeps. Pure and total — a non-object passes through unchanged.
+ */
+export function coerceDraftShape(value: unknown): unknown {
+  if (value === null || typeof value !== "object") return value
+  if (Array.isArray(value)) return value.map(coerceDraftShape)
+  const out: Record<string, unknown> = { ...(value as Record<string, unknown>) }
+  for (const key of ["consumes", "produces", "assumptions"]) {
+    if (out[key] != null && !Array.isArray(out[key])) out[key] = [out[key]]
+  }
+  if (out.substeps != null && !Array.isArray(out.substeps)) out.substeps = [out.substeps]
+  if (Array.isArray(out.substeps)) out.substeps = out.substeps.map(coerceDraftShape)
+  return out
+}
+
 const join = (base: string, seg: string): string => (base === "" ? seg : `${base}.${seg}`)
 
 const hasTool = (draft: StepDraft): boolean =>

@@ -89,6 +89,24 @@ describe("StepDraft codec", () => {
     expect(draft.substeps?.[0]?.goal).toBe("a")
   })
 
+  test("TOLERANCE: coerceDraftShape wraps a lone {id,type} object into an array (produces/consumes/substeps)", () => {
+    const coerced: any = JhStep.coerceDraftShape({
+      goal: "g",
+      size: "atomic",
+      tool: "write_file",
+      args: {},
+      produces: { id: "pi.c", type: "file" }, // lone object, not an array
+      consumes: { id: "add.c", type: "file" },
+    })
+    expect(coerced.produces).toEqual([{ id: "pi.c", type: "file" }])
+    expect(coerced.consumes).toEqual([{ id: "add.c", type: "file" }])
+    // recurses into a lone substep and decodes cleanly
+    const nested: any = JhStep.coerceDraftShape({ goal: "r", size: "needs_decomposition", substeps: { goal: "a", size: "atomic", tool: "note", args: {}, produces: { id: "x", type: "note" } } })
+    expect(Array.isArray(nested.substeps)).toBe(true)
+    const draft = decode(nested)
+    expect(draft.substeps?.[0]?.produces).toEqual([{ id: "x", type: "note" }])
+  })
+
   test("codec REJECTS missing goal, size:'huge', and an unknown check type", () => {
     expect(() => decode({ size: "atomic", success: "s", tool: "note", args: {} })).toThrow()
     expect(() => decode({ goal: "g", size: "huge", success: "s" })).toThrow()

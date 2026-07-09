@@ -89,7 +89,7 @@ export function parseReply(text: string): { readonly ok: true; readonly draft: J
   const extracted = JhExtract.extractJsonObject(text)
   if (!extracted.ok) return { ok: false, issue: `${extracted.failure.reason}: ${extracted.failure.detail}` }
   try {
-    const draft = Schema.decodeUnknownSync(JhStep.StepDraft)(extracted.value)
+    const draft = Schema.decodeUnknownSync(JhStep.StepDraft)(JhStep.coerceDraftShape(extracted.value))
     return { ok: true, draft }
   } catch (e) {
     // The SchemaError message names the failing field on an `at ["field"]` line — collapse it to one

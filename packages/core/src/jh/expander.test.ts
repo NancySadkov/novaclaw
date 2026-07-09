@@ -52,6 +52,12 @@ describe("parseReply", () => {
     if (r.ok) expect(r.draft.substeps?.[0]?.goal).toBe("a")
   })
 
+  test("tolerates a lone {id,type} produces object (coerced to an array)", () => {
+    const r = JhExpander.parseReply('{"goal":"g","size":"atomic","tool":"write_file","args":{"path":"pi.c","content":"x"},"produces":{"id":"pi.c","type":"file"}}')
+    expect(r.ok).toBe(true)
+    if (r.ok) expect(r.draft.produces).toEqual([{ id: "pi.c", type: "file" }])
+  })
+
   test("garbage → issue mentioning the extract reason", () => {
     const r = JhExpander.parseReply("no json here at all")
     expect(r.ok).toBe(false)
