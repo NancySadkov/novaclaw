@@ -91,6 +91,13 @@ const EXPLORE_CAP = 15
 // proper plan on others (temperature variance), so a couple of retries reliably gets a decomposition.
 const SOFT_DECOMPOSE_ATTEMPTS = 3
 const errorSig = (detail: string): string => detail.slice(0, 160).trim()
+// A leaf's check is its GOAL gate. The recovery loop may CORRECT a check's command (pi.exe→.\pi.exe —
+// adopt it), but must NEVER DOWNGRADE it: when the model does an intermediate write_file to fix a bug, its
+// weak (artifact_present) check must not replace the leaf's `run`/`output_equals` correctness gate — else
+// a stale binary false-passes (iter 20). Rank checks by how much they prove; adopt a recovery check only
+// if it is at least as strong as the current one.
+const checkRank = (c: JhStep.Check): number =>
+  c.type === "output_equals" ? 4 : c.type === "run" ? 3 : c.type === "compile" ? 2 : c.type === "file_exists" ? 1 : 0
 
 export function runTask(deps: Deps, task: { readonly goal: string }, resume?: State): Effect.Effect<Report> {
   const { maxDepth, maxTotalSteps } = deps.limits
@@ -385,7 +392,8 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
             draft = parsed.draft
             currentTool = parsed.draft.tool ?? currentTool
             currentArgs = parsed.draft.args ?? currentArgs
-            if (parsed.draft.check) check = parsed.draft.check // the corrected command's check moves WITH it
+            // adopt a corrected check (pi.exe→.\pi.exe) but NEVER downgrade the goal gate (run+Pi → weak)
+            if (parsed.draft.check && checkRank(parsed.draft.check) >= checkRank(check)) check = parsed.draft.check
             tree = JhTree.fill(tree, node.id, stripSubsteps(parsed.draft))
             emit({ type: "introspected", step: node.id })
           }

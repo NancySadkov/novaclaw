@@ -430,6 +430,28 @@ describe("JhEngine.runTask", () => {
     expect(types(r)).not.toContain("committed")
   })
 
+  test("26. recovery must NOT DOWNGRADE the check — a run+expect gate survives a write_file detour", async () => {
+    // iter 20 false-done: the leaf's strong run-check (correct-Pi expect) got replaced by the write_file
+    // recovery's weak artifact_present check, so a stale binary false-passed. The gate must be preserved.
+    const runCheck = { type: "run", command: ".\\pi.exe", expect: "3.14159" }
+    const d = scriptedDeps({
+      replies: [
+        reply(atomObj({ tool: "run", args: { command: ".\\pi.exe" }, check: runCheck, produces: [], difficulty_prior: "trivial" })),
+        // recovery: switch to write_file with a WEAK check — must be rejected in favor of the run gate
+        reply(atomObj({ tool: "write_file", args: { path: "pi.c", content: "x" }, check: { type: "artifact_present" }, produces: [{ id: "pi.c", type: "file" }], difficulty_prior: "trivial" })),
+        reply(atomObj({ tool: "write_file", args: { path: "pi.c", content: "y" }, check: { type: "artifact_present" }, produces: [{ id: "pi.c", type: "file" }], difficulty_prior: "trivial" })),
+        reply(atomObj({ tool: "write_file", args: { path: "pi.c", content: "z" }, check: { type: "artifact_present" }, produces: [{ id: "pi.c", type: "file" }], difficulty_prior: "trivial" })),
+      ],
+      observations: [okObs(), okObs({ "pi.c": "x" }), okObs({ "pi.c": "y" }), okObs({ "pi.c": "z" })],
+      // the program always prints wrong output → the run gate NEVER passes; a downgrade to artifact_present WOULD have
+      runByCommand: () => ({ exitCode: 0, output: "3000", timedOut: false }),
+      limits: { maxDepth: 0, maxTotalSteps: 8 }, // depth 0 → a stuck leaf blocks (no decompose), clean terminal
+    })
+    const r = await run(d)
+    expect(r.status).not.toBe("done") // the weak check never false-committed the leaf
+    expect(types(r)).not.toContain("committed")
+  })
+
   test("25. recovery that corrects the command ALSO moves the check (no stale-check re-fail)", async () => {
     // iter 19: action fixed `pi.exe`→`.\\pi.exe` (ran ok) but the frozen check kept running `pi.exe` → fail.
     const d = scriptedDeps({
