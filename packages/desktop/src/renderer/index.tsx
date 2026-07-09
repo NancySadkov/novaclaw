@@ -25,7 +25,6 @@ import { initializationData, initializationReady } from "./initialization"
 import { resetZoom, setPinchZoomEnabled, webviewZoom, zoomIn, zoomOut } from "./webview-zoom"
 import { availableStartupServer, readyWslConnections } from "./wsl/connections"
 import "./styles.css"
-import { Splash } from "@novaclaw/ui/logo"
 import { useTheme } from "@novaclaw/ui/theme/context"
 
 const root = document.getElementById("root")
@@ -310,7 +309,7 @@ render(() => {
     const wslServers = useWslServers()
     const splash = (
       <div class="h-dvh w-screen flex flex-col items-center justify-center bg-background-base">
-        <Splash class="w-16 h-20 opacity-50 animate-pulse" />
+        <img src="/logo.png" alt="NovaClaw" draggable={false} class="w-20 h-20 opacity-80 animate-pulse select-none" />
       </div>
     )
 

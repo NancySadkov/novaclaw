@@ -1,7 +1,6 @@
 import { createMemo, For, Show, Switch, Match } from "solid-js"
 import type {
   LlmToolContent,
-  ModelRef,
   SessionMessage,
   SessionMessageAssistant,
   SessionMessageAssistantTool,
@@ -68,12 +67,8 @@ function NativeMessage(props: { message: SessionMessage }) {
       <Match when={props.message.type === "compaction" && props.message}>
         {(m) => <CompactionMessage message={m()} />}
       </Match>
-      <Match when={props.message.type === "agent-switched" && props.message}>
-        {(m) => <SwitchMarker label={`Switched to agent ${(m() as { agent: string }).agent}`} />}
-      </Match>
-      <Match when={props.message.type === "model-switched" && props.message}>
-        {(m) => <SwitchMarker label={`Switched model to ${formatModel((m() as { model: ModelRef }).model)}`} />}
-      </Match>
+      {/* agent-switched / model-switched are internal state events — not shown to the user (they read
+          as debug noise like "Switched to agent build"). The events stay in the durable log. */}
     </Switch>
   )
 }
@@ -428,19 +423,7 @@ function CompactionMessage(props: { message: SessionMessageCompaction }) {
   )
 }
 
-function SwitchMarker(props: { label: string }) {
-  return (
-    <div data-slot="native-switch-marker">
-      <span>{props.label}</span>
-    </div>
-  )
-}
-
 // ── helpers ─────────────────────────────────────────────────────────────────────
-
-function formatModel(model: ModelRef): string {
-  return model.variant ? `${model.providerID}/${model.id} · ${model.variant}` : `${model.providerID}/${model.id}`
-}
 
 interface ToolMeta {
   title: string
