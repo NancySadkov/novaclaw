@@ -1,40 +1,7 @@
-import { type ComponentProps } from "solid-js"
-
-export const Mark = (props: { class?: string }) => {
-  return (
-    <svg
-      data-component="logo-mark"
-      classList={{ [props.class ?? ""]: !!props.class }}
-      viewBox="0 0 16 20"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <path data-slot="logo-logo-mark-shadow" d="M12 16H4V8H12V16Z" fill="var(--icon-weak-base)" />
-      <path data-slot="logo-logo-mark-o" d="M12 4H4V16H12V4ZM16 20H0V0H16V20Z" fill="var(--icon-strong-base)" />
-    </svg>
-  )
-}
-
-export const Splash = (props: Pick<ComponentProps<"svg">, "ref" | "class">) => {
-  return (
-    <svg
-      ref={props.ref}
-      data-component="logo-splash"
-      classList={{ [props.class ?? ""]: !!props.class }}
-      viewBox="0 0 80 100"
-      fill="none"
-      xmlns="http://www.w3.org/2000/svg"
-    >
-      <path d="M60 80H20V40H60V80Z" fill="var(--icon-base)" />
-      <path d="M60 20H20V80H60V20ZM80 100H0V0H80V100Z" fill="var(--icon-strong-base)" />
-    </svg>
-  )
-}
-
-// NovaClaw wordmark (text, app font). Replaces the inherited opencode pixel-art wordmark. Rendered as
-// SVG <text> so it scales to its container like the old mark (viewBox unchanged → every usage's sizing
-// is preserved); `textLength` fits it to the box regardless of the system font. Faded watermark on the
-// error page + the disconnected-home screen. (The only place upstream is named is the MIT NOTICE/licenses.)
+// NovaClaw wordmark — the product name set in the app font and rendered as an SVG <text> so it scales
+// to its container; `textLength` fits it to the box regardless of the system font. Used as a faded
+// watermark on the error page and the disconnected-home screen. The square glyph mark lives as an
+// image asset (logo.png); this module only owns the wordmark.
 export const Logo = (props: { class?: string }) => {
   return (
     <svg
@@ -55,7 +22,9 @@ export const Logo = (props: { class?: string }) => {
         font-size="104"
         font-weight="800"
         fill="var(--icon-base)"
-      >NovaClaw</text>
+      >
+        NovaClaw
+      </text>
     </svg>
   )
 }

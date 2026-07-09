@@ -5,7 +5,6 @@ import { Tabs } from "@novaclaw/ui/tabs"
 import { IconButton } from "@novaclaw/ui/icon-button"
 import { TooltipKeybind } from "@novaclaw/ui/tooltip"
 import { ResizeHandle } from "@novaclaw/ui/resize-handle"
-import { Mark } from "@novaclaw/ui/logo"
 import { DragDropProvider, DragDropSensors, DragOverlay, SortableProvider, closestCenter } from "@thisbeyond/solid-dnd"
 import type { DragEvent } from "@thisbeyond/solid-dnd"
 import type { SnapshotFileDiff, VcsFileDiff } from "@novaclaw/sdk/v2"
@@ -335,7 +334,7 @@ export function SessionSidePanel(props: {
                       <Show when={activeTab() === "empty"}>
                         <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
                           <div class="h-full px-6 pb-42 -mt-4 flex flex-col items-center justify-center text-center gap-6">
-                            <Mark class="w-14 opacity-10" />
+                            <img src="/logo.png" alt="" draggable={false} class="w-14 opacity-10 select-none" />
                             <div class="text-14-regular text-text-weak max-w-56">
                               {language.t("session.files.selectToOpen")}
                             </div>
