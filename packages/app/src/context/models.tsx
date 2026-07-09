@@ -133,7 +133,12 @@ export const { use: useModels, provider: ModelsProvider } = createSimpleContext(
       if (state === "show") return true
       if (latestSet().has(key)) return true
       const date = release().get(key)
-      if (!date?.isValid) return true
+      // No meaningful release date → show it. This covers a missing date AND the epoch
+      // placeholder (`1970-01-01T00:00:00.000Z`, i.e. `toMillis() <= 0`) that the catalog emits
+      // for a local endpoint that reports none — those are user-configured models, not a sprawling
+      // dated cloud catalog, so they belong in the picker by default. Only genuinely dated,
+      // >6-month-old models stay hidden-by-default (the declutter heuristic for large catalogs).
+      if (!date?.isValid || date.toMillis() <= 0) return true
       return false
     }
 
