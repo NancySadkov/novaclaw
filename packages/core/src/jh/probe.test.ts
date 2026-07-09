@@ -25,6 +25,11 @@ describe("JhProbe.batteryTask", () => {
   test("different seeds → different values", () => {
     expect(JhProbe.batteryTask(3, 1).expected).not.toBe(JhProbe.batteryTask(3, 999).expected)
   })
+
+  test("the goal inlines every value (the model can't see consumes-less root context)", () => {
+    const t = JhProbe.batteryTask(4, 3)
+    for (const a of t.artifacts) expect(t.stepGoal).toContain(a.content)
+  })
 })
 
 describe("JhProbe.staircaseDriver", () => {

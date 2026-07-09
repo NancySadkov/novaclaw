@@ -34,8 +34,11 @@ export function batteryTask(k: number, seed: number): BatteryTask {
     const content = String(n)
     artifacts.push({ id: `art-${i}`, type: "note", hash: Hash.sha256(content), content })
   }
-  const ids = artifacts.map((a) => a.id).join(", ")
-  const stepGoal = `Read the ${k} integers held in the artifacts (${ids}) and compute their sum. Output ONLY the integer sum, nothing else.`
+  // The values are inlined into the goal: the engine builds a step's context from its declared-consumes
+  // closure, and the ROOT placeholder declares none, so seeded artifacts never reach the introspection.
+  // Delivering the K numbers in the goal keeps the collapse variable — state cardinality K — intact.
+  const values = artifacts.map((a) => a.content).join(", ")
+  const stepGoal = `Compute the sum of these ${k} integers and output ONLY the resulting integer (no words, no commas, no explanation): ${values}.`
   return { k, artifacts, stepGoal, expected: String(sum) }
 }
 
