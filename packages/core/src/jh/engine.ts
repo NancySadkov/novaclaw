@@ -59,6 +59,14 @@ export interface Deps {
    *  GOAL was actually achieved against the workspace — a write that passed `artifact_present` did NOT
    *  compile+run+verify. Kills the "false done". Off by default. */
   readonly verifyGoal?: boolean
+  /** OPTIONAL precise task-completion oracle for root-completion. When the deliverable has an exact,
+   *  machine-checkable success criterion (a known expected output), the caller injects it here — it is more
+   *  reliable than the LLM goal-check, whose precision is bounded by the model's own knowledge (iter 31:
+   *  qwen memorizes Pi to ~50 digits, so it false-done'd a 50-correct output). Given the workspace + last
+   *  run stdout, returns whether the task is truly done and, if not, a coarse hint for the fix node. When
+   *  absent, root-completion falls back to the LLM goal-check. The program still must COMPUTE the result;
+   *  this only CHECKS it (a test oracle, not the model cheating). */
+  readonly taskComplete?: (input: { readonly workspace: string; readonly lastOutput: string }) => { readonly done: boolean; readonly detail: string }
   readonly limits: { readonly maxDepth: number; readonly maxTotalSteps: number }
   readonly trigger: JhBudget.SplitTrigger
   readonly onLog?: (entry: JhLog.Sequenced) => void
@@ -206,9 +214,9 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       if (!child || child.parent === undefined) break
       const parentID = child.parent
       if (!JhTree.allChildrenCommitted(tree, parentID)) break
-      // With goal-verification on, the ROOT is not auto-committed here: the main loop runs a final
-      // whole-task goal check first (and EXTENDS with a fix node if the deliverable isn't actually done).
-      if (deps.verifyGoal && parentID === tree.root) break
+      // With a root gate on, the ROOT is not auto-committed here: the main loop runs a final whole-task
+      // check first (and EXTENDS with a fix node if the deliverable isn't actually done).
+      if ((deps.verifyGoal || deps.taskComplete) && parentID === tree.root) break
       tree = JhTree.setStatus(tree, parentID, "committed")
       emit({ type: "committed", step: parentID })
       childID = parentID
@@ -537,9 +545,18 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         // bubble deferred the root under verifyGoal. Verify the WHOLE-TASK goal against the workspace; if
         // the deliverable is NOT actually done (e.g. the program runs but prints wrong digits), EXTEND the
         // root with ONE fix node and keep going — never a false-done. Block only at the global step budget.
-        if (root && deps.verifyGoal && root.status === "expanded" && JhTree.allChildrenCommitted(tree, tree.root)) {
-          const gc = yield* Effect.exit(deps.introspect(JhExpander.goalCheckPrompt({ goal: task.goal, workspace: renderWorkspace(), lastOutput: lastRunOutput })))
-          const verdict = Exit.isSuccess(gc) ? JhExpander.parseGoalCheck(gc.value) : { achieved: true, missing: "" } // unreachable checker → don't stall; accept
+        if (root && (deps.verifyGoal || deps.taskComplete) && root.status === "expanded" && JhTree.allChildrenCommitted(tree, tree.root)) {
+          // A precise task oracle (deps.taskComplete) is preferred — the LLM goal-check's precision is bounded
+          // by the model's own knowledge (iter 31: it false-done'd a 50-of-100-correct Pi). Fall back to the
+          // LLM goal-check when no oracle is provided.
+          let verdict: { achieved: boolean; missing: string }
+          if (deps.taskComplete) {
+            const tc = deps.taskComplete({ workspace: renderWorkspace(), lastOutput: lastRunOutput })
+            verdict = { achieved: tc.done, missing: tc.detail }
+          } else {
+            const gc = yield* Effect.exit(deps.introspect(JhExpander.goalCheckPrompt({ goal: task.goal, workspace: renderWorkspace(), lastOutput: lastRunOutput })))
+            verdict = Exit.isSuccess(gc) ? JhExpander.parseGoalCheck(gc.value) : { achieved: true, missing: "" } // unreachable checker → don't stall; accept
+          }
           emit({ type: "verification", step: tree.root, ok: verdict.achieved, detail: verdict.achieved ? "task goal achieved" : `task goal NOT achieved — ${verdict.missing}` })
           if (verdict.achieved) {
             tree = JhTree.setStatus(tree, tree.root, "committed")
