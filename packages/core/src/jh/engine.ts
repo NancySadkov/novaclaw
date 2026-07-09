@@ -46,6 +46,10 @@ export interface Deps {
   /** Harness-owned execution-environment description injected into every introspection (shell, cwd,
    *  fresh-shell/PATH mechanics) — the model needs to know how `run` commands actually execute. */
   readonly environment?: string
+  /** STRICT-mode policy: nudge the top-level task to decompose (a weak model tends to emit one big
+   *  atomic write_file with a trivial check — a "false done"). Off by default; the session's Strict
+   *  switch turns it on for weak models. */
+  readonly forceRootDecompose?: boolean
   readonly limits: { readonly maxDepth: number; readonly maxTotalSteps: number }
   readonly trigger: JhBudget.SplitTrigger
   readonly onLog?: (entry: JhLog.Sequenced) => void
@@ -223,6 +227,27 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       return "blocked" as const
     })
 
+  // SOFT decomposition nudge: a top-level task (depth 0) is the WHOLE task — write + build + run +
+  // verify — almost never one tool call, yet a weak model tends to emit one big atomic write_file with a
+  // trivial `artifact_present` check (a "false done" that never compiles/runs). Re-prompt to decompose;
+  // if the model gives a clean (dangling-free) split, expand it — otherwise FALL BACK to the atomic draft
+  // (return false) rather than block, so a genuinely-simple root still works.
+  const trySoftDecompose = (node: JhTree.Node): Effect.Effect<boolean> =>
+    Effect.gen(function* () {
+      const ex = yield* Effect.exit(deps.introspect(buildPrompt(node.id, { allowDecomposition: true, mustDecompose: true })))
+      if (!Exit.isSuccess(ex)) return false
+      const parsed = JhExpander.parseReply(ex.value)
+      const subs = parsed.ok && parsed.draft.size === "needs_decomposition" ? parsed.draft.substeps : undefined
+      if (!subs || subs.length === 0) return false
+      if (JhDataflow.validate(subs, deps.artifacts.ids()).some((i) => i.code === "dangling_consumes")) return false
+      const attached = JhTree.attach(tree, node.id, subs, maxDepth)
+      if (attached instanceof JhTree.AttachError) return false
+      tree = attached
+      emit({ type: "introspected", step: node.id })
+      emit({ type: "expanded", step: node.id, children: subs.length })
+      return true
+    })
+
   // E — the atomic execution loop.
   const atomicLoop = (node: JhTree.Node, initialDraft: JhStep.StepDraft): Effect.Effect<void> =>
     Effect.gen(function* () {
@@ -359,6 +384,13 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
 
       if (draft.size === "needs_decomposition") {
         yield* decompose(node, draft.substeps ?? [])
+        return
+      }
+
+      // A top-level atomic claim is almost always the model under-decomposing the whole task — nudge it
+      // (Strict-mode policy only).
+      if (deps.forceRootDecompose && node.depth === 0 && node.depth < maxDepth && (yield* trySoftDecompose(node))) {
+        yield* checkpoint()
         return
       }
 

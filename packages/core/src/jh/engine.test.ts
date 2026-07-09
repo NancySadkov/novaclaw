@@ -19,6 +19,7 @@ function scriptedDeps(opts: {
   limits?: { maxDepth: number; maxTotalSteps: number }
   checkpoint?: (s: JhEngine.State) => Effect.Effect<void>
   artifacts?: JhArtifact.Store
+  forceRootDecompose?: boolean
 }) {
   const replies = [...opts.replies]
   const observations = [...(opts.observations ?? [])]
@@ -50,6 +51,7 @@ function scriptedDeps(opts: {
     limits: opts.limits ?? { maxDepth: 4, maxTotalSteps: 64 },
     trigger: opts.trigger ?? JhBudget.DEFAULT_TRIGGER,
     checkpoint: opts.checkpoint,
+    forceRootDecompose: opts.forceRootDecompose,
   }
   return { deps, artifacts, modelCalls: () => modelCalls, runnerCalls: () => runnerCalls }
 }
@@ -357,5 +359,38 @@ describe("JhEngine.runTask", () => {
     expect(r.status).toBe("done")
     expect(types(r)).toContain("expanded")
     expect(types(r)).not.toContain("dataflow_rejected")
+  })
+
+  test("20. root soft-decompose: an atomic root is nudged to decompose (no false-done)", async () => {
+    const d = scriptedDeps({
+      replies: [
+        reply(atomObj({ goal: "the whole task", produces: [{ id: "out", type: "note" }] })), // root claims atomic
+        reply(compoundObj([atomObj({ goal: "a", produces: [{ id: "a1", type: "note" }] }), atomObj({ goal: "b", produces: [{ id: "b1", type: "note" }] })])),
+        reply(atomObj({ goal: "a", produces: [{ id: "a1", type: "note" }] })),
+        reply(atomObj({ goal: "b", produces: [{ id: "b1", type: "note" }] })),
+      ],
+      observations: [okObs({ a1: "x" }), okObs({ b1: "x" })],
+      forceRootDecompose: true,
+    })
+    const r = await run(d)
+    expect(r.status).toBe("done")
+    const t = types(r)
+    expect(t).toContain("expanded")
+    expect(t.indexOf("expanded")).toBeLessThan(t.indexOf("action")) // root never ran as a single atomic leaf
+  })
+
+  test("21. root soft-decompose FALLS BACK to atomic when the model insists (simple task)", async () => {
+    const d = scriptedDeps({
+      replies: [
+        reply(atomObj({ goal: "simple", produces: [{ id: "out", type: "note" }] })),
+        reply(atomObj({ goal: "simple", produces: [{ id: "out", type: "note" }] })), // insists atomic
+      ],
+      observations: [okObs({ out: "x" })],
+      forceRootDecompose: true,
+    })
+    const r = await run(d)
+    expect(r.status).toBe("done")
+    expect(types(r)).not.toContain("expanded")
+    expect(types(r)).toContain("committed")
   })
 })
