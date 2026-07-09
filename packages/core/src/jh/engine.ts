@@ -101,6 +101,14 @@ const errorSig = (detail: string): string => detail.slice(0, 160).trim()
 // if it is at least as strong as the current one.
 const checkRank = (c: JhStep.Check): number =>
   c.type === "output_equals" ? 4 : c.type === "run" ? 3 : c.type === "compile" ? 2 : c.type === "file_exists" ? 1 : 0
+// A grown fix node's goal. After several failed fixes of the SAME problem (priorAttempts high), a weak model
+// is in a local rut (iter 30: it printed ~2.95 ~40× while only tweaking trailing digits) — ESCALATE from
+// "tweak the source" to "rewrite from scratch + add debug prints", which pushes it out of the rut.
+const ESCALATE_AFTER = 4
+const fixNodeGoal = (baseGoal: string, detail: string, priorAttempts: number): string =>
+  priorAttempts >= ESCALATE_AFTER
+    ? `Several attempts at "${baseGoal}" have FAILED with the SAME wrong result — ${detail}. STOP tweaking the current code: REWRITE the computation from scratch with a cleaner, DIFFERENT approach, re-derive the math carefully step by step, and ADD printf statements to print each intermediate value so you can see EXACTLY where it diverges from what you expect — then recompile and re-run.`
+    : `The previous attempt at "${baseGoal}" did not pass its check — ${detail}. Do the next single action to fix it: if the program's OUTPUT is WRONG or it crashed, EDIT the source code to fix the bug, RECOMPILE, then re-run and verify — do NOT just re-run the same binary.`
 
 export function runTask(deps: Deps, task: { readonly goal: string }, resume?: State): Effect.Effect<Report> {
   const { maxDepth, maxTotalSteps } = deps.limits
@@ -383,7 +391,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
             tree = JhTree.setStatus(tree, node.id, "committed")
             emit({ type: "committed", step: node.id })
             const fixDraft: JhStep.StepDraft = {
-              goal: `The previous attempt at "${node.draft.goal}" did not pass its check — ${errorSig(vr.detail)}. Do the next single action to fix it: if the program's OUTPUT is WRONG or it crashed, EDIT the source code to fix the bug, RECOMPILE, then re-run and verify — do NOT just re-run the same binary.`,
+              goal: fixNodeGoal(node.draft.goal, errorSig(vr.detail), JhTree.get(tree, parentID)!.children.length),
               size: "atomic",
               success: node.draft.success ?? "the step's goal is met",
             }
@@ -541,7 +549,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
           }
           if (JhTree.size(tree) < maxTotalSteps) {
             const fixDraft: JhStep.StepDraft = {
-              goal: `The task is NOT yet complete — ${verdict.missing || "the deliverable is missing or incorrect"}. Do the next action to finish it: if a program prints wrong output, FIX the source, RECOMPILE, then re-run and verify the output is correct.`,
+              goal: fixNodeGoal(task.goal, verdict.missing || "the deliverable is missing or incorrect", root.children.length),
               size: "atomic",
               success: "the task's deliverable is produced and verified correct",
             }
