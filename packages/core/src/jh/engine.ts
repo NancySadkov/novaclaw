@@ -55,6 +55,10 @@ export interface Deps {
    *  files on disk). A `run` step whose check is `compile` can then re-introspect to a write_file that
    *  fixes the source, and the same compile-check verifies the fix (the write→compile→fix loop). */
   readonly listFiles?: () => ReadonlyArray<{ readonly name: string; readonly content: string }>
+  /** STRICT-mode policy (owner #5): after a WEAK mechanical check passes, the model verifies the step's
+   *  GOAL was actually achieved against the workspace — a write that passed `artifact_present` did NOT
+   *  compile+run+verify. Kills the "false done". Off by default. */
+  readonly verifyGoal?: boolean
   readonly limits: { readonly maxDepth: number; readonly maxTotalSteps: number }
   readonly trigger: JhBudget.SplitTrigger
   readonly onLog?: (entry: JhLog.Sequenced) => void
@@ -147,6 +151,14 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
     }
     const full = `${base}${fileBlock}`
     return extra ? `${full}\n\n${extra}` : full
+  }
+  /** the current workspace (file names + contents) as a plain block — for the goal-achievement check. */
+  const renderWorkspace = (): string => {
+    const files = deps.listFiles?.() ?? []
+    if (files.length === 0) return "(no files yet)"
+    return files
+      .map((f) => `### ${f.name}\n\`\`\`\n${f.content.length > 8000 ? f.content.slice(0, 8000) + "\n…[truncated]…" : f.content}\n\`\`\``)
+      .join("\n\n")
   }
   const buildPrompt = (
     nodeId: JhStep.StepID,
@@ -304,6 +316,17 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
           vr = yield* JhVerifier.verify({ check, cwd: deps.cwd, runner: deps.runner, fileExists: (rel) => deps.fileExists(rel, deps.cwd), producedPresent })
         } else {
           vr = { ok: false, detail: observation.output }
+        }
+        // STRICT goal-achievement verification (owner #5): a WEAK mechanical check (artifact_present /
+        // file_exists) passing does NOT prove the step's GOAL is met — a write that never compiled/ran.
+        // Ask the model to judge achievement against the workspace; if not achieved, demote to a verify
+        // FAIL so the leaf keeps exploring (compile/run/verify). This kills the "false done".
+        if (vr.ok && deps.verifyGoal && (check.type === "artifact_present" || check.type === "file_exists")) {
+          const gc = yield* Effect.exit(deps.introspect(JhExpander.goalCheckPrompt({ goal: goalOf(node.id), workspace: renderWorkspace() })))
+          if (Exit.isSuccess(gc)) {
+            const verdict = JhExpander.parseGoalCheck(gc.value)
+            if (!verdict.achieved) vr = { ok: false, detail: `goal not yet achieved — ${verdict.missing || "the deliverable is not produced/verified"}` }
+          }
         }
         emit({ type: "verification", step: node.id, ok: vr.ok, detail: vr.detail })
 

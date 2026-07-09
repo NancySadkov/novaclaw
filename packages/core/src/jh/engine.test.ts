@@ -20,6 +20,7 @@ function scriptedDeps(opts: {
   checkpoint?: (s: JhEngine.State) => Effect.Effect<void>
   artifacts?: JhArtifact.Store
   forceRootDecompose?: boolean
+  verifyGoal?: boolean
 }) {
   const replies = [...opts.replies]
   const observations = [...(opts.observations ?? [])]
@@ -52,6 +53,7 @@ function scriptedDeps(opts: {
     trigger: opts.trigger ?? JhBudget.DEFAULT_TRIGGER,
     checkpoint: opts.checkpoint,
     forceRootDecompose: opts.forceRootDecompose,
+    verifyGoal: opts.verifyGoal,
   }
   return { deps, artifacts, modelCalls: () => modelCalls, runnerCalls: () => runnerCalls }
 }
@@ -395,5 +397,34 @@ describe("JhEngine.runTask", () => {
     expect(r.status).toBe("done")
     expect(types(r)).not.toContain("expanded")
     expect(types(r)).toContain("committed")
+  })
+
+  test("22. verifyGoal OFF: a passing weak check commits with NO goal-check call", async () => {
+    const d = scriptedDeps({ replies: [reply(atomObj())], observations: [okObs({ out: "x" })] })
+    const r = await run(d)
+    expect(types(r)).toContain("committed")
+    expect(d.modelCalls()).toBe(1) // introspect only — no goal-check LLM call
+  })
+
+  test("23. verifyGoal ON + goal ACHIEVED: weak check commits (extra goal-check call)", async () => {
+    const d = scriptedDeps({ replies: [reply(atomObj()), `{"achieved": true}`], observations: [okObs({ out: "x" })], verifyGoal: true })
+    const r = await run(d)
+    expect(types(r)).toContain("committed")
+    expect(d.modelCalls()).toBe(2) // introspect + goal-check
+  })
+
+  test("24. verifyGoal ON + goal NOT achieved: weak-check pass is DEMOTED to a verify fail (no false-done)", async () => {
+    const no = `{"achieved": false, "missing": "not compiled/verified"}`
+    const d = scriptedDeps({
+      replies: [reply(atomObj({ difficulty_prior: "trivial" })), no, reply(atomObj({ difficulty_prior: "trivial" })), no],
+      observations: [okObs({ out: "x" }), okObs({ out: "x" })],
+      verifyGoal: true,
+    })
+    const r = await run(d)
+    const verifs = r.state.log.filter((e) => e.type === "verification")
+    // the mechanical artifact_present check passed, yet the goal-check demoted it → a verify FAIL surfaced
+    expect(verifs.some((e) => "ok" in e && e.ok === false && String((e as { detail?: unknown }).detail).includes("goal not yet achieved"))).toBe(true)
+    // and the root was NOT committed on that false-done
+    expect(types(r)).not.toContain("committed")
   })
 })

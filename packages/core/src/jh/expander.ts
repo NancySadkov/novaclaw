@@ -110,6 +110,27 @@ export function stepJsonSchema(): object {
   return { ...document.schema, $defs: document.definitions }
 }
 
+/** Goal-achievement verification (owner directive): after a step's mechanical check passes, the model
+ *  judges whether the step's GOAL was ACTUALLY achieved given the current workspace — a write_file that
+ *  passed `artifact_present` did NOT compile+run+verify. Catches the "false done". Reply is a tiny JSON
+ *  `{"achieved": bool, "missing": "…"}`. */
+export function goalCheckPrompt(input: { readonly goal: string; readonly workspace: string }): PromptPair {
+  const system = [
+    "You are the completion checker of a deterministic execution harness.",
+    "Given a step's GOAL and the CURRENT working-directory files (with contents), judge whether the goal is FULLY and OBJECTIVELY achieved by the state on disk — not merely 'a file was written'. A build/verify goal is only achieved if the program was actually compiled, run, AND its output verified correct.",
+    'Output EXACTLY ONE ```json object: {"achieved": true|false, "missing": "one short phrase — what still must happen, empty if achieved"}. Nothing else.',
+  ].join("\n")
+  const user = `# Goal\n${input.goal}\n\n# Working directory\n${input.workspace}\n\nIs the goal fully achieved? Output one json object.`
+  return { system, user }
+}
+
+export function parseGoalCheck(text: string): { readonly achieved: boolean; readonly missing: string } {
+  const extracted = JhExtract.extractJsonObject(text)
+  if (!extracted.ok || typeof extracted.value !== "object" || extracted.value === null) return { achieved: false, missing: "unparseable goal check" }
+  const v = extracted.value as Record<string, unknown>
+  return { achieved: v.achieved === true, missing: typeof v.missing === "string" ? v.missing : "" }
+}
+
 export function dataflowRepairReminder(issues: ReadonlyArray<JhDataflow.Issue>): string {
   const lines = issues.map((i) => `  - ${i.code} at substep ${i.step} (artifact "${i.artifact}")`)
   return [

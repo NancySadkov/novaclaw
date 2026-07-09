@@ -94,3 +94,24 @@ describe("dataflowRepairReminder", () => {
     expect(msg).toContain("x.c")
   })
 })
+
+describe("goalCheckPrompt / parseGoalCheck", () => {
+  test("prompt carries the goal and workspace", () => {
+    const p = JhExpander.goalCheckPrompt({ goal: "compile and verify 100 digits of Pi", workspace: "### pi.c\n...\n" })
+    expect(p.user).toContain("compile and verify 100 digits of Pi")
+    expect(p.user).toContain("pi.c")
+    expect(p.system).toContain("compiled")
+  })
+  test("parses achieved:true", () => {
+    expect(JhExpander.parseGoalCheck('```json\n{"achieved": true, "missing": ""}\n```')).toEqual({ achieved: true, missing: "" })
+  })
+  test("parses achieved:false with a missing phrase", () => {
+    expect(JhExpander.parseGoalCheck('{"achieved": false, "missing": "not compiled"}')).toEqual({ achieved: false, missing: "not compiled" })
+  })
+  test("unparseable → not achieved (fail-safe)", () => {
+    expect(JhExpander.parseGoalCheck("no json here").achieved).toBe(false)
+  })
+  test("a non-true 'achieved' is treated as not achieved", () => {
+    expect(JhExpander.parseGoalCheck('{"achieved": "yes"}').achieved).toBe(false)
+  })
+})
