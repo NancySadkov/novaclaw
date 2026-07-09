@@ -114,17 +114,18 @@ export function stepJsonSchema(): object {
  *  judges whether the step's GOAL was ACTUALLY achieved given the current workspace — a write_file that
  *  passed `artifact_present` did NOT compile+run+verify. Catches the "false done". Reply is a tiny JSON
  *  `{"achieved": bool, "missing": "…"}`. */
-export function goalCheckPrompt(input: { readonly goal: string; readonly workspace: string }): PromptPair {
+export function goalCheckPrompt(input: { readonly goal: string; readonly workspace: string; readonly lastOutput?: string }): PromptPair {
   const system = [
     "You are the completion checker of a deterministic execution harness.",
-    "Given ONE step's GOAL and the CURRENT working-directory files, judge whether THIS STEP's OWN goal is objectively achieved by the state on disk. Judge ONLY what this goal asks for — no more, no less:",
+    "Given ONE step's GOAL, the CURRENT working-directory files, and the most recent program OUTPUT, judge whether THIS STEP's OWN goal is objectively achieved. Judge ONLY what this goal asks for — no more, no less:",
     "  - a goal to WRITE or EDIT a source file → achieved once that file holds the required content.",
     "  - a goal to COMPILE/BUILD → achieved once the compiled output exists on disk (e.g. an .exe/.o is listed, even shown as a <compiled binary …> placeholder).",
-    "  - a goal to RUN and produce/verify output → achieved once the program has run and its output is correct.",
-    "Do NOT demand steps this goal does not ask for — a 'compile' goal does NOT require also running or verifying. But do NOT accept a mere source file when the goal itself asks for a built or correct artifact.",
+    "  - a goal to RUN / produce a correct RESULT → achieved only if the program actually ran AND the shown output is CORRECT. If the goal names an expected value (e.g. digits of a constant), CHECK the output against what you know to be the true value — a program that runs but prints wrong digits is NOT achieved.",
+    "Do NOT demand steps this goal does not ask for — a 'compile' goal does NOT require also running. But do NOT accept a mere source file when the goal asks for a built or correct artifact, and do NOT accept an empty/absent output when the goal asks for a computed result.",
     'Output EXACTLY ONE ```json object: {"achieved": true|false, "missing": "one short phrase — what THIS goal still needs, empty if achieved"}. Nothing else.',
   ].join("\n")
-  const user = `# Goal\n${input.goal}\n\n# Working directory\n${input.workspace}\n\nIs the goal fully achieved? Output one json object.`
+  const outputBlock = input.lastOutput !== undefined ? `\n\n# Most recent program output (stdout)\n\`\`\`\n${input.lastOutput.length > 4000 ? input.lastOutput.slice(0, 4000) + "\n…[truncated]…" : input.lastOutput || "(no output captured)"}\n\`\`\`` : ""
+  const user = `# Goal\n${input.goal}\n\n# Working directory\n${input.workspace}${outputBlock}\n\nIs the goal fully achieved? Output one json object.`
   return { system, user }
 }
 

@@ -102,6 +102,12 @@ describe("goalCheckPrompt / parseGoalCheck", () => {
     expect(p.user).toContain("pi.c")
     expect(p.system).toContain("compiled")
   })
+  test("prompt includes the most recent program stdout when given (so wrong output is checkable)", () => {
+    const p = JhExpander.goalCheckPrompt({ goal: "print 100 digits of Pi", workspace: "### pi.c", lastOutput: "Pi = 3.0000000" })
+    expect(p.user).toContain("Most recent program output")
+    expect(p.user).toContain("Pi = 3.0000000")
+    expect(p.system).toContain("wrong digits") // instructs the checker to compare against the true value
+  })
   test("parses achieved:true", () => {
     expect(JhExpander.parseGoalCheck('```json\n{"achieved": true, "missing": ""}\n```')).toEqual({ achieved: true, missing: "" })
   })

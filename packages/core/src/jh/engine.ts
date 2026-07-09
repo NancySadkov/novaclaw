@@ -108,6 +108,10 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
   const logArr: JhLog.Sequenced[] = [...(resume?.log ?? [])]
   let seq = logArr.length
   let lastBlockReason: string | undefined
+  // The most recent `run` action's stdout — a program prints its RESULT to stdout, not to a file, so the
+  // goal-checks (which otherwise only see workspace FILES) need it to judge whether a computed RESULT is
+  // actually correct (iter 22: a program that ran and printed wrong digits false-passed a file-only check).
+  let lastRunOutput = ""
 
   const emit = (entry: JhLog.Entry): void => {
     const seqd = { ...entry, seq: seq++ } as JhLog.Sequenced
@@ -318,6 +322,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         updateTelemetry(node.id, (t) => ({ ...t, attempts: t.attempts + 1 }))
         emit({ type: "action", step: node.id, tool: currentTool })
         const observation = yield* deps.executor.run({ tool: currentTool, args: currentArgs, produces: draft.produces ?? [], cwd: deps.cwd })
+        if (currentTool === "run" && observation.ok) lastRunOutput = observation.output // remember the program's stdout for the goal-checks
         emit({ type: "observation", step: node.id, ok: observation.ok })
 
         let vr: JhVerifier.VerifyResult
@@ -335,7 +340,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         // Ask the model to judge achievement against the workspace; if not achieved, demote to a verify
         // FAIL so the leaf keeps exploring (compile/run/verify). This kills the "false done".
         if (vr.ok && deps.verifyGoal && (check.type === "artifact_present" || check.type === "file_exists")) {
-          const gc = yield* Effect.exit(deps.introspect(JhExpander.goalCheckPrompt({ goal: goalOf(node.id), workspace: renderWorkspace() })))
+          const gc = yield* Effect.exit(deps.introspect(JhExpander.goalCheckPrompt({ goal: goalOf(node.id), workspace: renderWorkspace(), lastOutput: lastRunOutput })))
           if (Exit.isSuccess(gc)) {
             const verdict = JhExpander.parseGoalCheck(gc.value)
             if (!verdict.achieved) vr = { ok: false, detail: `goal not yet achieved — ${verdict.missing || "the deliverable is not produced/verified"}` }
@@ -497,7 +502,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         // the deliverable is NOT actually done (e.g. the program runs but prints wrong digits), EXTEND the
         // root with ONE fix node and keep going — never a false-done. Block only at the global step budget.
         if (root && deps.verifyGoal && root.status === "expanded" && JhTree.allChildrenCommitted(tree, tree.root)) {
-          const gc = yield* Effect.exit(deps.introspect(JhExpander.goalCheckPrompt({ goal: task.goal, workspace: renderWorkspace() })))
+          const gc = yield* Effect.exit(deps.introspect(JhExpander.goalCheckPrompt({ goal: task.goal, workspace: renderWorkspace(), lastOutput: lastRunOutput })))
           const verdict = Exit.isSuccess(gc) ? JhExpander.parseGoalCheck(gc.value) : { achieved: true, missing: "" } // unreachable checker → don't stall; accept
           emit({ type: "verification", step: tree.root, ok: verdict.achieved, detail: verdict.achieved ? "task goal achieved" : `task goal NOT achieved — ${verdict.missing}` })
           if (verdict.achieved) {
