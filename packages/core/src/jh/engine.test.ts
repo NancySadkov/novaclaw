@@ -1,0 +1,318 @@
+import { describe, expect, test } from "bun:test"
+import { Effect } from "effect"
+import { JhArtifact } from "./artifact"
+import { JhBudget } from "./budget"
+import { JhBasicTools } from "./tools-basic"
+import type { JhProcessRunner } from "./process-runner"
+import { JhEngine } from "./engine"
+
+// ---- scripted-deps harness: introspect+correct pull from ONE reply queue (call order); executor and
+// runner (verify) pull from their own queues. LLM_FAIL makes a model call fail. ----
+const LLM_FAIL = "__LLM_FAIL__"
+
+function scriptedDeps(opts: {
+  replies: string[]
+  observations?: JhBasicTools.Observation[]
+  runResults?: JhProcessRunner.RunResult[]
+  fileExists?: (rel: string, cwd: string) => boolean
+  trigger?: JhBudget.SplitTrigger
+  limits?: { maxDepth: number; maxTotalSteps: number }
+  checkpoint?: (s: JhEngine.State) => Effect.Effect<void>
+  artifacts?: JhArtifact.Store
+}) {
+  const replies = [...opts.replies]
+  const observations = [...(opts.observations ?? [])]
+  const runResults = [...(opts.runResults ?? [])]
+  let modelCalls = 0
+  let runnerCalls = 0
+  const artifacts = opts.artifacts ?? JhArtifact.memory()
+
+  const nextReply = () => {
+    modelCalls++
+    const r = replies.shift()
+    if (r === undefined || r === LLM_FAIL) return Effect.fail({ message: "scripted llm fail" })
+    return Effect.succeed(r)
+  }
+  const deps: JhEngine.Deps = {
+    introspect: () => nextReply(),
+    correct: () => nextReply(),
+    executor: { run: () => Effect.succeed(observations.shift() ?? { ok: false, output: "no scripted observation", artifacts: new Map() }) },
+    runner: {
+      run: () => {
+        runnerCalls++
+        return Effect.succeed(runResults.shift() ?? { exitCode: 0, output: "", timedOut: false })
+      },
+    },
+    artifacts,
+    fileExists: opts.fileExists ?? (() => false),
+    cwd: ".",
+    toolNames: JhBasicTools.TOOL_NAMES,
+    limits: opts.limits ?? { maxDepth: 4, maxTotalSteps: 64 },
+    trigger: opts.trigger ?? JhBudget.DEFAULT_TRIGGER,
+    checkpoint: opts.checkpoint,
+  }
+  return { deps, artifacts, modelCalls: () => modelCalls, runnerCalls: () => runnerCalls }
+}
+
+const reply = (o: unknown) => JSON.stringify(o)
+const atomObj = (over: Record<string, unknown> = {}) => ({
+  goal: "leaf",
+  size: "atomic",
+  tool: "note",
+  args: { text: "x" },
+  success: "ok",
+  check: { type: "artifact_present" },
+  produces: [{ id: "out", type: "note" }],
+  ...over,
+})
+const compoundObj = (substeps: unknown[]) => ({ goal: "root", size: "needs_decomposition", success: "ok", substeps })
+const okObs = (artifacts: Record<string, string> = {}): JhBasicTools.Observation => ({ ok: true, output: "o", artifacts: new Map(Object.entries(artifacts)) })
+const failObs = (output = "boom"): JhBasicTools.Observation => ({ ok: false, output, artifacts: new Map() })
+const run = (d: ReturnType<typeof scriptedDeps>) => Effect.runPromise(JhEngine.runTask(d.deps, { goal: "the task" }))
+const types = (r: JhEngine.Report) => r.state.log.map((e) => e.type)
+
+describe("JhEngine.runTask", () => {
+  test("1. single atom happy path", async () => {
+    const d = scriptedDeps({ replies: [reply(atomObj())], observations: [okObs({ out: "x" })] })
+    const r = await run(d)
+    expect(r.status).toBe("done")
+    expect(types(r)).toEqual(["task_started", "introspected", "action", "observation", "verification", "committed", "task_done"])
+    expect(d.artifacts.get("out")?.content).toBe("x")
+  })
+
+  test("2. one decomposition, both leaves commit, preorder", async () => {
+    const d = scriptedDeps({
+      replies: [
+        reply(compoundObj([atomObj({ goal: "a", produces: [{ id: "a1", type: "note" }] }), atomObj({ goal: "b", produces: [{ id: "b1", type: "note" }] })])),
+        reply(atomObj({ goal: "a", produces: [{ id: "a1", type: "note" }] })),
+        reply(atomObj({ goal: "b", produces: [{ id: "b1", type: "note" }] })),
+      ],
+      observations: [okObs({ a1: "x" }), okObs({ b1: "x" })],
+    })
+    const r = await run(d)
+    expect(r.status).toBe("done")
+    const t = types(r)
+    // child 1's action logged before child 2's introspection
+    const firstAction = t.indexOf("action")
+    const secondIntrospect = t.indexOf("introspected", t.indexOf("introspected", t.indexOf("introspected") + 1) + 1)
+    expect(firstAction).toBeLessThan(secondIntrospect)
+    expect(t.filter((x) => x === "committed").length).toBe(3) // 2 leaves + root
+  })
+
+  test("3. verify fail → corrector → pass", async () => {
+    const d = scriptedDeps({
+      replies: [reply(atomObj({ tool: "write_file", args: { path: "f.c", content: "bad" }, check: { type: "compile", command: "gcc" }, produces: [{ id: "f", type: "file" }] })), "```\ngood\n```"],
+      observations: [okObs({ f: "bad" }), okObs({ f: "good" })],
+      runResults: [{ exitCode: 1, output: "err", timedOut: false }, { exitCode: 0, output: "", timedOut: false }],
+    })
+    const r = await run(d)
+    expect(r.status).toBe("done")
+    expect(types(r)).toContain("corrected")
+    expect(r.state.telemetry.get("root")?.attempts).toBe(2)
+    expect(d.runnerCalls()).toBe(2)
+  })
+
+  test("4. budget exhaustion → forced decomposition (no forced_split log)", async () => {
+    const d = scriptedDeps({
+      replies: [
+        reply(atomObj({ tool: "write_file", difficulty_prior: "trivial", args: { path: "f.c", content: "x" }, check: { type: "compile", command: "gcc" }, produces: [{ id: "f", type: "file" }] })),
+        "```\nfix\n```",
+        reply(compoundObj([atomObj({ goal: "g1", produces: [{ id: "g1", type: "note" }] }), atomObj({ goal: "g2", produces: [{ id: "g2", type: "note" }] })])),
+        reply(atomObj({ goal: "g1", produces: [{ id: "g1", type: "note" }] })),
+        reply(atomObj({ goal: "g2", produces: [{ id: "g2", type: "note" }] })),
+      ],
+      observations: [okObs({ f: "x" }), okObs({ f: "y" }), okObs({ g1: "x" }), okObs({ g2: "x" })],
+      runResults: [{ exitCode: 1, output: "e", timedOut: false }, { exitCode: 1, output: "e", timedOut: false }],
+    })
+    const r = await run(d)
+    expect(r.status).toBe("done")
+    expect(types(r)).toContain("expanded")
+    expect(types(r)).not.toContain("forced_split")
+  })
+
+  test("5. budget exhaustion at maxDepth → blocked, no throw", async () => {
+    const d = scriptedDeps({
+      replies: [reply(atomObj({ tool: "write_file", difficulty_prior: "trivial", args: { path: "f.c", content: "x" }, check: { type: "compile", command: "gcc" }, produces: [{ id: "f", type: "file" }] })), "```\nfix\n```"],
+      observations: [okObs({ f: "x" }), okObs({ f: "y" })],
+      runResults: [{ exitCode: 1, output: "e", timedOut: false }, { exitCode: 1, output: "e", timedOut: false }],
+      limits: { maxDepth: 0, maxTotalSteps: 64 },
+    })
+    const r = await run(d)
+    expect(r.status).toBe("blocked")
+    expect(r.reason).toBe("budget")
+    expect(r.state.log.some((e) => e.type === "blocked" && e.reason === "budget")).toBe(true)
+  })
+
+  test("6. dataflow repair: fixed → expanded; still broken → blocked(dataflow)", async () => {
+    const dangling = compoundObj([atomObj({ goal: "a", produces: [{ id: "a1", type: "note" }] }), atomObj({ goal: "b", consumes: [{ id: "missing", type: "file" }] })])
+    const fixed = compoundObj([atomObj({ goal: "a", produces: [{ id: "a1", type: "note" }] }), atomObj({ goal: "b", produces: [{ id: "b1", type: "note" }] })])
+    const good = scriptedDeps({
+      replies: [reply(dangling), reply(fixed), reply(atomObj({ produces: [{ id: "a1", type: "note" }] })), reply(atomObj({ produces: [{ id: "b1", type: "note" }] }))],
+      observations: [okObs({ a1: "x" }), okObs({ b1: "x" })],
+    })
+    const rg = await run(good)
+    expect(rg.status).toBe("done")
+    const gt = types(rg)
+    expect(gt.indexOf("dataflow_rejected")).toBeLessThan(gt.indexOf("expanded"))
+
+    const bad = scriptedDeps({ replies: [reply(dangling), reply(dangling)] })
+    const rb = await run(bad)
+    expect(rb.status).toBe("blocked")
+    expect(rb.reason).toBe("dataflow")
+  })
+
+  test("7. force-split: cardinality over trigger → forced_split → decompose; atomic-again → cannot_split", async () => {
+    const nineConsumes = Array.from({ length: 9 }, (_, i) => ({ id: `c${i}`, type: "file" as const }))
+    const split = scriptedDeps({
+      replies: [
+        reply(atomObj({ consumes: nineConsumes, produces: [] })),
+        reply(compoundObj([atomObj({ goal: "s1", produces: [{ id: "s1", type: "note" }] }), atomObj({ goal: "s2", produces: [{ id: "s2", type: "note" }] })])),
+        reply(atomObj({ produces: [{ id: "s1", type: "note" }] })),
+        reply(atomObj({ produces: [{ id: "s2", type: "note" }] })),
+      ],
+      observations: [okObs({ s1: "x" }), okObs({ s2: "x" })],
+    })
+    const rs = await run(split)
+    expect(rs.status).toBe("done")
+    expect(types(rs)).toContain("forced_split")
+
+    const stuck = scriptedDeps({ replies: [reply(atomObj({ consumes: nineConsumes, produces: [] })), reply(atomObj({ produces: [] }))], observations: [okObs()] })
+    const ru = await run(stuck)
+    expect(ru.status).toBe("blocked")
+    expect(ru.reason).toBe("cannot_split")
+  })
+
+  test("8. depth cap: needs_decomposition at maxDepth → blocked(depth_budget)", async () => {
+    const d = scriptedDeps({
+      replies: [reply(compoundObj([atomObj({ goal: "child", produces: [{ id: "c1", type: "note" }] })])), reply(compoundObj([atomObj({ goal: "deeper", produces: [{ id: "d1", type: "note" }] })]))],
+      limits: { maxDepth: 1, maxTotalSteps: 64 },
+    })
+    const r = await run(d)
+    expect(r.status).toBe("blocked")
+    expect(r.state.log.some((e) => e.type === "blocked" && e.reason === "depth_budget")).toBe(true)
+  })
+
+  test("9. step cap: decomposition overflowing maxTotalSteps → blocked(step_budget)", async () => {
+    const four = compoundObj(["a", "b", "c", "d"].map((g) => atomObj({ goal: g, produces: [{ id: g, type: "note" }] })))
+    const d = scriptedDeps({ replies: [reply(four)], limits: { maxDepth: 4, maxTotalSteps: 3 } })
+    const r = await run(d)
+    expect(r.status).toBe("blocked")
+    expect(r.reason).toBe("step_budget")
+  })
+
+  test("10. tool failure is data — verify NOT invoked, obs.output is the detail", async () => {
+    const d = scriptedDeps({
+      replies: [reply(atomObj({ tool: "write_file", difficulty_prior: "trivial", args: { path: "f.c", content: "x" }, check: { type: "compile", command: "gcc" }, produces: [{ id: "f", type: "file" }] })), "```\nfix\n```"],
+      observations: [failObs("tool boom"), failObs("tool boom")],
+      limits: { maxDepth: 0, maxTotalSteps: 64 },
+    })
+    const r = await run(d)
+    expect(r.status).toBe("blocked")
+    expect(d.runnerCalls()).toBe(0) // verify skipped because obs.ok was false
+    expect(r.state.log.some((e) => e.type === "verification" && !e.ok && e.detail === "tool boom")).toBe(true)
+  })
+
+  test("11. parse failure: recover on retry; twice → blocked(unparseable)", async () => {
+    const recover = scriptedDeps({ replies: ["not json at all", reply(atomObj())], observations: [okObs({ out: "x" })] })
+    const rr = await run(recover)
+    expect(rr.status).toBe("done")
+    const rt = types(rr)
+    expect(rt.indexOf("parse_failed")).toBeLessThan(rt.indexOf("introspected"))
+
+    const stuck = scriptedDeps({ replies: ["garbage", "still garbage"] })
+    const rs = await run(stuck)
+    expect(rs.status).toBe("blocked")
+    expect(rs.reason).toBe("unparseable")
+  })
+
+  test("12. structural failure: recover on retry", async () => {
+    const d = scriptedDeps({ replies: [reply(atomObj({ substeps: [atomObj()] })), reply(atomObj())], observations: [okObs({ out: "x" })] })
+    const r = await run(d)
+    expect(r.status).toBe("done")
+    const t = types(r)
+    expect(t.indexOf("structural_rejected")).toBeLessThan(t.indexOf("introspected"))
+  })
+
+  test("13. LLM failure twice → blocked(llm_unreachable)", async () => {
+    const d = scriptedDeps({ replies: [LLM_FAIL, LLM_FAIL] })
+    const r = await run(d)
+    expect(r.status).toBe("blocked")
+    expect(r.state.log.some((e) => e.type === "blocked" && e.reason === "llm_unreachable")).toBe(true)
+  })
+
+  test("14. determinism: same scenario twice → identical log", async () => {
+    const scenario = () =>
+      scriptedDeps({
+        replies: [
+          reply(compoundObj([atomObj({ goal: "a", produces: [{ id: "a1", type: "note" }] }), atomObj({ goal: "b", produces: [{ id: "b1", type: "note" }] })])),
+          reply(atomObj({ goal: "a", produces: [{ id: "a1", type: "note" }] })),
+          reply(atomObj({ goal: "b", produces: [{ id: "b1", type: "note" }] })),
+        ],
+        observations: [okObs({ a1: "x" }), okObs({ b1: "x" })],
+      })
+    const a = await run(scenario())
+    const b = await run(scenario())
+    expect(JSON.stringify(a.state.log)).toBe(JSON.stringify(b.state.log))
+  })
+
+  test("15. resume from a checkpoint completes with the same combined log", async () => {
+    const scenarioReplies = () => [
+      reply(compoundObj([atomObj({ goal: "a", produces: [{ id: "a1", type: "note" }] }), atomObj({ goal: "b", produces: [{ id: "b1", type: "note" }] })])),
+      reply(atomObj({ goal: "a", produces: [{ id: "a1", type: "note" }] })),
+      reply(atomObj({ goal: "b", produces: [{ id: "b1", type: "note" }] })),
+    ]
+    const fullRun = await run(scriptedDeps({ replies: scenarioReplies(), observations: [okObs({ a1: "x" }), okObs({ b1: "x" })] }))
+    const fullTypes = types(fullRun)
+
+    let captured: JhEngine.State | undefined
+    await run(
+      scriptedDeps({
+        replies: scenarioReplies(),
+        observations: [okObs({ a1: "x" }), okObs({ b1: "x" })],
+        checkpoint: (s) => Effect.sync(() => { if (!captured) captured = s }),
+      }),
+    )
+    expect(captured).toBeDefined()
+
+    const resumed = await Effect.runPromise(
+      JhEngine.runTask(
+        scriptedDeps({
+          replies: [reply(atomObj({ goal: "b", produces: [{ id: "b1", type: "note" }] }))],
+          observations: [okObs({ b1: "x" })],
+          artifacts: JhArtifact.memory(captured!.artifacts),
+        }).deps,
+        { goal: "the task" },
+        captured,
+      ),
+    )
+    expect(resumed.status).toBe("done")
+    expect(resumed.state.log.map((e) => e.type)).toEqual(fullTypes)
+  })
+
+  test("16. adversarial replies never throw — always a Report", async () => {
+    const hostiles = [
+      "",
+      "null",
+      "{}",
+      '{"size":"atomic"}',
+      '{"goal":"g","size":"huge","success":"s"}',
+      '{"goal":"g","size":"atomic","tool":"note","args":"notanobject","success":"s"}',
+      '{"goal":"g","size":"atomic","tool":"note","args":{},"success":"s","check":{"type":"bogus"}}',
+      reply(compoundObj([compoundObj([compoundObj([compoundObj([compoundObj([atomObj()])])])])])),
+      reply(atomObj({ goal: "x".repeat(5000) })),
+      "```json\n{not: valid}\n```",
+    ]
+    for (const h of hostiles) {
+      const d = scriptedDeps({ replies: [h, h] })
+      const r = await run(d)
+      expect(["done", "blocked"]).toContain(r.status)
+    }
+  })
+
+  test("17. research_needed → research_flagged, execution proceeds", async () => {
+    const d = scriptedDeps({ replies: [reply(atomObj({ research_needed: true }))], observations: [okObs({ out: "x" })] })
+    const r = await run(d)
+    expect(r.status).toBe("done")
+    expect(types(r)).toContain("research_flagged")
+  })
+})
