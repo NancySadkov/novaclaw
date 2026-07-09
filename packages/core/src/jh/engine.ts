@@ -24,7 +24,6 @@ import { JhContext } from "./context"
 import { JhBudget } from "./budget"
 import { JhVerifier } from "./verifier"
 import { JhExpander } from "./expander"
-import { JhCorrector } from "./corrector"
 import { JhLog } from "./log"
 import type { JhBasicTools } from "./tools-basic"
 import type { JhProcessRunner } from "./process-runner"
@@ -337,45 +336,30 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
           return
         }
 
-        if (currentTool === "write_file") {
-          const produces = draft.produces ?? []
-          const firstProduce = produces.find((p) => p.type === "file") ?? produces[0]
-          updateTelemetry(node.id, (t) => ({ ...t, correctorCalls: t.correctorCalls + 1 }))
-          const cex = yield* Effect.exit(
-            deps.correct(JhCorrector.correctorPrompt({ goal: draft.goal, artifactID: firstProduce?.id ?? "output", artifactContent: String(currentArgs.content ?? ""), error: vr.detail })),
-          )
-          if (Exit.isSuccess(cex)) {
-            const pc = JhCorrector.parseCorrection(cex.value)
-            if (pc.ok) {
-              currentArgs = { ...currentArgs, content: pc.content }
-              emit({ type: "corrected", step: node.id })
-            }
-          }
-        } else {
-          // DIRECTIVE recovery: the leaf is a bounded free-form loop — pick the SINGLE next action toward
-          // the goal, and it may SWITCH the action (e.g. a compile-error ⇒ a write_file that fixes the
-          // source it can see in the workspace context; once it switches to write_file the corrector loop
-          // above then iterates the edit). This is what turns a "compile" leaf into the write→compile→fix
-          // loop without backtracking.
-          const failedCmd = typeof currentArgs.command === "string" ? currentArgs.command : JSON.stringify(currentArgs)
-          const recovery = [
-            "The previous action did NOT achieve this step's goal:",
-            `  action: ${currentTool} — ${failedCmd}`,
-            `  result/error: ${vr.detail}`,
-            "The working-directory files with their CURRENT contents are shown above. Emit exactly ONE atomic Step for the SINGLE next action that makes progress:",
-            "- If this is a SOURCE-CODE error (compile/runtime error in a file), emit a write_file with the COMPLETE corrected source (edit the code above).",
-            "- If the COMMAND was wrong (missing PATH prefix, wrong path/filename, wrong shell syntax), emit a corrected run command.",
-          ].join("\n")
-          const ex = yield* Effect.exit(deps.introspect(buildPrompt(node.id, { extraContext: recovery })))
-          if (Exit.isSuccess(ex)) {
-            const parsed = JhExpander.parseReply(ex.value)
-            if (parsed.ok && parsed.draft.size === "atomic" && JhStep.structuralIssues(parsed.draft).filter((i) => i.severity === "error").length === 0) {
-              draft = parsed.draft
-              currentTool = parsed.draft.tool ?? currentTool
-              currentArgs = parsed.draft.args ?? currentArgs
-              tree = JhTree.fill(tree, node.id, stripSubsteps(parsed.draft))
-              emit({ type: "introspected", step: node.id })
-            }
+        // UNIFIED DIRECTIVE recovery (owner's "explore/run as long as needed"): the leaf is a bounded
+        // free-form loop — each failure, the model picks the SINGLE next action (ANY tool) toward the
+        // GOAL, freely ALTERNATING between fixing a file (write_file) and running a command (run) until the
+        // step's check passes. This is the write→compile→fix loop with no backtracking and no tool-lock.
+        const actionDesc = currentTool === "write_file" ? `write_file ${String(currentArgs.path ?? "?")}` : typeof currentArgs.command === "string" ? currentArgs.command : JSON.stringify(currentArgs).slice(0, 200)
+        const recovery = [
+          "The previous action did NOT achieve this step's goal yet:",
+          `  action: ${currentTool} — ${actionDesc}`,
+          `  result/error: ${vr.detail}`,
+          "The working-directory files with their CURRENT contents are shown above. Emit exactly ONE atomic Step for the SINGLE next action that makes real progress toward the goal:",
+          "- SOURCE-CODE error (a compile/runtime error in a file) → write_file with the COMPLETE corrected source (edit the code shown above).",
+          "- The goal needs a file that a COMMAND produces (e.g. the compiled .exe) → `run` that command (remember: every gcc call needs the `set PATH=…/bin;%PATH% &&` prefix; the .exe lands in the working directory).",
+          "- The command itself was wrong (missing PATH, wrong path/filename, bad shell syntax) → a corrected `run` command.",
+          "Do NOT repeat the exact action that just failed.",
+        ].join("\n")
+        const ex = yield* Effect.exit(deps.introspect(buildPrompt(node.id, { extraContext: recovery })))
+        if (Exit.isSuccess(ex)) {
+          const parsed = JhExpander.parseReply(ex.value)
+          if (parsed.ok && parsed.draft.size === "atomic" && JhStep.structuralIssues(parsed.draft).filter((i) => i.severity === "error").length === 0) {
+            draft = parsed.draft
+            currentTool = parsed.draft.tool ?? currentTool
+            currentArgs = parsed.draft.args ?? currentArgs
+            tree = JhTree.fill(tree, node.id, stripSubsteps(parsed.draft))
+            emit({ type: "introspected", step: node.id })
           }
         }
       }

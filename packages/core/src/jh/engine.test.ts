@@ -101,15 +101,18 @@ describe("JhEngine.runTask", () => {
     expect(t.filter((x) => x === "committed").length).toBe(3) // 2 leaves + root
   })
 
-  test("3. verify fail → corrector → pass", async () => {
+  test("3. verify fail → directive recovery (edit) → pass", async () => {
     const d = scriptedDeps({
-      replies: [reply(atomObj({ tool: "write_file", args: { path: "f.c", content: "bad" }, check: { type: "compile", command: "gcc" }, produces: [{ id: "f", type: "file" }] })), "```\ngood\n```"],
+      replies: [
+        reply(atomObj({ tool: "write_file", args: { path: "f.c", content: "bad" }, check: { type: "compile", command: "gcc" }, produces: [{ id: "f", type: "file" }] })),
+        reply(atomObj({ tool: "write_file", args: { path: "f.c", content: "good" }, check: { type: "compile", command: "gcc" }, produces: [{ id: "f", type: "file" }] })), // recovery: fix the source
+      ],
       observations: [okObs({ f: "bad" }), okObs({ f: "good" })],
       runResults: [{ exitCode: 1, output: "err", timedOut: false }, { exitCode: 0, output: "", timedOut: false }],
     })
     const r = await run(d)
     expect(r.status).toBe("done")
-    expect(types(r)).toContain("corrected")
+    expect(types(r).filter((t) => t === "introspected").length).toBe(2) // root introspect + one recovery
     expect(r.state.telemetry.get("root")?.attempts).toBe(2)
     expect(d.runnerCalls()).toBe(2)
   })
