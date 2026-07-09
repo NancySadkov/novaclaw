@@ -78,6 +78,9 @@ const stripSubsteps = (d: JhStep.StepDraft): Omit<JhStep.StepDraft, "substeps"> 
 // error (e.g. an environment problem like a compiler PATH needs several distinct fixes) — up to this hard
 // cap. A REPEATED error (a stuck loop) ends it immediately at the budget. (afpro's changing-vs-stuck rule.)
 const EXPLORE_CAP = 6
+// The root soft-decompose retries this many times: a weak model insists atomic on some draws but yields a
+// proper plan on others (temperature variance), so a couple of retries reliably gets a decomposition.
+const SOFT_DECOMPOSE_ATTEMPTS = 3
 const errorSig = (detail: string): string => detail.slice(0, 160).trim()
 
 export function runTask(deps: Deps, task: { readonly goal: string }, resume?: State): Effect.Effect<Report> {
@@ -238,21 +241,26 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
   // (return false) rather than block, so a genuinely-simple root still works.
   const trySoftDecompose = (node: JhTree.Node): Effect.Effect<boolean> =>
     Effect.gen(function* () {
-      const ex = yield* Effect.exit(deps.introspect(buildPrompt(node.id, { allowDecomposition: true, mustDecompose: true })))
-      if (!Exit.isSuccess(ex)) return false
-      const parsed = JhExpander.parseReply(ex.value)
-      const subs = parsed.ok && parsed.draft.size === "needs_decomposition" ? parsed.draft.substeps : undefined
-      if (!subs || subs.length === 0) return false
-      // Attach a structurally-valid plan REGARDLESS of declared dataflow: for file-based work the real
-      // dependency is the file on disk (cwd), not the artifact store — a weak model's consumes/produces
-      // ids are an unreliable proxy, and a dangling DECLARATION doesn't mean the step will fail (§9/§12).
-      // Execution + the verify-gate are the real checks.
-      const attached = JhTree.attach(tree, node.id, subs, maxDepth)
-      if (attached instanceof JhTree.AttachError) return false
-      tree = attached
-      emit({ type: "introspected", step: node.id })
-      emit({ type: "expanded", step: node.id, children: subs.length })
-      return true
+      // The model's willingness to decompose the whole task is variable (temperature): sometimes it
+      // insists on one big atomic write. RETRY a few times — a retry usually yields a proper plan.
+      for (let attempt = 0; attempt < SOFT_DECOMPOSE_ATTEMPTS; attempt++) {
+        const ex = yield* Effect.exit(deps.introspect(buildPrompt(node.id, { allowDecomposition: true, mustDecompose: true })))
+        if (!Exit.isSuccess(ex)) continue
+        const parsed = JhExpander.parseReply(ex.value)
+        const subs = parsed.ok && parsed.draft.size === "needs_decomposition" ? parsed.draft.substeps : undefined
+        if (!subs || subs.length === 0) continue
+        // Attach a structurally-valid plan REGARDLESS of declared dataflow: for file-based work the real
+        // dependency is the file on disk (cwd), not the artifact store — a weak model's consumes/produces
+        // ids are an unreliable proxy, and a dangling DECLARATION doesn't mean the step will fail (§9/§12).
+        // Execution + the verify-gate are the real checks.
+        const attached = JhTree.attach(tree, node.id, subs, maxDepth)
+        if (attached instanceof JhTree.AttachError) continue
+        tree = attached
+        emit({ type: "introspected", step: node.id })
+        emit({ type: "expanded", step: node.id, children: subs.length })
+        return true
+      }
+      return false
     })
 
   // E — the atomic execution loop.
