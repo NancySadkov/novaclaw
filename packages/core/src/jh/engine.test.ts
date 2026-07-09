@@ -5,6 +5,7 @@ import { JhBudget } from "./budget"
 import { JhBasicTools } from "./tools-basic"
 import type { JhProcessRunner } from "./process-runner"
 import { JhEngine } from "./engine"
+import { JhTree } from "./tree"
 
 // ---- scripted-deps harness: introspect+correct pull from ONE reply queue (call order); executor and
 // runner (verify) pull from their own queues. LLM_FAIL makes a model call fail. ----
@@ -467,5 +468,30 @@ describe("JhEngine.runTask", () => {
     expect(r.status).toBe("done") // the corrected check runs `.\pi.exe` and passes — no infinite stale-check fail
     expect(types(r)).toContain("committed")
     expect(types(r).filter((t) => t === "introspected").length).toBe(2)
+  })
+
+  test("27. root-completion goal-check EXTENDS with a fix node when the whole-task goal isn't met", async () => {
+    // iter 21 false-done: children all committed (weak per-step checks passed) but the program printed wrong
+    // output. The root-level goal-check must catch it and GROW a fix node (owner #2+#5), not report done.
+    const runAtom = (goal: string, cmd: string) => reply(atomObj({ goal, tool: "run", args: { command: cmd }, check: { type: "run", command: cmd }, produces: [] }))
+    const d = scriptedDeps({
+      replies: [
+        reply(compoundObj([atomObj({ goal: "g1", tool: "run", args: { command: "a" }, check: { type: "run", command: "a" }, produces: [] })])), // root decomposes → 1 child
+        runAtom("g1", "a"), // root.1 introspect → runs, commits
+        `{"achieved": false, "missing": "the program prints wrong digits"}`, // root goal-check #1 → NOT achieved
+        runAtom("fix", "b"), // the appended root.2 (fix) introspect → runs, commits
+        `{"achieved": true, "missing": ""}`, // root goal-check #2 → achieved
+      ],
+      observations: [okObs(), okObs()],
+      runResults: [{ exitCode: 0, output: "", timedOut: false }, { exitCode: 0, output: "", timedOut: false }],
+      verifyGoal: true,
+    })
+    const r = await run(d)
+    expect(r.status).toBe("done")
+    // the root GREW a second child (the fix node) — it was not a false-done
+    expect(JhTree.get(r.state.tree, r.state.tree.root)?.children.length).toBe(2)
+    // two root-level goal verifications: first fail, then pass
+    const rootVerifs = r.state.log.filter((e) => e.type === "verification" && "step" in e && (e as { step?: string }).step === r.state.tree.root)
+    expect(rootVerifs.map((e) => (e as { ok?: boolean }).ok)).toEqual([false, true])
   })
 })

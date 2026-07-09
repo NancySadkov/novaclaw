@@ -191,6 +191,9 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       if (!child || child.parent === undefined) break
       const parentID = child.parent
       if (!JhTree.allChildrenCommitted(tree, parentID)) break
+      // With goal-verification on, the ROOT is not auto-committed here: the main loop runs a final
+      // whole-task goal check first (and EXTENDS with a fix node if the deliverable isn't actually done).
+      if (deps.verifyGoal && parentID === tree.root) break
       tree = JhTree.setStatus(tree, parentID, "committed")
       emit({ type: "committed", step: parentID })
       childID = parentID
@@ -488,6 +491,36 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         if (root && root.status === "committed") {
           emit({ type: "task_done" })
           return report("done")
+        }
+        // Root-completion goal verification + dynamic extend (owner #5 + #2): all children committed but
+        // bubble deferred the root under verifyGoal. Verify the WHOLE-TASK goal against the workspace; if
+        // the deliverable is NOT actually done (e.g. the program runs but prints wrong digits), EXTEND the
+        // root with ONE fix node and keep going — never a false-done. Block only at the global step budget.
+        if (root && deps.verifyGoal && root.status === "expanded" && JhTree.allChildrenCommitted(tree, tree.root)) {
+          const gc = yield* Effect.exit(deps.introspect(JhExpander.goalCheckPrompt({ goal: task.goal, workspace: renderWorkspace() })))
+          const verdict = Exit.isSuccess(gc) ? JhExpander.parseGoalCheck(gc.value) : { achieved: true, missing: "" } // unreachable checker → don't stall; accept
+          emit({ type: "verification", step: tree.root, ok: verdict.achieved, detail: verdict.achieved ? "task goal achieved" : `task goal NOT achieved — ${verdict.missing}` })
+          if (verdict.achieved) {
+            tree = JhTree.setStatus(tree, tree.root, "committed")
+            emit({ type: "committed", step: tree.root })
+            emit({ type: "task_done" })
+            return report("done")
+          }
+          if (JhTree.size(tree) < maxTotalSteps) {
+            const fixDraft: JhStep.StepDraft = {
+              goal: `The task is NOT yet complete — ${verdict.missing || "the deliverable is missing or incorrect"}. Do the next action to finish it: if a program prints wrong output, FIX the source, RECOMPILE, then re-run and verify the output is correct.`,
+              size: "atomic",
+              success: "the task's deliverable is produced and verified correct",
+            }
+            const appended = JhTree.appendChild(tree, tree.root, fixDraft, maxDepth)
+            if (!(appended instanceof JhTree.AttachError)) {
+              tree = appended
+              emit({ type: "expanded", step: tree.root, children: JhTree.get(tree, tree.root)!.children.length })
+              continue
+            }
+          }
+          emit({ type: "task_blocked", reason: "goal_unmet" })
+          return report("blocked", "goal_unmet")
         }
         const reason = lastBlockReason ?? "no_progress"
         emit({ type: "task_blocked", reason })

@@ -98,6 +98,23 @@ export function attach(
   return { root: tree.root, nodes }
 }
 
+/** Dynamic AST growth: append ONE new pending child to a node (owner's "the list holding it gets extended
+ *  with an additional node"). The parent becomes/stays "expanded" — so a COMMITTED node reopens when it
+ *  gains a fresh child (used to extend a task whose goal-check failed with one more fix step). The new
+ *  child id is `${parentID}.${children.length + 1}` (stable — never reuses a prior index). */
+export function appendChild(tree: Tree, parentID: JhStep.StepID, draft: JhStep.StepDraft, maxDepth: number): Tree | AttachError {
+  const parent = tree.nodes.get(parentID)
+  if (!parent) return new AttachError("unknown_parent", parentID)
+  const childID = asID(`${parentID}.${parent.children.length + 1}`)
+  const temp = new Map<string, Node>()
+  const err = buildSubtree(temp, draft, childID, parentID, parent.depth + 1, maxDepth)
+  if (err) return err
+  const nodes = new Map(tree.nodes)
+  nodes.set(parentID, { ...parent, status: "expanded", children: [...parent.children, childID] })
+  for (const [k, v] of temp) nodes.set(k, v)
+  return { root: tree.root, nodes }
+}
+
 export function get(tree: Tree, id: JhStep.StepID): Node | undefined {
   return tree.nodes.get(id)
 }
