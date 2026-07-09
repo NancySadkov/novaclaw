@@ -50,10 +50,12 @@ export interface Deps {
    *  atomic write_file with a trivial check — a "false done"). Off by default; the session's Strict
    *  switch turns it on for weak models. */
   readonly forceRootDecompose?: boolean
-  /** Filesystem ground truth: names of the files currently in the working directory. Injected into every
-   *  introspection so a step knows what actually exists (weak models mis-coordinate filenames across
-   *  steps — the declared-dataflow ids are an unreliable proxy for the real files on disk). */
-  readonly listFiles?: () => ReadonlyArray<string>
+  /** Filesystem ground truth: the working-directory files WITH their (text) contents. Injected into every
+   *  introspection so a step sees the real files and their code — weak models mis-coordinate filenames and
+   *  cannot fix a compile error they can't see (the declared-dataflow ids are an unreliable proxy for the
+   *  files on disk). A `run` step whose check is `compile` can then re-introspect to a write_file that
+   *  fixes the source, and the same compile-check verifies the fix (the write→compile→fix loop). */
+  readonly listFiles?: () => ReadonlyArray<{ readonly name: string; readonly content: string }>
   readonly limits: { readonly maxDepth: number; readonly maxTotalSteps: number }
   readonly trigger: JhBudget.SplitTrigger
   readonly onLog?: (entry: JhLog.Sequenced) => void
@@ -135,9 +137,16 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       })
     const ancestorGoals = JhTree.ancestors(tree, nodeId).map((n) => n.draft.goal)
     const base = JhContext.assemble({ taskGoal: task.goal, ancestorGoals, stepGoal: goalOf(nodeId), direct, transitive })
-    const files = deps.listFiles?.() ?? []
-    const fileLine = deps.listFiles ? `\n\nFiles currently in the working directory: ${files.length ? files.join(", ") : "(none yet)"}` : ""
-    const full = `${base}${fileLine}`
+    let fileBlock = ""
+    if (deps.listFiles) {
+      const files = deps.listFiles()
+      if (files.length === 0) fileBlock = "\n\n# Working directory\n(no files yet)"
+      else {
+        const bodies = files.map((f) => `### ${f.name}\n\`\`\`\n${f.content.length > 8000 ? f.content.slice(0, 8000) + "\n…[truncated]…" : f.content}\n\`\`\``)
+        fileBlock = `\n\n# Working directory (the ACTUAL files on disk — reference these exact names, and fix code here if a step failed)\n${bodies.join("\n\n")}`
+      }
+    }
+    const full = `${base}${fileBlock}`
     return extra ? `${full}\n\n${extra}` : full
   }
   const buildPrompt = (
