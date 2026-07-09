@@ -110,6 +110,10 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
     const s = deps.artifacts.get(id)
     return s ? s.content : "<artifact not yet produced>"
   }
+  // The root IS the task — introspection must NOT be allowed to narrow it (a weak model reframes "write
+  // AND compile AND verify X" down to "write X", losing requirements). Always introspect the root against
+  // the original task goal.
+  const goalOf = (nodeId: JhStep.StepID): string => (nodeId === tree.root ? task.goal : JhTree.get(tree, nodeId)!.draft.goal)
   const buildContext = (nodeId: JhStep.StepID, extra?: string): string => {
     const cur = JhTree.get(tree, nodeId)!
     const closureIds = JhDataflow.closure(tree, nodeId)
@@ -123,7 +127,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         return { id, type: (s?.type ?? "text") as JhStep.ArtifactType, content: s ? s.content : "<artifact not yet produced>" }
       })
     const ancestorGoals = JhTree.ancestors(tree, nodeId).map((n) => n.draft.goal)
-    const base = JhContext.assemble({ taskGoal: task.goal, ancestorGoals, stepGoal: cur.draft.goal, direct, transitive })
+    const base = JhContext.assemble({ taskGoal: task.goal, ancestorGoals, stepGoal: goalOf(nodeId), direct, transitive })
     return extra ? `${base}\n\n${extra}` : base
   }
   const buildPrompt = (
@@ -133,7 +137,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
     const cur = JhTree.get(tree, nodeId)!
     return JhExpander.introspectPrompt({
       taskGoal: task.goal,
-      stepGoal: cur.draft.goal,
+      stepGoal: goalOf(nodeId),
       context: buildContext(nodeId, opts.extraContext),
       toolNames: deps.toolNames,
       allowDecomposition: opts.allowDecomposition ?? cur.depth < maxDepth,
