@@ -82,3 +82,44 @@ describe("extractJsonObject", () => {
     expect(elapsed).toBeLessThan(1000)
   })
 })
+
+describe("extractJsonObject located syntax hints (improve3 P2b)", () => {
+  const fail = (text: string) => {
+    const r = JhExtract.extractJsonObject(text)
+    if (r.ok) throw new Error("expected a failure")
+    return r.failure
+  }
+
+  test("invalid_json carries a likely-cause hint + a bounded snippet", () => {
+    const f = fail('```json\n{"goal": "x", "size": "atomic" oops}\n```')
+    expect(f.reason).toBe("invalid_json")
+    expect(f.cause).toBeTruthy()
+    expect(f.snippet).toContain("goal")
+    expect((f.snippet ?? "").length).toBeLessThanOrEqual(200)
+  })
+
+  test("unbalanced (truncated) carries a position + snippet + a truncation hint", () => {
+    const f = fail('{"goal": "write the whole plan", "substeps": [{"goal": "a"')
+    expect(f.reason).toBe("unbalanced")
+    expect(typeof f.position).toBe("number")
+    expect(f.cause).toContain("TRUNCATED")
+    expect(f.snippet).toBeTruthy()
+  })
+
+  test("no_json carries an actionable cause", () => {
+    const f = fail("I will now think about the plan but never emit an object.")
+    expect(f.reason).toBe("no_json")
+    expect(f.cause).toContain("json")
+  })
+
+  test("a 20k-char reply's snippet stays bounded (no huge echo)", () => {
+    const huge = '{"goal": "' + "x".repeat(20000) + '" oops}'
+    const f = fail(huge)
+    expect((f.snippet ?? "").length).toBeLessThanOrEqual(200)
+  })
+
+  test("a valid object still parses (happy path unchanged)", () => {
+    const r = JhExtract.extractJsonObject('{"goal": "x", "size": "atomic"}')
+    expect(r.ok).toBe(true)
+  })
+})

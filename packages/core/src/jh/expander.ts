@@ -93,7 +93,16 @@ export function introspectPrompt(input: {
  *  that — it needs the parsed draft to repair). */
 export function parseReply(text: string): { readonly ok: true; readonly draft: JhStep.StepDraft } | { readonly ok: false; readonly issue: string } {
   const extracted = JhExtract.extractJsonObject(text)
-  if (!extracted.ok) return { ok: false, issue: `${extracted.failure.reason}: ${extracted.failure.detail}` }
+  if (!extracted.ok) {
+    // improve3 P2b: surface the LOCATED failure (position + snippet + likely cause) so the retry reminder is
+    // actionable — "unbalanced near '…{"goal":"…' (truncated → shorter plan)" instead of just "unbalanced".
+    const f = extracted.failure
+    const parts = [`${f.reason}: ${f.detail}`]
+    if (f.position !== undefined) parts.push(`near position ${f.position}`)
+    if (f.snippet) parts.push(`context: ${f.snippet}`)
+    if (f.cause) parts.push(`likely cause: ${f.cause}`)
+    return { ok: false, issue: parts.join(" — ") }
+  }
   try {
     const draft = Schema.decodeUnknownSync(JhStep.StepDraft)(JhStep.coerceDraftShape(extracted.value))
     return { ok: true, draft }

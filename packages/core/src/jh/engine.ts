@@ -137,6 +137,10 @@ const SOFT_DECOMPOSE_ATTEMPTS = 3
 // auto-reverts to the last verified checkpoint. 3 = give the model a couple of self-repair shots first, then stop
 // the damage (the model won't `git_revert` itself — §I2). Any green build resets the counter.
 const AUTO_REVERT_AFTER = 3
+// improve3 P2a (owner #2): the ROOT plan is the single most critical introspection — a malformed root reply
+// killed a whole run in ~2 min (run63/§I3). Give the root MANY more parse-retries (with the P2b located hint
+// each time); a non-root leaf keeps its 2 attempts (a failed leaf has never-dead-end, a failed root doesn't).
+const ROOT_INTROSPECT_ATTEMPTS = 10
 const errorSig = (detail: string): string => detail.slice(0, 160).trim()
 // A leaf's check is its GOAL gate. The recovery loop may CORRECT a check's command (pi.exe→.\pi.exe —
 // adopt it), but must NEVER DOWNGRADE it: when the model does an intermediate write_file to fix a bug, its
@@ -751,10 +755,12 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       const allowDecomposition = node.depth < maxDepth
       let draft: JhStep.StepDraft | undefined
       let reminder: string | undefined
-      for (let attempt = 0; attempt < 2; attempt++) {
+      const maxAttempts = node.id === tree.root ? ROOT_INTROSPECT_ATTEMPTS : 2 // P2a: the root gets many more
+      for (let attempt = 0; attempt < maxAttempts; attempt++) {
+        const notLast = attempt < maxAttempts - 1
         const ex = yield* Effect.exit(deps.introspect(buildPrompt(node.id, { allowDecomposition, mustDecompose: false, formatReminder: reminder })))
         if (!Exit.isSuccess(ex)) {
-          if (attempt === 0) {
+          if (notLast) {
             reminder = undefined
             continue
           }
@@ -765,8 +771,9 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         if (!parsed.ok) {
           emit({ type: "parse_failed", step: node.id, issue: parsed.issue })
           updateTelemetry(node.id, (t) => ({ ...t, parseFails: t.parseFails + 1 }))
-          if (attempt === 0) {
-            reminder = `Your previous reply could not be parsed (${parsed.issue}). Output exactly ONE \`\`\`json object.`
+          if (notLast) {
+            // P2b: parsed.issue now carries the located hint (position + snippet + likely cause).
+            reminder = `Your previous reply could not be parsed — ${parsed.issue}. Output exactly ONE \`\`\`json object; fix the specific problem above.`
             continue
           }
           yield* structuralFailRecover(node, "unparseable") // D11: recover, don't cascade-block
@@ -775,7 +782,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         const errs = JhStep.structuralIssues(parsed.draft).filter((i) => i.severity === "error")
         if (errs.length > 0) {
           emit({ type: "structural_rejected", step: node.id, codes: errs.map((e) => e.code) })
-          if (attempt === 0) {
+          if (notLast) {
             reminder = `Your step was malformed (${errs.map((e) => e.code).join(", ")}). Fix it and re-emit exactly one json object.`
             continue
           }

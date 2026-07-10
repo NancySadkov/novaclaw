@@ -235,14 +235,16 @@ describe("JhEngine.runTask", () => {
     expect(r.state.log.some((e) => e.type === "verification" && !e.ok && e.detail === "tool boom")).toBe(true)
   })
 
-  test("11. parse failure: recover on retry; twice → blocked(unparseable)", async () => {
+  test("11. parse failure: recover on retry; persistently → blocked(unparseable)", async () => {
     const recover = scriptedDeps({ replies: ["not json at all", reply(atomObj())], observations: [okObs({ out: "x" })] })
     const rr = await run(recover)
     expect(rr.status).toBe("done")
     const rt = types(rr)
     expect(rt.indexOf("parse_failed")).toBeLessThan(rt.indexOf("introspected"))
 
-    const stuck = scriptedDeps({ replies: ["garbage", "still garbage"] })
+    // improve3 P2a: the ROOT now gets ROOT_INTROSPECT_ATTEMPTS (10) parse-retries before giving up (run63/§I3
+    // died at 2). Persistent garbage across all attempts → blocked(unparseable).
+    const stuck = scriptedDeps({ replies: Array.from({ length: 10 }, () => "garbage") })
     const rs = await run(stuck)
     expect(rs.status).toBe("blocked")
     expect(rs.reason).toBe("unparseable")

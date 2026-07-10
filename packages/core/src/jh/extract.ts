@@ -10,6 +10,10 @@ export * as JhExtract from "./extract"
 export interface ExtractFailure {
   readonly reason: "no_json" | "unbalanced" | "invalid_json"
   readonly detail: string
+  // improve3 P2b: locate the failure so the retry reminder is actionable (not just "unparseable").
+  readonly position?: number // char index into the reply (best-effort; reliable for `unbalanced`)
+  readonly snippet?: string // ±80 chars of the raw reply around the failure, bounded ≤ ~200
+  readonly cause?: string // a likely-cause hint the model can act on (truncation / bad escape / …)
 }
 
 export type ExtractResult = { readonly ok: true; readonly value: unknown } | { readonly ok: false; readonly failure: ExtractFailure }
@@ -17,6 +21,31 @@ export type ExtractResult = { readonly ok: true; readonly value: unknown } | { r
 interface ScanResult {
   readonly objects: ReadonlyArray<string>
   readonly sawOpenBrace: boolean
+  readonly lastOpenIndex: number // index of the last top-level `{` left unclosed (−1 if none) — for `unbalanced`
+}
+
+/** ±radius chars of `text` around `pos`, collapsed to one line, bounded to ~2·radius+ellipsis. */
+function snippetAround(text: string, pos: number, radius = 80): string {
+  const from = Math.max(0, pos - radius)
+  const to = Math.min(text.length, pos + radius)
+  const s = text.slice(from, to).replace(/\s+/g, " ").trim()
+  return `${from > 0 ? "…" : ""}${s}${to < text.length ? "…" : ""}`
+}
+
+/** Build a LOCATED invalid_json failure: parser position (best-effort — V8 gives it, JSC/Bun usually doesn't),
+ *  a bounded snippet of the failing object, and a likely-cause hint the model can act on. */
+function invalidJsonFailure(candidate: string, error: string): ExtractFailure {
+  const m = error.match(/position (\d+)/i)
+  const position = m ? Number(m[1]) : undefined
+  const lower = error.toLowerCase()
+  const cause = lower.includes("unterminated string")
+    ? 'an unescaped quote or newline inside a JSON string — escape them (\\" and \\n) and use forward slashes in paths'
+    : lower.includes("escape")
+      ? "an invalid backslash escape inside a JSON string — use forward slashes in paths, and write any literal backslash as \\\\"
+      : lower.includes("eof") || lower.includes("end of") || lower.includes("unexpected end")
+        ? "the reply looks TRUNCATED — emit a SHORTER object (fewer, higher-level steps)"
+        : "malformed JSON — check for a missing comma, quote, or brace"
+  return { reason: "invalid_json", detail: error, position, snippet: snippetAround(candidate, position ?? 0), cause }
 }
 
 /**
@@ -57,7 +86,8 @@ function scanBalanced(s: string): ScanResult {
       }
     }
   }
-  return { objects, sawOpenBrace }
+  // If depth > 0 at the end, `start` marks the last top-level `{` that never balanced (the truncation point).
+  return { objects, sawOpenBrace, lastOpenIndex: depth > 0 ? start : -1 }
 }
 
 /** Split the text into fenced-block inner contents (``` ... ```), in document order. The balanced
@@ -123,7 +153,7 @@ export function extractJsonObject(text: string): ExtractResult {
     if (objects.length > 0) {
       const candidate = objects[objects.length - 1]!
       const parsed = tryParse(candidate)
-      return parsed.ok ? { ok: true, value: parsed.value } : { ok: false, failure: { reason: "invalid_json", detail: parsed.error } }
+      return parsed.ok ? { ok: true, value: parsed.value } : { ok: false, failure: invalidJsonFailure(candidate, parsed.error) }
     }
   }
 
@@ -132,11 +162,20 @@ export function extractJsonObject(text: string): ExtractResult {
   if (scan.objects.length > 0) {
     const candidate = scan.objects[scan.objects.length - 1]!
     const parsed = tryParse(candidate)
-    return parsed.ok ? { ok: true, value: parsed.value } : { ok: false, failure: { reason: "invalid_json", detail: parsed.error } }
+    return parsed.ok ? { ok: true, value: parsed.value } : { ok: false, failure: invalidJsonFailure(candidate, parsed.error) }
   }
 
   if (scan.sawOpenBrace) {
-    return { ok: false, failure: { reason: "unbalanced", detail: "found an opening brace but no balanced object" } }
+    return {
+      ok: false,
+      failure: {
+        reason: "unbalanced",
+        detail: "found an opening brace but no balanced object",
+        position: scan.lastOpenIndex >= 0 ? scan.lastOpenIndex : undefined,
+        snippet: snippetAround(text, text.length, 120), // the tail — where a truncated reply cut off
+        cause: "the reply may be TRUNCATED — emit a SHORTER plan (fewer, higher-level steps), and make sure every { has a matching }",
+      },
+    }
   }
-  return { ok: false, failure: { reason: "no_json", detail: "no JSON object found in model output" } }
+  return { ok: false, failure: { reason: "no_json", detail: "no JSON object found in model output", cause: "emit exactly ONE fenced ```json { … } ``` object and nothing after it" } }
 }
