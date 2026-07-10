@@ -311,6 +311,22 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         emit({ type: "expanded", step: parentID, children: JhTree.get(tree, parentID)!.children.length })
       }
     })
+  // D11 (char run45/47): a NON-root node whose introspection is unusable (unparseable / malformed /
+  // dataflow-broken — the LLM is up but emitted garbage) must NOT hard-block and cascade to the root (that
+  // discarded an 85-digit near-miss). Best-effort-commit it and grow a fix sibling — the never-dead-end
+  // principle applied to STRUCTURAL failures, not just stuck checks. Root / no-parent / budget → blockNode.
+  const structuralFailRecover = (node: JhTree.Node, reason: string): Effect.Effect<void> =>
+    Effect.gen(function* () {
+      const parentID = JhTree.get(tree, node.id)?.parent
+      if (deps.verifyGoal && parentID !== undefined && JhTree.size(tree) < maxTotalSteps) {
+        tree = JhTree.setStatus(tree, node.id, "committed")
+        emit({ type: "committed_best_effort", step: node.id, reason })
+        yield* growFixNode(parentID, JhTree.get(tree, node.id)!.draft.goal, `the previous step could not be completed (${reason} — the model emitted an unusable reply); do the step's work now with a clean, well-formed single action`, "the step's goal is met")
+        bubble(node.id)
+      } else {
+        blockNode(node, reason)
+      }
+    })
   // R2: run-scoped LLM goal-check cache + verdict result. `cached` lets the caller mark the transcript;
   // `evidenceFault` = an achieved:true claim without a verifiable verbatim quote (a checker fault, not a
   // model-action fault, so it must NOT accrue toward the leaf's stuck counter).
@@ -418,12 +434,12 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         }
         const parsed = JhExpander.parseReply(ex.value)
         if (!parsed.ok || !parsed.draft.substeps || parsed.draft.substeps.length === 0) {
-          blockNode(node, "dataflow")
+          yield* structuralFailRecover(node, "dataflow") // D11: recover, don't cascade-block
           return "blocked" as const
         }
         current = parsed.draft.substeps
       }
-      blockNode(node, "dataflow")
+      yield* structuralFailRecover(node, "dataflow") // D11: recover, don't cascade-block
       return "blocked" as const
     })
 
@@ -583,6 +599,13 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         if (vr.ok && analyzeNodes.has(node.id) && !hasInstrumentation(lastRunOutput)) {
           vr = { ok: false, detail: "no labeled intermediate values (NAME=value lines) in the output — add the printf instrumentation, recompile, and run" }
         }
+        // D12 (char run46): an ATOMIC ROOT (soft-decompose fell back to one leaf) commits directly and
+        // bypasses the root-completion gate + the taskComplete oracle → a false-done. Gate the root's own
+        // commit through the precise oracle: it cannot declare the whole task done unless taskComplete agrees.
+        if (vr.ok && node.id === tree.root && deps.taskComplete) {
+          const tc = deps.taskComplete({ workspace: renderWorkspace(), lastOutput: lastRunOutput })
+          if (!tc.done) vr = { ok: false, detail: `the whole task is not done yet — ${tc.detail}` }
+        }
         emit({ type: "verification", step: node.id, ok: vr.ok, detail: vr.detail })
 
         if (vr.ok) {
@@ -694,7 +717,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
             reminder = `Your previous reply could not be parsed (${parsed.issue}). Output exactly ONE \`\`\`json object.`
             continue
           }
-          blockNode(node, "unparseable")
+          yield* structuralFailRecover(node, "unparseable") // D11: recover, don't cascade-block
           return
         }
         const errs = JhStep.structuralIssues(parsed.draft).filter((i) => i.severity === "error")
@@ -704,7 +727,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
             reminder = `Your step was malformed (${errs.map((e) => e.code).join(", ")}). Fix it and re-emit exactly one json object.`
             continue
           }
-          blockNode(node, "malformed_step")
+          yield* structuralFailRecover(node, "malformed_step") // D11: recover, don't cascade-block
           return
         }
         draft = parsed.draft

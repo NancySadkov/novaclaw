@@ -91,6 +91,79 @@ describe("R4 escalation ladder — forced analyze", () => {
   })
 })
 
+describe("D11/D12 never-dead-end robustness (from the char campaign)", () => {
+  test("D12: an ATOMIC root cannot commit-done unless taskComplete agrees (no false-done)", async () => {
+    // the model insists the root is atomic (soft-decompose always fails) → the root runs as one leaf whose
+    // check passes, but taskComplete says NOT done → the root must NOT false-commit (char run46).
+    const deps: JhEngine.Deps = {
+      introspect: () => Effect.succeed(atomObj()), // always atomic → soft-decompose fails → root runs atomic
+      correct: () => Effect.fail({ message: "x" }),
+      executor: { run: () => Effect.succeed({ ok: true, output: "wrong", artifacts: new Map<string, string>() }) },
+      runner: { run: () => Effect.succeed({ exitCode: 0, output: "wrong", timedOut: false }) }, // the run check passes
+      artifacts: JhArtifact.memory(),
+      fileExists: () => true,
+      cwd: ".",
+      toolNames: JhBasicTools.TOOL_NAMES,
+      listFiles: () => [{ name: "a.c", content: "src" }],
+      forceRootDecompose: true,
+      verifyGoal: true,
+      taskComplete: () => ({ done: false, detail: "not the right output" }),
+      limits: { maxDepth: 0, maxTotalSteps: 8 },
+      trigger: JhBudget.DEFAULT_TRIGGER,
+    }
+    const r = await run(deps)
+    expect(r.status).not.toBe("done") // the precise oracle gated the atomic-root commit
+  })
+
+  test("D11: a non-root unparseable introspection RECOVERS (grows a fix sibling) instead of cascade-blocking", async () => {
+    // root → 1 child; the child's introspection is garbage twice → best-effort-commit + grow a fix sibling,
+    // never a hard `unparseable` block that discards the whole run (char run45's 85-digit near-miss).
+    const steps = [atomObj({ goal: "root" }), compound1(), "total garbage not json", "still not json", atomObj({ goal: "fix" })]
+    let i = 0
+    const deps: JhEngine.Deps = {
+      introspect: (p) => (p.user.includes("Is the goal fully achieved?") ? Effect.succeed(`{"achieved": false}`) : Effect.succeed(steps[i++] ?? atomObj())),
+      correct: () => Effect.fail({ message: "x" }),
+      executor: { run: () => Effect.succeed({ ok: true, output: "ran", artifacts: new Map<string, string>() }) },
+      runner: { run: () => Effect.succeed({ exitCode: 0, output: "", timedOut: false }) },
+      artifacts: JhArtifact.memory(),
+      fileExists: () => true,
+      cwd: ".",
+      toolNames: JhBasicTools.TOOL_NAMES,
+      listFiles: () => [{ name: "a.c", content: "src" }],
+      forceRootDecompose: true,
+      verifyGoal: true,
+      taskComplete: () => ({ done: false, detail: "wrong" }),
+      limits: { maxDepth: 2, maxTotalSteps: 12 },
+      trigger: JhBudget.DEFAULT_TRIGGER,
+    }
+    const r = await run(deps)
+    expect(has(r, "committed_best_effort")).toBe(true) // the garbage child was recovered, not hard-blocked
+    expect(r.reason).not.toBe("unparseable") // never a cascade-block on the parse failure
+  })
+
+  test("D11 parity: with verifyGoal OFF, an unparseable node still hard-blocks (unchanged legacy behavior)", async () => {
+    const steps = [compound1(), "garbage", "garbage"] // root decomposes → child introspects garbage twice
+    let i = 0
+    const deps: JhEngine.Deps = {
+      introspect: () => Effect.succeed(steps[i++] ?? "garbage"),
+      correct: () => Effect.fail({ message: "x" }),
+      executor: { run: () => Effect.succeed({ ok: true, output: "", artifacts: new Map<string, string>() }) },
+      runner: { run: () => Effect.succeed({ exitCode: 0, output: "", timedOut: false }) },
+      artifacts: JhArtifact.memory(),
+      fileExists: () => true,
+      cwd: ".",
+      toolNames: JhBasicTools.TOOL_NAMES,
+      forceRootDecompose: false,
+      verifyGoal: false, // OFF → legacy hard-block
+      limits: { maxDepth: 2, maxTotalSteps: 12 },
+      trigger: JhBudget.DEFAULT_TRIGGER,
+    }
+    const r = await run(deps)
+    expect(r.status).toBe("blocked")
+    expect(r.reason).toBe("unparseable")
+  })
+})
+
 describe("R3 graded score + keep-best", () => {
   test("a new best score emits `scored`; a snapshot is kept", async () => {
     // score climbs from the run output: 0.2 then 0.6 then never done → two `scored` events (improvements only)
