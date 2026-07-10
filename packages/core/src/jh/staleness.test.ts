@@ -1,0 +1,296 @@
+import { describe, expect, test } from "bun:test"
+import { Effect } from "effect"
+import { JhStaleness } from "./staleness"
+import { JhArtifact } from "./artifact"
+import { JhBudget } from "./budget"
+import { JhBasicTools } from "./tools-basic"
+import type { JhProcessRunner } from "./process-runner"
+import { JhEngine } from "./engine"
+
+// ---------------------------------------------------------------------------------------------------
+// Pure Tracker tests (jh-improve1 P1) — the build-graph over facts the harness owns.
+// ---------------------------------------------------------------------------------------------------
+describe("JhStaleness.tracker (pure)", () => {
+  test("1. a run-created file is a PRODUCT; write_file'd files never become products", () => {
+    const t = JhStaleness.tracker()
+    const s0 = t.snap([{ name: "a.c", content: "" }]) // (a.c already present, empty)
+    const s1 = t.snap([{ name: "a.c", content: "x" }])
+    // the model WROTE a.c → it's a source, not a product, even if named in a command
+    t.recordAction({ tool: "write_file", ok: true, before: s0, after: s1 })
+    expect(t.staleProducts("cc a.c", s1)).toEqual([])
+    // now a successful run creates out.exe from a.c → out.exe is a product
+    const s2 = t.snap([{ name: "a.c", content: "x" }, { name: "out.exe", content: "BIN0" }])
+    t.recordAction({ tool: "run", ok: true, command: "gcc a.c -o out.exe", before: s1, after: s2 })
+    // edit the source → out.exe is stale; a.c is never flagged (it's a source)
+    const s3 = t.snap([{ name: "a.c", content: "y" }, { name: "out.exe", content: "BIN0" }])
+    expect(t.staleProducts("out.exe", s3).map((p) => p.file)).toEqual(["out.exe"])
+    expect(t.staleProducts("a.c", s3)).toEqual([])
+  })
+
+  test("2. source edit → staleProducts names the product with its remembered rebuild command", () => {
+    const t = JhStaleness.tracker()
+    const s0 = t.snap([{ name: "pi.c", content: "v0" }])
+    const s1 = t.snap([{ name: "pi.c", content: "v0" }, { name: "pi.exe", content: "BIN0" }])
+    t.recordAction({ tool: "run", ok: true, command: "gcc pi.c -o pi.exe", before: s0, after: s1 })
+    // not stale before any edit
+    expect(t.staleProducts(".\\pi.exe", s1)).toEqual([])
+    // edit the source → stale, with the rebuild command, matched despite the .\ prefix
+    const s2 = t.snap([{ name: "pi.c", content: "v1" }, { name: "pi.exe", content: "BIN0" }])
+    expect(t.staleProducts(".\\pi.exe", s2)).toEqual([{ file: "pi.exe", rebuild: "gcc pi.c -o pi.exe" }])
+  })
+
+  test("9. product→source migration: model write_file's over pi.exe → no more refresh loop", () => {
+    const t = JhStaleness.tracker()
+    const s0 = t.snap([{ name: "pi.c", content: "v0" }])
+    const s1 = t.snap([{ name: "pi.c", content: "v0" }, { name: "pi.exe", content: "BIN0" }])
+    t.recordAction({ tool: "run", ok: true, command: "gcc pi.c -o pi.exe", before: s0, after: s1 })
+    // the model overwrites pi.exe via write_file → it's now a SOURCE (took ownership)
+    const s2 = t.snap([{ name: "pi.c", content: "v0" }, { name: "pi.exe", content: "HANDWRITTEN" }])
+    t.recordAction({ tool: "write_file", ok: true, before: s1, after: s2 })
+    // a later source change does NOT flag pi.exe (no product → no refresh loop), and a no-op run does not re-seed it
+    const s3 = t.snap([{ name: "pi.c", content: "v1" }, { name: "pi.exe", content: "HANDWRITTEN" }])
+    expect(t.staleProducts(".\\pi.exe", s3)).toEqual([])
+    t.recordAction({ tool: "run", ok: false, command: "foo", before: s3, after: s3 })
+    expect(t.staleProducts(".\\pi.exe", s3)).toEqual([])
+  })
+
+  test("checkDigest is stable on an unchanged workspace and changes on any edit", () => {
+    const t = JhStaleness.tracker()
+    const check = { type: "run", command: ".\\pi.exe" }
+    const a = t.snap([{ name: "pi.c", content: "v0" }])
+    const b = t.snap([{ name: "pi.c", content: "v0" }])
+    const c = t.snap([{ name: "pi.c", content: "v1" }])
+    expect(t.checkDigest(check, a)).toBe(t.checkDigest(check, b))
+    expect(t.checkDigest(check, a)).not.toBe(t.checkDigest(check, c))
+    expect(t.checkDigest(check, a)).not.toBe(t.checkDigest({ type: "run", command: "other" }, a))
+  })
+
+  test("orphan product (pre-existing binary, never produced) becomes stale after a source edit — no rebuild", () => {
+    const t = JhStaleness.tracker()
+    // pi.exe pre-exists; the first action is a source edit
+    const before = t.snap([{ name: "pi.c", content: "v0" }, { name: "pi.exe", content: "OLD" }])
+    const after = t.snap([{ name: "pi.c", content: "v1" }, { name: "pi.exe", content: "OLD" }])
+    t.recordAction({ tool: "write_file", ok: true, before, after })
+    const stale = t.staleProducts(".\\pi.exe", after)
+    expect(stale).toEqual([{ file: "pi.exe", rebuild: "" }]) // stale, but no remembered rebuild
+  })
+})
+
+// ---------------------------------------------------------------------------------------------------
+// Engine-integration tests — a scripted in-memory filesystem so listFiles/executor/runner stay
+// self-consistent (a compile writes a "binary" encoding the source; running it reads that back).
+// ---------------------------------------------------------------------------------------------------
+const atom = (over: Record<string, unknown> = {}) => JSON.stringify({ goal: "leaf", size: "atomic", tool: "note", args: { text: "x" }, success: "ok", check: { type: "artifact_present" }, produces: [], ...over })
+const compound = (substeps: unknown[]) => JSON.stringify({ goal: "root", size: "needs_decomposition", success: "ok", substeps })
+// a structurally-valid atomic substep placeholder (children re-introspect, but a substep must still decode)
+const subObj = (goal: string) => ({ goal, size: "atomic", tool: "note", args: { text: "x" }, success: "ok", check: { type: "artifact_present" }, produces: [] })
+
+// A Pi-like world: `gcc` compiles pi.c into pi.exe (the binary encodes the current source); running
+// pi.exe prints correct digits iff the encoded source contains "FIXED".
+const piWorld = (command: string, files: Map<string, string>): { exitCode: number; output: string } => {
+  if (command.includes("gcc")) {
+    const src = files.get("pi.c") ?? ""
+    if (src.includes("BROKEN")) return { exitCode: 1, output: "pi.c:3: error: expected ';'" }
+    files.set("pi.exe", `BIN[${src}]`)
+    return { exitCode: 0, output: "" }
+  }
+  if (command.includes("pi.exe")) {
+    const bin = files.get("pi.exe") ?? ""
+    return { exitCode: 0, output: bin.includes("FIXED") ? "3.14159" : "wrong" }
+  }
+  return { exitCode: 1, output: `unknown command: ${command}` }
+}
+
+function fsHarness(opts: {
+  replies: string[]
+  initial?: Record<string, string>
+  world: (command: string, files: Map<string, string>) => { exitCode: number; output: string }
+  staleness?: boolean
+  verifyGoal?: boolean
+  limits?: { maxDepth: number; maxTotalSteps: number }
+}) {
+  const files = new Map<string, string>(Object.entries(opts.initial ?? {}))
+  const replies = [...opts.replies]
+  const runLog: string[] = [] // commands routed through the RUNNER (verify checks + auto-rebuilds), in order
+  let modelCalls = 0
+
+  const runner: JhProcessRunner.Runner = {
+    run: ({ command }) => {
+      runLog.push(command)
+      const r = opts.world(command, files)
+      return Effect.succeed({ exitCode: r.exitCode, output: r.output, timedOut: false })
+    },
+  }
+  const executor: JhBasicTools.Executor = {
+    run: ({ tool, args, produces }) => {
+      if (tool === "write_file") {
+        files.set(String(args.path), String(args.content))
+        const art = new Map<string, string>()
+        const ref = produces.find((r) => r.type === "file")
+        if (ref) art.set(ref.id, String(args.content))
+        return Effect.succeed({ ok: true, output: `wrote ${args.path}`, artifacts: art })
+      }
+      if (tool === "run") {
+        const r = opts.world(String(args.command), files)
+        const art = new Map<string, string>()
+        const ref = produces.find((x) => x.type === "command_output")
+        if (ref) art.set(ref.id, r.output)
+        return Effect.succeed({ ok: r.exitCode === 0, output: r.output, artifacts: art })
+      }
+      const art = new Map<string, string>()
+      const ref = produces.find((x) => x.type === "note" || x.type === "text")
+      if (ref) art.set(ref.id, String(args.text ?? ""))
+      return Effect.succeed({ ok: true, output: String(args.text ?? ""), artifacts: art })
+    },
+  }
+  const deps: JhEngine.Deps = {
+    introspect: () => {
+      modelCalls++
+      const r = replies.shift()
+      return r === undefined ? Effect.fail({ message: "reply queue dry" }) : Effect.succeed(r)
+    },
+    correct: () => Effect.fail({ message: "no correct queue" }),
+    executor,
+    runner,
+    artifacts: JhArtifact.memory(),
+    fileExists: (rel) => files.has(rel),
+    cwd: ".",
+    toolNames: JhBasicTools.TOOL_NAMES,
+    listFiles: () => [...files.entries()].map(([name, content]) => ({ name, content })),
+    staleness: opts.staleness,
+    verifyGoal: opts.verifyGoal,
+    limits: opts.limits ?? { maxDepth: 2, maxTotalSteps: 32 },
+    trigger: JhBudget.DEFAULT_TRIGGER,
+  }
+  return { deps, files, runLog: () => runLog, modelCalls: () => modelCalls }
+}
+
+const runEngine = (h: ReturnType<typeof fsHarness>) => Effect.runPromise(JhEngine.runTask(h.deps, { goal: "build pi" }))
+const logTypes = (r: JhEngine.Report) => r.state.log.map((e) => e.type)
+const refreshedCount = (r: JhEngine.Report) => r.state.log.filter((e) => e.type === "refreshed").length
+
+describe("JhStaleness engine integration", () => {
+  test("3. edit→check auto-refreshes exactly once, and the rebuild runs BEFORE the re-check", async () => {
+    // A single leaf: compile buggy source, check runs the binary (wrong), model edits the source, the
+    // re-check auto-rebuilds the stale binary once then passes.
+    const runCheck = { type: "run", command: ".\\pi.exe", expect: "3.14159" }
+    const h = fsHarness({
+      initial: { "pi.c": "buggy" },
+      world: piWorld,
+      replies: [
+        atom({ goal: "build+verify", tool: "run", args: { command: "gcc pi.c -o pi.exe" }, check: runCheck }),
+        atom({ goal: "fix", tool: "write_file", args: { path: "pi.c", content: "FIXED source" }, check: runCheck, produces: [{ id: "pi.c", type: "file" }] }),
+      ],
+      limits: { maxDepth: 0, maxTotalSteps: 16 },
+    })
+    const r = await runEngine(h)
+    expect(r.status).toBe("done")
+    expect(refreshedCount(r)).toBe(1)
+    // the rebuild (gcc) was routed through the runner immediately before a pi.exe re-check
+    const log = h.runLog()
+    expect(log.some((c, i) => c.includes("gcc") && (log[i + 1] ?? "").includes("pi.exe"))).toBe(true)
+  })
+
+  test("4. a rebuild FAILURE surfaces as REBUILD FAILED and the check is NOT executed", async () => {
+    const runCheck = { type: "run", command: ".\\pi.exe", expect: "3.14159" }
+    const h = fsHarness({
+      initial: { "pi.c": "buggy" },
+      world: piWorld,
+      replies: [
+        atom({ goal: "build+verify", tool: "run", args: { command: "gcc pi.c -o pi.exe" }, check: runCheck }),
+        atom({ goal: "fix", tool: "write_file", args: { path: "pi.c", content: "BROKEN" }, check: runCheck, produces: [{ id: "pi.c", type: "file" }] }),
+      ],
+      limits: { maxDepth: 0, maxTotalSteps: 16 },
+    })
+    const r = await runEngine(h)
+    expect(r.state.log.some((e) => e.type === "verification" && !e.ok && String((e as { detail?: unknown }).detail).includes("REBUILD FAILED"))).toBe(true)
+    // exactly ONE binary execution (the pre-edit check); every post-edit rebuild failed → the re-check was skipped
+    // (`.\\pi.exe` is the check command; the gcc rebuild also contains "pi.exe" so match the run form precisely)
+    expect(h.runLog().filter((c) => c.includes(".\\pi.exe")).length).toBe(1)
+  })
+
+  test("5. a STALE product with no producer yields STALE ARTIFACT and never accrues 'stuck'", async () => {
+    const runCheck = { type: "run", command: ".\\pi.exe" }
+    const h = fsHarness({
+      initial: { "pi.c": "v0", "pi.exe": "OLDBIN" }, // pi.exe pre-exists, never produced by a recorded run
+      world: piWorld,
+      replies: [atom({ goal: "edit", tool: "write_file", args: { path: "pi.c", content: "v1" }, check: runCheck, produces: [{ id: "pi.c", type: "file" }] })],
+      limits: { maxDepth: 0, maxTotalSteps: 16 },
+    })
+    const r = await runEngine(h)
+    const stales = r.state.log.filter((e) => e.type === "verification" && String((e as { detail?: unknown }).detail).includes("STALE ARTIFACT"))
+    expect(stales.length).toBeGreaterThan(3) // it ran to the explore cap, NOT stuck at STUCK_REPEATS(3)
+    expect(h.runLog().filter((c) => c.includes("pi.exe")).length).toBe(0) // the check is skipped every time (no execution)
+  })
+
+  test("6. idempotence: an identical failing check over an unchanged workspace is CACHED (one execution), counts toward stuck", async () => {
+    const failCheck = { type: "run", command: "failing" }
+    const world = (command: string): { exitCode: number; output: string } =>
+      command === "failing" ? { exitCode: 1, output: "boom" } : { exitCode: 0, output: "" }
+    const h = fsHarness({
+      initial: { "a.txt": "x" },
+      world,
+      replies: [atom({ goal: "noop", tool: "run", args: { command: "noop" }, check: failCheck })],
+      limits: { maxDepth: 0, maxTotalSteps: 16 },
+    })
+    const r = await runEngine(h)
+    expect(h.runLog().filter((c) => c === "failing").length).toBe(1) // executed once; later identical checks cached
+    expect(r.state.log.some((e) => e.type === "verification" && String((e as { detail?: unknown }).detail).includes("nothing has changed since the last attempt"))).toBe(true)
+    expect(r.status).toBe("blocked") // the cached repeats DID count toward stuck
+  })
+
+  test("7a. run-27 regression: many blind edits then one run-check → exactly ONE refresh", async () => {
+    // compile once, then 3 write leaves (weak checks — no product execution), then a run-check leaf: the
+    // binary is stale by 3 edits and auto-rebuilds exactly once.
+    const runCheck = { type: "run", command: ".\\pi.exe", expect: "3.14159" }
+    const wl = (content: string) => atom({ goal: "edit", tool: "write_file", args: { path: "pi.c", content }, check: { type: "artifact_present" }, produces: [{ id: "pi.c", type: "file" }] })
+    const h = fsHarness({
+      initial: { "pi.c": "v0" },
+      world: piWorld,
+      replies: [
+        compound([subObj("compile"), subObj("e1"), subObj("e2"), subObj("e3"), subObj("check")]),
+        atom({ goal: "compile", tool: "run", args: { command: "gcc pi.c -o pi.exe" }, check: { type: "compile", command: "gcc pi.c -o pi.exe" } }),
+        wl("v1"),
+        wl("v2"),
+        wl("FIXED final"),
+        atom({ goal: "check", tool: "run", args: { command: ".\\pi.exe" }, check: runCheck }),
+      ],
+      limits: { maxDepth: 2, maxTotalSteps: 32 },
+    })
+    const r = await runEngine(h)
+    expect(r.status).toBe("done")
+    expect(refreshedCount(r)).toBe(1) // one rebuild across the whole run — the writes (weak checks) don't refresh
+  })
+
+  test("7b. run-32 regression: compile→check-fail→fix→re-check auto-refreshes and PASSES", async () => {
+    const runCheck = { type: "run", command: ".\\pi.exe", expect: "3.14159" }
+    const h = fsHarness({
+      initial: { "pi.c": "buggy" },
+      world: piWorld,
+      replies: [
+        atom({ goal: "build+verify", tool: "run", args: { command: "gcc pi.c -o pi.exe" }, check: runCheck }),
+        atom({ goal: "fix", tool: "write_file", args: { path: "pi.c", content: "FIXED math" }, check: runCheck, produces: [{ id: "pi.c", type: "file" }] }),
+      ],
+      limits: { maxDepth: 0, maxTotalSteps: 16 },
+    })
+    const r = await runEngine(h)
+    expect(r.status).toBe("done") // the correct fix was NOT discarded by a stale re-check
+    expect(refreshedCount(r)).toBe(1)
+  })
+
+  test("8. flags-off parity: staleness:false emits no `refreshed` and does not auto-rebuild", async () => {
+    const runCheck = { type: "run", command: ".\\pi.exe", expect: "3.14159" }
+    const h = fsHarness({
+      initial: { "pi.c": "buggy" },
+      world: piWorld,
+      staleness: false,
+      replies: [
+        atom({ goal: "build+verify", tool: "run", args: { command: "gcc pi.c -o pi.exe" }, check: runCheck }),
+        atom({ goal: "fix", tool: "write_file", args: { path: "pi.c", content: "FIXED source" }, check: runCheck, produces: [{ id: "pi.c", type: "file" }] }),
+      ],
+      limits: { maxDepth: 0, maxTotalSteps: 16 },
+    })
+    const r = await runEngine(h)
+    expect(logTypes(r)).not.toContain("refreshed") // no build-graph machinery when the flag is off
+  })
+})

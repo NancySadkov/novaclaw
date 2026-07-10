@@ -15,6 +15,9 @@ export type Entry =
   | { readonly type: "forced_split"; readonly step: string; readonly cardinality: number; readonly density: number }
   | { readonly type: "research_flagged"; readonly step: string }
   | { readonly type: "action"; readonly step: string; readonly tool: string }
+  // R1 staleness: a check would have run a STALE product, so the harness auto-re-ran the model's own last
+  // successful producing command (the make discipline) before verifying — deterministic bookkeeping.
+  | { readonly type: "refreshed"; readonly step: string; readonly command: string }
   | { readonly type: "observation"; readonly step: string; readonly ok: boolean }
   | { readonly type: "verification"; readonly step: string; readonly ok: boolean; readonly detail: string }
   | { readonly type: "corrected"; readonly step: string }
@@ -49,6 +52,8 @@ function describe(e: Sequenced): string {
       return `research_flagged ${e.step}`
     case "action":
       return `action ${e.step}: ${e.tool}`
+    case "refreshed":
+      return `refreshed ${e.step}: re-ran \`${e.command}\` (stale product)`
     case "observation":
       return `observation ${e.step}: ${e.ok ? "ok" : "fail"}`
     case "verification":

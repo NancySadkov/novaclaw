@@ -24,6 +24,7 @@ import { JhContext } from "./context"
 import { JhBudget } from "./budget"
 import { JhVerifier } from "./verifier"
 import { JhExpander } from "./expander"
+import { JhStaleness } from "./staleness"
 import { JhLog } from "./log"
 import type { JhBasicTools } from "./tools-basic"
 import type { JhProcessRunner } from "./process-runner"
@@ -59,6 +60,11 @@ export interface Deps {
    *  GOAL was actually achieved against the workspace — a write that passed `artifact_present` did NOT
    *  compile+run+verify. Kills the "false done". Off by default. */
   readonly verifyGoal?: boolean
+  /** R1 (jh-improve1): derived-artifact staleness — the harness tracks which run produced each artifact and,
+   *  before a run/output_equals check would execute a STALE binary (its sources edited since the build),
+   *  auto-re-runs the model's own last successful producing command (kills D1) and caches an unchanged
+   *  failing check (kills D10). Requires `listFiles`. Default ON; set false to reproduce pre-R1 behavior. */
+  readonly staleness?: boolean
   /** OPTIONAL precise task-completion oracle for root-completion. When the deliverable has an exact,
    *  machine-checkable success criterion (a known expected output), the caller injects it here — it is more
    *  reliable than the LLM goal-check, whose precision is bounded by the model's own knowledge (iter 31:
@@ -131,6 +137,11 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
   // goal-checks (which otherwise only see workspace FILES) need it to judge whether a computed RESULT is
   // actually correct (iter 22: a program that ran and printed wrong digits false-passed a file-only check).
   let lastRunOutput = ""
+  // R1: engine-run-scoped derived-artifact tracker (a minimal build graph). Active only when the caller
+  // supplies `listFiles` (the workspace ground truth it needs) and hasn't opted out. Products persist
+  // across leaves — a compile in one leaf, a check in another (jh-improve1 L4: in-memory, not in State).
+  const staleness = deps.staleness !== false && deps.listFiles ? JhStaleness.tracker() : undefined
+  const snapFiles = (): ReadonlyArray<JhStaleness.FileSnap> => (staleness ? staleness.snap(deps.listFiles!()) : [])
 
   const emit = (entry: JhLog.Entry): void => {
     const seqd = { ...entry, seq: seq++ } as JhLog.Sequenced
@@ -337,20 +348,67 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       // self-escalate the budget mid-leaf — else a trivial-prior leaf could never exhaust; see ledger).
       const budget = JhBudget.budgetFor(draft.difficulty_prior ?? undefined, JhBudget.emptyTelemetry)
       const errorCounts = new Map<string, number>() // verify-failure signature → how many times seen (THIS leaf)
+      // R1 idempotence (per-leaf): the digest + detail of the last EXECUTED check that FAILED. An identical
+      // check over an unchanged workspace cannot newly pass, so we return the cached fail (which DOES count
+      // toward stuck — an unchanged retry IS the rut) instead of re-running the same command.
+      let lastFailDigest: string | undefined
+      let lastFailDetail = ""
       for (;;) {
         updateTelemetry(node.id, (t) => ({ ...t, attempts: t.attempts + 1 }))
+        const before = snapFiles() // R1: workspace fingerprint BEFORE the action (source→product build graph)
         emit({ type: "action", step: node.id, tool: currentTool })
         const observation = yield* deps.executor.run({ tool: currentTool, args: currentArgs, produces: draft.produces ?? [], cwd: deps.cwd })
         if (currentTool === "run" && observation.ok) lastRunOutput = observation.output // remember the program's stdout for the goal-checks
         emit({ type: "observation", step: node.id, ok: observation.ok })
+        if (staleness)
+          staleness.recordAction({ tool: currentTool, ok: observation.ok, command: typeof currentArgs.command === "string" ? currentArgs.command : undefined, before, after: snapFiles() })
 
+        // A STALE-artifact bookkeeping fail must NOT feed the stuck counter (it asks for a recompile, it is
+        // not a model rut). Set only when a check ran a product whose sources changed but had no rebuild.
+        let noCountSig = false
         let vr: JhVerifier.VerifyResult
         if (observation.ok) {
           const producedPresent = (draft.produces ?? []).every((p) => {
             const c = observation.artifacts.get(p.id)
             return c !== undefined && c.length > 0
           })
-          vr = yield* JhVerifier.verify({ check, cwd: deps.cwd, runner: deps.runner, fileExists: (rel) => deps.fileExists(rel, deps.cwd), producedPresent })
+          // R1: before executing a run/output_equals check, refuse to run a STALE product — auto-re-run the
+          // model's own last successful producing command (the make move; log `refreshed`) or, if the product
+          // was never seen produced, report it stale; and short-circuit an identical failing check over an
+          // unchanged workspace (idempotence). curSnap tracks the workspace as the rebuild mutates it.
+          let curSnap = snapFiles()
+          let short: JhVerifier.VerifyResult | undefined
+          if (staleness && (check.type === "run" || check.type === "output_equals")) {
+            for (const sp of staleness.staleProducts(check.command, curSnap)) {
+              if (sp.rebuild) {
+                emit({ type: "refreshed", step: node.id, command: sp.rebuild })
+                const rb = yield* deps.runner.run({ command: sp.rebuild, cwd: deps.cwd, timeoutMs: JhVerifier.DEFAULT_TIMEOUT_MS })
+                const rbAfter = snapFiles()
+                staleness.recordAction({ tool: "run", ok: rb.exitCode === 0 && !rb.timedOut, command: sp.rebuild, before: curSnap, after: rbAfter })
+                curSnap = rbAfter
+                if (rb.exitCode !== 0 || rb.timedOut) {
+                  // A REAL compile error on the edited source — feed it to recovery; it counts toward stuck.
+                  short = { ok: false, detail: `REBUILD FAILED — the edited source no longer compiles:\n${rb.output.slice(-2000)}` }
+                  break
+                }
+              } else {
+                short = { ok: false, detail: `STALE ARTIFACT — ${sp.file} was built before the latest source edits; rebuild it (recompile) before re-checking` }
+                noCountSig = true
+                break
+              }
+            }
+          }
+          if (short) {
+            vr = short
+          } else if (staleness && lastFailDigest !== undefined && staleness.checkDigest(check, curSnap) === lastFailDigest) {
+            vr = { ok: false, detail: `${lastFailDetail}\n(nothing has changed since the last attempt — a repeat run cannot pass; change the source or the command)` }
+          } else {
+            vr = yield* JhVerifier.verify({ check, cwd: deps.cwd, runner: deps.runner, fileExists: (rel) => deps.fileExists(rel, deps.cwd), producedPresent })
+            if (staleness && !vr.ok) {
+              lastFailDigest = staleness.checkDigest(check, curSnap)
+              lastFailDetail = vr.detail
+            }
+          }
         } else {
           vr = { ok: false, detail: observation.output }
         }
@@ -385,8 +443,13 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         // 2nd occurrence: a weak model that repeats one mistake once (e.g. a PATH-less gcc) still deserves a
         // few more shots; temperature variance breaks the loop (iters 23–24 blocked after just 2 repeats).
         const sig = errorSig(vr.detail)
-        const seen = (errorCounts.get(sig) ?? 0) + 1
-        errorCounts.set(sig, seen)
+        // A STALE-artifact bookkeeping fail (noCountSig) never accrues toward "stuck" — it is not a model rut,
+        // just a signal to recompile (which the next step does). Everything else counts (incl. idempotence).
+        let seen = errorCounts.get(sig) ?? 0
+        if (!noCountSig) {
+          seen += 1
+          errorCounts.set(sig, seen)
+        }
         const stuck = seen >= STUCK_REPEATS
         const attempts = telemetryOf(node.id).attempts
         if (attempts > budget && (stuck || attempts >= EXPLORE_CAP)) {
