@@ -49,38 +49,74 @@ function gcHarness(opts: {
 const run = (h: ReturnType<typeof gcHarness>) => Effect.runPromise(JhEngine.runTask(h.deps, { goal: "the task" }))
 const detailIncludes = (r: JhEngine.Report, s: string) => r.state.log.filter((e) => e.type === "verification" && String((e as { detail?: unknown }).detail).includes(s)).length
 
-describe("R2 goal-check evidence rule", () => {
-  test("evidence-verified success commits (the quote occurs in the workspace)", async () => {
-    const h = gcHarness({
-      step: atom(),
-      goalCheck: `{"achieved": true, "missing": "", "evidence": "PROOF123"}`,
-      files: () => [{ name: "pi.c", content: "complete source PROOF123 here" }],
-      evidence: true,
-    })
-    const r = await run(h)
-    expect(r.status).toBe("done") // the verbatim quote proves it → committed
+// The evidence rule applies ONLY at the ROOT whole-task goal-check. This harness forces the root to
+// decompose into one child with a STRONG (run) check — so the child commits with NO weak-leaf goal-check —
+// then the root-completion gate runs the (evidence-gated) LLM goal-check. No taskComplete, so the LLM
+// fallback fires. The single goal-check reply is unambiguously the root's.
+function rootGcHarness(opts: { rootGoalCheck: string; files: () => Array<{ name: string; content: string }>; evidence?: boolean }) {
+  const steps = [
+    atom({ goal: "whole task", produces: [] }), // root atomic → triggers the soft-decompose
+    JSON.stringify({ goal: "root", size: "needs_decomposition", success: "ok", substeps: [{ goal: "run it", size: "atomic", tool: "run", args: { command: "x" }, success: "ok", check: { type: "run", command: "x" }, produces: [] }] }),
+    atom({ goal: "run it", tool: "run", args: { command: "x" }, check: { type: "run", command: "x" }, produces: [] }), // child introspect
+  ]
+  let i = 0
+  let rootGc = 0
+  const deps: JhEngine.Deps = {
+    introspect: (p) => {
+      if (p.user.includes("Is the goal fully achieved?")) {
+        rootGc++
+        return Effect.succeed(opts.rootGoalCheck)
+      }
+      return Effect.succeed(steps[i++] ?? atom())
+    },
+    correct: () => Effect.fail({ message: "no correct" }),
+    executor: { run: () => Effect.succeed({ ok: true, output: "ran", artifacts: new Map<string, string>() }) },
+    runner: { run: () => Effect.succeed({ exitCode: 0, output: "", timedOut: false }) },
+    artifacts: JhArtifact.memory(),
+    fileExists: () => false,
+    cwd: ".",
+    toolNames: JhBasicTools.TOOL_NAMES,
+    listFiles: opts.files,
+    forceRootDecompose: true,
+    verifyGoal: true,
+    evidence: opts.evidence,
+    limits: { maxDepth: 2, maxTotalSteps: 16 },
+    trigger: JhBudget.DEFAULT_TRIGGER,
+  }
+  return { deps, rootGcCalls: () => rootGc }
+}
+const runRoot = (h: ReturnType<typeof rootGcHarness>) => Effect.runPromise(JhEngine.runTask(h.deps, { goal: "the task" }))
+
+describe("R2 goal-check evidence rule (root-only)", () => {
+  test("the WEAK-LEAF never applies evidence: achieved:true with no quote commits even when evidence is ON", async () => {
+    // a weak model can't verbatim-quote per step; the per-step goal-check must NOT demand it (run42/43 fix)
+    const h = gcHarness({ step: atom(), goalCheck: `{"achieved": true, "missing": ""}`, files: () => [{ name: "a", content: "x" }], evidence: true })
+    expect((await run(h)).status).toBe("done")
   })
 
-  test("fabricated evidence is demoted and NEVER accrues toward stuck (checker fault, not model fault)", async () => {
-    const h = gcHarness({
-      step: atom(),
-      goalCheck: `{"achieved": true, "missing": "", "evidence": "NONEXISTENT-QUOTE-XYZ"}`,
-      files: () => [{ name: "pi.c", content: "some real source" }],
+  test("ROOT evidence-verified whole-task success commits (the quote occurs in the workspace)", async () => {
+    const h = rootGcHarness({
+      rootGoalCheck: `{"achieved": true, "missing": "", "evidence": "proof-quote-42"}`,
+      files: () => [{ name: "out.txt", content: "RESULT proof-quote-42 done" }],
       evidence: true,
-      goalCheckCache: false, // fresh fabricated check each iteration
     })
-    const r = await run(h)
-    // the demote fires many times (ran to the explore cap), never stopping early on a manufactured "stuck"
-    expect(detailIncludes(r, "goal-check claimed success without verifiable evidence")).toBeGreaterThan(3)
-    expect(r.status).toBe("blocked")
+    expect((await runRoot(h)).status).toBe("done")
   })
 
-  test("evidence OFF (flags-off parity): achieved:true with NO evidence still commits (pre-R2 behavior)", async () => {
-    const off = gcHarness({ step: atom(), goalCheck: `{"achieved": true, "missing": ""}`, files: () => [{ name: "a", content: "x" }], evidence: false })
-    expect((await run(off)).status).toBe("done")
-    // and with evidence ON the same reply is demoted (never done)
-    const on = gcHarness({ step: atom(), goalCheck: `{"achieved": true, "missing": ""}`, files: () => [{ name: "a", content: "x" }], evidence: true })
-    expect((await run(on)).status).not.toBe("done")
+  test("ROOT fabricated evidence is REJECTED — no false DONE (rubber-stamp guard)", async () => {
+    const h = rootGcHarness({
+      rootGoalCheck: `{"achieved": true, "missing": "", "evidence": "NONEXISTENT-QUOTE"}`,
+      files: () => [{ name: "out.txt", content: "the real workspace content" }],
+      evidence: true,
+    })
+    const r = await runRoot(h)
+    expect(r.status).not.toBe("done") // the unverifiable claim did not commit the whole task
+    expect(detailIncludes(r, "without verifiable evidence")).toBeGreaterThan(0)
+  })
+
+  test("ROOT evidence OFF: achieved:true with no quote is accepted (pre-R2 behavior)", async () => {
+    const h = rootGcHarness({ rootGoalCheck: `{"achieved": true, "missing": ""}`, files: () => [{ name: "a", content: "x" }], evidence: false })
+    expect((await runRoot(h)).status).toBe("done")
   })
 })
 

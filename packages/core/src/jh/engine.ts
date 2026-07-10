@@ -70,9 +70,10 @@ export interface Deps {
    *  no LLM call (kills most of D2 — 42–47% of all calls were goal-checks re-confirming a frozen state).
    *  Default ON. */
   readonly goalCheckCache?: boolean
-  /** R2 (jh-improve1): a goal-check that claims `achieved:true` must quote VERBATIM proof from the workspace
-   *  or last output; an absent/unverifiable quote is treated as not-achieved (kills the rubber-stamp that
-   *  false-done'd run31/32). Default ON. */
+  /** R2 (jh-improve1): at the ROOT whole-task goal-check ONLY, a claim of `achieved:true` must quote VERBATIM
+   *  proof from the workspace/last-output or it is treated as not-achieved (kills the run31/32 rubber-stamp).
+   *  NOT applied per-step (a weak model can't reliably verbatim-quote its own source, which stalled the run —
+   *  baseline run42/43). Default ON. */
   readonly evidence?: boolean
   /** OPTIONAL precise task-completion oracle for root-completion. When the deliverable has an exact,
    *  machine-checkable success criterion (a known expected output), the caller injects it here — it is more
@@ -215,10 +216,15 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
   // model-action fault, so it must NOT accrue toward the leaf's stuck counter).
   const goalCheckCache = new Map<string, { achieved: boolean; missing: string; evidenceFault: boolean }>()
   interface GoalVerdict { readonly achieved: boolean; readonly missing: string; readonly cached: boolean; readonly evidenceFault: boolean }
-  const runGoalCheck = (goal: string): Effect.Effect<GoalVerdict> =>
+  // `applyEvidence` gates the evidence rule. It is applied ONLY at the ROOT whole-task goal-check (where a
+  // rubber-stamped achieved:true = a false DONE), NOT at per-step weak-leaf checks: a weak model cannot
+  // reliably VERBATIM-quote its own source per step, so demanding it there blocks honest write steps and
+  // stalls the run (baseline run42/43: "without verifiable evidence" nag-loop, best≈0.06). Per-step
+  // achievement is backstopped by the compile/run checks and the root oracle, so evidence is not needed there.
+  const runGoalCheck = (goal: string, applyEvidence: boolean): Effect.Effect<GoalVerdict> =>
     Effect.gen(function* () {
       const workspace = renderWorkspace()
-      const key = Hash.sha256(`${goal}|${workspace}|${lastRunOutput}`)
+      const key = Hash.sha256(`${applyEvidence ? "E" : "-"}|${goal}|${workspace}|${lastRunOutput}`)
       if (deps.goalCheckCache !== false) {
         const hit = goalCheckCache.get(key)
         if (hit) return { ...hit, cached: true }
@@ -227,8 +233,8 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       if (!Exit.isSuccess(gc)) return { achieved: true, missing: "", cached: false, evidenceFault: false } // unreachable checker → don't stall; accept
       const parsed = JhExpander.parseGoalCheck(gc.value)
       let verdict = { achieved: parsed.achieved, missing: parsed.missing, evidenceFault: false }
-      // Evidence rule: a success claim must quote verbatim proof from the workspace or the last output.
-      if (deps.evidence !== false && parsed.achieved) {
+      // Evidence rule (root-only): a whole-task success claim must quote verbatim proof from the workspace/output.
+      if (deps.evidence !== false && applyEvidence && parsed.achieved) {
         const ev = (parsed.evidence ?? "").replace(/\s+/g, " ").trim()
         const material = `${workspace}\n${lastRunOutput}`.replace(/\s+/g, " ")
         if (ev.length === 0 || !material.includes(ev)) verdict = { achieved: false, missing: "goal-check claimed success without verifiable evidence", evidenceFault: true }
@@ -459,7 +465,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         // Ask the model to judge achievement against the workspace; if not achieved, demote to a verify
         // FAIL so the leaf keeps exploring (compile/run/verify). This kills the "false done".
         if (vr.ok && deps.verifyGoal && (check.type === "artifact_present" || check.type === "file_exists")) {
-          const res = yield* runGoalCheck(goalOf(node.id)) // R2: cached + evidence-quoted
+          const res = yield* runGoalCheck(goalOf(node.id), false) // R2: cached; NO evidence (per-step — see runGoalCheck)
           const marker = res.cached ? " (cached — state unchanged)" : ""
           if (!res.achieved) {
             vr = { ok: false, detail: (res.evidenceFault ? "goal-check claimed success without verifiable evidence" : `goal not yet achieved — ${res.missing || "the deliverable is not produced/verified"}`) + marker }
@@ -667,7 +673,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
             const tc = deps.taskComplete({ workspace: renderWorkspace(), lastOutput: lastRunOutput })
             verdict = { achieved: tc.done, missing: tc.detail }
           } else {
-            const res = yield* runGoalCheck(task.goal) // R2: cached + evidence-quoted LLM fallback
+            const res = yield* runGoalCheck(task.goal, true) // R2: cached + evidence-quoted (root whole-task LLM fallback)
             verdict = { achieved: res.achieved, missing: res.missing }
             if (res.cached) cachedMarker = " (cached — state unchanged)"
           }
