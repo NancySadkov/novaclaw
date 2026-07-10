@@ -91,6 +91,14 @@ export interface Deps {
   /** R4 (jh-improve1): the de-latched cycling escalation ladder (tweak→analyze→targeted_fix→rewrite→cycle),
    *  with a forced instrumented "analyze" stage. Off → the legacy ESCALATE_AFTER latch. Default ON. */
   readonly ladder?: boolean
+  /** improve3 P1 (owner #1): after AUTO_REVERT_AFTER consecutive build-DAMAGING edits (an edit_file/write_file
+   *  whose compile/rebuild then fails), the harness RESTORES the last verified checkpoint instead of letting the
+   *  model keep damaging the file (§I2 hit 4/6 wave-2 runs; the model won't `git_revert` voluntarily). Default
+   *  ON, but inert without `revertWorkspace`. */
+  readonly autoRevert?: boolean
+  /** improve3 P1/L4: the injected revert capability (the engine NEVER shells git). Restores ALL tracked source
+   *  files to the last verified checkpoint; the harness implements it over its git plumbing. */
+  readonly revertWorkspace?: () => Effect.Effect<{ readonly ok: boolean; readonly detail: string }>
   readonly limits: { readonly maxDepth: number; readonly maxTotalSteps: number }
   readonly trigger: JhBudget.SplitTrigger
   readonly onLog?: (entry: JhLog.Sequenced) => void
@@ -125,6 +133,10 @@ const STUCK_REPEATS = 3
 // The root soft-decompose retries this many times: a weak model insists atomic on some draws but yields a
 // proper plan on others (temperature variance), so a couple of retries reliably gets a decomposition.
 const SOFT_DECOMPOSE_ATTEMPTS = 3
+// improve3 P1: N consecutive build-DAMAGING edits (an edit whose compile/rebuild then fails) before the harness
+// auto-reverts to the last verified checkpoint. 3 = give the model a couple of self-repair shots first, then stop
+// the damage (the model won't `git_revert` itself — §I2). Any green build resets the counter.
+const AUTO_REVERT_AFTER = 3
 const errorSig = (detail: string): string => detail.slice(0, 160).trim()
 // A leaf's check is its GOAL gate. The recovery loop may CORRECT a check's command (pi.exe→.\pi.exe —
 // adopt it), but must NEVER DOWNGRADE it: when the model does an intermediate write_file to fix a bug, its
@@ -196,6 +208,12 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
   const ladders = new Map<string, JhLadder.LadderState>() // parentID → escalation state
   const lastFixBest = new Map<string, number>() // parentID → bestScore at its last grown fix node (for scoreImproved)
   const analyzeNodes = new Set<string>() // nodeIds the harness forced to be instrumented "analyze" steps
+  // improve3 P1: consecutive build-DAMAGING edits (reset on any green build); when it hits AUTO_REVERT_AFTER the
+  // harness restores the last verified checkpoint. `autoRevertOn` disables itself if a revert ever fails (never
+  // loop on a broken revert). `pendingRevertMessage` is delivered to the very next introspection.
+  let buildDamage = 0
+  let autoRevertOn = deps.autoRevert !== false && !!deps.revertWorkspace
+  let pendingRevertMessage: string | undefined
 
   const emit = (entry: JhLog.Entry): void => {
     const seqd = { ...entry, seq: seq++ } as JhLog.Sequenced
@@ -247,7 +265,11 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
     // D7 (jh-improve1): grown fix/analyze nodes must SEE the program's most recent stdout (the diagnostics) —
     // otherwise a step told to "fix what the values show" is acting blind (the 160-char cross-node collapse).
     const outputBlock = lastRunOutput ? `\n\n# Most recent program output (stdout, tail)\n\`\`\`\n${lastRunOutput.length > 2000 ? lastRunOutput.slice(-2000) : lastRunOutput}\n\`\`\`` : ""
-    const full = `${base}${fileBlock}${outputBlock}`
+    // improve3 P1: after an auto-revert, deliver the restore notice to the NEXT introspection, then clear it
+    // (consume-once). The workspace listing above already reflects the restored files.
+    const revertBlock = pendingRevertMessage ? `\n\n# ⚠️ Workspace restored by the harness\n${pendingRevertMessage}` : ""
+    pendingRevertMessage = undefined
+    const full = `${base}${fileBlock}${outputBlock}${revertBlock}`
     return extra ? `${full}\n\n${extra}` : full
   }
   /** the current workspace (file names + contents) as a plain block — for the goal-achievement check. */
@@ -609,6 +631,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         emit({ type: "verification", step: node.id, ok: vr.ok, detail: vr.detail })
 
         if (vr.ok) {
+          buildDamage = 0 // improve3 P1: a green verify clears the consecutive-build-damage counter
           for (const p of draft.produces ?? []) {
             const content = observation.artifacts.get(p.id)
             if (content !== undefined) deps.artifacts.put(p, content)
@@ -635,6 +658,34 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         }
         const stuck = seen >= STUCK_REPEATS
         const attempts = telemetryOf(node.id).attempts
+
+        // improve3 P1 (owner #1): the harness OWNS reverting. Track consecutive build-DAMAGING edits — an
+        // edit_file/write_file whose compile or staleness-rebuild then failed — and after AUTO_REVERT_AFTER of
+        // them, RESTORE the last verified checkpoint (the model keeps damaging the file over 10+ edits and won't
+        // git_revert itself — §I2 hit 4/6 wave-2 runs). Any other failure (wrong output on a compiling build)
+        // means the build is fine → reset the counter.
+        const buildDamaged = (currentTool === "edit_file" || currentTool === "write_file") && (vr.detail.startsWith("REBUILD FAILED") || check.type === "compile")
+        buildDamage = buildDamaged ? buildDamage + 1 : 0
+        if (autoRevertOn && buildDamage >= AUTO_REVERT_AFTER) {
+          const beforeRevert = snapFiles()
+          const rv = yield* deps.revertWorkspace!()
+          if (rv.ok) {
+            buildDamage = 0
+            emit({ type: "reverted", step: node.id, reason: sig })
+            // Re-sync staleness: the revert changed source files outside any tool action. Feed it as a
+            // model-written change so product digests stay coherent — the next check auto-rebuilds the products
+            // (now stale vs the reverted sources) through the normal path. The checkpoint is made ONLY after a
+            // verified commit, so the restored state is known to compile (no explicit confirm-green needed).
+            if (staleness) staleness.recordAction({ tool: "write_file", ok: true, before: beforeRevert, after: snapFiles() })
+            // Delivered to the NEXT introspection (recovery re-introspect or the grown fix node) via buildContext.
+            pendingRevertMessage =
+              "IMPORTANT: your last edits kept breaking the build and could not be repaired — the harness has RESTORED the last verified working state. The files are exactly as they were after the last successful step. Do NOT retry the same edit. Make a SMALLER, DIFFERENT change (one function, a few lines at a time), recompile, and verify it before editing anything else."
+          } else {
+            autoRevertOn = false // never loop on a broken revert
+            emit({ type: "reverted", step: node.id, reason: `revert unavailable — ${rv.detail}` })
+          }
+        }
+
         if (attempts > budget && (stuck || attempts >= EXPLORE_CAP)) {
           const parentID = JhTree.get(tree, node.id)?.parent
           // NEVER DEAD-END (owner E2): a stuck NON-root leaf under verifyGoal does not block its ancestors.

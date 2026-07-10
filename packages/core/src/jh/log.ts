@@ -27,6 +27,8 @@ export type Entry =
   | { readonly type: "restored_best"; readonly step: string; readonly score: number }
   // R4: a rewrite-stage fix node produced no source change — the directive was ignored.
   | { readonly type: "directive_ignored"; readonly step: string }
+  // improve3 P1: N consecutive build-damaging edits → the harness auto-reverted to the last verified checkpoint.
+  | { readonly type: "reverted"; readonly step: string; readonly reason: string }
   | { readonly type: "committed"; readonly step: string }
   // A leaf the harness gave up VERIFYING (stuck/budget) but committed best-effort so the tree can grow a
   // fix sibling instead of dead-ending (engine.ts stuck path). NOT a success — the reason carries the
@@ -72,6 +74,8 @@ function describe(e: Sequenced): string {
       return `restored_best ${e.step}: score=${e.score}`
     case "directive_ignored":
       return `directive_ignored ${e.step}`
+    case "reverted":
+      return `reverted ${e.step}: ${e.reason}`
     case "committed":
       return `committed ${e.step}`
     case "committed_best_effort":
