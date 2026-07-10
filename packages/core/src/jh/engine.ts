@@ -17,6 +17,7 @@ export * as JhEngine from "./engine"
 //       exhausted → forceDecompose|block(budget); else write_file→corrector / other→re-introspect }.
 
 import { Effect, Exit } from "effect"
+import { Hash } from "../util/hash"
 import { JhTree } from "./tree"
 import { JhStep } from "./step"
 import { JhDataflow } from "./dataflow"
@@ -65,6 +66,14 @@ export interface Deps {
    *  auto-re-runs the model's own last successful producing command (kills D1) and caches an unchanged
    *  failing check (kills D10). Requires `listFiles`. Default ON; set false to reproduce pre-R1 behavior. */
   readonly staleness?: boolean
+  /** R2 (jh-improve1): cache LLM goal-checks by (goal, workspace, last output) so an unchanged state costs
+   *  no LLM call (kills most of D2 — 42–47% of all calls were goal-checks re-confirming a frozen state).
+   *  Default ON. */
+  readonly goalCheckCache?: boolean
+  /** R2 (jh-improve1): a goal-check that claims `achieved:true` must quote VERBATIM proof from the workspace
+   *  or last output; an absent/unverifiable quote is treated as not-achieved (kills the rubber-stamp that
+   *  false-done'd run31/32). Default ON. */
+  readonly evidence?: boolean
   /** OPTIONAL precise task-completion oracle for root-completion. When the deliverable has an exact,
    *  machine-checkable success criterion (a known expected output), the caller injects it here — it is more
    *  reliable than the LLM goal-check, whose precision is bounded by the model's own knowledge (iter 31:
@@ -201,6 +210,32 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       .map((f) => `### ${f.name}\n\`\`\`\n${f.content.length > 8000 ? f.content.slice(0, 8000) + "\n…[truncated]…" : f.content}\n\`\`\``)
       .join("\n\n")
   }
+  // R2: run-scoped LLM goal-check cache + verdict result. `cached` lets the caller mark the transcript;
+  // `evidenceFault` = an achieved:true claim without a verifiable verbatim quote (a checker fault, not a
+  // model-action fault, so it must NOT accrue toward the leaf's stuck counter).
+  const goalCheckCache = new Map<string, { achieved: boolean; missing: string; evidenceFault: boolean }>()
+  interface GoalVerdict { readonly achieved: boolean; readonly missing: string; readonly cached: boolean; readonly evidenceFault: boolean }
+  const runGoalCheck = (goal: string): Effect.Effect<GoalVerdict> =>
+    Effect.gen(function* () {
+      const workspace = renderWorkspace()
+      const key = Hash.sha256(`${goal}|${workspace}|${lastRunOutput}`)
+      if (deps.goalCheckCache !== false) {
+        const hit = goalCheckCache.get(key)
+        if (hit) return { ...hit, cached: true }
+      }
+      const gc = yield* Effect.exit(deps.introspect(JhExpander.goalCheckPrompt({ goal, workspace, lastOutput: lastRunOutput })))
+      if (!Exit.isSuccess(gc)) return { achieved: true, missing: "", cached: false, evidenceFault: false } // unreachable checker → don't stall; accept
+      const parsed = JhExpander.parseGoalCheck(gc.value)
+      let verdict = { achieved: parsed.achieved, missing: parsed.missing, evidenceFault: false }
+      // Evidence rule: a success claim must quote verbatim proof from the workspace or the last output.
+      if (deps.evidence !== false && parsed.achieved) {
+        const ev = (parsed.evidence ?? "").replace(/\s+/g, " ").trim()
+        const material = `${workspace}\n${lastRunOutput}`.replace(/\s+/g, " ")
+        if (ev.length === 0 || !material.includes(ev)) verdict = { achieved: false, missing: "goal-check claimed success without verifiable evidence", evidenceFault: true }
+      }
+      if (deps.goalCheckCache !== false) goalCheckCache.set(key, verdict)
+      return { ...verdict, cached: false }
+    })
   const buildPrompt = (
     nodeId: JhStep.StepID,
     opts: { allowDecomposition?: boolean; mustDecompose?: boolean; formatReminder?: string; extraContext?: string },
@@ -417,10 +452,14 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         // Ask the model to judge achievement against the workspace; if not achieved, demote to a verify
         // FAIL so the leaf keeps exploring (compile/run/verify). This kills the "false done".
         if (vr.ok && deps.verifyGoal && (check.type === "artifact_present" || check.type === "file_exists")) {
-          const gc = yield* Effect.exit(deps.introspect(JhExpander.goalCheckPrompt({ goal: goalOf(node.id), workspace: renderWorkspace(), lastOutput: lastRunOutput })))
-          if (Exit.isSuccess(gc)) {
-            const verdict = JhExpander.parseGoalCheck(gc.value)
-            if (!verdict.achieved) vr = { ok: false, detail: `goal not yet achieved — ${verdict.missing || "the deliverable is not produced/verified"}` }
+          const res = yield* runGoalCheck(goalOf(node.id)) // R2: cached + evidence-quoted
+          const marker = res.cached ? " (cached — state unchanged)" : ""
+          if (!res.achieved) {
+            vr = { ok: false, detail: (res.evidenceFault ? "goal-check claimed success without verifiable evidence" : `goal not yet achieved — ${res.missing || "the deliverable is not produced/verified"}`) + marker }
+            // an evidence fault is a CHECKER fault, not a model-action rut — it must not accrue toward stuck.
+            if (res.evidenceFault) noCountSig = true
+          } else if (res.cached) {
+            vr = { ok: true, detail: "goal achieved" + marker } // surface the cache hit (no LLM call spent)
           }
         }
         emit({ type: "verification", step: node.id, ok: vr.ok, detail: vr.detail })
@@ -616,14 +655,16 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
           // by the model's own knowledge (iter 31: it false-done'd a 50-of-100-correct Pi). Fall back to the
           // LLM goal-check when no oracle is provided.
           let verdict: { achieved: boolean; missing: string }
+          let cachedMarker = ""
           if (deps.taskComplete) {
             const tc = deps.taskComplete({ workspace: renderWorkspace(), lastOutput: lastRunOutput })
             verdict = { achieved: tc.done, missing: tc.detail }
           } else {
-            const gc = yield* Effect.exit(deps.introspect(JhExpander.goalCheckPrompt({ goal: task.goal, workspace: renderWorkspace(), lastOutput: lastRunOutput })))
-            verdict = Exit.isSuccess(gc) ? JhExpander.parseGoalCheck(gc.value) : { achieved: true, missing: "" } // unreachable checker → don't stall; accept
+            const res = yield* runGoalCheck(task.goal) // R2: cached + evidence-quoted LLM fallback
+            verdict = { achieved: res.achieved, missing: res.missing }
+            if (res.cached) cachedMarker = " (cached — state unchanged)"
           }
-          emit({ type: "verification", step: tree.root, ok: verdict.achieved, detail: verdict.achieved ? "task goal achieved" : `task goal NOT achieved — ${verdict.missing}` })
+          emit({ type: "verification", step: tree.root, ok: verdict.achieved, detail: (verdict.achieved ? "task goal achieved" : `task goal NOT achieved — ${verdict.missing}`) + cachedMarker })
           if (verdict.achieved) {
             tree = JhTree.setStatus(tree, tree.root, "committed")
             emit({ type: "committed", step: tree.root })

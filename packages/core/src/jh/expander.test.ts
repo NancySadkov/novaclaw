@@ -120,4 +120,14 @@ describe("goalCheckPrompt / parseGoalCheck", () => {
   test("a non-true 'achieved' is treated as not achieved", () => {
     expect(JhExpander.parseGoalCheck('{"achieved": "yes"}').achieved).toBe(false)
   })
+  test("R2: parses the evidence quote when present, undefined when absent", () => {
+    expect(JhExpander.parseGoalCheck('{"achieved": true, "missing": "", "evidence": "3.14159"}')).toEqual({ achieved: true, missing: "", evidence: "3.14159" })
+    expect(JhExpander.parseGoalCheck('{"achieved": true, "missing": ""}').evidence).toBeUndefined()
+    expect(JhExpander.parseGoalCheck('{"achieved": true, "evidence": 42}').evidence).toBeUndefined() // non-string ignored
+  })
+  test("R2: the prompt asks for a verbatim evidence quote", () => {
+    const p = JhExpander.goalCheckPrompt({ goal: "print Pi", workspace: "### pi.c" })
+    expect(p.system).toContain("evidence")
+    expect(p.system.toLowerCase()).toContain("verbatim")
+  })
 })

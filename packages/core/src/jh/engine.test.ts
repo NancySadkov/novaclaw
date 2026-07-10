@@ -23,6 +23,8 @@ function scriptedDeps(opts: {
   artifacts?: JhArtifact.Store
   forceRootDecompose?: boolean
   verifyGoal?: boolean
+  goalCheckCache?: boolean
+  evidence?: boolean
 }) {
   const replies = [...opts.replies]
   const observations = [...(opts.observations ?? [])]
@@ -57,6 +59,10 @@ function scriptedDeps(opts: {
     checkpoint: opts.checkpoint,
     forceRootDecompose: opts.forceRootDecompose,
     verifyGoal: opts.verifyGoal,
+    // R2 levers default OFF in the test helper so legacy goal-check tests reproduce pre-R2 behavior (L2);
+    // the P2 tests opt in explicitly, and the real harness (flags undefined) gets them ON.
+    goalCheckCache: opts.goalCheckCache ?? false,
+    evidence: opts.evidence ?? false,
   }
   return { deps, artifacts, modelCalls: () => modelCalls, runnerCalls: () => runnerCalls }
 }

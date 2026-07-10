@@ -122,18 +122,22 @@ export function goalCheckPrompt(input: { readonly goal: string; readonly workspa
     "  - a goal to COMPILE/BUILD → achieved once the compiled output exists on disk (e.g. an .exe/.o is listed, even shown as a <compiled binary …> placeholder).",
     "  - a goal to RUN / produce a correct RESULT → achieved only if the program actually ran AND the shown output is CORRECT. If the goal names an expected value (e.g. digits of a constant), CHECK the output against what you know to be the true value — a program that runs but prints wrong digits is NOT achieved.",
     "Do NOT demand steps this goal does not ask for — a 'compile' goal does NOT require also running. But do NOT accept a mere source file when the goal asks for a built or correct artifact, and do NOT accept an empty/absent output when the goal asks for a computed result.",
-    'Output EXACTLY ONE ```json object: {"achieved": true|false, "missing": "one short phrase — what THIS goal still needs, empty if achieved"}. Nothing else.',
+    'Output EXACTLY ONE ```json object: {"achieved": true|false, "missing": "one short phrase — what THIS goal still needs, empty if achieved", "evidence": "when achieved is true, a VERBATIM quote copied EXACTLY from the working-directory files or the program output shown above that proves it — the literal text, not a paraphrase or a claim"}. Nothing else.',
   ].join("\n")
   const outputBlock = input.lastOutput !== undefined ? `\n\n# Most recent program output (stdout)\n\`\`\`\n${input.lastOutput.length > 4000 ? input.lastOutput.slice(0, 4000) + "\n…[truncated]…" : input.lastOutput || "(no output captured)"}\n\`\`\`` : ""
   const user = `# Goal\n${input.goal}\n\n# Working directory\n${input.workspace}${outputBlock}\n\nIs the goal fully achieved? Output one json object.`
   return { system, user }
 }
 
-export function parseGoalCheck(text: string): { readonly achieved: boolean; readonly missing: string } {
+export function parseGoalCheck(text: string): { readonly achieved: boolean; readonly missing: string; readonly evidence?: string } {
   const extracted = JhExtract.extractJsonObject(text)
   if (!extracted.ok || typeof extracted.value !== "object" || extracted.value === null) return { achieved: false, missing: "unparseable goal check" }
   const v = extracted.value as Record<string, unknown>
-  return { achieved: v.achieved === true, missing: typeof v.missing === "string" ? v.missing : "" }
+  return {
+    achieved: v.achieved === true,
+    missing: typeof v.missing === "string" ? v.missing : "",
+    evidence: typeof v.evidence === "string" ? v.evidence : undefined,
+  }
 }
 
 export function dataflowRepairReminder(issues: ReadonlyArray<JhDataflow.Issue>): string {
