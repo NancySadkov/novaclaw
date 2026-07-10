@@ -105,6 +105,10 @@ export interface Deps {
    *  (I5). Shrinks the fragile root reply (attacks I3 structurally) + defuses the depth-cap. Default ON;
    *  `false` = wave-2 recursive attach + hard depth-block. */
   readonly lazyPlan?: boolean
+  /** improve3 P5 (I4): before a check, rebuild only the stale products the check references + their production
+   *  chain (not EVERY stale product — a wave-2 500+-rebuild storm). Sub-flag of staleness. Default ON;
+   *  `false` = wave-2 rebuild-all-stale. */
+  readonly targetedRebuild?: boolean
   readonly limits: { readonly maxDepth: number; readonly maxTotalSteps: number }
   readonly trigger: JhBudget.SplitTrigger
   readonly onLog?: (entry: JhLog.Sequenced) => void
@@ -605,7 +609,10 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
           let curSnap = snapFiles()
           let short: JhVerifier.VerifyResult | undefined
           if (staleness && checkCommand !== undefined) {
-            for (const sp of staleness.allStale(curSnap)) {
+            // P5 (I4): rebuild only the check's products + their production chain (not EVERY stale product);
+            // targetedRebuild:false = wave-2 rebuild-all.
+            const staleToRebuild = deps.targetedRebuild === false ? staleness.allStale(curSnap) : staleness.staleChainFor(checkCommand, curSnap)
+            for (const sp of staleToRebuild) {
               if (sp.rebuild === checkCommand) continue // the check itself (re)builds this product — don't pre-run it
               if (sp.rebuild) {
                 emit({ type: "refreshed", step: node.id, command: sp.rebuild })

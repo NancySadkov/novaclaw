@@ -40,6 +40,10 @@ export interface Tracker {
   /** EVERY stale product, in PRODUCTION order (a chain like pi.c→pi.o→pi.exe lists pi.o before pi.exe), so
    *  the engine can rebuild them bottom-up before a check runs — not just the one the check names. */
   readonly allStale: (current: ReadonlyArray<FileSnap>) => ReadonlyArray<StaleProduct>
+  /** improve3 P5 (I4): the stale products the CHECK command references PLUS their transitive production chain
+   *  (pi.exe's rebuild names pi.o → include pi.o), in PRODUCTION order — but NOT unrelated stale products
+   *  (t_mul.exe stays stale until ITS check runs). Collapses the wave-2 rebuild-EVERY-stale storm (500+/run). */
+  readonly staleChainFor: (command: string, current: ReadonlyArray<FileSnap>) => ReadonlyArray<StaleProduct>
   /** digest of a check + everything it can observe (the full workspace) — for the idempotence cache. */
   readonly checkDigest: (check: unknown, current: ReadonlyArray<FileSnap>) => string
 }
@@ -132,6 +136,30 @@ export function tracker(): Tracker {
     return out
   }
 
+  // basenames a command references (its arguments), for chain discovery.
+  const refsOf = (command: string): Set<string> => new Set(command.split(/[\s"'=]+/).filter(Boolean).map(baseName))
+
+  const staleChainFor: Tracker["staleChainFor"] = (command, current) => {
+    const curDigest = sourceDigest(current)
+    const isStale = (rec: { sourceDigest: string }): boolean => rec.sourceDigest !== curDigest
+    // BFS: include a stale product if the check command references it, then follow each included product's
+    // rebuild command to the products IT references (pi.exe → gcc pi.o -o pi.exe → include pi.o), etc.
+    const want = new Set<string>()
+    let frontier = refsOf(command)
+    for (let hops = 0; hops < 32 && frontier.size > 0; hops++) {
+      const next = new Set<string>()
+      for (const [file, rec] of products) {
+        if (want.has(file) || !frontier.has(baseName(file)) || !isStale(rec)) continue
+        want.add(file)
+        for (const t of refsOf(rec.command)) next.add(t)
+      }
+      frontier = next
+    }
+    const out: StaleProduct[] = []
+    for (const [file, rec] of products) if (want.has(file) && isStale(rec)) out.push({ file, rebuild: rec.command }) // Map order = production order
+    return out
+  }
+
   const checkDigest: Tracker["checkDigest"] = (check, current) =>
     Hash.sha256(
       `${JSON.stringify(check ?? null)}|${current
@@ -141,5 +169,5 @@ export function tracker(): Tracker {
         .join("\n")}`,
     )
 
-  return { snap, recordAction, staleProducts, allStale, checkDigest }
+  return { snap, recordAction, staleProducts, allStale, staleChainFor, checkDigest }
 }

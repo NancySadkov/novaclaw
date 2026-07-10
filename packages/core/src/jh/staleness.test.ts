@@ -104,6 +104,22 @@ describe("JhStaleness.tracker (pure)", () => {
     expect(t.allStale(s2)).toEqual([{ file: "pi.o", rebuild: compound }]) // stale WITH a rebuild, not an orphan ""
   })
 
+  test("staleChainFor (P5/I4): the check's product + its chain ONLY, not unrelated stale products", () => {
+    const t = JhStaleness.tracker()
+    const s0 = t.snap([{ name: "pi.c", content: "v0" }, { name: "t_mul.c", content: "u0" }])
+    const s1 = t.snap([{ name: "pi.c", content: "v0" }, { name: "t_mul.c", content: "u0" }, { name: "pi.o", content: "O0" }])
+    t.recordAction({ tool: "run", ok: true, command: "gcc -c pi.c", before: s0, after: s1 }) // pi.o
+    const s2 = t.snap([{ name: "pi.c", content: "v0" }, { name: "t_mul.c", content: "u0" }, { name: "pi.o", content: "O0" }, { name: "pi.exe", content: "E0" }])
+    t.recordAction({ tool: "run", ok: true, command: "gcc pi.o -o pi.exe", before: s1, after: s2 }) // pi.exe ← pi.o
+    const s3 = t.snap([{ name: "pi.c", content: "v0" }, { name: "t_mul.c", content: "u0" }, { name: "pi.o", content: "O0" }, { name: "pi.exe", content: "E0" }, { name: "t_mul.exe", content: "M0" }])
+    t.recordAction({ tool: "run", ok: true, command: "gcc t_mul.c -o t_mul.exe", before: s2, after: s3 }) // t_mul.exe (unrelated)
+    // edit pi.c → the global source digest changes, so ALL products read stale (the flat model)...
+    const s4 = t.snap([{ name: "pi.c", content: "v1" }, { name: "t_mul.c", content: "u0" }, { name: "pi.o", content: "O0" }, { name: "pi.exe", content: "E0" }, { name: "t_mul.exe", content: "M0" }])
+    expect(t.allStale(s4).map((p) => p.file)).toEqual(["pi.o", "pi.exe", "t_mul.exe"]) // ...allStale rebuilds all 3
+    // ...but a check that runs pi.exe only needs the pi.exe chain — NOT t_mul.exe (rebuilt later when ITS check runs)
+    expect(t.staleChainFor(".\\pi.exe", s4).map((p) => p.file)).toEqual(["pi.o", "pi.exe"])
+  })
+
   test("orphan product (pre-existing binary, never produced) becomes stale after a source edit — no rebuild", () => {
     const t = JhStaleness.tracker()
     // pi.exe pre-exists; the first action is a source edit
