@@ -397,7 +397,10 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
           // parent/root goal-check is the real backstop; this only stops at the global step budget.
           if (deps.verifyGoal && parentID !== undefined && JhTree.size(tree) < maxTotalSteps) {
             tree = JhTree.setStatus(tree, node.id, "committed")
-            emit({ type: "committed", step: node.id })
+            // NOT a success: the leaf never passed its check — it is committed best-effort so the tree can
+            // grow a fix sibling (below) rather than dead-end. Log it distinctly so reports/scripts can't
+            // count it as a pass (R0 / D9 anatomy: run-32 read a best-effort commit as done).
+            emit({ type: "committed_best_effort", step: node.id, reason: errorSig(vr.detail) })
             const fixDraft: JhStep.StepDraft = {
               goal: fixNodeGoal(node.draft.goal, errorSig(vr.detail), JhTree.get(tree, parentID)!.children.length),
               size: "atomic",

@@ -19,6 +19,10 @@ export type Entry =
   | { readonly type: "verification"; readonly step: string; readonly ok: boolean; readonly detail: string }
   | { readonly type: "corrected"; readonly step: string }
   | { readonly type: "committed"; readonly step: string }
+  // A leaf the harness gave up VERIFYING (stuck/budget) but committed best-effort so the tree can grow a
+  // fix sibling instead of dead-ending (engine.ts stuck path). NOT a success — the reason carries the
+  // failing check's signature. Distinct from `committed` so transcripts/scripts can't mistake it for a pass.
+  | { readonly type: "committed_best_effort"; readonly step: string; readonly reason: string }
   | { readonly type: "blocked"; readonly step: string; readonly reason: string }
   | { readonly type: "task_done" }
   | { readonly type: "task_blocked"; readonly reason: string }
@@ -53,6 +57,8 @@ function describe(e: Sequenced): string {
       return `corrected ${e.step}`
     case "committed":
       return `committed ${e.step}`
+    case "committed_best_effort":
+      return `committed(best-effort) ${e.step} — ${e.reason}`
     case "blocked":
       return `blocked ${e.step}: ${e.reason}`
     case "task_done":

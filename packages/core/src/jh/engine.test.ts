@@ -524,4 +524,39 @@ describe("JhEngine.runTask", () => {
     expect(JhTree.get(r.state.tree, r.state.tree.root)?.children.length).toBe(2) // root.1 + grown fix sibling root.2
     expect(types(r)).not.toContain("blocked")
   })
+
+  // 0a (jh-improve1 R0): the ORACLE INVARIANT — with a precise `taskComplete` oracle that returns
+  // done:false EVERY time and an expander that "solves" every mechanical check, runTask must NEVER report
+  // status:"done". It may only keep EXTENDING the root with fix nodes until the step budget, then block
+  // honestly. This guards run-32's D9 contradiction (`task_done` reached while the oracle was negative).
+  test("0a. oracle invariant: taskComplete never-done ⇒ runTask never reports done", async () => {
+    // Leaves use a `run` check (not a weak artifact_present) so verifyGoal's weak-check goal demotion never
+    // fires — the ONLY oracle consulted is taskComplete, at the root-completion gate. Faithful to the real
+    // harness (verifyGoal + taskComplete both on).
+    const solve = reply(atomObj({ tool: "run", args: { command: "x" }, check: { type: "run", command: "x" }, produces: [] }))
+    const rootDecomp = reply(compoundObj([atomObj({ goal: "child", tool: "run", args: { command: "x" }, check: { type: "run", command: "x" }, produces: [] })]))
+    let calls = 0
+    const maxTotalSteps = 12
+    const deps: JhEngine.Deps = {
+      introspect: () => { calls++; return Effect.succeed(calls === 1 ? rootDecomp : solve) }, // 1st = root decompose, rest = atomic solves
+      correct: () => Effect.succeed(solve),
+      executor: { run: () => Effect.succeed({ ok: true, output: "o", artifacts: new Map<string, string>() }) },
+      runner: { run: () => Effect.succeed({ exitCode: 0, output: "", timedOut: false }) },
+      artifacts: JhArtifact.memory(),
+      fileExists: () => false,
+      cwd: ".",
+      toolNames: JhBasicTools.TOOL_NAMES,
+      verifyGoal: true,
+      taskComplete: () => ({ done: false, detail: "no" }), // the oracle is ALWAYS negative
+      limits: { maxDepth: 4, maxTotalSteps },
+      trigger: JhBudget.DEFAULT_TRIGGER,
+    }
+    const r = await Effect.runPromise(JhEngine.runTask(deps, { goal: "the task" }))
+    expect(r.status).not.toBe("done") // the invariant: a never-done oracle can NEVER yield status:done
+    expect(r.status).toBe("blocked")
+    expect(r.reason === "goal_unmet" || r.reason === "step_budget").toBe(true) // extended to the budget, then blocked honestly
+    expect(r.state.tree.nodes.size).toBeGreaterThanOrEqual(maxTotalSteps - 1) // it actually grew fix nodes
+    // and it NEVER emitted task_done
+    expect(types(r)).not.toContain("task_done")
+  })
 })
