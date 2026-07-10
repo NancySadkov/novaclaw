@@ -407,14 +407,17 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
             const c = observation.artifacts.get(p.id)
             return c !== undefined && c.length > 0
           })
-          // R1: before executing a run/output_equals check, refuse to run a STALE product — auto-re-run the
-          // model's own last successful producing command (the make move; log `refreshed`) or, if the product
-          // was never seen produced, report it stale; and short-circuit an identical failing check over an
-          // unchanged workspace (idempotence). curSnap tracks the workspace as the rebuild mutates it.
+          // R1: before executing a compile/run/output_equals check, refuse to run a STALE product — auto-re-run
+          // the model's own last successful producing command(s) (the make move; log `refreshed`). Rebuild
+          // EVERY stale product in production order (a chain pi.c→pi.o→pi.exe rebuilds pi.o then pi.exe),
+          // skipping the one the check itself (re)builds; a product we never saw produced is reported stale.
+          // Then short-circuit an identical failing check over an unchanged workspace (idempotence).
+          const checkCommand = "command" in check ? check.command : undefined // compile/run/output_equals only
           let curSnap = snapFiles()
           let short: JhVerifier.VerifyResult | undefined
-          if (staleness && (check.type === "run" || check.type === "output_equals")) {
-            for (const sp of staleness.staleProducts(check.command, curSnap)) {
+          if (staleness && checkCommand !== undefined) {
+            for (const sp of staleness.allStale(curSnap)) {
+              if (sp.rebuild === checkCommand) continue // the check itself (re)builds this product — don't pre-run it
               if (sp.rebuild) {
                 emit({ type: "refreshed", step: node.id, command: sp.rebuild })
                 const rb = yield* deps.runner.run({ command: sp.rebuild, cwd: deps.cwd, timeoutMs: JhVerifier.DEFAULT_TIMEOUT_MS })
@@ -439,6 +442,10 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
             vr = { ok: false, detail: `${lastFailDetail}\n(nothing has changed since the last attempt — a repeat run cannot pass; change the source or the command)` }
           } else {
             vr = yield* JhVerifier.verify({ check, cwd: deps.cwd, runner: deps.runner, fileExists: (rel) => deps.fileExists(rel, deps.cwd), producedPresent })
+            // Record artifacts the CHECK's command PRODUCED (e.g. pi.o from a `gcc -c pi.c` compile check) so a
+            // later source edit auto-rebuilds them instead of nagging — the D1 gap baseline run39/40 exposed
+            // (recordAction previously saw only ACTION runs + rebuilds, never verify-check runs).
+            if (staleness && checkCommand !== undefined) staleness.recordAction({ tool: "run", ok: vr.ok, command: checkCommand, before: curSnap, after: snapFiles() })
             if (staleness && !vr.ok) {
               lastFailDigest = staleness.checkDigest(check, curSnap)
               lastFailDetail = vr.detail

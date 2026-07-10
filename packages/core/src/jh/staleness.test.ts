@@ -65,6 +65,21 @@ describe("JhStaleness.tracker (pure)", () => {
     expect(t.checkDigest(check, a)).not.toBe(t.checkDigest({ type: "run", command: "other" }, a))
   })
 
+  test("allStale returns EVERY stale product in production order (chain: pi.o before pi.exe)", () => {
+    const t = JhStaleness.tracker()
+    const s0 = t.snap([{ name: "pi.c", content: "v0" }])
+    const s1 = t.snap([{ name: "pi.c", content: "v0" }, { name: "pi.o", content: "O0" }])
+    t.recordAction({ tool: "run", ok: true, command: "gcc -c pi.c", before: s0, after: s1 }) // pi.o
+    const s2 = t.snap([{ name: "pi.c", content: "v0" }, { name: "pi.o", content: "O0" }, { name: "pi.exe", content: "E0" }])
+    t.recordAction({ tool: "run", ok: true, command: "gcc pi.o -o pi.exe", before: s1, after: s2 }) // pi.exe
+    expect(t.allStale(s2)).toEqual([]) // nothing stale before an edit
+    const s3 = t.snap([{ name: "pi.c", content: "v1" }, { name: "pi.o", content: "O0" }, { name: "pi.exe", content: "E0" }])
+    expect(t.allStale(s3)).toEqual([
+      { file: "pi.o", rebuild: "gcc -c pi.c" },
+      { file: "pi.exe", rebuild: "gcc pi.o -o pi.exe" },
+    ])
+  })
+
   test("orphan product (pre-existing binary, never produced) becomes stale after a source edit — no rebuild", () => {
     const t = JhStaleness.tracker()
     // pi.exe pre-exists; the first action is a source edit
@@ -92,6 +107,25 @@ const piWorld = (command: string, files: Map<string, string>): { exitCode: numbe
     const src = files.get("pi.c") ?? ""
     if (src.includes("BROKEN")) return { exitCode: 1, output: "pi.c:3: error: expected ';'" }
     files.set("pi.exe", `BIN[${src}]`)
+    return { exitCode: 0, output: "" }
+  }
+  if (command.includes("pi.exe")) {
+    const bin = files.get("pi.exe") ?? ""
+    return { exitCode: 0, output: bin.includes("FIXED") ? "3.14159" : "wrong" }
+  }
+  return { exitCode: 1, output: `unknown command: ${command}` }
+}
+
+// A MULTI-STEP build: `gcc -c pi.c` → pi.o (encodes the source); `gcc pi.o -o pi.exe` → pi.exe (encodes pi.o);
+// running pi.exe prints correct digits iff the encoded chain carries "FIXED". Order of the branches matters
+// (the link command also contains the substring "pi.exe").
+const piWorldChain = (command: string, files: Map<string, string>): { exitCode: number; output: string } => {
+  if (command.includes("-c pi.c")) {
+    files.set("pi.o", `OBJ[${files.get("pi.c") ?? ""}]`)
+    return { exitCode: 0, output: "" }
+  }
+  if (command.includes("pi.o -o pi.exe")) {
+    files.set("pi.exe", `BIN[${files.get("pi.o") ?? ""}]`)
     return { exitCode: 0, output: "" }
   }
   if (command.includes("pi.exe")) {
@@ -276,6 +310,30 @@ describe("JhStaleness engine integration", () => {
     const r = await runEngine(h)
     expect(r.status).toBe("done") // the correct fix was NOT discarded by a stale re-check
     expect(refreshedCount(r)).toBe(1)
+  })
+
+  test("9. run39 regression: a compile-as-CHECK records its product; a later edit auto-rebuilds the WHOLE chain (no STALE nag)", async () => {
+    // The baseline bug: `gcc -c pi.c` ran as a CHECK produced pi.o, which recordAction never saw → pi.o was an
+    // orphan with no rebuild → the STALE-ARTIFACT nag looped. Now the check-run is recorded, and a source edit
+    // rebuilds pi.o THEN pi.exe (production order) before the run-check.
+    const runCheck = { type: "run", command: ".\\pi.exe", expect: "3.14159" }
+    const h = fsHarness({
+      initial: { "pi.c": "buggy" },
+      world: piWorldChain,
+      replies: [
+        compound([subObj("compile"), subObj("link+run")]),
+        // step1: WRITE the source; its CHECK compiles it to pi.o (compile is a CHECK, not the action)
+        atom({ goal: "compile", tool: "write_file", args: { path: "pi.c", content: "buggy" }, check: { type: "compile", command: "gcc -c pi.c" }, produces: [{ id: "pi.c", type: "file" }] }),
+        // step2: link + run — buggy first, so it fails and the recovery edits the source
+        atom({ goal: "link+run", tool: "run", args: { command: "gcc pi.o -o pi.exe" }, check: runCheck }),
+        atom({ goal: "fix", tool: "write_file", args: { path: "pi.c", content: "FIXED" }, check: runCheck, produces: [{ id: "pi.c", type: "file" }] }),
+      ],
+      limits: { maxDepth: 2, maxTotalSteps: 32 },
+    })
+    const r = await runEngine(h)
+    expect(r.status).toBe("done") // the edited source propagated through pi.o → pi.exe automatically
+    expect(r.state.log.filter((e) => e.type === "verification" && String((e as { detail?: unknown }).detail).includes("STALE ARTIFACT")).length).toBe(0) // pi.o was tracked, never an orphan
+    expect(refreshedCount(r)).toBeGreaterThanOrEqual(2) // pi.o AND pi.exe auto-rebuilt in order
   })
 
   test("8. flags-off parity: staleness:false emits no `refreshed` and does not auto-rebuild", async () => {

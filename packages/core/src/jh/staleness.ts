@@ -37,6 +37,9 @@ export interface Tracker {
   /** Products named in `command` (token/./\ tolerant filename match) whose recorded source fingerprint
    *  ≠ the current one — i.e. built before the latest source edits, hence STALE. */
   readonly staleProducts: (command: string, current: ReadonlyArray<FileSnap>) => ReadonlyArray<StaleProduct>
+  /** EVERY stale product, in PRODUCTION order (a chain like pi.c→pi.o→pi.exe lists pi.o before pi.exe), so
+   *  the engine can rebuild them bottom-up before a check runs — not just the one the check names. */
+  readonly allStale: (current: ReadonlyArray<FileSnap>) => ReadonlyArray<StaleProduct>
   /** digest of a check + everything it can observe (the full workspace) — for the idempotence cache. */
   readonly checkDigest: (check: unknown, current: ReadonlyArray<FileSnap>) => string
 }
@@ -118,6 +121,13 @@ export function tracker(): Tracker {
     return out
   }
 
+  const allStale: Tracker["allStale"] = (current) => {
+    const curDigest = sourceDigest(current)
+    const out: StaleProduct[] = []
+    for (const [file, rec] of products) if (rec.sourceDigest !== curDigest) out.push({ file, rebuild: rec.command }) // Map order = production order
+    return out
+  }
+
   const checkDigest: Tracker["checkDigest"] = (check, current) =>
     Hash.sha256(
       `${JSON.stringify(check ?? null)}|${current
@@ -127,5 +137,5 @@ export function tracker(): Tracker {
         .join("\n")}`,
     )
 
-  return { snap, recordAction, staleProducts, checkDigest }
+  return { snap, recordAction, staleProducts, allStale, checkDigest }
 }
