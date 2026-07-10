@@ -91,6 +91,19 @@ describe("JhStaleness.tracker (pure)", () => {
     ])
   })
 
+  test("a run's product is recorded even when the run FAILS (compound whose exec step crashes) — no orphan", () => {
+    // P1 baseline run58 (194× STALE nag): `gcc -c pi.c && gcc pi.o -o pi.exe && .\pi.exe` created a valid pi.o
+    // but the final exec crashed → ok:false → pi.o went unrecorded → orphan-seeded with rebuild="". A run's
+    // created files ARE its products regardless of the run's overall exit; the command is a usable rebuild.
+    const t = JhStaleness.tracker()
+    const s0 = t.snap([{ name: "pi.c", content: "v0" }])
+    const s1 = t.snap([{ name: "pi.c", content: "v0" }, { name: "pi.o", content: "O0" }])
+    const compound = "gcc -c pi.c && gcc pi.o -o pi.exe && .\\pi.exe"
+    t.recordAction({ tool: "run", ok: false, command: compound, before: s0, after: s1 }) // FAILED run, but pi.o was made
+    const s2 = t.snap([{ name: "pi.c", content: "v1" }, { name: "pi.o", content: "O0" }]) // edit source → pi.o stale
+    expect(t.allStale(s2)).toEqual([{ file: "pi.o", rebuild: compound }]) // stale WITH a rebuild, not an orphan ""
+  })
+
   test("orphan product (pre-existing binary, never produced) becomes stale after a source edit — no rebuild", () => {
     const t = JhStaleness.tracker()
     // pi.exe pre-exists; the first action is a source edit

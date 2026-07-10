@@ -78,7 +78,7 @@ export function tracker(): Tracker {
         .join("\n"),
     )
 
-  const recordAction: Tracker["recordAction"] = ({ tool, ok, command, before, after }) => {
+  const recordAction: Tracker["recordAction"] = ({ tool, command, before, after }) => {
     const beforeHash = new Map(before.map((f) => [f.name, f.hash]))
     const changed = after.filter((f) => beforeHash.get(f.name) !== f.hash) // changed or newly-appeared
     const changedNames = new Set(changed.map((f) => f.name))
@@ -88,9 +88,13 @@ export function tracker(): Tracker {
         sources.add(f.name)
         products.delete(f.name)
       }
-    } else if (ok && typeof command === "string" && command.trim() !== "") {
-      // A successful run's changed/new files are its PRODUCTS (unless the model authored them) — remember the
-      // producing command + the source fingerprint it consumed (the fingerprint BEFORE this run).
+    } else if (typeof command === "string" && command.trim() !== "") {
+      // A run's changed/new files are its PRODUCTS (unless the model authored them) — remember the producing
+      // command + the source fingerprint it consumed (BEFORE this run). NOTE: recorded EVEN WHEN the run
+      // reported failure — a compound like `gcc -c x.c && gcc x.o -o x.exe && .\x.exe` whose final exec
+      // crashes reports ok=false, yet the `-c` step produced a VALID x.o; not recording it here left x.o an
+      // unattributed orphan that nagged "STALE ARTIFACT … rebuild it" forever (P1 baseline run58, 194×). The
+      // remembered command IS the rebuild; re-running it either regenerates the product or surfaces the real error.
       const src = sourceDigest(before)
       for (const f of changed) if (!sources.has(f.name)) products.set(f.name, { command, sourceDigest: src })
     }
