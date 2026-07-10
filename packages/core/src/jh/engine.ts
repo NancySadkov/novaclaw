@@ -26,6 +26,7 @@ import { JhBudget } from "./budget"
 import { JhVerifier } from "./verifier"
 import { JhExpander } from "./expander"
 import { JhStaleness } from "./staleness"
+import { JhLadder } from "./ladder"
 import { JhLog } from "./log"
 import type { JhBasicTools } from "./tools-basic"
 import type { JhProcessRunner } from "./process-runner"
@@ -82,7 +83,14 @@ export interface Deps {
    *  run stdout, returns whether the task is truly done and, if not, a coarse hint for the fix node. When
    *  absent, root-completion falls back to the LLM goal-check. The program still must COMPUTE the result;
    *  this only CHECKS it (a test oracle, not the model cheating). */
-  readonly taskComplete?: (input: { readonly workspace: string; readonly lastOutput: string }) => { readonly done: boolean; readonly detail: string }
+  readonly taskComplete?: (input: { readonly workspace: string; readonly lastOutput: string }) => { readonly done: boolean; readonly detail: string; readonly score?: number }
+  /** R3 (jh-improve1): keep the best-scoring workspace snapshot; on escalation + a score regression, restore it
+   *  to disk so a rewrite improves on the best attempt instead of discarding it. Needs a graded taskComplete
+   *  (score) + listFiles. Default ON. */
+  readonly keepBest?: boolean
+  /** R4 (jh-improve1): the de-latched cycling escalation ladder (tweak→analyze→targeted_fix→rewrite→cycle),
+   *  with a forced instrumented "analyze" stage. Off → the legacy ESCALATE_AFTER latch. Default ON. */
+  readonly ladder?: boolean
   readonly limits: { readonly maxDepth: number; readonly maxTotalSteps: number }
   readonly trigger: JhBudget.SplitTrigger
   readonly onLog?: (entry: JhLog.Sequenced) => void
@@ -133,6 +141,36 @@ const fixNodeGoal = (baseGoal: string, detail: string, priorAttempts: number): s
   priorAttempts >= ESCALATE_AFTER
     ? `Several attempts at "${baseGoal}" have FAILED with the SAME wrong result — ${detail}. STOP tweaking the current code: REWRITE the computation from scratch with a cleaner, DIFFERENT approach, re-derive the math carefully step by step, and ADD printf statements to print each intermediate value so you can see EXACTLY where it diverges from what you expect — then recompile and re-run.`
     : `The previous attempt at "${baseGoal}" did not pass its check — ${detail}. Do the next single action to fix it: if the program's OUTPUT is WRONG or it crashed, EDIT the source code to fix the bug, RECOMPILE, then re-run and verify — do NOT just re-run the same binary.`
+// R4 escalation-ladder directive for a grown fix node, selected by the ladder stage. Note `detail` is the
+// FULL bounded verify detail (D7 — not the 160-char errorSig), so the fix node sees the real error.
+const stageFixGoal = (stage: JhLadder.Stage, baseGoal: string, detail: string): { readonly goal: string; readonly analyze: boolean } => {
+  switch (stage) {
+    case "analyze":
+      return {
+        goal: `The attempts at "${baseGoal}" keep failing — ${detail}. Do NOT rewrite yet. INSTRUMENT the program: add labeled debug prints so each key intermediate quantity prints on its OWN line as NAME=value (at least 3 distinct values on the code path that produces the wrong result), recompile, and run. The OUTPUT of this step is those diagnostic NAME=value lines.`,
+        analyze: true,
+      }
+    case "targeted_fix":
+      return {
+        goal: `Diagnostic NAME=value output from the last run is shown in the context above. State which SINGLE function or computation the printed values prove to be wrong, and fix ONLY that — do not rewrite anything else. Then recompile and re-run.`,
+        analyze: false,
+      }
+    case "rewrite":
+      return {
+        goal: `Several attempts at "${baseGoal}" have FAILED with the SAME wrong result — ${detail}. STOP tweaking the current code: REWRITE the computation from scratch with a cleaner, DIFFERENT approach, re-derive the math step by step, and ADD printf statements to print each intermediate value — then recompile and re-run.`,
+        analyze: false,
+      }
+    default: // tweak
+      return {
+        goal: `The previous attempt at "${baseGoal}" did not pass its check — ${detail}. Do the next single action to fix it: if the program's OUTPUT is WRONG or it crashed, EDIT the source to fix the bug, RECOMPILE, then re-run and verify — do NOT just re-run the same binary.`,
+        analyze: false,
+      }
+  }
+}
+// A leaf's output counts as "instrumented" when it prints ≥3 labeled NAME=value lines (mechanical shape
+// check — never content; forces run-30's missing diagnosis).
+const NAME_VALUE = /^\s*[A-Za-z_][\w.[\]]* *= *-?[\d.]/gm
+const hasInstrumentation = (output: string): boolean => (output.match(NAME_VALUE) ?? []).length >= 3
 
 export function runTask(deps: Deps, task: { readonly goal: string }, resume?: State): Effect.Effect<Report> {
   const { maxDepth, maxTotalSteps } = deps.limits
@@ -152,6 +190,12 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
   // across leaves — a compile in one leaf, a check in another (jh-improve1 L4: in-memory, not in State).
   const staleness = deps.staleness !== false && deps.listFiles ? JhStaleness.tracker() : undefined
   const snapFiles = (): ReadonlyArray<JhStaleness.FileSnap> => (staleness ? staleness.snap(deps.listFiles!()) : [])
+  // R3 keep-best + R4 ladder state (engine-run-scoped, in-memory — jh-improve1 L4).
+  let bestScore = Number.NEGATIVE_INFINITY
+  let bestSnapshot: ReadonlyArray<{ readonly name: string; readonly content: string }> | undefined
+  const ladders = new Map<string, JhLadder.LadderState>() // parentID → escalation state
+  const lastFixBest = new Map<string, number>() // parentID → bestScore at its last grown fix node (for scoreImproved)
+  const analyzeNodes = new Set<string>() // nodeIds the harness forced to be instrumented "analyze" steps
 
   const emit = (entry: JhLog.Entry): void => {
     const seqd = { ...entry, seq: seq++ } as JhLog.Sequenced
@@ -200,7 +244,10 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         fileBlock = `\n\n# Working directory (the ACTUAL files on disk — reference these exact names, and fix code here if a step failed)\n${bodies.join("\n\n")}`
       }
     }
-    const full = `${base}${fileBlock}`
+    // D7 (jh-improve1): grown fix/analyze nodes must SEE the program's most recent stdout (the diagnostics) —
+    // otherwise a step told to "fix what the values show" is acting blind (the 160-char cross-node collapse).
+    const outputBlock = lastRunOutput ? `\n\n# Most recent program output (stdout, tail)\n\`\`\`\n${lastRunOutput.length > 2000 ? lastRunOutput.slice(-2000) : lastRunOutput}\n\`\`\`` : ""
+    const full = `${base}${fileBlock}${outputBlock}`
     return extra ? `${full}\n\n${extra}` : full
   }
   /** the current workspace (file names + contents) as a plain block — for the goal-achievement check. */
@@ -211,6 +258,59 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       .map((f) => `### ${f.name}\n\`\`\`\n${f.content.length > 8000 ? f.content.slice(0, 8000) + "\n…[truncated]…" : f.content}\n\`\`\``)
       .join("\n\n")
   }
+  // R3: the current graded progress score (from the caller's oracle), or undefined if ungraded.
+  const currentScore = (): number | undefined => deps.taskComplete?.({ workspace: renderWorkspace(), lastOutput: lastRunOutput }).score
+  // R3: sample the score after a successful run; on a new best, snapshot the TEXT files (keep-best).
+  const sampleScore = (nodeId: JhStep.StepID): void => {
+    const s = currentScore()
+    if (s === undefined || s <= bestScore) return
+    bestScore = s
+    emit({ type: "scored", step: nodeId, score: s })
+    if (deps.keepBest !== false && deps.listFiles) {
+      bestSnapshot = deps.listFiles().filter((f) => !f.content.startsWith("<compiled binary")).map((f) => ({ name: f.name, content: f.content }))
+    }
+  }
+  // R3: on escalation + a score REGRESSION below the best, restore the best-scoring source snapshot to disk so
+  // a fix builds on the best attempt (products auto-rebuild via P1). No-op if keepBest off or nothing to restore.
+  const restoreBest = (nodeId: JhStep.StepID): Effect.Effect<boolean> =>
+    Effect.gen(function* () {
+      if (deps.keepBest === false || !bestSnapshot) return false
+      const cur = currentScore()
+      if (cur !== undefined && cur >= bestScore) return false // not a regression
+      for (const f of bestSnapshot) yield* deps.executor.run({ tool: "write_file", args: { path: f.name, content: f.content }, produces: [], cwd: deps.cwd })
+      emit({ type: "restored_best", step: nodeId, score: bestScore })
+      return true
+    })
+  // R3+R4: grow a fix node on `parentID` — pick the escalation stage (ladder or legacy latch), restore the
+  // best snapshot on an escalated regression, mark a forced-analyze node, and append it. Shared by the leaf-
+  // stuck and root-extend sites.
+  const growFixNode = (parentID: JhStep.StepID, baseGoal: string, fullDetail: string, defaultSuccess: string): Effect.Effect<void> =>
+    Effect.gen(function* () {
+      const sig = errorSig(fullDetail)
+      const prevBest = lastFixBest.get(parentID) ?? Number.NEGATIVE_INFINITY
+      const scoreImproved = bestScore > prevBest
+      lastFixBest.set(parentID, bestScore)
+      const childCount = JhTree.get(tree, parentID)!.children.length
+      let stage: JhLadder.Stage
+      if (deps.ladder !== false) {
+        const state = JhLadder.next(ladders.get(parentID), { sig, scoreImproved })
+        ladders.set(parentID, state)
+        stage = state.stage
+      } else {
+        stage = childCount >= ESCALATE_AFTER ? "rewrite" : "tweak" // legacy latch
+      }
+      const restored = stage !== "tweak" ? yield* restoreBest(parentID) : false
+      const fix = deps.ladder !== false ? stageFixGoal(stage, baseGoal, fullDetail) : { goal: fixNodeGoal(baseGoal, sig, childCount), analyze: false }
+      const goal = restored ? `The best attempt so far (progress score ${bestScore.toFixed(3)}) has been RESTORED to the working directory — improve on IT; do not start over. ${fix.goal}` : fix.goal
+      const fixDraft: JhStep.StepDraft = { goal, size: "atomic", success: defaultSuccess, kind: fix.analyze ? "analyze" : undefined }
+      const appended = JhTree.appendChild(tree, parentID, fixDraft, maxDepth)
+      if (!(appended instanceof JhTree.AttachError)) {
+        tree = appended
+        const newId = JhTree.get(tree, parentID)!.children.at(-1)
+        if (fix.analyze && newId !== undefined) analyzeNodes.add(newId)
+        emit({ type: "expanded", step: parentID, children: JhTree.get(tree, parentID)!.children.length })
+      }
+    })
   // R2: run-scoped LLM goal-check cache + verdict result. `cached` lets the caller mark the transcript;
   // `evidenceFault` = an achieved:true claim without a verifiable verbatim quote (a checker fault, not a
   // model-action fault, so it must NOT accrue toward the leaf's stuck counter).
@@ -399,7 +499,10 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         const before = snapFiles() // R1: workspace fingerprint BEFORE the action (source→product build graph)
         emit({ type: "action", step: node.id, tool: currentTool })
         const observation = yield* deps.executor.run({ tool: currentTool, args: currentArgs, produces: draft.produces ?? [], cwd: deps.cwd })
-        if (currentTool === "run" && observation.ok) lastRunOutput = observation.output // remember the program's stdout for the goal-checks
+        if (currentTool === "run" && observation.ok) {
+          lastRunOutput = observation.output // remember the program's stdout for the goal-checks
+          sampleScore(node.id) // R3: track the best progress score + snapshot on improvement
+        }
         emit({ type: "observation", step: node.id, ok: observation.ok })
         if (staleness)
           staleness.recordAction({ tool: currentTool, ok: observation.ok, command: typeof currentArgs.command === "string" ? currentArgs.command : undefined, before, after: snapFiles() })
@@ -475,6 +578,11 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
             vr = { ok: true, detail: "goal achieved" + marker } // surface the cache hit (no LLM call spent)
           }
         }
+        // R4 forced-analyze: an "analyze" node's job is to PRODUCE diagnostics — a passing check that emitted
+        // no labeled NAME=value lines has not instrumented anything (run-30's 0-printf rut). Demote it.
+        if (vr.ok && analyzeNodes.has(node.id) && !hasInstrumentation(lastRunOutput)) {
+          vr = { ok: false, detail: "no labeled intermediate values (NAME=value lines) in the output — add the printf instrumentation, recompile, and run" }
+        }
         emit({ type: "verification", step: node.id, ok: vr.ok, detail: vr.detail })
 
         if (vr.ok) {
@@ -516,16 +624,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
             // grow a fix sibling (below) rather than dead-end. Log it distinctly so reports/scripts can't
             // count it as a pass (R0 / D9 anatomy: run-32 read a best-effort commit as done).
             emit({ type: "committed_best_effort", step: node.id, reason: errorSig(vr.detail) })
-            const fixDraft: JhStep.StepDraft = {
-              goal: fixNodeGoal(node.draft.goal, errorSig(vr.detail), JhTree.get(tree, parentID)!.children.length),
-              size: "atomic",
-              success: node.draft.success ?? "the step's goal is met",
-            }
-            const appended = JhTree.appendChild(tree, parentID, fixDraft, maxDepth)
-            if (!(appended instanceof JhTree.AttachError)) {
-              tree = appended
-              emit({ type: "expanded", step: parentID, children: JhTree.get(tree, parentID)!.children.length })
-            }
+            yield* growFixNode(parentID, node.draft.goal, vr.detail, node.draft.success ?? "the step's goal is met")
             bubble(node.id)
             yield* checkpoint()
             return
@@ -685,17 +784,9 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
             return report("done")
           }
           if (JhTree.size(tree) < maxTotalSteps) {
-            const fixDraft: JhStep.StepDraft = {
-              goal: fixNodeGoal(task.goal, verdict.missing || "the deliverable is missing or incorrect", root.children.length),
-              size: "atomic",
-              success: "the task's deliverable is produced and verified correct",
-            }
-            const appended = JhTree.appendChild(tree, tree.root, fixDraft, maxDepth)
-            if (!(appended instanceof JhTree.AttachError)) {
-              tree = appended
-              emit({ type: "expanded", step: tree.root, children: JhTree.get(tree, tree.root)!.children.length })
-              continue
-            }
+            const beforeCount = JhTree.get(tree, tree.root)!.children.length
+            yield* growFixNode(tree.root, task.goal, verdict.missing || "the deliverable is missing or incorrect", "the task's deliverable is produced and verified correct")
+            if (JhTree.get(tree, tree.root)!.children.length > beforeCount) continue
           }
           emit({ type: "task_blocked", reason: "goal_unmet" })
           return report("blocked", "goal_unmet")

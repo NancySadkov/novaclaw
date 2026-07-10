@@ -21,6 +21,12 @@ export type Entry =
   | { readonly type: "observation"; readonly step: string; readonly ok: boolean }
   | { readonly type: "verification"; readonly step: string; readonly ok: boolean; readonly detail: string }
   | { readonly type: "corrected"; readonly step: string }
+  // R3: a new best progress score was observed (graded oracle).
+  | { readonly type: "scored"; readonly step: string; readonly score: number }
+  // R3: on escalation + regression, the best-scoring workspace snapshot was restored to disk.
+  | { readonly type: "restored_best"; readonly step: string; readonly score: number }
+  // R4: a rewrite-stage fix node produced no source change — the directive was ignored.
+  | { readonly type: "directive_ignored"; readonly step: string }
   | { readonly type: "committed"; readonly step: string }
   // A leaf the harness gave up VERIFYING (stuck/budget) but committed best-effort so the tree can grow a
   // fix sibling instead of dead-ending (engine.ts stuck path). NOT a success — the reason carries the
@@ -60,6 +66,12 @@ function describe(e: Sequenced): string {
       return `verification ${e.step}: ${e.ok ? "pass" : "fail"}${e.detail ? ` — ${e.detail}` : ""}`
     case "corrected":
       return `corrected ${e.step}`
+    case "scored":
+      return `scored ${e.step}: best=${e.score}`
+    case "restored_best":
+      return `restored_best ${e.step}: score=${e.score}`
+    case "directive_ignored":
+      return `directive_ignored ${e.step}`
     case "committed":
       return `committed ${e.step}`
     case "committed_best_effort":

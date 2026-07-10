@@ -75,6 +75,9 @@ export interface StepDraft {
   readonly check?: Check | null
   readonly assumptions?: ReadonlyArray<string> | null
   readonly substeps?: ReadonlyArray<StepDraft> | null
+  /** R4 (jh-improve1): harness-set marker for a forced "analyze" fix node (add labeled debug prints). Never
+   *  prompted or emitted by the model; the engine sets it and post-checks the leaf's output for NAME=value lines. */
+  readonly kind?: "analyze" | null
 }
 export const StepDraft = Schema.Struct({
   goal: Schema.String,
@@ -89,6 +92,7 @@ export const StepDraft = Schema.Struct({
   check: Schema.optional(Schema.NullOr(Check)),
   assumptions: Schema.optional(Schema.NullOr(Schema.Array(Schema.String))),
   substeps: Schema.optional(Schema.NullOr(Schema.Array(Schema.suspend((): Schema.Codec<StepDraft> => StepDraft)))),
+  kind: Schema.optional(Schema.NullOr(Schema.Literal("analyze"))),
 })
 
 export const ARTIFACT_ID_PATTERN = /^[a-z0-9][a-z0-9._-]{0,63}$/
