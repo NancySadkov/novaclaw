@@ -78,6 +78,59 @@ describe("JhBasicTools.basicExecutor", () => {
     expect((await runTool("edit_file", { path: "p.c", old_string: 1, new_string: "b" }, [], cwd)).ok).toBe(false)
   })
 
+  // improve3 P4 — near-miss tiers (C7): heal CRLF / trailing-space / indent drift in a full-line/multi-line quote.
+  test("edit_file near-miss: CRLF drift heals (tier 1)", async () => {
+    const cwd = tmp()
+    fs.writeFileSync(path.join(cwd, "a.c"), "int a;\r\nint b;\r\nint c;\r\n") // CRLF file
+    const obs = await runTool("edit_file", { path: "a.c", old_string: "int a;\nint b;", new_string: "int a;\nint B;" }, [], cwd) // LF quote spanning 2 lines
+    expect(obs.ok).toBe(true)
+    expect(obs.output).toContain("normalization")
+    expect(fs.readFileSync(path.join(cwd, "a.c"), "utf8")).toContain("int B;")
+  })
+
+  test("edit_file near-miss: trailing-space drift heals (tier 1)", async () => {
+    const cwd = tmp()
+    fs.writeFileSync(path.join(cwd, "a.c"), "alpha   \nbeta\n") // trailing spaces on line 1
+    const obs = await runTool("edit_file", { path: "a.c", old_string: "alpha\nbeta", new_string: "ALPHA\nbeta" }, [], cwd)
+    expect(obs.ok).toBe(true)
+    expect(fs.readFileSync(path.join(cwd, "a.c"), "utf8")).toContain("ALPHA")
+  })
+
+  test("edit_file near-miss: leading-indent drift heals (tier 2)", async () => {
+    const cwd = tmp()
+    fs.writeFileSync(path.join(cwd, "a.c"), "void f(){\n    return 0;\n    return 1;\n}\n") // 4-space indented block
+    const obs = await runTool("edit_file", { path: "a.c", old_string: "return 0;\nreturn 1;", new_string: "return 2;\nreturn 3;" }, [], cwd) // no indent in the quote
+    expect(obs.ok).toBe(true)
+    expect(obs.output).toContain("indentation")
+    expect(fs.readFileSync(path.join(cwd, "a.c"), "utf8")).toContain("return 2;")
+  })
+
+  test("edit_file: a unique EXACT substring uses tier 0 (no normalization note)", async () => {
+    const cwd = tmp()
+    fs.writeFileSync(path.join(cwd, "a.c"), "void f(){\n  return 0;\n}\n")
+    const obs = await runTool("edit_file", { path: "a.c", old_string: "return 0;", new_string: "return 9;" }, [], cwd)
+    expect(obs.ok).toBe(true)
+    expect(obs.output).not.toContain("normalization") // exact tier, not a near-miss
+    expect(fs.readFileSync(path.join(cwd, "a.c"), "utf8")).toContain("return 9;")
+  })
+
+  test("edit_file: multiple normalized matches still fail (uniqueness enforced at the tier)", async () => {
+    const cwd = tmp()
+    fs.writeFileSync(path.join(cwd, "a.c"), "  foo\n    foo\n") // both lines are `foo` after indent-flex
+    const obs = await runTool("edit_file", { path: "a.c", old_string: "foo", new_string: "bar" }, [], cwd)
+    expect(obs.ok).toBe(false)
+    expect(obs.output).toContain("occurs")
+  })
+
+  test("edit_file: total miss names the nearest line", async () => {
+    const cwd = tmp()
+    fs.writeFileSync(path.join(cwd, "a.c"), "int compute_sum(int n) {\n  return n;\n}\n")
+    const obs = await runTool("edit_file", { path: "a.c", old_string: "int compute_total(int n) {", new_string: "x" }, [], cwd)
+    expect(obs.ok).toBe(false)
+    expect(obs.output).toContain("nearest line")
+    expect(obs.output).toContain("compute_sum")
+  })
+
   test("note passes text through to a note produce", async () => {
     const obs = await runTool("note", { text: "the choice" }, [ref("n", "note")], tmp())
     expect(obs.ok).toBe(true)

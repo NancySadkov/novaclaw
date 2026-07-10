@@ -63,8 +63,76 @@ function writeFile(input: { args: Readonly<Record<string, unknown>>; produces: R
   return obs(true, `wrote ${Buffer.byteLength(content, "utf8")} bytes to ${p}`, assignFirst(input.produces, (r) => r.type === "file", content))
 }
 
+// improve3 P4 (C7/R-EDIT): a weak model quotes old_string with CRLF/trailing-space/indent drift, so an
+// EXACT-only match fails constantly (run54: 29× "old_string not found" on a SUCCESS run). Three tiers:
+// (0) exact; (1) CRLF + trailing-whitespace-normalized; (2) leading-indentation-flex (per-line ltrim).
+// Uniqueness is enforced at whichever tier first yields ≥1 match. A line-based match REPLACES the raw content
+// lines (so tier 1/2 heal the quote without corrupting the rest). Returns the updated content + the tier used.
+const normLine = (l: string, tier: number): string => {
+  let x = l.replace(/\r$/, "").replace(/[ \t]+$/, "") // tier 1: CRLF + trailing whitespace
+  if (tier >= 2) x = x.replace(/^[ \t]+/, "") // tier 2: leading indentation
+  return x
+}
+type EditMatch = { readonly kind: "ok"; readonly updated: string; readonly tier: number } | { readonly kind: "multi"; readonly count: number; readonly tier: number } | { readonly kind: "miss" }
+function matchEdit(content: string, oldStr: string, newStr: string): EditMatch {
+  if (oldStr === "") return { kind: "miss" }
+  // Tier 0: exact.
+  const exact = content.split(oldStr).length - 1
+  if (exact === 1) return { kind: "ok", updated: content.replace(oldStr, newStr), tier: 0 }
+  if (exact > 1) return { kind: "multi", count: exact, tier: 0 }
+  // Tiers 1 & 2: line-based normalized (whole-line windows).
+  const cLines = content.split("\n")
+  const oLines = oldStr.split("\n")
+  for (const tier of [1, 2]) {
+    const cn = cLines.map((l) => normLine(l, tier))
+    const on = oLines.map((l) => normLine(l, tier))
+    const k = on.length
+    const at: number[] = []
+    for (let i = 0; i + k <= cn.length; i++) {
+      let hit = true
+      for (let j = 0; j < k; j++)
+        if (cn[i + j] !== on[j]) {
+          hit = false
+          break
+        }
+      if (hit) at.push(i)
+    }
+    if (at.length === 1) {
+      const i = at[0]!
+      const updated = [...cLines.slice(0, i), ...newStr.split("\n"), ...cLines.slice(i + k)].join("\n")
+      return { kind: "ok", updated, tier }
+    }
+    if (at.length > 1) return { kind: "multi", count: at.length, tier }
+  }
+  return { kind: "miss" }
+}
+/** On a total miss, name the file line most similar to old_string's first line (shared-prefix + containment
+ *  ranking — no full Levenshtein) so the model can re-quote it exactly. */
+function nearestLine(content: string, oldStr: string): string {
+  const target = (oldStr.split("\n")[0] ?? "").trim()
+  if (target === "") return ""
+  const commonPrefix = (a: string, b: string): number => {
+    let n = 0
+    while (n < a.length && n < b.length && a[n] === b[n]) n++
+    return n
+  }
+  let best = ""
+  let bestScore = -1
+  for (const l of content.split("\n")) {
+    const t = l.trim()
+    if (t === "") continue
+    const score = commonPrefix(t, target) + (t.includes(target) || target.includes(t) ? 1000 : 0)
+    if (score > bestScore) {
+      bestScore = score
+      best = t
+    }
+  }
+  return best
+}
+
 // R5 (jh-improve1): a TARGETED edit — replace ONE unique occurrence of old_string. ~10× fewer output tokens
-// than a whole-file rewrite and can't corrupt the untouched rest of the file (kills D5).
+// than a whole-file rewrite and can't corrupt the untouched rest of the file (kills D5). improve3 P4 adds the
+// near-miss tiers above so weak-model quote drift heals instead of looping.
 function editFile(input: { args: Readonly<Record<string, unknown>>; produces: ReadonlyArray<JhStep.ArtifactRef>; cwd: string }): Observation {
   const { path: p, old_string: oldStr, new_string: newStr } = input.args
   if (typeof p !== "string" || typeof oldStr !== "string" || typeof newStr !== "string") return badArgs("edit_file", "{path: string, old_string: string, new_string: string}")
@@ -80,16 +148,20 @@ function editFile(input: { args: Readonly<Record<string, unknown>>; produces: Re
     } catch {}
     return obs(false, `file not found: ${p} — files present: ${present}`)
   }
-  const count = oldStr === "" ? 0 : content.split(oldStr).length - 1
-  if (count === 0) return obs(false, `old_string not found in ${p} — the file's ACTUAL current content is shown in the context above; copy the exact text to replace`)
-  if (count > 1) return obs(false, `old_string occurs ${count} times in ${p} — provide a longer, UNIQUE snippet so exactly one match is edited`)
-  const updated = content.replace(oldStr, newStr)
+  const m = matchEdit(content, oldStr, newStr)
+  if (m.kind === "multi") return obs(false, `old_string occurs ${m.count} times in ${p} — provide a longer, UNIQUE snippet so exactly one match is edited`)
+  if (m.kind === "miss") {
+    const near = nearestLine(content, oldStr)
+    const hint = near ? ` The nearest line in the file is: '${near}' — copy it EXACTLY (including indentation).` : ""
+    return obs(false, `old_string not found in ${p} — the file's ACTUAL current content is shown in the context above; copy the exact text to replace.${hint}`)
+  }
   try {
-    fs.writeFileSync(target, updated, "utf8")
+    fs.writeFileSync(target, m.updated, "utf8")
   } catch (e) {
     return obs(false, `edit_file failed: ${messageOf(e)}`)
   }
-  return obs(true, `edited ${p}: -${oldStr.length} +${newStr.length} chars`, assignFirst(input.produces, (r) => r.type === "file", updated))
+  const note = m.tier > 0 ? ` (matched with ${m.tier === 1 ? "whitespace" : "indentation"} normalization)` : ""
+  return obs(true, `edited ${p}: -${oldStr.length} +${newStr.length} chars${note}`, assignFirst(input.produces, (r) => r.type === "file", m.updated))
 }
 
 function readFile(input: { args: Readonly<Record<string, unknown>>; produces: ReadonlyArray<JhStep.ArtifactRef>; cwd: string }): Observation {
