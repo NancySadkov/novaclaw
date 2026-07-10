@@ -52,6 +52,32 @@ describe("JhBasicTools.basicExecutor", () => {
     expect(r.output.toLowerCase()).toContain("crash") // + the source-bug directive, so the model doesn't just re-run
   })
 
+  test("edit_file replaces ONE unique occurrence and sets the first file produce to the NEW content", async () => {
+    const cwd = tmp()
+    fs.writeFileSync(path.join(cwd, "p.c"), "int main(){ return 0; }")
+    const obs = await runTool("edit_file", { path: "p.c", old_string: "return 0;", new_string: "return 42;" }, [ref("f", "file")], cwd)
+    expect(obs.ok).toBe(true)
+    expect(fs.readFileSync(path.join(cwd, "p.c"), "utf8")).toBe("int main(){ return 42; }")
+    expect(obs.artifacts.get("f")).toBe("int main(){ return 42; }") // produce = full NEW content
+    expect(obs.output).toContain("edited p.c")
+  })
+
+  test("edit_file: missing file, no match, and >1 match each fail helpfully", async () => {
+    const cwd = tmp()
+    expect((await runTool("edit_file", { path: "nope.c", old_string: "a", new_string: "b" }, [], cwd)).output).toContain("file not found")
+    fs.writeFileSync(path.join(cwd, "d.c"), "x = 1; x = 1;")
+    expect((await runTool("edit_file", { path: "d.c", old_string: "zzz", new_string: "b" }, [], cwd)).output).toContain("not found in")
+    const dup = await runTool("edit_file", { path: "d.c", old_string: "x = 1;", new_string: "y = 2;" }, [], cwd)
+    expect(dup.ok).toBe(false)
+    expect(dup.output).toContain("occurs 2 times")
+  })
+
+  test("edit_file refuses unsafe paths and bad args", async () => {
+    const cwd = tmp()
+    expect((await runTool("edit_file", { path: "../e.c", old_string: "a", new_string: "b" }, [], cwd)).ok).toBe(false)
+    expect((await runTool("edit_file", { path: "p.c", old_string: 1, new_string: "b" }, [], cwd)).ok).toBe(false)
+  })
+
   test("note passes text through to a note produce", async () => {
     const obs = await runTool("note", { text: "the choice" }, [ref("n", "note")], tmp())
     expect(obs.ok).toBe(true)

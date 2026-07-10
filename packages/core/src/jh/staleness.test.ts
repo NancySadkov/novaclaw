@@ -54,6 +54,17 @@ describe("JhStaleness.tracker (pure)", () => {
     expect(t.staleProducts(".\\pi.exe", s3)).toEqual([])
   })
 
+  test("R5: an edit_file change is a model-written SOURCE (not a product) → its product goes stale", () => {
+    const t = JhStaleness.tracker()
+    const s0 = t.snap([{ name: "pi.c", content: "v0" }])
+    const s1 = t.snap([{ name: "pi.c", content: "v0" }, { name: "pi.exe", content: "E0" }])
+    t.recordAction({ tool: "run", ok: true, command: "gcc pi.c -o pi.exe", before: s0, after: s1 }) // pi.exe product
+    const s2 = t.snap([{ name: "pi.c", content: "v1" }, { name: "pi.exe", content: "E0" }])
+    t.recordAction({ tool: "edit_file", ok: true, before: s1, after: s2 }) // edit_file (tool !== "run") → source
+    expect(t.staleProducts(".\\pi.exe", s2).map((p) => p.file)).toEqual(["pi.exe"]) // product stale after the edit
+    expect(t.staleProducts("pi.c", s2)).toEqual([]) // the edited file is never a product
+  })
+
   test("checkDigest is stable on an unchanged workspace and changes on any edit", () => {
     const t = JhStaleness.tracker()
     const check = { type: "run", command: ".\\pi.exe" }

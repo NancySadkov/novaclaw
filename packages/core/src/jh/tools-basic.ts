@@ -28,7 +28,7 @@ export interface Executor {
   }) => Effect.Effect<Observation>
 }
 
-export const TOOL_NAMES: ReadonlyArray<string> = ["write_file", "read_file", "run", "note"]
+export const TOOL_NAMES: ReadonlyArray<string> = ["write_file", "edit_file", "read_file", "run", "note"]
 
 const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 const noArtifacts: ReadonlyMap<string, string> = new Map()
@@ -63,6 +63,35 @@ function writeFile(input: { args: Readonly<Record<string, unknown>>; produces: R
   return obs(true, `wrote ${Buffer.byteLength(content, "utf8")} bytes to ${p}`, assignFirst(input.produces, (r) => r.type === "file", content))
 }
 
+// R5 (jh-improve1): a TARGETED edit — replace ONE unique occurrence of old_string. ~10× fewer output tokens
+// than a whole-file rewrite and can't corrupt the untouched rest of the file (kills D5).
+function editFile(input: { args: Readonly<Record<string, unknown>>; produces: ReadonlyArray<JhStep.ArtifactRef>; cwd: string }): Observation {
+  const { path: p, old_string: oldStr, new_string: newStr } = input.args
+  if (typeof p !== "string" || typeof oldStr !== "string" || typeof newStr !== "string") return badArgs("edit_file", "{path: string, old_string: string, new_string: string}")
+  const target = safePath(input.cwd, p)
+  if (!target) return obs(false, `edit_file refused unsafe path "${p}" (absolute or contains "..")`)
+  let content: string
+  try {
+    content = fs.readFileSync(target, "utf8")
+  } catch {
+    let present = ""
+    try {
+      present = fs.readdirSync(input.cwd).join(", ")
+    } catch {}
+    return obs(false, `file not found: ${p} — files present: ${present}`)
+  }
+  const count = oldStr === "" ? 0 : content.split(oldStr).length - 1
+  if (count === 0) return obs(false, `old_string not found in ${p} — the file's ACTUAL current content is shown in the context above; copy the exact text to replace`)
+  if (count > 1) return obs(false, `old_string occurs ${count} times in ${p} — provide a longer, UNIQUE snippet so exactly one match is edited`)
+  const updated = content.replace(oldStr, newStr)
+  try {
+    fs.writeFileSync(target, updated, "utf8")
+  } catch (e) {
+    return obs(false, `edit_file failed: ${messageOf(e)}`)
+  }
+  return obs(true, `edited ${p}: -${oldStr.length} +${newStr.length} chars`, assignFirst(input.produces, (r) => r.type === "file", updated))
+}
+
 function readFile(input: { args: Readonly<Record<string, unknown>>; produces: ReadonlyArray<JhStep.ArtifactRef>; cwd: string }): Observation {
   const { path: p } = input.args
   if (typeof p !== "string") return badArgs("read_file", "{path: string}")
@@ -89,6 +118,8 @@ export function basicExecutor(runner: JhProcessRunner.Runner): Executor {
       switch (input.tool) {
         case "write_file":
           return Effect.succeed(writeFile(input))
+        case "edit_file":
+          return Effect.succeed(editFile(input))
         case "read_file":
           return Effect.succeed(readFile(input))
         case "note":
