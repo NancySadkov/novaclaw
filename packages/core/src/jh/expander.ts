@@ -25,14 +25,19 @@ const TOOL_ARGS: Record<string, string> = {
   git_revert: "git_revert{path?} — roll a file (or the whole tree if no path) back to the last VERIFIED checkpoint. Use when an edit_file made the file worse and you cannot repair it — revert, then try a different edit.",
 }
 
-function modeLine(allowDecomposition: boolean, mustDecompose: boolean): string {
+function modeLine(allowDecomposition: boolean, mustDecompose: boolean, lazyPlan: boolean): string {
+  // improve3 P3a: LAZY planning asks for the immediate TOP-LEVEL phases ONLY (no up-front nesting) — a smaller
+  // reply (harder to malform, attacking I3) that also defers depth. Each phase re-plans itself when reached.
+  const howMany = lazyPlan
+    ? 'it into its immediate TOP-LEVEL phases ONLY: 3–7 substeps, each ONE sentence of goal (plus its check when obvious). Do NOT nest sub-substeps inside them — each phase is planned in detail WHEN IT IS REACHED, with everything already built available as context'
+    : 'it into 2–8 substeps'
   if (mustDecompose) {
-    return 'This step is too complex to be atomic — you MUST decompose it into 2–8 substeps. Set size to "needs_decomposition", fill `substeps`, and emit NO tool/args on this step.'
+    return `This step is too complex to be atomic — you MUST decompose ${howMany}. Set size to "needs_decomposition", fill \`substeps\`, and emit NO tool/args on this step.`
   }
   if (!allowDecomposition) {
     return 'You may NOT decompose this step (maximum planning depth reached). Emit an ATOMIC step: size "atomic", exactly ONE tool with its args, and a runnable check.'
   }
-  return 'Decide: if this step is a single tool call, emit an ATOMIC step (size "atomic", one tool + args, a runnable check). If it is too big for one tool call, emit size "needs_decomposition" with 2–8 substeps and NO tool/args.'
+  return `Decide: if this step is a single tool call, emit an ATOMIC step (size "atomic", one tool + args, a runnable check). If it is too big for one tool call, emit size "needs_decomposition" and decompose ${howMany}, with NO tool/args.`
 }
 
 export function introspectPrompt(input: {
@@ -45,13 +50,15 @@ export function introspectPrompt(input: {
   readonly formatReminder?: string
   /** Harness-owned execution-environment description (shell, cwd, fresh-shell/PATH mechanics). */
   readonly environment?: string
+  /** improve3 P3a: lazy planning — ask for top-level phases only (default true; false = wave-2 wording). */
+  readonly lazyPlan?: boolean
 }): PromptPair {
   const toolTable = input.toolNames.map((n) => `  - ${TOOL_ARGS[n] ?? `${n}{...}`}`).join("\n")
   const environmentBlock = input.environment ? ["", "Execution environment:", input.environment] : []
   const system = [
     "You are the planning/expansion component of a deterministic execution harness. You do NOT do the whole task — you fill a small fixed schema for the CURRENT step only, and the harness runs the loop.",
     "",
-    modeLine(input.allowDecomposition, input.mustDecompose),
+    modeLine(input.allowDecomposition, input.mustDecompose, input.lazyPlan !== false),
     "",
     "Step schema fields:",
     "  - goal: one sentence — what THIS step achieves.",

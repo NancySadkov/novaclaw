@@ -25,10 +25,12 @@ describe("introspectPrompt", () => {
     expect(p.system).not.toContain("2–8 substeps")
   })
 
-  test("mustDecompose → the force line", () => {
+  test("mustDecompose → the force line (lazy phases by default; flag-off = wave-2 wording)", () => {
     const p = JhExpander.introspectPrompt({ ...base, mustDecompose: true })
     expect(p.system).toContain("MUST decompose")
-    expect(p.system).toContain("2–8 substeps")
+    expect(p.system).toContain("TOP-LEVEL phases") // improve3 P3a: lazy = phases-only
+    const p2 = JhExpander.introspectPrompt({ ...base, mustDecompose: true, lazyPlan: false })
+    expect(p2.system).toContain("2–8 substeps") // flag-off restores wave-2
   })
 
   test("formatReminder lands in the user message, not the system", () => {

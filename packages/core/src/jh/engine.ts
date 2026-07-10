@@ -99,6 +99,12 @@ export interface Deps {
   /** improve3 P1/L4: the injected revert capability (the engine NEVER shells git). Restores ALL tracked source
    *  files to the last verified checkpoint; the harness implements it over its git plumbing. */
   readonly revertWorkspace?: () => Effect.Effect<{ readonly ok: boolean; readonly detail: string }>
+  /** improve3 P3 (owner #3): LAZY shallow decomposition. Attach only a decomposition's TOP level — strip any
+   *  nested sub-substeps the model emitted up front (each phase re-plans itself when reached, with full
+   *  context). Also: at maxDepth, a node that still wants to decompose runs ATOMICALLY instead of hard-blocking
+   *  (I5). Shrinks the fragile root reply (attacks I3 structurally) + defuses the depth-cap. Default ON;
+   *  `false` = wave-2 recursive attach + hard depth-block. */
+  readonly lazyPlan?: boolean
   readonly limits: { readonly maxDepth: number; readonly maxTotalSteps: number }
   readonly trigger: JhBudget.SplitTrigger
   readonly onLog?: (entry: JhLog.Sequenced) => void
@@ -121,6 +127,22 @@ export interface Report {
 const stripSubsteps = (d: JhStep.StepDraft): Omit<JhStep.StepDraft, "substeps"> => {
   const { substeps, ...rest } = d
   return rest
+}
+
+// improve3 P3b (owner #3): lazy planning — strip nested sub-substeps from a decomposition's TOP level so
+// `JhTree.attach` materializes only the immediate phases; each phase re-plans ITSELF when reached (native
+// re-introspection with full context). Returns the flattened drafts + how many nested steps were discarded.
+const flattenTopLevel = (drafts: ReadonlyArray<JhStep.StepDraft>): { readonly drafts: ReadonlyArray<JhStep.StepDraft>; readonly discarded: number } => {
+  const countNested = (d: JhStep.StepDraft): number => (d.substeps ?? []).reduce((n, c) => n + 1 + countNested(c), 0)
+  let discarded = 0
+  const flat = drafts.map((d) => {
+    if (d.substeps && d.substeps.length > 0) {
+      discarded += countNested(d)
+      return { ...d, substeps: undefined }
+    }
+    return d
+  })
+  return { drafts: flat, discarded }
 }
 
 // A leaf may retry past its difficulty budget WHILE it is exploring productively — each failure a NOVEL
@@ -398,6 +420,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       mustDecompose: opts.mustDecompose ?? false,
       formatReminder: opts.formatReminder,
       environment: deps.environment,
+      lazyPlan: deps.lazyPlan !== false, // P3a: top-level-phases-only wording (false = wave-2)
     })
   }
 
@@ -442,13 +465,20 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         // problems, and a hard reject on a harmless declaration error just stalls the task (§12).
         const errors = JhDataflow.validate(current, deps.artifacts.ids()).filter((i) => i.code === "dangling_consumes")
         if (errors.length === 0) {
-          const attached = JhTree.attach(tree, node.id, current, maxDepth)
+          // P3b: lazy planning — attach only the TOP level; each phase re-plans itself when reached.
+          let toAttach = current
+          if (deps.lazyPlan !== false) {
+            const { drafts: flat, discarded } = flattenTopLevel(current)
+            if (discarded > 0) emit({ type: "flattened", step: node.id, discarded })
+            toAttach = flat
+          }
+          const attached = JhTree.attach(tree, node.id, toAttach, maxDepth)
           if (attached instanceof JhTree.AttachError) {
             blockNode(node, attached.reason === "max_depth" ? "depth_budget" : `attach_${attached.reason}`)
             return "blocked" as const
           }
           tree = attached
-          emit({ type: "expanded", step: node.id, children: current.length })
+          emit({ type: "expanded", step: node.id, children: toAttach.length })
           return "expanded" as const
         }
         emit({ type: "dataflow_rejected", step: node.id, issues: errors.map((e) => `${e.code}:${e.artifact}`) })
@@ -503,15 +533,23 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         const parsed = JhExpander.parseReply(ex.value)
         const subs = parsed.ok && parsed.draft.size === "needs_decomposition" ? parsed.draft.substeps : undefined
         if (!subs || subs.length === 0) continue
+        // P3b: lazy planning — attach only the TOP-LEVEL phases (each re-plans itself when reached). This is
+        // the root plan, so shrinking it is the structural attack on I3 (a smaller reply is harder to malform).
+        let toAttach: ReadonlyArray<JhStep.StepDraft> = subs
+        if (deps.lazyPlan !== false) {
+          const { drafts: flat, discarded } = flattenTopLevel(subs)
+          if (discarded > 0) emit({ type: "flattened", step: node.id, discarded })
+          toAttach = flat
+        }
         // Attach a structurally-valid plan REGARDLESS of declared dataflow: for file-based work the real
         // dependency is the file on disk (cwd), not the artifact store — a weak model's consumes/produces
         // ids are an unreliable proxy, and a dangling DECLARATION doesn't mean the step will fail (§9/§12).
         // Execution + the verify-gate are the real checks.
-        const attached = JhTree.attach(tree, node.id, subs, maxDepth)
+        const attached = JhTree.attach(tree, node.id, toAttach, maxDepth)
         if (attached instanceof JhTree.AttachError) continue
         tree = attached
         emit({ type: "introspected", step: node.id })
-        emit({ type: "expanded", step: node.id, children: subs.length })
+        emit({ type: "expanded", step: node.id, children: toAttach.length })
         return true
       }
       return false
@@ -799,6 +837,23 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       if (draft.research_needed) emit({ type: "research_flagged", step: node.id })
 
       if (draft.size === "needs_decomposition") {
+        // P3c (I5): at the depth cap, a node that STILL wants to decompose is not hard-blocked — attempt the
+        // goal ATOMICALLY instead (re-introspect forcing one action). Never-dead-end covers a bad reply.
+        if (deps.lazyPlan !== false && node.depth >= maxDepth) {
+          emit({ type: "depth_degraded", step: node.id })
+          const ex2 = yield* Effect.exit(deps.introspect(buildPrompt(node.id, { allowDecomposition: false, formatReminder: "You are at the MAXIMUM planning depth — emit exactly ONE atomic Step (a single tool call) that makes progress on this goal; do NOT decompose further." })))
+          if (Exit.isSuccess(ex2)) {
+            const parsed2 = JhExpander.parseReply(ex2.value)
+            if (parsed2.ok && parsed2.draft.size === "atomic" && JhStep.structuralIssues(parsed2.draft).filter((i) => i.severity === "error").length === 0) {
+              tree = JhTree.fill(tree, node.id, stripSubsteps(parsed2.draft))
+              emit({ type: "introspected", step: node.id })
+              yield* atomicLoop(node, parsed2.draft)
+              return
+            }
+          }
+          yield* structuralFailRecover(node, "depth_degraded") // couldn't get a clean atomic step — recover, don't block
+          return
+        }
         yield* decompose(node, draft.substeps ?? [])
         return
       }

@@ -25,6 +25,7 @@ function scriptedDeps(opts: {
   verifyGoal?: boolean
   goalCheckCache?: boolean
   evidence?: boolean
+  lazyPlan?: boolean
 }) {
   const replies = [...opts.replies]
   const observations = [...(opts.observations ?? [])]
@@ -59,6 +60,7 @@ function scriptedDeps(opts: {
     checkpoint: opts.checkpoint,
     forceRootDecompose: opts.forceRootDecompose,
     verifyGoal: opts.verifyGoal,
+    lazyPlan: opts.lazyPlan,
     // R2 levers default OFF in the test helper so legacy goal-check tests reproduce pre-R2 behavior (L2);
     // the P2 tests opt in explicitly, and the real harness (flags undefined) gets them ON.
     goalCheckCache: opts.goalCheckCache ?? false,
@@ -205,14 +207,62 @@ describe("JhEngine.runTask", () => {
     expect(ru.reason).toBe("cannot_split")
   })
 
-  test("8. depth cap: needs_decomposition at maxDepth → blocked(depth_budget)", async () => {
+  test("8. depth cap with lazyPlan:false → blocked(depth_budget) (wave-2 behavior)", async () => {
     const d = scriptedDeps({
       replies: [reply(compoundObj([atomObj({ goal: "child", produces: [{ id: "c1", type: "note" }] })])), reply(compoundObj([atomObj({ goal: "deeper", produces: [{ id: "d1", type: "note" }] })]))],
       limits: { maxDepth: 1, maxTotalSteps: 64 },
+      lazyPlan: false,
     })
     const r = await run(d)
     expect(r.status).toBe("blocked")
     expect(r.state.log.some((e) => e.type === "blocked" && e.reason === "depth_budget")).toBe(true)
+  })
+
+  test("8b. depth cap under lazyPlan (P3c/I5): a node insisting needs_decomposition at the cap DEGRADES to atomic, not a hard-block", async () => {
+    const d = scriptedDeps({
+      replies: [
+        reply(compoundObj([atomObj({ goal: "child", produces: [{ id: "c1", type: "note" }] })])), // root → child (depth 1 = cap)
+        reply(compoundObj([atomObj({ goal: "deeper" })])), // child insists needs_decomposition at the cap
+        reply(atomObj({ goal: "child done atomically", produces: [{ id: "c1", type: "note" }] })), // depth-degrade re-introspect → atomic
+      ],
+      observations: [okObs({ c1: "x" })],
+      limits: { maxDepth: 1, maxTotalSteps: 64 },
+    })
+    const r = await run(d)
+    expect(r.state.log.some((e) => e.type === "depth_degraded")).toBe(true)
+    expect(r.state.log.some((e) => e.type === "blocked" && e.reason === "depth_budget")).toBe(false) // NOT hard-blocked
+    expect(r.status).toBe("done")
+  })
+
+  test("8c. lazyPlan flatten (P3b): a NESTED plan attaches the TOP LEVEL only + logs flattened{discarded}", async () => {
+    const phaseA = { goal: "phase A", size: "needs_decomposition", success: "ok", substeps: [atomObj({ goal: "a1" }), atomObj({ goal: "a2" })] }
+    const phaseB = { goal: "phase B", size: "needs_decomposition", success: "ok", substeps: [atomObj({ goal: "b1" })] }
+    const d = scriptedDeps({
+      replies: [
+        reply(compoundObj([phaseA, phaseB])), // root → 2 phases, each with nested sub-substeps
+        reply(atomObj({ goal: "phase A", produces: [{ id: "a", type: "note" }] })), // phase A re-plans itself → atomic
+        reply(atomObj({ goal: "phase B", produces: [{ id: "b", type: "note" }] })), // phase B re-plans itself → atomic
+      ],
+      observations: [okObs({ a: "x" }), okObs({ b: "x" })],
+    })
+    const r = await run(d)
+    const flat = r.state.log.find((e) => e.type === "flattened")
+    expect(flat).toBeDefined()
+    expect((flat as { discarded?: number }).discarded).toBe(3) // a1, a2, b1 stripped
+    expect(JhTree.get(r.state.tree, r.state.tree.root)?.children.length).toBe(2) // 2 phases, not 5
+    expect(r.status).toBe("done")
+  })
+
+  test("8d. lazyPlan:false → nested plan attaches RECURSIVELY (wave-2), no flattened log", async () => {
+    const phaseA = { goal: "phase A", size: "needs_decomposition", success: "ok", substeps: [atomObj({ goal: "a1", produces: [{ id: "a1", type: "note" }] })] }
+    const d = scriptedDeps({
+      replies: [reply(compoundObj([phaseA])), reply(atomObj({ goal: "a1", produces: [{ id: "a1", type: "note" }] }))],
+      observations: [okObs({ a1: "x" })],
+      lazyPlan: false,
+    })
+    const r = await run(d)
+    expect(r.state.log.some((e) => e.type === "flattened")).toBe(false)
+    expect(r.status).toBe("done")
   })
 
   test("9. step cap: decomposition overflowing maxTotalSteps → blocked(step_budget)", async () => {
