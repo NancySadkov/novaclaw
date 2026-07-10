@@ -671,11 +671,12 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
           `  action: ${currentTool} — ${actionDesc}`,
           `  result/error: ${vr.detail}`,
           "The working-directory files with their CURRENT contents are shown above. Emit exactly ONE atomic Step for the SINGLE next action that makes real progress toward the goal:",
-          "- SOURCE-CODE error (a compile/runtime error in a file) → fix the source: edit_file for a targeted change to the code shown above, or write_file for a full rewrite.",
-          "- The program RAN but produced WRONG output (e.g. expected '3.14159', got '3.0') → the SOURCE ALGORITHM is buggy. Fix the logic (edit_file for a localized fix, or write_file for a rewrite). NOTE: after ANY source edit the compiled .exe is STALE — your very next steps must RECOMPILE (a `run` gcc step) and then re-run, before checking output again.",
+          "- SOURCE-CODE error (a compile/runtime error in a file) → make a SURGICAL `edit_file` on the SPECIFIC line(s) named in the error (a targeted old_string→new_string on the code shown above). Do NOT rewrite the whole file — `write_file` is ONLY for creating a file that does not exist yet.",
+          "- The program RAN but produced WRONG output (e.g. expected '3.14159', got '3.0') → ONE function's logic is buggy. Fix just that function with `edit_file` — re-emitting the entire file discards code you already verified and silently reintroduces bugs. NOTE: after ANY source edit the compiled .exe is STALE — your very next steps must RECOMPILE (a `run` gcc step) and then re-run, before checking output again.",
+          "- An `edit_file` left the file WORSE and you cannot repair it → `git_revert` to roll the file back to the last verified state, then try a DIFFERENT edit.",
           "- The goal needs a file a COMMAND produces (e.g. the compiled .exe) → `run` that command (every gcc call needs the `set PATH=…/bin;%PATH% &&` prefix; the .exe lands in the working directory).",
           "- The command itself was wrong (missing PATH, wrong path/filename, bad shell syntax) → a corrected `run` command.",
-          "Do NOT repeat the exact action that just failed — if re-running gave the same wrong result, the SOURCE must change.",
+          "Do NOT repeat the exact action that just failed, and do NOT rewrite the whole program — if re-running gave the same wrong result, change the SPECIFIC buggy code with edit_file.",
         ].join("\n")
         const ex = yield* Effect.exit(deps.introspect(buildPrompt(node.id, { extraContext: recovery })))
         if (Exit.isSuccess(ex)) {

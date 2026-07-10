@@ -17,11 +17,12 @@ export interface PromptPair {
 }
 
 const TOOL_ARGS: Record<string, string> = {
-  write_file: "write_file{path, content} — OVERWRITES the whole file; give a file's COMPLETE content in ONE call (a later write_file to the same path erases the earlier one — never build a file across multiple write_file calls)",
-  edit_file: "edit_file{path, old_string, new_string} — replace ONE exact occurrence of old_string with new_string (old_string must appear EXACTLY ONCE in the file); PREFER this over write_file for a localized fix — faster and it can't corrupt the rest of the file. Use write_file only for a NEW file or a full rewrite.",
+  write_file: "write_file{path, content} — CREATE a file that does not exist yet (OVERWRITES the whole file). Use it ONLY for the first creation of a file; to change or extend an EXISTING file use edit_file. Rewriting an existing file with write_file discards work you already verified and reintroduces bugs.",
+  edit_file: "edit_file{path, old_string, new_string} — replace ONE exact occurrence of old_string with new_string (old_string must appear EXACTLY ONCE in the file). This is the DEFAULT way to change an existing file: add a function, fix a line — surgical, fast, and it cannot corrupt the untouched rest of the file.",
   read_file: "read_file{path}",
   run: "run{command} — execute a shell command (compile, run a program, etc.)",
   note: "note{text}",
+  git_revert: "git_revert{path?} — roll a file (or the whole tree if no path) back to the last VERIFIED checkpoint. Use when an edit_file made the file worse and you cannot repair it — revert, then try a different edit.",
 }
 
 function modeLine(allowDecomposition: boolean, mustDecompose: boolean): string {
