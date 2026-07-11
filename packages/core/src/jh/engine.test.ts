@@ -26,6 +26,7 @@ function scriptedDeps(opts: {
   goalCheckCache?: boolean
   evidence?: boolean
   lazyPlan?: boolean
+  noForceSplit?: boolean
 }) {
   const replies = [...opts.replies]
   const observations = [...(opts.observations ?? [])]
@@ -65,6 +66,7 @@ function scriptedDeps(opts: {
     // the P2 tests opt in explicitly, and the real harness (flags undefined) gets them ON.
     goalCheckCache: opts.goalCheckCache ?? false,
     evidence: opts.evidence ?? false,
+    noForceSplit: opts.noForceSplit,
   }
   return { deps, artifacts, modelCalls: () => modelCalls, runnerCalls: () => runnerCalls }
 }
@@ -191,9 +193,10 @@ describe("JhEngine.runTask", () => {
     expect(types(rn)).toContain("dataflow_rejected") // the non-root phase's dangling WAS validated
   })
 
-  test("7. force-split: cardinality over trigger → forced_split → decompose; atomic-again → cannot_split", async () => {
+  test("7. force-split ARMED (noForceSplit:false): cardinality over trigger → forced_split → decompose", async () => {
     const nineConsumes = Array.from({ length: 9 }, (_, i) => ({ id: `c${i}`, type: "file" as const }))
     const split = scriptedDeps({
+      noForceSplit: false, // re-arm the wave-4 trigger (default is now advisory-only — P3)
       replies: [
         reply(atomObj({ consumes: nineConsumes, produces: [] })),
         reply(compoundObj([atomObj({ goal: "s1", produces: [{ id: "s1", type: "note" }] }), atomObj({ goal: "s2", produces: [{ id: "s2", type: "note" }] })])),
@@ -205,11 +208,28 @@ describe("JhEngine.runTask", () => {
     const rs = await run(split)
     expect(rs.status).toBe("done")
     expect(types(rs)).toContain("forced_split")
+  })
 
-    const stuck = scriptedDeps({ replies: [reply(atomObj({ consumes: nineConsumes, produces: [] })), reply(atomObj({ produces: [] }))], observations: [okObs()] })
-    const ru = await run(stuck)
-    expect(ru.status).toBe("blocked")
-    expect(ru.reason).toBe("cannot_split")
+  test("7b. improve5 P3.1: an armed force-split the model WON'T split degrades to ATOMIC (never cannot_split-blocks)", async () => {
+    const nineConsumes = Array.from({ length: 9 }, (_, i) => ({ id: `c${i}`, type: "file" as const }))
+    const degrade = scriptedDeps({
+      noForceSplit: false,
+      replies: [reply(atomObj({ consumes: nineConsumes, produces: [] })), reply(atomObj({ produces: [] }))], // 2nd reply is atomic → won't split
+      observations: [okObs()],
+    })
+    const rd = await run(degrade)
+    expect(types(rd)).toContain("split_degraded")
+    expect(rd.status).toBe("done") // ran atomically — never dead-ended
+    expect(rd.reason).not.toBe("cannot_split")
+  })
+
+  test("7c. improve5 P3.2: force-split is DISARMED by default under lazyPlan (advisory only — no forced decomposition)", async () => {
+    const nineConsumes = Array.from({ length: 9 }, (_, i) => ({ id: `c${i}`, type: "file" as const }))
+    const adv = scriptedDeps({ replies: [reply(atomObj({ consumes: nineConsumes, produces: [] }))], observations: [okObs()] })
+    const r = await run(adv)
+    expect(types(r)).toContain("forced_split_advisory")
+    expect(types(r)).not.toContain("forced_split") // the trigger did not force a decomposition
+    expect(r.status).toBe("done") // the node ran atomically
   })
 
   test("8. depth cap with lazyPlan:false → blocked(depth_budget) (wave-2 behavior)", async () => {

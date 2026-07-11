@@ -151,6 +151,14 @@ export interface Deps {
    *  edits were accepted then had to be healed). Opportunistic (no per-file compile → accept, L4); a rejected
    *  edit is a failed attempt but NOT buildDamage. Requires `staleness`. Default ON. */
   readonly txEdits?: boolean
+  /** improve5 P3: DISARM the closure-cardinality force-split trigger under lazyPlan. Since the §5 law-5
+   *  amendment the model's context is the DISK workspace, not the declared-artifact closure — so declared
+   *  cardinality no longer proxies complexity, and the default threshold (8) sits below the measured c* band
+   *  (13–19), MISFIRING (run82: a cardinality-8 force-split at the formula phase hard-blocked a winning run
+   *  after the foundation was already locked). With this ON (default, under lazyPlan) the trigger only LOGS
+   *  `forced_split_advisory` — no forced decomposition. Note the INVERTED sense: `false` re-arms the wave-4
+   *  trigger. */
+  readonly noForceSplit?: boolean
   readonly limits: { readonly maxDepth: number; readonly maxTotalSteps: number }
   readonly trigger: JhBudget.SplitTrigger
   readonly onLog?: (entry: JhLog.Sequenced) => void
@@ -665,12 +673,15 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       return "blocked" as const
     })
 
-  // Re-introspect with mustDecompose (the force-split and budget-exhaustion paths). On a valid
-  // decomposition it supersedes the leaf (the node becomes expanded); else it blocks with the given reason.
-  const forceDecompose = (node: JhTree.Node, blockReasonIfAtomic: string): Effect.Effect<"expanded" | "blocked"> =>
+  // Re-introspect with mustDecompose (the force-split and budget-exhaustion paths). On a valid decomposition
+  // it supersedes the leaf (the node becomes expanded). improve5 P3: when `degradeToAtomic`, a refusal (the
+  // model won't decompose, or the LLM is momentarily unreachable) returns "atomic" WITHOUT blocking — the
+  // caller runs the node's own atomic step (never-dead-end); otherwise it blocks with the given reason.
+  const forceDecompose = (node: JhTree.Node, blockReasonIfAtomic: string, degradeToAtomic = false): Effect.Effect<"expanded" | "blocked" | "atomic"> =>
     Effect.gen(function* () {
       const ex = yield* Effect.exit(deps.introspect(buildPrompt(node.id, { allowDecomposition: true, mustDecompose: true })))
       if (!Exit.isSuccess(ex)) {
+        if (degradeToAtomic) return "atomic" as const
         blockNode(node, "llm_unreachable")
         return "blocked" as const
       }
@@ -680,6 +691,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         emit({ type: "introspected", step: node.id })
         return yield* decompose(node, parsed.draft.substeps)
       }
+      if (degradeToAtomic) return "atomic" as const
       blockNode(node, blockReasonIfAtomic)
       return "blocked" as const
     })
@@ -1199,10 +1211,22 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
 
       const measured = { cardinality: JhDataflow.cardinality(tree, node.id), density: 0 }
       if (JhBudget.shouldForceSplit(deps.trigger, measured) && node.depth < maxDepth) {
-        emit({ type: "forced_split", step: node.id, cardinality: measured.cardinality, density: measured.density })
-        yield* forceDecompose(node, "cannot_split")
-        yield* checkpoint()
-        return
+        // improve5 P3.2: under lazyPlan the closure-cardinality trigger no longer measures complexity (context
+        // = disk, §5 law-5) and its threshold misfires (run82) — disarm it to ADVISORY-only by default.
+        if (deps.noForceSplit !== false && deps.lazyPlan !== false) {
+          emit({ type: "forced_split_advisory", step: node.id, cardinality: measured.cardinality, density: measured.density })
+          // fall through to atomicLoop below — no forced decomposition
+        } else {
+          emit({ type: "forced_split", step: node.id, cardinality: measured.cardinality, density: measured.density })
+          // improve5 P3.1: if the model won't split, DEGRADE to an atomic attempt (never dead-end) instead of cannot_split.
+          const outcome = yield* forceDecompose(node, "cannot_split", true)
+          if (outcome !== "atomic") {
+            yield* checkpoint()
+            return
+          }
+          emit({ type: "split_degraded", step: node.id })
+          // fall through to atomicLoop(node, draft) below
+        }
       }
 
       yield* atomicLoop(node, draft)

@@ -47,6 +47,12 @@ export type Entry =
   // improve5 P2: a source edit was REJECTED at the door — it did not compile (its per-file syntax gate
   // failed) and the file was restored to its pre-image; the workspace never went un-green.
   | { readonly type: "edit_rejected"; readonly step: string; readonly file: string }
+  // improve5 P3: a forced_split whose node could NOT be decomposed degraded to an ATOMIC attempt instead of
+  // hard-blocking (cannot_split) — the never-dead-end invariant, finally uniform.
+  | { readonly type: "split_degraded"; readonly step: string }
+  // improve5 P3: the closure-cardinality force-split trigger fired but is DISARMED in the file-workspace
+  // regime (context = disk, §5 law-5) — logged as advisory data for a future §4 recalibration, no behavior.
+  | { readonly type: "forced_split_advisory"; readonly step: string; readonly cardinality: number; readonly density: number }
   | { readonly type: "committed"; readonly step: string }
   // A leaf the harness gave up VERIFYING (stuck/budget) but committed best-effort so the tree can grow a
   // fix sibling instead of dead-ending (engine.ts stuck path). NOT a success — the reason carries the
@@ -108,6 +114,10 @@ function describe(e: Sequenced): string {
       return `rederived ${e.step}: fresh implementation of ${e.file}`
     case "edit_rejected":
       return `edit_rejected ${e.step}: ${e.file} did not compile — reverted (workspace stays green)`
+    case "split_degraded":
+      return `split_degraded ${e.step} (could not split — ran atomic instead of blocking)`
+    case "forced_split_advisory":
+      return `forced_split_advisory ${e.step} (cardinality ${e.cardinality}, density ${e.density} — disarmed)`
     case "committed":
       return `committed ${e.step}`
     case "committed_best_effort":
