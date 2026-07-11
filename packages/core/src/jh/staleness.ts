@@ -60,6 +60,12 @@ export interface Tracker {
   /** improve4 P1: does `command`'s referenced product still EXIST in the given workspace listing? A
    *  registered test whose product was deleted/renamed is pruned (its basename no longer present). */
   readonly productPresent: (command: string, current: ReadonlyArray<FileSnap>) => boolean
+  /** improve4 P4: the re-derive TARGET — among the SOURCE files feeding `command`'s product chain, the one
+   *  the MOST tracked products depend on: the shared FOUNDATION, deepest in the dependency order (the
+   *  library everything links, NOT the most-edited file — run75's most-edited was the wrong one to rewrite).
+   *  Dependency order, never content/name (L3). Returns the actual filename, or undefined if no source is
+   *  traceable. Ties → the highest-scoring source first seen. */
+  readonly deepestSource: (command: string, current: ReadonlyArray<FileSnap>) => string | undefined
 }
 
 // Build-product extensions — a file with one of these that we never attributed to a recorded run is
@@ -198,5 +204,42 @@ export function tracker(): Tracker {
     return false
   }
 
-  return { snap, recordAction, staleProducts, allStale, staleChainFor, checkDigest, sourceDigestNow, referencesProduct, productPresent }
+  const deepestSource: Tracker["deepestSource"] = (command, current) => {
+    const nameByBase = new Map(current.map((f) => [baseName(f.name), f.name]))
+    const isSourceBase = (b: string): boolean => nameByBase.has(b) && !isProductExt(b) // present, non-product file
+    // Collect the SOURCE files feeding `command`'s product chain: the sources the command names directly,
+    // plus those named by each product's rebuild command as we walk the chain (product → its rebuild's refs).
+    const chainSources = new Set<string>()
+    for (const r of refsOf(command)) if (isSourceBase(r)) chainSources.add(r)
+    const seen = new Set<string>()
+    let frontier = refsOf(command)
+    for (let hops = 0; hops < 32 && frontier.size > 0; hops++) {
+      const next = new Set<string>()
+      for (const [file, rec] of products) {
+        if (seen.has(file) || !frontier.has(baseName(file))) continue
+        seen.add(file)
+        for (const r of refsOf(rec.command)) {
+          if (isSourceBase(r)) chainSources.add(r)
+          else next.add(r)
+        }
+      }
+      frontier = next
+    }
+    if (chainSources.size === 0) return undefined
+    // Score each candidate by how many tracked products' rebuild commands reference it — the shared
+    // foundation (a library linked by every primitive test + the final program) scores highest.
+    let best: string | undefined
+    let bestScore = -1
+    for (const src of chainSources) {
+      let score = 0
+      for (const [, rec] of products) if (refsOf(rec.command).has(src)) score++
+      if (score > bestScore) {
+        bestScore = score
+        best = src
+      }
+    }
+    return best !== undefined ? (nameByBase.get(best) ?? best) : undefined
+  }
+
+  return { snap, recordAction, staleProducts, allStale, staleChainFor, checkDigest, sourceDigestNow, referencesProduct, productPresent, deepestSource }
 }

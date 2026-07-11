@@ -99,17 +99,24 @@ function harness(opts: {
   replies: string[]
   regressionGate?: boolean
   phaseGate?: boolean
+  rederive?: boolean
   autoRevert?: boolean
   now?: () => number
   maxSuiteMs?: number
   taskComplete?: JhEngine.Deps["taskComplete"]
+  defaultReply?: string // returned when the scripted replies run out (drives repeated-failure churn)
+  onPrompt?: (user: string) => void // observe each introspection's prompt (e.g. to capture a grown node's goal)
   limits?: { maxDepth: number; maxTotalSteps: number }
 }) {
   const replies = [...opts.replies]
   let i = 0
+  const idle = opts.defaultReply ?? atom({ tool: "note", args: { text: "idle" }, check: { type: "artifact_present" } })
   const deps: JhEngine.Deps = {
     // goal-check prompts never accept (we drive completion via taskComplete); otherwise serve scripted replies.
-    introspect: (p) => (p.user.includes("Is the goal fully achieved?") ? Effect.succeed(`{"achieved": false}`) : Effect.succeed(replies[i++] ?? atom({ tool: "note", args: { text: "idle" }, check: { type: "artifact_present" } }))),
+    introspect: (p) => {
+      opts.onPrompt?.(p.user)
+      return p.user.includes("Is the goal fully achieved?") ? Effect.succeed(`{"achieved": false}`) : Effect.succeed(replies[i++] ?? idle)
+    },
     correct: () => Effect.fail({ message: "x" }),
     executor: opts.world.executor,
     runner: opts.world.runner,
@@ -122,6 +129,7 @@ function harness(opts: {
     taskComplete: opts.taskComplete ?? (() => ({ done: false, detail: "not done" })),
     regressionGate: opts.regressionGate,
     phaseGate: opts.phaseGate,
+    rederive: opts.rederive,
     autoRevert: opts.autoRevert,
     revertWorkspace: opts.world.revertWorkspace,
     checkpoint: opts.world.doCheckpoint,
@@ -297,5 +305,40 @@ describe("jh-improve4 P2 — phase gate on the regression suite", () => {
     expect((log(r, "suite") as Array<{ step: string; red: number }>).some((s) => s.step === "root" && s.red >= 1)).toBe(true) // the root suite ran and was red
     const rootVerifs = log(r, "verification").filter((e) => (e as { step: string }).step === "root")
     expect(rootVerifs).toHaveLength(0) // the oracle/goal-check verdict at the root NEVER emitted — the suite gated it
+  })
+})
+
+describe("jh-improve4 P4 — bounded holistic re-derive escape", () => {
+  // A foundation `bigint.c` whose mul is subtly wrong from the start: t_add and pi (which don't test mul)
+  // build green and LINK bigint.c, so it is the most-linked source; the t_mul test keeps FAILING. After
+  // REDERIVE_AFTER fix attempts the harness grows ONE from-scratch re-implementation of bigint.c (deepest
+  // dependency, not the most-edited test file). The default reply keeps failing to drive the churn.
+  const FAIL_MUL = atom({ tool: "run", args: { command: "gcc t_mul.c bigint.c -o t_mul.exe && ./t_mul.exe" }, check: { type: "run", command: "gcc t_mul.c bigint.c -o t_mul.exe && ./t_mul.exe", expect: "998001" } })
+  const REDERIVE_REPLIES = [
+    compound(["build phase"]),
+    compound(["reg add", "build pi", "test mul"]),
+    REGISTER_ADD, // t_add.exe links bigint.c (green)
+    atom({ tool: "run", args: { command: "gcc pi.c bigint.c -o pi.exe && ./pi.exe" }, check: { type: "run", command: "gcc pi.c bigint.c -o pi.exe && ./pi.exe", expect: "3.14" } }), // pi.exe links bigint.c (green)
+    atom({ tool: "write_file", args: { path: "t_mul.c", content: "test mul" }, check: { type: "run", command: "gcc t_mul.c bigint.c -o t_mul.exe && ./t_mul.exe", expect: "998001" } }), // the failing mul test
+  ]
+  const rederiveWorld = () => buildWorld({ initial: { "bigint.c": "lib v0 (mul subtly wrong)", "pi.c": "formula" }, programs: { "t_add.exe": addProgram, "pi.exe": () => ({ code: 0, output: "3.14" }), "t_mul.exe": mulProgram } })
+
+  test("repeated failures on a foundation trigger a from-scratch re-derivation of the DEEPEST source (bigint.c), once, naming the file + test", async () => {
+    const world = rederiveWorld()
+    const prompts: string[] = []
+    const deps = harness({ world, replies: REDERIVE_REPLIES, defaultReply: FAIL_MUL, onPrompt: (u) => prompts.push(u), limits: { maxDepth: 3, maxTotalSteps: 40 } })
+    const r = await run(deps)
+    const rd = log(r, "rederived") as Array<{ file: string }>
+    expect(rd.length).toBe(1) // fired exactly ONCE (once per file per run)
+    expect(rd[0]!.file).toBe("bigint.c") // the shared foundation, NOT the most-edited test file t_mul.c
+    // the escape node's goal (seen when it is introspected) re-implements bigint.c from scratch and names its test
+    expect(prompts.some((u) => u.includes("FRESH implementation of bigint.c") && u.includes("t_mul.exe"))).toBe(true)
+  })
+
+  test("flag-off (rederive:false): the same repeated failures NEVER grow a re-derive node", async () => {
+    const world = rederiveWorld()
+    const deps = harness({ world, rederive: false, replies: REDERIVE_REPLIES, defaultReply: FAIL_MUL, limits: { maxDepth: 3, maxTotalSteps: 40 } })
+    const r = await run(deps)
+    expect(has(r, "rederived")).toBe(false)
   })
 })

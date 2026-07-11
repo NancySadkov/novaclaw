@@ -127,6 +127,11 @@ export interface Deps {
    *  are re-run; if ANY is red the phase does NOT commit, a fix node is grown on it instead (never a
    *  false-phase-complete). Requires `regressionGate`. Default ON; `false` = P1 without the gate. */
   readonly phaseGate?: boolean
+  /** improve4 P4: the bounded holistic RE-DERIVE escape. When fix attempts keep failing on the SAME
+   *  foundation (the deepest source in the failing check's chain), grow ONE from-scratch re-implementation
+   *  of that component (once per file per run) instead of patching symptoms forever — the monolith's
+   *  whole-coherence virtue reclaimed at COMPONENT scope. Requires `staleness`. Default ON. */
+  readonly rederive?: boolean
   readonly limits: { readonly maxDepth: number; readonly maxTotalSteps: number }
   readonly trigger: JhBudget.SplitTrigger
   readonly onLog?: (entry: JhLog.Sequenced) => void
@@ -187,6 +192,11 @@ const AUTO_REVERT_AFTER = 3
 const MAX_SUITE_MS = 60_000
 // improve4 P1: how much of a failing test's output to quote back to the model (its stdout/compile error).
 const REGRESSION_TAIL = 1500
+// improve4 P4: consecutive fix attempts targeting the SAME foundation file before the harness escalates from
+// patch-the-symptom to RE-DERIVE-the-component (a from-scratch re-implementation). 4 = give the ladder's own
+// escalation (analyze → targeted_fix → rewrite) a chance first; a foundation still failing after 4 grown
+// fixes is the "locked-in subtly-wrong foundation" §I6 names — rewrite it whole, deepest-dependency-first.
+const REDERIVE_AFTER = 4
 // improve3 P2a (owner #2): the ROOT plan is the single most critical introspection — a malformed root reply
 // killed a whole run in ~2 min (run63/§I3). Give the root MANY more parse-retries (with the P2b located hint
 // each time); a non-root leaf keeps its 2 attempts (a failed leaf has never-dead-end, a failed root doesn't).
@@ -268,6 +278,11 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
   const ladders = new Map<string, JhLadder.LadderState>() // parentID → escalation state
   const lastFixBest = new Map<string, number>() // parentID → bestScore at its last grown fix node (for scoreImproved)
   const analyzeNodes = new Set<string>() // nodeIds the harness forced to be instrumented "analyze" steps
+  // improve4 P4: re-derive bookkeeping (engine-run-scoped, L4). `rederivePressure` = consecutive fix attempts
+  // per FOUNDATION file (the deepest source in the failing chain); at REDERIVE_AFTER the harness grows a
+  // from-scratch re-implementation of that file. `rederived` = files already re-derived (once per run).
+  const rederivePressure = new Map<string, number>()
+  const rederived = new Set<string>()
   // improve3 P1: consecutive build-DAMAGING edits (reset on any green build); when it hits AUTO_REVERT_AFTER the
   // harness restores the last verified checkpoint. `autoRevertOn` disables itself if a revert ever fails (never
   // loop on a broken revert). `pendingRevertMessage` is delivered to the very next introspection.
@@ -366,8 +381,33 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
   // R3+R4: grow a fix node on `parentID` — pick the escalation stage (ladder or legacy latch), restore the
   // best snapshot on an escalated regression, mark a forced-analyze node, and append it. Shared by the leaf-
   // stuck and root-extend sites.
-  const growFixNode = (parentID: JhStep.StepID, baseGoal: string, fullDetail: string, defaultSuccess: string): Effect.Effect<void> =>
+  const growFixNode = (parentID: JhStep.StepID, baseGoal: string, fullDetail: string, defaultSuccess: string, failingCommand?: string): Effect.Effect<void> =>
     Effect.gen(function* () {
+      // improve4 P4: the bounded holistic RE-DERIVE escape. If this fix targets a foundation (the deepest
+      // source in the failing check's chain) that keeps failing across REDERIVE_AFTER fix attempts, stop
+      // patching symptoms — grow ONE from-scratch re-implementation of that COMPONENT (once per file per run,
+      // deepest-dependency-first: the library everything links, not the most-edited file — run75's most-edited
+      // was the wrong one). Supersedes the normal stage fix for this growth.
+      if (deps.rederive !== false && staleness && failingCommand) {
+        const target = staleness.deepestSource(failingCommand, snapFiles())
+        if (target && !rederived.has(target)) {
+          const n = (rederivePressure.get(target) ?? 0) + 1
+          rederivePressure.set(target, n)
+          if (n >= REDERIVE_AFTER) {
+            rederived.add(target)
+            const rdGoal = `Component ${target} keeps FAILING its test after ${n} repeated fix attempts — patching it is not working. Write a COMPLETELY FRESH implementation of ${target} from first principles: do NOT read or patch the old code (it will be REPLACED), keep the SAME function signatures so everything that links against it still builds, and make it pass \`${failingCommand}\` AND the boundary cases (the largest operands your representation allows, a carry/borrow across the limb/digit boundary, and the zero/identity cases). Then the whole test suite re-runs.`
+            const rdDraft: JhStep.StepDraft = { goal: rdGoal, size: "atomic", success: `${target} is re-implemented from scratch and its test passes` }
+            const appended = JhTree.appendChild(tree, parentID, rdDraft, maxDepth)
+            if (!(appended instanceof JhTree.AttachError)) {
+              tree = appended
+              emit({ type: "rederived", step: parentID, file: target })
+              emit({ type: "expanded", step: parentID, children: JhTree.get(tree, parentID)!.children.length })
+              return
+            }
+            rederived.delete(target) // couldn't grow (depth/budget) — undo the mark; fall through to a normal fix
+          }
+        }
+      }
       const sig = errorSig(fullDetail)
       const prevBest = lastFixBest.get(parentID) ?? Number.NEGATIVE_INFINITY
       const scoreImproved = bestScore > prevBest
@@ -699,7 +739,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       if (!sweep.redTest) return false
       if (JhTree.size(tree) < maxTotalSteps) {
         const baseGoal = JhTree.get(tree, nodeId)!.draft.goal
-        yield* growFixNode(nodeId, baseGoal, `this phase cannot complete while a previously-passing test fails: \`${sweep.redTest.command}\` — ${sweep.redTest.detail}`, "the previously-passing test passes again")
+        yield* growFixNode(nodeId, baseGoal, `this phase cannot complete while a previously-passing test fails: \`${sweep.redTest.command}\` — ${sweep.redTest.detail}`, "the previously-passing test passes again", sweep.redTest.command)
       }
       return true // red suite → do not commit this phase
     })
@@ -916,7 +956,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
             // grow a fix sibling (below) rather than dead-end. Log it distinctly so reports/scripts can't
             // count it as a pass (R0 / D9 anatomy: run-32 read a best-effort commit as done).
             emit({ type: "committed_best_effort", step: node.id, reason: errorSig(vr.detail) })
-            yield* growFixNode(parentID, node.draft.goal, vr.detail, node.draft.success ?? "the step's goal is met")
+            yield* growFixNode(parentID, node.draft.goal, vr.detail, node.draft.success ?? "the step's goal is met", "command" in check ? check.command : undefined)
             yield* bubble(node.id)
             yield* checkpoint()
             return

@@ -144,6 +144,32 @@ describe("JhStaleness.tracker (pure)", () => {
     expect(t.productPresent(".\\t_mul.exe", s2)).toBe(false) // product gone → prune it
   })
 
+  test("improve4 P4: deepestSource picks the shared FOUNDATION (most-linked source), not the test/most-edited file", () => {
+    const t = JhStaleness.tracker()
+    const raw = [
+      { name: "bigint.c", content: "b0" },
+      { name: "t_add.c", content: "a0" },
+      { name: "t_mul.c", content: "m0" },
+      { name: "pi.c", content: "p0" },
+    ]
+    let cur = t.snap(raw)
+    // build three products, each LINKING the shared bigint.c library
+    for (const [cmd, out] of [
+      ["gcc t_add.c bigint.c -o t_add.exe", "t_add.exe"],
+      ["gcc t_mul.c bigint.c -o t_mul.exe", "t_mul.exe"],
+      ["gcc pi.c bigint.c -o pi.exe", "pi.exe"],
+    ] as const) {
+      const before = cur
+      raw.push({ name: out, content: `BIN-${out}` })
+      cur = t.snap(raw)
+      t.recordAction({ tool: "run", ok: true, command: cmd, before, after: cur })
+    }
+    // bigint.c is linked by all three products → the foundation, chosen over the test file t_mul.c…
+    expect(t.deepestSource(".\\t_mul.exe", cur)).toBe("bigint.c")
+    // …and over pi.c for the pi chain.
+    expect(t.deepestSource(".\\pi.exe", cur)).toBe("bigint.c")
+  })
+
   test("orphan product (pre-existing binary, never produced) becomes stale after a source edit — no rebuild", () => {
     const t = JhStaleness.tracker()
     // pi.exe pre-exists; the first action is a source edit
