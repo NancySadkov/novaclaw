@@ -100,6 +100,7 @@ function harness(opts: {
   regressionGate?: boolean
   phaseGate?: boolean
   rederive?: boolean
+  txEdits?: boolean
   autoRevert?: boolean
   now?: () => number
   maxSuiteMs?: number
@@ -130,6 +131,7 @@ function harness(opts: {
     regressionGate: opts.regressionGate,
     phaseGate: opts.phaseGate,
     rederive: opts.rederive,
+    txEdits: opts.txEdits,
     autoRevert: opts.autoRevert,
     revertWorkspace: opts.world.revertWorkspace,
     checkpoint: opts.world.doCheckpoint,
@@ -340,6 +342,89 @@ describe("jh-improve4 P4 — bounded holistic re-derive escape", () => {
     const deps = harness({ world, rederive: false, replies: REDERIVE_REPLIES, defaultReply: FAIL_MUL, limits: { maxDepth: 3, maxTotalSteps: 40 } })
     const r = await run(deps)
     expect(has(r, "rederived")).toBe(false)
+  })
+})
+
+describe("jh-improve5 P2 — transactional edit gate", () => {
+  // root → [A compiles bigint.o via `gcc -c` (so staleness knows the per-file object compile), B edits bigint.c].
+  const COMPILE_BIGINT = atom({ tool: "run", args: { command: "gcc -c bigint.c -o bigint.o" }, check: { type: "compile", command: "gcc -c bigint.c -o bigint.o" } })
+  const txWorld = () => buildWorld({ initial: { "bigint.c": "lib OK" }, programs: {} })
+
+  test("the run89 fixture: a non-compiling edit is REJECTED at the door — file restored, workspace never un-green", async () => {
+    const world = txWorld()
+    const deps = harness({
+      world,
+      replies: [
+        compound(["compile bigint", "break bigint"]),
+        COMPILE_BIGINT,
+        atom({ tool: "write_file", args: { path: "bigint.c", content: "lib BUILDERR now" }, check: { type: "compile", command: "gcc -c bigint.c -o bigint.o" } }),
+      ],
+      limits: { maxDepth: 2, maxTotalSteps: 16 },
+    })
+    const r = await run(deps)
+    expect(log(r, "edit_rejected").map((e) => (e as { file: string }).file)).toContain("bigint.c")
+    expect(world.files.get("bigint.c")).toBe("lib OK") // restored to the pre-image — byte-identical
+    expect(verifDetails(r).some((d) => d.startsWith("edit NOT applied") && d.includes("bigint.c"))).toBe(true)
+    expect(has(r, "reverted")).toBe(false) // prevented, never healed — auto-revert never engaged
+  })
+
+  test("a COMPILING edit is accepted (gate passes) and applied", async () => {
+    const world = txWorld()
+    const deps = harness({
+      world,
+      replies: [
+        compound(["compile bigint", "improve bigint"]),
+        COMPILE_BIGINT,
+        atom({ tool: "write_file", args: { path: "bigint.c", content: "lib OK v2" }, check: { type: "compile", command: "gcc -c bigint.c -o bigint.o" } }),
+      ],
+      limits: { maxDepth: 2, maxTotalSteps: 16 },
+    })
+    const r = await run(deps)
+    expect(has(r, "edit_rejected")).toBe(false)
+    expect(world.files.get("bigint.c")).toBe("lib OK v2") // the good edit stuck
+  })
+
+  test("a file with NO known object-compile is ungated (opportunistic — accept)", async () => {
+    const world = buildWorld({ initial: { "notes.txt": "hello" }, programs: {} })
+    const deps = harness({
+      world,
+      replies: [atom({ tool: "write_file", args: { path: "notes.txt", content: "BUILDERR but not a compiled unit" }, check: { type: "artifact_present" } })],
+      limits: { maxDepth: 0, maxTotalSteps: 8 },
+    })
+    const r = await run(deps)
+    expect(has(r, "edit_rejected")).toBe(false) // no `-c` compile for notes.txt → gate skipped
+    expect(world.files.get("notes.txt")).toBe("BUILDERR but not a compiled unit")
+  })
+
+  test("rejected edits do NOT accrue buildDamage → no auto-revert even after repeats", async () => {
+    const world = txWorld()
+    const brk = (v: string) => atom({ tool: "write_file", args: { path: "bigint.c", content: `lib BUILDERR ${v}` }, check: { type: "compile", command: "gcc -c bigint.c -o bigint.o" } })
+    const deps = harness({
+      world,
+      autoRevert: true,
+      replies: [compound(["compile", "break repeatedly"]), COMPILE_BIGINT, brk("a"), brk("b"), brk("c"), brk("d")],
+      limits: { maxDepth: 2, maxTotalSteps: 20 },
+    })
+    const r = await run(deps)
+    expect(log(r, "edit_rejected").length).toBeGreaterThanOrEqual(3)
+    expect(has(r, "reverted")).toBe(false) // rejections aren't damage → buildDamage stays 0 → auto-revert never fires
+  })
+
+  test("flag-off (txEdits:false): the breaking edit is ACCEPTED (wave-4 heal-later behavior)", async () => {
+    const world = txWorld()
+    const deps = harness({
+      world,
+      txEdits: false,
+      replies: [
+        compound(["compile bigint", "break bigint"]),
+        COMPILE_BIGINT,
+        atom({ tool: "write_file", args: { path: "bigint.c", content: "lib BUILDERR now" }, check: { type: "compile", command: "gcc -c bigint.c -o bigint.o" } }),
+      ],
+      limits: { maxDepth: 2, maxTotalSteps: 16 },
+    })
+    const r = await run(deps)
+    expect(has(r, "edit_rejected")).toBe(false) // no gate
+    expect(world.files.get("bigint.c")).toBe("lib BUILDERR now") // the broken edit was accepted into the workspace
   })
 })
 

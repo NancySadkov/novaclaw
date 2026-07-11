@@ -44,6 +44,9 @@ export type Entry =
   | { readonly type: "suite"; readonly step: string; readonly green: number; readonly red: number; readonly skipped: number }
   // improve4 P4: a component that kept failing its test was targeted for a from-scratch re-derivation.
   | { readonly type: "rederived"; readonly step: string; readonly file: string }
+  // improve5 P2: a source edit was REJECTED at the door — it did not compile (its per-file syntax gate
+  // failed) and the file was restored to its pre-image; the workspace never went un-green.
+  | { readonly type: "edit_rejected"; readonly step: string; readonly file: string }
   | { readonly type: "committed"; readonly step: string }
   // A leaf the harness gave up VERIFYING (stuck/budget) but committed best-effort so the tree can grow a
   // fix sibling instead of dead-ending (engine.ts stuck path). NOT a success — the reason carries the
@@ -103,6 +106,8 @@ function describe(e: Sequenced): string {
       return `suite ${e.step}: ${e.green} green, ${e.red} red${e.skipped > 0 ? `, ${e.skipped} skipped (budget)` : ""}`
     case "rederived":
       return `rederived ${e.step}: fresh implementation of ${e.file}`
+    case "edit_rejected":
+      return `edit_rejected ${e.step}: ${e.file} did not compile — reverted (workspace stays green)`
     case "committed":
       return `committed ${e.step}`
     case "committed_best_effort":

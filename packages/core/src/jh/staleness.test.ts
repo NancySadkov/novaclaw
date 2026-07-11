@@ -156,6 +156,21 @@ describe("JhStaleness.tracker (pure)", () => {
     expect(t.productPresent(".\\t_mul.exe", s2)).toBe(false) // product gone → prune it
   })
 
+  test("improve5 P2: objectCompileFor finds a source's `-c` object compile, not a link", () => {
+    const t = JhStaleness.tracker()
+    const s0 = t.snap([{ name: "bigint.c", content: "b0" }, { name: "t_mul.c", content: "m0" }])
+    // a `-c` object compile of bigint.c → bigint.o
+    const s1 = t.snap([{ name: "bigint.c", content: "b0" }, { name: "t_mul.c", content: "m0" }, { name: "bigint.o", content: "O" }])
+    t.recordAction({ tool: "run", ok: true, command: "gcc -c bigint.c -o bigint.o", before: s0, after: s1 })
+    // a LINK of t_mul (no -c) → t_mul.exe
+    const s2 = t.snap([...s1.map((f) => ({ name: f.name, content: f.name === "bigint.o" ? "O" : "x" })), { name: "t_mul.exe", content: "M" }])
+    t.recordAction({ tool: "run", ok: true, command: "gcc t_mul.c bigint.o -o t_mul.exe", before: s1, after: s2 })
+    expect(t.objectCompileFor("bigint.c")).toBe("gcc -c bigint.c -o bigint.o") // the -c compile
+    expect(t.objectCompileFor(".\\bigint.c")).toBe("gcc -c bigint.c -o bigint.o") // basename-tolerant
+    expect(t.objectCompileFor("t_mul.c")).toBeUndefined() // only a link exists (no -c) → opportunistic gate skips it
+    expect(t.objectCompileFor("nothing.c")).toBeUndefined()
+  })
+
   test("improve4 P4: deepestSource picks the shared FOUNDATION (most-linked source), not the test/most-edited file", () => {
     const t = JhStaleness.tracker()
     const raw = [
@@ -243,6 +258,7 @@ function fsHarness(opts: {
   world: (command: string, files: Map<string, string>) => { exitCode: number; output: string }
   staleness?: boolean
   verifyGoal?: boolean
+  txEdits?: boolean
   limits?: { maxDepth: number; maxTotalSteps: number }
 }) {
   const files = new Map<string, string>(Object.entries(opts.initial ?? {}))
@@ -295,6 +311,7 @@ function fsHarness(opts: {
     listFiles: () => [...files.entries()].map(([name, content]) => ({ name, content })),
     staleness: opts.staleness,
     verifyGoal: opts.verifyGoal,
+    txEdits: opts.txEdits,
     limits: opts.limits ?? { maxDepth: 2, maxTotalSteps: 32 },
     trigger: JhBudget.DEFAULT_TRIGGER,
   }
@@ -422,6 +439,7 @@ describe("JhStaleness engine integration", () => {
     const h = fsHarness({
       initial: { "pi.c": "buggy" },
       world: piWorldChain,
+      txEdits: false, // isolate the staleness REFRESH chain — the improve5 tx gate would pre-compile pi.o itself (tested separately)
       replies: [
         compound([subObj("compile"), subObj("link+run")]),
         // step1: WRITE the source; its CHECK compiles it to pi.o (compile is a CHECK, not the action)

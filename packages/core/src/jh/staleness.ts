@@ -66,6 +66,12 @@ export interface Tracker {
    *  Dependency order, never content/name (L3). Returns the actual filename, or undefined if no source is
    *  traceable. Ties → the highest-scoring source first seen. */
   readonly deepestSource: (command: string, current: ReadonlyArray<FileSnap>) => string | undefined
+  /** improve5 P2: the per-file OBJECT-COMPILE command for source `file` — a tracked product whose rebuild is
+   *  a `-c`-shaped compile referencing `file` (e.g. bigint.c → `gcc -c bigint.c -o bigint.o`). The
+   *  transactional edit gate runs it as a SYNTAX check on `file`'s own unit BEFORE accepting an edit; undefined
+   *  when none exists (a header, a first write, or a model that only whole-links) → the gate is OPPORTUNISTIC,
+   *  never inventing a command (L4). Matches by basename; needs a `-c` token (so links are excluded). */
+  readonly objectCompileFor: (file: string) => string | undefined
 }
 
 // Build-product extensions — a file with one of these that we never attributed to a recorded run is
@@ -241,5 +247,15 @@ export function tracker(): Tracker {
     return best !== undefined ? (nameByBase.get(best) ?? best) : undefined
   }
 
-  return { snap, recordAction, staleProducts, allStale, staleChainFor, checkDigest, sourceDigestNow, referencesProduct, productPresent, deepestSource }
+  const objectCompileFor: Tracker["objectCompileFor"] = (file) => {
+    const base = baseName(file)
+    for (const [, rec] of products) {
+      if (rec.command === "") continue
+      // a compile-ONLY command (`-c` token) that references this source file
+      if (/(^|\s)-c(\s|$)/.test(rec.command) && refsOf(rec.command).has(base)) return rec.command
+    }
+    return undefined
+  }
+
+  return { snap, recordAction, staleProducts, allStale, staleChainFor, checkDigest, sourceDigestNow, referencesProduct, productPresent, deepestSource, objectCompileFor }
 }

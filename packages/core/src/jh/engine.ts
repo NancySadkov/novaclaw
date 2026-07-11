@@ -144,6 +144,13 @@ export interface Deps {
    *  AND the render cut poisoned the goal-check into rejecting a complete program as "truncated"). Applies
    *  to BOTH the editing view and the goal-check render. Default ON; `false` = wave-4 8000-char `[truncated]`. */
   readonly fullFiles?: boolean
+  /** improve5 P2: TRANSACTIONAL edits — prevent build damage instead of healing it. After a source edit,
+   *  if staleness knows a per-file object-compile for the edited file, run it as a SYNTAX gate BEFORE
+   *  accepting; a non-compiling edit is REJECTED (the file restored to its pre-image, tool-level undo) with
+   *  an actionable message — the workspace never leaves green (run89: auto-revert fired 8× because broken
+   *  edits were accepted then had to be healed). Opportunistic (no per-file compile → accept, L4); a rejected
+   *  edit is a failed attempt but NOT buildDamage. Requires `staleness`. Default ON. */
+  readonly txEdits?: boolean
   readonly limits: { readonly maxDepth: number; readonly maxTotalSteps: number }
   readonly trigger: JhBudget.SplitTrigger
   readonly onLog?: (entry: JhLog.Sequenced) => void
@@ -330,12 +337,15 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
   // across leaves — a compile in one leaf, a check in another (jh-improve1 L4: in-memory, not in State).
   const staleness = deps.staleness !== false && deps.listFiles ? JhStaleness.tracker() : undefined
   const snapFiles = (): ReadonlyArray<JhStaleness.FileSnap> => (staleness ? staleness.snap(deps.listFiles!()) : [])
+  const baseName = (s: string): string => s.replace(/^\.[/\\]/, "").split(/[/\\]/).pop() ?? s // improve5 P2: match a tool path to a listFiles entry
   // improve4 P1 (§I6): the persistent regression registry — active only WITH staleness (it feeds off the
   // tracker's source digests). Registers the model's own passing product-executing checks and re-runs the
   // digest-stale ones after later edits. Engine-run-scoped, in-memory (L4).
   const regression = deps.regressionGate !== false && staleness ? JhRegression.registry() : undefined
   const now = deps.now ?? (() => Date.now())
   const phaseGateOn = deps.phaseGate !== false && regression !== undefined // improve4 P2 (requires regressionGate)
+  const txEditsOn = deps.txEdits !== false && staleness !== undefined // improve5 P2 (needs the per-file compile registry)
+  const SOURCE_EDIT_TOOLS = new Set(["write_file", "edit_file", "replace_lines"])
   // R3 keep-best + R4 ladder state (engine-run-scoped, in-memory — jh-improve1 L4).
   let bestScore = Number.NEGATIVE_INFINITY
   let bestSnapshot: ReadonlyArray<{ readonly name: string; readonly content: string }> | undefined
@@ -838,6 +848,9 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       for (;;) {
         updateTelemetry(node.id, (t) => ({ ...t, attempts: t.attempts + 1 }))
         const before = snapFiles() // R1: workspace fingerprint BEFORE the action (source→product build graph)
+        // improve5 P2: the edited file + its PRE-IMAGE (for tool-level undo if the tx gate rejects the edit).
+        const editedFile = SOURCE_EDIT_TOOLS.has(currentTool) && typeof currentArgs.path === "string" ? String(currentArgs.path) : undefined
+        const preImage = txEditsOn && editedFile ? deps.listFiles?.().find((f) => baseName(f.name) === baseName(editedFile))?.content : undefined
         emit({ type: "action", step: node.id, tool: currentTool })
         const observation = yield* deps.executor.run({ tool: currentTool, args: currentArgs, produces: draft.produces ?? [], cwd: deps.cwd })
         if (currentTool === "run" && observation.ok) {
@@ -848,10 +861,32 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         if (staleness)
           staleness.recordAction({ tool: currentTool, ok: observation.ok, command: typeof currentArgs.command === "string" ? currentArgs.command : undefined, before, after: snapFiles() })
 
+        // improve5 P2: TRANSACTIONAL edit gate — syntax-check a source edit via the edited file's OWN
+        // per-file object compile BEFORE trusting it; a non-compiling edit is REJECTED and the file restored
+        // to its pre-image (prevent the damage, don't heal it later — run89's 8 revert cycles). Opportunistic:
+        // only when staleness knows a `-c` compile for the file (never invents one — L4).
+        let txRejected: JhVerifier.VerifyResult | undefined
+        if (txEditsOn && staleness && observation.ok && editedFile && preImage !== undefined) {
+          const cmd = staleness.objectCompileFor(editedFile)
+          if (cmd) {
+            const beforeCompile = snapFiles()
+            const rb = yield* deps.runner.run({ command: cmd, cwd: deps.cwd, timeoutMs: JhVerifier.DEFAULT_TIMEOUT_MS })
+            staleness.recordAction({ tool: "run", ok: rb.exitCode === 0 && !rb.timedOut, command: cmd, before: beforeCompile, after: snapFiles() })
+            if (rb.exitCode !== 0 || rb.timedOut) {
+              const beforeRestore = snapFiles()
+              yield* deps.executor.run({ tool: "write_file", args: { path: editedFile, content: preImage }, produces: [], cwd: deps.cwd }) // tool-level undo
+              staleness.recordAction({ tool: "write_file", ok: true, before: beforeRestore, after: snapFiles() })
+              emit({ type: "edit_rejected", step: node.id, file: baseName(editedFile) })
+              txRejected = { ok: false, detail: `edit NOT applied — your change to ${baseName(editedFile)} does not compile:\n${rb.output.slice(-REGRESSION_TAIL)}\nThe file is UNCHANGED (restored to the last version). Make a SMALLER, corrected edit that fixes the error above, then reapply.` }
+            }
+          }
+        }
+
         // improve4 P1: after a successful SOURCE edit, re-run the digest-stale registered tests BEFORE this
         // leaf's own check — a previously-green test the edit broke preempts everything and names the file.
+        // (Skipped when the tx gate rejected the edit: the workspace is UNCHANGED, so there is nothing to regress.)
         let regressionPreempt: JhVerifier.VerifyResult | undefined
-        if (regression && observation.ok && (currentTool === "write_file" || currentTool === "edit_file")) {
+        if (regression && observation.ok && !txRejected && SOURCE_EDIT_TOOLS.has(currentTool)) {
           const beforeHashes = new Map(before.map((f) => [f.name, f.hash]))
           const changed = snapFiles()
             .filter((f) => beforeHashes.get(f.name) !== f.hash)
@@ -863,7 +898,9 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         // not a model rut). Set only when a check ran a product whose sources changed but had no rebuild.
         let noCountSig = false
         let vr: JhVerifier.VerifyResult
-        if (regressionPreempt) {
+        if (txRejected) {
+          vr = txRejected // improve5 P2: the edit didn't compile and was reverted — the workspace never changed
+        } else if (regressionPreempt) {
           vr = regressionPreempt // the edit broke a locked test — skip the leaf's own check entirely
         } else if (observation.ok) {
           const producedPresent = (draft.produces ?? []).every((p) => {
@@ -994,7 +1031,8 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         // means the build is fine → reset the counter.
         // improve4 P1: a REGRESSION preempt (the edit broke a locked test) is build damage too — it feeds the
         // auto-revert path (repeated regression damage → the harness restores the last verified state).
-        const buildDamaged = (currentTool === "edit_file" || currentTool === "write_file") && (vr.detail.startsWith("REBUILD FAILED") || vr.detail.startsWith("REGRESSION") || check.type === "compile")
+        // improve5 P2: a tx-REJECTED edit is NOT damage (the file was restored; nothing was harmed) — never count it.
+        const buildDamaged = !txRejected && SOURCE_EDIT_TOOLS.has(currentTool) && (vr.detail.startsWith("REBUILD FAILED") || vr.detail.startsWith("REGRESSION") || check.type === "compile")
         buildDamage = buildDamaged ? buildDamage + 1 : 0
         if (autoRevertOn && buildDamage >= AUTO_REVERT_AFTER) {
           const beforeRevert = snapFiles()
