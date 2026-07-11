@@ -559,6 +559,24 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         emit({ type: "committed_best_effort", step: node.id, reason })
         yield* growFixNode(parentID, JhTree.get(tree, node.id)!.draft.goal, `the previous step could not be completed (${reason} — the model emitted an unusable reply); do the step's work now with a clean, well-formed single action`, "the step's goal is met")
         yield* bubble(node.id)
+      } else if (parentID === undefined && (deps.forceRootDecompose || deps.verifyGoal || deps.taskComplete)) {
+        // improve5 root-hardening (E7): the ROOT could not be planned (a malformed multi-step reply). Do NOT
+        // hard-block a capable model (run92-95 died at the root in 10s on a JSON fumble — the exact harness
+        // harm this wave removes). DEGRADE to a single ATOMIC start step (a far simpler introspect than a whole
+        // plan); the exploration loop + the root-completion oracle drive the rest. If even one atomic step
+        // won't parse, block as the last resort.
+        const ex = yield* Effect.exit(deps.introspect(buildPrompt(node.id, { allowDecomposition: false, formatReminder: 'Emit exactly ONE atomic Step — a single tool call for the FIRST concrete action toward the task (NOT a multi-step plan). Fill: goal, size:"atomic", tool, args, check.' })))
+        if (Exit.isSuccess(ex)) {
+          const parsed = JhExpander.parseReply(ex.value)
+          if (parsed.ok && parsed.draft.size === "atomic" && JhStep.structuralIssues(parsed.draft).filter((i) => i.severity === "error").length === 0) {
+            tree = JhTree.fill(tree, node.id, stripSubsteps(parsed.draft))
+            emit({ type: "root_degraded", step: node.id })
+            emit({ type: "introspected", step: node.id })
+            yield* atomicLoop(node, parsed.draft)
+            return
+          }
+        }
+        blockNode(node, reason)
       } else {
         blockNode(node, reason)
       }

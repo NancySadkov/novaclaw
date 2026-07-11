@@ -223,6 +223,31 @@ describe("JhEngine.runTask", () => {
     expect(rd.reason).not.toBe("cannot_split")
   })
 
+  test("7d. improve5 root-hardening: an UNPARSEABLE root plan degrades to a single atomic start (never hard-blocks)", async () => {
+    const garbage = "not json at all"
+    const d = scriptedDeps({
+      forceRootDecompose: true, // Strict mode → the root-degrade branch is eligible
+      replies: [
+        garbage, garbage, garbage, garbage, garbage, garbage, garbage, garbage, garbage, garbage, // 10 root introspects all fail
+        reply(atomObj({ tool: "note", args: { text: "start" }, check: { type: "artifact_present" } })), // the degrade: one atomic start
+      ],
+      observations: [okObs({ out: "x" })],
+    })
+    const r = await run(d)
+    expect(types(r)).toContain("root_degraded")
+    expect(r.status).toBe("done") // ran the atomic start + committed — never dead-ended
+    expect(r.reason).not.toBe("unparseable")
+  })
+
+  test("7e. root-hardening parity: with Strict OFF, an unparseable root still hard-blocks (unchanged)", async () => {
+    const garbage = "not json at all"
+    const d = scriptedDeps({ replies: Array.from({ length: 10 }, () => garbage) }) // 10 fills the root's retry budget with parse-fails
+    const r = await run(d)
+    expect(r.status).toBe("blocked")
+    expect(r.reason).toBe("unparseable")
+    expect(types(r)).not.toContain("root_degraded")
+  })
+
   test("7c. improve5 P3.2: force-split is DISARMED by default under lazyPlan (advisory only — no forced decomposition)", async () => {
     const nineConsumes = Array.from({ length: 9 }, (_, i) => ({ id: `c${i}`, type: "file" as const }))
     const adv = scriptedDeps({ replies: [reply(atomObj({ consumes: nineConsumes, produces: [] }))], observations: [okObs()] })
