@@ -467,7 +467,11 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         // check) blocks the plan. duplicate_produce (store is latest-wins) and unused_produce are
         // TOLERATED — weak models mis-declare produces routinely; the per-step verify catches real
         // problems, and a hard reject on a harmless declaration error just stalls the task (§12).
-        const errors = JhDataflow.validate(current, deps.artifacts.ids()).filter((i) => i.code === "dangling_consumes")
+        // improve3 (char run74): TOLERATE dangling consumes at the task ROOT — disk is truth there and the
+        // declared dataflow is an unreliable proxy (§5 law-7 amendment); a strict reject hard-blocks the whole
+        // run (the root has no parent to grow a fix sibling on). The tolerant trySoftDecompose path already did
+        // this; a directly-decomposing root went through the strict check. Non-root nodes still validate.
+        const errors = node.id === tree.root ? [] : JhDataflow.validate(current, deps.artifacts.ids()).filter((i) => i.code === "dangling_consumes")
         if (errors.length === 0) {
           // P3b: lazy planning — attach only the TOP level; each phase re-plans itself when reached.
           let toAttach = current

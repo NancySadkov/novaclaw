@@ -168,22 +168,27 @@ describe("JhEngine.runTask", () => {
     expect(r.state.log.some((e) => e.type === "blocked" && e.reason === "budget")).toBe(true)
   })
 
-  test("6. dataflow repair: fixed → expanded; still broken → blocked(dataflow)", async () => {
-    const dangling = compoundObj([atomObj({ goal: "a", produces: [{ id: "a1", type: "note" }] }), atomObj({ goal: "b", consumes: [{ id: "missing", type: "file" }] })])
-    const fixed = compoundObj([atomObj({ goal: "a", produces: [{ id: "a1", type: "note" }] }), atomObj({ goal: "b", produces: [{ id: "b1", type: "note" }] })])
-    const good = scriptedDeps({
-      replies: [reply(dangling), reply(fixed), reply(atomObj({ produces: [{ id: "a1", type: "note" }] })), reply(atomObj({ produces: [{ id: "b1", type: "note" }] }))],
+  test("6. dataflow: the ROOT TOLERATES dangling consumes (char run74); a NON-ROOT node still validates + repairs", async () => {
+    // improve3 (char run74): a root plan with a dangling consume is ATTACHED (disk is truth; the root has no
+    // parent to grow a fix sibling on), not hard-blocked — matching the tolerant trySoftDecompose path.
+    const rootDangling = compoundObj([atomObj({ goal: "a", produces: [{ id: "a1", type: "note" }] }), atomObj({ goal: "b", consumes: [{ id: "missing", type: "file" }], produces: [{ id: "b1", type: "note" }] })])
+    const rootTol = scriptedDeps({
+      replies: [reply(rootDangling), reply(atomObj({ produces: [{ id: "a1", type: "note" }] })), reply(atomObj({ produces: [{ id: "b1", type: "note" }] }))],
       observations: [okObs({ a1: "x" }), okObs({ b1: "x" })],
     })
-    const rg = await run(good)
-    expect(rg.status).toBe("done")
-    const gt = types(rg)
-    expect(gt.indexOf("dataflow_rejected")).toBeLessThan(gt.indexOf("expanded"))
+    const rt = await run(rootTol)
+    expect(rt.status).toBe("done") // tolerated + ran
+    expect(types(rt)).not.toContain("dataflow_rejected") // the ROOT was not rejected
 
-    const bad = scriptedDeps({ replies: [reply(dangling), reply(dangling)] })
-    const rb = await run(bad)
-    expect(rb.status).toBe("blocked")
-    expect(rb.reason).toBe("dataflow")
+    // A NON-ROOT node's dangling consume is still validated + repaired (validation unchanged off the root).
+    const phaseDangling = { goal: "phase", size: "needs_decomposition", success: "ok", substeps: [atomObj({ goal: "x", produces: [{ id: "x1", type: "note" }] }), atomObj({ goal: "y", consumes: [{ id: "missing", type: "file" }] })] }
+    const phaseFixed = { goal: "phase", size: "needs_decomposition", success: "ok", substeps: [atomObj({ goal: "x", produces: [{ id: "x1", type: "note" }] }), atomObj({ goal: "y", produces: [{ id: "y1", type: "note" }] })] }
+    const nonRoot = scriptedDeps({
+      replies: [reply(compoundObj([phaseDangling])), reply(phaseDangling), reply(phaseFixed), reply(atomObj({ produces: [{ id: "x1", type: "note" }] })), reply(atomObj({ produces: [{ id: "y1", type: "note" }] }))],
+      observations: [okObs({ x1: "x" }), okObs({ y1: "x" })],
+    })
+    const rn = await run(nonRoot)
+    expect(types(rn)).toContain("dataflow_rejected") // the non-root phase's dangling WAS validated
   })
 
   test("7. force-split: cardinality over trigger → forced_split → decompose; atomic-again → cannot_split", async () => {
