@@ -33,6 +33,17 @@ export type Entry =
   | { readonly type: "flattened"; readonly step: string; readonly discarded: number }
   // improve3 P3c: a node at maxDepth still wanted to decompose — run it atomically instead of hard-blocking.
   | { readonly type: "depth_degraded"; readonly step: string }
+  // improve4 P1: a passing run/output_equals check that executes a workspace product was REGISTERED as a
+  // persistent regression test (first registration only).
+  | { readonly type: "test_registered"; readonly step: string; readonly command: string }
+  // improve4 P1: a registered test that passed before the edit FAILS now — the source-edit at `step` broke
+  // previously-verified behavior; `changed` names the file(s) the edit touched. Preempts the leaf's own check.
+  | { readonly type: "regression"; readonly step: string; readonly command: string; readonly changed: ReadonlyArray<string> }
+  // improve4 P1/P2: a regression-suite evaluation (a post-edit re-run or a phase/root gate). `skipped` > 0
+  // means the MAX_SUITE_MS budget cut it short — surfaced so a partial suite is never silently trusted.
+  | { readonly type: "suite"; readonly step: string; readonly green: number; readonly red: number; readonly skipped: number }
+  // improve4 P4: a component that kept failing its test was targeted for a from-scratch re-derivation.
+  | { readonly type: "rederived"; readonly step: string; readonly file: string }
   | { readonly type: "committed"; readonly step: string }
   // A leaf the harness gave up VERIFYING (stuck/budget) but committed best-effort so the tree can grow a
   // fix sibling instead of dead-ending (engine.ts stuck path). NOT a success — the reason carries the
@@ -84,6 +95,14 @@ function describe(e: Sequenced): string {
       return `flattened ${e.step} (discarded ${e.discarded} nested)`
     case "depth_degraded":
       return `depth_degraded ${e.step} (ran atomic at the cap)`
+    case "test_registered":
+      return `test_registered ${e.step}: \`${e.command}\``
+    case "regression":
+      return `REGRESSION ${e.step}: \`${e.command}\` broke after editing ${e.changed.join(", ") || "the workspace"}`
+    case "suite":
+      return `suite ${e.step}: ${e.green} green, ${e.red} red${e.skipped > 0 ? `, ${e.skipped} skipped (budget)` : ""}`
+    case "rederived":
+      return `rederived ${e.step}: fresh implementation of ${e.file}`
     case "committed":
       return `committed ${e.step}`
     case "committed_best_effort":

@@ -46,6 +46,20 @@ export interface Tracker {
   readonly staleChainFor: (command: string, current: ReadonlyArray<FileSnap>) => ReadonlyArray<StaleProduct>
   /** digest of a check + everything it can observe (the full workspace) — for the idempotence cache. */
   readonly checkDigest: (check: unknown, current: ReadonlyArray<FileSnap>) => string
+  /** improve4 P1: the current SOURCE digest — a fingerprint over every non-product file (the compiler
+   *  inputs), the SAME notion staleProducts/allStale compare against internally. The regression registry
+   *  stamps a passing test with this; a later source edit changes it, marking the test stale + re-runnable.
+   *  Global (not per-chain) on purpose — a shared header/source edit can break ANY test, so re-running the
+   *  registered set on any source change is the SAFE choice (missing a regression is exactly the §I6 hazard;
+   *  the MAX_SUITE_MS budget + registered-only re-run keep it cheap). */
+  readonly sourceDigestNow: (current: ReadonlyArray<FileSnap>) => string
+  /** improve4 P1: does `command` execute/reference a tracked build product (an .exe/.o we have attributed
+   *  to a producing run)? — the regression registry only registers a passing run/output_equals check whose
+   *  command actually runs a workspace product (a `note`/`echo` check is not a regression test). */
+  readonly referencesProduct: (command: string) => boolean
+  /** improve4 P1: does `command`'s referenced product still EXIST in the given workspace listing? A
+   *  registered test whose product was deleted/renamed is pruned (its basename no longer present). */
+  readonly productPresent: (command: string, current: ReadonlyArray<FileSnap>) => boolean
 }
 
 // Build-product extensions — a file with one of these that we never attributed to a recorded run is
@@ -169,5 +183,20 @@ export function tracker(): Tracker {
         .join("\n")}`,
     )
 
-  return { snap, recordAction, staleProducts, allStale, staleChainFor, checkDigest }
+  const sourceDigestNow: Tracker["sourceDigestNow"] = (current) => sourceDigest(current)
+
+  const referencesProduct: Tracker["referencesProduct"] = (command) => {
+    const refs = refsOf(command)
+    for (const file of products.keys()) if (refs.has(baseName(file))) return true
+    return false
+  }
+
+  const productPresent: Tracker["productPresent"] = (command, current) => {
+    const refs = refsOf(command)
+    const present = new Set(current.map((f) => baseName(f.name)))
+    for (const file of products.keys()) if (refs.has(baseName(file)) && present.has(baseName(file))) return true
+    return false
+  }
+
+  return { snap, recordAction, staleProducts, allStale, staleChainFor, checkDigest, sourceDigestNow, referencesProduct, productPresent }
 }

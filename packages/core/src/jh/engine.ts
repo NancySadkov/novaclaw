@@ -26,6 +26,7 @@ import { JhBudget } from "./budget"
 import { JhVerifier } from "./verifier"
 import { JhExpander } from "./expander"
 import { JhStaleness } from "./staleness"
+import { JhRegression } from "./regression"
 import { JhLadder } from "./ladder"
 import { JhLog } from "./log"
 import type { JhBasicTools } from "./tools-basic"
@@ -109,6 +110,18 @@ export interface Deps {
    *  chain (not EVERY stale product — a wave-2 500+-rebuild storm). Sub-flag of staleness. Default ON;
    *  `false` = wave-2 rebuild-all-stale. */
   readonly targetedRebuild?: boolean
+  /** improve4 P1 (§I6): the persistent REGRESSION SUITE. A leaf's passing run/output_equals check that
+   *  executes a workspace product is registered; after any later source edit the digest-stale registered
+   *  tests are RE-RUN before the leaf's own check, so a previously-green primitive test broken by the edit
+   *  fails immediately and names the changed file (the foundation is LOCKED). Requires `staleness`. Default
+   *  ON; `false` = wave-3 behavior exactly. */
+  readonly regressionGate?: boolean
+  /** improve4 P1/L4: wall-clock budget (ms) for ONE regression-suite trigger — beyond it, remaining stale
+   *  tests are skipped and NAMED (never silently partial). Default MAX_SUITE_MS (60s). */
+  readonly maxSuiteMs?: number
+  /** improve4 P1/L4: monotonic wall-clock source for the suite budget (injected for deterministic tests).
+   *  Default `Date.now`. */
+  readonly now?: () => number
   readonly limits: { readonly maxDepth: number; readonly maxTotalSteps: number }
   readonly trigger: JhBudget.SplitTrigger
   readonly onLog?: (entry: JhLog.Sequenced) => void
@@ -163,6 +176,12 @@ const SOFT_DECOMPOSE_ATTEMPTS = 3
 // auto-reverts to the last verified checkpoint. 3 = give the model a couple of self-repair shots first, then stop
 // the damage (the model won't `git_revert` itself — §I2). Any green build resets the counter.
 const AUTO_REVERT_AFTER = 3
+// improve4 P1/L4: wall-clock budget for ONE regression-suite trigger. The suite re-runs digest-stale
+// REGISTERED tests only (a small set), but each is a compile+run; cap the total so a growing suite never
+// eats the 45-min wall — remaining tests are skipped and NAMED (never silently partial).
+const MAX_SUITE_MS = 60_000
+// improve4 P1: how much of a failing test's output to quote back to the model (its stdout/compile error).
+const REGRESSION_TAIL = 1500
 // improve3 P2a (owner #2): the ROOT plan is the single most critical introspection — a malformed root reply
 // killed a whole run in ~2 min (run63/§I3). Give the root MANY more parse-retries (with the P2b located hint
 // each time); a non-root leaf keeps its 2 attempts (a failed leaf has never-dead-end, a failed root doesn't).
@@ -232,6 +251,11 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
   // across leaves — a compile in one leaf, a check in another (jh-improve1 L4: in-memory, not in State).
   const staleness = deps.staleness !== false && deps.listFiles ? JhStaleness.tracker() : undefined
   const snapFiles = (): ReadonlyArray<JhStaleness.FileSnap> => (staleness ? staleness.snap(deps.listFiles!()) : [])
+  // improve4 P1 (§I6): the persistent regression registry — active only WITH staleness (it feeds off the
+  // tracker's source digests). Registers the model's own passing product-executing checks and re-runs the
+  // digest-stale ones after later edits. Engine-run-scoped, in-memory (L4).
+  const regression = deps.regressionGate !== false && staleness ? JhRegression.registry() : undefined
+  const now = deps.now ?? (() => Date.now())
   // R3 keep-best + R4 ladder state (engine-run-scoped, in-memory — jh-improve1 L4).
   let bestScore = Number.NEGATIVE_INFINITY
   let bestSnapshot: ReadonlyArray<{ readonly name: string; readonly content: string }> | undefined
@@ -563,6 +587,79 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       return false
     })
 
+  // improve4 P1 (§I6): re-run the digest-stale REGISTERED tests after a source edit, BEFORE the leaf's own
+  // check. Each stale test's product chain is rebuilt from the CURRENT sources (the make path) and the test
+  // is run; a test that passed before and FAILS now is a REGRESSION — it preempts the leaf's verification and
+  // NAMES the changed file(s), so the model fixes the FOUNDATION instead of thrashing the formula on it
+  // (run75: `pi.c` edited 74× while the bug was in `bigint.c`). Bounded by MAX_SUITE_MS; skipped tests are
+  // NAMED (never silently partial — L4). Returns a failing VerifyResult on the FIRST regression, else
+  // undefined (proceed with the normal check).
+  const runRegressionSuite = (nodeId: JhStep.StepID, changed: ReadonlyArray<string>): Effect.Effect<JhVerifier.VerifyResult | undefined> =>
+    Effect.gen(function* () {
+      if (!regression || !staleness) return undefined
+      // Prune tests whose product was deleted/renamed (log-free), then select the digest-stale ones.
+      regression.prune((command) => staleness.productPresent(command, snapFiles()))
+      const curDigest = staleness.sourceDigestNow(snapFiles())
+      const stale = regression.staleTests(() => curDigest)
+      if (stale.length === 0) return undefined
+      const budget = deps.maxSuiteMs ?? MAX_SUITE_MS
+      const startMs = now()
+      let green = 0
+      let firstFailure: { readonly command: string; readonly detail: string } | undefined
+      const skipped: string[] = []
+      let ran = 0
+      for (const t of stale) {
+        // Budget: once elapsed exceeds it, SKIP the rest (always run at least one — a 0 budget still progresses).
+        if (ran > 0 && now() - startMs >= budget) {
+          skipped.push(t.command)
+          continue
+        }
+        ran++
+        // Rebuild the test's product chain from the current sources (the normal staleness path), then run it.
+        let curSnap = snapFiles()
+        let buildErr: string | undefined
+        for (const sp of staleness.staleChainFor(t.command, curSnap)) {
+          if (!sp.rebuild) continue // an un-attributed product — let the run surface it, don't guess a command
+          const rb = yield* deps.runner.run({ command: sp.rebuild, cwd: deps.cwd, timeoutMs: JhVerifier.DEFAULT_TIMEOUT_MS })
+          const rbAfter = snapFiles()
+          staleness.recordAction({ tool: "run", ok: rb.exitCode === 0 && !rb.timedOut, command: sp.rebuild, before: curSnap, after: rbAfter })
+          curSnap = rbAfter
+          if (rb.exitCode !== 0 || rb.timedOut) {
+            buildErr = `the test no longer compiles after your edit:\n${rb.output.slice(-REGRESSION_TAIL)}`
+            break
+          }
+        }
+        let ok: boolean
+        let detail: string
+        if (buildErr !== undefined) {
+          ok = false
+          detail = buildErr
+        } else {
+          const r = yield* deps.runner.run({ command: t.command, cwd: deps.cwd, timeoutMs: JhVerifier.DEFAULT_TIMEOUT_MS })
+          staleness.recordAction({ tool: "run", ok: r.exitCode === 0 && !r.timedOut, command: t.command, before: curSnap, after: snapFiles() })
+          ok = r.exitCode === 0 && !r.timedOut && (t.expect ? r.output.includes(t.expect) : true)
+          detail = r.timedOut ? `timed out\n${r.output.slice(-REGRESSION_TAIL)}` : r.output.slice(-REGRESSION_TAIL)
+        }
+        regression.recordResult(t.command, ok, staleness.sourceDigestNow(snapFiles()))
+        if (ok) green++
+        else {
+          firstFailure = { command: t.command, detail }
+          break // preempt on the first regression — the model must fix it before we test more
+        }
+      }
+      if (skipped.length > 0) emit({ type: "suite", step: nodeId, green, red: firstFailure ? 1 : 0, skipped: skipped.length })
+      if (firstFailure) {
+        emit({ type: "regression", step: nodeId, command: firstFailure.command, changed })
+        const where = changed.length > 0 ? changed.join(", ") : "the file(s) you just edited"
+        const skipNote = skipped.length > 0 ? `\n(note: ${skipped.length} other registered test(s) were not re-run this round due to the ${Math.round(budget / 1000)}s suite budget: ${skipped.join(", ")})` : ""
+        return {
+          ok: false,
+          detail: `REGRESSION: \`${firstFailure.command}\` passed before your edit and FAILS now — the change you just made to ${where} broke previously-verified behavior. Fix THOSE files (or git-revert) before anything else. Test output: ${firstFailure.detail}${skipNote}`,
+        }
+      }
+      return undefined
+    })
+
   // E — the atomic execution loop.
   const atomicLoop = (node: JhTree.Node, initialDraft: JhStep.StepDraft): Effect.Effect<void> =>
     Effect.gen(function* () {
@@ -595,11 +692,24 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         if (staleness)
           staleness.recordAction({ tool: currentTool, ok: observation.ok, command: typeof currentArgs.command === "string" ? currentArgs.command : undefined, before, after: snapFiles() })
 
+        // improve4 P1: after a successful SOURCE edit, re-run the digest-stale registered tests BEFORE this
+        // leaf's own check — a previously-green test the edit broke preempts everything and names the file.
+        let regressionPreempt: JhVerifier.VerifyResult | undefined
+        if (regression && observation.ok && (currentTool === "write_file" || currentTool === "edit_file")) {
+          const beforeHashes = new Map(before.map((f) => [f.name, f.hash]))
+          const changed = snapFiles()
+            .filter((f) => beforeHashes.get(f.name) !== f.hash)
+            .map((f) => f.name)
+          regressionPreempt = yield* runRegressionSuite(node.id, changed)
+        }
+
         // A STALE-artifact bookkeeping fail must NOT feed the stuck counter (it asks for a recompile, it is
         // not a model rut). Set only when a check ran a product whose sources changed but had no rebuild.
         let noCountSig = false
         let vr: JhVerifier.VerifyResult
-        if (observation.ok) {
+        if (regressionPreempt) {
+          vr = regressionPreempt // the edit broke a locked test — skip the leaf's own check entirely
+        } else if (observation.ok) {
           const producedPresent = (draft.produces ?? []).every((p) => {
             const c = observation.artifacts.get(p.id)
             return c !== undefined && c.length > 0
@@ -685,6 +795,15 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
 
         if (vr.ok) {
           buildDamage = 0 // improve3 P1: a green verify clears the consecutive-build-damage counter
+          // improve4 P1: register a passing run/output_equals check that EXECUTES a workspace product as a
+          // persistent regression test (keyed by its command); re-registration refreshes the digest. A
+          // compile-only check never registers (builds are the staleness tracker's job — its type is excluded).
+          if (regression && staleness && (check.type === "run" || check.type === "output_equals") && staleness.referencesProduct(check.command)) {
+            const key = JhRegression.normalizeCommand(check.command)
+            const first = !regression.all().some((t) => t.command === key)
+            regression.register({ command: check.command, expect: check.type === "run" ? check.expect : check.expected, depsDigest: staleness.sourceDigestNow(snapFiles()) })
+            if (first) emit({ type: "test_registered", step: node.id, command: key })
+          }
           for (const p of draft.produces ?? []) {
             const content = observation.artifacts.get(p.id)
             if (content !== undefined) deps.artifacts.put(p, content)
@@ -717,7 +836,9 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         // them, RESTORE the last verified checkpoint (the model keeps damaging the file over 10+ edits and won't
         // git_revert itself — §I2 hit 4/6 wave-2 runs). Any other failure (wrong output on a compiling build)
         // means the build is fine → reset the counter.
-        const buildDamaged = (currentTool === "edit_file" || currentTool === "write_file") && (vr.detail.startsWith("REBUILD FAILED") || check.type === "compile")
+        // improve4 P1: a REGRESSION preempt (the edit broke a locked test) is build damage too — it feeds the
+        // auto-revert path (repeated regression damage → the harness restores the last verified state).
+        const buildDamaged = (currentTool === "edit_file" || currentTool === "write_file") && (vr.detail.startsWith("REBUILD FAILED") || vr.detail.startsWith("REGRESSION") || check.type === "compile")
         buildDamage = buildDamaged ? buildDamage + 1 : 0
         if (autoRevertOn && buildDamage >= AUTO_REVERT_AFTER) {
           const beforeRevert = snapFiles()

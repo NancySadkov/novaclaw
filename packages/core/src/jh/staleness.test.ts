@@ -120,6 +120,30 @@ describe("JhStaleness.tracker (pure)", () => {
     expect(t.staleChainFor(".\\pi.exe", s4).map((p) => p.file)).toEqual(["pi.o", "pi.exe"])
   })
 
+  test("improve4 P1: sourceDigestNow changes on a SOURCE edit, not on a product rebuild", () => {
+    const t = JhStaleness.tracker()
+    const s0 = t.snap([{ name: "pi.c", content: "v0" }])
+    const d0 = t.sourceDigestNow(s0)
+    const s1 = t.snap([{ name: "pi.c", content: "v0" }, { name: "pi.exe", content: "BIN0" }])
+    t.recordAction({ tool: "run", ok: true, command: "gcc pi.c -o pi.exe", before: s0, after: s1 })
+    expect(t.sourceDigestNow(s1)).toBe(d0) // pi.exe is a product, not a source → digest unchanged
+    const s2 = t.snap([{ name: "pi.c", content: "v1" }, { name: "pi.exe", content: "BIN0" }])
+    expect(t.sourceDigestNow(s2)).not.toBe(d0) // editing the source moves the digest
+  })
+
+  test("improve4 P1: referencesProduct + productPresent (for registration + prune)", () => {
+    const t = JhStaleness.tracker()
+    const s0 = t.snap([{ name: "t_mul.c", content: "u0" }, { name: "bigint.c", content: "b0" }])
+    expect(t.referencesProduct(".\\t_mul.exe")).toBe(false) // nothing built yet
+    const s1 = t.snap([{ name: "t_mul.c", content: "u0" }, { name: "bigint.c", content: "b0" }, { name: "t_mul.exe", content: "M0" }])
+    t.recordAction({ tool: "run", ok: true, command: "gcc t_mul.c bigint.c -o t_mul.exe", before: s0, after: s1 })
+    expect(t.referencesProduct(".\\t_mul.exe")).toBe(true) // command runs a tracked product
+    expect(t.referencesProduct("echo hi")).toBe(false)
+    expect(t.productPresent(".\\t_mul.exe", s1)).toBe(true)
+    const s2 = t.snap([{ name: "t_mul.c", content: "u0" }, { name: "bigint.c", content: "b0" }]) // t_mul.exe deleted
+    expect(t.productPresent(".\\t_mul.exe", s2)).toBe(false) // product gone → prune it
+  })
+
   test("orphan product (pre-existing binary, never produced) becomes stale after a source edit — no rebuild", () => {
     const t = JhStaleness.tracker()
     // pi.exe pre-exists; the first action is a source edit
