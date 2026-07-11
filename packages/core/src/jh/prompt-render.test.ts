@@ -95,3 +95,59 @@ describe("jh-improve5 P1 — numbered full-visibility workspace rendering", () =
     expect(editing(w5.prompts)).toContain("TARGET_beyond_8000")
   })
 })
+
+// jh-improve5 P4 — budget-aware steering. A leaf whose `run` check fails a few times re-introspects each
+// round (a fresh buildContext); an injected clock crosses the thresholds so we can assert the one-shot steers.
+function budgetCapture(opts: { clock: number[]; budgetAware?: boolean; withBudget?: boolean; failChecks: number }) {
+  const introspectPrompts: string[] = []
+  let checkCalls = 0
+  let c = 0
+  const atom = JSON.stringify({ goal: "s", size: "atomic", tool: "note", args: { text: "x" }, check: { type: "run", command: "go" }, produces: [], success: "ok" })
+  const deps: JhEngine.Deps = {
+    introspect: (p) => {
+      if (!p.user.includes("Is the goal fully achieved?")) introspectPrompts.push(p.user)
+      return Effect.succeed(atom)
+    },
+    correct: () => Effect.fail({ message: "x" }),
+    executor: { run: () => Effect.succeed({ ok: true, output: "noted", artifacts: new Map<string, string>() }) },
+    runner: {
+      run: () => {
+        checkCalls++
+        return Effect.succeed({ exitCode: checkCalls > opts.failChecks ? 0 : 1, output: "err", timedOut: false })
+      },
+    },
+    artifacts: JhArtifact.memory(),
+    fileExists: () => true,
+    cwd: ".",
+    toolNames: JhBasicTools.TOOL_NAMES,
+    limits: { maxDepth: 0, maxTotalSteps: 10 },
+    trigger: JhBudget.DEFAULT_TRIGGER,
+    budgetAware: opts.budgetAware,
+    budget: opts.withBudget === false ? undefined : { startedAt: 0, wallMs: 100, now: () => opts.clock[Math.min(c++, opts.clock.length - 1)]! },
+  }
+  return { deps, introspectPrompts }
+}
+
+describe("jh-improve5 P4 — budget-aware steering", () => {
+  test("crossing 50% then 75% injects each steer ONCE, in the introspect prompt", async () => {
+    // buildContext fires on the root introspect + each recovery; the clock advances 40→60→80→80…
+    const { deps, introspectPrompts } = budgetCapture({ clock: [40, 60, 80, 80, 80, 80], failChecks: 3 })
+    const r = await Effect.runPromise(JhEngine.runTask(deps, { goal: "t" }))
+    const notes = r.state.log.filter((e) => e.type === "budget_note").map((e) => (e as { fraction: number }).fraction)
+    expect(notes).toEqual([0.5, 0.75]) // each threshold once, in order
+    expect(introspectPrompts.some((p) => p.includes("half the time budget remains"))).toBe(true)
+    expect(introspectPrompts.some((p) => p.includes("quarter of the time budget remains"))).toBe(true)
+  })
+
+  test("no budget dep → no steers", async () => {
+    const { deps } = budgetCapture({ clock: [90], withBudget: false, failChecks: 2 })
+    const r = await Effect.runPromise(JhEngine.runTask(deps, { goal: "t" }))
+    expect(r.state.log.some((e) => e.type === "budget_note")).toBe(false)
+  })
+
+  test("budgetAware:false → no steers even with the dep present", async () => {
+    const { deps } = budgetCapture({ clock: [60, 80], budgetAware: false, failChecks: 2 })
+    const r = await Effect.runPromise(JhEngine.runTask(deps, { goal: "t" }))
+    expect(r.state.log.some((e) => e.type === "budget_note")).toBe(false)
+  })
+})

@@ -53,6 +53,9 @@ export type Entry =
   // improve5 P3: the closure-cardinality force-split trigger fired but is DISARMED in the file-workspace
   // regime (context = disk, §5 law-5) — logged as advisory data for a future §4 recalibration, no behavior.
   | { readonly type: "forced_split_advisory"; readonly step: string; readonly cardinality: number; readonly density: number }
+  // improve5 P4: a wall-clock budget threshold (0.5 / 0.75) was crossed → a calm "simplify / land it" steer
+  // was injected into the next introspection (one-shot per threshold).
+  | { readonly type: "budget_note"; readonly step: string; readonly fraction: number }
   | { readonly type: "committed"; readonly step: string }
   // A leaf the harness gave up VERIFYING (stuck/budget) but committed best-effort so the tree can grow a
   // fix sibling instead of dead-ending (engine.ts stuck path). NOT a success — the reason carries the
@@ -118,6 +121,8 @@ function describe(e: Sequenced): string {
       return `split_degraded ${e.step} (could not split — ran atomic instead of blocking)`
     case "forced_split_advisory":
       return `forced_split_advisory ${e.step} (cardinality ${e.cardinality}, density ${e.density} — disarmed)`
+    case "budget_note":
+      return `budget_note ${e.step}: ${Math.round(e.fraction * 100)}% of the time budget consumed`
     case "committed":
       return `committed ${e.step}`
     case "committed_best_effort":

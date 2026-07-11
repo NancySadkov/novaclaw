@@ -159,6 +159,13 @@ export interface Deps {
    *  `forced_split_advisory` — no forced decomposition. Note the INVERTED sense: `false` re-arms the wave-4
    *  trigger. */
   readonly noForceSplit?: boolean
+  /** improve5 P4: WALL-CLOCK budget awareness. The engine has no time sense (run79/87 spent all 45 min
+   *  gold-plating primitives; run84/86 died mid-formula) — so the harness supplies the wall, and at 50%/75%
+   *  consumed (one-shot each) the next introspection carries a calm steer to simplify / land an end-to-end
+   *  result. `now` is injected (the determinism rule holds). Active only when this dep is present. */
+  readonly budget?: { readonly startedAt: number; readonly wallMs: number; readonly now: () => number }
+  /** improve5 P4: gate the budget steers (default ON when `budget` is present; `false` = silent). */
+  readonly budgetAware?: boolean
   readonly limits: { readonly maxDepth: number; readonly maxTotalSteps: number }
   readonly trigger: JhBudget.SplitTrigger
   readonly onLog?: (entry: JhLog.Sequenced) => void
@@ -371,6 +378,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
   let buildDamage = 0
   let autoRevertOn = deps.autoRevert !== false && !!deps.revertWorkspace
   let pendingRevertMessage: string | undefined
+  const firedBudget = new Set<number>() // improve5 P4: wall-clock thresholds already steered (one-shot each)
 
   const emit = (entry: JhLog.Entry): void => {
     const seqd = { ...entry, seq: seq++ } as JhLog.Sequenced
@@ -429,7 +437,23 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
     // (consume-once). The workspace listing above already reflects the restored files.
     const revertBlock = pendingRevertMessage ? `\n\n# ⚠️ Workspace restored by the harness\n${pendingRevertMessage}` : ""
     pendingRevertMessage = undefined
-    const full = `${base}${fileBlock}${outputBlock}${revertBlock}`
+    // improve5 P4: wall-clock budget steer — at 50%/75% consumed (one-shot each) inject a calm "simplify /
+    // land an end-to-end result" nudge (the engine otherwise has no time sense; run79/87 gold-plated to the wall).
+    let budgetBlock = ""
+    if (deps.budgetAware !== false && deps.budget && deps.budget.wallMs > 0) {
+      const frac = (deps.budget.now() - deps.budget.startedAt) / deps.budget.wallMs
+      for (const th of [0.5, 0.75]) {
+        if (frac >= th && !firedBudget.has(th)) {
+          firedBudget.add(th)
+          emit({ type: "budget_note", step: nodeId, fraction: th })
+          budgetBlock =
+            th >= 0.75
+              ? "\n\n# ⏱ ~a quarter of the time budget remains\nGet an END-TO-END result NOW, even at REDUCED scope/precision (e.g. compute fewer digits first): a complete working pipeline you can VERIFY beats a perfect half. Finish it, verify, then improve only if time remains."
+              : "\n\n# ⏱ ~half the time budget remains\nPrefer the SIMPLEST implementation that passes the tests; do NOT gold-plate individual components — an end-to-end working result matters far more than a perfect part."
+        }
+      }
+    }
+    const full = `${base}${fileBlock}${outputBlock}${revertBlock}${budgetBlock}`
     return extra ? `${full}\n\n${extra}` : full
   }
   /** the current workspace (file names + contents) as a plain block — for the goal-achievement check + the
