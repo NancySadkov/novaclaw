@@ -89,6 +89,31 @@ const baseName = (name: string): string => {
   return (parts[parts.length - 1] ?? name).toLowerCase()
 }
 
+/** the base-named tokens a command references (module-level twin of the tracker's internal refsOf). */
+const refsOfCommand = (command: string): Set<string> => new Set(command.split(/[\s"'=]+/).filter(Boolean).map(baseName))
+
+/** improve6 P1 (gate surgery): extract ONLY the compile segment for `baseFile` from a possibly-COMPOUND
+ *  command, keeping the leading environment-setup segments (`set PATH=…` / `export …`) it needs in a fresh
+ *  shell. The wave-5 tx gate ran the WHOLE recorded compound — build AND test — so an edit that compiled
+ *  and passed 13/15 tests was rejected 73× with a false "does not compile" (run104 [28]); the gate must
+ *  never execute anything but the compiler. A `-c` segment cannot run a product, so the gate's
+ *  "no longer compiles" message becomes truthful STRUCTURALLY. Returns undefined when the command has no
+ *  `-c` segment referencing this file (the gate stays off for it — L4, opportunistic). */
+export const compileSegment = (command: string, baseFile: string): string | undefined => {
+  const base = baseName(baseFile)
+  const env: string[] = []
+  for (const raw of command.split("&&")) {
+    const seg = raw.trim()
+    if (seg === "") continue
+    if (/^set\s+\w+=/i.test(seg) || /^export\s+\w+/.test(seg)) {
+      env.push(seg)
+      continue
+    }
+    if (/(^|\s)-c(\s|$)/.test(seg) && refsOfCommand(seg).has(base)) return [...env, seg].join(" && ")
+  }
+  return undefined
+}
+
 export function tracker(): Tracker {
   const products = new Map<string, { command: string; sourceDigest: string }>()
   const sources = new Set<string>() // files the model authored — never a product (product→source migration)
@@ -248,11 +273,13 @@ export function tracker(): Tracker {
   }
 
   const objectCompileFor: Tracker["objectCompileFor"] = (file) => {
-    const base = baseName(file)
+    // improve6 P1: return the compile SEGMENT only (env prefixes + the `-c` part), NEVER the recorded
+    // compound — the wave-5 gate executed build+TEST chains and rejected compiling edits on test failures
+    // (run104: 13/15 passing, rejected 73× as "does not compile").
     for (const [, rec] of products) {
       if (rec.command === "") continue
-      // a compile-ONLY command (`-c` token) that references this source file
-      if (/(^|\s)-c(\s|$)/.test(rec.command) && refsOf(rec.command).has(base)) return rec.command
+      const seg = compileSegment(rec.command, file)
+      if (seg !== undefined) return seg
     }
     return undefined
   }

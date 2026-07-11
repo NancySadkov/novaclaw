@@ -472,3 +472,34 @@ describe("JhStaleness engine integration", () => {
     expect(logTypes(r)).not.toContain("refreshed") // no build-graph machinery when the flag is off
   })
 })
+
+// jh-improve6 P1 — compileSegment: the gate must extract ONLY the compile part of a recorded compound
+// (env prefixes kept), never the build+TEST chain the wave-5 gate executed (run104: 13/15-passing edits
+// rejected 73× as "does not compile").
+import { compileSegment } from "./staleness"
+
+describe("jh-improve6 — compileSegment extraction", () => {
+  const COMPOUND = "set PATH=C:/w64devkit/bin;%PATH% && gcc -c bigint.c -o bigint.o && gcc t_add.c bigint.o -o t_add.exe && .\t_add.exe"
+
+  test("a compound keeps env prefixes + the -c segment ONLY (no link, no test execution)", () => {
+    const seg = compileSegment(COMPOUND, "bigint.c")
+    expect(seg).toBe("set PATH=C:/w64devkit/bin;%PATH% && gcc -c bigint.c -o bigint.o")
+    expect(seg).not.toContain("t_add") // structurally cannot run the test
+  })
+
+  test("a plain -c command passes through unchanged", () => {
+    expect(compileSegment("gcc -c pi.c -o pi.o", "pi.c")).toBe("gcc -c pi.c -o pi.o")
+  })
+
+  test("no -c segment for the file → undefined (link-only compounds never gate)", () => {
+    expect(compileSegment("gcc t_add.c bigint.o -o t_add.exe && .\t_add.exe", "t_add.c")).toBeUndefined()
+  })
+
+  test("a -c segment for a DIFFERENT file → undefined", () => {
+    expect(compileSegment(COMPOUND, "pi.c")).toBeUndefined()
+  })
+
+  test("path/case tolerant: matches a dot-backslash path and an upper-case spelling", () => {
+    expect(compileSegment("gcc -c .\\bigint.c -o bigint.o && .\\t.exe", "BIGINT.C")).toBe("gcc -c .\\bigint.c -o bigint.o")
+  })
+})

@@ -34,7 +34,10 @@ function buildWorld(opts: { initial: Record<string, string>; programs: Record<st
       if (/(^|\s)gcc\b/.test(seg)) {
         const outMatch = seg.match(/-o\s+(\S+)/)
         const srcs = (seg.match(/\S+\.c\b/g) ?? []).map(base)
-        if (srcs.some((s) => (files.get(s) ?? "").includes("BUILDERR"))) return { code: 1, output: `${output}compile error` }
+        // improve6: name the offending file the way a real compiler does — the damage/suspect classifiers
+        // read diagnostics SHAPE (`file.c:1:1: error:`), and a bare "compile error" is not a real gcc output.
+        const bad = srcs.find((s) => (files.get(s) ?? "").includes("BUILDERR"))
+        if (bad) return { code: 1, output: `${output}${bad}:1:1: error: BUILDERR` }
         if (outMatch) files.set(base(outMatch[1]!), `bin(${srcs.map((s) => `${s}:${files.get(s) ?? ""}`).join(";")})`)
         continue
       }
@@ -210,23 +213,27 @@ describe("jh-improve4 P1 — regression suite engine integration", () => {
   })
 
   test("buildDamage interplay: three consecutive regressions trip the harness auto-revert", async () => {
+    // improve6 P2 (gradient-aware) deliberately REVISED the wave-4 policy this test used to pin: a test
+    // that keeps failing after edits is "REGRESSION SUITE:" — workable state, NOT damage (run102's
+    // 5/6-passing iteration must never be revert-cycled). What still accrues damage is true BUILD breakage
+    // — the leaf's own compile check failing after source edits — and that path must keep engaging the
+    // harness restore. (The still-failing-test shape is covered in improve6-engine.test.ts P2.)
     const world = buildWorld({ initial: { "bigint.c": "lib MUL_OK", "pi.c": "formula v1" }, programs: { "t_mul.exe": mulProgram } })
-    const damaging = (v: string) => atom({ tool: "write_file", args: { path: "bigint.c", content: `lib MUL_BROKEN ${v}` }, check: { type: "compile", command: "gcc pi.c bigint.c -o pi.exe" } })
+    const damaging = (v: string) => atom({ tool: "write_file", args: { path: "bigint.c", content: `lib BUILDERR ${v}` }, check: { type: "compile", command: "gcc pi.c bigint.c -o pi.exe" } })
     const deps = harness({
       world,
       autoRevert: true,
       replies: [
-        compound(["build+test mul", "break it repeatedly"]),
+        compound(["build+test mul", "break the build repeatedly"]),
         REGISTER_MUL,
-        damaging("v1"), // regression 1 (buildDamage → 1)
-        damaging("v2"), // regression 2 (→ 2)
-        damaging("v3"), // regression 3 (→ 3) → revert fires
+        damaging("v1"), // compile damage 1
+        damaging("v2"), // 2
+        damaging("v3"), // 3 → revert fires
       ],
     })
     const r = await run(deps)
-    expect(log(r, "regression").length).toBeGreaterThanOrEqual(3)
     const reverted = log(r, "reverted") as Array<{ reason: string }>
-    expect(reverted.length).toBeGreaterThanOrEqual(1) // the auto-revert engaged on repeated regression damage
+    expect(reverted.length).toBeGreaterThanOrEqual(1) // the auto-revert engaged on repeated COMPILE damage
     expect(reverted.some((e) => !e.reason.startsWith("revert unavailable"))).toBe(true)
   })
 

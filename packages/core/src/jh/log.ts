@@ -47,6 +47,17 @@ export type Entry =
   // improve5 P2: a source edit was REJECTED at the door — it did not compile (its per-file syntax gate
   // failed) and the file was restored to its pre-image; the workspace never went un-green.
   | { readonly type: "edit_rejected"; readonly step: string; readonly file: string }
+  // improve6 P1: after GATE_YIELD_AFTER consecutive rejections of the same file, the gate YIELDS — the next
+  // attempt lands regardless, restoring iteration-with-visibility (one-shot-perfect must be impossible;
+  // wave-5 runs 102/104 were locked 73-123× behind the gate). The normal rebuild/regression loop takes over.
+  | { readonly type: "gate_yielded"; readonly step: string; readonly file: string }
+  // improve6 P3: a registered test was marked SUSPECT (its own file doesn't build, or it stays red while the
+  // program's measured output improves) — it loses its veto and a one-time test-fix node is grown (run101
+  // died 29× on a t_arctan whose expectation was mathematically impossible; tests are code too).
+  | { readonly type: "suspect_test"; readonly step: string; readonly command: string }
+  // improve6 P5: the numeric-divergence signature fired (score plateau with a green build) — the caller's
+  // numerics hint was injected into the NEXT introspection context (never the planning prompt).
+  | { readonly type: "numerics_hint"; readonly step: string }
   // improve5 P3: a forced_split whose node could NOT be decomposed degraded to an ATOMIC attempt instead of
   // hard-blocking (cannot_split) — the never-dead-end invariant, finally uniform.
   | { readonly type: "split_degraded"; readonly step: string }
@@ -112,6 +123,12 @@ function describe(e: Sequenced): string {
       return `depth_degraded ${e.step} (ran atomic at the cap)`
     case "test_registered":
       return `test_registered ${e.step}: \`${e.command}\``
+    case "gate_yielded":
+      return `gate_yielded ${e.step}: ${e.file} — the edit gate yields after repeated rejections; the next attempt lands`
+    case "suspect_test":
+      return `suspect_test ${e.step}: \`${e.command}\` — excluded from gating (the test itself may be wrong)`
+    case "numerics_hint":
+      return `numerics_hint ${e.step}: score plateau with a green build — numerics guidance injected`
     case "regression":
       return `REGRESSION ${e.step}: \`${e.command}\` broke after editing ${e.changed.join(", ") || "the workspace"}`
     case "suite":

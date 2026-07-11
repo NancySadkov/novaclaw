@@ -166,6 +166,17 @@ export interface Deps {
   readonly budget?: { readonly startedAt: number; readonly wallMs: number; readonly now: () => number }
   /** improve5 P4: gate the budget steers (default ON when `budget` is present; `false` = silent). */
   readonly budgetAware?: boolean
+  /** improve6 P3: registered tests are NOT infallible — a test whose own file doesn't build, or that stays
+   *  red while the program's measured output improves, is marked SUSPECT: it keeps running + reporting but
+   *  loses its veto (phase gate + build-damage), and a one-time test-fix node is grown (run101 died 29× on
+   *  a t_arctan whose expectation was mathematically impossible). Default ON; `false` = wave-5 behavior. */
+  readonly suspectTests?: boolean
+  /** improve6 P5: caller-supplied numerics guidance (guard digits / low-precision-first), injected into the
+   *  NEXT introspection context ONLY when the numeric-divergence signature fires (score plateau ≥
+   *  NUMERIC_SCORE_FLOOR across NUMERIC_PLATEAU samples with a green build) — NEVER into planning prompts
+   *  (the wave-5 P6.1 regression: dense guidance in the root prompt derailed plan generation). The engine
+   *  knows only the delivery rule; the text is the caller's (L3). */
+  readonly numericsHint?: string
   readonly limits: { readonly maxDepth: number; readonly maxTotalSteps: number }
   readonly trigger: JhBudget.SplitTrigger
   readonly onLog?: (entry: JhLog.Sequenced) => void
@@ -231,6 +242,18 @@ const REGRESSION_TAIL = 1500
 // escalation (analyze → targeted_fix → rewrite) a chance first; a foundation still failing after 4 grown
 // fixes is the "locked-in subtly-wrong foundation" §I6 names — rewrite it whole, deepest-dependency-first.
 const REDERIVE_AFTER = 4
+// improve6 P1: after this many CONSECUTIVE gate rejections of the same file within a leaf, the gate YIELDS —
+// the next attempt LANDS regardless, restoring iteration-with-visibility. Wave-5 runs 102/104 were locked
+// 73-123× behind the gate in one-shot-perfect mode (no landed attempt, no instrumentation, no iteration).
+const GATE_YIELD_AFTER = 3
+// improve6 P3: a (non-suspect) registered test that has failed this many consecutive rounds while the
+// program's measured score did NOT regress is SUSPECT — the source is visibly improving, the test alone
+// stays red, so the test is the outlier (tests are code too; run101's impossible t_arctan expectation).
+const SUSPECT_AFTER = 4
+// improve6 P5: the numeric-divergence signature — some digits provably right (score ≥ floor) but no best-
+// score improvement across this many samples, with the build green. Fires the caller's numerics hint.
+const NUMERIC_SCORE_FLOOR = 0.05
+const NUMERIC_PLATEAU = 3
 // improve5 P1b: the per-file render cap. Raised 8000 → 24000 so a whole bignum/formula source is VISIBLE
 // (run84: pi.c > 8000 → the model was asked to quote invisible text, 73 misses). A 24000-char file ≈ 6–7K
 // tokens; a ~5-file workspace fits qwen's 64K with headroom (P0-measured). Over the cap → head+tail with a
@@ -364,6 +387,23 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
   // R3 keep-best + R4 ladder state (engine-run-scoped, in-memory — jh-improve1 L4).
   let bestScore = Number.NEGATIVE_INFINITY
   let bestSnapshot: ReadonlyArray<{ readonly name: string; readonly content: string }> | undefined
+  // improve6 P2: keep-best tiebreak — at an EQUAL score, a state with more registered tests passing is
+  // better (the suite green-count is a second gradient the safety layer must read, not ignore).
+  let bestSuiteGreen = -1
+  let lastSweepGreen = 0
+  // improve6 P5: numeric-divergence tracking — samples since the best score last improved; the hint is
+  // one-shot per plateau (re-armed by any improvement).
+  let scoreStagnant = 0
+  let numericsArmed = true
+  let pendingNumericsHint: string | undefined
+  // improve6 P3: suspect-test bookkeeping — the score when a test FIRST went red (the non-regression guard),
+  // and the tests whose one-time fix node was already grown.
+  const scoreAtFirstFail = new Map<string, number>()
+  const testFixGrown = new Set<string>()
+  // improve6 P1: consecutive gate rejections per file — ENGINE-scoped, not per-leaf: wave-5's 73-123
+  // rejections spanned GROWN FIX SIBLINGS (each a fresh leaf), so a per-leaf counter would reset before
+  // ever yielding. Reset by a clean gate compile or by the yield itself.
+  const gateRejects = new Map<string, number>()
   const ladders = new Map<string, JhLadder.LadderState>() // parentID → escalation state
   const lastFixBest = new Map<string, number>() // parentID → bestScore at its last grown fix node (for scoreImproved)
   const analyzeNodes = new Set<string>() // nodeIds the harness forced to be instrumented "analyze" steps
@@ -453,7 +493,11 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         }
       }
     }
-    const full = `${base}${fileBlock}${outputBlock}${revertBlock}${budgetBlock}`
+    // improve6 P5: consume-once numerics hint — delivered to the working context (recovery/fix), never a
+    // planning prompt (this builder feeds introspections mid-work; the signature only arms mid-leaf).
+    const numericsBlock = pendingNumericsHint ? `\n\n# Numerical-computation guidance (the output has stopped improving)\n${pendingNumericsHint}` : ""
+    pendingNumericsHint = undefined
+    const full = `${base}${fileBlock}${outputBlock}${revertBlock}${budgetBlock}${numericsBlock}`
     return extra ? `${full}\n\n${extra}` : full
   }
   /** the current workspace (file names + contents) as a plain block — for the goal-achievement check + the
@@ -469,13 +513,33 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
   // R3: the current graded progress score (from the caller's oracle), or undefined if ungraded.
   const currentScore = (): number | undefined => deps.taskComplete?.({ workspace: renderWorkspace(), lastOutput: lastRunOutput }).score
   // R3: sample the score after a successful run; on a new best, snapshot the TEXT files (keep-best).
+  // improve6 P2: an EQUAL score with MORE registered tests passing is also a new best (the suite green-count
+  // tiebreak — the safety layer reads both gradients). improve6 P5: no improvement across NUMERIC_PLATEAU
+  // samples while some digits are provably right (score ≥ floor) = the numeric-divergence signature → arm
+  // the caller's numerics hint for the NEXT introspection context (one-shot per plateau).
   const sampleScore = (nodeId: JhStep.StepID): void => {
     const s = currentScore()
-    if (s === undefined || s <= bestScore) return
-    bestScore = s
-    emit({ type: "scored", step: nodeId, score: s })
-    if (deps.keepBest !== false && deps.listFiles) {
-      bestSnapshot = deps.listFiles().filter((f) => !f.content.startsWith("<compiled binary")).map((f) => ({ name: f.name, content: f.content }))
+    if (s === undefined) return
+    const improved = s > bestScore
+    const greenTiebreak = s === bestScore && lastSweepGreen > bestSuiteGreen
+    if (improved || greenTiebreak) {
+      bestScore = s
+      bestSuiteGreen = lastSweepGreen
+      if (improved) {
+        scoreStagnant = 0
+        numericsArmed = true
+        emit({ type: "scored", step: nodeId, score: s })
+      }
+      if (deps.keepBest !== false && deps.listFiles) {
+        bestSnapshot = deps.listFiles().filter((f) => !f.content.startsWith("<compiled binary")).map((f) => ({ name: f.name, content: f.content }))
+      }
+      return
+    }
+    scoreStagnant++
+    if (deps.numericsHint && numericsArmed && bestScore >= NUMERIC_SCORE_FLOOR && scoreStagnant >= NUMERIC_PLATEAU) {
+      numericsArmed = false
+      pendingNumericsHint = deps.numericsHint
+      emit({ type: "numerics_hint", step: nodeId })
     }
   }
   // R3: on escalation + a score REGRESSION below the best, restore the best-scoring source snapshot to disk so
@@ -782,23 +846,32 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
   // preempt) and P2 (phase gate) callers decide what a red test MEANS.
   interface SweepResult {
     readonly green: number
-    readonly red: number // 0 or 1 — we stop at the first red
-    readonly redTest?: { readonly command: string; readonly detail: string }
+    readonly red: number // 0 or 1 — we stop at the first NON-SUSPECT red
+    readonly redTest?: { readonly command: string; readonly detail: string; readonly priorFailures: number }
     readonly skipped: ReadonlyArray<string>
+    /** improve6 P3: a SUSPECT test also failed — reported for visibility, never a veto. */
+    readonly suspectNote?: string
+    /** improve6 P3: a test crossed a suspicion threshold THIS sweep — the caller grows its one-time fix node. */
+    readonly newlySuspect?: string
   }
   const regressionSweep = (): Effect.Effect<SweepResult> =>
     Effect.gen(function* () {
       if (!regression || !staleness) return { green: 0, red: 0, skipped: [] }
+      const suspectOn = deps.suspectTests !== false
       // Prune tests whose product was deleted/renamed (log-free), then select the digest-stale ones.
       regression.prune((command) => staleness!.productPresent(command, snapFiles()))
       const curDigest = staleness.sourceDigestNow(snapFiles())
-      const stale = regression.staleTests(() => curDigest)
-      if (stale.length === 0) return { green: 0, red: 0, skipped: [] }
+      const staleAll = regression.staleTests(() => curDigest)
+      if (staleAll.length === 0) return { green: 0, red: 0, skipped: [] }
+      // improve6 P3: non-suspect tests first (they can veto); suspect tests run LAST and never veto.
+      const stale = suspectOn ? [...staleAll.filter((t) => !t.suspect), ...staleAll.filter((t) => t.suspect)] : staleAll
       const budget = deps.maxSuiteMs ?? MAX_SUITE_MS
       const startMs = now()
       let green = 0
-      let redTest: { readonly command: string; readonly detail: string } | undefined
+      let redTest: { readonly command: string; readonly detail: string; readonly priorFailures: number } | undefined
       const skipped: string[] = []
+      let suspectNote: string | undefined
+      let newlySuspect: string | undefined
       let ran = 0
       for (const t of stale) {
         // Budget: once elapsed exceeds it, SKIP the rest (always run at least one — a 0 budget still progresses).
@@ -817,7 +890,9 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
           staleness.recordAction({ tool: "run", ok: rb.exitCode === 0 && !rb.timedOut, command: sp.rebuild, before: curSnap, after: rbAfter })
           curSnap = rbAfter
           if (rb.exitCode !== 0 || rb.timedOut) {
-            buildErr = `the test no longer compiles after your edit:\n${rb.output.slice(-REGRESSION_TAIL)}`
+            // improve6 P1 (L4 never lie): a recorded rebuild can be a COMPOUND whose failing segment is the
+            // test run itself, not the compiler — say "build/run chain", never claim a compile failure.
+            buildErr = `the test's build/run chain FAILED after your edit:\n${rb.output.slice(-REGRESSION_TAIL)}`
             break
           }
         }
@@ -831,34 +906,108 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
           staleness.recordAction({ tool: "run", ok: r.exitCode === 0 && !r.timedOut, command: t.command, before: curSnap, after: snapFiles() })
           ok = r.exitCode === 0 && !r.timedOut && (t.expect ? r.output.includes(t.expect) : true)
           detail = r.timedOut ? `timed out\n${r.output.slice(-REGRESSION_TAIL)}` : r.output.slice(-REGRESSION_TAIL)
+          // improve6 P3 registration hygiene: a PASSING test whose output carries implicit-declaration
+          // warnings likely misses its unit's header — mark it; its first failure is suspect-eligible fast.
+          if (ok && suspectOn && r.output.includes("implicit declaration")) regression.markUnsanitized(t.command)
         }
         regression.recordResult(t.command, ok, staleness.sourceDigestNow(snapFiles()))
-        if (ok) green++
-        else {
-          redTest = { command: t.command, detail }
-          break
+        if (ok) {
+          green++
+          scoreAtFirstFail.delete(t.command)
+          continue
         }
+        if (t.suspect) {
+          // improve6 P3: suspect tests report, never veto.
+          suspectNote ??= `\n(note: the SUSPECT test \`${t.command}\` also failed — it is excluded from gating because it may itself be wrong; fix or replace it when convenient.)`
+          continue
+        }
+        // improve6 P3 suspicion checks (in order): the unsanitized fast-path; the test's OWN file failing to
+        // build (compiler diagnostics naming a file no OTHER registered test references — run101's t_arctan);
+        // red for SUSPECT_AFTER consecutive rounds while the program's measured score did NOT regress.
+        if (suspectOn) {
+          if (t.failures === 0) scoreAtFirstFail.set(t.command, bestScore)
+          const newFailures = t.failures + 1
+          const ownFile = buildErr !== undefined ? exclusiveSourceIn(t.command, buildErr) : undefined
+          const scoreGuard = bestScore >= (scoreAtFirstFail.get(t.command) ?? Number.POSITIVE_INFINITY)
+          const suspicious =
+            (t.unsanitized && newFailures >= 1) || ownFile !== undefined || (newFailures >= SUSPECT_AFTER && scoreGuard)
+          if (suspicious) {
+            regression.markSuspect(t.command)
+            newlySuspect ??= t.command
+            suspectNote ??= `\n(note: the test \`${t.command}\` was just marked SUSPECT${ownFile ? ` — its own file ${ownFile} does not build` : ""}; it is excluded from gating until fixed or replaced.)`
+            continue
+          }
+        }
+        redTest = { command: t.command, detail, priorFailures: t.failures }
+        break
       }
-      return { green, red: redTest ? 1 : 0, redTest, skipped }
+      lastSweepGreen = green // improve6 P2: the keep-best suite-green tiebreak reads the latest sweep
+      return { green, red: redTest ? 1 : 0, redTest, skipped, suspectNote, newlySuspect }
     })
+
+  // improve6 P3: the source files a test command references that NO OTHER registered test references — the
+  // test's OWN file(s), shape-derived (tokens with a non-product extension), never by naming convention (L3).
+  // Returns the first such file the diagnostics mention (`<file>:` — a compiler error inside it), else undefined.
+  const exclusiveSourceIn = (command: string, diagnostics: string): string | undefined => {
+    if (!regression) return undefined
+    const tokens = (cmd: string): Set<string> => new Set(cmd.split(/[\s"'=]+/).filter(Boolean).map(baseName))
+    const key = JhRegression.normalizeCommand(command)
+    const otherRefs = new Set<string>()
+    for (const o of regression.all()) if (o.command !== key) for (const r of tokens(o.command)) otherRefs.add(r)
+    const productish = /\.(exe|o|out|obj|dll|so|a|lib|dylib|class)$/i
+    for (const r of tokens(command)) {
+      if (!r.includes(".") || productish.test(r) || otherRefs.has(r)) continue
+      if (diagnostics.includes(`${r}:`)) return r
+    }
+    return undefined
+  }
 
   // improve4 P1 (§I6): the PER-EDIT preempt. After a source edit, sweep the registered tests BEFORE the
   // leaf's own check; a test that passed before and FAILS now preempts the leaf's verification and NAMES the
   // changed file(s), so the model fixes the FOUNDATION instead of thrashing the formula on it (run75: `pi.c`
   // edited 74× while the bug was in `bigint.c`). Returns a failing VerifyResult on a regression, else undefined.
-  const runRegressionSuite = (nodeId: JhStep.StepID, changed: ReadonlyArray<string>): Effect.Effect<JhVerifier.VerifyResult | undefined> =>
+  const runRegressionSuite = (nodeId: JhStep.StepID, changed: ReadonlyArray<string>): Effect.Effect<{ readonly result: JhVerifier.VerifyResult; readonly damage: boolean } | undefined> =>
     Effect.gen(function* () {
       if (!regression) return undefined
       const sweep = yield* regressionSweep()
       if (sweep.skipped.length > 0) emit({ type: "suite", step: nodeId, green: sweep.green, red: sweep.red, skipped: sweep.skipped.length })
+      // improve6 P3: the test-fix node must be a SIBLING (attached to the leaf's parent) — a child appended
+      // under a leaf that later commits is orphaned (nextPending never descends into committed subtrees).
+      if (sweep.newlySuspect) yield* growTestFixNode(JhTree.get(tree, nodeId)?.parent ?? nodeId, sweep.newlySuspect)
       if (!sweep.redTest) return undefined
       emit({ type: "regression", step: nodeId, command: sweep.redTest.command, changed })
       const where = changed.length > 0 ? changed.join(", ") : "the file(s) you just edited"
       const budget = deps.maxSuiteMs ?? MAX_SUITE_MS
       const skipNote = sweep.skipped.length > 0 ? `\n(note: ${sweep.skipped.length} other registered test(s) were not re-run this round due to the ${Math.round(budget / 1000)}s suite budget: ${sweep.skipped.join(", ")})` : ""
-      return {
-        ok: false,
-        detail: `REGRESSION: \`${sweep.redTest.command}\` passed before your edit and FAILS now — the change you just made to ${where} broke previously-verified behavior. Fix THOSE files (or git-revert) before anything else. Test output: ${sweep.redTest.detail}${skipNote}`,
+      const greenNote = sweep.green > 0 ? ` (${sweep.green} other registered test(s) still pass)` : ""
+      // improve6 P1.3/P2: never lie about the gradient. A FRESH break is damage; a STILL-failing test is
+      // progress-neutral information ("keep working on exactly this") — EXCEPT when the red is COMPILER
+      // breakage (diagnostics-shaped output): a workspace that does not BUILD is damage every round, or
+      // repeated build breakage under a covering test would evade the auto-revert floor entirely.
+      const fresh = sweep.redTest.priorFailures === 0
+      const compilerBroken = /(^|\s)([\w./\\-]+\.[a-z]{1,4}):\d+(:\d+)?:\s*(fatal\s+)?error/i.test(sweep.redTest.detail)
+      const detail = fresh
+        ? `REGRESSION: \`${sweep.redTest.command}\` passed before your edit and FAILS now — the change you just made to ${where} broke previously-verified behavior${greenNote}. Fix THOSE files (or git-revert) before anything else. Test output: ${sweep.redTest.detail}${skipNote}${sweep.suspectNote ?? ""}`
+        : `REGRESSION SUITE: \`${sweep.redTest.command}\` is STILL failing (round ${sweep.redTest.priorFailures + 1}) after your change to ${where}${greenNote} — keep working on exactly this. Test output: ${sweep.redTest.detail}${skipNote}${sweep.suspectNote ?? ""}`
+      return { result: { ok: false, detail }, damage: fresh || compilerBroken }
+    })
+
+  // improve6 P3: tests are code too — a test marked SUSPECT gets ONE fix node (and never a veto): re-derive
+  // the TEST itself from the unit's header with a small, definitely-correct case (run101's t_arctan wall).
+  const growTestFixNode = (parentID: JhStep.StepID, command: string): Effect.Effect<void> =>
+    Effect.gen(function* () {
+      if (deps.suspectTests === false || testFixGrown.has(command) || JhTree.size(tree) >= maxTotalSteps) return
+      testFixGrown.add(command)
+      emit({ type: "suspect_test", step: parentID, command })
+      const draft: JhStep.StepDraft = {
+        goal: `The test run by \`${command}\` appears to be WRONG itself (it kept failing while the program's measured output improved, or the test's own file does not build). Re-derive the TEST: include the unit's real header, call the real functions with their real signatures, and use a SMALL hand-computable case whose expected value is definitely correct. Do NOT weaken it into a tautology — a trivial-but-correct case beats an impossible one. Then compile and run it until it passes.`,
+        size: "atomic",
+        success: "the replaced test compiles, runs, and passes",
+      }
+      const appended = JhTree.appendChild(tree, parentID, draft, maxDepth)
+      if (!(appended instanceof JhTree.AttachError)) {
+        tree = appended
+        emit({ type: "expanded", step: parentID, children: JhTree.get(tree, parentID)!.children.length })
       }
     })
 
@@ -872,10 +1021,11 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       if (!regression) return false
       const sweep = yield* regressionSweep()
       emit({ type: "suite", step: nodeId, green: sweep.green, red: sweep.red, skipped: sweep.skipped.length })
+      if (sweep.newlySuspect) yield* growTestFixNode(nodeId, sweep.newlySuspect) // improve6 P3: suspects never veto the phase
       if (!sweep.redTest) return false
       if (JhTree.size(tree) < maxTotalSteps) {
         const baseGoal = JhTree.get(tree, nodeId)!.draft.goal
-        yield* growFixNode(nodeId, baseGoal, `this phase cannot complete while a previously-passing test fails: \`${sweep.redTest.command}\` — ${sweep.redTest.detail}`, "the previously-passing test passes again", sweep.redTest.command)
+        yield* growFixNode(nodeId, baseGoal, `this phase cannot complete while a previously-passing test fails: \`${sweep.redTest.command}\` — ${sweep.redTest.detail}${sweep.suspectNote ?? ""}`, "the previously-passing test passes again", sweep.redTest.command)
       }
       return true // red suite → do not commit this phase
     })
@@ -920,18 +1070,35 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         // to its pre-image (prevent the damage, don't heal it later — run89's 8 revert cycles). Opportunistic:
         // only when staleness knows a `-c` compile for the file (never invents one — L4).
         let txRejected: JhVerifier.VerifyResult | undefined
+        let txSig: string | undefined // improve6 P1: a STABLE per-file stuck signature (tx:<file>) — the varying compiler tail evaded the counter (K3)
         if (txEditsOn && staleness && observation.ok && editedFile && preImage !== undefined) {
-          const cmd = staleness.objectCompileFor(editedFile)
-          if (cmd) {
-            const beforeCompile = snapFiles()
-            const rb = yield* deps.runner.run({ command: cmd, cwd: deps.cwd, timeoutMs: JhVerifier.DEFAULT_TIMEOUT_MS })
-            staleness.recordAction({ tool: "run", ok: rb.exitCode === 0 && !rb.timedOut, command: cmd, before: beforeCompile, after: snapFiles() })
-            if (rb.exitCode !== 0 || rb.timedOut) {
-              const beforeRestore = snapFiles()
-              yield* deps.executor.run({ tool: "write_file", args: { path: editedFile, content: preImage }, produces: [], cwd: deps.cwd }) // tool-level undo
-              staleness.recordAction({ tool: "write_file", ok: true, before: beforeRestore, after: snapFiles() })
-              emit({ type: "edit_rejected", step: node.id, file: baseName(editedFile) })
-              txRejected = { ok: false, detail: `edit NOT applied — your change to ${baseName(editedFile)} does not compile:\n${rb.output.slice(-REGRESSION_TAIL)}\nThe file is UNCHANGED (restored to the last version). Make a SMALLER, corrected edit that fixes the error above, then reapply.` }
+          const base = baseName(editedFile)
+          if ((gateRejects.get(base) ?? 0) >= GATE_YIELD_AFTER) {
+            // improve6 P1: the gate YIELDS — this attempt lands regardless, restoring iteration with the
+            // attempt VISIBLE in the workspace; the rebuild/regression machinery takes over from here.
+            gateRejects.delete(base)
+            emit({ type: "gate_yielded", step: node.id, file: base })
+          } else {
+            // improve6 P1 (gate surgery): the gate runs ONLY the compile SEGMENT for this file (staleness
+            // extracts it — never the recorded build+TEST compound, which rejected 13/15-passing edits with
+            // a false "does not compile" 73× in run104). Exit≠0 here IS a compiler failure, so the message
+            // is truthful structurally; test failures never reject (they land and report via the sweep).
+            const cmd = staleness.objectCompileFor(editedFile)
+            if (cmd) {
+              const beforeCompile = snapFiles()
+              const rb = yield* deps.runner.run({ command: cmd, cwd: deps.cwd, timeoutMs: JhVerifier.DEFAULT_TIMEOUT_MS })
+              staleness.recordAction({ tool: "run", ok: rb.exitCode === 0 && !rb.timedOut, command: cmd, before: beforeCompile, after: snapFiles() })
+              if (rb.exitCode !== 0 || rb.timedOut) {
+                const beforeRestore = snapFiles()
+                yield* deps.executor.run({ tool: "write_file", args: { path: editedFile, content: preImage }, produces: [], cwd: deps.cwd }) // tool-level undo
+                staleness.recordAction({ tool: "write_file", ok: true, before: beforeRestore, after: snapFiles() })
+                emit({ type: "edit_rejected", step: node.id, file: base })
+                gateRejects.set(base, (gateRejects.get(base) ?? 0) + 1)
+                txSig = `tx:${base}`
+                txRejected = { ok: false, detail: `edit NOT applied — ${base} no longer compiles:\n${rb.output.slice(-REGRESSION_TAIL)}\nThe file is UNCHANGED (restored to the last version). Fix the compiler error above with a SMALLER edit, then reapply.` }
+              } else {
+                gateRejects.delete(base) // a clean compile resets the consecutive-rejection count
+              }
             }
           }
         }
@@ -940,12 +1107,15 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         // leaf's own check — a previously-green test the edit broke preempts everything and names the file.
         // (Skipped when the tx gate rejected the edit: the workspace is UNCHANGED, so there is nothing to regress.)
         let regressionPreempt: JhVerifier.VerifyResult | undefined
+        let preemptDamage = false // improve6 P2: damage is decided by failure CLASS (fresh break / compiler breakage), not message prefix
         if (regression && observation.ok && !txRejected && SOURCE_EDIT_TOOLS.has(currentTool)) {
           const beforeHashes = new Map(before.map((f) => [f.name, f.hash]))
           const changed = snapFiles()
             .filter((f) => beforeHashes.get(f.name) !== f.hash)
             .map((f) => f.name)
-          regressionPreempt = yield* runRegressionSuite(node.id, changed)
+          const preempt = yield* runRegressionSuite(node.id, changed)
+          regressionPreempt = preempt?.result
+          preemptDamage = preempt?.damage ?? false
         }
 
         // A STALE-artifact bookkeeping fail must NOT feed the stuck counter (it asks for a recompile, it is
@@ -1067,7 +1237,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         // "stuck" = the SAME error signature seen STUCK_REPEATS times (afpro changing-vs-stuck) — NOT merely a
         // 2nd occurrence: a weak model that repeats one mistake once (e.g. a PATH-less gcc) still deserves a
         // few more shots; temperature variance breaks the loop (iters 23–24 blocked after just 2 repeats).
-        const sig = errorSig(vr.detail)
+        const sig = txSig ?? errorSig(vr.detail) // improve6 P1: gate rejections count under a stable per-file signature
         // A STALE-artifact bookkeeping fail (noCountSig) never accrues toward "stuck" — it is not a model rut,
         // just a signal to recompile (which the next step does). Everything else counts (incl. idempotence).
         let seen = errorCounts.get(sig) ?? 0
@@ -1086,7 +1256,15 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         // improve4 P1: a REGRESSION preempt (the edit broke a locked test) is build damage too — it feeds the
         // auto-revert path (repeated regression damage → the harness restores the last verified state).
         // improve5 P2: a tx-REJECTED edit is NOT damage (the file was restored; nothing was harmed) — never count it.
-        const buildDamaged = !txRejected && SOURCE_EDIT_TOOLS.has(currentTool) && (vr.detail.startsWith("REBUILD FAILED") || vr.detail.startsWith("REGRESSION") || check.type === "compile")
+        // improve6 P2 (gradient-aware): damage = a FRESH break or COMPILER breakage (preemptDamage, decided
+        // by failure class in runRegressionSuite) — a still-failing test after an edit is NOT damage (an
+        // edit that reduces failures from 5 to 2 must never trigger the revert machinery even though red
+        // remains; run102's 5/6-passing iteration). The compile-check arm counts ONLY when the leaf's OWN
+        // compile check produced the failure — a suite preempt must not masquerade as compile damage.
+        const buildDamaged =
+          !txRejected &&
+          SOURCE_EDIT_TOOLS.has(currentTool) &&
+          (regressionPreempt !== undefined ? preemptDamage : vr.detail.startsWith("REBUILD FAILED") || check.type === "compile")
         buildDamage = buildDamaged ? buildDamage + 1 : 0
         if (autoRevertOn && buildDamage >= AUTO_REVERT_AFTER) {
           const beforeRevert = snapFiles()

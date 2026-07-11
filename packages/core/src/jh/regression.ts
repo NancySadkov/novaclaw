@@ -15,6 +15,15 @@ export interface TestEntry {
   readonly expect?: string // carried from the check that registered it (a substring the output must contain)
   readonly depsDigest: string // staleness source-digest at the last source state this test was EXECUTED against
   readonly failures: number // consecutive regression failures across fix attempts (jh-improve4 P4's re-derive trigger)
+  /** improve6 P3: a SUSPECT test may itself be wrong (its own file doesn't compile, or it stays red while
+   *  the program's output demonstrably improves — run101 died 29× on a t_arctan whose expectation was
+   *  mathematically impossible). Suspect tests still run + report but LOSE THEIR VETO (excluded from the
+   *  phase gate and from build-damage): registered tests must not be infallible by construction. */
+  readonly suspect: boolean
+  /** improve6 P3: registered from a run whose output carried `implicit declaration` warnings — the test
+   *  file likely misses the unit's header (wrong implicit prototypes). Its FIRST failure makes it
+   *  suspect-eligible immediately (no SUSPECT_AFTER wait). */
+  readonly unsanitized: boolean
 }
 
 export interface Registry {
@@ -26,6 +35,10 @@ export interface Registry {
    *  failure streak; on FAIL refresh the digest (executed at this state — re-run once per source change,
    *  not every step) + bump the consecutive-failure count that drives P4. */
   readonly recordResult: (command: string, ok: boolean, depsDigest: string) => void
+  /** improve6 P3: mark a test SUSPECT (it keeps its entry + keeps running, but loses its veto). */
+  readonly markSuspect: (command: string) => void
+  /** improve6 P3: mark a test as registered-with-warnings (implicit declarations at registration/pass). */
+  readonly markUnsanitized: (command: string) => void
   readonly all: () => ReadonlyArray<TestEntry>
   /** drop any registered test whose product no longer exists (deleted/renamed) — `productExists(command)`. */
   readonly prune: (productExists: (command: string) => boolean) => void
@@ -42,9 +55,11 @@ export function registry(): Registry {
     const key = normalizeCommand(command)
     if (key === "") return
     const prev = tests.get(key)
-    // Re-registration updates the digest (seen green again at a newer source state) and resets the failure
-    // streak; `expect` carries forward if this re-registration omitted one. A first registration starts clean.
-    tests.set(key, { command: key, expect: expect ?? prev?.expect, depsDigest, failures: 0 })
+    // Re-registration updates the digest (seen green again at a newer source state), resets the failure
+    // streak, AND clears `suspect` — the test just PASSED as a leaf's own check, so the suspicion is
+    // withdrawn (a replaced/fixed test re-earns trust the same way it earned registration). `unsanitized`
+    // clears too only if the re-registering pass was clean (the caller re-marks when it wasn't).
+    tests.set(key, { command: key, expect: expect ?? prev?.expect, depsDigest, failures: 0, suspect: false, unsanitized: false })
   }
 
   const staleTests: Registry["staleTests"] = (digestOf) => {
@@ -60,11 +75,23 @@ export function registry(): Registry {
     tests.set(key, { ...prev, depsDigest, failures: ok ? 0 : prev.failures + 1 })
   }
 
+  const markSuspect: Registry["markSuspect"] = (command) => {
+    const key = normalizeCommand(command)
+    const prev = tests.get(key)
+    if (prev) tests.set(key, { ...prev, suspect: true })
+  }
+
+  const markUnsanitized: Registry["markUnsanitized"] = (command) => {
+    const key = normalizeCommand(command)
+    const prev = tests.get(key)
+    if (prev) tests.set(key, { ...prev, unsanitized: true })
+  }
+
   const all: Registry["all"] = () => [...tests.values()]
 
   const prune: Registry["prune"] = (productExists) => {
     for (const key of [...tests.keys()]) if (!productExists(key)) tests.delete(key)
   }
 
-  return { register, staleTests, recordResult, all, prune }
+  return { register, staleTests, recordResult, markSuspect, markUnsanitized, all, prune }
 }
