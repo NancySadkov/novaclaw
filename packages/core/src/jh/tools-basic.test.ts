@@ -147,4 +147,71 @@ describe("JhBasicTools.basicExecutor", () => {
     expect((await runTool("write_file", { path: 123, content: "x" }, [], tmp())).ok).toBe(false)
     expect((await runTool("run", {}, [], tmp())).ok).toBe(false)
   })
+
+  // improve5 P1d — near-miss tier 3 (whitespace-collapsed): a re-typed line whose INTERNAL spacing drifted.
+  test("edit_file near-miss: whitespace-collapsed drift heals (tier 3)", async () => {
+    const cwd = tmp()
+    fs.writeFileSync(path.join(cwd, "a.c"), "int  x   =    1;") // odd internal spacing on disk
+    const obs = await runTool("edit_file", { path: "a.c", old_string: "int x = 1;", new_string: "int x = 2;" }, [], cwd) // clean quote
+    expect(obs.ok).toBe(true)
+    expect(obs.output).toContain("whitespace-collapsed")
+    expect(fs.readFileSync(path.join(cwd, "a.c"), "utf8")).toBe("int x = 2;")
+  })
+
+  test("edit_file near-miss tier 3 still refuses a MULTI-match (uniqueness enforced)", async () => {
+    const cwd = tmp()
+    // both lines have ODD internal spacing (no exact/tier-1/2 match for the clean quote), but collapse to the same
+    fs.writeFileSync(path.join(cwd, "a.c"), "int  a;\nint   a;")
+    const obs = await runTool("edit_file", { path: "a.c", old_string: "int a;", new_string: "int b;" }, [], cwd)
+    expect(obs.ok).toBe(false)
+    expect(obs.output).toMatch(/occurs 2 times/) // tier-3 collapse found 2 → refuse, never a silent wrong edit
+    expect(fs.readFileSync(path.join(cwd, "a.c"), "utf8")).toBe("int  a;\nint   a;") // unchanged
+  })
+
+  // improve5 P1c — replace_lines: coordinate-addressed editing.
+  test("replace_lines replaces an inclusive 1-based range + echoes the removed text", async () => {
+    const cwd = tmp()
+    fs.writeFileSync(path.join(cwd, "p.c"), "l1\nl2\nl3\nl4\nl5")
+    const obs = await runTool("replace_lines", { path: "p.c", first_line: 2, last_line: 3, new_content: "X\nY\nZ" }, [ref("f", "file")], cwd)
+    expect(obs.ok).toBe(true)
+    expect(fs.readFileSync(path.join(cwd, "p.c"), "utf8")).toBe("l1\nX\nY\nZ\nl4\nl5")
+    expect(obs.output).toContain("replaced lines 2-3")
+    expect(obs.output).toContain("l2\\nl3") // echoes what was removed (JSON-escaped)
+    expect(obs.artifacts.get("f")).toBe("l1\nX\nY\nZ\nl4\nl5")
+  })
+
+  test("replace_lines a single line (first==last)", async () => {
+    const cwd = tmp()
+    fs.writeFileSync(path.join(cwd, "p.c"), "a\nb\nc")
+    const obs = await runTool("replace_lines", { path: "p.c", first_line: 2, last_line: 2, new_content: "B" }, [], cwd)
+    expect(obs.ok).toBe(true)
+    expect(fs.readFileSync(path.join(cwd, "p.c"), "utf8")).toBe("a\nB\nc")
+  })
+
+  test("replace_lines out-of-range names the file's actual line count and does NOT write", async () => {
+    const cwd = tmp()
+    fs.writeFileSync(path.join(cwd, "p.c"), "a\nb\nc") // 3 lines
+    const obs = await runTool("replace_lines", { path: "p.c", first_line: 3, last_line: 9, new_content: "X" }, [], cwd)
+    expect(obs.ok).toBe(false)
+    expect(obs.output).toContain("has 3 lines")
+    expect(fs.readFileSync(path.join(cwd, "p.c"), "utf8")).toBe("a\nb\nc") // unchanged
+  })
+
+  test("replace_lines rejects first_line > last_line and non-integer / missing args", async () => {
+    const cwd = tmp()
+    fs.writeFileSync(path.join(cwd, "p.c"), "a\nb\nc")
+    expect((await runTool("replace_lines", { path: "p.c", first_line: 3, last_line: 1, new_content: "X" }, [], cwd)).ok).toBe(false)
+    expect((await runTool("replace_lines", { path: "p.c", first_line: 1.5, last_line: 2, new_content: "X" }, [], cwd)).ok).toBe(false)
+    expect((await runTool("replace_lines", { path: "p.c", first_line: 1, new_content: "X" }, [], cwd)).ok).toBe(false)
+  })
+
+  test("replace_lines refuses unsafe paths + a missing file", async () => {
+    const cwd = tmp()
+    expect((await runTool("replace_lines", { path: "../x.c", first_line: 1, last_line: 1, new_content: "X" }, [], cwd)).ok).toBe(false)
+    expect((await runTool("replace_lines", { path: "ghost.c", first_line: 1, last_line: 1, new_content: "X" }, [], cwd)).output).toContain("file not found")
+  })
+
+  test("replace_lines is in TOOL_NAMES (offered by default)", () => {
+    expect(JhBasicTools.TOOL_NAMES).toContain("replace_lines")
+  })
 })

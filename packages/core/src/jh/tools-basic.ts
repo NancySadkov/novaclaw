@@ -28,7 +28,7 @@ export interface Executor {
   }) => Effect.Effect<Observation>
 }
 
-export const TOOL_NAMES: ReadonlyArray<string> = ["write_file", "edit_file", "read_file", "run", "note", "git_revert"]
+export const TOOL_NAMES: ReadonlyArray<string> = ["write_file", "edit_file", "replace_lines", "read_file", "run", "note", "git_revert"]
 
 const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 const noArtifacts: ReadonlyMap<string, string> = new Map()
@@ -71,6 +71,7 @@ function writeFile(input: { args: Readonly<Record<string, unknown>>; produces: R
 const normLine = (l: string, tier: number): string => {
   let x = l.replace(/\r$/, "").replace(/[ \t]+$/, "") // tier 1: CRLF + trailing whitespace
   if (tier >= 2) x = x.replace(/^[ \t]+/, "") // tier 2: leading indentation
+  if (tier >= 3) x = x.replace(/\s+/g, " ").trim() // improve5 P1d tier 3: collapse ALL internal whitespace runs
   return x
 }
 type EditMatch = { readonly kind: "ok"; readonly updated: string; readonly tier: number } | { readonly kind: "multi"; readonly count: number; readonly tier: number } | { readonly kind: "miss" }
@@ -83,7 +84,7 @@ function matchEdit(content: string, oldStr: string, newStr: string): EditMatch {
   // Tiers 1 & 2: line-based normalized (whole-line windows).
   const cLines = content.split("\n")
   const oLines = oldStr.split("\n")
-  for (const tier of [1, 2]) {
+  for (const tier of [1, 2, 3]) {
     const cn = cLines.map((l) => normLine(l, tier))
     const on = oLines.map((l) => normLine(l, tier))
     const k = on.length
@@ -160,8 +161,41 @@ function editFile(input: { args: Readonly<Record<string, unknown>>; produces: Re
   } catch (e) {
     return obs(false, `edit_file failed: ${messageOf(e)}`)
   }
-  const note = m.tier > 0 ? ` (matched with ${m.tier === 1 ? "whitespace" : "indentation"} normalization)` : ""
+  const note = m.tier > 0 ? ` (matched with ${m.tier === 1 ? "whitespace" : m.tier === 2 ? "indentation" : "whitespace-collapsed"} normalization)` : ""
   return obs(true, `edited ${p}: -${oldStr.length} +${newStr.length} chars${note}`, assignFirst(input.produces, (r) => r.type === "file", m.updated))
+}
+
+// improve5 P1c: coordinate-addressed editing — replace an INCLUSIVE 1-based line range with new content. A
+// weak model cannot reliably reproduce an exact byte sequence (edit_file's `old_string` missed 16–77×/run in
+// wave 4), but it CAN read the `N→` line numbers shown in the workspace and name a range. Replace-only
+// (first_line ≤ last_line ≤ line count); out-of-range names the file's actual length; the observation ECHOES
+// the replaced lines so a mis-target is immediately visible + git/tx-revertible. Sandboxed like write_file.
+function replaceLines(input: { args: Readonly<Record<string, unknown>>; produces: ReadonlyArray<JhStep.ArtifactRef>; cwd: string }): Observation {
+  const { path: p, first_line: first, last_line: last, new_content: repl } = input.args
+  if (typeof p !== "string" || typeof first !== "number" || typeof last !== "number" || typeof repl !== "string")
+    return badArgs("replace_lines", "{path: string, first_line: number, last_line: number, new_content: string}")
+  if (!Number.isInteger(first) || !Number.isInteger(last)) return obs(false, "replace_lines: first_line and last_line must be integers")
+  const target = safePath(input.cwd, p)
+  if (!target) return obs(false, `replace_lines refused unsafe path "${p}" (absolute or contains "..")`)
+  let content: string
+  try {
+    content = fs.readFileSync(target, "utf8")
+  } catch {
+    return obs(false, `file not found: ${p} — use write_file to create it first`)
+  }
+  const lines = content.split("\n")
+  const n = lines.length
+  if (first < 1 || last < first || last > n)
+    return obs(false, `replace_lines out of range: ${p} has ${n} lines; you gave first_line=${first} last_line=${last} (need 1 ≤ first_line ≤ last_line ≤ ${n}). The workspace listing shows the current line numbers.`)
+  const removed = lines.slice(first - 1, last).join("\n")
+  const updated = [...lines.slice(0, first - 1), ...repl.split("\n"), ...lines.slice(last)].join("\n")
+  try {
+    fs.writeFileSync(target, updated, "utf8")
+  } catch (e) {
+    return obs(false, `replace_lines failed: ${messageOf(e)}`)
+  }
+  const echo = removed.length > 240 ? removed.slice(0, 240) + "…" : removed
+  return obs(true, `replaced lines ${first}-${last} in ${p} (was: ${JSON.stringify(echo)})`, assignFirst(input.produces, (r) => r.type === "file", updated))
 }
 
 function readFile(input: { args: Readonly<Record<string, unknown>>; produces: ReadonlyArray<JhStep.ArtifactRef>; cwd: string }): Observation {
@@ -213,6 +247,8 @@ export function basicExecutor(runner: JhProcessRunner.Runner): Executor {
           return Effect.succeed(writeFile(input))
         case "edit_file":
           return Effect.succeed(editFile(input))
+        case "replace_lines":
+          return Effect.succeed(replaceLines(input))
         case "read_file":
           return Effect.succeed(readFile(input))
         case "note":

@@ -120,6 +120,18 @@ describe("JhStaleness.tracker (pure)", () => {
     expect(t.staleChainFor(".\\pi.exe", s4).map((p) => p.file)).toEqual(["pi.o", "pi.exe"])
   })
 
+  test("improve5 P1c: a replace_lines change is a model-written SOURCE (tool !== 'run') → its product goes stale", () => {
+    const t = JhStaleness.tracker()
+    const s0 = t.snap([{ name: "pi.c", content: "v0" }])
+    const s1 = t.snap([{ name: "pi.c", content: "v0" }, { name: "pi.exe", content: "BIN0" }])
+    t.recordAction({ tool: "run", ok: true, command: "gcc pi.c -o pi.exe", before: s0, after: s1 })
+    // the model edits pi.c via replace_lines (tool = "replace_lines", not "run") → pi.c stays a source
+    const s2 = t.snap([{ name: "pi.c", content: "v1" }, { name: "pi.exe", content: "BIN0" }])
+    t.recordAction({ tool: "replace_lines", ok: true, before: s1, after: s2 })
+    expect(t.staleProducts(".\\pi.exe", s2).map((p) => p.file)).toEqual(["pi.exe"]) // product stale
+    expect(t.staleProducts("pi.c", s2)).toEqual([]) // the edited file is never itself a product
+  })
+
   test("improve4 P1: sourceDigestNow changes on a SOURCE edit, not on a product rebuild", () => {
     const t = JhStaleness.tracker()
     const s0 = t.snap([{ name: "pi.c", content: "v0" }])

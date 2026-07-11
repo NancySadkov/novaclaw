@@ -132,6 +132,18 @@ export interface Deps {
    *  of that component (once per file per run) instead of patching symptoms forever — the monolith's
    *  whole-coherence virtue reclaimed at COMPONENT scope. Requires `staleness`. Default ON. */
   readonly rederive?: boolean
+  /** improve5 P1a: render workspace files with 1-based `N→` line-number prefixes in the model's EDITING
+   *  view (buildContext) so it can address edits by COORDINATE (`replace_lines`) instead of re-quoting a
+   *  byte sequence it cannot reproduce (the wave-4 dominant residual: `old_string not found` 16–77×/run).
+   *  The goal-check/oracle/evidence paths use the UNNUMBERED render (renderWorkspace) — never number-polluted.
+   *  Default ON; `false` = wave-4 unnumbered. */
+  readonly numberedWorkspace?: boolean
+  /** improve5 P1b: FULL file visibility — raise the per-file render cap 8000 → FILE_RENDER_CAP and, when a
+   *  file still exceeds it, show head+tail with an elision that NAMES the omitted line range (never an
+   *  unnamed `[truncated]` — run84: pi.c exceeded 8000, the model was asked to quote text it could not see,
+   *  AND the render cut poisoned the goal-check into rejecting a complete program as "truncated"). Applies
+   *  to BOTH the editing view and the goal-check render. Default ON; `false` = wave-4 8000-char `[truncated]`. */
+  readonly fullFiles?: boolean
   readonly limits: { readonly maxDepth: number; readonly maxTotalSteps: number }
   readonly trigger: JhBudget.SplitTrigger
   readonly onLog?: (entry: JhLog.Sequenced) => void
@@ -197,6 +209,50 @@ const REGRESSION_TAIL = 1500
 // escalation (analyze → targeted_fix → rewrite) a chance first; a foundation still failing after 4 grown
 // fixes is the "locked-in subtly-wrong foundation" §I6 names — rewrite it whole, deepest-dependency-first.
 const REDERIVE_AFTER = 4
+// improve5 P1b: the per-file render cap. Raised 8000 → 24000 so a whole bignum/formula source is VISIBLE
+// (run84: pi.c > 8000 → the model was asked to quote invisible text, 73 misses). A 24000-char file ≈ 6–7K
+// tokens; a ~5-file workspace fits qwen's 64K with headroom (P0-measured). Over the cap → head+tail with a
+// NAMED elision (the omitted line range), never an unnamed `[truncated]`.
+const FILE_RENDER_CAP = 24_000
+const WAVE4_FILE_CAP = 8_000 // improve5 P1b flags-off: the exact wave-4 cap + unnamed truncation (ablation)
+
+// improve5 P1a/b: render ONE workspace file for a prompt. `numbered` prefixes each line `N→` (1-based) so
+// the model can address edits by coordinate (replace_lines). `fullFiles` picks the cap + elision style: ON
+// = 24000 + a head/tail split whose elision NAMES the omitted lines; OFF = the wave-4 8000 char-cap + a bare
+// `[truncated]`. Pure + total.
+function renderFileBlock(name: string, content: string, opts: { readonly numbered: boolean; readonly fullFiles: boolean }): string {
+  const numberize = (text: string): string => (opts.numbered ? text.split("\n").map((l, i) => `${i + 1}→${l}`).join("\n") : text)
+  let body: string
+  if (!opts.fullFiles) {
+    // wave-4 exact: raw char-cap + unnamed truncation (numbered line-wise on the shown part only).
+    body = numberize(content.length > WAVE4_FILE_CAP ? content.slice(0, WAVE4_FILE_CAP) + "\n…[truncated]…" : content)
+  } else if (content.length <= FILE_RENDER_CAP) {
+    body = numberize(content)
+  } else {
+    // full-visibility over-cap: head + tail with a NAMED elision so the model KNOWS what it cannot see.
+    const lines = content.split("\n")
+    const headBudget = Math.floor(FILE_RENDER_CAP * 0.6)
+    const tailBudget = FILE_RENDER_CAP - headBudget
+    let hc = 0
+    let headEnd = 0
+    while (headEnd < lines.length && hc + lines[headEnd]!.length + 1 <= headBudget) {
+      hc += lines[headEnd]!.length + 1
+      headEnd++
+    }
+    let tc = 0
+    let tailStart = lines.length
+    while (tailStart > headEnd + 1 && tc + lines[tailStart - 1]!.length + 1 <= tailBudget) {
+      tc += lines[tailStart - 1]!.length + 1
+      tailStart--
+    }
+    const num = (text: string, idx: number): string => (opts.numbered ? `${idx + 1}→${text}` : text)
+    const head = lines.slice(0, headEnd).map((l, i) => num(l, i))
+    const tail = lines.slice(tailStart).map((l, i) => num(l, tailStart + i))
+    const elision = `…lines ${headEnd + 1}-${tailStart} omitted (${tailStart - headEnd} lines; use read_file "${name}" to see them)…`
+    body = [...head, elision, ...tail].join("\n")
+  }
+  return `### ${name}\n\`\`\`\n${body}\n\`\`\``
+}
 // improve3 P2a (owner #2): the ROOT plan is the single most critical introspection — a malformed root reply
 // killed a whole run in ~2 min (run63/§I3). Give the root MANY more parse-retries (with the P2b located hint
 // each time); a non-root leaf keeps its 2 attempts (a failed leaf has never-dead-end, a failed root doesn't).
@@ -341,8 +397,11 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       const files = deps.listFiles()
       if (files.length === 0) fileBlock = "\n\n# Working directory\n(no files yet)"
       else {
-        const bodies = files.map((f) => `### ${f.name}\n\`\`\`\n${f.content.length > 8000 ? f.content.slice(0, 8000) + "\n…[truncated]…" : f.content}\n\`\`\``)
-        fileBlock = `\n\n# Working directory (the ACTUAL files on disk — reference these exact names, and fix code here if a step failed)\n${bodies.join("\n\n")}`
+        // improve5 P1a/b: the model's EDITING view — numbered (so it can `replace_lines` by coordinate) + full-visibility.
+        const numbered = deps.numberedWorkspace !== false
+        const bodies = files.map((f) => renderFileBlock(f.name, f.content, { numbered, fullFiles: deps.fullFiles !== false }))
+        const numNote = numbered ? " — each line is prefixed `N→` (the 1-based line number, for `replace_lines`)" : ""
+        fileBlock = `\n\n# Working directory (the ACTUAL files on disk${numNote}; reference these exact names, and fix code here if a step failed)\n${bodies.join("\n\n")}`
       }
     }
     // D7 (jh-improve1): grown fix/analyze nodes must SEE the program's most recent stdout (the diagnostics) —
@@ -355,13 +414,15 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
     const full = `${base}${fileBlock}${outputBlock}${revertBlock}`
     return extra ? `${full}\n\n${extra}` : full
   }
-  /** the current workspace (file names + contents) as a plain block — for the goal-achievement check. */
+  /** the current workspace (file names + contents) as a plain block — for the goal-achievement check + the
+   *  precise oracle + the evidence substring check. UNNUMBERED (improve5 P1a: numbering only the EDITING view;
+   *  the oracle extracts digits and the evidence check matches raw quotes, so numbers must NOT pollute this
+   *  render), but WITH full visibility (P1b: the raised cap + named elision — so the goal-check can't mistake
+   *  a render cut for an incomplete program, the run84 harm). */
   const renderWorkspace = (): string => {
     const files = deps.listFiles?.() ?? []
     if (files.length === 0) return "(no files yet)"
-    return files
-      .map((f) => `### ${f.name}\n\`\`\`\n${f.content.length > 8000 ? f.content.slice(0, 8000) + "\n…[truncated]…" : f.content}\n\`\`\``)
-      .join("\n\n")
+    return files.map((f) => renderFileBlock(f.name, f.content, { numbered: false, fullFiles: deps.fullFiles !== false })).join("\n\n")
   }
   // R3: the current graded progress score (from the caller's oracle), or undefined if ungraded.
   const currentScore = (): number | undefined => deps.taskComplete?.({ workspace: renderWorkspace(), lastOutput: lastRunOutput }).score
@@ -986,17 +1047,23 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         // GOAL, freely ALTERNATING between fixing a file (write_file) and running a command (run) until the
         // step's check passes. This is the write→compile→fix loop with no backtracking and no tool-lock.
         const actionDesc = currentTool === "write_file" ? `write_file ${String(currentArgs.path ?? "?")}` : typeof currentArgs.command === "string" ? currentArgs.command : JSON.stringify(currentArgs).slice(0, 200)
+        // improve5 P1c: when the workspace is numbered AND replace_lines is offered, steer surgical fixes to
+        // COORDINATES (the reliable way for a weak model) over quoting a byte sequence it can't reproduce.
+        const coordEdit = deps.numberedWorkspace !== false && deps.toolNames.includes("replace_lines")
+        const editHint = coordEdit
+          ? "use `replace_lines {path, first_line, last_line, new_content}` addressing the `N→` line numbers shown above (the RELIABLE way to change specific lines — you do NOT have to reproduce the old text), or `edit_file` only for a SHORT, unique, easy-to-quote string"
+          : "make a SURGICAL `edit_file` on the SPECIFIC line(s) named in the error (a targeted old_string→new_string on the code shown above)"
         const recovery = [
           "The previous action did NOT achieve this step's goal yet:",
           `  action: ${currentTool} — ${actionDesc}`,
           `  result/error: ${vr.detail}`,
           "The working-directory files with their CURRENT contents are shown above. Emit exactly ONE atomic Step for the SINGLE next action that makes real progress toward the goal:",
-          "- SOURCE-CODE error (a compile/runtime error in a file) → make a SURGICAL `edit_file` on the SPECIFIC line(s) named in the error (a targeted old_string→new_string on the code shown above). Do NOT rewrite the whole file — `write_file` is ONLY for creating a file that does not exist yet.",
-          "- The program RAN but produced WRONG output (e.g. expected '3.14159', got '3.0') → ONE function's logic is buggy. Fix just that function with `edit_file` — re-emitting the entire file discards code you already verified and silently reintroduces bugs. NOTE: after ANY source edit the compiled .exe is STALE — your very next steps must RECOMPILE (a `run` gcc step) and then re-run, before checking output again.",
-          "- An `edit_file` left the file WORSE and you cannot repair it → `git_revert` to roll the file back to the last verified state, then try a DIFFERENT edit.",
+          `- SOURCE-CODE error (a compile/runtime error in a file) → ${editHint}. Do NOT rewrite the whole file — \`write_file\` is ONLY for creating a file that does not exist yet.`,
+          `- The program RAN but produced WRONG output (e.g. expected '3.14159', got '3.0') → ONE function's logic is buggy. Fix just that function (${coordEdit ? "`replace_lines` by coordinate, or `edit_file`" : "`edit_file`"}) — re-emitting the entire file discards code you already verified and silently reintroduces bugs. NOTE: after ANY source edit the compiled .exe is STALE — your very next steps must RECOMPILE (a \`run\` gcc step) and then re-run, before checking output again.`,
+          "- An edit left the file WORSE and you cannot repair it → `git_revert` to roll the file back to the last verified state, then try a DIFFERENT edit.",
           "- The goal needs a file a COMMAND produces (e.g. the compiled .exe) → `run` that command (every gcc call needs the `set PATH=…/bin;%PATH% &&` prefix; the .exe lands in the working directory).",
           "- The command itself was wrong (missing PATH, wrong path/filename, bad shell syntax) → a corrected `run` command.",
-          "Do NOT repeat the exact action that just failed, and do NOT rewrite the whole program — if re-running gave the same wrong result, change the SPECIFIC buggy code with edit_file.",
+          `Do NOT repeat the exact action that just failed, and do NOT rewrite the whole program — if re-running gave the same wrong result, change the SPECIFIC buggy code ${coordEdit ? "with `replace_lines`" : "with edit_file"}.`,
         ].join("\n")
         const ex = yield* Effect.exit(deps.introspect(buildPrompt(node.id, { extraContext: recovery })))
         if (Exit.isSuccess(ex)) {
