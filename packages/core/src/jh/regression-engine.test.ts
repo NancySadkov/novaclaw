@@ -342,3 +342,30 @@ describe("jh-improve4 P4 — bounded holistic re-derive escape", () => {
     expect(has(r, "rederived")).toBe(false)
   })
 })
+
+describe("jh-improve4 P5 — opaque-crash routing to analyze", () => {
+  // A leaf that RUNS a pre-built binary which CRASHES (non-zero exit, EMPTY stdout) — the executor narrates
+  // a "runtime CRASH" with nothing to tweak. The ladder must jump straight to the ANALYZE (instrument)
+  // stage. crash.exe is pre-seeded + never compiled here, so re-derive can't fire (no source chain); the
+  // small budget means the ladder can't reach its natural count-4 analyze — any analyze directive is P5.
+  const CRASH_LEAF = atom({ tool: "run", args: { command: "./crash.exe" }, check: { type: "run", command: "./crash.exe", expect: "impossible" } })
+
+  test("an opaque crash (non-zero exit, no output) routes the FIRST grown fix straight to the analyze stage", async () => {
+    const world = buildWorld({ initial: { "crash.exe": "prebuilt" }, programs: { "crash.exe": () => ({ code: 1, output: "" }) } })
+    const prompts: string[] = []
+    const deps = harness({ world, replies: [compound(["run the crashing step"]), CRASH_LEAF], defaultReply: CRASH_LEAF, onPrompt: (u) => prompts.push(u), limits: { maxDepth: 2, maxTotalSteps: 5 } })
+    const r = await run(deps)
+    // an analyze directive appeared despite the tiny budget → the crash routed to analyze, not blind tweaks
+    expect(prompts.some((u) => u.includes("INSTRUMENT the program"))).toBe(true)
+    expect(r.status).not.toBe("done")
+  })
+
+  test("parity: a crash WITH diagnostic output does NOT jump to analyze (the ladder tweaks first)", async () => {
+    const world = buildWorld({ initial: { "crash.exe": "prebuilt" }, programs: { "crash.exe": () => ({ code: 1, output: "segfault at line 42: bad index" }) } })
+    const prompts: string[] = []
+    const deps = harness({ world, replies: [compound(["run the failing step"]), CRASH_LEAF], defaultReply: CRASH_LEAF, onPrompt: (u) => prompts.push(u), limits: { maxDepth: 2, maxTotalSteps: 5 } })
+    const r = await run(deps)
+    // with a non-empty failure detail the ladder is NOT crash-routed; within this tiny budget it never reaches analyze
+    expect(prompts.some((u) => u.includes("INSTRUMENT the program"))).toBe(false)
+  })
+})

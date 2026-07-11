@@ -243,6 +243,14 @@ const stageFixGoal = (stage: JhLadder.Stage, baseGoal: string, detail: string): 
       }
   }
 }
+// improve4 P5 (runs 69/76): an OPAQUE CRASH — a non-zero exit with NO output — gives the model nothing to
+// tweak, yet the ladder spends its tweak rounds blind. Detect the class: an empty failing detail (a check
+// that exited non-zero with no stdout) or the executor's runtime-CRASH narration. Such a failure routes
+// straight to the ANALYZE stage (an instrumented run is the only move that can produce information).
+const isOpaqueCrash = (detail: string): boolean => {
+  const d = detail.trim()
+  return d === "" || d.includes("runtime CRASH")
+}
 // A leaf's output counts as "instrumented" when it prints ≥3 labeled NAME=value lines (mechanical shape
 // check — never content; forces run-30's missing diagnosis).
 const NAME_VALUE = /^\s*[A-Za-z_][\w.[\]]* *= *-?[\d.]/gm
@@ -418,6 +426,9 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         const state = JhLadder.next(ladders.get(parentID), { sig, scoreImproved })
         ladders.set(parentID, state)
         stage = state.stage
+        // improve4 P5: an opaque crash at the blind (tweak) stage jumps straight to analyze — instrument, don't
+        // tweak in the dark. (An analyze run yields NAME=value output, so the next failure is no longer opaque.)
+        if (stage === "tweak" && isOpaqueCrash(fullDetail)) stage = "analyze"
       } else {
         stage = childCount >= ESCALATE_AFTER ? "rewrite" : "tweak" // legacy latch
       }
