@@ -122,6 +122,11 @@ export interface Deps {
   /** improve4 P1/L4: monotonic wall-clock source for the suite budget (injected for deterministic tests).
    *  Default `Date.now`. */
   readonly now?: () => number
+  /** improve4 P2: gate PHASE progression on a green regression suite. When a compound phase completes (the
+   *  bubble chokepoint) — and before the root's oracle/goal-check runs — the digest-stale registered tests
+   *  are re-run; if ANY is red the phase does NOT commit, a fix node is grown on it instead (never a
+   *  false-phase-complete). Requires `regressionGate`. Default ON; `false` = P1 without the gate. */
+  readonly phaseGate?: boolean
   readonly limits: { readonly maxDepth: number; readonly maxTotalSteps: number }
   readonly trigger: JhBudget.SplitTrigger
   readonly onLog?: (entry: JhLog.Sequenced) => void
@@ -256,6 +261,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
   // digest-stale ones after later edits. Engine-run-scoped, in-memory (L4).
   const regression = deps.regressionGate !== false && staleness ? JhRegression.registry() : undefined
   const now = deps.now ?? (() => Date.now())
+  const phaseGateOn = deps.phaseGate !== false && regression !== undefined // improve4 P2 (requires regressionGate)
   // R3 keep-best + R4 ladder state (engine-run-scoped, in-memory — jh-improve1 L4).
   let bestScore = Number.NEGATIVE_INFINITY
   let bestSnapshot: ReadonlyArray<{ readonly name: string; readonly content: string }> | undefined
@@ -398,7 +404,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         tree = JhTree.setStatus(tree, node.id, "committed")
         emit({ type: "committed_best_effort", step: node.id, reason })
         yield* growFixNode(parentID, JhTree.get(tree, node.id)!.draft.goal, `the previous step could not be completed (${reason} — the model emitted an unusable reply); do the step's work now with a clean, well-formed single action`, "the step's goal is met")
-        bubble(node.id)
+        yield* bubble(node.id)
       } else {
         blockNode(node, reason)
       }
@@ -452,21 +458,27 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
     })
   }
 
-  const bubble = (id: JhStep.StepID): void => {
-    let childID: JhStep.StepID = id
-    for (;;) {
-      const child = JhTree.get(tree, childID)
-      if (!child || child.parent === undefined) break
-      const parentID = child.parent
-      if (!JhTree.allChildrenCommitted(tree, parentID)) break
-      // With a root gate on, the ROOT is not auto-committed here: the main loop runs a final whole-task
-      // check first (and EXTENDS with a fix node if the deliverable isn't actually done).
-      if ((deps.verifyGoal || deps.taskComplete) && parentID === tree.root) break
-      tree = JhTree.setStatus(tree, parentID, "committed")
-      emit({ type: "committed", step: parentID })
-      childID = parentID
-    }
-  }
+  // improve4 P2: bubble is now an Effect — a completing PHASE is gated on a green regression suite before it
+  // commits (a red test grows a fix node on the phase and stops the bubble; the phase stays expanded until
+  // the suite is green). Off (phaseGateOn false) → the wave-3 synchronous walk.
+  const bubble = (id: JhStep.StepID): Effect.Effect<void> =>
+    Effect.gen(function* () {
+      let childID: JhStep.StepID = id
+      for (;;) {
+        const child = JhTree.get(tree, childID)
+        if (!child || child.parent === undefined) break
+        const parentID = child.parent
+        if (!JhTree.allChildrenCommitted(tree, parentID)) break
+        // With a root gate on, the ROOT is not auto-committed here: the main loop runs a final whole-task
+        // check first (and EXTENDS with a fix node if the deliverable isn't actually done).
+        if ((deps.verifyGoal || deps.taskComplete) && parentID === tree.root) break
+        // P2: gate the phase on the regression suite; a red test → fix node grown, stop (do not commit).
+        if (phaseGateOn && (yield* runPhaseGate(parentID))) return
+        tree = JhTree.setStatus(tree, parentID, "committed")
+        emit({ type: "committed", step: parentID })
+        childID = parentID
+      }
+    })
   const blockNode = (node: JhTree.Node, reason: string): void => {
     lastBlockReason = reason
     tree = JhTree.setStatus(tree, node.id, "blocked")
@@ -587,25 +599,29 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       return false
     })
 
-  // improve4 P1 (§I6): re-run the digest-stale REGISTERED tests after a source edit, BEFORE the leaf's own
-  // check. Each stale test's product chain is rebuilt from the CURRENT sources (the make path) and the test
-  // is run; a test that passed before and FAILS now is a REGRESSION — it preempts the leaf's verification and
-  // NAMES the changed file(s), so the model fixes the FOUNDATION instead of thrashing the formula on it
-  // (run75: `pi.c` edited 74× while the bug was in `bigint.c`). Bounded by MAX_SUITE_MS; skipped tests are
-  // NAMED (never silently partial — L4). Returns a failing VerifyResult on the FIRST regression, else
-  // undefined (proceed with the normal check).
-  const runRegressionSuite = (nodeId: JhStep.StepID, changed: ReadonlyArray<string>): Effect.Effect<JhVerifier.VerifyResult | undefined> =>
+  // improve4 P1/P2: the shared regression SWEEP — re-run the digest-stale REGISTERED tests, each rebuilt
+  // from the CURRENT sources (the normal staleness make-path) then executed. Stops at the FIRST red test
+  // (the model must fix it before we trust the rest). Bounded by MAX_SUITE_MS; skipped tests are NAMED
+  // (never silently partial — L4). Pure of policy: it logs nothing and grows no node; the P1 (per-edit
+  // preempt) and P2 (phase gate) callers decide what a red test MEANS.
+  interface SweepResult {
+    readonly green: number
+    readonly red: number // 0 or 1 — we stop at the first red
+    readonly redTest?: { readonly command: string; readonly detail: string }
+    readonly skipped: ReadonlyArray<string>
+  }
+  const regressionSweep = (): Effect.Effect<SweepResult> =>
     Effect.gen(function* () {
-      if (!regression || !staleness) return undefined
+      if (!regression || !staleness) return { green: 0, red: 0, skipped: [] }
       // Prune tests whose product was deleted/renamed (log-free), then select the digest-stale ones.
-      regression.prune((command) => staleness.productPresent(command, snapFiles()))
+      regression.prune((command) => staleness!.productPresent(command, snapFiles()))
       const curDigest = staleness.sourceDigestNow(snapFiles())
       const stale = regression.staleTests(() => curDigest)
-      if (stale.length === 0) return undefined
+      if (stale.length === 0) return { green: 0, red: 0, skipped: [] }
       const budget = deps.maxSuiteMs ?? MAX_SUITE_MS
       const startMs = now()
       let green = 0
-      let firstFailure: { readonly command: string; readonly detail: string } | undefined
+      let redTest: { readonly command: string; readonly detail: string } | undefined
       const skipped: string[] = []
       let ran = 0
       for (const t of stale) {
@@ -643,21 +659,49 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         regression.recordResult(t.command, ok, staleness.sourceDigestNow(snapFiles()))
         if (ok) green++
         else {
-          firstFailure = { command: t.command, detail }
-          break // preempt on the first regression — the model must fix it before we test more
+          redTest = { command: t.command, detail }
+          break
         }
       }
-      if (skipped.length > 0) emit({ type: "suite", step: nodeId, green, red: firstFailure ? 1 : 0, skipped: skipped.length })
-      if (firstFailure) {
-        emit({ type: "regression", step: nodeId, command: firstFailure.command, changed })
-        const where = changed.length > 0 ? changed.join(", ") : "the file(s) you just edited"
-        const skipNote = skipped.length > 0 ? `\n(note: ${skipped.length} other registered test(s) were not re-run this round due to the ${Math.round(budget / 1000)}s suite budget: ${skipped.join(", ")})` : ""
-        return {
-          ok: false,
-          detail: `REGRESSION: \`${firstFailure.command}\` passed before your edit and FAILS now — the change you just made to ${where} broke previously-verified behavior. Fix THOSE files (or git-revert) before anything else. Test output: ${firstFailure.detail}${skipNote}`,
-        }
+      return { green, red: redTest ? 1 : 0, redTest, skipped }
+    })
+
+  // improve4 P1 (§I6): the PER-EDIT preempt. After a source edit, sweep the registered tests BEFORE the
+  // leaf's own check; a test that passed before and FAILS now preempts the leaf's verification and NAMES the
+  // changed file(s), so the model fixes the FOUNDATION instead of thrashing the formula on it (run75: `pi.c`
+  // edited 74× while the bug was in `bigint.c`). Returns a failing VerifyResult on a regression, else undefined.
+  const runRegressionSuite = (nodeId: JhStep.StepID, changed: ReadonlyArray<string>): Effect.Effect<JhVerifier.VerifyResult | undefined> =>
+    Effect.gen(function* () {
+      if (!regression) return undefined
+      const sweep = yield* regressionSweep()
+      if (sweep.skipped.length > 0) emit({ type: "suite", step: nodeId, green: sweep.green, red: sweep.red, skipped: sweep.skipped.length })
+      if (!sweep.redTest) return undefined
+      emit({ type: "regression", step: nodeId, command: sweep.redTest.command, changed })
+      const where = changed.length > 0 ? changed.join(", ") : "the file(s) you just edited"
+      const budget = deps.maxSuiteMs ?? MAX_SUITE_MS
+      const skipNote = sweep.skipped.length > 0 ? `\n(note: ${sweep.skipped.length} other registered test(s) were not re-run this round due to the ${Math.round(budget / 1000)}s suite budget: ${sweep.skipped.join(", ")})` : ""
+      return {
+        ok: false,
+        detail: `REGRESSION: \`${sweep.redTest.command}\` passed before your edit and FAILS now — the change you just made to ${where} broke previously-verified behavior. Fix THOSE files (or git-revert) before anything else. Test output: ${sweep.redTest.detail}${skipNote}`,
       }
-      return undefined
+    })
+
+  // improve4 P2: the PHASE GATE. At a completing phase (and before the root's oracle), sweep the registered
+  // tests and LOG the result; a red test means the phase must NOT complete — grow a fix node on it that
+  // names the failing test (the existing appendChild path). Returns true when the caller must NOT commit
+  // this node (a red suite — a fix node was grown, or the step budget blocked growth → the run blocks
+  // rather than false-completing; never-dead-end holds via the global budget).
+  const runPhaseGate = (nodeId: JhStep.StepID): Effect.Effect<boolean> =>
+    Effect.gen(function* () {
+      if (!regression) return false
+      const sweep = yield* regressionSweep()
+      emit({ type: "suite", step: nodeId, green: sweep.green, red: sweep.red, skipped: sweep.skipped.length })
+      if (!sweep.redTest) return false
+      if (JhTree.size(tree) < maxTotalSteps) {
+        const baseGoal = JhTree.get(tree, nodeId)!.draft.goal
+        yield* growFixNode(nodeId, baseGoal, `this phase cannot complete while a previously-passing test fails: \`${sweep.redTest.command}\` — ${sweep.redTest.detail}`, "the previously-passing test passes again")
+      }
+      return true // red suite → do not commit this phase
     })
 
   // E — the atomic execution loop.
@@ -810,7 +854,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
           }
           tree = JhTree.setStatus(tree, node.id, "committed")
           emit({ type: "committed", step: node.id })
-          bubble(node.id)
+          yield* bubble(node.id)
           yield* checkpoint()
           return
         }
@@ -873,7 +917,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
             // count it as a pass (R0 / D9 anatomy: run-32 read a best-effort commit as done).
             emit({ type: "committed_best_effort", step: node.id, reason: errorSig(vr.detail) })
             yield* growFixNode(parentID, node.draft.goal, vr.detail, node.draft.success ?? "the step's goal is met")
-            bubble(node.id)
+            yield* bubble(node.id)
             yield* checkpoint()
             return
           }
@@ -1032,6 +1076,10 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         // the deliverable is NOT actually done (e.g. the program runs but prints wrong digits), EXTEND the
         // root with ONE fix node and keep going — never a false-done. Block only at the global step budget.
         if (root && (deps.verifyGoal || deps.taskComplete) && root.status === "expanded" && JhTree.allChildrenCommitted(tree, tree.root)) {
+          // improve4 P2: cheap mechanical FIRST (the D2 ordering lesson) — re-run the regression suite before
+          // the (expensive, precision-bounded) oracle/goal-check. A red foundation grows a fix node on the
+          // root and re-loops; the oracle never even runs on a broken suite.
+          if (phaseGateOn && (yield* runPhaseGate(tree.root))) continue
           // A precise task oracle (deps.taskComplete) is preferred — the LLM goal-check's precision is bounded
           // by the model's own knowledge (iter 31: it false-done'd a 50-of-100-correct Pi). Fall back to the
           // LLM goal-check when no oracle is provided.

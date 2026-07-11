@@ -98,6 +98,7 @@ function harness(opts: {
   world: ReturnType<typeof buildWorld>
   replies: string[]
   regressionGate?: boolean
+  phaseGate?: boolean
   autoRevert?: boolean
   now?: () => number
   maxSuiteMs?: number
@@ -120,6 +121,7 @@ function harness(opts: {
     verifyGoal: true,
     taskComplete: opts.taskComplete ?? (() => ({ done: false, detail: "not done" })),
     regressionGate: opts.regressionGate,
+    phaseGate: opts.phaseGate,
     autoRevert: opts.autoRevert,
     revertWorkspace: opts.world.revertWorkspace,
     checkpoint: opts.world.doCheckpoint,
@@ -138,7 +140,11 @@ const verifDetails = (r: JhEngine.Report) => r.state.log.filter((e) => e.type ==
 
 // The two-step run75 shape: step A builds + locks `t_mul` green; step B edits the file it names.
 const mulProgram: Program = (f) => (f.get("bigint.c")!.includes("MUL_OK") ? { code: 0, output: "998001" } : { code: 1, output: "got 999999 expected 998001" })
+const addProgram: Program = () => ({ code: 0, output: "OK-ADD" }) // independent of bigint.c — stays green when bigint.c breaks
 const REGISTER_MUL = atom({ tool: "write_file", args: { path: "t_mul.c", content: "test mul" }, check: { type: "run", command: "gcc t_mul.c bigint.c -o t_mul.exe && ./t_mul.exe", expect: "998001" } })
+const REGISTER_ADD = atom({ tool: "write_file", args: { path: "t_add.c", content: "test add" }, check: { type: "run", command: "gcc t_add.c bigint.c -o t_add.exe && ./t_add.exe", expect: "OK-ADD" } })
+const BREAK_MUL = atom({ tool: "edit_file", args: { path: "bigint.c", old_string: "MUL_OK", new_string: "MUL_BROKEN" }, check: { type: "compile", command: "gcc pi.c bigint.c -o pi.exe" } })
+const committedSteps = (r: JhEngine.Report) => log(r, "committed").map((e) => (e as { step: string }).step)
 
 describe("jh-improve4 P1 — regression suite engine integration", () => {
   test("the run75 fixture: an edit to bigint.c (while 'working on pi.c') is caught by re-running t_mul and NAMES bigint.c", async () => {
@@ -234,5 +240,62 @@ describe("jh-improve4 P1 — regression suite engine integration", () => {
     const r = await run(deps)
     const suites = log(r, "suite") as Array<{ green: number; red: number; skipped: number }>
     expect(suites.some((s) => s.skipped >= 1)).toBe(true) // the budget cut the suite short and it was surfaced
+  })
+})
+
+describe("jh-improve4 P2 — phase gate on the regression suite", () => {
+  // A phase P (root.1) with children [A registers t_add, B registers t_mul, C breaks bigint.c]. C's per-edit
+  // sweep budget-SKIPS t_mul (so it commits), leaving t_mul stale+red — which the PHASE GATE catches when P
+  // completes. `now: () => c++` with a 0ms budget makes every multi-test sweep run only its first stale test.
+  const RED_PHASE_REPLIES = [compound(["phase P"]), compound(["reg add", "reg mul", "break"]), REGISTER_ADD, REGISTER_MUL, BREAK_MUL]
+
+  test("a phase with a red suite does NOT commit — it grows a fix node instead (t_mul broke, per-edit budget missed it)", async () => {
+    let c = 0
+    const world = buildWorld({ initial: { "bigint.c": "lib MUL_OK", "pi.c": "v1" }, programs: { "t_add.exe": addProgram, "t_mul.exe": mulProgram, "pi.exe": () => ({ code: 0, output: "3.14" }) } })
+    const deps = harness({ world, maxSuiteMs: 0, now: () => c++, replies: RED_PHASE_REPLIES })
+    const r = await run(deps)
+    const suites = log(r, "suite") as Array<{ step: string; red: number }>
+    expect(suites.some((s) => s.step === "root.1" && s.red >= 1)).toBe(true) // the phase gate found the broken foundation
+    expect(committedSteps(r)).not.toContain("root.1") // the phase never committed on a red suite
+    expect(r.status).not.toBe("done") // no false phase/task completion
+  })
+
+  test("phaseGate:false — the same phase COMMITS despite the broken foundation (wave-3 parity)", async () => {
+    let c = 0
+    const world = buildWorld({ initial: { "bigint.c": "lib MUL_OK", "pi.c": "v1" }, programs: { "t_add.exe": addProgram, "t_mul.exe": mulProgram, "pi.exe": () => ({ code: 0, output: "3.14" }) } })
+    const deps = harness({ world, phaseGate: false, maxSuiteMs: 0, now: () => c++, replies: RED_PHASE_REPLIES })
+    const r = await run(deps)
+    expect(committedSteps(r)).toContain("root.1") // with the gate off, the phase commits on the (silently) broken foundation
+    expect((log(r, "suite") as Array<{ red: number }>).some((s) => s.red >= 1)).toBe(false) // no phase-gate evaluation happened
+  })
+
+  test("a green phase commits, and the gate logs the (empty/green) suite evaluation", async () => {
+    const world = buildWorld({ initial: { "bigint.c": "lib MUL_OK" }, programs: { "t_add.exe": addProgram } })
+    const deps = harness({ world, replies: [compound(["phase P"]), compound(["reg add"]), REGISTER_ADD] })
+    const r = await run(deps)
+    expect(committedSteps(r)).toContain("root.1") // green suite → the phase commits
+    const suites = log(r, "suite") as Array<{ step: string; red: number }>
+    expect(suites.some((s) => s.step === "root.1")).toBe(true) // a gate evaluation was logged for the phase
+    expect(suites.every((s) => s.red === 0)).toBe(true) // nothing red
+  })
+
+  test("root gate ordering: a red suite gates the oracle — the root's completion verification never runs", async () => {
+    // root's children directly: [A registers t_mul, B breaks bigint.c with per-edit budget skip]. At root
+    // completion the suite is red → grow a fix node and re-loop; the (precision-bounded) oracle never runs.
+    let c = 0
+    const world = buildWorld({ initial: { "bigint.c": "lib MUL_OK", "pi.c": "v1" }, programs: { "t_add.exe": addProgram, "t_mul.exe": mulProgram, "pi.exe": () => ({ code: 0, output: "3.14" }) } })
+    const deps = harness({
+      world,
+      maxSuiteMs: 0,
+      now: () => c++,
+      // A registers t_add (so the per-edit sweep on B has an earlier stale test to spend the budget on), B
+      // registers t_mul, C breaks bigint.c — all direct children of the root.
+      replies: [compound(["reg add", "reg mul", "break"]), REGISTER_ADD, REGISTER_MUL, BREAK_MUL],
+      limits: { maxDepth: 2, maxTotalSteps: 20 },
+    })
+    const r = await run(deps)
+    expect((log(r, "suite") as Array<{ step: string; red: number }>).some((s) => s.step === "root" && s.red >= 1)).toBe(true) // the root suite ran and was red
+    const rootVerifs = log(r, "verification").filter((e) => (e as { step: string }).step === "root")
+    expect(rootVerifs).toHaveLength(0) // the oracle/goal-check verdict at the root NEVER emitted — the suite gated it
   })
 })
