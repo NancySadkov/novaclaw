@@ -198,6 +198,12 @@ export interface Deps {
    *  finishes in seconds, so the 60 s default is pure wall loss per hung run (run57: 30 hung runs × 60 s).
    *  Default DEFAULT_TIMEOUT_MS (60 s); a check's OWN timeoutMs still wins. */
   readonly checkTimeoutMs?: number
+  /** improve9 P1a: when a sample scores ≥ NEAR_DONE with the oracle saying NOT done, the oracle's own
+   *  `detail` is delivered into the NEXT introspection — the oracle must speak WHEN IT KNOWS (run136
+   *  scored 1.0 at event [287]; the D5 "fix the PRINTING" verdict was only ever surfaced at root
+   *  completion, which the run never reached — ~370 blind events followed). One-shot per episode,
+   *  re-armed when the score leaves the band. Default ON. */
+  readonly oracleHint?: boolean
   readonly limits: { readonly maxDepth: number; readonly maxTotalSteps: number }
   readonly trigger: JhBudget.SplitTrigger
   readonly onLog?: (entry: JhLog.Sequenced) => void
@@ -285,6 +291,9 @@ const RESTORE_FLOOR = 0.1
 // become mandatory for it. 3 = the near-miss tiers get a fair shot first; a model that mis-quotes a file 3×
 // in a row will not start reproducing its bytes on the 4th (run111: 23×; run115: 12×).
 const COORD_AFTER = 3
+// improve9 P1a: the score band in which the oracle's not-done verdict is decisive enough to interrupt
+// with — every digit measured correct yet not done = a formatting/placement defect (the D5 class).
+const NEAR_DONE = 0.999
 // improve5 P1b: the per-file render cap. Raised 8000 → 24000 so a whole bignum/formula source is VISIBLE
 // (run84: pi.c > 8000 → the model was asked to quote invisible text, 73 misses). A 24000-char file ≈ 6–7K
 // tokens; a ~5-file workspace fits qwen's 64K with headroom (P0-measured). Over the cap → head+tail with a
@@ -432,6 +441,16 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
   // sync, so it only ARMS the restore; the call site performs it (Effect land).
   let dropStreak = 0
   let pendingDropRestore = false
+  // improve9 P1a/P1b: the near-done oracle directive (one-shot per episode) + the oracle-done flag the
+  // main loop short-circuits on (re-checked against the oracle before committing — never on the sample alone).
+  let pendingOracleHint: string | undefined
+  let oracleHintArmed = true
+  let oracleDone = false
+  // improve9 P2: the workspace text-file contents at the most recent PASSING verification — a
+  // best-snapshot file whose on-disk content matches NEITHER the best snapshot NOR this capture is
+  // trailing UNVERIFIED drift, and loses to the verified best at finalize. A verified-green tail
+  // (its state captured here) is never overwritten.
+  let lastGreenFiles: ReadonlyMap<string, string> | undefined
   // improve7 P2 (C7): per-file consecutive edit_file mis-quotes + the files locked to coordinate edits.
   const editMisses = new Map<string, number>()
   const coordLocked = new Set<string>()
@@ -536,7 +555,12 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
     // planning prompt (this builder feeds introspections mid-work; the signature only arms mid-leaf).
     const numericsBlock = pendingNumericsHint ? `\n\n# Numerical-computation guidance (the output has stopped improving)\n${pendingNumericsHint}` : ""
     pendingNumericsHint = undefined
-    const full = `${base}${fileBlock}${outputBlock}${revertBlock}${budgetBlock}${numericsBlock}`
+    // improve9 P1a: consume-once near-done oracle directive — the caller's own verdict, verbatim (L1).
+    const oracleBlock = pendingOracleHint
+      ? `\n\n# ⚡ THE TASK ORACLE: the task is ONE SMALL FIX from complete\n${pendingOracleHint}\nDo EXACTLY this now — do not edit or build ANYTHING else first.`
+      : ""
+    pendingOracleHint = undefined
+    const full = `${base}${fileBlock}${outputBlock}${revertBlock}${budgetBlock}${numericsBlock}${oracleBlock}`
     return extra ? `${full}\n\n${extra}` : full
   }
   /** the current workspace (file names + contents) as a plain block — for the goal-achievement check + the
@@ -557,7 +581,22 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
   // samples while some digits are provably right (score ≥ floor) = the numeric-divergence signature → arm
   // the caller's numerics hint for the NEXT introspection context (one-shot per plateau).
   const sampleScore = (nodeId: JhStep.StepID): void => {
-    const s = currentScore()
+    const verdict = deps.taskComplete?.({ workspace: renderWorkspace(), lastOutput: lastRunOutput })
+    const s = verdict?.score
+    // improve9 P1a/P1b: the oracle speaks WHEN IT KNOWS. done=true arms the main-loop short-circuit
+    // (re-checked there — never committed on the sample alone). A near-done NOT-done verdict (the D5
+    // class: every digit measured correct, only formatting wrong) is delivered to the NEXT
+    // introspection — run136 held that verdict for ~370 events without the model ever seeing it.
+    if (verdict !== undefined) {
+      if (verdict.done) oracleDone = true
+      const near = s !== undefined && s >= NEAR_DONE && !verdict.done
+      if (near && deps.oracleHint !== false && oracleHintArmed && verdict.detail) {
+        oracleHintArmed = false
+        pendingOracleHint = verdict.detail
+        emit({ type: "oracle_hint", step: nodeId })
+      }
+      if (!near) oracleHintArmed = true
+    }
     if (s === undefined) return
     const improved = s > bestScore
     const greenTiebreak = s === bestScore && lastSweepGreen > bestSuiteGreen
@@ -617,6 +656,24 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
   // clean `done` (current == best) is untouched.
   const finalizeReport = (status: "done" | "blocked", reason?: string): Effect.Effect<Report> =>
     Effect.gen(function* () {
+      // improve9 P2: trailing UNVERIFIED edits lose to the last VERIFIED state. A best-snapshot file
+      // whose on-disk content matches NEITHER the best snapshot NOR the last verified-green capture is
+      // unverified surgery (run136's tail — invisible to the score because no successful run
+      // re-sampled it); restore the proven snapshot. A verified-green tail is never overwritten (L2).
+      if (status !== "done" && deps.keepBest !== false && bestSnapshot && deps.listFiles) {
+        const onDisk = new Map(deps.listFiles().map((f) => [f.name, f.content]))
+        const drifted = bestSnapshot.some((f) => {
+          const cur = onDisk.get(f.name)
+          return cur !== f.content && cur !== lastGreenFiles?.get(f.name)
+        })
+        const cur = currentScore()
+        if (drifted && (cur === undefined || cur >= bestScore)) {
+          const beforeRestore = snapFiles()
+          for (const f of bestSnapshot) yield* deps.executor.run({ tool: "write_file", args: { path: f.name, content: f.content }, produces: [], cwd: deps.cwd })
+          if (staleness) staleness.recordAction({ tool: "write_file", ok: true, before: beforeRestore, after: snapFiles() })
+          emit({ type: "restored_best", step: tree.root, score: bestScore, reason: "final" })
+        }
+      }
       yield* restoreBest(tree.root, "final")
       return report(status, reason)
     })
@@ -1312,6 +1369,10 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
           if (!tc.done) vr = { ok: false, detail: `the whole task is not done yet — ${tc.detail}` }
         }
         emit({ type: "verification", step: node.id, ok: vr.ok, detail: vr.detail })
+        // improve9 P2: a green verification blesses the CURRENT workspace text — capture it so the
+        // finalize drift check can tell a verified tail from unverified surgery.
+        if (vr.ok && deps.keepBest !== false && deps.listFiles)
+          lastGreenFiles = new Map(deps.listFiles().filter((f) => !f.content.startsWith("<compiled binary")).map((f) => [f.name, f.content]))
 
         if (vr.ok) {
           buildDamage = 0 // improve3 P1: a green verify clears the consecutive-build-damage counter
@@ -1567,6 +1628,21 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       if (deps.budget && deps.budget.wallMs > 0 && deps.budget.now() - deps.budget.startedAt >= deps.budget.wallMs) {
         emit({ type: "task_blocked", reason: "wall_exhausted" })
         return yield* finalizeReport("blocked", "wall_exhausted")
+      }
+      // improve9 P1b: the oracle-done short-circuit. A sample said the task IS complete — the oracle is
+      // the completion authority (D4/E8); remaining tree nodes are scaffolding. RE-CHECK before
+      // committing (the flag never bypasses the authority it delegates to); a disagreeing re-check
+      // clears the flag and resumes normal flow.
+      if (oracleDone && deps.taskComplete) {
+        const tc = deps.taskComplete({ workspace: renderWorkspace(), lastOutput: lastRunOutput })
+        if (tc.done) {
+          tree = JhTree.setStatus(tree, tree.root, "committed")
+          emit({ type: "oracle_done", step: tree.root })
+          emit({ type: "committed", step: tree.root })
+          emit({ type: "task_done" })
+          return yield* finalizeReport("done")
+        }
+        oracleDone = false
       }
       if (++guard > (maxTotalSteps + 8) * 16) {
         emit({ type: "task_blocked", reason: "loop_guard" })

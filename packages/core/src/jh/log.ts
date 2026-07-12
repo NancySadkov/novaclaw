@@ -64,6 +64,12 @@ export type Entry =
   // improve6 P5: the numeric-divergence signature fired (score plateau with a green build) — the caller's
   // numerics hint was injected into the NEXT introspection context (never the planning prompt).
   | { readonly type: "numerics_hint"; readonly step: string }
+  // improve9 P1a: a sample scored ≥ NEAR_DONE with the oracle NOT done — the oracle's own verdict was
+  // delivered to the NEXT introspection (run136 held "fix the PRINTING" for ~370 events unseen).
+  | { readonly type: "oracle_hint"; readonly step: string }
+  // improve9 P1b: a sample reported the task COMPLETE; the main loop re-checked the oracle and
+  // short-circuited to done — remaining tree nodes were scaffolding.
+  | { readonly type: "oracle_done"; readonly step: string }
   // improve5 P3: a forced_split whose node could NOT be decomposed degraded to an ATOMIC attempt instead of
   // hard-blocking (cannot_split) — the never-dead-end invariant, finally uniform.
   | { readonly type: "split_degraded"; readonly step: string }
@@ -137,6 +143,10 @@ function describe(e: Sequenced): string {
       return `suspect_test ${e.step}: \`${e.command}\` — excluded from gating (the test itself may be wrong)`
     case "numerics_hint":
       return `numerics_hint ${e.step}: score plateau with a green build — numerics guidance injected`
+    case "oracle_hint":
+      return `oracle_hint ${e.step}: near-done — the oracle's verdict delivered to the next introspection`
+    case "oracle_done":
+      return `oracle_done ${e.step}: the oracle reports the task complete — short-circuiting to done`
     case "regression":
       return `REGRESSION ${e.step}: \`${e.command}\` broke after editing ${e.changed.join(", ") || "the workspace"}`
     case "suite":
