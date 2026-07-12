@@ -17,6 +17,7 @@ import { SettingsServersV2 } from "./servers"
 import { SettingsIntrospectionV2 } from "./introspection"
 import { SettingsSystemPromptV2 } from "./system-prompt"
 import { SettingsAffectiveV2 } from "./affective"
+import { SettingsStrictV2 } from "./strict"
 import { SettingsToolsV2 } from "./tools"
 import { SettingsQualityV2 } from "./quality"
 import { SettingsRecoveryV2 } from "./recovery"
@@ -26,6 +27,7 @@ import { SettingsRecoveryV2 } from "./recovery"
 const TAB_LEVELS: Record<string, ExpertiseLevel> = {
   "system-prompt": "advanced",
   tools: "advanced",
+  strict: "advanced",
   introspection: "developer",
   affective: "developer",
   quality: "developer",
@@ -103,6 +105,12 @@ export const DialogSettings: Component<{
                         {language.t("settings.affective.title")}
                       </TabsV2.Trigger>
                     </Show>
+                    <Show when={tabVisible("strict")}>
+                      <TabsV2.Trigger value="strict">
+                        <Icon name="shield" />
+                        {language.t("settings.strict.title")}
+                      </TabsV2.Trigger>
+                    </Show>
                     <Show when={tabVisible("tools")}>
                       <TabsV2.Trigger value="tools">
                         <Icon name="code-lines" />
@@ -170,6 +178,11 @@ export const DialogSettings: Component<{
         <Show when={tabVisible("affective")}>
           <TabsV2.Content value="affective" class="settings-v2-panel">
             <SettingsAffectiveV2 />
+          </TabsV2.Content>
+        </Show>
+        <Show when={tabVisible("strict")}>
+          <TabsV2.Content value="strict" class="settings-v2-panel">
+            <SettingsStrictV2 />
           </TabsV2.Content>
         </Show>
         <Show when={tabVisible("tools")}>

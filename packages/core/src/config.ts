@@ -26,6 +26,7 @@ import { ConfigPlugin } from "./config/plugin"
 import { ConfigProvider } from "./config/provider"
 import { ConfigReference } from "./config/reference"
 import { ConfigServer } from "./config/server"
+import { ConfigStrict } from "./config/strict"
 import { ConfigToolOutput } from "./config/tool-output"
 import { ConfigWatcher } from "./config/watcher"
 
@@ -106,6 +107,9 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   }),
   affective: ConfigAffective.Info.pipe(Schema.optional).annotate({
     description: "Affective mode — emotion-modulated sampling + loop-breaking nudges (P3)",
+  }),
+  strict: ConfigStrict.Info.pipe(Schema.optional).annotate({
+    description: "Strict mode — the Juvenile Harness posture for weak/local models: harness-owned decomposition, per-step verification, recovery (jh.md; E6)",
   }),
   offline: Schema.Boolean.pipe(Schema.optional).annotate({
     description:

@@ -1375,6 +1375,26 @@ export const dict = {
   "settings.affective.row.extended.title": "Extended parameters",
   "settings.affective.row.extended.description":
     "Also modulate top_k — for local engines (vLLM, llama.cpp) that accept it.",
+  "settings.strict.title": "Strict mode",
+  "settings.strict.description":
+    "The training-wheels harness for small local models: instead of trusting the model to plan a long task, the system breaks work into tiny steps, verifies each one by actually compiling and running things, and recovers from mistakes automatically — so a modest model on your own hardware can finish jobs that normally need a frontier model. Applies to Strict-harness sessions.",
+  "settings.strict.toast.failed": "Saving Strict-mode settings failed",
+  "settings.strict.row.enabled.title": "Enable Strict mode",
+  "settings.strict.row.enabled.description": "Run tasks under the Strict harness: step-by-step planning with a verified checkpoint after every action.",
+  "settings.strict.row.verification.title": "Verification gates",
+  "settings.strict.row.verification.description":
+    "Track what each build produced and re-run the kept tests after every edit — a change that silently breaks something verified is caught immediately.",
+  "settings.strict.row.recovery.title": "Recovery & keep-best",
+  "settings.strict.row.recovery.description":
+    "Snapshot the best result so far and restore it if later edits make things worse (including at the very end); undo runs of build-breaking edits automatically.",
+  "settings.strict.row.editingAids.title": "Editing aids",
+  "settings.strict.row.editingAids.description":
+    "Show files with line numbers, reject edits that would not compile, and require line-number edits when the model keeps mis-quoting a file.",
+  "settings.strict.row.budgetSteering.title": "Time-budget steering",
+  "settings.strict.row.budgetSteering.description":
+    "At 50% and 75% of the time budget, calmly steer the model to simplify and land an end-to-end result.",
+  "settings.strict.row.wallMinutes.title": "Time budget (minutes)",
+  "settings.strict.row.wallMinutes.description": "Wall-clock budget per Strict task; at exhaustion the best verified state is delivered. Empty = 45.",
   "settings.tools.title": "Tools",
   "settings.tools.description": "Ad-hoc tool recipes: a name, a one-line description the model sees in its prompt, and a manual it pulls on demand (the API shape plus a curl example). The model runs them from the shell — no MCP server to set up.",
   "settings.tools.empty": "No ad-hoc tools defined yet.",
