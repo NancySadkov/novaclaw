@@ -193,6 +193,11 @@ export interface Deps {
    *  coordinates — until a successful source edit lands on it. The harness stops merely OFFERING coordinates
    *  and enforces them (run111: 23× misses on bigint.c stalled the run at 0.03). Default ON. */
   readonly coordMode?: boolean
+  /** improve8 P1 (C9): the timeout for engine-issued command runs — verify checks that set no own timeout,
+   *  staleness rebuilds, the tx-gate compile, the regression sweep. On compute tasks a correct program
+   *  finishes in seconds, so the 60 s default is pure wall loss per hung run (run57: 30 hung runs × 60 s).
+   *  Default DEFAULT_TIMEOUT_MS (60 s); a check's OWN timeoutMs still wins. */
+  readonly checkTimeoutMs?: number
   readonly limits: { readonly maxDepth: number; readonly maxTotalSteps: number }
   readonly trigger: JhBudget.SplitTrigger
   readonly onLog?: (entry: JhLog.Sequenced) => void
@@ -407,6 +412,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
   // digest-stale ones after later edits. Engine-run-scoped, in-memory (L4).
   const regression = deps.regressionGate !== false && staleness ? JhRegression.registry() : undefined
   const now = deps.now ?? (() => Date.now())
+  const checkTimeout = deps.checkTimeoutMs ?? JhVerifier.DEFAULT_TIMEOUT_MS // improve8 P1 (C9)
   const phaseGateOn = deps.phaseGate !== false && regression !== undefined // improve4 P2 (requires regressionGate)
   const txEditsOn = deps.txEdits !== false && staleness !== undefined // improve5 P2 (needs the per-file compile registry)
   const SOURCE_EDIT_TOOLS = new Set(["write_file", "edit_file", "replace_lines"])
@@ -946,7 +952,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         let buildErr: string | undefined
         for (const sp of staleness.staleChainFor(t.command, curSnap)) {
           if (!sp.rebuild) continue // an un-attributed product — let the run surface it, don't guess a command
-          const rb = yield* deps.runner.run({ command: sp.rebuild, cwd: deps.cwd, timeoutMs: JhVerifier.DEFAULT_TIMEOUT_MS })
+          const rb = yield* deps.runner.run({ command: sp.rebuild, cwd: deps.cwd, timeoutMs: checkTimeout })
           const rbAfter = snapFiles()
           staleness.recordAction({ tool: "run", ok: rb.exitCode === 0 && !rb.timedOut, command: sp.rebuild, before: curSnap, after: rbAfter })
           curSnap = rbAfter
@@ -963,7 +969,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
           ok = false
           detail = buildErr
         } else {
-          const r = yield* deps.runner.run({ command: t.command, cwd: deps.cwd, timeoutMs: JhVerifier.DEFAULT_TIMEOUT_MS })
+          const r = yield* deps.runner.run({ command: t.command, cwd: deps.cwd, timeoutMs: checkTimeout })
           staleness.recordAction({ tool: "run", ok: r.exitCode === 0 && !r.timedOut, command: t.command, before: curSnap, after: snapFiles() })
           ok = r.exitCode === 0 && !r.timedOut && (t.expect ? r.output.includes(t.expect) : true)
           detail = r.timedOut ? `timed out\n${r.output.slice(-REGRESSION_TAIL)}` : r.output.slice(-REGRESSION_TAIL)
@@ -1183,7 +1189,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
             const cmd = staleness.objectCompileFor(editedFile)
             if (cmd) {
               const beforeCompile = snapFiles()
-              const rb = yield* deps.runner.run({ command: cmd, cwd: deps.cwd, timeoutMs: JhVerifier.DEFAULT_TIMEOUT_MS })
+              const rb = yield* deps.runner.run({ command: cmd, cwd: deps.cwd, timeoutMs: checkTimeout })
               staleness.recordAction({ tool: "run", ok: rb.exitCode === 0 && !rb.timedOut, command: cmd, before: beforeCompile, after: snapFiles() })
               if (rb.exitCode !== 0 || rb.timedOut) {
                 const beforeRestore = snapFiles()
@@ -1244,7 +1250,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
               if (sp.rebuild === checkCommand) continue // the check itself (re)builds this product — don't pre-run it
               if (sp.rebuild) {
                 emit({ type: "refreshed", step: node.id, command: sp.rebuild })
-                const rb = yield* deps.runner.run({ command: sp.rebuild, cwd: deps.cwd, timeoutMs: JhVerifier.DEFAULT_TIMEOUT_MS })
+                const rb = yield* deps.runner.run({ command: sp.rebuild, cwd: deps.cwd, timeoutMs: checkTimeout })
                 const rbAfter = snapFiles()
                 staleness.recordAction({ tool: "run", ok: rb.exitCode === 0 && !rb.timedOut, command: sp.rebuild, before: curSnap, after: rbAfter })
                 curSnap = rbAfter
@@ -1265,7 +1271,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
           } else if (staleness && lastFailDigest !== undefined && staleness.checkDigest(check, curSnap) === lastFailDigest) {
             vr = { ok: false, detail: `${lastFailDetail}\n(nothing has changed since the last attempt — a repeat run cannot pass; change the source or the command)` }
           } else {
-            vr = yield* JhVerifier.verify({ check, cwd: deps.cwd, runner: deps.runner, fileExists: (rel) => deps.fileExists(rel, deps.cwd), producedPresent })
+            vr = yield* JhVerifier.verify({ check, cwd: deps.cwd, runner: deps.runner, fileExists: (rel) => deps.fileExists(rel, deps.cwd), producedPresent, defaultTimeoutMs: checkTimeout })
             // Record artifacts the CHECK's command PRODUCED (e.g. pi.o from a `gcc -c pi.c` compile check) so a
             // later source edit auto-rebuilds them instead of nagging — the D1 gap baseline run39/40 exposed
             // (recordAction previously saw only ACTION runs + rebuilds, never verify-check runs).

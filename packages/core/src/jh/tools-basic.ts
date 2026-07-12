@@ -239,7 +239,10 @@ function gitRevert(runner: JhProcessRunner.Runner, input: { args: Readonly<Recor
   )
 }
 
-export function basicExecutor(runner: JhProcessRunner.Runner): Executor {
+export function basicExecutor(runner: JhProcessRunner.Runner, opts?: { readonly runTimeoutMs?: number }): Executor {
+  // C9: the run-action timeout is caller-tunable — for compute tasks a correct program finishes in
+  // seconds, so a 60 s wait per hung run is pure wall loss (run57: 30 hung runs × 60 s ≈ half the wall).
+  const runTimeoutMs = opts?.runTimeoutMs ?? 60_000
   return {
     run: (input) => {
       switch (input.tool) {
@@ -258,12 +261,13 @@ export function basicExecutor(runner: JhProcessRunner.Runner): Executor {
         case "run": {
           const command = input.args.command
           if (typeof command !== "string") return Effect.succeed(badArgs("run", "{command: string}"))
-          return runner.run({ command, cwd: input.cwd, timeoutMs: 60_000 }).pipe(
+          return runner.run({ command, cwd: input.cwd, timeoutMs: runTimeoutMs }).pipe(
             Effect.map((r) =>
               obs(
                 r.exitCode === 0 && !r.timedOut,
                 r.timedOut
-                  ? `timed out\n${r.output}`
+                  ? // C9: a bare "timed out" manufactures a fake opaque rut — name the likely cause + the fix.
+                    `command timed out after ${runTimeoutMs}ms and was KILLED — your program did not terminate. If this command RUNS a program, that program most likely has an INFINITE LOOP (or reads input it never gets): add an iteration BOUND to every loop, print progress, recompile, and re-run.${r.output.trim() ? `\n${r.output}` : ""}`
                   : r.exitCode === 0
                     ? r.output
                     : // a non-zero exit with no output is a runtime CRASH — tell the model it's a source bug, not a

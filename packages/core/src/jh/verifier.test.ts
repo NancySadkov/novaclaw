@@ -9,7 +9,7 @@ const fake = (result: JhProcessRunner.RunResult): JhProcessRunner.Runner => ({ r
 
 const doVerify = (
   check: JhStep.Check,
-  opts: { runner?: JhProcessRunner.Runner; fileExists?: (p: string) => boolean; producedPresent?: boolean } = {},
+  opts: { runner?: JhProcessRunner.Runner; fileExists?: (p: string) => boolean; producedPresent?: boolean; defaultTimeoutMs?: number } = {},
 ) =>
   Effect.runPromise(
     JhVerifier.verify({
@@ -18,6 +18,7 @@ const doVerify = (
       runner: opts.runner ?? fake(rr()),
       fileExists: opts.fileExists ?? (() => false),
       producedPresent: opts.producedPresent ?? false,
+      defaultTimeoutMs: opts.defaultTimeoutMs,
     }),
   )
 
@@ -57,9 +58,13 @@ describe("JhVerifier.verify (fake runner)", () => {
     expect((await doVerify({ type: "artifact_present" }, { producedPresent: false })).ok).toBe(false)
   })
 
-  test("timeout is classified", async () => {
+  test("timeout is classified, actionable (C9), and honors the caller's default", async () => {
     const res = await doVerify({ type: "compile", command: "x" }, { runner: fake(rr({ timedOut: true, exitCode: undefined })) })
-    expect(res).toEqual({ ok: false, detail: "timed out after 60000ms" })
+    expect(res.ok).toBe(false)
+    expect(res.detail).toContain("timed out after 60000ms")
+    expect(res.detail).toContain("INFINITE LOOP") // C9: never a bare "timed out" — that manufactures an opaque rut
+    const short = await doVerify({ type: "compile", command: "x" }, { runner: fake(rr({ timedOut: true, exitCode: undefined })), defaultTimeoutMs: 15_000 })
+    expect(short.detail).toContain("timed out after 15000ms")
   })
 
   test("fail detail is the TAIL of long output (≤ 2000 chars)", async () => {
