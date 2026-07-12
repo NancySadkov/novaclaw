@@ -259,15 +259,46 @@ describe("jh-improve7 P1 — K5 terminal restore + wall-stop", () => {
     expect(log(r, "restored_best").length).toBe(0)
   })
 
+  test("the wall can expire MID-LEAF: an endless exploration loop still exits through the terminal restore", async () => {
+    // probe-11550 shape: a leaf rut (its check keeps failing) runs past the wall without returning to the
+    // scheduler — pre-fix, only the harness's backstop race could end it, skipping the best-restore.
+    const world = scoreWorld()
+    // Event-driven clock (the in-leaf check consumes now() calls, so call-counting is brittle): time
+    // stays far from the wall until the WORSEN edit is on disk, then crosses a few calls later — i.e.
+    // mid-rut, inside the endless leaf.
+    let clock = 0
+    let afterWorsen = 0
+    const MISS_FOREVER = atom({ goal: "fix", tool: "edit_file", args: { path: "s.c", old_string: "NO-SUCH", new_string: "y" }, check: { type: "artifact_present" } })
+    const deps = harness({
+      world,
+      // run → worsen → run (the regression gets MEASURED — a restore is score-keyed) → the endless rut.
+      replies: [compound(["run", "worsen", "run", "rut"]), RUN_STEP, WORSEN, RUN_STEP, MISS_FOREVER],
+      defaultReply: MISS_FOREVER, // the leaf never passes — pre-fix it would spin to its own budget only
+      taskComplete: scoreOracle,
+      restoreOnDrop: false,
+      coordMode: false, // keep the rut pure edit-miss (coord interception has its own tests)
+      budget: { startedAt: 0, wallMs: 1_000_000, now: () => ((world.files.get("s.c") ?? "").includes("BAD") && ++afterWorsen > 6 ? 2_000_000 : (clock += 1)) },
+      budgetAware: false,
+      limits: { maxDepth: 3, maxTotalSteps: 64 },
+    })
+    const r = await run(deps)
+    expect(r.reason).toBe("wall_exhausted")
+    expect(restores(r, "final").length).toBe(1)
+    expect(world.files.get("s.c")).toContain("GOOD")
+  })
+
   test("engine wall-stop: exhaustion exits through the terminal restore (wall_exhausted, best delivered)", async () => {
     const world = scoreWorld()
+    // Event-driven clock: crosses the wall only after the worsening edit AND its below-best run sample
+    // exist (the run replies exhaust into idle notes; the wall then ends the run through the restore).
     let clock = 0
+    let afterWorsen = 0
     const deps = harness({
       world,
       replies: [compound(["run", "worsen", "run"]), RUN_STEP, WORSEN, RUN_STEP],
       taskComplete: scoreOracle,
       restoreOnDrop: false,
-      budget: { startedAt: 0, wallMs: 2000, now: () => (clock += 450) }, // crosses 2000 on the 5th loop top
+      budget: { startedAt: 0, wallMs: 1_000_000, now: () => ((world.files.get("s.c") ?? "").includes("BAD") && ++afterWorsen > 12 ? 2_000_000 : (clock += 1)) },
       budgetAware: false, // isolate the wall-stop from the 50%/75% steers (their own tests exist)
       limits: { maxDepth: 3, maxTotalSteps: 64 },
     })

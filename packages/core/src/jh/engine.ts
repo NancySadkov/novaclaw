@@ -1111,6 +1111,11 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       let lastFailDigest: string | undefined
       let lastFailDetail = ""
       for (;;) {
+        // improve7.1: the wall can expire MID-LEAF — a leaf's exploration loop can run for many minutes
+        // without returning to the outer scheduler, so the probe-11550 run sailed past its wall inside a
+        // rut and the harness backstop race had to kill it, skipping the terminal best-restore. Bail out
+        // of the leaf (node stays pending); the outer loop's wall check then finalizes THROUGH the restore.
+        if (deps.budget && deps.budget.wallMs > 0 && deps.budget.now() - deps.budget.startedAt >= deps.budget.wallMs) return
         updateTelemetry(node.id, (t) => ({ ...t, attempts: t.attempts + 1 }))
         const before = snapFiles() // R1: workspace fingerprint BEFORE the action (source→product build graph)
         // improve5 P2: the edited file + its PRE-IMAGE (for tool-level undo if the tx gate rejects the edit).
