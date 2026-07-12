@@ -23,8 +23,14 @@ export type Entry =
   | { readonly type: "corrected"; readonly step: string }
   // R3: a new best progress score was observed (graded oracle).
   | { readonly type: "scored"; readonly step: string; readonly score: number }
-  // R3: on escalation + regression, the best-scoring workspace snapshot was restored to disk.
-  | { readonly type: "restored_best"; readonly step: string; readonly score: number }
+  // R3: on a score regression, the best-scoring workspace snapshot was restored to disk. improve7 P1 (K5)
+  // widened the trigger beyond escalation: `drop` = consecutive below-best samples mid-run; `final` = the
+  // terminal restore (the deliverable is the BEST state, never a regressed one — run112 walked away from 82
+  // digits; run113 from 98).
+  | { readonly type: "restored_best"; readonly step: string; readonly score: number; readonly reason: "escalation" | "drop" | "final" }
+  // improve7 P2 (C7): a file crossed COORD_AFTER consecutive `old_string not found` misses — edit_file is
+  // disabled for it (intercepted pre-execution with a replace_lines redirect) until a successful edit lands.
+  | { readonly type: "coord_mode"; readonly step: string; readonly file: string }
   // R4: a rewrite-stage fix node produced no source change — the directive was ignored.
   | { readonly type: "directive_ignored"; readonly step: string }
   // improve3 P1: N consecutive build-damaging edits → the harness auto-reverted to the last verified checkpoint.
@@ -112,7 +118,9 @@ function describe(e: Sequenced): string {
     case "scored":
       return `scored ${e.step}: best=${e.score}`
     case "restored_best":
-      return `restored_best ${e.step}: score=${e.score}`
+      return `restored_best ${e.step}: score=${e.score} (${e.reason})`
+    case "coord_mode":
+      return `coord_mode ${e.step}: ${e.file} — edit_file disabled after repeated mis-quotes; use replace_lines coordinates`
     case "directive_ignored":
       return `directive_ignored ${e.step}`
     case "reverted":

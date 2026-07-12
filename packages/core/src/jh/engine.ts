@@ -177,6 +177,22 @@ export interface Deps {
    *  (the wave-5 P6.1 regression: dense guidance in the root prompt derailed plan generation). The engine
    *  knows only the delivery rule; the text is the caller's (L3). */
   readonly numericsHint?: string
+  /** improve7 P3 (K4): like `numericsHint`, but the CALLER formats the text from the measured plateau facts
+   *  (the graded best score → "correct to ~N digits — raise terms + guard digits"), far sharper than a static
+   *  hint (run113 died 2 digits short on the generic text). Preferred over `numericsHint` when both are
+   *  present; same delivery rule (numeric-divergence signature only, never a planning prompt). The engine
+   *  passes only the score — any task language stays the caller's (L3). */
+  readonly numericsHintFor?: (info: { readonly bestScore: number }) => string
+  /** improve7 P1 (K5): restore the best-scoring snapshot when the measured score stays BELOW the best for
+   *  DROP_RESTORE_AFTER consecutive samples — a plain worsening edit never routes through escalation, so
+   *  wave-6's keep-best let run112 walk an 82-digit best down to 17 digits. Needs keepBest + a graded
+   *  taskComplete. Default ON. */
+  readonly restoreOnDrop?: boolean
+  /** improve7 P2 (C7): after COORD_AFTER consecutive `old_string not found` misses on ONE file, edit_file is
+   *  DISABLED for that file — the attempt is intercepted pre-execution with a redirect to `replace_lines`
+   *  coordinates — until a successful source edit lands on it. The harness stops merely OFFERING coordinates
+   *  and enforces them (run111: 23× misses on bigint.c stalled the run at 0.03). Default ON. */
+  readonly coordMode?: boolean
   readonly limits: { readonly maxDepth: number; readonly maxTotalSteps: number }
   readonly trigger: JhBudget.SplitTrigger
   readonly onLog?: (entry: JhLog.Sequenced) => void
@@ -254,6 +270,16 @@ const SUSPECT_AFTER = 4
 // score improvement across this many samples, with the build green. Fires the caller's numerics hint.
 const NUMERIC_SCORE_FLOOR = 0.05
 const NUMERIC_PLATEAU = 3
+// improve7 P1 (K5): consecutive below-best score samples before the harness restores the best snapshot mid-
+// run — 2, because ONE bad sample can be the model mid-repair (an intentionally reduced-scope test run); two
+// in a row is a real regression walk. Gated on the best being WORTH restoring (RESTORE_FLOOR): restoring a
+// 0.03 state is churn, not rescue.
+const DROP_RESTORE_AFTER = 2
+const RESTORE_FLOOR = 0.1
+// improve7 P2 (C7): consecutive edit_file `old_string not found` misses on ONE file before coordinates
+// become mandatory for it. 3 = the near-miss tiers get a fair shot first; a model that mis-quotes a file 3×
+// in a row will not start reproducing its bytes on the 4th (run111: 23×; run115: 12×).
+const COORD_AFTER = 3
 // improve5 P1b: the per-file render cap. Raised 8000 → 24000 so a whole bignum/formula source is VISIBLE
 // (run84: pi.c > 8000 → the model was asked to quote invisible text, 73 misses). A 24000-char file ≈ 6–7K
 // tokens; a ~5-file workspace fits qwen's 64K with headroom (P0-measured). Over the cap → head+tail with a
@@ -396,6 +422,13 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
   let scoreStagnant = 0
   let numericsArmed = true
   let pendingNumericsHint: string | undefined
+  // improve7 P1 (K5): consecutive below-best samples (reset by any sample at-or-above best). The sampler is
+  // sync, so it only ARMS the restore; the call site performs it (Effect land).
+  let dropStreak = 0
+  let pendingDropRestore = false
+  // improve7 P2 (C7): per-file consecutive edit_file mis-quotes + the files locked to coordinate edits.
+  const editMisses = new Map<string, number>()
+  const coordLocked = new Set<string>()
   // improve6 P3: suspect-test bookkeeping — the score when a test FIRST went red (the non-regression guard),
   // and the tests whose one-time fix node was already grown.
   const scoreAtFirstFail = new Map<string, number>()
@@ -525,6 +558,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
     if (improved || greenTiebreak) {
       bestScore = s
       bestSuiteGreen = lastSweepGreen
+      dropStreak = 0 // improve7 P1: at-or-above best is not a drop
       if (improved) {
         scoreStagnant = 0
         numericsArmed = true
@@ -536,22 +570,49 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       return
     }
     scoreStagnant++
-    if (deps.numericsHint && numericsArmed && bestScore >= NUMERIC_SCORE_FLOOR && scoreStagnant >= NUMERIC_PLATEAU) {
+    // improve7 P1 (K5): a sample strictly BELOW the best is a regression walk — after DROP_RESTORE_AFTER
+    // consecutive ones (and a best worth restoring) arm the restore; the call site performs it.
+    if (deps.restoreOnDrop !== false && deps.keepBest !== false && s < bestScore && bestScore >= RESTORE_FLOOR) {
+      dropStreak++
+      if (dropStreak >= DROP_RESTORE_AFTER) {
+        dropStreak = 0
+        pendingDropRestore = true
+      }
+    } else {
+      dropStreak = 0
+    }
+    // improve7 P3 (K4): the caller-formatted precise directive (bestScore → "~N digits") is preferred over
+    // the static text; delivery mechanics unchanged (plateau signature, one-shot, working context only).
+    const hintText = deps.numericsHintFor ? deps.numericsHintFor({ bestScore }) : deps.numericsHint
+    if (hintText && numericsArmed && bestScore >= NUMERIC_SCORE_FLOOR && scoreStagnant >= NUMERIC_PLATEAU) {
       numericsArmed = false
-      pendingNumericsHint = deps.numericsHint
+      pendingNumericsHint = hintText
       emit({ type: "numerics_hint", step: nodeId })
     }
   }
   // R3: on escalation + a score REGRESSION below the best, restore the best-scoring source snapshot to disk so
   // a fix builds on the best attempt (products auto-rebuild via P1). No-op if keepBest off or nothing to restore.
-  const restoreBest = (nodeId: JhStep.StepID): Effect.Effect<boolean> =>
+  const restoreBest = (nodeId: JhStep.StepID, reason: "escalation" | "drop" | "final" = "escalation"): Effect.Effect<boolean> =>
     Effect.gen(function* () {
       if (deps.keepBest === false || !bestSnapshot) return false
       const cur = currentScore()
       if (cur !== undefined && cur >= bestScore) return false // not a regression
+      const beforeRestore = snapFiles()
       for (const f of bestSnapshot) yield* deps.executor.run({ tool: "write_file", args: { path: f.name, content: f.content }, produces: [], cwd: deps.cwd })
-      emit({ type: "restored_best", step: nodeId, score: bestScore })
+      // Re-sync staleness (the auto-revert precedent): the restore changed sources outside a model action, so
+      // record it — the next check auto-rebuilds the now-stale products through the normal path.
+      if (staleness) staleness.recordAction({ tool: "write_file", ok: true, before: beforeRestore, after: snapFiles() })
+      emit({ type: "restored_best", step: nodeId, score: bestScore, reason })
       return true
+    })
+  // improve7 P1 (K5): every terminal path delivers the BEST state — a run must never END on a workspace that
+  // scores below its own best (run112 walked away from 82 digits, run113 from 98; wave-6's keep-best only
+  // restored via escalation). `restoreBest` no-ops unless the current state is a genuine regression, so a
+  // clean `done` (current == best) is untouched.
+  const finalizeReport = (status: "done" | "blocked", reason?: string): Effect.Effect<Report> =>
+    Effect.gen(function* () {
+      yield* restoreBest(tree.root, "final")
+      return report(status, reason)
     })
   // R3+R4: grow a fix node on `parentID` — pick the escalation stage (ladder or legacy latch), restore the
   // best snapshot on an escalated regression, mark a forced-analyze node, and append it. Shared by the leaf-
@@ -1056,14 +1117,45 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         const editedFile = SOURCE_EDIT_TOOLS.has(currentTool) && typeof currentArgs.path === "string" ? String(currentArgs.path) : undefined
         const preImage = txEditsOn && editedFile ? deps.listFiles?.().find((f) => baseName(f.name) === baseName(editedFile))?.content : undefined
         emit({ type: "action", step: node.id, tool: currentTool })
-        const observation = yield* deps.executor.run({ tool: currentTool, args: currentArgs, produces: draft.produces ?? [], cwd: deps.cwd })
+        // improve7 P2 (C7): a file locked to coordinates intercepts edit_file BEFORE execution — the model
+        // has proven it cannot reproduce this file's bytes (COORD_AFTER consecutive misses); redirect it to
+        // the coordinate editor instead of letting quote-drift burn the wall (run111: 23× on bigint.c).
+        const coordBase = deps.coordMode !== false && currentTool === "edit_file" && editedFile ? baseName(editedFile) : undefined
+        const coordIntercepted = coordBase !== undefined && coordLocked.has(coordBase)
+        const observation: JhBasicTools.Observation = coordIntercepted
+          ? { ok: false, output: `edit_file is DISABLED for ${coordBase} — your old_string did not match the file ${COORD_AFTER} times in a row. Use replace_lines {path, first_line, last_line, new_content} with the \`N→\` line numbers shown in the workspace view above; you do NOT need to reproduce the old text — the numbered lines are the ground truth.`, artifacts: new Map() }
+          : yield* deps.executor.run({ tool: currentTool, args: currentArgs, produces: draft.produces ?? [], cwd: deps.cwd })
         if (currentTool === "run" && observation.ok) {
           lastRunOutput = observation.output // remember the program's stdout for the goal-checks
           sampleScore(node.id) // R3: track the best progress score + snapshot on improvement
+          // improve7 P1 (K5): the sampler armed a drop-restore (consecutive below-best scores) — perform it
+          // here (Effect land) and tell the NEXT introspection what happened and what to do.
+          if (pendingDropRestore) {
+            pendingDropRestore = false
+            const did = yield* restoreBest(node.id, "drop")
+            if (did)
+              pendingRevertMessage = `your recent edits made the measured output WORSE — the harness has RESTORED the best-known state (progress score ${bestScore.toFixed(3)}). Improve FROM this state with a SMALL, different change; do not repeat the reverted approach. (After any source edit, recompile before re-running.)`
+          }
         }
         emit({ type: "observation", step: node.id, ok: observation.ok })
-        if (staleness)
+        if (staleness && !coordIntercepted)
           staleness.recordAction({ tool: currentTool, ok: observation.ok, command: typeof currentArgs.command === "string" ? currentArgs.command : undefined, before, after: snapFiles() })
+        // improve7 P2 (C7): count consecutive per-file mis-quotes; at COORD_AFTER the file locks to
+        // coordinates (the interception above); ANY successful source edit on the file clears lock + count.
+        if (deps.coordMode !== false && editedFile) {
+          const base = baseName(editedFile)
+          if (currentTool === "edit_file" && !coordIntercepted && !observation.ok && observation.output.startsWith("old_string not found in")) {
+            const n = (editMisses.get(base) ?? 0) + 1
+            editMisses.set(base, n)
+            if (n >= COORD_AFTER && !coordLocked.has(base)) {
+              coordLocked.add(base)
+              emit({ type: "coord_mode", step: node.id, file: base })
+            }
+          } else if (SOURCE_EDIT_TOOLS.has(currentTool) && observation.ok) {
+            editMisses.delete(base)
+            coordLocked.delete(base)
+          }
+        }
 
         // improve5 P2: TRANSACTIONAL edit gate — syntax-check a source edit via the edited file's OWN
         // per-file object compile BEFORE trusting it; a non-compiling edit is REJECTED and the file restored
@@ -1237,7 +1329,9 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         // "stuck" = the SAME error signature seen STUCK_REPEATS times (afpro changing-vs-stuck) — NOT merely a
         // 2nd occurrence: a weak model that repeats one mistake once (e.g. a PATH-less gcc) still deserves a
         // few more shots; temperature variance breaks the loop (iters 23–24 blocked after just 2 repeats).
-        const sig = txSig ?? errorSig(vr.detail) // improve6 P1: gate rejections count under a stable per-file signature
+        // improve6 P1: gate rejections count under a stable per-file signature; improve7 P2: so do
+        // coordinate-mode interceptions (`coord:<file>`) — a model that refuses coordinates still escalates.
+        const sig = txSig ?? (coordIntercepted ? `coord:${coordBase}` : errorSig(vr.detail))
         // A STALE-artifact bookkeeping fail (noCountSig) never accrues toward "stuck" — it is not a model rut,
         // just a signal to recompile (which the next step does). Everything else counts (incl. idempotence).
         let seen = errorCounts.get(sig) ?? 0
@@ -1456,20 +1550,27 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
     if (!resume) emit({ type: "task_started", goal: task.goal })
     let guard = 0
     for (;;) {
+      // improve7 P1.3: the engine owns its wall — at exhaustion it exits through the NORMAL terminal path
+      // (terminal best-restore included) instead of relying on the harness's hard race, which bypasses
+      // finalization entirely (the race stays as an infra backstop at wallMs + grace).
+      if (deps.budget && deps.budget.wallMs > 0 && deps.budget.now() - deps.budget.startedAt >= deps.budget.wallMs) {
+        emit({ type: "task_blocked", reason: "wall_exhausted" })
+        return yield* finalizeReport("blocked", "wall_exhausted")
+      }
       if (++guard > (maxTotalSteps + 8) * 16) {
         emit({ type: "task_blocked", reason: "loop_guard" })
-        return report("blocked", "loop_guard")
+        return yield* finalizeReport("blocked", "loop_guard")
       }
       if (JhTree.size(tree) > maxTotalSteps) {
         emit({ type: "task_blocked", reason: "step_budget" })
-        return report("blocked", "step_budget")
+        return yield* finalizeReport("blocked", "step_budget")
       }
       const node = JhTree.nextPending(tree)
       if (!node) {
         const root = JhTree.get(tree, tree.root)
         if (root && root.status === "committed") {
           emit({ type: "task_done" })
-          return report("done")
+          return yield* finalizeReport("done")
         }
         // Root-completion goal verification + dynamic extend (owner #5 + #2): all children committed but
         // bubble deferred the root under verifyGoal. Verify the WHOLE-TASK goal against the workspace; if
@@ -1498,7 +1599,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
             tree = JhTree.setStatus(tree, tree.root, "committed")
             emit({ type: "committed", step: tree.root })
             emit({ type: "task_done" })
-            return report("done")
+            return yield* finalizeReport("done")
           }
           if (JhTree.size(tree) < maxTotalSteps) {
             const beforeCount = JhTree.get(tree, tree.root)!.children.length
@@ -1506,11 +1607,11 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
             if (JhTree.get(tree, tree.root)!.children.length > beforeCount) continue
           }
           emit({ type: "task_blocked", reason: "goal_unmet" })
-          return report("blocked", "goal_unmet")
+          return yield* finalizeReport("blocked", "goal_unmet")
         }
         const reason = lastBlockReason ?? "no_progress"
         emit({ type: "task_blocked", reason })
-        return report("blocked", reason)
+        return yield* finalizeReport("blocked", reason)
       }
       yield* processNode(node)
     }
