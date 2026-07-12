@@ -41,10 +41,12 @@ import { SessionSchema } from "../schema"
 import { SessionStore } from "../store"
 import { SessionTitle } from "../title"
 import { SessionV1 } from "../../v1/session"
-import { resolveSessionConfig, EFFECTIVE_CONFIG_DEFAULTS } from "../config-resolve"
+import { resolveSessionConfig, EFFECTIVE_CONFIG_DEFAULTS, type EffectiveConfig } from "../config-resolve"
 import { SessionScheduler } from "../scheduler"
 import { type RunError, Service } from "./index"
 import { SessionRunnerModel } from "./model"
+import { SessionStrict } from "./strict"
+import { JhStore } from "../../jh/store"
 import { createLLMEventPublisher } from "./publish-llm-event"
 import { toLLMMessages } from "./to-llm-message"
 import { AdhocGuidance } from "../../adhoc-tools/guidance"
@@ -216,6 +218,8 @@ export const layer = Layer.effect(
       return yield* store.context(sessionID)
     })
 
+    // P14-minimal (jh-improve8 P3): the Strict-harness toggle — Settings → Strict mode.
+    const strictConfig = Config.latest(configEntries, "strict")
     // P3: per-session mood state for the affective engine (in-memory per location; bounded).
     const affectiveConfig = Config.latest(configEntries, "affective")
     const moods = new Map<string, Affective.Mood>()
@@ -783,6 +787,117 @@ export const layer = Layer.effect(
         })
     })
 
+    // Post-run maintenance — best-effort, must never fail the drain it follows (shared by the normal
+    // and the Strict routes): the changes summary first (one git tree-diff; feeds the Changes
+    // review/badge), then the auto-title (an LLM call) while the user reads the response.
+    const postRunMaintenance = Effect.fnUntraced(function* (sessionID: SessionSchema.ID) {
+      yield* refreshChangesSummary(sessionID).pipe(
+        Effect.catchCause((cause) => Effect.logWarning("changes-summary refresh failed", { sessionID, cause })),
+      )
+      yield* generateTitle(sessionID).pipe(
+        Effect.catchCause((cause) => Effect.logWarning("auto-title failed", { sessionID, cause })),
+      )
+    })
+
+    // P14-minimal (jh-improve8 P3): the Strict-harness drain — one JhEngine task per pending user
+    // message; queued messages drain in order. The engine self-terminates at its wall THROUGH the
+    // terminal best-restore (improve7), so a stopped run still delivers the best verified state.
+    // Progress = Synthetic milestone notices (projector-safe); persistence = JhStore keyed by session.
+    const runStrictDrain = Effect.fn("SessionRunner.strictDrain")(function* (
+      sessionID: SessionSchema.ID,
+      resolved: EffectiveConfig,
+      first: SessionInput.Delivery | undefined,
+    ) {
+      const notice = (text: string) =>
+        Effect.gen(function* () {
+          yield* events.publish(SessionEvent.Synthetic, {
+            sessionID,
+            messageID: SessionMessage.ID.create(),
+            timestamp: yield* DateTime.now,
+            text,
+          })
+        }).pipe(Effect.ignore)
+      const session = yield* getSession(sessionID)
+      const model = yield* models.resolve({ ...session, model: resolved.model as typeof session.model }).pipe(
+        Effect.catch((error: unknown) =>
+          notice(
+            `⚠️ Strict mode couldn't run — the session's model is unavailable (${error instanceof Error ? error.message : String(error)}).`,
+          ).pipe(Effect.as(undefined)),
+        ),
+      )
+      if (model === undefined) return
+      // The engine's one-shot completion (the judgeCompletion idiom). MAXTOK gives a whole non-trivial
+      // source file headroom (jh.md §3 "Measured": a C program is ~13-15k tokens; truncation is fatal).
+      const completeOnce = (system: string, user: string) =>
+        Effect.gen(function* () {
+          const text: string[] = []
+          const reasoning: string[] = []
+          yield* llm
+            .stream(
+              LLM.request({
+                model,
+                system: [SystemPart.make(system)],
+                messages: [Message.user(user)],
+                tools: [],
+                generation: { maxTokens: 24_576 },
+              }),
+            )
+            .pipe(
+              Stream.runForEach((event) => {
+                if (LLMEvent.is.textDelta(event)) text.push(event.text)
+                else if (event.type === "reasoning-delta") reasoning.push(event.text)
+                return Effect.void
+              }),
+            )
+          // A1: a reasoning model can put the whole reply in the think channel — fall back rather
+          // than hand the engine an empty introspection.
+          return text.join("").trim() || reasoning.join("")
+        }).pipe(Effect.mapError((error) => ({ message: error instanceof Error ? error.message : String(error) })))
+      let promotion = first
+      for (;;) {
+        if (promotion === undefined) return
+        const cutoff = yield* EventV2.latestSequence(db, sessionID)
+        let promoted = 0
+        if (promotion === "steer") promoted = yield* SessionInput.promoteSteers(db, events, sessionID, cutoff)
+        if (promotion === "queue") {
+          promoted += Number(yield* SessionInput.promoteNextQueued(db, events, sessionID))
+          promoted += yield* SessionInput.promoteSteers(db, events, sessionID, cutoff)
+        }
+        if (promoted === 0) return
+        const task = SessionStrict.lastUserText(yield* getContext(sessionID))
+        if (task === undefined) return
+        yield* notice(`🛡️ Strict mode: working on this step-by-step — plan, verified actions, and recovery notices will appear below.`)
+        const report = yield* SessionStrict.runTask({
+          task,
+          cwd: location.directory,
+          strict: strictConfig ?? {},
+          completeOnce,
+          onMilestone: notice,
+          checkpoint: (state) =>
+            JhStore.save(db, { id: `jh_${sessionID}`, goal: task, status: "running", state, now: Date.now() }).pipe(
+              Effect.ignore,
+            ),
+        }).pipe(
+          Effect.catchCause((cause: Cause.Cause<unknown>) =>
+            Effect.logError("strict turn failed", { sessionID, cause }).pipe(Effect.as(undefined)),
+          ),
+        )
+        if (report === undefined) {
+          yield* notice("⚠️ The Strict run hit an internal error — see the server log. The working directory is left as-is.")
+          return
+        }
+        yield* JhStore.save(db, { id: `jh_${sessionID}`, goal: task, status: report.status, state: report.state, now: Date.now() }).pipe(Effect.ignore)
+        const steps = report.state.tree.nodes.size
+        yield* notice(
+          report.status === "done"
+            ? `✅ Strict task complete — ${steps} steps, every one verified.`
+            : `⚠️ Strict run stopped (${report.reason ?? "blocked"}) after ${steps} steps — the best verified state was kept in the working directory.`,
+        )
+        promotion = "queue"
+        if (!(yield* SessionInput.hasPending(db, sessionID, "queue"))) return
+      }
+    })
+
     const run = Effect.fn("SessionRunner.run")(function* (input: {
       readonly sessionID: SessionSchema.ID
       readonly force: boolean
@@ -824,6 +939,26 @@ export const layer = Layer.effect(
         return
       }
       yield* failInterruptedTools(input.sessionID)
+      // P14-minimal (jh-improve8 P3): the Strict-harness route. `config.strict.enabled` routes the
+      // drain through JhEngine.runTask (jh.md — the harness owns decomposition/verification/recovery).
+      // It executes shell/write actions autonomously, so it requires an autonomous permission mode;
+      // below that the toggle must not silently bypass the permission model — the drain says why and
+      // answers normally instead.
+      if (strictConfig?.enabled === true) {
+        if (handoff.permissionMode === "bypass" || handoff.permissionMode === "yolo") {
+          yield* runStrictDrain(input.sessionID, handoff, hasSteer ? "steer" : hasQueue ? "queue" : undefined)
+          yield* postRunMaintenance(input.sessionID)
+          return
+        }
+        yield* Effect.gen(function* () {
+          yield* events.publish(SessionEvent.Synthetic, {
+            sessionID: input.sessionID,
+            messageID: SessionMessage.ID.create(),
+            timestamp: yield* DateTime.now,
+            text: "🛡️ Strict mode is enabled, but this chat's permission mode doesn't allow autonomous execution — switch the permission mode to Bypass to run the Strict harness. Answering normally instead.",
+          })
+        }).pipe(Effect.ignore)
+      }
       // 1E: track which repeated-call loops we have already redirected this drain, so a
       // persistent loop is nudged once (not every turn). 1N/A2 adds a per-target failure-streak
       // latch + a once-per-drain runaway latch; 1N/A3 a consecutive-empty-turn counter.
@@ -954,19 +1089,7 @@ export const layer = Layer.effect(
         shouldRun = yield* SessionInput.hasPending(db, input.sessionID, "queue")
         promotion = shouldRun ? "queue" : undefined
       }
-      // Post-run maintenance — best-effort, must never fail the drain it follows:
-      // the changes summary first (one git tree-diff; feeds the Changes review/badge),
-      // then the auto-title (an LLM call) while the user reads the response.
-      yield* refreshChangesSummary(input.sessionID).pipe(
-        Effect.catchCause((cause) =>
-          Effect.logWarning("changes-summary refresh failed", { sessionID: input.sessionID, cause }),
-        ),
-      )
-      yield* generateTitle(input.sessionID).pipe(
-        Effect.catchCause((cause) =>
-          Effect.logWarning("auto-title failed", { sessionID: input.sessionID, cause }),
-        ),
-      )
+      yield* postRunMaintenance(input.sessionID)
     })
 
     return Service.of({
