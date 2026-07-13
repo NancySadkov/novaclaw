@@ -30,5 +30,9 @@ export const Info = Schema.Struct({
   wallMinutes: Schema.optional(Schema.Number).annotate({
     description: "Wall-clock budget per Strict task in minutes; the engine stops through its terminal best-restore at exhaustion (default: 45)",
   }),
+  attempts: Schema.optional(Schema.Number).annotate({
+    description:
+      "Best-of-N racing (jh.md §14.2): run N isolated attempts on FORKED copies of the workspace and keep the first verified winner (1 = off, max 8). Explicit opt-in — costs ~N× compute; the Spark's bandwidth-bound decoding makes concurrent attempts nearly free capacity (default: 1)",
+  }),
 })
 export type Info = typeof Info.Type

@@ -79,6 +79,7 @@ function harness(opts: {
   defaultReply?: string
   onPrompt?: (user: string) => void
   neverGreen?: boolean
+  aborted?: () => boolean
   limits?: { maxDepth: number; maxTotalSteps: number }
 }) {
   const replies = [...opts.replies]
@@ -100,6 +101,7 @@ function harness(opts: {
     verifyGoal: true,
     taskComplete: () => ({ done: false, detail: "not done" }),
     neverGreen: opts.neverGreen,
+    aborted: opts.aborted,
     limits: opts.limits ?? { maxDepth: 3, maxTotalSteps: 32 },
     trigger: JhBudget.DEFAULT_TRIGGER,
   }
@@ -180,6 +182,28 @@ describe("jh-improve10 P1 — never-green suspicion (§K6)", () => {
     })
     const r = await run(deps)
     expect(log(r, "test_never_green").length).toBe(0)
+  })
+})
+
+describe("jh-improve11 P1 — the cooperative abort seam (racing)", () => {
+  test("aborted mid-run: exits through the normal terminal path with reason 'aborted', mid-leaf included", async () => {
+    const world = buildWorld({ initial: { "lib.c": "v1" }, programs: {} })
+    const MISS = atom({ goal: "m", tool: "edit_file", args: { path: "lib.c", old_string: "NO-SUCH", new_string: "x" }, check: { type: "artifact_present" }, difficulty_prior: "hard" })
+    let calls = 0
+    const deps = harness({
+      world,
+      replies: [compound(["endless"]), MISS],
+      defaultReply: MISS, // an endless leaf — only the abort can end it early
+      onPrompt: () => {
+        calls++
+      },
+      aborted: () => calls >= 4, // flip mid-leaf
+      limits: { maxDepth: 3, maxTotalSteps: 64 },
+    })
+    const r = await run(deps)
+    expect(r.status).toBe("blocked")
+    expect(r.reason).toBe("aborted")
+    expect(calls).toBeLessThan(10) // it stopped promptly, not at the step budget
   })
 })
 

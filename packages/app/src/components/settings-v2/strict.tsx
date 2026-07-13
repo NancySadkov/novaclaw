@@ -21,6 +21,7 @@ interface StrictConfig {
   editingAids?: boolean
   budgetSteering?: boolean
   wallMinutes?: number
+  attempts?: number
 }
 
 const DEFAULT_WALL_MINUTES = 45
@@ -81,6 +82,28 @@ export const SettingsStrictV2: Component = () => {
                 </Switch>
               </SettingsRowV2>
             ))}
+
+            <SettingsRowV2
+              title={language.t("settings.strict.row.attempts.title")}
+              description={language.t("settings.strict.row.attempts.description")}
+            >
+              <div class="w-full sm:w-[100px]">
+                <TextInputV2
+                  type="number"
+                  appearance="base"
+                  min="1"
+                  max="8"
+                  step="1"
+                  value={current().attempts || ""}
+                  placeholder="1"
+                  onChange={(event) => {
+                    const parsed = Number.parseInt(event.currentTarget.value, 10)
+                    void persist({ attempts: Number.isFinite(parsed) && parsed > 1 ? Math.min(parsed, 8) : 0 })
+                  }}
+                  aria-label={language.t("settings.strict.row.attempts.title")}
+                />
+              </div>
+            </SettingsRowV2>
 
             <SettingsRowV2
               title={language.t("settings.strict.row.wallMinutes.title")}

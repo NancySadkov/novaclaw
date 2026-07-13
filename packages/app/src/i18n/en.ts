@@ -1393,6 +1393,9 @@ export const dict = {
   "settings.strict.row.budgetSteering.title": "Time-budget steering",
   "settings.strict.row.budgetSteering.description":
     "At 50% and 75% of the time budget, calmly steer the model to simplify and land an end-to-end result.",
+  "settings.strict.row.attempts.title": "Parallel attempts (race)",
+  "settings.strict.row.attempts.description":
+    "Run several isolated attempts at the same task on separate copies of your project and keep the first one that verifiably succeeds. More attempts = better odds and more compute; your local hardware runs them nearly in parallel. Empty or 1 = off.",
   "settings.strict.row.wallMinutes.title": "Time budget (minutes)",
   "settings.strict.row.wallMinutes.description": "Wall-clock budget per Strict task; at exhaustion the best verified state is delivered. Empty = 45.",
   "settings.tools.title": "Tools",

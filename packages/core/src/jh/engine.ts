@@ -211,6 +211,10 @@ export interface Deps {
    *  re-derives the TEST, not the source (improve6's suspicion cannot see these: suspicion requires
    *  registration, registration requires a pass — the registration hole). Default ON. */
   readonly neverGreen?: boolean
+  /** improve11 P1 (jh.md §14.2, best-of-N racing): cooperative abort. When it returns true the run
+   *  exits via the NORMAL terminal path (reason "aborted") — THROUGH the terminal best-restore — at
+   *  the next loop/leaf boundary. Losing racers stop cleanly; their workspaces stay verified-best. */
+  readonly aborted?: () => boolean
   readonly limits: { readonly maxDepth: number; readonly maxTotalSteps: number }
   readonly trigger: JhBudget.SplitTrigger
   readonly onLog?: (entry: JhLog.Sequenced) => void
@@ -1199,6 +1203,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         // rut and the harness backstop race had to kill it, skipping the terminal best-restore. Bail out
         // of the leaf (node stays pending); the outer loop's wall check then finalizes THROUGH the restore.
         if (deps.budget && deps.budget.wallMs > 0 && deps.budget.now() - deps.budget.startedAt >= deps.budget.wallMs) return
+        if (deps.aborted?.()) return // improve11 P1: a losing racer bails mid-leaf; the outer loop finalizes
         updateTelemetry(node.id, (t) => ({ ...t, attempts: t.attempts + 1 }))
         const before = snapFiles() // R1: workspace fingerprint BEFORE the action (source→product build graph)
         // improve5 P2: the edited file + its PRE-IMAGE (for tool-level undo if the tx gate rejects the edit).
@@ -1693,6 +1698,11 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       if (deps.budget && deps.budget.wallMs > 0 && deps.budget.now() - deps.budget.startedAt >= deps.budget.wallMs) {
         emit({ type: "task_blocked", reason: "wall_exhausted" })
         return yield* finalizeReport("blocked", "wall_exhausted")
+      }
+      // improve11 P1 (racing): a losing racer stops cooperatively — through the terminal best-restore.
+      if (deps.aborted?.()) {
+        emit({ type: "task_blocked", reason: "aborted" })
+        return yield* finalizeReport("blocked", "aborted")
       }
       // improve9 P1b: the oracle-done short-circuit. A sample said the task IS complete — the oracle is
       // the completion authority (D4/E8); remaining tree nodes are scaffolding. RE-CHECK before
