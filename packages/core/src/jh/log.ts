@@ -70,6 +70,9 @@ export type Entry =
   // improve9 P1b: a sample reported the task COMPLETE; the main loop re-checked the oracle and
   // short-circuited to done — remaining tree nodes were scaffolding.
   | { readonly type: "oracle_done"; readonly step: string }
+  // improve10 P1 (§K6): an UNREGISTERED test failed byte-identically across distinct source states —
+  // oracle-suspect; a re-derive-the-TEST sibling was grown (the never-green registration hole closed).
+  | { readonly type: "test_never_green"; readonly step: string; readonly command: string }
   // improve5 P3: a forced_split whose node could NOT be decomposed degraded to an ATOMIC attempt instead of
   // hard-blocking (cannot_split) — the never-dead-end invariant, finally uniform.
   | { readonly type: "split_degraded"; readonly step: string }
@@ -147,6 +150,8 @@ function describe(e: Sequenced): string {
       return `oracle_hint ${e.step}: near-done — the oracle's verdict delivered to the next introspection`
     case "oracle_done":
       return `oracle_done ${e.step}: the oracle reports the task complete — short-circuiting to done`
+    case "test_never_green":
+      return `test_never_green ${e.step}: \`${e.command}\` failed identically across changing source — re-derive the TEST`
     case "regression":
       return `REGRESSION ${e.step}: \`${e.command}\` broke after editing ${e.changed.join(", ") || "the workspace"}`
     case "suite":

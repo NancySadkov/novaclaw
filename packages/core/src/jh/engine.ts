@@ -204,6 +204,13 @@ export interface Deps {
    *  completion, which the run never reached — ~370 blind events followed). One-shot per episode,
    *  re-armed when the score leaves the band. Default ON. */
   readonly oracleHint?: boolean
+  /** improve10 P1 (§K6): NEVER-GREEN suspicion. An UNREGISTERED product-executing check that fails
+   *  with a BYTE-IDENTICAL detail across NEVERGREEN_AFTER distinct source states is oracle-suspect —
+   *  same failure × different code means the TEST is the invariant (run138: 28× identical while 85%
+   *  of builds hammered one test; run139: an expectation the model had itself disproven). The escape
+   *  re-derives the TEST, not the source (improve6's suspicion cannot see these: suspicion requires
+   *  registration, registration requires a pass — the registration hole). Default ON. */
+  readonly neverGreen?: boolean
   readonly limits: { readonly maxDepth: number; readonly maxTotalSteps: number }
   readonly trigger: JhBudget.SplitTrigger
   readonly onLog?: (entry: JhLog.Sequenced) => void
@@ -294,6 +301,12 @@ const COORD_AFTER = 3
 // improve9 P1a: the score band in which the oracle's not-done verdict is decisive enough to interrupt
 // with — every digit measured correct yet not done = a formatting/placement defect (the D5 class).
 const NEAR_DONE = 0.999
+// improve10 P1 (§K6): identical failures across this many DISTINCT source states before an unregistered
+// test is oracle-suspect. 3 = three different implementations all "failing" the same way is the test.
+const NEVERGREEN_AFTER = 3
+// improve10 P2: lifetime per-file edit_file misses before the coordinate lock goes STICKY — run140's 17
+// misses never tripped the consecutive counter (interleaved successes reset it by design).
+const COORD_CUMULATIVE = 6
 // improve5 P1b: the per-file render cap. Raised 8000 → 24000 so a whole bignum/formula source is VISIBLE
 // (run84: pi.c > 8000 → the model was asked to quote invisible text, 73 misses). A 24000-char file ≈ 6–7K
 // tokens; a ~5-file workspace fits qwen's 64K with headroom (P0-measured). Over the cap → head+tail with a
@@ -454,6 +467,13 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
   // improve7 P2 (C7): per-file consecutive edit_file mis-quotes + the files locked to coordinate edits.
   const editMisses = new Map<string, number>()
   const coordLocked = new Set<string>()
+  // improve10 P2: LIFETIME per-file misses — past COORD_CUMULATIVE the lock is sticky (interleaved
+  // successful edits reset the consecutive counter but not this one; run140: 17 misses, 0 locks).
+  const editMissesTotal = new Map<string, number>()
+  // improve10 P1 (§K6): never-green tracking — per normalized command, the identical failure detail and
+  // how many DISTINCT source states produced it; one test-fix growth per command.
+  const neverGreenFails = new Map<string, { detail: string; count: number; lastDigest: string }>()
+  const neverGreenGrown = new Set<string>()
   // improve6 P3: suspect-test bookkeeping — the score when a test FIRST went red (the non-regression guard),
   // and the tests whose one-time fix node was already grown.
   const scoreAtFirstFail = new Map<string, number>()
@@ -1189,7 +1209,8 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         // has proven it cannot reproduce this file's bytes (COORD_AFTER consecutive misses); redirect it to
         // the coordinate editor instead of letting quote-drift burn the wall (run111: 23× on bigint.c).
         const coordBase = deps.coordMode !== false && currentTool === "edit_file" && editedFile ? baseName(editedFile) : undefined
-        const coordIntercepted = coordBase !== undefined && coordLocked.has(coordBase)
+        // improve10 P2: past COORD_CUMULATIVE lifetime misses the lock is STICKY (run140's interleave evasion).
+        const coordIntercepted = coordBase !== undefined && (coordLocked.has(coordBase) || (editMissesTotal.get(coordBase) ?? 0) >= COORD_CUMULATIVE)
         const observation: JhBasicTools.Observation = coordIntercepted
           ? { ok: false, output: `edit_file is DISABLED for ${coordBase} — your old_string did not match the file ${COORD_AFTER} times in a row. Use replace_lines {path, first_line, last_line, new_content} with the \`N→\` line numbers shown in the workspace view above; you do NOT need to reproduce the old text — the numbered lines are the ground truth.`, artifacts: new Map() }
           : yield* deps.executor.run({ tool: currentTool, args: currentArgs, produces: draft.produces ?? [], cwd: deps.cwd })
@@ -1215,7 +1236,9 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
           if (currentTool === "edit_file" && !coordIntercepted && !observation.ok && observation.output.startsWith("old_string not found in")) {
             const n = (editMisses.get(base) ?? 0) + 1
             editMisses.set(base, n)
-            if (n >= COORD_AFTER && !coordLocked.has(base)) {
+            const total = (editMissesTotal.get(base) ?? 0) + 1
+            editMissesTotal.set(base, total)
+            if ((n >= COORD_AFTER || total >= COORD_CUMULATIVE) && !coordLocked.has(base)) {
               coordLocked.add(base)
               emit({ type: "coord_mode", step: node.id, file: base })
             }
@@ -1413,6 +1436,48 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         }
         const stuck = seen >= STUCK_REPEATS
         const attempts = telemetryOf(node.id).attempts
+
+        // improve10 P1 (§K6): NEVER-GREEN suspicion — an UNREGISTERED product-executing check failing
+        // with a BYTE-IDENTICAL detail across NEVERGREEN_AFTER distinct source states is oracle-suspect
+        // (same failure × different code ⇒ the TEST is the invariant). Grow ONE re-derive-the-TEST
+        // sibling (L2: 3/3 wave-9 re-derives rewrote the SOURCE into the same rut).
+        if (
+          deps.neverGreen !== false &&
+          staleness &&
+          !txRejected &&
+          !regressionPreempt &&
+          (check.type === "run" || check.type === "output_equals") &&
+          staleness.referencesProduct(check.command)
+        ) {
+          const key = JhRegression.normalizeCommand(check.command)
+          const registeredAlready = regression?.all().some((t) => t.command === key) ?? false
+          if (!registeredAlready && !neverGreenGrown.has(key)) {
+            const digestNow = staleness.sourceDigestNow(snapFiles())
+            const detailNow = vr.detail.slice(0, 400)
+            const prev = neverGreenFails.get(key)
+            if (!prev || prev.detail !== detailNow) {
+              neverGreenFails.set(key, { detail: detailNow, count: 1, lastDigest: digestNow })
+            } else if (prev.lastDigest !== digestNow) {
+              prev.count += 1
+              prev.lastDigest = digestNow
+              const parentID = JhTree.get(tree, node.id)?.parent
+              if (prev.count >= NEVERGREEN_AFTER && parentID !== undefined && JhTree.size(tree) < maxTotalSteps) {
+                neverGreenGrown.add(key)
+                const ngDraft: JhStep.StepDraft = {
+                  goal: `The check \`${check.command}\` has FAILED IDENTICALLY across ${prev.count} different versions of the source — the TEST'S EXPECTED VALUES are the likely bug (hand-computed constants are error-prone; the program may already be CORRECT). Re-derive the TEST, not the source: recompute every expected value from FIRST PRINCIPLES, digit by digit — or REPLACE the case with one whose answer is trivially checkable (e.g. 1+1, 10/3, one small carry). A small correct case beats an impressive wrong one. Then re-run the check.`,
+                  size: "atomic",
+                  success: "the check passes with honestly re-derived expected values",
+                }
+                const appended = JhTree.appendChild(tree, parentID, ngDraft, maxDepth)
+                if (!(appended instanceof JhTree.AttachError)) {
+                  tree = appended
+                  emit({ type: "test_never_green", step: node.id, command: key })
+                  emit({ type: "expanded", step: parentID, children: JhTree.get(tree, parentID)!.children.length })
+                }
+              }
+            }
+          }
+        }
 
         // improve3 P1 (owner #1): the harness OWNS reverting. Track consecutive build-DAMAGING edits — an
         // edit_file/write_file whose compile or staleness-rebuild then failed — and after AUTO_REVERT_AFTER of
