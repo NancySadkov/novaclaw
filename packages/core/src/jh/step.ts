@@ -118,15 +118,43 @@ export interface StructuralIssue {
  * lone `substeps` object. Coerce those to one-element arrays so the codec accepts them; recurse into
  * substeps. Pure and total — a non-object passes through unchanged.
  */
-export function coerceDraftShape(value: unknown): unknown {
+export function coerceDraftShape(value: unknown, fallbackGoal?: string, inSubstep = false): unknown {
   if (value === null || typeof value !== "object") return value
-  if (Array.isArray(value)) return value.map(coerceDraftShape)
+  if (Array.isArray(value)) return value.map((v) => coerceDraftShape(v, fallbackGoal, inSubstep))
   const out: Record<string, unknown> = { ...(value as Record<string, unknown>) }
   for (const key of ["consumes", "produces", "assumptions"]) {
     if (out[key] != null && !Array.isArray(out[key])) out[key] = [out[key]]
   }
   if (out.substeps != null && !Array.isArray(out.substeps)) out.substeps = [out.substeps]
-  if (Array.isArray(out.substeps)) out.substeps = out.substeps.map(coerceDraftShape)
+  // improve12.1 (the §12 tolerance ethos — repair before rejecting; probe-anatomy: 30/32 baseline
+  // parse failures were the three shapes below, at a 29-40% all-calls tax):
+  // R3 (3/32): a STRING substep ("Phase 1: …") is a phase goal — wrap it as an atomic child
+  // (lazyPlan strips nesting anyway, and a phase re-plans itself when reached).
+  if (Array.isArray(out.substeps)) {
+    out.substeps = out.substeps.map((s) => (typeof s === "string" && s.trim() !== "" ? { goal: s.trim(), size: "atomic" } : coerceDraftShape(s, fallbackGoal, true)))
+  }
+  // R1 (17/32): the TOOL-CALL shape — the model emitted its native {name, arguments} (or tool/args
+  // without goal). The caller KNOWS which goal this reply was filling — adopt it instead of
+  // rejecting the model's work (top level only: substeps carry their own goals).
+  if (typeof out.name === "string" && out.tool === undefined) {
+    out.tool = out.name
+    delete out.name
+    if (out.arguments !== undefined && out.args === undefined) {
+      out.args = out.arguments
+      delete out.arguments
+    }
+  }
+  if ((out.goal === undefined || out.goal === null || out.goal === "") && fallbackGoal !== undefined && !inSubstep && (out.tool !== undefined || out.substeps !== undefined)) {
+    out.goal = fallbackGoal
+  }
+  // R2 (11/32): a missing `size` is INFERABLE — substeps present = a decomposition; a tool = an atom;
+  // and INSIDE a substeps list a goal-only child is a PHASE (it re-plans itself when reached — the
+  // lazyPlan model) → atomic. At the TOP level with neither tool nor substeps, never guess.
+  if (out.size === undefined || out.size === null) {
+    if (Array.isArray(out.substeps) && out.substeps.length > 0) out.size = "needs_decomposition"
+    else if (out.tool !== undefined) out.size = "atomic"
+    else if (inSubstep && typeof out.goal === "string" && out.goal !== "") out.size = "atomic"
+  }
   return out
 }
 

@@ -97,8 +97,9 @@ export function introspectPrompt(input: {
 }
 
 /** extract the JSON object → decode against the Step codec. NO structural validation (the engine owns
- *  that — it needs the parsed draft to repair). */
-export function parseReply(text: string): { readonly ok: true; readonly draft: JhStep.StepDraft } | { readonly ok: false; readonly issue: string } {
+ *  that — it needs the parsed draft to repair). improve12.1: `fallbackGoal` lets shape-coercion adopt
+ *  the caller-known goal for tool-call-shaped replies (§12 tolerance — repair before rejecting). */
+export function parseReply(text: string, opts?: { readonly fallbackGoal?: string }): { readonly ok: true; readonly draft: JhStep.StepDraft } | { readonly ok: false; readonly issue: string } {
   const extracted = JhExtract.extractJsonObject(text)
   if (!extracted.ok) {
     // improve3 P2b: surface the LOCATED failure (position + snippet + likely cause) so the retry reminder is
@@ -111,7 +112,7 @@ export function parseReply(text: string): { readonly ok: true; readonly draft: J
     return { ok: false, issue: parts.join(" — ") }
   }
   try {
-    const draft = Schema.decodeUnknownSync(JhStep.StepDraft)(JhStep.coerceDraftShape(extracted.value))
+    const draft = Schema.decodeUnknownSync(JhStep.StepDraft)(JhStep.coerceDraftShape(extracted.value, opts?.fallbackGoal))
     return { ok: true, draft }
   } catch (e) {
     // The SchemaError message names the failing field on an `at ["field"]` line — collapse it to one

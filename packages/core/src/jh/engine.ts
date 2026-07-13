@@ -779,7 +779,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         // won't parse, block as the last resort.
         const ex = yield* Effect.exit(deps.introspect(buildPrompt(node.id, { allowDecomposition: false, formatReminder: 'Emit exactly ONE atomic Step — a single tool call for the FIRST concrete action toward the task (NOT a multi-step plan). Fill: goal, size:"atomic", tool, args, check.' })))
         if (Exit.isSuccess(ex)) {
-          const parsed = JhExpander.parseReply(ex.value)
+          const parsed = JhExpander.parseReply(ex.value, { fallbackGoal: goalOf(node.id) })
           if (parsed.ok && parsed.draft.size === "atomic" && JhStep.structuralIssues(parsed.draft).filter((i) => i.severity === "error").length === 0) {
             tree = JhTree.fill(tree, node.id, stripSubsteps(parsed.draft))
             emit({ type: "root_degraded", step: node.id })
@@ -916,7 +916,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
           blockNode(node, "llm_unreachable")
           return "blocked" as const
         }
-        const parsed = JhExpander.parseReply(ex.value)
+        const parsed = JhExpander.parseReply(ex.value, { fallbackGoal: goalOf(node.id) })
         if (!parsed.ok || !parsed.draft.substeps || parsed.draft.substeps.length === 0) {
           yield* structuralFailRecover(node, "dataflow") // D11: recover, don't cascade-block
           return "blocked" as const
@@ -939,7 +939,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         blockNode(node, "llm_unreachable")
         return "blocked" as const
       }
-      const parsed = JhExpander.parseReply(ex.value)
+      const parsed = JhExpander.parseReply(ex.value, { fallbackGoal: goalOf(node.id) })
       if (parsed.ok && parsed.draft.size === "needs_decomposition" && parsed.draft.substeps && parsed.draft.substeps.length > 0) {
         tree = JhTree.fill(tree, node.id, stripSubsteps(parsed.draft))
         emit({ type: "introspected", step: node.id })
@@ -962,7 +962,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       for (let attempt = 0; attempt < SOFT_DECOMPOSE_ATTEMPTS; attempt++) {
         const ex = yield* Effect.exit(deps.introspect(buildPrompt(node.id, { allowDecomposition: true, mustDecompose: true })))
         if (!Exit.isSuccess(ex)) continue
-        const parsed = JhExpander.parseReply(ex.value)
+        const parsed = JhExpander.parseReply(ex.value, { fallbackGoal: goalOf(node.id) })
         const subs = parsed.ok && parsed.draft.size === "needs_decomposition" ? parsed.draft.substeps : undefined
         if (!subs || subs.length === 0) continue
         // P3b: lazy planning — attach only the TOP-LEVEL phases (each re-plans itself when reached). This is
@@ -1573,7 +1573,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         ].join("\n")
         const ex = yield* Effect.exit(deps.introspect(buildPrompt(node.id, { extraContext: recovery })))
         if (Exit.isSuccess(ex)) {
-          const parsed = JhExpander.parseReply(ex.value)
+          const parsed = JhExpander.parseReply(ex.value, { fallbackGoal: goalOf(node.id) })
           if (parsed.ok && parsed.draft.size === "atomic" && JhStep.structuralIssues(parsed.draft).filter((i) => i.severity === "error").length === 0) {
             draft = parsed.draft
             currentTool = parsed.draft.tool ?? currentTool
@@ -1605,7 +1605,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
           blockNode(node, "llm_unreachable")
           return
         }
-        const parsed = JhExpander.parseReply(ex.value)
+        const parsed = JhExpander.parseReply(ex.value, { fallbackGoal: goalOf(node.id) })
         if (!parsed.ok) {
           emit({ type: "parse_failed", step: node.id, issue: parsed.issue })
           updateTelemetry(node.id, (t) => ({ ...t, parseFails: t.parseFails + 1 }))
@@ -1643,7 +1643,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
           emit({ type: "depth_degraded", step: node.id })
           const ex2 = yield* Effect.exit(deps.introspect(buildPrompt(node.id, { allowDecomposition: false, formatReminder: "You are at the MAXIMUM planning depth — emit exactly ONE atomic Step (a single tool call) that makes progress on this goal; do NOT decompose further." })))
           if (Exit.isSuccess(ex2)) {
-            const parsed2 = JhExpander.parseReply(ex2.value)
+            const parsed2 = JhExpander.parseReply(ex2.value, { fallbackGoal: goalOf(node.id) })
             if (parsed2.ok && parsed2.draft.size === "atomic" && JhStep.structuralIssues(parsed2.draft).filter((i) => i.severity === "error").length === 0) {
               tree = JhTree.fill(tree, node.id, stripSubsteps(parsed2.draft))
               emit({ type: "introspected", step: node.id })

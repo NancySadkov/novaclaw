@@ -81,6 +81,53 @@ describe("parseReply", () => {
   })
 })
 
+// improve12.1 — wrong-shape TOLERANCE (§12: repair before rejecting). The three rules pin the probe
+// anatomy (30/32 baseline parse failures across seeds 12300-12301 were exactly these shapes).
+describe("parseReply wrong-shape coercion (improve12.1)", () => {
+  test("R1 (17/32): the tool-call shape — tool/args without goal adopts the caller's fallbackGoal", () => {
+    const r = JhExpander.parseReply('{"tool":"edit_file","args":{"path":"a.c","old_string":"x","new_string":"y"},"check":{"type":"compile","command":"gcc -c a.c"}}', { fallbackGoal: "fix the carry bug" })
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.draft.goal).toBe("fix the carry bug")
+      expect(r.draft.size).toBe("atomic") // R2 kicked in too (tool present)
+      expect(r.draft.tool).toBe("edit_file")
+    }
+  })
+  test("R1 variant: the OpenAI-native {name, arguments} shape is remapped", () => {
+    const r = JhExpander.parseReply('{"name":"run","arguments":{"command":"gcc -c a.c"}}', { fallbackGoal: "compile it" })
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.draft.tool).toBe("run")
+      expect((r.draft.args as { command?: string }).command).toBe("gcc -c a.c")
+    }
+  })
+  test("R2 (11/32): missing size in substeps is inferred (atomic without substeps)", () => {
+    const r = JhExpander.parseReply('{"goal":"plan","size":"needs_decomposition","substeps":[{"goal":"phase 1"},{"goal":"phase 2","tool":"note","args":{}}]}')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.draft.substeps?.[0]?.size).toBe("atomic") // no tool/substeps — but SIZE is inferable... see R2 note
+      expect(r.draft.substeps?.[1]?.size).toBe("atomic")
+    }
+  })
+  test("R3 (3/32): STRING substeps become atomic phase children", () => {
+    const r = JhExpander.parseReply('{"goal":"plan","size":"needs_decomposition","substeps":["Phase 1: build primitives","Phase 2: compute Pi"]}')
+    expect(r.ok).toBe(true)
+    if (r.ok) {
+      expect(r.draft.substeps?.length).toBe(2)
+      expect(r.draft.substeps?.[0]?.goal).toBe("Phase 1: build primitives")
+      expect(r.draft.substeps?.[0]?.size).toBe("atomic")
+    }
+  })
+  test("never guess: no tool, no substeps, no goal → still rejected", () => {
+    const r = JhExpander.parseReply('{"success":"ok"}', { fallbackGoal: "g" })
+    expect(r.ok).toBe(false)
+  })
+  test("without fallbackGoal the tool-call shape still fails (no invented goals)", () => {
+    const r = JhExpander.parseReply('{"tool":"run","args":{"command":"x"}}')
+    expect(r.ok).toBe(false)
+  })
+})
+
 describe("stepJsonSchema", () => {
   test("emits the recursive schema (substeps + $defs/$ref)", () => {
     const json = JSON.stringify(JhExpander.stepJsonSchema())
