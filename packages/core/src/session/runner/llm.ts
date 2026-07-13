@@ -9,6 +9,7 @@ import {
   type ProviderErrorEvent,
 } from "@novaclaw/llm"
 import { Cause, DateTime, Duration, Effect, FiberSet, Layer, Option, Semaphore, Stream } from "effect"
+import fs from "node:fs"
 import path from "path"
 import { AgentV2 } from "../../agent"
 import { Config } from "../../config"
@@ -866,32 +867,82 @@ export const layer = Layer.effect(
         if (promoted === 0) return
         const task = SessionStrict.lastUserText(yield* getContext(sessionID))
         if (task === undefined) return
-        yield* notice(`🛡️ Strict mode: working on this step-by-step — plan, verified actions, and recovery notices will appear below.`)
-        const report = yield* SessionStrict.runTask({
-          task,
-          cwd: location.directory,
-          strict: strictConfig ?? {},
-          completeOnce,
-          onMilestone: notice,
-          checkpoint: (state) =>
-            JhStore.save(db, { id: `jh_${sessionID}`, goal: task, status: "running", state, now: Date.now() }).pipe(
-              Effect.ignore,
-            ),
-        }).pipe(
-          Effect.catchCause((cause: Cause.Cause<unknown>) =>
-            Effect.logError("strict turn failed", { sessionID, cause }).pipe(Effect.as(undefined)),
-          ),
+        // improve11 P5 (jh.md §14.2): best-of-N racing — explicit opt-in via strict.attempts. Each
+        // racer works on a bounded FORK of the folder; the first oracle-... (in sessions: the first
+        // attempt whose run completes DONE) wins and its changes are applied back; losers are deleted.
+        // Measured (12 rig races): ~2× per-wall success; contention notes in jh-improve11.md.
+        let attempts = Math.max(1, Math.min(SessionStrict.MAX_ATTEMPTS, Math.floor(strictConfig?.attempts ?? 1)))
+        let baseline: ReadonlyMap<string, string> | undefined
+        let forks: string[] = []
+        if (attempts > 1) {
+          baseline = SessionStrict.manifestFor(location.directory)
+          for (let i = 0; i < attempts; i++) {
+            const fork = SessionStrict.forkWorkspace(location.directory, i + 1)
+            if ("refused" in fork) {
+              yield* notice(`🛡️ Racing is OFF for this task — ${fork.refused}. Running a single attempt instead.`)
+              for (const d of forks) try { fs.rmSync(d, { recursive: true, force: true }) } catch {}
+              forks = []
+              attempts = 1
+              break
+            }
+            forks.push(fork.dir)
+          }
+        }
+        const single = attempts === 1
+        yield* notice(
+          single
+            ? `🛡️ Strict mode: working on this step-by-step — plan, verified actions, and recovery notices will appear below.`
+            : `🛡️ Strict mode: racing ${attempts} independent attempts on isolated copies of the folder — the first verified success is kept, the rest are discarded.`,
         )
+        let winnerIdx: number | undefined
+        const runOne = (i: number, cwd: string) =>
+          SessionStrict.runTask({
+            task,
+            cwd,
+            strict: strictConfig ?? {},
+            completeOnce,
+            onMilestone: (text) => notice(single ? text : `[attempt ${i + 1}/${attempts}] ${text}`),
+            aborted: single ? undefined : () => winnerIdx !== undefined && winnerIdx !== i,
+            checkpoint: single
+              ? (state) =>
+                  JhStore.save(db, { id: `jh_${sessionID}`, goal: task, status: "running", state, now: Date.now() }).pipe(
+                    Effect.ignore,
+                  )
+              : undefined, // racers don't persist; the winner's final state is saved below
+          }).pipe(
+            Effect.tap((r) =>
+              Effect.sync(() => {
+                if (r.status === "done" && winnerIdx === undefined) winnerIdx = i
+              }),
+            ),
+            Effect.catchCause((cause: Cause.Cause<unknown>) =>
+              Effect.logError("strict attempt failed", { sessionID, attempt: i + 1, cause }).pipe(Effect.as(undefined)),
+            ),
+          )
+        const reports = single
+          ? [yield* runOne(0, location.directory)]
+          : yield* Effect.all(forks.map((dir, i) => runOne(i, dir)), { concurrency: "unbounded" })
+        const report = winnerIdx !== undefined ? reports[winnerIdx] : (reports.find((r) => r !== undefined) ?? undefined)
         if (report === undefined) {
           yield* notice("⚠️ The Strict run hit an internal error — see the server log. The working directory is left as-is.")
+          for (const d of forks) try { fs.rmSync(d, { recursive: true, force: true }) } catch {}
           return
+        }
+        if (!single) {
+          if (winnerIdx !== undefined && baseline) {
+            const applied = SessionStrict.applyBack(forks[winnerIdx]!, location.directory, baseline)
+            yield* notice(`🏁 Attempt ${winnerIdx + 1}/${attempts} WON the race — ${applied.length} changed file${applied.length === 1 ? "" : "s"} applied to the folder: ${applied.slice(0, 8).join(", ")}${applied.length > 8 ? ", …" : ""}`)
+            for (const d of forks) try { fs.rmSync(d, { recursive: true, force: true }) } catch {}
+          } else {
+            yield* notice(`🏁 No attempt verified success — YOUR FOLDER IS UNCHANGED. The attempt workspaces are kept for inspection: ${forks.join(" · ")}`)
+          }
         }
         yield* JhStore.save(db, { id: `jh_${sessionID}`, goal: task, status: report.status, state: report.state, now: Date.now() }).pipe(Effect.ignore)
         const steps = report.state.tree.nodes.size
         yield* notice(
           report.status === "done"
             ? `✅ Strict task complete — ${steps} steps, every one verified.`
-            : `⚠️ Strict run stopped (${report.reason ?? "blocked"}) after ${steps} steps — the best verified state was kept in the working directory.`,
+            : `⚠️ Strict run stopped (${report.reason ?? "blocked"}) after ${steps} steps — the best verified state was kept${single ? " in the working directory" : " in the attempt workspaces"}.`,
         )
         promotion = "queue"
         if (!(yield* SessionInput.hasPending(db, sessionID, "queue"))) return

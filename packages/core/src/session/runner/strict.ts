@@ -14,7 +14,9 @@ export * as SessionStrict from "./strict"
 // gate + keep-best still protect); persistence via JhStore through `checkpoint`.
 
 import { Effect } from "effect"
+import crypto from "node:crypto"
 import fs from "node:fs"
+import os from "node:os"
 import path from "node:path"
 import { JhArtifact } from "../../jh/artifact"
 import { JhBasicTools } from "../../jh/tools-basic"
@@ -29,6 +31,13 @@ import type { SessionMessage } from "../message"
 export const WALL_DEFAULT_MIN = 45
 export const MAX_DEPTH = 5
 export const MAX_TOTAL_STEPS = 64
+// Best-of-N racing (improve11 P5, jh.md §14.2): forks are BOUNDED plain copies — a copy is strictly
+// more faithful than a git clone for "the folder as the user sees it" (uncommitted + untracked files
+// come along); .git is excluded (racers don't use git — the git_revert atom is filtered out). Over the
+// bounds, racing degrades to a single attempt with a notice (never a silent cap).
+export const MAX_FORK_BYTES = 256 * 1024 * 1024
+export const MAX_FORK_FILES = 5000
+export const MAX_ATTEMPTS = 8
 // The workspace render is the model's working set — a session cwd can be a whole user project, so the
 // listing is bounded (most-recently-modified first; the tail entry names how many files were omitted).
 export const FILE_LIST_CAP = 24
@@ -162,6 +171,73 @@ export function listFilesFor(cwd: string): ReadonlyArray<{ readonly name: string
   }
 }
 
+// ── best-of-N racing helpers (improve11 P5) ────────────────────────────────────────────────────
+const walkFiles = (root: string): Array<{ rel: string; full: string; size: number }> => {
+  const out: Array<{ rel: string; full: string; size: number }> = []
+  const walk = (dir: string, rel: string) => {
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (e.name === ".git") continue
+      const full = path.join(dir, e.name)
+      const r = rel ? `${rel}/${e.name}` : e.name
+      if (e.isDirectory()) walk(full, r)
+      else if (e.isFile()) {
+        let size = 0
+        try {
+          size = fs.statSync(full).size
+        } catch {}
+        out.push({ rel: r, full, size })
+      }
+    }
+  }
+  walk(root, "")
+  return out
+}
+const sha1 = (buf: Buffer): string => crypto.createHash("sha1").update(buf).digest("hex")
+
+/** Content manifest of a workspace (rel path → sha1), .git excluded — the apply-back baseline. */
+export function manifestFor(root: string): Map<string, string> {
+  const m = new Map<string, string>()
+  for (const f of walkFiles(root)) {
+    try {
+      m.set(f.rel, sha1(fs.readFileSync(f.full)))
+    } catch {}
+  }
+  return m
+}
+
+/** Fork the workspace into an isolated temp copy (bounded — L2: racers never touch the live folder).
+ *  Returns the fork path, or the reason racing cannot fork (the caller degrades to one attempt). */
+export function forkWorkspace(src: string, attempt: number): { readonly dir: string } | { readonly refused: string } {
+  const files = walkFiles(src)
+  const bytes = files.reduce((a, f) => a + f.size, 0)
+  if (files.length > MAX_FORK_FILES) return { refused: `the folder has ${files.length} files (racing forks are capped at ${MAX_FORK_FILES})` }
+  if (bytes > MAX_FORK_BYTES) return { refused: `the folder is ${(bytes / 1e6).toFixed(0)} MB (racing forks are capped at ${MAX_FORK_BYTES / 1e6} MB)` }
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), `jh-attempt${attempt}-`))
+  fs.cpSync(src, dir, { recursive: true, filter: (p) => path.basename(p) !== ".git" })
+  return { dir }
+}
+
+/** Apply the WINNER's changes back onto the live folder: files that differ from the fork-time
+ *  manifest (or are new) are copied over; deletions are NOT propagated (v1 — safer for user data).
+ *  Returns the applied rel paths. */
+export function applyBack(winnerDir: string, dst: string, baseline: ReadonlyMap<string, string>): string[] {
+  const applied: string[] = []
+  for (const f of walkFiles(winnerDir)) {
+    let content: Buffer
+    try {
+      content = fs.readFileSync(f.full)
+    } catch {
+      continue
+    }
+    if (baseline.get(f.rel) === sha1(content)) continue // unchanged since the fork
+    const target = path.join(dst, f.rel)
+    fs.mkdirSync(path.dirname(target), { recursive: true })
+    fs.writeFileSync(target, content)
+    applied.push(f.rel)
+  }
+  return applied
+}
+
 export interface RunArgs {
   readonly task: string
   readonly cwd: string
@@ -171,6 +247,8 @@ export interface RunArgs {
   /** Publishes one progress notice into the chat (Synthetic). Batched milestone lines arrive joined. */
   readonly onMilestone: (text: string) => Effect.Effect<void>
   readonly checkpoint?: (state: JhEngine.State) => Effect.Effect<void>
+  /** improve11 P5: the racing latch — a losing racer stops at its next step boundary. */
+  readonly aborted?: () => boolean
   readonly now?: () => number
 }
 
@@ -207,6 +285,7 @@ export function runTask(args: RunArgs): Effect.Effect<JhEngine.Report> {
     trigger: JhBudget.DEFAULT_TRIGGER,
     budget: { startedAt: nowFn(), wallMs: wallMin * 60 * 1000, now: nowFn },
     ...flagsFor(args.strict),
+    aborted: args.aborted,
     checkpoint: args.checkpoint,
     onLog: (entry) => {
       const line = milestone(entry)

@@ -57,6 +57,50 @@ describe("SessionStrict.lastUserText", () => {
   })
 })
 
+describe("SessionStrict racing helpers (improve11 P5)", () => {
+  const mk = () => {
+    const src = fs.mkdtempSync(path.join(os.tmpdir(), "jh-fork-src-"))
+    fs.writeFileSync(path.join(src, "a.c"), "original A")
+    fs.mkdirSync(path.join(src, "sub"))
+    fs.writeFileSync(path.join(src, "sub", "b.txt"), "original B")
+    fs.mkdirSync(path.join(src, ".git"))
+    fs.writeFileSync(path.join(src, ".git", "HEAD"), "ref: x")
+    return src
+  }
+  test("forkWorkspace copies the tree (without .git); applyBack applies ONLY changed+new files", () => {
+    const src = mk()
+    const baseline = SessionStrict.manifestFor(src)
+    const fork = SessionStrict.forkWorkspace(src, 1)
+    if ("refused" in fork) throw new Error(fork.refused)
+    expect(fs.readFileSync(path.join(fork.dir, "a.c"), "utf8")).toBe("original A")
+    expect(fs.existsSync(path.join(fork.dir, ".git"))).toBe(false)
+    // the racer edits a.c, creates c.c, leaves sub/b.txt untouched, deletes nothing back-propagatable
+    fs.writeFileSync(path.join(fork.dir, "a.c"), "WINNER A")
+    fs.writeFileSync(path.join(fork.dir, "c.c"), "NEW C")
+    const applied = SessionStrict.applyBack(fork.dir, src, baseline)
+    expect(applied.sort()).toEqual(["a.c", "c.c"])
+    expect(fs.readFileSync(path.join(src, "a.c"), "utf8")).toBe("WINNER A")
+    expect(fs.readFileSync(path.join(src, "c.c"), "utf8")).toBe("NEW C")
+    expect(fs.readFileSync(path.join(src, "sub", "b.txt"), "utf8")).toBe("original B")
+  })
+  test("deletions are NOT propagated (v1 safety)", () => {
+    const src = mk()
+    const baseline = SessionStrict.manifestFor(src)
+    const fork = SessionStrict.forkWorkspace(src, 2)
+    if ("refused" in fork) throw new Error(fork.refused)
+    fs.rmSync(path.join(fork.dir, "sub", "b.txt"))
+    const applied = SessionStrict.applyBack(fork.dir, src, baseline)
+    expect(applied).toEqual([])
+    expect(fs.existsSync(path.join(src, "sub", "b.txt"))).toBe(true)
+  })
+  test("the fork bound REFUSES with a named reason (no silent cap)", () => {
+    const src = fs.mkdtempSync(path.join(os.tmpdir(), "jh-fork-big-"))
+    for (let i = 0; i <= SessionStrict.MAX_FORK_FILES; i++) fs.writeFileSync(path.join(src, `f${i}`), "")
+    const refused = SessionStrict.forkWorkspace(src, 1)
+    expect("refused" in refused && refused.refused).toContain("files")
+  })
+})
+
 describe("SessionStrict.listFilesFor", () => {
   test("binary placeholders, dotfile skip, and a NAMED cap (no silent truncation)", () => {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), "jh-strictls-"))
