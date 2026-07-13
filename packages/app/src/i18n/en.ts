@@ -1380,7 +1380,8 @@ export const dict = {
     "The training-wheels harness for small local models: instead of trusting the model to plan a long task, the system breaks work into tiny steps, verifies each one by actually compiling and running things, and recovers from mistakes automatically — so a modest model on your own hardware can finish jobs that normally need a frontier model. Applies to Strict-harness sessions.",
   "settings.strict.toast.failed": "Saving Strict-mode settings failed",
   "settings.strict.row.enabled.title": "Enable Strict mode",
-  "settings.strict.row.enabled.description": "Run tasks under the Strict harness: step-by-step planning with a verified checkpoint after every action.",
+  "settings.strict.row.enabled.description":
+    "Run tasks under the Strict harness: step-by-step planning with a verified checkpoint after every action. Because it builds and runs things on its own, a chat also needs its permission mode set to Bypass (or Yolo) — below that, the chat explains and answers normally.",
   "settings.strict.row.verification.title": "Verification gates",
   "settings.strict.row.verification.description":
     "Track what each build produced and re-run the kept tests after every edit — a change that silently breaks something verified is caught immediately.",
@@ -1395,7 +1396,7 @@ export const dict = {
     "At 50% and 75% of the time budget, calmly steer the model to simplify and land an end-to-end result.",
   "settings.strict.row.attempts.title": "Parallel attempts (race)",
   "settings.strict.row.attempts.description":
-    "Run several isolated attempts at the same task on separate copies of your project and keep the first one that verifiably succeeds. More attempts = better odds and more compute; your local hardware runs them nearly in parallel. Empty or 1 = off.",
+    "Run several isolated attempts at the same task on separate copies of your project and keep the first one that verifiably succeeds — a lost race leaves your folder untouched. More attempts = better odds and more compute; your local hardware runs them nearly in parallel. Works for folders up to ~5000 files / 256 MB (larger ones fall back to a single attempt). Empty or 1 = off.",
   "settings.strict.row.wallMinutes.title": "Time budget (minutes)",
   "settings.strict.row.wallMinutes.description": "Wall-clock budget per Strict task; at exhaustion the best verified state is delivered. Empty = 45.",
   "settings.tools.title": "Tools",
