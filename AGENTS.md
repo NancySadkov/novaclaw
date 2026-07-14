@@ -277,3 +277,10 @@ const table = sqliteTable("session", {
 - **Readiness is a Promise that always exists.** Never expose (or rely on) a `.promise` that is
   undefined once a store has already loaded — a resource built over it never resolves on warm
   mounts. (persist.ts contract fix: plan P1.)
+- **Never `setStore` an object onto a getter-backed store key.** Several `State` keys in
+  `global-sync/child-store.ts` (`path`, `provider`, `mcp`) are getters over TanStack query data.
+  Solid resolves the write target THROUGH the getter and merges into the query's own store
+  proxy: the dev "Cannot mutate a Store directly" warn, and the write is silently swallowed —
+  it can never be read back anyway (the getter shadows it). Query-backed data is seeded via
+  `queryClient.setQueryData` on the owning query key (see `bootstrapDirectory`'s path seed),
+  never via the directory store.
