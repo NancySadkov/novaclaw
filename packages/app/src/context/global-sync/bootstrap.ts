@@ -218,7 +218,16 @@ export async function bootstrapDirectory(input: {
   const seededProject = projectID(input.directory, input.global.project)
   const seededPath = input.global.path.directory === input.directory ? input.global.path : undefined
   if (seededProject) input.setStore("project", seededProject)
-  if (seededPath) input.setStore("path", seededPath)
+  // Seed the QUERY cache, never the store: `State.path` is a getter over the per-directory
+  // path query (child-store.ts), so a store write can't land — Solid merges it into the
+  // query's own store proxy instead, which is exactly the dev "Cannot mutate a Store
+  // directly" warn with the write silently swallowed. setQueryData is what the getter reads.
+  if (seededPath) {
+    const pathOptions = loadPathQuery(input.scope, input.directory, input.sdk)
+    if (!input.queryClient.getQueryData(pathOptions.queryKey)) {
+      input.queryClient.setQueryData(pathOptions.queryKey, seededPath)
+    }
+  }
   if (Object.keys(input.store.config).length === 0 && Object.keys(input.global.config).length > 0) {
     input.setStore("config", reconcile(input.global.config, { merge: false }))
   }

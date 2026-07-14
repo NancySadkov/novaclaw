@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { createStore } from "solid-js/store"
 import { QueryClient } from "@tanstack/solid-query"
-import type { Config, NovaclawClient, Project } from "@novaclaw/sdk/v2/client"
+import type { Config, NovaclawClient, Path, Project } from "@novaclaw/sdk/v2/client"
 import type { NormalizedProviderListResponse } from "@novaclaw/session-ui/context"
 import { bootstrapDirectory, loadPathQuery, loadProvidersQuery } from "./bootstrap"
 import type { State, VcsCache } from "./types"
@@ -84,6 +84,174 @@ describe("bootstrapDirectory", () => {
 
     expect(store.status).toBe("complete")
     expect(mcpReads).toEqual([])
+  })
+})
+
+describe("bootstrapDirectory path seeding", () => {
+  // The real child store exposes `path` as a GETTER over the per-directory path query
+  // (child-store.ts) — a store write to it merges into the query's own store proxy, which
+  // is Solid's dev "Cannot mutate a Store directly" warn with the write silently swallowed.
+  // The seed must go to the query cache instead, and never touch the foreign proxy.
+  test("seeds the path query cache and never writes the getter-backed store key", async () => {
+    const seeded = {
+      state: "s",
+      config: "c",
+      data: "d",
+      roots: [],
+      worktree: "/project",
+      directory: "/project",
+      home: "/home",
+    }
+    // Stands in for pathQuery.data: a foreign read-only store proxy behind the getter.
+    const [foreignPath] = createStore({ ...seeded, state: "", worktree: "" })
+
+    const [store, setStore] = createStore<State>({
+      status: "loading",
+      agent: [],
+      command: [],
+      project: "",
+      projectMeta: undefined,
+      icon: undefined,
+      provider_ready: true,
+      provider,
+      config: {},
+      get path() {
+        return foreignPath
+      },
+      session: [],
+      sessionTotal: 0,
+      session_status: {},
+      session_working(id: string) {
+        return this.session_status[id]?.type !== "idle"
+      },
+      session_diff: {},
+      todo: {},
+      permission: {},
+      question: {},
+      mcp_ready: true,
+      mcp: {},
+      vcs: undefined,
+      limit: 5,
+    })
+
+    const warnings: string[] = []
+    const originalWarn = console.warn
+    console.warn = (...args: unknown[]) => void warnings.push(String(args[0]))
+
+    const queryClient = new QueryClient()
+    try {
+      await bootstrapDirectory({
+        directory: "/project",
+        scope: ServerScope.local,
+        mcp: false,
+        global: {
+          config: {} satisfies Config,
+          path: seeded,
+          project: [{ id: "project", worktree: "/project" } as Project],
+          provider,
+        },
+        sdk: {
+          app: { agents: async () => ({ data: [] }) },
+          config: { get: async () => ({ data: {} }) },
+          session: { status: async () => ({ data: {} }) },
+          vcs: { get: async () => ({ data: undefined }) },
+          command: { list: async () => ({ data: [] }) },
+          v2: { permission: { request: { list: async () => ({ data: { data: [] } }) } } },
+          question: { list: async () => ({ data: [] }) },
+          mcp: { status: async () => ({ data: {} }) },
+          provider: { list: async () => ({ data: { all: [], connected: [], default: {} } }) },
+        } as unknown as NovaclawClient,
+        store,
+        setStore,
+        vcsCache: { setStore() {} } as unknown as VcsCache,
+        loadSessions() {},
+        translate: (key) => key,
+        queryClient,
+      })
+    } finally {
+      console.warn = originalWarn
+    }
+
+    const pathKey = [...loadPathQuery(ServerScope.local, "/project", {} as NovaclawClient).queryKey]
+    expect(queryClient.getQueryData<Path>(pathKey)).toEqual(seeded)
+    expect(foreignPath.state).toBe("") // the proxy behind the getter is never written
+    expect(warnings.filter((w) => w.includes("Cannot mutate a Store directly"))).toEqual([])
+  })
+
+  test("does not clobber existing path query data with the global seed", async () => {
+    const existing = {
+      state: "existing",
+      config: "",
+      data: "",
+      roots: [],
+      worktree: "/project",
+      directory: "/project",
+      home: "/home",
+    }
+    const queryClient = new QueryClient()
+    const pathKey = [...loadPathQuery(ServerScope.local, "/project", {} as NovaclawClient).queryKey]
+    queryClient.setQueryData<Path>(pathKey, existing)
+
+    const [store, setStore] = createStore<State>({
+      status: "complete",
+      agent: [],
+      command: [],
+      project: "",
+      projectMeta: undefined,
+      icon: undefined,
+      provider_ready: true,
+      provider,
+      config: {},
+      get path() {
+        return existing
+      },
+      session: [],
+      sessionTotal: 0,
+      session_status: {},
+      session_working(id: string) {
+        return this.session_status[id]?.type !== "idle"
+      },
+      session_diff: {},
+      todo: {},
+      permission: {},
+      question: {},
+      mcp_ready: true,
+      mcp: {},
+      vcs: undefined,
+      limit: 5,
+    })
+
+    await bootstrapDirectory({
+      directory: "/project",
+      scope: ServerScope.local,
+      mcp: false,
+      global: {
+        config: {} satisfies Config,
+        path: { ...existing, state: "stale-global" },
+        project: [],
+        provider,
+      },
+      sdk: {
+        app: { agents: async () => ({ data: [] }) },
+        config: { get: async () => ({ data: {} }) },
+        session: { status: async () => ({ data: {} }) },
+        vcs: { get: async () => ({ data: undefined }) },
+        command: { list: async () => ({ data: [] }) },
+        v2: { permission: { request: { list: async () => ({ data: { data: [] } }) } } },
+        question: { list: async () => ({ data: [] }) },
+        mcp: { status: async () => ({ data: {} }) },
+        provider: { list: async () => ({ data: { all: [], connected: [], default: {} } }) },
+        project: { current: async () => ({ data: { id: "project" } }) },
+      } as unknown as NovaclawClient,
+      store,
+      setStore,
+      vcsCache: { setStore() {} } as unknown as VcsCache,
+      loadSessions() {},
+      translate: (key) => key,
+      queryClient,
+    })
+
+    expect(queryClient.getQueryData<Path>(pathKey)).toEqual(existing)
   })
 })
 
