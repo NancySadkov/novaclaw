@@ -12,6 +12,7 @@ import { createStore, produce, reconcile } from "solid-js/store"
 import { Binary } from "@novaclaw/core/util/binary"
 import { diffs as cleanDiffs } from "@/utils/diffs"
 import { rootSession } from "@/utils/session-route"
+import { applyControlPatch, controlPatch } from "./global-sync/control-fold"
 import { dropSessionCaches, pickSessionCacheEvictions, SESSION_CACHE_LIMIT } from "./global-sync/session-cache"
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
@@ -235,6 +236,19 @@ export function createServerSession(client: NovaclawClient, options?: { retry?: 
         event.type !== "session.deleted"
       )
         void resolve(eventID).catch(() => {})
+    }
+    // P2 (ui-arch-hardening): fold V2 CONTROL events into the cached record so open views stay
+    // live (an uncached record was already queued for a fetch above, which returns fresh).
+    const control = controlPatch(event)
+    if (control && data.info[control.sessionID]) {
+      setData(
+        "info",
+        control.sessionID,
+        produce((draft) => {
+          if (draft) applyControlPatch(draft, control.patch)
+        }),
+      )
+      return
     }
     switch (event.type) {
       case "session.created":
