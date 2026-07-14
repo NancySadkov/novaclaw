@@ -17,15 +17,14 @@ import { serverName, ServerConnection, useServer } from "@/context/server"
 import { useSDK } from "@/context/sdk"
 import { switchFeature, switchMode, switchStrict, type SessionFeatureName } from "@/utils/fs-api"
 import { useSettings } from "@/context/settings"
-import { useServerSync } from "@/context/server-sync"
 import { useSync } from "@/context/sync"
+import { useSessionView } from "@/pages/session/use-session-view"
 import { useTabs } from "@/context/tabs"
 import { useProviders } from "@/hooks/use-providers"
 import { legacySessionHref } from "@/utils/session-route"
 import { pathKey } from "@/utils/path-key"
 
 export function createPromptInputController(input: {
-  sessionKey: Accessor<string>
   sessionID: Accessor<string | undefined>
   queryOptions: Pick<QueryOptionsApi, "agents" | "providers">
 }) {
@@ -35,16 +34,18 @@ export function createPromptInputController(input: {
   const providers = useProviders()
   const settings = useSettings()
   const sync = useSync()
-  const serverSync = useServerSync()
   const sdk = useSDK()
   const server = useServer()
   const pickDirectory = useDirectoryPicker()
   const navigate = useNavigate()
   const params = useParams<{ dir?: string }>()
-  const view = layout.view(input.sessionKey)
-  const agentsQuery = createQuery(() => input.queryOptions.agents(pathKey(sdk().directory)))
+  // The per-session facade (ui-arch P5): record/working/scope/key come from ONE place —
+  // no hand-picking between sync/serverSync or threading a sessionKey from the route.
+  const sessionView = useSessionView(input.sessionID)
+  const view = layout.view(sessionView.sessionKey)
+  const agentsQuery = createQuery(() => input.queryOptions.agents(pathKey(sessionView.directory())))
   const globalProvidersQuery = createQuery(() => input.queryOptions.providers(null))
-  const providersQuery = createQuery(() => input.queryOptions.providers(pathKey(sdk().directory)))
+  const providersQuery = createQuery(() => input.queryOptions.providers(pathKey(sessionView.directory())))
 
   // 1K: mid-session permission-mode switch — update the local signal AND, when a session is live,
   // tell the server so the MODE_RULES overlay applies from the next turn (create-time uses the
@@ -53,7 +54,7 @@ export function createPromptInputController(input: {
     local.permissionMode.set(value)
     const id = input.sessionID()
     const conn = server.current
-    const directory = sdk().directory
+    const directory = sessionView.directory()
     if (id && conn && directory)
       void switchMode(conn.http, { directory, sessionID: id, permissionMode: value }).catch((error) =>
         console.error("switchMode failed", error),
@@ -61,17 +62,15 @@ export function createPromptInputController(input: {
   }
 
   // The per-chat Strict switch (jh.md): this browser's explicit choice wins (it is what we last
-  // POSTed — the store record only refreshes on load, so it must not shadow a newer toggle), then
-  // the session record (a fork's copied override, or one set from another client), then the global
-  // Settings → Strict default. Same local-first precedence as the permission-mode droplist.
+  // POSTed — it must not be shadowed by a not-yet-folded record), then the live session record
+  // (a fork's copied override, or one set from another client — P2 keeps it folded), then the
+  // global Settings → Strict default. Same local-first precedence as the permission-mode droplist.
   const strictGlobal = () =>
     (sync().data.config as { strict?: { enabled?: boolean; attempts?: number; wallMinutes?: number } }).strict ?? {}
   const strictCurrent = () => {
-    const id = input.sessionID()
-    const record = id
-      ? (sync().session.get(id) as { strict?: { enabled?: boolean; attempts?: number; wallMinutes?: number } } | undefined)
-          ?.strict
-      : undefined
+    const record = (
+      sessionView.record() as { strict?: { enabled?: boolean; attempts?: number; wallMinutes?: number } } | undefined
+    )?.strict
     return local.strict.current() ?? record ?? strictGlobal()
   }
 
@@ -80,10 +79,9 @@ export function createPromptInputController(input: {
   // block's `enabled`. The control shows the EFFECTIVE state, so a globally-on feature reads ON
   // here and flipping it writes this chat's explicit off.
   const featuresCurrent = (): Record<SessionFeatureName, boolean> => {
-    const id = input.sessionID()
-    const record = id
-      ? (sync().session.get(id) as { introspection?: boolean; quality?: boolean; affective?: boolean } | undefined)
-      : undefined
+    const record = sessionView.record() as
+      | { introspection?: boolean; quality?: boolean; affective?: boolean }
+      | undefined
     const config = sync().data.config as Partial<Record<SessionFeatureName, { enabled?: boolean }>>
     const draft = local.features.current()
     const pick = (feature: SessionFeatureName) =>
@@ -114,7 +112,7 @@ export function createPromptInputController(input: {
         local.strict.set(value)
         const id = input.sessionID()
         const conn = server.current
-        const directory = sdk().directory
+        const directory = sessionView.directory()
         if (id && conn && directory)
           void switchStrict(conn.http, { directory, sessionID: id, strict: value }).catch((error) =>
             console.error("switchStrict failed", error),
@@ -132,12 +130,9 @@ export function createPromptInputController(input: {
     // the session MIGRATES to the picked directory (the control-plane move; children unaffected).
     // Disabled while the agent works: a mid-turn move would yank the cwd out from under tools.
     folder: {
-      name: displayName({ worktree: sdk().directory }),
+      name: displayName({ worktree: sessionView.directory() }),
       visible: !!input.sessionID(),
-      working: (() => {
-        const id = input.sessionID()
-        return id ? serverSync().session.data.session_working(id) : false
-      })(),
+      working: sessionView.working(),
       pick: () => {
         const id = input.sessionID()
         const conn = server.current
@@ -147,7 +142,7 @@ export function createPromptInputController(input: {
           title: language.t("prompt.folder.pick.title"),
           onSelect: (result) => {
             const directory = Array.isArray(result) ? result[0] : result
-            if (!directory || directory === sdk().directory) return
+            if (!directory || directory === sessionView.directory()) return
             void sdk()
               .client.experimental.controlPlane.moveSession({ sessionID: id, destination: { directory } })
               .then((moved) => {
@@ -176,7 +171,7 @@ export function createPromptInputController(input: {
         local.features.set({ ...local.features.current(), [feature]: enabled })
         const id = input.sessionID()
         const conn = server.current
-        const directory = sdk().directory
+        const directory = sessionView.directory()
         if (id && conn && directory)
           void switchFeature(conn.http, { directory, sessionID: id, feature, enabled }).catch((error) =>
             console.error("switchFeature failed", error),
@@ -185,7 +180,7 @@ export function createPromptInputController(input: {
     },
     session: {
       id: input.sessionID(),
-      tabs: layout.tabs(input.sessionKey),
+      tabs: layout.tabs(sessionView.sessionKey),
       reviewPanel: view.reviewPanel,
     },
     newLayoutDesigns: settings.general.newLayoutDesigns(),

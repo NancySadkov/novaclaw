@@ -161,7 +161,6 @@ export default function Page() {
 
   const composer = createSessionComposerController()
   const inputController = createPromptInputController({
-    sessionKey,
     sessionID: () => params.id,
     queryOptions: serverSync().queryOptions,
   })

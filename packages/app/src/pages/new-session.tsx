@@ -44,7 +44,6 @@ export default function NewSessionPage() {
   let inputRef: HTMLDivElement | undefined
 
   const inputController = createPromptInputController({
-    sessionKey: route.sessionKey,
     sessionID: () => route.params.id,
     queryOptions: serverSync().queryOptions,
   })

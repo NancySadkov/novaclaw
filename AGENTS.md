@@ -284,3 +284,21 @@ const table = sqliteTable("session", {
   it can never be read back anyway (the getter shadows it). Query-backed data is seeded via
   `queryClient.setQueryData` on the owning query key (see `bootstrapDirectory`'s path seed),
   never via the directory store.
+
+### The client context map (P5) — which context owns what
+
+Per-session reads go through **`useSessionView(sessionID)`**
+(`packages/app/src/pages/session/use-session-view.ts`) — the one facade answering: the live
+**record** (P2-folded, survives folder moves), **working** state, the canonical **scope** /
+**sessionKey**, the view's **directory**, and **persistTarget(key)** (the single answer to "the
+persisted key for session X"). Don't hand-assemble these from the raw contexts below; the facade
+exists so picking a wrong context can't compile. What each raw context owns:
+
+| Context | Owns |
+|---|---|
+| `useServerSDK()` | the server connection: `scope`, HTTP `client`, the SSE event tap |
+| `useServerSync()` | server-scoped stores: the canonical **session record store** (`session.get/lineage/status`, P2 control-event folds), `data.project`, notifications plumbing, `child(dir)` directory stores, `queryOptions` |
+| `useSDK()` | the ROUTE's directory-scoped client: `directory`, dir-bound HTTP `client` |
+| `useSync()` | the route's directory-sync view over serverSync: `data.*` (config/agent/command + session-field passthroughs), dir-scoped `session.{fetch,archive,…}` |
+| `global.ensureServerCtx(conn)` | multi-server surfaces ONLY (home lists, pickers): a NON-route server's sdk/sync/projects — never for the open session view |
+| `Persist.*` | storage addressing; per-session keys ONLY via the facade's `persistTarget`; draft-tab state via `Persist.draft(draftID, …)` (deleted with the tab; owned by prompt/tabs contexts) |
