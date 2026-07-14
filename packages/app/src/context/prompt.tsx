@@ -194,13 +194,44 @@ function promptTarget(serverScope: ServerScope, scope: Scope) {
   return Persist.serverScoped(serverScope, scope.dir, scope.id, "prompt", [legacy])
 }
 
+// A one-shot, scope-free draft hand-off: the New Agent bar (or any spawner) stages the text the
+// user typed under the new session's id, and whichever prompt session first materializes for that
+// chat consumes it as the composer draft. sessionStorage on purpose — per-tab, survives the SPA
+// navigation and a reload, never leaks across windows.
+const draftSeedKey = (sessionID: string) => `novaclaw.draft-seed:${sessionID}`
+
+export function stageDraftSeed(sessionID: string, text: string) {
+  try {
+    sessionStorage.setItem(draftSeedKey(sessionID), text)
+  } catch {
+    // Storage unavailable (quota/private mode) — losing the pre-typed text is acceptable.
+  }
+}
+
 export function createPromptSession(serverScope: ServerScope, scope: Scope) {
   const [store, setStore, _, ready] = persisted(
     promptTarget(serverScope, scope),
     createStore<PromptStore>(promptStore()),
   )
 
-  return { ready, ...createPromptStateValue(store, setStore) }
+  const value = { ready, ...createPromptStateValue(store, setStore) }
+  // Consume a staged draft seed once the persisted load settles — only into an EMPTY composer
+  // (a real draft the user already typed must never be clobbered by a stale seed).
+  if ("id" in scope && scope.id) {
+    const sessionID = scope.id
+    void Promise.resolve(ready.promise).then(() => {
+      try {
+        const seed = sessionStorage.getItem(draftSeedKey(sessionID))
+        if (seed === null) return
+        sessionStorage.removeItem(draftSeedKey(sessionID))
+        if (value.dirty()) return
+        value.set([{ type: "text", content: seed, start: 0, end: seed.length }], seed.length)
+      } catch {
+        // Same storage caveat as stageDraftSeed.
+      }
+    })
+  }
+  return value
 }
 
 export function createPromptReady(session: Accessor<PromptSession>) {

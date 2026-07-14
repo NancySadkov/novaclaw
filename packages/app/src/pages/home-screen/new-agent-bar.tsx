@@ -4,23 +4,23 @@ import { Spinner } from "@novaclaw/ui/spinner"
 import { ServerConnection, useServer } from "@/context/server"
 import { useGlobal } from "@/context/global"
 import { useServerSync } from "@/context/server-sync"
-import { useModels } from "@/context/models"
 import { useTabs } from "@/context/tabs"
 import { useLanguage } from "@/context/language"
 import { useDirectoryPicker } from "@/components/directory-picker"
+import { stageDraftSeed } from "@/context/prompt"
 import { displayName, errorMessage } from "@/pages/layout/helpers"
 import { showToast } from "@/utils/toast"
 
-// The "New Agent" spawn box — the home launcher's primary action. Type a prompt, hit Enter: it creates
-// a session in the shared scratch dir (or a folder picked via the chip), fires the prompt, and opens the
-// new chat — no draft/composer detour. Self-contained: it resolves the current server, its scratch dir,
-// and the model to use on its own, so it can live on the launcher without the Chats page's contexts.
-// (Moved off /chats: the Chats page is now a pure list of existing chats.)
+// The "New Agent" spawn box — the home launcher's primary action. Enter creates a session in the
+// shared scratch dir (or a folder picked via the chip) and opens the new chat IMMEDIATELY — the
+// prompt is NOT fired (owner call 2026-07-14): the user first configures the chat (model,
+// permission mode, Strict, Tuning, prompt override) in the live composer, where any text typed
+// here is waiting as the message draft. Firing before configuration meant the first turn always
+// ran with an auto-picked model and default permissions — exactly what a user could never adjust.
 export function NewAgentBar() {
   const server = useServer()
   const global = useGlobal()
   const sync = useServerSync()
-  const models = useModels()
   const tabs = useTabs()
   const language = useLanguage()
   const pickDirectory = useDirectoryPicker()
@@ -48,26 +48,6 @@ export function NewAgentBar() {
     return displayName({ worktree: folder })
   })
 
-  // The spawn turn must carry an explicit model (a model-less turn regresses to the legacy path).
-  // Prefer the user's living choices: last-used → curated "shown" → config default → first available.
-  const spawnModel = createMemo(() => {
-    const usable = (key: { providerID: string; modelID: string }) => !!models.find(key) && models.visible(key)
-    const recent = models.recent.list().find(usable)
-    if (recent) return { providerID: recent.providerID, modelID: recent.modelID }
-    const shown = models.shown()[0]
-    if (shown) return { providerID: shown.providerID, modelID: shown.modelID }
-    const configured = (activeSync().data.config as { model?: string } | undefined)?.model
-    if (configured) {
-      const [providerID, ...rest] = configured.split("/")
-      if (providerID && rest.length) {
-        const key = { providerID, modelID: rest.join("/") }
-        if (usable(key)) return key
-      }
-    }
-    const first = models.list().find((m) => models.visible({ providerID: m.provider.id, modelID: m.id }))
-    return first ? { providerID: first.provider.id, modelID: first.id } : undefined
-  })
-
   function pickFolder() {
     const c = conn()
     if (!c) return
@@ -85,19 +65,17 @@ export function NewAgentBar() {
     const text = prompt.trim()
     const c = conn()
     const directory = spawnFolder()
-    if (!text || !c || !directory || spawning()) return
+    if (!c || !directory || spawning()) return
     setSpawning(true)
     try {
       const cx = global.ensureServerCtx(c)
       const created = await cx.sdk.client.v2.session.create({ location: { directory } })
       const sessionID = created.data?.data.id
       if (created.error || !sessionID) throw created.error ?? new Error("session create returned no id")
-      const admitted = await cx.sdk.client.session.promptAsync({
-        sessionID,
-        model: spawnModel(),
-        parts: [{ type: "text", text }],
-      })
-      if (admitted.error) throw admitted.error
+      // Owner call 2026-07-14: open the chat WITHOUT firing — the user configures model /
+      // permission mode / Strict / Tuning first; the typed task waits in the composer draft
+      // (a scope-free hand-off the chat's prompt session consumes on mount).
+      if (text) stageDraftSeed(sessionID, text)
       cx.projects.open(directory)
       cx.projects.touch(directory)
       startTransition(() => {
@@ -116,8 +94,7 @@ export function NewAgentBar() {
 
   const [value, setValue] = createSignal("")
   const submit = () => {
-    const text = value().trim()
-    if (!text || spawning()) return
+    if (spawning()) return
     // Never silently no-op: if the server/scratch dir isn't ready yet, tell the user instead of
     // eating the Enter (which reads as "nothing happens").
     if (!canSpawn()) {
@@ -127,7 +104,7 @@ export function NewAgentBar() {
       })
       return
     }
-    void spawn(text)
+    void spawn(value())
     setValue("")
   }
 

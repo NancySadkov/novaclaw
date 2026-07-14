@@ -1560,11 +1560,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   <Show when={newSession() || props.controls.session?.id}>
                     <ComposerPermissionModeControl state={permissionModeControlState()} />
                     <ComposerStrictControl state={strictControlState()} />
-                    {/* T1: the Tuning toggles are an Advanced+ affordance (uix.md §6.4) — the
-                        helpers themselves stay configured in Settings; per-chat we surface on/off. */}
-                    <Show when={expertise.atLeast("advanced")}>
-                      <ComposerFeaturesControl state={featuresControlState()} />
-                    </Show>
+                    {/* T1: the Tuning toggles — ungated like the Strict switch (owner call
+                        2026-07-14: per-chat helpers must be discoverable, not hidden behind an
+                        expertise level; the helpers' INTERNALS stay in Settings). */}
+                    <ComposerFeaturesControl state={featuresControlState()} />
                   </Show>
                   <Show when={!providersLoading() && store.mode !== "shell" && showVariantControl()}>
                     <div

@@ -748,7 +748,7 @@ export const dict = {
   "home.sessions.sort.recent": "Recent",
   "home.sessions.sort.active": "Active",
   "home.sessions.sort.tokens": "Tokens",
-  "home.newAgent.placeholder": "Tell a new agent what to do — Enter to spawn",
+  "home.newAgent.placeholder": "Tell a new agent what to do — Enter opens its chat, ready to configure",
   "home.newAgent.folder.scratch": "Scratch",
   "home.newAgent.folder.pick": "Choose the agent's working folder",
   "home.newAgent.folder.reset": "Back to the scratch folder",
