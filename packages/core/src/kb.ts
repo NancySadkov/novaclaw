@@ -18,7 +18,6 @@ export * as Kb from "./kb"
 //   - `clear` is the only true delete, and `backup` exists precisely so it is safe.
 
 import { and, asc, eq, isNull, type SQL } from "drizzle-orm"
-import { index, integer, real, sqliteTable, text } from "drizzle-orm/sqlite-core"
 import { Context, Effect, Layer, Schema } from "effect"
 import { ascending } from "@novaclaw/schema/identifier"
 import { Database } from "./database/database"
@@ -26,28 +25,10 @@ import { makeGlobalNode } from "./effect/app-node"
 
 // --- storage ------------------------------------------------------------------
 
-export const KbFactTable = sqliteTable(
-  "kb_fact",
-  {
-    id: text().primaryKey(),
-    subject: text().notNull(),
-    predicate: text().notNull(),
-    object: text().notNull(),
-    relation: text().$type<"core" | "staged">().notNull(),
-    source: text(),
-    agent: text(),
-    confidence: real(),
-    valid_from: integer().notNull(),
-    valid_to: integer(),
-    superseded_by: text(),
-    time_created: integer().notNull(),
-  },
-  (table) => [
-    index("kb_fact_subject_idx").on(table.subject, table.valid_to),
-    index("kb_fact_predicate_idx").on(table.predicate, table.valid_to),
-    index("kb_fact_object_idx").on(table.object, table.valid_to),
-  ],
-)
+// The table definition lives in kb/sql.ts (drizzle.config.ts's schema globs only match sql.ts
+// files — schema.gen.ts regenerates from them); re-exported here so callers don't churn.
+export { KbFactTable } from "./kb/sql"
+import { KbFactTable } from "./kb/sql"
 
 // --- wire schemas ---------------------------------------------------------------
 

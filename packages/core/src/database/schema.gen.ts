@@ -131,6 +131,22 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`kb_fact\` (
+          \`id\` text PRIMARY KEY,
+          \`subject\` text NOT NULL,
+          \`predicate\` text NOT NULL,
+          \`object\` text NOT NULL,
+          \`relation\` text NOT NULL,
+          \`source\` text,
+          \`agent\` text,
+          \`confidence\` real,
+          \`valid_from\` integer NOT NULL,
+          \`valid_to\` integer,
+          \`superseded_by\` text,
+          \`time_created\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`permission\` (
           \`id\` text PRIMARY KEY,
           \`project_id\` text NOT NULL,
@@ -268,6 +284,9 @@ export default {
       `)
       yield* tx.run(`CREATE UNIQUE INDEX \`event_aggregate_seq_idx\` ON \`event\` (\`aggregate_id\`,\`seq\`);`)
       yield* tx.run(`CREATE INDEX \`event_aggregate_type_seq_idx\` ON \`event\` (\`aggregate_id\`,\`type\`,\`seq\`);`)
+      yield* tx.run(`CREATE INDEX \`kb_fact_subject_idx\` ON \`kb_fact\` (\`subject\`,\`valid_to\`);`)
+      yield* tx.run(`CREATE INDEX \`kb_fact_predicate_idx\` ON \`kb_fact\` (\`predicate\`,\`valid_to\`);`)
+      yield* tx.run(`CREATE INDEX \`kb_fact_object_idx\` ON \`kb_fact\` (\`object\`,\`valid_to\`);`)
       yield* tx.run(
         `CREATE UNIQUE INDEX \`permission_project_action_resource_idx\` ON \`permission\` (\`project_id\`,\`action\`,\`resource\`);`,
       )
@@ -295,29 +314,6 @@ export default {
       yield* tx.run(`CREATE INDEX \`session_parent_idx\` ON \`session\` (\`parent_id\`);`)
       yield* tx.run(`CREATE INDEX \`session_tag_tag_idx\` ON \`session_tag\` (\`tag\`);`)
       yield* tx.run(`CREATE INDEX \`todo_session_idx\` ON \`todo\` (\`session_id\`);`)
-      // HAND-MAINTAINED: kb_fact's Drizzle definition lives in src/kb.ts, which drizzle.config.ts's
-      // schema globs (*.sql.ts / sql.ts) do NOT match, so a full regenerate silently drops this block.
-      // Keep it in sync with src/kb.ts and migration/20260703120000_add_kb_fact.ts until the table
-      // definition moves into a globbed sql file.
-      yield* tx.run(`
-        CREATE TABLE \`kb_fact\` (
-          \`id\` text PRIMARY KEY,
-          \`subject\` text NOT NULL,
-          \`predicate\` text NOT NULL,
-          \`object\` text NOT NULL,
-          \`relation\` text NOT NULL,
-          \`source\` text,
-          \`agent\` text,
-          \`confidence\` real,
-          \`valid_from\` integer NOT NULL,
-          \`valid_to\` integer,
-          \`superseded_by\` text,
-          \`time_created\` integer NOT NULL
-        );
-      `)
-      yield* tx.run(`CREATE INDEX \`kb_fact_subject_idx\` ON \`kb_fact\` (\`subject\`,\`valid_to\`);`)
-      yield* tx.run(`CREATE INDEX \`kb_fact_predicate_idx\` ON \`kb_fact\` (\`predicate\`,\`valid_to\`);`)
-      yield* tx.run(`CREATE INDEX \`kb_fact_object_idx\` ON \`kb_fact\` (\`object\`,\`valid_to\`);`)
     })
   },
 } satisfies Omit<DatabaseMigration.Migration, "id">
