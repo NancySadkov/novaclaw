@@ -393,6 +393,11 @@ export const dict = {
   "prompt.features.affective.title": "Mood sampling",
   "prompt.features.affective.description": "Adapts the model's sampling to its appraised mood — steadier when frustrated, freer when exploring.",
 
+  "prompt.folder.tooltip": "This chat's working folder — click to move the chat somewhere else",
+  "prompt.folder.tooltip.working": "The agent is working — you can move the chat once it's idle",
+  "prompt.folder.pick.title": "Move this chat to a folder",
+  "prompt.folder.moveFailed": "Moving the chat failed",
+
   "prompt.toast.pasteUnsupported.title": "Unsupported attachment",
   "prompt.toast.pasteUnsupported.description": "Only images, PDFs, or text files can be attached here.",
   "prompt.toast.modelAgentRequired.title": "Select an agent and model",

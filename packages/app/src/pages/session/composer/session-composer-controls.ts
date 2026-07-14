@@ -5,6 +5,9 @@ import { type Accessor, createMemo } from "solid-js"
 import type { PromptInputControls } from "@/components/prompt-input"
 import type { PromptProjectControls } from "@/components/prompt-project-selector"
 import { useDirectoryPicker } from "@/components/directory-picker"
+import { useLanguage } from "@/context/language"
+import { displayName, errorMessage } from "@/pages/layout/helpers"
+import { showToast } from "@/utils/toast"
 import { useGlobal } from "@/context/global"
 import { useLayout } from "@/context/layout"
 import { useLocal } from "@/context/local"
@@ -14,6 +17,7 @@ import { serverName, ServerConnection, useServer } from "@/context/server"
 import { useSDK } from "@/context/sdk"
 import { switchFeature, switchMode, switchStrict, type SessionFeatureName } from "@/utils/fs-api"
 import { useSettings } from "@/context/settings"
+import { useServerSync } from "@/context/server-sync"
 import { useSync } from "@/context/sync"
 import { useTabs } from "@/context/tabs"
 import { useProviders } from "@/hooks/use-providers"
@@ -25,12 +29,15 @@ export function createPromptInputController(input: {
   queryOptions: Pick<QueryOptionsApi, "agents" | "providers">
 }) {
   const layout = useLayout()
+  const language = useLanguage()
   const local = useLocal()
   const providers = useProviders()
   const settings = useSettings()
   const sync = useSync()
+  const serverSync = useServerSync()
   const sdk = useSDK()
   const server = useServer()
+  const pickDirectory = useDirectoryPicker()
   const view = layout.view(input.sessionKey)
   const agentsQuery = createQuery(() => input.queryOptions.agents(pathKey(sdk().directory)))
   const globalProvidersQuery = createQuery(() => input.queryOptions.providers(null))
@@ -116,6 +123,44 @@ export function createPromptInputController(input: {
           const mode = local.permissionMode.current()
           if (mode !== "bypass" && mode !== "yolo") selectPermissionMode("bypass")
         }
+      },
+    },
+    // Owner call 2026-07-14: a chat's working folder is changeable while the agent is idle —
+    // the session MIGRATES to the picked directory (the control-plane move; children unaffected).
+    // Disabled while the agent works: a mid-turn move would yank the cwd out from under tools.
+    folder: {
+      name: displayName({ worktree: sdk().directory }),
+      visible: !!input.sessionID(),
+      working: (() => {
+        const id = input.sessionID()
+        return id ? serverSync().session.data.session_working(id) : false
+      })(),
+      pick: () => {
+        const id = input.sessionID()
+        const conn = server.current
+        if (!id || !conn) return
+        pickDirectory({
+          server: conn,
+          title: language.t("prompt.folder.pick.title"),
+          onSelect: (result) => {
+            const directory = Array.isArray(result) ? result[0] : result
+            if (!directory || directory === sdk().directory) return
+            void sdk()
+              .client.experimental.controlPlane.moveSession({ sessionID: id, destination: { directory } })
+              .then((moved) => {
+                if (moved.error) throw moved.error
+                // The route resolves the session's directory at load — re-enter it so every
+                // directory-scoped context (SDK, sync, drafts) rebinds to the new folder.
+                window.location.reload()
+              })
+              .catch((error: unknown) => {
+                showToast({
+                  title: language.t("prompt.folder.moveFailed"),
+                  description: errorMessage(error, language.t("common.requestFailed")),
+                })
+              })
+          },
+        })
       },
     },
     features: {

@@ -7,16 +7,14 @@ import { useServerSync } from "@/context/server-sync"
 import { useTabs } from "@/context/tabs"
 import { useLanguage } from "@/context/language"
 import { useDirectoryPicker } from "@/components/directory-picker"
-import { stageDraftSeed } from "@/context/prompt"
 import { displayName, errorMessage } from "@/pages/layout/helpers"
 import { showToast } from "@/utils/toast"
 
-// The "New Agent" spawn box — the home launcher's primary action. Enter creates a session in the
-// shared scratch dir (or a folder picked via the chip) and opens the new chat IMMEDIATELY — the
-// prompt is NOT fired (owner call 2026-07-14): the user first configures the chat (model,
-// permission mode, Strict, Tuning, prompt override) in the live composer, where any text typed
-// here is waiting as the message draft. Firing before configuration meant the first turn always
-// ran with an auto-picked model and default permissions — exactly what a user could never adjust.
+// The "New Agent" launch box — the home launcher's primary action, pinned at the BOTTOM of the
+// screen (the chat composer's position). CLICKING it creates a session in the shared scratch dir
+// (or a folder picked via the chip) and opens the new chat immediately — nothing is typed or
+// fired here (owner call 2026-07-14): the user lands in the real composer, configures the chat
+// (model, permission mode, Strict, Tuning, prompt override, folder), and sends when ready.
 export function NewAgentBar() {
   const server = useServer()
   const global = useGlobal()
@@ -61,8 +59,7 @@ export function NewAgentBar() {
     })
   }
 
-  async function spawn(prompt: string) {
-    const text = prompt.trim()
+  async function spawn() {
     const c = conn()
     const directory = spawnFolder()
     if (!c || !directory || spawning()) return
@@ -72,10 +69,6 @@ export function NewAgentBar() {
       const created = await cx.sdk.client.v2.session.create({ location: { directory } })
       const sessionID = created.data?.data.id
       if (created.error || !sessionID) throw created.error ?? new Error("session create returned no id")
-      // Owner call 2026-07-14: open the chat WITHOUT firing — the user configures model /
-      // permission mode / Strict / Tuning first; the typed task waits in the composer draft
-      // (a scope-free hand-off the chat's prompt session consumes on mount).
-      if (text) stageDraftSeed(sessionID, text)
       cx.projects.open(directory)
       cx.projects.touch(directory)
       startTransition(() => {
@@ -92,11 +85,13 @@ export function NewAgentBar() {
     }
   }
 
-  const [value, setValue] = createSignal("")
-  const submit = () => {
+  // Owner call 2026-07-14: the CLICK creates the chat — no typing here. The bar sits at the
+  // bottom of the launcher, the same screen position as the chat composer, so activating it
+  // transitions straight into the new chat's composer without the input appearing to move.
+  const activate = () => {
     if (spawning()) return
     // Never silently no-op: if the server/scratch dir isn't ready yet, tell the user instead of
-    // eating the Enter (which reads as "nothing happens").
+    // eating the click (which reads as "nothing happens").
     if (!canSpawn()) {
       showToast({
         title: language.t("common.requestFailed"),
@@ -104,12 +99,9 @@ export function NewAgentBar() {
       })
       return
     }
-    void spawn(value())
-    setValue("")
+    void spawn()
   }
 
-  // The input stays enabled (only locked mid-spawn) so it's always clickable/typeable; submit is gated
-  // on `canSpawn` — a keystroke before the scratch dir has loaded just no-ops instead of dead-ending.
   return (
     <div
       data-slot="home-new-agent"
@@ -119,15 +111,18 @@ export function NewAgentBar() {
       <input
         data-slot="home-new-agent-input"
         type="text"
-        class="min-w-0 flex-1 bg-transparent text-[14px] text-v2-text-text-base outline-none placeholder:text-v2-text-text-faint"
+        readonly
+        class="min-w-0 flex-1 cursor-text bg-transparent text-[14px] text-v2-text-text-base outline-none placeholder:text-v2-text-text-faint"
         placeholder={language.t("home.newAgent.placeholder")}
         disabled={spawning()}
-        value={value()}
-        onInput={(event) => setValue(event.currentTarget.value)}
+        onPointerDown={(event) => {
+          event.preventDefault()
+          activate()
+        }}
         onKeyDown={(event) => {
           if (event.key !== "Enter") return
           event.preventDefault()
-          submit()
+          activate()
         }}
       />
       <Show when={spawning()}>

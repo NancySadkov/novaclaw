@@ -102,6 +102,14 @@ export type PromptInputControls = {
     current: PermissionMode
     select: (value: PermissionMode) => void
   }
+  // The chat's working folder (mid-session only): shows where the agent works; picking a new
+  // folder MIGRATES the session there (control-plane move). Disabled while the agent is working.
+  folder: {
+    name: string
+    visible: boolean
+    working: boolean
+    pick: () => void
+  }
   // The per-chat Tuning toggles: current = the EFFECTIVE stance per feature (draft → session
   // record → global config); set writes this chat's explicit stance (and persists it live).
   features: {
@@ -1420,6 +1428,12 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     set: (feature, enabled) => props.controls.features.set(feature, enabled),
     onClose: restoreFocus,
   }))
+  const folderControlState = createMemo<ComposerFolderControlState>(() => ({
+    name: props.controls.folder.name,
+    working: props.controls.folder.working,
+    style: control(),
+    pick: () => props.controls.folder.pick(),
+  }))
   return (
     <div class="relative size-full flex flex-col gap-0">
       {(promptReady(), null)}
@@ -1564,6 +1578,9 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                         2026-07-14: per-chat helpers must be discoverable, not hidden behind an
                         expertise level; the helpers' INTERNALS stay in Settings). */}
                     <ComposerFeaturesControl state={featuresControlState()} />
+                    <Show when={props.controls.folder.visible}>
+                      <ComposerFolderControl state={folderControlState()} />
+                    </Show>
                   </Show>
                   <Show when={!providersLoading() && store.mode !== "shell" && showVariantControl()}>
                     <div
@@ -2169,6 +2186,41 @@ function ComposerFeaturesControl(props: { state: ComposerFeaturesControlState })
         </KobaltePopover.Content>
       </KobaltePopover.Portal>
     </KobaltePopover>
+  )
+}
+
+type ComposerFolderControlState = {
+  name: string
+  working: boolean
+  style: JSX.CSSProperties | undefined
+  pick: () => void
+}
+
+/**
+ * The chat's working-folder chip (mid-session): click to MIGRATE the session to another folder
+ * (control-plane move — the chat, its config, and future file work re-home there). Disabled while
+ * the agent is working; a mid-turn move would yank the cwd out from under running tools.
+ */
+function ComposerFolderControl(props: { state: ComposerFolderControlState }) {
+  const language = useLanguage()
+  return (
+    <TooltipV2
+      placement="top"
+      gutter={4}
+      value={language.t(props.state.working ? "prompt.folder.tooltip.working" : "prompt.folder.tooltip")}
+    >
+      <button
+        type="button"
+        data-action="prompt-folder"
+        disabled={props.state.working}
+        class="flex h-7 items-center gap-1.5 rounded-md px-2 text-[13px] font-[440] leading-5 text-v2-text-text-faint hover:bg-v2-background-bg-subtle disabled:cursor-not-allowed disabled:opacity-60"
+        style={props.state.style}
+        onClick={() => props.state.pick()}
+      >
+        <Icon name="folder" size="small" class="text-v2-icon-icon-muted" />
+        <span class="max-w-[10rem] truncate">{props.state.name}</span>
+      </button>
+    </TooltipV2>
   )
 }
 

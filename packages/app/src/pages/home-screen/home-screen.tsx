@@ -203,10 +203,6 @@ export const HomeScreen: Component = () => {
           {greeting()}
         </h1>
       </div>
-      {/* The primary action: spawn a new agent right from the launcher, above the app tiles. */}
-      <div class="w-full max-w-[42rem] shrink-0 px-6 pb-4">
-        <NewAgentBar />
-      </div>
       <DragDropProvider onDragEnd={onDragEnd} collisionDetector={closestCenter}>
         <DragDropSensors />
         <div
@@ -249,6 +245,11 @@ export const HomeScreen: Component = () => {
           </For>
         </div>
       </Show>
+      {/* The primary action, pinned to the BOTTOM — the same screen position as a chat's composer,
+          so the click-to-create transition into the new chat doesn't jump (owner call 2026-07-14). */}
+      <div class="w-full max-w-[42rem] shrink-0 px-6 pb-4">
+        <NewAgentBar />
+      </div>
     </div>
   )
 }
