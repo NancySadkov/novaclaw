@@ -320,11 +320,12 @@ export function NewHome() {
     const items = visibleRecords().slice()
     const updatedAt = (record: HomeSessionRecord) => record.session.time.updated ?? record.session.time.created
     if (mode === "tokens") {
-      const total = (record: HomeSessionRecord) => {
+      // Generated tokens only (output + reasoning) — the same metric the row badge shows.
+      const generated = (record: HomeSessionRecord) => {
         const tokens = record.session.tokens
-        return tokens ? (tokens.input ?? 0) + (tokens.output ?? 0) + (tokens.reasoning ?? 0) : 0
+        return tokens ? (tokens.output ?? 0) + (tokens.reasoning ?? 0) : 0
       }
-      return items.sort((a, b) => total(b) - total(a) || updatedAt(b) - updatedAt(a))
+      return items.sort((a, b) => generated(b) - generated(a) || updatedAt(b) - updatedAt(a))
     }
     // active: waiting on the user → working → unseen output → everything else, newest first.
     const sets = chatsAttention()
@@ -637,7 +638,9 @@ export function NewHome() {
           aria-label={language.t("sidebar.project.recentSessions")}
         >
           <div class="flex justify-center pb-5 pt-1 select-none">
-            <Logo class="w-36 text-v2-text-text-base" />
+            <h1 class="text-[20px] font-semibold tracking-tight text-v2-text-text-base">
+              {language.t("home.sessions.title")}
+            </h1>
           </div>
           <div class="mt-3 flex min-w-0 items-start gap-2">
             <Show when={tagUniverse().length > 0}>
@@ -1119,23 +1122,25 @@ function HomeSessionRow(props: {
               </span>
             )}
           </Show>
-          <Show when={tokens().total > 0}>
+          <Show when={tokens().generated > 0}>
             <span
               data-slot="home-session-tokens"
               class="shrink-0 flex items-center gap-1 rounded-[4px] bg-v2-background-bg-layer-01 px-1.5 py-0.5 text-[11px] leading-none tabular-nums text-v2-text-text-muted [font-weight:530]"
               title={language.t("home.session.tokens.title", {
-                total: tokens().total.toLocaleString(),
-                input: tokens().input.toLocaleString(),
+                generated: tokens().generated.toLocaleString(),
                 output: tokens().output.toLocaleString(),
+                reasoning: tokens().reasoning.toLocaleString(),
               })}
             >
               <Icon name="cpu" size="small" class="text-v2-icon-icon-muted" />
-              {compactTokens(tokens().total)}
+              {compactTokens(tokens().generated)}
             </span>
           </Show>
+          {/* The hover-reveal action icons overlay the row's right edge — hide the date under
+              them (hover + keyboard focus, symmetric with the icons' own reveal). */}
           <span
             data-slot="home-session-time"
-            class="shrink-0 text-[11px] leading-none tabular-nums text-v2-text-text-faint [font-weight:440]"
+            class="shrink-0 text-[11px] leading-none tabular-nums text-v2-text-text-faint [font-weight:440] transition-opacity group-hover/session:opacity-0 group-focus-within/session:opacity-0"
           >
             {timeLabel()}
           </span>

@@ -735,6 +735,7 @@ export const dict = {
   "home.sessions.search.placeholder.scoped": "Search chats in {{scope}}",
   "home.sessions.search.sessions": "Chats",
   "home.sessions.search.noResults": "No chats found for {{query}}",
+  "home.sessions.title": "Sessions",
   "home.sessions.empty": "Nothing here yet",
   "home.sessions.empty.description": "Start a chat to get going.",
   "home.sessions.group.today": "Today",
@@ -744,7 +745,8 @@ export const dict = {
   "home.session.info": "Details",
   "home.session.stop": "Stop this chat's current run",
   "home.session.clone": "Clone chat",
-  "home.session.tokens.title": "{{total}} tokens ({{input}} read · {{output}} written), sub-agent threads included",
+  "home.session.tokens.title":
+    "{{generated}} tokens generated ({{output}} text · {{reasoning}} reasoning), sub-agent threads included",
   "session.info.folder": "Folder",
   "session.info.tags": "Tags",
   "common.remove": "Remove",
