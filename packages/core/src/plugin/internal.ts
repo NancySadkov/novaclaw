@@ -9,6 +9,8 @@ import { Catalog } from "../catalog"
 import { AgentConfigStore } from "../agent-config-store"
 import { CatalogStore } from "../catalog-store"
 import { CommandConfigStore } from "../command-config-store"
+import { ReferenceConfigStore } from "../reference-config-store"
+import { SkillConfigStore } from "../skill-config-store"
 import { CommandV2 } from "../command"
 import { Config } from "../config"
 import { ConfigAgentPlugin } from "../config/plugin/agent"
@@ -143,6 +145,8 @@ export const node = makeLocationNode({
     Catalog.node,
     CatalogStore.node,
     CommandConfigStore.node,
+    ReferenceConfigStore.node,
+    SkillConfigStore.node,
     CommandV2.node,
     PluginV2.node,
     Integration.node,

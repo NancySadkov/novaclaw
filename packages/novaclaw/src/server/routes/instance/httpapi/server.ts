@@ -9,6 +9,10 @@ import { CatalogSeed } from "@novaclaw/core/catalog-seed"
 import { CatalogStore } from "@novaclaw/core/catalog-store"
 import { CommandConfigSeed } from "@novaclaw/core/command-config-seed"
 import { CommandConfigStore } from "@novaclaw/core/command-config-store"
+import { ReferenceConfigSeed } from "@novaclaw/core/reference-config-seed"
+import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
+import { SkillConfigSeed } from "@novaclaw/core/skill-config-seed"
+import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
 import { Global } from "@novaclaw/core/global"
 import * as Observability from "@novaclaw/core/observability"
 import { Account } from "@/account/account"
@@ -221,6 +225,8 @@ const app = LayerNode.group([
   AgentConfigStore.node,
   CatalogStore.node,
   CommandConfigStore.node,
+  SkillConfigStore.node,
+  ReferenceConfigStore.node,
   Database.node,
   Auth.node,
   Account.node,
@@ -276,6 +282,8 @@ const catalogSeedStartup = Layer.effectDiscard(
     yield* CatalogSeed.seedFromDirectory(global.config, process.cwd()).pipe(Effect.ignore)
     yield* AgentConfigSeed.seedFromDirectory(global.config, process.cwd()).pipe(Effect.ignore)
     yield* CommandConfigSeed.seedFromDirectory(global.config, process.cwd()).pipe(Effect.ignore)
+    yield* SkillConfigSeed.seedFromDirectory(global.config, process.cwd(), global.home).pipe(Effect.ignore)
+    yield* ReferenceConfigSeed.seedFromDirectory(global.config, process.cwd(), global.home).pipe(Effect.ignore)
   }),
 )
 

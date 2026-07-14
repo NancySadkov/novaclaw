@@ -7,12 +7,32 @@ import { Global } from "@novaclaw/core/global"
 import { Location } from "@novaclaw/core/location"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SkillV2 } from "@novaclaw/core/skill"
+import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
 import { location } from "../fixture/location"
 import { testEffect } from "../lib/effect"
 import { host } from "../plugin/host"
 
 const it = testEffect(Layer.empty)
 const decode = Schema.decodeUnknownSync(Config.Info)
+
+// Config→SQLite step 4: the plugin reads config-borne skill sources from the instance-wide store
+// (its transitional seed imports the stubbed Config documents on first run).
+const memoryStore = () => {
+  const sources: string[] = []
+  return SkillConfigStore.Service.of({
+    sources: () => Effect.sync(() => [...sources]),
+    addSource: (source) =>
+      Effect.sync(() => {
+        if (!sources.includes(source)) sources.push(source)
+      }),
+    removeSource: (source) =>
+      Effect.sync(() => {
+        const index = sources.indexOf(source)
+        if (index !== -1) sources.splice(index, 1)
+      }),
+    isEmpty: () => Effect.sync(() => sources.length === 0),
+  })
+}
 
 describe("ConfigSkillPlugin.Plugin", () => {
   it.effect("registers configured skill directories and URLs", () =>
@@ -39,6 +59,7 @@ describe("ConfigSkillPlugin.Plugin", () => {
           skill: { transform, reload: () => Effect.void },
         }),
       ).pipe(
+        Effect.provideService(SkillConfigStore.Service, memoryStore()),
         Effect.provideService(Global.Service, Global.Service.of({ ...Global.make(), home: "/home/test" })),
         Effect.provideService(Location.Service, Location.Service.of(location({ directory }))),
         Effect.provideService(
