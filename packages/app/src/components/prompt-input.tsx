@@ -596,16 +596,18 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     editorRef.textContent = text
   }
 
+  const placeCursorAtEnd = () => {
+    editorRef.focus()
+    const range = document.createRange()
+    const selection = window.getSelection()
+    range.selectNodeContents(editorRef)
+    range.collapse(false)
+    selection?.removeAllRanges()
+    selection?.addRange(range)
+  }
+
   const focusEditorEnd = () => {
-    requestAnimationFrame(() => {
-      editorRef.focus()
-      const range = document.createRange()
-      const selection = window.getSelection()
-      range.selectNodeContents(editorRef)
-      range.collapse(false)
-      selection?.removeAllRanges()
-      selection?.addRange(range)
-    })
+    requestAnimationFrame(placeCursorAtEnd)
   }
 
   const currentCursor = () => {
@@ -1385,6 +1387,34 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     () => prompt.ready.promise,
     (p) => p,
   )
+
+  // Focus the message box as soon as a chat opens (owner call 2026-07-14: click-to-create must
+  // land the user READY TO TYPE). Once per mount, after the persisted draft loads (so the cursor
+  // goes to the end of any restored text) — unless the user already put focus somewhere real
+  // (typing in another field must not be hijacked by a background load settling). Gate on the
+  // reactive ready() boolean, NOT promptReady.state: `ready.promise` is undefined for an
+  // already-loaded (cached) prompt session, so the resource never resolves on warm mounts.
+  // Verify-and-retry briefly: the route transition can reparent the composer right after a
+  // one-shot focus, which silently drops it back to <body>.
+  let autoFocused = false
+  const attemptAutoFocus = (remaining: number) => {
+    const active = document.activeElement
+    const idle = !active || active === document.body || !(active instanceof HTMLElement) || active.tagName === "BUTTON"
+    if (!idle && active !== editorRef) return // the user focused something real — stop
+    // Synchronous on purpose (no rAF): a backgrounded window never fires animation frames, and a
+    // parked focus would then pop in whenever the window resurfaces, stealing whatever the user
+    // was doing by that point.
+    if (editorRef?.isConnected) placeCursorAtEnd()
+    if (remaining > 0)
+      setTimeout(() => {
+        if (document.activeElement !== editorRef) attemptAutoFocus(remaining - 1)
+      }, 120)
+  }
+  createEffect(() => {
+    if (autoFocused || !prompt.ready()) return
+    autoFocused = true
+    attemptAutoFocus(8)
+  })
 
   const designPlaceholder = () => {
     if (store.mode === "shell") return placeholder()
