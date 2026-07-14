@@ -1,6 +1,6 @@
 import { base64Encode } from "@novaclaw/core/util/encode"
 import { createQuery } from "@tanstack/solid-query"
-import { useNavigate, useSearchParams } from "@solidjs/router"
+import { useNavigate, useParams, useSearchParams } from "@solidjs/router"
 import { type Accessor, createMemo } from "solid-js"
 import type { PromptInputControls } from "@/components/prompt-input"
 import type { PromptProjectControls } from "@/components/prompt-project-selector"
@@ -21,6 +21,7 @@ import { useServerSync } from "@/context/server-sync"
 import { useSync } from "@/context/sync"
 import { useTabs } from "@/context/tabs"
 import { useProviders } from "@/hooks/use-providers"
+import { legacySessionHref } from "@/utils/session-route"
 import { pathKey } from "@/utils/path-key"
 
 export function createPromptInputController(input: {
@@ -38,6 +39,8 @@ export function createPromptInputController(input: {
   const sdk = useSDK()
   const server = useServer()
   const pickDirectory = useDirectoryPicker()
+  const navigate = useNavigate()
+  const params = useParams<{ dir?: string }>()
   const view = layout.view(input.sessionKey)
   const agentsQuery = createQuery(() => input.queryOptions.agents(pathKey(sdk().directory)))
   const globalProvidersQuery = createQuery(() => input.queryOptions.providers(null))
@@ -149,9 +152,11 @@ export function createPromptInputController(input: {
               .client.experimental.controlPlane.moveSession({ sessionID: id, destination: { directory } })
               .then((moved) => {
                 if (moved.error) throw moved.error
-                // The route resolves the session's directory at load — re-enter it so every
-                // directory-scoped context (SDK, sync, drafts) rebinds to the new folder.
-                window.location.reload()
+                // P3 view rebind, no reload: the `session.next.moved` event folds the new
+                // directory onto the client record (P2), and the target-session route re-derives
+                // its directory-scoped contexts from that record reactively. Only the legacy
+                // route carries the directory in the URL — re-enter the session at its new home.
+                if (params.dir) navigate(legacySessionHref(directory, id))
               })
               .catch((error: unknown) => {
                 showToast({

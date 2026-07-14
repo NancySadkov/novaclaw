@@ -80,10 +80,8 @@ export default function NewSessionPage() {
     })
   })
 
-  createEffect(() => {
-    if (!prompt.ready()) return
-    requestAnimationFrame(() => inputRef?.focus())
-  })
+  // (P3: no separate autofocus here — PromptInput owns the focus-on-open behavior; a second
+  // rAF-parked focus path was both redundant and the hidden-window trap from the incident.)
   const [promptReady] = createResource(
     // P1 readiness contract: ready.promise ALWAYS exists (resolved when already loaded).
     () => prompt.ready.promise,

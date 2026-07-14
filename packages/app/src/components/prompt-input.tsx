@@ -70,6 +70,7 @@ import { PromptContextItems } from "./prompt-input/context-items"
 import { PromptImageAttachments } from "./prompt-input/image-attachments"
 import { PromptDragOverlay } from "./prompt-input/drag-overlay"
 import { promptPlaceholder } from "./prompt-input/placeholder"
+import { composerMounts } from "./prompt-input/mount-registry"
 import { createPromptInputTransientState } from "./prompt-input/transient-state"
 import { showToast } from "@/utils/toast"
 import { ImagePreview } from "@novaclaw/ui/image-preview"
@@ -1388,31 +1389,29 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     (p) => p,
   )
 
+  // P3 one-view-host invariant: every live composer registers per session so a steady-state
+  // duplicate (a second mounter outside the router) warns the moment it regresses.
+  createEffect(() => {
+    const release = composerMounts.register(props.controls.session.id ?? "draft")
+    onCleanup(release)
+  })
+
   // Focus the message box as soon as a chat opens (owner call 2026-07-14: click-to-create must
   // land the user READY TO TYPE). Once per mount, after the persisted draft loads (so the cursor
   // goes to the end of any restored text) — unless the user already put focus somewhere real
   // (typing in another field must not be hijacked by a background load settling).
-  // Verify-and-retry briefly: the route transition can reparent the composer right after a
-  // one-shot focus, which silently drops it back to <body>. (Plan P3 deletes this retry once
-  // session views stop being reparented.)
+  // Synchronous on purpose (no rAF): a backgrounded window never fires animation frames, and a
+  // parked focus would then pop in whenever the window resurfaces, stealing whatever the user
+  // was doing by that point. One shot, no retry: session views mount through the router only
+  // (P3), so the composer is never reparented out from under a just-placed focus anymore.
   let autoFocused = false
-  const attemptAutoFocus = (remaining: number) => {
-    const active = document.activeElement
-    const idle = !active || active === document.body || !(active instanceof HTMLElement) || active.tagName === "BUTTON"
-    if (!idle && active !== editorRef) return // the user focused something real — stop
-    // Synchronous on purpose (no rAF): a backgrounded window never fires animation frames, and a
-    // parked focus would then pop in whenever the window resurfaces, stealing whatever the user
-    // was doing by that point.
-    if (editorRef?.isConnected) placeCursorAtEnd()
-    if (remaining > 0)
-      setTimeout(() => {
-        if (document.activeElement !== editorRef) attemptAutoFocus(remaining - 1)
-      }, 120)
-  }
   createEffect(() => {
     if (autoFocused || !prompt.ready()) return
     autoFocused = true
-    attemptAutoFocus(8)
+    const active = document.activeElement
+    const idle = !active || active === document.body || !(active instanceof HTMLElement) || active.tagName === "BUTTON"
+    if (!idle) return // the user focused something real — don't hijack it
+    if (editorRef?.isConnected) placeCursorAtEnd()
   })
 
   const designPlaceholder = () => {

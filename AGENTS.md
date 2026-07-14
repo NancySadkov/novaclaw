@@ -263,9 +263,17 @@ const table = sqliteTable("session", {
 - **A new per-session control ships with its client-store projection.** V2 control events update
   the server row; if the client store doesn't apply the event too, every other open view shows a
   stale record until reload. Either project it client-side or document the staleness out loud.
-- **Imperative DOM state (focus/selection/scroll) is set synchronously and verified** — route
-  transitions can reparent views and silently drop it. Long-term this lives in the editor-core
-  seam (plan P3/P4), not scattered through components.
+- **The URL is the ONE session-view mounter (P3).** Only the router mounts/unmounts session
+  views; the titlebar tab strip, home lists, and launcher NAVIGATE (`tabs.select` → `navigate`)
+  and never mount, duplicate, or reparent a view themselves. The composer enforces this at
+  runtime: every PromptInput registers in `components/prompt-input/mount-registry.ts`, and a
+  steady-state second instance for one session logs a console warning
+  (`window.__novaComposerMounts()` shows live counts) — treat that warning as a regression, not
+  noise. Corollary: one-shot imperative effects (the composer autofocus) are a single
+  synchronous attempt; do not add verify-and-retry loops to paper over a stray second mounter.
+- **Imperative DOM state (focus/selection/scroll) is set synchronously and verified** — a
+  fire-and-forget write can land in a view that is being swapped out. Long-term this lives in
+  the editor-core seam (plan P4), not scattered through components.
 - **Readiness is a Promise that always exists.** Never expose (or rely on) a `.promise` that is
   undefined once a store has already loaded — a resource built over it never resolves on warm
   mounts. (persist.ts contract fix: plan P1.)
