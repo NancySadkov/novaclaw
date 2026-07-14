@@ -3,6 +3,8 @@ import { HttpApiBuilder, OpenApi } from "effect/unstable/httpapi"
 import { HttpMiddleware, HttpRouter, HttpServer, HttpServerResponse } from "effect/unstable/http"
 import * as Socket from "effect/unstable/socket/Socket"
 import { FSUtil } from "@novaclaw/core/fs-util"
+import { AgentConfigSeed } from "@novaclaw/core/agent-config-seed"
+import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
 import { CatalogSeed } from "@novaclaw/core/catalog-seed"
 import { CatalogStore } from "@novaclaw/core/catalog-store"
 import { Global } from "@novaclaw/core/global"
@@ -214,6 +216,7 @@ const app = LayerNode.group([
   Npm.node,
   FSUtil.node,
   Global.node,
+  AgentConfigStore.node,
   CatalogStore.node,
   Database.node,
   Auth.node,
@@ -268,6 +271,7 @@ const catalogSeedStartup = Layer.effectDiscard(
   Effect.gen(function* () {
     const global = yield* Global.Service
     yield* CatalogSeed.seedFromDirectory(global.config, process.cwd()).pipe(Effect.ignore)
+    yield* AgentConfigSeed.seedFromDirectory(global.config, process.cwd()).pipe(Effect.ignore)
   }),
 )
 

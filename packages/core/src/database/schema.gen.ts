@@ -57,6 +57,22 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`agent_config\` (
+          \`name\` text PRIMARY KEY,
+          \`layers\` text NOT NULL,
+          \`time_created\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`
+        CREATE TABLE \`agent_setting\` (
+          \`key\` text PRIMARY KEY,
+          \`value\` text NOT NULL,
+          \`time_created\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`catalog_provider\` (
           \`id\` text PRIMARY KEY,
           \`layers\` text NOT NULL,

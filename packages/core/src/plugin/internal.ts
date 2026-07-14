@@ -6,6 +6,7 @@ import type { PluginContext } from "@novaclaw/plugin/v2/effect"
 import { Effect, Layer, Scope } from "effect"
 import { AgentV2 } from "../agent"
 import { Catalog } from "../catalog"
+import { AgentConfigStore } from "../agent-config-store"
 import { CatalogStore } from "../catalog-store"
 import { CommandV2 } from "../command"
 import { Config } from "../config"
@@ -137,6 +138,7 @@ export const node = makeLocationNode({
   name: "plugin-internal",
   layer,
   deps: [
+    AgentConfigStore.node,
     Catalog.node,
     CatalogStore.node,
     CommandV2.node,

@@ -3,6 +3,8 @@ import fs from "fs/promises"
 import path from "path"
 import { Effect, Schema } from "effect"
 import { AgentV2 } from "@novaclaw/core/agent"
+import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
+import type { ConfigAgent } from "@novaclaw/core/config/agent"
 import { Config } from "@novaclaw/core/config"
 import { ConfigAgentPlugin } from "@novaclaw/core/config/plugin/agent"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
@@ -15,6 +17,35 @@ import { testEffect } from "../lib/effect"
 import { agentHost, host } from "../plugin/host"
 
 const it = testEffect(AppNodeBuilder.build(LayerNode.group([AgentV2.node, FSUtil.node])))
+
+// Config→SQLite step 2: the plugin reads config-borne agents from the instance-wide store (its
+// transitional seed imports the stubbed Config documents on first run, so the merge assertions
+// below exercise the same jsonc-shaped inputs through the store path).
+const memoryStore = () => {
+  const layers = new Map<string, ConfigAgent.Info[]>()
+  let defaultAgent: string | undefined
+  return AgentConfigStore.Service.of({
+    agents: () => Effect.sync(() => Object.fromEntries(layers)),
+    setLayers: (name, next) =>
+      Effect.sync(() => {
+        layers.set(name, [...next])
+      }),
+    removeAgent: (name) =>
+      Effect.sync(() => {
+        layers.delete(name)
+      }),
+    getDefault: () => Effect.sync(() => defaultAgent),
+    setDefault: (name) =>
+      Effect.sync(() => {
+        defaultAgent = name
+      }),
+    setDefaultIfEmpty: (name) =>
+      Effect.sync(() => {
+        defaultAgent ??= name
+      }),
+    isEmpty: () => Effect.sync(() => layers.size === 0),
+  })
+}
 const decode = Schema.decodeUnknownSync(Config.Info)
 
 describe("ConfigAgentPlugin.Plugin", () => {
@@ -71,6 +102,7 @@ describe("ConfigAgentPlugin.Plugin", () => {
 
       yield* ConfigAgentPlugin.Plugin.effect(host({ agent: agentHost(agents) })).pipe(
         Effect.provideService(Config.Service, config),
+        Effect.provideService(AgentConfigStore.Service, memoryStore()),
       )
 
       const buildAgent = yield* agents.get(build)
@@ -152,6 +184,7 @@ describe("ConfigAgentPlugin.Plugin", () => {
 
       yield* ConfigAgentPlugin.Plugin.effect(host({ agent: agentHost(agents) })).pipe(
         Effect.provideService(Config.Service, config),
+        Effect.provideService(AgentConfigStore.Service, memoryStore()),
       )
 
       const reviewer = yield* agents.get(AgentV2.ID.make("reviewer"))
@@ -190,6 +223,7 @@ describe("ConfigAgentPlugin.Plugin", () => {
 
       yield* ConfigAgentPlugin.Plugin.effect(host({ agent: agentHost(agents) })).pipe(
         Effect.provideService(Config.Service, config),
+        Effect.provideService(AgentConfigStore.Service, memoryStore()),
       )
 
       expect(yield* agents.get(build)).toBeUndefined()
@@ -254,6 +288,7 @@ Use native v2 fields.`,
 
           yield* ConfigAgentPlugin.Plugin.effect(host({ agent: agentHost(agents) })).pipe(
             Effect.provideService(Config.Service, config),
+        Effect.provideService(AgentConfigStore.Service, memoryStore()),
           )
 
           expect(yield* agents.get(AgentV2.ID.make("reviewer"))).toMatchObject({

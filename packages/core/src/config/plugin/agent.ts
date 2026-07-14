@@ -1,34 +1,48 @@
 export * as ConfigAgentPlugin from "./agent"
 
 import { define } from "../../plugin/internal"
+import type { PluginContext } from "@novaclaw/plugin/v2/effect"
 import path from "path"
 import { Effect, Option, Schema } from "effect"
 import { AgentV2 } from "../../agent"
+import { AgentConfigStore } from "../../agent-config-store"
 import { Config } from "../../config"
 import { ConfigAgent } from "../agent"
 import { ConfigMarkdown } from "../markdown"
 import { FSUtil } from "../../fs-util"
 import { ModelV2 } from "../../model"
+import type { Permission } from "@novaclaw/schema/permission"
 
 const markdownSources = [
   { pattern: "{agent,agents}/**/*.md", primary: false },
   { pattern: "{mode,modes}/*.md", primary: true },
 ] as const
+/** The plugin-facing agent draft (what ctx.agent.transform hands its callback). */
+type AgentDraft = Parameters<Parameters<PluginContext["agent"]["transform"]>[0]>[0]
 const decodeAgent = Schema.decodeUnknownOption(ConfigAgent.Info)
 const decodeConfig = Schema.decodeUnknownOption(Config.Info)
 
+// Config→SQLite step 2: config-FILE agent definitions come from the instance-wide
+// `AgentConfigStore` (ordered layers per agent), not from `config.entries()` — so every location
+// (incl. the shared scratch dir) resolves the same agents. Markdown agents stay filesystem-walked
+// (locked decision D2 — user-editable documents, not settings). The global `permissions` ruleset
+// still rides the config documents until step 6 (runtime settings) moves it.
 export const Plugin = define({
   id: "config-agent",
   effect: Effect.fn(function* (ctx) {
     const config = yield* Config.Service
+    const store = yield* AgentConfigStore.Service
     const fs = yield* FSUtil.Service
     yield* ctx.agent.transform(
       Effect.fn(function* (draft) {
-        const documents = yield* Effect.forEach(yield* config.entries(), (entry) => {
-          if (entry.type === "document") return Effect.succeed([entry])
+        const entries = yield* config.entries()
+        const files = entries.filter((entry): entry is Config.Document => entry.type === "document")
+        // D2: walk the markdown agent/mode files exactly as before (their filenames are the names).
+        const markdownDocuments = yield* Effect.forEach(entries, (entry) => {
+          if (entry.type === "document") return Effect.succeed([])
           return Effect.gen(function* () {
-            const files = yield* discover(fs, entry.path)
-            return yield* Effect.forEach(files, (file) =>
+            const found = yield* discover(fs, entry.path)
+            return yield* Effect.forEach(found, (file) =>
               fs.readFileStringSafe(file.filepath).pipe(
                 Effect.map((content) => content && decode(file, content)),
                 Effect.catch(() => Effect.succeed(undefined)),
@@ -40,49 +54,70 @@ export const Plugin = define({
             )
           })
         }).pipe(Effect.map((documents) => documents.flat()))
-        const global = documents.flatMap((document) => document.info.permissions ?? [])
-        const configuredDefault = Config.latest(documents, "default_agent")
-        if (configuredDefault !== undefined) draft.default(AgentV2.ID.make(configuredDefault))
+
+        // Transitional jsonc seed (one-time, mirrors config-provider): import an existing config's
+        // agents + default_agent into the store the first time it is empty, so an existing setup
+        // carries over. This is the sole remaining runtime jsonc read for agent DEFINITIONS and is
+        // removed in migration step 8 (once the settings UI writes the store directly).
+        if (yield* store.isEmpty()) {
+          const layers: Record<string, ConfigAgent.Info[]> = {}
+          for (const file of files)
+            for (const [name, item] of Object.entries(file.info.agents ?? {})) (layers[name] ??= []).push(item)
+          for (const [name, agentLayers] of Object.entries(layers)) yield* store.setLayers(name, agentLayers)
+          const configuredDefault = Config.latest(entries, "default_agent")
+          if (configuredDefault !== undefined) yield* store.setDefaultIfEmpty(configuredDefault)
+        }
+
+        const global = files.flatMap((file) => file.info.permissions ?? [])
+        const storedDefault = yield* store.getDefault()
+        if (storedDefault !== undefined) draft.default(AgentV2.ID.make(storedDefault))
         for (const current of draft.list()) {
           draft.update(current.id, (agent) => agent.permissions.push(...global))
         }
 
-        for (const document of documents) {
-          for (const [id, item] of Object.entries(document.info.agents ?? {})) {
-            const agentID = AgentV2.ID.make(id)
-            if (item.disabled) {
-              draft.remove(agentID)
-              continue
-            }
-
-            const exists = draft.get(agentID) !== undefined
-            draft.update(agentID, (agent) => {
-              if (!exists) agent.permissions.push(...global)
-              if (item.model !== undefined) {
-                const model = ModelV2.parse(item.model)
-                agent.model = { id: model.modelID, providerID: model.providerID, variant: agent.model?.variant }
-              }
-              if (item.variant !== undefined && agent.model !== undefined) {
-                agent.model.variant = ModelV2.VariantID.make(item.variant)
-              }
-              if (item.request !== undefined) {
-                Object.assign(agent.request.headers, item.request.headers ?? {})
-                Object.assign(agent.request.body, item.request.body ?? {})
-              }
-              if (item.system !== undefined) agent.system = item.system
-              if (item.description !== undefined) agent.description = item.description
-              if (item.mode !== undefined) agent.mode = item.mode
-              if (item.hidden !== undefined) agent.hidden = item.hidden
-              if (item.color !== undefined) agent.color = item.color
-              if (item.steps !== undefined) agent.steps = item.steps
-              if (item.permissions !== undefined) agent.permissions.push(...item.permissions)
-            })
-          }
-        }
+        // Config-borne agents from the store (each agent's layers apply in order)…
+        const stored = yield* store.agents()
+        for (const [name, layers] of Object.entries(stored))
+          for (const item of layers) applyItem(draft, AgentV2.ID.make(name), item, global)
+        // …then the markdown agents (full definitions; a name collision lets the file win).
+        for (const document of markdownDocuments)
+          for (const [name, item] of Object.entries(document.info.agents ?? {}))
+            applyItem(draft, AgentV2.ID.make(name), item, global)
       }),
     )
   }),
 })
+
+/** Apply ONE config fragment for one agent onto the draft (the historical per-document merge body). */
+function applyItem(draft: AgentDraft, agentID: AgentV2.ID, item: ConfigAgent.Info, global: Permission.Ruleset) {
+  if (item.disabled) {
+    draft.remove(agentID)
+    return
+  }
+
+  const exists = draft.get(agentID) !== undefined
+  draft.update(agentID, (agent) => {
+    if (!exists) agent.permissions.push(...global)
+    if (item.model !== undefined) {
+      const model = ModelV2.parse(item.model)
+      agent.model = { id: model.modelID, providerID: model.providerID, variant: agent.model?.variant }
+    }
+    if (item.variant !== undefined && agent.model !== undefined) {
+      agent.model.variant = ModelV2.VariantID.make(item.variant)
+    }
+    if (item.request !== undefined) {
+      Object.assign(agent.request.headers, item.request.headers ?? {})
+      Object.assign(agent.request.body, item.request.body ?? {})
+    }
+    if (item.system !== undefined) agent.system = item.system
+    if (item.description !== undefined) agent.description = item.description
+    if (item.mode !== undefined) agent.mode = item.mode
+    if (item.hidden !== undefined) agent.hidden = item.hidden
+    if (item.color !== undefined) agent.color = item.color
+    if (item.steps !== undefined) agent.steps = item.steps
+    if (item.permissions !== undefined) agent.permissions.push(...item.permissions)
+  })
+}
 
 function discover(fs: FSUtil.Interface, directory: string) {
   return Effect.forEach(markdownSources, (source) =>
