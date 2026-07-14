@@ -9,6 +9,8 @@ import { CatalogSeed } from "@novaclaw/core/catalog-seed"
 import { CatalogStore } from "@novaclaw/core/catalog-store"
 import { CommandConfigSeed } from "@novaclaw/core/command-config-seed"
 import { CommandConfigStore } from "@novaclaw/core/command-config-store"
+import { PluginConfigSeed } from "@novaclaw/core/plugin-config-seed"
+import { PluginConfigStore } from "@novaclaw/core/plugin-config-store"
 import { ReferenceConfigSeed } from "@novaclaw/core/reference-config-seed"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { SkillConfigSeed } from "@novaclaw/core/skill-config-seed"
@@ -225,6 +227,7 @@ const app = LayerNode.group([
   AgentConfigStore.node,
   CatalogStore.node,
   CommandConfigStore.node,
+  PluginConfigStore.node,
   SkillConfigStore.node,
   ReferenceConfigStore.node,
   Database.node,
@@ -284,6 +287,7 @@ const catalogSeedStartup = Layer.effectDiscard(
     yield* CommandConfigSeed.seedFromDirectory(global.config, process.cwd()).pipe(Effect.ignore)
     yield* SkillConfigSeed.seedFromDirectory(global.config, process.cwd(), global.home).pipe(Effect.ignore)
     yield* ReferenceConfigSeed.seedFromDirectory(global.config, process.cwd(), global.home).pipe(Effect.ignore)
+    yield* PluginConfigSeed.seedFromDirectory(global.config, process.cwd()).pipe(Effect.ignore)
   }),
 )
 

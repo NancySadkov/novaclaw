@@ -4,12 +4,14 @@ import type { Plugin as EffectPlugin } from "@novaclaw/plugin/v2/effect"
 import type { Plugin as PromisePlugin } from "@novaclaw/plugin/v2/promise"
 import { Effect, Schema } from "effect"
 import path from "path"
-import { fileURLToPath, pathToFileURL } from "url"
+import { pathToFileURL } from "url"
 import { Config } from "../../config"
 import { FSUtil } from "../../fs-util"
 import { Location } from "../../location"
 import { Npm } from "../../npm"
 import { define } from "../../plugin/internal"
+import { PluginConfigSeed } from "../../plugin-config-seed"
+import { PluginConfigStore } from "../../plugin-config-store"
 import { PluginPromise } from "../../plugin/promise"
 
 const PluginModule = Schema.Struct({
@@ -29,32 +31,37 @@ const PluginModule = Schema.Struct({
   ]),
 })
 
+// Config→SQLite step 5: config-borne external plugin specs come from the instance-wide
+// `PluginConfigStore` (normalized package + options), not from `config.entries()`. Plugin FILES
+// dropped under `{plugin,plugins}/` in config dirs stay filesystem-walked (the D2 analog —
+// user-dropped modules, not settings).
 export const Plugin = define({
   id: "config-plugin",
   effect: Effect.fn(function* (ctx) {
     const config = yield* Config.Service
+    const store = yield* PluginConfigStore.Service
     const fs = yield* FSUtil.Service
     const location = yield* Location.Service
     const npm = yield* Npm.Service
     yield* Effect.gen(function* () {
-      const configured: { package: string; options?: Record<string, any> }[] = []
+      const entries = yield* config.entries()
 
-      for (const entry of yield* config.entries()) {
-        if (entry.type === "document") {
-          const directory = entry.path ? path.dirname(entry.path) : location.directory
-          for (const item of entry.info.plugins ?? []) {
-            const ref = typeof item === "string" ? { package: item } : item
-            const packageName = (() => {
-              if (ref.package.startsWith("file://")) return fileURLToPath(ref.package)
-              if (ref.package.startsWith("./") || ref.package.startsWith("../")) {
-                return path.resolve(directory, ref.package)
-              }
-              return ref.package
-            })()
-            configured.push({ package: packageName, options: ref.options })
-          }
+      // Transitional jsonc seed (one-time, mirrors config-agent/command/skill): import an
+      // existing config's `plugins` into the store the first time it is empty, resolved
+      // against each declaring file's directory. Removed in step 8.
+      if (yield* store.isEmpty()) {
+        for (const entry of entries) {
+          if (entry.type !== "document") continue
+          const declaringDir = entry.path ? path.dirname(entry.path) : location.directory
+          for (const item of entry.info.plugins ?? [])
+            yield* store.setPlugin(PluginConfigSeed.normalizePluginEntry(declaringDir, item))
         }
+      }
 
+      const configured: { package: string; options?: Record<string, any> }[] = []
+      for (const stored of yield* store.plugins()) configured.push(stored)
+
+      for (const entry of entries) {
         if (entry.type === "directory") {
           const files = yield* fs
             .glob("{plugin,plugins}/*.{ts,js}", {

@@ -8,6 +8,7 @@ import { FSUtil } from "@novaclaw/core/fs-util"
 import { Location } from "@novaclaw/core/location"
 import { Npm } from "@novaclaw/core/npm"
 import { PluginV2 } from "@novaclaw/core/plugin"
+import { PluginConfigStore, type PluginConfigEntry } from "@novaclaw/core/plugin-config-store"
 import { PluginHost } from "@novaclaw/core/plugin/host"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { testEffect } from "../lib/effect"
@@ -15,6 +16,24 @@ import { PluginTestLayer } from "../plugin/fixture"
 
 const it = testEffect(PluginTestLayer)
 const decode = Schema.decodeUnknownSync(Config.Info)
+
+// Config→SQLite step 5: the loader reads config-borne plugin specs from the instance-wide store
+// (its transitional seed imports the stubbed Config documents on first run).
+const memoryStore = () => {
+  const entries = new Map<string, PluginConfigEntry>()
+  return PluginConfigStore.Service.of({
+    plugins: () => Effect.sync(() => [...entries.values()]),
+    setPlugin: (entry) =>
+      Effect.sync(() => {
+        entries.set(entry.package, entry)
+      }),
+    removePlugin: (pkg) =>
+      Effect.sync(() => {
+        entries.delete(pkg)
+      }),
+    isEmpty: () => Effect.sync(() => entries.size === 0),
+  })
+}
 
 describe("ConfigExternalPlugin", () => {
   it.live("resolves and loads a configured Promise plugin with options", () =>
@@ -32,6 +51,7 @@ describe("ConfigExternalPlugin", () => {
         Effect.provideService(FSUtil.Service, fs),
         Effect.provideService(Location.Service, location),
         Effect.provideService(Npm.Service, npm),
+        Effect.provideService(PluginConfigStore.Service, memoryStore()),
         Effect.provideService(
           Config.Service,
           Config.Service.of({
@@ -75,6 +95,7 @@ describe("ConfigExternalPlugin", () => {
         Effect.provideService(FSUtil.Service, fs),
         Effect.provideService(Location.Service, location),
         Effect.provideService(Npm.Service, npm),
+        Effect.provideService(PluginConfigStore.Service, memoryStore()),
         Effect.provideService(
           Config.Service,
           Config.Service.of({
@@ -118,6 +139,7 @@ describe("ConfigExternalPlugin", () => {
         Effect.provideService(FSUtil.Service, fs),
         Effect.provideService(Location.Service, location),
         Effect.provideService(Npm.Service, npm),
+        Effect.provideService(PluginConfigStore.Service, memoryStore()),
         Effect.provideService(
           Config.Service,
           Config.Service.of({
@@ -174,6 +196,7 @@ describe("ConfigExternalPlugin", () => {
         Effect.provideService(FSUtil.Service, fs),
         Effect.provideService(Location.Service, location),
         Effect.provideService(Npm.Service, npm),
+        Effect.provideService(PluginConfigStore.Service, memoryStore()),
         Effect.provideService(
           Config.Service,
           Config.Service.of({
@@ -216,6 +239,7 @@ describe("ConfigExternalPlugin", () => {
         Effect.provideService(FSUtil.Service, fs),
         Effect.provideService(Location.Service, location),
         Effect.provideService(Npm.Service, npm),
+        Effect.provideService(PluginConfigStore.Service, memoryStore()),
         Effect.provideService(
           Config.Service,
           Config.Service.of({

@@ -55,5 +55,6 @@ export const migrations = (
     import("./migration/20260714140121_add_agent_config"),
     import("./migration/20260714141710_add_command_config"),
     import("./migration/20260714213000_add_skill_reference_config"),
+    import("./migration/20260715090000_add_plugin_config"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]

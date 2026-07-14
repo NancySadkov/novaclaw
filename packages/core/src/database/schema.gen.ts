@@ -183,6 +183,14 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`plugin_config\` (
+          \`package\` text PRIMARY KEY,
+          \`options\` text,
+          \`time_created\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`project_directory\` (
           \`project_id\` text NOT NULL,
           \`directory\` text NOT NULL,
