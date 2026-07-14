@@ -249,3 +249,23 @@ const table = sqliteTable("session", {
 - Keep delivery vocabulary explicit. Prompts steer by default and promote at the next safe provider-turn boundary while the current drain requires continuation. An explicit `queue` input remains pending until the Session would otherwise become idle; promote one queued input at that boundary, then reevaluate continuation before promoting another. Promoting any new user input resets the selected agent's provider-turn allowance; a batch of steers resets it once.
 - Keep EventV2 replay owner claims separate from clustered Session execution ownership.
 - Keep the System Context algebra, registry, and built-ins in `src/system-context`; keep Context Source producers with their observed domains, and keep Session History selection plus Context Epoch persistence Session-owned.
+
+## UI conventions (app layer — born from the 2026-07-14 autofocus incident; plan: novaclaw-plan notes/ui-arch-hardening-plan.md)
+
+- **No `requestAnimationFrame` for must-run effects.** rAF never fires in a hidden/backgrounded
+  window — an rAF-parked action pops whenever the window resurfaces, stealing whatever the user is
+  doing by then. Use rAF only for paint-coupled work; anything that must happen (focus, state
+  writes, network) runs synchronously or via timers.
+- **Never hand-build a persisted-storage key or write another context's persisted store.** Keys
+  embed a server-scope encoding that differs per context — a launcher writing "the composer's
+  draft" lands in a sibling key the composer never reads. Address per-session client state only
+  through the owning facade.
+- **A new per-session control ships with its client-store projection.** V2 control events update
+  the server row; if the client store doesn't apply the event too, every other open view shows a
+  stale record until reload. Either project it client-side or document the staleness out loud.
+- **Imperative DOM state (focus/selection/scroll) is set synchronously and verified** — route
+  transitions can reparent views and silently drop it. Long-term this lives in the editor-core
+  seam (plan P3/P4), not scattered through components.
+- **Readiness is a Promise that always exists.** Never expose (or rely on) a `.promise` that is
+  undefined once a store has already loaded — a resource built over it never resolves on warm
+  mounts. (persist.ts contract fix: plan P1.)
