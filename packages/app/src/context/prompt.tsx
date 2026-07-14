@@ -206,7 +206,7 @@ export function createPromptSession(serverScope: ServerScope, scope: Scope) {
 export function createPromptReady(session: Accessor<PromptSession>) {
   return Object.defineProperty(() => session().ready(), "promise", {
     get: () => session().ready.promise,
-  }) as (() => boolean) & { readonly promise: Promise<unknown> | undefined }
+  }) as (() => boolean) & { readonly promise: Promise<unknown> }
 }
 
 function promptStore(): PromptStore {

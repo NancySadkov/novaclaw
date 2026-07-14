@@ -7,11 +7,15 @@ import { pathKey } from "@/utils/path-key"
 import { ScopedKey, ServerScope, type ServerScope as ServerScopeValue } from "@/utils/server-scope"
 
 type InitType = Promise<string> | string | null
+// The readiness contract (ui-arch-hardening P1): `ready()` is the reactive boolean; `ready.promise`
+// is ALWAYS a Promise — already-resolved for a synchronously-loaded (or cached) store, never
+// undefined. A sometimes-undefined promise made warm mounts unawaitable: a resource built over it
+// never resolved, which is exactly how the 2026-07-14 composer-autofocus bug shipped.
 type PersistedWithReady<T> = [
   Store<T>,
   SetStoreFunction<T>,
   InitType,
-  Accessor<boolean> & { promise: undefined | Promise<any> },
+  Accessor<boolean> & { promise: Promise<unknown> },
 ]
 
 type PersistTarget = {
@@ -633,7 +637,7 @@ export function persisted<T>(
     setState,
     init,
     Object.assign(() => (ready.loading ? false : ready.latest === true), {
-      promise: init instanceof Promise ? init : undefined,
+      promise: init instanceof Promise ? init.then(() => true as const) : Promise.resolve(true as const),
     }),
   ]
 }

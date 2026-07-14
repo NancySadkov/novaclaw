@@ -1391,11 +1391,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   // Focus the message box as soon as a chat opens (owner call 2026-07-14: click-to-create must
   // land the user READY TO TYPE). Once per mount, after the persisted draft loads (so the cursor
   // goes to the end of any restored text) — unless the user already put focus somewhere real
-  // (typing in another field must not be hijacked by a background load settling). Gate on the
-  // reactive ready() boolean, NOT promptReady.state: `ready.promise` is undefined for an
-  // already-loaded (cached) prompt session, so the resource never resolves on warm mounts.
+  // (typing in another field must not be hijacked by a background load settling).
   // Verify-and-retry briefly: the route transition can reparent the composer right after a
-  // one-shot focus, which silently drops it back to <body>.
+  // one-shot focus, which silently drops it back to <body>. (Plan P3 deletes this retry once
+  // session views stop being reparented.)
   let autoFocused = false
   const attemptAutoFocus = (remaining: number) => {
     const active = document.activeElement

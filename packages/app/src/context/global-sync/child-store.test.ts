@@ -12,7 +12,8 @@ const persist: typeof import("@/utils/persist").persisted = (_target, store) => 
   store[0],
   store[1],
   null,
-  Object.assign(() => true, { promise: undefined }),
+  // P1 readiness contract: ready.promise is always a Promise (resolved when loaded).
+  Object.assign(() => true, { promise: Promise.resolve(true) }),
 ]
 
 const child = () => createStore({} as State)

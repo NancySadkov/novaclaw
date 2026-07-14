@@ -84,9 +84,9 @@ export default function NewSessionPage() {
     if (!prompt.ready()) return
     requestAnimationFrame(() => inputRef?.focus())
   })
-  const ready = Promise.resolve()
   const [promptReady] = createResource(
-    () => prompt.ready.promise ?? ready,
+    // P1 readiness contract: ready.promise ALWAYS exists (resolved when already loaded).
+    () => prompt.ready.promise,
     (promise) => promise.then(() => true),
   )
 

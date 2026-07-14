@@ -113,9 +113,9 @@ export function createSessionComposerRegionController(input: {
     () => `${input.sessionKey()}\0${store.ready}`,
   )
   const value = createMemo(() => Math.max(0, Math.min(1, progress())))
-  const ready = Promise.resolve()
   const [promptReady] = createResource(
-    () => input.prompt.ready.promise ?? ready,
+    // P1 readiness contract: ready.promise ALWAYS exists (resolved when already loaded).
+    () => input.prompt.ready.promise,
     (promise) => promise.then(() => true),
   )
 
