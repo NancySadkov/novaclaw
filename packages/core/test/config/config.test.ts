@@ -125,7 +125,11 @@ describe("Config", () => {
           )
           return yield* Effect.gen(function* () {
             const config = yield* Config.Service
-            const documents = (yield* config.entries()).filter((entry) => entry.type === "document")
+            // FILE documents only — step 6 appends one PATHLESS synthetic document carrying the
+            // store-backed runtime settings (seeded from these very files).
+            const documents = (yield* config.entries()).filter(
+              (entry): entry is Config.Document => entry.type === "document" && entry.path !== undefined,
+            )
 
             expect(documents).toHaveLength(3)
             expect(documents.map((document) => document.type)).toEqual(["document", "document", "document"])
@@ -165,7 +169,11 @@ describe("Config", () => {
 
           return yield* Effect.gen(function* () {
             const config = yield* Config.Service
-            const documents = (yield* config.entries()).filter((entry) => entry.type === "document")
+            // FILE documents only — step 6 appends one PATHLESS synthetic document carrying the
+            // store-backed runtime settings (seeded from these very files).
+            const documents = (yield* config.entries()).filter(
+              (entry): entry is Config.Document => entry.type === "document" && entry.path !== undefined,
+            )
 
             expect(documents[0]?.info.$schema).toBeUndefined()
             expect(documents[0]?.info.shell).toBe("/bin/zsh")
@@ -274,7 +282,11 @@ describe("Config", () => {
 
           return yield* Effect.gen(function* () {
             const config = yield* Config.Service
-            const documents = (yield* config.entries()).filter((entry) => entry.type === "document")
+            // FILE documents only — step 6 appends one PATHLESS synthetic document carrying the
+            // store-backed runtime settings (seeded from these very files).
+            const documents = (yield* config.entries()).filter(
+              (entry): entry is Config.Document => entry.type === "document" && entry.path !== undefined,
+            )
 
             expect(documents).toHaveLength(1)
             expect(documents[0]?.info.shell).toBe("/bin/bash")
@@ -386,7 +398,11 @@ describe("Config", () => {
 
           return yield* Effect.gen(function* () {
             const config = yield* Config.Service
-            const documents = (yield* config.entries()).filter((entry) => entry.type === "document")
+            // FILE documents only — step 6 appends one PATHLESS synthetic document carrying the
+            // store-backed runtime settings (seeded from these very files).
+            const documents = (yield* config.entries()).filter(
+              (entry): entry is Config.Document => entry.type === "document" && entry.path !== undefined,
+            )
 
             expect(documents).toHaveLength(1)
             expect(documents[0]?.info.model).toBe("anthropic/claude")
@@ -413,7 +429,11 @@ describe("Config", () => {
           )
           return yield* Effect.gen(function* () {
             const config = yield* Config.Service
-            const documents = (yield* config.entries()).filter((entry) => entry.type === "document")
+            // FILE documents only — step 6 appends one PATHLESS synthetic document carrying the
+            // store-backed runtime settings (seeded from these very files).
+            const documents = (yield* config.entries()).filter(
+              (entry): entry is Config.Document => entry.type === "document" && entry.path !== undefined,
+            )
 
             expect(documents.map((document) => document.info.$schema)).toEqual(["base"])
           }).pipe(Effect.provide(testLayer(tmp.path)))

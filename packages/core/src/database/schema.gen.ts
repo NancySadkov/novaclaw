@@ -226,6 +226,14 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`runtime_setting\` (
+          \`key\` text PRIMARY KEY,
+          \`value\` text NOT NULL,
+          \`time_created\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`session_context_epoch\` (
           \`session_id\` text PRIMARY KEY,
           \`baseline\` text NOT NULL,

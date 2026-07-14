@@ -29,6 +29,8 @@ import { ConfigServer } from "./config/server"
 import { ConfigStrict } from "./config/strict"
 import { ConfigToolOutput } from "./config/tool-output"
 import { ConfigWatcher } from "./config/watcher"
+import { SettingsConfigSeed } from "./settings-config-seed"
+import { SettingsConfigStore } from "./settings-config-store"
 
 export class Info extends Schema.Class<Info>("Config.Info")({
   $schema: Schema.optional(Schema.String).annotate({
@@ -290,9 +292,19 @@ export const layer = Layer.effect(
         .flatMap((config) => config.info.experimental?.policies ?? []),
     )
 
+    // Config→SQLite step 6: runtime settings resolve from the instance-wide store through ONE
+    // synthetic document appended LAST (most specific — `latest()` finds it first), so every
+    // `Config.latest(entries, key)` reader is store-backed with no reader changes. The store is
+    // read once here (the documented snapshot-at-boot semantics). Transitional: an empty store
+    // seeds from this location's documents (removed in migration step 8, with the file loads).
+    const settingsStore = yield* SettingsConfigStore.Service
+    if (yield* settingsStore.isEmpty()) yield* SettingsConfigSeed.seedFromEntries(configs)
+    const settingsInfo = SettingsConfigSeed.settingsInfoFromStore(yield* settingsStore.all())
+    const allConfigs = settingsInfo ? [...configs, new Document({ type: "document", info: settingsInfo })] : configs
+
     return Service.of({
       entries: Effect.fn("Config.entries")(function* () {
-        return configs
+        return allConfigs
       }),
     })
   }),
@@ -303,5 +315,5 @@ export const locationLayer = layer.pipe(Layer.provideMerge(Policy.locationLayer)
 export const node = makeLocationNode({
   service: Service,
   layer,
-  deps: [FSUtil.node, Global.node, Location.node, Policy.node],
+  deps: [FSUtil.node, Global.node, Location.node, Policy.node, SettingsConfigStore.node],
 })
