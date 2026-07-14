@@ -23,8 +23,6 @@ import {
   Prompt,
   usePrompt,
   ImageAttachmentPart,
-  AgentPart,
-  FileAttachmentPart,
 } from "@/context/prompt"
 import { useLayout } from "@/context/layout"
 import { useSDK } from "@/context/sdk"
@@ -52,7 +50,8 @@ import { useLanguage } from "@/context/language"
 import { useExpertise, PERMISSION_MODE_MIN_LEVEL } from "@/context/expertise"
 import { usePlatform } from "@/context/platform"
 import { createSessionTabs } from "@/pages/session/helpers"
-import { createTextFragment, getCursorPosition, setCursorPosition, setRangeEdge } from "./prompt-input/editor-dom"
+import { getCursorPosition } from "./prompt-input/editor-dom"
+import { createEditorCore } from "./prompt-input/editor-core"
 import { createPromptAttachments } from "./prompt-input/attachments"
 import { ACCEPTED_FILE_TYPES, pickAttachmentFiles } from "./prompt-input/files"
 import {
@@ -249,38 +248,14 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const inset = 56
   const space = `${inset}px`
 
-  const scrollCursorIntoView = () => {
-    const container = scrollRef
-    const selection = window.getSelection()
-    if (!container || !selection || selection.rangeCount === 0) return
+  // P4a editor-core: all contenteditable Range/Selection surgery lives behind this facade.
+  const editor = createEditorCore({ editor: () => editorRef, empty: () => DEFAULT_PROMPT })
 
-    const range = selection.getRangeAt(0)
-    if (!editorRef.contains(range.startContainer)) return
-
-    const cursor = getCursorPosition(editorRef)
-    const length = promptLength(prompt.current().filter((part) => part.type !== "image"))
-    if (cursor >= length) {
-      container.scrollTop = container.scrollHeight
-      return
-    }
-
-    const rect = range.getClientRects().item(0) ?? range.getBoundingClientRect()
-    if (!rect.height) return
-
-    const containerRect = container.getBoundingClientRect()
-    const top = rect.top - containerRect.top + container.scrollTop
-    const bottom = rect.bottom - containerRect.top + container.scrollTop
-    const padding = 12
-
-    if (top < container.scrollTop + padding) {
-      container.scrollTop = Math.max(0, top - padding)
-      return
-    }
-
-    if (bottom > container.scrollTop + container.clientHeight - inset) {
-      container.scrollTop = bottom - container.clientHeight + inset
-    }
-  }
+  const scrollCursorIntoView = () =>
+    editor.scrollCursorIntoView(scrollRef, {
+      inset,
+      contentLength: promptLength(prompt.current().filter((part) => part.type !== "image")),
+    })
 
   const queueScroll = (count = 2) => {
     requestAnimationFrame(() => {
@@ -502,29 +477,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     applyHistoryComments(entry.comments)
     prompt.set(p, length)
     requestAnimationFrame(() => {
-      editorRef.focus()
-      setCursorPosition(editorRef, length)
+      editor.focusAt(length)
       setStore("applyingHistory", false)
       queueScroll()
     })
   }
 
-  const getCaretState = () => {
-    const selection = window.getSelection()
-    const textLength = promptLength(prompt.current())
-    if (!selection || selection.rangeCount === 0) {
-      return { collapsed: false, cursorPosition: 0, textLength }
-    }
-    const anchorNode = selection.anchorNode
-    if (!anchorNode || !editorRef.contains(anchorNode)) {
-      return { collapsed: false, cursorPosition: 0, textLength }
-    }
-    return {
-      collapsed: selection.isCollapsed,
-      cursorPosition: getCursorPosition(editorRef),
-      textLength,
-    }
-  }
+  const getCaretState = () => editor.caretState(promptLength(prompt.current()))
 
   const escBlur = () => platform.platform === "desktop" && platform.os === "macos"
 
@@ -588,48 +547,16 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     setStore("savedPrompt", null)
   }
 
-  const clearEditor = () => {
-    editorRef.innerHTML = ""
-  }
-
-  const setEditorText = (text: string) => {
-    clearEditor()
-    editorRef.textContent = text
-  }
-
-  const placeCursorAtEnd = () => {
-    editorRef.focus()
-    const range = document.createRange()
-    const selection = window.getSelection()
-    range.selectNodeContents(editorRef)
-    range.collapse(false)
-    selection?.removeAllRanges()
-    selection?.addRange(range)
-  }
-
   const focusEditorEnd = () => {
-    requestAnimationFrame(placeCursorAtEnd)
-  }
-
-  const currentCursor = () => {
-    const selection = window.getSelection()
-    if (!selection || selection.rangeCount === 0 || !editorRef.contains(selection.anchorNode)) return null
-    return getCursorPosition(editorRef)
+    requestAnimationFrame(() => editor.placeCursorAtEnd())
   }
 
   const restoreFocus = () => {
     requestAnimationFrame(() => {
       const cursor = prompt.cursor() ?? promptLength(prompt.current())
-      editorRef.focus()
-      setCursorPosition(editorRef, cursor)
+      editor.focusAt(cursor)
       queueScroll()
     })
-  }
-
-  const renderEditorWithCursor = (parts: Prompt) => {
-    const cursor = currentCursor()
-    renderEditor(parts)
-    if (cursor !== null) setCursorPosition(editorRef, cursor)
   }
 
   createEffect(() => {
@@ -751,13 +678,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
     if (cmd.type === "custom") {
       const text = `/${cmd.trigger} `
-      setEditorText(text)
+      editor.setText(text)
       prompt.set([{ type: "text", content: text, start: 0, end: text.length }, ...images], text.length)
       focusEditorEnd()
       return
     }
 
-    clearEditor()
+    editor.clear()
     prompt.set([...DEFAULT_PROMPT, ...images], 0)
     command.trigger(cmd.id, "slash")
   }
@@ -774,55 +701,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     filterKeys: ["trigger", "title"],
     onSelect: handleSlashSelect,
   })
-
-  const createPill = (part: FileAttachmentPart | AgentPart) => {
-    const pill = document.createElement("span")
-    pill.textContent = part.content
-    pill.setAttribute("data-type", part.type)
-    if (part.type === "file") pill.setAttribute("data-path", part.path)
-    if (part.type === "agent") pill.setAttribute("data-name", part.name)
-    pill.setAttribute("contenteditable", "false")
-    pill.style.userSelect = "text"
-    pill.style.cursor = "default"
-    return pill
-  }
-
-  const isNormalizedEditor = () =>
-    Array.from(editorRef.childNodes).every((node) => {
-      if (node.nodeType === Node.TEXT_NODE) {
-        const text = node.textContent ?? ""
-        if (!text.includes("\u200B")) return true
-        if (text !== "\u200B") return false
-
-        const prev = node.previousSibling
-        const next = node.nextSibling
-        const prevIsBr = prev?.nodeType === Node.ELEMENT_NODE && (prev as HTMLElement).tagName === "BR"
-        return !!prevIsBr && !next
-      }
-      if (node.nodeType !== Node.ELEMENT_NODE) return false
-      const el = node as HTMLElement
-      if (el.dataset.type === "file") return true
-      if (el.dataset.type === "agent") return true
-      return el.tagName === "BR"
-    })
-
-  const renderEditor = (parts: Prompt) => {
-    clearEditor()
-    for (const part of parts) {
-      if (part.type === "text") {
-        editorRef.appendChild(createTextFragment(part.content))
-        continue
-      }
-      if (part.type === "file" || part.type === "agent") {
-        editorRef.appendChild(createPill(part))
-      }
-    }
-
-    const last = editorRef.lastChild
-    if (last?.nodeType === Node.ELEMENT_NODE && (last as HTMLElement).tagName === "BR") {
-      editorRef.appendChild(document.createTextNode("\u200B"))
-    }
-  }
 
   const scrollSlashActiveIntoView = () => {
     const activeId = slashActive()
@@ -855,16 +733,16 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const reconcile = (input: Prompt) => {
     if (mirror.input) {
       mirror.input = false
-      if (isNormalizedEditor()) return
+      if (editor.isNormalized()) return
 
-      renderEditorWithCursor(input)
+      editor.renderWithCursor(input)
       return
     }
 
-    const dom = parseFromDOM()
-    if (isNormalizedEditor() && isPromptEqual(input, dom)) return
+    const dom = editor.parse()
+    if (editor.isNormalized() && isPromptEqual(input, dom)) return
 
-    renderEditorWithCursor(input)
+    editor.renderWithCursor(input)
   }
 
   createEffect(
@@ -877,90 +755,8 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     ),
   )
 
-  const parseFromDOM = (): Prompt => {
-    const parts: Prompt = []
-    let position = 0
-    let buffer = ""
-
-    const flushText = () => {
-      let content = buffer
-      if (content.includes("\r")) content = content.replace(/\r\n?/g, "\n")
-      if (content.includes("\u200B")) content = content.replace(/\u200B/g, "")
-      buffer = ""
-      if (!content) return
-      parts.push({ type: "text", content, start: position, end: position + content.length })
-      position += content.length
-    }
-
-    const pushFile = (file: HTMLElement) => {
-      const content = file.textContent ?? ""
-      parts.push({
-        type: "file",
-        path: file.dataset.path!,
-        content,
-        start: position,
-        end: position + content.length,
-      })
-      position += content.length
-    }
-
-    const pushAgent = (agent: HTMLElement) => {
-      const content = agent.textContent ?? ""
-      parts.push({
-        type: "agent",
-        name: agent.dataset.name!,
-        content,
-        start: position,
-        end: position + content.length,
-      })
-      position += content.length
-    }
-
-    const visit = (node: Node) => {
-      if (node.nodeType === Node.TEXT_NODE) {
-        buffer += node.textContent ?? ""
-        return
-      }
-      if (node.nodeType !== Node.ELEMENT_NODE) return
-
-      const el = node as HTMLElement
-      if (el.dataset.type === "file") {
-        flushText()
-        pushFile(el)
-        return
-      }
-      if (el.dataset.type === "agent") {
-        flushText()
-        pushAgent(el)
-        return
-      }
-      if (el.tagName === "BR") {
-        buffer += "\n"
-        return
-      }
-
-      for (const child of Array.from(el.childNodes)) {
-        visit(child)
-      }
-    }
-
-    const children = Array.from(editorRef.childNodes)
-    children.forEach((child, index) => {
-      const isBlock = child.nodeType === Node.ELEMENT_NODE && ["DIV", "P"].includes((child as HTMLElement).tagName)
-      visit(child)
-      if (isBlock && index < children.length - 1) {
-        buffer += "\n"
-      }
-    })
-
-    flushText()
-
-    if (parts.length === 0) parts.push(...DEFAULT_PROMPT)
-    return parts
-  }
-
   const handleInput = () => {
-    const rawParts = parseFromDOM()
+    const rawParts = editor.parse()
     const images = imageAttachments()
     const cursorPosition = getCursorPosition(editorRef)
     const rawText =
@@ -1010,80 +806,15 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }
 
   const addPart = (part: ContentPart) => {
-    if (part.type === "image") return false
-
-    const selection = window.getSelection()
-    if (!selection) return false
-
-    if (selection.rangeCount === 0 || !editorRef.contains(selection.anchorNode)) {
-      editorRef.focus()
-      const cursor = prompt.cursor() ?? promptLength(prompt.current())
-      setCursorPosition(editorRef, cursor)
-    }
-
-    if (selection.rangeCount === 0) return false
-    const range = selection.getRangeAt(0)
-    if (!editorRef.contains(range.startContainer)) return false
-
-    if (part.type === "file" || part.type === "agent") {
-      const cursorPosition = getCursorPosition(editorRef)
-      const rawText = prompt
-        .current()
-        .map((p) => ("content" in p ? p.content : ""))
-        .join("")
-      const textBeforeCursor = rawText.substring(0, cursorPosition)
-      const atMatch = textBeforeCursor.match(/@(\S*)$/)
-      const pill = createPill(part)
-      const gap = document.createTextNode(" ")
-
-      if (atMatch) {
-        const start = atMatch.index ?? cursorPosition - atMatch[0].length
-        setRangeEdge(editorRef, range, "start", start)
-        setRangeEdge(editorRef, range, "end", cursorPosition)
-      }
-
-      range.deleteContents()
-      range.insertNode(gap)
-      range.insertNode(pill)
-      range.setStartAfter(gap)
-      range.collapse(true)
-      selection.removeAllRanges()
-      selection.addRange(range)
-    }
-
-    if (part.type === "text") {
-      const fragment = createTextFragment(part.content)
-      const last = fragment.lastChild
-      range.deleteContents()
-      range.insertNode(fragment)
-      if (last) {
-        if (last.nodeType === Node.TEXT_NODE) {
-          const text = last.textContent ?? ""
-          if (text === "\u200B") {
-            range.setStart(last, 0)
-          }
-          if (text !== "\u200B") {
-            range.setStart(last, text.length)
-          }
-        }
-        if (last.nodeType !== Node.TEXT_NODE) {
-          const isBreak = last.nodeType === Node.ELEMENT_NODE && (last as HTMLElement).tagName === "BR"
-          const next = last.nextSibling
-          const emptyText = next?.nodeType === Node.TEXT_NODE && (next.textContent ?? "") === ""
-          if (isBreak && (!next || emptyText)) {
-            const placeholder = next && emptyText ? next : document.createTextNode("\u200B")
-            if (!next) last.parentNode?.insertBefore(placeholder, null)
-            placeholder.textContent = "\u200B"
-            range.setStart(placeholder, 0)
-          } else {
-            range.setStartAfter(last)
-          }
-        }
-      }
-      range.collapse(true)
-      selection.removeAllRanges()
-      selection.addRange(range)
-    }
+    const inserted = editor.insertPart(part, {
+      fallbackCursor: () => prompt.cursor() ?? promptLength(prompt.current()),
+      text: () =>
+        prompt
+          .current()
+          .map((p) => ("content" in p ? p.content : ""))
+          .join(""),
+    })
+    if (!inserted) return false
 
     handleInput()
     closePopover()
@@ -1123,8 +854,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         setStore("savedPrompt", null)
         prompt.set(edit.prompt, promptLength(edit.prompt))
         requestAnimationFrame(() => {
-          editorRef.focus()
-          setCursorPosition(editorRef, promptLength(edit.prompt))
+          editor.focusAt(promptLength(edit.prompt))
           queueScroll()
         })
         props.onEditLoaded?.()
@@ -1154,10 +884,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     editor: () => editorRef,
     isDialogActive: () => !!dialog.active,
     setDraggingType: (type) => setStore("draggingType", type),
-    focusEditor: () => {
-      editorRef.focus()
-      setCursorPosition(editorRef, promptLength(prompt.current()))
-    },
+    focusEditor: () => editor.focusAt(promptLength(prompt.current())),
     addPart,
     readClipboardImage: platform.readClipboardImage,
     getPathForFile: platform.getPathForFile,
@@ -1223,21 +950,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     }
 
     if (event.key === "Backspace") {
-      const selection = window.getSelection()
-      if (selection && selection.isCollapsed) {
-        const node = selection.anchorNode
-        const offset = selection.anchorOffset
-        if (node && node.nodeType === Node.TEXT_NODE) {
-          const text = node.textContent ?? ""
-          if (/^\u200B+$/.test(text) && offset > 0) {
-            const range = document.createRange()
-            range.setStart(node, 0)
-            range.collapse(true)
-            selection.removeAllRanges()
-            selection.addRange(range)
-          }
-        }
-      }
+      editor.collapseBackspaceAtZeroWidth()
     }
 
     // uix.md §6.4: for a Normal user a leading "!" just types "!" — the accidental keystroke must not
@@ -1411,7 +1124,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     const active = document.activeElement
     const idle = !active || active === document.body || !(active instanceof HTMLElement) || active.tagName === "BUTTON"
     if (!idle) return // the user focused something real — don't hijack it
-    if (editorRef?.isConnected) placeCursorAtEnd()
+    if (editorRef?.isConnected) editor.placeCursorAtEnd()
   })
 
   const designPlaceholder = () => {
