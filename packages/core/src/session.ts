@@ -246,6 +246,10 @@ export interface Interface {
     feature: "introspection" | "quality" | "affective"
     enabled: boolean | null
   }) => Effect.Effect<void, NotFoundError>
+  readonly switchPromptOverride: (input: {
+    sessionID: SessionSchema.ID
+    override: string | null
+  }) => Effect.Effect<void, NotFoundError>
   readonly setTitle: (input: { sessionID: SessionSchema.ID; title: string }) => Effect.Effect<void, NotFoundError>
   readonly setMetadata: (input: {
     sessionID: SessionSchema.ID
@@ -802,6 +806,17 @@ export const layer = Layer.effect(
           timestamp: yield* DateTime.now,
           feature: input.feature,
           enabled: input.enabled,
+        })
+      }),
+      // B4/T2: the per-session system-prompt override layer (info-sheet editor + the reconfigure
+      // tool) — applies on the next turn; `null` clears the layer (back to inherit via the walk).
+      switchPromptOverride: Effect.fn("V2Session.switchPromptOverride")(function* (input) {
+        yield* result.get(input.sessionID)
+        yield* events.publish(SessionEvent.PromptOverrideSwitched, {
+          sessionID: input.sessionID,
+          messageID: SessionMessage.ID.create(),
+          timestamp: yield* DateTime.now,
+          override: input.override,
         })
       }),
       // F1c-1 — rename on the core engine. Unchanged titles dedup to no event.

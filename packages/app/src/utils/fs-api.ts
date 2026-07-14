@@ -190,3 +190,12 @@ export function switchFeature(
     enabled: input.enabled,
   })
 }
+
+// B4/T2: the per-session system-prompt override layer (the info-sheet editor; the agent-side
+// counterpart is the `reconfigure` tool). `override: null` clears the layer.
+export function switchPromptOverride(
+  server: ServerConnection.HttpBase,
+  input: { directory: string; sessionID: string; override: string | null },
+) {
+  return sessionPost(server, input.directory, input.sessionID, "prompt-override", { override: input.override })
+}

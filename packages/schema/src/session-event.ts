@@ -131,6 +131,22 @@ export const FeatureSwitched = Event.define({
 })
 export type FeatureSwitched = typeof FeatureSwitched.Type
 
+// B4/T2: the per-session system-prompt OVERRIDE layer (the info-sheet editor + the agent's own
+// guardrailed `reconfigure` tool). The override composes after the persona baseline and before the
+// agent prompt (runner llm.ts system assembly) and rides the config walk (children/forks inherit).
+// `override: null` clears the layer. Like the switches above, the projector writes the column and
+// the runner reads it fresh each turn.
+export const PromptOverrideSwitched = Event.define({
+  type: "session.next.prompt-override.switched",
+  ...options,
+  schema: {
+    ...Base,
+    messageID: SessionMessage.ID,
+    override: Schema.NullOr(Schema.String),
+  },
+})
+export type PromptOverrideSwitched = typeof PromptOverrideSwitched.Type
+
 export const Moved = Event.define({
   type: "session.next.moved",
   ...options,
@@ -539,6 +555,7 @@ export const DurableDefinitions = Event.inventory(
   ModeSwitched,
   StrictSwitched,
   FeatureSwitched,
+  PromptOverrideSwitched,
   Moved,
   Prompted,
   PromptAdmitted,
@@ -576,6 +593,7 @@ export const Definitions = Event.inventory(
   ModeSwitched,
   StrictSwitched,
   FeatureSwitched,
+  PromptOverrideSwitched,
   Moved,
   Prompted,
   PromptAdmitted,

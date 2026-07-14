@@ -100,6 +100,7 @@ export function fromRow(row: SessionRow): Info {
     introspection: row.introspection ?? undefined,
     quality: row.quality ?? undefined,
     affective: row.affective ?? undefined,
+    systemPromptOverride: row.system_prompt_override ?? undefined,
     time: {
       created: row.time_created,
       updated: row.time_updated,

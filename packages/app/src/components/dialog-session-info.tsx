@@ -1,12 +1,16 @@
 import { Component, createMemo, createSignal, For, Show } from "solid-js"
 import type { Session } from "@novaclaw/sdk/v2/client"
 import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
+import { Button } from "@novaclaw/ui/button"
 import { Icon } from "@novaclaw/ui/icon"
+import { RequiresLevel } from "@/context/expertise"
 import { useLanguage } from "@/context/language"
+import { useServer } from "@/context/server"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
 import { subtreeRows, tokenTotals } from "@/pages/home-session-meta"
 import { sessionTitle } from "@/utils/session-title"
+import { switchPromptOverride } from "@/utils/fs-api"
 
 // Chat details sheet (uix-improvement slice 5): everything a user may want to KNOW about a chat —
 // its working folder, agent + model, live status, file changes, timestamps, and token usage (this
@@ -27,8 +31,31 @@ const Row: Component<{ label: string; value: string; mono?: boolean }> = (props)
 
 export const DialogSessionInfo: Component<{ session: Session; projectName?: string }> = (props) => {
   const language = useLanguage()
+  const server = useServer()
   const serverSDK = useServerSDK()
   const serverSync = useServerSync()
+
+  // B4/T2: the per-session system-prompt OVERRIDE layer (advanced+). The record value is the
+  // load-time truth; the draft signal is what the user is editing. Saving posts the switch route
+  // (the same durable event the agent-side `reconfigure` tool publishes) — it applies from the
+  // session's next turn, and children/forks inherit through the config walk.
+  const recordOverride = () =>
+    (props.session as Session & { systemPromptOverride?: string }).systemPromptOverride ?? ""
+  const [promptDraft, setPromptDraft] = createSignal<string | undefined>(undefined)
+  const [promptSaved, setPromptSaved] = createSignal(recordOverride())
+  const promptValue = () => promptDraft() ?? promptSaved()
+  const promptDirty = () => promptDraft() !== undefined && promptDraft() !== promptSaved()
+  const savePromptOverride = (next: string | null) => {
+    const conn = server.current
+    if (!conn) return
+    setPromptSaved(next ?? "")
+    setPromptDraft(undefined)
+    void switchPromptOverride(conn.http, {
+      directory: props.session.directory,
+      sessionID: props.session.id,
+      override: next,
+    }).catch((error) => console.error("switchPromptOverride failed", error))
+  }
 
   // Tags component (notes/entities.md T0): edit the chat's tag set inline. Writes replace the full
   // set (idempotent PUT); the store updates reactively via the `session.tags.updated` event.
@@ -164,6 +191,47 @@ export const DialogSessionInfo: Component<{ session: Session; projectName?: stri
               {language.t("session.info.tokens.hint")}
             </p>
           </div>
+          <RequiresLevel min="advanced">
+            <div class="mt-2 border-t border-v2-border-border-base pt-2" data-slot="session-info-prompt-override">
+              <div class="flex items-center justify-between py-1.5">
+                <span class="text-[12px] text-v2-text-text-faint [font-weight:470]">
+                  {language.t("session.info.prompt.title")}
+                </span>
+                <div class="flex items-center gap-2">
+                  <Show when={promptSaved().length > 0 || promptDirty()}>
+                    <Button
+                      variant="ghost"
+                      type="button"
+                      data-action="session-info-prompt-clear"
+                      onClick={() => savePromptOverride(null)}
+                    >
+                      {language.t("common.clear")}
+                    </Button>
+                  </Show>
+                  <Show when={promptDirty()}>
+                    <Button
+                      variant="primary"
+                      type="button"
+                      data-action="session-info-prompt-save"
+                      onClick={() => savePromptOverride(promptValue().trim() === "" ? null : promptValue())}
+                    >
+                      {language.t("common.save")}
+                    </Button>
+                  </Show>
+                </div>
+              </div>
+              <textarea
+                data-slot="session-info-prompt-input"
+                class="min-h-[72px] w-full resize-y rounded-md border border-v2-border-border-base bg-transparent p-2 font-mono text-[12px] leading-snug text-v2-text-text-base outline-none placeholder:text-v2-text-text-faint"
+                placeholder={language.t("session.info.prompt.placeholder")}
+                value={promptValue()}
+                onInput={(event) => setPromptDraft(event.currentTarget.value)}
+              />
+              <p class="pt-1 text-[12px] leading-snug text-v2-text-text-faint">
+                {language.t("session.info.prompt.hint")}
+              </p>
+            </div>
+          </RequiresLevel>
         </div>
       </div>
     </Dialog>

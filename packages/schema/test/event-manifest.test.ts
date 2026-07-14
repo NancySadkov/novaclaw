@@ -9,8 +9,8 @@ import { WorkspaceEvent } from "../src/workspace-event"
 
 describe("public event manifest", () => {
   test("owns the complete public event surface", () => {
-    expect(EventManifest.ServerDefinitions.length).toBe(62)
-    expect(EventManifest.Definitions.length).toBe(86)
+    expect(EventManifest.ServerDefinitions.length).toBe(63)
+    expect(EventManifest.Definitions.length).toBe(87)
     // F1g: the message/part events retired with the legacy tables — only the session-LEVEL
     // SessionV1 vocabulary (Created/Updated/Deleted + the non-durable Diff/Error) survives.
     expect(SessionV1.Event.Definitions).toEqual([
@@ -20,8 +20,8 @@ describe("public event manifest", () => {
       SessionV1.Event.Diff,
       SessionV1.Event.Error,
     ])
-    expect(EventManifest.Latest.size).toBe(86)
-    expect(EventManifest.Durable.size).toBe(37)
+    expect(EventManifest.Latest.size).toBe(87)
+    expect(EventManifest.Durable.size).toBe(38)
   })
 
   test("uses canonical definitions for current public events", () => {
@@ -39,7 +39,7 @@ describe("public event manifest", () => {
     expect(Reference.Event.Definitions).toEqual([Reference.Event.Updated])
     expect(EventManifest.Latest.has("ide.installed")).toBe(false)
     expect(IdeEvent.Definitions).toEqual([IdeEvent.Installed])
-    expect(EventManifest.Definitions.slice(45, 47)).toEqual([SessionV1.Event.Diff, SessionV1.Event.Error])
+    expect(EventManifest.Definitions.slice(46, 48)).toEqual([SessionV1.Event.Diff, SessionV1.Event.Error])
     expect(EventManifest.Latest.get("session.next.message.recorded")).toBe(SessionEvent.MessageRecorded)
     expect(EventManifest.Durable.get("session.next.message.recorded.1")).toBe(SessionEvent.MessageRecorded)
     expect(EventManifest.Durable.has("session.next.step.ended.1")).toBe(false)

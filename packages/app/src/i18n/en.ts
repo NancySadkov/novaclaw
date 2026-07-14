@@ -767,6 +767,10 @@ export const dict = {
   "session.info.tokens.rollup": "{{total}} across {{threads}} sub-agent threads",
   "session.info.tokens.hint":
     "Tokens are the pieces of text the AI reads and writes — a rough measure of how much work this chat has done.",
+  "session.info.prompt.title": "System prompt (this chat)",
+  "session.info.prompt.placeholder": "Extra standing instructions for this chat…",
+  "session.info.prompt.hint":
+    "Standing instructions layered on top of the agent's base prompt — for this chat only (chats spawned from it inherit them). Applies from the next reply; the base prompt is never changed.",
   "home.sessions.attention.waiting": "Waiting for you",
   "home.sessions.attention.working": "Working",
   "home.sessions.attention.error": "Something went wrong",

@@ -106,6 +106,8 @@ export const Info = Schema.Struct({
   introspection: optional(Schema.Boolean),
   quality: optional(Schema.Boolean),
   affective: optional(Schema.Boolean),
+  // B4/T2: the per-session system-prompt override layer (info-sheet editor / reconfigure tool).
+  systemPromptOverride: optional(Schema.String),
   revert: optional(Revert),
 }).annotate({ identifier: "Session" })
 export type Info = Types.DeepMutable<Schema.Schema.Type<typeof Info>>

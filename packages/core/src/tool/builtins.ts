@@ -14,6 +14,7 @@ import { ProfileTool } from "./profile"
 import { QualityProvisionTool } from "./quality-provision"
 import { QuestionTool } from "./question"
 import { ReadTool } from "./read"
+import { ReconfigureTool } from "./reconfigure"
 import { ReadHexTool } from "./read-hex"
 import { ReadToolFileSystem } from "./read-filesystem"
 import { RegisterAppTool } from "./register-app"
@@ -56,6 +57,7 @@ export const locationLayer = Layer.mergeAll(
   QuestionTool.layer,
   ReadTool.layer.pipe(Layer.provide(ReadToolFileSystem.layer)),
   ReadHexTool.layer,
+  ReconfigureTool.layer,
   RegisterAppTool.layer,
   RevertTool.layer,
   SkillTool.layer,
@@ -87,6 +89,7 @@ export const node = makeLocationNode({
     QuestionTool.node,
     ReadTool.node,
     ReadHexTool.node,
+    ReconfigureTool.node,
     RegisterAppTool.node,
     RevertTool.node,
     SkillTool.node,
