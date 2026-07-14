@@ -7,6 +7,8 @@ import { AgentConfigSeed } from "@novaclaw/core/agent-config-seed"
 import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
 import { CatalogSeed } from "@novaclaw/core/catalog-seed"
 import { CatalogStore } from "@novaclaw/core/catalog-store"
+import { CommandConfigSeed } from "@novaclaw/core/command-config-seed"
+import { CommandConfigStore } from "@novaclaw/core/command-config-store"
 import { Global } from "@novaclaw/core/global"
 import * as Observability from "@novaclaw/core/observability"
 import { Account } from "@/account/account"
@@ -218,6 +220,7 @@ const app = LayerNode.group([
   Global.node,
   AgentConfigStore.node,
   CatalogStore.node,
+  CommandConfigStore.node,
   Database.node,
   Auth.node,
   Account.node,
@@ -272,6 +275,7 @@ const catalogSeedStartup = Layer.effectDiscard(
     const global = yield* Global.Service
     yield* CatalogSeed.seedFromDirectory(global.config, process.cwd()).pipe(Effect.ignore)
     yield* AgentConfigSeed.seedFromDirectory(global.config, process.cwd()).pipe(Effect.ignore)
+    yield* CommandConfigSeed.seedFromDirectory(global.config, process.cwd()).pipe(Effect.ignore)
   }),
 )
 

@@ -2,7 +2,9 @@ import fs from "fs/promises"
 import path from "path"
 import { describe, expect } from "bun:test"
 import { Effect, Schema } from "effect"
+import { CommandConfigStore } from "@novaclaw/core/command-config-store"
 import { CommandV2 } from "@novaclaw/core/command"
+import type { ConfigCommand } from "@novaclaw/core/config/command"
 import { Config } from "@novaclaw/core/config"
 import { ConfigCommandPlugin } from "@novaclaw/core/config/plugin/command"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
@@ -17,6 +19,24 @@ import { host } from "../plugin/host"
 
 const it = testEffect(AppNodeBuilder.build(LayerNode.group([CommandV2.node, FSUtil.node])))
 const decode = Schema.decodeUnknownSync(Config.Info)
+
+// Config→SQLite step 3: the plugin reads config-borne commands from the instance-wide store (its
+// transitional seed imports the stubbed Config documents on first run).
+const memoryStore = () => {
+  const layers = new Map<string, ConfigCommand.Info[]>()
+  return CommandConfigStore.Service.of({
+    commands: () => Effect.sync(() => Object.fromEntries(layers)),
+    setLayers: (name, next) =>
+      Effect.sync(() => {
+        layers.set(name, [...next])
+      }),
+    removeCommand: (name) =>
+      Effect.sync(() => {
+        layers.delete(name)
+      }),
+    isEmpty: () => Effect.sync(() => layers.size === 0),
+  })
+}
 
 describe("ConfigCommandPlugin.Plugin", () => {
   it.live("loads inline and file-based commands in config order", () =>
@@ -45,6 +65,7 @@ Review files`,
 
           const command = yield* CommandV2.Service
           yield* ConfigCommandPlugin.Plugin.effect(host({ command: { ...command, reload: command.reload } })).pipe(
+            Effect.provideService(CommandConfigStore.Service, memoryStore()),
             Effect.provideService(
               Config.Service,
               Config.Service.of({

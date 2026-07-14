@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "5a9f70e7-2826-4605-b867-1bb4420d09b7",
+  "id": "41126383-3338-43e5-937c-3f1813cd6acc",
   "prevIds": [
-    "77e40d8c-fec0-408d-bdfd-33ff245688d0"
+    "5a9f70e7-2826-4605-b867-1bb4420d09b7"
   ],
   "ddl": [
     {
@@ -40,6 +40,10 @@
     },
     {
       "name": "catalog_setting",
+      "entityType": "tables"
+    },
+    {
+      "name": "command_config",
       "entityType": "tables"
     },
     {
@@ -555,6 +559,46 @@
       "name": "time_updated",
       "entityType": "columns",
       "table": "catalog_setting"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "name",
+      "entityType": "columns",
+      "table": "command_config"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "layers",
+      "entityType": "columns",
+      "table": "command_config"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_created",
+      "entityType": "columns",
+      "table": "command_config"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_updated",
+      "entityType": "columns",
+      "table": "command_config"
     },
     {
       "type": "text",
@@ -2201,6 +2245,15 @@
       "nameExplicit": false,
       "name": "catalog_setting_pk",
       "table": "catalog_setting",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "name"
+      ],
+      "nameExplicit": false,
+      "name": "command_config_pk",
+      "table": "command_config",
       "entityType": "pks"
     },
     {

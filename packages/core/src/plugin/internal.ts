@@ -8,6 +8,7 @@ import { AgentV2 } from "../agent"
 import { Catalog } from "../catalog"
 import { AgentConfigStore } from "../agent-config-store"
 import { CatalogStore } from "../catalog-store"
+import { CommandConfigStore } from "../command-config-store"
 import { CommandV2 } from "../command"
 import { Config } from "../config"
 import { ConfigAgentPlugin } from "../config/plugin/agent"
@@ -141,6 +142,7 @@ export const node = makeLocationNode({
     AgentConfigStore.node,
     Catalog.node,
     CatalogStore.node,
+    CommandConfigStore.node,
     CommandV2.node,
     PluginV2.node,
     Integration.node,
