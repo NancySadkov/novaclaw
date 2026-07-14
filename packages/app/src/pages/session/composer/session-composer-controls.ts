@@ -12,7 +12,7 @@ import type { QueryOptionsApi } from "@/context/server-sync"
 import { useServerSDK } from "@/context/server-sdk"
 import { serverName, ServerConnection, useServer } from "@/context/server"
 import { useSDK } from "@/context/sdk"
-import { switchMode, switchStrict } from "@/utils/fs-api"
+import { switchFeature, switchMode, switchStrict, type SessionFeatureName } from "@/utils/fs-api"
 import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useTabs } from "@/context/tabs"
@@ -65,6 +65,22 @@ export function createPromptInputController(input: {
     return local.strict.current() ?? record ?? strictGlobal()
   }
 
+  // The Tuning toggles (introspection · quality · affective) — same local-first precedence per
+  // feature: this browser's explicit stance, then the session record, then the global config
+  // block's `enabled`. The control shows the EFFECTIVE state, so a globally-on feature reads ON
+  // here and flipping it writes this chat's explicit off.
+  const featuresCurrent = (): Record<SessionFeatureName, boolean> => {
+    const id = input.sessionID()
+    const record = id
+      ? (sync().session.get(id) as { introspection?: boolean; quality?: boolean; affective?: boolean } | undefined)
+      : undefined
+    const config = sync().data.config as Partial<Record<SessionFeatureName, { enabled?: boolean }>>
+    const draft = local.features.current()
+    const pick = (feature: SessionFeatureName) =>
+      draft?.[feature] ?? record?.[feature] ?? (config[feature]?.enabled === true)
+    return { introspection: pick("introspection"), quality: pick("quality"), affective: pick("affective") }
+  }
+
   return createMemo<PromptInputControls>(() => ({
     // The visible agent picker (plan/build) is retired — the permission-mode droplist is the one mode
     // control. `available` still feeds the composer's @-mention subagent list.
@@ -100,6 +116,21 @@ export function createPromptInputController(input: {
           const mode = local.permissionMode.current()
           if (mode !== "bypass" && mode !== "yolo") selectPermissionMode("bypass")
         }
+      },
+    },
+    features: {
+      current: featuresCurrent(),
+      set: (feature, enabled) => {
+        // The draft signal is the instant UI truth (and the create-time payload); a live session
+        // ALSO persists the stance server-side so the runner reads it on the next turn.
+        local.features.set({ ...local.features.current(), [feature]: enabled })
+        const id = input.sessionID()
+        const conn = server.current
+        const directory = sdk().directory
+        if (id && conn && directory)
+          void switchFeature(conn.http, { directory, sessionID: id, feature, enabled }).catch((error) =>
+            console.error("switchFeature failed", error),
+          )
       },
     },
     session: {

@@ -21,12 +21,16 @@ export type PermissionMode = "plan" | "ask" | "surgical" | "bypass" | "yolo"
 /** The composer's per-chat Strict-harness choice (jh.md): on/off + racing width + time budget. */
 export type StrictChoice = { enabled: boolean; attempts?: number; wallMinutes?: number }
 
+/** The composer's per-chat harness-feature stances (the Tuning control); absent key = inherit. */
+export type FeatureChoices = { introspection?: boolean; quality?: boolean; affective?: boolean }
+
 type State = {
   agent?: string
   model?: ModelKey
   variant?: string | null
   permissionMode?: PermissionMode
   strict?: StrictChoice
+  features?: FeatureChoices
 }
 
 type Saved = {
@@ -235,6 +239,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         variant: selected(),
         permissionMode: scope()?.permissionMode,
         strict: scope()?.strict,
+        features: scope()?.features,
       } satisfies State
     }
 
@@ -370,12 +375,23 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       },
     }
 
+    // The composer's Tuning toggles (introspection · quality · affective). Same contract as
+    // `strict`: this local state is the new-session draft; a live session ALSO persists each
+    // stance server-side (the switchFeature route).
+    const features = {
+      current: (): FeatureChoices | undefined => scope()?.features,
+      set(value: FeatureChoices | undefined) {
+        write({ features: value })
+      },
+    }
+
     const result = {
       slug: createMemo(() => base64Encode(sdk().directory)),
       model,
       agent,
       permissionMode,
       strict,
+      features,
       session: {
         reset() {
           setStore("draft", undefined)

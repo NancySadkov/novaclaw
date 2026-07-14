@@ -59,6 +59,11 @@ export const SessionTable = sqliteTable(
     // The per-session Strict-harness override (the composer switch): enabled + racing attempts +
     // wallMinutes. NULL = inherit (parent chain, then the global `config.strict`).
     strict: text({ mode: "json" }).$type<{ enabled?: boolean; attempts?: number; wallMinutes?: number }>(),
+    // Per-session harness-feature overrides (the composer's Tuning control). NULL = inherit
+    // (parent chain, then the matching global config block's `enabled`).
+    introspection: integer({ mode: "boolean" }),
+    quality: integer({ mode: "boolean" }),
+    affective: integer({ mode: "boolean" }),
     result: text({ mode: "json" }).$type<unknown>(),
     ...Timestamps,
     time_compacting: integer(),

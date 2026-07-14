@@ -15,8 +15,6 @@ const DEFAULTS: EffectiveConfig = {
   responder: "nova",
   permissionMode: "ask",
   permissionRules: [],
-  introspection: false,
-  affective: false,
 }
 
 describe("resolveConfig — simple fields (undefined = inherit)", () => {
@@ -26,7 +24,7 @@ describe("resolveConfig — simple fields (undefined = inherit)", () => {
     const eff = resolveConfig(DEFAULTS, [{ model: { providerID: "dgx", id: "qwen" }, affective: true }])
     expect(eff.model).toEqual({ providerID: "dgx", id: "qwen" })
     expect(eff.affective).toBe(true)
-    expect(eff.introspection).toBe(false) // inherited from defaults
+    expect(eff.introspection).toBeUndefined() // no per-session stance — runner falls back to global
     expect(eff.agent).toBeUndefined() // inherited (still unset)
   })
 
@@ -51,6 +49,30 @@ describe("resolveConfig — simple fields (undefined = inherit)", () => {
     expect(resolveConfig(DEFAULTS, [{ systemPromptOverride: "A" }, { systemPromptOverride: "B" }]).systemPromptOverride).toBe(
       "B",
     )
+  })
+
+  test("feature toggles (T1): tri-state — child inherits parent's stance, own stance wins, explicit false is real", () => {
+    // No stance anywhere → undefined (the runner falls back to the global config block).
+    expect(resolveConfig(DEFAULTS, [{}]).quality).toBeUndefined()
+    // A parent's stance flows to a stance-less child.
+    expect(resolveConfig(DEFAULTS, [{ quality: true }, {}]).quality).toBe(true)
+    expect(resolveConfig(DEFAULTS, [{ introspection: true }, {}]).introspection).toBe(true)
+    // The child's own stance wins — including an explicit FALSE over a parent's true.
+    expect(resolveConfig(DEFAULTS, [{ quality: true }, { quality: false }]).quality).toBe(false)
+    expect(resolveConfig(DEFAULTS, [{ affective: true }, { affective: false }]).affective).toBe(false)
+  })
+
+  test("feature toggles flow through the effectful walk (session rows carry them)", () => {
+    const sessions: Record<string, SessionLike> = {
+      root: { id: "root", quality: true, introspection: true, affective: true },
+      child: { id: "child", parentID: "root", introspection: false },
+    }
+    const resolved = Effect.runSync(
+      resolveSessionConfig(DEFAULTS, "child", (id) => Effect.succeed(sessions[id])),
+    )
+    expect(resolved.quality).toBe(true) // inherited
+    expect(resolved.affective).toBe(true) // inherited
+    expect(resolved.introspection).toBe(false) // the child's explicit off wins
   })
 
   test("B10 responder: defaults to nova, inherits down the chain, child can override", () => {

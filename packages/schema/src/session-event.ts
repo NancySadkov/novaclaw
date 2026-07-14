@@ -8,6 +8,7 @@ import { Delivery } from "./session-delivery"
 import { Model } from "./model"
 import { DateTimeUtcFromMillis, NonNegativeInt, RelativePath } from "./schema"
 import { FileAttachment, Prompt } from "./prompt"
+import { SessionFeature } from "./session-feature"
 import { SessionID } from "./session-id"
 import { SessionStrict } from "./session-strict"
 import { Location } from "./location"
@@ -114,6 +115,21 @@ export const StrictSwitched = Event.define({
   },
 })
 export type StrictSwitched = typeof StrictSwitched.Type
+
+// The per-session harness-feature toggles (the composer's Tuning control — introspection ·
+// quality · affective). Like StrictSwitched, the runner reads the projected column fresh each
+// turn. `enabled: null` clears the override back to inherit (parent chain, then global config).
+export const FeatureSwitched = Event.define({
+  type: "session.next.feature.switched",
+  ...options,
+  schema: {
+    ...Base,
+    messageID: SessionMessage.ID,
+    feature: SessionFeature.Name,
+    enabled: Schema.NullOr(Schema.Boolean),
+  },
+})
+export type FeatureSwitched = typeof FeatureSwitched.Type
 
 export const Moved = Event.define({
   type: "session.next.moved",
@@ -522,6 +538,7 @@ export const DurableDefinitions = Event.inventory(
   ResponderSwitched,
   ModeSwitched,
   StrictSwitched,
+  FeatureSwitched,
   Moved,
   Prompted,
   PromptAdmitted,
@@ -558,6 +575,7 @@ export const Definitions = Event.inventory(
   ResponderSwitched,
   ModeSwitched,
   StrictSwitched,
+  FeatureSwitched,
   Moved,
   Prompted,
   PromptAdmitted,

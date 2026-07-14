@@ -97,6 +97,9 @@ export function fromRow(row: SessionRow): Info {
     permission: row.permission ? [...row.permission] : undefined,
     permissionMode: row.permission_mode ?? undefined,
     strict: row.strict ?? undefined,
+    introspection: row.introspection ?? undefined,
+    quality: row.quality ?? undefined,
+    affective: row.affective ?? undefined,
     time: {
       created: row.time_created,
       updated: row.time_updated,

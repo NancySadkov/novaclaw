@@ -139,6 +139,10 @@ type CreateInput = {
   permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
   // The per-session Strict-harness override (the composer switch); undefined = inherit.
   strict?: { enabled?: boolean; attempts?: number; wallMinutes?: number }
+  // Per-session harness-feature overrides (the composer's Tuning control); undefined = inherit.
+  introspection?: boolean
+  quality?: boolean
+  affective?: boolean
   location: Location.Ref
   // F1c fork: a fork seeds its record from the source (title + cloned metadata).
   title?: string
@@ -236,6 +240,11 @@ export interface Interface {
   readonly switchStrict: (input: {
     sessionID: SessionSchema.ID
     strict: { enabled?: boolean; attempts?: number; wallMinutes?: number } | null
+  }) => Effect.Effect<void, NotFoundError>
+  readonly switchFeature: (input: {
+    sessionID: SessionSchema.ID
+    feature: "introspection" | "quality" | "affective"
+    enabled: boolean | null
   }) => Effect.Effect<void, NotFoundError>
   readonly setTitle: (input: { sessionID: SessionSchema.ID; title: string }) => Effect.Effect<void, NotFoundError>
   readonly setMetadata: (input: {
@@ -345,6 +354,9 @@ export const createSessionRecord = (
       permission: input.permission ? [...input.permission] : undefined,
       permissionMode: input.permissionMode,
       strict: input.strict,
+      introspection: input.introspection,
+      quality: input.quality,
+      affective: input.affective,
       cost: 0,
       tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
       time: { created: now, updated: now },
@@ -780,6 +792,18 @@ export const layer = Layer.effect(
           strict: input.strict,
         })
       }),
+      // A per-session harness-feature toggle (the composer's Tuning control) — applies on the next
+      // turn; `null` clears the override back to inherit (parent chain, then global config).
+      switchFeature: Effect.fn("V2Session.switchFeature")(function* (input) {
+        yield* result.get(input.sessionID)
+        yield* events.publish(SessionEvent.FeatureSwitched, {
+          sessionID: input.sessionID,
+          messageID: SessionMessage.ID.create(),
+          timestamp: yield* DateTime.now,
+          feature: input.feature,
+          enabled: input.enabled,
+        })
+      }),
       // F1c-1 — rename on the core engine. Unchanged titles dedup to no event.
       setTitle: Effect.fn("V2Session.setTitle")((input) =>
         patchRecord(input.sessionID, (info) =>
@@ -882,6 +906,9 @@ export const layer = Layer.effect(
               : undefined,
             permissionMode: source.permissionMode,
             strict: source.strict,
+            introspection: source.introspection,
+            quality: source.quality,
+            affective: source.affective,
           },
         )
         const sourceRows = yield* db

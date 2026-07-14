@@ -381,6 +381,18 @@ export const dict = {
     "Strict mode works autonomously, so this chat's permission mode switches to Bypass (changes stay inside the project).",
   "prompt.strict.popover.enable": "Enable Strict",
 
+  "prompt.features.tooltip": "Tuning: per-chat helper switches — the stuck detector, quality gates, and mood sampling",
+  "prompt.features.label": "Tuning",
+  "prompt.features.popover.title": "Tune this chat",
+  "prompt.features.popover.description":
+    "These switches apply to this chat only (chats spawned from it inherit them). Everything else about each helper is configured in Settings.",
+  "prompt.features.introspection.title": "Stuck detector",
+  "prompt.features.introspection.description": "A judge model periodically checks whether the agent is stuck and nudges it to change approach.",
+  "prompt.features.quality.title": "Quality gates",
+  "prompt.features.quality.description": "Compiles and tests after the agent edits code, and steers it to fix failures before finishing.",
+  "prompt.features.affective.title": "Mood sampling",
+  "prompt.features.affective.description": "Adapts the model's sampling to its appraised mood — steadier when frustrated, freer when exploring.",
+
   "prompt.toast.pasteUnsupported.title": "Unsupported attachment",
   "prompt.toast.pasteUnsupported.description": "Only images, PDFs, or text files can be attached here.",
   "prompt.toast.modelAgentRequired.title": "Select an agent and model",

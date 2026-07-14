@@ -563,6 +563,10 @@ export const SessionInfo = Schema.Struct({
   permissionMode: optional(Schema.Literals(["plan", "ask", "surgical", "bypass", "yolo"])),
   // The per-session Strict-harness override (the composer switch); absent = inherit.
   strict: optional(SessionStrict.Override),
+  // Per-session harness-feature overrides (the composer's Tuning control); absent = inherit.
+  introspection: optional(Schema.Boolean),
+  quality: optional(Schema.Boolean),
+  affective: optional(Schema.Boolean),
   result: optional(Schema.Unknown),
   version: Schema.String,
   metadata: optional(Schema.Record(Schema.String, Schema.Any)),

@@ -21,6 +21,7 @@ import { Model } from "@novaclaw/schema/model"
 import { Location } from "@novaclaw/schema/location"
 import { Revert } from "@novaclaw/schema/revert"
 import { SessionEvent } from "@novaclaw/schema/session-event"
+import { SessionFeature } from "@novaclaw/schema/session-feature"
 import { SessionStrict } from "@novaclaw/schema/session-strict"
 
 const SessionsQueryFields = {
@@ -285,6 +286,23 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
             summary: "Set the session's Strict-harness override (jh.md)",
             description:
               "Enable/disable Strict mode for this session and set its racing attempts + time budget; null clears the override back to inherit (parent chain, then global config). Applies from the next turn.",
+          }),
+        ),
+    )
+    .add(
+      HttpApiEndpoint.post("session.switchFeature", "/api/session/:sessionID/feature", {
+        params: { sessionID: Session.ID },
+        payload: Schema.Struct({ feature: SessionFeature.Name, enabled: Schema.NullOr(Schema.Boolean) }),
+        success: HttpApiSchema.NoContent,
+        error: SessionNotFoundError,
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.switchFeature",
+            summary: "Set a per-session harness-feature override (introspection · quality · affective)",
+            description:
+              "Enable/disable one harness feature for this session; null clears the override back to inherit (parent chain, then global config). Applies from the next turn.",
           }),
         ),
     )

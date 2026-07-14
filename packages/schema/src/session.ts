@@ -30,6 +30,10 @@ export const Info = Schema.Struct({
   responder: Schema.Literals(["nova", "operator"]).pipe(optional),
   permissionMode: Schema.Literals(["plan", "ask", "surgical", "bypass", "yolo"]).pipe(optional),
   strict: SessionStrict.Override.pipe(optional),
+  // Per-session harness-feature overrides (the composer's Tuning control); absent = inherit.
+  introspection: Schema.Boolean.pipe(optional),
+  quality: Schema.Boolean.pipe(optional),
+  affective: Schema.Boolean.pipe(optional),
   result: Schema.Unknown.pipe(optional),
   cost: Schema.Finite,
   tokens: Schema.Struct({

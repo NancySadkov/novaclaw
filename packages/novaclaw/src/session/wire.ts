@@ -102,6 +102,10 @@ export const Info = Schema.Struct({
   permission: optional(PermissionV1.Ruleset),
   permissionMode: optional(PermissionMode),
   strict: optional(Strict),
+  // Per-session harness-feature overrides (the composer's Tuning control); absent = inherit.
+  introspection: optional(Schema.Boolean),
+  quality: optional(Schema.Boolean),
+  affective: optional(Schema.Boolean),
   revert: optional(Revert),
 }).annotate({ identifier: "Session" })
 export type Info = Types.DeepMutable<Schema.Schema.Type<typeof Info>>
@@ -129,6 +133,9 @@ export const CreateInput = Schema.optional(
     permission: Schema.optional(PermissionV1.Ruleset),
     permissionMode: Schema.optional(PermissionMode),
     strict: Schema.optional(Strict),
+    introspection: Schema.optional(Schema.Boolean),
+    quality: Schema.optional(Schema.Boolean),
+    affective: Schema.optional(Schema.Boolean),
     workspaceID: Schema.optional(WorkspaceV2.ID),
   }),
 )

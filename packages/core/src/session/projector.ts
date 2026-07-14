@@ -51,6 +51,9 @@ function sessionRow(info: SessionV1.SessionInfo): typeof SessionTable.$inferInse
     responder: info.responder,
     permission_mode: info.permissionMode,
     strict: info.strict,
+    introspection: info.introspection,
+    quality: info.quality,
+    affective: info.affective,
     result: info.result,
     version: info.version,
     share_url: info.share?.url,
@@ -295,6 +298,22 @@ export const layer = Layer.effectDiscard(
         .run()
         .pipe(Effect.orDie, Effect.andThen(run(db, event))),
     )
+    // A per-session harness-feature toggle (introspection · quality · affective) — same shape.
+    yield* events.project(SessionEvent.FeatureSwitched, (event) => {
+      const stamp = { time_updated: DateTime.toEpochMillis(event.data.timestamp) }
+      const patch =
+        event.data.feature === "introspection"
+          ? { introspection: event.data.enabled, ...stamp }
+          : event.data.feature === "quality"
+            ? { quality: event.data.enabled, ...stamp }
+            : { affective: event.data.enabled, ...stamp }
+      return db
+        .update(SessionTable)
+        .set(patch)
+        .where(eq(SessionTable.id, event.data.sessionID))
+        .run()
+        .pipe(Effect.orDie, Effect.andThen(run(db, event)))
+    })
     yield* events.project(SessionEvent.Prompted, (event) =>
       Effect.gen(function* () {
         if (event.durable === undefined) return yield* Effect.die("Durable Session event is missing aggregate sequence")

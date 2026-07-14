@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "30a591ec-9e8b-4ed2-bed3-f83770194648",
+  "id": "77e40d8c-fec0-408d-bdfd-33ff245688d0",
   "prevIds": [
-    "00000000-0000-0000-0000-000000000000"
+    "30a591ec-9e8b-4ed2-bed3-f83770194648"
   ],
   "ddl": [
     {
@@ -1625,6 +1625,36 @@
       "default": null,
       "generated": null,
       "name": "strict",
+      "entityType": "columns",
+      "table": "session"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "introspection",
+      "entityType": "columns",
+      "table": "session"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "quality",
+      "entityType": "columns",
+      "table": "session"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "affective",
       "entityType": "columns",
       "table": "session"
     },

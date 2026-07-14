@@ -99,6 +99,7 @@ export interface SessionConfig {
   readonly permissionMode?: PermissionMode
   readonly permissionRules?: readonly PermissionRule[]
   readonly introspection?: boolean
+  readonly quality?: boolean
   readonly affective?: boolean
   readonly strict?: StrictOverride
   readonly tools?: readonly string[]
@@ -115,8 +116,6 @@ export const EFFECTIVE_CONFIG_DEFAULTS: EffectiveConfig = {
   responder: "nova",
   permissionMode: "ask",
   permissionRules: [],
-  introspection: false,
-  affective: false,
 }
 
 /** The fully-resolved config a session actually runs with. */
@@ -130,8 +129,11 @@ export interface EffectiveConfig {
   readonly responder: Responder
   readonly permissionMode: PermissionMode
   readonly permissionRules: readonly PermissionRule[]
-  readonly introspection: boolean
-  readonly affective: boolean
+  /** Harness-feature stances (tri-state): the nearest explicit true/false on the chain wins;
+   *  `undefined` = no per-session stance — the runner falls back to the global config block. */
+  readonly introspection?: boolean
+  readonly quality?: boolean
+  readonly affective?: boolean
   /** The nearest per-session Strict override on the chain; `undefined` = none (use global config). */
   readonly strict?: StrictOverride
   readonly tools?: readonly string[]
@@ -150,6 +152,7 @@ export function resolveConfig(defaults: EffectiveConfig, chain: readonly Session
   let priority = defaults.priority
   let responder = defaults.responder
   let introspection = defaults.introspection
+  let quality = defaults.quality
   let affective = defaults.affective
   let strict = defaults.strict
   let tools = defaults.tools
@@ -165,6 +168,7 @@ export function resolveConfig(defaults: EffectiveConfig, chain: readonly Session
     if (layer.priority !== undefined) priority = layer.priority
     if (layer.responder !== undefined) responder = layer.responder
     if (layer.introspection !== undefined) introspection = layer.introspection
+    if (layer.quality !== undefined) quality = layer.quality
     if (layer.affective !== undefined) affective = layer.affective
     if (layer.strict !== undefined) strict = layer.strict
     if (layer.tools !== undefined) tools = layer.tools
@@ -186,6 +190,7 @@ export function resolveConfig(defaults: EffectiveConfig, chain: readonly Session
     permissionMode,
     permissionRules,
     introspection,
+    quality,
     affective,
     strict,
     tools,
@@ -209,8 +214,11 @@ export interface SessionLike {
   readonly responder?: Responder
   readonly permissionMode?: PermissionMode
   readonly strict?: StrictOverride
-  // permissionRules / introspection / affective / tools get mapped here as the
-  // session schema grows to carry them (see architecture.md Phase 1 step 4).
+  readonly introspection?: boolean
+  readonly quality?: boolean
+  readonly affective?: boolean
+  // permissionRules / tools get mapped here as the session schema grows to carry them
+  // (see architecture.md Phase 1 step 4).
 }
 
 /** Project a session record onto its config OVERRIDES (only fields it actually carries today). */
@@ -223,6 +231,9 @@ export const sessionToConfig = (session: SessionLike): SessionConfig => ({
   responder: session.responder,
   permissionMode: session.permissionMode,
   strict: session.strict,
+  introspection: session.introspection,
+  quality: session.quality,
+  affective: session.affective,
 })
 
 /**

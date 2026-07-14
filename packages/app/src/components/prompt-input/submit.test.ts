@@ -121,6 +121,10 @@ beforeAll(async () => {
         current: () => undefined,
         set: () => {},
       },
+      features: {
+        current: () => undefined,
+        set: () => {},
+      },
       session: {
         promote(directory: string, sessionID: string) {
           promoted.push({ directory, sessionID })

@@ -176,3 +176,17 @@ export function switchStrict(
 ) {
   return sessionPost(server, input.directory, input.sessionID, "strict", { strict: input.strict })
 }
+
+// A per-session harness-feature toggle (the composer's Tuning control — introspection ·
+// quality · affective). `enabled: null` clears the override back to inherit (global config).
+export type SessionFeatureName = "introspection" | "quality" | "affective"
+
+export function switchFeature(
+  server: ServerConnection.HttpBase,
+  input: { directory: string; sessionID: string; feature: SessionFeatureName; enabled: boolean | null },
+) {
+  return sessionPost(server, input.directory, input.sessionID, "feature", {
+    feature: input.feature,
+    enabled: input.enabled,
+  })
+}

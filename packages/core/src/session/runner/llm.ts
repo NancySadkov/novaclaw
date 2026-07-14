@@ -464,9 +464,10 @@ export const layer = Layer.effect(
       // P3 (3A/3B): appraise the per-session mood from what has happened so far (runs BEFORE
       // this turn's request, afpro-style), modulate sampling AROUND the model's configured
       // baseline, and at high frustration/urgency steer a one-shot redirect (rising-edge only —
-      // decay naturally re-arms it). Enabled via global config or the per-session flag.
+      // decay naturally re-arms it). The per-session stance (the composer's Tuning toggle,
+      // resolved through the config walk) wins; no stance = the global config decides.
       let affectiveGeneration: ReturnType<typeof Affective.toSampling> | undefined
-      if (affectiveConfig?.enabled === true || config.affective) {
+      if (config.affective ?? affectiveConfig?.enabled === true) {
         const previous = moods.get(session.id) ?? Affective.calmMood
         const mood = Affective.appraise(previous, context)
         rememberMood(session.id, mood)
@@ -1024,10 +1025,15 @@ export const layer = Layer.effect(
       let consecutiveEmpty = 0
       let regrounded = false
       const quality = Quality.initialState()
+      // T1 per-session feature stances (the composer's Tuning toggles), resolved through the
+      // config walk above: an explicit true/false on the chain wins; no stance = global config.
+      // Only the ON/OFF is per-session — cadence/commands/model internals stay global.
+      const qualityOn = handoff.quality ?? qualityConfig.enabled
+      const introspectionOn = handoff.introspection ?? introspectionConfig.enabled
       // QE-A: quality mode with NO provisioned commands is inert — steer ONCE per session
       // to run the provisioner (deterministic manifest scan → verify → write project config).
       if (
-        qualityConfig.enabled &&
+        qualityOn &&
         !Object.values(qualityConfig.commands).some(Boolean) &&
         !provisionNudged.has(input.sessionID)
       ) {
@@ -1095,14 +1101,14 @@ export const layer = Layer.effect(
             // P2 (2A): cadence-gated introspection judge — an out-of-band model call that
             // asks "is this agent stuck?"; a YES steers the interjection (2B). Best-effort:
             // never allowed to fail the drain it watches.
-            if (introspectionConfig.enabled && Introspection.shouldJudge(step, introspectionConfig.cadence))
+            if (introspectionOn && Introspection.shouldJudge(step, introspectionConfig.cadence))
               yield* introspect(input.sessionID).pipe(
                 Effect.catch((cause) => Effect.logWarning("introspection judge failed", { cause })),
               )
             // QE-B steps 1–3: per touched file after a write-class tool settles (syntax +
             // incremental check), whole-module typecheck every Nth write. Best-effort — a
             // broken check command must never break the drain it guards.
-            if (qualityConfig.enabled)
+            if (qualityOn)
               for (const check of Quality.dueMidLoop(qualityConfig, quality, Quality.writeTargets(context)))
                 yield* runQualityCheck(input.sessionID, check).pipe(
                   Effect.catchCause((cause) => Effect.logWarning("quality check errored", { cause })),
@@ -1134,7 +1140,7 @@ export const layer = Layer.effect(
             // QE-B steps 4–5: the turn-end gate — test + structural pass, once per drain,
             // only when the drain actually wrote something. A failure steers; the pending
             // steer below re-arms continuation so the model fixes it before "done".
-            if (qualityConfig.enabled)
+            if (qualityOn)
               for (const check of Quality.dueTurnEnd(qualityConfig, quality))
                 yield* runQualityCheck(input.sessionID, check).pipe(
                   Effect.catchCause((cause) => Effect.logWarning("quality check errored", { cause })),
