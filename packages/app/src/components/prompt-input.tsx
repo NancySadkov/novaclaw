@@ -29,10 +29,7 @@ import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { useServerSync } from "@/context/server-sync"
 import { useComments } from "@/context/comments"
-import { Popover as KobaltePopover } from "@kobalte/core/popover"
 import { Button } from "@novaclaw/ui/button"
-import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
-import { Switch as SwitchToggle } from "@novaclaw/ui/v2/switch-v2"
 import { DockShellForm, DockTray } from "@novaclaw/ui/dock-surface"
 import { Icon } from "@novaclaw/ui/icon"
 import { ProviderIcon } from "@novaclaw/ui/provider-icon"
@@ -47,7 +44,15 @@ import { useCommand } from "@/context/command"
 import { Persist, persisted } from "@/utils/persist"
 import { usePermission } from "@/context/permission"
 import { useLanguage } from "@/context/language"
-import { useExpertise, PERMISSION_MODE_MIN_LEVEL } from "@/context/expertise"
+import { useExpertise } from "@/context/expertise"
+import {
+  ComposerControlsRow,
+  type ComposerFeaturesControlState,
+  type ComposerFolderControlState,
+  type ComposerModelControlState,
+  type ComposerPermissionModeControlState,
+  type ComposerStrictControlState,
+} from "@/components/composer"
 import { usePlatform } from "@/context/platform"
 import { createSessionTabs } from "@/pages/session/helpers"
 import { getCursorPosition } from "./prompt-input/editor-dom"
@@ -1309,20 +1314,17 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     />
                   </TooltipV2>
                   {props.toolbar}
-                  <ComposerModelControl state={modelControlState()} />
-                  {/* 1K: the permission-mode droplist shows on the new-session composer AND
-                      mid-session (an active session id) — mid-session selection calls switchMode. */}
-                  <Show when={newSession() || props.controls.session?.id}>
-                    <ComposerPermissionModeControl state={permissionModeControlState()} />
-                    <ComposerStrictControl state={strictControlState()} />
-                    {/* T1: the Tuning toggles — ungated like the Strict switch (owner call
-                        2026-07-14: per-chat helpers must be discoverable, not hidden behind an
-                        expertise level; the helpers' INTERNALS stay in Settings). */}
-                    <ComposerFeaturesControl state={featuresControlState()} />
-                    <Show when={props.controls.folder.visible}>
-                      <ComposerFolderControl state={folderControlState()} />
-                    </Show>
-                  </Show>
+                  <ComposerControlsRow
+                    state={{
+                      sessionControls: newSession() || !!props.controls.session?.id,
+                      folderVisible: props.controls.folder.visible,
+                      model: modelControlState(),
+                      permissionMode: permissionModeControlState(),
+                      strict: strictControlState(),
+                      features: featuresControlState(),
+                      folder: folderControlState(),
+                    }}
+                  />
                   <Show when={!providersLoading() && store.mode !== "shell" && showVariantControl()}>
                     <div
                       data-component="prompt-variant-control"
@@ -1651,374 +1653,5 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         </Match>
       </Switch>
     </div>
-  )
-}
-
-type ComposerPermissionModeControlState = {
-  title: string
-  current: PermissionMode
-  label: (mode: PermissionMode) => string
-  style: JSX.CSSProperties | undefined
-  onSelect: (value: PermissionMode) => void
-}
-
-const PERMISSION_MODES: PermissionMode[] = ["plan", "ask", "surgical", "bypass", "yolo"]
-
-/** 1K: the create-time permission-mode droplist — mirrors ComposerAgentControl's Select styling. */
-function ComposerPermissionModeControl(props: { state: ComposerPermissionModeControlState }) {
-  // uix.md §6.4: Normal sees plan/ask, Advanced +surgical, Developer +bypass/yolo. The current value
-  // always stays listed so an already-set mode never vanishes from the picker.
-  const { atLeast } = useExpertise()
-  const options = createMemo(() =>
-    PERMISSION_MODES.filter(
-      (mode) => mode === props.state.current || atLeast(PERMISSION_MODE_MIN_LEVEL[mode] ?? "normal"),
-    ),
-  )
-  return (
-    <div class="relative">
-      <div class="pointer-events-none absolute left-2 top-1/2 z-10 flex size-4 -translate-y-1/2 items-center justify-center text-v2-icon-icon-muted">
-        <Icon name="checklist" size="small" />
-      </div>
-      <TooltipV2 placement="top" gutter={4} value={props.state.title}>
-        <Select
-          size="normal"
-          options={options()}
-          current={props.state.current}
-          label={(mode) => props.state.label(mode)}
-          onSelect={(value) => {
-            // Kobalte re-emits onChange with the UNCHANGED value whenever the options array is
-            // recreated (any composer-controls recompute) — only a real change may hit the server.
-            if (value && value !== props.state.current) props.state.onSelect(value)
-          }}
-          class="max-w-[190px] justify-start text-v2-text-text-faint [&_[data-component=icon]]:text-v2-icon-icon-muted"
-          valueClass="truncate pl-5 text-[13px] font-[440] leading-5 text-v2-text-text-faint"
-          triggerStyle={props.state.style}
-          triggerProps={{ "data-action": "prompt-permission-mode" }}
-          variant="ghost"
-        />
-      </TooltipV2>
-    </div>
-  )
-}
-
-type ComposerStrictControlState = {
-  current: { enabled?: boolean; attempts?: number; wallMinutes?: number }
-  permissionBelowFloor: boolean
-  style: JSX.CSSProperties | undefined
-  set: (value: { enabled: boolean; attempts?: number; wallMinutes?: number }) => void
-  onClose: () => void
-}
-
-/**
- * The per-chat Strict switch (jh.md): OFF → click opens a small ask — how many agents race and the
- * time budget — then enables; ON → click turns it off directly. Enabling also raises the permission
- * mode to Bypass (the harness's autonomous floor) — the popover says so before the user commits.
- */
-function ComposerStrictControl(props: { state: ComposerStrictControlState }) {
-  const language = useLanguage()
-  const [open, setOpen] = createSignal(false)
-  const [attempts, setAttempts] = createSignal("")
-  const [wall, setWall] = createSignal("")
-  const enabled = () => props.state.current.enabled === true
-  const close = () => {
-    setOpen(false)
-    props.state.onClose()
-  }
-  const enable = () => {
-    const racers = Number.parseInt(attempts(), 10)
-    const minutes = Number.parseInt(wall(), 10)
-    props.state.set({
-      enabled: true,
-      attempts: Number.isFinite(racers) && racers > 1 ? Math.min(racers, 8) : undefined,
-      wallMinutes: Number.isFinite(minutes) && minutes > 0 ? Math.min(minutes, 480) : undefined,
-    })
-    close()
-  }
-  return (
-    <KobaltePopover
-      open={open()}
-      onOpenChange={(next) => {
-        if (next && enabled()) {
-          // A click on an armed switch just turns Strict off — nothing to ask.
-          props.state.set({ enabled: false })
-          props.state.onClose()
-          return
-        }
-        if (next) {
-          setAttempts(props.state.current.attempts && props.state.current.attempts > 1 ? String(props.state.current.attempts) : "")
-          setWall(props.state.current.wallMinutes ? String(props.state.current.wallMinutes) : "")
-        }
-        setOpen(next)
-      }}
-      modal={false}
-      placement="top-start"
-      gutter={4}
-    >
-      <TooltipV2 placement="top" gutter={4} value={language.t("prompt.strict.tooltip")}>
-        <KobaltePopover.Trigger
-          type="button"
-          data-action="prompt-strict"
-          data-enabled={enabled() ? "true" : undefined}
-          class="flex h-7 items-center gap-1.5 rounded-md px-2 text-[13px] font-[440] leading-5 hover:bg-v2-background-bg-subtle"
-          classList={{
-            "text-v2-text-text-faint": !enabled(),
-            "text-v2-text-text-base": enabled(),
-          }}
-          style={props.state.style}
-        >
-          <Icon name="shield" size="small" class={enabled() ? "text-v2-icon-icon-base" : "text-v2-icon-icon-muted"} />
-          <span>{language.t(enabled() ? "prompt.strict.on" : "prompt.strict.off")}</span>
-        </KobaltePopover.Trigger>
-      </TooltipV2>
-      <KobaltePopover.Portal>
-        <KobaltePopover.Content
-          data-component="prompt-strict-popover"
-          class="w-80 flex flex-col gap-3 p-4 rounded-md border border-border-base bg-surface-raised-stronger-non-alpha shadow-md z-50 outline-none"
-          onEscapeKeyDown={(event) => {
-            event.preventDefault()
-            event.stopPropagation()
-            close()
-          }}
-          onPointerDownOutside={() => setOpen(false)}
-        >
-          <div class="flex flex-col gap-1">
-            <span class="text-[13px] font-[560] text-v2-text-text-base">{language.t("prompt.strict.popover.title")}</span>
-            <span class="text-[12px] leading-4 text-v2-text-text-faint">
-              {language.t("prompt.strict.popover.description")}
-            </span>
-          </div>
-          <label class="flex items-center justify-between gap-3">
-            <span class="text-[13px] text-v2-text-text-base">{language.t("prompt.strict.popover.attempts")}</span>
-            <div class="w-[90px]">
-              <TextInputV2
-                type="number"
-                appearance="base"
-                min="1"
-                max="8"
-                step="1"
-                placeholder="1"
-                value={attempts()}
-                onInput={(event) => setAttempts(event.currentTarget.value)}
-                aria-label={language.t("prompt.strict.popover.attempts")}
-              />
-            </div>
-          </label>
-          <label class="flex items-center justify-between gap-3">
-            <span class="text-[13px] text-v2-text-text-base">{language.t("prompt.strict.popover.wallMinutes")}</span>
-            <div class="w-[90px]">
-              <TextInputV2
-                type="number"
-                appearance="base"
-                min="1"
-                max="480"
-                step="1"
-                placeholder="45"
-                value={wall()}
-                onInput={(event) => setWall(event.currentTarget.value)}
-                aria-label={language.t("prompt.strict.popover.wallMinutes")}
-              />
-            </div>
-          </label>
-          <Show when={props.state.permissionBelowFloor}>
-            <span class="text-[12px] leading-4 text-v2-text-text-faint">{language.t("prompt.strict.popover.bypassNote")}</span>
-          </Show>
-          <div class="flex items-center justify-end gap-2">
-            <Button variant="ghost" type="button" onClick={close}>
-              {language.t("common.cancel")}
-            </Button>
-            <Button variant="primary" type="button" data-action="prompt-strict-enable" onClick={enable}>
-              {language.t("prompt.strict.popover.enable")}
-            </Button>
-          </div>
-        </KobaltePopover.Content>
-      </KobaltePopover.Portal>
-    </KobaltePopover>
-  )
-}
-
-type ComposerFeature = "introspection" | "quality" | "affective"
-
-type ComposerFeaturesControlState = {
-  current: Record<ComposerFeature, boolean>
-  style: JSX.CSSProperties | undefined
-  set: (feature: ComposerFeature, enabled: boolean) => void
-  onClose: () => void
-}
-
-const COMPOSER_FEATURES: readonly ComposerFeature[] = ["introspection", "quality", "affective"]
-
-/**
- * The per-chat Tuning control (T1, Advanced+): a popover with one switch per harness helper —
- * the stuck detector (introspection), quality gates, and mood sampling (affective). Each switch
- * shows the EFFECTIVE stance (this chat's override, else the global Settings default) and a flip
- * writes the per-chat override; the helpers' internals stay in Settings.
- */
-function ComposerFeaturesControl(props: { state: ComposerFeaturesControlState }) {
-  const language = useLanguage()
-  const [open, setOpen] = createSignal(false)
-  const enabledCount = () => COMPOSER_FEATURES.filter((feature) => props.state.current[feature]).length
-  const close = () => {
-    setOpen(false)
-    props.state.onClose()
-  }
-  return (
-    <KobaltePopover open={open()} onOpenChange={setOpen} modal={false} placement="top-start" gutter={4}>
-      <TooltipV2 placement="top" gutter={4} value={language.t("prompt.features.tooltip")}>
-        <KobaltePopover.Trigger
-          type="button"
-          data-action="prompt-features"
-          data-enabled-count={enabledCount() || undefined}
-          class="flex h-7 items-center gap-1.5 rounded-md px-2 text-[13px] font-[440] leading-5 hover:bg-v2-background-bg-subtle"
-          classList={{
-            "text-v2-text-text-faint": enabledCount() === 0,
-            "text-v2-text-text-base": enabledCount() > 0,
-          }}
-          style={props.state.style}
-        >
-          <Icon
-            name="sliders"
-            size="small"
-            class={enabledCount() > 0 ? "text-v2-icon-icon-base" : "text-v2-icon-icon-muted"}
-          />
-          <span>
-            {language.t("prompt.features.label")}
-            {enabledCount() > 0 ? ` · ${enabledCount()}` : ""}
-          </span>
-        </KobaltePopover.Trigger>
-      </TooltipV2>
-      <KobaltePopover.Portal>
-        <KobaltePopover.Content
-          data-component="prompt-features-popover"
-          class="w-80 flex flex-col gap-3 p-4 rounded-md border border-border-base bg-surface-raised-stronger-non-alpha shadow-md z-50 outline-none"
-          onEscapeKeyDown={(event) => {
-            event.preventDefault()
-            event.stopPropagation()
-            close()
-          }}
-          onPointerDownOutside={() => setOpen(false)}
-        >
-          <div class="flex flex-col gap-1">
-            <span class="text-[13px] font-[560] text-v2-text-text-base">
-              {language.t("prompt.features.popover.title")}
-            </span>
-            <span class="text-[12px] leading-4 text-v2-text-text-faint">
-              {language.t("prompt.features.popover.description")}
-            </span>
-          </div>
-          {COMPOSER_FEATURES.map((feature) => (
-            <div class="flex items-start justify-between gap-3" data-feature={feature}>
-              <div class="flex flex-col gap-0.5">
-                <span class="text-[13px] text-v2-text-text-base">
-                  {language.t(`prompt.features.${feature}.title` as Parameters<typeof language.t>[0])}
-                </span>
-                <span class="text-[12px] leading-4 text-v2-text-text-faint">
-                  {language.t(`prompt.features.${feature}.description` as Parameters<typeof language.t>[0])}
-                </span>
-              </div>
-              <SwitchToggle
-                checked={props.state.current[feature]}
-                onChange={(checked) => props.state.set(feature, checked)}
-                hideLabel
-              >
-                {language.t(`prompt.features.${feature}.title` as Parameters<typeof language.t>[0])}
-              </SwitchToggle>
-            </div>
-          ))}
-        </KobaltePopover.Content>
-      </KobaltePopover.Portal>
-    </KobaltePopover>
-  )
-}
-
-type ComposerFolderControlState = {
-  name: string
-  working: boolean
-  style: JSX.CSSProperties | undefined
-  pick: () => void
-}
-
-/**
- * The chat's working-folder chip (mid-session): click to MIGRATE the session to another folder
- * (control-plane move — the chat, its config, and future file work re-home there). Disabled while
- * the agent is working; a mid-turn move would yank the cwd out from under running tools.
- */
-function ComposerFolderControl(props: { state: ComposerFolderControlState }) {
-  const language = useLanguage()
-  return (
-    <TooltipV2
-      placement="top"
-      gutter={4}
-      value={language.t(props.state.working ? "prompt.folder.tooltip.working" : "prompt.folder.tooltip")}
-    >
-      <button
-        type="button"
-        data-action="prompt-folder"
-        disabled={props.state.working}
-        class="flex h-7 items-center gap-1.5 rounded-md px-2 text-[13px] font-[440] leading-5 text-v2-text-text-faint hover:bg-v2-background-bg-subtle disabled:cursor-not-allowed disabled:opacity-60"
-        style={props.state.style}
-        onClick={() => props.state.pick()}
-      >
-        <Icon name="folder" size="small" class="text-v2-icon-icon-muted" />
-        <span class="max-w-[10rem] truncate">{props.state.name}</span>
-      </button>
-    </TooltipV2>
-  )
-}
-
-type ComposerModelControlState = {
-  loading: boolean
-  shouldAnimate: boolean
-  title: string
-  keybind: string[]
-  model: ReturnType<typeof useLocal>["model"]
-  providerID?: string
-  modelName: string
-  style: JSX.CSSProperties | undefined
-  onClose: () => void
-}
-
-function ComposerModelControl(props: { state: ComposerModelControlState }) {
-  return (
-    <Show when={!props.state.loading}>
-      <TooltipV2
-        placement="top"
-        gutter={4}
-        value={
-          <>
-            {props.state.title}
-            <KeybindV2 keys={props.state.keybind} variant="neutral" />
-          </>
-        }
-      >
-        <ModelSelectorPopover
-          model={props.state.model}
-          triggerAs={Button}
-          triggerProps={{
-            variant: "ghost",
-            size: "normal",
-            style: props.state.style,
-            class:
-              "min-w-0 max-w-[220px] justify-start text-[13px] font-[440] leading-5 text-v2-text-text-faint group",
-            classList: { "animate-in fade-in": props.state.shouldAnimate },
-            "data-action": "prompt-model",
-          }}
-          onClose={props.state.onClose}
-        >
-          <Show when={props.state.providerID}>
-            {(providerID) => (
-              <ProviderIcon
-                id={providerID()}
-                class="size-4 shrink-0 opacity-40 group-hover:opacity-100 transition-opacity duration-150"
-                style={{ "will-change": "opacity", transform: "translateZ(0)" }}
-              />
-            )}
-          </Show>
-          <span class="truncate">{props.state.modelName}</span>
-          <span class="-ml-1 shrink-0 flex size-fit">
-            <Icon name="chevron-down" size="small" class="text-v2-icon-icon-muted" />
-          </span>
-        </ModelSelectorPopover>
-      </TooltipV2>
-    </Show>
   )
 }
