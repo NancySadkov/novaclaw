@@ -17,3 +17,5 @@ export {
   ComposerLegacyModelControls,
   type ComposerLegacyModelControlsState,
 } from "./legacy-model-controls"
+export { ComposerAttachmentsTray, type ComposerAttachmentsTrayState } from "./attachments-tray"
+export { ComposerEditorSurface, type ComposerEditorSurfaceState } from "./editor-surface"

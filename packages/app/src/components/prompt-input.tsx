@@ -13,7 +13,7 @@ import {
   Match,
   type JSX,
 } from "solid-js"
-import { createStore, type SetStoreFunction, type Store } from "solid-js/store"
+import { createStore } from "solid-js/store"
 import type { PermissionMode, useLocal } from "@/context/local"
 import { selectionFromLines, type SelectedLineRange, useFile } from "@/context/file"
 import {
@@ -38,14 +38,16 @@ import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import { IconButton } from "@novaclaw/ui/icon-button"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useCommand } from "@/context/command"
-import { Persist, persisted } from "@/utils/persist"
 import { usePermission } from "@/context/permission"
 import { useLanguage } from "@/context/language"
 import { useExpertise } from "@/context/expertise"
 import {
+  ComposerAttachmentsTray,
   ComposerControlsRow,
+  ComposerEditorSurface,
   ComposerLegacyModelControls,
   ComposerVariantControl,
+  type ComposerAttachmentsTrayState,
   type ComposerFeaturesControlState,
   type ComposerFolderControlState,
   type ComposerModelControlState,
@@ -60,30 +62,24 @@ import { createPromptAttachments } from "./prompt-input/attachments"
 import { ACCEPTED_FILE_TYPES, pickAttachmentFiles } from "./prompt-input/files"
 import {
   canNavigateHistoryAtCursor,
+  createPersistedPromptInputHistory,
   navigatePromptHistory,
-  prependHistoryEntry,
   type PromptHistoryComment,
   type PromptHistoryEntry,
-  type PromptHistoryStoredEntry,
+  type PromptInputHistory,
   promptLength,
 } from "./prompt-input/history"
 import { createPromptSubmit, type FollowupDraft } from "./prompt-input/submit"
 import { PromptPopover, type AtOption, type SlashCommand } from "./prompt-input/slash-popover"
-import { PromptContextItems } from "./prompt-input/context-items"
-import { PromptImageAttachments } from "./prompt-input/image-attachments"
-import { PromptDragOverlay } from "./prompt-input/drag-overlay"
-import { promptPlaceholder } from "./prompt-input/placeholder"
+import { promptPlaceholder, PROMPT_EXAMPLE_KEYS } from "./prompt-input/placeholder"
 import { composerMounts } from "./prompt-input/mount-registry"
 import { createPromptInputTransientState } from "./prompt-input/transient-state"
 import { showToast } from "@/utils/toast"
-import { ImagePreview } from "@novaclaw/ui/image-preview"
 
 export type PromptInputState = ReturnType<typeof usePrompt>
 
-export type PromptInputHistory = {
-  entries: (mode: "normal" | "shell") => PromptHistoryStoredEntry[]
-  add: (prompt: Prompt, mode: "normal" | "shell", comments: PromptHistoryComment[]) => void
-}
+export { createPromptInputHistory } from "./prompt-input/history"
+export type { PromptInputHistory }
 
 export type PromptInputSubmission = {
   abort: () => Promise<void> | void
@@ -142,44 +138,6 @@ export type PromptInputControls = {
   newLayoutDesigns: boolean
 }
 
-export function createPromptInputHistory(): PromptInputHistory {
-  const [normal, setNormal] = createStore<PromptHistoryState>({ entries: [] })
-  const [shell, setShell] = createStore<PromptHistoryState>({ entries: [] })
-  return createPromptInputHistoryStore(normal, setNormal, shell, setShell)
-}
-
-type PromptHistoryState = { entries: PromptHistoryStoredEntry[] }
-
-function createPromptInputHistoryStore(
-  normal: Store<PromptHistoryState>,
-  setNormal: SetStoreFunction<PromptHistoryState>,
-  shell: Store<PromptHistoryState>,
-  setShell: SetStoreFunction<PromptHistoryState>,
-): PromptInputHistory {
-  return {
-    entries: (mode) => (mode === "shell" ? shell.entries : normal.entries),
-    add(prompt, mode, comments) {
-      const current = mode === "shell" ? shell : normal
-      const setCurrent = mode === "shell" ? setShell : setNormal
-      const next = prependHistoryEntry(current.entries, prompt, comments)
-      if (next === current.entries) return
-      setCurrent("entries", next)
-    },
-  }
-}
-
-function createPersistedPromptInputHistory() {
-  const [normal, setNormal] = persisted(
-    Persist.global("prompt-history", ["prompt-history.v1"]),
-    createStore<PromptHistoryState>({ entries: [] }),
-  )
-  const [shell, setShell] = persisted(
-    Persist.global("prompt-history-shell", ["prompt-history-shell.v1"]),
-    createStore<PromptHistoryState>({ entries: [] }),
-  )
-  return createPromptInputHistoryStore(normal, setNormal, shell, setShell)
-}
-
 export interface PromptInputProps {
   class?: string
   variant?: "dock" | "new-session"
@@ -198,34 +156,6 @@ export interface PromptInputProps {
   onSubmit?: () => void
   toolbar?: JSX.Element
 }
-
-const EXAMPLES = [
-  "prompt.example.1",
-  "prompt.example.2",
-  "prompt.example.3",
-  "prompt.example.4",
-  "prompt.example.5",
-  "prompt.example.6",
-  "prompt.example.7",
-  "prompt.example.8",
-  "prompt.example.9",
-  "prompt.example.10",
-  "prompt.example.11",
-  "prompt.example.12",
-  "prompt.example.13",
-  "prompt.example.14",
-  "prompt.example.15",
-  "prompt.example.16",
-  "prompt.example.17",
-  "prompt.example.18",
-  "prompt.example.19",
-  "prompt.example.20",
-  "prompt.example.21",
-  "prompt.example.22",
-  "prompt.example.23",
-  "prompt.example.24",
-  "prompt.example.25",
-] as const
 
 export const PromptInput: Component<PromptInputProps> = (props) => {
   const sdk = useSDK()
@@ -348,7 +278,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
 
   const [store, setStore] = createPromptInputTransientState(
     () => prompt.capture(),
-    Math.floor(Math.random() * EXAMPLES.length),
+    Math.floor(Math.random() * PROMPT_EXAMPLE_KEYS.length),
   )
   const buttonsSpring = useSpring(() => (store.mode === "normal" ? 1 : 0), { visualDuration: 0.2, bounce: 0 })
   const motion = (value: number) => ({
@@ -413,7 +343,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     promptPlaceholder({
       mode: store.mode,
       commentCount: commentCount(),
-      example: suggest() ? (store.mode === "shell" ? "git status" : language.t(EXAMPLES[store.placeholder])) : "",
+      example: suggest()
+        ? store.mode === "shell"
+          ? "git status"
+          : language.t(PROMPT_EXAMPLE_KEYS[store.placeholder])
+        : "",
       suggest: suggest(),
       t: (key, params) => language.t(key as Parameters<typeof language.t>[0], params as never),
     }),
@@ -568,7 +502,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     if (props.controls.session.id) return
     if (!suggest()) return
     const interval = setInterval(() => {
-      setStore("placeholder", (prev) => (prev + 1) % EXAMPLES.length)
+      setStore("placeholder", (prev) => (prev + 1) % PROMPT_EXAMPLE_KEYS.length)
     }, 6500)
     onCleanup(() => clearInterval(interval))
   })
@@ -1179,6 +1113,21 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     style: control(),
     pick: () => props.controls.folder.pick(),
   }))
+  const attachmentsTrayState = createMemo<ComposerAttachmentsTrayState>(() => ({
+    dragging: store.draggingType,
+    contextItems: contextItems(),
+    isContextItemActive: (item) => {
+      const active = comments.active()
+      return !!item.commentID && item.commentID === active?.id && item.path === active?.file
+    },
+    openComment,
+    removeContextItem: (item) => {
+      if (item.commentID) comments.remove(item.path, item.commentID)
+      prompt.context.remove(item.key)
+    },
+    images: imageAttachments(),
+    removeImage: removeAttachment,
+  }))
   return (
     <div class="relative size-full flex flex-col gap-0">
       {(promptReady(), null)}
@@ -1211,33 +1160,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 [props.class ?? ""]: !!props.class,
               }}
             >
-              <PromptDragOverlay
-                type={store.draggingType}
-                label={language.t(
-                  store.draggingType === "@mention" ? "prompt.dropzone.file.label" : "prompt.dropzone.label",
-                )}
-              />
-              <PromptContextItems
-                items={contextItems()}
-                active={(item) => {
-                  const active = comments.active()
-                  return !!item.commentID && item.commentID === active?.id && item.path === active?.file
-                }}
-                openComment={openComment}
-                remove={(item) => {
-                  if (item.commentID) comments.remove(item.path, item.commentID)
-                  prompt.context.remove(item.key)
-                }}
-                t={(key) => language.t(key as Parameters<typeof language.t>[0])}
-              />
-              <PromptImageAttachments
-                attachments={imageAttachments()}
-                onOpen={(attachment) =>
-                  dialog.show(() => <ImagePreview src={attachment.dataUrl} alt={attachment.filename} />)
-                }
-                onRemove={removeAttachment}
-                removeLabel={language.t("prompt.attachment.remove")}
-              />
+              <ComposerAttachmentsTray state={attachmentsTrayState()} />
               <div
                 class="relative min-h-[52px]"
                 onMouseDown={(e) => {
@@ -1247,45 +1170,31 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   editorRef?.focus()
                 }}
               >
-                <div class="relative max-h-[180px] overflow-y-auto no-scrollbar" ref={(el) => (scrollRef = el)}>
-                  <div
-                    data-component="prompt-input"
-                    ref={(el) => {
+                <ComposerEditorSurface
+                  state={{
+                    mode: store.mode,
+                    ariaLabel: designPlaceholder(),
+                    placeholder: designPlaceholder(),
+                    placeholderComponent: newSession() ? "session-new-design-text" : "session-composer-text",
+                    dirty: prompt.dirty(),
+                    scrollClass: "relative max-h-[180px] overflow-y-auto no-scrollbar",
+                    editorClass:
+                      "min-h-[52px] w-full px-4 pt-4 pb-2 focus:outline-none whitespace-pre-wrap leading-5 text-[13px] font-[440] text-v2-text-text-base",
+                    placeholderClass:
+                      "absolute top-0 inset-x-0 px-4 pt-4 pointer-events-none whitespace-nowrap truncate leading-5 text-[13px] font-[440] text-v2-text-text-faint [font-family:Inter,var(--font-family-sans)]",
+                    setScrollRef: (el) => (scrollRef = el),
+                    setEditorRef: (el) => {
                       editorRef = el
                       props.ref?.(el)
-                    }}
-                    role="textbox"
-                    aria-multiline="true"
-                    aria-label={designPlaceholder()}
-                    contenteditable="true"
-                    autocapitalize={store.mode === "normal" ? "sentences" : "off"}
-                    autocorrect={store.mode === "normal" ? "on" : "off"}
-                    spellcheck={store.mode === "normal"}
-                    inputMode="text"
-                    // @ts-expect-error
-                    autocomplete="off"
-                    onInput={handleInput}
-                    onPaste={handlePaste}
-                    onCompositionStart={handleCompositionStart}
-                    onCompositionEnd={handleCompositionEnd}
-                    onBlur={handleBlur}
-                    onKeyDown={handleKeyDown}
-                    classList={{
-                      "select-text": true,
-                      "min-h-[52px] w-full px-4 pt-4 pb-2 focus:outline-none whitespace-pre-wrap leading-5 text-[13px] font-[440] text-v2-text-text-base": true,
-                      "[&_[data-type=file]]:text-syntax-property": true,
-                      "[&_[data-type=agent]]:text-syntax-type": true,
-                      "font-mono!": store.mode === "shell",
-                    }}
-                  />
-                  <div
-                    data-component={newSession() ? "session-new-design-text" : "session-composer-text"}
-                    class="absolute top-0 inset-x-0 px-4 pt-4 pointer-events-none whitespace-nowrap truncate leading-5 text-[13px] font-[440] text-v2-text-text-faint [font-family:Inter,var(--font-family-sans)]"
-                    classList={{ "font-mono!": store.mode === "shell", hidden: prompt.dirty() }}
-                  >
-                    {designPlaceholder()}
-                  </div>
-                </div>
+                    },
+                    onInput: handleInput,
+                    onPaste: handlePaste,
+                    onCompositionStart: handleCompositionStart,
+                    onCompositionEnd: handleCompositionEnd,
+                    onBlur: handleBlur,
+                    onKeyDown: handleKeyDown,
+                  }}
+                />
               </div>
               <div class="flex h-11 items-center px-2">
                 <div class="flex min-w-0 flex-1 items-center gap-0">
@@ -1371,33 +1280,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               [props.class ?? ""]: !!props.class,
             }}
           >
-            <PromptDragOverlay
-              type={store.draggingType}
-              label={language.t(
-                store.draggingType === "@mention" ? "prompt.dropzone.file.label" : "prompt.dropzone.label",
-              )}
-            />
-            <PromptContextItems
-              items={contextItems()}
-              active={(item) => {
-                const active = comments.active()
-                return !!item.commentID && item.commentID === active?.id && item.path === active?.file
-              }}
-              openComment={openComment}
-              remove={(item) => {
-                if (item.commentID) comments.remove(item.path, item.commentID)
-                prompt.context.remove(item.key)
-              }}
-              t={(key) => language.t(key as Parameters<typeof language.t>[0])}
-            />
-            <PromptImageAttachments
-              attachments={imageAttachments()}
-              onOpen={(attachment) =>
-                dialog.show(() => <ImagePreview src={attachment.dataUrl} alt={attachment.filename} />)
-              }
-              onRemove={removeAttachment}
-              removeLabel={language.t("prompt.attachment.remove")}
-            />
+            <ComposerAttachmentsTray state={attachmentsTrayState()} />
             <div
               class="relative"
               onMouseDown={(e) => {
@@ -1409,50 +1292,33 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                 editorRef?.focus()
               }}
             >
-              <div
-                class="relative max-h-[240px] overflow-y-auto no-scrollbar"
-                ref={(el) => (scrollRef = el)}
-                style={{ "scroll-padding-bottom": space }}
-              >
-                <div
-                  data-component="prompt-input"
-                  ref={(el) => {
+              <ComposerEditorSurface
+                state={{
+                  mode: store.mode,
+                  ariaLabel: placeholder(),
+                  placeholder: placeholder(),
+                  dirty: prompt.dirty(),
+                  scrollClass: "relative max-h-[240px] overflow-y-auto no-scrollbar",
+                  scrollStyle: { "scroll-padding-bottom": space },
+                  editorClass:
+                    "w-full pl-3 pr-2 pt-2 text-14-regular text-text-strong focus:outline-none whitespace-pre-wrap",
+                  editorStyle: { "padding-bottom": space },
+                  placeholderClass:
+                    "absolute top-0 inset-x-0 pl-3 pr-2 pt-2 text-14-regular text-text-weak pointer-events-none whitespace-nowrap truncate",
+                  placeholderStyle: { "padding-bottom": space },
+                  setScrollRef: (el) => (scrollRef = el),
+                  setEditorRef: (el) => {
                     editorRef = el
                     props.ref?.(el)
-                  }}
-                  role="textbox"
-                  aria-multiline="true"
-                  aria-label={placeholder()}
-                  contenteditable="true"
-                  autocapitalize={store.mode === "normal" ? "sentences" : "off"}
-                  autocorrect={store.mode === "normal" ? "on" : "off"}
-                  spellcheck={store.mode === "normal"}
-                  inputMode="text"
-                  // @ts-expect-error
-                  autocomplete="off"
-                  onInput={handleInput}
-                  onPaste={handlePaste}
-                  onCompositionStart={handleCompositionStart}
-                  onCompositionEnd={handleCompositionEnd}
-                  onBlur={handleBlur}
-                  onKeyDown={handleKeyDown}
-                  classList={{
-                    "select-text": true,
-                    "w-full pl-3 pr-2 pt-2 text-14-regular text-text-strong focus:outline-none whitespace-pre-wrap": true,
-                    "[&_[data-type=file]]:text-syntax-property": true,
-                    "[&_[data-type=agent]]:text-syntax-type": true,
-                    "font-mono!": store.mode === "shell",
-                  }}
-                  style={{ "padding-bottom": space }}
-                />
-                <div
-                  class="absolute top-0 inset-x-0 pl-3 pr-2 pt-2 text-14-regular text-text-weak pointer-events-none whitespace-nowrap truncate"
-                  classList={{ "font-mono!": store.mode === "shell" }}
-                  style={{ "padding-bottom": space, display: prompt.dirty() ? "none" : undefined }}
-                >
-                  {placeholder()}
-                </div>
-              </div>
+                  },
+                  onInput: handleInput,
+                  onPaste: handlePaste,
+                  onCompositionStart: handleCompositionStart,
+                  onCompositionEnd: handleCompositionEnd,
+                  onBlur: handleBlur,
+                  onKeyDown: handleKeyDown,
+                }}
+              />
 
               <div
                 aria-hidden="true"
