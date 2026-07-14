@@ -175,6 +175,22 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         }),
       )
       .handle(
+        "session.switchStrict",
+        Effect.fn(function* (ctx) {
+          yield* session.switchStrict({ sessionID: ctx.params.sessionID, strict: ctx.payload.strict }).pipe(
+            Effect.catchTag("Session.NotFoundError", (error) =>
+              Effect.fail(
+                new SessionNotFoundError({
+                  sessionID: error.sessionID,
+                  message: `Session not found: ${error.sessionID}`,
+                }),
+              ),
+            ),
+          )
+          return HttpApiSchema.NoContent.make()
+        }),
+      )
+      .handle(
         "session.switchMode",
         Effect.fn(function* (ctx) {
           yield* session

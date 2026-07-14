@@ -8,6 +8,7 @@ import { Project } from "./project"
 import { DateTimeUtcFromMillis, optional, RelativePath } from "./schema"
 import { SessionEvent } from "./session-event"
 import { SessionID } from "./session-id"
+import { SessionStrict } from "./session-strict"
 import { SessionType } from "./session-type"
 import { Revert } from "./revert"
 
@@ -28,6 +29,7 @@ export const Info = Schema.Struct({
   priority: Schema.Finite.pipe(optional),
   responder: Schema.Literals(["nova", "operator"]).pipe(optional),
   permissionMode: Schema.Literals(["plan", "ask", "surgical", "bypass", "yolo"]).pipe(optional),
+  strict: SessionStrict.Override.pipe(optional),
   result: Schema.Unknown.pipe(optional),
   cost: Schema.Finite,
   tokens: Schema.Struct({

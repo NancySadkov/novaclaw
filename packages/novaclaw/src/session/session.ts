@@ -96,6 +96,7 @@ export function fromRow(row: SessionRow): Info {
     revert,
     permission: row.permission ? [...row.permission] : undefined,
     permissionMode: row.permission_mode ?? undefined,
+    strict: row.strict ?? undefined,
     time: {
       created: row.time_created,
       updated: row.time_updated,

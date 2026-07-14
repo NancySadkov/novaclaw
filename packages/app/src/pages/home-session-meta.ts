@@ -34,6 +34,13 @@ export function tokenTotals(
   return out
 }
 
+/** Compact human token count for the Chats-list row badge: 950 · 9.5k · 12k · 1.2M. */
+export function compactTokens(count: number): string {
+  if (count >= 1e6) return `${(count / 1e6).toFixed(count >= 1e7 ? 0 : 1)}M`
+  if (count >= 1e3) return `${(count / 1e3).toFixed(count >= 1e4 ? 0 : 1)}k`
+  return String(count)
+}
+
 /**
  * A root's subtask subtree as depth-ordered rows (children indented under their parent,
  * newest first per level), skipping archived sessions. The Chats list day-groups ROOTS only;

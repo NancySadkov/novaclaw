@@ -9,6 +9,7 @@ import { Model } from "./model"
 import { DateTimeUtcFromMillis, NonNegativeInt, RelativePath } from "./schema"
 import { FileAttachment, Prompt } from "./prompt"
 import { SessionID } from "./session-id"
+import { SessionStrict } from "./session-strict"
 import { Location } from "./location"
 import { SessionMessage } from "./session-message"
 import { Revert } from "./revert"
@@ -99,6 +100,20 @@ export const ModeSwitched = Event.define({
   },
 })
 export type ModeSwitched = typeof ModeSwitched.Type
+
+// The per-session Strict-harness override switch (the composer's Strict toggle — jh.md). Like
+// ModeSwitched, the runner reads the projected column fresh each turn. `strict: null` clears the
+// override back to inherit (parent chain, then global config).
+export const StrictSwitched = Event.define({
+  type: "session.next.strict.switched",
+  ...options,
+  schema: {
+    ...Base,
+    messageID: SessionMessage.ID,
+    strict: Schema.NullOr(SessionStrict.Override),
+  },
+})
+export type StrictSwitched = typeof StrictSwitched.Type
 
 export const Moved = Event.define({
   type: "session.next.moved",
@@ -506,6 +521,7 @@ export const DurableDefinitions = Event.inventory(
   ModelSwitched,
   ResponderSwitched,
   ModeSwitched,
+  StrictSwitched,
   Moved,
   Prompted,
   PromptAdmitted,
@@ -541,6 +557,7 @@ export const Definitions = Event.inventory(
   ModelSwitched,
   ResponderSwitched,
   ModeSwitched,
+  StrictSwitched,
   Moved,
   Prompted,
   PromptAdmitted,

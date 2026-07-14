@@ -131,6 +131,8 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
       "session.next.responder.switched": () => Effect.void,
       // 1K: mode switch is likewise a control signal (the projector writes the column).
       "session.next.mode.switched": () => Effect.void,
+      // The per-session Strict override is likewise a control signal (the projector writes the column).
+      "session.next.strict.switched": () => Effect.void,
       "session.next.prompted": (event) => {
         return adapter.appendMessage(
           SessionMessage.User.make({

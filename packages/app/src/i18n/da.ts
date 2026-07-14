@@ -12,7 +12,6 @@ export const dict = {
   "command.category.terminal": "Terminal",
   "command.category.model": "Model",
   "command.category.mcp": "MCP",
-  "command.category.agent": "Agent",
   "command.category.permissions": "Tilladelser",
   "command.category.workspace": "Arbejdsområde",
 
@@ -63,10 +62,6 @@ export const dict = {
   "command.model.choose.description": "Vælg en anden model",
   "command.mcp.toggle": "Skift MCP'er",
   "command.mcp.toggle.description": "Skift MCP'er",
-  "command.agent.cycle": "Skift agent",
-  "command.agent.cycle.description": "Skift til næste agent",
-  "command.agent.cycle.reverse": "Skift agent baglæns",
-  "command.agent.cycle.reverse.description": "Skift til forrige agent",
   "command.model.variant.cycle": "Skift tænkeindsats",
   "command.model.variant.cycle.description": "Skift til næste indsatsniveau",
   "command.prompt.mode.shell": "Shell",

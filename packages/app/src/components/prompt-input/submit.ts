@@ -330,12 +330,15 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     if (!session && isNewSession) {
       // 1K: the composer's permission-mode droplist applies at create. The generated SDK's create
       // has no permissionMode arg yet — the `$body_` extra-prefix routes it into the JSON body
-      // without editing sdk/gen (golden rule 5).
+      // without editing sdk/gen (golden rule 5). The Strict switch stages the same way: a draft
+      // choice becomes the new session's per-chat override.
       const permissionMode = local.permissionMode.current()
+      const strict = local.strict.current()
+      const extras: Record<string, unknown> = {}
+      if (permissionMode !== "ask") extras.$body_permissionMode = permissionMode
+      if (strict !== undefined) extras.$body_strict = strict
       const createParams =
-        permissionMode !== "ask"
-          ? ({ $body_permissionMode: permissionMode } as Parameters<typeof client.session.create>[0])
-          : undefined
+        Object.keys(extras).length > 0 ? (extras as Parameters<typeof client.session.create>[0]) : undefined
       const created = await client.session
         .create(createParams)
         .then((x) => x.data ?? undefined)

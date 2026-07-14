@@ -16,7 +16,6 @@ export const dict = {
   "command.category.terminal": "终端",
   "command.category.model": "模型",
   "command.category.mcp": "MCP",
-  "command.category.agent": "智能体",
   "command.category.permissions": "权限",
   "command.category.workspace": "工作区",
   "command.category.settings": "设置",
@@ -85,10 +84,6 @@ export const dict = {
   "command.mcp.toggle": "切换 MCPs",
   "command.mcp.toggle.description": "切换 MCPs",
 
-  "command.agent.cycle": "切换智能体",
-  "command.agent.cycle.description": "切换到下一个智能体",
-  "command.agent.cycle.reverse": "反向切换智能体",
-  "command.agent.cycle.reverse.description": "切换到上一个智能体",
 
   "command.model.variant.cycle": "切换思考强度",
   "command.model.variant.cycle.description": "切换到下一个强度等级",

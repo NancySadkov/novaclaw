@@ -18,11 +18,15 @@ export type ModelKey = { providerID: string; modelID: string; variant?: string }
 /** 1K: the session's permission-mode ceiling, chosen at create time in the composer. */
 export type PermissionMode = "plan" | "ask" | "surgical" | "bypass" | "yolo"
 
+/** The composer's per-chat Strict-harness choice (jh.md): on/off + racing width + time budget. */
+export type StrictChoice = { enabled: boolean; attempts?: number; wallMinutes?: number }
+
 type State = {
   agent?: string
   model?: ModelKey
   variant?: string | null
   permissionMode?: PermissionMode
+  strict?: StrictChoice
 }
 
 type Saved = {
@@ -192,53 +196,12 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
     const fallback = createMemo<ModelKey | undefined>(() => configuredModel() ?? recentModel() ?? defaultModel())
 
+    // The composer's visible agent picker is retired — `current()` (the default primary agent)
+    // is all the app still needs; the prompt's @-mention pills carry per-message subagents.
     const agent = {
       list,
       current() {
         return pickAgent(scope()?.agent ?? store.current)
-      },
-      set(name: string | undefined) {
-        const item = pickAgent(name)
-        if (!item) {
-          setStore("current", undefined)
-          return
-        }
-
-        batch(() => {
-          setStore("current", item.name)
-          setStore("last", {
-            type: "agent",
-            agent: item.name,
-            model: item.model,
-            variant: item.variant ?? null,
-          })
-          const prev = scope()
-          const next = {
-            agent: item.name,
-            model: item.model ?? prev?.model,
-            variant: item.variant ?? prev?.variant,
-          } satisfies State
-          const session = id()
-          if (session) {
-            setSaved("session", session, next)
-            return
-          }
-          setStore("draft", next)
-        })
-      },
-      move(direction: 1 | -1) {
-        const items = list()
-        if (items.length === 0) {
-          setStore("current", undefined)
-          return
-        }
-
-        let next = items.findIndex((item) => item.name === agent.current()?.name) + direction
-        if (next < 0) next = items.length - 1
-        if (next >= items.length) next = 0
-        const item = items[next]
-        if (!item) return
-        agent.set(item.name)
       },
     }
 
@@ -271,6 +234,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         model: model ? { providerID: model.provider.id, modelID: model.id } : undefined,
         variant: selected(),
         permissionMode: scope()?.permissionMode,
+        strict: scope()?.strict,
       } satisfies State
     }
 
@@ -396,11 +360,22 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       },
     }
 
+    // The composer's Strict switch (jh.md). `undefined` = no explicit choice yet (the global
+    // Settings → Strict mode default applies); a live session ALSO persists the choice server-side
+    // (the switchStrict route) — this local state carries the new-session draft to create time.
+    const strict = {
+      current: (): StrictChoice | undefined => scope()?.strict,
+      set(value: StrictChoice | undefined) {
+        write({ strict: value })
+      },
+    }
+
     const result = {
       slug: createMemo(() => base64Encode(sdk().directory)),
       model,
       agent,
       permissionMode,
+      strict,
       session: {
         reset() {
           setStore("draft", undefined)

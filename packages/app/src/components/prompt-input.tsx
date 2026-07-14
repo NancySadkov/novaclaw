@@ -31,7 +31,9 @@ import { useSDK } from "@/context/sdk"
 import { useSync } from "@/context/sync"
 import { useServerSync } from "@/context/server-sync"
 import { useComments } from "@/context/comments"
+import { Popover as KobaltePopover } from "@kobalte/core/popover"
 import { Button } from "@novaclaw/ui/button"
+import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { DockShellForm, DockTray } from "@novaclaw/ui/dock-surface"
 import { Icon } from "@novaclaw/ui/icon"
 import { ProviderIcon } from "@novaclaw/ui/provider-icon"
@@ -84,13 +86,10 @@ export type PromptInputSubmission = {
 }
 
 export type PromptInputControls = {
+  // The visible agent picker (plan/build) was opencode residue and is gone — the permission-mode
+  // droplist is the one mode control. `available` stays: it feeds the @-mention subagent list.
   agents: {
     available: { name: string; hidden?: boolean; mode: string }[]
-    options: string[]
-    current: string
-    loading: boolean
-    visible: boolean
-    select: (name: string | undefined) => void
   }
   model: {
     selection: ReturnType<typeof useLocal>["model"]
@@ -101,6 +100,12 @@ export type PromptInputControls = {
   permissionMode: {
     current: PermissionMode
     select: (value: PermissionMode) => void
+  }
+  // The per-chat Strict-harness switch (jh.md): current = the effective state (session override →
+  // draft → global Settings default); set writes the per-session override (and stages it on drafts).
+  strict: {
+    current: { enabled?: boolean; attempts?: number; wallMinutes?: number }
+    set: (value: { enabled: boolean; attempts?: number; wallMinutes?: number }) => void
   }
   session: {
     id?: string
@@ -1358,8 +1363,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
     }
   }
 
-  const agentsLoading = () => props.controls.agents.loading
-  const agentsShouldFadeIn = createMemo<boolean>((prev) => prev ?? agentsLoading())
   const providersLoading = () => props.controls.model.loading
   const providersShouldFadeIn = createMemo<boolean>((prev) => prev ?? providersLoading())
 
@@ -1386,18 +1389,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }))
 
   const newSession = () => props.variant === "new-session"
-  const showAgentControl = createMemo(() => props.controls.agents.visible && props.controls.agents.options.length > 0)
-  const agentControlState = createMemo<ComposerAgentControlState>(() => ({
-    title: language.t("command.agent.cycle"),
-    keybind: command.keybindParts("agent.cycle"),
-    options: props.controls.agents.options,
-    current: props.controls.agents.current,
-    style: control(),
-    onSelect: (value) => {
-      props.controls.agents.select(value)
-      restoreFocus()
-    },
-  }))
   const permissionModeControlState = createMemo<ComposerPermissionModeControlState>(() => ({
     title: language.t("prompt.permissionMode.title"),
     current: props.controls.permissionMode.current,
@@ -1407,6 +1398,14 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
       props.controls.permissionMode.select(value)
       restoreFocus()
     },
+  }))
+  const strictControlState = createMemo<ComposerStrictControlState>(() => ({
+    current: props.controls.strict.current,
+    permissionBelowFloor:
+      props.controls.permissionMode.current !== "bypass" && props.controls.permissionMode.current !== "yolo",
+    style: control(),
+    set: (value) => props.controls.strict.set(value),
+    onClose: restoreFocus,
   }))
   return (
     <div class="relative size-full flex flex-col gap-0">
@@ -1541,15 +1540,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                       aria-label={language.t("prompt.action.attachFile")}
                     />
                   </TooltipV2>
-                  <Show when={showAgentControl()}>
-                    <ComposerAgentControl state={agentControlState()} />
-                  </Show>
                   {props.toolbar}
                   <ComposerModelControl state={modelControlState()} />
                   {/* 1K: the permission-mode droplist shows on the new-session composer AND
                       mid-session (an active session id) — mid-session selection calls switchMode. */}
                   <Show when={newSession() || props.controls.session?.id}>
                     <ComposerPermissionModeControl state={permissionModeControlState()} />
+                    <ComposerStrictControl state={strictControlState()} />
                   </Show>
                   <Show when={!providersLoading() && store.mode !== "shell" && showVariantControl()}>
                     <div
@@ -1799,34 +1796,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     </Button>
                   </div>
                   <div class="flex items-center gap-1.5 min-w-0 flex-1 h-7">
-                    <Show when={!agentsLoading()}>
-                      <div
-                        data-component="prompt-agent-control"
-                        classList={{ "animate-in fade-in duration-300": agentsShouldFadeIn() }}
-                      >
-                        <TooltipKeybind
-                          placement="top"
-                          gutter={4}
-                          title={language.t("command.agent.cycle")}
-                          keybind={command.keybind("agent.cycle")}
-                        >
-                          <Select
-                            size="normal"
-                            options={props.controls.agents.options}
-                            current={props.controls.agents.current}
-                            onSelect={(value) => {
-                              props.controls.agents.select(value)
-                              restoreFocus()
-                            }}
-                            class="capitalize max-w-[160px] text-text-base"
-                            valueClass="truncate text-13-regular text-text-base"
-                            triggerStyle={control()}
-                            triggerProps={{ "data-action": "prompt-agent" }}
-                            variant="ghost"
-                          />
-                        </TooltipKeybind>
-                      </div>
-                    </Show>
                     <Show when={!providersLoading()}>
                       <Show when={store.mode !== "shell"}>
                         <div
@@ -1910,15 +1879,6 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   )
 }
 
-type ComposerAgentControlState = {
-  title: string
-  keybind: string[]
-  options: string[]
-  current: string
-  style: JSX.CSSProperties | undefined
-  onSelect: (value: string | undefined) => void
-}
-
 type ComposerPermissionModeControlState = {
   title: string
   current: PermissionMode
@@ -1951,7 +1911,9 @@ function ComposerPermissionModeControl(props: { state: ComposerPermissionModeCon
           current={props.state.current}
           label={(mode) => props.state.label(mode)}
           onSelect={(value) => {
-            if (value) props.state.onSelect(value)
+            // Kobalte re-emits onChange with the UNCHANGED value whenever the options array is
+            // recreated (any composer-controls recompute) — only a real change may hit the server.
+            if (value && value !== props.state.current) props.state.onSelect(value)
           }}
           class="max-w-[190px] justify-start text-v2-text-text-faint [&_[data-component=icon]]:text-v2-icon-icon-muted"
           valueClass="truncate pl-5 text-[13px] font-[440] leading-5 text-v2-text-text-faint"
@@ -1961,6 +1923,141 @@ function ComposerPermissionModeControl(props: { state: ComposerPermissionModeCon
         />
       </TooltipV2>
     </div>
+  )
+}
+
+type ComposerStrictControlState = {
+  current: { enabled?: boolean; attempts?: number; wallMinutes?: number }
+  permissionBelowFloor: boolean
+  style: JSX.CSSProperties | undefined
+  set: (value: { enabled: boolean; attempts?: number; wallMinutes?: number }) => void
+  onClose: () => void
+}
+
+/**
+ * The per-chat Strict switch (jh.md): OFF → click opens a small ask — how many agents race and the
+ * time budget — then enables; ON → click turns it off directly. Enabling also raises the permission
+ * mode to Bypass (the harness's autonomous floor) — the popover says so before the user commits.
+ */
+function ComposerStrictControl(props: { state: ComposerStrictControlState }) {
+  const language = useLanguage()
+  const [open, setOpen] = createSignal(false)
+  const [attempts, setAttempts] = createSignal("")
+  const [wall, setWall] = createSignal("")
+  const enabled = () => props.state.current.enabled === true
+  const close = () => {
+    setOpen(false)
+    props.state.onClose()
+  }
+  const enable = () => {
+    const racers = Number.parseInt(attempts(), 10)
+    const minutes = Number.parseInt(wall(), 10)
+    props.state.set({
+      enabled: true,
+      attempts: Number.isFinite(racers) && racers > 1 ? Math.min(racers, 8) : undefined,
+      wallMinutes: Number.isFinite(minutes) && minutes > 0 ? Math.min(minutes, 480) : undefined,
+    })
+    close()
+  }
+  return (
+    <KobaltePopover
+      open={open()}
+      onOpenChange={(next) => {
+        if (next && enabled()) {
+          // A click on an armed switch just turns Strict off — nothing to ask.
+          props.state.set({ enabled: false })
+          props.state.onClose()
+          return
+        }
+        if (next) {
+          setAttempts(props.state.current.attempts && props.state.current.attempts > 1 ? String(props.state.current.attempts) : "")
+          setWall(props.state.current.wallMinutes ? String(props.state.current.wallMinutes) : "")
+        }
+        setOpen(next)
+      }}
+      modal={false}
+      placement="top-start"
+      gutter={4}
+    >
+      <TooltipV2 placement="top" gutter={4} value={language.t("prompt.strict.tooltip")}>
+        <KobaltePopover.Trigger
+          type="button"
+          data-action="prompt-strict"
+          data-enabled={enabled() ? "true" : undefined}
+          class="flex h-7 items-center gap-1.5 rounded-md px-2 text-[13px] font-[440] leading-5 hover:bg-v2-background-bg-subtle"
+          classList={{
+            "text-v2-text-text-faint": !enabled(),
+            "text-v2-text-text-base": enabled(),
+          }}
+          style={props.state.style}
+        >
+          <Icon name="shield" size="small" class={enabled() ? "text-v2-icon-icon-base" : "text-v2-icon-icon-muted"} />
+          <span>{language.t(enabled() ? "prompt.strict.on" : "prompt.strict.off")}</span>
+        </KobaltePopover.Trigger>
+      </TooltipV2>
+      <KobaltePopover.Portal>
+        <KobaltePopover.Content
+          data-component="prompt-strict-popover"
+          class="w-80 flex flex-col gap-3 p-4 rounded-md border border-border-base bg-surface-raised-stronger-non-alpha shadow-md z-50 outline-none"
+          onEscapeKeyDown={(event) => {
+            event.preventDefault()
+            event.stopPropagation()
+            close()
+          }}
+          onPointerDownOutside={() => setOpen(false)}
+        >
+          <div class="flex flex-col gap-1">
+            <span class="text-[13px] font-[560] text-v2-text-text-base">{language.t("prompt.strict.popover.title")}</span>
+            <span class="text-[12px] leading-4 text-v2-text-text-faint">
+              {language.t("prompt.strict.popover.description")}
+            </span>
+          </div>
+          <label class="flex items-center justify-between gap-3">
+            <span class="text-[13px] text-v2-text-text-base">{language.t("prompt.strict.popover.attempts")}</span>
+            <div class="w-[90px]">
+              <TextInputV2
+                type="number"
+                appearance="base"
+                min="1"
+                max="8"
+                step="1"
+                placeholder="1"
+                value={attempts()}
+                onInput={(event) => setAttempts(event.currentTarget.value)}
+                aria-label={language.t("prompt.strict.popover.attempts")}
+              />
+            </div>
+          </label>
+          <label class="flex items-center justify-between gap-3">
+            <span class="text-[13px] text-v2-text-text-base">{language.t("prompt.strict.popover.wallMinutes")}</span>
+            <div class="w-[90px]">
+              <TextInputV2
+                type="number"
+                appearance="base"
+                min="1"
+                max="480"
+                step="1"
+                placeholder="45"
+                value={wall()}
+                onInput={(event) => setWall(event.currentTarget.value)}
+                aria-label={language.t("prompt.strict.popover.wallMinutes")}
+              />
+            </div>
+          </label>
+          <Show when={props.state.permissionBelowFloor}>
+            <span class="text-[12px] leading-4 text-v2-text-text-faint">{language.t("prompt.strict.popover.bypassNote")}</span>
+          </Show>
+          <div class="flex items-center justify-end gap-2">
+            <Button variant="ghost" type="button" onClick={close}>
+              {language.t("common.cancel")}
+            </Button>
+            <Button variant="primary" type="button" data-action="prompt-strict-enable" onClick={enable}>
+              {language.t("prompt.strict.popover.enable")}
+            </Button>
+          </div>
+        </KobaltePopover.Content>
+      </KobaltePopover.Portal>
+    </KobaltePopover>
   )
 }
 
@@ -1974,38 +2071,6 @@ type ComposerModelControlState = {
   modelName: string
   style: JSX.CSSProperties | undefined
   onClose: () => void
-}
-
-function ComposerAgentControl(props: { state: ComposerAgentControlState }) {
-  return (
-    <div class="relative">
-      <div class="pointer-events-none absolute left-2 top-1/2 z-10 flex size-4 -translate-y-1/2 items-center justify-center text-v2-icon-icon-muted">
-        <Icon name="sliders" size="small" />
-      </div>
-      <TooltipV2
-        placement="top"
-        gutter={4}
-        value={
-          <>
-            {props.state.title}
-            <KeybindV2 keys={props.state.keybind} variant="neutral" />
-          </>
-        }
-      >
-        <Select
-          size="normal"
-          options={props.state.options}
-          current={props.state.current}
-          onSelect={props.state.onSelect}
-          class="max-w-[175px] justify-start text-v2-text-text-faint [&_[data-component=icon]]:text-v2-icon-icon-muted"
-          valueClass="truncate pl-5 text-[13px] font-[440] leading-5 text-v2-text-text-faint"
-          triggerStyle={props.state.style}
-          triggerProps={{ "data-action": "prompt-agent" }}
-          variant="ghost"
-        />
-      </TooltipV2>
-    </div>
-  )
 }
 
 function ComposerModelControl(props: { state: ComposerModelControlState }) {

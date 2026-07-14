@@ -9,6 +9,7 @@ import { Model } from "../model"
 import { NonNegativeInt, optional, statics } from "../schema"
 import { ascending } from "../identifier"
 import { SessionID } from "../session-id"
+import { SessionStrict } from "../session-strict"
 import { WorkspaceID } from "../workspace-id"
 import { PermissionV1 } from "./permission"
 
@@ -560,6 +561,8 @@ export const SessionInfo = Schema.Struct({
   priority: optional(Schema.Finite),
   responder: optional(Schema.Literals(["nova", "operator"])),
   permissionMode: optional(Schema.Literals(["plan", "ask", "surgical", "bypass", "yolo"])),
+  // The per-session Strict-harness override (the composer switch); absent = inherit.
+  strict: optional(SessionStrict.Override),
   result: optional(Schema.Unknown),
   version: Schema.String,
   metadata: optional(Schema.Record(Schema.String, Schema.Any)),

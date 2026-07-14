@@ -50,5 +50,6 @@ export const migrations = (
     import("./migration/20260706220000_add_session_tag"),
     import("./migration/20260708000000_drop_legacy_message_part"),
     import("./migration/20260709120000_add_jh_plan"),
+    import("./migration/20260714090000_add_session_strict"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]

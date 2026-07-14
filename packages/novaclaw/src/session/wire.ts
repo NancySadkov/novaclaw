@@ -72,6 +72,15 @@ export const Metadata = Schema.Record(Schema.String, Schema.Any)
 export const PermissionMode = Schema.Literals(["plan", "ask", "surgical", "bypass", "yolo"])
 export type PermissionMode = typeof PermissionMode.Type
 
+// The per-session Strict-harness override (the composer switch — jh.md); absent = inherit
+// (parent chain, then the global `config.strict`). Mirrors SessionV1.SessionInfo.strict.
+export const Strict = Schema.Struct({
+  enabled: optional(Schema.Boolean),
+  attempts: optional(Schema.Finite),
+  wallMinutes: optional(Schema.Finite),
+})
+export type Strict = Types.DeepMutable<Schema.Schema.Type<typeof Strict>>
+
 export const Info = Schema.Struct({
   id: SessionID,
   slug: Schema.String,
@@ -92,6 +101,7 @@ export const Info = Schema.Struct({
   time: Time,
   permission: optional(PermissionV1.Ruleset),
   permissionMode: optional(PermissionMode),
+  strict: optional(Strict),
   revert: optional(Revert),
 }).annotate({ identifier: "Session" })
 export type Info = Types.DeepMutable<Schema.Schema.Type<typeof Info>>
@@ -118,6 +128,7 @@ export const CreateInput = Schema.optional(
     metadata: Schema.optional(Metadata),
     permission: Schema.optional(PermissionV1.Ruleset),
     permissionMode: Schema.optional(PermissionMode),
+    strict: Schema.optional(Strict),
     workspaceID: Schema.optional(WorkspaceV2.ID),
   }),
 )

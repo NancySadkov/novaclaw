@@ -161,3 +161,18 @@ export function switchMode(
 ) {
   return sessionPost(server, input.directory, input.sessionID, "mode", { permissionMode: input.permissionMode })
 }
+
+// The per-session Strict-harness override (the composer's Strict switch — jh.md).
+// `strict: null` clears the override back to inherit (global Settings → Strict mode).
+export interface SessionStrictOverride {
+  enabled?: boolean
+  attempts?: number
+  wallMinutes?: number
+}
+
+export function switchStrict(
+  server: ServerConnection.HttpBase,
+  input: { directory: string; sessionID: string; strict: SessionStrictOverride | null },
+) {
+  return sessionPost(server, input.directory, input.sessionID, "strict", { strict: input.strict })
+}

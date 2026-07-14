@@ -201,6 +201,7 @@ export const sessionHandlers = HttpApiBuilder.group(InstanceHttpApi, "session", 
         metadata: payload?.metadata,
         permission: payload?.permission ? [...payload.permission] : undefined,
         permissionMode: payload?.permissionMode,
+        strict: payload?.strict,
         location: Location.Ref.make({
           directory: AbsolutePath.make(instance.directory),
           workspaceID: payload?.workspaceID ?? workspace,

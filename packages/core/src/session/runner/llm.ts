@@ -867,11 +867,14 @@ export const layer = Layer.effect(
         if (promoted === 0) return
         const task = SessionStrict.lastUserText(yield* getContext(sessionID))
         if (task === undefined) return
+        // The effective strict config for THIS session: the global `config.strict` overlaid with the
+        // session's own override (the composer switch — enabled/attempts/wallMinutes per chat).
+        const strict = { ...(strictConfig ?? {}), ...(resolved.strict ?? {}) }
         // improve11 P5 (jh.md §14.2): best-of-N racing — explicit opt-in via strict.attempts. Each
         // racer works on a bounded FORK of the folder; the first oracle-... (in sessions: the first
         // attempt whose run completes DONE) wins and its changes are applied back; losers are deleted.
         // Measured (12 rig races): ~2× per-wall success; contention notes in jh-improve11.md.
-        let attempts = Math.max(1, Math.min(SessionStrict.MAX_ATTEMPTS, Math.floor(strictConfig?.attempts ?? 1)))
+        let attempts = Math.max(1, Math.min(SessionStrict.MAX_ATTEMPTS, Math.floor(strict.attempts ?? 1)))
         let baseline: ReadonlyMap<string, string> | undefined
         let forks: string[] = []
         if (attempts > 1) {
@@ -899,7 +902,7 @@ export const layer = Layer.effect(
           SessionStrict.runTask({
             task,
             cwd,
-            strict: strictConfig ?? {},
+            strict,
             completeOnce,
             onMilestone: (text) => notice(single ? text : `[attempt ${i + 1}/${attempts}] ${text}`),
             aborted: single ? undefined : () => winnerIdx !== undefined && winnerIdx !== i,
@@ -990,12 +993,14 @@ export const layer = Layer.effect(
         return
       }
       yield* failInterruptedTools(input.sessionID)
-      // P14-minimal (jh-improve8 P3): the Strict-harness route. `config.strict.enabled` routes the
-      // drain through JhEngine.runTask (jh.md — the harness owns decomposition/verification/recovery).
-      // It executes shell/write actions autonomously, so it requires an autonomous permission mode;
-      // below that the toggle must not silently bypass the permission model — the drain says why and
-      // answers normally instead.
-      if (strictConfig?.enabled === true) {
+      // P14-minimal (jh-improve8 P3): the Strict-harness route. The effective strict config is the
+      // global `config.strict` overlaid with the session's own override (the composer switch, resolved
+      // through the config walk so children inherit) — it routes the drain through JhEngine.runTask
+      // (jh.md — the harness owns decomposition/verification/recovery). It executes shell/write actions
+      // autonomously, so it requires an autonomous permission mode; below that the toggle must not
+      // silently bypass the permission model — the drain says why and answers normally instead.
+      const strictEffective = { ...(strictConfig ?? {}), ...(handoff.strict ?? {}) }
+      if (strictEffective.enabled === true) {
         if (handoff.permissionMode === "bypass" || handoff.permissionMode === "yolo") {
           yield* runStrictDrain(input.sessionID, handoff, hasSteer ? "steer" : hasQueue ? "queue" : undefined)
           yield* postRunMaintenance(input.sessionID)

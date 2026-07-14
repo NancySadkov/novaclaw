@@ -12,9 +12,8 @@ import type { QueryOptionsApi } from "@/context/server-sync"
 import { useServerSDK } from "@/context/server-sdk"
 import { serverName, ServerConnection, useServer } from "@/context/server"
 import { useSDK } from "@/context/sdk"
-import { switchMode } from "@/utils/fs-api"
+import { switchMode, switchStrict } from "@/utils/fs-api"
 import { useSettings } from "@/context/settings"
-import { useExpertise } from "@/context/expertise"
 import { useSync } from "@/context/sync"
 import { useTabs } from "@/context/tabs"
 import { useProviders } from "@/hooks/use-providers"
@@ -29,7 +28,6 @@ export function createPromptInputController(input: {
   const local = useLocal()
   const providers = useProviders()
   const settings = useSettings()
-  const expertise = useExpertise()
   const sync = useSync()
   const sdk = useSDK()
   const server = useServer()
@@ -38,18 +36,40 @@ export function createPromptInputController(input: {
   const globalProvidersQuery = createQuery(() => input.queryOptions.providers(null))
   const providersQuery = createQuery(() => input.queryOptions.providers(pathKey(sdk().directory)))
 
+  // 1K: mid-session permission-mode switch — update the local signal AND, when a session is live,
+  // tell the server so the MODE_RULES overlay applies from the next turn (create-time uses the
+  // signal only). Shared with the Strict switch, which raises the mode to its Bypass floor.
+  const selectPermissionMode = (value: Parameters<typeof local.permissionMode.set>[0]) => {
+    local.permissionMode.set(value)
+    const id = input.sessionID()
+    const conn = server.current
+    const directory = sdk().directory
+    if (id && conn && directory)
+      void switchMode(conn.http, { directory, sessionID: id, permissionMode: value }).catch((error) =>
+        console.error("switchMode failed", error),
+      )
+  }
+
+  // The per-chat Strict switch (jh.md): this browser's explicit choice wins (it is what we last
+  // POSTed — the store record only refreshes on load, so it must not shadow a newer toggle), then
+  // the session record (a fork's copied override, or one set from another client), then the global
+  // Settings → Strict default. Same local-first precedence as the permission-mode droplist.
+  const strictGlobal = () =>
+    (sync().data.config as { strict?: { enabled?: boolean; attempts?: number; wallMinutes?: number } }).strict ?? {}
+  const strictCurrent = () => {
+    const id = input.sessionID()
+    const record = id
+      ? (sync().session.get(id) as { strict?: { enabled?: boolean; attempts?: number; wallMinutes?: number } } | undefined)
+          ?.strict
+      : undefined
+    return local.strict.current() ?? record ?? strictGlobal()
+  }
+
   return createMemo<PromptInputControls>(() => ({
+    // The visible agent picker (plan/build) is retired — the permission-mode droplist is the one mode
+    // control. `available` still feeds the composer's @-mention subagent list.
     agents: {
       available: sync().data.agent,
-      options: local.agent.list().map((agent) => agent.name),
-      current: local.agent.current()?.name ?? "",
-      loading: agentsQuery.isLoading,
-      // The agent picker (plan/build/custom agents) reads like a second "permission mode" box next to
-      // the real one, which confused users. It's an Advanced concept — hide it at Normal so the default
-      // composer shows a single mode control (the permission-mode picker). `settings.visibility.*` is a
-      // frozen always-true legacy shim (see context/settings.tsx), so gate on expertise instead.
-      visible: expertise.atLeast("advanced"),
-      select: local.agent.set,
     },
     model: {
       selection: local.model,
@@ -58,17 +78,28 @@ export function createPromptInputController(input: {
     },
     permissionMode: {
       current: local.permissionMode.current(),
-      // 1K: mid-session switch — update the local signal AND, when a session is live, tell the
-      // server so the MODE_RULES overlay applies from the next turn (create-time uses the signal only).
-      select: (value) => {
-        local.permissionMode.set(value)
+      select: selectPermissionMode,
+    },
+    strict: {
+      current: strictCurrent(),
+      set: (value) => {
+        // The draft signal is the instant UI truth (and the create-time payload); a live session
+        // ALSO persists the override server-side so the runner reads it on the next turn.
+        local.strict.set(value)
         const id = input.sessionID()
         const conn = server.current
         const directory = sdk().directory
         if (id && conn && directory)
-          void switchMode(conn.http, { directory, sessionID: id, permissionMode: value }).catch((error) =>
-            console.error("switchMode failed", error),
+          void switchStrict(conn.http, { directory, sessionID: id, strict: value }).catch((error) =>
+            console.error("switchStrict failed", error),
           )
+        // The Strict harness executes autonomously — the runner's permission floor is Bypass
+        // (llm.ts strict gate). Raise the mode with the switch so the toggle just works; the
+        // popover says so out loud. Turning Strict off leaves the mode as the user set it.
+        if (value.enabled) {
+          const mode = local.permissionMode.current()
+          if (mode !== "bypass" && mode !== "yolo") selectPermissionMode("bypass")
+        }
       },
     },
     session: {

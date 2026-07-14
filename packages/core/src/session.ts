@@ -137,6 +137,8 @@ type CreateInput = {
   type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
   priority?: number
   permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
+  // The per-session Strict-harness override (the composer switch); undefined = inherit.
+  strict?: { enabled?: boolean; attempts?: number; wallMinutes?: number }
   location: Location.Ref
   // F1c fork: a fork seeds its record from the source (title + cloned metadata).
   title?: string
@@ -230,6 +232,10 @@ export interface Interface {
   readonly switchMode: (input: {
     sessionID: SessionSchema.ID
     permissionMode: "plan" | "ask" | "surgical" | "bypass" | "yolo"
+  }) => Effect.Effect<void, NotFoundError>
+  readonly switchStrict: (input: {
+    sessionID: SessionSchema.ID
+    strict: { enabled?: boolean; attempts?: number; wallMinutes?: number } | null
   }) => Effect.Effect<void, NotFoundError>
   readonly setTitle: (input: { sessionID: SessionSchema.ID; title: string }) => Effect.Effect<void, NotFoundError>
   readonly setMetadata: (input: {
@@ -338,6 +344,7 @@ export const createSessionRecord = (
       priority: input.priority,
       permission: input.permission ? [...input.permission] : undefined,
       permissionMode: input.permissionMode,
+      strict: input.strict,
       cost: 0,
       tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
       time: { created: now, updated: now },
@@ -762,6 +769,17 @@ export const layer = Layer.effect(
           permissionMode: input.permissionMode,
         })
       }),
+      // The per-session Strict-harness override (the composer switch) — applies on the next turn;
+      // `null` clears the override back to inherit (parent chain, then global config.strict).
+      switchStrict: Effect.fn("V2Session.switchStrict")(function* (input) {
+        yield* result.get(input.sessionID)
+        yield* events.publish(SessionEvent.StrictSwitched, {
+          sessionID: input.sessionID,
+          messageID: SessionMessage.ID.create(),
+          timestamp: yield* DateTime.now,
+          strict: input.strict,
+        })
+      }),
       // F1c-1 — rename on the core engine. Unchanged titles dedup to no event.
       setTitle: Effect.fn("V2Session.setTitle")((input) =>
         patchRecord(input.sessionID, (info) =>
@@ -863,6 +881,7 @@ export const layer = Layer.effect(
                 })
               : undefined,
             permissionMode: source.permissionMode,
+            strict: source.strict,
           },
         )
         const sourceRows = yield* db

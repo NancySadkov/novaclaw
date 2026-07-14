@@ -63,7 +63,9 @@ import { Persist, persisted } from "@/utils/persist"
 import { useMarked } from "@novaclaw/ui/context/marked"
 import { preloadMarkdown } from "@novaclaw/session-ui/markdown-cache"
 import { archiveHomeSession } from "./home-session-archive"
-import { homeSessionTimeLabel, subtreeRows } from "./home-session-meta"
+import { notifySessionTabsRemoved } from "@/components/titlebar-session-events"
+import { compactTokens, homeSessionTimeLabel, subtreeRows, tokenTotals } from "./home-session-meta"
+import { Dialog } from "@novaclaw/ui/dialog"
 import { usePermission } from "@/context/permission"
 import { useChatsAttentionSets } from "@/apps/chats-attention"
 import { DialogSessionInfo } from "@/components/dialog-session-info"
@@ -555,6 +557,60 @@ export function NewHome() {
     })
   }
 
+  const requestFailedToast = (error: unknown) =>
+    showToast({
+      title: language.t("common.requestFailed"),
+      description: errorMessage(error, language.t("common.requestFailed")),
+    })
+
+  // Task-manager controls (the ps row: suspend/resume/kill — todo.md §OS metaphor). Stop interrupts
+  // the running turn (the chat survives); clone forks the full transcript into a fresh chat; delete
+  // permanently removes the chat after an explicit confirm.
+  async function stopSession(session: Session) {
+    const ctx = focusedServerCtx()
+    if (!ctx) return
+    await ctx.sdk.client.session
+      .abort({ sessionID: session.id, directory: session.directory })
+      .catch(requestFailedToast)
+  }
+
+  async function cloneSession(session: Session) {
+    const ctx = focusedServerCtx()
+    if (!ctx) return
+    try {
+      const forked = await ctx.sdk.client.session.fork({ sessionID: session.id, directory: session.directory })
+      if (forked.data) openSession(forked.data)
+    } catch (error) {
+      requestFailedToast(error)
+    }
+  }
+
+  async function deleteSession(session: Session) {
+    const conn = focusedServer()
+    const ctx = focusedServerCtx()
+    if (!conn || !ctx) return
+    try {
+      await ctx.sdk.client.session.delete({ sessionID: session.id, directory: session.directory })
+      const [, setStore] = ctx.sync.child(session.directory)
+      setStore(
+        produce((draft) => {
+          const match = Binary.search(draft.session, session.id, (s) => s.id)
+          if (match.found) draft.session.splice(match.index, 1)
+        }),
+      )
+      notifySessionTabsRemoved({
+        server: ServerConnection.key(conn),
+        directory: session.directory,
+        sessionIDs: [session.id],
+      })
+    } catch (error) {
+      showToast({
+        title: language.t("session.delete.failed.title"),
+        description: errorMessage(error, language.t("common.requestFailed")),
+      })
+    }
+  }
+
   function chooseProject(conn: ServerConnection.Any) {
     if (global.servers.health[ServerConnection.key(conn)]?.healthy === false) return
 
@@ -663,6 +719,9 @@ export function NewHome() {
                               activeServer={selection().server === server.key}
                               openSession={openSession}
                               archiveSession={archiveSession}
+                              stopSession={stopSession}
+                              cloneSession={cloneSession}
+                              deleteSession={deleteSession}
                             />
                           )}
                         </For>
@@ -688,6 +747,9 @@ export function NewHome() {
                             activeServer={selection().server === server.key}
                             openSession={openSession}
                             archiveSession={archiveSession}
+                            stopSession={stopSession}
+                            cloneSession={cloneSession}
+                            deleteSession={deleteSession}
                           />
                         )}
                       </For>
@@ -714,6 +776,9 @@ export function NewHome() {
                                 activeServer={selection().server === server.key}
                                 openSession={openSession}
                                 archiveSession={archiveSession}
+                                stopSession={stopSession}
+                                cloneSession={cloneSession}
+                                deleteSession={deleteSession}
                               />
                             )}
                           </For>
@@ -951,6 +1016,9 @@ function HomeSessionRow(props: {
   activeServer: boolean
   openSession: (session: Session) => void
   archiveSession: (session: Session) => Promise<void>
+  stopSession: (session: Session) => Promise<void>
+  cloneSession: (session: Session) => Promise<void>
+  deleteSession: (session: Session) => Promise<void>
 }) {
   const language = useLanguage()
   const dialog = useDialog()
@@ -980,6 +1048,19 @@ function HomeSessionRow(props: {
   const rowTags = createMemo(() =>
     props.activeServer ? (serverSyncForChildren().session.data.tag[props.record.session.id] ?? []) : [],
   )
+  // Task-manager meta (todo.md ps row: … status · tokens): the chat's token spend incl. its
+  // sub-agent threads, and whether a turn is currently running (gates the Stop control).
+  const tokens = createMemo(() =>
+    tokenTotals([props.record.session, ...children().map((row) => row.session)]),
+  )
+  const working = createMemo(
+    () => props.activeServer && serverSyncForChildren().session.data.session_working(props.record.session.id),
+  )
+  const confirmDelete = () => {
+    void dialog.show(() => (
+      <DialogDeleteSession name={title()} onConfirm={() => props.deleteSession(props.record.session)} />
+    ))
+  }
 
   return (
     <>
@@ -1038,6 +1119,20 @@ function HomeSessionRow(props: {
               </span>
             )}
           </Show>
+          <Show when={tokens().total > 0}>
+            <span
+              data-slot="home-session-tokens"
+              class="shrink-0 flex items-center gap-1 rounded-[4px] bg-v2-background-bg-layer-01 px-1.5 py-0.5 text-[11px] leading-none tabular-nums text-v2-text-text-muted [font-weight:530]"
+              title={language.t("home.session.tokens.title", {
+                total: tokens().total.toLocaleString(),
+                input: tokens().input.toLocaleString(),
+                output: tokens().output.toLocaleString(),
+              })}
+            >
+              <Icon name="cpu" size="small" class="text-v2-icon-icon-muted" />
+              {compactTokens(tokens().total)}
+            </span>
+          </Show>
           <span
             data-slot="home-session-time"
             class="shrink-0 text-[11px] leading-none tabular-nums text-v2-text-text-faint [font-weight:440]"
@@ -1047,6 +1142,22 @@ function HomeSessionRow(props: {
         </span>
       </button>
       <div class="hover-reveal absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-1 group-hover/session:opacity-100 focus-within:opacity-100">
+        <Show when={working()}>
+          <TooltipV2 class="flex shrink-0 items-center" placement="bottom" value={language.t("home.session.stop")}>
+            <IconButtonV2
+              data-action="home-session-stop"
+              variant="ghost-muted"
+              size="large"
+              icon={<Icon name="stop" size="small" />}
+              aria-label={language.t("home.session.stop")}
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                void props.stopSession(props.record.session)
+              }}
+            />
+          </TooltipV2>
+        </Show>
         <TooltipV2 class="flex shrink-0 items-center" placement="bottom" value={language.t("home.session.info")}>
           <IconButtonV2
             data-action="home-session-info"
@@ -1060,6 +1171,34 @@ function HomeSessionRow(props: {
               void dialog.show(() => (
                 <DialogSessionInfo session={props.record.session} projectName={props.record.projectName} />
               ))
+            }}
+          />
+        </TooltipV2>
+        <TooltipV2 class="flex shrink-0 items-center" placement="bottom" value={language.t("home.session.clone")}>
+          <IconButtonV2
+            data-action="home-session-clone"
+            variant="ghost-muted"
+            size="large"
+            icon={<Icon name="fork" size="small" />}
+            aria-label={language.t("home.session.clone")}
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              void props.cloneSession(props.record.session)
+            }}
+          />
+        </TooltipV2>
+        <TooltipV2 class="flex shrink-0 items-center" placement="bottom" value={language.t("session.delete.title")}>
+          <IconButtonV2
+            data-action="home-session-delete"
+            variant="ghost-muted"
+            size="large"
+            icon={<Icon name="trash" size="small" />}
+            aria-label={language.t("session.delete.title")}
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              confirmDelete()
             }}
           />
         </TooltipV2>
@@ -1106,6 +1245,42 @@ function HomeSessionRow(props: {
       )}
     </For>
   </>
+  )
+}
+
+/** Deleting a chat is permanent (messages + history) — always confirm explicitly. */
+function DialogDeleteSession(props: { name: string; onConfirm: () => Promise<void> }) {
+  const dialog = useDialog()
+  const language = useLanguage()
+  const [busy, setBusy] = createSignal(false)
+  return (
+    <Dialog title={language.t("session.delete.title")} fit>
+      <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3">
+        <div class="flex flex-col gap-1">
+          <span class="text-14-regular text-text-strong">
+            {language.t("session.delete.confirm", { name: props.name })}
+          </span>
+          <span class="text-12-regular text-text-weak">{language.t("session.delete.description")}</span>
+        </div>
+        <div class="flex justify-end gap-2">
+          <Button variant="ghost" size="large" onClick={() => dialog.close()}>
+            {language.t("common.cancel")}
+          </Button>
+          <Button
+            variant="primary"
+            size="large"
+            data-action="home-session-delete-confirm"
+            disabled={busy()}
+            onClick={() => {
+              setBusy(true)
+              void props.onConfirm().finally(() => dialog.close())
+            }}
+          >
+            {language.t("session.delete.button")}
+          </Button>
+        </div>
+      </div>
+    </Dialog>
   )
 }
 

@@ -21,6 +21,7 @@ import { Model } from "@novaclaw/schema/model"
 import { Location } from "@novaclaw/schema/location"
 import { Revert } from "@novaclaw/schema/revert"
 import { SessionEvent } from "@novaclaw/schema/session-event"
+import { SessionStrict } from "@novaclaw/schema/session-strict"
 
 const SessionsQueryFields = {
   workspace: Workspace.ID.pipe(Schema.optional),
@@ -267,6 +268,23 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
             identifier: "v2.session.switchMode",
             summary: "Switch session permission mode (1K)",
             description: "Change the permission mode mid-session; the MODE_RULES overlay applies from the next turn.",
+          }),
+        ),
+    )
+    .add(
+      HttpApiEndpoint.post("session.switchStrict", "/api/session/:sessionID/strict", {
+        params: { sessionID: Session.ID },
+        payload: Schema.Struct({ strict: Schema.NullOr(SessionStrict.Override) }),
+        success: HttpApiSchema.NoContent,
+        error: SessionNotFoundError,
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.switchStrict",
+            summary: "Set the session's Strict-harness override (jh.md)",
+            description:
+              "Enable/disable Strict mode for this session and set its racing attempts + time budget; null clears the override back to inherit (parent chain, then global config). Applies from the next turn.",
           }),
         ),
     )

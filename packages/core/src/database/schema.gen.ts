@@ -57,6 +57,22 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`catalog_provider\` (
+          \`id\` text PRIMARY KEY,
+          \`layers\` text NOT NULL,
+          \`time_created\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`
+        CREATE TABLE \`catalog_setting\` (
+          \`key\` text PRIMARY KEY,
+          \`value\` text NOT NULL,
+          \`time_created\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`credential\` (
           \`id\` text PRIMARY KEY,
           \`integration_id\` text,
@@ -84,6 +100,34 @@ export default {
           \`type\` text NOT NULL,
           \`data\` text NOT NULL,
           CONSTRAINT \`fk_event_aggregate_id_event_sequence_aggregate_id_fk\` FOREIGN KEY (\`aggregate_id\`) REFERENCES \`event_sequence\`(\`aggregate_id\`) ON DELETE CASCADE
+        );
+      `)
+      yield* tx.run(`
+        CREATE TABLE \`jh_artifact\` (
+          \`plan_id\` text NOT NULL,
+          \`artifact_id\` text NOT NULL,
+          \`type\` text NOT NULL,
+          \`hash\` text NOT NULL,
+          \`content\` text NOT NULL,
+          CONSTRAINT \`jh_artifact_pk\` PRIMARY KEY(\`plan_id\`, \`artifact_id\`)
+        );
+      `)
+      yield* tx.run(`
+        CREATE TABLE \`jh_log\` (
+          \`plan_id\` text NOT NULL,
+          \`seq\` integer NOT NULL,
+          \`entry\` text NOT NULL,
+          CONSTRAINT \`jh_log_pk\` PRIMARY KEY(\`plan_id\`, \`seq\`)
+        );
+      `)
+      yield* tx.run(`
+        CREATE TABLE \`jh_plan\` (
+          \`id\` text PRIMARY KEY,
+          \`goal\` text NOT NULL,
+          \`status\` text NOT NULL,
+          \`state\` text NOT NULL,
+          \`time_created\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL
         );
       `)
       yield* tx.run(`
@@ -190,12 +234,23 @@ export default {
           \`priority\` integer,
           \`responder\` text,
           \`permission_mode\` text,
+          \`strict\` text,
           \`result\` text,
           \`time_created\` integer NOT NULL,
           \`time_updated\` integer NOT NULL,
           \`time_compacting\` integer,
           \`time_archived\` integer,
           CONSTRAINT \`fk_session_project_id_project_id_fk\` FOREIGN KEY (\`project_id\`) REFERENCES \`project\`(\`id\`) ON DELETE CASCADE
+        );
+      `)
+      yield* tx.run(`
+        CREATE TABLE \`session_tag\` (
+          \`session_id\` text NOT NULL,
+          \`tag\` text NOT NULL,
+          \`time_created\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL,
+          CONSTRAINT \`session_tag_pk\` PRIMARY KEY(\`session_id\`, \`tag\`),
+          CONSTRAINT \`fk_session_tag_session_id_session_id_fk\` FOREIGN KEY (\`session_id\`) REFERENCES \`session\`(\`id\`) ON DELETE CASCADE
         );
       `)
       yield* tx.run(`
@@ -238,18 +293,12 @@ export default {
       yield* tx.run(`CREATE INDEX \`session_project_idx\` ON \`session\` (\`project_id\`);`)
       yield* tx.run(`CREATE INDEX \`session_workspace_idx\` ON \`session\` (\`workspace_id\`);`)
       yield* tx.run(`CREATE INDEX \`session_parent_idx\` ON \`session\` (\`parent_id\`);`)
-      yield* tx.run(`CREATE INDEX \`todo_session_idx\` ON \`todo\` (\`session_id\`);`)
-      yield* tx.run(`
-        CREATE TABLE \`session_tag\` (
-          \`session_id\` text NOT NULL,
-          \`tag\` text NOT NULL,
-          \`time_created\` integer NOT NULL,
-          \`time_updated\` integer NOT NULL,
-          CONSTRAINT \`session_tag_pk\` PRIMARY KEY(\`session_id\`, \`tag\`),
-          CONSTRAINT \`fk_session_tag_session_id_session_id_fk\` FOREIGN KEY (\`session_id\`) REFERENCES \`session\`(\`id\`) ON DELETE CASCADE
-        );
-      `)
       yield* tx.run(`CREATE INDEX \`session_tag_tag_idx\` ON \`session_tag\` (\`tag\`);`)
+      yield* tx.run(`CREATE INDEX \`todo_session_idx\` ON \`todo\` (\`session_id\`);`)
+      // HAND-MAINTAINED: kb_fact's Drizzle definition lives in src/kb.ts, which drizzle.config.ts's
+      // schema globs (*.sql.ts / sql.ts) do NOT match, so a full regenerate silently drops this block.
+      // Keep it in sync with src/kb.ts and migration/20260703120000_add_kb_fact.ts until the table
+      // definition moves into a globbed sql file.
       yield* tx.run(`
         CREATE TABLE \`kb_fact\` (
           \`id\` text PRIMARY KEY,
@@ -269,50 +318,6 @@ export default {
       yield* tx.run(`CREATE INDEX \`kb_fact_subject_idx\` ON \`kb_fact\` (\`subject\`,\`valid_to\`);`)
       yield* tx.run(`CREATE INDEX \`kb_fact_predicate_idx\` ON \`kb_fact\` (\`predicate\`,\`valid_to\`);`)
       yield* tx.run(`CREATE INDEX \`kb_fact_object_idx\` ON \`kb_fact\` (\`object\`,\`valid_to\`);`)
-      yield* tx.run(`
-        CREATE TABLE \`catalog_provider\` (
-          \`id\` text PRIMARY KEY,
-          \`layers\` text NOT NULL,
-          \`time_created\` integer NOT NULL,
-          \`time_updated\` integer NOT NULL
-        );
-      `)
-      yield* tx.run(`
-        CREATE TABLE \`catalog_setting\` (
-          \`key\` text PRIMARY KEY,
-          \`value\` text NOT NULL,
-          \`time_created\` integer NOT NULL,
-          \`time_updated\` integer NOT NULL
-        );
-      `)
-      yield* tx.run(`
-        CREATE TABLE \`jh_artifact\` (
-          \`plan_id\` text NOT NULL,
-          \`artifact_id\` text NOT NULL,
-          \`type\` text NOT NULL,
-          \`hash\` text NOT NULL,
-          \`content\` text NOT NULL,
-          CONSTRAINT \`jh_artifact_pk\` PRIMARY KEY(\`plan_id\`, \`artifact_id\`)
-        );
-      `)
-      yield* tx.run(`
-        CREATE TABLE \`jh_log\` (
-          \`plan_id\` text NOT NULL,
-          \`seq\` integer NOT NULL,
-          \`entry\` text NOT NULL,
-          CONSTRAINT \`jh_log_pk\` PRIMARY KEY(\`plan_id\`, \`seq\`)
-        );
-      `)
-      yield* tx.run(`
-        CREATE TABLE \`jh_plan\` (
-          \`id\` text PRIMARY KEY,
-          \`goal\` text NOT NULL,
-          \`status\` text NOT NULL,
-          \`state\` text NOT NULL,
-          \`time_created\` integer NOT NULL,
-          \`time_updated\` integer NOT NULL
-        );
-      `)
     })
   },
 } satisfies Omit<DatabaseMigration.Migration, "id">

@@ -50,6 +50,7 @@ function sessionRow(info: SessionV1.SessionInfo): typeof SessionTable.$inferInse
     priority: info.priority,
     responder: info.responder,
     permission_mode: info.permissionMode,
+    strict: info.strict,
     result: info.result,
     version: info.version,
     share_url: info.share?.url,
@@ -281,6 +282,15 @@ export const layer = Layer.effectDiscard(
       db
         .update(SessionTable)
         .set({ permission_mode: event.data.permissionMode, time_updated: DateTime.toEpochMillis(event.data.timestamp) })
+        .where(eq(SessionTable.id, event.data.sessionID))
+        .run()
+        .pipe(Effect.orDie, Effect.andThen(run(db, event))),
+    )
+    // The per-session Strict-harness override switch — the runner reads the column fresh each turn.
+    yield* events.project(SessionEvent.StrictSwitched, (event) =>
+      db
+        .update(SessionTable)
+        .set({ strict: event.data.strict, time_updated: DateTime.toEpochMillis(event.data.timestamp) })
         .where(eq(SessionTable.id, event.data.sessionID))
         .run()
         .pipe(Effect.orDie, Effect.andThen(run(db, event))),

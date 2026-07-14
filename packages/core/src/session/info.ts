@@ -31,6 +31,7 @@ export function fromRow(row: typeof SessionTable.$inferSelect): SessionSchema.In
     priority: row.priority ?? undefined,
     responder: row.responder ?? undefined,
     permissionMode: row.permission_mode ?? undefined,
+    strict: row.strict ?? undefined,
     result: row.result ?? undefined,
     cost: row.cost,
     tokens: {
@@ -96,6 +97,7 @@ export function v1InfoFromRow(row: typeof SessionTable.$inferSelect): SessionV1.
     priority: row.priority ?? undefined,
     responder: row.responder ?? undefined,
     permissionMode: row.permission_mode ?? undefined,
+    strict: row.strict ?? undefined,
     result: row.result ?? undefined,
     version: row.version,
     summary,

@@ -16,7 +16,6 @@ export const dict = {
   "command.category.terminal": "終端機",
   "command.category.model": "模型",
   "command.category.mcp": "MCP",
-  "command.category.agent": "代理程式",
   "command.category.permissions": "權限",
   "command.category.workspace": "工作區",
 
@@ -67,10 +66,6 @@ export const dict = {
   "command.model.choose.description": "選擇不同的模型",
   "command.mcp.toggle": "切換 MCP",
   "command.mcp.toggle.description": "切換 MCP",
-  "command.agent.cycle": "循環代理程式",
-  "command.agent.cycle.description": "切換到下一個代理程式",
-  "command.agent.cycle.reverse": "反向循環代理程式",
-  "command.agent.cycle.reverse.description": "切換到上一個代理程式",
   "command.model.variant.cycle": "循環思考強度",
   "command.model.variant.cycle.description": "切換到下一個強度等級",
   "command.prompt.mode.shell": "Shell",
