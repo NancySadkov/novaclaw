@@ -12,3 +12,8 @@ export {
   type ComposerFeaturesControlState,
 } from "./features-control"
 export { ComposerFolderControl, type ComposerFolderControlState } from "./folder-control"
+export { ComposerVariantControl, type ComposerVariantControlState } from "./variant-control"
+export {
+  ComposerLegacyModelControls,
+  type ComposerLegacyModelControlsState,
+} from "./legacy-model-controls"

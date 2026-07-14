@@ -32,14 +32,11 @@ import { useComments } from "@/context/comments"
 import { Button } from "@novaclaw/ui/button"
 import { DockShellForm, DockTray } from "@novaclaw/ui/dock-surface"
 import { Icon } from "@novaclaw/ui/icon"
-import { ProviderIcon } from "@novaclaw/ui/provider-icon"
 import { Tooltip, TooltipKeybind } from "@novaclaw/ui/tooltip"
 import { KeybindV2 } from "@novaclaw/ui/v2/keybind-v2"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import { IconButton } from "@novaclaw/ui/icon-button"
-import { Select } from "@novaclaw/ui/select"
 import { useDialog } from "@novaclaw/ui/context/dialog"
-import { ModelSelectorPopover } from "@/components/dialog-select-model"
 import { useCommand } from "@/context/command"
 import { Persist, persisted } from "@/utils/persist"
 import { usePermission } from "@/context/permission"
@@ -47,6 +44,8 @@ import { useLanguage } from "@/context/language"
 import { useExpertise } from "@/context/expertise"
 import {
   ComposerControlsRow,
+  ComposerLegacyModelControls,
+  ComposerVariantControl,
   type ComposerFeaturesControlState,
   type ComposerFolderControlState,
   type ComposerModelControlState,
@@ -1326,42 +1325,20 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     }}
                   />
                   <Show when={!providersLoading() && store.mode !== "shell" && showVariantControl()}>
-                    <div
-                      data-component="prompt-variant-control"
-                      classList={{
-                        "animate-in fade-in": providersShouldFadeIn(),
-                        "hidden group-hover/prompt-input:block group-focus-within/prompt-input:block":
-                          !props.controls.model.selection.variant.current() && !store.variantOpen,
+                    <ComposerVariantControl
+                      state={{
+                        revealOnHoverOnly: !props.controls.model.selection.variant.current() && !store.variantOpen,
+                        shouldAnimate: providersShouldFadeIn(),
+                        variants: variants(),
+                        current: props.controls.model.selection.variant.current(),
+                        style: control(),
+                        set: (variant) => {
+                          props.controls.model.selection.variant.set(variant)
+                          restoreFocus()
+                        },
+                        onOpenChange: (open) => setStore("variantOpen", open),
                       }}
-                    >
-                      <TooltipV2
-                        placement="top"
-                        gutter={4}
-                        value={
-                          <>
-                            {language.t("command.model.variant.cycle")}
-                            <KeybindV2 keys={command.keybindParts("model.variant.cycle")} variant="neutral" />
-                          </>
-                        }
-                      >
-                        <Select
-                          size="normal"
-                          options={variants()}
-                          current={props.controls.model.selection.variant.current() ?? "default"}
-                          label={(x) => (x === "default" ? language.t("common.default") : x)}
-                          onOpenChange={(open) => setStore("variantOpen", open)}
-                          onSelect={(value) => {
-                            props.controls.model.selection.variant.set(value === "default" ? undefined : value)
-                            restoreFocus()
-                          }}
-                          class="capitalize max-w-[160px] justify-start text-v2-text-text-faint"
-                          valueClass="truncate text-[13px] font-[440] leading-5 text-v2-text-text-faint"
-                          triggerStyle={control()}
-                          triggerProps={{ "data-action": "prompt-model-variant" }}
-                          variant="ghost"
-                        />
-                      </TooltipV2>
-                    </div>
+                    />
                   </Show>
                 </div>
                 <TooltipV2 placement="top" inactive={!working() && blank()} value={tip()}>
@@ -1575,74 +1552,16 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   <div class="flex items-center gap-1.5 min-w-0 flex-1 h-7">
                     <Show when={!providersLoading()}>
                       <Show when={store.mode !== "shell"}>
-                        <div
-                          data-component="prompt-model-control"
-                          classList={{ "animate-in fade-in duration-300": providersShouldFadeIn() }}
-                        >
-                          {/* One local-first picker for everyone — the paid/unpaid split (branded
-                              cloud catalog vs "free models") was opencode residue. */}
-                          <TooltipKeybind
-                            placement="top"
-                            gutter={4}
-                            title={language.t("command.model.choose")}
-                            keybind={command.keybind("model.choose")}
-                          >
-                            <ModelSelectorPopover
-                              model={props.controls.model.selection}
-                              triggerAs={Button}
-                              triggerProps={{
-                                variant: "ghost",
-                                size: "normal",
-                                style: control(),
-                                class: "min-w-0 max-w-[320px] text-13-regular text-text-base group",
-                                "data-action": "prompt-model",
-                              }}
-                              onClose={restoreFocus}
-                            >
-                              <Show when={props.controls.model.selection.current()?.provider?.id}>
-                                <ProviderIcon
-                                  id={props.controls.model.selection.current()?.provider?.id ?? ""}
-                                  class="size-4 shrink-0 opacity-40 group-hover:opacity-100 transition-opacity duration-150"
-                                  style={{ "will-change": "opacity", transform: "translateZ(0)" }}
-                                />
-                              </Show>
-                              <span class="truncate">
-                                {props.controls.model.selection.current()?.name ??
-                                  language.t("dialog.model.select.title")}
-                              </span>
-                              <Icon name="chevron-down" size="small" class="shrink-0" />
-                            </ModelSelectorPopover>
-                          </TooltipKeybind>
-                        </div>
-                        <Show when={showVariantControl()}>
-                          <div
-                            data-component="prompt-variant-control"
-                            classList={{ "animate-in fade-in duration-300": providersShouldFadeIn() }}
-                          >
-                            <TooltipKeybind
-                              placement="top"
-                              gutter={4}
-                              title={language.t("command.model.variant.cycle")}
-                              keybind={command.keybind("model.variant.cycle")}
-                            >
-                              <Select
-                                size="normal"
-                                options={variants()}
-                                current={props.controls.model.selection.variant.current() ?? "default"}
-                                label={(x) => (x === "default" ? language.t("common.default") : x)}
-                                onSelect={(value) => {
-                                  props.controls.model.selection.variant.set(value === "default" ? undefined : value)
-                                  restoreFocus()
-                                }}
-                                class="capitalize max-w-[160px] text-text-base"
-                                valueClass="truncate text-13-regular text-text-base"
-                                triggerStyle={control()}
-                                triggerProps={{ "data-action": "prompt-model-variant" }}
-                                variant="ghost"
-                              />
-                            </TooltipKeybind>
-                          </div>
-                        </Show>
+                        <ComposerLegacyModelControls
+                          state={{
+                            model: props.controls.model.selection,
+                            shouldAnimate: providersShouldFadeIn(),
+                            showVariant: showVariantControl(),
+                            variants: variants(),
+                            style: control(),
+                            onDone: restoreFocus,
+                          }}
+                        />
                       </Show>
                     </Show>
                   </div>
