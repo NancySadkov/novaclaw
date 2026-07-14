@@ -1124,6 +1124,18 @@ export const layer = Layer.effect(
               yield* SessionInput.steer(db, events, input.sessionID, EMPTY_TURN_RECOVERY)
             } else {
               yield* Effect.logWarning(EMPTY_TURN_DIAGNOSTIC, { sessionID: input.sessionID })
+              // T4 (1N residue): the user must see WHY the chat went quiet — surface the calm
+              // in-chat notice too (it names the server-side fix), not just a server log. Once
+              // per drain (consecutiveEmpty === 2 exactly); best-effort like every Synthetic.
+              if (consecutiveEmpty === 2)
+                yield* Effect.gen(function* () {
+                  yield* events.publish(SessionEvent.Synthetic, {
+                    sessionID: input.sessionID,
+                    messageID: SessionMessage.ID.create(),
+                    timestamp: yield* DateTime.now,
+                    text: `⚠️ ${EMPTY_TURN_DIAGNOSTIC}`,
+                  })
+                }).pipe(Effect.ignore)
             }
           } else {
             consecutiveEmpty = 0
