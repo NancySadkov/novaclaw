@@ -79,6 +79,7 @@ export type Entry =
   // improve5 (root-hardening): the ROOT could not be planned (a malformed multi-step reply, 10 retries) —
   // instead of the E7 hard-block, it degraded to a single atomic START step + the exploration loop.
   | { readonly type: "root_degraded"; readonly step: string }
+  | { readonly type: "root_extended"; readonly step: string; readonly reason: string }
   // improve5 P3: the closure-cardinality force-split trigger fired but is DISARMED in the file-workspace
   // regime (context = disk, §5 law-5) — logged as advisory data for a future §4 recalibration, no behavior.
   | { readonly type: "forced_split_advisory"; readonly step: string; readonly cardinality: number; readonly density: number }
@@ -164,6 +165,8 @@ function describe(e: Sequenced): string {
       return `split_degraded ${e.step} (could not split — ran atomic instead of blocking)`
     case "root_degraded":
       return `root_degraded ${e.step} (could not plan — degraded to a single atomic start, never dead-ended)`
+    case "root_extended":
+      return `root_extended ${e.step} — ${e.reason} (the root exhausted its own attempts and refuses to plan; growing a fix CHILD under it instead of dead-ending)`
     case "forced_split_advisory":
       return `forced_split_advisory ${e.step} (cardinality ${e.cardinality}, density ${e.density} — disarmed)`
     case "budget_note":

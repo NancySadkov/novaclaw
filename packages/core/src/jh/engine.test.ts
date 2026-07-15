@@ -170,6 +170,36 @@ describe("JhEngine.runTask", () => {
     expect(r.state.log.some((e) => e.type === "blocked" && e.reason === "budget")).toBe(true)
   })
 
+  test("5b. improve17: a ROOT that refuses to plan and exhausts its attempts grows a fix CHILD (never dead-ends on budget)", async () => {
+    // wave-15 run11 + wave-17 probe 12695: the model insisted on one big atomic action at the root, its
+    // check never passed, the root exhausted its own attempts and — having no parent to grow a fix SIBLING
+    // on — blocked the WHOLE task ~2 minutes into a 40-minute wall. E2's never-dead-end law now covers the
+    // root itself: it grows the fix child under ITSELF (appendChild makes it an expanded phase).
+    const atomic = reply(atomObj({ tool: "run", args: { command: "x" }, check: { type: "run", command: "x" }, produces: [] }))
+    const deps: JhEngine.Deps = {
+      introspect: () => Effect.succeed(atomic), // ALWAYS atomic — the model refuses to plan, even under mustDecompose
+      correct: () => Effect.succeed(atomic),
+      executor: { run: () => Effect.succeed({ ok: true, output: "o", artifacts: new Map<string, string>() }) },
+      runner: { run: () => Effect.succeed({ exitCode: 1, output: "still failing", timedOut: false }) }, // the check NEVER passes
+      artifacts: JhArtifact.memory(),
+      fileExists: () => false,
+      cwd: ".",
+      toolNames: JhBasicTools.TOOL_NAMES,
+      forceRootDecompose: true,
+      verifyGoal: true,
+      taskComplete: () => ({ done: false, detail: "ch1.md does not exist yet — start it with append_file" }),
+      limits: { maxDepth: 4, maxTotalSteps: 8 },
+      trigger: JhBudget.DEFAULT_TRIGGER,
+    }
+    const r = await Effect.runPromise(JhEngine.runTask(deps, { goal: "the task" }))
+    expect(types(r)).toContain("root_extended") // the rescue fired instead of an immediate block
+    // The contract is NOT "never blocks" — a check that never passes must end honestly at the step
+    // budget. It is "never dead-ends AT THE ROOT with the wall unused": pre-fix this run died with a
+    // ONE-node tree; now the root keeps growing fix children until the real budget is spent.
+    expect(r.state.tree.nodes.size).toBeGreaterThanOrEqual(4)
+    expect(r.state.log.some((e) => e.type === "blocked" && e.step === r.state.tree.root && e.reason === "budget")).toBe(false)
+  })
+
   test("6. dataflow: the ROOT TOLERATES dangling consumes (char run74); a NON-ROOT node still validates + repairs", async () => {
     // improve3 (char run74): a root plan with a dangling consume is ATTACHED (disk is truth; the root has no
     // parent to grow a fix sibling on), not hard-blocked — matching the tolerant trySoftDecompose path.

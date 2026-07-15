@@ -1539,8 +1539,20 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
             yield* checkpoint()
             return
           }
+          // improve17: THE ROOT NEVER DEAD-ENDS ON BUDGET EITHER. E2's never-dead-end law protected
+          // every node except the root — which has no parent to grow a fix sibling on — so a root that
+          // insists on one big atomic action (the model refusing to plan, even under mustDecompose)
+          // exhausted its own attempts and BLOCKED THE WHOLE TASK ~2 minutes into a 40-minute wall
+          // (wave-15 run11; wave-17 probe 12695, 13 calls). The root has ITSELF: `appendChild` makes it
+          // an expanded phase whose fix CHILD carries the directive (the oracle's own next-step text),
+          // and the root-completion gate then drives the rest exactly as for any other phase.
+          const rootRescue = parentID === undefined && (deps.verifyGoal || deps.taskComplete) && JhTree.size(tree) < maxTotalSteps
           if (node.depth < maxDepth) {
-            yield* forceDecompose(node, "budget")
+            const outcome = yield* forceDecompose(node, "budget", rootRescue)
+            if (outcome === "atomic") {
+              emit({ type: "root_extended", step: node.id, reason: errorSig(vr.detail) })
+              yield* growFixNode(node.id, node.draft.goal, vr.detail, node.draft.success ?? "the step's goal is met", "command" in check ? check.command : undefined)
+            }
           } else {
             blockNode(node, "budget")
           }
