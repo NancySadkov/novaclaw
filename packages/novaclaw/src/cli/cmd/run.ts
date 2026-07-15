@@ -47,6 +47,29 @@ function resolveRunInput(value?: string, piped?: string): string | undefined {
   return value + "\n" + piped
 }
 
+// Read piped stdin for the prompt. A non-TTY stdin held OPEN but silent — CI wrappers and
+// process runners that spawn with a pipe and never write or close it — parks
+// `Bun.stdin.text()` forever waiting for EOF, hanging the whole run before any output
+// (the test harness works around it with stdin:"ignore"; real callers hit it). When a
+// message argument already exists, stdin is OPTIONAL extra input: give a real pipe a
+// short grace window (an actual `echo x | novaclaw run "y"` delivers EOF well within it)
+// and proceed without stdin if nothing arrives. With no message argument, stdin is the
+// only input source — block until EOF as before.
+const PIPED_INPUT_GRACE_MS = 250
+
+async function readPipedInput(hasMessage: boolean): Promise<string | undefined> {
+  if (process.stdin.isTTY) return undefined
+  const read = Bun.stdin.text()
+  if (!hasMessage) return read
+  return Promise.race([
+    read,
+    new Promise<undefined>((resolve) => {
+      const timer = setTimeout(() => resolve(undefined), PIPED_INPUT_GRACE_MS)
+      timer.unref?.()
+    }),
+  ])
+}
+
 type FilePart = {
   type: "file"
   url: string
@@ -314,7 +337,7 @@ export const RunCommand = effectCmd({
         }
       }
 
-      const piped = process.stdin.isTTY ? undefined : await Bun.stdin.text()
+      const piped = await readPipedInput(message.trim().length > 0)
       message = resolveRunInput(message, piped) ?? ""
 
       if (message.trim().length === 0 && !args.command) {

@@ -103,6 +103,24 @@ describe("novaclaw run (non-interactive subprocess)", () => {
     60_000,
   )
 
+  // Regression (2026-07-15): a non-TTY stdin held OPEN but silent — the CI/process-runner
+  // spawn shape — parked `Bun.stdin.text()` forever, hanging the whole run before any
+  // output. With a message argument present, stdin is optional input: the run must give
+  // the pipe a short grace window and proceed without it. Uses startRun with
+  // stdin:"held-open-pipe" — the pipe is deliberately never written to or closed.
+  cliIt.concurrent(
+    "completes with a message argument while a silent stdin pipe stays open",
+    ({ llm, novaclaw }) =>
+      Effect.gen(function* () {
+        yield* llm.text("survived the open pipe")
+        const handle = yield* novaclaw.startRun("say hi", { stdin: "held-open-pipe" })
+        const result = yield* handle.result
+        expect(result.exitCode).toBe(0)
+        expect(result.stdout).toBe("survived the open pipe\n")
+      }),
+    60_000,
+  )
+
   // --format json puts one JSON object per line on stdout for each emitted
   // event. Consumers (CI scripts, tooling) parse this stream. Asserts the
   // shape so a future event-emit change has to update this expectation.

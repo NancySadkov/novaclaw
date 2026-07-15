@@ -25,6 +25,7 @@ import { FetchHttpClient, HttpClient } from "effect/unstable/http"
 import { ChildProcess } from "effect/unstable/process"
 import path from "node:path"
 import { TestLLMServer } from "./llm-server"
+import { ConfigPermission } from "@novaclaw/core/config/permission"
 import { testProviderConfig } from "./test-provider"
 import { it } from "./effect"
 
@@ -99,6 +100,10 @@ export type RunOpts = SpawnOpts & {
   readonly printLogs?: boolean
   readonly permission?: Record<string, "ask" | "allow" | "deny">
   readonly extraArgs?: string[]
+  // "held-open-pipe" spawns the child with a stdin pipe that is never written to or
+  // closed — the CI/process-runner shape that used to park `Bun.stdin.text()` forever
+  // (the run.ts piped-input grace-window regression). Default: "ignore".
+  readonly stdin?: "ignore" | "held-open-pipe"
 }
 
 // `novaclaw serve` is a long-lived process — it never exits on its own.
@@ -241,7 +246,9 @@ export function withCliFixture<A, E>(
           ...opts.env,
           NOVACLAW_CONFIG_CONTENT: JSON.stringify({
             ...testProviderConfig(llm.url),
-            permission: opts.permission,
+            // V2 config takes the lowered RULESET under `permissions` (the V1 `permission`
+            // dict is an unrecognized key post-F1-config).
+            permissions: ConfigPermission.ruleset(opts.permission),
           }),
         },
       }
@@ -259,7 +266,8 @@ export function withCliFixture<A, E>(
           Bun.spawn(["bun", "run", "--conditions=browser", cliEntry, ...runArgs(message, opts)], {
             cwd: home,
             env: { ...process.env, ...env, ...options?.env },
-            stdin: "ignore",
+            // "held-open-pipe": a stdin pipe nobody writes to or closes (see RunOpts.stdin).
+            stdin: opts?.stdin === "held-open-pipe" ? "pipe" : "ignore",
             stdout: "pipe",
             stderr: "pipe",
           }),
