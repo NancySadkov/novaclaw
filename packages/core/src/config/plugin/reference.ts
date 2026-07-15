@@ -23,25 +23,6 @@ export const Plugin = define({
     const global = yield* Global.Service
     yield* ctx.reference.transform(
       Effect.fn(function* (draft) {
-        // Transitional jsonc seed (one-time, mirrors config-agent/command): import an existing
-        // config's `references` into the store the first time it is empty, local paths resolved
-        // against each declaring file's directory. Removed in step 8.
-        if (yield* store.isEmpty()) {
-          const layers: Record<string, ConfigReference.Entry[]> = {}
-          for (const doc of (yield* config.entries()).filter(
-            (entry): entry is Config.Document => entry.type === "document",
-          )) {
-            const declaringDir = doc.path ? path.dirname(doc.path) : location.directory
-            for (const [name, entry] of Object.entries(doc.info.references ?? {})) {
-              if (!ConfigReference.validAlias(name)) continue
-              ;(layers[name] ??= []).push(
-                ReferenceConfigSeed.normalizeReferenceEntry(declaringDir, global.home, entry),
-              )
-            }
-          }
-          for (const [name, referenceLayers] of Object.entries(layers)) yield* store.setLayers(name, referenceLayers)
-        }
-
         const entries = new Map<string, Reference.Source>()
         const stored = yield* store.references()
         for (const [name, layers] of Object.entries(stored)) {

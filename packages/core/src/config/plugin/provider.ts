@@ -3,33 +3,30 @@ export * as ConfigProviderPlugin from "./provider"
 import { define } from "../../plugin/internal"
 import { Effect } from "effect"
 import { CatalogStore } from "../../catalog-store"
-import { Config } from "../../config"
-import { ConfigProvider } from "../provider"
 import { ModelV2 } from "../../model"
 import { ProviderV2 } from "../../provider"
 
 export const Plugin = define({
   id: "config-provider",
   effect: Effect.fn(function* (ctx) {
-    const config = yield* Config.Service
     const store = yield* CatalogStore.Service
     yield* ctx.integration.transform(
       Effect.fn(function* (integrations) {
-        const files = (yield* config.entries()).filter((entry): entry is Config.Document => entry.type === "document")
-        // `env: []` must count as ABSENT: an env method with zero names can never produce a
-        // credential, but its mere existence creates an integration record — and a provider
-        // with an integration record and no connections drops out of catalog availability
-        // (catalog.ts `available`). V1 configs commonly carry `env: []` for keyless/local
-        // endpoints, which would silently disable the provider.
+        // Config→SQLite 8c: provider fragments come from the instance-wide CatalogStore layers
+        // (config documents no longer exist at runtime). `env: []` must count as ABSENT: an env
+        // method with zero names can never produce a credential, but its mere existence creates
+        // an integration record — and a provider with an integration record and no connections
+        // drops out of catalog availability (catalog.ts `available`). V1 configs commonly
+        // carried `env: []` for keyless/local endpoints, which would silently disable the
+        // provider.
+        const layers = yield* store.providers()
         const configuredIntegrations = new Set(
-          files.flatMap((file) =>
-            Object.entries(file.info.providers ?? {}).flatMap(([id, provider]) =>
-              provider.env === undefined || provider.env.length === 0 ? [] : [id],
-            ),
+          Object.entries(layers).flatMap(([id, list]) =>
+            list.some((item) => item.env !== undefined && item.env.length > 0) ? [id] : [],
           ),
         )
-        for (const file of files) {
-          for (const [id, item] of Object.entries(file.info.providers ?? {})) {
+        for (const [id, list] of Object.entries(layers)) {
+          for (const item of list) {
             const integrationID = id
             if (!configuredIntegrations.has(id) && !integrations.get(integrationID)) continue
             integrations.update(integrationID, (integration) => {
@@ -48,22 +45,6 @@ export const Plugin = define({
 
     yield* ctx.catalog.transform(
       Effect.fn(function* (catalog) {
-        // Transitional jsonc seed (one-time): import an existing novaclaw.jsonc into the instance-wide
-        // store the first time it is empty, so an existing config carries over. jsonc is import/export
-        // only — this is the sole remaining runtime jsonc read for the catalog and is removed in
-        // migration step 8 (once the settings UI writes the store directly).
-        if (yield* store.isEmpty()) {
-          const entries = yield* config.entries()
-          const files = entries.filter((entry): entry is Config.Document => entry.type === "document")
-          const layers: Record<string, ConfigProvider.Info[]> = {}
-          for (const file of files)
-            for (const [id, item] of Object.entries(file.info.providers ?? {})) (layers[id] ??= []).push(item)
-          for (const [id, providerLayers] of Object.entries(layers))
-            yield* store.setLayers(ProviderV2.ID.make(id), providerLayers)
-          const configuredDefault = Config.latest(entries, "model")
-          if (configuredDefault !== undefined) yield* store.setDefaultIfEmpty(configuredDefault)
-        }
-
         // Populate the catalog from the instance-wide store (the source of truth). Global store + this
         // per-location transform ⇒ every location (incl. the scratch dir) sees the same providers.
         const storedDefault = yield* store.getDefault()

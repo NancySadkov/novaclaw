@@ -38,17 +38,6 @@ export const Plugin = define({
           )
         }
 
-        // Transitional jsonc seed (one-time, mirrors config-agent/command): import an existing
-        // config's `skills` entries into the store the first time it is empty, resolved against
-        // each declaring file's directory. Removed in step 8.
-        if (yield* store.isEmpty()) {
-          for (const doc of entries.filter((entry): entry is Config.Document => entry.type === "document")) {
-            const declaringDir = doc.path ? path.dirname(doc.path) : location.directory
-            for (const item of doc.info.skills ?? [])
-              yield* store.addSource(SkillConfigSeed.resolveSkillSource(declaringDir, global.home, item))
-          }
-        }
-
         // Stored sources are URLs or absolute paths; the expansion below keeps tolerating a
         // hand-written relative/`~` row (resolved like the historical jsonc semantics).
         for (const item of yield* store.sources()) {

@@ -97,8 +97,25 @@ describe("SettingsConfigStore", () => {
   )
 })
 
-describe("Config layer settings overlay", () => {
-  const layerFor = (directory: string, globalDirectory: string) =>
+describe("Config layer settings overlay (8c: jsonc is not a runtime source)", () => {
+  const memorySettings = (values: Record<string, unknown>) =>
+    Layer.succeed(
+      SettingsConfigStore.Service,
+      SettingsConfigStore.Service.of({
+        all: () => Effect.succeed({ ...values }),
+        set: (key, value) =>
+          Effect.sync(() => {
+            values[key] = value
+          }),
+        remove: (key) =>
+          Effect.sync(() => {
+            delete values[key]
+          }),
+        isEmpty: () => Effect.succeed(Object.keys(values).length === 0),
+      }),
+    )
+
+  const layerFor = (directory: string, globalDirectory: string, values: Record<string, unknown>) =>
     AppNodeBuilder.build(LayerNode.group([Config.node, Policy.node]), [
       [
         Location.node,
@@ -113,9 +130,10 @@ describe("Config layer settings overlay", () => {
         ),
       ],
       [Global.node, Global.layerWith({ config: globalDirectory })],
+      [SettingsConfigStore.node, memorySettings(values)],
     ])
 
-  it.effect("boot seeds the store from documents and serves them through the synthetic entry", () =>
+  it.effect("serves the store through the one synthetic document; jsonc files are never read", () =>
     Effect.gen(function* () {
       const tmp = yield* Effect.promise(() => tmpdir())
       yield* Effect.addFinalizer(() => Effect.promise(() => tmp[Symbol.asyncDispose]()))
@@ -124,25 +142,84 @@ describe("Config layer settings overlay", () => {
       yield* Effect.promise(async () => {
         await fs.mkdir(projectDir, { recursive: true })
         await fs.mkdir(globalDir, { recursive: true })
+        // DECOY files: post-8c the runtime must never read them (import seeds + the Import
+        // button are the only jsonc consumers).
         await fs.writeFile(
           path.join(projectDir, "novaclaw.jsonc"),
-          JSON.stringify({ username: "overlay-user", snapshots: false }),
+          JSON.stringify({ username: "file-user", shell: "file-shell" }),
         )
+        await fs.writeFile(path.join(globalDir, "novaclaw.json"), JSON.stringify({ username: "global-file-user" }))
       })
 
       yield* Effect.gen(function* () {
         const config = yield* Config.Service
-        const store = yield* SettingsConfigStore.Service
         const entries = yield* config.entries()
-        // The layer seeded the store from the documents…
-        expect((yield* store.all()).username).toBe("overlay-user")
-        // …and appended the synthetic settings document (no path) carrying the values.
-        const synthetic = entries.at(-1)
-        expect(synthetic?.type).toBe("document")
-        expect(synthetic?.type === "document" && synthetic.path).toBeUndefined()
-        expect(Config.latest(entries, "username")).toBe("overlay-user")
-        expect(Config.latest(entries, "snapshots")).toBe(false)
-      }).pipe(Effect.provide(layerFor(projectDir, globalDir)))
+
+        // No file-backed documents exist — the one document is the synthetic (pathless) one.
+        const documents = entries.filter((entry): entry is Config.Document => entry.type === "document")
+        expect(documents).toHaveLength(1)
+        expect(documents[0]?.path).toBeUndefined()
+
+        expect(Config.latest(entries, "username")).toBe("store-user") // the decoy files never load
+        expect(Config.latest(entries, "shell")).toBeUndefined()
+        // The concat keys ride the same synthetic document (8c moved them with the file cut).
+        expect(documents.flatMap((doc) => doc.info.permissions ?? [])).toEqual([
+          { action: "bash", resource: "*", effect: "ask" },
+        ])
+
+        // Policies load from the store-backed document (the seed preserved rule precedence).
+        const policy = yield* Policy.Service
+        expect(yield* policy.evaluate("provider.use", "openai", "allow")).toBe("deny")
+      }).pipe(
+        Effect.provide(
+          layerFor(projectDir, globalDir, {
+            username: "store-user",
+            permissions: [{ action: "bash", resource: "*", effect: "ask" }],
+            experimental: { policies: [{ effect: "deny", action: "provider.use", resource: "openai" }] },
+          }),
+        ),
+      )
+    }),
+  )
+
+  it.effect("seedFromInfos folds concat keys: permissions concat in order, policies reverse-concat", () =>
+    Effect.gen(function* () {
+      const store = yield* SettingsConfigStore.Service
+      const dir = yield* Effect.promise(() => tmpdir())
+      yield* Effect.addFinalizer(() => Effect.promise(() => dir[Symbol.asyncDispose]()))
+      const globalDir = path.join(dir.path, "global")
+      const projectDir = path.join(dir.path, "project")
+      yield* Effect.promise(async () => {
+        await fs.mkdir(globalDir, { recursive: true })
+        await fs.mkdir(projectDir, { recursive: true })
+        await fs.writeFile(
+          path.join(globalDir, "novaclaw.jsonc"),
+          JSON.stringify({
+            permissions: [{ action: "bash", resource: "*", effect: "ask" }],
+            experimental: { policies: [{ effect: "deny", action: "provider.use", resource: "openai" }] },
+          }),
+        )
+        await fs.writeFile(
+          path.join(projectDir, "novaclaw.jsonc"),
+          JSON.stringify({
+            permissions: [{ action: "edit", resource: "*", effect: "allow" }],
+            experimental: { policies: [{ effect: "allow", action: "provider.use", resource: "anthropic" }] },
+          }),
+        )
+      })
+
+      yield* SettingsConfigSeed.seedFromDirectory(globalDir, projectDir)
+      const all = yield* store.all()
+      // permissions: document order (general first, specific last) — the agent plugin's flatMap.
+      expect(all.permissions).toEqual([
+        { action: "bash", resource: "*", effect: "ask" },
+        { action: "edit", resource: "*", effect: "allow" },
+      ])
+      // policies: REVERSE order (a user-global rule overrides a repository rule).
+      expect((all.experimental as { policies: unknown[] }).policies).toEqual([
+        { effect: "allow", action: "provider.use", resource: "anthropic" },
+        { effect: "deny", action: "provider.use", resource: "openai" },
+      ])
     }),
   )
 })

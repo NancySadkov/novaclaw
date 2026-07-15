@@ -46,18 +46,6 @@ export const Plugin = define({
     yield* Effect.gen(function* () {
       const entries = yield* config.entries()
 
-      // Transitional jsonc seed (one-time, mirrors config-agent/command/skill): import an
-      // existing config's `plugins` into the store the first time it is empty, resolved
-      // against each declaring file's directory. Removed in step 8.
-      if (yield* store.isEmpty()) {
-        for (const entry of entries) {
-          if (entry.type !== "document") continue
-          const declaringDir = entry.path ? path.dirname(entry.path) : location.directory
-          for (const item of entry.info.plugins ?? [])
-            yield* store.setPlugin(PluginConfigSeed.normalizePluginEntry(declaringDir, item))
-        }
-      }
-
       const configured: { package: string; options?: Record<string, any> }[] = []
       for (const stored of yield* store.plugins()) configured.push(stored)
 

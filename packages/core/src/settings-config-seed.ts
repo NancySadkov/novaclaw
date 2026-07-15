@@ -6,6 +6,7 @@ import { Effect, Option, Schema } from "effect"
 import { Config } from "./config"
 import { Flag } from "./flag/flag"
 import { FSUtil } from "./fs-util"
+import { MergePatch } from "./merge-patch"
 import { SettingsConfigStore } from "./settings-config-store"
 
 // NOTE: config.ts imports this module (the layer runs the seed + synthetic-doc build), so all
@@ -15,18 +16,19 @@ const DECODE_OPTIONS = { errors: "all", onExcessProperty: "ignore", propertyOrde
 
 /**
  * The runtime-settings keys that live in the instance-wide `SettingsConfigStore` (config-sqlite
- * step 6). Every key here has WHOLE-VALUE `Config.latest()` semantics — the last document
- * holding the key wins — so the store keeps one value per key and the Config layer surfaces
- * them through one synthetic document appended to `entries()`.
+ * steps 6 + 8c). Most keys have WHOLE-VALUE `Config.latest()` semantics; two carry their own
+ * import folding (see `seedFromInfos`): `permissions` CONCATS across documents (general first,
+ * specific last — the agent plugin's historical flatMap order) and `experimental` deep-merges,
+ * with `policies` REVERSE-concatenated (the policy loader's historical user-global-overrides-
+ * repository order). Post-8c the runtime reads all of them from ONE synthetic document, so the
+ * multi-document semantics only matter at import time.
  *
  * Deliberately EXCLUDED:
  * - `model` + `default_agent` — owned by the Catalog/AgentConfig stores (steps 1-2).
- * - `agents`/`commands`/`skills`/`references`/`plugins`/`providers`/`disabled_providers`/
- *   `enabled_providers` — migrated per-subsystem stores (steps 1-5).
- * - `permissions` + `instructions` — CONCAT-across-documents semantics (not latest()); moving
- *   them through a synthetic doc would double-apply while jsonc documents still load. They stay
- *   document-read until step 8 retires jsonc-as-runtime-source.
- * - `experimental` — the policies pipeline + experimental handler (step 9).
+ * - `agents`/`commands`/`skills`/`references`/`plugins`/`providers` — per-subsystem stores.
+ * - `instructions` + `disabled_providers`/`enabled_providers` — read from the V1-side novaclaw
+ *   config service (instance file state), not core entries(); they migrate with step 9's
+ *   handler/CLI retirement.
  */
 export const SETTINGS_KEYS = [
   "shell",
@@ -40,6 +42,7 @@ export const SETTINGS_KEYS = [
   "tool_output",
   "mcp",
   "compaction",
+  "permissions",
   "persona",
   "user_profile",
   "introspection",
@@ -49,6 +52,7 @@ export const SETTINGS_KEYS = [
   "offline",
   "kb",
   "quality",
+  "experimental",
 ] as const satisfies readonly (keyof Config.Info)[]
 
 export type SettingsKey = (typeof SETTINGS_KEYS)[number]
@@ -65,24 +69,39 @@ export function settingsInfoFromStore(values: Record<string, unknown>): Config.I
   return Option.getOrUndefined(Schema.decodeUnknownOption(Config.Info, DECODE_OPTIONS)(filtered))
 }
 
-/**
- * The transitional jsonc IMPORT for runtime settings (config-sqlite step 6): store each
- * settings key's `Config.latest()` value from the given document entries. Runs inside the
- * Config layer on first boot (isEmpty-gated there); step 8 removes it. Encoded (plain-JSON)
- * values go into the store so the later synthetic-document decode round-trips.
- */
-export const seedFromEntries = (entries: readonly Config.Entry[]) =>
-  seedFromInfos(entries.filter((entry): entry is Config.Document => entry.type === "document").map((doc) => doc.info))
-
 const seedFromInfos = (infos: readonly Config.Info[]) =>
   Effect.gen(function* () {
     const store = yield* SettingsConfigStore.Service
     const encodeInfo = Schema.encodeSync(Config.Info)
     // Encode each document back to plain JSON (field values may be Schema.Class instances),
-    // then replicate latest() per key over the plain objects — the stored value must be plain
-    // so the later synthetic-document decode round-trips.
+    // then replicate each key's historical multi-document folding over the plain objects —
+    // the stored value must be plain so the later synthetic-document decode round-trips.
     const plains = infos.map((info) => encodeInfo(info) as Record<string, unknown>)
     for (const key of SETTINGS_KEYS) {
+      if (key === "permissions") {
+        // Concat in document order (general first, specific last) — the agent plugin's
+        // historical `files.flatMap(info.permissions)`.
+        const rules = plains.flatMap((info) => (info.permissions as unknown[] | undefined) ?? [])
+        if (rules.length > 0) yield* store.set(key, rules)
+        continue
+      }
+      if (key === "experimental") {
+        // Fields deep-merge in document order; `policies` REVERSE-concatenate (the policy
+        // loader's historical toReversed().flatMap — a user-global rule overrides a
+        // repository rule).
+        const values = plains
+          .map((info) => info.experimental)
+          .filter((value): value is Record<string, unknown> => value !== undefined)
+        if (values.length === 0) continue
+        const merged = values.reduce<unknown>((acc, value) => MergePatch.mergePatch(acc, value), undefined) as Record<
+          string,
+          unknown
+        >
+        const policies = [...values].reverse().flatMap((value) => (value.policies as unknown[] | undefined) ?? [])
+        if (policies.length > 0) merged.policies = policies
+        yield* store.set(key, merged)
+        continue
+      }
       const value = plains.findLast((info) => info[key] !== undefined)?.[key]
       if (value !== undefined) yield* store.set(key, value)
     }

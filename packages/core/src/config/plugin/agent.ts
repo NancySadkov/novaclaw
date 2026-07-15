@@ -22,11 +22,11 @@ type AgentDraft = Parameters<Parameters<PluginContext["agent"]["transform"]>[0]>
 const decodeAgent = Schema.decodeUnknownOption(ConfigAgent.Info)
 const decodeConfig = Schema.decodeUnknownOption(Config.Info)
 
-// Config→SQLite step 2: config-FILE agent definitions come from the instance-wide
-// `AgentConfigStore` (ordered layers per agent), not from `config.entries()` — so every location
-// (incl. the shared scratch dir) resolves the same agents. Markdown agents stay filesystem-walked
-// (locked decision D2 — user-editable documents, not settings). The global `permissions` ruleset
-// still rides the config documents until step 6 (runtime settings) moves it.
+// Config→SQLite steps 2 + 8c: config-borne agent definitions come from the instance-wide
+// `AgentConfigStore` (ordered layers per agent) — so every location (incl. the shared scratch
+// dir) resolves the same agents. Markdown agents stay filesystem-walked (locked decision D2 —
+// user-editable documents, not settings). The global `permissions` ruleset reads from the
+// settings store's synthetic document (the only document post-8c).
 export const Plugin = define({
   id: "config-agent",
   effect: Effect.fn(function* (ctx) {
@@ -54,19 +54,6 @@ export const Plugin = define({
             )
           })
         }).pipe(Effect.map((documents) => documents.flat()))
-
-        // Transitional jsonc seed (one-time, mirrors config-provider): import an existing config's
-        // agents + default_agent into the store the first time it is empty, so an existing setup
-        // carries over. This is the sole remaining runtime jsonc read for agent DEFINITIONS and is
-        // removed in migration step 8 (once the settings UI writes the store directly).
-        if (yield* store.isEmpty()) {
-          const layers: Record<string, ConfigAgent.Info[]> = {}
-          for (const file of files)
-            for (const [name, item] of Object.entries(file.info.agents ?? {})) (layers[name] ??= []).push(item)
-          for (const [name, agentLayers] of Object.entries(layers)) yield* store.setLayers(name, agentLayers)
-          const configuredDefault = Config.latest(entries, "default_agent")
-          if (configuredDefault !== undefined) yield* store.setDefaultIfEmpty(configuredDefault)
-        }
 
         const global = files.flatMap((file) => file.info.permissions ?? [])
         const storedDefault = yield* store.getDefault()

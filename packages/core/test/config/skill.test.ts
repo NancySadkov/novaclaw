@@ -54,27 +54,26 @@ describe("ConfigSkillPlugin.Plugin", () => {
         return { dispose }
       })
 
+      // 8c: the store is PRE-populated (import seeds fill it at boot; the plugin never reads
+      // config documents). Relative/~ entries stay tolerated at apply time.
+      const store = memoryStore()
+      for (const item of ["./skills", "~/shared-skills", "/opt/skills", "https://example.test/skills/"]) {
+        yield* store.addSource(item)
+      }
+
       yield* ConfigSkillPlugin.Plugin.effect(
         host({
           skill: { transform, reload: () => Effect.void },
         }),
       ).pipe(
-        Effect.provideService(SkillConfigStore.Service, memoryStore()),
+        Effect.provideService(SkillConfigStore.Service, store),
         Effect.provideService(Global.Service, Global.Service.of({ ...Global.make(), home: "/home/test" })),
         Effect.provideService(Location.Service, Location.Service.of(location({ directory }))),
         Effect.provideService(
           Config.Service,
           Config.Service.of({
             entries: () =>
-              Effect.succeed([
-                new Config.Directory({ type: "directory", path: AbsolutePath.make("/repo/.novaclaw") }),
-                new Config.Document({
-                  type: "document",
-                  info: decode({
-                    skills: ["./skills", "~/shared-skills", "/opt/skills", "https://example.test/skills/"],
-                  }),
-                }),
-              ]),
+              Effect.succeed([new Config.Directory({ type: "directory", path: AbsolutePath.make("/repo/.novaclaw") })]),
           }),
         ),
       )

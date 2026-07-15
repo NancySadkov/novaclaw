@@ -9,6 +9,7 @@ import { ConfigAgent } from "./config/agent"
 import { ConfigCommand } from "./config/command"
 import { ConfigProvider } from "./config/provider"
 import { ConfigReference } from "./config/reference"
+import { MergePatch } from "./merge-patch"
 import { PluginConfigSeed } from "./plugin-config-seed"
 import { PluginConfigStore } from "./plugin-config-store"
 import { ProviderV2 } from "./provider"
@@ -17,12 +18,12 @@ import { SettingsConfigSeed } from "./settings-config-seed"
 import { SettingsConfigStore } from "./settings-config-store"
 import { SkillConfigStore } from "./skill-config-store"
 
-// Config→SQLite step 7: the Settings-UI write router + read overlay. The app's
+// Config→SQLite step 7 (+8c): the Settings-UI write router + read overlay. The app's
 // `updateConfig` contract is patch-MERGE over the effective config; this module routes each
 // top-level key of such a patch into its owning SQLite store — and mirrors the same keys back
-// over the file-derived view so the UI reads what it wrote. Keys with no owning store yet
-// (permissions, instructions, experimental, disabled/enabled_providers, …) are NOT consumed;
-// the caller falls back to the legacy jsonc patch for them (removed in step 8).
+// over the file-derived view so the UI reads what it wrote. Post-8c the only unrouted keys are
+// `instructions` + `disabled/enabled_providers` (read from the V1-side novaclaw config service;
+// they migrate with step 9) — those fall back to the legacy jsonc patch.
 //
 // Merge semantics per store shape:
 // - settings keys: one whole value per key — deep-merge the patch into the stored value
@@ -32,25 +33,8 @@ import { SkillConfigStore } from "./skill-config-store"
 // - list stores (skills/plugins): the config value is an array (replace-wholesale contract) —
 //   the store content is replaced.
 
-/** Deep patch-merge: objects merge recursively, arrays and primitives replace. */
-export function mergePatch(base: unknown, patch: unknown): unknown {
-  if (patch === undefined) return base
-  if (
-    base === null ||
-    patch === null ||
-    typeof base !== "object" ||
-    typeof patch !== "object" ||
-    Array.isArray(base) ||
-    Array.isArray(patch)
-  ) {
-    return patch
-  }
-  const result: Record<string, unknown> = { ...(base as Record<string, unknown>) }
-  for (const [key, value] of Object.entries(patch as Record<string, unknown>)) {
-    result[key] = key in result ? mergePatch(result[key], value) : value
-  }
-  return result
-}
+/** Deep patch-merge: objects merge recursively, arrays and primitives replace (merge-patch.ts). */
+export const mergePatch = MergePatch.mergePatch
 
 const encodeInfo = (info: Config.Info) => Schema.encodeSync(Config.Info)(info) as Record<string, unknown>
 

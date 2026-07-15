@@ -2,10 +2,8 @@ export * as Config from "./config"
 
 import { makeLocationNode } from "./effect/app-node"
 import path from "path"
-import { type ParseError, parse } from "jsonc-parser"
-import { Context, Effect, Layer, Option, Schema } from "effect"
+import { Context, Effect, Layer, Schema } from "effect"
 import { Permission } from "@novaclaw/schema/permission"
-import { Flag } from "./flag/flag"
 import { FSUtil } from "./fs-util"
 import { Global } from "./global"
 import { Location } from "./location"
@@ -206,101 +204,42 @@ export const layer = Layer.effect(
     const global = yield* Global.Service
     const location = yield* Location.Service
     const policy = yield* Policy.Service
-    const names = ["config.json", "novaclaw.json", "novaclaw.jsonc"]
-    const decodeOptions = { errors: "all", onExcessProperty: "ignore", propertyOrder: "original" } as const
-    const decodeInfo = Schema.decodeUnknownOption(Info, decodeOptions)
 
-    const loadFile = Effect.fnUntraced(function* (filepath: string) {
-      const text = yield* fs.readFileStringSafe(filepath)
-      if (!text) return
-
-      const errors: ParseError[] = []
-      const input: unknown = parse(text, errors, { allowTrailingComma: true })
-      if (errors.length) return
-
-      const info = Option.getOrUndefined(decodeInfo(input))
-      if (!info) return
-      return new Document({ type: "document", path: filepath, info })
-    })
-
-    const loadDirectory = Effect.fnUntraced(function* (directory: AbsolutePath) {
-      return [
-        ...(yield* Effect.forEach(names, (file) => loadFile(path.join(directory, file))).pipe(
-          Effect.map((configs) => configs.filter((config): config is Document => config !== undefined)),
-        )),
-        new Directory({ type: "directory", path: directory }),
-      ]
-    })
-
+    // Config→SQLite 8c: jsonc is NOT a runtime config source. The one config DOCUMENT is
+    // synthetic — the instance-wide settings store's snapshot (read once per location boot;
+    // the per-subsystem stores feed their own loaders directly). The directory walk-up
+    // SURVIVES for Directory entries only: the D2 filesystem resources (markdown agents/
+    // commands, `skill(s)/` dirs, plugin files) ride them. jsonc files are read exclusively
+    // by the boot-time import seeds (isEmpty-gated, server startup) and the explicit Import
+    // button — import/export wire format, never resolution.
     const globalDirectory = AbsolutePath.make(global.config)
     const locationIsGlobal = path.resolve(location.directory) === path.resolve(global.config)
-    // Read configuration once when this location opens. Later calls reuse these
-    // values until the location is reopened.
     const discovered = locationIsGlobal
       ? []
       : yield* fs
           .up({
-            targets: [".novaclaw", ...names.toReversed()],
+            targets: [".novaclaw"],
             start: location.directory,
             stop: location.project.directory,
           })
           .pipe(Effect.orDie)
-    const directories = [
-      globalDirectory,
+    const directories: Entry[] = [
+      new Directory({ type: "directory", path: globalDirectory }),
       ...discovered
         .filter((item) => path.basename(item) === ".novaclaw")
         .toReversed()
-        .map((directory) => AbsolutePath.make(directory)),
+        .map((directory) => new Directory({ type: "directory", path: AbsolutePath.make(directory) })),
     ]
-    // A config closer to the opened directory should win over one higher up.
-    // Search starts nearby, so reverse the results before applying them.
-    const directPaths = discovered.filter((item) => path.basename(item) !== ".novaclaw").toReversed()
-    const direct = yield* Effect.forEach(directPaths, loadFile).pipe(
-      Effect.orDie,
-      Effect.map((configs) => configs.filter((config): config is Document => config !== undefined)),
-    )
-    const supplementary = yield* Effect.forEach(directories, loadDirectory).pipe(Effect.orDie)
-    // NOVACLAW_CONFIG_CONTENT is a first-class inline config source — the SDK's server launcher
-    // passes app config exclusively through it, and headless/test embeddings rely on it. Mirrors
-    // the V1 loader (which merges it as a "local" source after every file source): applied LAST =
-    // most specific. Without this, such an instance sees none of its configured agents/permissions
-    // on the V2 path. (catalog-seed.ts imports the same source for the provider catalog.)
-    const inline = (() => {
-      const text = Flag.NOVACLAW_CONFIG_CONTENT
-      if (!text) return undefined
-      const errors: ParseError[] = []
-      const input: unknown = parse(text, errors, { allowTrailingComma: true })
-      if (errors.length) return undefined
-      const info = Option.getOrUndefined(decodeInfo(input))
-      if (!info) return undefined
-      return new Document({ type: "document", path: "NOVACLAW_CONFIG_CONTENT", info })
-    })()
-    // Apply general settings first and more specific settings last:
-    // global config, project files, then `.novaclaw` files, then the inline env config.
-    const configs = [
-      ...(supplementary[0] ?? []),
-      ...direct,
-      ...supplementary.slice(1).flat(),
-      ...(inline ? [inline] : []),
-    ]
-    // Rules use the opposite order so a user-global rule can override a
-    // repository rule. Statement order inside each file stays unchanged.
-    yield* policy.load(
-      configs
-        .filter((config): config is Document => config.type === "document")
-        .toReversed()
-        .flatMap((config) => config.info.experimental?.policies ?? []),
-    )
 
-    // Config→SQLite step 6: runtime settings resolve from the instance-wide store through ONE
-    // synthetic document appended LAST (most specific — `latest()` finds it first), so every
-    // `Config.latest(entries, key)` reader is store-backed with no reader changes. The store is
-    // read once here (the documented snapshot-at-boot semantics). Transitional: an empty store
-    // seeds from this location's documents (removed in migration step 8, with the file loads).
     const settingsStore = yield* SettingsConfigStore.Service
-    if (yield* settingsStore.isEmpty()) yield* SettingsConfigSeed.seedFromEntries(configs)
     const settingsInfo = SettingsConfigSeed.settingsInfoFromStore(yield* settingsStore.all())
-    const allConfigs = settingsInfo ? [...configs, new Document({ type: "document", info: settingsInfo })] : configs
+    const allConfigs = settingsInfo
+      ? [...directories, new Document({ type: "document", info: settingsInfo })]
+      : directories
+
+    // Policies come from the store-backed synthetic document; the import seed preserved the
+    // historical reversed-concat order, so loading them verbatim keeps rule precedence.
+    yield* policy.load(settingsInfo?.experimental?.policies ? [...settingsInfo.experimental.policies] : [])
 
     return Service.of({
       entries: Effect.fn("Config.entries")(function* () {

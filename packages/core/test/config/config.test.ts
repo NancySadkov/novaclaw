@@ -4,49 +4,62 @@ import { describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
 import { Config } from "@novaclaw/core/config"
 import { ConfigPermission } from "@novaclaw/core/config/permission"
-import { ConfigProvider } from "@novaclaw/core/config/provider"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
-import { FSUtil } from "@novaclaw/core/fs-util"
 import { Global } from "@novaclaw/core/global"
 import { Location } from "@novaclaw/core/location"
 import { Policy } from "@novaclaw/core/policy"
 import { Project } from "@novaclaw/core/project"
 import { AbsolutePath } from "@novaclaw/core/schema"
+import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { location } from "../fixture/location"
 import { tmpdir } from "../fixture/tmpdir"
 import { testEffect } from "../lib/effect"
 
+// Config→SQLite 8c contract: jsonc is NOT a runtime config source. `entries()` returns the
+// discovered DIRECTORY entries (global config dir + `.novaclaw` dirs — the D2 filesystem
+// resources ride them) plus at most ONE synthetic document carrying the settings store's
+// snapshot. File parsing lives exclusively in the import seeds (their own test files).
+
 const it = testEffect(Layer.empty)
+
+const memorySettings = (values: Record<string, unknown>) =>
+  Layer.succeed(
+    SettingsConfigStore.Service,
+    SettingsConfigStore.Service.of({
+      all: () => Effect.succeed({ ...values }),
+      set: (key, value) =>
+        Effect.sync(() => {
+          values[key] = value
+        }),
+      remove: (key) =>
+        Effect.sync(() => {
+          delete values[key]
+        }),
+      isEmpty: () => Effect.succeed(Object.keys(values).length === 0),
+    }),
+  )
 
 function testLayer(
   directory: string,
   globalDirectory = path.join(directory, "global"),
   projectDirectory = directory,
-  vcs?: Project.Vcs,
+  options: { vcs?: Project.Vcs; settings?: Record<string, unknown> } = {},
 ) {
   const locationLayer = Layer.succeed(
     Location.Service,
     Location.Service.of(
       location(
         { directory: AbsolutePath.make(directory) },
-        { projectDirectory: AbsolutePath.make(projectDirectory), vcs },
+        { projectDirectory: AbsolutePath.make(projectDirectory), vcs: options.vcs },
       ),
     ),
   )
   return AppNodeBuilder.build(LayerNode.group([Config.node, Policy.node]), [
     [Location.node, locationLayer],
     [Global.node, Global.layerWith({ config: globalDirectory })],
+    [SettingsConfigStore.node, memorySettings(options.settings ?? {})],
   ])
-}
-
-const provider = {
-  api: { type: "native", settings: {} },
-  request: {
-    headers: {},
-    body: {},
-  },
-  models: {},
 }
 
 describe("Config", () => {
@@ -78,7 +91,7 @@ describe("Config", () => {
     }),
   )
 
-  it.live("returns an empty configuration when directory files do not exist", () =>
+  it.live("returns only the global directory entry when the store is empty", () =>
     Effect.acquireRelease(
       Effect.promise(() => tmpdir()),
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
@@ -96,387 +109,75 @@ describe("Config", () => {
     ),
   )
 
-  it.live("loads JSON and JSONC files from lowest to highest priority", () =>
+  it.live("never reads jsonc files at runtime — the settings store is the one document (8c)", () =>
     Effect.acquireRelease(
       Effect.promise(() => tmpdir()),
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
     ).pipe(
       Effect.flatMap((tmp) =>
         Effect.gen(function* () {
-          yield* Effect.promise(() =>
-            Promise.all([
-              fs.writeFile(
-                path.join(tmp.path, "config.json"),
-                JSON.stringify({ $schema: "base", providers: { base: provider } }),
-              ),
-              fs.writeFile(
-                path.join(tmp.path, "novaclaw.json"),
-                JSON.stringify({ $schema: "middle", providers: { middle: provider } }),
-              ),
-              fs.writeFile(
-                path.join(tmp.path, "novaclaw.jsonc"),
-                `{
-                  // Later global files override scalar fields while retaining providers.
-                  "$schema": "last",
-                  "providers": { "last": ${JSON.stringify(provider)} },
-                }`,
-              ),
-            ]),
-          )
-          return yield* Effect.gen(function* () {
-            const config = yield* Config.Service
-            // FILE documents only — step 6 appends one PATHLESS synthetic document carrying the
-            // store-backed runtime settings (seeded from these very files).
-            const documents = (yield* config.entries()).filter(
-              (entry): entry is Config.Document => entry.type === "document" && entry.path !== undefined,
-            )
-
-            expect(documents).toHaveLength(3)
-            expect(documents.map((document) => document.type)).toEqual(["document", "document", "document"])
-            expect(documents.map((document) => document.info.$schema)).toEqual(["base", "middle", "last"])
-            expect(documents[0]).toBeInstanceOf(Config.Document)
-            expect(documents[0]?.path).toBe(path.join(tmp.path, "config.json"))
-            expect(documents[2]?.info.providers?.last).toBeInstanceOf(ConfigProvider.Info)
-
-            yield* Effect.promise(() =>
-              fs.writeFile(path.join(tmp.path, "novaclaw.jsonc"), JSON.stringify({ $schema: "changed" })),
-            )
-            expect(
-              (yield* config.entries())
-                .filter((entry) => entry.type === "document")
-                .map((document) => document.info.$schema),
-            ).toEqual(["base", "middle", "last"])
-          }).pipe(Effect.provide(testLayer(tmp.path)))
-        }),
-      ),
-    ),
-  )
-
-  it.live("accepts $schema metadata without writing it into config files", () =>
-    Effect.acquireRelease(
-      Effect.promise(() => tmpdir()),
-      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
-    ).pipe(
-      Effect.flatMap((tmp) =>
-        Effect.gen(function* () {
-          const file = path.join(tmp.path, "novaclaw.json")
-          const contents = JSON.stringify({
-            shell: "/bin/zsh",
-            experimental: { policies: [{ effect: "deny", action: "provider.use", resource: "openai" }] },
-            providers: { local: provider },
+          // DECOY config files everywhere the old walk-up used to look.
+          yield* Effect.promise(async () => {
+            await fs.mkdir(path.join(tmp.path, "global"), { recursive: true })
+            await Promise.all([
+              fs.writeFile(path.join(tmp.path, "config.json"), JSON.stringify({ username: "decoy-a" })),
+              fs.writeFile(path.join(tmp.path, "novaclaw.json"), JSON.stringify({ username: "decoy-b" })),
+              fs.writeFile(path.join(tmp.path, "novaclaw.jsonc"), JSON.stringify({ username: "decoy-c" })),
+              fs.writeFile(path.join(tmp.path, "global", "novaclaw.jsonc"), JSON.stringify({ username: "decoy-d" })),
+            ])
           })
-          yield* Effect.promise(() => fs.writeFile(file, contents))
-
           return yield* Effect.gen(function* () {
             const config = yield* Config.Service
-            // FILE documents only — step 6 appends one PATHLESS synthetic document carrying the
-            // store-backed runtime settings (seeded from these very files).
-            const documents = (yield* config.entries()).filter(
-              (entry): entry is Config.Document => entry.type === "document" && entry.path !== undefined,
-            )
+            const entries = yield* config.entries()
+            const documents = entries.filter((entry): entry is Config.Document => entry.type === "document")
 
-            expect(documents[0]?.info.$schema).toBeUndefined()
-            expect(documents[0]?.info.shell).toBe("/bin/zsh")
-            expect(documents[0]?.info.experimental?.policies?.[0]).toEqual({
-              effect: "deny",
-              action: "provider.use",
-              resource: "openai",
-            })
-            expect(yield* Effect.promise(() => fs.readFile(file, "utf8"))).toBe(contents)
-          }).pipe(Effect.provide(testLayer(tmp.path)))
-        }),
-      ),
-    ),
-  )
-
-  it.live("loads supported scalar and resource configuration", () =>
-    Effect.acquireRelease(
-      Effect.promise(() => tmpdir()),
-      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
-    ).pipe(
-      Effect.flatMap((tmp) =>
-        Effect.gen(function* () {
-          yield* Effect.promise(() =>
-            fs.writeFile(
-              path.join(tmp.path, "novaclaw.json"),
-              JSON.stringify({
-                shell: "/bin/bash",
-                model: "anthropic/claude",
-                default_agent: "reviewer",
-                autoupdate: "notify",
-                share: "disabled",
-                enterprise: { url: "https://share.example.com" },
-                username: "test-user",
-                permissions: [
-                  { action: "bash", resource: "*", effect: "ask" },
-                  { action: "bash", resource: "git status", effect: "allow" },
-                ],
-                agents: {
-                  reviewer: {
-                    model: "openrouter/openai/gpt-5",
-                    variant: "high",
-                    request: {
-                      headers: { "x-agent": "reviewer" },
-                      body: { reasoningEffort: "high" },
-                    },
-                    description: "Review changes for correctness",
-                    system: "Find regressions.",
-                    mode: "subagent",
-                    hidden: false,
-                    color: "warning",
-                    steps: 12,
-                    disabled: false,
-                    permissions: [{ action: "edit", resource: "*", effect: "deny" }],
-                  },
-                },
-                snapshots: false,
-                watcher: { ignore: ["node_modules/**", "dist/**", ".git"] },
-                formatter: {
-                  prettier: { disabled: true },
-                  custom: { command: ["custom-fmt", "$FILE"], extensions: [".foo"] },
-                },
-                attachments: {
-                  image: { auto_resize: false, max_width: 1200, max_height: 900, max_base64_bytes: 1048576 },
-                },
-                tool_output: { max_lines: 1000, max_bytes: 32768 },
-                mcp: {
-                  timeout: { startup: 5000, request: 60000 },
-                  servers: {
-                    local: {
-                      type: "local",
-                      command: ["node", "./mcp/server.js"],
-                      environment: { API_KEY: "secret" },
-                      disabled: false,
-                      timeout: { request: 10000 },
-                    },
-                    remote: {
-                      type: "remote",
-                      url: "https://mcp.example.com/mcp",
-                      headers: { Authorization: "Bearer token" },
-                      oauth: { client_id: "client", scope: "read write", callback_port: 19876 },
-                      disabled: true,
-                      timeout: { startup: 15000 },
-                    },
-                  },
-                },
-                compaction: {
-                  auto: true,
-                  prune: false,
-                  keep: { tokens: 2000 },
-                  buffer: 10000,
-                },
-                skills: ["./skills", "~/shared-skills", "https://example.com/.well-known/skills/"],
-                instructions: ["CONTRIBUTING.md", ".cursor/rules/*.md", "https://example.com/shared-rules.md"],
-                references: {
-                  local: { path: "../library" },
-                  sdk: { repository: "github.com/example/sdk", branch: "main" },
-                  shorthand: "github.com/example/docs",
-                },
-                plugins: [
-                  "novaclaw-helicone-session",
-                  { package: "@my-org/audit-plugin", options: { endpoint: "https://audit.example.com" } },
-                ],
+            expect(documents).toHaveLength(1)
+            expect(documents[0]?.path).toBeUndefined()
+            expect(Config.latest(entries, "username")).toBe("store-user")
+            expect(Config.latest(entries, "shell")).toBe("store-shell")
+          }).pipe(
+            Effect.provide(
+              testLayer(tmp.path, undefined, tmp.path, {
+                settings: { username: "store-user", shell: "store-shell" },
               }),
             ),
           )
+        }),
+      ),
+    ),
+  )
 
-          return yield* Effect.gen(function* () {
-            const config = yield* Config.Service
-            // FILE documents only — step 6 appends one PATHLESS synthetic document carrying the
-            // store-backed runtime settings (seeded from these very files).
-            const documents = (yield* config.entries()).filter(
-              (entry): entry is Config.Document => entry.type === "document" && entry.path !== undefined,
-            )
-
-            expect(documents).toHaveLength(1)
-            expect(documents[0]?.info.shell).toBe("/bin/bash")
-            expect(documents[0]?.info.model).toBe("anthropic/claude")
-            expect(documents[0]?.info.default_agent).toBe("reviewer")
-            expect(documents[0]?.info.autoupdate).toBe("notify")
-            // F1f decision ④: the share feature is deleted. Old files still carry
-            // `share`/`enterprise` (this fixture does, above) — they must decode as ignored
-            // unknown keys, never surface on the Info.
-            expect(documents[0]?.info).not.toHaveProperty("share")
-            expect(documents[0]?.info).not.toHaveProperty("enterprise")
-            expect(documents[0]?.info.username).toBe("test-user")
-            expect(documents[0]?.info.permissions).toEqual([
-              { action: "bash", resource: "*", effect: "ask" },
-              { action: "bash", resource: "git status", effect: "allow" },
-            ])
-            const reviewer = documents[0]?.info.agents?.reviewer
-            expect(reviewer?.model).toBe("openrouter/openai/gpt-5")
-            expect(reviewer?.variant).toBe("high")
-            expect(reviewer?.request).toEqual({
-              headers: { "x-agent": "reviewer" },
-              body: { reasoningEffort: "high" },
-            })
-            expect(reviewer?.description).toBe("Review changes for correctness")
-            expect(reviewer?.system).toBe("Find regressions.")
-            expect(reviewer?.mode).toBe("subagent")
-            expect(reviewer?.hidden).toBe(false)
-            expect(reviewer?.color).toBe("warning")
-            expect(reviewer?.steps).toBe(12)
-            expect(reviewer?.disabled).toBe(false)
-            expect(reviewer?.permissions).toEqual([{ action: "edit", resource: "*", effect: "deny" }])
-            expect(documents[0]?.info.snapshots).toBe(false)
-            expect(documents[0]?.info.watcher).toEqual({ ignore: ["node_modules/**", "dist/**", ".git"] })
-            expect(documents[0]?.info.formatter).toEqual({
-              prettier: { disabled: true },
-              custom: { command: ["custom-fmt", "$FILE"], extensions: [".foo"] },
-            })
-            expect(documents[0]?.info.attachments).toEqual({
-              image: { auto_resize: false, max_width: 1200, max_height: 900, max_base64_bytes: 1048576 },
-            })
-            expect(documents[0]?.info.tool_output).toEqual({ max_lines: 1000, max_bytes: 32768 })
-            expect(documents[0]?.info.mcp).toEqual({
-              timeout: { startup: 5000, request: 60000 },
-              servers: {
-                local: {
-                  type: "local",
-                  command: ["node", "./mcp/server.js"],
-                  environment: { API_KEY: "secret" },
-                  disabled: false,
-                  timeout: { request: 10000 },
-                },
-                remote: {
-                  type: "remote",
-                  url: "https://mcp.example.com/mcp",
-                  headers: { Authorization: "Bearer token" },
-                  oauth: { client_id: "client", scope: "read write", callback_port: 19876 },
-                  disabled: true,
-                  timeout: { startup: 15000 },
+  it.live("loads policy statements from the store-backed synthetic document", () =>
+    Effect.acquireRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ).pipe(
+      Effect.flatMap((tmp) =>
+        Effect.gen(function* () {
+          const policy = yield* Policy.Service
+          // The import seed stores policies pre-folded in precedence order (reverse-concat);
+          // the layer loads them verbatim — the first matching statement wins.
+          expect(yield* policy.evaluate("provider.use", "openai", "allow")).toBe("deny")
+          expect(yield* policy.evaluate("provider.use", "anthropic", "deny")).toBe("allow")
+        }).pipe(
+          Effect.provide(
+            testLayer(tmp.path, undefined, tmp.path, {
+              settings: {
+                experimental: {
+                  policies: [
+                    { effect: "deny", action: "provider.use", resource: "openai" },
+                    { effect: "allow", action: "provider.use", resource: "anthropic" },
+                  ],
                 },
               },
-            })
-            expect(documents[0]?.info.compaction).toEqual({
-              auto: true,
-              prune: false,
-              keep: { tokens: 2000 },
-              buffer: 10000,
-            })
-            expect(documents[0]?.info.skills).toEqual([
-              "./skills",
-              "~/shared-skills",
-              "https://example.com/.well-known/skills/",
-            ])
-            expect(documents[0]?.info.instructions).toEqual([
-              "CONTRIBUTING.md",
-              ".cursor/rules/*.md",
-              "https://example.com/shared-rules.md",
-            ])
-            expect(documents[0]?.info.references).toEqual({
-              local: { path: "../library" },
-              sdk: { repository: "github.com/example/sdk", branch: "main" },
-              shorthand: "github.com/example/docs",
-            })
-            expect(documents[0]?.info.plugins).toEqual([
-              "novaclaw-helicone-session",
-              { package: "@my-org/audit-plugin", options: { endpoint: "https://audit.example.com" } },
-            ])
-          }).pipe(Effect.provide(testLayer(tmp.path)))
-        }),
+            }),
+          ),
+        ),
       ),
     ),
   )
 
-  it.live("ignores unknown top-level keys such as the removed lsp field", () =>
-    Effect.acquireRelease(
-      Effect.promise(() => tmpdir()),
-      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
-    ).pipe(
-      Effect.flatMap((tmp) =>
-        Effect.gen(function* () {
-          yield* Effect.promise(() =>
-            fs.writeFile(
-              path.join(tmp.path, "novaclaw.json"),
-              JSON.stringify({
-                model: "anthropic/claude",
-                lsp: { typescript: { disabled: true } },
-              }),
-            ),
-          )
-
-          return yield* Effect.gen(function* () {
-            const config = yield* Config.Service
-            // FILE documents only — step 6 appends one PATHLESS synthetic document carrying the
-            // store-backed runtime settings (seeded from these very files).
-            const documents = (yield* config.entries()).filter(
-              (entry): entry is Config.Document => entry.type === "document" && entry.path !== undefined,
-            )
-
-            expect(documents).toHaveLength(1)
-            expect(documents[0]?.info.model).toBe("anthropic/claude")
-            expect(documents[0]?.info).not.toHaveProperty("lsp")
-          }).pipe(Effect.provide(testLayer(tmp.path)))
-        }),
-      ),
-    ),
-  )
-
-  it.live("ignores invalid files while loading valid config values", () =>
-    Effect.acquireRelease(
-      Effect.promise(() => tmpdir()),
-      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
-    ).pipe(
-      Effect.flatMap((tmp) =>
-        Effect.gen(function* () {
-          yield* Effect.promise(() =>
-            Promise.all([
-              fs.writeFile(path.join(tmp.path, "config.json"), JSON.stringify({ $schema: "base" })),
-              fs.writeFile(path.join(tmp.path, "novaclaw.json"), "{ invalid"),
-              fs.writeFile(path.join(tmp.path, "novaclaw.jsonc"), JSON.stringify({ providers: { invalid: true } })),
-            ]),
-          )
-          return yield* Effect.gen(function* () {
-            const config = yield* Config.Service
-            // FILE documents only — step 6 appends one PATHLESS synthetic document carrying the
-            // store-backed runtime settings (seeded from these very files).
-            const documents = (yield* config.entries()).filter(
-              (entry): entry is Config.Document => entry.type === "document" && entry.path !== undefined,
-            )
-
-            expect(documents.map((document) => document.info.$schema)).toEqual(["base"])
-          }).pipe(Effect.provide(testLayer(tmp.path)))
-        }),
-      ),
-    ),
-  )
-
-  it.live("loads policy statements in reverse config order", () =>
-    Effect.acquireRelease(
-      Effect.promise(() => tmpdir()),
-      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
-    ).pipe(
-      Effect.flatMap((tmp) => {
-        const global = path.join(tmp.path, "global")
-        return Effect.gen(function* () {
-          yield* Effect.promise(async () => {
-            await fs.mkdir(global, { recursive: true })
-            await fs.writeFile(
-              path.join(global, "novaclaw.json"),
-              JSON.stringify({
-                experimental: { policies: [{ effect: "deny", action: "provider.use", resource: "openai" }] },
-              }),
-            )
-            await fs.writeFile(
-              path.join(tmp.path, "novaclaw.json"),
-              JSON.stringify({
-                experimental: { policies: [{ effect: "allow", action: "provider.use", resource: "openai" }] },
-              }),
-            )
-          })
-
-          return yield* Effect.gen(function* () {
-            const policy = yield* Policy.Service
-
-            expect(yield* policy.evaluate("provider.use", "openai", "allow")).toBe("deny")
-          }).pipe(Effect.provide(testLayer(tmp.path, global)))
-        })
-      }),
-    ),
-  )
-
-  it.live("loads global, ancestor, and .novaclaw configuration up to the project boundary", () =>
+  it.live("discovers global and .novaclaw directories up to the project boundary", () =>
     Effect.acquireRelease(
       Effect.promise(() => tmpdir()),
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
@@ -492,54 +193,24 @@ describe("Config", () => {
             await fs.mkdir(directory, { recursive: true })
             await fs.mkdir(path.join(root, ".novaclaw"), { recursive: true })
             await fs.mkdir(path.join(directory, ".novaclaw"), { recursive: true })
-            await Promise.all([
-              fs.writeFile(path.join(tmp.path, "novaclaw.json"), JSON.stringify({ $schema: "outside" })),
-              fs.writeFile(path.join(global, "novaclaw.json"), JSON.stringify({ $schema: "global" })),
-              fs.writeFile(path.join(root, "novaclaw.json"), JSON.stringify({ $schema: "root" })),
-              fs.writeFile(path.join(parent, "novaclaw.jsonc"), JSON.stringify({ $schema: "parent" })),
-              fs.writeFile(path.join(directory, "config.json"), JSON.stringify({ $schema: "directory" })),
-              fs.writeFile(path.join(root, ".novaclaw", "novaclaw.json"), JSON.stringify({ $schema: "root-dot" })),
-              fs.writeFile(
-                path.join(directory, ".novaclaw", "novaclaw.jsonc"),
-                JSON.stringify({ $schema: "directory-dot" }),
-              ),
-            ])
+            // An outside-the-boundary .novaclaw must NOT be discovered.
+            await fs.mkdir(path.join(tmp.path, ".novaclaw"), { recursive: true })
           })
 
           return yield* Effect.gen(function* () {
             const config = yield* Config.Service
             const entries = yield* config.entries()
-            const documents = entries.filter((entry) => entry.type === "document")
 
             expect(entries.filter((entry) => entry.type === "directory").map((entry) => entry.path)).toEqual([
               AbsolutePath.make(global),
               AbsolutePath.make(path.join(root, ".novaclaw")),
               AbsolutePath.make(path.join(directory, ".novaclaw")),
             ])
-            expect(documents.map((document) => document.info.$schema)).toEqual([
-              "global",
-              "root",
-              "parent",
-              "directory",
-              "root-dot",
-              "directory-dot",
-            ])
-            expect(entries.map((entry) => (entry.type === "document" ? entry.info.$schema : entry.path))).toEqual([
-              "global",
-              AbsolutePath.make(global),
-              "root",
-              "parent",
-              "directory",
-              "root-dot",
-              AbsolutePath.make(path.join(root, ".novaclaw")),
-              "directory-dot",
-              AbsolutePath.make(path.join(directory, ".novaclaw")),
-            ])
+            expect(entries.filter((entry) => entry.type === "document")).toHaveLength(0)
           }).pipe(
             Effect.provide(
               testLayer(directory, global, root, {
-                type: "git",
-                store: AbsolutePath.make(path.join(root, ".git")),
+                vcs: { type: "git", store: AbsolutePath.make(path.join(root, ".git")) },
               }),
             ),
           )

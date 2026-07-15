@@ -90,12 +90,12 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
       return Schema.decodeUnknownSync(ConfigV2.Info)(yield* ConfigStoreWrite.overlay(base))
     })
 
-    // Config→SQLite step 7: `updateConfig` patches route into the per-subsystem SQLite stores
-    // (settings values merge in place; providers/agents/commands/references append a layer;
-    // skills/plugins replace). Keys with no owning store yet (permissions, instructions,
-    // experimental, disabled/enabled_providers, …) fall back to the legacy jsonc patch —
-    // removed in step 8. Any change still disposes instances: locations snapshot config (and
-    // rebuild the catalog + the settings synthetic document) at boot.
+    // Config→SQLite step 7 (+8c): `updateConfig` patches route into the per-subsystem SQLite
+    // stores (settings values merge in place; providers/agents/commands/references append a
+    // layer; skills/plugins replace). Post-8c only `instructions` + `disabled/enabled_providers`
+    // fall back to the legacy jsonc patch (V1-side readers; step 9). Any change still disposes
+    // instances: locations snapshot config (and rebuild the catalog + the settings synthetic
+    // document) at boot.
     const configUpdate = Effect.fn("GlobalHttpApi.configUpdate")(function* (ctx) {
       const consumed = yield* ConfigStoreWrite.apply(ctx.payload)
       // Filter on the ENCODED payload — residual values must be plain JSON so the

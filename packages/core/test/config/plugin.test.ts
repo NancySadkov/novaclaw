@@ -17,8 +17,10 @@ import { PluginTestLayer } from "../plugin/fixture"
 const it = testEffect(PluginTestLayer)
 const decode = Schema.decodeUnknownSync(Config.Info)
 
-// Config→SQLite step 5: the loader reads config-borne plugin specs from the instance-wide store
-// (its transitional seed imports the stubbed Config documents on first run).
+// Config→SQLite steps 5 + 8c: the loader reads config-borne plugin specs from the instance-wide
+// store (pre-populated here with the ABSOLUTE paths the import seeds would have resolved;
+// documents are never read — entries only feed the D2 `{plugin,plugins}/*` directory walk).
+const fixture = (name: string) => path.resolve(import.meta.dir, "../plugin/fixtures", name)
 const memoryStore = () => {
   const entries = new Map<string, PluginConfigEntry>()
   return PluginConfigStore.Service.of({
@@ -44,34 +46,19 @@ describe("ConfigExternalPlugin", () => {
       const location = yield* Location.Service
       const npm = yield* Npm.Service
       const host = yield* PluginHost.make(plugins)
-      const document = path.join(import.meta.dir, "config.json")
+      const store = memoryStore()
+      yield* store.setPlugin({
+        package: fixture("config-promise-plugin.ts"),
+        options: { description: "Loaded from config" },
+      })
 
       yield* ConfigExternalPlugin.Plugin.effect(host).pipe(
         Effect.provideService(PluginV2.Service, plugins),
         Effect.provideService(FSUtil.Service, fs),
         Effect.provideService(Location.Service, location),
         Effect.provideService(Npm.Service, npm),
-        Effect.provideService(PluginConfigStore.Service, memoryStore()),
-        Effect.provideService(
-          Config.Service,
-          Config.Service.of({
-            entries: () =>
-              Effect.succeed([
-                new Config.Document({
-                  type: "document",
-                  path: document,
-                  info: decode({
-                    plugins: [
-                      {
-                        package: "../plugin/fixtures/config-promise-plugin.ts",
-                        options: { description: "Loaded from config" },
-                      },
-                    ],
-                  }),
-                }),
-              ]),
-          }),
-        ),
+        Effect.provideService(PluginConfigStore.Service, store),
+        Effect.provideService(Config.Service, Config.Service.of({ entries: () => Effect.succeed([]) })),
       )
 
       expect(yield* waitForAgent(agents, "configured")).toMatchObject({
@@ -95,27 +82,18 @@ describe("ConfigExternalPlugin", () => {
         Effect.provideService(FSUtil.Service, fs),
         Effect.provideService(Location.Service, location),
         Effect.provideService(Npm.Service, npm),
-        Effect.provideService(PluginConfigStore.Service, memoryStore()),
         Effect.provideService(
-          Config.Service,
-          Config.Service.of({
-            entries: () =>
-              Effect.succeed([
-                new Config.Document({
-                  type: "document",
-                  path: path.join(import.meta.dir, "config.json"),
-                  info: decode({
-                    plugins: [
-                      {
-                        package: "../plugin/fixtures/config-effect-plugin.ts",
-                        options: { description: "Effect plugin from config" },
-                      },
-                    ],
-                  }),
-                }),
-              ]),
+          PluginConfigStore.Service,
+          yield* Effect.gen(function* () {
+            const store = memoryStore()
+            yield* store.setPlugin({
+              package: fixture("config-effect-plugin.ts"),
+              options: { description: "Effect plugin from config" },
+            })
+            return store
           }),
         ),
+        Effect.provideService(Config.Service, Config.Service.of({ entries: () => Effect.succeed([]) })),
       )
 
       expect(yield* waitForAgent(agents, "effect-configured")).toMatchObject({
@@ -139,29 +117,20 @@ describe("ConfigExternalPlugin", () => {
         Effect.provideService(FSUtil.Service, fs),
         Effect.provideService(Location.Service, location),
         Effect.provideService(Npm.Service, npm),
-        Effect.provideService(PluginConfigStore.Service, memoryStore()),
         Effect.provideService(
-          Config.Service,
-          Config.Service.of({
-            entries: () =>
-              Effect.succeed([
-                new Config.Document({
-                  type: "document",
-                  path: path.join(import.meta.dir, "config.json"),
-                  info: decode({
-                    plugins: [
-                      "../plugin/fixtures/missing-plugin.ts",
-                      "../plugin/fixtures/invalid-plugin.ts",
-                      {
-                        package: "../plugin/fixtures/config-promise-plugin.ts",
-                        options: { description: "Loaded after invalid plugins" },
-                      },
-                    ],
-                  }),
-                }),
-              ]),
+          PluginConfigStore.Service,
+          yield* Effect.gen(function* () {
+            const store = memoryStore()
+            yield* store.setPlugin({ package: fixture("missing-plugin.ts") })
+            yield* store.setPlugin({ package: fixture("invalid-plugin.ts") })
+            yield* store.setPlugin({
+              package: fixture("config-promise-plugin.ts"),
+              options: { description: "Loaded after invalid plugins" },
+            })
+            return store
           }),
         ),
+        Effect.provideService(Config.Service, Config.Service.of({ entries: () => Effect.succeed([]) })),
       )
 
       expect(yield* waitForAgent(agents, "configured")).toMatchObject({
@@ -196,26 +165,15 @@ describe("ConfigExternalPlugin", () => {
         Effect.provideService(FSUtil.Service, fs),
         Effect.provideService(Location.Service, location),
         Effect.provideService(Npm.Service, npm),
-        Effect.provideService(PluginConfigStore.Service, memoryStore()),
         Effect.provideService(
-          Config.Service,
-          Config.Service.of({
-            entries: () =>
-              Effect.succeed([
-                new Config.Document({
-                  type: "document",
-                  info: decode({
-                    plugins: [
-                      {
-                        package: "example-plugin@1.0.0",
-                        options: { description: "Installed from npm" },
-                      },
-                    ],
-                  }),
-                }),
-              ]),
+          PluginConfigStore.Service,
+          yield* Effect.gen(function* () {
+            const store = memoryStore()
+            yield* store.setPlugin({ package: "example-plugin@1.0.0", options: { description: "Installed from npm" } })
+            return store
           }),
         ),
+        Effect.provideService(Config.Service, Config.Service.of({ entries: () => Effect.succeed([]) })),
       )
 
       expect(yield* waitForAgent(agents, "configured")).toMatchObject({

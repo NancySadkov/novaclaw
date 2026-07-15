@@ -20,8 +20,8 @@ import { host } from "../plugin/host"
 const it = testEffect(AppNodeBuilder.build(LayerNode.group([CommandV2.node, FSUtil.node])))
 const decode = Schema.decodeUnknownSync(Config.Info)
 
-// Config→SQLite step 3: the plugin reads config-borne commands from the instance-wide store (its
-// transitional seed imports the stubbed Config documents on first run).
+// Config→SQLite steps 3 + 8c: the plugin reads config-borne commands from the instance-wide
+// store (pre-populated here — the import seeds fill it at boot; documents are never read).
 const memoryStore = () => {
   const layers = new Map<string, ConfigCommand.Info[]>()
   return CommandConfigStore.Service.of({
@@ -63,20 +63,17 @@ Review files`,
             await fs.writeFile(path.join(tmp.path, "commands", "empty.md"), "")
           })
 
+          const store = memoryStore()
+          yield* store.setLayers("review", [decode({ commands: { review: { template: "Inline review" } } }).commands!.review])
+
           const command = yield* CommandV2.Service
           yield* ConfigCommandPlugin.Plugin.effect(host({ command: { ...command, reload: command.reload } })).pipe(
-            Effect.provideService(CommandConfigStore.Service, memoryStore()),
+            Effect.provideService(CommandConfigStore.Service, store),
             Effect.provideService(
               Config.Service,
               Config.Service.of({
                 entries: () =>
-                  Effect.succeed([
-                    new Config.Document({
-                      type: "document",
-                      info: decode({ commands: { review: { template: "Inline review" } } }),
-                    }),
-                    new Config.Directory({ type: "directory", path: AbsolutePath.make(tmp.path) }),
-                  ]),
+                  Effect.succeed([new Config.Directory({ type: "directory", path: AbsolutePath.make(tmp.path) })]),
               }),
             ),
           )

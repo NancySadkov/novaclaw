@@ -1,6 +1,7 @@
 import { describe, expect } from "bun:test"
 import { Effect, Schema } from "effect"
 import { Catalog } from "@novaclaw/core/catalog"
+import { CatalogStore } from "@novaclaw/core/catalog-store"
 import { Config } from "@novaclaw/core/config"
 import { ConfigProviderPlugin } from "@novaclaw/core/config/plugin/provider"
 import { Integration } from "@novaclaw/core/integration"
@@ -13,10 +14,12 @@ import { PluginTestLayer } from "../plugin/fixture"
 
 const it = testEffect(PluginTestLayer)
 
-const addPlugin = Effect.fn(function* (config: Config.Interface) {
+// 8c: the plugin reads ONLY the instance-wide CatalogStore (documents no longer exist at
+// runtime); tests pre-populate the store layers the import seeds would have written.
+const addPlugin = Effect.fn(function* () {
   const plugin = yield* PluginV2.Service
   const host = yield* PluginHost.make(plugin)
-  yield* ConfigProviderPlugin.Plugin.effect(host).pipe(Effect.provideService(Config.Service, config))
+  yield* ConfigProviderPlugin.Plugin.effect(host)
 })
 
 function required<T>(value: T | undefined): T {
@@ -58,39 +61,34 @@ describe("ConfigProviderPlugin.Plugin", () => {
   it.effect("keeps configured model variant bodies unchanged", () =>
     Effect.gen(function* () {
       const catalog = yield* Catalog.Service
+      const store = yield* CatalogStore.Service
       const providerID = ProviderV2.ID.make("novaclaw")
       const modelID = ModelV2.ID.make("alpha-gpt-next")
-      const config = Config.Service.of({
-        entries: () =>
-          Effect.succeed([
-            new Config.Document({
-              type: "document",
-              info: decode({
-                providers: {
-                  novaclaw: {
-                    api: { type: "aisdk", package: "@ai-sdk/openai", url: "https://novaclaw.test/v1" },
-                    models: {
-                      "alpha-gpt-next": {
-                        variants: [
-                          {
-                            id: "high",
-                            body: {
-                              reasoningEffort: "high",
-                              reasoningSummary: "auto",
-                              include: ["reasoning.encrypted_content"],
-                            },
-                          },
-                        ],
+      yield* store.setLayers(providerID, [
+        decode({
+          providers: {
+            novaclaw: {
+              api: { type: "aisdk", package: "@ai-sdk/openai", url: "https://novaclaw.test/v1" },
+              models: {
+                "alpha-gpt-next": {
+                  variants: [
+                    {
+                      id: "high",
+                      body: {
+                        reasoningEffort: "high",
+                        reasoningSummary: "auto",
+                        include: ["reasoning.encrypted_content"],
                       },
                     },
-                  },
+                  ],
                 },
-              }),
-            }),
-          ]),
-      })
+              },
+            },
+          },
+        }).providers!.novaclaw,
+      ])
 
-      yield* addPlugin(config)
+      yield* addPlugin()
 
       const model = required(yield* catalog.model.get(providerID, modelID))
       expect(model.variants).toMatchObject([
@@ -109,39 +107,31 @@ describe("ConfigProviderPlugin.Plugin", () => {
   it.effect("keeps layered model variant bodies unchanged", () =>
     Effect.gen(function* () {
       const catalog = yield* Catalog.Service
+      const store = yield* CatalogStore.Service
       const providerID = ProviderV2.ID.make("novaclaw")
       const modelID = ModelV2.ID.make("alpha-gpt-next")
-      const config = Config.Service.of({
-        entries: () =>
-          Effect.succeed([
-            new Config.Document({
-              type: "document",
-              info: decode({
-                providers: {
-                  novaclaw: {
-                    api: { type: "aisdk", package: "@ai-sdk/openai", url: "https://novaclaw.test/v1" },
-                  },
+      yield* store.setLayers(providerID, [
+        decode({
+          providers: {
+            novaclaw: {
+              api: { type: "aisdk", package: "@ai-sdk/openai", url: "https://novaclaw.test/v1" },
+            },
+          },
+        }).providers!.novaclaw,
+        decode({
+          providers: {
+            novaclaw: {
+              models: {
+                "alpha-gpt-next": {
+                  variants: [{ id: "high", body: { reasoningEffort: "high" } }],
                 },
-              }),
-            }),
-            new Config.Document({
-              type: "document",
-              info: decode({
-                providers: {
-                  novaclaw: {
-                    models: {
-                      "alpha-gpt-next": {
-                        variants: [{ id: "high", body: { reasoningEffort: "high" } }],
-                      },
-                    },
-                  },
-                },
-              }),
-            }),
-          ]),
-      })
+              },
+            },
+          },
+        }).providers!.novaclaw,
+      ])
 
-      yield* addPlugin(config)
+      yield* addPlugin()
 
       const model = required(yield* catalog.model.get(providerID, modelID))
       expect(model.variants[0]).toMatchObject({
@@ -155,87 +145,76 @@ describe("ConfigProviderPlugin.Plugin", () => {
     withEnv({ CUSTOM_API_KEY: "secret" }, () =>
       Effect.gen(function* () {
         const catalog = yield* Catalog.Service
+        const store = yield* CatalogStore.Service
         const integrations = yield* Integration.Service
         const providerID = ProviderV2.ID.make("custom")
         const modelID = ModelV2.ID.make("chat")
-        const config = Config.Service.of({
-          entries: () =>
-            Effect.succeed([
-              new Config.Document({
-                type: "document",
-                info: decode({
-                  model: "custom/first",
-                  providers: {
-                    custom: {
-                      name: "Configured",
-                      env: ["CUSTOM_API_KEY"],
-                      api: { type: "native", settings: {} },
-                      request: request({ first: "first", shared: "first" }),
-                      models: {
-                        chat: {
-                          name: "First",
-                          capabilities: { tools: true, input: ["text"], output: ["text"] },
-                          disabled: true,
-                          limit: { context: 100, output: 50 },
-                          cost: { input: 1, output: 2 },
-                          request: request({ first: "first", shared: "first" }, "retained"),
-                          variants: [
-                            {
-                              id: "fast",
-                              headers: { first: "first", shared: "first" },
-                            },
-                          ],
-                        },
+        yield* store.setLayers(providerID, [
+          decode({
+            providers: {
+              custom: {
+                name: "Configured",
+                env: ["CUSTOM_API_KEY"],
+                api: { type: "native", settings: {} },
+                request: request({ first: "first", shared: "first" }),
+                models: {
+                  chat: {
+                    name: "First",
+                    capabilities: { tools: true, input: ["text"], output: ["text"] },
+                    disabled: true,
+                    limit: { context: 100, output: 50 },
+                    cost: { input: 1, output: 2 },
+                    request: request({ first: "first", shared: "first" }, "retained"),
+                    variants: [
+                      {
+                        id: "fast",
+                        headers: { first: "first", shared: "first" },
                       },
-                    },
+                    ],
                   },
-                }),
-              }),
-              new Config.Document({
-                type: "document",
-                info: decode({
-                  model: "custom/default",
-                  providers: {
-                    custom: {
-                      api: { type: "aisdk", package: "custom-sdk", url: "https://example.test" },
-                      request: request({ last: "last", shared: "last" }),
-                      models: {
-                        default: {
-                          name: "Default",
-                        },
-                        chat: {
-                          api: { id: "api-chat" },
-                          name: "Last",
-                          limit: { output: 75 },
-                          request: request({ last: "last", shared: "last" }),
-                          variants: [
-                            {
-                              id: "fast",
-                              headers: { last: "last", shared: "last" },
-                            },
-                            {
-                              id: "slow",
-                              headers: { slow: "slow" },
-                            },
-                          ],
-                        },
+                },
+              },
+            },
+          }).providers!.custom,
+          decode({
+            providers: {
+              custom: {
+                api: { type: "aisdk", package: "custom-sdk", url: "https://example.test" },
+                request: request({ last: "last", shared: "last" }),
+                models: {
+                  default: {
+                    name: "Default",
+                  },
+                  chat: {
+                    api: { id: "api-chat" },
+                    name: "Last",
+                    limit: { output: 75 },
+                    request: request({ last: "last", shared: "last" }),
+                    variants: [
+                      {
+                        id: "fast",
+                        headers: { last: "last", shared: "last" },
                       },
-                    },
+                      {
+                        id: "slow",
+                        headers: { slow: "slow" },
+                      },
+                    ],
                   },
-                }),
-              }),
-              new Config.Document({
-                type: "document",
-                info: decode({
-                  providers: {
-                    custom: { name: "Renamed" },
-                  },
-                }),
-              }),
-            ]),
-        })
+                },
+              },
+            },
+          }).providers!.custom,
+          decode({
+            providers: {
+              custom: { name: "Renamed" },
+            },
+          }).providers!.custom,
+        ])
+        // The import seed stores the latest() `model` ref as the default (custom/default here).
+        yield* store.setDefault("custom/default")
 
-        yield* addPlugin(config)
+        yield* addPlugin()
 
         const provider = required(yield* catalog.provider.get(providerID))
         const model = required(yield* catalog.model.get(providerID, modelID))

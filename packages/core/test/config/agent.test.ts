@@ -18,9 +18,9 @@ import { agentHost, host } from "../plugin/host"
 
 const it = testEffect(AppNodeBuilder.build(LayerNode.group([AgentV2.node, FSUtil.node])))
 
-// Config→SQLite step 2: the plugin reads config-borne agents from the instance-wide store (its
-// transitional seed imports the stubbed Config documents on first run, so the merge assertions
-// below exercise the same jsonc-shaped inputs through the store path).
+// Config→SQLite steps 2 + 8c: the plugin reads config-borne agents from the instance-wide
+// store (pre-populated here — the import seeds fill it at boot; documents only carry the
+// global `permissions` ruleset, which in production is the settings store's synthetic doc).
 const memoryStore = () => {
   const layers = new Map<string, ConfigAgent.Info[]>()
   let defaultAgent: string | undefined
@@ -60,41 +60,48 @@ describe("ConfigAgentPlugin.Plugin", () => {
         }),
       )
 
+      const first = decode({
+        agents: {
+          build: {
+            permissions: [{ action: "bash", resource: "git *", effect: "allow" }],
+          },
+          reviewer: {
+            model: "openrouter/openai/gpt-5",
+            description: "Review changes",
+            mode: "subagent",
+            permissions: [
+              { action: "edit", resource: "*", effect: "deny" },
+              { action: "read", resource: "*", effect: "deny" },
+            ],
+          },
+          removed: { description: "Removed later" },
+        },
+      }).agents!
+      const second = decode({
+        agents: {
+          reviewer: { variant: "high", hidden: true },
+          removed: { disabled: true },
+          late: {
+            permissions: [{ action: "edit", resource: "*", effect: "allow" }],
+          },
+        },
+      }).agents!
+      const store = memoryStore()
+      yield* store.setLayers("build", [first.build])
+      yield* store.setLayers("reviewer", [first.reviewer, second.reviewer])
+      yield* store.setLayers("removed", [first.removed, second.removed])
+      yield* store.setLayers("late", [second.late])
+
       const config = Config.Service.of({
         entries: () =>
           Effect.succeed([
             new Config.Document({
               type: "document",
               info: decode({
-                permissions: [{ action: "bash", resource: "*", effect: "ask" }],
-                agents: {
-                  build: {
-                    permissions: [{ action: "bash", resource: "git *", effect: "allow" }],
-                  },
-                  reviewer: {
-                    model: "openrouter/openai/gpt-5",
-                    description: "Review changes",
-                    mode: "subagent",
-                    permissions: [
-                      { action: "edit", resource: "*", effect: "deny" },
-                      { action: "read", resource: "*", effect: "deny" },
-                    ],
-                  },
-                  removed: { description: "Removed later" },
-                },
-              }),
-            }),
-            new Config.Document({
-              type: "document",
-              info: decode({
-                permissions: [{ action: "read", resource: "*", effect: "allow" }],
-                agents: {
-                  reviewer: { variant: "high", hidden: true },
-                  removed: { disabled: true },
-                  late: {
-                    permissions: [{ action: "edit", resource: "*", effect: "allow" }],
-                  },
-                },
+                permissions: [
+                  { action: "bash", resource: "*", effect: "ask" },
+                  { action: "read", resource: "*", effect: "allow" },
+                ],
               }),
             }),
           ]),
@@ -102,7 +109,7 @@ describe("ConfigAgentPlugin.Plugin", () => {
 
       yield* ConfigAgentPlugin.Plugin.effect(host({ agent: agentHost(agents) })).pipe(
         Effect.provideService(Config.Service, config),
-        Effect.provideService(AgentConfigStore.Service, memoryStore()),
+        Effect.provideService(AgentConfigStore.Service, store),
       )
 
       const buildAgent = yield* agents.get(build)
@@ -143,48 +150,40 @@ describe("ConfigAgentPlugin.Plugin", () => {
   it.effect("maps configured agent fields and preserves an unspecified model variant", () =>
     Effect.gen(function* () {
       const agents = yield* AgentV2.Service
-      const config = Config.Service.of({
-        entries: () =>
-          Effect.succeed([
-            new Config.Document({
-              type: "document",
-              info: decode({
-                agents: {
-                  reviewer: {
-                    model: "anthropic/claude-sonnet",
-                    system: "Review carefully.",
-                    description: "Reviews changes",
-                    mode: "subagent",
-                    hidden: true,
-                    color: "warning",
-                    steps: 12,
-                    request: {
-                      headers: { first: "one", shared: "first" },
-                      body: { enabled: true, profile: "review", effort: "medium" },
-                    },
-                  },
-                },
-              }),
-            }),
-            new Config.Document({
-              type: "document",
-              info: decode({
-                agents: {
-                  reviewer: {
-                    request: {
-                      headers: { shared: "last", second: "two" },
-                      body: { retries: 2, effort: "high" },
-                    },
-                  },
-                },
-              }),
-            }),
-          ]),
-      })
+      const store = memoryStore()
+      yield* store.setLayers("reviewer", [
+        decode({
+          agents: {
+            reviewer: {
+              model: "anthropic/claude-sonnet",
+              system: "Review carefully.",
+              description: "Reviews changes",
+              mode: "subagent",
+              hidden: true,
+              color: "warning",
+              steps: 12,
+              request: {
+                headers: { first: "one", shared: "first" },
+                body: { enabled: true, profile: "review", effort: "medium" },
+              },
+            },
+          },
+        }).agents!.reviewer,
+        decode({
+          agents: {
+            reviewer: {
+              request: {
+                headers: { shared: "last", second: "two" },
+                body: { retries: 2, effort: "high" },
+              },
+            },
+          },
+        }).agents!.reviewer,
+      ])
 
       yield* ConfigAgentPlugin.Plugin.effect(host({ agent: agentHost(agents) })).pipe(
-        Effect.provideService(Config.Service, config),
-        Effect.provideService(AgentConfigStore.Service, memoryStore()),
+        Effect.provideService(Config.Service, Config.Service.of({ entries: () => Effect.succeed([]) })),
+        Effect.provideService(AgentConfigStore.Service, store),
       )
 
       const reviewer = yield* agents.get(AgentV2.ID.make("reviewer"))
@@ -211,19 +210,12 @@ describe("ConfigAgentPlugin.Plugin", () => {
       const build = AgentV2.ID.make("build")
       yield* agents.transform((editor) => editor.update(build, () => {}))
 
-      const config = Config.Service.of({
-        entries: () =>
-          Effect.succeed([
-            new Config.Document({
-              type: "document",
-              info: decode({ agents: { build: { disabled: true } } }),
-            }),
-          ]),
-      })
+      const store = memoryStore()
+      yield* store.setLayers("build", [decode({ agents: { build: { disabled: true } } }).agents!.build])
 
       yield* ConfigAgentPlugin.Plugin.effect(host({ agent: agentHost(agents) })).pipe(
-        Effect.provideService(Config.Service, config),
-        Effect.provideService(AgentConfigStore.Service, memoryStore()),
+        Effect.provideService(Config.Service, Config.Service.of({ entries: () => Effect.succeed([]) })),
+        Effect.provideService(AgentConfigStore.Service, store),
       )
 
       expect(yield* agents.get(build)).toBeUndefined()

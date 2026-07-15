@@ -27,16 +27,6 @@ export const Plugin = define({
     yield* ctx.command.transform(
       Effect.fn(function* (draft) {
         const entries = yield* config.entries()
-        const files = entries.filter((entry): entry is Config.Document => entry.type === "document")
-
-        // Transitional jsonc seed (one-time, mirrors config-agent/provider): import an existing
-        // config's commands into the store the first time it is empty. Removed in step 8.
-        if (yield* store.isEmpty()) {
-          const layers: Record<string, ConfigCommand.Info[]> = {}
-          for (const file of files)
-            for (const [name, item] of Object.entries(file.info.commands ?? {})) (layers[name] ??= []).push(item)
-          for (const [name, commandLayers] of Object.entries(layers)) yield* store.setLayers(name, commandLayers)
-        }
 
         // Config-borne commands from the store (each command's layers apply in order)…
         const stored = yield* store.commands()
