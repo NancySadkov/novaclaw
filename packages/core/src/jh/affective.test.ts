@@ -4,7 +4,7 @@
 // blown out (every jh call is tool-call JSON — affective's own toolsPresent contract).
 import { describe, expect, test } from "bun:test"
 import { JhAffective } from "@novaclaw/core/jh/affective"
-import { Affective } from "@novaclaw/core/session/runner/affective"
+import { Affective } from "@novaclaw/core/affective"
 
 const base = { temperature: 0.6, topP: 0.95 }
 /** Drive N identical failing steps — the rut shape (waves 15-17: 9-25 repeats of one signature). */

@@ -17,6 +17,11 @@ function violationFor(filename: string, spec: string): string | undefined {
   if (spec === "effect") return undefined
   if (spec.startsWith("./")) return undefined
   if (spec === "../util/hash") return undefined
+  // improve18: the PURE affective homeostat (core root, zero dependencies) — Strict and the normal
+  // drain loop must drive ONE engine, not two look-alikes. Whitelisted on the same grounds as
+  // ../util/hash: a leaf module, no session/tool/config/v1/llm/schema reach (which is what §0.7.2
+  // actually guards).
+  if (spec === "../affective") return undefined
   if (spec.startsWith("node:")) {
     return NODE_ALLOWED.has(filename) ? undefined : `node: import "${spec}" not allowed in ${filename}`
   }

@@ -1,9 +1,13 @@
 export * as JhAffective from "./affective"
 
-import { Affective } from "../session/runner/affective"
+import { Affective } from "../affective"
 import type { JhLog } from "./log"
 
 // improve18 (owner directive): AFFECTIVE × STRICT — one engine, two callers.
+//
+// Imports `../affective` (the core-root homeostat, zero deps) — NOT the session tree: the §0.7.2
+// import guard keeps jh off session/tool/config/v1/llm/schema, and it is right to. The homeostat
+// was moved to the core root precisely so both engines can share it without that violation.
 //
 // The two modes are orthogonal and should strengthen each other: Strict owns the STRUCTURE (what to
 // do next, verified), affective owns the DISPOSITION (how to sample while doing it). Until now they
