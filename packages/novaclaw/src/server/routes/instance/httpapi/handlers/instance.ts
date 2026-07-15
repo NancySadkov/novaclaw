@@ -3,6 +3,10 @@ import { LocationServiceMap } from "@novaclaw/core/location-services"
 import { ServerLocationServiceMap } from "@/location-service-map"
 import { Location } from "@novaclaw/core/location"
 import { AbsolutePath } from "@novaclaw/core/schema"
+import { CommandV2 } from "@novaclaw/core/command"
+import { ExternalCommandSource } from "@novaclaw/core/command/external-command-source"
+import { SkillCommand } from "@novaclaw/core/command/skill-command"
+import { SkillV2 } from "@novaclaw/core/skill"
 import { GlobalBus } from "@/bus/global"
 import { Command } from "@/command"
 import * as InstanceState from "@/effect/instance-state"
@@ -43,7 +47,6 @@ function probeRoots(): Promise<string[]> {
 export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance", (handlers) =>
   Effect.gen(function* () {
     const locations = yield* LocationServiceMap.Service
-    const command = yield* Command.Service
     const format = yield* Format.Service
     const skill = yield* Skill.Service
     const vcs = yield* Vcs.Service
@@ -111,8 +114,58 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
       )
     })
 
+    // P6 reconciliation (rides config-sqlite step 9): list from the authoritative V2 truth —
+    // `CommandV2` (built-ins + store/markdown + PLUGIN-registered commands, what the dispatch
+    // op reads) ∪ skills ∪ the MCP `ExternalCommandSource` — projected onto the V1 wire shape.
+    // The old novaclaw `Command.Service` map read V1 config, so store/plugin commands ran but
+    // never appeared (the getAgent bug class), while its MCP/skill entries appeared but could
+    // NOT dispatch (the V2 command op never knew them). Precedence on a name collision mirrors
+    // dispatch: CommandV2 > skill > MCP. MCP templates resolve lazily at dispatch, so the wire
+    // carries "" for them (V1 serialized a Promise there — clients never read it).
     const getCommand = Effect.fn("InstanceHttpApi.command")(function* () {
-      return yield* command.list()
+      const directory = (yield* InstanceState.context).directory
+      return yield* Effect.gen(function* () {
+        const commands = yield* CommandV2.Service
+        const skills = yield* SkillV2.Service
+        const external = yield* ExternalCommandSource.Service
+        const list: Command.Info[] = []
+        const seen = new Set<string>()
+        for (const cmd of yield* commands.list()) {
+          seen.add(cmd.name)
+          list.push({
+            name: cmd.name,
+            description: cmd.description,
+            agent: cmd.agent,
+            model: cmd.model ? `${cmd.model.providerID}/${cmd.model.id}` : undefined,
+            source: "command",
+            template: cmd.template,
+            subtask: cmd.subtask,
+            hints: Command.hints(cmd.template),
+          })
+        }
+        for (const skill of yield* skills.list()) {
+          if (seen.has(skill.name)) continue
+          seen.add(skill.name)
+          list.push({
+            name: skill.name,
+            description: skill.description,
+            source: "skill",
+            template: SkillCommand.template(skill),
+            hints: [],
+          })
+        }
+        for (const [name, entry] of yield* external.entries()) {
+          if (seen.has(name)) continue
+          list.push({
+            name,
+            description: entry.description,
+            source: "mcp",
+            template: "",
+            hints: [...entry.hints],
+          })
+        }
+        return list
+      }).pipe(Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory) }))))
     })
 
     // F1 reconciliation: list from the authoritative V2 store (`AgentV2`, what the

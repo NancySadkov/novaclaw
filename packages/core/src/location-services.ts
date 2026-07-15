@@ -3,6 +3,7 @@ import { AdhocGuidance } from "./adhoc-tools/guidance"
 import { AgentV2 } from "./agent"
 import { Catalog } from "./catalog"
 import { CommandV2 } from "./command"
+import { ExternalCommandSource } from "./command/external-command-source"
 import { Config } from "./config"
 import { LayerNode } from "./effect/layer-node"
 import { Node } from "./effect/app-node"
@@ -47,6 +48,7 @@ export const locationServices = LayerNode.group([
   Config.node,
   AgentV2.node,
   CommandV2.node,
+  ExternalCommandSource.node,
   Reference.node,
   Integration.node,
   Catalog.node,

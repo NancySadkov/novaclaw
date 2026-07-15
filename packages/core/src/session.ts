@@ -44,6 +44,9 @@ import { FSUtil } from "./fs-util"
 import { SessionDurable } from "@novaclaw/schema/durable-event-manifest"
 import { Config } from "./config"
 import { CommandV2 } from "./command"
+import { ExternalCommandSource } from "./command/external-command-source"
+import { SkillCommand } from "./command/skill-command"
+import { SkillV2 } from "./skill"
 import { SessionSpawner } from "./session/spawner"
 import { AppProcess } from "./process"
 import { Shell } from "./shell"
@@ -632,16 +635,42 @@ export const layer = Layer.effect(
       // delegates to `prompt()`). CommandV2 + the shell machinery + SessionSpawner are location
       // services, resolved via the session's Location. Covers arg substitution + `` !`shell` ``
       // substitution + cmd.agent/cmd.model override + the subtask (command-as-subagent) branch +
-      // submit — returning a discriminated `CommandResult` (prompt vs subtask). A missing command
-      // dies (the caller validates existence); a spawn-quota trip dies for now (residue).
+      // submit — returning a discriminated `CommandResult` (prompt vs subtask). A name that
+      // misses CommandV2 falls back to a SKILL (every skill is slash-invokable, V1 parity) and
+      // then to the ExternalCommandSource seam (MCP prompts, resolved lazily) — the same union
+      // the `/command` list serves; only then does a missing command die (the caller validates
+      // existence). A spawn-quota trip dies for now (residue).
       command: Effect.fn("V2Session.command")(function* (input) {
         const session = yield* result.get(input.sessionID)
         // Resolve the command and run any `` !`cmd` `` substitutions in the Location scope; the
         // shell run mirrors the `shell` op (configured shell + cwd; AppProcess provided directly).
         const resolved = yield* Effect.gen(function* () {
           const commands = yield* CommandV2.Service
-          const cmd = yield* commands.get(input.command)
-          if (!cmd) return yield* Effect.die(new Error(`Command not found: ${input.command}`))
+          const cmd: CommandV2.Info = yield* commands.get(input.command).pipe(
+            Effect.flatMap((found) =>
+              found
+                ? Effect.succeed(found)
+                : Effect.gen(function* () {
+                    const skills = yield* SkillV2.Service
+                    const skill = (yield* skills.list()).find((item) => item.name === input.command)
+                    if (skill)
+                      return {
+                        name: skill.name,
+                        template: SkillCommand.template(skill),
+                        ...(skill.description !== undefined ? { description: skill.description } : {}),
+                      } as CommandV2.Info
+                    const external = yield* ExternalCommandSource.Service
+                    const entry = (yield* external.entries()).get(input.command)
+                    if (entry)
+                      return {
+                        name: input.command,
+                        template: yield* entry.template,
+                        ...(entry.description !== undefined ? { description: entry.description } : {}),
+                      } as CommandV2.Info
+                    return yield* Effect.die(new Error(`Command not found: ${input.command}`))
+                  }),
+            ),
+          )
           let text = expandCommandTemplate(cmd.template, input.arguments)
           const bashMatches = [...text.matchAll(COMMAND_BASH_REGEX)]
           if (bashMatches.length > 0) {
