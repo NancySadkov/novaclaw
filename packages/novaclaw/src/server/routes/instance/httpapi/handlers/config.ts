@@ -1,5 +1,6 @@
 import { Config } from "@/config/config"
 import { Config as ConfigV2 } from "@novaclaw/core/config"
+import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
 import { ProviderCatalogView } from "@/provider/catalog-view"
 import { Catalog } from "@novaclaw/core/catalog"
 import { LocationServiceMap } from "@novaclaw/core/location-services"
@@ -21,7 +22,11 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
       // The success schema is the `Config.Info` Schema.Class, so the response must be a class
       // INSTANCE — the service returns a plain merged object (with the derived `plugin_origins`),
       // so decode it (excess `plugin_origins` is ignored) before returning.
-      return Schema.decodeUnknownSync(ConfigV2.Info)(yield* configSvc.get())
+      // Config→SQLite step 7: overlay the store-backed keys so per-location consumers
+      // (`sync().data.config` — the composer's strict/tuning global defaults) read the same
+      // values the runtime's synthetic document serves.
+      const base = (yield* configSvc.get()) as Record<string, unknown>
+      return Schema.decodeUnknownSync(ConfigV2.Info)(yield* ConfigStoreWrite.overlay(base))
     })
 
     const update = Effect.fn("ConfigHttpApi.update")(function* (ctx) {

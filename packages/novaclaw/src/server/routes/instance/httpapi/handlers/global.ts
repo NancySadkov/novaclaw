@@ -1,5 +1,6 @@
 import { Config } from "@/config/config"
 import { Config as ConfigV2 } from "@novaclaw/core/config"
+import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
 import { GlobalBus, type GlobalEvent as GlobalBusEvent } from "@/bus/global"
 import { EffectBridge } from "@/effect/bridge"
 import { EventV2 } from "@novaclaw/core/event"
@@ -82,14 +83,37 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
 
     // The `Config.Info` success schema is a Schema.Class, so responses must be class INSTANCES — the
     // service returns plain merged objects (with derived `plugin_origins`); decode before returning.
+    // Config→SQLite step 7: the store-backed keys OVERLAY the file-derived view, so the
+    // Settings UI reads exactly what the write router stored (the file no longer carries them).
     const configGet = Effect.fn("GlobalHttpApi.configGet")(function* () {
-      return Schema.decodeUnknownSync(ConfigV2.Info)(yield* config.getGlobal())
+      const base = (yield* config.getGlobal()) as Record<string, unknown>
+      return Schema.decodeUnknownSync(ConfigV2.Info)(yield* ConfigStoreWrite.overlay(base))
     })
 
+    // Config→SQLite step 7: `updateConfig` patches route into the per-subsystem SQLite stores
+    // (settings values merge in place; providers/agents/commands/references append a layer;
+    // skills/plugins replace). Keys with no owning store yet (permissions, instructions,
+    // experimental, disabled/enabled_providers, …) fall back to the legacy jsonc patch —
+    // removed in step 8. Any change still disposes instances: locations snapshot config (and
+    // rebuild the catalog + the settings synthetic document) at boot.
     const configUpdate = Effect.fn("GlobalHttpApi.configUpdate")(function* (ctx) {
-      const result = yield* config.updateGlobal(ctx.payload)
-      if (result.changed) bridge.fork(disposeAllInstancesAndEmitGlobalDisposed({ swallowErrors: true }))
-      return Schema.decodeUnknownSync(ConfigV2.Info)(result.info)
+      const consumed = yield* ConfigStoreWrite.apply(ctx.payload)
+      // Filter on the ENCODED payload — residual values must be plain JSON so the
+      // legacy-path decode below round-trips.
+      const plainPayload = Schema.encodeSync(ConfigV2.Info)(ctx.payload) as Record<string, unknown>
+      const residual = Object.fromEntries(
+        Object.entries(plainPayload).filter(([key, value]) => value !== undefined && !consumed.has(key)),
+      )
+      let changed = consumed.size > 0
+      if (Object.keys(residual).length > 0) {
+        // The legacy path patches plain JSON into the file (patchJsonc) — the encoded
+        // residual IS that shape; its keys were already validated by the route decode.
+        const result = yield* config.updateGlobal(residual as Config.Info)
+        changed = changed || result.changed
+      }
+      if (changed) bridge.fork(disposeAllInstancesAndEmitGlobalDisposed({ swallowErrors: true }))
+      const base = (yield* config.getGlobal()) as Record<string, unknown>
+      return Schema.decodeUnknownSync(ConfigV2.Info)(yield* ConfigStoreWrite.overlay(base))
     })
 
     const dispose = Effect.fn("GlobalHttpApi.dispose")(function* () {
