@@ -12,4 +12,10 @@ export const Info = Schema.Struct({
   agent: Schema.String.pipe(optional),
   model: Model.Ref.pipe(optional),
   subtask: Schema.Boolean.pipe(optional),
+  // P6 (/command reconciliation): presentation metadata the list routes project — where the
+  // command came from (a saved command, an MCP prompt, a skill) and its argument placeholders
+  // ($1..$N / $ARGUMENTS) for the composer. Absent on the raw CommandV2 state entries; the
+  // list handlers fill them.
+  source: Schema.Literals(["command", "mcp", "skill"]).pipe(optional),
+  hints: Schema.Array(Schema.String).pipe(optional),
 }).annotate({ identifier: "CommandV2.Info" })
