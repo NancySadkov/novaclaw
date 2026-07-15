@@ -28,7 +28,7 @@ export interface Executor {
   }) => Effect.Effect<Observation>
 }
 
-export const TOOL_NAMES: ReadonlyArray<string> = ["write_file", "edit_file", "replace_lines", "read_file", "run", "note", "git_revert"]
+export const TOOL_NAMES: ReadonlyArray<string> = ["write_file", "append_file", "edit_file", "replace_lines", "read_file", "run", "note", "git_revert"]
 
 const messageOf = (e: unknown): string => (e instanceof Error ? e.message : String(e))
 const noArtifacts: ReadonlyMap<string, string> = new Map()
@@ -61,6 +61,36 @@ function writeFile(input: { args: Readonly<Record<string, unknown>>; produces: R
     return obs(false, `write_file failed: ${messageOf(e)}`)
   }
   return obs(true, `wrote ${Buffer.byteLength(content, "utf8")} bytes to ${p}`, assignFirst(input.produces, (r) => r.type === "file", content))
+}
+
+// improve17 L2 (the beat-run pipeline): bulk artifacts (chapters, long documents) GROW in verified
+// increments — appending must not re-transmit the file (whole-chapter regeneration was the #1 wall
+// sink in the Tier-3 batteries: every gate failure re-bought a ~2,700-token generation). Creates the
+// file when missing; separates increments with a blank line when the existing text doesn't already
+// end in one (the natural paragraph glue for prose — and harmless for code/logs).
+function appendFile(input: { args: Readonly<Record<string, unknown>>; produces: ReadonlyArray<JhStep.ArtifactRef>; cwd: string }): Observation {
+  const { path: p, content } = input.args
+  if (typeof p !== "string" || typeof content !== "string") return badArgs("append_file", "{path: string, content: string}")
+  if (content === "") return obs(false, "append_file: content is empty — nothing to append")
+  const target = safePath(input.cwd, p)
+  if (!target) return obs(false, `append_file refused unsafe path "${p}" (absolute or contains "..")`)
+  try {
+    fs.mkdirSync(path.dirname(target), { recursive: true })
+    let existing = ""
+    try {
+      existing = fs.readFileSync(target, "utf8")
+    } catch {}
+    const glue = existing === "" ? "" : existing.endsWith("\n\n") ? "" : existing.endsWith("\n") ? "\n" : "\n\n"
+    const updated = existing + glue + content
+    fs.writeFileSync(target, updated, "utf8")
+    return obs(
+      true,
+      `appended ${Buffer.byteLength(content, "utf8")} bytes to ${p} (file is now ${updated.split("\n").length} lines)`,
+      assignFirst(input.produces, (r) => r.type === "file", updated),
+    )
+  } catch (e) {
+    return obs(false, `append_file failed: ${messageOf(e)}`)
+  }
 }
 
 // improve3 P4 (C7/R-EDIT): a weak model quotes old_string with CRLF/trailing-space/indent drift, so an
@@ -248,6 +278,8 @@ export function basicExecutor(runner: JhProcessRunner.Runner, opts?: { readonly 
       switch (input.tool) {
         case "write_file":
           return Effect.succeed(writeFile(input))
+        case "append_file":
+          return Effect.succeed(appendFile(input))
         case "edit_file":
           return Effect.succeed(editFile(input))
         case "replace_lines":

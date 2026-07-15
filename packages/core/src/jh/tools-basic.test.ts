@@ -28,6 +28,39 @@ describe("JhBasicTools.basicExecutor", () => {
     expect((await runTool("write_file", { path: "../escape.c", content: "x" }, [], cwd)).ok).toBe(false)
   })
 
+  test("append_file creates a missing file, then grows it with blank-line glue (improve17 beat-runs)", async () => {
+    const cwd = tmp()
+    const first = await runTool("append_file", { path: "ch1.md", content: "First beat-run." }, [ref("a", "file")], cwd)
+    expect(first.ok).toBe(true)
+    expect(fs.readFileSync(path.join(cwd, "ch1.md"), "utf8")).toBe("First beat-run.")
+    const second = await runTool("append_file", { path: "ch1.md", content: "Second beat-run." }, [ref("a", "file")], cwd)
+    expect(second.ok).toBe(true)
+    // no trailing newline on the existing text → a full blank-line paragraph separator
+    expect(fs.readFileSync(path.join(cwd, "ch1.md"), "utf8")).toBe("First beat-run.\n\nSecond beat-run.")
+    // the file produce carries the WHOLE updated content (the oracle sees the full state)
+    expect(second.artifacts.get("a")).toBe("First beat-run.\n\nSecond beat-run.")
+    expect(second.output).toContain("appended")
+  })
+
+  test("append_file glue: a single trailing newline gains one more; a double stays as-is", async () => {
+    const cwd = tmp()
+    fs.writeFileSync(path.join(cwd, "one.md"), "para\n")
+    await runTool("append_file", { path: "one.md", content: "next" }, [], cwd)
+    expect(fs.readFileSync(path.join(cwd, "one.md"), "utf8")).toBe("para\n\nnext")
+    fs.writeFileSync(path.join(cwd, "two.md"), "para\n\n")
+    await runTool("append_file", { path: "two.md", content: "next" }, [], cwd)
+    expect(fs.readFileSync(path.join(cwd, "two.md"), "utf8")).toBe("para\n\nnext")
+  })
+
+  test("append_file refuses unsafe paths, bad args, and empty content", async () => {
+    const cwd = tmp()
+    expect((await runTool("append_file", { path: "../escape.md", content: "x" }, [], cwd)).ok).toBe(false)
+    expect((await runTool("append_file", { path: "a.md" }, [], cwd)).ok).toBe(false)
+    const empty = await runTool("append_file", { path: "a.md", content: "" }, [], cwd)
+    expect(empty.ok).toBe(false)
+    expect(empty.output).toContain("empty")
+  })
+
   test("read_file reads under cwd and sets the first produce", async () => {
     const cwd = tmp()
     fs.writeFileSync(path.join(cwd, "r.txt"), "hello")

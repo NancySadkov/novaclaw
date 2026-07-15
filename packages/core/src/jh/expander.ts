@@ -18,7 +18,14 @@ export interface PromptPair {
 
 const TOOL_ARGS: Record<string, string> = {
   write_file: "write_file{path, content} — CREATE a file that does not exist yet (OVERWRITES the whole file). Use it ONLY for the first creation of a file; to change or extend an EXISTING file use edit_file. Rewriting an existing file with write_file discards work you already verified and reintroduces bugs.",
+  // improve17 L2: the beat-run primitive — bulk artifacts grow in verified increments instead of
+  // being regenerated whole.
+  append_file: "append_file{path, content} — ADD content to the END of a file (creates it if missing; a blank line separates increments). The RIGHT tool for growing a long document section by section — never re-send text the file already contains.",
   edit_file: "edit_file{path, old_string, new_string} — replace ONE exact occurrence of old_string with new_string (old_string must appear EXACTLY ONCE in the file). This is the DEFAULT way to change an existing file: add a function, fix a line — surgical, fast, and it cannot corrupt the untouched rest of the file.",
+  // improve16/17 anatomy: replace_lines previously had NO entry here, so its schema rendered as
+  // "replace_lines{...}" and the model learned the arg shape only from rejections (8-17 arg-shape
+  // fails per wall-55 run). The schema belongs in the table.
+  replace_lines: "replace_lines{path, first_line, last_line, new_content} — replace the line RANGE first_line..last_line (1-based, inclusive, from the `N→` numbers in the workspace view) with new_content. The reliable way to fix specific lines: you do NOT reproduce the old text, the numbered lines are ground truth.",
   read_file: "read_file{path}",
   run: "run{command} — execute a shell command (compile, run a program, etc.)",
   note: "note{text}",
