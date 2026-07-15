@@ -39,7 +39,18 @@ export const registeredApps = apps
 
 // The built-in app ids are reserved — a plugin/agent app can't shadow or duplicate them. Mirrors the
 // server guard (core/app-registry.ts RESERVED_IDS) so the browser path can't sneak one past it (L2).
-const RESERVED_IDS = new Set(["chats", "notes", "files", "processes", "search", "terminal", "trash", "help", "settings"])
+const RESERVED_IDS = new Set([
+  "chats",
+  "notes",
+  "files",
+  "processes",
+  "registry",
+  "search",
+  "terminal",
+  "trash",
+  "help",
+  "settings",
+])
 
 /** Register (or replace, by id) a dynamically-contributed app. */
 export function registerApp(app: HomeApp): void {

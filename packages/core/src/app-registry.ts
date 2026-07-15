@@ -45,7 +45,18 @@ const appsRoot = (options?: Options) => options?.root ?? path.join(Global.Path.d
 const ID_PATTERN = /^[a-z0-9][a-z0-9-_]{0,63}$/
 export const isValidId = (id: string) => ID_PATTERN.test(id)
 
-const RESERVED_IDS = new Set(["chats", "notes", "files", "processes", "search", "terminal", "trash", "help", "settings"])
+const RESERVED_IDS = new Set([
+  "chats",
+  "notes",
+  "files",
+  "processes",
+  "registry",
+  "search",
+  "terminal",
+  "trash",
+  "help",
+  "settings",
+])
 
 /** Derive a valid id from a title ("Stock Prices" -> "stock-prices"). */
 export function slugify(title: string): string {
