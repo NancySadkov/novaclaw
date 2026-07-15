@@ -23,6 +23,7 @@ import { toolDefinitions } from "./lib/tool"
 import { FSUtil } from "../src/fs-util"
 import { Credential } from "../src/credential"
 import { Database } from "../src/database/database"
+import { SettingsConfigStore } from "../src/settings-config-store"
 import { EventV2 } from "../src/event"
 import { Global } from "../src/global"
 import { ModelsDev } from "../src/models-dev"
@@ -33,7 +34,15 @@ import { ToolRegistry } from "../src/tool/registry"
 import { ApplicationTools } from "../src/tool/application-tools"
 
 const it = testEffect(
-  AppNodeBuilder.build(LayerNode.group([ApplicationTools.node, Database.node, EventV2.node, LocationServiceMap.node])),
+  AppNodeBuilder.build(
+    LayerNode.group([
+      ApplicationTools.node,
+      Database.node,
+      EventV2.node,
+      SettingsConfigStore.node,
+      LocationServiceMap.node,
+    ]),
+  ),
 )
 
 describe("LocationServiceMap", () => {
@@ -61,6 +70,10 @@ describe("LocationServiceMap", () => {
     ),
   )
 
+  // Config→SQLite 8c: policies are INSTANCE-WIDE settings-store state (jsonc files are not a
+  // runtime source), snapshotted per location at boot. A location booted while the store holds
+  // the deny policy filters the provider; one booted after the policy is removed does not —
+  // and each location's catalog transform state stays its own.
   it.live("isolates location state while sharing location policy with catalog", () =>
     Effect.acquireRelease(
       Effect.promise(() => Promise.all([tmpdir(), tmpdir()])),
@@ -76,14 +89,10 @@ describe("LocationServiceMap", () => {
               execute: () => Effect.succeed({ ok: true }),
             }),
           })
-          yield* Effect.promise(() =>
-            fs.writeFile(
-              path.join(blocked.path, "novaclaw.json"),
-              JSON.stringify({
-                experimental: { policies: [{ effect: "deny", action: "provider.use", resource: "test" }] },
-              }),
-            ),
-          )
+          const settings = yield* SettingsConfigStore.Service
+          yield* settings.set("experimental", {
+            policies: [{ effect: "deny", action: "provider.use", resource: "test" }],
+          })
 
           const update = (directory: string) =>
             Effect.gen(function* () {
@@ -113,7 +122,6 @@ describe("LocationServiceMap", () => {
             "glob",
             "grep",
             "js",
-            "profile",
             "quality_provision",
             "question",
             "read",
@@ -131,6 +139,9 @@ describe("LocationServiceMap", () => {
             "write",
             "write-hex",
           ])
+          // The second location boots AFTER the policy is gone — its boot snapshot allows the
+          // provider, and the first location's catalog transform never leaked into it.
+          yield* settings.remove("experimental")
           const allowedState = yield* update(allowed.path)
           expect(allowedState.providers.some((provider) => provider.id === ProviderV2.ID.make("test"))).toBe(true)
           expect(allowedState.tools.map((tool) => tool.name).sort()).toEqual([
@@ -143,7 +154,6 @@ describe("LocationServiceMap", () => {
             "glob",
             "grep",
             "js",
-            "profile",
             "quality_provision",
             "question",
             "read",
