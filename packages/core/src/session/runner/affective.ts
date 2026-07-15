@@ -61,7 +61,13 @@ function fingerprint(text: string): string {
   return (hash >>> 0).toString(16)
 }
 
-interface Observed {
+/**
+ * The appraisal inputs. EXPORTED (improve18) so non-session callers can drive the same homeostat:
+ * the jh Strict engine has no `SessionMessage` history, but it produces exactly these facts every
+ * step (the action it took, the observation it got back, whether it acted) — so Strict and the
+ * normal drain loop now share ONE affective engine instead of two look-alikes.
+ */
+export interface Observed {
   readonly toolResult?: string
   readonly action?: string
   readonly assistantText?: string
@@ -92,12 +98,21 @@ export function observe(context: ReadonlyArray<SessionMessage.Message>): Observe
 }
 
 /**
- * One homeostatic step: decay toward calm, then bump from what just happened. Mirrors
- * afpro's `appraise` + `register_response` folded into one pass over the current context
- * (the V2 runner sees the full projected history between steps).
+ * One homeostatic step over the SESSION context: project it to `Observed`, then appraise.
+ * (The V2 runner sees the full projected history between steps.)
  */
 export function appraise(mood: Mood, context: ReadonlyArray<SessionMessage.Message>): Mood {
-  const seen = observe(context)
+  return appraiseObserved(mood, observe(context))
+}
+
+/**
+ * One homeostatic step: decay toward calm, then bump from what just happened. Mirrors
+ * afpro's `appraise` + `register_response` folded into one pass. improve18: this is the PURE
+ * core — it takes the appraisal facts directly, so any caller that can say "here is the action I
+ * took and the result I got" drives the same homeostat (the session runner via `observe()`, the
+ * jh Strict engine via `JhAffective`).
+ */
+export function appraiseObserved(mood: Mood, seen: Observed): Mood {
   let frustration = mood.frustration * DECAY
   let satisfaction = mood.satisfaction * DECAY
   let boredom = mood.boredom * DECAY
