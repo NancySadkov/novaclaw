@@ -86,24 +86,30 @@ describe("ConfigStoreWrite.apply", () => {
     }),
   )
 
-  it.effect("replaces list stores wholesale (skills, plugins) and leaves unrouted keys unconsumed", () =>
+  it.effect("replaces list stores wholesale (skills, plugins); step 9 routes the last settings keys", () =>
     Effect.gen(function* () {
       const skills = yield* SkillConfigStore.Service
       yield* skills.addSource("/old/skills")
       const plugins = yield* PluginConfigStore.Service
       yield* plugins.setPlugin({ package: "old-plugin" })
 
+      // Step 9: instructions + disabled/enabled_providers joined SETTINGS_KEYS — every
+      // Config.Info key now routes (nothing falls back to a jsonc patch anymore).
       const consumed = yield* ConfigStoreWrite.apply(
         decodeInfo({
           skills: ["/new/skills"],
           plugins: ["new-plugin"],
-          instructions: ["keep-on-jsonc.md"],
+          instructions: ["now-routed.md"],
           disabled_providers: ["x"],
         }),
       )
-      expect([...consumed].sort()).toEqual(["plugins", "skills"])
+      expect([...consumed].sort()).toEqual(["disabled_providers", "instructions", "plugins", "skills"])
       expect(yield* skills.sources()).toEqual(["/new/skills"])
       expect(yield* plugins.plugins()).toEqual([{ package: "new-plugin" }])
+      const settings = yield* SettingsConfigStore.Service
+      const all = yield* settings.all()
+      expect(all.instructions).toEqual(["now-routed.md"])
+      expect(all.disabled_providers).toEqual(["x"])
     }),
   )
 })

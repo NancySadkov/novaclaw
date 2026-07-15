@@ -2,17 +2,23 @@ import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { httpClient } from "@novaclaw/core/effect/app-node-platform"
 import { serviceUse } from "@novaclaw/core/effect/service-use"
 import path from "path"
-import { pathToFileURL } from "url"
 import os from "os"
 import { mergeDeep } from "remeda"
 import { Global } from "@novaclaw/core/global"
-import fsNode from "fs/promises"
 import { Flag } from "@novaclaw/core/flag/flag"
 import { Auth } from "../auth"
 import { Env } from "../env"
-import { applyEdits, modify } from "jsonc-parser"
 import { InstallationLocal, InstallationVersion } from "@novaclaw/core/installation/version"
 import { existsSync } from "fs"
+import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
+import { CatalogStore } from "@novaclaw/core/catalog-store"
+import { CommandConfigStore } from "@novaclaw/core/command-config-store"
+import { ConfigSeedStartup } from "@novaclaw/core/config-seed-startup"
+import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
+import { PluginConfigStore } from "@novaclaw/core/plugin-config-store"
+import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
+import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
+import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
 import { Account } from "@/account/account"
 import { isRecord } from "@/util/record"
 import type { ConsoleState } from "@novaclaw/core/config/console-state"
@@ -195,12 +201,13 @@ type State = {
   consoleState: ConsoleState
 }
 
+// Config→SQLite step 9: `update`/`updateGlobal` are gone — every write routes through
+// `ConfigStoreWrite.apply` (the HTTP handlers call it directly), and there is no jsonc file
+// to patch. `invalidate` remains so a store write can refresh the cached global view.
 export interface Interface {
   readonly get: () => Effect.Effect<Info>
   readonly getGlobal: () => Effect.Effect<Info>
   readonly getConsoleState: () => Effect.Effect<ConsoleState>
-  readonly update: (config: Info) => Effect.Effect<void>
-  readonly updateGlobal: (config: Info) => Effect.Effect<{ info: Info; changed: boolean }>
   readonly invalidate: () => Effect.Effect<void>
   readonly directories: () => Effect.Effect<string[]>
   readonly waitForDependencies: () => Effect.Effect<void>
@@ -209,42 +216,6 @@ export interface Interface {
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/Config") {}
 
 export const use = serviceUse(Service)
-
-function globalConfigFile() {
-  const candidates = ["novaclaw.jsonc", "novaclaw.json", "config.json"].map((file) =>
-    path.join(Global.Path.config, file),
-  )
-  for (const file of candidates) {
-    if (existsSync(file)) return file
-  }
-  return candidates[0]
-}
-
-function patchJsonc(input: string, patch: unknown, path: string[] = []): string {
-  if (!isRecord(patch)) {
-    const edits = modify(input, path, patch, {
-      formattingOptions: {
-        insertSpaces: true,
-        tabSize: 2,
-      },
-    })
-    return applyEdits(input, edits)
-  }
-
-  return Object.entries(patch).reduce((result, [key, value]) => patchJsonc(result, value, [...path, key]), input)
-}
-
-function writable(info: Info) {
-  const { plugin_origins: _plugin_origins, ...next } = info
-  return next
-}
-
-function writableGlobal(info: Info) {
-  const next = writable(info)
-  // When a user changes config from a value back to default in the Desktop app, we don't want to leave a blank `"shell": "",` key
-  if ("shell" in next && next.shell === "") return { ...next, shell: undefined }
-  return next
-}
 
 export const layer = Layer.effect(
   Service,
@@ -255,6 +226,33 @@ export const layer = Layer.effect(
     const env = yield* Env.Service
     const npmSvc = yield* Npm.Service
     const http = yield* HttpClient.HttpClient
+
+    // Config→SQLite step 9: the per-subsystem stores ARE the config source. Capture them once
+    // so the Interface methods (R = never) can run store-requiring effects (overlay + seeds).
+    const agentStore = yield* AgentConfigStore.Service
+    const catalogStore = yield* CatalogStore.Service
+    const commandStore = yield* CommandConfigStore.Service
+    const pluginStore = yield* PluginConfigStore.Service
+    const referenceStore = yield* ReferenceConfigStore.Service
+    const settingsStore = yield* SettingsConfigStore.Service
+    const skillStore = yield* SkillConfigStore.Service
+    const provideStores = <A, E, R>(
+      effect: Effect.Effect<
+        A,
+        E,
+        R
+      >,
+    ) =>
+      effect.pipe(
+        Effect.provideService(AgentConfigStore.Service, agentStore),
+        Effect.provideService(CatalogStore.Service, catalogStore),
+        Effect.provideService(CommandConfigStore.Service, commandStore),
+        Effect.provideService(PluginConfigStore.Service, pluginStore),
+        Effect.provideService(ReferenceConfigStore.Service, referenceStore),
+        Effect.provideService(SettingsConfigStore.Service, settingsStore),
+        Effect.provideService(SkillConfigStore.Service, skillStore),
+        Effect.provideService(FSUtil.Service, fs),
+      )
 
     const readConfigFile = (filepath: string) => fs.readFileStringSafe(filepath).pipe(Effect.orDie)
 
@@ -317,43 +315,22 @@ export const layer = Layer.effect(
       return yield* loadConfig(text, { path: filepath }, env)
     })
 
-    const loadGlobal = Effect.fnUntraced(function* (env?: Record<string, string>) {
-      let result: Info = {}
-      // Seed the default global config with the schema for editor completion, but avoid writing when the user
-      // explicitly routes config through env-provided paths or content.
-      if (!Flag.NOVACLAW_CONFIG && !Flag.NOVACLAW_CONFIG_DIR && !Flag.NOVACLAW_CONFIG_CONTENT) {
-        const file = globalConfigFile()
-        if (!existsSync(file)) {
-          yield* fs
-            .writeWithDirs(file, JSON.stringify({ $schema: "https://novaclaw.app/config.json" }, null, 2))
-            .pipe(Effect.catch(() => Effect.void))
-        }
-      }
-      result = mergeConfig(result, yield* loadFile(path.join(Global.Path.config, "config.json"), env))
-      result = mergeConfig(result, yield* loadFile(path.join(Global.Path.config, "novaclaw.json"), env))
-      result = mergeConfig(result, yield* loadFile(path.join(Global.Path.config, "novaclaw.jsonc"), env))
-
-      const legacy = path.join(Global.Path.config, "config")
-      if (existsSync(legacy)) {
-        yield* Effect.promise(() =>
-          import(pathToFileURL(legacy).href, { with: { type: "toml" } })
-            .then(async (mod) => {
-              const { provider, model, ...rest } = mod.default
-              if (provider && model) result.model = `${provider}/${model}`
-              result["$schema"] = "https://novaclaw.app/config.json"
-              result = mergeConfig(result, rest)
-              await fsNode.writeFile(path.join(Global.Path.config, "config.json"), JSON.stringify(result, null, 2))
-              await fsNode.unlink(legacy)
-            })
-            .catch(() => {}),
-        )
-      }
-
-      return result
+    // Config→SQLite step 9: the global view IS the store overlay — ONE V2 document assembled
+    // from the per-subsystem SQLite stores (`ConfigStoreWrite.overlay` over an empty base = the
+    // export document). The first read runs the idempotent first-boot IMPORT (isEmpty-gated
+    // seeds over global dir + launch dir + NOVACLAW_CONFIG_CONTENT), so a fresh install picks
+    // up existing jsonc on ANY entry point (serve, run, debug config, providers) — after that,
+    // no jsonc file is ever read for resolution.
+    const loadStores = Effect.fnUntraced(function* () {
+      // Global.Path statics read at CALL time (the historical loadGlobal contract) — the
+      // server's startup seed separately honors NOVACLAW_CONFIG_DIR via Global.Service.
+      yield* provideStores(ConfigSeedStartup.seedAll(Global.Path.config, process.cwd(), Global.Path.home))
+      const doc = yield* provideStores(ConfigStoreWrite.overlay({}))
+      return loadAsV2(doc, "sqlite-stores")
     })
 
     const [cachedGlobal, invalidateGlobal] = yield* Effect.cachedInvalidateWithTTL(
-      loadGlobal().pipe(
+      loadStores().pipe(
         Effect.tapError((error) =>
           Effect.logError("failed to load global config, using defaults", { error: String(error) }),
         ),
@@ -470,19 +447,14 @@ export const layer = Layer.effect(
           }
         }
 
-        const global = Object.keys(authEnv).length ? yield* loadGlobal(authEnv) : yield* getGlobal()
-        yield* merge(Global.Path.config, global, "global")
-
-        if (Flag.NOVACLAW_CONFIG) {
-          yield* merge(Flag.NOVACLAW_CONFIG, yield* loadFile(Flag.NOVACLAW_CONFIG, authEnv))
-          yield* Effect.logDebug("loaded custom config", { path: Flag.NOVACLAW_CONFIG })
-        }
-
-        if (!Flag.NOVACLAW_DISABLE_PROJECT_CONFIG) {
-          for (const file of yield* ConfigPaths.files("novaclaw", ctx.directory, ctx.worktree).pipe(Effect.orDie)) {
-            yield* merge(file, yield* loadFile(file, authEnv), "local")
-          }
-        }
+        // Config→SQLite step 9: the store-backed document replaces every file-borne source —
+        // the global candidates AND the project jsonc walk (settings are instance-wide by
+        // design; per-directory divergence lives in the D2 markdown/dir resources below).
+        // `authEnv` still feeds the REMOTE sources' variable substitution above; store values
+        // are served as imported (provider env resolution happens at runtime in the catalog
+        // integration transform, not here).
+        const stored = yield* getGlobal()
+        yield* merge("sqlite-stores", stored, "global")
 
         result.agents = result.agents || {}
         result.plugins = result.plugins || []
@@ -496,16 +468,6 @@ export const layer = Layer.effect(
         const deps: Fiber.Fiber<void>[] = []
 
         for (const dir of directories) {
-          if (dir.endsWith(".novaclaw") || dir === Flag.NOVACLAW_CONFIG_DIR) {
-            for (const file of ["novaclaw.json", "novaclaw.jsonc"]) {
-              const source = path.join(dir, file)
-              yield* Effect.logDebug(`loading config from ${source}`)
-              yield* merge(source, yield* loadFile(source, authEnv))
-              result.agents ??= {}
-              result.plugins ??= []
-            }
-          }
-
           yield* ensureGitignore(dir).pipe(Effect.orDie)
 
           // Opt-in only (Flag doc): `@novaclaw/plugin` is not on npm, so this
@@ -688,53 +650,14 @@ export const layer = Layer.effect(
       )
     })
 
-    const update = Effect.fn("Config.update")(function* (config: Info) {
-      const dir = yield* InstanceState.directory
-      const file = path.join(dir, "config.json")
-      const existing = yield* loadFile(file)
-      yield* fs
-        .writeFileString(file, JSON.stringify(mergeDeep(writable(existing), writable(config)), null, 2))
-        .pipe(Effect.orDie)
-    })
-
     const invalidate = Effect.fn("Config.invalidate")(function* () {
       yield* invalidateGlobal
-    })
-
-    const updateGlobal = Effect.fn("Config.updateGlobal")(function* (config: Info) {
-      const file = globalConfigFile()
-      const before = (yield* readConfigFile(file)) ?? "{}"
-      const patch = writableGlobal(config)
-
-      let next: Info
-      let changed: boolean
-      const parsedBefore = ConfigParse.jsonc(before, file)
-      // A plain `.json` file is rewritten wholesale; a `.jsonc` is patched in place so comments and
-      // formatting survive. Every source is authored as V2 now, so patching V2 keys always stays V2.
-      if (!file.endsWith(".jsonc")) {
-        const existing = loadAsV2(parsedBefore, file)
-        const merged = mergeDeep(writable(existing), patch)
-        const serialized = JSON.stringify(merged, null, 2)
-        changed = serialized !== before
-        if (changed) yield* fs.writeFileString(file, serialized).pipe(Effect.orDie)
-        next = merged
-      } else {
-        const updated = patchJsonc(before, patch)
-        next = loadAsV2(ConfigParse.jsonc(updated, file), file)
-        changed = updated !== before
-        if (changed) yield* fs.writeFileString(file, updated).pipe(Effect.orDie)
-      }
-
-      if (changed) yield* invalidate()
-      return { info: next, changed }
     })
 
     return Service.of({
       get,
       getGlobal,
       getConsoleState,
-      update,
-      updateGlobal,
       invalidate,
       directories,
       waitForDependencies,
@@ -750,12 +673,33 @@ export const defaultLayer = layer.pipe(
   Layer.provide(Account.defaultLayer),
   Layer.provide(Npm.defaultLayer),
   Layer.provide(FetchHttpClient.layer),
+  Layer.provide(AgentConfigStore.defaultLayer),
+  Layer.provide(CatalogStore.defaultLayer),
+  Layer.provide(CommandConfigStore.defaultLayer),
+  Layer.provide(PluginConfigStore.defaultLayer),
+  Layer.provide(ReferenceConfigStore.defaultLayer),
+  Layer.provide(SettingsConfigStore.defaultLayer),
+  Layer.provide(SkillConfigStore.defaultLayer),
 )
 
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [FSUtil.node, Auth.node, Account.node, Env.node, Npm.node, httpClient],
+  deps: [
+    FSUtil.node,
+    Auth.node,
+    Account.node,
+    Env.node,
+    Npm.node,
+    httpClient,
+    AgentConfigStore.node,
+    CatalogStore.node,
+    CommandConfigStore.node,
+    PluginConfigStore.node,
+    ReferenceConfigStore.node,
+    SettingsConfigStore.node,
+    SkillConfigStore.node,
+  ],
 })
 
 export * as Config from "./config"

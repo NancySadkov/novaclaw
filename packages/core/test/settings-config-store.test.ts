@@ -222,4 +222,34 @@ describe("Config layer settings overlay (8c: jsonc is not a runtime source)", ()
       ])
     }),
   )
+
+  it.effect("seedFromInfos folds instructions with concat + dedup (step 9)", () =>
+    Effect.gen(function* () {
+      const store = yield* SettingsConfigStore.Service
+      const dir = yield* Effect.promise(() => tmpdir())
+      yield* Effect.addFinalizer(() => Effect.promise(() => dir[Symbol.asyncDispose]()))
+      const globalDir = path.join(dir.path, "global")
+      const projectDir = path.join(dir.path, "project")
+      yield* Effect.promise(async () => {
+        await fs.mkdir(globalDir, { recursive: true })
+        await fs.mkdir(projectDir, { recursive: true })
+        await fs.writeFile(
+          path.join(globalDir, "novaclaw.jsonc"),
+          JSON.stringify({ instructions: ["dup.md", "global-only.md"], disabled_providers: ["openai"] }),
+        )
+        await fs.writeFile(
+          path.join(projectDir, "novaclaw.jsonc"),
+          JSON.stringify({ instructions: ["dup.md", "project-only.md"], disabled_providers: ["google"] }),
+        )
+      })
+
+      yield* SettingsConfigSeed.seedFromDirectory(globalDir, projectDir)
+      const all = yield* store.all()
+      // instructions: the V1 config service's historical Set union — concat in document
+      // order, first occurrence wins the position.
+      expect(all.instructions).toEqual(["dup.md", "global-only.md", "project-only.md"])
+      // disabled/enabled_providers: whole-value latest() — the more specific doc wins.
+      expect(all.disabled_providers).toEqual(["google"])
+    }),
+  )
 })

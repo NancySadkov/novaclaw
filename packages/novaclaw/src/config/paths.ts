@@ -7,19 +7,6 @@ import { unique } from "remeda"
 import * as Effect from "effect/Effect"
 import { FSUtil } from "@novaclaw/core/fs-util"
 
-export const files = Effect.fn("ConfigPaths.projectFiles")(function* (
-  name: string,
-  directory: string,
-  worktree?: string,
-) {
-  const afs = yield* FSUtil.Service
-  return (yield* afs.up({
-    targets: [`${name}.jsonc`, `${name}.json`],
-    start: directory,
-    stop: worktree,
-  })).toReversed()
-})
-
 export const directories = Effect.fn("ConfigPaths.directories")(function* (directory: string, worktree?: string) {
   const afs = yield* FSUtil.Service
   return unique([

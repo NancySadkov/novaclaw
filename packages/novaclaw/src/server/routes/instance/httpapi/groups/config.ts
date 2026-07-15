@@ -1,4 +1,3 @@
-import { Config } from "@/config/config"
 import { Config as ConfigV2 } from "@novaclaw/core/config"
 import { ProviderCatalogView } from "@/provider/catalog-view"
 import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"

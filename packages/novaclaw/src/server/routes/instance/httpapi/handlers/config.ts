@@ -29,8 +29,13 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
       return Schema.decodeUnknownSync(ConfigV2.Info)(yield* ConfigStoreWrite.overlay(base))
     })
 
+    // Config→SQLite step 9: settings are instance-wide, so the instance-scoped update routes
+    // through the same store router as the global one (there is no per-instance config.json
+    // anymore). Invalidate refreshes the service's cached store view; disposal makes location
+    // boots re-snapshot.
     const update = Effect.fn("ConfigHttpApi.update")(function* (ctx) {
-      yield* configSvc.update(ctx.payload)
+      const consumed = yield* ConfigStoreWrite.apply(ctx.payload)
+      if (consumed.size > 0) yield* configSvc.invalidate()
       yield* markInstanceForDisposal(yield* InstanceState.context)
       return ctx.payload
     })

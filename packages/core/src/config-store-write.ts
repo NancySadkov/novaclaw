@@ -18,12 +18,12 @@ import { SettingsConfigSeed } from "./settings-config-seed"
 import { SettingsConfigStore } from "./settings-config-store"
 import { SkillConfigStore } from "./skill-config-store"
 
-// Config→SQLite step 7 (+8c): the Settings-UI write router + read overlay. The app's
+// Config→SQLite step 7→9: the Settings-UI write router + read overlay. The app's
 // `updateConfig` contract is patch-MERGE over the effective config; this module routes each
 // top-level key of such a patch into its owning SQLite store — and mirrors the same keys back
-// over the file-derived view so the UI reads what it wrote. Post-8c the only unrouted keys are
-// `instructions` + `disabled/enabled_providers` (read from the V1-side novaclaw config service;
-// they migrate with step 9) — those fall back to the legacy jsonc patch.
+// over the served view so the UI reads what it wrote. Since step 9 EVERY Config.Info key
+// routes (`instructions` + `disabled/enabled_providers` joined SETTINGS_KEYS); there is no
+// jsonc fallback anymore — an unrouted key (only `$schema`) is ignored.
 //
 // Merge semantics per store shape:
 // - settings keys: one whole value per key — deep-merge the patch into the stored value

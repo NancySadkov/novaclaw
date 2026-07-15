@@ -4,10 +4,17 @@ import { FetchHttpClient } from "effect/unstable/http"
 import { CrossSpawnSpawner } from "@novaclaw/core/cross-spawn-spawner"
 import { Database } from "@novaclaw/core/database/database"
 import { FSUtil } from "@novaclaw/core/fs-util"
+import { Global } from "@novaclaw/core/global"
+import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
+import { CatalogStore } from "@novaclaw/core/catalog-store"
+import { CommandConfigStore } from "@novaclaw/core/command-config-store"
+import { PluginConfigStore } from "@novaclaw/core/plugin-config-store"
+import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
+import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
+import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
 import { Ripgrep } from "@novaclaw/core/ripgrep"
 import { EffectFlock } from "@novaclaw/core/util/effect-flock"
 import path from "path"
-import { pathToFileURL } from "url"
 import { Auth } from "../../src/auth"
 import { EventV2Bridge } from "../../src/event-v2-bridge"
 import { Config } from "../../src/config/config"
@@ -35,6 +42,14 @@ const configLayer = Config.layer.pipe(
   Layer.provide(AccountTest.empty),
   Layer.provide(NpmTest.noop),
   Layer.provide(FetchHttpClient.layer),
+  Layer.provide(Global.layer),
+  Layer.provide(AgentConfigStore.defaultLayer),
+  Layer.provide(CatalogStore.defaultLayer),
+  Layer.provide(CommandConfigStore.defaultLayer),
+  Layer.provide(PluginConfigStore.defaultLayer),
+  Layer.provide(ReferenceConfigStore.defaultLayer),
+  Layer.provide(SettingsConfigStore.defaultLayer),
+  Layer.provide(SkillConfigStore.defaultLayer),
 )
 const pluginLayer = Plugin.layer.pipe(
   Layer.provide(EventV2Bridge.defaultLayer),
@@ -67,7 +82,9 @@ describe("plugin.workspace", () => {
     Effect.gen(function* () {
       const dir = (yield* TestInstance).directory
       const type = `plug-${Math.random().toString(36).slice(2)}`
-      const file = path.join(dir, "plugin.ts")
+      // Config→SQLite step 9: project config FILES are no longer a runtime plugin source —
+      // deliver the plugin via the D2 `.novaclaw/{plugin,plugins}/*` directory walk.
+      const file = path.join(dir, ".novaclaw", "plugin", "plugin.ts")
       const mark = path.join(dir, "created.json")
       const space = path.join(dir, "space")
       yield* Effect.promise(() =>
@@ -93,20 +110,6 @@ describe("plugin.workspace", () => {
             "}",
             "",
           ].join("\n"),
-        ),
-      )
-
-      yield* Effect.promise(() =>
-        Bun.write(
-          path.join(dir, "novaclaw.json"),
-          JSON.stringify(
-            {
-              $schema: "https://novaclaw.app/config.json",
-              plugin: [pathToFileURL(file).href],
-            },
-            null,
-            2,
-          ),
         ),
       )
 

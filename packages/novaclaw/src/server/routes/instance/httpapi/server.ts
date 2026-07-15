@@ -3,19 +3,13 @@ import { HttpApiBuilder, OpenApi } from "effect/unstable/httpapi"
 import { HttpMiddleware, HttpRouter, HttpServer, HttpServerResponse } from "effect/unstable/http"
 import * as Socket from "effect/unstable/socket/Socket"
 import { FSUtil } from "@novaclaw/core/fs-util"
-import { AgentConfigSeed } from "@novaclaw/core/agent-config-seed"
 import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
-import { CatalogSeed } from "@novaclaw/core/catalog-seed"
+import { ConfigSeedStartup } from "@novaclaw/core/config-seed-startup"
 import { CatalogStore } from "@novaclaw/core/catalog-store"
-import { CommandConfigSeed } from "@novaclaw/core/command-config-seed"
 import { CommandConfigStore } from "@novaclaw/core/command-config-store"
-import { PluginConfigSeed } from "@novaclaw/core/plugin-config-seed"
 import { PluginConfigStore } from "@novaclaw/core/plugin-config-store"
-import { ReferenceConfigSeed } from "@novaclaw/core/reference-config-seed"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
-import { SettingsConfigSeed } from "@novaclaw/core/settings-config-seed"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
-import { SkillConfigSeed } from "@novaclaw/core/skill-config-seed"
 import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
 import { Global } from "@novaclaw/core/global"
 import * as Observability from "@novaclaw/core/observability"
@@ -278,20 +272,16 @@ const app = LayerNode.group([
   PtyTicket.node,
 ])
 
-// Settings → SQLite: seed the instance-wide `CatalogStore` from the launch directory's novaclaw.jsonc
-// ONCE at server startup, BEFORE any location boots — so every dir (incl. the shared scratch dir) sees the
-// same providers, rather than a scratch-first access finding an empty catalog. Best-effort: a seed failure
-// must never block startup. See core/catalog-seed.ts + memory `settings-in-sqlite-jsonc-export-only`.
+// Settings → SQLite: run the ONE first-boot import pass (every per-subsystem store) at server
+// startup, BEFORE any location boots — so every dir (incl. the shared scratch dir) sees the
+// same settings, rather than a scratch-first access finding empty stores. Idempotent + best-
+// effort: seedAll ignores per-seed failures; a seed failure must never block startup. The V1
+// config service runs the same pass on its first read (CLI entry points), so this is a cheap
+// no-op on every boot after the first. See core/config-seed-startup.ts.
 const catalogSeedStartup = Layer.effectDiscard(
   Effect.gen(function* () {
     const global = yield* Global.Service
-    yield* CatalogSeed.seedFromDirectory(global.config, process.cwd()).pipe(Effect.ignore)
-    yield* AgentConfigSeed.seedFromDirectory(global.config, process.cwd()).pipe(Effect.ignore)
-    yield* CommandConfigSeed.seedFromDirectory(global.config, process.cwd()).pipe(Effect.ignore)
-    yield* SkillConfigSeed.seedFromDirectory(global.config, process.cwd(), global.home).pipe(Effect.ignore)
-    yield* ReferenceConfigSeed.seedFromDirectory(global.config, process.cwd(), global.home).pipe(Effect.ignore)
-    yield* PluginConfigSeed.seedFromDirectory(global.config, process.cwd()).pipe(Effect.ignore)
-    yield* SettingsConfigSeed.seedFromDirectory(global.config, process.cwd()).pipe(Effect.ignore)
+    yield* ConfigSeedStartup.seedAll(global.config, process.cwd(), global.home)
   }),
 )
 

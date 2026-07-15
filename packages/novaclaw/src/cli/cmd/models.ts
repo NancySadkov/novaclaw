@@ -6,6 +6,7 @@ import { LocationServiceMap, locationServiceMapLayer } from "@novaclaw/core/loca
 import { Location } from "@novaclaw/core/location"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { ProviderCatalogView } from "@/provider/catalog-view"
+import { Config } from "@/config/config"
 import { effectCmd, fail } from "../effect-cmd"
 import { UI } from "../ui"
 
@@ -36,6 +37,12 @@ export const ModelsCommand = effectCmd({
       yield* ModelsDev.Service.use((s) => s.refresh(true))
       UI.println(UI.Style.TEXT_SUCCESS_BOLD + "Models cache refreshed" + UI.Style.TEXT_NORMAL)
     }
+
+    // Config→SQLite step 9: a bare CLI process must run the first-boot IMPORT before the
+    // catalog location boots — a fresh install (or an XDG-isolated test) would otherwise
+    // list only the ModelsDev defaults, never the user's configured providers. The V1
+    // config service's first read runs the idempotent seedAll pass over every store.
+    yield* Config.use.getGlobal()
 
     const result = yield* Effect.gen(function* () {
       const catalog = yield* Catalog.Service

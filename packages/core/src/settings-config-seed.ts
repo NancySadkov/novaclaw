@@ -26,12 +26,16 @@ const DECODE_OPTIONS = { errors: "all", onExcessProperty: "ignore", propertyOrde
  * Deliberately EXCLUDED:
  * - `model` + `default_agent` — owned by the Catalog/AgentConfig stores (steps 1-2).
  * - `agents`/`commands`/`skills`/`references`/`plugins`/`providers` — per-subsystem stores.
- * - `instructions` + `disabled_providers`/`enabled_providers` — read from the V1-side novaclaw
- *   config service (instance file state), not core entries(); they migrate with step 9's
- *   handler/CLI retirement.
+ *
+ * Step 9 moved the last three V1-side keys in: `instructions` CONCAT+dedups across documents
+ * (the V1 service's historical Set union); `disabled_providers`/`enabled_providers` are
+ * whole-value (last document wins — mergeDeep replaced arrays).
  */
 export const SETTINGS_KEYS = [
   "shell",
+  "instructions",
+  "disabled_providers",
+  "enabled_providers",
   "autoupdate",
   "username",
   "server",
@@ -83,6 +87,13 @@ const seedFromInfos = (infos: readonly Config.Info[]) =>
         // historical `files.flatMap(info.permissions)`.
         const rules = plains.flatMap((info) => (info.permissions as unknown[] | undefined) ?? [])
         if (rules.length > 0) yield* store.set(key, rules)
+        continue
+      }
+      if (key === "instructions") {
+        // Concat + dedup in document order — the V1 config service's historical
+        // `Array.from(new Set([...target, ...source]))` union across sources.
+        const items = plains.flatMap((info) => (info.instructions as string[] | undefined) ?? [])
+        if (items.length > 0) yield* store.set(key, Array.from(new Set(items)))
         continue
       }
       if (key === "experimental") {
