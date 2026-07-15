@@ -24,6 +24,15 @@ export interface Interface {
   readonly add: (id: ID, effect: PluginRuntime["effect"]) => Effect.Effect<void>
   readonly remove: (id: ID) => Effect.Effect<void>
   readonly wait: (id: ID) => Effect.Effect<void>
+  /**
+   * Resolves once the location's INITIAL plugin boot batch has completed — every built-in
+   * plugin registered AND the deferred State.batch reloads materialized (catalog/agents/…
+   * populated). `wait(id)` is NOT enough for that: it resolves inside the batch, before the
+   * reloads run. Late/external plugin loads are not covered — this is the boot signal only.
+   */
+  readonly ready: Effect.Effect<void>
+  /** Opens `ready`. Called by the plugin-internal boot after its initial batch. */
+  readonly markReady: Effect.Effect<void>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/Plugin") {}
@@ -38,6 +47,7 @@ export const layer = Layer.effect(
     const loading = new Set<ID>()
     const waiters = new Map<ID, Set<Deferred.Deferred<void>>>()
     const failures = new Map<ID, Exit.Exit<void, never>>()
+    const booted = yield* Deferred.make<void>()
     let host: Parameters<PluginRuntime["effect"]>[0]
 
     const add = Effect.fn("Plugin.add")(function* (id: ID, effect: PluginRuntime["effect"]) {
@@ -136,6 +146,8 @@ export const layer = Layer.effect(
       add,
       remove,
       wait,
+      ready: Deferred.await(booted),
+      markReady: Deferred.succeed(booted, undefined).pipe(Effect.asVoid),
     })
     host = yield* PluginHost.make(service)
     return service

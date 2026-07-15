@@ -133,6 +133,25 @@ export const layer = Layer.effect(
     const unsafeShadowWorktree =
       path.parse(worktree).root === worktree || path.resolve(worktree) === path.resolve(os.homedir())
 
+    // The repo's exclude rules. Beyond the static junk-dir set: when the app's OWN data
+    // directory (this snapshot store, the DB, logs) lives INSIDE the worktree — novaclaw
+    // opened in $HOME, or any cwd that contains the data root — tracking it makes every
+    // capture stage the snapshot repo's own objects: a compounding feedback loop that turns
+    // end-of-turn diffs pathological (observed: an 1860-file, ~40s diff after two turns).
+    const excludes = () => {
+      const lines = [SHADOW_EXCLUDES]
+      const dataRelative = path.relative(worktree, global.data)
+      if (dataRelative && !dataRelative.startsWith("..") && !path.isAbsolute(dataRelative)) {
+        lines.push("/" + dataRelative.replaceAll("\\", "/") + "/")
+      }
+      return lines.join("\n")
+    }
+
+    const writeExcludes = Effect.promise(async () => {
+      await fsp.mkdir(path.join(gitDirectory, "info"), { recursive: true })
+      await fsp.writeFile(path.join(gitDirectory, "info", "exclude"), excludes())
+    })
+
     const repository = Effect.fnUntraced(function* () {
       if (yield* fs.existsSafe(path.join(gitDirectory, "HEAD")))
         return new Git.Repository({
@@ -151,19 +170,20 @@ export const layer = Layer.effect(
         const created = yield* git.repo
           .create({ worktree, gitDirectory })
           .pipe(Effect.mapError((cause) => failure("capture", cause)))
-        yield* Effect.promise(async () => {
-          await fsp.mkdir(path.join(gitDirectory, "info"), { recursive: true })
-          await fsp.writeFile(path.join(gitDirectory, "info", "exclude"), SHADOW_EXCLUDES)
-        })
+        yield* writeExcludes
         return created
       }
-      return yield* git.repo
+      const seeded = yield* git.repo
         .create({
           worktree,
           gitDirectory,
           seed: source,
         })
         .pipe(Effect.mapError((cause) => failure("capture", cause)))
+      // Git-seeded repos inherit the project's ignore rules, which never cover the app data
+      // dir — write the same exclude file (info/exclude is additive to inherited ignores).
+      yield* writeExcludes
+      return seeded
     })
 
     const enabled = Effect.fnUntraced(function* () {

@@ -128,7 +128,15 @@ const layer = Layer.effectDiscard(
         yield* add(ConfigProviderPlugin.Plugin)
         yield* add(VariantPlugin.Plugin)
       }),
-    ).pipe(Effect.withSpan("PluginInternal.boot"), Effect.forkScoped({ startImmediately: true }))
+    ).pipe(
+      // The batch defers every State reload to its end — only AFTER it returns is the
+      // catalog/agent/… state materialized. `plugin.markReady` opens the boot latch a
+      // first-prompt-after-boot consumer (the session-runner model resolver) can await
+      // instead of racing this fork (the "model unavailable right after boot" race).
+      Effect.andThen(plugin.markReady),
+      Effect.withSpan("PluginInternal.boot"),
+      Effect.forkScoped({ startImmediately: true }),
+    )
   }),
 )
 

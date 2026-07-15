@@ -13,6 +13,7 @@ import { Catalog } from "../../catalog"
 import { Credential } from "../../credential"
 import { Integration } from "../../integration"
 import { ModelV2 } from "../../model"
+import { PluginV2 } from "../../plugin"
 import { ProviderV2 } from "../../provider"
 import { SessionSchema } from "../schema"
 
@@ -191,17 +192,33 @@ export const locationLayer = Layer.effect(
   Effect.gen(function* () {
     const catalog = yield* Catalog.Service
     const integrations = yield* Integration.Service
+    const plugins = yield* PluginV2.Service
+
+    const select = Effect.fnUntraced(function* (session: SessionSchema.Info) {
+      const defaultModel = session.model ? undefined : yield* catalog.model.default()
+      return session.model
+        ? (yield* catalog.model.available()).find(
+            (model) => model.providerID === session.model?.providerID && model.id === session.model.id,
+          )
+        : defaultModel && supported(defaultModel)
+          ? defaultModel
+          : (yield* catalog.model.available()).find(supported)
+    })
+
     return Service.of({
       resolve: Effect.fn("SessionRunnerModel.resolve")(function* (session) {
-        // Location plugins populate and filter the catalog asynchronously during layer startup.
-        const defaultModel = session.model ? undefined : yield* catalog.model.default()
-        const selected = session.model
-          ? (yield* catalog.model.available()).find(
-              (model) => model.providerID === session.model?.providerID && model.id === session.model.id,
-            )
-          : defaultModel && supported(defaultModel)
-            ? defaultModel
-            : (yield* catalog.model.available()).find(supported)
+        // Location plugins populate and filter the catalog asynchronously during layer startup
+        // (plugin-internal's forked boot batch) — a prompt issued right after boot can read an
+        // EMPTY catalog and misreport a configured model as unavailable. Only when the first
+        // look fails: await the boot latch (bounded — some test graphs never open it) and look
+        // again before failing. The healthy path pays nothing.
+        let selected = yield* select(session)
+        if (!selected) {
+          yield* plugins.ready.pipe(
+            Effect.timeoutOrElse({ duration: "5 seconds", orElse: () => Effect.void }),
+          )
+          selected = yield* select(session)
+        }
         if (!selected && session.model)
           return yield* new ModelUnavailableError({
             providerID: session.model.providerID,
@@ -222,4 +239,8 @@ export const locationLayer = Layer.effect(
   }),
 )
 
-export const node = makeLocationNode({ service: Service, layer: locationLayer, deps: [Catalog.node, Integration.node] })
+export const node = makeLocationNode({
+  service: Service,
+  layer: locationLayer,
+  deps: [Catalog.node, Integration.node, PluginV2.node],
+})
