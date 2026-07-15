@@ -5,7 +5,10 @@ import { AgentConfigStore } from "./agent-config-store"
 import { CatalogStore } from "./catalog-store"
 import { CommandConfigStore } from "./command-config-store"
 import { Config } from "./config"
+import { ConfigAgent } from "./config/agent"
+import { ConfigCommand } from "./config/command"
 import { ConfigProvider } from "./config/provider"
+import { ConfigReference } from "./config/reference"
 import { PluginConfigSeed } from "./plugin-config-seed"
 import { PluginConfigStore } from "./plugin-config-store"
 import { ProviderV2 } from "./provider"
@@ -132,10 +135,21 @@ export const apply = (patch: Config.Info) =>
     return consumed
   })
 
+/** Fold a layered-store record into one merged config fragment per name (layers in order). */
+function foldLayers<A>(layers: Record<string, A[]>, encode: (layer: A) => unknown) {
+  const folded: Record<string, unknown> = {}
+  for (const [name, list] of Object.entries(layers)) {
+    folded[name] = list.reduce<unknown>((merged, layer) => mergePatch(merged, encode(layer)), undefined)
+  }
+  return folded
+}
+
 /**
  * Overlay the store-backed keys onto a file-derived config view (the /config GET responses),
- * so the Settings UI reads exactly what the router wrote. Folds layered stores with the same
- * patch-merge the runtime applies layer-by-layer.
+ * so the Settings UI reads exactly what the router wrote — and, over an empty base, the
+ * complete stores→jsonc EXPORT document (config-sqlite step 8: the Config-Export payload).
+ * Layered stores fold with the same patch-merge the runtime applies layer-by-layer, which
+ * also compacts accumulated write layers on every export.
  */
 export const overlay = (base: Record<string, unknown>) =>
   Effect.gen(function* () {
@@ -149,19 +163,40 @@ export const overlay = (base: Record<string, unknown>) =>
     const catalog = yield* CatalogStore.Service
     const providerLayers = yield* catalog.providers()
     if (Object.keys(providerLayers).length > 0) {
-      const encodeProvider = Schema.encodeSync(ConfigProvider.Info)
-      const folded: Record<string, unknown> = {}
-      for (const [id, layers] of Object.entries(providerLayers)) {
-        folded[id] = layers.reduce<unknown>((merged, layer) => mergePatch(merged, encodeProvider(layer)), undefined)
-      }
-      result.providers = folded
+      result.providers = foldLayers(providerLayers, Schema.encodeSync(ConfigProvider.Info))
     }
     const defaultModel = yield* catalog.getDefault()
     if (defaultModel !== undefined) result.model = defaultModel
 
     const agents = yield* AgentConfigStore.Service
+    const agentLayers = yield* agents.agents()
+    if (Object.keys(agentLayers).length > 0) {
+      result.agents = foldLayers(agentLayers, Schema.encodeSync(ConfigAgent.Info))
+    }
     const defaultAgent = yield* agents.getDefault()
     if (defaultAgent !== undefined) result.default_agent = defaultAgent
+
+    const commands = yield* CommandConfigStore.Service
+    const commandLayers = yield* commands.commands()
+    if (Object.keys(commandLayers).length > 0) {
+      result.commands = foldLayers(commandLayers, Schema.encodeSync(ConfigCommand.Info))
+    }
+
+    const references = yield* ReferenceConfigStore.Service
+    const referenceLayers = yield* references.references()
+    if (Object.keys(referenceLayers).length > 0) {
+      result.references = foldLayers(referenceLayers, Schema.encodeSync(ConfigReference.Entry))
+    }
+
+    const skills = yield* SkillConfigStore.Service
+    const sources = yield* skills.sources()
+    if (sources.length > 0) result.skills = sources
+
+    const plugins = yield* PluginConfigStore.Service
+    const entries = yield* plugins.plugins()
+    if (entries.length > 0) {
+      result.plugins = entries.map((entry) => (entry.options ? entry : entry.package))
+    }
 
     return result
   })

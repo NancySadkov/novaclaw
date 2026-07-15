@@ -108,6 +108,53 @@ describe("ConfigStoreWrite.apply", () => {
   )
 })
 
+describe("ConfigStoreWrite export→import round-trip (step 8)", () => {
+  it.effect("overlay({}) exports the stores; wiping and re-importing reproduces the same document", () =>
+    Effect.gen(function* () {
+      // Populate every store the way real usage does.
+      yield* ConfigStoreWrite.apply(
+        decodeInfo({
+          shell: "pwsh",
+          strict: { enabled: true, attempts: 2 },
+          model: "spark/m1",
+          default_agent: "build",
+          providers: { spark: { name: "Spark", models: { m1: { name: "M1" } } } },
+          agents: { build: { description: "the builder" } },
+          commands: { review: { template: "review it" } },
+          references: { docs: "https://github.com/example/docs.git" },
+          skills: ["/opt/skills"],
+          plugins: ["team-plugin@1.0.0", { package: "/opt/plugins/local.js", options: { x: 1 } }],
+        }),
+      )
+      // A second provider patch: the export must FOLD the two layers into one fragment.
+      yield* ConfigStoreWrite.apply(decodeInfo({ providers: { spark: { models: { m1: { name: "M1 v2" } } } } }))
+
+      const exported = yield* ConfigStoreWrite.overlay({})
+      expect((exported.providers as Record<string, { models: Record<string, { name: string }> }>).spark.models.m1.name).toBe("M1 v2")
+
+      // Wipe every store (a fresh instance), then import the exported document via the router.
+      const catalog = yield* CatalogStore.Service
+      for (const id of Object.keys(yield* catalog.providers())) yield* catalog.removeProvider(ProviderV2.ID.make(id))
+      const agents = yield* AgentConfigStore.Service
+      for (const name of Object.keys(yield* agents.agents())) yield* agents.removeAgent(name)
+      const commands = yield* CommandConfigStore.Service
+      for (const name of Object.keys(yield* commands.commands())) yield* commands.removeCommand(name)
+      const references = yield* ReferenceConfigStore.Service
+      for (const name of Object.keys(yield* references.references())) yield* references.removeReference(name)
+      const skills = yield* SkillConfigStore.Service
+      for (const source of yield* skills.sources()) yield* skills.removeSource(source)
+      const plugins = yield* PluginConfigStore.Service
+      for (const entry of yield* plugins.plugins()) yield* plugins.removePlugin(entry.package)
+      const settings = yield* SettingsConfigStore.Service
+      for (const key of Object.keys(yield* settings.all())) yield* settings.remove(key)
+
+      yield* ConfigStoreWrite.apply(decodeInfo(exported))
+      const reimported = yield* ConfigStoreWrite.overlay({})
+      expect(reimported).toEqual(exported)
+    }),
+  )
+})
+
 describe("ConfigStoreWrite.overlay", () => {
   it.effect("mirrors settings, folded providers, and defaults over the file view", () =>
     Effect.gen(function* () {

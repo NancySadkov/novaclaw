@@ -9,10 +9,18 @@ import { RequiresLevel } from "@/context/expertise"
 // Raw whole-config Export/Import — a Developer affordance (uix.md §6.4). Lifted out of the (removed)
 // Providers tab into the merged Models tab so config portability survives the merge. Desktop-only:
 // window.api (the file pickers) is absent on web, so the buttons no-op there.
+//
+// Config→SQLite step 8: the export is the COMPLETE effective config — the server's /config view
+// overlays every SQLite store (settings + folded provider/agent/command/reference layers +
+// skills/plugins), so this document is the full settings wire format an Import on another
+// instance re-seeds from. Only derived/transport noise is dropped.
+const EXPORT_DROP_KEYS = new Set(["$schema", "plugin_origins"])
+
 function generateConfigTemplate(current: Record<string, unknown>): string {
   const out: Record<string, unknown> = { $schema: "https://novaclaw.app/config.json" }
-  for (const key of ["model", "shell", "default_agent", "username", "providers", "mcp", "agents", "permissions"]) {
-    if (current[key] !== undefined) out[key] = current[key]
+  for (const [key, value] of Object.entries(current)) {
+    if (value === undefined || EXPORT_DROP_KEYS.has(key)) continue
+    out[key] = value
   }
   return JSON.stringify(out, null, 2) + "\n"
 }
