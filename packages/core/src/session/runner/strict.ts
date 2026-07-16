@@ -54,6 +54,88 @@ export const MAX_ATTEMPTS = 8
 export const FILE_LIST_CAP = 24
 const BINARY_EXTS = new Set([".exe", ".o", ".obj", ".dll", ".so", ".dylib", ".bin", ".a", ".lib"])
 
+// ── P14.1 routing (jh MVP): TASK vs CHAT ────────────────────────────────────────────────────────
+// With Strict enabled, EVERY message would otherwise launch a full engine run — including "thanks"
+// and "what does that error mean?". One small routing call keeps Strict mode livable: conversational
+// messages get a normal turn; only work requests engage the harness.
+export const ROUTE_TOKENS = 2048 // headroom for a reasoning model that thinks before its one-word verdict
+
+export const ROUTE_SYSTEM = [
+  "You route messages for a work agent that operates on the user's project folder.",
+  "Decide whether the user's message is a WORK TASK or ORDINARY CHAT.",
+  "A WORK TASK asks for something to be DONE in the folder: create, edit, fix, refactor, build,",
+  "install, set up, convert, run, verify, or produce a file, program, document, or dataset.",
+  "ORDINARY CHAT is everything else: greetings, thanks, acknowledgements, questions answered in",
+  "words, explanations, opinions, status questions, small talk.",
+  "Reply with exactly one word: TASK or CHAT.",
+].join("\n")
+
+/** Parse the router verdict. Only an EXPLICIT, final CHAT verdict routes away from the engine — the
+ *  user turned Strict on, so ambiguity or garbage resolves to their stated stance (TASK). The LAST
+ *  token wins because a reasoning model may weigh both words before concluding. */
+export function routeOf(reply: string): "task" | "chat" {
+  const matches = reply.toUpperCase().match(/\b(TASK|CHAT)\b/g)
+  return matches !== null && matches[matches.length - 1] === "CHAT" ? "chat" : "task"
+}
+
+// ── P14.1 resume: the continuation intent ───────────────────────────────────────────────────────
+// Only these filler words may follow "resume"/"continue" — a message carrying NEW content
+// ("continue, but make the button red") must NOT match, or its modifier would be silently lost.
+const RESUME_TAIL = new Set([
+  "the", "that", "this", "task", "run", "job", "it", "work", "working", "please", "with", "on",
+  "going", "go", "ahead", "from", "where", "you", "we", "left", "off", "stopped", "was", "were",
+  "previous", "last", "earlier", "interrupted", "your", "my", "again", "now",
+])
+
+/** A bare continuation request ("resume", "continue the task", "resume where you left off") — the
+ *  documented way to pick an interrupted Strict run back up (the notices teach the word). */
+export function resumeIntent(text: string): boolean {
+  const words = text.trim().toLowerCase().replace(/[.!?,;…'"“”‘’]+/g, " ").split(/\s+/).filter(Boolean)
+  if (words.length === 0 || words.length > 7) return false
+  if (words[0] !== "resume" && words[0] !== "continue") return false
+  return words.slice(1).every((w) => RESUME_TAIL.has(w))
+}
+
+// ── P14.1 final answer: the run summary ─────────────────────────────────────────────────────────
+export const SUMMARY_TOKENS = 4096
+const SUMMARY_LINE_MAX = 240
+const SUMMARY_LINES_MAX = 40
+
+/** The prompt pair for the end-of-run assistant summary — the user's readable answer to "what did
+ *  you actually do?". Input is harness ground truth only (goal, outcome, the phase-level journal,
+ *  applied files) so the summary can't claim more than the run verified. */
+export function summaryPrompt(input: {
+  readonly goal: string
+  readonly status: string
+  readonly reason?: string
+  readonly milestones: ReadonlyArray<string>
+  readonly appliedFiles?: ReadonlyArray<string>
+}): { readonly system: string; readonly user: string } {
+  const system = [
+    "You report the outcome of an autonomous step-by-step work run to the user who requested it.",
+    "Write a short, plain-language report: what was produced or changed (name the files), how it",
+    "was verified, and — if the run stopped early — exactly what state the folder is in and what",
+    "remains to be done. Base every claim ONLY on the journal below; if the journal doesn't show",
+    "something was verified, don't claim it works. 3-8 sentences, no headings, no apologies.",
+  ].join("\n")
+  const outcome =
+    input.status === "done"
+      ? "completed — every step verified"
+      : `stopped early (${input.reason ?? input.status}) — the best verified state was kept`
+  const journal = input.milestones
+    .slice(-SUMMARY_LINES_MAX)
+    .map((line) => (line.length > SUMMARY_LINE_MAX ? line.slice(0, SUMMARY_LINE_MAX) + "…" : line))
+    .join("\n")
+  const applied =
+    input.appliedFiles !== undefined && input.appliedFiles.length > 0
+      ? `\n\nFiles applied to the folder: ${input.appliedFiles.join(", ")}`
+      : ""
+  return {
+    system,
+    user: `The task: ${input.goal}\n\nOutcome: ${outcome}\n\nRun journal (phase-level):\n${journal || "(no phase milestones recorded)"}${applied}`,
+  }
+}
+
 /** ConfigStrict group toggles → engine lever flags. `undefined` = the engine's default (ON); an
  *  explicit group `false` disables its family (core/src/config/strict.ts documents the mapping). */
 export function flagsFor(strict: ConfigStrict.Info): Pick<
@@ -259,8 +341,12 @@ export interface RunArgs {
   /** Publishes one progress notice into the chat (Synthetic). Batched milestone lines arrive joined. */
   readonly onMilestone: (text: string) => Effect.Effect<void>
   readonly checkpoint?: (state: JhEngine.State) => Effect.Effect<void>
-  /** improve11 P5: the racing latch — a losing racer stops at its next step boundary. */
+  /** improve11 P5: the racing latch — a losing racer stops at its next step boundary. P14.1: also
+   *  the user's Stop — the engine exits THROUGH the terminal best-restore at the next boundary. */
   readonly aborted?: () => boolean
+  /** P14.1 resume: a JhStore-checkpointed state to continue from (crash/stop recovery). The engine
+   *  picks up the existing tree instead of re-planning; completed steps are never redone. */
+  readonly resume?: JhEngine.State
   readonly now?: () => number
 }
 
@@ -313,7 +399,7 @@ export function runTask(args: RunArgs): Effect.Effect<JhEngine.Report> {
     },
   }
   return Effect.gen(function* () {
-    const report = yield* JhEngine.runTask(deps, { goal: args.task })
+    const report = yield* JhEngine.runTask(deps, { goal: args.task }, args.resume)
     yield* flush
     return report
   })

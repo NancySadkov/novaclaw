@@ -8,7 +8,7 @@ import {
   isContextOverflowFailure,
   type ProviderErrorEvent,
 } from "@novaclaw/llm"
-import { Cause, DateTime, Duration, Effect, FiberSet, Layer, Option, Semaphore, Stream } from "effect"
+import { Cause, DateTime, Duration, Effect, Fiber, FiberSet, Layer, Option, Semaphore, Stream } from "effect"
 import fs from "node:fs"
 import path from "path"
 import { AgentV2 } from "../../agent"
@@ -48,6 +48,7 @@ import { type RunError, Service } from "./index"
 import { SessionRunnerModel } from "./model"
 import { SessionStrict } from "./strict"
 import { JhStore } from "../../jh/store"
+import type { JhEngine } from "../../jh/engine"
 import { createLLMEventPublisher } from "./publish-llm-event"
 import { toLLMMessages } from "./to-llm-message"
 import { AdhocGuidance } from "../../adhoc-tools/guidance"
@@ -801,10 +802,17 @@ export const layer = Layer.effect(
       )
     })
 
-    // P14-minimal (jh-improve8 P3): the Strict-harness drain — one JhEngine task per pending user
-    // message; queued messages drain in order. The engine self-terminates at its wall THROUGH the
-    // terminal best-restore (improve7), so a stopped run still delivers the best verified state.
-    // Progress = Synthetic milestone notices (projector-safe); persistence = JhStore keyed by session.
+    // P14-minimal (jh-improve8 P3) + P14.1 (jh MVP): the Strict-harness drain — one JhEngine task per
+    // pending user message; queued messages drain in order. The engine self-terminates at its wall
+    // THROUGH the terminal best-restore (improve7), so a stopped run still delivers the best verified
+    // state. Progress = Synthetic milestone notices (projector-safe); persistence = JhStore keyed by
+    // session. P14.1 adds the four product legs: TASK/CHAT routing (a greeting must not launch an
+    // engine run — the "chat" return falls through to the normal loop), cooperative Stop (engine work
+    // runs on a DETACHED fiber; interrupting the drain flips the abort latch and the run finalizes
+    // THROUGH the best-restore at its next step boundary), crash resume (a "running" JhStore row
+    // means a hard death; a bare "resume"/"continue" continues it), and the end-of-run summary (a
+    // real streamed assistant message — the user's readable answer).
+    const strictInflight = new Map<SessionSchema.ID, Fiber.Fiber<void>>()
     const runStrictDrain = Effect.fn("SessionRunner.strictDrain")(function* (
       sessionID: SessionSchema.ID,
       resolved: EffectiveConfig,
@@ -827,7 +835,7 @@ export const layer = Layer.effect(
           ).pipe(Effect.as(undefined)),
         ),
       )
-      if (model === undefined) return
+      if (model === undefined) return "handled" as const
       // The engine's one-shot completion (the judgeCompletion idiom). The budget is per-CALL and comes
       // from ConfigStrict: execution steps need a whole non-trivial source file of headroom (jh.md §3
       // "Measured": a C program is ~13-15k tokens; truncation is fatal), and reasoning steps need room
@@ -860,7 +868,7 @@ export const layer = Layer.effect(
         }).pipe(Effect.mapError((error) => ({ message: error instanceof Error ? error.message : String(error) })))
       let promotion = first
       for (;;) {
-        if (promotion === undefined) return
+        if (promotion === undefined) return "handled" as const
         const cutoff = yield* EventV2.latestSequence(db, sessionID)
         let promoted = 0
         if (promotion === "steer") promoted = yield* SessionInput.promoteSteers(db, events, sessionID, cutoff)
@@ -868,17 +876,66 @@ export const layer = Layer.effect(
           promoted += Number(yield* SessionInput.promoteNextQueued(db, events, sessionID))
           promoted += yield* SessionInput.promoteSteers(db, events, sessionID, cutoff)
         }
-        if (promoted === 0) return
+        if (promoted === 0) return "handled" as const
         const task = SessionStrict.lastUserText(yield* getContext(sessionID))
-        if (task === undefined) return
+        if (task === undefined) return "handled" as const
+        // A stopped run finalizes on a detached fiber at its next step boundary — two engines must
+        // never work the same folder, so wait for any straggler before starting (or routing) anything.
+        {
+          const inflight = strictInflight.get(sessionID)
+          if (inflight !== undefined) {
+            yield* Effect.exit(Fiber.join(inflight))
+            strictInflight.delete(sessionID)
+          }
+        }
         // The effective strict config for THIS session: the global `config.strict` overlaid with the
         // session's own override (the composer switch — enabled/attempts/wallMinutes per chat).
         const strict = { ...(strictConfig ?? {}), ...(resolved.strict ?? {}) }
+        // P14.1 resume: a saved plan that never reached "done" is continuable. Status "running" means
+        // a HARD death (crash/kill — a clean stop saves its terminal status), so the user is told once
+        // and taught the resume word. A bare "resume"/"continue" picks the saved tree back up —
+        // completed steps are never redone.
+        const savedKey = `jh_${sessionID}`
+        const saved = yield* JhStore.load(db, savedKey).pipe(
+          Effect.catchDefect((defect) =>
+            Effect.logWarning("strict resume state unreadable", { sessionID, defect }).pipe(Effect.as(undefined)),
+          ),
+        )
+        const resumable = saved !== undefined && saved.status !== "done"
+        const wantsResume = SessionStrict.resumeIntent(task)
+        const resuming = wantsResume && resumable
+        const goal = resuming ? saved!.goal : task
+        const resumeState = resuming ? saved!.state : undefined
+        if (!resuming) {
+          // P14.1 routing: "resume" with nothing to resume is a conversation ("continue what?");
+          // everything else asks the router. Only an explicit CHAT verdict leaves the engine path —
+          // ambiguity resolves to TASK, the user's stated stance (they turned Strict on). An
+          // unreachable model also routes to TASK: the engine path surfaces model failures properly.
+          const verdict = wantsResume
+            ? ("chat" as const)
+            : SessionStrict.routeOf(
+                yield* completeOnce(SessionStrict.ROUTE_SYSTEM, task, SessionStrict.ROUTE_TOKENS).pipe(
+                  Effect.catch(() => Effect.succeed("TASK")),
+                ),
+              )
+          if (saved !== undefined && saved.status === "running") {
+            const shortGoal = saved.goal.length > 100 ? saved.goal.slice(0, 100) + "…" : saved.goal
+            yield* notice(
+              `⏸️ A previous Strict run was interrupted before finishing — “${shortGoal}”. Your files kept every verified step; say "resume" to continue it.`,
+            )
+            yield* JhStore.save(db, { id: savedKey, goal: saved.goal, status: "interrupted", state: saved.state, now: Date.now() })
+          }
+          if (verdict === "chat") return "chat" as const
+        }
         // improve11 P5 (jh.md §14.2): best-of-N racing — explicit opt-in via strict.attempts. Each
         // racer works on a bounded FORK of the folder; the first oracle-... (in sessions: the first
         // attempt whose run completes DONE) wins and its changes are applied back; losers are deleted.
         // Measured (12 rig races): ~2× per-wall success; contention notes in jh-improve11.md.
-        let attempts = Math.max(1, Math.min(SessionStrict.MAX_ATTEMPTS, Math.floor(strict.attempts ?? 1)))
+        // A RESUMED run is always single-attempt: the saved tree describes the LIVE folder, not a fork.
+        let attempts =
+          resumeState !== undefined
+            ? 1
+            : Math.max(1, Math.min(SessionStrict.MAX_ATTEMPTS, Math.floor(strict.attempts ?? 1)))
         let baseline: ReadonlyMap<string, string> | undefined
         let forks: string[] = []
         if (attempts > 1) {
@@ -897,22 +954,40 @@ export const layer = Layer.effect(
         }
         const single = attempts === 1
         yield* notice(
-          single
-            ? `🛡️ Strict mode: working on this step-by-step — plan, verified actions, and recovery notices will appear below.`
-            : `🛡️ Strict mode: racing ${attempts} independent attempts on isolated copies of the folder — the first verified success is kept, the rest are discarded.`,
+          resuming
+            ? `▶️ Resuming the Strict run — picking up from the last verified step.`
+            : single
+              ? `🛡️ Strict mode: working on this step-by-step — plan, verified actions, and recovery notices will appear below.`
+              : `🛡️ Strict mode: racing ${attempts} independent attempts on isolated copies of the folder — the first verified success is kept, the rest are discarded.`,
         )
+        // P14.1 Stop: the abort latch. Interrupting the drain (the Stop button →
+        // SessionExecution.interrupt) flips it via onInterrupt below; the engine exits THROUGH the
+        // terminal best-restore at its next boundary (never a half-written step), and in-flight model
+        // calls are raced against the latch so a stop lands in seconds, not a whole model call.
+        let stopRequested = false
+        const abortWatch: Effect.Effect<never, JhEngine.LLMFail> = Effect.gen(function* () {
+          for (;;) {
+            if (stopRequested) return yield* Effect.fail({ message: "stopped by the user" })
+            yield* Effect.sleep(Duration.millis(500))
+          }
+        })
+        // raceFirst, not race: the latch's FAILURE must decide the race and interrupt the in-flight
+        // model call (plain race waits for the first SUCCESS and would ignore the failing watcher).
+        const completeAbortable = (system: string, user: string, maxTokens: number) =>
+          Effect.raceFirst(completeOnce(system, user, maxTokens), abortWatch)
         let winnerIdx: number | undefined
         const runOne = (i: number, cwd: string) =>
           SessionStrict.runTask({
-            task,
+            task: goal,
             cwd,
             strict,
-            completeOnce,
+            completeOnce: completeAbortable,
+            ...(resumeState === undefined ? {} : { resume: resumeState }),
             onMilestone: (text) => notice(single ? text : `[attempt ${i + 1}/${attempts}] ${text}`),
-            aborted: single ? undefined : () => winnerIdx !== undefined && winnerIdx !== i,
+            aborted: () => stopRequested || (winnerIdx !== undefined && winnerIdx !== i),
             checkpoint: single
               ? (state) =>
-                  JhStore.save(db, { id: `jh_${sessionID}`, goal: task, status: "running", state, now: Date.now() }).pipe(
+                  JhStore.save(db, { id: savedKey, goal, status: "running", state, now: Date.now() }).pipe(
                     Effect.ignore,
                   )
               : undefined, // racers don't persist; the winner's final state is saved below
@@ -926,33 +1001,108 @@ export const layer = Layer.effect(
               Effect.logError("strict attempt failed", { sessionID, attempt: i + 1, cause }).pipe(Effect.as(undefined)),
             ),
           )
-        const reports = single
-          ? [yield* runOne(0, location.directory)]
-          : yield* Effect.all(forks.map((dir, i) => runOne(i, dir)), { concurrency: "unbounded" })
-        const report = winnerIdx !== undefined ? reports[winnerIdx] : (reports.find((r) => r !== undefined) ?? undefined)
-        if (report === undefined) {
-          yield* notice("⚠️ The Strict run hit an internal error — see the server log. The working directory is left as-is.")
-          for (const d of forks) try { fs.rmSync(d, { recursive: true, force: true }) } catch {}
-          return
-        }
-        if (!single) {
-          if (winnerIdx !== undefined && baseline) {
-            const applied = SessionStrict.applyBack(forks[winnerIdx]!, location.directory, baseline)
-            yield* notice(`🏁 Attempt ${winnerIdx + 1}/${attempts} WON the race — ${applied.length} changed file${applied.length === 1 ? "" : "s"} applied to the folder: ${applied.slice(0, 8).join(", ")}${applied.length > 8 ? ", …" : ""}`)
+        // P14.1 final answer: the end-of-run summary — a REAL streamed assistant message built from
+        // harness ground truth (goal, outcome, the phase journal, applied files), so the user reads a
+        // normal reply instead of decoding notices. Best-effort: the terminal notice already stated
+        // the outcome, so a failed summary only costs polish.
+        const publishSummary = (report: JhEngine.Report, appliedFiles: ReadonlyArray<string>) =>
+          Effect.gen(function* () {
+            const milestones = report.state.log
+              .map((entry) => SessionStrict.milestone(entry))
+              .filter((line): line is string => line !== undefined)
+            const prompts = SessionStrict.summaryPrompt({
+              goal,
+              status: report.status,
+              ...(report.reason === undefined ? {} : { reason: report.reason }),
+              milestones,
+              appliedFiles,
+            })
+            const publisher = createLLMEventPublisher(events, {
+              sessionID,
+              agent: String(resolved.agent),
+              model: {
+                id: ModelV2.ID.make(model.id),
+                providerID: ProviderV2.ID.make(model.provider),
+                ...(session.model?.variant === undefined ? {} : { variant: session.model.variant }),
+              },
+            })
+            yield* llm
+              .stream(
+                LLM.request({
+                  model,
+                  system: [SystemPart.make(prompts.system)],
+                  messages: [Message.user(prompts.user)],
+                  tools: [],
+                  generation: { maxTokens: SessionStrict.SUMMARY_TOKENS },
+                }),
+              )
+              .pipe(Stream.runForEach((event) => publisher.publish(event)))
+            const settlement = publisher.stepSettlement()
+            if (settlement !== undefined && !publisher.hasProviderError())
+              yield* events.publish(SessionEvent.Step.Ended, {
+                sessionID,
+                timestamp: yield* DateTime.now,
+                assistantMessageID: yield* publisher.startAssistant(),
+                finish: settlement.finish,
+                cost: 0,
+                tokens: settlement.tokens,
+              })
+          }).pipe(
+            Effect.catchCause((cause) => Effect.logWarning("strict summary failed", { sessionID, cause })),
+          )
+        // The engine work + everything owed to the user afterwards runs on a DETACHED fiber: when the
+        // drain is interrupted (Stop), this fiber survives, the latch stops the engine at its next
+        // step boundary through the best-restore, and the stopped-notice/summary/save still arrive.
+        const finalize = Effect.gen(function* () {
+          const reports = single
+            ? [yield* runOne(0, location.directory)]
+            : yield* Effect.all(forks.map((dir, i) => runOne(i, dir)), { concurrency: "unbounded" })
+          const report = winnerIdx !== undefined ? reports[winnerIdx] : (reports.find((r) => r !== undefined) ?? undefined)
+          if (report === undefined) {
+            yield* notice("⚠️ The Strict run hit an internal error — see the server log. The working directory is left as-is.")
             for (const d of forks) try { fs.rmSync(d, { recursive: true, force: true }) } catch {}
-          } else {
-            yield* notice(`🏁 No attempt verified success — YOUR FOLDER IS UNCHANGED. The attempt workspaces are kept for inspection: ${forks.join(" · ")}`)
+            return
           }
-        }
-        yield* JhStore.save(db, { id: `jh_${sessionID}`, goal: task, status: report.status, state: report.state, now: Date.now() }).pipe(Effect.ignore)
-        const steps = report.state.tree.nodes.size
-        yield* notice(
-          report.status === "done"
-            ? `✅ Strict task complete — ${steps} steps, every one verified.`
-            : `⚠️ Strict run stopped (${report.reason ?? "blocked"}) after ${steps} steps — the best verified state was kept${single ? " in the working directory" : " in the attempt workspaces"}.`,
+          let appliedFiles: string[] = []
+          if (!single) {
+            if (winnerIdx !== undefined && baseline) {
+              appliedFiles = SessionStrict.applyBack(forks[winnerIdx]!, location.directory, baseline)
+              yield* notice(`🏁 Attempt ${winnerIdx + 1}/${attempts} WON the race — ${appliedFiles.length} changed file${appliedFiles.length === 1 ? "" : "s"} applied to the folder: ${appliedFiles.slice(0, 8).join(", ")}${appliedFiles.length > 8 ? ", …" : ""}`)
+              for (const d of forks) try { fs.rmSync(d, { recursive: true, force: true }) } catch {}
+            } else if (stopRequested) {
+              yield* notice(`🏁 The race was stopped before any attempt verified success — YOUR FOLDER IS UNCHANGED.`)
+              for (const d of forks) try { fs.rmSync(d, { recursive: true, force: true }) } catch {}
+            } else {
+              yield* notice(`🏁 No attempt verified success — YOUR FOLDER IS UNCHANGED. The attempt workspaces are kept for inspection: ${forks.join(" · ")}`)
+            }
+          }
+          yield* JhStore.save(db, { id: savedKey, goal, status: report.status, state: report.state, now: Date.now() }).pipe(Effect.ignore)
+          const steps = report.state.tree.nodes.size
+          const stopped = report.reason === "aborted"
+          yield* notice(
+            report.status === "done"
+              ? `✅ Strict task complete — ${steps} steps, every one verified.`
+              : stopped
+                ? `⏹️ Strict run stopped at your request after ${steps} steps — the best verified state was kept${single ? " in the working directory" : ""}. Say "resume" to pick it up again.`
+                : `⚠️ Strict run stopped (${report.reason ?? "blocked"}) after ${steps} steps — the best verified state was kept${single ? " in the working directory" : " in the attempt workspaces"}. Say "resume" to continue it.`,
+          )
+          yield* publishSummary(report, appliedFiles)
+          yield* postRunMaintenance(sessionID)
+        }).pipe(
+          Effect.catchCause((cause) => Effect.logError("strict finalize failed", { sessionID, cause })),
         )
+        const worker = yield* Effect.forkDetach(finalize)
+        strictInflight.set(sessionID, worker)
+        yield* Fiber.join(worker).pipe(
+          Effect.onInterrupt(() =>
+            Effect.sync(() => {
+              stopRequested = true
+            }),
+          ),
+        )
+        strictInflight.delete(sessionID)
         promotion = "queue"
-        if (!(yield* SessionInput.hasPending(db, sessionID, "queue"))) return
+        if (!(yield* SessionInput.hasPending(db, sessionID, "queue"))) return "handled" as const
       }
     })
 
@@ -1006,18 +1156,26 @@ export const layer = Layer.effect(
       const strictEffective = { ...(strictConfig ?? {}), ...(handoff.strict ?? {}) }
       if (strictEffective.enabled === true) {
         if (handoff.permissionMode === "bypass" || handoff.permissionMode === "yolo") {
-          yield* runStrictDrain(input.sessionID, handoff, hasSteer ? "steer" : hasQueue ? "queue" : undefined)
-          yield* postRunMaintenance(input.sessionID)
-          return
+          const outcome = yield* runStrictDrain(
+            input.sessionID,
+            handoff,
+            hasSteer ? "steer" : hasQueue ? "queue" : undefined,
+          )
+          // "handled": engine work ran — its detached finalizer owns the maintenance (it must run
+          // even after a Stop interrupts this fiber). "chat": the routed message is conversational —
+          // fall THROUGH to the normal loop below (it runs the turn over the already-promoted
+          // context and ends with its own postRunMaintenance).
+          if (outcome === "handled") return
+        } else {
+          yield* Effect.gen(function* () {
+            yield* events.publish(SessionEvent.Synthetic, {
+              sessionID: input.sessionID,
+              messageID: SessionMessage.ID.create(),
+              timestamp: yield* DateTime.now,
+              text: "🛡️ Strict mode is enabled, but this chat's permission mode doesn't allow autonomous execution — switch the permission mode to Bypass to run the Strict harness. Answering normally instead.",
+            })
+          }).pipe(Effect.ignore)
         }
-        yield* Effect.gen(function* () {
-          yield* events.publish(SessionEvent.Synthetic, {
-            sessionID: input.sessionID,
-            messageID: SessionMessage.ID.create(),
-            timestamp: yield* DateTime.now,
-            text: "🛡️ Strict mode is enabled, but this chat's permission mode doesn't allow autonomous execution — switch the permission mode to Bypass to run the Strict harness. Answering normally instead.",
-          })
-        }).pipe(Effect.ignore)
       }
       // 1E: track which repeated-call loops we have already redirected this drain, so a
       // persistent loop is nudged once (not every turn). 1N/A2 adds a per-target failure-streak

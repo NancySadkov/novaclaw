@@ -6,7 +6,9 @@ import path from "node:path"
 import { SessionStrict } from "./strict"
 import { SessionInput } from "../input"
 import type { SessionMessage } from "../message"
+import type { JhEngine } from "../../jh/engine"
 import type { JhLog } from "../../jh/log"
+import { JhTree } from "../../jh/tree"
 
 // P14-minimal (jh-improve8 P3) — the session-independent half of the Strict route. The engine
 // integration itself is gated by the LIVE smoke (tests/jh-strict-session-smoke.ts, plan P4).
@@ -117,6 +119,109 @@ describe("SessionStrict.listFilesFor", () => {
     // the exe may fall outside the mtime-sorted cap window on a fast filesystem — when shown, it must
     // be a placeholder, never raw bytes
     if (exe) expect(exe.content).toContain("<compiled binary")
+  })
+})
+
+// P14.1 routing: with Strict enabled, EVERY message would otherwise launch a full engine run —
+// including "thanks". The router keeps Strict livable; these pin its bias (only an explicit,
+// FINAL "CHAT" leaves the engine path — ambiguity resolves to the user's stated stance).
+describe("SessionStrict.routeOf (P14.1 routing)", () => {
+  test("explicit verdicts route where they say", () => {
+    expect(SessionStrict.routeOf("CHAT")).toBe("chat")
+    expect(SessionStrict.routeOf("TASK")).toBe("task")
+    expect(SessionStrict.routeOf("The verdict is: chat.")).toBe("chat")
+  })
+  test("garbage and ambiguity resolve to task (the user turned Strict on)", () => {
+    expect(SessionStrict.routeOf("")).toBe("task")
+    expect(SessionStrict.routeOf("I am not sure what this is")).toBe("task")
+    expect(SessionStrict.routeOf("chatty tasking")).toBe("task") // no whole-word match either way
+  })
+  test("the LAST token wins — a reasoning model weighs both words before concluding", () => {
+    expect(SessionStrict.routeOf("This could be a TASK... no, it's small talk. CHAT")).toBe("chat")
+    expect(SessionStrict.routeOf("Sounds like CHAT at first, but they want a file: TASK")).toBe("task")
+  })
+})
+
+// P14.1 resume: the documented continuation phrase. A message carrying NEW content must never
+// match — its modifier would be silently swallowed by the resumed plan.
+describe("SessionStrict.resumeIntent (P14.1 resume)", () => {
+  test("bare continuation requests match", () => {
+    for (const t of [
+      "resume",
+      "Resume.",
+      "continue",
+      "CONTINUE!",
+      "resume the task",
+      "continue where you left off",
+      "resume it please",
+      "continue the run",
+    ])
+      expect(SessionStrict.resumeIntent(t)).toBe(true)
+  })
+  test("messages carrying new content or unrelated text never match", () => {
+    for (const t of [
+      "continue, but make the button red",
+      "resume tomorrow at 5",
+      "continue the analysis of chapter two",
+      "hi",
+      "fix the bug in main.c",
+      "please resume", // must START with the verb — 'please resume the big red task' shapes are unbounded
+      "",
+      "   ",
+    ])
+      expect(SessionStrict.resumeIntent(t)).toBe(false)
+  })
+})
+
+// P14.1 final answer: the summary prompt is assembled from harness GROUND TRUTH only, so the
+// model can't be led to claim more than the run verified.
+describe("SessionStrict.summaryPrompt (P14.1 final answer)", () => {
+  test("done runs state completion; goal and journal are embedded verbatim", () => {
+    const p = SessionStrict.summaryPrompt({
+      goal: "build the widget",
+      status: "done",
+      milestones: ["committed root.1 — wrote widget.c"],
+      appliedFiles: [],
+    })
+    expect(p.user).toContain("build the widget")
+    expect(p.user).toContain("completed — every step verified")
+    expect(p.user).toContain("committed root.1")
+    expect(p.system).toContain("ONLY on the journal")
+  })
+  test("stopped runs carry the reason and the kept-best framing", () => {
+    const p = SessionStrict.summaryPrompt({ goal: "g", status: "blocked", reason: "aborted", milestones: [] })
+    expect(p.user).toContain("stopped early (aborted)")
+    expect(p.user).toContain("best verified state was kept")
+    expect(p.user).toContain("(no phase milestones recorded)")
+  })
+  test("the journal is capped in lines and line length; applied files are named", () => {
+    const many = Array.from({ length: 100 }, (_, i) => `line-${i} ` + "x".repeat(300))
+    const p = SessionStrict.summaryPrompt({ goal: "g", status: "done", milestones: many, appliedFiles: ["a.c", "b.c"] })
+    expect(p.user).not.toContain("line-59 ") // only the last 40 lines survive
+    expect(p.user).toContain("line-99")
+    expect(p.user).toContain("…") // long lines truncated
+    expect(p.user).toContain("Files applied to the folder: a.c, b.c")
+  })
+})
+
+// P14.1 resume threading: a resume state's tree is CONTINUED (same root goal, no fresh
+// task_started), never re-planned from the new message text.
+describe("SessionStrict.runTask resume (P14.1)", () => {
+  test("the resumed tree is continued, not re-planned from the user's resume message", async () => {
+    const tree = JhTree.create({ goal: "THE-RESUMED-GOAL", size: "atomic", success: "the task is complete" })
+    const state = { tree, artifacts: [], log: [], telemetry: new Map() } as JhEngine.State
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "jh-resume-"))
+    const report = await SessionStrict.runTask({
+      task: "resume", // the user's continuation word — must NOT become the goal
+      cwd,
+      strict: {},
+      completeOnce: () => Effect.succeed("not json"),
+      onMilestone: () => Effect.void,
+      resume: state,
+    }).pipe(Effect.runPromise)
+    const root = report.state.tree.nodes.get(report.state.tree.root)!
+    expect(root.draft.goal).toBe("THE-RESUMED-GOAL")
+    expect(report.state.log.some((e) => e.type === "task_started")).toBe(false)
   })
 })
 
