@@ -67,6 +67,28 @@ describe("JhAffective (improve18: affective × strict)", () => {
     expect(s.mood.frustration).toBeLessThan(stuck)
   })
 
+  test("a model whose baseline penalty is HIGH is never modulated DOWN (the Qwen3.6 anti-repetition trap)", () => {
+    // Our Spark serves Qwen3.6-35B-A3B with `--override-generation-config {"presence_penalty":1.1,…}`
+    // (the MoE build's documented anti-repetition default). The old ABSOLUTE cap turned that into
+    // clamp(1.1+boredom, 0, 0.5) = 0.5 — affective would have STRIPPED the model's repetition
+    // protection while claiming to fight repetition, and the wave-18 A/B would have blamed the lever.
+    const qwen = { temperature: 0.6, topP: 0.95, presencePenalty: 1.1, frequencyPenalty: 0 }
+    const calm = JhAffective.sampling(JhAffective.initial, qwen)
+    expect(calm.presencePenalty).toBe(1.1) // never below the model's own baseline
+    const stuck = JhAffective.sampling(rut(4), qwen)
+    expect(stuck.presencePenalty).toBeGreaterThan(1.1) // boredom RAISES it
+    expect(stuck.presencePenalty).toBeLessThanOrEqual(1.6) // by at most our headroom
+    expect(stuck.presencePenalty).toBeLessThanOrEqual(2) // and never past Qwen's documented ceiling
+  })
+
+  test("a zero baseline behaves exactly as before (the fix is a no-op for every other config)", () => {
+    const zero = { temperature: 0.6, topP: 0.95 }
+    expect(JhAffective.sampling(JhAffective.initial, zero).presencePenalty).toBe(0)
+    const stuck = JhAffective.sampling(rut(4), zero)
+    expect(stuck.presencePenalty).toBeGreaterThan(0)
+    expect(stuck.presencePenalty).toBeLessThanOrEqual(0.5)
+  })
+
   test("it is the SAME engine as the session drain loop (no look-alike homeostat)", () => {
     // Identical facts through both entry points must yield an identical mood.
     const viaJh = JhAffective.step(JhAffective.initial, { action: "a(1)", result: "error: boom", acted: true })

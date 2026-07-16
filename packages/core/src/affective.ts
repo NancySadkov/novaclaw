@@ -43,8 +43,19 @@ const TEMP_CEIL = 1.15
 const TOOL_TEMP_CEIL = 0.6
 const TOPP_UP = 0.1
 const TOPP_DOWN = 0.05
+// improve18: these are HEADROOM above the configured baseline, not absolute caps. They used to be
+// absolute — which silently INVERTED the lever on any model whose recommended baseline already sits
+// high: our Qwen3.6-35B-A3B server runs `--override-generation-config {…"presence_penalty":1.1…}`
+// (the MoE build's documented anti-repetition default; the model card asks 1.1-1.5), so
+// `clamp(1.1 + boredom, 0, 0.5)` returned 0.5 — affective "modulating" a 1.1 penalty DOWN to 0.5,
+// and an unset base made the request send 0-0.5 where the server would otherwise have applied 1.1.
+// Either way the mood engine STRIPPED the model's repetition protection — on the exact defect
+// (verbatim self-copy) it is meant to fight. Penalties now only ever RISE from the baseline.
+// (For a base of 0 — every other model/config today — the behavior is byte-identical.)
 const FREQ_MAX = 0.5
 const PRES_MAX = 0.5
+/** Qwen documents presence/frequency penalties on a 0-2 scale; never exceed it. */
+const PENALTY_CEIL = 2
 export const FRUST_INTERVENE = 0.7
 export const URGENCY_INTERVENE = 0.8
 
@@ -175,8 +186,22 @@ export function toSampling(
   const out: SamplingOverride = {
     temperature: round3(temperature),
     topP: round3(topP),
-    frequencyPenalty: round3(clamp((base.frequencyPenalty ?? 0) + 0.3 * mood.boredom + 0.15 * mood.frustration, 0, FREQ_MAX)),
-    presencePenalty: round3(clamp((base.presencePenalty ?? 0) + 0.2 * mood.boredom, 0, PRES_MAX)),
+    // Penalties RISE from the configured baseline (never below it — see the FREQ_MAX/PRES_MAX note):
+    // floor = the model's own recommended value, ceiling = that + our headroom, hard-capped at 2.
+    frequencyPenalty: round3(
+      clamp(
+        (base.frequencyPenalty ?? 0) + 0.3 * mood.boredom + 0.15 * mood.frustration,
+        base.frequencyPenalty ?? 0,
+        Math.min(PENALTY_CEIL, (base.frequencyPenalty ?? 0) + FREQ_MAX),
+      ),
+    ),
+    presencePenalty: round3(
+      clamp(
+        (base.presencePenalty ?? 0) + 0.2 * mood.boredom,
+        base.presencePenalty ?? 0,
+        Math.min(PENALTY_CEIL, (base.presencePenalty ?? 0) + PRES_MAX),
+      ),
+    ),
   }
   if (options.extended) out.topK = Math.round(clamp((base.topK ?? 40) + 60 * explore - 20 * calm, 10, 120))
 
