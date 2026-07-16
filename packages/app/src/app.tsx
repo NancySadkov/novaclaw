@@ -66,8 +66,10 @@ import { NewHome, LegacyHome } from "@/pages/home"
 import { HomeScreen } from "@/pages/home-screen/home-screen"
 import { FilesPage } from "@/pages/files"
 import { NotesPage } from "@/pages/notes"
+import { DebugPage } from "@/pages/debug"
 import { RegistryPage } from "@/pages/registry"
 import { TrashPage } from "@/pages/trash"
+import { installErrorLog } from "@/utils/error-log"
 
 const NewSession = lazy(() => import("@/pages/new-session"))
 
@@ -391,6 +393,9 @@ function DraftProviders(props: ParentProps) {
 }
 
 export function AppBaseProviders(props: ParentProps<{ locale?: Locale }>) {
+  // Dependability P5: start capturing errors at boot — the Debug app's Error-log panel renders
+  // whatever the window has seen, not just what happens after the panel opens.
+  installErrorLog()
   return (
     <MetaProvider>
       <Font />
@@ -641,6 +646,7 @@ function Routes() {
         <Route path="/files" component={FilesPage} />
         <Route path="/notes" component={NotesPage} />
         <Route path="/registry" component={RegistryPage} />
+        <Route path="/debug" component={DebugPage} />
         <Route path="/trash" component={TrashPage} />
         <Route path="/:dir/session/:id" component={LegacyTargetSessionRoute} />
       </Show>

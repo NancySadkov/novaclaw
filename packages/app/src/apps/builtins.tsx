@@ -97,6 +97,18 @@ export function useBuiltinApps(): () => HomeApp[] {
       open: () => navigate("/registry"),
     },
     {
+      id: "debug",
+      title: "Debug",
+      icon: "console",
+      accent: "#a78bfa",
+      subtitle: "Connection, error log, sessions — under the hood",
+      source: "builtin",
+      // Raw diagnostics are a Developer surface (uix.md §6.4; dependability P5 — the calm
+      // banner/ErrorPage stay clean, the detail lives here).
+      minLevel: "developer",
+      open: () => navigate("/debug"),
+    },
+    {
       id: "trash",
       title: "Trash",
       icon: "trash",
