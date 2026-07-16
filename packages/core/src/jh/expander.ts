@@ -106,6 +106,60 @@ export function introspectPrompt(input: {
 /** extract the JSON object → decode against the Step codec. NO structural validation (the engine owns
  *  that — it needs the parsed draft to repair). improve12.1: `fallbackGoal` lets shape-coercion adopt
  *  the caller-known goal for tool-call-shaped replies (§12 tolerance — repair before rejecting). */
+/** How many lines of plan we ask for — and mechanically enforce (improve19: summarisation is a
+ *  BOUNDED ASK, not a third call; a plan longer than the step it plans is a new context problem). */
+export const PLAN_MAX_LINES = 8
+
+/**
+ * improve19 — the THINK stage prompt (`notes/jh-think-stage.md`). Deliberately schema-FREE: this is
+ * the one call in jh that must NOT produce JSON. It gets the same context the introspect gets and
+ * returns a short plan in plain language, which is then pre-prompted into the DO call.
+ *
+ * The mode split is the whole design: reasoning here (where a runaway costs only this call and its
+ * output IS prose), schema-filling there (where a runaway costs the step).
+ */
+export function thinkPrompt(input: {
+  readonly taskGoal: string
+  readonly stepGoal: string
+  readonly context: string
+  readonly kind: "decompose" | "recover" | "atomic"
+  readonly environment?: string
+}): PromptPair {
+  const focus =
+    input.kind === "decompose"
+      ? "Decide how this step should BREAK DOWN: name the 3-7 phases, in order, and say what makes each one verifiable."
+      : input.kind === "recover"
+        ? "The last attempt FAILED and the failure is quoted in the context. Diagnose the ACTUAL cause from the evidence, then name the ONE next action that is genuinely different from what just failed — do not repeat it."
+        : "Decide the ONE next concrete action for this step, and what would prove it worked."
+  return {
+    system:
+      "You are the PLANNER for an automated build harness. You think; a separate executor acts. " +
+      "Reason about the step and answer with a short plan in PLAIN LANGUAGE — no JSON, no code blocks, no tool call. " +
+      `At most ${PLAN_MAX_LINES} short lines. Be concrete and specific to THIS workspace; do not restate the task.`,
+    user: [
+      `TASK: ${input.taskGoal}`,
+      `THIS STEP: ${input.stepGoal}`,
+      input.environment ? `\nENVIRONMENT:\n${input.environment}` : "",
+      `\nWORKSPACE + HISTORY:\n${input.context}`,
+      `\n${focus}`,
+      `\nAnswer in at most ${PLAN_MAX_LINES} short lines of plain language.`,
+    ]
+      .filter(Boolean)
+      .join("\n"),
+  }
+}
+
+/** Trim a plan to its first PLAN_MAX_LINES non-empty lines and strip any code fences the planner
+ *  emitted anyway — the DO call must never receive something that looks like a schema to copy. */
+export function boundPlan(text: string): string {
+  const cleaned = text
+    .replace(/```[\s\S]*?```/g, " ")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean)
+  return cleaned.slice(0, PLAN_MAX_LINES).join("\n").slice(0, 1500)
+}
+
 export function parseReply(text: string, opts?: { readonly fallbackGoal?: string }): { readonly ok: true; readonly draft: JhStep.StepDraft } | { readonly ok: false; readonly issue: string } {
   const extracted = JhExtract.extractJsonObject(text)
   if (!extracted.ok) {

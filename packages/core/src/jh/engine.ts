@@ -40,6 +40,27 @@ export interface LLMFail {
 export interface Deps {
   readonly introspect: (p: JhExpander.PromptPair) => Effect.Effect<string, LLMFail>
   readonly correct: (p: JhExpander.PromptPair) => Effect.Effect<string, LLMFail>
+  /**
+   * improve19 (owner design, `notes/jh-think-stage.md`) — the THINK/DO split. Optional REASONING
+   * stage: given the same context the introspect gets, return a SHORT free-form plan for this step.
+   * The plan is injected into the following introspect prompt, so reasoning and schema-filling never
+   * compete inside one call.
+   *
+   * Why this exists: jh disabled the `<think>` channel in wave 1 because a reasoning model "burns the
+   * entire token budget in `<think>` and returns EMPTY content" — reasoning and JSON formatting fight
+   * for one reply. Aider hit the identical wall ("strong at reasoning, but often fail to output
+   * properly formatted code editing instructions") and SPLIT the roles instead of amputating —
+   * architect + editor = 85% SOTA on their benchmark. This seam is that split, per step: the think
+   * call has no JSON to lose, the do call has no reasoning to run away with.
+   *
+   * The caller owns the model and sampling — so `think` may run a STRONGER model (or the same model
+   * with thinking ON) while `introspect`/`correct` run a cheaper one. Failure or an empty plan is
+   * NEVER fatal: the engine falls through to the unplanned path (never-dead-end).
+   */
+  readonly think?: (p: JhExpander.PromptPair) => Effect.Effect<string, LLMFail>
+  /** Which step kinds get a think stage (default: all three). `notes/jh-think-stage.md` argues the
+   *  wall goes to decomposition + recovery, so a cost-sensitive caller can narrow to those. */
+  readonly thinkOn?: ReadonlyArray<"decompose" | "recover" | "atomic">
   readonly executor: JhBasicTools.Executor
   readonly runner: JhProcessRunner.Runner
   readonly artifacts: JhArtifact.Store
@@ -824,6 +845,52 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       if (deps.goalCheckCache !== false) goalCheckCache.set(key, verdict)
       return { ...verdict, cached: false }
     })
+  // improve19 — the THINK/DO split (`notes/jh-think-stage.md`). Run the optional reasoning stage for
+  // this node and return the bounded plan, or undefined when the stage is off/narrowed/unusable.
+  // NEVER throws and never blocks: an empty, truncated or failed think falls through to the
+  // unplanned path (the improve1 ghost — "<think> ate the budget, content came back empty" — is
+  // caught here rather than costing the step, which is the point of splitting the calls).
+  const thinkFor = (
+    nodeId: JhStep.StepID,
+    kind: "decompose" | "recover" | "atomic",
+    extraContext?: string,
+  ): Effect.Effect<string | undefined> =>
+    Effect.gen(function* () {
+      const think = deps.think
+      if (!think) return undefined
+      if (deps.thinkOn && !deps.thinkOn.includes(kind)) return undefined
+      const ex = yield* Effect.exit(
+        think(
+          JhExpander.thinkPrompt({
+            taskGoal: task.goal,
+            stepGoal: goalOf(nodeId),
+            context: buildContext(nodeId, extraContext),
+            kind,
+            ...(deps.environment !== undefined ? { environment: deps.environment } : {}),
+          }),
+        ),
+      )
+      if (!Exit.isSuccess(ex)) {
+        emit({ type: "think_failed", step: nodeId, reason: "llm_unreachable" })
+        return undefined
+      }
+      const plan = JhExpander.boundPlan(ex.value)
+      if (plan === "") {
+        emit({ type: "think_failed", step: nodeId, reason: "empty" })
+        return undefined
+      }
+      emit({ type: "planned", step: nodeId, kind, plan })
+      return plan
+    })
+
+  /** The plan, rendered for the DO call's context — labelled so the executor treats it as guidance,
+   *  not as text to copy into a file. */
+  const withPlan = (plan: string | undefined, extraContext?: string): string | undefined => {
+    if (!plan) return extraContext
+    const block = `YOUR PLAN FOR THIS STEP (you wrote this a moment ago — follow it):\n${plan}`
+    return extraContext ? `${extraContext}\n\n${block}` : block
+  }
+
   const buildPrompt = (
     nodeId: JhStep.StepID,
     opts: { allowDecomposition?: boolean; mustDecompose?: boolean; formatReminder?: string; extraContext?: string },
@@ -933,7 +1000,10 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
   // caller runs the node's own atomic step (never-dead-end); otherwise it blocks with the given reason.
   const forceDecompose = (node: JhTree.Node, blockReasonIfAtomic: string, degradeToAtomic = false): Effect.Effect<"expanded" | "blocked" | "atomic"> =>
     Effect.gen(function* () {
-      const ex = yield* Effect.exit(deps.introspect(buildPrompt(node.id, { allowDecomposition: true, mustDecompose: true })))
+      const forcePlan = yield* thinkFor(node.id, "decompose")
+      const ex = yield* Effect.exit(
+        deps.introspect(buildPrompt(node.id, { allowDecomposition: true, mustDecompose: true, ...(withPlan(forcePlan) !== undefined ? { extraContext: withPlan(forcePlan)! } : {}) })),
+      )
       if (!Exit.isSuccess(ex)) {
         if (degradeToAtomic) return "atomic" as const
         blockNode(node, "llm_unreachable")
@@ -960,7 +1030,10 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       // The model's willingness to decompose the whole task is variable (temperature): sometimes it
       // insists on one big atomic write. RETRY a few times — a retry usually yields a proper plan.
       for (let attempt = 0; attempt < SOFT_DECOMPOSE_ATTEMPTS; attempt++) {
-        const ex = yield* Effect.exit(deps.introspect(buildPrompt(node.id, { allowDecomposition: true, mustDecompose: true })))
+        const softPlan = yield* thinkFor(node.id, "decompose")
+        const ex = yield* Effect.exit(
+          deps.introspect(buildPrompt(node.id, { allowDecomposition: true, mustDecompose: true, ...(withPlan(softPlan) !== undefined ? { extraContext: withPlan(softPlan)! } : {}) })),
+        )
         if (!Exit.isSuccess(ex)) continue
         const parsed = JhExpander.parseReply(ex.value, { fallbackGoal: goalOf(node.id) })
         const subs = parsed.ok && parsed.draft.size === "needs_decomposition" ? parsed.draft.substeps : undefined
@@ -1583,7 +1656,8 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
           "- The command itself was wrong (missing PATH, wrong path/filename, bad shell syntax) → a corrected `run` command.",
           `Do NOT repeat the exact action that just failed, and do NOT rewrite the whole program — if re-running gave the same wrong result, change the SPECIFIC buggy code ${coordEdit ? "with `replace_lines`" : "with edit_file"}.`,
         ].join("\n")
-        const ex = yield* Effect.exit(deps.introspect(buildPrompt(node.id, { extraContext: recovery })))
+        const recoverPlan = yield* thinkFor(node.id, "recover", recovery)
+        const ex = yield* Effect.exit(deps.introspect(buildPrompt(node.id, { extraContext: withPlan(recoverPlan, recovery)! })))
         if (Exit.isSuccess(ex)) {
           const parsed = JhExpander.parseReply(ex.value, { fallbackGoal: goalOf(node.id) })
           if (parsed.ok && parsed.draft.size === "atomic" && JhStep.structuralIssues(parsed.draft).filter((i) => i.severity === "error").length === 0) {
@@ -1608,7 +1682,10 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       const maxAttempts = node.id === tree.root ? ROOT_INTROSPECT_ATTEMPTS : 2 // P2a: the root gets many more
       for (let attempt = 0; attempt < maxAttempts; attempt++) {
         const notLast = attempt < maxAttempts - 1
-        const ex = yield* Effect.exit(deps.introspect(buildPrompt(node.id, { allowDecomposition, mustDecompose: false, formatReminder: reminder })))
+        const mainPlan = yield* thinkFor(node.id, allowDecomposition ? "decompose" : "atomic")
+        const ex = yield* Effect.exit(
+          deps.introspect(buildPrompt(node.id, { allowDecomposition, mustDecompose: false, formatReminder: reminder, ...(withPlan(mainPlan) !== undefined ? { extraContext: withPlan(mainPlan)! } : {}) })),
+        )
         if (!Exit.isSuccess(ex)) {
           if (notLast) {
             reminder = undefined

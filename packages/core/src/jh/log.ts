@@ -79,6 +79,11 @@ export type Entry =
   // improve5 (root-hardening): the ROOT could not be planned (a malformed multi-step reply, 10 retries) —
   // instead of the E7 hard-block, it degraded to a single atomic START step + the exploration loop.
   | { readonly type: "root_degraded"; readonly step: string }
+  // improve19 — the THINK/DO split. The plan is an ARTIFACT, not a hidden `<think>` channel: it is
+  // logged verbatim so a run's reasoning is auditable (jh's legibility value; the product's "show me
+  // why it did that"). `think_failed` records the improve1 ghost being caught by the fall-through.
+  | { readonly type: "planned"; readonly step: string; readonly kind: string; readonly plan: string }
+  | { readonly type: "think_failed"; readonly step: string; readonly reason: string }
   | { readonly type: "root_extended"; readonly step: string; readonly reason: string }
   // improve5 P3: the closure-cardinality force-split trigger fired but is DISARMED in the file-workspace
   // regime (context = disk, §5 law-5) — logged as advisory data for a future §4 recalibration, no behavior.
@@ -165,6 +170,10 @@ function describe(e: Sequenced): string {
       return `split_degraded ${e.step} (could not split — ran atomic instead of blocking)`
     case "root_degraded":
       return `root_degraded ${e.step} (could not plan — degraded to a single atomic start, never dead-ended)`
+    case "planned":
+      return `planned ${e.step} (${e.kind}): ${e.plan.replace(/\n/g, " | ")}`
+    case "think_failed":
+      return `think_failed ${e.step} — ${e.reason} (falling through to the unplanned path)`
     case "root_extended":
       return `root_extended ${e.step} — ${e.reason} (the root exhausted its own attempts and refuses to plan; growing a fix CHILD under it instead of dead-ending)`
     case "forced_split_advisory":
