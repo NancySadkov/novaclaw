@@ -31,12 +31,24 @@ describe("JhAffective (improve18: affective × strict)", () => {
     expect(stuckS.frequencyPenalty).toBeGreaterThan(0.2)
   })
 
-  test("temperature is NEVER blown out in jh — every call is tool-call JSON (toolsPresent contract)", () => {
+  test("temperature respects the DEFAULT tool ceiling (0.6) when the model declares none", () => {
     for (const n of [0, 1, 4, 12]) {
       const s = JhAffective.sampling(rut(n), base)
       expect(s.temperature).toBeLessThanOrEqual(0.6)
       expect(s.topP).toBeLessThanOrEqual(0.9)
     }
+  })
+
+  test("a model that declares a HIGHER tool ceiling is allowed to reach it (the Qwen3.6 measurement)", () => {
+    // Measured for our build: step-JSON 6/6 at every temperature 0.3-1.3, while creative diversity
+    // only exists at ≥1.0 (its own default). The 0.6 clamp is a general heuristic, false HERE — so
+    // the ceiling is a model property. Frustration must still be able to push temperature UP toward it.
+    const qwen = { ...base, temperature: 1.0, toolTempCeil: 1.0 }
+    const calm = JhAffective.sampling(JhAffective.initial, qwen)
+    expect(calm.temperature).toBeGreaterThan(0.6) // no longer pinned into the flat zone
+    expect(calm.temperature).toBeLessThanOrEqual(1.0) // but never past what the model declares
+    const stuck = JhAffective.sampling(rut(4), qwen)
+    expect(stuck.temperature).toBeLessThanOrEqual(1.0)
   })
 
   test("progress CALMS the homeostat back down (frustration decays, penalties relax)", () => {

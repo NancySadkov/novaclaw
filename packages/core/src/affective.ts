@@ -151,6 +151,16 @@ export interface SamplingBase {
   readonly topK?: number
   readonly frequencyPenalty?: number
   readonly presencePenalty?: number
+  /**
+   * improve18: the tool-turn temperature ceiling is a MODEL PROPERTY, not a universal law.
+   * `TOOL_TEMP_CEIL` (0.6) encodes the general heuristic "high temperature corrupts tool-call
+   * JSON" — measured FALSE for our Qwen3.6-35B-A3B build: step-JSON validity was 6/6 at every
+   * temperature from 0.3 to 1.3, while creative diversity only appears at ≥1.0 (the model's OWN
+   * default; pairwise 5-gram overlap 0.021 @0.6 → 0.000 @1.0). On such a model the clamp pins the
+   * harness into the flat zone — the opposite of what affective is for. Unset = 0.6 (every
+   * existing deployment is unchanged).
+   */
+  readonly toolTempCeil?: number
 }
 
 export interface SamplingOverride {
@@ -206,7 +216,7 @@ export function toSampling(
   if (options.extended) out.topK = Math.round(clamp((base.topK ?? 40) + 60 * explore - 20 * calm, 10, 120))
 
   if (options.toolsPresent) {
-    out.temperature = round3(Math.min(out.temperature, TOOL_TEMP_CEIL))
+    out.temperature = round3(Math.min(out.temperature, base.toolTempCeil ?? TOOL_TEMP_CEIL))
     out.topP = round3(Math.min(out.topP, 0.9))
   }
   return out
