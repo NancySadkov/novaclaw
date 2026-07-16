@@ -31,6 +31,17 @@ import type { SessionMessage } from "../message"
 export const WALL_DEFAULT_MIN = 45
 export const MAX_DEPTH = 5
 export const MAX_TOTAL_STEPS = 64
+// Per-call GENERATION budgets (ConfigStrict.executionTokens / .reasoningTokens). Not the context
+// window: a local model is typically served with 128k of context, but each call still needs room to
+// finish its own reply. An execution step that truncates loses a half-written file; a reasoning step
+// that truncates returns EMPTY (the <think> block never closes, so the parser extracts nothing).
+export const EXECUTION_TOKENS_DEFAULT = 24_576
+// Where reasoning pays (notes/jh-think-stage.md): the wall goes to decomposition quality and to ruts,
+// not to individual atoms — so the stage is scoped rather than charged for on every step.
+const THINK_ON = ["decompose", "recover"] as const
+/** A budget knob is OFF at 0 (the `attempts: 1 = off` idiom); non-finite/negative is treated as unset. */
+const positive = (n: number | undefined): number | undefined =>
+  n !== undefined && Number.isFinite(n) && n > 0 ? Math.floor(n) : undefined
 // Best-of-N racing (improve11 P5, jh.md §14.2): forks are BOUNDED plain copies — a copy is strictly
 // more faithful than a git clone for "the folder as the user sees it" (uncommitted + untracked files
 // come along); .git is excluded (racers don't use git — the git_revert atom is filtered out). Over the
@@ -242,8 +253,9 @@ export interface RunArgs {
   readonly task: string
   readonly cwd: string
   readonly strict: ConfigStrict.Info
-  /** One system+user completion → the model's raw text (the runner's judgeCompletion idiom). */
-  readonly completeOnce: (system: string, user: string) => Effect.Effect<string, JhEngine.LLMFail>
+  /** One system+user completion → the model's raw text (the runner's judgeCompletion idiom).
+   *  `maxTokens` is per-CALL: reasoning and execution steps are budgeted separately (ConfigStrict). */
+  readonly completeOnce: (system: string, user: string, maxTokens: number) => Effect.Effect<string, JhEngine.LLMFail>
   /** Publishes one progress notice into the chat (Synthetic). Batched milestone lines arrive joined. */
   readonly onMilestone: (text: string) => Effect.Effect<void>
   readonly checkpoint?: (state: JhEngine.State) => Effect.Effect<void>
@@ -264,12 +276,20 @@ export function runTask(args: RunArgs): Effect.Effect<JhEngine.Report> {
     const text = queue.splice(0, queue.length).join("\n")
     return args.onMilestone(text)
   })
-  const withFlush = (fn: (system: string, user: string) => Effect.Effect<string, JhEngine.LLMFail>) =>
+  // Per-call budgets (ConfigStrict). Execution truncation is fatal (a half-written source file);
+  // reasoning truncation returns EMPTY, because a <think> block that never closes leaves the parser
+  // nothing to extract — so the reasoning stage is either budgeted generously or left off entirely.
+  const execTokens = positive(args.strict.executionTokens) ?? EXECUTION_TOKENS_DEFAULT
+  const reasonTokens = positive(args.strict.reasoningTokens)
+  const withFlush = (maxTokens: number) =>
     (p: { readonly system: string; readonly user: string }): Effect.Effect<string, JhEngine.LLMFail> =>
-      flush.pipe(Effect.andThen(fn(p.system, p.user)))
+      flush.pipe(Effect.andThen(args.completeOnce(p.system, p.user, maxTokens)))
   const deps: JhEngine.Deps = {
-    introspect: withFlush(args.completeOnce),
-    correct: withFlush(args.completeOnce),
+    introspect: withFlush(execTokens),
+    correct: withFlush(execTokens),
+    // The THINK/DO split (notes/jh-think-stage.md): opt-in via a non-zero reasoning budget, and
+    // scoped to the steps the wall actually goes to — decomposition and recovery, not every atom.
+    ...(reasonTokens !== undefined ? { think: withFlush(reasonTokens), thinkOn: THINK_ON } : {}),
     executor: JhBasicTools.basicExecutor(runner),
     runner,
     artifacts: JhArtifact.memory(),

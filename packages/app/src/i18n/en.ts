@@ -1432,6 +1432,12 @@ export const dict = {
     "Run several isolated attempts at the same task on separate copies of your project and keep the first one that verifiably succeeds — a lost race leaves your folder untouched. More attempts = better odds and more compute; your local hardware runs them nearly in parallel. Works for folders up to ~5000 files / 256 MB (larger ones fall back to a single attempt). Empty or 1 = off.",
   "settings.strict.row.wallMinutes.title": "Time budget (minutes)",
   "settings.strict.row.wallMinutes.description": "Wall-clock budget per Strict task; at exhaustion the best verified state is delivered. Empty = 45.",
+  "settings.strict.row.executionTokens.title": "Execution budget (tokens)",
+  "settings.strict.row.executionTokens.description":
+    "How much room each working step gets to write its answer — file edits, commands, and the like. A step that runs out mid-file is wasted work, so leave headroom: one non-trivial source file already runs to 13–15k tokens. Empty = 24576.",
+  "settings.strict.row.reasoningTokens.title": "Reasoning budget (tokens)",
+  "settings.strict.row.reasoningTokens.description":
+    "Let the model think a step through before it acts, and give that thinking its own room. Reasoning is all-or-nothing: a model cut off mid-thought returns nothing at all, so this needs to be generous — 24576 works, 8192 returns empty. Costs an extra call on the steps that plan and recover. Empty or 0 = off.",
   "settings.tools.title": "Tools",
   "settings.tools.description": "Ad-hoc tool recipes: a name, a one-line description the model sees in its prompt, and a manual it pulls on demand (the API shape plus a curl example). The model runs them from the shell — no MCP server to set up.",
   "settings.tools.empty": "No ad-hoc tools defined yet.",

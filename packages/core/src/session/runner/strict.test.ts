@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test"
+import { Effect } from "effect"
 import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
@@ -116,5 +117,57 @@ describe("SessionStrict.listFilesFor", () => {
     // the exe may fall outside the mtime-sorted cap window on a fast filesystem — when shown, it must
     // be a placeholder, never raw bytes
     if (exe) expect(exe.content).toContain("<compiled binary")
+  })
+})
+
+// The two per-call token budgets (owner, 2026-07-16): "the settings for Strict mode should allow the
+// user to configure budgets for reasoning and execution steps". These pin the CONTRACT — that each
+// kind of call is charged its own budget, and that the reasoning stage is opt-in — because the
+// failure they guard against is invisible: a reasoning call cut off mid-thought returns EMPTY (its
+// <think> block never closes), which reads as "the model said nothing" rather than "you starved it".
+describe("SessionStrict token budgets", () => {
+  const calls: Array<{ maxTokens: number; system: string }> = []
+  const run = (strict: Parameters<typeof SessionStrict.runTask>[0]["strict"]) => {
+    calls.length = 0
+    const cwd = fs.mkdtempSync(path.join(os.tmpdir(), "jh-budget-"))
+    return SessionStrict.runTask({
+      task: "do the thing",
+      cwd,
+      strict,
+      completeOnce: (system, _user, maxTokens) => {
+        calls.push({ maxTokens, system })
+        // Unparseable on purpose: the run ends fast and we only assert what was BILLED per call.
+        return Effect.succeed("not json")
+      },
+      onMilestone: () => Effect.void,
+    }).pipe(Effect.runPromise)
+  }
+
+  test("execution steps are billed the configured budget", async () => {
+    await run({ executionTokens: 8000 })
+    expect(calls.length).toBeGreaterThan(0)
+    expect(calls.every((c) => c.maxTokens === 8000)).toBe(true)
+  })
+
+  test("unset = the documented default, never an accidental small number", async () => {
+    await run({})
+    expect(calls.every((c) => c.maxTokens === SessionStrict.EXECUTION_TOKENS_DEFAULT)).toBe(true)
+    expect(SessionStrict.EXECUTION_TOKENS_DEFAULT).toBe(24_576)
+  })
+
+  test("reasoning is OFF unless budgeted — 0/undefined/negative buy no think calls", async () => {
+    for (const strict of [{}, { reasoningTokens: 0 }, { reasoningTokens: -5 }]) {
+      await run(strict)
+      expect(calls.some((c) => c.system.includes("no JSON"))).toBe(false)
+    }
+  })
+
+  test("a non-zero reasoning budget turns the stage on and is billed SEPARATELY from execution", async () => {
+    await run({ reasoningTokens: 20_000, executionTokens: 8000 })
+    const think = calls.filter((c) => c.system.includes("no JSON"))
+    const exec = calls.filter((c) => !c.system.includes("no JSON"))
+    expect(think.length).toBeGreaterThan(0)
+    expect(think.every((c) => c.maxTokens === 20_000)).toBe(true)
+    expect(exec.every((c) => c.maxTokens === 8000)).toBe(true)
   })
 })

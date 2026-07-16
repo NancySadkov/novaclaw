@@ -22,9 +22,16 @@ interface StrictConfig {
   budgetSteering?: boolean
   wallMinutes?: number
   attempts?: number
+  executionTokens?: number
+  reasoningTokens?: number
 }
 
 const DEFAULT_WALL_MINUTES = 45
+// Per-call GENERATION budgets — not the context window. A local model is typically served with 128k
+// of context, but each call still needs room to FINISH its own reply, and the two step kinds fail in
+// opposite ways when starved: execution truncates (half a file), reasoning returns EMPTY.
+const DEFAULT_EXECUTION_TOKENS = 24_576
+const MAX_TOKENS = 131_072
 // The lever groups all default ON inside the engine — the switches show that default until overridden.
 const GROUPS = ["verification", "recovery", "editingAids", "budgetSteering"] as const
 
@@ -123,6 +130,50 @@ export const SettingsStrictV2: Component = () => {
                     void persist({ wallMinutes: Number.isFinite(parsed) && parsed > 0 ? parsed : 0 })
                   }}
                   aria-label={language.t("settings.strict.row.wallMinutes.title")}
+                />
+              </div>
+            </SettingsRowV2>
+
+            <SettingsRowV2
+              title={language.t("settings.strict.row.executionTokens.title")}
+              description={language.t("settings.strict.row.executionTokens.description")}
+            >
+              <div class="w-full sm:w-[100px]">
+                <TextInputV2
+                  type="number"
+                  appearance="base"
+                  min="1"
+                  max={String(MAX_TOKENS)}
+                  step="1024"
+                  value={current().executionTokens || ""}
+                  placeholder={String(DEFAULT_EXECUTION_TOKENS)}
+                  onChange={(event) => {
+                    const parsed = Number.parseInt(event.currentTarget.value, 10)
+                    void persist({ executionTokens: Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, MAX_TOKENS) : 0 })
+                  }}
+                  aria-label={language.t("settings.strict.row.executionTokens.title")}
+                />
+              </div>
+            </SettingsRowV2>
+
+            <SettingsRowV2
+              title={language.t("settings.strict.row.reasoningTokens.title")}
+              description={language.t("settings.strict.row.reasoningTokens.description")}
+            >
+              <div class="w-full sm:w-[100px]">
+                <TextInputV2
+                  type="number"
+                  appearance="base"
+                  min="0"
+                  max={String(MAX_TOKENS)}
+                  step="1024"
+                  value={current().reasoningTokens || ""}
+                  placeholder="0"
+                  onChange={(event) => {
+                    const parsed = Number.parseInt(event.currentTarget.value, 10)
+                    void persist({ reasoningTokens: Number.isFinite(parsed) && parsed > 0 ? Math.min(parsed, MAX_TOKENS) : 0 })
+                  }}
+                  aria-label={language.t("settings.strict.row.reasoningTokens.title")}
                 />
               </div>
             </SettingsRowV2>
