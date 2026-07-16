@@ -26,6 +26,7 @@ import {
   Show,
 } from "solid-js"
 import { Dynamic } from "solid-js/web"
+import { ConnectionBanner } from "@/components/connection-banner"
 import { CommandProvider } from "@/context/command"
 import { CommentsProvider } from "@/context/comments"
 import { FileProvider } from "@/context/file"
@@ -492,6 +493,9 @@ function ConnectionGate(props: ParentProps<{ disableHealthCheck?: boolean }>) {
           />
         }
       >
+        {/* Dependability P2: rendered ALONGSIDE children — the app stays interactive while the
+            banner reports the outage (degraded contexts from P1 make that safe). */}
+        <ConnectionBanner />
         {props.children}
       </Show>
     </Show>

@@ -2,7 +2,7 @@ import type { Event } from "@novaclaw/sdk/v2/client"
 import { createSimpleContext } from "@novaclaw/ui/context"
 import { createGlobalEmitter } from "@solid-primitives/event-bus"
 import { makeEventListener } from "@solid-primitives/event-listener"
-import { type Accessor, batch, createMemo, onCleanup, onMount } from "solid-js"
+import { type Accessor, batch, createMemo, createSignal, onCleanup, onMount } from "solid-js"
 import { createSdkForServer } from "@/utils/server"
 import { useLanguage } from "./language"
 import { usePlatform } from "./platform"
@@ -16,6 +16,12 @@ const isAbortError = (error: unknown) =>
 
 const isStreamClosed = (error: unknown, signal?: AbortSignal) => isAbortError(error) || signal?.aborted === true
 type QueuedServerEvent = { directory: string; payload: Event }
+
+/** Dependability P2: the per-server SSE stream status the calm reconnect banner reads. There is
+ *  deliberately no "offline" tier here — the SSE client retries internally and the outer loop only
+ *  re-enters on the 15s heartbeat, so failure COUNTS don't measure outage duration; the banner
+ *  escalates its own copy by wall-clock instead. */
+export type ServerStreamStatus = "idle" | "connecting" | "connected" | "reconnecting"
 
 // S7: the V1 `message.part.updated`/`message.part.delta` coalescing retired with the translated
 // vocabulary — the stream carries raw `session.next.*` events now, batched per frame by the
@@ -86,6 +92,11 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
     timer = setTimeout(flush, Math.max(0, FLUSH_FRAME_MS - elapsed))
   }
 
+  // Dependability P2: the per-server stream status the calm reconnect banner reads. "idle" =
+  // never started/stopped, "connecting" = started but never yet received, "connected" = the SSE
+  // stream is delivering, "reconnecting" = it dropped and retries are running (they never stop).
+  const [streamStatus, setStreamStatus] = createSignal<ServerStreamStatus>("idle")
+
   let streamErrorLogged = false
   const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms))
   let attempt: AbortController | undefined
@@ -111,6 +122,7 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
   const start = () => {
     if (started) return run
     started = true
+    setStreamStatus((s) => (s === "connected" ? s : "connecting"))
     const active = ++generation
     const previous = run
     const current = (async () => {
@@ -139,7 +151,18 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
           })
           let yielded = Date.now()
           resetHeartbeat()
+          // P2: "connected" flips on the FIRST RECEIVED ITEM, not on `.event()` resolving — the SDK
+          // returns its stream object lazily WITHOUT having connected, so a dead server still
+          // resolves the call and would flap connected↔reconnecting every retry (measured live:
+          // the flap kept the banner's 2s debounce from ever firing). Receiving data is the only
+          // truthful definition; the server streams sync/keepalive items well inside the 15s
+          // heartbeat, so a healthy connection flips within moments.
+          let receivedAny = false
           for await (const event of events.stream) {
+            if (!receivedAny) {
+              receivedAny = true
+              setStreamStatus("connected")
+            }
             resetHeartbeat()
             streamErrorLogged = false
             if (event.payload.type !== "sync") {
@@ -169,6 +192,8 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
         }
 
         if (abort.signal.aborted || !started || generation !== active) return
+        // P2: the stream dropped (or never delivered) and retries continue.
+        setStreamStatus("reconnecting")
         await wait(RECONNECT_DELAY_MS)
       }
     })().finally(() => {
@@ -185,6 +210,7 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
     generation++
     attempt?.abort()
     clearHeartbeat()
+    setStreamStatus("idle") // an intentionally stopped stream (pagehide/cleanup) is not an outage
   }
 
   onMount(() => {
@@ -215,6 +241,7 @@ function createServerSdkContextBase(server: ServerConnection.Any, scope: ServerS
     scope,
     url: server.http.url,
     client: sdk,
+    streamStatus,
     event: {
       on: emitter.on.bind(emitter),
       listen: emitter.listen.bind(emitter),

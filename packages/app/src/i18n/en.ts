@@ -436,6 +436,9 @@ export const dict = {
   "app.server.otherServers": "Other servers",
   "app.server.none": "No instance connected",
   "app.server.noneHint": "NovaClaw's instance isn't running yet. It usually starts by itself — this screen will clear as soon as it comes up.",
+  "app.connection.reconnecting": "Connection lost — reconnecting…",
+  "app.connection.stillTrying": "Still trying. Your work is safe; this clears by itself once the instance is back.",
+  "app.connection.restored": "Reconnected",
 
   "dialog.server.title": "Servers",
   "dialog.server.description": "Switch which NovaClaw server this app connects to.",
