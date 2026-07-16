@@ -113,6 +113,13 @@ export interface Deps {
   /** R4 (jh-improve1): the de-latched cycling escalation ladder (tweak→analyze→targeted_fix→rewrite→cycle),
    *  with a forced instrumented "analyze" stage. Off → the legacy ESCALATE_AFTER latch. Default ON. */
   readonly ladder?: boolean
+  /** wave-21 residue: whether the ladder's fix stages use CODE instrumentation (add printf / NAME=value
+   *  diagnostics, recompile — the Pi/build path) or a task-agnostic "diagnose, then fix ONLY that part"
+   *  directive. Default TRUE (code/numeric tasks). PROSE/writing rigs set FALSE — otherwise the analyze
+   *  stage's forced-instrumentation gate HARD-BLOCKS a task with no numeric intermediates (novel run76
+   *  relocated onto "no labeled intermediate values" after its self-copy was blocked). When false the
+   *  analyze node is not marked instrumented, so the NAME=value demotion gate never fires. */
+  readonly forcedAnalyze?: boolean
   /** improve3 P1 (owner #1): after AUTO_REVERT_AFTER consecutive build-DAMAGING edits (an edit_file/write_file
    *  whose compile/rebuild then fails), the harness RESTORES the last verified checkpoint instead of letting the
    *  model keep damaging the file (§I2 hit 4/6 wave-2 runs; the model won't `git_revert` voluntarily). Default
@@ -398,7 +405,36 @@ const fixNodeGoal = (baseGoal: string, detail: string, priorAttempts: number): s
     : `The previous attempt at "${baseGoal}" did not pass its check — ${detail}. Do the next single action to fix it: if the program's OUTPUT is WRONG or it crashed, EDIT the source code to fix the bug, RECOMPILE, then re-run and verify — do NOT just re-run the same binary.`
 // R4 escalation-ladder directive for a grown fix node, selected by the ladder stage. Note `detail` is the
 // FULL bounded verify detail (D7 — not the 160-char errorSig), so the fix node sees the real error.
-const stageFixGoal = (stage: JhLadder.Stage, baseGoal: string, detail: string): { readonly goal: string; readonly analyze: boolean } => {
+const stageFixGoal = (stage: JhLadder.Stage, baseGoal: string, detail: string, instrument = true): { readonly goal: string; readonly analyze: boolean } => {
+  if (!instrument) {
+    // Task-agnostic escalation (no compile, no numeric intermediates — prose/writing/config tasks). Same
+    // ladder SHAPE (diagnose before you redo → change only the offending part → last-resort rewrite) with
+    // NO code vocabulary and NO forced NAME=value instrumentation (analyze:false ⇒ the demotion gate at the
+    // leaf loop never applies). The generic "which part / why, quoting the offending element" is the prose
+    // twin of "which function the printed values prove wrong".
+    switch (stage) {
+      case "analyze":
+        return {
+          goal: `The attempts at "${baseGoal}" keep failing — ${detail}. Do NOT redo the whole thing yet. First DIAGNOSE: name precisely which part of your work the check is rejecting and WHY, quoting the exact offending element, before you change anything.`,
+          analyze: false,
+        }
+      case "targeted_fix":
+        return {
+          goal: `Using that diagnosis, change ONLY the specific part the check rejected — leave everything else exactly as it is — then re-verify.`,
+          analyze: false,
+        }
+      case "rewrite":
+        return {
+          goal: `Several attempts at "${baseGoal}" have FAILED the same way — ${detail}. Stop patching: redo THIS piece from scratch with a genuinely DIFFERENT approach that avoids the repeated failure, then re-verify.`,
+          analyze: false,
+        }
+      default: // tweak
+        return {
+          goal: `The previous attempt at "${baseGoal}" did not pass its check — ${detail}. Make the smallest change that addresses exactly what the check reported, then re-verify.`,
+          analyze: false,
+        }
+    }
+  }
   switch (stage) {
     case "analyze":
       return {
@@ -769,7 +805,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         stage = childCount >= ESCALATE_AFTER ? "rewrite" : "tweak" // legacy latch
       }
       const restored = stage !== "tweak" ? yield* restoreBest(parentID) : false
-      const fix = deps.ladder !== false ? stageFixGoal(stage, baseGoal, fullDetail) : { goal: fixNodeGoal(baseGoal, sig, childCount), analyze: false }
+      const fix = deps.ladder !== false ? stageFixGoal(stage, baseGoal, fullDetail, deps.forcedAnalyze !== false) : { goal: fixNodeGoal(baseGoal, sig, childCount), analyze: false }
       const goal = restored ? `The best attempt so far (progress score ${bestScore.toFixed(3)}) has been RESTORED to the working directory — improve on IT; do not start over. ${fix.goal}` : fix.goal
       const fixDraft: JhStep.StepDraft = { goal, size: "atomic", success: defaultSuccess, kind: fix.analyze ? "analyze" : undefined }
       const appended = JhTree.appendChild(tree, parentID, fixDraft, maxDepth)

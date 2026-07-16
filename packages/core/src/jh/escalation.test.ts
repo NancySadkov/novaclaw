@@ -17,6 +17,7 @@ function escHarness(opts: {
   taskComplete: JhEngine.Deps["taskComplete"]
   ladder?: boolean
   keepBest?: boolean
+  forcedAnalyze?: boolean
   files?: () => Array<{ name: string; content: string }>
 }) {
   let calls = 0
@@ -47,6 +48,7 @@ function escHarness(opts: {
     taskComplete: opts.taskComplete,
     ladder: opts.ladder,
     keepBest: opts.keepBest,
+    forcedAnalyze: opts.forcedAnalyze,
     limits: { maxDepth: 2, maxTotalSteps: 24 },
     trigger: JhBudget.DEFAULT_TRIGGER,
   }
@@ -78,6 +80,24 @@ describe("R4 escalation ladder — forced analyze", () => {
     })
     const r = await run(deps)
     expect(verifDetail(r, "no labeled intermediate values")).toBe(false) // instrumentation present → gate passes
+  })
+
+  test("forcedAnalyze:false (PROSE task) — the analyze stage never demands NAME=value; no instrumentation hard-block", async () => {
+    // wave-21 residue: a prose/writing task has no numeric intermediates, so the forced-instrumentation
+    // demotion ("no labeled intermediate values… add the printf") would hard-block it forever (novel run76
+    // relocated onto it after its self-copy was refused). With forcedAnalyze:false the ladder still
+    // escalates (grows fix nodes, cycles) but the analyze node is not marked instrumented, so the gate
+    // never fires — the analyze stage instead asks for a task-agnostic diagnosis.
+    const { deps } = escHarness({
+      world: () => ({ exitCode: 0, output: "a paragraph of prose with no labeled values at all" }),
+      taskComplete: () => ({ done: false, detail: "a chapter is wrong" }), // ungraded, stable → ladder advances
+      ladder: true,
+      forcedAnalyze: false,
+    })
+    const r = await run(deps)
+    expect(verifDetail(r, "no labeled intermediate values")).toBe(false) // the code-only demotion never fires
+    expect(has(r, "expanded")).toBe(true) // the ladder DID escalate (grew fix nodes)
+    expect(r.status).toBe("blocked") // still never done (the oracle is always negative), just not hard-blocked on printf
   })
 
   test("flags-off: ladder:false never emits the analyze directive (legacy latch)", async () => {
