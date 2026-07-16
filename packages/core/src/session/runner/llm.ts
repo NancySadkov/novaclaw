@@ -1019,7 +1019,7 @@ export const layer = Layer.effect(
             })
             const publisher = createLLMEventPublisher(events, {
               sessionID,
-              agent: String(resolved.agent),
+              agent: String(resolved.agent ?? session.agent ?? "nova"),
               model: {
                 id: ModelV2.ID.make(model.id),
                 providerID: ProviderV2.ID.make(model.provider),
