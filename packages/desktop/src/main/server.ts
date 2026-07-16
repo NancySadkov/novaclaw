@@ -6,6 +6,7 @@ import { getLogger } from "./logging"
 import { getUserShell, loadShellEnv } from "./shell-env"
 import { getStore } from "./store"
 import { DEFAULT_SERVER_URL_KEY } from "./store-keys"
+import { initialSuperviseState, superviseDecision, FAST_CRASH_GIVEUP } from "./supervise-policy"
 
 export type HealthCheck = { wait: Promise<void> }
 
@@ -185,6 +186,85 @@ export async function spawnLocalServer(
       },
     },
     health: { wait },
+  }
+}
+
+// Dependability P3 (uix-dependability-plan): the sidecar SUPERVISOR — "the instance heals itself".
+// Wraps spawnLocalServer: a child that exits after becoming ready (a crash, an OOM kill) is
+// respawned with backoff; a crash loop gives up gracefully (the renderer's P2 banner reports the
+// outage — never a dead dialog). An intentional stop (updater/app-quit via listener.stop) sets the
+// `stopping` latch so the respawner never fights a shutdown. Each respawn goes through
+// spawnLocalServer itself, so every child gets FRESH exit/health plumbing. The returned shape is
+// spawnLocalServer's own — callers hold ONE stable listener whose stop() always targets the live
+// child, and the first child's health gate (the boot contract) is preserved.
+export async function superviseLocalServer(
+  hostname: string,
+  port: number,
+  password: string,
+  options: SpawnLocalServerOptions,
+): Promise<{ listener: SidecarListener; health: HealthCheck }> {
+  let stopping = false
+  let state = initialSuperviseState
+  let startedAt = Date.now()
+  let current: Awaited<ReturnType<typeof spawnLocalServer>> | undefined
+  let respawnTimer: NodeJS.Timeout | undefined
+  const note = (message: string) => options.onStderr?.(`[supervise] ${message}`)
+
+  const spawnOnce = async () => {
+    let readySeen = false
+    startedAt = Date.now()
+    const handle = await spawnLocalServer(hostname, port, password, {
+      ...options,
+      onExit: (code) => {
+        options.onExit?.(code)
+        // Pre-ready exits reject spawnOnce's await and are counted by the caller — only a child
+        // that made it past ready is handled here (readySeen is set before any later event fires).
+        if (readySeen && !stopping) onChildGone(code)
+      },
+    })
+    readySeen = true
+    return handle
+  }
+
+  const onChildGone = (code: number) => {
+    const decision = superviseDecision(state, { code, aliveMs: Date.now() - startedAt })
+    if (decision.action === "stop-clean") {
+      note("sidecar exited cleanly — not restarting")
+      return
+    }
+    if (decision.action === "giveup") {
+      note(`crash loop: ${FAST_CRASH_GIVEUP} consecutive fast exits — giving up; the connection banner will show the outage`)
+      return
+    }
+    note(`sidecar exited (code ${code}) — restarting in ${decision.delayMs / 1000}s`)
+    state = decision.next
+    respawnTimer = setTimeout(() => void respawn(), decision.delayMs)
+  }
+
+  const respawn = async () => {
+    if (stopping) return
+    try {
+      current = await spawnOnce()
+      note("sidecar respawned")
+      // Respawned children aren't awaited by boot code — surface a failed health gate in the log.
+      current.health.wait.catch((error: unknown) => note(`respawned sidecar health check failed: ${String(error)}`))
+    } catch (error) {
+      if (stopping) return
+      note(`respawn failed before ready: ${error instanceof Error ? error.message : String(error)}`)
+      onChildGone(1)
+    }
+  }
+
+  current = await spawnOnce() // first boot failures throw to the caller, exactly as before
+  return {
+    listener: {
+      stop: () => {
+        stopping = true
+        if (respawnTimer) clearTimeout(respawnTimer)
+        return current ? current.listener.stop() : Promise.resolve()
+      },
+    },
+    health: current.health,
   }
 }
 

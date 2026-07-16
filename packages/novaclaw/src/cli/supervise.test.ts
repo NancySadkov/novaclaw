@@ -8,6 +8,7 @@ import {
   superviseDecision,
   type SuperviseState,
 } from "./supervise"
+import * as DesktopMirror from "../../../desktop/src/main/supervise-policy"
 
 // Dependability P4: the serve-supervision restart policy. These pin the CONTRACT — clean exits are
 // never fought, the backoff ladder grows to a cap and resets on stability, and a crash loop gives
@@ -65,5 +66,25 @@ describe("superviseDecision", () => {
       state = d.next
     }
     expect(gaveUp).toBe(true)
+  })
+
+  test("the desktop sidecar policy mirror (P3) has NOT drifted from this one", () => {
+    // The desktop main bundle carries a copy instead of a package edge — this pins the twins.
+    const scenarios = [
+      { code: 0, aliveMs: 5 },
+      { code: 1, aliveMs: 5 },
+      { code: 1, aliveMs: 12_000 },
+      { code: 1, aliveMs: BACKOFF_RESET_ALIVE_MS },
+      { code: 137, aliveMs: 100 },
+    ]
+    const states: SuperviseState[] = [
+      initialSuperviseState,
+      { fastCrashes: 3, backoffMs: 8_000 },
+      { fastCrashes: 4, backoffMs: 30_000 },
+    ]
+    for (const state of states)
+      for (const exit of scenarios)
+        expect(DesktopMirror.superviseDecision(state, exit)).toEqual(superviseDecision(state, exit))
+    expect(DesktopMirror.initialSuperviseState).toEqual(initialSuperviseState)
   })
 })

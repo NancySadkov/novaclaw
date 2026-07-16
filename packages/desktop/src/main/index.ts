@@ -23,7 +23,7 @@ import {
   getDefaultServerUrl,
   preferAppEnv,
   setDefaultServerUrl,
-  spawnLocalServer,
+  superviseLocalServer,
   type SidecarListener,
 } from "./server"
 import { setupAutoUpdater, showUpdaterDialog } from "./updater"
@@ -312,8 +312,10 @@ const main = Effect.gen(function* () {
     useEnvProxy()
 
     logger.log("spawning sidecar", { url })
+    // P3: supervised — a sidecar that dies after boot is respawned with backoff (crash loops give
+    // up gracefully and the renderer's connection banner reports the outage).
     const { listener, health } = yield* Effect.promise(() =>
-      spawnLocalServer(hostname, port, password, {
+      superviseLocalServer(hostname, port, password, {
         userDataPath: app.getPath("userData"),
         onStdout: (message) => writeLog("server", "stdout", { message }),
         onStderr: (message) => writeLog("server", "stderr", { message }, "warn"),
