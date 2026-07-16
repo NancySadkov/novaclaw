@@ -428,25 +428,36 @@ function ConnectionGate(props: ParentProps<{ disableHealthCheck?: boolean }>) {
 
   const [checkMode, setCheckMode] = createSignal<"blocking" | "background">("blocking")
 
-  // performs repeated health check with a grace period for
-  // non-http connections, otherwise fails instantly
-  const [startupHealthCheck, healthCheckActions] = createResource(() =>
-    props.disableHealthCheck
-      ? true
-      : Effect.gen(function* () {
-          if (!server.current) return true
-          const { http, type } = server.current
+  // Repeated health check with a grace period for non-http connections; fails instantly otherwise.
+  const healthLoop = () =>
+    Effect.gen(function* () {
+      if (!server.current) return false
+      const { http, type } = server.current
 
-          while (true) {
-            const res = yield* Effect.promise(() => checkServerHealth(http))
-            if (res.healthy) return true
-            if (checkMode() === "background" || type === "http") return false
-          }
-        }).pipe(
-          Effect.timeoutOrElse({ duration: "10 seconds", orElse: () => Effect.succeed(false) }),
-          Effect.ensuring(Effect.sync(() => setCheckMode("background"))),
-          Effect.runPromise,
-        ),
+      while (true) {
+        const res = yield* Effect.promise(() => checkServerHealth(http))
+        if (res.healthy) return true
+        if (checkMode() === "background" || type === "http") return false
+      }
+    }).pipe(Effect.timeoutOrElse({ duration: "10 seconds", orElse: () => Effect.succeed(false) }))
+
+  const [startupHealthCheck, healthCheckActions] = createResource(() =>
+    Effect.gen(function* () {
+      // Dependability P1: NO configured instance (a fresh desktop install whose sidecar failed to
+      // initialize, or an emptied server list) must land on the calm connection screen — rendering
+      // the app subtree without a server makes every useServerSDK/useServerSync memo throw and
+      // dead-ends the whole app on the root ErrorPage. This check ignores disableHealthCheck (it
+      // guards a render invariant, not liveness); ConnectionError's retry tick re-runs it, so the
+      // screen clears by itself the moment an instance appears.
+      if (!server.current) return false
+      if (props.disableHealthCheck) return true
+      return yield* healthLoop()
+    }).pipe(
+      // checkMode flips to background on EVERY outcome (including the no-server path) — the retry
+      // tick in ConnectionError only refetches in background mode.
+      Effect.ensuring(Effect.sync(() => setCheckMode("background"))),
+      Effect.runPromise,
+    ),
   )
   const checking = createMemo(
     () => checkMode() === "blocking" && ["unresolved", "pending"].includes(startupHealthCheck.state),
@@ -502,12 +513,23 @@ function ConnectionError(props: { onRetry?: () => void; onServerSelected?: (key:
     <div class="h-dvh w-screen flex flex-col items-center justify-center bg-background-base gap-6 p-6">
       <div class="flex flex-col items-center max-w-md text-center">
         <img src="/logo.png" alt="NovaClaw" draggable={false} class="w-14 h-14 mb-4 opacity-80 select-none" />
-        <p class="text-14-regular text-text-base">
-          {unreachable()[0]}
-          <span class="text-text-strong font-medium">{name()}</span>
-          {unreachable()[1]}
+        <Show
+          when={server.current}
+          fallback={
+            // Dependability P1: the no-instance state (sidecar failed / server list emptied) gets
+            // honest copy instead of "could not reach <internal key>".
+            <p class="text-14-regular text-text-base">{language.t("app.server.none")}</p>
+          }
+        >
+          <p class="text-14-regular text-text-base">
+            {unreachable()[0]}
+            <span class="text-text-strong font-medium">{name()}</span>
+            {unreachable()[1]}
+          </p>
+        </Show>
+        <p class="mt-1 text-12-regular text-text-weak">
+          {server.current ? language.t("app.server.retrying") : language.t("app.server.noneHint")}
         </p>
-        <p class="mt-1 text-12-regular text-text-weak">{language.t("app.server.retrying")}</p>
       </div>
       <Show when={others().length > 0}>
         <div class="flex flex-col gap-2 w-full max-w-sm">

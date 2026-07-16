@@ -563,6 +563,9 @@ export const { use: useServerSync, provider: ServerSyncProvider } = createSimple
 
     return createMemo<ServerSync>(() => {
       const conn = props.server?.() ?? server.current
+      // Programmer invariant (mirrors useServerSDK): ConnectionGate guarantees a server exists
+      // before the app subtree renders (dependability P1) — a throw here means a consumer mounted
+      // outside the gate.
       if (!conn) throw new Error(language.t("error.serverSDK.noServerAvailable"))
       return global.ensureServerCtx(conn).sync
     })

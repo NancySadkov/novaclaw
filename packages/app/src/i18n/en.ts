@@ -434,6 +434,8 @@ export const dict = {
   "app.server.unreachable": "Could not reach {{server}}",
   "app.server.retrying": "Retrying automatically...",
   "app.server.otherServers": "Other servers",
+  "app.server.none": "No instance connected",
+  "app.server.noneHint": "NovaClaw's instance isn't running yet. It usually starts by itself — this screen will clear as soon as it comes up.",
 
   "dialog.server.title": "Servers",
   "dialog.server.description": "Switch which NovaClaw server this app connects to.",

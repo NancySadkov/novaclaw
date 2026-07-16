@@ -253,6 +253,9 @@ export const { use: useServerSDK, provider: ServerSDKProvider } = createSimpleCo
 
     return createMemo<ServerSDK>(() => {
       const conn = props.server?.() ?? server.current
+      // Programmer invariant, not a reachable state: ConnectionGate never renders the app subtree
+      // while server.current is undefined (dependability P1), so a throw here means a consumer
+      // mounted outside the gate — fail loudly rather than limp with a fake SDK.
       if (!conn) throw new Error(language.t("error.serverSDK.noServerAvailable"))
       return global.ensureServerCtx(conn).sdk
     })
