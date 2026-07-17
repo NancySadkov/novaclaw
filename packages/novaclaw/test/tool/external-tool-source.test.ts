@@ -49,7 +49,8 @@ describe("AggregateExternalToolSource — config-dir custom tools (F1a SLICE 1)"
     )
     const locationMock = Layer.mock(Location.Service, {
       directory: root,
-      project: { id: Project.ID.make("prj_slice1"), directory: root },
+      root,
+      origin: Project.ID.make("prj_slice1"),
     })
     const permissionMock = Layer.mock(PermissionV2.Service, { assert: () => Effect.void })
     const base = Layer.mergeAll(configMock, locationMock, permissionMock)
@@ -91,7 +92,8 @@ describe("AggregateExternalToolSource — config-dir custom tools (F1a SLICE 1)"
 
     const locationMock = Layer.mock(Location.Service, {
       directory: root,
-      project: { id: Project.ID.make("prj_plugintools"), directory: root },
+      root,
+      origin: Project.ID.make("prj_plugintools"),
     })
     const permissionMock = Layer.mock(PermissionV2.Service, { assert: () => Effect.void })
     const base = Layer.mergeAll(locationMock, permissionMock, PluginTools.layer)

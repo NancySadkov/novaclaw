@@ -31,8 +31,8 @@ describe("Location", () => {
 
       expect(location.directory).toBe(AbsolutePath.make("/repo/packages/app"))
       expect(location.workspaceID).toBe(workspaceID)
-      expect(location.project.id).toBe(Project.ID.make("project"))
-      expect(location.project.directory).toBe(AbsolutePath.make("/repo"))
+      expect(location.origin).toBe(Project.ID.make("project"))
+      expect(location.root).toBe(AbsolutePath.make("/repo"))
       expect(location.vcs).toEqual({
         type: "git",
         store: AbsolutePath.make("/repo/.git"),

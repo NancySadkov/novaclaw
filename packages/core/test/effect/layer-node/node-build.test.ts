@@ -56,7 +56,8 @@ describe("node build", () => {
               Location.Service.of({
                 directory: ref.directory,
                 workspaceID: ref.workspaceID,
-                project: { id: Project.ID.global, directory: service.directory },
+                root: service.directory,
+                origin: Project.ID.global,
               }),
             ),
           { idleTimeToLive: "1 minute" },

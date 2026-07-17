@@ -3534,10 +3534,8 @@ export type WorkspaceEventConnectionStatus = {
 export type LocationInfo = {
   directory: string
   workspaceID?: string
-  project: {
-    id: string
-    directory: string
-  }
+  root: string
+  origin: string
 }
 
 export type AgentColor = string | "primary" | "secondary" | "accent" | "success" | "warning" | "error" | "info"

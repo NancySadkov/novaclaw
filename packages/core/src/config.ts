@@ -232,7 +232,7 @@ export const layer = Layer.effect(
           .up({
             targets: [".novaclaw"],
             start: location.directory,
-            stop: location.project.directory,
+            stop: location.root,
           })
           .pipe(Effect.orDie)
     const directories: Entry[] = [

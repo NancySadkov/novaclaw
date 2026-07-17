@@ -112,14 +112,15 @@ export const layer = Layer.effect(
     const git = yield* Git.Service
     const global = yield* Global.Service
     const location = yield* Location.Service
-    const source = yield* git.repo.discover(location.project.directory)
+    const source = yield* git.repo.discover(location.root)
     // Non-git fallback is the LOCATION directory, not project.directory: the synthetic
     // "global" project roots at HOME, which the B11 shadow guard rightly refuses — the
     // shadow repo should track exactly where the agent works.
     const worktree = source
       ? AbsolutePath.make(yield* fs.realPath(source.worktree).pipe(Effect.orDie))
       : AbsolutePath.make(location.directory)
-    const gitDirectory = AbsolutePath.make(path.join(global.data, "snapshot", location.project.id, Hash.fast(worktree)))
+    // Keyed on `origin` — the same string the old project id carried, so existing snapshot repos survive.
+    const gitDirectory = AbsolutePath.make(path.join(global.data, "snapshot", location.origin, Hash.fast(worktree)))
 
     const scope = Effect.fnUntraced(function* () {
       const relative = path.relative(worktree, location.directory)

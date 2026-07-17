@@ -71,11 +71,11 @@ export const fileHandlers = HttpApiBuilder.group(InstanceHttpApi, "file", (handl
           const location = yield* Location.Service
           const ignored = ignore()
           const gitignore = yield* raw
-            .readFileString(path.join(location.project.directory, ".gitignore"))
+            .readFileString(path.join(location.root, ".gitignore"))
             .pipe(Effect.catch(() => Effect.succeed("")))
           if (gitignore) ignored.add(gitignore)
           const ignorefile = yield* raw
-            .readFileString(path.join(location.project.directory, ".ignore"))
+            .readFileString(path.join(location.root, ".ignore"))
             .pipe(Effect.catch(() => Effect.succeed("")))
           if (ignorefile) ignored.add(ignorefile)
           return (yield* fs.list({ path: RelativePath.make(ctx.query.path) })).map((item) => ({
@@ -84,7 +84,7 @@ export const fileHandlers = HttpApiBuilder.group(InstanceHttpApi, "file", (handl
             absolute: path.resolve(location.directory, item.path),
             type: item.type,
             ignored: ignored.ignores(
-              path.relative(location.project.directory, path.resolve(location.directory, item.path)) +
+              path.relative(location.root, path.resolve(location.directory, item.path)) +
                 (item.type === "directory" ? "/" : ""),
             ),
           }))

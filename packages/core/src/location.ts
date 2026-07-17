@@ -25,7 +25,8 @@ export const layer = (ref: Ref) =>
       return Service.of({
         directory: ref.directory,
         workspaceID: ref.workspaceID,
-        project: { id: resolved.id, directory: resolved.directory },
+        root: resolved.directory,
+        origin: resolved.id,
         vcs: resolved.vcs,
       })
     }),

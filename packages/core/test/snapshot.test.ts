@@ -115,7 +115,7 @@ describe("Snapshot", () => {
           expect(yield* capture(linked)).toBeDefined()
 
           const projectID = yield* Effect.gen(function* () {
-            return (yield* Location.Service).project.id
+            return (yield* Location.Service).origin
           }).pipe(
             Effect.provide(
               AppNodeBuilder.build(Location.boundNode(Location.Ref.make({ directory: AbsolutePath.make(project) }))),

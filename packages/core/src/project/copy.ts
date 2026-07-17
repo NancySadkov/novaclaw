@@ -111,10 +111,10 @@ export const refreshAfterBoot = Effect.gen(function* () {
   const location = yield* Location.Service
   const copies = yield* Service
   yield* Effect.gen(function* () {
-    yield* Effect.logInfo("project copy refresh started", { projectID: location.project.id })
-    const result = yield* copies.refresh({ projectID: location.project.id })
+    yield* Effect.logInfo("project copy refresh started", { projectID: location.origin })
+    const result = yield* copies.refresh({ projectID: Project.ID.make(location.origin) })
     yield* Effect.logInfo("project copy refresh done", {
-      projectID: location.project.id,
+      projectID: location.origin,
       updated: result.updated,
       removed: result.removed,
     })

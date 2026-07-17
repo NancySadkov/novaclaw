@@ -8,7 +8,8 @@ export function location(ref: Location.Ref, input: { projectDirectory?: Absolute
   return {
     directory: ref.directory,
     workspaceID: ref.workspaceID,
-    project: { id: Project.ID.global, directory: input.projectDirectory ?? ref.directory },
+    root: input.projectDirectory ?? ref.directory,
+    origin: Project.ID.global,
     vcs: input.vcs,
   } satisfies Location.Interface
 }

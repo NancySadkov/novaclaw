@@ -17,7 +17,7 @@ export const ProjectCopyHandler = HttpApiBuilder.group(Api, "server.projectCopy"
             copies.create({
               ...ctx.payload,
               projectID: ctx.params.projectID,
-              sourceDirectory: location.project.directory,
+              sourceDirectory: location.root,
             }),
           )
         }),

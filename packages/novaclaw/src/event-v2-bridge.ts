@@ -34,7 +34,8 @@ export const layer = Layer.effect(
           location: new Location.Info({
             directory: AbsolutePath.make(ctx.directory),
             ...(workspaceID ? { workspaceID } : {}),
-            project: { id: Project.ID.make(ctx.project.id), directory: AbsolutePath.make(ctx.worktree) },
+            root: AbsolutePath.make(ctx.worktree),
+            origin: ctx.project.id,
           }),
         })
       })

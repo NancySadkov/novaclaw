@@ -16,7 +16,7 @@ const builtIns = Layer.effectDiscard(
     const environment = [
       "<env>",
       `  Working directory: ${location.directory}`,
-      `  Workspace root folder: ${location.project.directory}`,
+      `  Workspace root folder: ${location.root}`,
       `  Is directory a git repo: ${location.vcs?.type === "git" ? "yes" : "no"}`,
       `  Platform: ${process.platform}`,
       "</env>",

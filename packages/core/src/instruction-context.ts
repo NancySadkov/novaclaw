@@ -39,7 +39,7 @@ export const layer = Layer.effectDiscard(
 
     const observe = Effect.fn("InstructionContext.observe")(function* () {
       const start = FSUtil.resolve(location.directory)
-      const stop = FSUtil.resolve(location.project.directory)
+      const stop = FSUtil.resolve(location.root)
       const fromProject = relative(stop, start)
       const insideProject =
         fromProject === "" || (fromProject !== ".." && !fromProject.startsWith(`..${sep}`) && !isAbsolute(fromProject))
