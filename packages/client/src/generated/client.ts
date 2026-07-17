@@ -8,13 +8,40 @@ import type {
   SessionsListOutput,
   SessionsCreateInput,
   SessionsCreateOutput,
+  SessionsSetInput,
+  SessionsSetOutput,
+  SessionsAllOutput,
   SessionsActiveOutput,
   SessionsGetInput,
   SessionsGetOutput,
+  SessionsChildrenInput,
+  SessionsChildrenOutput,
+  SessionsUpdateInput,
+  SessionsUpdateOutput,
+  SessionsRemoveInput,
+  SessionsRemoveOutput,
+  SessionsForkInput,
+  SessionsForkOutput,
+  SessionsTodoInput,
+  SessionsTodoOutput,
   SessionsSwitchAgentInput,
   SessionsSwitchAgentOutput,
   SessionsSwitchModelInput,
   SessionsSwitchModelOutput,
+  SessionsSwitchResponderInput,
+  SessionsSwitchResponderOutput,
+  SessionsSwitchModeInput,
+  SessionsSwitchModeOutput,
+  SessionsSwitchStrictInput,
+  SessionsSwitchStrictOutput,
+  SessionsSwitchFeatureInput,
+  SessionsSwitchFeatureOutput,
+  SessionsSwitchPromptOverrideInput,
+  SessionsSwitchPromptOverrideOutput,
+  SessionsShellInput,
+  SessionsShellOutput,
+  SessionsCommandInput,
+  SessionsCommandOutput,
   SessionsPromptInput,
   SessionsPromptOutput,
   SessionsCompactInput,
@@ -290,6 +317,7 @@ export function make(options: ClientOptions) {
             path: `/api/session`,
             query: {
               workspace: input?.["workspace"],
+              roots: input?.["roots"],
               limit: input?.["limit"],
               order: input?.["order"],
               search: input?.["search"],
@@ -315,12 +343,38 @@ export function make(options: ClientOptions) {
               agent: input?.["agent"],
               model: input?.["model"],
               systemPromptOverride: input?.["systemPromptOverride"],
+              type: input?.["type"],
+              priority: input?.["priority"],
+              permissionMode: input?.["permissionMode"],
               location: input?.["location"],
+              title: input?.["title"],
+              permission: input?.["permission"],
+              strict: input?.["strict"],
+              introspection: input?.["introspection"],
+              quality: input?.["quality"],
+              affective: input?.["affective"],
             },
             successStatus: 200,
             declaredStatuses: [401, 400],
             empty: false,
           },
+          requestOptions,
+        ).then((value) => value.data),
+      set: (input: SessionsSetInput, requestOptions?: RequestOptions) =>
+        request<SessionsSetOutput>(
+          {
+            method: "PUT",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/tags`,
+            body: { tags: input["tags"] },
+            successStatus: 204,
+            declaredStatuses: [404, 400, 401],
+            empty: true,
+          },
+          requestOptions,
+        ),
+      all: (requestOptions?: RequestOptions) =>
+        request<{ readonly data: SessionsAllOutput }>(
+          { method: "GET", path: `/api/tag`, successStatus: 200, declaredStatuses: [401, 400], empty: false },
           requestOptions,
         ).then((value) => value.data),
       active: (requestOptions?: RequestOptions) =>
@@ -345,6 +399,63 @@ export function make(options: ClientOptions) {
           },
           requestOptions,
         ).then((value) => value.data),
+      children: (input: SessionsChildrenInput, requestOptions?: RequestOptions) =>
+        request<{ readonly data: SessionsChildrenOutput }>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/children`,
+            successStatus: 200,
+            declaredStatuses: [404, 400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ).then((value) => value.data),
+      update: (input: SessionsUpdateInput, requestOptions?: RequestOptions) =>
+        request<{ readonly data: SessionsUpdateOutput }>(
+          {
+            method: "PATCH",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}`,
+            body: { title: input["title"], metadata: input["metadata"], archived: input["archived"] },
+            successStatus: 200,
+            declaredStatuses: [404, 400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ).then((value) => value.data),
+      remove: (input: SessionsRemoveInput, requestOptions?: RequestOptions) =>
+        request<SessionsRemoveOutput>(
+          {
+            method: "DELETE",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}`,
+            successStatus: 204,
+            declaredStatuses: [404, 400, 401],
+            empty: true,
+          },
+          requestOptions,
+        ),
+      fork: (input: SessionsForkInput, requestOptions?: RequestOptions) =>
+        request<{ readonly data: SessionsForkOutput }>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/fork`,
+            query: { messageID: input["messageID"] },
+            successStatus: 200,
+            declaredStatuses: [404, 400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ).then((value) => value.data),
+      todo: (input: SessionsTodoInput, requestOptions?: RequestOptions) =>
+        request<{ readonly data: SessionsTodoOutput }>(
+          {
+            method: "GET",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/todo`,
+            successStatus: 200,
+            declaredStatuses: [404, 400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ).then((value) => value.data),
       switchAgent: (input: SessionsSwitchAgentInput, requestOptions?: RequestOptions) =>
         request<SessionsSwitchAgentOutput>(
           {
@@ -363,6 +474,97 @@ export function make(options: ClientOptions) {
             method: "POST",
             path: `/api/session/${encodeURIComponent(input.sessionID)}/model`,
             body: { model: input["model"] },
+            successStatus: 204,
+            declaredStatuses: [404, 400, 401],
+            empty: true,
+          },
+          requestOptions,
+        ),
+      switchResponder: (input: SessionsSwitchResponderInput, requestOptions?: RequestOptions) =>
+        request<SessionsSwitchResponderOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/responder`,
+            body: { responder: input["responder"] },
+            successStatus: 204,
+            declaredStatuses: [404, 400, 401],
+            empty: true,
+          },
+          requestOptions,
+        ),
+      switchMode: (input: SessionsSwitchModeInput, requestOptions?: RequestOptions) =>
+        request<SessionsSwitchModeOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/mode`,
+            body: { permissionMode: input["permissionMode"] },
+            successStatus: 204,
+            declaredStatuses: [404, 400, 401],
+            empty: true,
+          },
+          requestOptions,
+        ),
+      switchStrict: (input: SessionsSwitchStrictInput, requestOptions?: RequestOptions) =>
+        request<SessionsSwitchStrictOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/strict`,
+            body: { strict: input["strict"] },
+            successStatus: 204,
+            declaredStatuses: [404, 400, 401],
+            empty: true,
+          },
+          requestOptions,
+        ),
+      switchFeature: (input: SessionsSwitchFeatureInput, requestOptions?: RequestOptions) =>
+        request<SessionsSwitchFeatureOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/feature`,
+            body: { feature: input["feature"], enabled: input["enabled"] },
+            successStatus: 204,
+            declaredStatuses: [404, 400, 401],
+            empty: true,
+          },
+          requestOptions,
+        ),
+      switchPromptOverride: (input: SessionsSwitchPromptOverrideInput, requestOptions?: RequestOptions) =>
+        request<SessionsSwitchPromptOverrideOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/prompt-override`,
+            body: { override: input["override"] },
+            successStatus: 204,
+            declaredStatuses: [404, 400, 401],
+            empty: true,
+          },
+          requestOptions,
+        ),
+      shell: (input: SessionsShellInput, requestOptions?: RequestOptions) =>
+        request<SessionsShellOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/shell`,
+            body: { command: input["command"] },
+            successStatus: 204,
+            declaredStatuses: [404, 400, 401],
+            empty: true,
+          },
+          requestOptions,
+        ),
+      command: (input: SessionsCommandInput, requestOptions?: RequestOptions) =>
+        request<SessionsCommandOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/command`,
+            body: {
+              command: input["command"],
+              arguments: input["arguments"],
+              agent: input["agent"],
+              model: input["model"],
+              variant: input["variant"],
+              messageID: input["messageID"],
+            },
             successStatus: 204,
             declaredStatuses: [404, 400, 401],
             empty: true,
@@ -683,7 +885,7 @@ export function make(options: ClientOptions) {
           {
             method: "GET",
             path: `/api/permission/saved`,
-            query: { projectID: input?.["projectID"] },
+            query: { origin: input?.["origin"] },
             successStatus: 200,
             declaredStatuses: [401, 400],
             empty: false,
