@@ -133,12 +133,6 @@ import type {
   QuestionsRejectOutput,
   ReferencesListInput,
   ReferencesListOutput,
-  ProjectCopiesCreateInput,
-  ProjectCopiesCreateOutput,
-  ProjectCopiesRemoveInput,
-  ProjectCopiesRemoveOutput,
-  ProjectCopiesRefreshInput,
-  ProjectCopiesRefreshOutput,
 } from "./types"
 import { ClientError } from "./client-error"
 
@@ -322,8 +316,7 @@ export function make(options: ClientOptions) {
               order: input?.["order"],
               search: input?.["search"],
               directory: input?.["directory"],
-              project: input?.["project"],
-              subpath: input?.["subpath"],
+              under: input?.["under"],
               cursor: input?.["cursor"],
             },
             successStatus: 200,
@@ -1147,46 +1140,6 @@ export function make(options: ClientOptions) {
             successStatus: 200,
             declaredStatuses: [401, 400],
             empty: false,
-          },
-          requestOptions,
-        ),
-    },
-    projectCopies: {
-      create: (input: ProjectCopiesCreateInput, requestOptions?: RequestOptions) =>
-        request<ProjectCopiesCreateOutput>(
-          {
-            method: "POST",
-            path: `/experimental/project/${encodeURIComponent(input.projectID)}/copy`,
-            query: { location: input["location"] },
-            body: { strategy: input["strategy"], directory: input["directory"], name: input["name"] },
-            successStatus: 200,
-            declaredStatuses: [400, 401],
-            empty: false,
-          },
-          requestOptions,
-        ),
-      remove: (input: ProjectCopiesRemoveInput, requestOptions?: RequestOptions) =>
-        request<ProjectCopiesRemoveOutput>(
-          {
-            method: "DELETE",
-            path: `/experimental/project/${encodeURIComponent(input.projectID)}/copy`,
-            query: { location: input["location"] },
-            body: { directory: input["directory"], force: input["force"] },
-            successStatus: 204,
-            declaredStatuses: [400, 401],
-            empty: true,
-          },
-          requestOptions,
-        ),
-      refresh: (input: ProjectCopiesRefreshInput, requestOptions?: RequestOptions) =>
-        request<ProjectCopiesRefreshOutput>(
-          {
-            method: "POST",
-            path: `/experimental/project/${encodeURIComponent(input.projectID)}/copy/refresh`,
-            query: { location: input["location"] },
-            successStatus: 204,
-            declaredStatuses: [400, 401],
-            empty: true,
           },
           requestOptions,
         ),

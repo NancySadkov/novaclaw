@@ -60,7 +60,6 @@ export type Event =
   | EventPermissionV2Asked
   | EventPermissionV2Replied
   | EventPluginAdded
-  | EventProjectDirectoriesUpdated
   | EventFileWatcherUpdated
   | EventPtyCreated
   | EventPtyUpdated
@@ -75,7 +74,6 @@ export type Event =
   | EventPermissionReplied
   | EventMcpToolsChanged
   | EventMcpBrowserOpenFailed
-  | EventProjectUpdated
   | EventSessionStatus
   | EventSessionIdle
   | EventQuestionAsked
@@ -822,13 +820,6 @@ export type GlobalEvent = {
       }
     | {
         id: string
-        type: "project.directories.updated"
-        properties: {
-          projectID: string
-        }
-      }
-    | {
-        id: string
         type: "file.watcher.updated"
         properties: {
           file: string
@@ -959,20 +950,6 @@ export type GlobalEvent = {
         properties: {
           mcpName: string
           url: string
-        }
-      }
-    | {
-        id: string
-        type: "project.updated"
-        properties: {
-          id: string
-          worktree: string
-          vcs?: ProjectVcs
-          name?: string
-          icon?: ProjectIcon
-          commands?: ProjectCommands
-          time: ProjectTime
-          sandboxes: Array<string>
         }
       }
     | {
@@ -1394,23 +1371,6 @@ export type McpServerNotFoundError = {
   message: string
 }
 
-export type Project = {
-  id: string
-  worktree: string
-  vcs?: ProjectVcs
-  name?: string
-  icon?: ProjectIcon
-  commands?: ProjectCommands
-  time: ProjectTime
-  sandboxes: Array<string>
-}
-
-export type ProjectNotFoundError = {
-  _tag: "ProjectNotFoundError"
-  projectID: string
-  message: string
-}
-
 export type PtyNotFoundError = {
   _tag: "PtyNotFoundError"
   ptyID: string
@@ -1520,7 +1480,7 @@ export type Workspace = {
   branch?: string | null
   directory?: string | null
   extra?: unknown | null
-  projectID: string
+  origin: string
   timeUsed: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
 }
 
@@ -1766,7 +1726,6 @@ export type V2Event =
   | PermissionV2Asked
   | PermissionV2Replied
   | PluginAdded
-  | ProjectDirectoriesUpdated
   | FileWatcherUpdated
   | PtyCreated
   | PtyUpdated
@@ -1781,7 +1740,6 @@ export type V2Event =
   | PermissionReplied
   | McpToolsChanged
   | McpBrowserOpenFailed
-  | ProjectUpdated
   | SessionStatus2
   | SessionIdle
   | QuestionAsked
@@ -1802,14 +1760,6 @@ export type V2EventStream = string
 export type ForbiddenError = {
   _tag: "ForbiddenError"
   message: string
-}
-
-export type ProjectCopyError = {
-  name: "ProjectCopyError"
-  data: {
-    message: string
-    forceRequired?: boolean
-  }
 }
 
 export type EffectHttpApiErrorForbidden = {
@@ -1886,7 +1836,6 @@ export type SessionChangesSummary = {
 export type SessionV2Info = {
   id: string
   parentID?: string
-  projectID: string
   slug: string
   version: string
   permission?: PermissionRuleset
@@ -2251,27 +2200,6 @@ export type QuestionV2Tool = {
 }
 
 export type QuestionV2Answer = Array<string>
-
-export type ProjectVcs = "git"
-
-export type ProjectIcon = {
-  url?: string
-  override?: string
-  color?: string
-}
-
-export type ProjectCommands = {
-  /**
-   * Startup script to run when creating a new workspace (worktree)
-   */
-  start?: string
-}
-
-export type ProjectTime = {
-  created: number
-  updated: number
-  initialized?: number
-}
 
 export type EventServerInstanceDisposed = {
   id: string
@@ -3496,11 +3424,6 @@ export type KbUpdateInput = {
   confidence?: number
   source?: string
 }
-
-export type ProjectDirectories = Array<{
-  directory: string
-  strategy?: string
-}>
 
 export type PtyTicketConnectToken = {
   ticket: string
@@ -4837,23 +4760,6 @@ export type PluginAdded = {
   }
 }
 
-export type ProjectDirectoriesUpdated = {
-  id: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  type: "project.directories.updated"
-  durable?: {
-    aggregateID: string
-    seq: number
-    version: number
-  }
-  location?: LocationRef
-  data: {
-    projectID: string
-  }
-}
-
 export type FileWatcherUpdated = {
   id: string
   metadata?: {
@@ -5128,30 +5034,6 @@ export type McpBrowserOpenFailed = {
   }
 }
 
-export type ProjectUpdated = {
-  id: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  type: "project.updated"
-  durable?: {
-    aggregateID: string
-    seq: number
-    version: number
-  }
-  location?: LocationRef
-  data: {
-    id: string
-    worktree: string
-    vcs?: ProjectVcs
-    name?: string
-    icon?: ProjectIcon
-    commands?: ProjectCommands
-    time: ProjectTime
-    sandboxes: Array<string>
-  }
-}
-
 export type SessionIdle = {
   id: string
   metadata?: {
@@ -5387,10 +5269,6 @@ export type ReferenceInfo = {
   description?: string
   hidden?: boolean
   source: ReferenceSource
-}
-
-export type ProjectCopyCopy = {
-  directory: string
 }
 
 export type EventModelsDevRefreshed = {
@@ -6016,14 +5894,6 @@ export type EventPluginAdded = {
   }
 }
 
-export type EventProjectDirectoriesUpdated = {
-  id: string
-  type: "project.directories.updated"
-  properties: {
-    projectID: string
-  }
-}
-
 export type EventFileWatcherUpdated = {
   id: string
   type: "file.watcher.updated"
@@ -6169,21 +6039,6 @@ export type EventMcpBrowserOpenFailed = {
   properties: {
     mcpName: string
     url: string
-  }
-}
-
-export type EventProjectUpdated = {
-  id: string
-  type: "project.updated"
-  properties: {
-    id: string
-    worktree: string
-    vcs?: ProjectVcs
-    name?: string
-    icon?: ProjectIcon
-    commands?: ProjectCommands
-    time: ProjectTime
-    sandboxes: Array<string>
   }
 }
 
@@ -8439,194 +8294,6 @@ export type McpDisconnectResponses = {
 
 export type McpDisconnectResponse = McpDisconnectResponses[keyof McpDisconnectResponses]
 
-export type ProjectListData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/project"
-}
-
-export type ProjectListErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type ProjectListError = ProjectListErrors[keyof ProjectListErrors]
-
-export type ProjectListResponses = {
-  /**
-   * List of projects
-   */
-  200: Array<Project>
-}
-
-export type ProjectListResponse = ProjectListResponses[keyof ProjectListResponses]
-
-export type ProjectCurrentData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/project/current"
-}
-
-export type ProjectCurrentErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type ProjectCurrentError = ProjectCurrentErrors[keyof ProjectCurrentErrors]
-
-export type ProjectCurrentResponses = {
-  /**
-   * Current project information
-   */
-  200: Project
-}
-
-export type ProjectCurrentResponse = ProjectCurrentResponses[keyof ProjectCurrentResponses]
-
-export type ProjectInitGitData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/project/git/init"
-}
-
-export type ProjectInitGitErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type ProjectInitGitError = ProjectInitGitErrors[keyof ProjectInitGitErrors]
-
-export type ProjectInitGitResponses = {
-  /**
-   * Project information after git initialization
-   */
-  200: Project
-}
-
-export type ProjectInitGitResponse = ProjectInitGitResponses[keyof ProjectInitGitResponses]
-
-export type ProjectUpdateData = {
-  body?: {
-    name?: string
-    icon?: ProjectIcon
-    commands?: ProjectCommands
-  }
-  path: {
-    projectID: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/project/{projectID}"
-}
-
-export type ProjectUpdateErrors = {
-  /**
-   * BadRequest | InvalidRequestError
-   */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-  /**
-   * ProjectNotFoundError
-   */
-  404: ProjectNotFoundError
-}
-
-export type ProjectUpdateError = ProjectUpdateErrors[keyof ProjectUpdateErrors]
-
-export type ProjectUpdateResponses = {
-  /**
-   * Updated project information
-   */
-  200: Project
-}
-
-export type ProjectUpdateResponse = ProjectUpdateResponses[keyof ProjectUpdateResponses]
-
-export type ProjectDirectoriesData = {
-  body?: never
-  path: {
-    projectID: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/project/{projectID}/directories"
-}
-
-export type ProjectDirectoriesErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type ProjectDirectoriesError = ProjectDirectoriesErrors[keyof ProjectDirectoriesErrors]
-
-export type ProjectDirectoriesResponses = {
-  /**
-   * Project directories
-   */
-  200: ProjectDirectories
-}
-
-export type ProjectDirectoriesResponse = ProjectDirectoriesResponses[keyof ProjectDirectoriesResponses]
-
-export type ExperimentalProjectCopyGenerateNameData = {
-  body?: {
-    context?: string
-  }
-  path: {
-    projectID: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/experimental/project/{projectID}/copy/generate-name"
-}
-
-export type ExperimentalProjectCopyGenerateNameErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type ExperimentalProjectCopyGenerateNameError =
-  ExperimentalProjectCopyGenerateNameErrors[keyof ExperimentalProjectCopyGenerateNameErrors]
-
-export type ExperimentalProjectCopyGenerateNameResponses = {
-  /**
-   * Success
-   */
-  200: {
-    name: string
-  }
-}
-
-export type ExperimentalProjectCopyGenerateNameResponse =
-  ExperimentalProjectCopyGenerateNameResponses[keyof ExperimentalProjectCopyGenerateNameResponses]
-
 export type PtyShellsData = {
   body?: never
   path?: never
@@ -9938,8 +9605,7 @@ export type V2SessionListData = {
     order?: "asc" | "desc"
     search?: string
     directory?: string
-    project?: string
-    subpath?: string
+    under?: string
     /**
      * Opaque pagination cursor returned as cursor.previous or cursor.next in the previous response.
      */
@@ -12621,109 +12287,6 @@ export type V2ReferenceListResponses = {
 }
 
 export type V2ReferenceListResponse = V2ReferenceListResponses[keyof V2ReferenceListResponses]
-
-export type V2ProjectCopyRemoveData = {
-  body?: {
-    directory: string
-    force: boolean
-  }
-  path: {
-    projectID: string
-  }
-  query?: {
-    location?: {
-      directory?: string
-      workspace?: string
-    }
-  }
-  url: "/experimental/project/{projectID}/copy"
-}
-
-export type V2ProjectCopyRemoveErrors = {
-  /**
-   * ProjectCopyError | InvalidRequestError
-   */
-  400: ProjectCopyError | InvalidRequestError
-}
-
-export type V2ProjectCopyRemoveError = V2ProjectCopyRemoveErrors[keyof V2ProjectCopyRemoveErrors]
-
-export type V2ProjectCopyRemoveResponses = {
-  /**
-   * <No Content>
-   */
-  204: void
-}
-
-export type V2ProjectCopyRemoveResponse = V2ProjectCopyRemoveResponses[keyof V2ProjectCopyRemoveResponses]
-
-export type V2ProjectCopyCreateData = {
-  body?: {
-    strategy: string
-    directory: string
-    name?: string
-  }
-  path: {
-    projectID: string
-  }
-  query?: {
-    location?: {
-      directory?: string
-      workspace?: string
-    }
-  }
-  url: "/experimental/project/{projectID}/copy"
-}
-
-export type V2ProjectCopyCreateErrors = {
-  /**
-   * ProjectCopyError | InvalidRequestError
-   */
-  400: ProjectCopyError | InvalidRequestError
-}
-
-export type V2ProjectCopyCreateError = V2ProjectCopyCreateErrors[keyof V2ProjectCopyCreateErrors]
-
-export type V2ProjectCopyCreateResponses = {
-  /**
-   * ProjectCopy.Copy
-   */
-  200: ProjectCopyCopy
-}
-
-export type V2ProjectCopyCreateResponse = V2ProjectCopyCreateResponses[keyof V2ProjectCopyCreateResponses]
-
-export type V2ProjectCopyRefreshData = {
-  body?: never
-  path: {
-    projectID: string
-  }
-  query?: {
-    location?: {
-      directory?: string
-      workspace?: string
-    }
-  }
-  url: "/experimental/project/{projectID}/copy/refresh"
-}
-
-export type V2ProjectCopyRefreshErrors = {
-  /**
-   * ProjectCopyError | InvalidRequestError
-   */
-  400: ProjectCopyError | InvalidRequestError
-}
-
-export type V2ProjectCopyRefreshError = V2ProjectCopyRefreshErrors[keyof V2ProjectCopyRefreshErrors]
-
-export type V2ProjectCopyRefreshResponses = {
-  /**
-   * <No Content>
-   */
-  204: void
-}
-
-export type V2ProjectCopyRefreshResponse = V2ProjectCopyRefreshResponses[keyof V2ProjectCopyRefreshResponses]
 
 export type PtyConnectData = {
   body?: never

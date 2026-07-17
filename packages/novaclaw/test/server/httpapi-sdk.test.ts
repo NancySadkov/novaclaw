@@ -287,7 +287,6 @@ describe("HttpApi SDK", () => {
         expect(listed.data?.data.map((item) => item.id)).toContain(session.data?.data.id)
 
         yield* Effect.all([
-          expectStatus(() => sdk.project.current(), 200),
           expectStatus(() => sdk.config.get(), 200),
           expectStatus(() => sdk.config.providers(), 200),
           expectStatus(() => sdk.find.files({ query: "hello", limit: 10 }), 200),
@@ -433,8 +432,6 @@ describe("HttpApi SDK", () => {
   serverPathParity("matches generated SDK instance read routes", (serverPath) =>
     withProject(serverPath, { git: true, setup: writeStandardFiles }, ({ sdk, directory }) =>
       Effect.gen(function* () {
-        const project = yield* capture(() => sdk.project.current())
-        const projects = yield* capture(() => sdk.project.list())
         const paths = yield* capture(() => sdk.path.get())
         const config = yield* capture(() => sdk.config.get())
         const providers = yield* capture(() => sdk.config.providers())
@@ -451,8 +448,6 @@ describe("HttpApi SDK", () => {
 
         return {
           statuses: statuses({
-            project,
-            projects,
             paths,
             config,
             providers,
@@ -467,10 +462,8 @@ describe("HttpApi SDK", () => {
             vcs,
             formatter,
           }),
-          project: { worktreeSelected: record(project.data).worktree === directory },
           paths: { directorySelected: record(paths.data).directory === directory },
           file: record(file.data).content,
-          hasProject: array(projects.data).length > 0,
           foundFile: JSON.stringify(findFiles.data).includes("hello.txt"),
           foundText: JSON.stringify(findText.data ?? null).includes("sdk-parity"),
           listedFile: JSON.stringify(files.data).includes("hello.txt"),
@@ -535,29 +528,4 @@ describe("HttpApi SDK", () => {
   // The SDK TUI parity suite retired with the TUI routes themselves (the server has no /tui
   // surface; the regenerated client rightly has no `sdk.tui`). It only ever exercised 404s.
 
-  serverPathParity("matches generated SDK project git initialization", (serverPath) =>
-    withProject(serverPath, {}, ({ sdk, directory }) =>
-      Effect.gen(function* () {
-        const before = yield* capture(() => sdk.project.current())
-        const init = yield* capture(() => sdk.project.initGit())
-        const after = yield* capture(() => sdk.project.current())
-
-        return {
-          statuses: statuses({ before, init, after }),
-          before: {
-            vcs: record(before.data).vcs ?? null,
-            worktree: record(before.data).worktree,
-          },
-          init: {
-            vcs: record(init.data).vcs,
-            worktreeSelected: record(init.data).worktree === directory,
-          },
-          after: {
-            vcs: record(after.data).vcs,
-            worktreeSelected: record(after.data).worktree === directory,
-          },
-        }
-      }),
-    ),
-  )
 })

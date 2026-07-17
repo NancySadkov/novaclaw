@@ -45,8 +45,6 @@ import type {
   ExperimentalConsoleSwitchOrgResponses,
   ExperimentalControlPlaneMoveSessionErrors,
   ExperimentalControlPlaneMoveSessionResponses,
-  ExperimentalProjectCopyGenerateNameErrors,
-  ExperimentalProjectCopyGenerateNameResponses,
   ExperimentalResourceListErrors,
   ExperimentalResourceListResponses,
   ExperimentalSessionBackgroundErrors,
@@ -147,18 +145,6 @@ import type {
   PermissionRuleset,
   PermissionV2Reply,
   PermissionV2Source,
-  ProjectCommands,
-  ProjectCurrentErrors,
-  ProjectCurrentResponses,
-  ProjectDirectoriesErrors,
-  ProjectDirectoriesResponses,
-  ProjectIcon,
-  ProjectInitGitErrors,
-  ProjectInitGitResponses,
-  ProjectListErrors,
-  ProjectListResponses,
-  ProjectUpdateErrors,
-  ProjectUpdateResponses,
   PromptInput,
   ProviderAuthErrors,
   ProviderAuthResponses,
@@ -263,12 +249,6 @@ import type {
   V2PermissionSavedListResponses,
   V2PermissionSavedRemoveErrors,
   V2PermissionSavedRemoveResponses,
-  V2ProjectCopyCreateErrors,
-  V2ProjectCopyCreateResponses,
-  V2ProjectCopyRefreshErrors,
-  V2ProjectCopyRefreshResponses,
-  V2ProjectCopyRemoveErrors,
-  V2ProjectCopyRemoveResponses,
   V2ProviderGetErrors,
   V2ProviderGetResponses,
   V2ProviderListErrors,
@@ -942,51 +922,6 @@ export class Resource extends HeyApiClient {
   }
 }
 
-export class ProjectCopy extends HeyApiClient {
-  /**
-   * Generate project copy name
-   *
-   * Generate a short name for a project copy from task context.
-   */
-  public generateName<ThrowOnError extends boolean = false>(
-    parameters: {
-      projectID: string
-      directory?: string
-      workspace?: string
-      context?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "projectID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "body", key: "context" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<
-      ExperimentalProjectCopyGenerateNameResponses,
-      ExperimentalProjectCopyGenerateNameErrors,
-      ThrowOnError
-    >({
-      url: "/experimental/project/{projectID}/copy/generate-name",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-}
-
 export class Adapter extends HeyApiClient {
   /**
    * List workspace adapters
@@ -1284,11 +1219,6 @@ export class Experimental extends HeyApiClient {
   private _resource?: Resource
   get resource(): Resource {
     return (this._resource ??= new Resource({ client: this.client }))
-  }
-
-  private _projectCopy?: ProjectCopy
-  get projectCopy(): ProjectCopy {
-    return (this._projectCopy ??= new ProjectCopy({ client: this.client }))
   }
 
   private _workspace?: Workspace
@@ -3051,173 +2981,6 @@ export class Mcp extends HeyApiClient {
   }
 }
 
-export class Project extends HeyApiClient {
-  /**
-   * List all projects
-   *
-   * Get a list of projects that have been opened with NovaClaw.
-   */
-  public list<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<ProjectListResponses, ProjectListErrors, ThrowOnError>({
-      url: "/project",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Get current project
-   *
-   * Retrieve the currently active project that NovaClaw is working with.
-   */
-  public current<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<ProjectCurrentResponses, ProjectCurrentErrors, ThrowOnError>({
-      url: "/project/current",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Initialize git repository
-   *
-   * Create a git repository for the current project and return the refreshed project info.
-   */
-  public initGit<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<ProjectInitGitResponses, ProjectInitGitErrors, ThrowOnError>({
-      url: "/project/git/init",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Update project
-   *
-   * Update project properties such as name, icon, and commands.
-   */
-  public update<ThrowOnError extends boolean = false>(
-    parameters: {
-      projectID: string
-      directory?: string
-      workspace?: string
-      name?: string
-      icon?: ProjectIcon
-      commands?: ProjectCommands
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "projectID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "body", key: "name" },
-            { in: "body", key: "icon" },
-            { in: "body", key: "commands" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).patch<ProjectUpdateResponses, ProjectUpdateErrors, ThrowOnError>({
-      url: "/project/{projectID}",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-
-  /**
-   * List project directories
-   *
-   * List known local absolute directories for a project.
-   */
-  public directories<ThrowOnError extends boolean = false>(
-    parameters: {
-      projectID: string
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "projectID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<ProjectDirectoriesResponses, ProjectDirectoriesErrors, ThrowOnError>({
-      url: "/project/{projectID}/directories",
-      ...options,
-      ...params,
-    })
-  }
-}
-
 export class Pty extends HeyApiClient {
   /**
    * List available shells
@@ -4769,8 +4532,7 @@ export class Session2 extends HeyApiClient {
       order?: "asc" | "desc"
       search?: string
       directory?: string
-      project?: string
-      subpath?: string
+      under?: string
       cursor?: string
     },
     options?: Options<never, ThrowOnError>,
@@ -4786,8 +4548,7 @@ export class Session2 extends HeyApiClient {
             { in: "query", key: "order" },
             { in: "query", key: "search" },
             { in: "query", key: "directory" },
-            { in: "query", key: "project" },
-            { in: "query", key: "subpath" },
+            { in: "query", key: "under" },
             { in: "query", key: "cursor" },
           ],
         },
@@ -6635,122 +6396,6 @@ export class Reference extends HeyApiClient {
   }
 }
 
-export class ProjectCopy2 extends HeyApiClient {
-  public remove<ThrowOnError extends boolean = false>(
-    parameters: {
-      projectID: string
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-      directory?: string
-      force?: boolean
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "projectID" },
-            { in: "query", key: "location" },
-            { in: "body", key: "directory" },
-            { in: "body", key: "force" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).delete<
-      V2ProjectCopyRemoveResponses,
-      V2ProjectCopyRemoveErrors,
-      ThrowOnError
-    >({
-      url: "/experimental/project/{projectID}/copy",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-
-  public create<ThrowOnError extends boolean = false>(
-    parameters: {
-      projectID: string
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-      strategy?: string
-      directory?: string
-      name?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "projectID" },
-            { in: "query", key: "location" },
-            { in: "body", key: "strategy" },
-            { in: "body", key: "directory" },
-            { in: "body", key: "name" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<V2ProjectCopyCreateResponses, V2ProjectCopyCreateErrors, ThrowOnError>(
-      {
-        url: "/experimental/project/{projectID}/copy",
-        ...options,
-        ...params,
-        headers: {
-          "Content-Type": "application/json",
-          ...options?.headers,
-          ...params.headers,
-        },
-      },
-    )
-  }
-
-  public refresh<ThrowOnError extends boolean = false>(
-    parameters: {
-      projectID: string
-      location?: {
-        directory?: string
-        workspace?: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "projectID" },
-            { in: "query", key: "location" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<
-      V2ProjectCopyRefreshResponses,
-      V2ProjectCopyRefreshErrors,
-      ThrowOnError
-    >({
-      url: "/experimental/project/{projectID}/copy/refresh",
-      ...options,
-      ...params,
-    })
-  }
-}
-
 export class V2 extends HeyApiClient {
   private _health?: Health
   get health(): Health {
@@ -6830,11 +6475,6 @@ export class V2 extends HeyApiClient {
   private _reference?: Reference
   get reference(): Reference {
     return (this._reference ??= new Reference({ client: this.client }))
-  }
-
-  private _projectCopy?: ProjectCopy2
-  get projectCopy(): ProjectCopy2 {
-    return (this._projectCopy ??= new ProjectCopy2({ client: this.client }))
   }
 }
 
@@ -6934,11 +6574,6 @@ export class NovaclawClient extends HeyApiClient {
   private _mcp?: Mcp
   get mcp(): Mcp {
     return (this._mcp ??= new Mcp({ client: this.client }))
-  }
-
-  private _project?: Project
-  get project(): Project {
-    return (this._project ??= new Project({ client: this.client }))
   }
 
   private _pty?: Pty

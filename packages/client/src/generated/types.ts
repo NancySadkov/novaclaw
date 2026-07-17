@@ -94,13 +94,6 @@ export type QuestionNotFoundError = {
 export const isQuestionNotFoundError = (value: unknown): value is QuestionNotFoundError =>
   typeof value === "object" && value !== null && "_tag" in value && value["_tag"] === "QuestionNotFoundError"
 
-export type ProjectCopyError = {
-  readonly name: "ProjectCopyError"
-  readonly data: { readonly message: string; readonly forceRequired?: boolean | undefined }
-}
-export const isProjectCopyError = (value: unknown): value is ProjectCopyError =>
-  typeof value === "object" && value !== null && "name" in value && value["name"] === "ProjectCopyError"
-
 export type HealthGetOutput = { readonly healthy: true }
 
 export type LocationGetInput = {
@@ -158,8 +151,7 @@ export type SessionsListInput = {
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
     readonly directory?: string | undefined
-    readonly project?: string | undefined
-    readonly subpath?: string | undefined
+    readonly under?: string | undefined
     readonly cursor?: string | undefined
   }["workspace"]
   readonly roots?: {
@@ -169,8 +161,7 @@ export type SessionsListInput = {
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
     readonly directory?: string | undefined
-    readonly project?: string | undefined
-    readonly subpath?: string | undefined
+    readonly under?: string | undefined
     readonly cursor?: string | undefined
   }["roots"]
   readonly limit?: {
@@ -180,8 +171,7 @@ export type SessionsListInput = {
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
     readonly directory?: string | undefined
-    readonly project?: string | undefined
-    readonly subpath?: string | undefined
+    readonly under?: string | undefined
     readonly cursor?: string | undefined
   }["limit"]
   readonly order?: {
@@ -191,8 +181,7 @@ export type SessionsListInput = {
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
     readonly directory?: string | undefined
-    readonly project?: string | undefined
-    readonly subpath?: string | undefined
+    readonly under?: string | undefined
     readonly cursor?: string | undefined
   }["order"]
   readonly search?: {
@@ -202,8 +191,7 @@ export type SessionsListInput = {
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
     readonly directory?: string | undefined
-    readonly project?: string | undefined
-    readonly subpath?: string | undefined
+    readonly under?: string | undefined
     readonly cursor?: string | undefined
   }["search"]
   readonly directory?: {
@@ -213,32 +201,19 @@ export type SessionsListInput = {
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
     readonly directory?: string | undefined
-    readonly project?: string | undefined
-    readonly subpath?: string | undefined
+    readonly under?: string | undefined
     readonly cursor?: string | undefined
   }["directory"]
-  readonly project?: {
+  readonly under?: {
     readonly workspace?: string | undefined
     readonly roots?: boolean | undefined
     readonly limit?: number | undefined
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
     readonly directory?: string | undefined
-    readonly project?: string | undefined
-    readonly subpath?: string | undefined
+    readonly under?: string | undefined
     readonly cursor?: string | undefined
-  }["project"]
-  readonly subpath?: {
-    readonly workspace?: string | undefined
-    readonly roots?: boolean | undefined
-    readonly limit?: number | undefined
-    readonly order?: "asc" | "desc" | undefined
-    readonly search?: string | undefined
-    readonly directory?: string | undefined
-    readonly project?: string | undefined
-    readonly subpath?: string | undefined
-    readonly cursor?: string | undefined
-  }["subpath"]
+  }["under"]
   readonly cursor?: {
     readonly workspace?: string | undefined
     readonly roots?: boolean | undefined
@@ -246,8 +221,7 @@ export type SessionsListInput = {
     readonly order?: "asc" | "desc" | undefined
     readonly search?: string | undefined
     readonly directory?: string | undefined
-    readonly project?: string | undefined
-    readonly subpath?: string | undefined
+    readonly under?: string | undefined
     readonly cursor?: string | undefined
   }["cursor"]
 }
@@ -256,7 +230,6 @@ export type SessionsListOutput = {
   readonly data: ReadonlyArray<{
     readonly id: string
     readonly parentID?: string
-    readonly projectID: string
     readonly slug: string
     readonly version: string
     readonly permission?: ReadonlyArray<{
@@ -639,7 +612,6 @@ export type SessionsCreateOutput = {
   readonly data: {
     readonly id: string
     readonly parentID?: string
-    readonly projectID: string
     readonly slug: string
     readonly version: string
     readonly permission?: ReadonlyArray<{
@@ -716,7 +688,6 @@ export type SessionsGetOutput = {
   readonly data: {
     readonly id: string
     readonly parentID?: string
-    readonly projectID: string
     readonly slug: string
     readonly version: string
     readonly permission?: ReadonlyArray<{
@@ -782,7 +753,6 @@ export type SessionsChildrenOutput = {
   readonly data: ReadonlyArray<{
     readonly id: string
     readonly parentID?: string
-    readonly projectID: string
     readonly slug: string
     readonly version: string
     readonly permission?: ReadonlyArray<{
@@ -865,7 +835,6 @@ export type SessionsUpdateOutput = {
   readonly data: {
     readonly id: string
     readonly parentID?: string
-    readonly projectID: string
     readonly slug: string
     readonly version: string
     readonly permission?: ReadonlyArray<{
@@ -938,7 +907,6 @@ export type SessionsForkOutput = {
   readonly data: {
     readonly id: string
     readonly parentID?: string
-    readonly projectID: string
     readonly slug: string
     readonly version: string
     readonly permission?: ReadonlyArray<{
@@ -4078,35 +4046,3 @@ export type ReferencesListOutput = {
         }
   }>
 }
-
-export type ProjectCopiesCreateInput = {
-  readonly projectID: { readonly projectID: string }["projectID"]
-  readonly location?: {
-    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
-  }["location"]
-  readonly strategy: { readonly strategy: string; readonly directory: string; readonly name?: string }["strategy"]
-  readonly directory: { readonly strategy: string; readonly directory: string; readonly name?: string }["directory"]
-  readonly name?: { readonly strategy: string; readonly directory: string; readonly name?: string }["name"]
-}
-
-export type ProjectCopiesCreateOutput = { readonly directory: string }
-
-export type ProjectCopiesRemoveInput = {
-  readonly projectID: { readonly projectID: string }["projectID"]
-  readonly location?: {
-    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
-  }["location"]
-  readonly directory: { readonly directory: string; readonly force: boolean }["directory"]
-  readonly force: { readonly directory: string; readonly force: boolean }["force"]
-}
-
-export type ProjectCopiesRemoveOutput = void
-
-export type ProjectCopiesRefreshInput = {
-  readonly projectID: { readonly projectID: string }["projectID"]
-  readonly location?: {
-    readonly location?: { readonly directory?: string | undefined; readonly workspace?: string | undefined } | undefined
-  }["location"]
-}
-
-export type ProjectCopiesRefreshOutput = void
