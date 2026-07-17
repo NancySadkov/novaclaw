@@ -98,13 +98,9 @@ export function expandCommandTemplate(template: string, argumentsRaw: string): s
 export const RevertState = Revert.State
 export type RevertState = Revert.State
 
-// get project -> project.locations
-//
 // get all sessions
 //
-
-// - by project
-//   - by subpath
+// - by directory (exact) or under a root (boundary prefix)
 // - by workspace (home is special)
 
 export { ListAnchor }
@@ -124,15 +120,16 @@ const ListDirectoryInput = Schema.Struct({
   directory: AbsolutePath,
 })
 
-const ListProjectInput = Schema.Struct({
+// T2 (notes/entities.md): "a project's sessions" is an entity-free query — every session whose
+// directory IS the root or lives under it (boundary-exact, both separators).
+const ListUnderInput = Schema.Struct({
   ...ListInputBase,
-  project: ProjectV2.ID,
-  subpath: RelativePath.pipe(Schema.optional),
+  under: AbsolutePath,
 })
 
 const ListAllInput = Schema.Struct(ListInputBase)
 
-export const ListInput = Schema.Union([ListDirectoryInput, ListProjectInput, ListAllInput])
+export const ListInput = Schema.Union([ListDirectoryInput, ListUnderInput, ListAllInput])
 export type ListInput = typeof ListInput.Type
 
 type CreateInput = {

@@ -3,6 +3,7 @@ import { DateTime, Effect } from "effect"
 import { cmd } from "./cmd"
 import { effectCmd, fail } from "../effect-cmd"
 import { Database } from "@novaclaw/core/database/database"
+import { AbsolutePath } from "@novaclaw/core/schema"
 import { removeSessionRecord } from "@novaclaw/core/session"
 import { SessionRead } from "@novaclaw/core/session/read"
 import type { SessionSchema } from "@novaclaw/core/session/schema"
@@ -98,7 +99,7 @@ export const SessionListCommand = effectCmd({
     if (!ctx) return
     // V1-nuke slice A: the native deps-taking read (same rows, native Session.Info shape).
     const { db } = yield* Database.Service
-    const sessions = yield* SessionRead.list(db, { project: ctx.project.id, roots: true, limit: args.maxCount })
+    const sessions = yield* SessionRead.list(db, { under: AbsolutePath.make(ctx.worktree), roots: true, limit: args.maxCount })
 
     if (sessions.length === 0) return
 

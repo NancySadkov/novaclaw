@@ -25,7 +25,18 @@ export const list = (db: Db, input: SessionV2.ListInput = {}): Effect.Effect<Ses
     const conditions: SQL[] = []
     if ("directory" in input) conditions.push(eq(SessionTable.directory, input.directory))
     if (input.workspaceID) conditions.push(eq(SessionTable.workspace_id, input.workspaceID))
-    if ("project" in input) conditions.push(eq(SessionTable.project_id, input.project))
+    // "Under a root": the directory IS the root, or sits below it with an explicit separator
+    // boundary (never the sibling `C:\repo2` when under=`C:\repo`) — both separator styles.
+    if ("under" in input) {
+      const top = "\uffff"
+      conditions.push(
+        or(
+          eq(SessionTable.directory, input.under),
+          and(gt(SessionTable.directory, input.under + "\\"), lt(SessionTable.directory, input.under + "\\" + top)),
+          and(gt(SessionTable.directory, input.under + "/"), lt(SessionTable.directory, input.under + "/" + top)),
+        )!,
+      )
+    }
     if (input.search) conditions.push(like(SessionTable.title, `%${input.search}%`))
     if (input.roots) conditions.push(isNull(SessionTable.parent_id))
     if (input.anchor) {

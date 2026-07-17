@@ -211,7 +211,7 @@ const run = Effect.fn("Cli.export.body")(function* (args: { sessionID?: string; 
     UI.empty()
     prompts.intro("Export session", { output: process.stderr })
 
-    const sessions = [...(yield* SessionRead.list(db, { project: ctx.project.id }))]
+    const sessions = [...(yield* SessionRead.list(db, { under: AbsolutePath.make(ctx.worktree) }))]
 
     if (sessions.length === 0) {
       prompts.log.error("No sessions found", { output: process.stderr })
