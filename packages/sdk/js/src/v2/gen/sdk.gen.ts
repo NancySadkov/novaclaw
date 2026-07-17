@@ -253,6 +253,8 @@ import type {
   V2ProviderGetResponses,
   V2ProviderListErrors,
   V2ProviderListResponses,
+  V2ProviderRemoveErrors,
+  V2ProviderRemoveResponses,
   V2PtyConnectErrors,
   V2PtyConnectResponses,
   V2PtyConnectTokenErrors,
@@ -5440,6 +5442,39 @@ export class Provider2 extends HeyApiClient {
     const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
     return (options?.client ?? this.client).get<V2ProviderListResponses, V2ProviderListErrors, ThrowOnError>({
       url: "/api/provider",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Remove provider
+   *
+   * Delete a config-defined provider from the instance catalog store (T10iv: a true key delete, not a disable-list hide). Takes effect fully on the next serve boot.
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      providerID: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "providerID" },
+            { in: "query", key: "location" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<V2ProviderRemoveResponses, V2ProviderRemoveErrors, ThrowOnError>({
+      url: "/api/provider/{providerID}",
       ...options,
       ...params,
     })

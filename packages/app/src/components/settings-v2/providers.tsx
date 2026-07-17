@@ -101,10 +101,25 @@ export const SettingsProvidersV2: Component = () => {
     })
     if (!ok) return
     if (isConfigCustom(providerID)) {
+      // T10(iv): a config-defined provider is truly DELETED from the catalog store (instance-wide),
+      // not hidden behind the disable list; credentials go with it. Fully gone on the next boot.
       await serverSdk()
         .client.auth.remove({ providerID })
         .catch(() => undefined)
-      await disableProvider(providerID, name)
+      await serverSdk()
+        .client.v2.provider.remove({ providerID })
+        .then(() => {
+          showToast({
+            variant: "success",
+            icon: "circle-check",
+            title: language.t("provider.disconnect.toast.disconnected.title", { provider: name }),
+            description: language.t("provider.disconnect.toast.disconnected.description", { provider: name }),
+          })
+        })
+        .catch((err: unknown) => {
+          const message = err instanceof Error ? err.message : String(err)
+          showToast({ title: language.t("common.requestFailed"), description: message })
+        })
       return
     }
     await serverSdk()

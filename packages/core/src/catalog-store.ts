@@ -26,6 +26,8 @@ export interface Interface {
   readonly getDefault: () => Effect.Effect<string | undefined>
   /** Set the default-model ref. */
   readonly setDefault: (ref: string) => Effect.Effect<void>
+  /** Remove the stored default-model ref (T10iv: pruning a dangling ref after a provider delete). */
+  readonly clearDefault: () => Effect.Effect<void>
   /** Set the default-model ref only if none is set yet (used by the transitional jsonc seed). */
   readonly setDefaultIfEmpty: (ref: string) => Effect.Effect<void>
   /** True when no providers are stored (used to gate the one-time jsonc seed). */
@@ -75,6 +77,9 @@ export const layer = Layer.effect(
       }),
       setDefault: Effect.fn("CatalogStore.setDefault")(function* (ref) {
         yield* putSetting(DEFAULT_MODEL_KEY, ref)
+      }),
+      clearDefault: Effect.fn("CatalogStore.clearDefault")(function* () {
+        yield* db.delete(CatalogSettingTable).where(eq(CatalogSettingTable.key, DEFAULT_MODEL_KEY)).run().pipe(Effect.orDie)
       }),
       setDefaultIfEmpty: Effect.fn("CatalogStore.setDefaultIfEmpty")(function* (ref) {
         const existing = yield* getSetting(DEFAULT_MODEL_KEY)

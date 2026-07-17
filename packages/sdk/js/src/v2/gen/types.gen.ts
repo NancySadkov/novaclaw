@@ -10920,6 +10920,46 @@ export type V2ProviderListResponses = {
 
 export type V2ProviderListResponse = V2ProviderListResponses[keyof V2ProviderListResponses]
 
+export type V2ProviderRemoveData = {
+  body?: never
+  path: {
+    providerID: string
+  }
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/provider/{providerID}"
+}
+
+export type V2ProviderRemoveErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * ServiceUnavailableError
+   */
+  503: ServiceUnavailableError
+}
+
+export type V2ProviderRemoveError = V2ProviderRemoveErrors[keyof V2ProviderRemoveErrors]
+
+export type V2ProviderRemoveResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2ProviderRemoveResponse = V2ProviderRemoveResponses[keyof V2ProviderRemoveResponses]
+
 export type V2ProviderGetData = {
   body?: never
   path: {

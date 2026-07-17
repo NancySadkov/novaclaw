@@ -72,6 +72,8 @@ import type {
   ProvidersListOutput,
   ProvidersGetInput,
   ProvidersGetOutput,
+  ProvidersRemoveInput,
+  ProvidersRemoveOutput,
   IntegrationsListInput,
   IntegrationsListOutput,
   IntegrationsGetInput,
@@ -740,6 +742,18 @@ export function make(options: ClientOptions) {
             successStatus: 200,
             declaredStatuses: [404, 503, 401, 400],
             empty: false,
+          },
+          requestOptions,
+        ),
+      remove: (input: ProvidersRemoveInput, requestOptions?: RequestOptions) =>
+        request<ProvidersRemoveOutput>(
+          {
+            method: "DELETE",
+            path: `/api/provider/${encodeURIComponent(input.providerID)}`,
+            query: { location: input["location"] },
+            successStatus: 204,
+            declaredStatuses: [503, 401, 400],
+            empty: true,
           },
           requestOptions,
         ),

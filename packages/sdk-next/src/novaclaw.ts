@@ -1,4 +1,5 @@
 import { NovaClaw } from "@novaclaw/client/effect"
+import { CatalogStore } from "@novaclaw/core/catalog-store"
 import { PermissionSaved } from "@novaclaw/core/permission/saved"
 import { ApplicationTools } from "@novaclaw/core/tool/application-tools"
 import { createEmbeddedRoutes } from "@novaclaw/server/routes"
@@ -9,17 +10,23 @@ export const create = Effect.fn("NovaClaw.create")(function* () {
   const scope = yield* Scope.Scope
   const memoMap = yield* Layer.makeMemoMap
   const context = yield* Layer.buildWithMemoMap(
-    Layer.merge(ApplicationTools.layer, PermissionSaved.defaultLayer),
+    Layer.mergeAll(ApplicationTools.layer, PermissionSaved.defaultLayer, CatalogStore.defaultLayer),
     memoMap,
     scope,
   )
   const tools = Context.get(context, ApplicationTools.Service)
   const permissions = Context.get(context, PermissionSaved.Service)
+  const catalogStore = Context.get(context, CatalogStore.Service)
   const web = yield* Effect.acquireRelease(
     Effect.sync(() =>
       HttpRouter.toWebHandler(
         createEmbeddedRoutes().pipe(
-          HttpRouter.provideRequest(Layer.succeed(PermissionSaved.Service, permissions)),
+          HttpRouter.provideRequest(
+            Layer.mergeAll(
+              Layer.succeed(PermissionSaved.Service, permissions),
+              Layer.succeed(CatalogStore.Service, catalogStore),
+            ),
+          ),
           Layer.provide(HttpServer.layerServices),
         ),
         { disableLogger: true, memoMap },

@@ -1,7 +1,7 @@
 import { Provider } from "@novaclaw/schema/provider"
 import { Location } from "@novaclaw/schema/location"
 import { Schema } from "effect"
-import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
+import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
 import { ProviderNotFoundError, ServiceUnavailableError } from "../errors"
 import { LocationQuery, locationQueryOpenApi } from "./location"
 
@@ -34,6 +34,23 @@ export const ProviderGroup = HttpApiGroup.make("server.provider")
           identifier: "v2.provider.get",
           summary: "Get provider",
           description: "Retrieve a single AI provider so clients can inspect its availability and endpoint settings.",
+        }),
+      ),
+  )
+  .add(
+    HttpApiEndpoint.delete("provider.remove", "/api/provider/:providerID", {
+      params: { providerID: Provider.ID },
+      query: LocationQuery,
+      success: HttpApiSchema.NoContent,
+      error: ServiceUnavailableError,
+    })
+      .annotateMerge(locationQueryOpenApi)
+      .annotateMerge(
+        OpenApi.annotations({
+          identifier: "v2.provider.remove",
+          summary: "Remove provider",
+          description:
+            "Delete a config-defined provider from the instance catalog store (T10iv: a true key delete, not a disable-list hide). Takes effect fully on the next serve boot.",
         }),
       ),
   )
