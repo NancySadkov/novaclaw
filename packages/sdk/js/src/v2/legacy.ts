@@ -4,13 +4,15 @@
 //
 // What it types: the V1 READ-MODEL shapes the app's session surface still traffics — the session
 // page + ~21 files ride the V1 sync store (`app/src/context/sync.tsx`) and `data.ts`'s optimistic
-// message builder, served by the server's v1-read projection (core/session/v1-read.ts). The native
-// V2 transcript path (`SessionMessage*`, message-v2-store) exists behind
-// NOVACLAW_EXPERIMENTAL_NATIVE_SESSION and already renders the transcript.
+// message builder, served by the server's v1-read PROJECTION (core/session/v1-read.ts) over the
+// SAME SessionTable rows the native engine writes. There is NO migration behind this: the engine
+// is native-V2-only since F1b (the experimental-native-session off-switch is deleted) and no data
+// is stored in these shapes — they exist at read time only.
 //
-// RETIREMENT TRIGGER (delete this file in the same change): the native-session migration flips to
-// default — retire app `sync.tsx` consumers + `data.ts`, then the server's v1-read projection.
-// Tracked in todo.md ("native-session migration residue"). Do NOT add new imports of these types.
+// RETIREMENT TRIGGER (delete this file in the same change): the UI vocabulary CUTOVER — port the
+// `sync.tsx` consumers to the native V2 store (`SessionMessage*`, message-v2-store), then delete
+// sync.tsx + data.ts + v1-read.ts + this file wholesale. Tracked in todo.md ("V1 read-layer
+// cutover"). Do NOT add new imports of these types.
 // Shared vocabulary that still exists in the V2 spec is imported, never duplicated.
 
 import type {
