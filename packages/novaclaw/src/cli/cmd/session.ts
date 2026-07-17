@@ -1,11 +1,11 @@
 import type { Argv } from "yargs"
-import { Effect } from "effect"
+import { DateTime, Effect } from "effect"
 import { cmd } from "./cmd"
 import { effectCmd, fail } from "../effect-cmd"
 import { Database } from "@novaclaw/core/database/database"
 import { removeSessionRecord } from "@novaclaw/core/session"
-import { SessionV1Read } from "@novaclaw/core/session/v1-read"
-import { SessionV1 } from "@novaclaw/core/v1/session"
+import { SessionRead } from "@novaclaw/core/session/read"
+import type { SessionSchema } from "@novaclaw/core/session/schema"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { InstanceRef } from "@/effect/instance-ref"
 import { SessionID } from "../../session/schema"
@@ -96,8 +96,9 @@ export const SessionListCommand = effectCmd({
     // (the HTTP list handler resolves it the same way).
     const ctx = yield* InstanceRef
     if (!ctx) return
+    // V1-nuke slice A: the native deps-taking read (same rows, native Session.Info shape).
     const { db } = yield* Database.Service
-    const sessions = yield* SessionV1Read.list(db, { projectID: ctx.project.id, roots: true, limit: args.maxCount })
+    const sessions = yield* SessionRead.list(db, { project: ctx.project.id, roots: true, limit: args.maxCount })
 
     if (sessions.length === 0) return
 
@@ -128,7 +129,7 @@ export const SessionListCommand = effectCmd({
   }),
 })
 
-function formatSessionTable(sessions: SessionV1.SessionInfo[]): string {
+function formatSessionTable(sessions: SessionSchema.Info[]): string {
   const lines: string[] = []
 
   const maxIdWidth = Math.max(20, ...sessions.map((s) => s.id.length))
@@ -139,7 +140,7 @@ function formatSessionTable(sessions: SessionV1.SessionInfo[]): string {
   lines.push("─".repeat(header.length))
   for (const session of sessions) {
     const truncatedTitle = Locale.truncate(session.title, maxTitleWidth)
-    const timeStr = Locale.todayTimeOrDateTime(session.time.updated)
+    const timeStr = Locale.todayTimeOrDateTime(DateTime.toEpochMillis(session.time.updated))
     const line = `${session.id.padEnd(maxIdWidth)}  ${truncatedTitle.padEnd(maxTitleWidth)}  ${timeStr}`
     lines.push(line)
   }
@@ -147,14 +148,14 @@ function formatSessionTable(sessions: SessionV1.SessionInfo[]): string {
   return lines.join(EOL)
 }
 
-function formatSessionJSON(sessions: SessionV1.SessionInfo[]): string {
+function formatSessionJSON(sessions: SessionSchema.Info[]): string {
   const jsonData = sessions.map((session) => ({
     id: session.id,
     title: session.title,
-    updated: session.time.updated,
-    created: session.time.created,
+    updated: DateTime.toEpochMillis(session.time.updated),
+    created: DateTime.toEpochMillis(session.time.created),
     projectId: session.projectID,
-    directory: session.directory,
+    directory: session.location.directory,
   }))
   return JSON.stringify(jsonData, null, 2)
 }

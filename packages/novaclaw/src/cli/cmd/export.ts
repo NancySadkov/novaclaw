@@ -1,15 +1,16 @@
-import { SessionV1 } from "@novaclaw/core/v1/session"
+import { SessionSchema } from "@novaclaw/core/session/schema"
+import { AbsolutePath } from "@novaclaw/core/schema"
+import { SessionRead } from "@novaclaw/core/session/read"
 import { Database } from "@novaclaw/core/database/database"
 import { SessionMessage } from "@novaclaw/core/session/message"
 import { SessionMessageRead } from "@novaclaw/core/session/message-read"
-import { SessionV1Read } from "@novaclaw/core/session/v1-read"
 import { InstanceRef } from "@/effect/instance-ref"
 import { SessionID } from "../../session/schema"
 import { effectCmd, fail } from "../effect-cmd"
 import { UI } from "../ui"
 import * as prompts from "@clack/prompts"
 import { EOL } from "os"
-import { Effect, Schema } from "effect"
+import { DateTime, Effect, Schema } from "effect"
 
 // F1c-0 — export serves the NATIVE transcript (`session_message`, the F1e wire vocabulary);
 // the legacy message/part shape is no longer read here (pre-F0 legacy-only transcripts export
@@ -150,11 +151,15 @@ export function sanitizeMessage(msg: SessionMessage.Message): SessionMessage.Mes
   }
 }
 
-export function sanitizeInfo(info: SessionV1.SessionInfo) {
+export function sanitizeInfo(info: SessionSchema.Info) {
   return {
     ...info,
     title: redact("session-title", info.id, info.title),
-    directory: redact("session-directory", info.id, info.directory),
+    location: {
+      ...info.location,
+      // A brand without a filter — safe to stamp onto the redaction token.
+      directory: AbsolutePath.make(redact("session-directory", info.id, info.location.directory)),
+    },
     summary: !info.summary
       ? info.summary
       : {
@@ -193,6 +198,7 @@ export const ExportCommand = effectCmd({
 // The export wire shape: the native message encoding (millis timestamps), the same vocabulary
 // the HTTP transcript route serves.
 const encodeMessages = Schema.encodeSync(Schema.Array(SessionMessage.Message))
+const encodeInfo = Schema.encodeSync(SessionSchema.Info)
 
 const run = Effect.fn("Cli.export.body")(function* (args: { sessionID?: string; sanitize?: boolean }) {
   const { db } = yield* Database.Service
@@ -205,7 +211,7 @@ const run = Effect.fn("Cli.export.body")(function* (args: { sessionID?: string; 
     UI.empty()
     prompts.intro("Export session", { output: process.stderr })
 
-    const sessions = [...(yield* SessionV1Read.list(db, { projectID: ctx.project.id }))]
+    const sessions = [...(yield* SessionRead.list(db, { project: ctx.project.id }))]
 
     if (sessions.length === 0) {
       prompts.log.error("No sessions found", { output: process.stderr })
@@ -213,7 +219,7 @@ const run = Effect.fn("Cli.export.body")(function* (args: { sessionID?: string; 
       return
     }
 
-    sessions.sort((a, b) => b.time.updated - a.time.updated)
+    sessions.sort((a, b) => DateTime.toEpochMillis(b.time.updated) - DateTime.toEpochMillis(a.time.updated))
 
     const selectedSession = yield* Effect.promise(() =>
       prompts.autocomplete({
@@ -222,7 +228,7 @@ const run = Effect.fn("Cli.export.body")(function* (args: { sessionID?: string; 
         options: sessions.map((session) => ({
           label: session.title,
           value: session.id,
-          hint: `${new Date(session.time.updated).toLocaleString()} • ${session.id.slice(-8)}`,
+          hint: `${new Date(DateTime.toEpochMillis(session.time.updated)).toLocaleString()} • ${session.id.slice(-8)}`,
         })),
         output: process.stderr,
       }),
@@ -237,7 +243,7 @@ const run = Effect.fn("Cli.export.body")(function* (args: { sessionID?: string; 
     prompts.outro("Exporting session...", { output: process.stderr })
   }
 
-  const sessionInfo = yield* SessionV1Read.get(db, sessionID)
+  const sessionInfo = yield* SessionRead.get(db, sessionID)
   if (!sessionInfo) return yield* fail(`Session not found: ${sessionID}`)
   const messages = yield* SessionMessageRead.list(db, { sessionID: sessionInfo.id, order: "asc" }).pipe(
     Effect.catchTag("Session.MessageDecodeError", (error) =>
@@ -245,8 +251,10 @@ const run = Effect.fn("Cli.export.body")(function* (args: { sessionID?: string; 
     ),
   )
 
+  // Encode through the schema so the envelope is wire-faithful (time as epoch millis, not
+  // DateTime object dumps) — mirrors the messages half.
   const exportData = {
-    info: args.sanitize ? sanitizeInfo(sessionInfo) : sessionInfo,
+    info: encodeInfo(args.sanitize ? sanitizeInfo(sessionInfo) : sessionInfo),
     messages: encodeMessages(args.sanitize ? messages.map(sanitizeMessage) : messages),
   }
 

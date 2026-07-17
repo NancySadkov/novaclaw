@@ -5654,6 +5654,7 @@ export class Session3 extends HeyApiClient {
   public list<ThrowOnError extends boolean = false>(
     parameters?: {
       workspace?: string
+      roots?: boolean | "true" | "false"
       limit?: number
       order?: "asc" | "desc"
       search?: string
@@ -5670,6 +5671,7 @@ export class Session3 extends HeyApiClient {
         {
           args: [
             { in: "query", key: "workspace" },
+            { in: "query", key: "roots" },
             { in: "query", key: "limit" },
             { in: "query", key: "order" },
             { in: "query", key: "search" },

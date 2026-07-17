@@ -5,7 +5,7 @@ import { Session } from "@novaclaw/schema/session"
 import { Project } from "@novaclaw/schema/project"
 import { AbsolutePath, NonNegativeInt, PositiveInt, RelativePath, statics } from "@novaclaw/schema/schema"
 import { Workspace } from "@novaclaw/schema/workspace"
-import { Context, Effect, Encoding, Result, Schema, Struct } from "effect"
+import { Context, Effect, Encoding, Result, Schema, SchemaGetter, Struct } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiMiddleware, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
 import {
   ConflictError,
@@ -27,6 +27,15 @@ import { SessionTodo } from "@novaclaw/schema/session-todo"
 
 const SessionsQueryFields = {
   workspace: Workspace.ID.pipe(Schema.optional),
+  roots: Schema.Literals(["true", "false"])
+    .pipe(
+      Schema.decodeTo(Schema.Boolean, {
+        decode: SchemaGetter.transform((value) => value === "true"),
+        encode: SchemaGetter.transform((value) => (value ? "true" : "false")),
+      }),
+      Schema.optional,
+    )
+    .annotate({ description: "When true, only root sessions (no parent) are returned — the threads-tree top level." }),
   limit: Schema.NumberFromString.pipe(Schema.decodeTo(PositiveInt), Schema.optional).annotate({
     description: "Maximum number of sessions to return. Defaults to the newest 50 sessions.",
   }),

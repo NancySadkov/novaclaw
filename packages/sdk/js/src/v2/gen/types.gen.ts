@@ -4297,6 +4297,21 @@ export type AgentV2Info = {
   permissions: PermissionV2Ruleset
 }
 
+export type SessionChangeDiff = {
+  file?: string
+  patch?: string
+  additions: number
+  deletions: number
+  status?: "added" | "deleted" | "modified"
+}
+
+export type SessionChangesSummary = {
+  additions: number
+  deletions: number
+  files: number
+  diffs?: Array<SessionChangeDiff>
+}
+
 export type SessionV2Info = {
   id: string
   parentID?: string
@@ -4332,6 +4347,7 @@ export type SessionV2Info = {
   location: LocationRef
   subpath?: string
   revert?: RevertState
+  summary?: SessionChangesSummary
 }
 
 export type PromptInputFileAttachment = {
@@ -11648,6 +11664,7 @@ export type V2SessionListData = {
   path?: never
   query?: {
     workspace?: string
+    roots?: boolean | "true" | "false"
     limit?: number
     order?: "asc" | "desc"
     search?: string

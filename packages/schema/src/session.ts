@@ -17,6 +17,24 @@ export type ID = SessionID
 
 export const Event = SessionEvent
 
+/** One changed file in the drain-end changes summary (row-faithful to the stored diff JSON). */
+export const ChangeDiff = Schema.Struct({
+  file: Schema.String.pipe(optional),
+  patch: Schema.String.pipe(optional),
+  additions: Schema.Finite,
+  deletions: Schema.Finite,
+  status: Schema.Literals(["added", "deleted", "modified"]).pipe(optional),
+}).annotate({ identifier: "Session.ChangeDiff" })
+export interface ChangeDiff extends Schema.Schema.Type<typeof ChangeDiff> {}
+
+export const ChangesSummary = Schema.Struct({
+  additions: Schema.Finite,
+  deletions: Schema.Finite,
+  files: Schema.Finite,
+  diffs: Schema.Array(ChangeDiff).pipe(optional),
+}).annotate({ identifier: "Session.ChangesSummary" })
+export interface ChangesSummary extends Schema.Schema.Type<typeof ChangesSummary> {}
+
 export interface Info extends Schema.Schema.Type<typeof Info> {}
 export const Info = Schema.Struct({
   id: ID,
@@ -54,6 +72,10 @@ export const Info = Schema.Struct({
   location: Location.Ref,
   subpath: RelativePath.pipe(optional),
   revert: Revert.State.pipe(optional),
+  // The drain-end CHANGES summary (the runner's git tree-diff over the whole transcript — feeds
+  // the Changes badge/review). Row-faithful to the stored columns; V1-nuke slice A surfaced it
+  // natively (the V1 wire shape was the only carrier before).
+  summary: ChangesSummary.pipe(optional),
 }).annotate({ identifier: "SessionV2.Info" })
 
 export const ListAnchor = Schema.Struct({
