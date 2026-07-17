@@ -35,7 +35,7 @@ export const makePermissionGroup = <
     )
     .add(
       HttpApiEndpoint.get("permission.saved.list", "/api/permission/saved", {
-        query: Schema.Struct({ projectID: Project.ID.pipe(Schema.optional) }),
+        query: Schema.Struct({ origin: Schema.String.pipe(Schema.optional) }),
         success: Schema.Struct({ data: Schema.Array(PermissionSaved.Info) }),
       }).annotateMerge(
         OpenApi.annotations({

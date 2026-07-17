@@ -234,7 +234,7 @@ describe("PermissionV2", () => {
     Effect.gen(function* () {
       yield* setup()
       const saved = yield* PermissionSaved.Service
-      yield* saved.add({ projectID: Project.ID.global, action: "bash", resources: ["pwd"] })
+      yield* saved.add({ origin: Project.ID.global, action: "bash", resources: ["pwd"] })
 
       const service = yield* PermissionV2.Service
       expect(yield* service.ask(assertion({ action: "bash", resources: ["pwd"] }))).toEqual({
@@ -325,12 +325,12 @@ describe("PermissionV2", () => {
 
       const { db } = yield* Database.Service
       expect(
-        yield* db.select().from(PermissionTable).where(eq(PermissionTable.project_id, Project.ID.global)).all(),
+        yield* db.select().from(PermissionTable).where(eq(PermissionTable.origin, Project.ID.global)).all(),
       ).toMatchObject([{ action: "read", resource: "src/*" }])
       const saved = yield* PermissionSaved.Service
       const id = (yield* saved.list())[0]!.id
       expect(yield* saved.list()).toEqual([
-        { id, projectID: Project.ID.global, action: "read", resource: "src/*", effect: "allow" },
+        { id, origin: Project.ID.global, action: "read", resource: "src/*", effect: "allow" },
       ])
       yield* service.assert(assertion({ id: PermissionV2.ID.create("per_next"), resources: ["src/next.ts"] }))
       yield* saved.remove(id)

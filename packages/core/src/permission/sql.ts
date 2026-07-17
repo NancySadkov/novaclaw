@@ -1,21 +1,18 @@
 import { sqliteTable, text, uniqueIndex } from "drizzle-orm/sqlite-core"
 import { Timestamps } from "../database/schema.sql"
-import { ProjectV2 } from "../project"
-import { ProjectTable } from "../project/sql"
 import type { PermissionSaved } from "./saved"
 
+// T2 (notes/entities.md): saved verdicts are scoped by the rename-stable `origin` hash — a
+// derived substrate attribute of the location, not a foreign key into a project entity.
 export const PermissionTable = sqliteTable(
   "permission",
   {
     id: text().$type<PermissionSaved.ID>().primaryKey(),
-    project_id: text()
-      .$type<ProjectV2.ID>()
-      .notNull()
-      .references(() => ProjectTable.id, { onDelete: "cascade" }),
+    origin: text().notNull(),
     action: text().notNull(),
     resource: text().notNull(),
     effect: text().$type<"allow" | "deny">(),
     ...Timestamps,
   },
-  (table) => [uniqueIndex("permission_project_action_resource_idx").on(table.project_id, table.action, table.resource)],
+  (table) => [uniqueIndex("permission_origin_action_resource_idx").on(table.origin, table.action, table.resource)],
 )

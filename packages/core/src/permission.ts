@@ -11,7 +11,6 @@ import { SessionStore } from "./session/store"
 import { Wildcard } from "./util/wildcard"
 import { EFFECTIVE_CONFIG_DEFAULTS, MODE_RULES, resolveSessionConfig, type PermissionMode } from "./session/config-resolve"
 import { PermissionSaved } from "./permission/saved"
-import { ProjectV2 } from "./project"
 
 export { Effect, Rule, Ruleset } from "@novaclaw/schema/permission"
 const missingAgentPermissions: Permission.Ruleset = [{ action: "*", resource: "*", effect: "deny" }]
@@ -232,7 +231,7 @@ export const layer = Layer.effect(
     yield* EffectRuntime.addFinalizer(() => unsubscribe)
 
     const savedRules = EffectRuntime.fnUntraced(function* () {
-      return (yield* saved.list({ projectID: ProjectV2.ID.make(location.origin) })).map(
+      return (yield* saved.list({ origin: location.origin })).map(
         (item): Permission.Rule => ({ action: item.action, resource: item.resource, effect: item.effect ?? "allow" }),
       )
     })
@@ -355,7 +354,7 @@ export const layer = Layer.effect(
             // 1K: a deny can persist (file/always scope) so the same ask never comes back.
             if (persisted.length)
               yield* saved.add({
-                projectID: ProjectV2.ID.make(location.origin),
+                origin: location.origin,
                 action: existing.request.action,
                 resources: persisted,
                 effect: "deny",
@@ -372,7 +371,7 @@ export const layer = Layer.effect(
 
           if (persisted.length) {
             yield* saved.add({
-              projectID: ProjectV2.ID.make(location.origin),
+              origin: location.origin,
               action: existing.request.action,
               resources: persisted,
               effect: "allow",

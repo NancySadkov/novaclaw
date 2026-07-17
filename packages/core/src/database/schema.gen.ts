@@ -173,13 +173,12 @@ export default {
       yield* tx.run(`
         CREATE TABLE \`permission\` (
           \`id\` text PRIMARY KEY,
-          \`project_id\` text NOT NULL,
+          \`origin\` text NOT NULL,
           \`action\` text NOT NULL,
           \`resource\` text NOT NULL,
           \`effect\` text,
           \`time_created\` integer NOT NULL,
-          \`time_updated\` integer NOT NULL,
-          CONSTRAINT \`fk_permission_project_id_project_id_fk\` FOREIGN KEY (\`project_id\`) REFERENCES \`project\`(\`id\`) ON DELETE CASCADE
+          \`time_updated\` integer NOT NULL
         );
       `)
       yield* tx.run(`
@@ -346,7 +345,7 @@ export default {
       yield* tx.run(`CREATE INDEX \`kb_fact_predicate_idx\` ON \`kb_fact\` (\`predicate\`,\`valid_to\`);`)
       yield* tx.run(`CREATE INDEX \`kb_fact_object_idx\` ON \`kb_fact\` (\`object\`,\`valid_to\`);`)
       yield* tx.run(
-        `CREATE UNIQUE INDEX \`permission_project_action_resource_idx\` ON \`permission\` (\`project_id\`,\`action\`,\`resource\`);`,
+        `CREATE UNIQUE INDEX \`permission_origin_action_resource_idx\` ON \`permission\` (\`origin\`,\`action\`,\`resource\`);`,
       )
       yield* tx.run(
         `CREATE INDEX \`session_input_session_pending_delivery_seq_idx\` ON \`session_input\` (\`session_id\`,\`promoted_seq\`,\`delivery\`,\`admitted_seq\`);`,

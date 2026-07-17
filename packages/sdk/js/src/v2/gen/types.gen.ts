@@ -4437,7 +4437,7 @@ export type PermissionV2Request = {
 
 export type PermissionSavedInfo = {
   id: string
-  projectID: string
+  origin: string
   action: string
   resource: string
   effect?: "allow" | "deny"
@@ -11693,7 +11693,7 @@ export type V2PermissionSavedListData = {
   body?: never
   path?: never
   query?: {
-    projectID?: string
+    origin?: string
   }
   url: "/api/permission/saved"
 }

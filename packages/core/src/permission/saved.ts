@@ -4,7 +4,6 @@ import { eq } from "drizzle-orm"
 import { Context, Effect, Layer, Schema } from "effect"
 import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
-import { ProjectV2 } from "../project"
 import { PermissionTable } from "./sql"
 import { PermissionSaved } from "@novaclaw/schema/permission-saved"
 
@@ -15,12 +14,12 @@ export const Info = PermissionSaved.Info
 export type Info = typeof Info.Type
 
 export const ListInput = Schema.Struct({
-  projectID: ProjectV2.ID.pipe(Schema.optional),
+  origin: Schema.String.pipe(Schema.optional),
 }).annotate({ identifier: "PermissionSaved.ListInput" })
 export type ListInput = typeof ListInput.Type
 
 export const AddInput = Schema.Struct({
-  projectID: ProjectV2.ID,
+  origin: Schema.String,
   action: Schema.String,
   resources: Schema.Array(Schema.String),
   /** 1K: persistent denies. Omitted = "allow" (legacy rows have no effect column). */
@@ -45,13 +44,13 @@ export const layer = Layer.effect(
       const rows = yield* db
         .select()
         .from(PermissionTable)
-        .where(input?.projectID ? eq(PermissionTable.project_id, input.projectID) : undefined)
+        .where(input?.origin ? eq(PermissionTable.origin, input.origin) : undefined)
         .all()
         .pipe(Effect.orDie)
       return rows.map(
         (row): Info => ({
           id: row.id,
-          projectID: row.project_id,
+          origin: row.origin,
           action: row.action,
           resource: row.resource,
           effect: row.effect ?? "allow",
@@ -66,7 +65,7 @@ export const layer = Layer.effect(
         .values(
           input.resources.map((resource) => ({
             id: ID.create(),
-            project_id: input.projectID,
+            origin: input.origin,
             action: input.action,
             resource,
             effect: input.effect ?? "allow",
@@ -74,7 +73,7 @@ export const layer = Layer.effect(
         )
         // A re-save with a different verdict REPLACES the old grant (last decision wins).
         .onConflictDoUpdate({
-          target: [PermissionTable.project_id, PermissionTable.action, PermissionTable.resource],
+          target: [PermissionTable.origin, PermissionTable.action, PermissionTable.resource],
           set: { effect: input.effect ?? "allow" },
         })
         .run()

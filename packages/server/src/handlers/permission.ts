@@ -1,7 +1,6 @@
 import { Location } from "@novaclaw/core/location"
 import { PermissionV2 } from "@novaclaw/core/permission"
 import { PermissionSaved } from "@novaclaw/core/permission/saved"
-import { ProjectV2 } from "@novaclaw/core/project"
 import { Effect } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
@@ -83,7 +82,7 @@ export const PermissionHandler = HttpApiBuilder.group(Api, "server.permission", 
           const location = yield* Location.Service
           return {
             data: yield* (yield* PermissionSaved.Service).list({
-              projectID: ctx.query.projectID ?? ProjectV2.ID.make(location.origin),
+              origin: ctx.query.origin ?? location.origin,
             }),
           }
         }),
