@@ -1,5 +1,5 @@
 import launch from "cross-spawn"
-import { type Config } from "./gen/types.gen.js"
+import { type ConfigInfo as Config } from "./gen/types.gen.js"
 import { stop, bindAbort } from "../process.js"
 
 export type ServerOptions = {
@@ -8,6 +8,9 @@ export type ServerOptions = {
   signal?: AbortSignal
   timeout?: number
   config?: Config
+  /** CLI --log-level for the launched server. The V2 config schema carries no log level — it is a
+   *  process concern, not a settings-store field. */
+  logLevel?: string
 }
 
 export type TuiOptions = {
@@ -30,7 +33,7 @@ export async function createNovaclawServer(options?: ServerOptions) {
   )
 
   const args = [`serve`, `--hostname=${options.hostname}`, `--port=${options.port}`]
-  if (options.config?.logLevel) args.push(`--log-level=${options.config.logLevel}`)
+  if (options.logLevel) args.push(`--log-level=${options.logLevel}`)
 
   const proc = launch(`novaclaw`, args, {
     env: {

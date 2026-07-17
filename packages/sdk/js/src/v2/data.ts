@@ -1,4 +1,4 @@
-import type { Part, UserMessage } from "./client.js"
+import type { Part, UserMessage } from "./legacy.js"
 
 export const message = {
   user(input: Omit<UserMessage, "role" | "time" | "id"> & { parts: Omit<Part, "id" | "sessionID" | "messageID">[] }): {

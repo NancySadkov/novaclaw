@@ -532,56 +532,8 @@ describe("HttpApi SDK", () => {
   // promptAsync no-reply observation via sdk.session.messages. Native transcript reads are covered
   // by httpapi-session-v2 (sdk.v2.session.messages); promptAsync routing by the same suite's Case (a).
 
-  serverPathParity("matches generated SDK TUI validation and command routes", (serverPath) =>
-    withStandardProject(serverPath, ({ sdk }) =>
-      Effect.gen(function* () {
-        const session = yield* capture(() => sdk.session.create({ title: "tui" }))
-        const sessionID = String(record(session.data).id)
-        const appendPrompt = yield* capture(() => sdk.tui.appendPrompt({ text: "hello" }))
-        const openHelp = yield* capture(() => sdk.tui.openHelp())
-        const openSessions = yield* capture(() => sdk.tui.openSessions())
-        const openThemes = yield* capture(() => sdk.tui.openThemes())
-        const openModels = yield* capture(() => sdk.tui.openModels())
-        const submitPrompt = yield* capture(() => sdk.tui.submitPrompt())
-        const clearPrompt = yield* capture(() => sdk.tui.clearPrompt())
-        const executeCommand = yield* capture(() => sdk.tui.executeCommand({ command: "session_new" }))
-        const showToast = yield* capture(() => sdk.tui.showToast({ title: "SDK", message: "hello", variant: "info" }))
-        const selectSession = yield* capture(() => sdk.tui.selectSession({ sessionID }))
-        const missingSession = yield* capture(() => sdk.tui.selectSession({ sessionID: "ses_missing" }))
-        const invalidSession = yield* capture(() => sdk.tui.selectSession({ sessionID: "invalid_session_id" }))
-
-        return {
-          statuses: statuses({
-            session,
-            appendPrompt,
-            openHelp,
-            openSessions,
-            openThemes,
-            openModels,
-            submitPrompt,
-            clearPrompt,
-            executeCommand,
-            showToast,
-            selectSession,
-            missingSession,
-            invalidSession,
-          }),
-          data: {
-            appendPrompt: appendPrompt.data,
-            openHelp: openHelp.data,
-            openSessions: openSessions.data,
-            openThemes: openThemes.data,
-            openModels: openModels.data,
-            submitPrompt: submitPrompt.data,
-            clearPrompt: clearPrompt.data,
-            executeCommand: executeCommand.data,
-            showToast: showToast.data,
-            selectSession: selectSession.data,
-          },
-        }
-      }),
-    ),
-  )
+  // The SDK TUI parity suite retired with the TUI routes themselves (the server has no /tui
+  // surface; the regenerated client rightly has no `sdk.tui`). It only ever exercised 404s.
 
   serverPathParity("matches generated SDK project git initialization", (serverPath) =>
     withProject(serverPath, {}, ({ sdk, directory }) =>
