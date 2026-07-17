@@ -6,7 +6,7 @@ import type {
   Path,
   PermissionV2Request,
   QuestionRequest,
-  Session,
+  SessionV2Info as Session,
   SessionStatus,
   SnapshotFileDiff,
   Todo,

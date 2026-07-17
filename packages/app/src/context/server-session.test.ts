@@ -1,29 +1,31 @@
 import { describe, expect, test } from "bun:test"
-import type { NovaclawClient, Session } from "@novaclaw/sdk/v2/client"
+import type { NovaclawClient, SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
 import { createServerSession } from "./server-session"
 
-const session = (id: string, parentID?: string): Session => ({
-  id,
-  slug: id,
-  projectID: "project",
-  directory: "/repo",
-  title: id,
-  version: "1",
-  parentID,
-  time: { created: 1, updated: 1 },
-})
+const session = (id: string, parentID?: string): Session =>
+  ({
+    id,
+    projectID: "project",
+    location: { directory: "/repo" },
+    title: id,
+    parentID,
+    cost: 0,
+    tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+    time: { created: 1, updated: 1 },
+  }) as unknown as Session
 
 function setup(sessions: Record<string, Session>) {
   const get: unknown[] = []
   const client = {
-    session: {
-      get: async (input: unknown) => {
-        get.push(input)
-        const id = (input as { sessionID: string }).sessionID
-        return { data: sessions[id] }
+    v2: {
+      session: {
+        get: async (input: unknown) => {
+          get.push(input)
+          const id = (input as { sessionID: string }).sessionID
+          return { data: sessions[id] ? { data: sessions[id] } : undefined }
+        },
+        todo: async () => ({ data: { data: [] } }),
       },
-      diff: async () => ({ data: [] }),
-      todo: async () => ({ data: [] }),
     },
   } as unknown as NovaclawClient
   return { get, store: createServerSession(client) }
@@ -72,7 +74,7 @@ describe("server session", () => {
     ctx.store.apply({ type: "session.created", properties: { sessionID: "root", info: session("root") } })
     ctx.store.apply({ type: "session.status", properties: { sessionID: "root", status: { type: "busy" } } })
 
-    expect(ctx.store.get("root")?.directory).toBe("/repo")
+    expect(ctx.store.get("root")?.location.directory).toBe("/repo")
     expect(ctx.store.data.session_working("root")).toBe(true)
     expect(ctx.get).toEqual([])
   })

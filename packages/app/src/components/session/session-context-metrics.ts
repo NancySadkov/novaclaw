@@ -1,4 +1,4 @@
-import type { SessionMessage, SessionMessageAssistant, Session } from "@novaclaw/sdk/v2/client"
+import type { SessionMessage, SessionMessageAssistant, SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
 
 type Provider = {
   id: string

@@ -7,9 +7,8 @@ type HomeSession = {
 }
 
 type SessionUpdate = {
-  directory: string
   sessionID: string
-  time: { archived: number }
+  archived: number
 }
 
 export async function archiveHomeSession(input: {
@@ -21,9 +20,8 @@ export async function archiveHomeSession(input: {
 }) {
   await input
     .update({
-      directory: input.session.directory,
       sessionID: input.session.id,
-      time: { archived: Date.now() },
+      archived: Date.now(),
     })
     .then(() => {
       input.remove()

@@ -1,4 +1,4 @@
-import type { Project, UserMessage } from "@novaclaw/sdk/v2"
+import type { Project } from "@novaclaw/sdk/v2"
 import type { SessionMessageUser } from "@novaclaw/sdk/v2/client"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { createQuery, skipToken, useMutation, useQueryClient } from "@tanstack/solid-query"
@@ -1429,7 +1429,7 @@ export default function Page() {
   const halt = (sessionID: string) =>
     busy(sessionID)
       ? sdk()
-          .client.session.abort({ sessionID })
+          .client.v2.session.interrupt({ sessionID })
           .catch(() => {})
       : Promise.resolve()
 
@@ -1445,9 +1445,15 @@ export default function Page() {
           roll(input.sessionID, { messageID: input.messageID }, target)
           prompt.set(value)
         },
-        request: () => halt(input.sessionID).then(() => client.session.revert(input)),
+        // Native revert ops return the staged state, not the record — refetch it for the eager
+        // store merge (the event stream converges regardless).
+        request: () =>
+          halt(input.sessionID)
+            .then(() => client.v2.session.revert.stage(input))
+            .then(() => client.v2.session.get({ sessionID: input.sessionID })),
         complete: (result) => {
-          if (result.data) merge(result.data, target)
+          const info = result.data?.data
+          if (info) merge(info, target)
         },
         rollback: () => roll(input.sessionID, last, target),
         fail,
@@ -1476,11 +1482,13 @@ export default function Page() {
           promptSession.reset()
         },
         request: () =>
-          !next
-            ? halt(sessionID).then(() => client.session.unrevert({ sessionID }))
-            : halt(sessionID).then(() => client.session.revert({ sessionID, messageID: next.id })),
+          (!next
+            ? halt(sessionID).then(() => client.v2.session.revert.clear({ sessionID }))
+            : halt(sessionID).then(() => client.v2.session.revert.stage({ sessionID, messageID: next.id }))
+          ).then(() => client.v2.session.get({ sessionID })),
         complete: (result) => {
-          if (result.data) merge(result.data, target)
+          const info = result.data?.data
+          if (info) merge(info, target)
         },
         rollback: () => roll(sessionID, last, target),
         fail,

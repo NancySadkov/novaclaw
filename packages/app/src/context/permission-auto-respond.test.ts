@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { PermissionV2Request, Session } from "@novaclaw/sdk/v2/client"
+import type { PermissionV2Request, SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
 import { base64Encode } from "@novaclaw/core/util/encode"
 import { autoRespondsPermission, isDirectoryAutoAccepting } from "./permission-auto-respond"
 

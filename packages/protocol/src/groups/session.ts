@@ -151,6 +151,12 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
           priority: Schema.Finite.pipe(Schema.optional),
           permissionMode: Schema.Literals(["plan", "ask", "surgical", "bypass", "yolo"]).pipe(Schema.optional),
           location: Location.Ref.pipe(Schema.optional),
+          // Per-session overrides staged from the composer (V1-nuke slice C: these rode $body_
+          // extras over the V1 create before).
+          strict: SessionStrict.Override.pipe(Schema.optional),
+          introspection: Schema.Boolean.pipe(Schema.optional),
+          quality: Schema.Boolean.pipe(Schema.optional),
+          affective: Schema.Boolean.pipe(Schema.optional),
         }),
         success: Schema.Struct({ data: Session.Info }),
       }).annotateMerge(
@@ -241,6 +247,9 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
         payload: Schema.Struct({
           title: Schema.optional(Schema.String),
           metadata: Schema.optional(Schema.Record(Schema.String, Schema.Unknown)),
+          // Archive/unarchive: epoch millis to archive, null to restore (V1-nuke slice C — the
+          // archive flow rode the V1 update route before).
+          archived: Schema.optional(Schema.NullOr(Schema.Finite)),
         }),
         success: Schema.Struct({ data: Session.Info }),
         error: SessionNotFoundError,
@@ -418,6 +427,32 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
             summary: "Set the session's system-prompt override layer",
             description:
               "Replace this session's system-prompt override (composed after the persona baseline, before the agent prompt); null clears it. Children and forks inherit through the config walk. Applies from the next turn.",
+          }),
+        ),
+    )
+    .add(
+      HttpApiEndpoint.post("session.command", "/api/session/:sessionID/command", {
+        params: { sessionID: Session.ID },
+        payload: Schema.Struct({
+          command: Schema.String,
+          arguments: Schema.String,
+          // Per-turn agent/model selection, applied to the session before the turn (persisted —
+          // the V2 switch semantics).
+          agent: Schema.optional(Schema.String),
+          model: Schema.optional(Schema.String).annotate({ description: "providerID/modelID" }),
+          variant: Schema.optional(Schema.String),
+          messageID: Schema.optional(Schema.String),
+        }),
+        success: HttpApiSchema.NoContent,
+        error: [SessionNotFoundError, InvalidRequestError],
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.command",
+            summary: "Run a slash command",
+            description:
+              "Expand and dispatch a slash command: a prompt-kind command runs a turn on this session; a subtask command spawns a child session (surfaced via session events).",
           }),
         ),
     )

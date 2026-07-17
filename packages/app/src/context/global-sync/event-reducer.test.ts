@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { PermissionV2Request, Project, QuestionRequest, Session } from "@novaclaw/sdk/v2/client"
+import type { PermissionV2Request, Project, QuestionRequest, SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
 import { createStore } from "solid-js/store"
 import type { State } from "./types"
 import { applyDirectoryEvent, applyGlobalEvent } from "./event-reducer"
@@ -13,7 +13,7 @@ const rootSession = (input: { id: string; parentID?: string; archived?: number }
       updated: 1,
       archived: input.archived,
     },
-  }) as Session
+  }) as unknown as Session
 
 const permissionRequest = (id: string, sessionID: string, title = id) =>
   ({

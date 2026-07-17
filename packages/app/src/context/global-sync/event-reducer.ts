@@ -4,7 +4,7 @@ import type {
   PermissionV2Request,
   Project,
   QuestionRequest,
-  Session,
+  SessionV2Info as Session,
   SessionStatus,
   SnapshotFileDiff,
   Todo,

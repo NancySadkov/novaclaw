@@ -1,5 +1,9 @@
 import { SessionV2 } from "@novaclaw/core/session"
+import { SessionMessage } from "@novaclaw/core/session/message"
 import { SessionTags } from "@novaclaw/core/session/tags"
+import { AgentV2 } from "@novaclaw/core/agent"
+import { ModelV2 } from "@novaclaw/core/model"
+import { ProviderV2 } from "@novaclaw/core/provider"
 import { DateTime, Effect, Stream } from "effect"
 import { HttpApiBuilder, HttpApiSchema } from "effect/unstable/httpapi"
 import { Api } from "../api"
@@ -7,6 +11,7 @@ import { SessionsCursor } from "@novaclaw/protocol/groups/session"
 import {
   ConflictError,
   InvalidCursorError,
+  InvalidRequestError,
   MessageNotFoundError,
   ServiceUnavailableError,
   SessionNotFoundError,
@@ -92,6 +97,10 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
               type: ctx.payload.type,
               priority: ctx.payload.priority,
               permissionMode: ctx.payload.permissionMode,
+              strict: ctx.payload.strict,
+              introspection: ctx.payload.introspection,
+              quality: ctx.payload.quality,
+              affective: ctx.payload.affective,
               location: ctx.payload.location ?? { directory: AbsolutePath.make(process.cwd()) },
             }),
           }
@@ -158,6 +167,14 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
           if (ctx.payload.metadata !== undefined)
             yield* session
               .setMetadata({ sessionID: ctx.params.sessionID, metadata: ctx.payload.metadata })
+              .pipe(Effect.catchTag("Session.NotFoundError", (error) => notFound(error)))
+          if (ctx.payload.archived !== undefined)
+            yield* session
+              .setArchived({
+                sessionID: ctx.params.sessionID,
+                // null on the wire = unarchive (the core op takes undefined for restore)
+                ...(ctx.payload.archived === null ? {} : { time: ctx.payload.archived }),
+              })
               .pipe(Effect.catchTag("Session.NotFoundError", (error) => notFound(error)))
           return {
             data: yield* session
@@ -350,6 +367,57 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                     sessionID: error.sessionID,
                     message: `Session not found: ${error.sessionID}`,
                   }),
+                ),
+              ),
+            )
+          return HttpApiSchema.NoContent.make()
+        }),
+      )
+      .handle(
+        "session.command",
+        Effect.fn(function* (ctx) {
+          // Per-turn agent/model selection persists on the session (V2 switch semantics), then the
+          // core command op expands + dispatches (it admits + wakes the turn itself; a subtask
+          // command spawns a child surfaced via session events).
+          if (ctx.payload.model !== undefined) {
+            const [providerID, ...rest] = ctx.payload.model.split("/")
+            const modelID = rest.join("/")
+            if (!providerID || !modelID)
+              return yield* new InvalidRequestError({ message: `Invalid model ref: ${ctx.payload.model}` })
+            yield* session
+              .switchModel({
+                sessionID: ctx.params.sessionID,
+                model: {
+                  id: ModelV2.ID.make(modelID),
+                  providerID: ProviderV2.ID.make(providerID),
+                  ...(ctx.payload.variant ? { variant: ModelV2.VariantID.make(ctx.payload.variant) } : {}),
+                },
+              })
+              .pipe(Effect.orDie)
+          }
+          if (ctx.payload.agent !== undefined)
+            yield* session
+              .switchAgent({ sessionID: ctx.params.sessionID, agent: AgentV2.ID.make(ctx.payload.agent) })
+              .pipe(Effect.orDie)
+          yield* session
+            .command({
+              sessionID: ctx.params.sessionID,
+              command: ctx.payload.command,
+              arguments: ctx.payload.arguments,
+              ...(ctx.payload.messageID ? { id: SessionMessage.ID.make(ctx.payload.messageID) } : {}),
+            })
+            .pipe(
+              Effect.catchTag("Session.NotFoundError", (error) =>
+                Effect.fail(
+                  new SessionNotFoundError({
+                    sessionID: error.sessionID,
+                    message: `Session not found: ${error.sessionID}`,
+                  }),
+                ),
+              ),
+              Effect.catch((error: unknown) =>
+                Effect.fail(
+                  error instanceof SessionNotFoundError ? error : new InvalidRequestError({ message: String(error) }),
                 ),
               ),
             )

@@ -60,7 +60,7 @@ export const DialogModelConfig: Component<{
   const tk = (key: string) => language.t(key as Parameters<typeof language.t>[0])
 
   const providerCfg = (): { models?: Record<string, ModelConfig>; [k: string]: unknown } =>
-    (serverSync().data.config?.provider as Record<string, { models?: Record<string, ModelConfig> }> | undefined)?.[
+    (serverSync().data.config?.providers as Record<string, { models?: Record<string, ModelConfig> }> | undefined)?.[
       props.providerID
     ] ?? {}
   const savedModel = (): ModelConfig => providerCfg().models?.[props.modelID] ?? {}

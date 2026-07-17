@@ -1,4 +1,4 @@
-import type { PermissionV2Request, QuestionRequest, Session } from "@novaclaw/sdk/v2/client"
+import type { PermissionV2Request, QuestionRequest, SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
 
 function sessionTreeRequest<T>(
   session: Session[],

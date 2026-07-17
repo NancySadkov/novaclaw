@@ -50,6 +50,29 @@ const prompt = {
 const clientFor = (directory: string) => {
   createdClients.push(directory)
   return {
+    v2: {
+      session: {
+        create: async () => {
+          createdSessions.push(directory)
+          return {
+            data: {
+              data: {
+                id: `session-${createdSessions.length}`,
+                title: `New session ${createdSessions.length}`,
+              },
+            },
+          }
+        },
+        prompt: async () => ({ data: undefined }),
+        command: async () => ({ data: undefined }),
+        interrupt: async () => ({ data: undefined }),
+        switchModel: async (input: { model?: { variant?: string } }) => {
+          promptedVariants.push(input?.model?.variant)
+          return { data: undefined }
+        },
+        switchAgent: async () => ({ data: undefined }),
+      },
+    },
     session: {
       create: async () => {
         createdSessions.push(directory)
@@ -210,6 +233,7 @@ beforeAll(async () => {
       session: {
         remember: () => undefined,
         set: () => undefined,
+        get: () => undefined,
       },
       child: (directory: string) => {
         syncedDirectories.push(directory)
@@ -389,7 +413,7 @@ describe("prompt submit worktree selection", () => {
     await new Promise((resolve) => setTimeout(resolve, 0))
 
     // The optimistic-prompt render moved to session.tsx; submit.ts's remaining job is that the
-    // selected model variant reaches the sent prompt (draft.variant → promptAsync).
+    // selected model variant reaches the session (draft.variant → v2.session.switchModel).
     expect(promptedVariants).toEqual(["high"])
   })
 

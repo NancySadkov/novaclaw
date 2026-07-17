@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { PermissionV2Request, QuestionRequest, Session } from "@novaclaw/sdk/v2/client"
+import type { PermissionV2Request, QuestionRequest, SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
 import { todoDockAtBoundary, todoState } from "./session-composer-todo"
 import { sessionPermissionRequest, sessionQuestionRequest } from "./session-request-tree"
 

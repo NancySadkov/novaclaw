@@ -1,4 +1,4 @@
-import type { PermissionV2Request, Session } from "@novaclaw/sdk/v2/client"
+import type { PermissionV2Request, SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
 import { cmp } from "./utils"
 import { SESSION_RECENT_LIMIT, SESSION_RECENT_WINDOW } from "./types"
 

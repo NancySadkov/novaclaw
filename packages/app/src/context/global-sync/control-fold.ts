@@ -1,4 +1,4 @@
-import type { Session } from "@novaclaw/sdk/v2/client"
+import type { SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
 
 // ui-arch-hardening P2 — live session records. The V2 CONTROL events (session.next.*.switched)
 // update the server row, but the client record channel is the V1 `session.created/updated`

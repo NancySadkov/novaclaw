@@ -283,7 +283,7 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
   const mcpStatus = (name: string) => sync().data.mcp?.[name]?.status
   const mcpConnected = createMemo(() => mcpNames().filter((name) => mcpStatus(name) === "connected").length)
   const plugins = createMemo(() =>
-    (sync().data.config.plugin ?? []).map((item) => (typeof item === "string" ? item : item[0])),
+    (sync().data.config.plugins ?? []).map((item) => (typeof item === "string" ? item : item.package)),
   )
   const pluginCount = createMemo(() => plugins().length)
   const pluginEmpty = createMemo(() => pluginEmptyMessage(language.t("dialog.plugins.empty"), "novaclaw.json"))

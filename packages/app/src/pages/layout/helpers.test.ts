@@ -6,7 +6,7 @@ import {
   parseDeepLink,
   parseNewSessionDeepLink,
 } from "./deep-links"
-import { type Session } from "@novaclaw/sdk/v2/client"
+import { type SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
 import {
   childSessionOnPath,
   closeHomeProject,
@@ -25,16 +25,14 @@ import { ServerConnection } from "@/context/server"
 
 const serverKey = ServerConnection.Key.make
 
-const session = (input: Partial<Session> & Pick<Session, "id" | "directory">) =>
+const session = (input: Partial<Session> & { id: string; directory: string }) =>
   ({
     title: "",
-    version: "v2",
     parentID: undefined,
-    messageCount: 0,
-    permissions: { session: {}, share: {} },
     time: { created: 0, updated: 0, archived: undefined },
     ...input,
-  }) as Session
+    location: { directory: input.directory },
+  }) as unknown as Session
 
 describe("layout deep links", () => {
   test("parses open-project deep links", () => {

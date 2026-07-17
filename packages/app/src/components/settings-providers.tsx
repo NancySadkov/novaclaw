@@ -73,9 +73,10 @@ const SettingsProvidersContent: Component = () => {
   const note = (id: string) => PROVIDER_NOTES.find((item) => item.match(id))?.key
 
   const isConfigCustom = (providerID: string) => {
-    const provider = serverSync().data.config.provider?.[providerID]
+    const provider = serverSync().data.config.providers?.[providerID]
     if (!provider) return false
-    if (provider.npm !== "@ai-sdk/openai-compatible") return false
+    // V2 config vocabulary: a config-custom provider is a generic-channel entry (api set).
+    if (!provider.api) return false
     if (!provider.models || Object.keys(provider.models).length === 0) return false
     return true
   }

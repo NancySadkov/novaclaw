@@ -262,7 +262,8 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
           loadRootSessionsWithFallback({
             directory,
             limit,
-            list: (query) => serverSDK.client.session.list(query),
+            list: (query) =>
+              serverSDK.client.v2.session.list(query).then((r) => ({ data: r.data?.data ? [...r.data.data] : undefined })),
           })
             .then((x) => {
               const nonArchived = (x.data ?? [])
@@ -319,7 +320,8 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     children.pin(key)
     try {
       const [, setStore] = children.child(directory, { bootstrap: false })
-      const result = await serverSDK.client.session.list({ directory, limit: options?.limit ?? 200 })
+      const response = await serverSDK.client.v2.session.list({ directory, limit: options?.limit ?? 200 })
+      const result = { data: response.data?.data ? [...response.data.data] : undefined }
       const nonRoot = (result.data ?? []).filter((s) => !!s?.id && !!s.parentID && !s.time?.archived)
       if (nonRoot.length) {
         batch(() => {
@@ -484,7 +486,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
   }
 
   const updateConfigMutation = useMutation(() => ({
-    mutationFn: (config: Config) => serverSDK.client.global.config.update({ config }),
+    mutationFn: (config: Config) => serverSDK.client.global.config.update({ configInfo: config }),
     onSuccess: () => {
       bootstrap.refetch()
       // Invalidate all provider queries so newly configured custom providers

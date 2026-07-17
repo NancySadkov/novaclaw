@@ -5,8 +5,6 @@ import { createNovaclawClient } from "./client.js"
 import { createNovaclawServer } from "./server.js"
 import type { ServerOptions } from "./server.js"
 
-export * as data from "./data.js"
-
 export async function createNovaclaw(options?: ServerOptions) {
   const server = await createNovaclawServer({
     ...options,

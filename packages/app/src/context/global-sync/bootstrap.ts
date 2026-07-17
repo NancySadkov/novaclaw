@@ -6,7 +6,7 @@ import type {
   Project,
   ProviderAuthResponse,
   QuestionRequest,
-  Session,
+  SessionV2Info as Session,
 } from "@novaclaw/sdk/v2/client"
 import { showToast } from "@/utils/toast"
 import { getFilename } from "@novaclaw/core/util/path"
@@ -168,8 +168,8 @@ function warmSessions(input: {
   if (ids.length === 0) return Promise.resolve()
   return Promise.all(
     ids.map((sessionID) =>
-      retry(() => input.sdk.session.get({ sessionID })).then((x) => {
-        const session = x.data
+      retry(() => input.sdk.v2.session.get({ sessionID })).then((x) => {
+        const session = x.data?.data
         if (!session?.id) return
         mergeSession(input.setStore, session)
       }),
@@ -247,9 +247,12 @@ export async function bootstrapDirectory(input: {
         retry(() => input.sdk.config.get().then((x) => input.setStore("config", reconcile(x.data!, { merge: false })))),
       () =>
         retry(() =>
-          input.sdk.session.status().then(async (x) => {
+          input.sdk.v2.session.active().then(async (x) => {
+            // Native /active reports {type:"running"}; the store vocabulary is "busy".
+            const statuses: Record<string, { type: "busy" }> = Object.fromEntries(
+              Object.keys(x.data?.data ?? {}).map((sessionID) => [sessionID, { type: "busy" as const }]),
+            )
             if (input.session) {
-              const statuses = x.data ?? {}
               await Promise.all(
                 Object.keys(statuses).map((sessionID) => input.session!.resolve(sessionID).catch(() => undefined)),
               )
@@ -258,7 +261,7 @@ export async function bootstrapDirectory(input: {
                 produce((draft) => {
                   for (const sessionID of Object.keys(draft)) {
                     if (statuses[sessionID]) continue
-                    if (input.session?.get(sessionID)?.directory === input.directory) delete draft[sessionID]
+                    if (input.session?.get(sessionID)?.location.directory === input.directory) delete draft[sessionID]
                   }
                 }),
               )
@@ -266,7 +269,7 @@ export async function bootstrapDirectory(input: {
                 input.session.set("session_status", sessionID, reconcile(status))
               }
             }
-            if (!input.session) input.setStore("session_status", x.data!)
+            if (!input.session) input.setStore("session_status", statuses)
           }),
         ),
       !seededProject &&
@@ -304,7 +307,7 @@ export async function bootstrapDirectory(input: {
                 const current = input.session?.data.permission ?? input.store.permission
                 for (const sessionID of Object.keys(current)) {
                   if (grouped[sessionID]) continue
-                  if (input.session?.get(sessionID)?.directory !== input.directory) continue
+                  if (input.session?.get(sessionID)?.location.directory !== input.directory) continue
                   if (input.session) input.session.set("permission", sessionID, [])
                   if (!input.session) input.setStore("permission", sessionID, [])
                 }
@@ -333,7 +336,7 @@ export async function bootstrapDirectory(input: {
                 const current = input.session?.data.question ?? input.store.question
                 for (const sessionID of Object.keys(current)) {
                   if (grouped[sessionID]) continue
-                  if (input.session?.get(sessionID)?.directory !== input.directory) continue
+                  if (input.session?.get(sessionID)?.location.directory !== input.directory) continue
                   if (input.session) input.session.set("question", sessionID, [])
                   if (!input.session) input.setStore("question", sessionID, [])
                 }

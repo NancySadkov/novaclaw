@@ -1,5 +1,5 @@
 import { Component, createMemo, createSignal, For, Show } from "solid-js"
-import type { Session } from "@novaclaw/sdk/v2/client"
+import type { SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
 import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
 import { Button } from "@novaclaw/ui/button"
 import { Icon } from "@novaclaw/ui/icon"
@@ -51,7 +51,7 @@ export const DialogSessionInfo: Component<{ session: Session; projectName?: stri
     setPromptSaved(next ?? "")
     setPromptDraft(undefined)
     void switchPromptOverride(conn.http, {
-      directory: props.session.directory,
+      directory: props.session.location.directory,
       sessionID: props.session.id,
       override: next,
     }).catch((error) => console.error("switchPromptOverride failed", error))
@@ -80,7 +80,7 @@ export const DialogSessionInfo: Component<{ session: Session; projectName?: stri
   )
 
   const threads = createMemo(() => {
-    const [childStore] = serverSync().child(props.session.directory, { bootstrap: false })
+    const [childStore] = serverSync().child(props.session.location.directory, { bootstrap: false })
     return subtreeRows(childStore.session, props.session.id)
   })
   const own = createMemo(() => tokenTotals([props.session]))
@@ -115,7 +115,7 @@ export const DialogSessionInfo: Component<{ session: Session; projectName?: stri
           </span>
         </div>
         <div class="flex flex-col pt-1">
-          <Row label={language.t("session.info.folder")} value={props.session.directory} mono />
+          <Row label={language.t("session.info.folder")} value={props.session.location.directory} mono />
           <div class="flex items-baseline gap-3 py-1.5">
             <span class="w-28 shrink-0 text-[12px] text-v2-text-text-faint [font-weight:470]">
               {language.t("session.info.tags")}

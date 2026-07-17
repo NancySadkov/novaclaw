@@ -3,7 +3,7 @@ import type {
   NovaclawClient,
   PermissionV2Request,
   QuestionRequest,
-  Session,
+  SessionV2Info as Session,
   SessionStatus,
   SnapshotFileDiff,
   Todo,
@@ -112,10 +112,11 @@ export function createServerSession(client: NovaclawClient, options?: { retry?: 
     const pending = requests.get(sessionID)
     if (pending) return pending
     const active = generation(sessionID)
-    const request = client.session.get({ sessionID }).then((result) => {
-      if (!result.data) throw new Error(`Session not found: ${sessionID}`)
-      if (generations.get(sessionID) !== active) return result.data
-      return remember(result.data)
+    const request = client.v2.session.get({ sessionID }).then((result) => {
+      const info = result.data?.data
+      if (!info) throw new Error(`Session not found: ${sessionID}`)
+      if (generations.get(sessionID) !== active) return info
+      return remember(info)
     })
     requests.set(sessionID, request)
     const cleanup = () => {
@@ -386,9 +387,10 @@ export function createServerSession(client: NovaclawClient, options?: { retry?: 
       if (data.session_diff[sessionID] !== undefined && !options?.force) return Promise.resolve()
       return runInflight(inflightDiff, sessionID, () => {
         const active = generation(sessionID)
-        return retry(() => client.session.diff({ sessionID })).then((result) => {
+        return retry(() => client.v2.session.get({ sessionID })).then((result) => {
           if (generations.get(sessionID) !== active) return
-          setData("session_diff", sessionID, reconcile(cleanDiffs(result.data), { key: "file" }))
+          // V1-nuke slice C: the drain-end changes summary rides the native record (Session.Info.summary).
+          setData("session_diff", sessionID, reconcile(cleanDiffs([...(result.data?.data?.summary?.diffs ?? [])]), { key: "file" }))
         })
       })
     },
@@ -397,9 +399,9 @@ export function createServerSession(client: NovaclawClient, options?: { retry?: 
       if (data.todo[sessionID] !== undefined && !options?.force) return Promise.resolve()
       return runInflight(inflightTodo, sessionID, () => {
         const active = generation(sessionID)
-        return retry(() => client.session.todo({ sessionID })).then((result) => {
+        return retry(() => client.v2.session.todo({ sessionID })).then((result) => {
           if (generations.get(sessionID) !== active) return
-          setData("todo", sessionID, reconcile(result.data ?? [], { key: "id" }))
+          setData("todo", sessionID, reconcile([...(result.data?.data ?? [])], { key: "id" }))
         })
       })
     },

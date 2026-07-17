@@ -26,7 +26,7 @@ import { Tooltip } from "@novaclaw/ui/tooltip"
 import { DropdownMenu } from "@novaclaw/ui/dropdown-menu"
 import { Dialog } from "@novaclaw/ui/dialog"
 import { getFilename } from "@novaclaw/core/util/path"
-import { Session } from "@novaclaw/sdk/v2/client"
+import { SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
 import { usePlatform } from "@/context/platform"
 import { useSettings } from "@/context/settings"
 import { createStore, produce, reconcile } from "solid-js/store"
@@ -735,7 +735,7 @@ export default function LegacyLayout(props: ParentProps) {
   }
 
   const prefetchSession = (session: Session, priority: "high" | "low" = "low") => {
-    const directory = session.directory
+    const directory = session.location.directory
     if (!directory) return
 
     const q = queueFor(directory)
@@ -870,15 +870,14 @@ export default function LegacyLayout(props: ParentProps) {
   }
 
   async function archiveSession(session: Session) {
-    const [store, setStore] = serverSync().child(session.directory)
+    const [store, setStore] = serverSync().child(session.location.directory)
     const sessions = store.session ?? []
     const index = sessions.findIndex((s) => s.id === session.id)
     const nextSession = sessions[index + 1] ?? sessions[index - 1]
 
-    await serverSDK().client.session.update({
-      directory: session.directory,
+    await serverSDK().client.v2.session.update({
       sessionID: session.id,
-      time: { archived: Date.now() },
+      archived: Date.now(),
     })
     setStore(
       produce((draft) => {
@@ -1216,10 +1215,10 @@ export default function LegacyLayout(props: ParentProps) {
         .sync(target.id)
         .then(() => sync.session.get(target.id))
         .catch(() => undefined)
-      if (!resolved?.directory) return false
-      if (!canOpen(resolved.directory)) return false
-      setStore("lastProjectSession", root, { directory: resolved.directory, id: resolved.id, at: Date.now() })
-      navigateWithSidebarReset(`/${base64Encode(resolved.directory)}/session/${resolved.id}`)
+      if (!resolved?.location.directory) return false
+      if (!canOpen(resolved.location.directory)) return false
+      setStore("lastProjectSession", root, { directory: resolved.location.directory, id: resolved.id, at: Date.now() })
+      navigateWithSidebarReset(`/${base64Encode(resolved.location.directory)}/session/${resolved.id}`)
       return true
     }
 
@@ -1235,7 +1234,7 @@ export default function LegacyLayout(props: ParentProps) {
       dirs.map((item) => serverSync().child(item, { bootstrap: false })[0]),
       Date.now(),
     )
-    if (latest && (await openSession(latest))) {
+    if (latest && (await openSession({ directory: latest.location.directory, id: latest.id }))) {
       return
     }
 
@@ -1244,14 +1243,14 @@ export default function LegacyLayout(props: ParentProps) {
         dirs.map(async (item) => ({
           path: { directory: item },
           session: await serverSDK()
-            .client.session.list({ directory: item })
-            .then((x) => x.data ?? [])
+            .client.v2.session.list({ directory: item })
+            .then((x) => x.data?.data ?? [])
             .catch(() => []),
         })),
       ),
       Date.now(),
     )
-    if (fetched && (await openSession(fetched))) {
+    if (fetched && (await openSession({ directory: fetched.location.directory, id: fetched.id }))) {
       return
     }
 
@@ -1260,7 +1259,7 @@ export default function LegacyLayout(props: ParentProps) {
 
   function navigateToSession(session: Session | undefined) {
     if (!session) return
-    navigateWithSidebarReset(`/${base64Encode(session.directory)}/session/${session.id}`)
+    navigateWithSidebarReset(`/${base64Encode(session.location.directory)}/session/${session.id}`)
   }
 
   function openProject(directory: string, navigate = true) {
@@ -1458,8 +1457,8 @@ export default function LegacyLayout(props: ParentProps) {
     const dismiss = () => toaster.dismiss(progress)
 
     const sessions: Session[] = await serverSDK()
-      .client.session.list({ directory })
-      .then((x) => x.data ?? [])
+      .client.v2.session.list({ directory })
+      .then((x) => x.data?.data ? [...x.data.data] : [])
       .catch(() => [])
 
     clearWorkspaceTerminals(
@@ -1495,10 +1494,9 @@ export default function LegacyLayout(props: ParentProps) {
         .filter((session) => session.time.archived === undefined)
         .map((session) =>
           serverSDK()
-            .client.session.update({
+            .client.v2.session.update({
               sessionID: session.id,
-              directory: session.directory,
-              time: { archived: archivedAt },
+              archived: archivedAt,
             })
             .catch(() => undefined),
         ),
@@ -1595,8 +1593,8 @@ export default function LegacyLayout(props: ParentProps) {
 
     const refresh = async () => {
       const sessions = await serverSDK()
-        .client.session.list({ directory: props.directory })
-        .then((x) => x.data ?? [])
+        .client.v2.session.list({ directory: props.directory })
+        .then((x) => x.data?.data ? [...x.data.data] : [])
         .catch(() => [])
       const active = sessions.filter((session) => session.time.archived === undefined)
       setState({ sessions: active })

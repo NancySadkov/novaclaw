@@ -3,8 +3,6 @@ export type { FileSystemEntry as LocationFileSystemEntry } from "./gen/types.gen
 // The V2 spec renamed the API-config schema `Config` → `ConfigInfo`; keep the sdk's public name
 // stable (three app consumers) — same shape, renamed identifier.
 export type { ConfigInfo as Config } from "./gen/types.gen.js"
-// V1 read-model shapes for the LEGACY session surface (no longer spec'd; see legacy.ts).
-export * from "./legacy.js"
 
 import { createClient } from "./gen/client/client.gen.js"
 import { type Config } from "./gen/client/types.gen.js"

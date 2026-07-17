@@ -55,12 +55,12 @@ function SessionTabSlot(props: {
   createEffect(() => {
     const ctx = props.serverCtx()
     const value = session()
-    if (!ctx || !value || prefetched) return
+    if (!ctx || !value?.location || prefetched) return
     prefetched = true
     createRoot((dispose) => {
       try {
         void ctx.sync
-          .ensureDirSyncContext(value.directory)
+          .ensureDirSyncContext(value.location.directory)
           .session.sync(value.id)
           .catch(() => {})
           .finally(dispose)
@@ -73,9 +73,9 @@ function SessionTabSlot(props: {
   createEffect(() => {
     const value = session()
     const current = sdk()
-    if (!value || !current) return
+    if (!value?.location || !current) return
     createTabPromptState(tabs, props.tab, current.scope, {
-      dir: base64Encode(value.directory),
+      dir: base64Encode(value.location.directory),
       id: value.id,
     })
   })

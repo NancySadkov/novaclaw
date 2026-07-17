@@ -56,7 +56,7 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
       const directory = props.directory?.() ?? decode64(params.dir)
       if (!directory) return false
       const [store] = serverSync().child(directory)
-      return hasPermissionPromptRules(store.config.permission)
+      return hasPermissionPromptRules(store.config.permissions)
     })
 
     const [store, setStore, _, ready] = persisted(
@@ -88,7 +88,7 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
       const directory = props.directory?.() ?? decode64(params.dir)
       if (!directory) return
       const [childStore] = serverSync().child(directory)
-      const perm = childStore.config.permission
+      const perm = childStore.config.permissions
       if (typeof perm === "string" && perm === "allow") {
         const key = directoryAcceptKey(directory)
         if (store.autoAccept[key] === undefined) {
@@ -279,7 +279,7 @@ export const { use: usePermission, provider: PermissionProvider } = createSimple
       permissionsEnabled,
       isPermissionAllowAll(directory: string) {
         const [childStore] = serverSync().child(directory)
-        const perm = childStore.config.permission
+        const perm = childStore.config.permissions
         return typeof perm === "string" && perm === "allow"
       },
     }

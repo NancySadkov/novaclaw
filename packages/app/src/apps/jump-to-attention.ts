@@ -29,7 +29,7 @@ export function useJumpToAttention(): () => void {
     // A session's directory usually comes from its resolved record; an unseen chat the store
     // hasn't resolved yet can still be routed via its notification's directory.
     let directory = id
-      ? (data.info[id]?.directory ??
+      ? (data.info[id]?.location.directory ??
         notification.session
           .all(id)
           .findLast((item) => item.directory !== undefined)?.directory)
@@ -41,7 +41,7 @@ export function useJumpToAttention(): () => void {
         .sort((a, b) => (b!.time.updated ?? b!.time.created) - (a!.time.updated ?? a!.time.created))[0]
       if (latest) {
         id = latest.id
-        directory = latest.directory
+        directory = latest.location.directory
       }
     }
 

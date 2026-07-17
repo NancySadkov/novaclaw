@@ -147,7 +147,7 @@ function ResolvedTargetSessionRoute() {
       }),
   )
   const current = createMemo(() => selectSessionLineage(params.id, cached(), resolved()))
-  const directory = createMemo(() => current()?.session.directory)
+  const directory = createMemo(() => current()?.session.location.directory)
   const targetDirectory = () => directory()!
 
   createEffect(() => {
@@ -408,6 +408,9 @@ export function AppBaseProviders(props: ParentProps<{ locale?: Locale }>) {
           <UiI18nBridge>
             <ErrorBoundary
               fallback={(error, reset) => {
+                // Boundary-caught crashes never hit window.onerror — log them so the console and
+                // the Debug app's error ring see the real failure, not just the calm page.
+                console.error("app error boundary", error)
                 return <ErrorPage error={error} reset={reset} />
               }}
             >

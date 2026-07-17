@@ -1,4 +1,4 @@
-import type { Session } from "@novaclaw/sdk/v2/client"
+import type { SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
 import { createSimpleContext } from "@novaclaw/ui/context"
 import { createStore, produce } from "solid-js/store"
 import { Persist, persisted, removePersisted, draftPersistedKeys } from "@/utils/persist"

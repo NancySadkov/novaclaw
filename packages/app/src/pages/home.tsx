@@ -1,4 +1,4 @@
-import type { Session } from "@novaclaw/sdk/v2/client"
+import type { SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
 import {
   type ComponentProps,
   createEffect,
@@ -110,7 +110,7 @@ function buildHomeSessionRecords(input: {
       input
         .projectDirectories()
         .flatMap((directory) => sortedRootSessions(input.sync.child(directory, { bootstrap: false })[0], Date.now()))
-        .map((session) => [`${pathKey(session.directory)}:${session.id}`, session] as const),
+        .map((session) => [`${pathKey(session.location.directory)}:${session.id}`, session] as const),
     ).values(),
   ]
     .sort((a, b) => (b.time.updated ?? b.time.created) - (a.time.updated ?? a.time.created))
@@ -356,7 +356,7 @@ export function NewHome() {
     // child bubbles to its root — the list shows roots).
     const recordRank = (record: HomeSessionRecord) => {
       let best = rank.get(record.session.id)
-      const [childStore] = sync().child(record.session.directory, { bootstrap: false })
+      const [childStore] = sync().child(record.session.location.directory, { bootstrap: false })
       for (const row of subtreeRows(childStore.session, record.session.id)) {
         const tier = rank.get(row.session.id)
         if (tier !== undefined && (best === undefined || tier < best)) best = tier
@@ -524,7 +524,7 @@ export function NewHome() {
     const project = projectForSession(session, projects(), projectByID())
     const conn = focusedServer()
     if (!conn) return
-    const directory = project?.worktree ?? session.directory
+    const directory = project?.worktree ?? session.location.directory
     const ctx = global.ensureServerCtx(conn)
     ctx.projects.open(directory)
     ctx.projects.touch(directory)
@@ -538,11 +538,11 @@ export function NewHome() {
     const conn = focusedServer()
     const ctx = focusedServerCtx()
     if (!conn || !ctx) return
-    const [, setStore] = ctx.sync.child(session.directory)
+    const [, setStore] = ctx.sync.child(session.location.directory)
     await archiveHomeSession({
       server: ServerConnection.key(conn),
-      session,
-      update: (value) => ctx.sdk.client.session.update(value),
+      session: { id: session.id, directory: session.location.directory },
+      update: (value) => ctx.sdk.client.v2.session.update(value),
       remove: () =>
         setStore(
           produce((draft) => {
@@ -571,7 +571,7 @@ export function NewHome() {
     const ctx = focusedServerCtx()
     if (!ctx) return
     await ctx.sdk.client.session
-      .abort({ sessionID: session.id, directory: session.directory })
+      .abort({ sessionID: session.id, directory: session.location.directory })
       .catch(requestFailedToast)
   }
 
@@ -579,8 +579,8 @@ export function NewHome() {
     const ctx = focusedServerCtx()
     if (!ctx) return
     try {
-      const forked = await ctx.sdk.client.session.fork({ sessionID: session.id, directory: session.directory })
-      if (forked.data) openSession(forked.data)
+      const forked = await ctx.sdk.client.v2.session.fork({ sessionID: session.id })
+      if (forked.data?.data) openSession(forked.data.data)
     } catch (error) {
       requestFailedToast(error)
     }
@@ -591,8 +591,8 @@ export function NewHome() {
     const ctx = focusedServerCtx()
     if (!conn || !ctx) return
     try {
-      await ctx.sdk.client.session.delete({ sessionID: session.id, directory: session.directory })
-      const [, setStore] = ctx.sync.child(session.directory)
+      await ctx.sdk.client.v2.session.remove({ sessionID: session.id })
+      const [, setStore] = ctx.sync.child(session.location.directory)
       setStore(
         produce((draft) => {
           const match = Binary.search(draft.session, session.id, (s) => s.id)
@@ -601,7 +601,7 @@ export function NewHome() {
       )
       notifySessionTabsRemoved({
         server: ServerConnection.key(conn),
-        directory: session.directory,
+        directory: session.location.directory,
         sessionIDs: [session.id],
       })
     } catch (error) {
@@ -908,7 +908,7 @@ function HomeSessionLeading(props: {
       </Show>
       <SessionTabAvatar
         project={props.project}
-        directory={props.session.directory}
+        directory={props.session.location.directory}
         sessionId={props.session.id}
         activeServer={props.activeServer}
         revealProjectOnHover={props.revealProjectOnHover}
@@ -951,7 +951,7 @@ function HomeSessionAttention(props: { session: Session; activeServer: boolean }
   // Default bootstrap: a fresh /chats load must seed the pending permission/question state for the
   // directories on screen, or the pill (and the page-level attention cluster reading the same store)
   // only ever appears from live events.
-  const [childStore] = serverSync().child(props.session.directory)
+  const [childStore] = serverSync().child(props.session.location.directory)
   const waiting = createMemo(() => {
     if (!props.activeServer) return false
     const data = serverSync().session.data
@@ -959,7 +959,7 @@ function HomeSessionAttention(props: { session: Session; activeServer: boolean }
       childStore.session,
       data.permission,
       props.session.id,
-      (item) => !permission.autoResponds(item, props.session.directory),
+      (item) => !permission.autoResponds(item, props.session.location.directory),
     )
     if (ask) return true
     return !!sessionQuestionRequest(childStore.session, data.question, props.session.id)
@@ -1044,7 +1044,7 @@ function HomeSessionRow(props: {
   const serverSyncForChildren = useServerSync()
   const children = createMemo(() =>
     props.activeServer
-      ? subtreeRows(serverSyncForChildren().child(props.record.session.directory, { bootstrap: false })[0].session, props.record.session.id)
+      ? subtreeRows(serverSyncForChildren().child(props.record.session.location.directory, { bootstrap: false })[0].session, props.record.session.id)
       : [],
   )
   // Tags component (notes/entities.md T0): the chat's tag chips from the instance-wide tag map.

@@ -245,13 +245,13 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     if (!message) return
 
     if (sync().data.session_working(sessionID)) {
-      await client.session.abort({ sessionID }).catch(() => {})
+      await client.v2.session.interrupt({ sessionID }).catch(() => {})
     }
 
     await runCommand({
       owner,
       prompt: promptSession,
-      request: () => client.session.revert({ sessionID, messageID: message.id }),
+      request: () => client.v2.session.revert.stage({ sessionID, messageID: message.id }),
       updatePrompt: (promptSession) => {
         promptSession.set(promptFromUserMessage(message, { directory }))
       },
@@ -275,7 +275,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       await runCommand({
         owner,
         prompt: promptSession,
-        request: () => client.session.unrevert({ sessionID }),
+        request: () => client.v2.session.revert.clear({ sessionID }),
         updatePrompt: (promptSession) => promptSession.reset(),
         updateViewport: () => setActiveMessage(findLast(messages, (x) => x.id >= revertMessageID)),
       })
@@ -285,7 +285,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     await runCommand({
       owner,
       prompt: promptSession,
-      request: () => client.session.revert({ sessionID, messageID: next.id }),
+      request: () => client.v2.session.revert.stage({ sessionID, messageID: next.id }),
       updatePrompt: () => undefined,
       updateViewport: () => setActiveMessage(findLast(messages, (x) => x.id < next.id)),
     })
@@ -304,10 +304,8 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
       return
     }
 
-    await sdk().client.session.summarize({
+    await sdk().client.v2.session.compact({
       sessionID,
-      modelID: model.id,
-      providerID: model.provider.id,
     })
   }
 

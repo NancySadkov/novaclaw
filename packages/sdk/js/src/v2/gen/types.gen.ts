@@ -11712,6 +11712,10 @@ export type V2SessionCreateData = {
     priority?: number
     permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
     location?: LocationRef
+    strict?: SessionStrictOverride
+    introspection?: boolean
+    quality?: boolean
+    affective?: boolean
   }
   path?: never
   query?: never
@@ -11923,6 +11927,7 @@ export type V2SessionUpdateData = {
     metadata?: {
       [key: string]: unknown
     }
+    archived?: number
   }
   path: {
     sessionID: string
@@ -12334,6 +12339,48 @@ export type V2SessionSwitchPromptOverrideResponses = {
 
 export type V2SessionSwitchPromptOverrideResponse =
   V2SessionSwitchPromptOverrideResponses[keyof V2SessionSwitchPromptOverrideResponses]
+
+export type V2SessionCommandData = {
+  body: {
+    command: string
+    arguments: string
+    agent?: string
+    model?: string
+    variant?: string
+    messageID?: string
+  }
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/command"
+}
+
+export type V2SessionCommandErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+}
+
+export type V2SessionCommandError = V2SessionCommandErrors[keyof V2SessionCommandErrors]
+
+export type V2SessionCommandResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2SessionCommandResponse = V2SessionCommandResponses[keyof V2SessionCommandResponses]
 
 export type V2SessionPromptData = {
   body: {

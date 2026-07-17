@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { Session } from "@novaclaw/sdk/v2/client"
+import type { SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
 import { applyControlPatch, controlPatch } from "./control-fold"
 
 // P2 (ui-arch-hardening): every V2 control event folds into the client record exactly like the

@@ -1,12 +1,31 @@
 import { getFilename } from "@novaclaw/core/util/path"
-import { type AgentPartInput, type FilePartInput, type Part, type TextPartInput } from "@novaclaw/sdk/v2/client"
 import type { FileSelection } from "@/context/file"
 import { encodeFilePath } from "@/context/file/path"
 import type { AgentPart, FileAttachmentPart, ImageAttachmentPart, Prompt } from "@/context/prompt"
-import { Identifier } from "@/utils/id"
-import { createCommentMetadata, formatCommentNote } from "@/utils/comment-note"
+import { formatCommentNote } from "@/utils/comment-note"
 
-type PromptRequestPart = (TextPartInput | FilePartInput | AgentPartInput) & { id: string }
+// V1-nuke slice C: the composer builds the NATIVE PromptInput ({text, files, agents}) for
+// /api/session/:id/prompt — the V1 parts array (and its optimistic mirror, which nothing ever
+// consumed) is gone. Comment notes fold into the text (they were synthetic text parts before;
+// the model-visible content is identical). Images ride as data: URIs; file references as
+// file:// URIs with the selection range in the query, exactly as the server resolves them.
+
+type PromptFileAttachment = {
+  uri: string
+  name?: string
+  source?: { text: string; start: number; end: number }
+}
+
+type PromptAgentAttachment = {
+  name: string
+  source?: { text: string; start: number; end: number }
+}
+
+export type NativePrompt = {
+  text: string
+  files?: PromptFileAttachment[]
+  agents?: PromptAgentAttachment[]
+}
 
 type ContextFile = {
   key: string
@@ -19,13 +38,11 @@ type ContextFile = {
   preview?: string
 }
 
-type BuildRequestPartsInput = {
+type BuildPromptInput = {
   prompt: Prompt
   context: ContextFile[]
   images: ImageAttachmentPart[]
   text: string
-  messageID: string
-  sessionID: string
   sessionDirectory: string
 }
 
@@ -52,150 +69,64 @@ const parseCommentMentions = (comment: string) => {
 const isFileAttachment = (part: Prompt[number]): part is FileAttachmentPart => part.type === "file"
 const isAgentAttachment = (part: Prompt[number]): part is AgentPart => part.type === "agent"
 
-const toOptimisticPart = (part: PromptRequestPart, sessionID: string, messageID: string): Part => {
-  if (part.type === "text") {
-    return {
-      id: part.id,
-      type: "text",
-      text: part.text,
-      synthetic: part.synthetic,
-      ignored: part.ignored,
-      time: part.time,
-      metadata: part.metadata,
-      sessionID,
-      messageID,
-    }
-  }
-  if (part.type === "file") {
-    return {
-      id: part.id,
-      type: "file",
-      mime: part.mime,
-      filename: part.filename,
-      url: part.url,
-      source: part.source,
-      sessionID,
-      messageID,
-    }
-  }
-  return {
-    id: part.id,
-    type: "agent",
-    name: part.name,
-    source: part.source,
-    sessionID,
-    messageID,
-  }
-}
-
-export function buildRequestParts(input: BuildRequestPartsInput) {
-  const requestParts: PromptRequestPart[] = [
-    {
-      id: Identifier.ascending("part"),
-      type: "text",
-      text: input.text,
-    },
-  ]
-
-  const files = input.prompt.filter(isFileAttachment).map((attachment) => {
+export function buildPrompt(input: BuildPromptInput): NativePrompt {
+  const files: PromptFileAttachment[] = input.prompt.filter(isFileAttachment).map((attachment) => {
     const path = absolute(input.sessionDirectory, attachment.path)
     return {
-      id: Identifier.ascending("part"),
-      type: "file",
-      mime: "text/plain",
-      url: `file://${encodeFilePath(path)}${fileQuery(attachment.selection)}`,
-      filename: getFilename(attachment.path),
+      uri: `file://${encodeFilePath(path)}${fileQuery(attachment.selection)}`,
+      name: getFilename(attachment.path),
       source: {
-        type: "file",
-        text: {
-          value: attachment.content,
-          start: attachment.start,
-          end: attachment.end,
-        },
-        path,
-      },
-    } satisfies PromptRequestPart
-  })
-
-  const agents = input.prompt.filter(isAgentAttachment).map((attachment) => {
-    return {
-      id: Identifier.ascending("part"),
-      type: "agent",
-      name: attachment.name,
-      source: {
-        value: attachment.content,
+        text: attachment.content,
         start: attachment.start,
         end: attachment.end,
       },
-    } satisfies PromptRequestPart
+    }
   })
 
-  const used = new Set(files.map((part) => part.url))
-  const context = input.context.flatMap((item) => {
+  const agents: PromptAgentAttachment[] = input.prompt.filter(isAgentAttachment).map((attachment) => ({
+    name: attachment.name,
+    source: {
+      text: attachment.content,
+      start: attachment.start,
+      end: attachment.end,
+    },
+  }))
+
+  // Context files + comment notes. A commented file always attaches; its note text folds into the
+  // prompt (V1 sent the note as a synthetic text part — same model-visible content, flat shape).
+  const notes: string[] = []
+  const used = new Set(files.map((file) => file.uri))
+  for (const item of input.context) {
     const path = absolute(input.sessionDirectory, item.path)
-    const url = `file://${encodeFilePath(path)}${fileQuery(item.selection)}`
+    const uri = `file://${encodeFilePath(path)}${fileQuery(item.selection)}`
     const comment = item.comment?.trim()
-    if (!comment && used.has(url)) return []
-    used.add(url)
+    if (!comment && used.has(uri)) continue
+    if (!used.has(uri)) {
+      used.add(uri)
+      files.push({ uri, name: getFilename(item.path) })
+    }
+    if (!comment) continue
+    notes.push(formatCommentNote({ path: item.path, selection: item.selection, comment }))
+    for (const mentioned of parseCommentMentions(comment)) {
+      const mentionedUri = `file://${encodeFilePath(absolute(input.sessionDirectory, mentioned))}`
+      if (used.has(mentionedUri)) continue
+      used.add(mentionedUri)
+      files.push({ uri: mentionedUri, name: getFilename(mentioned) })
+    }
+  }
 
-    const filePart = {
-      id: Identifier.ascending("part"),
-      type: "file",
-      mime: "text/plain",
-      url,
-      filename: getFilename(item.path),
-    } satisfies PromptRequestPart
-
-    if (!comment) return [filePart]
-
-    const mentions = parseCommentMentions(comment).flatMap((path) => {
-      const url = `file://${encodeFilePath(absolute(input.sessionDirectory, path))}`
-      if (used.has(url)) return []
-      used.add(url)
-      return [
-        {
-          id: Identifier.ascending("part"),
-          type: "file",
-          mime: "text/plain",
-          url,
-          filename: getFilename(path),
-        } satisfies PromptRequestPart,
-      ]
+  for (const attachment of input.images) {
+    files.push({
+      uri: attachment.dataUrl,
+      name: attachment.sourcePath ?? attachment.filename,
     })
+  }
 
-    return [
-      {
-        id: Identifier.ascending("part"),
-        type: "text",
-        text: formatCommentNote({ path: item.path, selection: item.selection, comment }),
-        synthetic: true,
-        metadata: createCommentMetadata({
-          path: item.path,
-          selection: item.selection,
-          comment,
-          preview: item.preview,
-          origin: item.commentOrigin,
-        }),
-      } satisfies PromptRequestPart,
-      filePart,
-      ...mentions,
-    ]
-  })
-
-  const images = input.images.map((attachment) => {
-    return {
-      id: Identifier.ascending("part"),
-      type: "file",
-      mime: attachment.mime,
-      url: attachment.dataUrl,
-      filename: attachment.sourcePath ?? attachment.filename,
-    } satisfies PromptRequestPart
-  })
-
-  requestParts.push(...files, ...context, ...agents, ...images)
+  const text = [input.text, ...notes].filter((value) => value.trim().length > 0).join("\n\n")
 
   return {
-    requestParts,
-    optimisticParts: requestParts.map((part) => toOptimisticPart(part, input.sessionID, input.messageID)),
+    text,
+    ...(files.length > 0 ? { files } : {}),
+    ...(agents.length > 0 ? { agents } : {}),
   }
 }

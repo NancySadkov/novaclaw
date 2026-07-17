@@ -1,4 +1,4 @@
-import type { Session } from "@novaclaw/sdk/v2/client"
+import type { SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
 import { showToast } from "@/utils/toast"
 import { base64Encode } from "@novaclaw/core/util/encode"
 import { Binary } from "@novaclaw/core/util/binary"
@@ -15,7 +15,7 @@ import { useSDK, type DirectorySDK } from "@/context/sdk"
 import { useSync, type DirectorySync } from "@/context/sync"
 import { Identifier } from "@/utils/id"
 import { Worktree as WorktreeState } from "@/utils/worktree"
-import { buildRequestParts } from "./build-request-parts"
+import { buildPrompt } from "./build-request-parts"
 import { setCursorPosition } from "./editor-dom"
 import { formatServerError } from "@/utils/server-errors"
 import { ScopedKey } from "@/utils/server-scope"
@@ -81,20 +81,17 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
         return false
       }
 
-      await input.client.session.command({
+      // A command with image attachments has no native lowering (the V1 route rejected it
+      // server-side with the same message) — refuse legibly before sending.
+      if (images.length > 0)
+        throw new Error("A command with file attachments is not supported yet — send the attachment as a regular message instead.")
+      await input.client.v2.session.command({
         sessionID: input.draft.sessionID,
         command: cmd,
         arguments: tail.join(" "),
         agent: input.draft.agent,
         model: `${input.draft.model.providerID}/${input.draft.model.modelID}`,
         variant: input.draft.variant,
-        parts: images.map((attachment) => ({
-          id: Identifier.ascending("part"),
-          type: "file" as const,
-          mime: attachment.mime,
-          url: attachment.dataUrl,
-          filename: attachment.filename,
-        })),
       })
       return true
     } catch (err) {
@@ -104,13 +101,11 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
   }
 
   const messageID = input.messageID ?? Identifier.ascending("message")
-  const { requestParts } = buildRequestParts({
+  const prompt = buildPrompt({
     prompt: input.draft.prompt,
     context: input.draft.context,
     images,
     text,
-    sessionID: input.draft.sessionID,
-    messageID,
     sessionDirectory: input.draft.sessionDirectory,
   })
 
@@ -122,13 +117,29 @@ export async function sendFollowupDraft(input: FollowupSendInput) {
       return false
     }
 
-    await input.client.session.promptAsync({
+    // The composer's agent/model selection persists on the session (V2 switch semantics — the V1
+    // promptAsync carried them per turn). Switch only when the record disagrees.
+    const record = input.serverSync.session.get(input.draft.sessionID)
+    const draftModel = input.draft.model
+    if (
+      record?.model?.providerID !== draftModel.providerID ||
+      record?.model?.id !== draftModel.modelID ||
+      (input.draft.variant !== undefined && record?.model?.variant !== input.draft.variant)
+    )
+      await input.client.v2.session.switchModel({
+        sessionID: input.draft.sessionID,
+        model: {
+          providerID: draftModel.providerID,
+          id: draftModel.modelID,
+          ...(input.draft.variant ? { variant: input.draft.variant } : {}),
+        },
+      })
+    if (record?.agent !== input.draft.agent)
+      await input.client.v2.session.switchAgent({ sessionID: input.draft.sessionID, agent: input.draft.agent })
+    await input.client.v2.session.prompt({
       sessionID: input.draft.sessionID,
-      agent: input.draft.agent,
-      model: input.draft.model,
-      messageID,
-      parts: requestParts,
-      variant: input.draft.variant,
+      id: messageID,
+      prompt,
     })
     return true
   } catch (err) {
@@ -201,7 +212,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       return Promise.resolve()
     }
     return sdk()
-      .client.session.abort({
+      .client.v2.session.interrupt({
         sessionID,
       })
       .catch(() => {})
@@ -328,24 +339,21 @@ export function createPromptSubmit(input: PromptSubmitInput) {
 
     let session = input.info()
     if (!session && isNewSession) {
-      // 1K: the composer's permission-mode droplist applies at create. The generated SDK's create
-      // has no permissionMode arg yet — the `$body_` extra-prefix routes it into the JSON body
-      // without editing sdk/gen (golden rule 5). The Strict switch and the Tuning toggles stage
-      // the same way: a draft choice becomes the new session's per-chat override.
+      // 1K + V1-nuke slice C: the composer's staged choices (permission mode, the Strict switch,
+      // the Tuning toggles) are FIRST-CLASS fields on the native create — a draft choice becomes
+      // the new session's per-chat override.
       const permissionMode = local.permissionMode.current()
       const strict = local.strict.current()
       const features = local.features.current()
-      const extras: Record<string, unknown> = {}
-      if (permissionMode !== "ask") extras.$body_permissionMode = permissionMode
-      if (strict !== undefined) extras.$body_strict = strict
-      if (features?.introspection !== undefined) extras.$body_introspection = features.introspection
-      if (features?.quality !== undefined) extras.$body_quality = features.quality
-      if (features?.affective !== undefined) extras.$body_affective = features.affective
-      const createParams =
-        Object.keys(extras).length > 0 ? (extras as Parameters<typeof client.session.create>[0]) : undefined
-      const created = await client.session
-        .create(createParams)
-        .then((x) => x.data ?? undefined)
+      const created = await client.v2.session
+        .create({
+          ...(permissionMode !== "ask" ? { permissionMode } : {}),
+          ...(strict !== undefined ? { strict } : {}),
+          ...(features?.introspection !== undefined ? { introspection: features.introspection } : {}),
+          ...(features?.quality !== undefined ? { quality: features.quality } : {}),
+          ...(features?.affective !== undefined ? { affective: features.affective } : {}),
+        })
+        .then((x) => x.data?.data ?? undefined)
         .catch((err) => {
           showToast({
             title: language.t("prompt.toast.sessionCreateFailed.title"),

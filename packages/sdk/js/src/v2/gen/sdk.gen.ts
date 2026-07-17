@@ -341,6 +341,8 @@ import type {
   V2SessionActiveResponses,
   V2SessionChildrenErrors,
   V2SessionChildrenResponses,
+  V2SessionCommandErrors,
+  V2SessionCommandResponses,
   V2SessionCompactErrors,
   V2SessionCompactResponses,
   V2SessionContextErrors,
@@ -5706,6 +5708,10 @@ export class Session3 extends HeyApiClient {
       priority?: number
       permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
       location?: LocationRef
+      strict?: SessionStrictOverride
+      introspection?: boolean
+      quality?: boolean
+      affective?: boolean
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -5723,6 +5729,10 @@ export class Session3 extends HeyApiClient {
             { in: "body", key: "priority" },
             { in: "body", key: "permissionMode" },
             { in: "body", key: "location" },
+            { in: "body", key: "strict" },
+            { in: "body", key: "introspection" },
+            { in: "body", key: "quality" },
+            { in: "body", key: "affective" },
           ],
         },
       ],
@@ -5801,6 +5811,7 @@ export class Session3 extends HeyApiClient {
       metadata?: {
         [key: string]: unknown
       }
+      archived?: number
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -5812,6 +5823,7 @@ export class Session3 extends HeyApiClient {
             { in: "path", key: "sessionID" },
             { in: "body", key: "title" },
             { in: "body", key: "metadata" },
+            { in: "body", key: "archived" },
           ],
         },
       ],
@@ -6159,6 +6171,51 @@ export class Session3 extends HeyApiClient {
       ThrowOnError
     >({
       url: "/api/session/{sessionID}/prompt-override",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Run a slash command
+   *
+   * Expand and dispatch a slash command: a prompt-kind command runs a turn on this session; a subtask command spawns a child session (surfaced via session events).
+   */
+  public command<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      command?: string
+      arguments?: string
+      agent?: string
+      model?: string
+      variant?: string
+      messageID?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "body", key: "command" },
+            { in: "body", key: "arguments" },
+            { in: "body", key: "agent" },
+            { in: "body", key: "model" },
+            { in: "body", key: "variant" },
+            { in: "body", key: "messageID" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2SessionCommandResponses, V2SessionCommandErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/command",
       ...options,
       ...params,
       headers: {

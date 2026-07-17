@@ -21,7 +21,7 @@ export function useChatsAttentionSets(): () => { waiting: string[]; unseen: stri
       permission: data.permission,
       question: data.question,
       unseen: notification.session.unseenSessionIds(),
-      countsAsk: (ask) => !permission.autoResponds(ask, data.info[ask.sessionID]?.directory),
+      countsAsk: (ask) => !permission.autoResponds(ask, data.info[ask.sessionID]?.location.directory),
     })
   })
 }

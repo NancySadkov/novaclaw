@@ -9,7 +9,7 @@ import { ServerConnection } from "@/context/server"
 import { projectForSession } from "@/pages/layout/helpers"
 import { SessionTabAvatar } from "@/pages/layout/session-tab-avatar"
 import { showToast } from "@/utils/toast"
-import type { Session } from "@novaclaw/sdk/v2"
+import type { SessionV2Info as Session } from "@novaclaw/sdk/v2"
 import { canOpenTabRename, forwardTabRef } from "./titlebar-tab-gesture"
 import "./titlebar-tab-nav.css"
 
@@ -94,8 +94,8 @@ export function TabNavItem(props: {
     const ctx = serverCtx()
     const session = props.session()
     if (!ctx || !session) return
-    const client = ctx.sdk.createClient({ directory: session.directory, throwOnError: true })
-    await client.session.update({ sessionID: session.id, title })
+    const client = ctx.sdk.createClient({ directory: session.location.directory, throwOnError: true })
+    await client.v2.session.update({ sessionID: session.id, title })
   }
 
   const closeRename = async (save: boolean) => {
@@ -211,7 +211,7 @@ export function TabNavItem(props: {
               <span data-slot="project-avatar-slot">
                 <SessionTabAvatar
                   project={project()}
-                  directory={session().directory}
+                  directory={session()?.location?.directory ?? ""}
                   sessionId={session().id}
                   activeServer={props.activeServer}
                 />

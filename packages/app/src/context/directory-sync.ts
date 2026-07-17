@@ -1,5 +1,5 @@
 import { Binary } from "@novaclaw/core/util/binary"
-import type { Session } from "@novaclaw/sdk/v2/client"
+import type { SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
 import { createMemo } from "solid-js"
 import { produce, reconcile, type SetStoreFunction } from "solid-js/store"
 import type { createServerSdkContext } from "./server-sdk"
@@ -42,7 +42,7 @@ export const createDirSyncContext = (
 
   const index = (sessionID: string) => {
     const session = serverSync.session.get(sessionID)
-    if (!session || session.directory !== directory) return
+    if (!session || session.location.directory !== directory) return
     const [store, setStore] = current()
     const result = Binary.search(store.session, session.id, (item) => item.id)
     if (result.found) {
@@ -76,7 +76,7 @@ export const createDirSyncContext = (
       },
       get(sessionID: string) {
         const session = serverSync.session.get(sessionID)
-        if (session?.directory === directory) return session
+        if (session?.location.directory === directory) return session
       },
       async sync(sessionID: string, options?: { force?: boolean }) {
         await serverSync.session.sync(sessionID, options)
@@ -90,8 +90,8 @@ export const createDirSyncContext = (
       fetch: async (count = 10) => {
         const [store, setStore] = current()
         setStore("limit", (value) => value + count)
-        const response = await client.session.list()
-        const sessions = (response.data ?? [])
+        const response = await client.v2.session.list()
+        const sessions = [...(response.data?.data ?? [])]
           .filter((session) => !!session?.id)
           .sort((a, b) => cmp(a.id, b.id))
           .slice(0, store.limit)
@@ -100,7 +100,7 @@ export const createDirSyncContext = (
       },
       more: createMemo(() => current()[0].session.length >= current()[0].limit),
       archive: async (sessionID: string) => {
-        await serverSDK.client.session.update({ sessionID, time: { archived: Date.now() } })
+        await serverSDK.client.v2.session.update({ sessionID, archived: Date.now() })
         current()[1](
           "session",
           produce((draft) => {
