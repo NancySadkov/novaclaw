@@ -144,6 +144,21 @@ const make = (options: Config) =>
     return client
   })
 
+/** One-shot SYNCHRONOUS read for boot-time snapshot consumers — the node twin of
+ *  sqlite.bun.ts `readRowsSync` (keep the contracts identical; `#sqlite` picks the runtime). */
+export function readRowsSync(filename: string, query: string): Array<Record<string, unknown>> | undefined {
+  try {
+    const db = new DatabaseSync(filename, { readOnly: true })
+    try {
+      return db.prepare(query).all() as Array<Record<string, unknown>>
+    } finally {
+      db.close()
+    }
+  } catch {
+    return undefined
+  }
+}
+
 const nativeLayer = (config: Config) =>
   Layer.effect(
     Sqlite.Native,

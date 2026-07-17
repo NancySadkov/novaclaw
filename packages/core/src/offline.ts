@@ -6,9 +6,11 @@
 // legible error naming the blocked host and how to allow it.
 //
 // Policy sources (snapshot at layer init — a machine-level invariant, not per-request):
-//   - `NOVACLAW_OFFLINE` env ("true"/"1") OR `offline: true` in the GLOBAL config file.
-//   - allowlist = hosts of `provider.*.options.baseURL` from the GLOBAL config
-//     (project-scoped providers are not visible to this global layer — in airgap
+//   - `NOVACLAW_OFFLINE` env ("true"/"1") OR `offline: true` in the SETTINGS STORE (config-sqlite:
+//     the runtime_setting SQLite row is the runtime truth; the jsonc file is only consulted
+//     before the FIRST boot has seeded the stores — at that moment it IS the declared config).
+//   - allowlist = hosts of every catalog_provider layer's `api.url` (V2 vocabulary; same pre-seed
+//     jsonc fallback; project-scoped providers are not visible to this global layer — in airgap
 //     mode, declare the provider globally or use the env escape hatch), plus
 //   - `NOVACLAW_OFFLINE_ALLOW` env: comma-separated extra hosts (e.g. a LAN SearXNG).
 //   - Loopback (localhost / 127.0.0.0/8 / ::1) is ALWAYS allowed: the app talking to
@@ -22,6 +24,8 @@ import path from "path"
 import { Context, Effect, Layer } from "effect"
 import { HttpClient, HttpClientError } from "effect/unstable/http"
 import { parse } from "jsonc-parser"
+import { readRowsSync } from "#sqlite"
+import { DatabasePath } from "./database/db-path"
 import { Global } from "./global"
 import { makeGlobalNode } from "./effect/app-node"
 
@@ -56,15 +60,20 @@ export function parseAllowList(value: string | undefined): string[] {
     .filter((entry) => entry.length > 0)
 }
 
-/** Hostnames of every `provider.*.options.baseURL` in a (decoded-or-raw) config object. */
+/** The endpoint host of one provider fragment (ConfigProvider.Info shape): `api.url` — the V2
+ *  vocabulary (F1-config; the V1 `provider.*.options.baseURL` never survives the V2 decode). */
+function providerHost(entry: unknown): string | undefined {
+  const url = (entry as { api?: { url?: unknown } } | undefined)?.api?.url
+  return typeof url === "string" ? hostFromUrl(url) : undefined
+}
+
+/** Hostnames of every `providers.*.api.url` in a (decoded-or-raw) V2 config object. */
 export function providerHostsFromConfig(config: unknown): string[] {
-  const providers = (config as { provider?: Record<string, unknown> } | undefined)?.provider
+  const providers = (config as { providers?: Record<string, unknown> } | undefined)?.providers
   if (!providers || typeof providers !== "object") return []
   const hosts: string[] = []
   for (const entry of Object.values(providers)) {
-    const baseURL = (entry as { options?: { baseURL?: unknown } } | undefined)?.options?.baseURL
-    if (typeof baseURL !== "string") continue
-    const host = hostFromUrl(baseURL)
+    const host = providerHost(entry)
     if (host) hosts.push(host)
   }
   return hosts
@@ -85,7 +94,7 @@ export function checkUrl(url: string, policy: Policy): Verdict {
     message:
       `Offline mode: request to host '${host}' blocked (fail-closed). ` +
       `Only loopback and the configured model-provider hosts are reachable (allowed: ${allowed}). ` +
-      `To allow it: add the provider to the GLOBAL novaclaw.jsonc, extend NOVACLAW_OFFLINE_ALLOW ` +
+      `To allow it: add the provider globally (Settings → Models), extend NOVACLAW_OFFLINE_ALLOW ` +
       `(comma-separated hosts), or turn offline mode off.`,
   }
 }
@@ -94,7 +103,10 @@ const truthy = (value: string | undefined) => value === "true" || value === "1"
 
 const CONFIG_NAMES = ["config.json", "novaclaw.json", "novaclaw.jsonc"]
 
-/** Read the GLOBAL config file (first of the known names that parses). Sync + tolerant. */
+/** Read the GLOBAL config file (first of the known names that parses). Sync + tolerant. Post
+ *  config-sqlite this is ONLY the pre-first-boot fallback: before `seedAll` has imported the file
+ *  into the stores, the file IS the declared config; afterwards the stores are the truth and a
+ *  stale exported jsonc must not override them. */
 function readGlobalConfig(configDir: string): unknown {
   for (const name of CONFIG_NAMES) {
     try {
@@ -108,12 +120,53 @@ function readGlobalConfig(configDir: string): unknown {
   return undefined
 }
 
-export function loadPolicy(input: { configDir: string; env?: Record<string, string | undefined> }): Policy {
+/** The policy inputs as the SQLite stores hold them (config-sqlite: settings + catalog are the
+ *  runtime truth; jsonc is import/export wire only). `undefined` = the stores are not seeded yet
+ *  (no db / no tables / both empty — a pre-first-boot process), so the caller may fall back to
+ *  the jsonc that is about to be imported. Sync read-only one-shots — this runs at layer init. */
+export function readStorePolicy(dbFile: string): { readonly offline: boolean; readonly providerHosts: string[] } | undefined {
+  const settings = readRowsSync(dbFile, "SELECT key, value FROM runtime_setting")
+  const providers = readRowsSync(dbFile, "SELECT layers FROM catalog_provider")
+  if ((settings === undefined || settings.length === 0) && (providers === undefined || providers.length === 0))
+    return undefined
+  const parseJson = (value: unknown): unknown => {
+    if (typeof value !== "string") return value
+    try {
+      return JSON.parse(value)
+    } catch {
+      return undefined
+    }
+  }
+  const offlineRow = settings?.find((row) => row.key === "offline")
+  const hosts: string[] = []
+  for (const row of providers ?? []) {
+    const layers = parseJson(row.layers)
+    if (!Array.isArray(layers)) continue
+    for (const layer of layers) {
+      const host = providerHost(layer)
+      if (host) hosts.push(host)
+    }
+  }
+  return { offline: offlineRow !== undefined && parseJson(offlineRow.value) === true, providerHosts: hosts }
+}
+
+export function loadPolicy(input: {
+  configDir: string
+  env?: Record<string, string | undefined>
+  /** The instance database file; tests inject a temp db. Default: the real instance db. */
+  dbFile?: string
+}): Policy {
   const env = input.env ?? process.env
-  const config = readGlobalConfig(input.configDir)
-  const enabled = truthy(env["NOVACLAW_OFFLINE"]) || (config as { offline?: unknown } | undefined)?.offline === true
+  // Source order: env (machine escape hatch) → the SQLite stores (the runtime truth since
+  // config-sqlite) → the jsonc ONLY while the stores are unseeded (pre-first-boot, when the file
+  // is what seedAll is about to import). A stale exported jsonc never overrides the stores.
+  const store = readStorePolicy(input.dbFile ?? DatabasePath.path())
+  const config = store === undefined ? readGlobalConfig(input.configDir) : undefined
+  const fromConfig = (config as { offline?: unknown } | undefined)?.offline === true
+  const enabled = truthy(env["NOVACLAW_OFFLINE"]) || (store !== undefined ? store.offline : fromConfig)
   if (!enabled) return disabledPolicy
-  const allowedHosts = new Set([...providerHostsFromConfig(config), ...parseAllowList(env["NOVACLAW_OFFLINE_ALLOW"])])
+  const hosts = store !== undefined ? store.providerHosts : providerHostsFromConfig(config)
+  const allowedHosts = new Set([...hosts, ...parseAllowList(env["NOVACLAW_OFFLINE_ALLOW"])])
   return { enabled, allowedHosts }
 }
 

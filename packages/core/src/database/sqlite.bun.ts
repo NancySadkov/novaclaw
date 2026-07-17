@@ -151,6 +151,23 @@ const make = (options: Config) =>
     return client
   })
 
+/** One-shot SYNCHRONOUS read for boot-time snapshot consumers (the offline chokepoint reads the
+ *  settings store at layer init, before any Effect layer exists). Opens read-only, never creates,
+ *  closes immediately; undefined on ANY failure (missing db/table = pre-first-boot). Exported
+ *  through the `#sqlite` runtime map so the bun/node driver split stays in one place. */
+export function readRowsSync(filename: string, query: string): Array<Record<string, unknown>> | undefined {
+  try {
+    const db = new Database(filename, { readonly: true, create: false })
+    try {
+      return db.query(query).all() as Array<Record<string, unknown>>
+    } finally {
+      db.close()
+    }
+  } catch {
+    return undefined
+  }
+}
+
 const nativeLayer = (config: Config) =>
   Layer.effect(
     Sqlite.Native,

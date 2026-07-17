@@ -35,12 +35,12 @@ describe("offline pure helpers", () => {
     expect(hostFromUrl("not a url")).toBeUndefined()
   })
 
-  test("providerHostsFromConfig walks provider.*.options.baseURL", () => {
+  test("providerHostsFromConfig walks providers.*.api.url (V2)", () => {
     const hosts = providerHostsFromConfig({
-      provider: {
-        "dgx-spark": { options: { baseURL: "http://192.168.178.40:8000/v1" } },
-        cloudy: { options: { baseURL: "https://api.example.com/v1" } },
-        broken: { options: { baseURL: 42 } },
+      providers: {
+        "dgx-spark": { api: { url: "http://192.168.178.40:8000/v1" } },
+        cloudy: { api: { url: "https://api.example.com/v1" } },
+        broken: { api: { url: 42 } },
         bare: {},
       },
     })
@@ -148,7 +148,7 @@ describe("loadPolicy", () => {
   test("env NOVACLAW_OFFLINE=1 enables; allowlist from global config providers + env", () => {
     const dir = tmpConfig(`{
       // JSONC comments must not break the loader (nor the :// in URLs)
-      "provider": { "dgx-spark": { "options": { "baseURL": "http://192.168.178.40:8000/v1" } } },
+      "providers": { "dgx-spark": { "api": { "url": "http://192.168.178.40:8000/v1" } } },
     }`)
     const policy = loadPolicy({
       configDir: dir,
@@ -159,7 +159,7 @@ describe("loadPolicy", () => {
   })
 
   test("config offline:true enables without env", () => {
-    const dir = tmpConfig(`{ "offline": true, "provider": {} }`)
+    const dir = tmpConfig(`{ "offline": true, "providers": {} }`)
     const policy = loadPolicy({ configDir: dir, env: {} })
     expect(policy.enabled).toBe(true)
     expect(policy.allowedHosts.size).toBe(0)
@@ -174,5 +174,98 @@ describe("loadPolicy", () => {
     })
     expect(forced.enabled).toBe(true)
     expect(forced.allowedHosts.size).toBe(0)
+  })
+})
+
+// Config→SQLite sourcing (dependability follow-up): once the stores are seeded they are the ONLY
+// runtime truth — the jsonc is an import/export wire and must never override them. Before the
+// first boot has seeded anything, the jsonc IS the declared config (seedAll is about to import
+// it), so the loader falls back to it. These tests build a real sqlite file with the production
+// table shapes and inject it via `dbFile`.
+describe("loadPolicy store sourcing", () => {
+  const tmpConfig = (content?: string) => {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), "offline-store-test-"))
+    if (content !== undefined) fs.writeFileSync(path.join(dir, "novaclaw.jsonc"), content)
+    return dir
+  }
+  const makeStoreDb = (input: {
+    offline?: boolean
+    providers?: Array<{ id: string; layers: unknown[] }>
+    extraSetting?: boolean
+  }) => {
+    const { Database } = require("bun:sqlite") as typeof import("bun:sqlite")
+    const file = path.join(fs.mkdtempSync(path.join(os.tmpdir(), "offline-store-db-")), "novaclaw.db")
+    const db = new Database(file)
+    db.run("CREATE TABLE runtime_setting (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+    db.run("CREATE TABLE catalog_provider (id TEXT PRIMARY KEY, layers TEXT NOT NULL)")
+    if (input.offline !== undefined)
+      db.run("INSERT INTO runtime_setting (key, value) VALUES ('offline', ?)", [JSON.stringify(input.offline)])
+    if (input.extraSetting) db.run("INSERT INTO runtime_setting (key, value) VALUES ('shell', '\"cmd\"')")
+    for (const provider of input.providers ?? [])
+      db.run("INSERT INTO catalog_provider (id, layers) VALUES (?, ?)", [provider.id, JSON.stringify(provider.layers)])
+    db.close()
+    return file
+  }
+
+  test("store offline:true engages the policy with catalog-layer hosts — no jsonc involved", () => {
+    const dbFile = makeStoreDb({
+      offline: true,
+      providers: [{ id: "dgx-spark", layers: [{ api: { url: "http://192.168.178.40:8000/v1" } }] }],
+    })
+    const policy = loadPolicy({ configDir: tmpConfig(), env: {}, dbFile })
+    expect(policy.enabled).toBe(true)
+    expect([...policy.allowedHosts]).toEqual(["192.168.178.40"])
+  })
+
+  test("a STALE jsonc offline:true never overrides a seeded store that says off", () => {
+    const dbFile = makeStoreDb({ offline: false, extraSetting: true })
+    const dir = tmpConfig(`{ "offline": true, "providers": { "x": { "api": { "url": "https://evil.example" } } } }`)
+    const policy = loadPolicy({ configDir: dir, env: {}, dbFile })
+    expect(policy.enabled).toBe(false)
+  })
+
+  test("seeded store WITHOUT an offline row means off (no jsonc fallback once seeded)", () => {
+    const dbFile = makeStoreDb({ extraSetting: true })
+    const dir = tmpConfig(`{ "offline": true }`)
+    expect(loadPolicy({ configDir: dir, env: {}, dbFile }).enabled).toBe(false)
+  })
+
+  test("pre-seed (missing db) falls back to the jsonc that is about to be imported", () => {
+    const dir = tmpConfig(`{ "offline": true, "providers": { "p": { "api": { "url": "http://10.0.0.5:8000" } } } }`)
+    const policy = loadPolicy({
+      configDir: dir,
+      env: {},
+      dbFile: path.join(os.tmpdir(), "definitely-missing-dir", "no.db"),
+    })
+    expect(policy.enabled).toBe(true)
+    expect([...policy.allowedHosts]).toEqual(["10.0.0.5"])
+  })
+
+  test("env stays the highest-precedence escape hatch; allowlist merges store + env hosts", () => {
+    const dbFile = makeStoreDb({
+      offline: false,
+      providers: [{ id: "spark", layers: [{ api: { url: "http://192.168.178.40:8000/v1" } }] }],
+    })
+    const policy = loadPolicy({
+      configDir: tmpConfig(),
+      env: { NOVACLAW_OFFLINE: "1", NOVACLAW_OFFLINE_ALLOW: "searx.lan" },
+      dbFile,
+    })
+    expect(policy.enabled).toBe(true)
+    expect([...policy.allowedHosts].sort()).toEqual(["192.168.178.40", "searx.lan"])
+  })
+
+  test("multi-layer providers contribute every layer api.url host", () => {
+    const dbFile = makeStoreDb({
+      offline: true,
+      providers: [
+        {
+          id: "p",
+          layers: [{ api: { url: "http://10.1.1.1:1" } }, { api: { url: "http://10.2.2.2:2" } }],
+        },
+      ],
+    })
+    const policy = loadPolicy({ configDir: tmpConfig(), env: {}, dbFile })
+    expect([...policy.allowedHosts].sort()).toEqual(["10.1.1.1", "10.2.2.2"])
   })
 })

@@ -3,11 +3,9 @@ export * as Database from "./database"
 import { EffectDrizzleSqlite } from "@novaclaw/effect-drizzle-sqlite"
 import { layer as sqliteLayer } from "#sqlite"
 import { Context, Duration, Effect, Layer, Schedule } from "effect"
-import { Global } from "../global"
-import { Flag } from "../flag/flag"
-import { isAbsolute, join } from "path"
+import { DatabasePath } from "./db-path"
 import { DatabaseMigration } from "./migration"
-import { InstallationChannel } from "../installation/version"
+import { Global } from "../global"
 import { makeGlobalNode } from "../effect/app-node"
 
 const makeDatabase = EffectDrizzleSqlite.makeWithDefaults()
@@ -40,19 +38,9 @@ export function layerFromPath(filename: string) {
   return layer.pipe(Layer.provide(sqliteLayer({ filename })))
 }
 
-export function path() {
-  if (Flag.NOVACLAW_DB) {
-    if (Flag.NOVACLAW_DB === ":memory:" || isAbsolute(Flag.NOVACLAW_DB)) return Flag.NOVACLAW_DB
-    return join(Global.Path.data, Flag.NOVACLAW_DB)
-  }
-  if (
-    ["latest", "beta", "prod"].includes(InstallationChannel) ||
-    process.env.NOVACLAW_DISABLE_CHANNEL_DB === "1" ||
-    process.env.NOVACLAW_DISABLE_CHANNEL_DB === "true"
-  )
-    return join(Global.Path.data, "novaclaw.db")
-  return join(Global.Path.data, `novaclaw-${InstallationChannel.replace(/[^a-zA-Z0-9._-]/g, "-")}.db`)
-}
+// Moved to db-path.ts (a leaf module) so boot-time snapshot readers — the offline chokepoint —
+// can resolve the file without this module's drizzle/migration import graph. Same callable here.
+export const path = DatabasePath.path
 
 export const defaultLayer = Layer.unwrap(
   Effect.gen(function* () {
