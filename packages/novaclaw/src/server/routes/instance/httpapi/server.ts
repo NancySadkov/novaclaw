@@ -34,8 +34,6 @@ import { Project } from "@/project/project"
 import { Vcs } from "@/project/vcs"
 import { ProviderAuth } from "@/provider/auth"
 import { Question } from "@/question"
-import { Instruction } from "@/session/instruction"
-import { Session } from "@/session/session"
 import { Todo } from "@/session/todo"
 import { Skill } from "@/skill"
 import { Discovery } from "@/skill/discovery"
@@ -94,7 +92,6 @@ import { projectCopyHandlers } from "./handlers/project-copy"
 import { providerHandlers } from "./handlers/provider"
 import { ptyConnectHandlers, ptyHandlers } from "./handlers/pty"
 import { questionHandlers } from "./handlers/question"
-import { sessionHandlers } from "./handlers/session"
 import { shellHandlers } from "./handlers/shell"
 import { syncHandlers } from "./handlers/sync"
 import { handlers } from "@novaclaw/server/handlers"
@@ -173,7 +170,6 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
     questionHandlers,
     permissionHandlers,
     providerHandlers,
-    sessionHandlers,
     shellHandlers,
     syncHandlers,
     workspaceHandlers,
@@ -247,12 +243,10 @@ const app = LayerNode.group([
   Permission.node,
   PermissionSaved.node,
   Todo.node,
-  Session.node,
   SessionProjector.node,
   BackgroundJob.node,
   RuntimeFlags.node,
   EventV2Bridge.node,
-  Instruction.node,
   MCP.node,
   McpAuth.node,
   Truncate.node,

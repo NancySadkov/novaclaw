@@ -110,8 +110,8 @@ const add = Effect.fnUntraced(function* (state: State, match: string, events: Ev
     Effect.catch(
       Effect.fnUntraced(function* (err) {
         const message = FrontmatterError.isInstance(err) ? err.data.message : `Failed to parse skill ${match}`
-        const { Session } = yield* Effect.promise(() => import("@/session/session"))
-        yield* events.publish(Session.Event.Error, { error: new NamedError.Unknown({ message }).toObject() })
+        const { SessionRecordEvent } = yield* Effect.promise(() => import("@novaclaw/schema/session-record-event"))
+        yield* events.publish(SessionRecordEvent.Error, { error: new NamedError.Unknown({ message }).toObject() })
         yield* Effect.logError("failed to load skill", { skill: match, error: err })
         return undefined
       }),

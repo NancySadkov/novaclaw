@@ -2,7 +2,6 @@ import { AccountID, OrgID } from "@/account/schema"
 import { MCP } from "@/mcp"
 
 // F1f-prep: the route group declares only the WIRE schemas — no dependency on the V1 service file.
-import { SessionWire as Session } from "@/session/wire"
 import { SessionID } from "@/session/schema"
 import { Worktree } from "@/worktree"
 import { NonNegativeInt } from "@novaclaw/core/schema"
@@ -97,7 +96,6 @@ export const ExperimentalPaths = {
   toolIDs: "/experimental/tool/ids",
   worktree: "/experimental/worktree",
   worktreeReset: "/experimental/worktree/reset",
-  session: "/experimental/session",
   sessionBackground: "/experimental/session/:sessionID/background",
   resource: "/experimental/resource",
 } as const
@@ -220,17 +218,6 @@ export const ExperimentalApi = HttpApi.make("experimental")
             identifier: "worktree.reset",
             summary: "Reset worktree",
             description: "Reset a worktree branch to the primary default branch.",
-          }),
-        ),
-        HttpApiEndpoint.get("session", ExperimentalPaths.session, {
-          query: SessionListQuery,
-          success: described(Schema.Array(Session.GlobalInfo), "List of sessions"),
-        }).annotateMerge(
-          OpenApi.annotations({
-            identifier: "experimental.session.list",
-            summary: "List sessions",
-            description:
-              "Get a list of all NovaClaw sessions across projects, sorted by most recently updated. Archived sessions are excluded by default.",
           }),
         ),
         HttpApiEndpoint.post("sessionBackground", ExperimentalPaths.sessionBackground, {

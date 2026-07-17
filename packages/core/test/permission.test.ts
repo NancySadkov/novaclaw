@@ -1,5 +1,5 @@
 import { describe, expect } from "bun:test"
-import { Deferred, Effect, Fiber, Layer } from "effect"
+import { DateTime, Deferred, Effect, Fiber, Layer } from "effect"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { Database } from "@novaclaw/core/database/database"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
@@ -15,7 +15,7 @@ import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { SessionStore } from "@novaclaw/core/session/store"
-import { SessionV1 } from "@novaclaw/core/v1/session"
+import { SessionRecordEvent } from "@novaclaw/schema/session-record-event"
 import { eq } from "drizzle-orm"
 import { location } from "./fixture/location"
 import { testEffect } from "./lib/effect"
@@ -283,16 +283,18 @@ describe("PermissionV2", () => {
       )
       yield* Effect.addFinalizer(() => unsubscribe)
 
-      yield* events.publish(SessionV1.Event.Deleted, {
+      yield* events.publish(SessionRecordEvent.Deleted, {
         sessionID: request.sessionID,
         info: {
           id: request.sessionID,
           slug: "test",
           projectID: Project.ID.global,
-          directory: "/project",
+          location: { directory: AbsolutePath.make("/project") },
           title: "test",
           version: "test",
-          time: { created: 0, updated: 0 },
+          cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          time: { created: DateTime.makeUnsafe(1), updated: DateTime.makeUnsafe(1) },
         },
       } as never)
 

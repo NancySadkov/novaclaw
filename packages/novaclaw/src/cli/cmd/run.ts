@@ -1,4 +1,4 @@
-import type { PermissionV1 } from "@novaclaw/core/v1/permission"
+import type { PermissionRuleset } from "@novaclaw/schema/permission-ruleset"
 import { FSUtil } from "@novaclaw/core/fs-util"
 // CLI entry point for `novaclaw run` — the headless, non-interactive runner.
 //
@@ -21,18 +21,15 @@ import { UI } from "../ui"
 import { effectCmd } from "../effect-cmd"
 import { EOL } from "os"
 import { Filesystem } from "@/util/filesystem"
-import { createNovaclawClient, type NovaclawClient, type ToolPart } from "@novaclaw/sdk/v2"
+import { createNovaclawClient, type NovaclawClient } from "@novaclaw/sdk/v2"
+import type { ToolPart } from "./run/types"
 import { FormatError, FormatUnknownError } from "../error"
 
-type ModelInput = Parameters<NovaclawClient["session"]["promptAsync"]>[0]["model"]
+type ModelInput = string
 
 function pick(value: string | undefined): ModelInput | undefined {
-  if (!value) return undefined
-  const [providerID, ...rest] = value.split("/")
-  return {
-    providerID,
-    modelID: rest.join("/"),
-  } as ModelInput
+  // The native switch takes the "providerID/modelID" ref string apart itself at the call site.
+  return value || undefined
 }
 
 function resolveRunInput(value?: string, piped?: string): string | undefined {
@@ -350,7 +347,7 @@ export const RunCommand = effectCmd({
         process.exit(1)
       }
 
-      const rules: PermissionV1.Ruleset = [
+      const rules: PermissionRuleset.Ruleset = [
         {
           permission: "question",
           action: "deny",
@@ -376,55 +373,55 @@ export const RunCommand = effectCmd({
 
       async function session(sdk: NovaclawClient): Promise<SessionInfo | undefined> {
         if (args.session) {
-          const current = await sdk.session
+          const current = await sdk.v2.session
             .get({
               sessionID: args.session,
             })
             .catch(() => undefined)
 
-          if (!current?.data) {
+          if (!current?.data?.data) {
             UI.error("Session not found")
             process.exit(1)
           }
 
           if (args.fork) {
-            const forked = await sdk.session.fork({
+            const forked = await sdk.v2.session.fork({
               sessionID: args.session,
             })
-            const id = forked.data?.id
+            const id = forked.data?.data?.id
             if (!id) {
               return
             }
 
             return {
               id,
-              title: forked.data?.title ?? current.data.title,
-              directory: forked.data?.directory ?? current.data.directory,
+              title: forked.data?.data?.title ?? current.data.data.title,
+              directory: forked.data?.data?.location.directory ?? current.data.data.location.directory,
             }
           }
 
           return {
-            id: current.data.id,
-            title: current.data.title,
-            directory: current.data.directory,
+            id: current.data.data.id,
+            title: current.data.data.title,
+            directory: current.data.data.location.directory,
           }
         }
 
-        const base = args.continue ? (await sdk.session.list()).data?.find((item) => !item.parentID) : undefined
+        const base = args.continue ? (await sdk.v2.session.list()).data?.data?.find((item) => !item.parentID) : undefined
 
         if (base && args.fork) {
-          const forked = await sdk.session.fork({
+          const forked = await sdk.v2.session.fork({
             sessionID: base.id,
           })
-          const id = forked.data?.id
+          const id = forked.data?.data?.id
           if (!id) {
             return
           }
 
           return {
             id,
-            title: forked.data?.title ?? base.title,
-            directory: forked.data?.directory ?? base.directory,
+            title: forked.data?.data?.title ?? base.title,
+            directory: forked.data?.data?.location.directory ?? base.location.directory,
           }
         }
 
@@ -432,24 +429,24 @@ export const RunCommand = effectCmd({
           return {
             id: base.id,
             title: base.title,
-            directory: base.directory,
+            directory: base.location.directory,
           }
         }
 
         const name = title()
-        const result = await sdk.session.create({
+        const result = await sdk.v2.session.create({
           title: name,
           permission: [...rules],
         })
-        const id = result.data?.id
+        const id = result.data?.data?.id
         if (!id) {
           return
         }
 
         return {
           id,
-          title: result.data?.title ?? name,
-          directory: result.data?.directory,
+          title: result.data?.data?.title ?? name,
+          directory: result.data?.data?.location.directory,
         }
       }
 
@@ -786,7 +783,7 @@ export const RunCommand = effectCmd({
         }
 
         if (args.command) {
-          const result = await client.session.command({
+          const result = await client.v2.session.command({
             sessionID,
             agent,
             model: args.model,
@@ -812,12 +809,28 @@ export const RunCommand = effectCmd({
         // The blocking `session.prompt` endpoint is legacy-only and 400s on native
         // V2 sessions, so the headless runner must use `promptAsync` to reach the
         // V2 engine.
-        const result = await client.session.promptAsync({
+        // V1-nuke slice D: the native prompt takes {text, files}; the per-turn agent/model persist
+        // via the switch ops (the V2 semantics — the V1 promptAsync carried them inline).
+        if (model) {
+          const [providerID, ...restModel] = model.split("/")
+          const modelID = restModel.join("/")
+          if (providerID && modelID)
+            await client.v2.session
+              .switchModel({
+                sessionID,
+                model: { providerID, id: modelID, ...(args.variant ? { variant: args.variant } : {}) },
+              })
+              .catch(() => undefined)
+        }
+        if (agent) await client.v2.session.switchAgent({ sessionID, agent }).catch(() => undefined)
+        const result = await client.v2.session.prompt({
           sessionID,
-          agent,
-          model,
-          variant: args.variant,
-          parts: [...files, { type: "text", text: message }],
+          prompt: {
+            text: message,
+            ...(files.length > 0
+              ? { files: files.map((file) => ({ uri: file.url, name: file.filename })) }
+              : {}),
+          },
         })
         if (result.error) {
           if (!emit("error", { error: result.error })) UI.error(formatRunError(result.error))

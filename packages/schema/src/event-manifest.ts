@@ -8,17 +8,16 @@ import { FileSystem } from "./filesystem"
 import { FileSystemWatcher } from "./filesystem-watcher"
 import { InstallationEvent } from "./installation-event"
 import { Integration } from "./integration"
-import { LegacyEvent } from "./legacy-event"
 import { McpEvent } from "./mcp-event"
 import { ModelsDev } from "./models-dev"
 import { Permission } from "./permission"
-import { PermissionV1 } from "./permission-v1"
+import { PermissionRuleset } from "./permission-ruleset"
 import { Plugin } from "./plugin"
 import { Project } from "./project"
 import { ProjectDirectories } from "./project-directories"
 import { Pty } from "./pty"
 import { Question } from "./question"
-import { QuestionV1 } from "./question-v1"
+import { QuestionRequest } from "./question-request"
 import { Reference } from "./reference"
 import { ServerEvent } from "./server-event"
 import { SessionCompactionEvent } from "./session-compaction-event"
@@ -26,15 +25,17 @@ import { SessionEvent } from "./session-event"
 import { SessionStatusEvent } from "./session-status-event"
 import { SessionTags } from "./session-tags"
 import { SessionTodo } from "./session-todo"
-import { SessionV1 } from "./session-v1"
+import { SessionRecordEvent } from "./session-record-event"
 import { VcsEvent } from "./vcs-event"
 import { WorkspaceEvent } from "./workspace-event"
 import { WorktreeEvent } from "./worktree-event"
 
-const sessionV1DurableDefinitions = SessionV1.Event.Definitions.filter((definition) => definition.durable !== undefined)
-const sessionV1LiveDefinitions = SessionV1.Event.Definitions.filter((definition) => definition.durable === undefined)
+// V1-nuke slice D: the record lifecycle events are native (payload = Session.Info, durable v2);
+// session.diff + command.executed died (no publishers).
+const recordDurableDefinitions = SessionRecordEvent.Definitions.filter((definition) => definition.durable !== undefined)
+const recordLiveDefinitions = SessionRecordEvent.Definitions.filter((definition) => definition.durable === undefined)
 
-const coreDefinitions = Event.inventory(...sessionV1DurableDefinitions, ...SessionEvent.Definitions)
+const coreDefinitions = Event.inventory(...recordDurableDefinitions, ...SessionEvent.Definitions)
 
 const foundationDefinitions = Event.inventory(
   ...ModelsDev.Event.Definitions,
@@ -64,17 +65,16 @@ export const ServerDefinitions = Event.inventory(
 
 export const Definitions = Event.inventory(
   ...foundationDefinitions,
-  ...sessionV1LiveDefinitions,
+  ...recordLiveDefinitions,
   ...InstallationEvent.Definitions,
   ...featureDefinitions,
   ...SessionTodo.Event.Definitions,
   ...SessionTags.Event.Definitions,
-  ...PermissionV1.Event.Definitions,
+  ...PermissionRuleset.Event.Definitions,
   ...McpEvent.Definitions,
-  ...LegacyEvent.Definitions,
-  ...Project.Event.Definitions,
+    ...Project.Event.Definitions,
   ...SessionStatusEvent.Definitions,
-  ...QuestionV1.Event.Definitions,
+  ...QuestionRequest.Event.Definitions,
   ...SessionCompactionEvent.Definitions,
   ...VcsEvent.Definitions,
   ...WorkspaceEvent.Definitions,

@@ -41,7 +41,7 @@ import { SessionPatch } from "../patch"
 import { SessionSchema } from "../schema"
 import { SessionStore } from "../store"
 import { SessionTitle } from "../title"
-import { SessionV1 } from "../../v1/session"
+
 import { resolveSessionConfig, EFFECTIVE_CONFIG_DEFAULTS, type EffectiveConfig } from "../config-resolve"
 import { SessionScheduler } from "../scheduler"
 import { type RunError, Service } from "./index"
@@ -320,7 +320,7 @@ export const layer = Layer.effect(
       const title = SessionTitle.clean(chunks.join(""))
       if (!title) return
       yield* SessionPatch.patchSessionRecord({ db, events }, sessionID, (info) =>
-        SessionV1.SessionInfo.make({ ...info, title, time: { ...info.time, updated: Date.now() } }),
+        SessionSchema.Info.make({ ...info, title, time: { ...info.time, updated: DateTime.makeUnsafe(Date.now()) } }),
       )
     })
 
@@ -342,7 +342,7 @@ export const layer = Layer.effect(
       yield* SessionPatch.patchSessionRecord({ db, events }, sessionID, (info) =>
         SessionChanges.equal(info.summary, summary)
           ? undefined
-          : SessionV1.SessionInfo.make({ ...info, summary, time: { ...info.time, updated: Date.now() } }),
+          : SessionSchema.Info.make({ ...info, summary, time: { ...info.time, updated: DateTime.makeUnsafe(Date.now()) } }),
       )
     })
 

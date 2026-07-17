@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { SnapshotFileDiff } from "@novaclaw/sdk/v2"
+import type { SessionChangeDiff } from "@novaclaw/sdk/v2"
 import { diffs } from "./diffs"
 
 const item = {
@@ -8,7 +8,7 @@ const item = {
   additions: 1,
   deletions: 1,
   status: "modified",
-} satisfies SnapshotFileDiff
+} satisfies SessionChangeDiff
 
 describe("diffs", () => {
   test("keeps valid arrays", () => {

@@ -1,5 +1,4 @@
 import { Schema } from "effect"
-import { LegacyEvent } from "@novaclaw/schema/legacy-event"
 
 // P6 (ui-arch hardening, rides config-sqlite step 9): the V1 `Command.Service` map is retired —
 // both /command routes serve the shared core `CommandList` union (CommandV2 ∪ skills ∪ MCP
@@ -7,7 +6,6 @@ import { LegacyEvent } from "@novaclaw/schema/legacy-event"
 // shape (`Info`, the legacy /command response) and the built-in command name constants.
 
 export const Event = {
-  Executed: LegacyEvent.CommandExecuted,
 }
 
 export const Info = Schema.Struct({

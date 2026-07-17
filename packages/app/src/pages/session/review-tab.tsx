@@ -1,6 +1,6 @@
 import { createEffect, onCleanup, type JSX } from "solid-js"
 import { makeEventListener } from "@solid-primitives/event-listener"
-import type { SnapshotFileDiff, VcsFileDiff } from "@novaclaw/sdk/v2"
+import type { SessionChangeDiff, VcsFileDiff } from "@novaclaw/sdk/v2"
 import { SessionReview } from "@novaclaw/session-ui/session-review"
 import type {
   SessionReviewCommentActions,
@@ -14,7 +14,7 @@ import type { LineComment } from "@/context/comments"
 
 export type DiffStyle = "unified" | "split"
 
-type ReviewDiff = SnapshotFileDiff | VcsFileDiff
+type ReviewDiff = SessionChangeDiff | VcsFileDiff
 
 export interface SessionReviewTabProps {
   title?: JSX.Element

@@ -260,9 +260,9 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                 return conn ? { route, sdk: global.ensureServerCtx(conn).sdk } : undefined
               },
               ({ route, sdk }) =>
-                sdk.client.session
+                sdk.client.v2.session
                   .get({ sessionID: route.sessionId })
-                  .then((x) => x.data)
+                  .then((x) => x.data?.data)
                   .catch(() => {}),
             )
 
@@ -318,7 +318,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
               const route = layout.route()
               const activeSession = session()
               if (route.type === "session" && activeSession) {
-                tabs.newDraft({ server: route.server ?? server.key, directory: activeSession.directory }, "")
+                tabs.newDraft({ server: route.server ?? server.key, directory: activeSession.location.directory }, "")
                 return
               }
 

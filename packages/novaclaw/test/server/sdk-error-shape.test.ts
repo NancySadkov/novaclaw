@@ -33,7 +33,7 @@ describe("v2 SDK error shape", () => {
 
     let caught: unknown
     try {
-      await sdk.session.get({ sessionID: "ses_no_such" }, { throwOnError: true })
+      await sdk.v2.session.get({ sessionID: "ses_no_such" }, { throwOnError: true })
     } catch (e) {
       caught = e
     }
@@ -43,9 +43,10 @@ describe("v2 SDK error shape", () => {
     const cause = err.cause as { body?: any; status?: number }
     expect(err.message).toContain("Session not found")
     expect(cause.status).toBe(404)
+    // V1-nuke slice D: the native route serves the typed protocol error (tagged, flat message).
     expect(cause.body).toMatchObject({
-      name: "NotFoundError",
-      data: { message: expect.stringContaining("Session not found") },
+      _tag: "SessionNotFoundError",
+      message: expect.stringContaining("Session not found"),
     })
   })
 

@@ -7,7 +7,6 @@ import { MCP } from "@/mcp"
 import { Project } from "@/project/project"
 import type { SessionID } from "@/session/schema"
 import { Database } from "@novaclaw/core/database/database"
-import { SessionV1Read } from "@novaclaw/core/session/v1-read"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import { LocationServiceMap } from "@novaclaw/core/location-services"
 import { ServerLocationServiceMap } from "@/location-service-map"
@@ -146,27 +145,6 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       return true
     })
 
-    const session = Effect.fn("ExperimentalHttpApi.session")(function* (ctx: { query: typeof SessionListQuery.Type }) {
-      const limit = ctx.query.limit ?? 100
-      // F1c read-sweep B: the global list serves from core (row-faithful V1 wire shape).
-      const all = yield* SessionV1Read.listGlobal(db, {
-        directory: ctx.query.directory,
-        roots: ctx.query.roots,
-        start: ctx.query.start,
-        cursor: ctx.query.cursor,
-        search: ctx.query.search,
-        limit: limit + 1,
-        archived: ctx.query.archived,
-      })
-      const list = all.length > limit ? all.slice(0, limit) : all
-      return HttpServerResponse.jsonUnsafe(list, {
-        headers:
-          all.length > limit && list.length > 0
-            ? { "x-next-cursor": String(list[list.length - 1].time.updated) }
-            : undefined,
-      })
-    })
-
     const sessionBackground = Effect.fn("ExperimentalHttpApi.sessionBackground")(function* (ctx: {
       params: { sessionID: SessionID }
     }) {
@@ -197,7 +175,6 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       .handle("worktreeCreate", worktreeCreate)
       .handle("worktreeRemove", worktreeRemove)
       .handle("worktreeReset", worktreeReset)
-      .handle("session", session)
       .handle("sessionBackground", sessionBackground)
       .handle("resource", resource)
   }),

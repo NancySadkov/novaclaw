@@ -1,4 +1,4 @@
-import { PermissionV1 } from "@novaclaw/core/v1/permission"
+import { PermissionRuleset } from "@novaclaw/schema/permission-ruleset"
 import type { Agent } from "./agent"
 
 /**
@@ -12,9 +12,9 @@ import type { Agent } from "./agent"
  *    doesn't already permit them.
  */
 export function deriveSubagentSessionPermission(input: {
-  parentSessionPermission: PermissionV1.Ruleset
+  parentSessionPermission: PermissionRuleset.Ruleset
   subagent: Agent.Info
-}): PermissionV1.Ruleset {
+}): PermissionRuleset.Ruleset {
   const canTask = input.subagent.permission.some((rule) => rule.permission === "task")
   const canTodo = input.subagent.permission.some((rule) => rule.permission === "todowrite")
   return [

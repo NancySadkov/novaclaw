@@ -1,4 +1,4 @@
-import { PermissionV1 } from "@novaclaw/core/v1/permission"
+import { PermissionRuleset } from "@novaclaw/schema/permission-ruleset"
 import { NodeHttpServer, NodeServices } from "@effect/platform-node"
 import { Flag } from "@novaclaw/core/flag/flag"
 import { describe, expect } from "bun:test"
@@ -8,7 +8,7 @@ import * as Socket from "effect/unstable/socket/Socket"
 import { WorkspaceV2 } from "@novaclaw/core/workspace"
 import { ControlPaths } from "../../src/server/routes/instance/httpapi/groups/control"
 import { InstancePaths } from "../../src/server/routes/instance/httpapi/groups/instance"
-import { SessionPaths } from "../../src/server/routes/instance/httpapi/groups/session"
+import { InstancePaths as FencePaths } from "../../src/server/routes/instance/httpapi/groups/instance"
 import { ProjectV2 } from "@novaclaw/core/project"
 import { QuestionID } from "../../src/question/schema"
 import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
@@ -67,7 +67,7 @@ describe("instance HttpApi", () => {
         info: expect.any(Object),
         paths: expect.objectContaining({
           "/global/health": expect.any(Object),
-          "/session": expect.any(Object),
+          "/api/session": expect.any(Object),
         }),
       })
     }),
@@ -84,9 +84,11 @@ describe("instance HttpApi", () => {
       )
 
       const dir = yield* tmpdirScoped({ git: true })
-      const response = yield* HttpClientRequest.post(SessionPaths.create).pipe(
+      // V1-nuke slice D: the bare /session create died; any mutating instance route carries the
+      // fence header — app registration is the simplest.
+      const response = yield* HttpClientRequest.post(FencePaths.app).pipe(
         directoryHeader(dir),
-        HttpClientRequest.bodyJson({ title: "fenced" }),
+        HttpClientRequest.bodyJson({ id: "fence-test", title: "fenced" }),
         Effect.flatMap(HttpClient.execute),
       )
 
@@ -167,7 +169,7 @@ describe("instance HttpApi", () => {
             handlerContext,
           ),
         )
-      const permissionID = PermissionV1.ID.ascending()
+      const permissionID = PermissionRuleset.ID.ascending()
       const questionReplyID = QuestionID.ascending()
       const questionRejectID = QuestionID.ascending()
       const [permission, questionReply, questionReject] = yield* Effect.all(

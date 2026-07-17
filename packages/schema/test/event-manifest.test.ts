@@ -4,23 +4,22 @@ import { EventManifest } from "../src/event-manifest"
 import { IdeEvent } from "../src/ide-event"
 import { SessionEvent } from "../src/session-event"
 import { SessionTodo } from "../src/session-todo"
-import { SessionV1 } from "../src/session-v1"
+import { SessionRecordEvent } from "../src/session-record-event"
 import { WorkspaceEvent } from "../src/workspace-event"
 
 describe("public event manifest", () => {
   test("owns the complete public event surface", () => {
     expect(EventManifest.ServerDefinitions.length).toBe(63)
-    expect(EventManifest.Definitions.length).toBe(87)
-    // F1g: the message/part events retired with the legacy tables — only the session-LEVEL
-    // SessionV1 vocabulary (Created/Updated/Deleted + the non-durable Diff/Error) survives.
-    expect(SessionV1.Event.Definitions).toEqual([
-      SessionV1.Event.Created,
-      SessionV1.Event.Updated,
-      SessionV1.Event.Deleted,
-      SessionV1.Event.Diff,
-      SessionV1.Event.Error,
+    expect(EventManifest.Definitions.length).toBe(85)
+    // V1-nuke slice D: the record lifecycle events are native (Session.Info payloads, durable
+    // v2); session.diff + command.executed died with the V1 wire schemas (no publishers).
+    expect(SessionRecordEvent.Definitions).toEqual([
+      SessionRecordEvent.Created,
+      SessionRecordEvent.Updated,
+      SessionRecordEvent.Deleted,
+      SessionRecordEvent.Error,
     ])
-    expect(EventManifest.Latest.size).toBe(87)
+    expect(EventManifest.Latest.size).toBe(85)
     expect(EventManifest.Durable.size).toBe(38)
   })
 
@@ -39,7 +38,7 @@ describe("public event manifest", () => {
     expect(Reference.Event.Definitions).toEqual([Reference.Event.Updated])
     expect(EventManifest.Latest.has("ide.installed")).toBe(false)
     expect(IdeEvent.Definitions).toEqual([IdeEvent.Installed])
-    expect(EventManifest.Definitions.slice(46, 48)).toEqual([SessionV1.Event.Diff, SessionV1.Event.Error])
+    expect(EventManifest.Definitions).toContain(SessionRecordEvent.Error)
     expect(EventManifest.Latest.get("session.next.message.recorded")).toBe(SessionEvent.MessageRecorded)
     expect(EventManifest.Durable.get("session.next.message.recorded.1")).toBe(SessionEvent.MessageRecorded)
     expect(EventManifest.Durable.has("session.next.step.ended.1")).toBe(false)

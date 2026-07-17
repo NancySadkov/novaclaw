@@ -3,14 +3,13 @@ import { Effect, Layer } from "effect"
 import { HttpClientResponse } from "effect/unstable/http"
 import { Database } from "@novaclaw/core/database/database"
 
-import { Session } from "@/session/session"
 import { SyncPaths } from "../../src/server/routes/instance/httpapi/groups/sync"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { httpApiLayer, requestInDirectory } from "./httpapi-layer"
 
-const it = testEffect(Layer.mergeAll(Session.defaultLayer, Database.defaultLayer, httpApiLayer))
+const it = testEffect(Layer.mergeAll(Database.defaultLayer, httpApiLayer))
 
 const text = (response: HttpClientResponse.HttpClientResponse) => response.text
 

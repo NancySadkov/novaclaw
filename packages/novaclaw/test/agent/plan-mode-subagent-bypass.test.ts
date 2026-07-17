@@ -1,4 +1,4 @@
-import { PermissionV1 } from "@novaclaw/core/v1/permission"
+import { PermissionRuleset } from "@novaclaw/schema/permission-ruleset"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { expect } from "bun:test"
 import { Effect } from "effect"
@@ -38,7 +38,7 @@ it.instance("subagent permissions take precedence over parent agent restrictions
     // tool layer — see Permission.disabled / EDIT_TOOLS.)
     expect(Permission.evaluate("edit", "/some/file.ts", planAgent!.permission).action).toBe("deny")
 
-    const parentSessionPermission: PermissionV1.Ruleset = []
+    const parentSessionPermission: PermissionRuleset.Ruleset = []
 
     const subagentSessionPermission = deriveSubagentSessionPermission({
       parentSessionPermission,
@@ -59,7 +59,7 @@ it.instance("subagent's own read-only restriction remains effective", () =>
     const explore = yield* Agent.use.get("explore")
     expect(explore).toBeDefined()
 
-    const parentSessionPermission: PermissionV1.Ruleset = []
+    const parentSessionPermission: PermissionRuleset.Ruleset = []
     const subagentSessionPermission = deriveSubagentSessionPermission({
       parentSessionPermission,
       subagent: explore!,
@@ -79,7 +79,7 @@ it.instance(
       expect(planAgent).toBeDefined()
       expect(my).toBeDefined()
 
-      const parentSessionPermission: PermissionV1.Ruleset = []
+      const parentSessionPermission: PermissionRuleset.Ruleset = []
       const subagentSessionPermission = deriveSubagentSessionPermission({
         parentSessionPermission,
         subagent: my!,

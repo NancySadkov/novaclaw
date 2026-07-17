@@ -86,14 +86,12 @@ export interface Interface {
    * current instance and stamps the project's initialized timestamp when it
    * fires. Subscription lifetime is tied to the per-instance state scope.
    */
-  readonly init: () => Effect.Effect<void>
   readonly fromDirectory: (directory: string) => Effect.Effect<{ project: Info; sandbox: string }>
   readonly discover: (input: Info) => Effect.Effect<void>
   readonly list: () => Effect.Effect<Info[]>
   readonly get: (id: ProjectV2.ID) => Effect.Effect<Info | undefined>
   readonly update: (input: UpdateInput) => Effect.Effect<Info, NotFoundError>
   readonly initGit: (input: { directory: string; project: Info }) => Effect.Effect<Info>
-  readonly setInitialized: (id: ProjectV2.ID) => Effect.Effect<void>
   readonly sandboxes: (id: ProjectV2.ID) => Effect.Effect<string[]>
   readonly addSandbox: (id: ProjectV2.ID, directory: string) => Effect.Effect<void>
   readonly removeSandbox: (id: ProjectV2.ID, directory: string) => Effect.Effect<void>
@@ -374,30 +372,9 @@ export const layer = Layer.effect(
       return project
     })
 
-    const setInitialized = Effect.fn("Project.setInitialized")(function* (id: ProjectV2.ID) {
-      yield* db
-        .update(ProjectTable)
-        .set({ time_initialized: Date.now() })
-        .where(eq(ProjectTable.id, id))
-        .run()
-        .pipe(Effect.orDie)
-    })
-
-    const initState = yield* InstanceState.make(
-      Effect.fn("Project.initState")(function* (ctx) {
-        const unsubscribe = yield* events.listen((event) => {
-          if (event.type !== Command.Event.Executed.type || event.location?.directory !== ctx.directory)
-            return Effect.void
-          const data = event.data as EventV2.Data<typeof Command.Event.Executed>
-          return data.name === Command.Default.INIT ? setInitialized(ctx.project.id) : Effect.void
-        })
-        yield* Effect.addFinalizer(() => unsubscribe)
-      }),
-    )
-
-    const init = Effect.fn("Project.init")(function* () {
-      yield* InstanceState.get(initState)
-    })
+    // V1-nuke slice D: the /init command-executed listener died with the command.executed event —
+    // its publisher was deleted in an earlier F-slice, so the init-marking flow was already
+    // dormant (nothing ever called Project.init to attach it, and nothing read the mark).
 
     const sandboxes = Effect.fn("Project.sandboxes")(function* (id: ProjectV2.ID) {
       const row = yield* db.select().from(ProjectTable).where(eq(ProjectTable.id, id)).get().pipe(Effect.orDie)
@@ -448,14 +425,12 @@ export const layer = Layer.effect(
     })
 
     return Service.of({
-      init,
       fromDirectory,
       discover,
       list,
       get,
       update,
       initGit,
-      setInitialized,
       sandboxes,
       addSandbox,
       removeSandbox,

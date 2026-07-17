@@ -1,4 +1,4 @@
-import { PermissionV1 } from "@novaclaw/core/v1/permission"
+import { PermissionRuleset } from "@novaclaw/schema/permission-ruleset"
 import { Permission } from "@/permission"
 import { Schema } from "effect"
 import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
@@ -10,7 +10,7 @@ import { described } from "./metadata"
 
 const root = "/permission"
 const ReplyPayload = Schema.Struct({
-  reply: PermissionV1.Reply,
+  reply: PermissionRuleset.Reply,
   message: Schema.optional(Schema.String),
 })
 
@@ -20,7 +20,7 @@ export const PermissionApi = HttpApi.make("permission")
       .add(
         HttpApiEndpoint.get("list", root, {
           query: WorkspaceRoutingQuery,
-          success: described(Schema.Array(PermissionV1.Request), "List of pending permissions"),
+          success: described(Schema.Array(PermissionRuleset.Request), "List of pending permissions"),
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "permission.list",
@@ -29,7 +29,7 @@ export const PermissionApi = HttpApi.make("permission")
           }),
         ),
         HttpApiEndpoint.post("reply", `${root}/:requestID/reply`, {
-          params: { requestID: PermissionV1.ID },
+          params: { requestID: PermissionRuleset.ID },
           query: WorkspaceRoutingQuery,
           payload: ReplyPayload,
           success: described(Schema.Boolean, "Permission processed successfully"),

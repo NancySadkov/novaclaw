@@ -97,6 +97,8 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
               type: ctx.payload.type,
               priority: ctx.payload.priority,
               permissionMode: ctx.payload.permissionMode,
+              title: ctx.payload.title,
+              permission: ctx.payload.permission,
               strict: ctx.payload.strict,
               introspection: ctx.payload.introspection,
               quality: ctx.payload.quality,
@@ -369,6 +371,25 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                   }),
                 ),
               ),
+            )
+          return HttpApiSchema.NoContent.make()
+        }),
+      )
+      .handle(
+        "session.shell",
+        Effect.fn(function* (ctx) {
+          yield* session
+            .shell({ sessionID: ctx.params.sessionID, command: ctx.payload.command })
+            .pipe(
+              Effect.catchTag("Session.NotFoundError", (error) =>
+                Effect.fail(
+                  new SessionNotFoundError({
+                    sessionID: error.sessionID,
+                    message: `Session not found: ${error.sessionID}`,
+                  }),
+                ),
+              ),
+              Effect.orDie,
             )
           return HttpApiSchema.NoContent.make()
         }),

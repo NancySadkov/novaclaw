@@ -1,4 +1,4 @@
-import { PermissionV1 } from "@novaclaw/core/v1/permission"
+import { PermissionRuleset } from "@novaclaw/schema/permission-ruleset"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { describe, test, expect } from "bun:test"
 import { Effect } from "effect"
@@ -11,7 +11,7 @@ const it = testEffect(LayerNode.compile(Config.node))
 const load = Config.use.get()
 
 describe("Permission.evaluate for permission.task", () => {
-  const createRuleset = (rules: Record<string, "allow" | "deny" | "ask">): PermissionV1.Ruleset =>
+  const createRuleset = (rules: Record<string, "allow" | "deny" | "ask">): PermissionRuleset.Ruleset =>
     Object.entries(rules).map(([pattern, action]) => ({
       permission: "task",
       pattern,
@@ -77,7 +77,7 @@ describe("Permission.disabled for task tool", () => {
   // Note: The `disabled` function checks if a TOOL should be completely removed from the tool list.
   // It only disables a tool when there's a rule with `pattern: "*"` and `action: "deny"`.
   // It does NOT evaluate complex subagent patterns - those are handled at runtime by `evaluate`.
-  const createRuleset = (rules: Record<string, "allow" | "deny" | "ask">): PermissionV1.Ruleset =>
+  const createRuleset = (rules: Record<string, "allow" | "deny" | "ask">): PermissionRuleset.Ruleset =>
     Object.entries(rules).map(([pattern, action]) => ({
       permission: "task",
       pattern,

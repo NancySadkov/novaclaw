@@ -7,7 +7,7 @@ import { TooltipKeybind } from "@novaclaw/ui/tooltip"
 import { ResizeHandle } from "@novaclaw/ui/resize-handle"
 import { DragDropProvider, DragDropSensors, DragOverlay, SortableProvider, closestCenter } from "@thisbeyond/solid-dnd"
 import type { DragEvent } from "@thisbeyond/solid-dnd"
-import type { SnapshotFileDiff, VcsFileDiff } from "@novaclaw/sdk/v2"
+import type { SessionChangeDiff, VcsFileDiff } from "@novaclaw/sdk/v2"
 import { ConstrainDragYAxis, getDraggableId } from "@/utils/solid-dnd"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 
@@ -32,15 +32,15 @@ import {
 import { setSessionHandoff } from "@/pages/session/handoff"
 import { useSessionLayout } from "@/pages/session/session-layout"
 
-type RenderDiff = (SnapshotFileDiff & { file: string }) | VcsFileDiff
+type RenderDiff = (SessionChangeDiff & { file: string }) | VcsFileDiff
 
-function renderDiff(value: SnapshotFileDiff | VcsFileDiff): value is RenderDiff {
+function renderDiff(value: SessionChangeDiff | VcsFileDiff): value is RenderDiff {
   return typeof value.file === "string"
 }
 
 export function SessionSidePanel(props: {
   canReview: () => boolean
-  diffs: () => (SnapshotFileDiff | VcsFileDiff)[]
+  diffs: () => (SessionChangeDiff | VcsFileDiff)[]
   diffsReady: () => boolean
   empty: () => string
   hasReview: () => boolean

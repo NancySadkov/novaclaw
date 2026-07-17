@@ -276,15 +276,15 @@ describe("HttpApi SDK", () => {
     ({ sdk }) =>
       Effect.gen(function* () {
         const file = yield* call(() => sdk.file.read({ path: "hello.txt" }))
-        const session = yield* call(() => sdk.session.create({ title: "sdk" }))
-        const listed = yield* call(() => sdk.session.list({ roots: true, limit: 10 }))
+        const session = yield* call(() => sdk.v2.session.create({ title: "sdk" }))
+        const listed = yield* call(() => sdk.v2.session.list({ roots: true, limit: 10 }))
 
         expect(file.response.status).toBe(200)
         expect(file.data).toMatchObject({ content: "hello" })
         expect(session.response.status).toBe(200)
-        expect(session.data).toMatchObject({ title: "sdk" })
+        expect(session.data?.data).toMatchObject({ title: "sdk" })
         expect(listed.response.status).toBe(200)
-        expect(listed.data?.map((item) => item.id)).toContain(session.data?.id)
+        expect(listed.data?.data.map((item) => item.id)).toContain(session.data?.data.id)
 
         yield* Effect.all([
           expectStatus(() => sdk.project.current(), 200),
@@ -364,8 +364,8 @@ describe("HttpApi SDK", () => {
           name: "NotFoundError",
           data: { message: `Session not found: ${sessionID}` },
         }
-        const missing = yield* capture(() => sdk.session.get({ sessionID }))
-        const thrown = yield* captureThrown(() => sdk.session.get({ sessionID }, { throwOnError: true }))
+        const missing = yield* capture(() => sdk.v2.session.get({ sessionID }))
+        const thrown = yield* captureThrown(() => sdk.v2.session.get({ sessionID }, { throwOnError: true }))
 
         // Result-tuple path: error body is preserved as-is so existing
         // consumers reading `result.error.name` / `JSON.stringify(error)`
@@ -483,22 +483,22 @@ describe("HttpApi SDK", () => {
   serverPathParity("matches generated SDK session lifecycle routes", (serverPath) =>
     withStandardProject(serverPath, ({ sdk }) =>
       Effect.gen(function* () {
-        const parent = yield* capture(() => sdk.session.create({ title: "parent" }))
+        const parent = yield* capture(() => sdk.v2.session.create({ title: "parent" }))
         const parentID = String(record(parent.data).id)
-        const child = yield* capture(() => sdk.session.create({ title: "child", parentID }))
+        const child = yield* capture(() => sdk.v2.session.create({ title: "child", parentID }))
         const childID = String(record(child.data).id)
-        const get = yield* capture(() => sdk.session.get({ sessionID: parentID }))
-        const update = yield* capture(() => sdk.session.update({ sessionID: parentID, title: "renamed" }))
-        const roots = yield* capture(() => sdk.session.list({ roots: true, limit: 10 }))
-        const all = yield* capture(() => sdk.session.list({ roots: false, limit: 10 }))
-        const children = yield* capture(() => sdk.session.children({ sessionID: parentID }))
-        const todo = yield* capture(() => sdk.session.todo({ sessionID: parentID }))
-        const status = yield* capture(() => sdk.session.status())
+        const get = yield* capture(() => sdk.v2.session.get({ sessionID: parentID }))
+        const update = yield* capture(() => sdk.v2.session.update({ sessionID: parentID, title: "renamed" }))
+        const roots = yield* capture(() => sdk.v2.session.list({ roots: true, limit: 10 }))
+        const all = yield* capture(() => sdk.v2.session.list({ roots: false, limit: 10 }))
+        const children = yield* capture(() => sdk.v2.session.children({ sessionID: parentID }))
+        const todo = yield* capture(() => sdk.v2.session.todo({ sessionID: parentID }))
+        const status = yield* capture(() => sdk.v2.session.active())
         // F1g: the V1 session.messages route (WithParts) is gone — native transcripts are read via
         // sdk.v2.session.messages (covered by httpapi-session-v2). Session-level SDK routes remain.
-        const missingGet = yield* capture(() => sdk.session.get({ sessionID: "ses_missing" }))
-        const deleted = yield* capture(() => sdk.session.delete({ sessionID: childID }))
-        const getDeleted = yield* capture(() => sdk.session.get({ sessionID: childID }))
+        const missingGet = yield* capture(() => sdk.v2.session.get({ sessionID: "ses_missing" }))
+        const deleted = yield* capture(() => sdk.v2.session.remove({ sessionID: childID }))
+        const getDeleted = yield* capture(() => sdk.v2.session.get({ sessionID: childID }))
 
         return {
           statuses: statuses({

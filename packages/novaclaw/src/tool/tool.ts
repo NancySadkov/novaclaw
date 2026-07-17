@@ -1,6 +1,5 @@
-import { PermissionV1 } from "@novaclaw/core/v1/permission"
+import { PermissionRuleset } from "@novaclaw/schema/permission-ruleset"
 import { Effect, Schema } from "effect"
-import { SessionV1 } from "@novaclaw/core/v1/session"
 import type { JSONSchema7 } from "json-schema"
 import type { Permission } from "../permission"
 import type { SessionID, MessageID } from "../session/schema"
@@ -39,16 +38,22 @@ export type Context<M extends Metadata = Metadata> = {
   abort: AbortSignal
   callID?: string
   extra?: { [key: string]: unknown }
-  messages: SessionV1.WithParts[]
+  /** V1-nuke: nothing populates this since the V1 prompt path died (mcp-external passes []). */
+  messages: unknown[]
   metadata(input: { title?: string; metadata?: M }): Effect.Effect<void>
-  ask(input: Omit<PermissionV1.Request, "id" | "sessionID" | "tool">): Effect.Effect<void>
+  ask(input: Omit<PermissionRuleset.Request, "id" | "sessionID" | "tool">): Effect.Effect<void>
 }
 
 export interface ExecuteResult<M extends Metadata = Metadata> {
   title: string
   metadata: M
   output: string
-  attachments?: Omit<SessionV1.FilePart, "id" | "sessionID" | "messageID">[]
+  attachments?: {
+    type: "file"
+    mime: string
+    url: string
+    filename?: string
+  }[]
 }
 
 export interface Def<

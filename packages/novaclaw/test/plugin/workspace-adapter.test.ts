@@ -27,7 +27,6 @@ import { InstanceStore } from "../../src/project/instance-store"
 import { Project } from "../../src/project/project"
 import { Vcs } from "../../src/project/vcs"
 import { InstanceState } from "../../src/effect/instance-state"
-import { Session } from "../../src/session/session"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { AccountTest } from "../fake/account"
@@ -59,7 +58,6 @@ const pluginLayer = Plugin.layer.pipe(
 const noopBootstrapLayer = Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))
 const workspaceLayer = Workspace.layer.pipe(
   Layer.provide(Auth.defaultLayer),
-  Layer.provide(Session.defaultLayer),
   Layer.provide(Project.defaultLayer),
   Layer.provide(Vcs.defaultLayer),
   Layer.provide(FetchHttpClient.layer),

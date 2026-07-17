@@ -8,7 +8,7 @@ import type {
   QuestionRequest,
   SessionV2Info as Session,
   SessionStatus,
-  SnapshotFileDiff,
+  SessionChangeDiff,
   Todo,
   VcsInfo,
 } from "@novaclaw/sdk/v2/client"
@@ -45,7 +45,7 @@ export type State = {
   }
   session_working(id: string): boolean
   session_diff: {
-    [sessionID: string]: SnapshotFileDiff[]
+    [sessionID: string]: SessionChangeDiff[]
   }
   todo: {
     [sessionID: string]: Todo[]

@@ -213,10 +213,10 @@ function createSessionEntries(props: {
     state.inflight = Promise.all(
       dirs.map((directory) => {
         const description = props.label(directory)
-        return props.serverSDK.client.session
+        return props.serverSDK.client.v2.session
           .list({ directory, roots: true })
           .then((x) =>
-            (x.data ?? [])
+            [...(x.data?.data ?? [])]
               .filter((s) => !!s?.id)
               .map((s) => ({
                 id: s.id,

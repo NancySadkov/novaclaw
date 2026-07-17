@@ -1,5 +1,5 @@
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
-import { PermissionV1 } from "@novaclaw/core/v1/permission"
+import { PermissionRuleset } from "@novaclaw/schema/permission-ruleset"
 import { Config } from "@/config/config"
 import { serviceUse } from "@novaclaw/core/effect/service-use"
 import { ProviderCatalogView } from "@/provider/catalog-view"
@@ -44,7 +44,7 @@ export const Info = Schema.Struct({
   topP: Schema.optional(Schema.Finite),
   temperature: Schema.optional(Schema.Finite),
   color: Schema.optional(Schema.String),
-  permission: PermissionV1.Ruleset,
+  permission: PermissionRuleset.Ruleset,
   model: Schema.optional(
     Schema.Struct({
       modelID: ModelV2.ID,

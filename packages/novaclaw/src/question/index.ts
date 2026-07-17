@@ -4,25 +4,25 @@ import { InstanceState } from "@/effect/instance-state"
 import { SessionID } from "@/session/schema"
 import { QuestionID } from "./schema"
 import { EventV2Bridge } from "@/event-v2-bridge"
-import { QuestionV1 } from "@novaclaw/schema/question-v1"
+import { QuestionRequest } from "@novaclaw/schema/question-request"
 
-export const Option = QuestionV1.Option
+export const Option = QuestionRequest.Option
 export type Option = typeof Option.Type
-export const Info = QuestionV1.Info
+export const Info = QuestionRequest.Info
 export type Info = typeof Info.Type
-export const Prompt = QuestionV1.Prompt
+export const Prompt = QuestionRequest.Prompt
 export type Prompt = typeof Prompt.Type
-export const Tool = QuestionV1.Tool
+export const Tool = QuestionRequest.Tool
 export type Tool = typeof Tool.Type
-export const Request = QuestionV1.Request
+export const Request = QuestionRequest.Request
 export type Request = typeof Request.Type
-export const Answer = QuestionV1.Answer
+export const Answer = QuestionRequest.Answer
 export type Answer = typeof Answer.Type
-export const Reply = QuestionV1.Reply
+export const Reply = QuestionRequest.Reply
 export type Reply = typeof Reply.Type
-export const Replied = QuestionV1.Replied
-export const Rejected = QuestionV1.Rejected
-export const Event = QuestionV1.Event
+export const Replied = QuestionRequest.Replied
+export const Rejected = QuestionRequest.Rejected
+export const Event = QuestionRequest.Event
 
 export class RejectedError extends Schema.TaggedErrorClass<RejectedError>()("QuestionRejectedError", {}) {
   override get message() {

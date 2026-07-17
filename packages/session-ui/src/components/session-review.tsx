@@ -15,7 +15,7 @@ import { getDirectory, getFilename } from "@novaclaw/core/util/path"
 import { checksum } from "@novaclaw/core/util/encode"
 import { createEffect, createMemo, createSignal, For, Match, onCleanup, Show, Switch, untrack, type JSX } from "solid-js"
 import { createStore } from "solid-js/store"
-import { type FileContent, type SnapshotFileDiff, type VcsFileDiff } from "@novaclaw/sdk/v2"
+import { type FileContent, type SessionChangeDiff, type VcsFileDiff } from "@novaclaw/sdk/v2"
 import { PreloadMultiFileDiffResult } from "@pierre/diffs/ssr"
 import { type SelectedLineRange } from "@pierre/diffs"
 import { Dynamic } from "solid-js/web"
@@ -64,10 +64,10 @@ export type SessionReviewCommentActions = {
 
 export type SessionReviewFocus = { file: string; id: string }
 
-type RawReviewDiff = (SnapshotFileDiff | VcsFileDiff) & {
+type RawReviewDiff = (SessionChangeDiff | VcsFileDiff) & {
   preloaded?: PreloadMultiFileDiffResult<any>
 }
-type ReviewDiff = ((SnapshotFileDiff & { file: string }) | VcsFileDiff) & {
+type ReviewDiff = ((SessionChangeDiff & { file: string }) | VcsFileDiff) & {
   preloaded?: PreloadMultiFileDiffResult<any>
 }
 type Item = ViewDiff & { preloaded?: PreloadMultiFileDiffResult<any> }

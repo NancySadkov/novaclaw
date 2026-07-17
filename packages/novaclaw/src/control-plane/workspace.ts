@@ -23,7 +23,8 @@ import { type Target, type WorkspaceInfo, WorkspaceInfo as WorkspaceInfoSchema }
 import { WorkspaceV2 } from "@novaclaw/core/workspace"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionPatch } from "@novaclaw/core/session/patch"
-import { SessionV1 } from "@novaclaw/core/v1/session"
+import { SessionSchema } from "@novaclaw/core/session/schema"
+import { Location } from "@novaclaw/core/location"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { SessionID } from "@/session/schema"
 import { errorData } from "@/util/error"
@@ -162,9 +163,12 @@ export const layer = Layer.effect(
     const { db } = yield* Database.Service
     // F1c: session-warp writes the workspace pointer through the core patch seam (full-info
     // legacy `session.updated`; V1 parity — no time bump), not the V1 Session.Service.
-    const setSessionWorkspace = (input: { sessionID: SessionV1.SessionInfo["id"]; workspaceID?: WorkspaceV2.ID }) =>
+    const setSessionWorkspace = (input: { sessionID: SessionSchema.ID; workspaceID?: WorkspaceV2.ID }) =>
       SessionPatch.patchSessionRecord({ db, events }, input.sessionID, (info) =>
-        SessionV1.SessionInfo.make({ ...info, workspaceID: input.workspaceID }),
+        SessionSchema.Info.make({
+          ...info,
+          location: Location.Ref.make({ directory: info.location.directory, workspaceID: input.workspaceID }),
+        }),
       ).pipe(Effect.asVoid)
     const connections = new Map<WorkspaceV2.ID, ConnectionStatus>()
     const syncFibers = yield* FiberMap.make<WorkspaceV2.ID, void, SyncLoopError>()

@@ -4,8 +4,9 @@ import { HttpClient, HttpClientResponse } from "effect/unstable/http"
 import { eq } from "drizzle-orm"
 import { GlobalBus, type GlobalEvent } from "@/bus/global"
 import { ExperimentalPaths } from "../../src/server/routes/instance/httpapi/groups/experimental"
-import { Session } from "@/session/session"
 import { SessionTable } from "@novaclaw/core/session/sql"
+import { SessionSchema } from "@novaclaw/core/session/schema"
+import { ProjectV2 } from "@novaclaw/core/project"
 import { Database } from "@novaclaw/core/database/database"
 import { AccountV2 } from "@novaclaw/core/account"
 import { AccountTable } from "@novaclaw/core/account/sql"
@@ -15,15 +16,38 @@ import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
 import { httpApiLayer, requestInDirectory } from "./httpapi-layer"
 
-const it = testEffect(Layer.mergeAll(Session.defaultLayer, Database.defaultLayer, httpApiLayer))
+const it = testEffect(Layer.mergeAll(Database.defaultLayer, httpApiLayer))
 const testWorktreeMutations = process.platform === "win32" ? it.instance.skip : it.instance
 
 function request(path: string, directory: string, init: RequestInit = {}) {
   return requestInDirectory(path, directory, init)
 }
 
-function createSession(input?: Session.CreateInput) {
-  return Session.use.create(input)
+// V1-nuke slice D: the facade create died; route tests seed rows directly.
+type SeededSession = { id: SessionSchema.ID; title: string }
+let seedCounter = 0
+function createSession(input?: { title?: string }): Effect.Effect<SeededSession, never, Database.Service> {
+  return Effect.gen(function* () {
+    const { db } = yield* Database.Service
+    const id = SessionSchema.ID.make(`ses_test${String(++seedCounter).padStart(20, "0")}`)
+    const title = input?.title ?? "test"
+    const now = Date.now()
+    yield* db
+      .insert(SessionTable)
+      .values({
+        id,
+        project_id: ProjectV2.ID.global,
+        slug: id,
+        directory: "C:/project",
+        title,
+        version: "test",
+        time_created: now,
+        time_updated: now,
+      })
+      .run()
+      .pipe(Effect.orDie)
+    return { id, title }
+  })
 }
 
 function json<T>(response: HttpClientResponse.HttpClientResponse) {
@@ -82,7 +106,7 @@ function insertAccount() {
   )
 }
 
-function setSessionUpdated(session: Session.Info, updated: number) {
+function setSessionUpdated(session: SeededSession, updated: number) {
   return Effect.gen(function* () {
     const { db } = yield* Database.Service
     yield* db
@@ -232,40 +256,7 @@ describe("experimental HttpApi", () => {
     { config: { formatter: false } },
   )
 
-  it.instance(
-    "serves global session list through the default server app",
-    () =>
-      Effect.gen(function* () {
-        const tmp = yield* TestInstance
-        const first = yield* createSession({ title: "page-one" })
-        const second = yield* createSession({ title: "page-two" })
-        yield* setSessionUpdated(first, 1)
-        yield* setSessionUpdated(second, 2)
-
-        const page = yield* request(
-          `${ExperimentalPaths.session}?${new URLSearchParams({ directory: tmp.directory, limit: "1" })}`,
-          tmp.directory,
-        )
-        expect(page.status).toBe(200)
-        expect(page.headers["x-next-cursor"]).toBeTruthy()
-
-        const body = yield* json<Session.GlobalInfo[]>(page)
-        expect(body.map((session) => session.id)).toEqual([second.id])
-        expect(body[0].project?.id).toBe(second.projectID)
-
-        const next = yield* request(
-          `${ExperimentalPaths.session}?${new URLSearchParams({
-            directory: tmp.directory,
-            limit: "10",
-            cursor: body[0].time.updated.toString(),
-          })}`,
-          tmp.directory,
-        )
-        expect(next.status).toBe(200)
-        expect((yield* json<Session.GlobalInfo[]>(next)).map((session) => session.id)).toContain(first.id)
-      }),
-    { git: true, config: { formatter: false } },
-  )
+  // V1-nuke slice D: the global session list route died with the V1 read layer (no consumers).
 
   testWorktreeMutations(
     "serves worktree mutations through the default server app",

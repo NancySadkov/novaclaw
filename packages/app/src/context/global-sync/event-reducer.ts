@@ -6,7 +6,7 @@ import type {
   QuestionRequest,
   SessionV2Info as Session,
   SessionStatus,
-  SnapshotFileDiff,
+  SessionChangeDiff,
   Todo,
 } from "@novaclaw/sdk/v2/client"
 import type { State, VcsCache } from "./types"
@@ -174,7 +174,7 @@ export function applyDirectoryEvent(input: {
       break
     }
     case "session.diff": {
-      const props = event.properties as { sessionID: string; diff: SnapshotFileDiff[] }
+      const props = event.properties as { sessionID: string; diff: SessionChangeDiff[] }
       input.setStore("session_diff", props.sessionID, reconcile(list(props.diff), { key: "file" }))
       break
     }

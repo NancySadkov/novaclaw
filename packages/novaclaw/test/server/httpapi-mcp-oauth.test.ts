@@ -1,5 +1,4 @@
 import { NodeHttpServer } from "@effect/platform-node"
-import { Session } from "@/session/session"
 import { describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
 import { HttpClient, HttpClientRequest, HttpRouter } from "effect/unstable/http"
@@ -14,7 +13,6 @@ import {
 import { testEffect } from "../lib/effect"
 
 const TestHttpApi = HttpApi.make("novaclaw-instance").addHttpApi(McpApi)
-const fakeSession = Layer.mock(Session.Service)({})
 const testMcpHandlers = HttpApiBuilder.group(TestHttpApi, "mcp", (handlers) =>
   Effect.succeed(
     handlers
@@ -52,7 +50,7 @@ const it = testEffect(
   HttpRouter.serve(
     HttpApiBuilder.layer(TestHttpApi).pipe(
       Layer.provide(testMcpHandlers),
-      Layer.provide([passthroughAuthorization, passthroughInstanceContext, testWorkspaceRouting, fakeSession]),
+      Layer.provide([passthroughAuthorization, passthroughInstanceContext, testWorkspaceRouting]),
     ),
     { disableListenLog: true, disableLogger: true },
   ).pipe(Layer.provideMerge(NodeHttpServer.layerTest)),

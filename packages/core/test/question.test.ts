@@ -1,5 +1,5 @@
 import { describe, expect } from "bun:test"
-import { Context, Deferred, Effect, Exit, Fiber, Layer, Scope } from "effect"
+import { Context, DateTime, Deferred, Effect, Exit, Fiber, Layer, Scope } from "effect"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { EventV2 } from "@novaclaw/core/event"
@@ -7,7 +7,7 @@ import { Location } from "@novaclaw/core/location"
 import { QuestionV2 } from "@novaclaw/core/question"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
-import { SessionV1 } from "@novaclaw/core/v1/session"
+import { SessionRecordEvent } from "@novaclaw/schema/session-record-event"
 import { location } from "./fixture/location"
 import { testEffect } from "./lib/effect"
 
@@ -114,16 +114,18 @@ describe("QuestionV2", () => {
       yield* Effect.addFinalizer(() => unsubscribe)
       const { fiber, request } = yield* waitForAsk(service, { sessionID, questions: [question] })
 
-      yield* events.publish(SessionV1.Event.Deleted, {
+      yield* events.publish(SessionRecordEvent.Deleted, {
         sessionID,
         info: {
           id: sessionID,
           slug: "test",
           projectID: "test",
-          directory: "/project",
+          location: { directory: "/project" },
           title: "test",
           version: "test",
-          time: { created: 0, updated: 0 },
+          cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          time: { created: DateTime.makeUnsafe(1), updated: DateTime.makeUnsafe(1) },
         },
       } as never)
 

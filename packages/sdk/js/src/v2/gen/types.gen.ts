@@ -51,7 +51,6 @@ export type Event =
   | EventSessionNextRevertStaged
   | EventSessionNextRevertCleared
   | EventSessionNextRevertCommitted
-  | EventSessionDiff
   | EventSessionError
   | EventInstallationUpdated
   | EventInstallationUpdateAvailable
@@ -76,7 +75,6 @@ export type Event =
   | EventPermissionReplied
   | EventMcpToolsChanged
   | EventMcpBrowserOpenFailed
-  | EventCommandExecuted
   | EventProjectUpdated
   | EventSessionStatus
   | EventSessionIdle
@@ -147,14 +145,6 @@ export type MoveSessionError = {
   }
 }
 
-export type SnapshotFileDiff = {
-  file?: string
-  patch?: string
-  additions: number
-  deletions: number
-  status?: "added" | "deleted" | "modified"
-}
-
 export type PermissionAction = "allow" | "deny" | "ask"
 
 export type PermissionRule = {
@@ -165,142 +155,10 @@ export type PermissionRule = {
 
 export type PermissionRuleset = Array<PermissionRule>
 
-export type Session = {
-  id: string
-  slug: string
-  projectID: string
-  workspaceID?: string
-  directory: string
-  path?: string
-  parentID?: string
-  summary?: {
-    additions: number
-    deletions: number
-    files: number
-    diffs?: Array<SnapshotFileDiff>
-  }
-  cost?: number
-  tokens?: {
-    input: number
-    output: number
-    reasoning: number
-    cache: {
-      read: number
-      write: number
-    }
-  }
-  share?: {
-    url: string
-  }
-  title: string
-  agent?: string
-  model?: {
-    id: string
-    providerID: string
-    variant?: string
-  }
-  systemPromptOverride?: string
-  type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
-  priority?: number
-  responder?: "nova" | "operator"
-  permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
-  strict?: SessionStrictOverride
-  introspection?: boolean
-  quality?: boolean
-  affective?: boolean
-  result?: unknown
-  version: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  time: {
-    created: number
-    updated: number
-    compacting?: number
-    archived?: number
-  }
-  permission?: PermissionRuleset
-  revert?: {
-    messageID: string
-    partID?: string
-    snapshot?: string
-    diff?: string
-  }
-}
-
 export type Prompt = {
   text: string
   files?: Array<PromptFileAttachment>
   agents?: Array<PromptAgentAttachment>
-}
-
-export type ProviderAuthError = {
-  name: "ProviderAuthError"
-  data: {
-    providerID: string
-    message: string
-  }
-}
-
-export type UnknownError = {
-  name: "UnknownError"
-  data: {
-    message: string
-    ref?: string
-  }
-}
-
-export type MessageOutputLengthError = {
-  name: "MessageOutputLengthError"
-  data: {
-    [key: string]: unknown
-  }
-}
-
-export type MessageAbortedError = {
-  name: "MessageAbortedError"
-  data: {
-    message: string
-  }
-}
-
-export type StructuredOutputError = {
-  name: "StructuredOutputError"
-  data: {
-    message: string
-    retries: number
-  }
-}
-
-export type ContextOverflowError = {
-  name: "ContextOverflowError"
-  data: {
-    message: string
-    responseBody?: string
-  }
-}
-
-export type ContentFilterError = {
-  name: "ContentFilterError"
-  data: {
-    message: string
-  }
-}
-
-export type ApiError = {
-  name: "APIError"
-  data: {
-    message: string
-    statusCode?: number
-    isRetryable: boolean
-    responseHeaders?: {
-      [key: string]: string
-    }
-    responseBody?: string
-    metadata?: {
-      [key: string]: string
-    }
-  }
 }
 
 export type Pty = {
@@ -427,7 +285,7 @@ export type GlobalEvent = {
         type: "session.created"
         properties: {
           sessionID: string
-          info: Session
+          info: SessionV2Info
         }
       }
     | {
@@ -435,7 +293,7 @@ export type GlobalEvent = {
         type: "session.updated"
         properties: {
           sessionID: string
-          info: Session
+          info: SessionV2Info
         }
       }
     | {
@@ -443,7 +301,7 @@ export type GlobalEvent = {
         type: "session.deleted"
         properties: {
           sessionID: string
-          info: Session
+          info: SessionV2Info
         }
       }
     | {
@@ -889,26 +747,10 @@ export type GlobalEvent = {
       }
     | {
         id: string
-        type: "session.diff"
-        properties: {
-          sessionID: string
-          diff: Array<SnapshotFileDiff>
-        }
-      }
-    | {
-        id: string
         type: "session.error"
         properties: {
           sessionID?: string
-          error?:
-            | ProviderAuthError
-            | UnknownError
-            | MessageOutputLengthError
-            | MessageAbortedError
-            | StructuredOutputError
-            | ContextOverflowError
-            | ContentFilterError
-            | ApiError
+          error: unknown
         }
       }
     | {
@@ -1117,16 +959,6 @@ export type GlobalEvent = {
         properties: {
           mcpName: string
           url: string
-        }
-      }
-    | {
-        id: string
-        type: "command.executed"
-        properties: {
-          name: string
-          sessionID: string
-          arguments: string
-          messageID: string
         }
       }
     | {
@@ -1458,76 +1290,6 @@ export type WorktreeResetInput = {
   directory: string
 }
 
-export type ProjectSummary = {
-  id: string
-  name?: string
-  worktree: string
-}
-
-export type GlobalSession = {
-  id: string
-  slug: string
-  projectID: string
-  workspaceID?: string
-  directory: string
-  path?: string
-  parentID?: string
-  summary?: {
-    additions: number
-    deletions: number
-    files: number
-    diffs?: Array<SnapshotFileDiff>
-  }
-  cost?: number
-  tokens?: {
-    input: number
-    output: number
-    reasoning: number
-    cache: {
-      read: number
-      write: number
-    }
-  }
-  share?: {
-    url: string
-  }
-  title: string
-  agent?: string
-  model?: {
-    id: string
-    providerID: string
-    variant?: string
-  }
-  version: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  time: {
-    created: number
-    updated: number
-    compacting?: number
-    archived?: number
-  }
-  permission?: PermissionRuleset
-  permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
-  strict?: {
-    enabled?: boolean
-    attempts?: number
-    wallMinutes?: number
-  }
-  introspection?: boolean
-  quality?: boolean
-  affective?: boolean
-  systemPromptOverride?: string
-  revert?: {
-    messageID: string
-    partID?: string
-    snapshot?: string
-    diff?: string
-  }
-  project: ProjectSummary | null
-}
-
 export type McpResource = {
   name: string
   uri: string
@@ -1824,7 +1586,7 @@ export type ProviderAuthAuthorization = {
   instructions: string
 }
 
-export type ProviderAuthError1 = {
+export type ProviderAuthError = {
   name:
     | "BadRequest"
     | "ProviderAuthOauthMissing"
@@ -1836,558 +1598,6 @@ export type ProviderAuthError1 = {
     field?: string
     message?: string
     kind?: string
-  }
-}
-
-export type Session1 = {
-  id: string
-  slug: string
-  projectID: string
-  workspaceID?: string
-  directory: string
-  path?: string
-  parentID?: string
-  summary?: {
-    additions: number
-    deletions: number
-    files: number
-    diffs?: Array<SnapshotFileDiff>
-  }
-  cost?: number
-  tokens?: {
-    input: number
-    output: number
-    reasoning: number
-    cache: {
-      read: number
-      write: number
-    }
-  }
-  share?: {
-    url: string
-  }
-  title: string
-  agent?: string
-  model?: {
-    id: string
-    providerID: string
-    variant?: string
-  }
-  version: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  time: {
-    created: number
-    updated: number
-    compacting?: number
-    archived?: number
-  }
-  permission?: PermissionRuleset
-  permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
-  strict?: {
-    enabled?: boolean
-    attempts?: number
-    wallMinutes?: number
-  }
-  introspection?: boolean
-  quality?: boolean
-  affective?: boolean
-  systemPromptOverride?: string
-  revert?: {
-    messageID: string
-    partID?: string
-    snapshot?: string
-    diff?: string
-  }
-}
-
-export type Session2 = {
-  id: string
-  slug: string
-  projectID: string
-  workspaceID?: string
-  directory: string
-  path?: string
-  parentID?: string
-  summary?: {
-    additions: number
-    deletions: number
-    files: number
-    diffs?: Array<SnapshotFileDiff>
-  }
-  cost?: number
-  tokens?: {
-    input: number
-    output: number
-    reasoning: number
-    cache: {
-      read: number
-      write: number
-    }
-  }
-  share?: {
-    url: string
-  }
-  title: string
-  agent?: string
-  model?: {
-    id: string
-    providerID: string
-    variant?: string
-  }
-  version: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  time: {
-    created: number
-    updated: number
-    compacting?: number
-    archived?: number
-  }
-  permission?: PermissionRuleset
-  permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
-  strict?: {
-    enabled?: boolean
-    attempts?: number
-    wallMinutes?: number
-  }
-  introspection?: boolean
-  quality?: boolean
-  affective?: boolean
-  systemPromptOverride?: string
-  revert?: {
-    messageID: string
-    partID?: string
-    snapshot?: string
-    diff?: string
-  }
-}
-
-export type Session3 = {
-  id: string
-  slug: string
-  projectID: string
-  workspaceID?: string
-  directory: string
-  path?: string
-  parentID?: string
-  summary?: {
-    additions: number
-    deletions: number
-    files: number
-    diffs?: Array<SnapshotFileDiff>
-  }
-  cost?: number
-  tokens?: {
-    input: number
-    output: number
-    reasoning: number
-    cache: {
-      read: number
-      write: number
-    }
-  }
-  share?: {
-    url: string
-  }
-  title: string
-  agent?: string
-  model?: {
-    id: string
-    providerID: string
-    variant?: string
-  }
-  version: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  time: {
-    created: number
-    updated: number
-    compacting?: number
-    archived?: number
-  }
-  permission?: PermissionRuleset
-  permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
-  strict?: {
-    enabled?: boolean
-    attempts?: number
-    wallMinutes?: number
-  }
-  introspection?: boolean
-  quality?: boolean
-  affective?: boolean
-  systemPromptOverride?: string
-  revert?: {
-    messageID: string
-    partID?: string
-    snapshot?: string
-    diff?: string
-  }
-}
-
-export type Session4 = {
-  id: string
-  slug: string
-  projectID: string
-  workspaceID?: string
-  directory: string
-  path?: string
-  parentID?: string
-  summary?: {
-    additions: number
-    deletions: number
-    files: number
-    diffs?: Array<SnapshotFileDiff>
-  }
-  cost?: number
-  tokens?: {
-    input: number
-    output: number
-    reasoning: number
-    cache: {
-      read: number
-      write: number
-    }
-  }
-  share?: {
-    url: string
-  }
-  title: string
-  agent?: string
-  model?: {
-    id: string
-    providerID: string
-    variant?: string
-  }
-  version: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  time: {
-    created: number
-    updated: number
-    compacting?: number
-    archived?: number
-  }
-  permission?: PermissionRuleset
-  permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
-  strict?: {
-    enabled?: boolean
-    attempts?: number
-    wallMinutes?: number
-  }
-  introspection?: boolean
-  quality?: boolean
-  affective?: boolean
-  systemPromptOverride?: string
-  revert?: {
-    messageID: string
-    partID?: string
-    snapshot?: string
-    diff?: string
-  }
-}
-
-export type Session5 = {
-  id: string
-  slug: string
-  projectID: string
-  workspaceID?: string
-  directory: string
-  path?: string
-  parentID?: string
-  summary?: {
-    additions: number
-    deletions: number
-    files: number
-    diffs?: Array<SnapshotFileDiff>
-  }
-  cost?: number
-  tokens?: {
-    input: number
-    output: number
-    reasoning: number
-    cache: {
-      read: number
-      write: number
-    }
-  }
-  share?: {
-    url: string
-  }
-  title: string
-  agent?: string
-  model?: {
-    id: string
-    providerID: string
-    variant?: string
-  }
-  version: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  time: {
-    created: number
-    updated: number
-    compacting?: number
-    archived?: number
-  }
-  permission?: PermissionRuleset
-  permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
-  strict?: {
-    enabled?: boolean
-    attempts?: number
-    wallMinutes?: number
-  }
-  introspection?: boolean
-  quality?: boolean
-  affective?: boolean
-  systemPromptOverride?: string
-  revert?: {
-    messageID: string
-    partID?: string
-    snapshot?: string
-    diff?: string
-  }
-}
-
-export type OutputFormatText = {
-  type: "text"
-}
-
-export type JsonSchema = {
-  [key: string]: unknown
-}
-
-export type OutputFormatJsonSchema = {
-  type: "json_schema"
-  schema: JsonSchema
-  retryCount?: number
-}
-
-export type OutputFormat = OutputFormatText | OutputFormatJsonSchema
-
-export type TextPartInput = {
-  id?: string
-  type: "text"
-  text: string
-  synthetic?: boolean
-  ignored?: boolean
-  time?: {
-    start: number
-    end?: number
-  }
-  metadata?: {
-    [key: string]: unknown
-  }
-}
-
-export type FilePartSourceText = {
-  value: string
-  start: number
-  end: number
-}
-
-export type FileSource = {
-  text: FilePartSourceText
-  type: "file"
-  path: string
-}
-
-export type Range = {
-  start: {
-    line: number
-    character: number
-  }
-  end: {
-    line: number
-    character: number
-  }
-}
-
-export type SymbolSource = {
-  text: FilePartSourceText
-  type: "symbol"
-  path: string
-  range: Range
-  name: string
-  kind: number
-}
-
-export type ResourceSource = {
-  text: FilePartSourceText
-  type: "resource"
-  clientName: string
-  uri: string
-}
-
-export type FilePartSource = FileSource | SymbolSource | ResourceSource
-
-export type FilePartInput = {
-  id?: string
-  type: "file"
-  mime: string
-  filename?: string
-  url: string
-  source?: FilePartSource
-}
-
-export type AgentPartInput = {
-  id?: string
-  type: "agent"
-  name: string
-  source?: {
-    value: string
-    start: number
-    end: number
-  }
-}
-
-export type SubtaskPartInput = {
-  id?: string
-  type: "subtask"
-  prompt: string
-  description: string
-  agent: string
-  model?: {
-    providerID: string
-    modelID: string
-  }
-  command?: string
-}
-
-export type SessionBusyError = {
-  _tag: "SessionBusyError"
-  sessionID: string
-  message: string
-}
-
-export type Session6 = {
-  id: string
-  slug: string
-  projectID: string
-  workspaceID?: string
-  directory: string
-  path?: string
-  parentID?: string
-  summary?: {
-    additions: number
-    deletions: number
-    files: number
-    diffs?: Array<SnapshotFileDiff>
-  }
-  cost?: number
-  tokens?: {
-    input: number
-    output: number
-    reasoning: number
-    cache: {
-      read: number
-      write: number
-    }
-  }
-  share?: {
-    url: string
-  }
-  title: string
-  agent?: string
-  model?: {
-    id: string
-    providerID: string
-    variant?: string
-  }
-  version: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  time: {
-    created: number
-    updated: number
-    compacting?: number
-    archived?: number
-  }
-  permission?: PermissionRuleset
-  permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
-  strict?: {
-    enabled?: boolean
-    attempts?: number
-    wallMinutes?: number
-  }
-  introspection?: boolean
-  quality?: boolean
-  affective?: boolean
-  systemPromptOverride?: string
-  revert?: {
-    messageID: string
-    partID?: string
-    snapshot?: string
-    diff?: string
-  }
-}
-
-export type Session7 = {
-  id: string
-  slug: string
-  projectID: string
-  workspaceID?: string
-  directory: string
-  path?: string
-  parentID?: string
-  summary?: {
-    additions: number
-    deletions: number
-    files: number
-    diffs?: Array<SnapshotFileDiff>
-  }
-  cost?: number
-  tokens?: {
-    input: number
-    output: number
-    reasoning: number
-    cache: {
-      read: number
-      write: number
-    }
-  }
-  share?: {
-    url: string
-  }
-  title: string
-  agent?: string
-  model?: {
-    id: string
-    providerID: string
-    variant?: string
-  }
-  version: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  time: {
-    created: number
-    updated: number
-    compacting?: number
-    archived?: number
-  }
-  permission?: PermissionRuleset
-  permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
-  strict?: {
-    enabled?: boolean
-    attempts?: number
-    wallMinutes?: number
-  }
-  introspection?: boolean
-  quality?: boolean
-  affective?: boolean
-  systemPromptOverride?: string
-  revert?: {
-    messageID: string
-    partID?: string
-    snapshot?: string
-    diff?: string
   }
 }
 
@@ -2469,7 +1679,7 @@ export type ServiceUnavailableError = {
   service?: string
 }
 
-export type UnknownError1 = {
+export type UnknownError = {
   _tag: "UnknownError"
   message: string
   ref?: string
@@ -2635,7 +1845,6 @@ export type V2Event =
   | SessionNextRevertStaged
   | SessionNextRevertCleared
   | SessionNextRevertCommitted
-  | SessionDiff
   | SessionError
   | InstallationUpdated
   | InstallationUpdateAvailable
@@ -2660,7 +1869,6 @@ export type V2Event =
   | PermissionReplied
   | McpToolsChanged
   | McpBrowserOpenFailed
-  | CommandExecuted
   | ProjectUpdated
   | SessionStatus2
   | SessionIdle
@@ -2715,21 +1923,96 @@ export type MoveSessionDestination = {
   directory: string
 }
 
-export type SessionStrictOverride = {
-  enabled?: boolean
-  attempts?: number
-  wallMinutes?: number
-}
-
 export type ModelRef = {
   id: string
   providerID: string
   variant?: string
 }
 
+export type SessionStrictOverride = {
+  enabled?: boolean
+  attempts?: number
+  wallMinutes?: number
+}
+
 export type LocationRef = {
   directory: string
   workspaceID?: string
+}
+
+export type FileDiff = {
+  path: string
+  status: "added" | "modified" | "deleted"
+  additions: number
+  deletions: number
+  patch: string
+}
+
+export type RevertState = {
+  messageID: string
+  partID?: string
+  snapshot?: string
+  diff?: string
+  files?: Array<FileDiff>
+}
+
+export type SessionChangeDiff = {
+  file?: string
+  patch?: string
+  additions: number
+  deletions: number
+  status?: "added" | "deleted" | "modified"
+}
+
+export type SessionChangesSummary = {
+  additions: number
+  deletions: number
+  files: number
+  diffs?: Array<SessionChangeDiff>
+}
+
+export type SessionV2Info = {
+  id: string
+  parentID?: string
+  projectID: string
+  slug: string
+  version: string
+  permission?: PermissionRuleset
+  metadata?: {
+    [key: string]: unknown
+  }
+  agent?: string
+  model?: ModelRef
+  systemPromptOverride?: string
+  type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
+  priority?: number
+  responder?: "nova" | "operator"
+  permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
+  strict?: SessionStrictOverride
+  introspection?: boolean
+  quality?: boolean
+  affective?: boolean
+  result?: unknown
+  cost: number
+  tokens: {
+    input: number
+    output: number
+    reasoning: number
+    cache: {
+      read: number
+      write: number
+    }
+  }
+  time: {
+    created: number
+    updated: number
+    archived?: number
+  }
+  title: string
+  location: LocationRef
+  subpath?: string
+  revert?: RevertState
+  summary?: SessionChangesSummary
 }
 
 export type PromptSource = {
@@ -3005,22 +2288,6 @@ export type SessionNextRetryError = {
   }
 }
 
-export type FileDiff = {
-  path: string
-  status: "added" | "modified" | "deleted"
-  additions: number
-  deletions: number
-  patch: string
-}
-
-export type RevertState = {
-  messageID: string
-  partID?: string
-  snapshot?: string
-  diff?: string
-  files?: Array<FileDiff>
-}
-
 export type PermissionV2Source = {
   type: "tool"
   messageID: string
@@ -3106,13 +2373,13 @@ export type SyncEventSessionCreated = {
   type: "sync"
   id: string
   syncEvent: {
-    type: "session.created.1"
+    type: "session.created.2"
     id: string
     seq: number
     aggregateID: string
     data: {
       sessionID: string
-      info: Session
+      info: SessionV2Info
     }
   }
 }
@@ -3121,13 +2388,13 @@ export type SyncEventSessionUpdated = {
   type: "sync"
   id: string
   syncEvent: {
-    type: "session.updated.1"
+    type: "session.updated.2"
     id: string
     seq: number
     aggregateID: string
     data: {
       sessionID: string
-      info: Session
+      info: SessionV2Info
     }
   }
 }
@@ -3136,13 +2403,13 @@ export type SyncEventSessionDeleted = {
   type: "sync"
   id: string
   syncEvent: {
-    type: "session.deleted.1"
+    type: "session.deleted.2"
     id: string
     seq: number
     aggregateID: string
     data: {
       sessionID: string
-      info: Session
+      info: SessionV2Info
     }
   }
 }
@@ -4297,59 +3564,6 @@ export type AgentV2Info = {
   permissions: PermissionV2Ruleset
 }
 
-export type SessionChangeDiff = {
-  file?: string
-  patch?: string
-  additions: number
-  deletions: number
-  status?: "added" | "deleted" | "modified"
-}
-
-export type SessionChangesSummary = {
-  additions: number
-  deletions: number
-  files: number
-  diffs?: Array<SessionChangeDiff>
-}
-
-export type SessionV2Info = {
-  id: string
-  parentID?: string
-  projectID: string
-  agent?: string
-  model?: ModelRef
-  systemPromptOverride?: string
-  type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
-  priority?: number
-  responder?: "nova" | "operator"
-  permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
-  strict?: SessionStrictOverride
-  introspection?: boolean
-  quality?: boolean
-  affective?: boolean
-  result?: unknown
-  cost: number
-  tokens: {
-    input: number
-    output: number
-    reasoning: number
-    cache: {
-      read: number
-      write: number
-    }
-  }
-  time: {
-    created: number
-    updated: number
-    archived?: number
-  }
-  title: string
-  location: LocationRef
-  subpath?: string
-  revert?: RevertState
-  summary?: SessionChangesSummary
-}
-
 export type PromptInputFileAttachment = {
   uri: string
   name?: string
@@ -5425,7 +4639,7 @@ export type SessionCreated = {
   location?: LocationRef
   data: {
     sessionID: string
-    info: Session
+    info: SessionV2Info
   }
 }
 
@@ -5443,7 +4657,7 @@ export type SessionUpdated = {
   location?: LocationRef
   data: {
     sessionID: string
-    info: Session
+    info: SessionV2Info
   }
 }
 
@@ -5461,7 +4675,7 @@ export type SessionDeleted = {
   location?: LocationRef
   data: {
     sessionID: string
-    info: Session
+    info: SessionV2Info
   }
 }
 
@@ -5548,24 +4762,6 @@ export type SessionNextCompactionDelta = {
   }
 }
 
-export type SessionDiff = {
-  id: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  type: "session.diff"
-  durable?: {
-    aggregateID: string
-    seq: number
-    version: number
-  }
-  location?: LocationRef
-  data: {
-    sessionID: string
-    diff: Array<SnapshotFileDiff>
-  }
-}
-
 export type SessionError = {
   id: string
   metadata?: {
@@ -5580,15 +4776,7 @@ export type SessionError = {
   location?: LocationRef
   data: {
     sessionID?: string
-    error?:
-      | ProviderAuthError
-      | UnknownError
-      | MessageOutputLengthError
-      | MessageAbortedError
-      | StructuredOutputError
-      | ContextOverflowError
-      | ContentFilterError
-      | ApiError
+    error: unknown
   }
 }
 
@@ -6030,26 +5218,6 @@ export type McpBrowserOpenFailed = {
   }
 }
 
-export type CommandExecuted = {
-  id: string
-  metadata?: {
-    [key: string]: unknown
-  }
-  type: "command.executed"
-  durable?: {
-    aggregateID: string
-    seq: number
-    version: number
-  }
-  location?: LocationRef
-  data: {
-    name: string
-    sessionID: string
-    arguments: string
-    messageID: string
-  }
-}
-
 export type ProjectUpdated = {
   id: string
   metadata?: {
@@ -6352,7 +5520,7 @@ export type EventSessionCreated = {
   type: "session.created"
   properties: {
     sessionID: string
-    info: Session
+    info: SessionV2Info
   }
 }
 
@@ -6361,7 +5529,7 @@ export type EventSessionUpdated = {
   type: "session.updated"
   properties: {
     sessionID: string
-    info: Session
+    info: SessionV2Info
   }
 }
 
@@ -6370,7 +5538,7 @@ export type EventSessionDeleted = {
   type: "session.deleted"
   properties: {
     sessionID: string
-    info: Session
+    info: SessionV2Info
   }
 }
 
@@ -6854,29 +6022,12 @@ export type EventSessionNextRevertCommitted = {
   }
 }
 
-export type EventSessionDiff = {
-  id: string
-  type: "session.diff"
-  properties: {
-    sessionID: string
-    diff: Array<SnapshotFileDiff>
-  }
-}
-
 export type EventSessionError = {
   id: string
   type: "session.error"
   properties: {
     sessionID?: string
-    error?:
-      | ProviderAuthError
-      | UnknownError
-      | MessageOutputLengthError
-      | MessageAbortedError
-      | StructuredOutputError
-      | ContextOverflowError
-      | ContentFilterError
-      | ApiError
+    error: unknown
   }
 }
 
@@ -7108,17 +6259,6 @@ export type EventMcpBrowserOpenFailed = {
   properties: {
     mcpName: string
     url: string
-  }
-}
-
-export type EventCommandExecuted = {
-  id: string
-  type: "command.executed"
-  properties: {
-    name: string
-    sessionID: string
-    arguments: string
-    messageID: string
   }
 }
 
@@ -8105,40 +7245,6 @@ export type WorktreeResetResponses = {
 }
 
 export type WorktreeResetResponse = WorktreeResetResponses[keyof WorktreeResetResponses]
-
-export type ExperimentalSessionListData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-    roots?: boolean | "true" | "false"
-    start?: number
-    cursor?: number
-    search?: string
-    limit?: number
-    archived?: boolean | "true" | "false"
-  }
-  url: "/experimental/session"
-}
-
-export type ExperimentalSessionListErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type ExperimentalSessionListError = ExperimentalSessionListErrors[keyof ExperimentalSessionListErrors]
-
-export type ExperimentalSessionListResponses = {
-  /**
-   * List of sessions
-   */
-  200: Array<GlobalSession>
-}
-
-export type ExperimentalSessionListResponse = ExperimentalSessionListResponses[keyof ExperimentalSessionListResponses]
 
 export type ExperimentalSessionBackgroundData = {
   body?: never
@@ -10245,7 +9351,7 @@ export type ProviderOauthAuthorizeErrors = {
   /**
    * ProviderAuthError | InvalidRequestError
    */
-  400: ProviderAuthError1 | InvalidRequestError
+  400: ProviderAuthError | InvalidRequestError
 }
 
 export type ProviderOauthAuthorizeError = ProviderOauthAuthorizeErrors[keyof ProviderOauthAuthorizeErrors]
@@ -10281,7 +9387,7 @@ export type ProviderOauthCallbackErrors = {
   /**
    * ProviderAuthError | InvalidRequestError
    */
-  400: ProviderAuthError1 | InvalidRequestError
+  400: ProviderAuthError | InvalidRequestError
 }
 
 export type ProviderOauthCallbackError = ProviderOauthCallbackErrors[keyof ProviderOauthCallbackErrors]
@@ -10334,742 +9440,6 @@ export type ProviderProbeResponses = {
 }
 
 export type ProviderProbeResponse = ProviderProbeResponses[keyof ProviderProbeResponses]
-
-export type SessionListData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-    scope?: "project"
-    path?: string
-    roots?: boolean | "true" | "false"
-    start?: number
-    search?: string
-    limit?: number
-  }
-  url: "/session"
-}
-
-export type SessionListErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type SessionListError = SessionListErrors[keyof SessionListErrors]
-
-export type SessionListResponses = {
-  /**
-   * List of sessions
-   */
-  200: Array<Session1>
-}
-
-export type SessionListResponse = SessionListResponses[keyof SessionListResponses]
-
-export type SessionCreateData = {
-  body?: {
-    parentID?: string
-    title?: string
-    agent?: string
-    model?: {
-      id: string
-      providerID: string
-      variant?: string
-    }
-    metadata?: {
-      [key: string]: unknown
-    }
-    permission?: PermissionRuleset
-    permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
-    strict?: {
-      enabled?: boolean
-      attempts?: number
-      wallMinutes?: number
-    }
-    introspection?: boolean
-    quality?: boolean
-    affective?: boolean
-    workspaceID?: string
-  }
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/session"
-}
-
-export type SessionCreateErrors = {
-  /**
-   * BadRequest | InvalidRequestError
-   */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-}
-
-export type SessionCreateError = SessionCreateErrors[keyof SessionCreateErrors]
-
-export type SessionCreateResponses = {
-  /**
-   * Successfully created session
-   */
-  200: Session3
-}
-
-export type SessionCreateResponse = SessionCreateResponses[keyof SessionCreateResponses]
-
-export type SessionStatusData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/session/status"
-}
-
-export type SessionStatusErrors = {
-  /**
-   * BadRequest | InvalidRequestError
-   */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-}
-
-export type SessionStatusError = SessionStatusErrors[keyof SessionStatusErrors]
-
-export type SessionStatusResponses = {
-  /**
-   * Get session status
-   */
-  200: {
-    [key: string]: SessionStatus
-  }
-}
-
-export type SessionStatusResponse = SessionStatusResponses[keyof SessionStatusResponses]
-
-export type SessionDeleteData = {
-  body?: never
-  path: {
-    sessionID: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/session/{sessionID}"
-}
-
-export type SessionDeleteErrors = {
-  /**
-   * BadRequest | InvalidRequestError
-   */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-  /**
-   * NotFoundError
-   */
-  404: NotFoundError
-}
-
-export type SessionDeleteError = SessionDeleteErrors[keyof SessionDeleteErrors]
-
-export type SessionDeleteResponses = {
-  /**
-   * Successfully deleted session
-   */
-  200: boolean
-}
-
-export type SessionDeleteResponse = SessionDeleteResponses[keyof SessionDeleteResponses]
-
-export type SessionGetData = {
-  body?: never
-  path: {
-    sessionID: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/session/{sessionID}"
-}
-
-export type SessionGetErrors = {
-  /**
-   * BadRequest | InvalidRequestError
-   */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-  /**
-   * NotFoundError
-   */
-  404: NotFoundError
-}
-
-export type SessionGetError = SessionGetErrors[keyof SessionGetErrors]
-
-export type SessionGetResponses = {
-  /**
-   * Get session
-   */
-  200: Session2
-}
-
-export type SessionGetResponse = SessionGetResponses[keyof SessionGetResponses]
-
-export type SessionUpdateData = {
-  body?: {
-    title?: string
-    metadata?: {
-      [key: string]: unknown
-    }
-    permission?: PermissionRuleset
-    time?: {
-      archived?: number
-    }
-  }
-  path: {
-    sessionID: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/session/{sessionID}"
-}
-
-export type SessionUpdateErrors = {
-  /**
-   * BadRequest | InvalidRequestError
-   */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-  /**
-   * NotFoundError
-   */
-  404: NotFoundError
-}
-
-export type SessionUpdateError = SessionUpdateErrors[keyof SessionUpdateErrors]
-
-export type SessionUpdateResponses = {
-  /**
-   * Successfully updated session
-   */
-  200: Session4
-}
-
-export type SessionUpdateResponse = SessionUpdateResponses[keyof SessionUpdateResponses]
-
-export type SessionChildrenData = {
-  body?: never
-  path: {
-    sessionID: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/session/{sessionID}/children"
-}
-
-export type SessionChildrenErrors = {
-  /**
-   * BadRequest | InvalidRequestError
-   */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-  /**
-   * NotFoundError
-   */
-  404: NotFoundError
-}
-
-export type SessionChildrenError = SessionChildrenErrors[keyof SessionChildrenErrors]
-
-export type SessionChildrenResponses = {
-  /**
-   * List of children
-   */
-  200: Array<Session1>
-}
-
-export type SessionChildrenResponse = SessionChildrenResponses[keyof SessionChildrenResponses]
-
-export type SessionTodoData = {
-  body?: never
-  path: {
-    sessionID: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/session/{sessionID}/todo"
-}
-
-export type SessionTodoErrors = {
-  /**
-   * BadRequest | InvalidRequestError
-   */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-  /**
-   * NotFoundError
-   */
-  404: NotFoundError
-}
-
-export type SessionTodoError = SessionTodoErrors[keyof SessionTodoErrors]
-
-export type SessionTodoResponses = {
-  /**
-   * Todo list
-   */
-  200: Array<Todo>
-}
-
-export type SessionTodoResponse = SessionTodoResponses[keyof SessionTodoResponses]
-
-export type SessionDiffData = {
-  body?: never
-  path: {
-    sessionID: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-    messageID?: string
-  }
-  url: "/session/{sessionID}/diff"
-}
-
-export type SessionDiffErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type SessionDiffError = SessionDiffErrors[keyof SessionDiffErrors]
-
-export type SessionDiffResponses = {
-  /**
-   * Successfully retrieved diff
-   */
-  200: Array<SnapshotFileDiff>
-}
-
-export type SessionDiffResponse = SessionDiffResponses[keyof SessionDiffResponses]
-
-export type SessionForkData = {
-  body?: {
-    messageID?: string
-  }
-  path: {
-    sessionID: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/session/{sessionID}/fork"
-}
-
-export type SessionForkErrors = {
-  /**
-   * BadRequest | InvalidRequestError
-   */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-  /**
-   * NotFoundError
-   */
-  404: NotFoundError
-}
-
-export type SessionForkError = SessionForkErrors[keyof SessionForkErrors]
-
-export type SessionForkResponses = {
-  /**
-   * 200
-   */
-  200: Session5
-}
-
-export type SessionForkResponse = SessionForkResponses[keyof SessionForkResponses]
-
-export type SessionAbortData = {
-  body?: never
-  path: {
-    sessionID: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/session/{sessionID}/abort"
-}
-
-export type SessionAbortErrors = {
-  /**
-   * BadRequest | InvalidRequestError
-   */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-}
-
-export type SessionAbortError = SessionAbortErrors[keyof SessionAbortErrors]
-
-export type SessionAbortResponses = {
-  /**
-   * Aborted session
-   */
-  200: boolean
-}
-
-export type SessionAbortResponse = SessionAbortResponses[keyof SessionAbortResponses]
-
-export type SessionInitData = {
-  body?: {
-    modelID: string
-    providerID: string
-    messageID: string
-  }
-  path: {
-    sessionID: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/session/{sessionID}/init"
-}
-
-export type SessionInitErrors = {
-  /**
-   * BadRequest | InvalidRequestError
-   */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-  /**
-   * NotFoundError
-   */
-  404: NotFoundError
-}
-
-export type SessionInitError = SessionInitErrors[keyof SessionInitErrors]
-
-export type SessionInitResponses = {
-  /**
-   * 200
-   */
-  200: boolean
-}
-
-export type SessionInitResponse = SessionInitResponses[keyof SessionInitResponses]
-
-export type SessionSummarizeData = {
-  body?: {
-    providerID: string
-    modelID: string
-    auto?: boolean
-  }
-  path: {
-    sessionID: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/session/{sessionID}/summarize"
-}
-
-export type SessionSummarizeErrors = {
-  /**
-   * BadRequest | InvalidRequestError
-   */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-  /**
-   * NotFoundError
-   */
-  404: NotFoundError
-}
-
-export type SessionSummarizeError = SessionSummarizeErrors[keyof SessionSummarizeErrors]
-
-export type SessionSummarizeResponses = {
-  /**
-   * Summarized session
-   */
-  200: boolean
-}
-
-export type SessionSummarizeResponse = SessionSummarizeResponses[keyof SessionSummarizeResponses]
-
-export type SessionPromptAsyncData = {
-  body?: {
-    messageID?: string
-    model?: {
-      providerID: string
-      modelID: string
-    }
-    agent?: string
-    noReply?: boolean
-    tools?: {
-      [key: string]: boolean
-    }
-    format?: OutputFormat
-    system?: string
-    variant?: string
-    parts: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
-  }
-  path: {
-    sessionID: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/session/{sessionID}/prompt_async"
-}
-
-export type SessionPromptAsyncErrors = {
-  /**
-   * BadRequest | InvalidRequestError
-   */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-  /**
-   * NotFoundError
-   */
-  404: NotFoundError
-}
-
-export type SessionPromptAsyncError = SessionPromptAsyncErrors[keyof SessionPromptAsyncErrors]
-
-export type SessionPromptAsyncResponses = {
-  /**
-   * Prompt accepted
-   */
-  204: void
-}
-
-export type SessionPromptAsyncResponse = SessionPromptAsyncResponses[keyof SessionPromptAsyncResponses]
-
-export type SessionCommandData = {
-  body?: {
-    messageID?: string
-    agent?: string
-    model?: string
-    arguments: string
-    command: string
-    variant?: string
-    parts?: Array<{
-      id?: string
-      type: "file"
-      mime: string
-      filename?: string
-      url: string
-      source?: FilePartSource
-    }>
-  }
-  path: {
-    sessionID: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/session/{sessionID}/command"
-}
-
-export type SessionCommandErrors = {
-  /**
-   * BadRequest | InvalidRequestError
-   */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-  /**
-   * NotFoundError
-   */
-  404: NotFoundError
-}
-
-export type SessionCommandError = SessionCommandErrors[keyof SessionCommandErrors]
-
-export type SessionCommandResponses = {
-  /**
-   * Command accepted
-   */
-  204: void
-}
-
-export type SessionCommandResponse = SessionCommandResponses[keyof SessionCommandResponses]
-
-export type SessionShellData = {
-  body?: {
-    messageID?: string
-    agent: string
-    model?: {
-      providerID: string
-      modelID: string
-    }
-    command: string
-  }
-  path: {
-    sessionID: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/session/{sessionID}/shell"
-}
-
-export type SessionShellErrors = {
-  /**
-   * BadRequest | InvalidRequestError
-   */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-  /**
-   * NotFoundError
-   */
-  404: NotFoundError
-  /**
-   * SessionBusyError
-   */
-  409: SessionBusyError
-}
-
-export type SessionShellError = SessionShellErrors[keyof SessionShellErrors]
-
-export type SessionShellResponses = {
-  /**
-   * Shell command executed
-   */
-  204: void
-}
-
-export type SessionShellResponse = SessionShellResponses[keyof SessionShellResponses]
-
-export type SessionRevertData = {
-  body?: {
-    messageID: string
-    partID?: string
-  }
-  path: {
-    sessionID: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/session/{sessionID}/revert"
-}
-
-export type SessionRevertErrors = {
-  /**
-   * BadRequest | InvalidRequestError
-   */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-  /**
-   * NotFoundError
-   */
-  404: NotFoundError
-  /**
-   * SessionBusyError
-   */
-  409: SessionBusyError
-}
-
-export type SessionRevertError = SessionRevertErrors[keyof SessionRevertErrors]
-
-export type SessionRevertResponses = {
-  /**
-   * Updated session
-   */
-  200: Session6
-}
-
-export type SessionRevertResponse = SessionRevertResponses[keyof SessionRevertResponses]
-
-export type SessionUnrevertData = {
-  body?: never
-  path: {
-    sessionID: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/session/{sessionID}/unrevert"
-}
-
-export type SessionUnrevertErrors = {
-  /**
-   * BadRequest | InvalidRequestError
-   */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-  /**
-   * NotFoundError
-   */
-  404: NotFoundError
-  /**
-   * SessionBusyError
-   */
-  409: SessionBusyError
-}
-
-export type SessionUnrevertError = SessionUnrevertErrors[keyof SessionUnrevertErrors]
-
-export type SessionUnrevertResponses = {
-  /**
-   * Updated session
-   */
-  200: Session7
-}
-
-export type SessionUnrevertResponse = SessionUnrevertResponses[keyof SessionUnrevertResponses]
-
-export type PermissionRespondData = {
-  body?: {
-    response:
-      | "once"
-      | "always"
-      | "reject"
-      | "allow-once"
-      | "allow-file"
-      | "allow-always"
-      | "deny-once"
-      | "deny-file"
-      | "deny-always"
-  }
-  path: {
-    sessionID: string
-    permissionID: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/session/{sessionID}/permissions/{permissionID}"
-}
-
-export type PermissionRespondErrors = {
-  /**
-   * BadRequest | InvalidRequestError
-   */
-  400: EffectHttpApiErrorBadRequest | InvalidRequestError
-  /**
-   * NotFoundError | PermissionNotFoundError
-   */
-  404: NotFoundError | PermissionNotFoundError
-}
-
-export type PermissionRespondError = PermissionRespondErrors[keyof PermissionRespondErrors]
-
-export type PermissionRespondResponses = {
-  /**
-   * Permission processed successfully
-   */
-  200: boolean
-}
-
-export type PermissionRespondResponse = PermissionRespondResponses[keyof PermissionRespondResponses]
 
 export type ShellStatusData = {
   body?: never
@@ -11712,6 +10082,8 @@ export type V2SessionCreateData = {
     priority?: number
     permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
     location?: LocationRef
+    title?: string
+    permission?: PermissionRuleset
     strict?: SessionStrictOverride
     introspection?: boolean
     quality?: boolean
@@ -12340,6 +10712,43 @@ export type V2SessionSwitchPromptOverrideResponses = {
 export type V2SessionSwitchPromptOverrideResponse =
   V2SessionSwitchPromptOverrideResponses[keyof V2SessionSwitchPromptOverrideResponses]
 
+export type V2SessionShellData = {
+  body: {
+    command: string
+  }
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/shell"
+}
+
+export type V2SessionShellErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+}
+
+export type V2SessionShellError = V2SessionShellErrors[keyof V2SessionShellErrors]
+
+export type V2SessionShellResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2SessionShellResponse = V2SessionShellResponses[keyof V2SessionShellResponses]
+
 export type V2SessionCommandData = {
   body: {
     command: string
@@ -12534,7 +10943,7 @@ export type V2SessionRevertStageErrors = {
   /**
    * UnknownError
    */
-  500: UnknownError1
+  500: UnknownError
 }
 
 export type V2SessionRevertStageError = V2SessionRevertStageErrors[keyof V2SessionRevertStageErrors]
@@ -12575,7 +10984,7 @@ export type V2SessionRevertClearErrors = {
   /**
    * UnknownError
    */
-  500: UnknownError1
+  500: UnknownError
 }
 
 export type V2SessionRevertClearError = V2SessionRevertClearErrors[keyof V2SessionRevertClearErrors]
@@ -12649,7 +11058,7 @@ export type V2SessionContextErrors = {
   /**
    * UnknownError
    */
-  500: UnknownError1
+  500: UnknownError
 }
 
 export type V2SessionContextError = V2SessionContextErrors[keyof V2SessionContextErrors]
@@ -12849,7 +11258,7 @@ export type V2SessionMessagesErrors = {
   /**
    * UnknownError
    */
-  500: UnknownError1
+  500: UnknownError
 }
 
 export type V2SessionMessagesError = V2SessionMessagesErrors[keyof V2SessionMessagesErrors]

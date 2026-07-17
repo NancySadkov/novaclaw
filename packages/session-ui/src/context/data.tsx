@@ -1,4 +1,4 @@
-import type { Session, SnapshotFileDiff, SessionStatus, Provider } from "@novaclaw/sdk/v2"
+import type { SessionV2Info as Session, SessionChangeDiff, SessionStatus, Provider } from "@novaclaw/sdk/v2"
 import { createSimpleContext } from "@novaclaw/ui/context"
 import { PreloadMultiFileDiffResult } from "@pierre/diffs/ssr"
 
@@ -21,7 +21,7 @@ type Data = {
     [sessionID: string]: SessionStatus
   }
   session_diff: {
-    [sessionID: string]: SnapshotFileDiff[]
+    [sessionID: string]: SessionChangeDiff[]
   }
   session_diff_preload?: {
     [sessionID: string]: PreloadMultiFileDiffResult<any>[]

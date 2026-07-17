@@ -23,6 +23,7 @@ import { Revert } from "@novaclaw/schema/revert"
 import { SessionEvent } from "@novaclaw/schema/session-event"
 import { SessionFeature } from "@novaclaw/schema/session-feature"
 import { SessionStrict } from "@novaclaw/schema/session-strict"
+import { PermissionRuleset } from "@novaclaw/schema/permission-ruleset"
 import { SessionTodo } from "@novaclaw/schema/session-todo"
 
 const SessionsQueryFields = {
@@ -151,6 +152,9 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
           priority: Schema.Finite.pipe(Schema.optional),
           permissionMode: Schema.Literals(["plan", "ask", "surgical", "bypass", "yolo"]).pipe(Schema.optional),
           location: Location.Ref.pipe(Schema.optional),
+          title: Schema.String.pipe(Schema.optional),
+          // The caller's explicit saved permission ruleset (the headless runner's allow-all).
+          permission: PermissionRuleset.Ruleset.pipe(Schema.optional),
           // Per-session overrides staged from the composer (V1-nuke slice C: these rode $body_
           // extras over the V1 create before).
           strict: SessionStrict.Override.pipe(Schema.optional),
@@ -427,6 +431,25 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
             summary: "Set the session's system-prompt override layer",
             description:
               "Replace this session's system-prompt override (composed after the persona baseline, before the agent prompt); null clears it. Children and forks inherit through the config walk. Applies from the next turn.",
+          }),
+        ),
+    )
+    .add(
+      HttpApiEndpoint.post("session.shell", "/api/session/:sessionID/shell", {
+        params: { sessionID: Session.ID },
+        payload: Schema.Struct({
+          command: Schema.String,
+        }),
+        success: HttpApiSchema.NoContent,
+        error: SessionNotFoundError,
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.shell",
+            summary: "Run a shell command",
+            description:
+              "Run one shell command to completion against the session's location; the transcript renders from the durable shell events (no model turn).",
           }),
         ),
     )

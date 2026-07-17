@@ -4,12 +4,12 @@ import { InstanceState } from "@/effect/instance-state"
 import { Wildcard } from "@novaclaw/core/util/wildcard"
 import { Deferred, Effect, Layer, Context } from "effect"
 import os from "os"
-import { PermissionV1 } from "@novaclaw/core/v1/permission"
+import { PermissionRuleset } from "@novaclaw/schema/permission-ruleset"
 import { normalizeReply } from "@novaclaw/core/permission"
 import type { PermissionMode } from "@novaclaw/core/session/config-resolve"
 import { EventV2Bridge } from "@/event-v2-bridge"
 
-export const Event = PermissionV1.Event
+export const Event = PermissionRuleset.Event
 
 /**
  * 1K on the V1 runtime: the ruleset overlay a permission MODE contributes to a session's own
@@ -19,7 +19,7 @@ export const Event = PermissionV1.Event
  * identity on V1. `bypass` allows in-project mutations but leaves external_directory at ask;
  * `yolo` allows everything.
  */
-export function modeRuleset(mode: PermissionMode): PermissionV1.Rule[] {
+export function modeRuleset(mode: PermissionMode): PermissionRuleset.Rule[] {
   switch (mode) {
     case "plan":
       return [{ permission: "edit", pattern: "*", action: "deny" }]
@@ -37,22 +37,22 @@ export function modeRuleset(mode: PermissionMode): PermissionV1.Rule[] {
 }
 
 export interface Interface {
-  readonly ask: (input: PermissionV1.AskInput) => Effect.Effect<void, PermissionV1.Error>
-  readonly reply: (input: PermissionV1.ReplyInput) => Effect.Effect<void, PermissionV1.NotFoundError>
-  readonly list: () => Effect.Effect<ReadonlyArray<PermissionV1.Request>>
+  readonly ask: (input: PermissionRuleset.AskInput) => Effect.Effect<void, PermissionRuleset.Error>
+  readonly reply: (input: PermissionRuleset.ReplyInput) => Effect.Effect<void, PermissionRuleset.NotFoundError>
+  readonly list: () => Effect.Effect<ReadonlyArray<PermissionRuleset.Request>>
 }
 
 interface PendingEntry {
-  info: PermissionV1.Request
-  deferred: Deferred.Deferred<void, PermissionV1.RejectedError | PermissionV1.CorrectedError>
+  info: PermissionRuleset.Request
+  deferred: Deferred.Deferred<void, PermissionRuleset.RejectedError | PermissionRuleset.CorrectedError>
 }
 
 interface State {
-  pending: Map<PermissionV1.ID, PendingEntry>
-  approved: PermissionV1.Rule[]
+  pending: Map<PermissionRuleset.ID, PendingEntry>
+  approved: PermissionRuleset.Rule[]
 }
 
-export function evaluate(permission: string, pattern: string, ...rulesets: PermissionV1.Ruleset[]): PermissionV1.Rule {
+export function evaluate(permission: string, pattern: string, ...rulesets: PermissionRuleset.Ruleset[]): PermissionRuleset.Rule {
   return (
     rulesets
       .flat()
@@ -74,14 +74,14 @@ export const layer = Layer.effect(
       Effect.fn("Permission.state")(function* (ctx) {
         void ctx
         const state = {
-          pending: new Map<PermissionV1.ID, PendingEntry>(),
+          pending: new Map<PermissionRuleset.ID, PendingEntry>(),
           approved: [],
         }
 
         yield* Effect.addFinalizer(() =>
           Effect.gen(function* () {
             for (const item of state.pending.values()) {
-              yield* Deferred.fail(item.deferred, new PermissionV1.RejectedError())
+              yield* Deferred.fail(item.deferred, new PermissionRuleset.RejectedError())
             }
             state.pending.clear()
           }),
@@ -91,7 +91,7 @@ export const layer = Layer.effect(
       }),
     )
 
-    const ask = Effect.fn("Permission.ask")(function* (input: PermissionV1.AskInput) {
+    const ask = Effect.fn("Permission.ask")(function* (input: PermissionRuleset.AskInput) {
       const { approved, pending } = yield* InstanceState.get(state)
       const { ruleset, ...request } = input
       let needsAsk = false
@@ -100,7 +100,7 @@ export const layer = Layer.effect(
         const rule = evaluate(request.permission, pattern, ruleset, approved)
         yield* Effect.logInfo("evaluated", { permission: request.permission, pattern, action: rule })
         if (rule.action === "deny") {
-          return yield* new PermissionV1.DeniedError({
+          return yield* new PermissionRuleset.DeniedError({
             ruleset: ruleset.filter((rule) => Wildcard.match(request.permission, rule.permission)),
           })
         }
@@ -110,8 +110,8 @@ export const layer = Layer.effect(
 
       if (!needsAsk) return
 
-      const id = request.id ?? PermissionV1.ID.ascending()
-      const info: PermissionV1.Request = {
+      const id = request.id ?? PermissionRuleset.ID.ascending()
+      const info: PermissionRuleset.Request = {
         id,
         sessionID: request.sessionID,
         permission: request.permission,
@@ -122,7 +122,7 @@ export const layer = Layer.effect(
       }
       yield* Effect.logInfo("asking", { id, permission: info.permission, patterns: info.patterns })
 
-      const deferred = yield* Deferred.make<void, PermissionV1.RejectedError | PermissionV1.CorrectedError>()
+      const deferred = yield* Deferred.make<void, PermissionRuleset.RejectedError | PermissionRuleset.CorrectedError>()
       pending.set(id, { info, deferred })
       yield* events.publish(Event.Asked, info)
       return yield* Effect.ensuring(
@@ -133,10 +133,10 @@ export const layer = Layer.effect(
       )
     })
 
-    const reply = Effect.fn("Permission.reply")(function* (input: PermissionV1.ReplyInput) {
+    const reply = Effect.fn("Permission.reply")(function* (input: PermissionRuleset.ReplyInput) {
       const { approved, pending } = yield* InstanceState.get(state)
       const existing = pending.get(input.requestID)
-      if (!existing) return yield* new PermissionV1.NotFoundError({ requestID: input.requestID })
+      if (!existing) return yield* new PermissionRuleset.NotFoundError({ requestID: input.requestID })
 
       pending.delete(input.requestID)
       yield* events.publish(Event.Replied, {
@@ -163,8 +163,8 @@ export const layer = Layer.effect(
         yield* Deferred.fail(
           existing.deferred,
           input.message
-            ? new PermissionV1.CorrectedError({ feedback: input.message })
-            : new PermissionV1.RejectedError(),
+            ? new PermissionRuleset.CorrectedError({ feedback: input.message })
+            : new PermissionRuleset.RejectedError(),
         )
 
         for (const [id, item] of pending.entries()) {
@@ -175,7 +175,7 @@ export const layer = Layer.effect(
             requestID: item.info.id,
             reply: "reject",
           })
-          yield* Deferred.fail(item.deferred, new PermissionV1.RejectedError())
+          yield* Deferred.fail(item.deferred, new PermissionRuleset.RejectedError())
         }
         return
       }
@@ -225,7 +225,7 @@ function expand(pattern: string): string {
 }
 
 export function fromConfig(permission: ConfigPermission.Info) {
-  const ruleset: PermissionV1.Rule[] = []
+  const ruleset: PermissionRuleset.Rule[] = []
   for (const [key, value] of Object.entries(permission)) {
     if (typeof value === "string") {
       ruleset.push({ permission: key, action: value, pattern: "*" })
@@ -238,11 +238,11 @@ export function fromConfig(permission: ConfigPermission.Info) {
   return ruleset
 }
 
-export function merge(...rulesets: PermissionV1.Ruleset[]): PermissionV1.Rule[] {
+export function merge(...rulesets: PermissionRuleset.Ruleset[]): PermissionRuleset.Rule[] {
   return rulesets.flat()
 }
 
-export function disabled(tools: string[], ruleset: PermissionV1.Ruleset): Set<string> {
+export function disabled(tools: string[], ruleset: PermissionRuleset.Ruleset): Set<string> {
   const edits = ["edit", "write", "apply_patch"]
   const reads = ["list_mcp_resources", "list_mcp_resource_templates", "read_mcp_resource"]
   return new Set(

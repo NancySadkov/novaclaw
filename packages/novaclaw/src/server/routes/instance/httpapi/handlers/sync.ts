@@ -1,6 +1,5 @@
 import { Workspace } from "@/control-plane/workspace"
 import * as InstanceState from "@/effect/instance-state"
-import { Session } from "@/session/session"
 import { Database } from "@novaclaw/core/database/database"
 import { EventV2 } from "@novaclaw/core/event"
 import { EventV2Bridge } from "@/event-v2-bridge"
@@ -13,13 +12,15 @@ import { not } from "drizzle-orm"
 import { or } from "drizzle-orm"
 import { Effect, Scope } from "effect"
 import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
+import { SessionPatch } from "@novaclaw/core/session/patch"
+import { SessionSchema } from "@novaclaw/core/session/schema"
+import { Location } from "@novaclaw/core/location"
 import { InstanceHttpApi } from "../api"
 import { HistoryPayload, ReplayPayload, SessionPayload } from "../groups/sync"
 
 export const syncHandlers = HttpApiBuilder.group(InstanceHttpApi, "sync", (handlers) =>
   Effect.gen(function* () {
     const workspace = yield* Workspace.Service
-    const session = yield* Session.Service
     const scope = yield* Scope.Scope
     const events = yield* EventV2Bridge.Service
     const { db } = yield* Database.Service
@@ -62,7 +63,14 @@ export const syncHandlers = HttpApiBuilder.group(InstanceHttpApi, "sync", (handl
       const workspaceID = yield* InstanceState.workspaceID
       if (!workspaceID) return yield* new HttpApiError.BadRequest({})
 
-      yield* session.setWorkspace({ sessionID: ctx.payload.sessionID, workspaceID })
+      // V1-nuke slice D: the workspace steal writes through the native patch seam (the V1
+      // Session.Service facade retired wholesale).
+      yield* SessionPatch.patchSessionRecord({ db, events }, SessionSchema.ID.make(ctx.payload.sessionID), (info) =>
+        SessionSchema.Info.make({
+          ...info,
+          location: Location.Ref.make({ directory: info.location.directory, workspaceID }),
+        }),
+      )
 
       yield* Effect.logInfo("sync session stolen", { sessionID: ctx.payload.sessionID, workspaceID })
 

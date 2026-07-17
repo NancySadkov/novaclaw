@@ -1,4 +1,4 @@
-import { QuestionV1 } from "@novaclaw/schema/question-v1"
+import { QuestionRequest } from "@novaclaw/schema/question-request"
 
-export const QuestionID = QuestionV1.ID
+export const QuestionID = QuestionRequest.ID
 export type QuestionID = typeof QuestionID.Type

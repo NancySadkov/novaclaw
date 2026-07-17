@@ -20,8 +20,6 @@ import { Discovery } from "@/skill/discovery"
 import { Question } from "@/question"
 import { Permission } from "@/permission"
 import { Todo } from "@/session/todo"
-import { Session } from "@/session/session"
-import { Instruction } from "@/session/instruction"
 import { MCP } from "@/mcp"
 import { McpAuth } from "@/mcp/auth"
 import { Truncate } from "@/tool/truncate"
@@ -59,11 +57,9 @@ export const AppLayer = Layer.mergeAll(
   Question.defaultLayer,
   Permission.defaultLayer,
   Todo.defaultLayer,
-  Session.defaultLayer,
   BackgroundJob.defaultLayer,
   RuntimeFlags.defaultLayer,
   EventV2Bridge.defaultLayer,
-  Instruction.defaultLayer,
   MCP.defaultLayer,
   McpAuth.defaultLayer,
   Truncate.defaultLayer,

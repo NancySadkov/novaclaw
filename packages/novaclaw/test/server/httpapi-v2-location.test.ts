@@ -114,7 +114,11 @@ describe("v2 location HttpApi", () => {
     expect(connected.type).toBe("server.connected")
     expect(connected.location).toBeUndefined()
 
-    const created = await request("/session", publisher.path, { method: "POST" })
+    const created = await request("/api/session", publisher.path, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ location: { directory: publisher.path } }),
+    })
     expect(created.status).toBe(200)
     expect(await readEventType(reader, "session.created")).toMatchObject({
       type: "session.created",

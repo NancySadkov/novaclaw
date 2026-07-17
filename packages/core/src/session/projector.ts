@@ -6,7 +6,7 @@ import { Database } from "../database/database"
 import { EventV2 } from "../event"
 import { makeGlobalNode } from "../effect/app-node"
 import { SessionEvent } from "./event"
-import { SessionV1 } from "../v1/session"
+import { SessionRecordEvent } from "@novaclaw/schema/session-record-event"
 import { WorkspaceTable } from "../control-plane/workspace.sql"
 import { SessionMessage } from "./message"
 import { SessionMessageUpdater } from "./message-updater"
@@ -33,15 +33,18 @@ type Usage = {
   }
 }
 
-function sessionRow(info: SessionV1.SessionInfo): typeof SessionTable.$inferInsert {
+// V1-nuke slice D: the record events carry the NATIVE Session.Info; this is fromRow's inverse.
+// share_url/time_compacting are no longer written (their only traffic was the V1 codec round-trip;
+// the columns stay for old rows).
+function sessionRow(info: SessionSchema.Info): typeof SessionTable.$inferInsert {
   return {
     id: info.id,
     project_id: info.projectID,
-    workspace_id: info.workspaceID ?? null,
+    workspace_id: info.location.workspaceID ?? null,
     parent_id: info.parentID,
     slug: info.slug,
-    directory: info.directory,
-    path: info.path,
+    directory: info.location.directory,
+    path: info.subpath,
     title: info.title,
     agent: info.agent,
     model: info.model,
@@ -56,7 +59,6 @@ function sessionRow(info: SessionV1.SessionInfo): typeof SessionTable.$inferInse
     affective: info.affective,
     result: info.result,
     version: info.version,
-    share_url: info.share?.url,
     summary_additions: info.summary?.additions,
     summary_deletions: info.summary?.deletions,
     summary_files: info.summary?.files,
@@ -70,10 +72,9 @@ function sessionRow(info: SessionV1.SessionInfo): typeof SessionTable.$inferInse
     tokens_cache_write: (info.tokens ?? { cache: { write: 0 } }).cache.write,
     revert: info.revert ? { ...info.revert, messageID: SessionMessage.ID.make(info.revert.messageID) } : null,
     permission: info.permission ? [...info.permission] : undefined,
-    time_created: info.time.created,
-    time_updated: info.time.updated,
-    time_compacting: info.time.compacting,
-    time_archived: info.time.archived,
+    time_created: DateTime.toEpochMillis(info.time.created),
+    time_updated: DateTime.toEpochMillis(info.time.updated),
+    time_archived: info.time.archived ? DateTime.toEpochMillis(info.time.archived) : undefined,
   }
 }
 
@@ -197,7 +198,7 @@ export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const events = yield* EventV2.Service
     const { db } = yield* Database.Service
-    yield* events.project(SessionV1.Event.Created, (event) =>
+    yield* events.project(SessionRecordEvent.Created, (event) =>
       Effect.gen(function* () {
         const stored = yield* db
           .insert(SessionTable)
@@ -207,17 +208,17 @@ export const layer = Layer.effectDiscard(
           .get()
           .pipe(Effect.orDie)
         if (!stored) return yield* Effect.die(new SessionAlreadyProjected())
-        if (event.data.info.workspaceID) {
+        if (event.data.info.location.workspaceID) {
           yield* db
             .update(WorkspaceTable)
             .set({ time_used: Date.now() })
-            .where(eq(WorkspaceTable.id, event.data.info.workspaceID))
+            .where(eq(WorkspaceTable.id, event.data.info.location.workspaceID))
             .run()
             .pipe(Effect.orDie)
         }
       }),
     )
-    yield* events.project(SessionV1.Event.Updated, (event) =>
+    yield* events.project(SessionRecordEvent.Updated, (event) =>
       db
         .update(SessionTable)
         .set(sessionRow(event.data.info))
@@ -249,7 +250,7 @@ export const layer = Layer.effectDiscard(
         yield* SessionContextEpoch.reset(db, event.data.sessionID)
       }),
     )
-    yield* events.project(SessionV1.Event.Deleted, (event) =>
+    yield* events.project(SessionRecordEvent.Deleted, (event) =>
       db.delete(SessionTable).where(eq(SessionTable.id, event.data.sessionID)).run().pipe(Effect.orDie),
     )
     yield* events.project(SessionEvent.AgentSwitched, (event) =>

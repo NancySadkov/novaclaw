@@ -9,7 +9,6 @@ import type {
   AdhocListResponses,
   AdhocPromoteErrors,
   AdhocPromoteResponses,
-  AgentPartInput,
   AppAgentsErrors,
   AppAgentsResponses,
   AppListErrors,
@@ -52,8 +51,6 @@ import type {
   ExperimentalResourceListResponses,
   ExperimentalSessionBackgroundErrors,
   ExperimentalSessionBackgroundResponses,
-  ExperimentalSessionListErrors,
-  ExperimentalSessionListResponses,
   ExperimentalWorkspaceAdapterListErrors,
   ExperimentalWorkspaceAdapterListResponses,
   ExperimentalWorkspaceCreateErrors,
@@ -72,8 +69,6 @@ import type {
   FileListResponses,
   FileMkdirErrors,
   FileMkdirResponses,
-  FilePartInput,
-  FilePartSource,
   FileReadErrors,
   FileReadResponses,
   FileStatusErrors,
@@ -143,15 +138,12 @@ import type {
   McpStatusResponses,
   ModelRef,
   MoveSessionDestination,
-  OutputFormat,
   PathGetErrors,
   PathGetResponses,
   PermissionListErrors,
   PermissionListResponses,
   PermissionReplyErrors,
   PermissionReplyResponses,
-  PermissionRespondErrors,
-  PermissionRespondResponses,
   PermissionRuleset,
   PermissionV2Reply,
   PermissionV2Source,
@@ -210,50 +202,13 @@ import type {
   RegistryTablesResponses,
   RegistryUpdateRowErrors,
   RegistryUpdateRowResponses,
-  SessionAbortErrors,
-  SessionAbortResponses,
-  SessionChildrenErrors,
-  SessionChildrenResponses,
-  SessionCommandErrors,
-  SessionCommandResponses,
-  SessionCreateErrors,
-  SessionCreateResponses,
-  SessionDeleteErrors,
-  SessionDeleteResponses,
-  SessionDiffErrors,
-  SessionDiffResponses,
-  SessionForkErrors,
-  SessionForkResponses,
-  SessionGetErrors,
-  SessionGetResponses,
-  SessionInitErrors,
-  SessionInitResponses,
-  SessionListErrors,
-  SessionListResponses,
-  SessionPromptAsyncErrors,
-  SessionPromptAsyncResponses,
-  SessionRevertErrors,
-  SessionRevertResponses,
-  SessionShellErrors,
-  SessionShellResponses,
-  SessionStatusErrors,
-  SessionStatusResponses,
   SessionStrictOverride,
-  SessionSummarizeErrors,
-  SessionSummarizeResponses,
-  SessionTodoErrors,
-  SessionTodoResponses,
-  SessionUnrevertErrors,
-  SessionUnrevertResponses,
-  SessionUpdateErrors,
-  SessionUpdateResponses,
   ShellOfflineErrors,
   ShellOfflineResponses,
   ShellProvisionErrors,
   ShellProvisionResponses,
   ShellStatusErrors,
   ShellStatusResponses,
-  SubtaskPartInput,
   SyncHistoryListErrors,
   SyncHistoryListResponses,
   SyncReplayErrors,
@@ -262,7 +217,6 @@ import type {
   SyncStartResponses,
   SyncStealErrors,
   SyncStealResponses,
-  TextPartInput,
   ToolIdsErrors,
   ToolIdsResponses,
   ToolListErrors,
@@ -389,6 +343,8 @@ import type {
   V2SessionRevertCommitResponses,
   V2SessionRevertStageErrors,
   V2SessionRevertStageResponses,
+  V2SessionShellErrors,
+  V2SessionShellResponses,
   V2SessionSwitchAgentErrors,
   V2SessionSwitchAgentResponses,
   V2SessionSwitchFeatureErrors,
@@ -913,52 +869,6 @@ export class Console extends HeyApiClient {
 }
 
 export class Session extends HeyApiClient {
-  /**
-   * List sessions
-   *
-   * Get a list of all NovaClaw sessions across projects, sorted by most recently updated. Archived sessions are excluded by default.
-   */
-  public list<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-      roots?: boolean | "true" | "false"
-      start?: number
-      cursor?: number
-      search?: string
-      limit?: number
-      archived?: boolean | "true" | "false"
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "query", key: "roots" },
-            { in: "query", key: "start" },
-            { in: "query", key: "cursor" },
-            { in: "query", key: "search" },
-            { in: "query", key: "limit" },
-            { in: "query", key: "archived" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<
-      ExperimentalSessionListResponses,
-      ExperimentalSessionListErrors,
-      ThrowOnError
-    >({
-      url: "/experimental/session",
-      ...options,
-      ...params,
-    })
-  }
-
   /**
    * Background subagents
    *
@@ -3926,58 +3836,6 @@ export class Permission extends HeyApiClient {
       },
     })
   }
-
-  /**
-   * Respond to permission
-   *
-   * Approve or deny a permission request from the AI assistant.
-   *
-   * @deprecated
-   */
-  public respond<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      permissionID: string
-      directory?: string
-      workspace?: string
-      response?:
-        | "once"
-        | "always"
-        | "reject"
-        | "allow-once"
-        | "allow-file"
-        | "allow-always"
-        | "deny-once"
-        | "deny-file"
-        | "deny-always"
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "sessionID" },
-            { in: "path", key: "permissionID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "body", key: "response" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<PermissionRespondResponses, PermissionRespondErrors, ThrowOnError>({
-      url: "/session/{sessionID}/permissions/{permissionID}",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
 }
 
 export class Oauth extends HeyApiClient {
@@ -4181,756 +4039,6 @@ export class Provider extends HeyApiClient {
   private _oauth?: Oauth
   get oauth(): Oauth {
     return (this._oauth ??= new Oauth({ client: this.client }))
-  }
-}
-
-export class Session2 extends HeyApiClient {
-  /**
-   * List sessions
-   *
-   * Get a list of all NovaClaw sessions, sorted by most recently updated.
-   */
-  public list<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-      scope?: "project"
-      path?: string
-      roots?: boolean | "true" | "false"
-      start?: number
-      search?: string
-      limit?: number
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "query", key: "scope" },
-            { in: "query", key: "path" },
-            { in: "query", key: "roots" },
-            { in: "query", key: "start" },
-            { in: "query", key: "search" },
-            { in: "query", key: "limit" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<SessionListResponses, SessionListErrors, ThrowOnError>({
-      url: "/session",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Create session
-   *
-   * Create a new NovaClaw session for interacting with AI assistants and managing conversations.
-   */
-  public create<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-      parentID?: string
-      title?: string
-      agent?: string
-      model?: {
-        id: string
-        providerID: string
-        variant?: string
-      }
-      metadata?: {
-        [key: string]: unknown
-      }
-      permission?: PermissionRuleset
-      permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
-      strict?: {
-        enabled?: boolean
-        attempts?: number
-        wallMinutes?: number
-      }
-      introspection?: boolean
-      quality?: boolean
-      affective?: boolean
-      workspaceID?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "body", key: "parentID" },
-            { in: "body", key: "title" },
-            { in: "body", key: "agent" },
-            { in: "body", key: "model" },
-            { in: "body", key: "metadata" },
-            { in: "body", key: "permission" },
-            { in: "body", key: "permissionMode" },
-            { in: "body", key: "strict" },
-            { in: "body", key: "introspection" },
-            { in: "body", key: "quality" },
-            { in: "body", key: "affective" },
-            { in: "body", key: "workspaceID" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<SessionCreateResponses, SessionCreateErrors, ThrowOnError>({
-      url: "/session",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-
-  /**
-   * Get session status
-   *
-   * Retrieve the current status of all sessions, including active, idle, and completed states.
-   */
-  public status<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<SessionStatusResponses, SessionStatusErrors, ThrowOnError>({
-      url: "/session/status",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Delete session
-   *
-   * Delete a session and permanently remove all associated data, including messages and history.
-   */
-  public delete<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "sessionID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).delete<SessionDeleteResponses, SessionDeleteErrors, ThrowOnError>({
-      url: "/session/{sessionID}",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Get session
-   *
-   * Retrieve detailed information about a specific NovaClaw session.
-   */
-  public get<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "sessionID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<SessionGetResponses, SessionGetErrors, ThrowOnError>({
-      url: "/session/{sessionID}",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Update session
-   *
-   * Update properties of an existing session, such as title or other metadata.
-   */
-  public update<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      directory?: string
-      workspace?: string
-      title?: string
-      metadata?: {
-        [key: string]: unknown
-      }
-      permission?: PermissionRuleset
-      time?: {
-        archived?: number
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "sessionID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "body", key: "title" },
-            { in: "body", key: "metadata" },
-            { in: "body", key: "permission" },
-            { in: "body", key: "time" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).patch<SessionUpdateResponses, SessionUpdateErrors, ThrowOnError>({
-      url: "/session/{sessionID}",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-
-  /**
-   * Get session children
-   *
-   * Retrieve all child sessions that were forked from the specified parent session.
-   */
-  public children<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "sessionID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<SessionChildrenResponses, SessionChildrenErrors, ThrowOnError>({
-      url: "/session/{sessionID}/children",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Get session todos
-   *
-   * Retrieve the todo list associated with a specific session, showing tasks and action items.
-   */
-  public todo<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "sessionID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<SessionTodoResponses, SessionTodoErrors, ThrowOnError>({
-      url: "/session/{sessionID}/todo",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Get message diff
-   *
-   * Get the file changes (diff) that resulted from a specific user message in the session.
-   */
-  public diff<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      directory?: string
-      workspace?: string
-      messageID?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "sessionID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "query", key: "messageID" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<SessionDiffResponses, SessionDiffErrors, ThrowOnError>({
-      url: "/session/{sessionID}/diff",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Fork session
-   *
-   * Create a new session by forking an existing session at a specific message point.
-   */
-  public fork<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      directory?: string
-      workspace?: string
-      messageID?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "sessionID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "body", key: "messageID" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<SessionForkResponses, SessionForkErrors, ThrowOnError>({
-      url: "/session/{sessionID}/fork",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-
-  /**
-   * Abort session
-   *
-   * Abort an active session and stop any ongoing AI processing or command execution.
-   */
-  public abort<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "sessionID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<SessionAbortResponses, SessionAbortErrors, ThrowOnError>({
-      url: "/session/{sessionID}/abort",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Initialize session
-   *
-   * Analyze the current application and create an AGENTS.md file with project-specific agent configurations.
-   */
-  public init<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      directory?: string
-      workspace?: string
-      modelID?: string
-      providerID?: string
-      messageID?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "sessionID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "body", key: "modelID" },
-            { in: "body", key: "providerID" },
-            { in: "body", key: "messageID" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<SessionInitResponses, SessionInitErrors, ThrowOnError>({
-      url: "/session/{sessionID}/init",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-
-  /**
-   * Summarize session
-   *
-   * Generate a concise summary of the session using AI compaction to preserve key information.
-   */
-  public summarize<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      directory?: string
-      workspace?: string
-      providerID?: string
-      modelID?: string
-      auto?: boolean
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "sessionID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "body", key: "providerID" },
-            { in: "body", key: "modelID" },
-            { in: "body", key: "auto" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<SessionSummarizeResponses, SessionSummarizeErrors, ThrowOnError>({
-      url: "/session/{sessionID}/summarize",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-
-  /**
-   * Send async message
-   *
-   * Create and send a new message to a session asynchronously, starting the session if needed and returning immediately.
-   */
-  public promptAsync<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      directory?: string
-      workspace?: string
-      messageID?: string
-      model?: {
-        providerID: string
-        modelID: string
-      }
-      agent?: string
-      noReply?: boolean
-      tools?: {
-        [key: string]: boolean
-      }
-      format?: OutputFormat
-      system?: string
-      variant?: string
-      parts?: Array<TextPartInput | FilePartInput | AgentPartInput | SubtaskPartInput>
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "sessionID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "body", key: "messageID" },
-            { in: "body", key: "model" },
-            { in: "body", key: "agent" },
-            { in: "body", key: "noReply" },
-            { in: "body", key: "tools" },
-            { in: "body", key: "format" },
-            { in: "body", key: "system" },
-            { in: "body", key: "variant" },
-            { in: "body", key: "parts" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<SessionPromptAsyncResponses, SessionPromptAsyncErrors, ThrowOnError>({
-      url: "/session/{sessionID}/prompt_async",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-
-  /**
-   * Send command
-   *
-   * Send a new command to a session for execution by the AI assistant.
-   */
-  public command<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      directory?: string
-      workspace?: string
-      messageID?: string
-      agent?: string
-      model?: string
-      arguments?: string
-      command?: string
-      variant?: string
-      parts?: Array<{
-        id?: string
-        type: "file"
-        mime: string
-        filename?: string
-        url: string
-        source?: FilePartSource
-      }>
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "sessionID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "body", key: "messageID" },
-            { in: "body", key: "agent" },
-            { in: "body", key: "model" },
-            { in: "body", key: "arguments" },
-            { in: "body", key: "command" },
-            { in: "body", key: "variant" },
-            { in: "body", key: "parts" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<SessionCommandResponses, SessionCommandErrors, ThrowOnError>({
-      url: "/session/{sessionID}/command",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-
-  /**
-   * Run shell command
-   *
-   * Execute a shell command within the session context; its output renders in the transcript.
-   */
-  public shell<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      directory?: string
-      workspace?: string
-      messageID?: string
-      agent?: string
-      model?: {
-        providerID: string
-        modelID: string
-      }
-      command?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "sessionID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "body", key: "messageID" },
-            { in: "body", key: "agent" },
-            { in: "body", key: "model" },
-            { in: "body", key: "command" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<SessionShellResponses, SessionShellErrors, ThrowOnError>({
-      url: "/session/{sessionID}/shell",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-
-  /**
-   * Revert message
-   *
-   * Revert a specific message in a session, undoing its effects and restoring the previous state.
-   */
-  public revert<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      directory?: string
-      workspace?: string
-      messageID?: string
-      partID?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "sessionID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "body", key: "messageID" },
-            { in: "body", key: "partID" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<SessionRevertResponses, SessionRevertErrors, ThrowOnError>({
-      url: "/session/{sessionID}/revert",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-
-  /**
-   * Restore reverted messages
-   *
-   * Restore all previously reverted messages in a session.
-   */
-  public unrevert<ThrowOnError extends boolean = false>(
-    parameters: {
-      sessionID: string
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "sessionID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<SessionUnrevertResponses, SessionUnrevertErrors, ThrowOnError>({
-      url: "/session/{sessionID}/unrevert",
-      ...options,
-      ...params,
-    })
   }
 }
 
@@ -5647,7 +4755,7 @@ export class Question2 extends HeyApiClient {
   }
 }
 
-export class Session3 extends HeyApiClient {
+export class Session2 extends HeyApiClient {
   /**
    * List sessions
    *
@@ -5708,6 +4816,8 @@ export class Session3 extends HeyApiClient {
       priority?: number
       permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
       location?: LocationRef
+      title?: string
+      permission?: PermissionRuleset
       strict?: SessionStrictOverride
       introspection?: boolean
       quality?: boolean
@@ -5729,6 +4839,8 @@ export class Session3 extends HeyApiClient {
             { in: "body", key: "priority" },
             { in: "body", key: "permissionMode" },
             { in: "body", key: "location" },
+            { in: "body", key: "title" },
+            { in: "body", key: "permission" },
             { in: "body", key: "strict" },
             { in: "body", key: "introspection" },
             { in: "body", key: "quality" },
@@ -6171,6 +5283,41 @@ export class Session3 extends HeyApiClient {
       ThrowOnError
     >({
       url: "/api/session/{sessionID}/prompt-override",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Run a shell command
+   *
+   * Run one shell command to completion against the session's location; the transcript renders from the durable shell events (no model turn).
+   */
+  public shell<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      command?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "body", key: "command" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2SessionShellResponses, V2SessionShellErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/shell",
       ...options,
       ...params,
       headers: {
@@ -7620,9 +6767,9 @@ export class V2 extends HeyApiClient {
     return (this._agent ??= new Agent({ client: this.client }))
   }
 
-  private _session?: Session3
-  get session(): Session3 {
-    return (this._session ??= new Session3({ client: this.client }))
+  private _session?: Session2
+  get session(): Session2 {
+    return (this._session ??= new Session2({ client: this.client }))
   }
 
   private _model?: Model
@@ -7817,11 +6964,6 @@ export class NovaclawClient extends HeyApiClient {
   private _provider?: Provider
   get provider(): Provider {
     return (this._provider ??= new Provider({ client: this.client }))
-  }
-
-  private _session?: Session2
-  get session(): Session2 {
-    return (this._session ??= new Session2({ client: this.client }))
   }
 
   private _shell?: Shell

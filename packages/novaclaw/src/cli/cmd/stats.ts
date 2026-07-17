@@ -1,8 +1,8 @@
-import { Effect } from "effect"
+import { DateTime, Effect } from "effect"
 import { effectCmd } from "../effect-cmd"
 import { Database } from "@novaclaw/core/database/database"
 import { SessionTable } from "@novaclaw/core/session/sql"
-import { v1InfoFromRow } from "@novaclaw/core/session/info"
+import { fromRow } from "@novaclaw/core/session/info"
 import { SessionMessageRead } from "@novaclaw/core/session/message-read"
 import { Project } from "@/project/project"
 import { InstanceRef } from "@/effect/instance-ref"
@@ -82,7 +82,7 @@ export const StatsCommand = effectCmd({
 
 const getAllSessions = Effect.fnUntraced(function* () {
   const { db } = yield* Database.Service
-  return (yield* db.select().from(SessionTable).all().pipe(Effect.orDie)).map((row) => v1InfoFromRow(row))
+  return (yield* db.select().from(SessionTable).all().pipe(Effect.orDie)).map((row) => fromRow(row))
 })
 
 const aggregateSessionStats = Effect.fn("Cli.stats.aggregate")(function* (
@@ -110,7 +110,7 @@ const aggregateSessionStats = Effect.fn("Cli.stats.aggregate")(function* (
     return days
   })()
 
-  let filteredSessions = cutoffTime > 0 ? sessions.filter((session) => session.time.updated >= cutoffTime) : sessions
+  let filteredSessions = cutoffTime > 0 ? sessions.filter((session) => DateTime.toEpochMillis(session.time.updated) >= cutoffTime) : sessions
 
   if (projectFilter !== undefined) {
     if (projectFilter === "") {
@@ -222,8 +222,8 @@ const aggregateSessionStats = Effect.fn("Cli.stats.aggregate")(function* (
             sessionTokens.cache.write,
           sessionToolUsage,
           sessionModelUsage,
-          earliestTime: cutoffTime > 0 ? session.time.updated : session.time.created,
-          latestTime: session.time.updated,
+          earliestTime: DateTime.toEpochMillis(cutoffTime > 0 ? session.time.updated : session.time.created),
+          latestTime: DateTime.toEpochMillis(session.time.updated),
         }
       }),
     { concurrency: 20 },

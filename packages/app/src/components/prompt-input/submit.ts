@@ -430,11 +430,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
 
     if (mode === "shell") {
       clearInput()
-      client.session
+      client.v2.session
         .shell({
           sessionID: session.id,
-          agent,
-          model,
           command: text,
         })
         .catch((err) => {
@@ -453,7 +451,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       const customCommand = sync().data.command.find((c) => c.name === commandName)
       if (customCommand) {
         clearInput()
-        client.session
+        client.v2.session
           .command({
             sessionID: session.id,
             command: commandName,
@@ -461,13 +459,6 @@ export function createPromptSubmit(input: PromptSubmitInput) {
             agent,
             model: `${model.providerID}/${model.modelID}`,
             variant,
-            parts: images.map((attachment) => ({
-              id: Identifier.ascending("part"),
-              type: "file" as const,
-              mime: attachment.mime,
-              url: attachment.dataUrl,
-              filename: attachment.filename,
-            })),
           })
           .catch((err) => {
             showToast({

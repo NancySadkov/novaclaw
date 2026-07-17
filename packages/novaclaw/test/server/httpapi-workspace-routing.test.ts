@@ -23,7 +23,6 @@ import { WorkspaceTable } from "@novaclaw/core/control-plane/workspace.sql"
 import { Database } from "@novaclaw/core/database/database"
 import { Ripgrep } from "@novaclaw/core/ripgrep"
 import { Project } from "../../src/project/project"
-import { Session } from "../../src/session/session"
 import { WorkspacePaths } from "../../src/server/routes/instance/httpapi/groups/workspace"
 import {
   WorkspaceRoutingMiddleware,
@@ -255,7 +254,6 @@ const probeHandlers = HttpApiBuilder.group(ProbeApi, "probe", (handlers) =>
 const serveProbe = HttpApiBuilder.layer(ProbeApi).pipe(
   Layer.provide(probeHandlers),
   Layer.provide(workspaceRoutingTestLayer),
-  Layer.provide(Layer.mock(Session.Service)({})),
   HttpRouter.serve,
   Layer.build,
 )
@@ -379,8 +377,7 @@ describe("HttpApi workspace routing middleware", () => {
         Layer.provide(probeHandlers),
         Layer.provide(workspaceRoutingTestLayer),
         Layer.provide(Layer.succeed(Workspace.Service, workspace)),
-        Layer.provide(Layer.mock(Session.Service)({})),
-        HttpRouter.serve,
+              HttpRouter.serve,
         Layer.build,
       )
 

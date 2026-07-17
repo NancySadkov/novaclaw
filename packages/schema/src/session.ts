@@ -11,6 +11,7 @@ import { SessionID } from "./session-id"
 import { SessionStrict } from "./session-strict"
 import { SessionType } from "./session-type"
 import { Revert } from "./revert"
+import { PermissionRuleset } from "./permission-ruleset"
 
 export const ID = SessionID
 export type ID = SessionID
@@ -40,6 +41,14 @@ export const Info = Schema.Struct({
   id: ID,
   parentID: ID.pipe(optional),
   projectID: Project.ID,
+  // Row-truth provenance (V1-nuke slice D: the record events carry the FULL row, so these ride
+  // the native Info now; the columns are NOT NULL).
+  slug: Schema.String,
+  version: Schema.String,
+  // The saved permission ruleset (written at create/setPermission; the whole-row Updated
+  // projector must never lose it).
+  permission: PermissionRuleset.Ruleset.pipe(optional),
+  metadata: Schema.Record(Schema.String, Schema.Unknown).pipe(optional),
   agent: Agent.ID.pipe(optional),
   model: Model.Ref.pipe(optional),
   systemPromptOverride: Schema.String.pipe(optional),

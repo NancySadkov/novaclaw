@@ -3,13 +3,14 @@ import { mkdir } from "node:fs/promises"
 import path from "node:path"
 import { Effect, Layer, Stream } from "effect"
 import { Flag } from "@novaclaw/core/flag/flag"
+import { EventV2 } from "@novaclaw/core/event"
+import { seedSessionRow } from "../fixture/db"
 import { registerAdapter } from "../../src/control-plane/adapters"
 import { WorkspaceV2 } from "@novaclaw/core/workspace"
 import type { WorkspaceAdapter } from "../../src/control-plane/types"
 import { Workspace } from "../../src/control-plane/workspace"
 import { WorkspacePaths } from "../../src/server/routes/instance/httpapi/groups/workspace"
 import { EventPaths } from "../../src/server/routes/instance/httpapi/groups/event"
-import { Session } from "@/session/session"
 import { Database } from "@novaclaw/core/database/database"
 import { Ripgrep } from "@novaclaw/core/ripgrep"
 import { Server } from "../../src/server/server"
@@ -30,7 +31,7 @@ const workspaceLayer = Workspace.defaultLayer.pipe(
 const it = testEffect(
   Layer.mergeAll(
     Project.defaultLayer,
-    Session.defaultLayer,
+    EventV2.defaultLayer,
     workspaceLayer,
     InstanceStore.defaultLayer.pipe(Layer.provide(InstanceBootstrap.defaultLayer)),
     Database.defaultLayer,
@@ -223,7 +224,7 @@ describe("workspace HttpApi", () => {
       const workspace = (yield* created.json) as Workspace.Info
       expect(workspace).toMatchObject({ type: "local-test", name: "local-test" })
 
-      const session = yield* Session.use.create({}).pipe(provideInstance(dir))
+      const session = yield* seedSessionRow({ directory: dir }).pipe(provideInstance(dir))
       const warped = yield* request(WorkspacePaths.warp, dir, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -268,7 +269,7 @@ describe("workspace HttpApi", () => {
   it.live("returns a declared not found error when warping into a missing workspace", () =>
     Effect.gen(function* () {
       const dir = yield* tmpdirScoped({ git: true })
-      const session = yield* Session.use.create({}).pipe(provideInstance(dir))
+      const session = yield* seedSessionRow({ directory: dir }).pipe(provideInstance(dir))
       const workspaceID = WorkspaceV2.ID.ascending("wrk_missing_warp")
 
       const response = yield* request(WorkspacePaths.warp, dir, {
@@ -470,7 +471,7 @@ describe("workspace HttpApi", () => {
       })
       const workspace = (yield* created.json) as Workspace.Info
       const sessionResponse = yield* requestDefault("/session", dir, { method: "POST" })
-      const session = (yield* sessionResponse.json) as Session.Info
+      const session = (yield* sessionResponse.json) as { id: string }
       const warped = yield* requestDefault(WorkspacePaths.warp, dir, {
         method: "POST",
         headers: { "content-type": "application/json" },

@@ -5,7 +5,7 @@ import type { SessionMessage } from "./message"
 import type { Prompt } from "./prompt"
 import type { SessionInput } from "./input"
 import type { Snapshot } from "../snapshot"
-import { PermissionV1 } from "../v1/permission"
+import { PermissionRuleset } from "@novaclaw/schema/permission-ruleset"
 import { ProjectV2 } from "../project"
 import type { SessionSchema } from "./schema"
 import { WorkspaceV2 } from "../workspace"
@@ -44,7 +44,7 @@ export const SessionTable = sqliteTable(
     tokens_cache_read: integer().notNull().default(0),
     tokens_cache_write: integer().notNull().default(0),
     revert: text({ mode: "json" }).$type<Revert.State>(),
-    permission: text({ mode: "json" }).$type<PermissionV1.Ruleset>(),
+    permission: text({ mode: "json" }).$type<PermissionRuleset.Ruleset>(),
     agent: text(),
     model: text({ mode: "json" }).$type<{
       id: string

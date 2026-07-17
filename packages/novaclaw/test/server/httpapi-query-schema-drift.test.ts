@@ -13,15 +13,10 @@ import {
 } from "../../src/server/routes/instance/httpapi/groups/file"
 import {
   ExperimentalPaths,
-  SessionListQuery as ExperimentalSessionListQuery,
   ToolListQuery,
 } from "../../src/server/routes/instance/httpapi/groups/experimental"
 import { InstancePaths, VcsDiffQuery } from "../../src/server/routes/instance/httpapi/groups/instance"
 import { WorkspacePaths } from "../../src/server/routes/instance/httpapi/groups/workspace"
-import {
-  ListQuery as SessionListQuery,
-  SessionPaths,
-} from "../../src/server/routes/instance/httpapi/groups/session"
 import { PtyPaths } from "../../src/server/routes/instance/httpapi/groups/pty"
 import { SessionMessagesQuery } from "@novaclaw/protocol/groups/message"
 import { QueryBoolean, QueryBooleanOpenApi } from "../../src/server/routes/instance/httpapi/groups/query"
@@ -45,39 +40,25 @@ type OpenApiParameter = { readonly name: string; readonly in: string; readonly s
 type OpenApiOperation = { readonly parameters?: readonly OpenApiParameter[] }
 
 const openApiDriftRoutes = [
-  { method: "get", path: SessionPaths.list, query: SessionListQuery },
   { method: "get", path: FilePaths.findFile, query: FindFileQuery },
   { method: "get", path: FilePaths.findText, query: FindTextQuery },
   { method: "get", path: FilePaths.list, query: FileQuery },
-  { method: "get", path: ExperimentalPaths.session, query: ExperimentalSessionListQuery },
   { method: "get", path: ExperimentalPaths.tool, query: ToolListQuery },
   { method: "get", path: InstancePaths.vcsDiff, query: VcsDiffQuery },
   { method: "get", path: "/api/session/:sessionID/message", query: SessionMessagesQuery },
 ] satisfies Array<{ method: Method; path: string; query: QuerySchema }>
 
 const numericSdkQueryParams = [
-  { method: "get", path: ExperimentalPaths.session, name: "start", schema: { type: "number" } },
-  { method: "get", path: ExperimentalPaths.session, name: "cursor", schema: { type: "number" } },
-  { method: "get", path: ExperimentalPaths.session, name: "limit", schema: { type: "number" } },
   { method: "get", path: FilePaths.findFile, name: "limit", schema: { type: "integer", minimum: 1, maximum: 200 } },
-  { method: "get", path: SessionPaths.list, name: "start", schema: { type: "number" } },
-  { method: "get", path: SessionPaths.list, name: "limit", schema: { type: "number" } },
   { method: "get", path: "/api/session/:sessionID/message", name: "limit", schema: { type: "number" } },
 ] satisfies Array<{ method: Method; path: string; name: string; schema: OpenApiSchema }>
 
-const booleanSdkQueryParams = [
-  { method: "get", path: ExperimentalPaths.session, name: "roots" },
-  { method: "get", path: ExperimentalPaths.session, name: "archived" },
-  { method: "get", path: SessionPaths.list, name: "roots" },
-] satisfies Array<{ method: Method; path: string; name: string }>
+// V1-nuke slice D: emptied — every entry was a bare-/session or experimental-session row.
+const booleanSdkQueryParams: Array<{ method: Method; path: string; name: string }> = []
 
-const queryParamPatterns = [
-  { method: "get", path: SessionPaths.diff, name: "messageID", pattern: "^msg" },
-] satisfies Array<{ method: Method; path: string; name: string; pattern: string }>
+const queryParamPatterns: Array<{ method: Method; path: string; name: string; pattern: string }> = []
 
 const pathParamPatterns = [
-  { method: "get", path: SessionPaths.get, name: "sessionID", pattern: "^ses" },
-  { method: "post", path: SessionPaths.permissions, name: "permissionID", pattern: "^per" },
   { method: "post", path: "/permission/:requestID/reply", name: "requestID", pattern: "^per" },
   { method: "post", path: "/question/:requestID/reply", name: "requestID", pattern: "^que" },
   { method: "put", path: PtyPaths.update, name: "ptyID", pattern: "^pty" },

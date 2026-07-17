@@ -4,7 +4,7 @@ import { fileURLToPath } from "url"
 import path from "path"
 import { SqliteClient } from "@effect/sql-sqlite-bun"
 import { EffectDrizzleSqlite } from "@novaclaw/effect-drizzle-sqlite"
-import { Effect, Layer } from "effect"
+import { DateTime, Effect, Layer } from "effect"
 import { eq, inArray, sql } from "drizzle-orm"
 import { DatabaseMigration } from "@novaclaw/core/database/migration"
 import { migrations } from "@novaclaw/core/database/migration.gen"
@@ -28,7 +28,7 @@ import sessionMetadataMigration from "@novaclaw/core/database/migration/20260511
 import type { SqlClient as SqlClientService } from "effect/unstable/sql/SqlClient"
 import { Database } from "@novaclaw/core/database/database"
 import { SessionProjector } from "@novaclaw/core/session/projector"
-import { SessionV1 } from "@novaclaw/core/v1/session"
+import { SessionRecordEvent } from "@novaclaw/schema/session-record-event"
 import { tmpdir } from "./fixture/tmpdir"
 
 const run = <A, E>(effect: Effect.Effect<A, E, SqlClientService>) =>
@@ -268,16 +268,18 @@ describe("DatabaseMigration", () => {
 
         const database = Layer.succeed(Database.Service, { db })
         yield* EventV2.Service.use((service) =>
-          service.publish(SessionV1.Event.Updated, {
+          service.publish(SessionRecordEvent.Updated, {
             sessionID: SessionSchema.ID.make("session"),
             info: {
               id: SessionSchema.ID.make("session"),
               slug: "session",
               projectID: ProjectV2.ID.global,
-              directory: "/project",
+              location: { directory: AbsolutePath.make("/project") },
               title: "After",
               version: "test",
-              time: { created: 1, updated: 2 },
+              cost: 0,
+              tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+              time: { created: DateTime.makeUnsafe(1), updated: DateTime.makeUnsafe(2) },
             },
           }),
         ).pipe(
@@ -306,7 +308,7 @@ describe("DatabaseMigration", () => {
           sessionMessages: 0,
           contextEpochs: 0,
           seq: 0,
-          eventType: "session.updated.1",
+          eventType: "session.updated.2",
         })
       }),
     )

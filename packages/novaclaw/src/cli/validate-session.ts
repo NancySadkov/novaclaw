@@ -28,5 +28,5 @@ export async function validateSession(input: {
     directory: input.directory,
     fetch: input.fetch,
     headers: input.headers,
-  }).session.get({ sessionID }, { throwOnError: true })
+  }).v2.session.get({ sessionID }, { throwOnError: true })
 }

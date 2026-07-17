@@ -9,7 +9,7 @@ import type {
 import { Config } from "@/config/config"
 import { createNovaclawClient } from "@novaclaw/sdk/v2/client"
 import { ServerAuth } from "@/server/auth"
-import { SessionV1 } from "@novaclaw/core/v1/session"
+import { SessionRecordEvent } from "@novaclaw/schema/session-record-event"
 import { NamedError } from "@novaclaw/core/util/error"
 import { Effect, Layer, Context } from "effect"
 import { EffectBridge } from "@/effect/bridge"
@@ -106,7 +106,7 @@ export const layer = Layer.effect(
         const bridge = yield* EffectBridge.make()
 
         function publishPluginError(message: string) {
-          bridge.fork(events.publish(SessionV1.Event.Error, { error: new NamedError.Unknown({ message }).toObject() }))
+          bridge.fork(events.publish(SessionRecordEvent.Error, { error: new NamedError.Unknown({ message }).toObject() }))
         }
 
         const { Server } = yield* Effect.promise(() => import("../server/server"))

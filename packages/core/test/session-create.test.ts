@@ -1,6 +1,6 @@
 import { describe, expect } from "bun:test"
 import path from "path"
-import { Effect, Layer, Stream } from "effect"
+import { DateTime, Effect, Layer, Stream } from "effect"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { asc, eq } from "drizzle-orm"
 import { Database } from "@novaclaw/core/database/database"
@@ -18,7 +18,8 @@ import { SessionV2 } from "@novaclaw/core/session"
 import { CommandV2 } from "@novaclaw/core/command"
 import { LocationServiceMap } from "@novaclaw/core/location-service-map"
 import { buildLocationServiceMap } from "@novaclaw/core/location-services"
-import { SessionV1 } from "@novaclaw/core/v1/session"
+import { SessionRecordEvent } from "@novaclaw/schema/session-record-event"
+import { SessionSchema } from "@novaclaw/core/session/schema"
 import { Prompt } from "@novaclaw/core/session/prompt"
 import { SessionMessage } from "@novaclaw/core/session/message"
 import { SessionProjector } from "@novaclaw/core/session/projector"
@@ -185,17 +186,19 @@ describe("SessionV2.create", () => {
       const input = { id, location }
       const created = yield* session.create(input)
 
-      yield* events.publish(SessionV1.Event.Updated, {
+      yield* events.publish(SessionRecordEvent.Updated, {
         sessionID: id,
-        info: SessionV1.SessionInfo.make({
+        info: SessionSchema.Info.make({
           id,
           slug: "updated",
           version: "test",
           projectID: created.projectID,
-          directory: created.location.directory,
+          location: { directory: created.location.directory },
           title: "updated",
-          agent: "build",
-          time: { created: 0, updated: 1 },
+          agent: AgentV2.ID.make("build"),
+          cost: 0,
+          tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+          time: { created: DateTime.makeUnsafe(1), updated: DateTime.makeUnsafe(2) },
         }),
       })
 
@@ -211,7 +214,7 @@ describe("SessionV2.create", () => {
 
       expect(
         yield* db.select().from(EventTable).where(eq(EventTable.aggregate_id, created.id)).all().pipe(Effect.orDie),
-      ).toMatchObject([{ type: EventV2.versionedType(SessionV1.Event.Created.type, 1) }])
+      ).toMatchObject([{ type: EventV2.versionedType(SessionRecordEvent.Created.type, 2) }])
     }),
   )
 
@@ -325,7 +328,7 @@ describe("SessionV2.create", () => {
             .all()
             .pipe(Effect.orDie)).map((event) => [event.seq, event.type]),
         ).toEqual([
-          [0, EventV2.versionedType(SessionV1.Event.Created.type, 1)],
+          [0, EventV2.versionedType(SessionRecordEvent.Created.type, 2)],
           [1, EventV2.versionedType(SessionEvent.PromptAdmitted.type, 1)],
           [2, EventV2.versionedType(SessionEvent.Prompted.type, 1)],
         ])
@@ -338,7 +341,7 @@ describe("SessionV2.create", () => {
       const session = yield* SessionV2.Service
       const event = yield* EventV2.Service
       const defect = new Error("unrelated projector defect")
-      yield* event.project(SessionV1.Event.Created, () => Effect.die(defect))
+      yield* event.project(SessionRecordEvent.Created, () => Effect.die(defect))
 
       expect(yield* session.create({ id, location }).pipe(Effect.catchDefect(Effect.succeed))).toBe(defect)
     }),
@@ -512,9 +515,9 @@ describe("SessionV2.setTitle", () => {
       expect(
         yield* db.select().from(EventTable).where(eq(EventTable.aggregate_id, created.id)).all().pipe(Effect.orDie),
       ).toMatchObject([
-        { type: EventV2.versionedType(SessionV1.Event.Created.type, 1) },
+        { type: EventV2.versionedType(SessionRecordEvent.Created.type, 2) },
         {
-          type: EventV2.versionedType(SessionV1.Event.Updated.type, 1),
+          type: EventV2.versionedType(SessionRecordEvent.Updated.type, 2),
           data: { sessionID: created.id, info: { title: "Renamed session" } },
         },
       ])
@@ -768,7 +771,7 @@ describe("SessionV2.fork", () => {
           .all()
           .pipe(Effect.orDie)).map((event) => event.type),
       ).toEqual([
-        EventV2.versionedType(SessionV1.Event.Created.type, 1),
+        EventV2.versionedType(SessionRecordEvent.Created.type, 2),
         EventV2.versionedType(SessionEvent.MessageRecorded.type, 1),
       ])
     }),

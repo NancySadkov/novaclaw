@@ -570,8 +570,8 @@ export function NewHome() {
   async function stopSession(session: Session) {
     const ctx = focusedServerCtx()
     if (!ctx) return
-    await ctx.sdk.client.session
-      .abort({ sessionID: session.id, directory: session.location.directory })
+    await ctx.sdk.client.v2.session
+      .interrupt({ sessionID: session.id })
       .catch(requestFailedToast)
   }
 

@@ -1,4 +1,4 @@
-import { PermissionV1 } from "@novaclaw/core/v1/permission"
+import { PermissionRuleset } from "@novaclaw/schema/permission-ruleset"
 import { Permission } from "@/permission"
 import { Effect } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
@@ -18,8 +18,8 @@ export const permissionHandlers = HttpApiBuilder.group(InstanceHttpApi, "permiss
     })
 
     const reply = Effect.fn("PermissionHttpApi.reply")(function* (ctx: {
-      params: { requestID: PermissionV1.ID }
-      payload: PermissionV1.ReplyBody
+      params: { requestID: PermissionRuleset.ID }
+      payload: PermissionRuleset.ReplyBody
     }) {
       yield* svc
         .reply({

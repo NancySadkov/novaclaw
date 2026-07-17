@@ -203,6 +203,8 @@ describe("LocationServiceMap", () => {
               SessionV2.Info.make({
                 id: SessionV2.ID.make("ses_unavailable_model"),
                 projectID: ProjectV2.ID.global,
+                slug: "test",
+                version: "test",
                 title: "test",
                 model: {
                   id: ModelV2.ID.make("chat"),

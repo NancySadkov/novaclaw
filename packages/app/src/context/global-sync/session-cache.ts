@@ -2,7 +2,7 @@ import type {
   PermissionV2Request,
   QuestionRequest,
   SessionStatus,
-  SnapshotFileDiff,
+  SessionChangeDiff,
   Todo,
 } from "@novaclaw/sdk/v2/client"
 
@@ -10,7 +10,7 @@ export const SESSION_CACHE_LIMIT = 40
 
 type SessionCache = {
   session_status: Record<string, SessionStatus | undefined>
-  session_diff: Record<string, SnapshotFileDiff[] | undefined>
+  session_diff: Record<string, SessionChangeDiff[] | undefined>
   todo: Record<string, Todo[] | undefined>
   permission: Record<string, PermissionV2Request[] | undefined>
   question: Record<string, QuestionRequest[] | undefined>

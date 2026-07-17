@@ -5,7 +5,7 @@ import type {
   QuestionRequest,
   SessionV2Info as Session,
   SessionStatus,
-  SnapshotFileDiff,
+  SessionChangeDiff,
   Todo,
 } from "@novaclaw/sdk/v2/client"
 import { createStore, produce, reconcile } from "solid-js/store"
@@ -33,7 +33,7 @@ export function createServerSession(client: NovaclawClient, options?: { retry?: 
   const [data, setData] = createStore({
     info: {} as Record<string, Session | undefined>,
     session_status: {} as Record<string, SessionStatus>,
-    session_diff: {} as Record<string, SnapshotFileDiff[]>,
+    session_diff: {} as Record<string, SessionChangeDiff[]>,
     todo: {} as Record<string, Todo[]>,
     permission: {} as Record<string, PermissionV2Request[]>,
     question: {} as Record<string, QuestionRequest[]>,
@@ -277,7 +277,7 @@ export function createServerSession(client: NovaclawClient, options?: { retry?: 
         return
       }
       case "session.diff": {
-        const props = event.properties as { sessionID: string; diff: SnapshotFileDiff[] }
+        const props = event.properties as { sessionID: string; diff: SessionChangeDiff[] }
         setData("session_diff", props.sessionID, reconcile(cleanDiffs(props.diff), { key: "file" }))
         return
       }

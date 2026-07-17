@@ -24,7 +24,6 @@ import { ProviderApi } from "./groups/provider"
 import { PtyApi, PtyConnectApi } from "./groups/pty"
 import { QuestionApi } from "./groups/question"
 import { RegistryApi } from "./groups/registry"
-import { SessionApi } from "./groups/session"
 import { ShellApi } from "./groups/shell"
 import { SyncApi } from "./groups/sync"
 import { WorkspaceApi } from "./groups/workspace"
@@ -76,7 +75,6 @@ export const InstanceHttpApi = HttpApi.make("novaclaw-instance")
   .addHttpApi(RegistryApi)
   .addHttpApi(PermissionApi)
   .addHttpApi(ProviderApi)
-  .addHttpApi(SessionApi)
   .addHttpApi(ShellApi)
   .addHttpApi(SyncApi)
   .addHttpApi(WorkspaceApi)

@@ -2,7 +2,7 @@ export * as SessionChanges from "./changes"
 
 import type { Revert } from "@novaclaw/schema/revert"
 import type { SessionMessage } from "./message"
-import type { SessionV1 } from "../v1/session"
+import type { Session } from "@novaclaw/schema/session"
 
 /**
  * The session-changes summary — what the app's "Changes" review and the chats changes badge
@@ -31,9 +31,9 @@ export const boundaries = (messages: readonly SessionMessage.Message[]): Boundar
   return { from, to }
 }
 
-type Summary = NonNullable<SessionV1.SessionInfo["summary"]>
+type Summary = Session.ChangesSummary
 
-/** Fold snapshot file diffs into the legacy record summary (counters + wire diffs). */
+/** Fold snapshot file diffs into the record's changes summary (counters + wire diffs). */
 export const summary = (diffs: readonly Revert.FileDiff[]): Summary => ({
   additions: diffs.reduce((sum, item) => sum + item.additions, 0),
   deletions: diffs.reduce((sum, item) => sum + item.deletions, 0),

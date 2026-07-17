@@ -9,7 +9,7 @@ import { Config } from "../../src/config/config"
 import { RuntimeFlags } from "../../src/effect/runtime-flags"
 import { Global } from "@novaclaw/core/global"
 import { Permission } from "../../src/permission"
-import { PermissionV1 } from "@novaclaw/core/v1/permission"
+import { PermissionRuleset } from "@novaclaw/schema/permission-ruleset"
 import { Plugin } from "../../src/plugin"
 import { Skill } from "../../src/skill"
 import { Truncate } from "../../src/tool/truncate"
@@ -28,7 +28,7 @@ const agentLayer = (flags: Partial<RuntimeFlags.Info> = {}) =>
 const it = testEffect(agentLayer())
 
 // Helper to evaluate permission for a tool with wildcard pattern
-function evalPerm(agent: Agent.Info | undefined, permission: string): PermissionV1.Action | undefined {
+function evalPerm(agent: Agent.Info | undefined, permission: string): PermissionRuleset.Action | undefined {
   if (!agent) return undefined
   return Permission.evaluate(permission, "*", agent.permission).action
 }

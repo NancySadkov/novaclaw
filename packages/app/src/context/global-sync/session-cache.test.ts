@@ -3,7 +3,7 @@ import type {
   PermissionV2Request,
   QuestionRequest,
   SessionStatus,
-  SnapshotFileDiff,
+  SessionChangeDiff,
   Todo,
 } from "@novaclaw/sdk/v2/client"
 import { dropSessionCaches, pickSessionCacheEvictions } from "./session-cache"
@@ -12,7 +12,7 @@ describe("app session cache", () => {
   test("dropSessionCaches clears every per-session cache for stale sessions only", () => {
     const store: {
       session_status: Record<string, SessionStatus | undefined>
-      session_diff: Record<string, SnapshotFileDiff[] | undefined>
+      session_diff: Record<string, SessionChangeDiff[] | undefined>
       todo: Record<string, Todo[] | undefined>
       permission: Record<string, PermissionV2Request[] | undefined>
       question: Record<string, QuestionRequest[] | undefined>

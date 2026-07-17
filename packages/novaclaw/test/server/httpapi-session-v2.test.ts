@@ -11,7 +11,6 @@
 //       fetch, owner decision ①).
 
 import { afterEach, describe, expect } from "bun:test"
-import { SessionV1 } from "@novaclaw/core/v1/session"
 import { Deferred, Effect, Layer } from "effect"
 import type * as Scope from "effect/Scope"
 import { HttpServer } from "effect/unstable/http"
@@ -126,12 +125,12 @@ describe("promptAsync routes to the V2 native engine (F1b: one engine)", () => {
           yield* llm.text("v2 hello back", { usage: { input: 5, output: 3 } })
 
           const session = yield* Effect.promise(() =>
-            sdk.session.create({
+            sdk.v2.session.create({
               title: "v2 reroute",
               permission: [{ permission: "*", pattern: "*", action: "allow" }],
             }),
           )
-          const sessionID = String(record(session.data).id)
+          const sessionID = String(record(record(session.data).data).id)
 
           // Subscribe BEFORE prompting so the busy/idle bracket cannot be missed.
           const controller = new AbortController()
@@ -169,14 +168,11 @@ describe("promptAsync routes to the V2 native engine (F1b: one engine)", () => {
           yield* awaitWithTimeout(Deferred.await(ready), "no server.connected", "3 seconds")
 
           const prompt = yield* Effect.promise(() =>
-            sdk.session.promptAsync({
-              sessionID,
-              agent: "build",
-              model: { providerID: "test", modelID: "test-model" },
-              parts: [{ type: "text", text: "v2 please" }],
-            }),
+            sdk.v2.session
+              .switchModel({ sessionID, model: { providerID: "test", id: "test-model" } })
+              .then(() => sdk.v2.session.prompt({ sessionID, prompt: { text: "v2 please" } })),
           )
-          expect(prompt.response.status).toBe(204)
+          expect(prompt.response.status).toBe(200)
 
           // 2. busy is published synchronously before the fork.
           yield* awaitWithTimeout(Deferred.await(sawBusy), "no busy status", "5 seconds")
@@ -187,14 +183,9 @@ describe("promptAsync routes to the V2 native engine (F1b: one engine)", () => {
 
           // A SECOND prompt on the (now row-bearing) V2 session runs V2 too.
           const second = yield* Effect.promise(() =>
-            sdk.session.promptAsync({
-              sessionID,
-              agent: "build",
-              model: { providerID: "test", modelID: "test-model" },
-              parts: [{ type: "text", text: "v2 again" }],
-            }),
+            sdk.v2.session.prompt({ sessionID, prompt: { text: "v2 again" } }),
           )
-          expect(second.response.status).toBe(204)
+          expect(second.response.status).toBe(200)
           yield* awaitWithTimeout(Deferred.await(sawPromptedAgain), "second prompt did not route to V2", "10 seconds")
 
           // S7: the client-facing NATIVE endpoint (GET /api/session/:id/message) serves the
@@ -214,10 +205,8 @@ describe("promptAsync routes to the V2 native engine (F1b: one engine)", () => {
           // F1a SLICE 7 + F1b: summarize routes NATIVELY (SessionV2.compact marks the
           // runner's one-shot compaction request) — no 400.
           const summarizeStatus = yield* Effect.promise(async () => {
-            const result = await sdk.session.summarize({
+            const result = await sdk.v2.session.compact({
               sessionID,
-              providerID: "test",
-              modelID: "test-model",
             })
             return result.response.status
           })

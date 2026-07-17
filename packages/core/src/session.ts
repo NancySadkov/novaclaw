@@ -18,12 +18,12 @@ import { SessionMessageTable, SessionTable } from "./session/sql"
 import { SessionSchema } from "./session/schema"
 import { AbsolutePath, PositiveInt, RelativePath } from "./schema"
 import { AgentV2 } from "./agent"
-import { SessionV1 } from "./v1/session"
+import { SessionRecordEvent } from "@novaclaw/schema/session-record-event"
 import { InstallationVersion } from "./installation/version"
 import { Slug } from "./util/slug"
 import { ProjectTable } from "./project/sql"
 import path from "path"
-import { fromRow, v1InfoFromRow } from "./session/info"
+import { fromRow } from "./session/info"
 import { SessionRunner } from "./session/runner/index"
 import { SessionStore } from "./session/store"
 import { SessionCompactionRequest } from "./session/compaction-request"
@@ -38,7 +38,7 @@ import { Snapshot } from "./snapshot"
 import { SessionRevert } from "./session/revert"
 import { SessionPatch } from "./session/patch"
 import { SessionTitle } from "./session/title"
-import { PermissionV1 } from "./v1/permission"
+import { PermissionRuleset } from "@novaclaw/schema/permission-ruleset"
 import { Revert } from "@novaclaw/schema/revert"
 import { FSUtil } from "./fs-util"
 import { SessionDurable } from "@novaclaw/schema/durable-event-manifest"
@@ -158,7 +158,7 @@ type CreateInput = {
   // permission-mode overlay here (V1 baked MODE_RULES into the saved rules at create; the V2
   // runner applies the overlay from `permissionMode` at runtime, so baking would make the
   // create-time mode stick across later mode switches).
-  permission?: PermissionV1.Ruleset
+  permission?: PermissionRuleset.Ruleset
 }
 
 type CompactInput = {
@@ -265,7 +265,7 @@ export interface Interface {
   readonly setArchived: (input: { sessionID: SessionSchema.ID; time?: number }) => Effect.Effect<void, NotFoundError>
   readonly setPermission: (input: {
     sessionID: SessionSchema.ID
-    permission: PermissionV1.Ruleset
+    permission: PermissionRuleset.Ruleset
   }) => Effect.Effect<void, NotFoundError>
   readonly children: (sessionID: SessionSchema.ID) => Effect.Effect<SessionSchema.Info[], NotFoundError>
   /** The agent-maintained todo list (native twin of the retired bare-/session read — V1-nuke A0). */
@@ -342,15 +342,18 @@ export const createSessionRecord = (
       .run()
       .pipe(Effect.orDie)
     const now = Date.now()
-    const info = SessionV1.SessionInfo.make({
+    const subpath = path.relative(project.directory, input.location.directory).replaceAll("\\", "/")
+    const info = SessionSchema.Info.make({
       id: sessionID,
       parentID: input.parentID,
       slug: Slug.create(),
       version: InstallationVersion,
       projectID: project.id,
-      directory: input.location.directory,
-      path: path.relative(project.directory, input.location.directory).replaceAll("\\", "/"),
-      workspaceID: input.location.workspaceID ? WorkspaceV2.ID.make(input.location.workspaceID) : undefined,
+      location: Location.Ref.make({
+        directory: input.location.directory,
+        workspaceID: input.location.workspaceID ? WorkspaceV2.ID.make(input.location.workspaceID) : undefined,
+      }),
+      subpath: subpath ? RelativePath.make(subpath) : undefined,
       title: input.title ?? `New session - ${new Date(now).toISOString()}`,
       metadata: input.metadata,
       agent: input.agent,
@@ -358,7 +361,7 @@ export const createSessionRecord = (
         ? {
             id: ModelV2.ID.make(input.model.id),
             providerID: input.model.providerID,
-            variant: input.model.variant,
+            variant: ModelV2.VariantID.make(input.model.variant ?? "default"),
           }
         : undefined,
       systemPromptOverride: input.systemPromptOverride,
@@ -372,10 +375,10 @@ export const createSessionRecord = (
       affective: input.affective,
       cost: 0,
       tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
-      time: { created: now, updated: now },
+      time: { created: DateTime.makeUnsafe(now), updated: DateTime.makeUnsafe(now) },
     })
     const projected = yield* events
-      .publish(SessionV1.Event.Created, { sessionID, info }, { location: input.location })
+      .publish(SessionRecordEvent.Created, { sessionID, info }, { location: input.location })
       .pipe(
         Effect.as({ type: "created" } as const),
         Effect.catchDefect((defect) => {
@@ -431,8 +434,8 @@ export const removeSessionRecord = (
       yield* removeSessionRecord(deps, child.id).pipe(Effect.catchTag("Session.NotFoundError", () => Effect.void))
     }
     yield* events.publish(
-      SessionV1.Event.Deleted,
-      { sessionID, info: v1InfoFromRow(row) },
+      SessionRecordEvent.Deleted,
+      { sessionID, info: fromRow(row) },
       {
         location: Location.Ref.make({
           directory: AbsolutePath.make(row.directory),
@@ -457,13 +460,13 @@ export const layer = Layer.effect(
     const isDurableSessionEvent = Schema.is(SessionEvent.Durable)
     const decode = SessionMessageRead.decodeRow
 
-    // F1c — the shared V1-store setter shape (setTitle/setMetadata/setArchived/setPermission):
-    // the cycle-free `SessionPatch.patchSessionRecord` (read row -> v1InfoFromRow -> merge ->
-    // full-info legacy `session.updated` publish; also used by the runner's auto-title), with
-    // the missing-row case mapped onto this service's NotFoundError.
+    // The shared setter shape (setTitle/setMetadata/setArchived/setPermission): the cycle-free
+    // `SessionPatch.patchSessionRecord` (read row -> fromRow -> merge -> full-info NATIVE
+    // `session.updated` publish; also used by the runner's auto-title), with the missing-row
+    // case mapped onto this service's NotFoundError.
     const patchRecord = (
       sessionID: SessionSchema.ID,
-      merge: (info: SessionV1.SessionInfo) => SessionV1.SessionInfo | undefined,
+      merge: (info: SessionSchema.Info) => SessionSchema.Info | undefined,
     ): Effect.Effect<void, NotFoundError> =>
       Effect.gen(function* () {
         const found = yield* SessionPatch.patchSessionRecord({ db, events }, sessionID, merge)
@@ -826,10 +829,10 @@ export const layer = Layer.effect(
         patchRecord(input.sessionID, (info) =>
           info.title === input.title
             ? undefined
-            : SessionV1.SessionInfo.make({
+            : SessionSchema.Info.make({
                 ...info,
                 title: input.title,
-                time: { ...info.time, updated: Date.now() },
+                time: { ...info.time, updated: DateTime.makeUnsafe(Date.now()) },
               }),
         ),
       ),
@@ -838,24 +841,27 @@ export const layer = Layer.effect(
       // `archived` is not a wire capability — the projector skips undefined columns).
       setMetadata: Effect.fn("V2Session.setMetadata")((input) =>
         patchRecord(input.sessionID, (info) =>
-          SessionV1.SessionInfo.make({
+          SessionSchema.Info.make({
             ...info,
             metadata: input.metadata,
-            time: { ...info.time, updated: Date.now() },
+            time: { ...info.time, updated: DateTime.makeUnsafe(Date.now()) },
           }),
         ),
       ),
       setArchived: Effect.fn("V2Session.setArchived")((input) =>
         patchRecord(input.sessionID, (info) =>
-          SessionV1.SessionInfo.make({ ...info, time: { ...info.time, archived: input.time } }),
+          SessionSchema.Info.make({
+            ...info,
+            time: { ...info.time, archived: input.time === undefined ? undefined : DateTime.makeUnsafe(input.time) },
+          }),
         ),
       ),
       setPermission: Effect.fn("V2Session.setPermission")((input) =>
         patchRecord(input.sessionID, (info) =>
-          SessionV1.SessionInfo.make({
+          SessionSchema.Info.make({
             ...info,
             permission: [...input.permission],
-            time: { ...info.time, updated: Date.now() },
+            time: { ...info.time, updated: DateTime.makeUnsafe(Date.now()) },
           }),
         ),
       ),
@@ -906,7 +912,7 @@ export const layer = Layer.effect(
             })
           boundary = anchor.seq
         }
-        const source = v1InfoFromRow(row)
+        const source = fromRow(row)
         const location = Location.Ref.make({
           directory: AbsolutePath.make(row.directory),
           workspaceID: row.workspace_id ?? undefined,

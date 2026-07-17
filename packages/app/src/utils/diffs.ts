@@ -1,6 +1,6 @@
-import type { SnapshotFileDiff, VcsFileDiff } from "@novaclaw/sdk/v2"
+import type { SessionChangeDiff, VcsFileDiff } from "@novaclaw/sdk/v2"
 
-type Diff = SnapshotFileDiff | VcsFileDiff
+type Diff = SessionChangeDiff | VcsFileDiff
 
 function diff(value: unknown): value is Diff {
   if (!value || typeof value !== "object" || Array.isArray(value)) return false

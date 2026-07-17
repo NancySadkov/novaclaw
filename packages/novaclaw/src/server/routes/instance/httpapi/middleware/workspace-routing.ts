@@ -3,8 +3,8 @@ import type { Target } from "@/control-plane/types"
 import { Workspace } from "@/control-plane/workspace"
 import { WorkspaceAdapterRuntime } from "@/control-plane/workspace-adapter-runtime"
 import { Database } from "@novaclaw/core/database/database"
-import { SessionV1 } from "@novaclaw/core/v1/session"
-import { SessionV1Read } from "@novaclaw/core/session/v1-read"
+import { SessionSchema } from "@novaclaw/core/session/schema"
+import { SessionRead } from "@novaclaw/core/session/read"
 import { HttpApiProxy } from "./proxy"
 import * as Fence from "@/server/shared/fence"
 import { getWorkspaceRouteSessionID, isLocalWorkspaceRoute, workspaceProxyURL } from "@/server/shared/workspace-routing"
@@ -162,14 +162,14 @@ function planWorkspaceRequest(
 
 function planRequest(
   request: HttpServerRequest.HttpServerRequest,
-  session?: SessionV1.SessionInfo,
+  session?: SessionSchema.Info,
 ): Effect.Effect<RequestPlan, never, Workspace.Service> {
   return Effect.gen(function* () {
     const url = requestURL(request)
     const envWorkspaceID = configuredWorkspaceID()
     const workspaceID = url.pathname.startsWith("/api/")
-      ? selectedV2WorkspaceID(url, session?.workspaceID)
-      : selectedWorkspaceID(url, session?.workspaceID)
+      ? selectedV2WorkspaceID(url, session?.location.workspaceID)
+      : selectedWorkspaceID(url, session?.location.workspaceID)
     if (workspaceID === InvalidWorkspaceID) return RequestPlan.InvalidWorkspace()
     const workspace = yield* resolveWorkspace(workspaceID, envWorkspaceID)
 
@@ -182,7 +182,7 @@ function planRequest(
     }
 
     return RequestPlan.Local({
-      directory: session?.directory || defaultDirectory(request, url),
+      directory: session?.location.directory || defaultDirectory(request, url),
       workspaceID: envWorkspaceID ?? workspaceID,
     })
   })
@@ -224,7 +224,7 @@ function routeHttpApiWorkspace<E>(
   return Effect.gen(function* () {
     const request = yield* HttpServerRequest.HttpServerRequest
     const sessionID = getWorkspaceRouteSessionID(requestURL(request))
-    const session = sessionID ? yield* SessionV1Read.get(db, sessionID) : undefined
+    const session = sessionID ? yield* SessionRead.get(db, sessionID) : undefined
     const plan = yield* planRequest(request, session)
     return yield* routeWorkspace(client, effect, plan)
   })

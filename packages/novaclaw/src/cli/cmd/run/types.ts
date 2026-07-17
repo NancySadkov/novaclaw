@@ -4,7 +4,14 @@
 // run/tool.ts consumes them to render tool calls to stdout. (The far richer
 // interactive `--mini` split-footer types that once lived here were removed
 // with the TUI — only the headless-output vocabulary survives.)
-import type { ToolPart } from "@novaclaw/sdk/v2"
+// V1-nuke slice D: the run CLI's LOCAL tool-part rendering model (was the retired V1 wire
+// ToolPart type). The CLI builds these itself from native tool events; only the renderer reads them.
+export type ToolPart = {
+  id: string
+  tool: string
+  state: { status: string; metadata?: Record<string, unknown>; [key: string]: unknown }
+  [key: string]: unknown
+}
 
 // The semantic role of a scrollback entry. Maps 1:1 to theme colors.
 export type EntryKind = "system" | "user" | "assistant" | "reasoning" | "tool" | "error"
