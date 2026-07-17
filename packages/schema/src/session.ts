@@ -4,7 +4,6 @@ import { Schema } from "effect"
 import { Agent } from "./agent"
 import { Location } from "./location"
 import { Model } from "./model"
-import { Project } from "./project"
 import { DateTimeUtcFromMillis, optional, RelativePath } from "./schema"
 import { SessionEvent } from "./session-event"
 import { SessionID } from "./session-id"
@@ -40,7 +39,6 @@ export interface Info extends Schema.Schema.Type<typeof Info> {}
 export const Info = Schema.Struct({
   id: ID,
   parentID: ID.pipe(optional),
-  projectID: Project.ID,
   // Row-truth provenance (V1-nuke slice D: the record events carry the FULL row, so these ride
   // the native Info now; the columns are NOT NULL).
   slug: Schema.String,

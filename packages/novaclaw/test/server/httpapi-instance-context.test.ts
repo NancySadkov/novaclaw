@@ -1,3 +1,5 @@
+import { ProjectV2 } from "@novaclaw/core/project"
+import { AbsolutePath } from "@novaclaw/core/schema"
 import { NodeHttpServer, NodeServices } from "@effect/platform-node"
 import { describe, expect } from "bun:test"
 import { Effect, Fiber, Layer, Schema } from "effect"
@@ -13,7 +15,6 @@ import type { WorkspaceAdapter } from "../../src/control-plane/types"
 import { Workspace } from "../../src/control-plane/workspace"
 import { InstanceRef, WorkspaceRef } from "../../src/effect/instance-ref"
 import { InstanceLayer } from "../../src/project/instance-layer"
-import { Project } from "../../src/project/project"
 import { Database } from "@novaclaw/core/database/database"
 import { disposeMiddleware, markInstanceForDisposal } from "../../src/server/routes/instance/httpapi/lifecycle"
 import {
@@ -31,6 +32,12 @@ import { withFixedWorkspaceID } from "../fixture/flag"
 import { workspaceLayerWithRuntimeFlags } from "../fixture/workspace"
 import { waitGlobalBusEvent } from "./global-bus"
 import { testEffect } from "../lib/effect"
+
+const resolveOrigin = (dir: string) =>
+  Effect.gen(function* () {
+    const projects = yield* ProjectV2.Service
+    return (yield* projects.resolve(AbsolutePath.make(dir))).id
+  })
 
 const testStateLayer = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -52,7 +59,7 @@ const it = testEffect(
     NodeHttpServer.layerTest,
     NodeServices.layer,
     InstanceLayer.layer,
-    Project.defaultLayer,
+    ProjectV2.defaultLayer,
     workspaceLayer,
   ).pipe(Layer.provide(Ripgrep.defaultLayer)),
 )
@@ -78,7 +85,7 @@ const localAdapter = (directory: string): WorkspaceAdapter => ({
   target: () => ({ type: "local" as const, directory }),
 })
 
-const createLocalWorkspace = (input: { projectID: Project.Info["id"]; type: string; directory: string }) =>
+const createLocalWorkspace = (input: { projectID: string; type: string; directory: string }) =>
   Effect.acquireRelease(
     Effect.gen(function* () {
       registerAdapter(input.projectID, input.type, localAdapter(input.directory))
@@ -99,7 +106,7 @@ const probeInstanceContext = Effect.gen(function* () {
   return {
     directory: instance?.directory,
     worktree: instance?.worktree,
-    projectID: instance?.project.id,
+    projectID: instance?.origin,
     workspaceID,
   }
 })
@@ -161,7 +168,7 @@ describe("HttpApi instance context middleware", () => {
   it.live("provides instance context from the routed directory", () =>
     Effect.gen(function* () {
       const dir = yield* tmpdirScoped({ git: true })
-      const project = yield* Project.use.fromDirectory(dir)
+      const origin = yield* resolveOrigin(dir)
       yield* serveProbe()
 
       const response = yield* HttpClient.get(`/probe?directory=${encodeURIComponent(dir)}`)
@@ -170,7 +177,7 @@ describe("HttpApi instance context middleware", () => {
       expect(yield* response.json).toEqual({
         directory: dir,
         worktree: dir,
-        projectID: project.project.id,
+        projectID: origin,
         workspaceID: null,
       })
     }),
@@ -192,10 +199,10 @@ describe("HttpApi instance context middleware", () => {
   it.live("provides selected workspace id on control-plane routes", () =>
     Effect.gen(function* () {
       const dir = yield* tmpdirScoped({ git: true })
-      const project = yield* Project.use.fromDirectory(dir)
+      const origin = yield* resolveOrigin(dir)
       const workspaceDir = path.join(dir, ".workspace-local")
       const workspace = yield* createLocalWorkspace({
-        projectID: project.project.id,
+        projectID: origin,
         type: "instance-context-workspace-ref",
         directory: workspaceDir,
       })
@@ -217,10 +224,10 @@ describe("HttpApi instance context middleware", () => {
   it.live("uses workspace routing output instead of raw directory hints", () =>
     Effect.gen(function* () {
       const dir = yield* tmpdirScoped({ git: true })
-      const project = yield* Project.use.fromDirectory(dir)
+      const origin = yield* resolveOrigin(dir)
       const workspaceDir = path.join(dir, ".workspace-local")
       const workspace = yield* createLocalWorkspace({
-        projectID: project.project.id,
+        projectID: origin,
         type: "instance-context-routing-output",
         directory: workspaceDir,
       })
@@ -245,10 +252,10 @@ describe("HttpApi instance context middleware", () => {
       yield* withFixedWorkspaceID(fixedWorkspaceID)
 
       const dir = yield* tmpdirScoped({ git: true })
-      const project = yield* Project.use.fromDirectory(dir)
+      const origin = yield* resolveOrigin(dir)
       const workspaceDir = path.join(dir, ".workspace-local")
       const workspace = yield* createLocalWorkspace({
-        projectID: project.project.id,
+        projectID: origin,
         type: "instance-context-fixed-workspace-ref",
         directory: workspaceDir,
       })
@@ -273,7 +280,7 @@ describe("HttpApi instance context middleware", () => {
       yield* withFixedWorkspaceID(fixedWorkspaceID)
 
       const dir = yield* tmpdirScoped({ git: true })
-      yield* Project.use.fromDirectory(dir)
+      yield* resolveOrigin(dir)
       yield* serveProbe()
 
       // Reference a workspace id that is not registered locally. Without the
@@ -301,10 +308,10 @@ describe("HttpApi instance context middleware", () => {
       yield* withFixedWorkspaceID(fixedWorkspaceID)
 
       const dir = yield* tmpdirScoped({ git: true })
-      const project = yield* Project.use.fromDirectory(dir)
+      const origin = yield* resolveOrigin(dir)
       const workspaceDir = path.join(dir, ".workspace-local")
       const workspace = yield* createLocalWorkspace({
-        projectID: project.project.id,
+        projectID: origin,
         type: "instance-context-fixed-workspace-control-plane",
         directory: workspaceDir,
       })
@@ -330,10 +337,10 @@ describe("HttpApi instance context middleware", () => {
   it.live("preserves selected workspace id on instance disposal events", () =>
     Effect.gen(function* () {
       const dir = yield* tmpdirScoped({ git: true })
-      const project = yield* Project.use.fromDirectory(dir)
+      const origin = yield* resolveOrigin(dir)
       const workspaceDir = path.join(dir, ".workspace-local")
       const workspace = yield* createLocalWorkspace({
-        projectID: project.project.id,
+        projectID: origin,
         type: "instance-context-dispose-event",
         directory: workspaceDir,
       })

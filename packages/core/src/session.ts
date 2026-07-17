@@ -21,7 +21,6 @@ import { AgentV2 } from "./agent"
 import { SessionRecordEvent } from "@novaclaw/schema/session-record-event"
 import { InstallationVersion } from "./installation/version"
 import { Slug } from "./util/slug"
-import { ProjectTable } from "./project/sql"
 import path from "path"
 import { fromRow } from "./session/info"
 import { SessionRunner } from "./session/runner/index"
@@ -332,12 +331,6 @@ export const createSessionRecord = (
     const recorded = yield* store.get(sessionID)
     if (recorded) return recorded
     const project = yield* projects.resolve(input.location.directory)
-    yield* db
-      .insert(ProjectTable)
-      .values({ id: project.id, worktree: project.directory, vcs: project.vcs?.type, sandboxes: [] })
-      .onConflictDoNothing()
-      .run()
-      .pipe(Effect.orDie)
     const now = Date.now()
     const subpath = path.relative(project.directory, input.location.directory).replaceAll("\\", "/")
     const info = SessionSchema.Info.make({
@@ -345,7 +338,6 @@ export const createSessionRecord = (
       parentID: input.parentID,
       slug: Slug.create(),
       version: InstallationVersion,
-      projectID: project.id,
       location: Location.Ref.make({
         directory: input.location.directory,
         workspaceID: input.location.workspaceID ? WorkspaceV2.ID.make(input.location.workspaceID) : undefined,

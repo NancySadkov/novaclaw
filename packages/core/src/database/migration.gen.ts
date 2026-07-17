@@ -59,5 +59,6 @@ export const migrations = (
     import("./migration/20260715100000_add_runtime_setting"),
     import("./migration/20260717120000_permission_origin"),
     import("./migration/20260717130000_workspace_origin"),
+    import("./migration/20260717150000_drop_project_entity"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]

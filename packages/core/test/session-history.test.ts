@@ -6,7 +6,6 @@ import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
 import { Location } from "@novaclaw/core/location"
 import { ProjectV2 } from "@novaclaw/core/project"
-import { ProjectTable } from "@novaclaw/core/project/sql"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionExecution } from "@novaclaw/core/session/execution"
@@ -19,8 +18,6 @@ const projects = Layer.succeed(
   ProjectV2.Service,
   ProjectV2.Service.of({
     resolve: (directory) => Effect.succeed({ id: ProjectV2.ID.global, directory }),
-    directories: () => Effect.succeed([]),
-    commit: () => Effect.void,
   }),
 )
 const it = testEffect(
@@ -47,15 +44,9 @@ describe("SessionV2.history", () => {
       const session = yield* SessionV2.Service
       const sessionID = SessionV2.ID.make("ses_empty_history")
       yield* db
-        .insert(ProjectTable)
-        .values({ id: ProjectV2.ID.global, worktree: AbsolutePath.make("/project"), sandboxes: [] })
-        .onConflictDoNothing()
-        .run()
-      yield* db
         .insert(SessionTable)
         .values({
           id: sessionID,
-          project_id: ProjectV2.ID.global,
           slug: "empty-history",
           directory: "/project",
           title: "Empty history",

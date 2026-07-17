@@ -1,3 +1,5 @@
+import { ProjectV2 } from "@novaclaw/core/project"
+import { AbsolutePath } from "@novaclaw/core/schema"
 import { afterEach, describe, expect, mock } from "bun:test"
 import { mkdir } from "node:fs/promises"
 import path from "node:path"
@@ -18,10 +20,15 @@ import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, provideInstance, tmpdirScoped } from "../fixture/fixture"
 import { InstanceBootstrap } from "../../src/project/bootstrap"
 import { InstanceStore } from "../../src/project/instance-store"
-import { Project } from "../../src/project/project"
 import { InstancePaths } from "../../src/server/routes/instance/httpapi/groups/instance"
 import { testEffect } from "../lib/effect"
 import { httpApiLayer, requestInDirectory } from "./httpapi-layer"
+
+const resolveOrigin = (dir: string) =>
+  Effect.gen(function* () {
+    const projects = yield* ProjectV2.Service
+    return (yield* projects.resolve(AbsolutePath.make(dir))).id
+  })
 
 const originalWorkspaces = Flag.NOVACLAW_EXPERIMENTAL_WORKSPACES
 const workspaceLayer = Workspace.defaultLayer.pipe(
@@ -30,7 +37,7 @@ const workspaceLayer = Workspace.defaultLayer.pipe(
 )
 const it = testEffect(
   Layer.mergeAll(
-    Project.defaultLayer,
+    ProjectV2.defaultLayer,
     EventV2.defaultLayer,
     workspaceLayer,
     InstanceStore.defaultLayer.pipe(Layer.provide(InstanceBootstrap.defaultLayer)),
@@ -94,7 +101,7 @@ function listedAdapter(directory: string, type: string): WorkspaceAdapter {
           branch: "listed/main",
           directory,
           extra: { listed: true },
-          origin: context?.instance?.project.id ?? missingAdapterContext(),
+          origin: context?.instance?.origin ?? missingAdapterContext(),
         },
       ]
     },
@@ -212,8 +219,8 @@ describe("workspace HttpApi", () => {
     Effect.gen(function* () {
       Flag.NOVACLAW_EXPERIMENTAL_WORKSPACES = true
       const dir = yield* tmpdirScoped({ git: true })
-      const project = yield* Project.use.fromDirectory(dir)
-      registerAdapter(project.project.id, "local-test", localAdapter(path.join(dir, ".workspace")))
+      const origin = yield* resolveOrigin(dir)
+      registerAdapter(origin, "local-test", localAdapter(path.join(dir, ".workspace")))
 
       const created = yield* request(WorkspacePaths.list, dir, {
         method: "POST",
@@ -246,9 +253,9 @@ describe("workspace HttpApi", () => {
     Effect.gen(function* () {
       Flag.NOVACLAW_EXPERIMENTAL_WORKSPACES = true
       const dir = yield* tmpdirScoped({ git: true })
-      const project = yield* Project.use.fromDirectory(dir)
+      const origin = yield* resolveOrigin(dir)
       const type = `listed-${Math.random().toString(36).slice(2)}`
-      registerAdapter(project.project.id, type, listedAdapter(path.join(dir, ".listed"), type))
+      registerAdapter(origin, type, listedAdapter(path.join(dir, ".listed"), type))
 
       const response = yield* request(WorkspacePaths.syncList, dir, { method: "POST" })
 
@@ -290,8 +297,8 @@ describe("workspace HttpApi", () => {
     Effect.gen(function* () {
       Flag.NOVACLAW_EXPERIMENTAL_WORKSPACES = true
       const dir = yield* tmpdirScoped({ git: true })
-      const project = yield* Project.use.fromDirectory(dir)
-      registerAdapter(project.project.id, "local-test", localAdapter(path.join(dir, ".workspace")))
+      const origin = yield* resolveOrigin(dir)
+      registerAdapter(origin, "local-test", localAdapter(path.join(dir, ".workspace")))
 
       const created = yield* request(WorkspacePaths.list, dir, {
         method: "POST",
@@ -330,8 +337,8 @@ describe("workspace HttpApi", () => {
       Flag.NOVACLAW_EXPERIMENTAL_WORKSPACES = true
       const dir = yield* tmpdirScoped({ git: true })
       const workspaceDir = path.join(dir, ".workspace-local")
-      const project = yield* Project.use.fromDirectory(dir)
-      registerAdapter(project.project.id, "local-target", localAdapter(workspaceDir))
+      const origin = yield* resolveOrigin(dir)
+      registerAdapter(origin, "local-target", localAdapter(workspaceDir))
       const created = yield* request(WorkspacePaths.list, dir, {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -380,9 +387,9 @@ describe("workspace HttpApi", () => {
         )
       })
 
-      const project = yield* Project.use.fromDirectory(dir)
+      const origin = yield* resolveOrigin(dir)
       registerAdapter(
-        project.project.id,
+        origin,
         "remote-target",
         remoteAdapter(path.join(dir, ".remote"), `http://127.0.0.1:${remote.port}/base`, {
           "x-target-auth": "secret",
@@ -458,9 +465,9 @@ describe("workspace HttpApi", () => {
         return Response.json({ proxied: true, path: new URL(request.url).pathname })
       })
 
-      const project = yield* Project.use.fromDirectory(dir)
+      const origin = yield* resolveOrigin(dir)
       registerAdapter(
-        project.project.id,
+        origin,
         "remote-session-target",
         remoteAdapter(path.join(dir, ".remote-session"), `http://127.0.0.1:${remote.port}/base`),
       )

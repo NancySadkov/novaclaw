@@ -3,11 +3,8 @@ import { path } from "@novaclaw/core/effect/app-node-platform"
 import { Global } from "@novaclaw/core/global"
 import { InstanceLayer } from "@/project/instance-layer"
 import { InstanceStore } from "@/project/instance-store"
-import { Project } from "@/project/project"
 import { Database } from "@novaclaw/core/database/database"
 import { eq } from "drizzle-orm"
-import { ProjectTable } from "@novaclaw/core/project/sql"
-import type { ProjectV2 } from "@novaclaw/core/project"
 import { Slug } from "@novaclaw/core/util/slug"
 import { errorMessage } from "../util/error"
 import { GlobalBus } from "@/bus/global"
@@ -138,7 +135,6 @@ export const layer: Layer.Layer<
   | Path.Path
   | AppProcess.Service
   | Git.Service
-  | Project.Service
   | InstanceStore.Service
   | Database.Service
 > = Layer.effect(
@@ -150,7 +146,6 @@ export const layer: Layer.Layer<
     const appProcess = yield* AppProcess.Service
     const { db } = yield* Database.Service
     const gitSvc = yield* Git.Service
-    const project = yield* Project.Service
     const store = yield* InstanceStore.Service
 
     const git = Effect.fnUntraced(
@@ -203,11 +198,11 @@ export const layer: Layer.Layer<
       detached?: boolean
     }) {
       const ctx = yield* InstanceState.context
-      if (ctx.project.vcs !== "git") {
+      if (ctx.vcs !== "git") {
         return yield* new NotGitError({ message: "Worktrees are only supported for git projects" })
       }
 
-      const root = pathSvc.join(Global.Path.data, "worktree", ctx.project.id)
+      const root = pathSvc.join(Global.Path.data, "worktree", ctx.origin)
       yield* fs.makeDirectory(root, { recursive: true }).pipe(Effect.orDie)
 
       return yield* candidate({ root, name: input?.name ? slugify(input.name) : "", detached: input?.detached })
@@ -227,13 +222,11 @@ export const layer: Layer.Layer<
         })
       }
 
-      yield* project.addSandbox(ctx.project.id, info.directory).pipe(Effect.catch(() => Effect.void))
     })
 
     const boot = Effect.fnUntraced(function* (info: Info, startCommand?: string) {
       const ctx = yield* InstanceState.context
       const workspaceID = yield* InstanceState.workspaceID
-      const projectID = ctx.project.id
       const extra = startCommand?.trim()
 
       const populated = yield* git(["reset", "--hard"], { cwd: info.directory })
@@ -242,7 +235,7 @@ export const layer: Layer.Layer<
         yield* Effect.logError("worktree checkout failed", { directory: info.directory, message })
         GlobalBus.emit("event", {
           directory: info.directory,
-          project: ctx.project.id,
+          project: ctx.origin,
           workspace: workspaceID,
           payload: { type: Event.Failed.type, properties: { message } },
         })
@@ -257,7 +250,7 @@ export const layer: Layer.Layer<
             yield* Effect.logError("worktree bootstrap failed", { directory: info.directory, message })
             GlobalBus.emit("event", {
               directory: info.directory,
-              project: ctx.project.id,
+              project: ctx.origin,
               workspace: workspaceID,
               payload: { type: Event.Failed.type, properties: { message } },
             })
@@ -269,7 +262,7 @@ export const layer: Layer.Layer<
 
       GlobalBus.emit("event", {
         directory: info.directory,
-        project: ctx.project.id,
+        project: ctx.origin,
         workspace: workspaceID,
         payload: {
           type: Event.Ready.type,
@@ -277,7 +270,7 @@ export const layer: Layer.Layer<
         },
       })
 
-      yield* runStartScripts(info.directory, { projectID, extra })
+      yield* runStartScripts(info.directory, { extra })
     })
 
     const createFromInfo = Effect.fn("Worktree.createFromInfo")(function* (info: Info, startCommand?: string) {
@@ -334,7 +327,7 @@ export const layer: Layer.Layer<
 
     const list = Effect.fn("Worktree.list")(function* () {
       const ctx = yield* InstanceState.context
-      if (ctx.project.vcs !== "git") {
+      if (ctx.vcs !== "git") {
         return []
       }
 
@@ -343,7 +336,7 @@ export const layer: Layer.Layer<
         return yield* new ListFailedError({ message: result.stderr || result.text || "Failed to read git worktrees" })
       }
 
-      const primary = yield* canonical(ctx.project.worktree)
+      const primary = yield* canonical(ctx.worktree)
       const primaryName = pathSvc.basename(primary).toLowerCase()
       return yield* Effect.forEach(parseWorktreeList(result.text), (entry) =>
         Effect.gen(function* () {
@@ -389,7 +382,7 @@ export const layer: Layer.Layer<
 
     const remove = Effect.fn("Worktree.remove")(function* (input: RemoveInput) {
       const ctx = yield* InstanceState.context
-      if (ctx.project.vcs !== "git") {
+      if (ctx.vcs !== "git") {
         return yield* new NotGitError({ message: "Worktrees are only supported for git projects" })
       }
 
@@ -480,20 +473,9 @@ export const layer: Layer.Layer<
       return false
     })
 
-    const runStartScripts = Effect.fnUntraced(function* (
-      directory: string,
-      input: { projectID: ProjectV2.ID; extra?: string },
-    ) {
-      const row = yield* db
-        .select()
-        .from(ProjectTable)
-        .where(eq(ProjectTable.id, input.projectID))
-        .get()
-        .pipe(Effect.orDie)
-      const project = row ? Project.fromRow(row) : undefined
-      const startup = project?.commands?.start?.trim() ?? ""
-      const ok = yield* runStartScript(directory, startup, "project")
-      if (!ok) return false
+    // T3 (entities.md): the per-project startup command died with the entity's meta — only an
+    // explicitly passed start command runs now (plugins/adapters can reintroduce richer hooks).
+    const runStartScripts = Effect.fnUntraced(function* (directory: string, input: { extra?: string }) {
       yield* runStartScript(directory, input.extra ?? "", "worktree")
       return true
     })
@@ -526,7 +508,7 @@ export const layer: Layer.Layer<
 
     const reset = Effect.fn("Worktree.reset")(function* (input: ResetInput) {
       const ctx = yield* InstanceState.context
-      if (ctx.project.vcs !== "git") {
+      if (ctx.vcs !== "git") {
         return yield* new NotGitError({ message: "Worktrees are only supported for git projects" })
       }
 
@@ -604,7 +586,7 @@ export const layer: Layer.Layer<
         return yield* new ResetFailedError({ message: `Worktree reset left local changes:\n${status.text.trim()}` })
       }
 
-      yield* runStartScripts(worktreePath, { projectID: ctx.project.id }).pipe(
+      yield* runStartScripts(worktreePath, {}).pipe(
         Effect.catchCause((cause) => Effect.logError("worktree start task failed", { cause })),
         Effect.forkIn(scope),
       )
@@ -619,7 +601,6 @@ export const layer: Layer.Layer<
 export const appLayer = layer.pipe(
   Layer.provide(Git.defaultLayer),
   Layer.provide(AppProcess.defaultLayer),
-  Layer.provide(Project.defaultLayer),
   Layer.provide(Database.defaultLayer),
   Layer.provide(FSUtil.defaultLayer),
   Layer.provide(NodePath.layer),
@@ -630,7 +611,7 @@ export const defaultLayer = appLayer.pipe(Layer.provide(InstanceLayer.layer))
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [FSUtil.node, path, AppProcess.node, Git.node, Project.node, InstanceStore.node, Database.node],
+  deps: [FSUtil.node, path, AppProcess.node, Git.node, InstanceStore.node, Database.node],
 })
 
 export * as Worktree from "."

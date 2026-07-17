@@ -524,7 +524,6 @@ export const McpAddCommand = effectCmd({
       UI.empty()
       prompts.intro("Add MCP server")
 
-      const project = ctx.project
 
       // Resolve config paths eagerly for hints
       const [projectConfigPath, globalConfigPath] = await Promise.all([
@@ -534,7 +533,7 @@ export const McpAddCommand = effectCmd({
 
       // Determine scope
       let configPath = globalConfigPath
-      if (project.vcs === "git") {
+      if (ctx.vcs === "git") {
         const scopeResult = await prompts.select({
           message: "Location",
           options: [

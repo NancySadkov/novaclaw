@@ -2,7 +2,6 @@ import { DateTime } from "effect"
 import { AgentV2 } from "../agent"
 import { Location } from "../location"
 import { ModelV2 } from "../model"
-import { ProjectV2 } from "../project"
 import { ProviderV2 } from "../provider"
 import { AbsolutePath, RelativePath } from "../schema"
 import { WorkspaceV2 } from "../workspace"
@@ -14,7 +13,6 @@ import { Snapshot } from "../snapshot"
 export function fromRow(row: typeof SessionTable.$inferSelect): SessionSchema.Info {
   return SessionSchema.Info.make({
     id: SessionSchema.ID.make(row.id),
-    projectID: ProjectV2.ID.make(row.project_id),
     slug: row.slug,
     version: row.version,
     permission: row.permission ?? undefined,

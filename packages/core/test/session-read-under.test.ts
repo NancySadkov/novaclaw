@@ -4,7 +4,6 @@ import { Database } from "@novaclaw/core/database/database"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { Project } from "@novaclaw/core/project"
-import { ProjectTable } from "@novaclaw/core/project/sql"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionRead } from "@novaclaw/core/session/read"
 import { SessionTable } from "@novaclaw/core/session/sql"
@@ -21,7 +20,6 @@ const seed = (db: Database.Interface["db"], id: string, directory: string) =>
     .insert(SessionTable)
     .values({
       id: SessionV2.ID.make(id),
-      project_id: Project.ID.global,
       slug: id,
       directory,
       title: id,
@@ -34,11 +32,6 @@ describe("SessionRead.list under", () => {
   it.effect("matches the root and true subdirectories, both separators, never siblings", () =>
     Effect.gen(function* () {
       const { db } = yield* Database.Service
-      yield* db
-        .insert(ProjectTable)
-        .values({ id: Project.ID.global, worktree: AbsolutePath.make("/repo"), sandboxes: [] })
-        .run()
-        .pipe(Effect.orDie)
       yield* seed(db, "ses_root", "C:\\repo")
       yield* seed(db, "ses_sub_win", "C:\\repo\\packages\\app")
       yield* seed(db, "ses_sub_posix", "C:\\repo/docs")

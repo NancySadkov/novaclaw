@@ -1,3 +1,5 @@
+import { ProjectV2 } from "@novaclaw/core/project"
+import { AbsolutePath } from "@novaclaw/core/schema"
 import { NodeHttpServer, NodeServices } from "@effect/platform-node"
 import { describe, expect } from "bun:test"
 import { Context, Effect, Layer, Queue, Ref, Schema, Stream } from "effect"
@@ -22,7 +24,6 @@ import { Workspace } from "../../src/control-plane/workspace"
 import { WorkspaceTable } from "@novaclaw/core/control-plane/workspace.sql"
 import { Database } from "@novaclaw/core/database/database"
 import { Ripgrep } from "@novaclaw/core/ripgrep"
-import { Project } from "../../src/project/project"
 import { WorkspacePaths } from "../../src/server/routes/instance/httpapi/groups/workspace"
 import {
   WorkspaceRoutingMiddleware,
@@ -35,6 +36,12 @@ import { resetDatabase } from "../fixture/db"
 import { workspaceLayerWithRuntimeFlags } from "../fixture/workspace"
 import { tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
+
+const resolveOrigin = (dir: string) =>
+  Effect.gen(function* () {
+    const projects = yield* ProjectV2.Service
+    return (yield* projects.resolve(AbsolutePath.make(dir))).id
+  })
 
 const testStateLayer = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -55,7 +62,7 @@ const it = testEffect(
     NodeHttpServer.layerTest,
     NodeServices.layer,
     Database.defaultLayer,
-    Project.defaultLayer,
+    ProjectV2.defaultLayer,
     workspaceLayer,
     Socket.layerWebSocketConstructorGlobal,
   ).pipe(Layer.provide(Ripgrep.defaultLayer)),
@@ -122,7 +129,7 @@ const syncResponse = (request: HttpServerRequest.HttpServerRequest) => {
   return undefined
 }
 
-const createWorkspace = (input: { origin: Project.Info["id"]; type: string; adapter: WorkspaceAdapter }) =>
+const createWorkspace = (input: { origin: string; type: string; adapter: WorkspaceAdapter }) =>
   Effect.acquireRelease(
     Effect.gen(function* () {
       registerAdapter(input.origin, input.type, input.adapter)
@@ -139,7 +146,7 @@ const createWorkspace = (input: { origin: Project.Info["id"]; type: string; adap
 
 const createRemoteWorkspace = (input: {
   dir: string
-  projectID: Project.Info["id"]
+  projectID: string
   type: string
   url: string
   headers?: HeadersInit
@@ -153,7 +160,7 @@ const createRemoteWorkspace = (input: {
     adapter: remoteAdapter(path.join(input.dir, `.${input.type}`), input.url, input.headers),
   })
 
-const createLocalWorkspace = (input: { projectID: Project.Info["id"]; type: string; directory: string }) =>
+const createLocalWorkspace = (input: { projectID: string; type: string; directory: string }) =>
   createWorkspace({
     origin: input.projectID,
     type: input.type,
@@ -162,7 +169,7 @@ const createLocalWorkspace = (input: { projectID: Project.Info["id"]; type: stri
 
 const insertRemoteWorkspaceWithoutSync = (input: {
   dir: string
-  projectID: Project.Info["id"]
+  projectID: string
   type: string
   url: string
 }) =>
@@ -262,7 +269,7 @@ describe("HttpApi workspace routing middleware", () => {
   it.live("proxies remote workspace HTTP requests through the selected workspace target", () =>
     Effect.gen(function* () {
       const dir = yield* tmpdirScoped({ git: true })
-      const project = yield* Project.use.fromDirectory(dir)
+      const origin = yield* resolveOrigin(dir)
       let forwarded: ProxiedRequest | undefined
 
       // This starts a second HTTP server that stands in for the novaclaw server
@@ -286,7 +293,7 @@ describe("HttpApi workspace routing middleware", () => {
       // `${remoteUrl}/base/probe` on the fake remote server above.
       const workspace = yield* createRemoteWorkspace({
         dir,
-        projectID: project.project.id,
+        projectID: origin,
         type: "remote-http-target",
         url: `${remoteUrl}/base`,
         headers: { "x-target-auth": "secret" },
@@ -331,7 +338,7 @@ describe("HttpApi workspace routing middleware", () => {
   it.live("waits for sync fence headers from remote workspace HTTP responses", () =>
     Effect.gen(function* () {
       const dir = yield* tmpdirScoped({ git: true })
-      const project = yield* Project.use.fromDirectory(dir)
+      const origin = yield* resolveOrigin(dir)
       const workspaceID = WorkspaceV2.ID.ascending()
       const type = "remote-http-fence-target"
       const waited = yield* Ref.make<{ workspaceID: WorkspaceV2.ID; state: Record<string, number> } | undefined>(
@@ -344,7 +351,7 @@ describe("HttpApi workspace routing middleware", () => {
           { status: 202, headers: { [FenceHeader]: JSON.stringify({ aggregate: 3 }) } },
         ),
       )
-      registerAdapter(project.project.id, type, remoteAdapter(path.join(dir, `.${type}`), `${remoteUrl}/base`))
+      registerAdapter(origin, type, remoteAdapter(path.join(dir, `.${type}`), `${remoteUrl}/base`))
 
       const workspace = Workspace.Service.of({
         create: () => Effect.die("unused"),
@@ -361,7 +368,7 @@ describe("HttpApi workspace routing middleware", () => {
                   name: "remote-http-fence-target",
                   directory: null,
                   extra: null,
-                  origin: project.project.id,
+                  origin: origin,
                   timeUsed: Date.now(),
                 }
               : undefined,
@@ -392,10 +399,10 @@ describe("HttpApi workspace routing middleware", () => {
   it.live("returns 503 when a remote workspace is not actively syncing", () =>
     Effect.gen(function* () {
       const dir = yield* tmpdirScoped({ git: true })
-      const project = yield* Project.use.fromDirectory(dir)
+      const origin = yield* resolveOrigin(dir)
       const workspaceID = yield* insertRemoteWorkspaceWithoutSync({
         dir,
-        projectID: project.project.id,
+        projectID: origin,
         type: "remote-not-syncing",
         url: "http://127.0.0.1:1/base",
       })
@@ -412,11 +419,11 @@ describe("HttpApi workspace routing middleware", () => {
   it.live("proxies remote workspace WebSocket requests through the selected workspace target", () =>
     Effect.gen(function* () {
       const dir = yield* tmpdirScoped({ git: true })
-      const project = yield* Project.use.fromDirectory(dir)
+      const origin = yield* resolveOrigin(dir)
       const remoteUrl = yield* listenRemoteWebSocket()
       const workspace = yield* createRemoteWorkspace({
         dir,
-        projectID: project.project.id,
+        projectID: origin,
         type: "remote-websocket-target",
         url: `${remoteUrl}/base`,
       })
@@ -459,11 +466,11 @@ describe("HttpApi workspace routing middleware", () => {
   it.live("keeps control-plane routes local even when workspace is selected", () =>
     Effect.gen(function* () {
       const dir = yield* tmpdirScoped({ git: true })
-      const project = yield* Project.use.fromDirectory(dir)
+      const origin = yield* resolveOrigin(dir)
 
       const workspaceDir = path.join(dir, ".workspace-local")
       const workspace = yield* createLocalWorkspace({
-        projectID: project.project.id,
+        projectID: origin,
         type: "control-plane-target",
         directory: workspaceDir,
       })
@@ -482,10 +489,10 @@ describe("HttpApi workspace routing middleware", () => {
   it.live("keeps workspace control routes local even when workspace is selected", () =>
     Effect.gen(function* () {
       const dir = yield* tmpdirScoped({ git: true })
-      const project = yield* Project.use.fromDirectory(dir)
+      const origin = yield* resolveOrigin(dir)
       const workspaceDir = path.join(dir, ".workspace-local")
       const workspace = yield* createLocalWorkspace({
-        projectID: project.project.id,
+        projectID: origin,
         type: "workspace-control-plane-target",
         directory: workspaceDir,
       })
@@ -527,11 +534,11 @@ describe("HttpApi workspace routing middleware", () => {
   it.live("routes local workspace requests through WorkspaceRouteContext", () =>
     Effect.gen(function* () {
       const dir = yield* tmpdirScoped({ git: true })
-      const project = yield* Project.use.fromDirectory(dir)
+      const origin = yield* resolveOrigin(dir)
 
       const workspaceDir = path.join(dir, ".workspace-local")
       const workspace = yield* createLocalWorkspace({
-        projectID: project.project.id,
+        projectID: origin,
         type: "local-target",
         directory: workspaceDir,
       })

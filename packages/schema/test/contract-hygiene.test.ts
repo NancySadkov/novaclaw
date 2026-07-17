@@ -4,7 +4,6 @@ import { Schema } from "effect"
 import { Agent } from "../src/agent"
 import { FileSystem } from "../src/filesystem"
 import { Model } from "../src/model"
-import { Project } from "../src/project"
 import { Pty } from "../src/pty"
 import { Question } from "../src/question"
 import { Session } from "../src/session"
@@ -42,10 +41,6 @@ describe("contract hygiene", () => {
       Model.Capabilities,
       Model.Cost,
       Model.Api,
-      Project.Icon,
-      Project.Commands,
-      Project.Time,
-      Project.Info,
       Pty.Info,
       Session.ListAnchor,
     ].map((schema) => schema.ast.annotations?.identifier)

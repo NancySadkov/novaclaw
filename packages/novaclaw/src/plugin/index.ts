@@ -122,12 +122,12 @@ export const layer = Layer.effect(
         const cfg = yield* config.get()
         const input: PluginInput = {
           client,
-          project: ctx.project,
+          origin: ctx.origin,
           worktree: ctx.worktree,
           directory: ctx.directory,
           experimental_workspace: {
             register(type: string, adapter: PluginWorkspaceAdapter) {
-              registerAdapter(ctx.project.id, type, adapter as WorkspaceAdapter)
+              registerAdapter(ctx.origin, type, adapter as WorkspaceAdapter)
             },
           },
           get serverUrl(): URL {

@@ -119,7 +119,6 @@ describe("QuestionV2", () => {
         info: {
           id: sessionID,
           slug: "test",
-          projectID: "test",
           location: { directory: "/project" },
           title: "test",
           version: "test",

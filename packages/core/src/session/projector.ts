@@ -39,7 +39,6 @@ type Usage = {
 function sessionRow(info: SessionSchema.Info): typeof SessionTable.$inferInsert {
   return {
     id: info.id,
-    project_id: info.projectID,
     workspace_id: info.location.workspaceID ?? null,
     parent_id: info.parentID,
     slug: info.slug,

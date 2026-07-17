@@ -16,8 +16,6 @@ import { DateTime, Effect } from "effect"
 import { EventV2 } from "@novaclaw/core/event"
 import { SessionSchema } from "@novaclaw/core/session/schema"
 import { SessionRecordEvent } from "@novaclaw/schema/session-record-event"
-import { ProjectTable } from "@novaclaw/core/project/sql"
-import { ProjectV2 } from "@novaclaw/core/project"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { Location } from "@novaclaw/core/location"
 
@@ -29,13 +27,6 @@ export function seedSessionRow(input?: { title?: string; directory?: string }) {
     const id = SessionSchema.ID.make(`ses_test${String(++seededSessions).padStart(20, "0")}`)
     const directory = AbsolutePath.make(input?.directory ?? "C:/project")
     const now = DateTime.makeUnsafe(Date.now())
-    // Session rows FK onto project — seed the global project row first.
-    yield* db
-      .insert(ProjectTable)
-      .values({ id: ProjectV2.ID.global, worktree: directory, sandboxes: [] })
-      .onConflictDoNothing()
-      .run()
-      .pipe(Effect.orDie)
     const title = input?.title ?? "test"
     yield* events.publish(
       SessionRecordEvent.Created,
@@ -43,7 +34,6 @@ export function seedSessionRow(input?: { title?: string; directory?: string }) {
         sessionID: id,
         info: SessionSchema.Info.make({
           id,
-          projectID: ProjectV2.ID.global,
           slug: id,
           version: "test",
           title,

@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { PermissionRuleset } from "../src/permission-ruleset"
 import { QuestionRequest } from "../src/question-request"
-import { Project } from "../src/project"
 import { SessionRecordEvent } from "../src/session-record-event"
 
 // V1-nuke slice D: the record lifecycle vocabulary pin. The V1 wire schemas died; these events
@@ -30,7 +29,6 @@ describe("session record event schemas", () => {
       QuestionRequest.Event.Asked.type,
       QuestionRequest.Event.Replied.type,
       QuestionRequest.Event.Rejected.type,
-      Project.Event.Updated.type,
     ]).toEqual([
       "session.error",
       "permission.asked",
@@ -38,7 +36,6 @@ describe("session record event schemas", () => {
       "question.asked",
       "question.replied",
       "question.rejected",
-      "project.updated",
     ])
   })
 })

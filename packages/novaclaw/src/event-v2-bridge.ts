@@ -35,7 +35,7 @@ export const layer = Layer.effect(
             directory: AbsolutePath.make(ctx.directory),
             ...(workspaceID ? { workspaceID } : {}),
             root: AbsolutePath.make(ctx.worktree),
-            origin: ctx.project.id,
+            origin: ctx.origin,
           }),
         })
       })
@@ -50,14 +50,14 @@ export const layer = Layer.effect(
         const workspaceID = (yield* WorkspaceRef) ?? event.location?.workspaceID
         GlobalBus.emit("event", {
           directory: event.location?.directory ?? ctx?.directory,
-          project: ctx?.project.id,
+          project: ctx?.origin,
           workspace: workspaceID,
           payload: { id: event.id, type: event.type, properties: event.data },
         })
         if (event.durable === undefined) return
         GlobalBus.emit("event", {
           directory: event.location?.directory ?? ctx?.directory,
-          project: ctx?.project.id,
+          project: ctx?.origin,
           workspace: workspaceID,
           payload: {
             type: "sync",

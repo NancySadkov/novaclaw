@@ -4,7 +4,6 @@ import { Database } from "@novaclaw/core/database/database"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { fromRow } from "@novaclaw/core/session/info"
 import { SessionMessageRead } from "@novaclaw/core/session/message-read"
-import { Project } from "@/project/project"
 import { InstanceRef } from "@/effect/instance-ref"
 
 interface SessionStats {
@@ -63,13 +62,13 @@ export const StatsCommand = effectCmd({
         describe: "show model statistics (default: hidden). Pass a number to show top N, otherwise shows all",
       })
       .option("project", {
-        describe: "filter by project (default: all projects, empty string: current project)",
+        describe: "filter by folder (default: all; empty string: the current repo root)",
         type: "string",
       }),
   handler: Effect.fn("Cli.stats")(function* (args) {
     const ctx = yield* InstanceRef
     if (!ctx) return
-    const stats = yield* aggregateSessionStats(args.days, args.project, ctx.project)
+    const stats = yield* aggregateSessionStats(args.days, args.project, ctx.worktree)
     let modelLimit: number | undefined
     if (args.models === true) {
       modelLimit = Infinity
@@ -88,7 +87,7 @@ const getAllSessions = Effect.fnUntraced(function* () {
 const aggregateSessionStats = Effect.fn("Cli.stats.aggregate")(function* (
   days?: number,
   projectFilter?: string,
-  currentProject?: Project.Info,
+  currentRoot?: string,
 ) {
   const { db } = yield* Database.Service
   const sessions = yield* getAllSessions()
@@ -112,12 +111,15 @@ const aggregateSessionStats = Effect.fn("Cli.stats.aggregate")(function* (
 
   let filteredSessions = cutoffTime > 0 ? sessions.filter((session) => DateTime.toEpochMillis(session.time.updated) >= cutoffTime) : sessions
 
+  // T3 (entities.md): sessions carry no project — the scope is a directory root.
+  const underRoot = (directory: string, root: string) =>
+    directory === root || directory.startsWith(root + "\\") || directory.startsWith(root + "/")
   if (projectFilter !== undefined) {
     if (projectFilter === "") {
-      if (!currentProject) throw new Error("currentProject required when projectFilter is empty string")
-      filteredSessions = filteredSessions.filter((session) => session.projectID === currentProject.id)
+      if (!currentRoot) throw new Error("current root required when the folder filter is empty")
+      filteredSessions = filteredSessions.filter((session) => underRoot(session.location.directory, currentRoot))
     } else {
-      filteredSessions = filteredSessions.filter((session) => session.projectID === projectFilter)
+      filteredSessions = filteredSessions.filter((session) => underRoot(session.location.directory, projectFilter))
     }
   }
 

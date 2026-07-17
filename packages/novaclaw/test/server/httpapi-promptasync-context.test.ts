@@ -7,6 +7,8 @@
 // body runs detached from the request fiber's context, so the explicit
 // Effect.provideService calls there are required, not defensive duplication.
 
+import { ProjectV2 } from "@novaclaw/core/project"
+import { AbsolutePath } from "@novaclaw/core/schema"
 import { NodeHttpServer, NodeServices } from "@effect/platform-node"
 import { describe, expect } from "bun:test"
 import { Deferred, Effect, Layer, Schema, Scope } from "effect"
@@ -21,7 +23,6 @@ import type { WorkspaceAdapter } from "../../src/control-plane/types"
 import { Workspace } from "../../src/control-plane/workspace"
 import { InstanceRef, WorkspaceRef } from "../../src/effect/instance-ref"
 import { InstanceLayer } from "../../src/project/instance-layer"
-import { Project } from "../../src/project/project"
 import { Database } from "@novaclaw/core/database/database"
 import {
   InstanceContextMiddleware,
@@ -36,6 +37,12 @@ import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, tmpdirScoped } from "../fixture/fixture"
 import { workspaceLayerWithRuntimeFlags } from "../fixture/workspace"
 import { testEffect } from "../lib/effect"
+
+const resolveOrigin = (dir: string) =>
+  Effect.gen(function* () {
+    const projects = yield* ProjectV2.Service
+    return (yield* projects.resolve(AbsolutePath.make(dir))).id
+  })
 
 const testStateLayer = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -57,7 +64,7 @@ const it = testEffect(
     NodeHttpServer.layerTest,
     NodeServices.layer,
     InstanceLayer.layer,
-    Project.defaultLayer,
+    ProjectV2.defaultLayer,
     workspaceLayer,
   ).pipe(Layer.provide(Ripgrep.defaultLayer)),
 )
@@ -86,8 +93,8 @@ const localAdapter = (directory: string): WorkspaceAdapter => ({
 const setupWorkspace = (kind: string) =>
   Effect.gen(function* () {
     const dir = yield* tmpdirScoped({ git: true })
-    yield* Project.use.fromDirectory(dir)
-    const projectID = yield* Project.Service.use((svc) => svc.fromDirectory(dir).pipe(Effect.map((p) => p.project.id)))
+    yield* resolveOrigin(dir)
+    const projectID = yield* resolveOrigin(dir)
     registerAdapter(projectID, kind, localAdapter(dir))
     const workspace = yield* Workspace.Service.use((svc) =>
       svc.create({ type: kind, branch: null, extra: null, origin: projectID }),

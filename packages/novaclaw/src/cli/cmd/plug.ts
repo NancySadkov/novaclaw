@@ -218,7 +218,7 @@ export const PluginCommand = effectCmd({
     if (!ctx) return
     const ok = yield* Effect.promise(() =>
       run({
-        vcs: ctx.project.vcs,
+        vcs: ctx.vcs,
         worktree: ctx.worktree,
         directory: ctx.directory,
       }),

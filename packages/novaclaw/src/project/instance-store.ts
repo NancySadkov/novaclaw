@@ -9,12 +9,11 @@ import { Context, Deferred, Duration, Effect, Exit, Layer, Scope } from "effect"
 import { type InstanceContext } from "./instance-context"
 import { InstanceBootstrap } from "./bootstrap-service"
 import { InstanceBootstrap as InstanceBootstrapGraph } from "./bootstrap"
-import * as Project from "./project"
+import { ProjectV2 } from "@novaclaw/core/project"
+import { AbsolutePath } from "@novaclaw/core/schema"
 
 export interface LoadInput {
   directory: string
-  worktree?: string
-  project?: Project.Info
 }
 
 export interface Interface {
@@ -34,30 +33,25 @@ interface Entry {
   readonly deferred: Deferred.Deferred<InstanceContext>
 }
 
-export const layer: Layer.Layer<Service, never, Project.Service | InstanceBootstrap.Service> = Layer.effect(
+export const layer: Layer.Layer<Service, never, ProjectV2.Service | InstanceBootstrap.Service> = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const project = yield* Project.Service
+    const project = yield* ProjectV2.Service
     const bootstrap = yield* InstanceBootstrap.Service
     const scope = yield* Scope.Scope
     const cache = new Map<string, Entry>()
 
     const boot = (input: LoadInput & { directory: string }) =>
       Effect.gen(function* () {
-        const ctx: InstanceContext =
-          input.project && input.worktree
-            ? {
-                directory: input.directory,
-                worktree: input.worktree,
-                project: input.project,
-              }
-            : yield* project.fromDirectory(input.directory).pipe(
-                Effect.map((result) => ({
-                  directory: input.directory,
-                  worktree: result.sandbox,
-                  project: result.project,
-                })),
-              )
+        const resolved = yield* project.resolve(AbsolutePath.make(FSUtil.resolve(input.directory)))
+        const ctx: InstanceContext = {
+          directory: input.directory,
+          // Outside any repo the boundary sentinel stays "/" (containsPath skips it) — never a
+          // filesystem root that would contains-match the whole drive.
+          worktree: resolved.vcs ? resolved.directory : "/",
+          origin: resolved.id,
+          ...(resolved.vcs ? { vcs: resolved.vcs.type } : {}),
+        }
         yield* bootstrap.run.pipe(Effect.provideService(InstanceRef, ctx))
         return ctx
       }).pipe(Effect.withSpan("InstanceStore.boot"))
@@ -94,7 +88,7 @@ export const layer: Layer.Layer<Service, never, Project.Service | InstanceBootst
     const disposeContext = Effect.fn("InstanceStore.disposeContext")(function* (ctx: InstanceContext) {
       yield* Effect.logInfo("disposing instance", { directory: ctx.directory })
       yield* Effect.promise(() => runDisposers(ctx.directory))
-      yield* emitDisposed({ directory: ctx.directory, project: ctx.project.id })
+      yield* emitDisposed({ directory: ctx.directory, project: ctx.origin })
     })
 
     const disposeEntry = Effect.fnUntraced(function* (directory: string, entry: Entry, ctx: InstanceContext) {
@@ -135,7 +129,7 @@ export const layer: Layer.Layer<Service, never, Project.Service | InstanceBootst
             if (previous) {
               yield* Deferred.await(previous.deferred).pipe(Effect.ignore)
               yield* Effect.promise(() => runDisposers(directory))
-              yield* emitDisposed({ directory, project: input.project?.id })
+              yield* emitDisposed({ directory })
             }
             yield* completeLoad(directory, input, entry)
           }).pipe(Effect.forkIn(scope, { startImmediately: true }))
@@ -202,12 +196,12 @@ export const layer: Layer.Layer<Service, never, Project.Service | InstanceBootst
   }),
 )
 
-export const defaultLayer = layer.pipe(Layer.provide(Project.defaultLayer))
+export const defaultLayer = layer.pipe(Layer.provide(ProjectV2.defaultLayer))
 
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [Project.node, InstanceBootstrapGraph.node],
+  deps: [ProjectV2.node, InstanceBootstrapGraph.node],
 })
 
 export * as InstanceStore from "./instance-store"

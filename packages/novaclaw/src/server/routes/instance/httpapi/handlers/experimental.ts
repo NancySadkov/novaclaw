@@ -4,7 +4,6 @@ import { Config } from "@/config/config"
 import { InstanceState } from "@/effect/instance-state"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { MCP } from "@/mcp"
-import { Project } from "@/project/project"
 import type { SessionID } from "@/session/schema"
 import { Database } from "@novaclaw/core/database/database"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
@@ -30,7 +29,6 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
     const account = yield* Account.Service
     const config = yield* Config.Service
     const mcp = yield* MCP.Service
-    const project = yield* Project.Service
     const locations = yield* LocationServiceMap.Service
     const worktreeSvc = yield* Worktree.Service
 
@@ -119,8 +117,8 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
     })
 
     const worktree = Effect.fn("ExperimentalHttpApi.worktree")(function* () {
-      const ctx = yield* InstanceState.context
-      return yield* project.sandboxes(ctx.project.id)
+      // T3 (entities.md): the sandbox registry died with the entity — git is the truth.
+      return (yield* mapWorktreeError(worktreeSvc.list())).map((item) => item.directory)
     })
 
     const worktreeCreate = Effect.fn("ExperimentalHttpApi.worktreeCreate")(function* (ctx: {
@@ -132,9 +130,7 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
     const worktreeRemove = Effect.fn("ExperimentalHttpApi.worktreeRemove")(function* (input: {
       payload: Worktree.RemoveInput
     }) {
-      const ctx = yield* InstanceState.context
       yield* mapWorktreeError(worktreeSvc.remove(input.payload))
-      yield* project.removeSandbox(ctx.project.id, input.payload.directory)
       return true
     })
 

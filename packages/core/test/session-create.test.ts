@@ -11,7 +11,6 @@ import { EventTable } from "@novaclaw/core/event/sql"
 import { Location } from "@novaclaw/core/location"
 import { ModelV2 } from "@novaclaw/core/model"
 import { ProjectV2 } from "@novaclaw/core/project"
-import { ProjectTable } from "@novaclaw/core/project/sql"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
@@ -36,8 +35,6 @@ const projects = Layer.succeed(
   ProjectV2.Service,
   ProjectV2.Service.of({
     resolve: (directory) => Effect.succeed({ id: ProjectV2.ID.global, directory }),
-    directories: () => Effect.succeed([]),
-    commit: () => Effect.void,
   }),
 )
 const it = testEffect(
@@ -192,7 +189,6 @@ describe("SessionV2.create", () => {
           id,
           slug: "updated",
           version: "test",
-          projectID: created.projectID,
           location: { directory: created.location.directory },
           title: "updated",
           agent: AgentV2.ID.make("build"),
@@ -290,11 +286,6 @@ describe("SessionV2.create", () => {
         const db = (yield* Database.Service).db
         const events = yield* EventV2.Service
         const store = yield* SessionStore.Service
-        yield* db
-          .insert(ProjectTable)
-          .values({ id: ProjectV2.ID.global, worktree: location.directory, sandboxes: [] })
-          .run()
-          .pipe(Effect.orDie)
 
         expect(yield* store.get(created.id)).toBeUndefined()
         expect(yield* events.replayAll(serialized.slice(0, 2))).toBe(created.id)

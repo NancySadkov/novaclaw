@@ -82,8 +82,10 @@ export const layer = Layer.effect(
 
       const source = yield* project.resolve(current.location.directory)
       const destination = yield* project.resolve(directory)
-      if (current.projectID !== destination.id) {
-        return yield* new DestinationProjectMismatchError({ expected: current.projectID, actual: destination.id })
+      // T3 (entities.md): same-repo guard by DERIVED origin — the source session directory and
+      // the destination must resolve to the same substrate identity.
+      if (source.id !== destination.id) {
+        return yield* new DestinationProjectMismatchError({ expected: source.id, actual: destination.id })
       }
 
       const moveChanges = input.moveChanges && source.directory !== destination.directory

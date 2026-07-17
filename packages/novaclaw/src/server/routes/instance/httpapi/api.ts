@@ -18,8 +18,6 @@ import { InstanceApi } from "./groups/instance"
 import { KbApi } from "./groups/kb"
 import { McpApi } from "./groups/mcp"
 import { PermissionApi } from "./groups/permission"
-import { ProjectApi } from "./groups/project"
-import { ProjectCopyApi } from "./groups/project-copy"
 import { ProviderApi } from "./groups/provider"
 import { PtyApi, PtyConnectApi } from "./groups/pty"
 import { QuestionApi } from "./groups/question"
@@ -68,8 +66,6 @@ export const InstanceHttpApi = HttpApi.make("novaclaw-instance")
   .addHttpApi(InstanceApi)
   .addHttpApi(KbApi)
   .addHttpApi(McpApi)
-  .addHttpApi(ProjectApi)
-  .addHttpApi(ProjectCopyApi)
   .addHttpApi(PtyApi)
   .addHttpApi(QuestionApi)
   .addHttpApi(RegistryApi)

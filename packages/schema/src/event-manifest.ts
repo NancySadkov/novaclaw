@@ -13,8 +13,6 @@ import { ModelsDev } from "./models-dev"
 import { Permission } from "./permission"
 import { PermissionRuleset } from "./permission-ruleset"
 import { Plugin } from "./plugin"
-import { Project } from "./project"
-import { ProjectDirectories } from "./project-directories"
 import { Pty } from "./pty"
 import { Question } from "./question"
 import { QuestionRequest } from "./question-request"
@@ -50,7 +48,6 @@ const featureDefinitions = Event.inventory(
   ...Reference.Event.Definitions,
   ...Permission.Event.Definitions,
   ...Plugin.Event.Definitions,
-  ...ProjectDirectories.Event.Definitions,
   ...FileSystemWatcher.Event.Definitions,
   ...Pty.Event.Definitions,
   ...Question.Event.Definitions,
@@ -72,7 +69,6 @@ export const Definitions = Event.inventory(
   ...SessionTags.Event.Definitions,
   ...PermissionRuleset.Event.Definitions,
   ...McpEvent.Definitions,
-    ...Project.Event.Definitions,
   ...SessionStatusEvent.Definitions,
   ...QuestionRequest.Event.Definitions,
   ...SessionCompactionEvent.Definitions,

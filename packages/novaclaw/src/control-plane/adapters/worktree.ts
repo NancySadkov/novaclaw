@@ -73,7 +73,7 @@ export const WorktreeAdapter: WorkspaceAdapter = {
       name: info.name,
       branch: info.branch,
       directory: info.directory,
-      origin: ctx.project.id,
+      origin: ctx.origin,
     }))
   },
   async remove(info, context) {

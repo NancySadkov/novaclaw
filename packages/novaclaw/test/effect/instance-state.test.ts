@@ -154,7 +154,7 @@ it.live("InstanceState preserves directory across async boundaries", () =>
             Effect.sync(() => ({
               directory: ctx.directory,
               worktree: ctx.worktree,
-              project: ctx.project.id,
+              project: ctx.origin,
             })),
           )
 

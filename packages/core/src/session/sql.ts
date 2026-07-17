@@ -1,12 +1,10 @@
 import { sqliteTable, text, integer, index, primaryKey, real, uniqueIndex } from "drizzle-orm/sqlite-core"
 import * as DatabasePath from "../database/path"
-import { ProjectTable } from "../project/sql"
 import type { SessionMessage } from "./message"
 import type { Prompt } from "./prompt"
 import type { SessionInput } from "./input"
 import type { Snapshot } from "../snapshot"
 import { PermissionRuleset } from "@novaclaw/schema/permission-ruleset"
-import { ProjectV2 } from "../project"
 import type { SessionSchema } from "./schema"
 import { WorkspaceV2 } from "../workspace"
 import { Timestamps } from "../database/schema.sql"
@@ -20,10 +18,6 @@ export const SessionTable = sqliteTable(
   "session",
   {
     id: text().$type<SessionSchema.ID>().primaryKey(),
-    project_id: text()
-      .$type<ProjectV2.ID>()
-      .notNull()
-      .references(() => ProjectTable.id, { onDelete: "cascade" }),
     workspace_id: text().$type<WorkspaceV2.ID>(),
     parent_id: text().$type<SessionSchema.ID>(),
     slug: text().notNull(),
@@ -70,7 +64,6 @@ export const SessionTable = sqliteTable(
     time_archived: integer(),
   },
   (table) => [
-    index("session_project_idx").on(table.project_id),
     index("session_workspace_idx").on(table.workspace_id),
     index("session_parent_idx").on(table.parent_id),
   ],

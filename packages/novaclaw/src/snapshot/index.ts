@@ -69,8 +69,8 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
         const state = {
           directory: ctx.directory,
           worktree: ctx.worktree,
-          gitdir: path.join(Global.Path.data, "snapshot", ctx.project.id, Hash.fast(ctx.worktree)),
-          vcs: ctx.project.vcs,
+          gitdir: path.join(Global.Path.data, "snapshot", ctx.origin, Hash.fast(ctx.worktree)),
+          vcs: ctx.vcs,
         }
 
         const args = (cmd: string[]) => ["--git-dir", state.gitdir, "--work-tree", state.worktree, ...cmd]

@@ -10,7 +10,6 @@ import { PermissionV2 } from "@novaclaw/core/permission"
 import { PermissionTable } from "@novaclaw/core/permission/sql"
 import { PermissionSaved } from "@novaclaw/core/permission/saved"
 import { Project } from "@novaclaw/core/project"
-import { ProjectTable } from "@novaclaw/core/project/sql"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionTable } from "@novaclaw/core/session/sql"
@@ -42,16 +41,9 @@ function setup(rules: PermissionV2.Ruleset = []) {
   return Effect.gen(function* () {
     const { db } = yield* Database.Service
     yield* db
-      .insert(ProjectTable)
-      .values({ id: Project.ID.global, worktree: AbsolutePath.make("/project"), sandboxes: [] })
-      .onConflictDoNothing()
-      .run()
-      .pipe(Effect.orDie)
-    yield* db
       .insert(SessionTable)
       .values({
         id: SessionV2.ID.make("ses_test"),
-        project_id: Project.ID.global,
         slug: "test",
         directory: "/project",
         title: "test",
@@ -288,7 +280,6 @@ describe("PermissionV2", () => {
         info: {
           id: request.sessionID,
           slug: "test",
-          projectID: Project.ID.global,
           location: { directory: AbsolutePath.make("/project") },
           title: "test",
           version: "test",

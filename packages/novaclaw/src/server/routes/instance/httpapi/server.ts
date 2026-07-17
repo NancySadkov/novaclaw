@@ -30,7 +30,6 @@ import { Permission } from "@/permission"
 import { Plugin } from "@/plugin"
 import { PluginPtyEnvironment } from "@/plugin/pty-environment"
 import { InstanceStore } from "@/project/instance-store"
-import { Project } from "@/project/project"
 import { Vcs } from "@/project/vcs"
 import { ProviderAuth } from "@/provider/auth"
 import { Question } from "@/question"
@@ -52,7 +51,6 @@ import { ModelsDev } from "@novaclaw/core/models-dev"
 import { Npm } from "@novaclaw/core/npm"
 import { PermissionSaved } from "@novaclaw/core/permission/saved"
 import { ProjectV2 } from "@novaclaw/core/project"
-import { ProjectCopy } from "@novaclaw/core/project/copy"
 import { PtyTicket } from "@novaclaw/core/pty/ticket"
 import { Ripgrep } from "@novaclaw/core/ripgrep"
 import { SessionProjector } from "@novaclaw/core/session/projector"
@@ -87,8 +85,6 @@ import { kbHandlers } from "./handlers/kb"
 import { registryHandlers } from "./handlers/registry"
 import { mcpHandlers } from "./handlers/mcp"
 import { permissionHandlers } from "./handlers/permission"
-import { projectHandlers } from "./handlers/project"
-import { projectCopyHandlers } from "./handlers/project-copy"
 import { providerHandlers } from "./handlers/provider"
 import { ptyConnectHandlers, ptyHandlers } from "./handlers/pty"
 import { questionHandlers } from "./handlers/question"
@@ -164,8 +160,6 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
     kbHandlers,
     registryHandlers,
     mcpHandlers,
-    projectHandlers,
-    projectCopyHandlers,
     ptyHandlers,
     questionHandlers,
     permissionHandlers,
@@ -251,7 +245,6 @@ const app = LayerNode.group([
   McpAuth.node,
   Truncate.node,
   Format.node,
-  Project.node,
   Vcs.node,
   Workspace.node,
   Worktree.node,
@@ -262,7 +255,6 @@ const app = LayerNode.group([
   SessionTags.node,
   Kb.node,
   ProjectV2.node,
-  ProjectCopy.node,
   PtyTicket.node,
 ])
 

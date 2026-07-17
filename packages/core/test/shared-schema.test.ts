@@ -8,8 +8,6 @@ import { Location } from "@novaclaw/schema/location"
 import { Model } from "@novaclaw/schema/model"
 import { AgentAttachment, FileAttachment, Prompt, Source } from "@novaclaw/schema/prompt"
 import { Provider } from "@novaclaw/schema/provider"
-import { Project } from "@novaclaw/schema/project"
-import { ProjectDirectories } from "@novaclaw/schema/project-directories"
 import { PermissionRuleset } from "@novaclaw/schema/permission-ruleset"
 import { Session } from "@novaclaw/schema/session"
 import { SessionInput } from "@novaclaw/schema/session-input"
@@ -41,9 +39,7 @@ test("Core reuses the canonical shared schemas", async () => {
     coreLocation,
     coreLLM,
     corePermission,
-    coreProjectCopy,
     corePty,
-    coreProject,
     coreReference,
     coreSessionInput,
     coreSessionMessage,
@@ -62,9 +58,7 @@ test("Core reuses the canonical shared schemas", async () => {
     import("@novaclaw/core/location"),
     import("@novaclaw/llm"),
     import("@novaclaw/core/permission"),
-    import("@novaclaw/core/project/copy"),
     import("@novaclaw/core/pty"),
-    import("@novaclaw/core/project/schema"),
     import("@novaclaw/core/reference"),
     import("@novaclaw/core/session/input"),
     import("@novaclaw/core/session/message"),
@@ -125,12 +119,10 @@ test("Core reuses the canonical shared schemas", async () => {
     [corePermission.Effect, Permission.Effect],
     [corePermission.Rule, Permission.Rule],
     [corePermission.Ruleset, Permission.Ruleset],
-    [coreProjectCopy.Event, ProjectDirectories.Event],
     [PluginV2.ID, Plugin.ID],
     [PluginV2.Event, Plugin.Event],
     [corePty.Info, Pty.Info],
     [corePty.Event, Pty.Event],
-    [coreProject.ID, Project.ID],
     [coreReference.LocalSource, Reference.LocalSource],
     [coreReference.GitSource, Reference.GitSource],
     [coreReference.Source, Reference.Source],

@@ -7,7 +7,6 @@ import { EventV2 } from "@novaclaw/core/event"
 import { EventTable } from "@novaclaw/core/event/sql"
 import { ModelV2 } from "@novaclaw/core/model"
 import { Project } from "@novaclaw/core/project"
-import { ProjectTable } from "@novaclaw/core/project/sql"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
@@ -30,16 +29,9 @@ describe("Tool.Progress", () => {
       const service = yield* EventV2.Service
       const sessionID = SessionV2.ID.make("ses_tool_progress_projector")
       yield* db
-        .insert(ProjectTable)
-        .values({ id: Project.ID.global, worktree: AbsolutePath.make("/project"), sandboxes: [] })
-        .onConflictDoNothing()
-        .run()
-        .pipe(Effect.orDie)
-      yield* db
         .insert(SessionTable)
         .values({
           id: sessionID,
-          project_id: Project.ID.global,
           slug: "progress",
           directory: "/project",
           title: "progress",

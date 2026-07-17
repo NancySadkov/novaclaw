@@ -7,7 +7,6 @@ import { Database } from "@novaclaw/core/database/database"
 import { asc } from "drizzle-orm"
 import { eq } from "drizzle-orm"
 import { inArray } from "drizzle-orm"
-import { Project } from "@/project/project"
 import { GlobalBus } from "@/bus/global"
 import { Auth } from "@/auth"
 import { EventV2 } from "@novaclaw/core/event"
@@ -132,8 +131,8 @@ type SyncLoopError = SyncHttpError | HttpClientError.HttpClientError
 export interface Interface {
   readonly create: (input: CreateInput) => Effect.Effect<Info, CreateError>
   readonly sessionWarp: (input: SessionWarpInput) => Effect.Effect<void, SessionWarpError>
-  readonly list: (project: Project.Info) => Effect.Effect<Info[]>
-  readonly syncList: (project: Project.Info) => Effect.Effect<void>
+  readonly list: (origin: string) => Effect.Effect<Info[]>
+  readonly syncList: (origin: string) => Effect.Effect<void>
   readonly get: (id: WorkspaceV2.ID) => Effect.Effect<Info | undefined>
   readonly remove: (id: WorkspaceV2.ID) => Effect.Effect<Info | undefined>
   readonly status: () => Effect.Effect<ConnectionStatus[]>
@@ -723,21 +722,21 @@ export const layer = Layer.effect(
       })
     })
 
-    const list = Effect.fn("Workspace.list")(function* (project: Project.Info) {
+    const list = Effect.fn("Workspace.list")(function* (origin: string) {
       return (yield* db
         .select()
         .from(WorkspaceTable)
-        .where(eq(WorkspaceTable.origin, project.id))
+        .where(eq(WorkspaceTable.origin, origin))
         .all()
         .pipe(Effect.orDie))
         .map(fromRow)
         .sort((a, b) => a.id.localeCompare(b.id))
     })
 
-    const syncList = Effect.fn("Workspace.syncList")(function* (project: Project.Info) {
-      const names = new Set((yield* list(project)).map((workspace) => workspace.name))
+    const syncList = Effect.fn("Workspace.syncList")(function* (origin: string) {
+      const names = new Set((yield* list(origin)).map((workspace) => workspace.name))
       const discovered = yield* Effect.forEach(
-        registeredAdapters(project.id),
+        registeredAdapters(origin),
         ([type, adapter]) =>
           WorkspaceAdapterRuntime.list(adapter).pipe(
             Effect.catchCause((error) =>
@@ -902,7 +901,6 @@ export const layer = Layer.effect(
 
 export const defaultLayer = layer.pipe(
   Layer.provide(Auth.defaultLayer),
-  Layer.provide(Project.defaultLayer),
   Layer.provide(Vcs.defaultLayer),
   Layer.provide(FSUtil.defaultLayer),
   Layer.provide(Database.defaultLayer),

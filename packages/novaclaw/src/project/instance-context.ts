@@ -1,11 +1,14 @@
 import { LocalContext } from "@/util/local-context"
 import { FSUtil } from "@novaclaw/core/fs-util"
-import type * as Project from "./project"
 
+// T3 (notes/entities.md): the instance carries derived substrate attributes, not an entity —
+// worktree (the VCS root; "/" outside any repo, preserving the containsPath guard), the
+// rename-stable origin hash, and the vcs kind.
 export interface InstanceContext {
   directory: string
   worktree: string
-  project: Project.Info
+  origin: string
+  vcs?: "git"
 }
 
 export const context = LocalContext.create<InstanceContext>("instance")

@@ -6,7 +6,6 @@ import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
 import { Location } from "@novaclaw/core/location"
 import { Project } from "@novaclaw/core/project"
-import { ProjectTable } from "@novaclaw/core/project/sql"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionTable } from "@novaclaw/core/session/sql"
@@ -28,16 +27,9 @@ function setup() {
   return Effect.gen(function* () {
     const { db } = yield* Database.Service
     yield* db
-      .insert(ProjectTable)
-      .values({ id: Project.ID.global, worktree: AbsolutePath.make("/project"), sandboxes: [] })
-      .onConflictDoNothing()
-      .run()
-      .pipe(Effect.orDie)
-    yield* db
       .insert(SessionTable)
       .values({
         id: sessionID,
-        project_id: Project.ID.global,
         slug: "tags-test",
         directory: "/project",
         title: "tags test",

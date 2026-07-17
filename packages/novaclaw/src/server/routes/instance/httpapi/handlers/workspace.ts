@@ -15,11 +15,11 @@ export const workspaceHandlers = HttpApiBuilder.group(InstanceHttpApi, "workspac
 
     const adapters = Effect.fn("WorkspaceHttpApi.adapters")(function* () {
       const instance = yield* InstanceState.context
-      return yield* Effect.sync(() => listAdapters(instance.project.id))
+      return yield* Effect.sync(() => listAdapters(instance.origin))
     })
 
     const list = Effect.fn("WorkspaceHttpApi.list")(function* () {
-      return yield* workspace.list((yield* InstanceState.context).project)
+      return yield* workspace.list((yield* InstanceState.context).origin)
     })
 
     const create = Effect.fn("WorkspaceHttpApi.create")(function* (ctx: { payload: typeof CreatePayload.Type }) {
@@ -28,7 +28,7 @@ export const workspaceHandlers = HttpApiBuilder.group(InstanceHttpApi, "workspac
         .create({
           ...ctx.payload,
           extra: ctx.payload.extra ?? null,
-          origin: instance.project.id,
+          origin: instance.origin,
         })
         .pipe(
           Effect.catchCause((cause) => {
@@ -49,11 +49,11 @@ export const workspaceHandlers = HttpApiBuilder.group(InstanceHttpApi, "workspac
     })
 
     const syncList = Effect.fn("WorkspaceHttpApi.syncList")(function* () {
-      yield* workspace.syncList((yield* InstanceState.context).project)
+      yield* workspace.syncList((yield* InstanceState.context).origin)
     })
 
     const status = Effect.fn("WorkspaceHttpApi.status")(function* () {
-      const ids = new Set((yield* workspace.list((yield* InstanceState.context).project)).map((item) => item.id))
+      const ids = new Set((yield* workspace.list((yield* InstanceState.context).origin)).map((item) => item.id))
       return (yield* workspace.status()).filter((item) => ids.has(item.workspaceID))
     })
 

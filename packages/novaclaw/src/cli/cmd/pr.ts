@@ -17,7 +17,7 @@ export const PrCommand = effectCmd({
   handler: Effect.fn("Cli.pr")(function* (args) {
     const ctx = yield* InstanceRef
     if (!ctx) return yield* fail("Could not load instance context")
-    if (ctx.project.vcs !== "git") {
+    if (ctx.vcs !== "git") {
       return yield* fail("Could not find git repository. Please run this command from a git repository.")
     }
 

@@ -84,7 +84,6 @@ const durableData = (sessionID: Session.ID, text: string) => ({
   info: {
     id: sessionID,
     slug: text,
-    projectID: ProjectV2.ID.global,
     location: { directory: AbsolutePath.make("/project") },
     title: text,
     version: "test",

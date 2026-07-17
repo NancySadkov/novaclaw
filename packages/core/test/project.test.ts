@@ -51,7 +51,6 @@ describe("ProjectV2.resolve", () => {
 
       expect(result.id).toBe(ProjectV2.ID.make("global"))
       expect(path.resolve(result.directory)).toBe(path.parse(tmp.path).root)
-      expect(result.previous).toBeUndefined()
       expect(result.vcs).toBeUndefined()
     }),
   )
@@ -69,7 +68,6 @@ describe("ProjectV2.resolve", () => {
 
       expect(result.id).toBe(ProjectV2.ID.make("global"))
       expect(result.directory).toBe(yield* real(tmp.path))
-      expect(result.previous).toBeUndefined()
       expect(result.vcs?.type).toBe("git")
     }),
   )
@@ -87,7 +85,6 @@ describe("ProjectV2.resolve", () => {
 
       expect(result.id).toBe(ProjectV2.ID.make(yield* Effect.promise(() => rootCommit(tmp.path))))
       expect(result.directory).toBe(yield* real(tmp.path))
-      expect(result.previous).toBeUndefined()
       expect(result.vcs?.type).toBe("git")
     }),
   )
@@ -159,7 +156,6 @@ describe("ProjectV2.resolve", () => {
 
       const result = yield* project.resolve(abs(tmp.path))
 
-      expect(result.previous).toBe(ProjectV2.ID.make("old-id"))
       expect(result.id).toBe(remoteID("github.com/owner/repo"))
     }),
   )
@@ -213,7 +209,6 @@ describe("ProjectV2.resolve", () => {
       const result = yield* project.resolve(abs(worktree))
 
       expect(result.directory).toBe(yield* real(worktree))
-      expect(result.previous).toBe(ProjectV2.ID.make("old-id"))
       expect(result.id).toBe(remoteID("github.com/owner/repo"))
       expect(result.vcs?.type).toBe("git")
     }),

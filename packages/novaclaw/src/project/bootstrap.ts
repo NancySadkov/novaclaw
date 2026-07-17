@@ -2,7 +2,6 @@ import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { Plugin } from "../plugin"
 import { Format } from "../format"
 import { Snapshot } from "../snapshot"
-import * as Project from "./project"
 import * as Vcs from "./vcs"
 import { InstanceState } from "@/effect/instance-state"
 import { Effect, Layer } from "effect"
@@ -21,7 +20,6 @@ export const layer = Layer.effect(
     const config = yield* Config.Service
     const format = yield* Format.Service
     const plugin = yield* Plugin.Service
-    const project = yield* Project.Service
     const snapshot = yield* Snapshot.Service
     const vcs = yield* Vcs.Service
 
@@ -50,7 +48,6 @@ export const defaultLayer: Layer.Layer<Service> = layer.pipe(
     Config.defaultLayer,
     Format.defaultLayer,
     Plugin.defaultLayer,
-    Project.defaultLayer,
     Snapshot.defaultLayer,
     Vcs.defaultLayer,
   ]),
@@ -59,7 +56,7 @@ export const defaultLayer: Layer.Layer<Service> = layer.pipe(
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [Config.node, Format.node, Plugin.node, Project.node, Snapshot.node, Vcs.node],
+  deps: [Config.node, Format.node, Plugin.node, Snapshot.node, Vcs.node],
 })
 
 export * as InstanceBootstrap from "./bootstrap"

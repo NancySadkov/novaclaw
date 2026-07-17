@@ -25,7 +25,6 @@ import { McpAuth } from "@/mcp/auth"
 import { Truncate } from "@/tool/truncate"
 import { Format } from "@/format"
 import { InstanceLayer } from "@/project/instance-layer"
-import { Project } from "@/project/project"
 import { Vcs } from "@/project/vcs"
 import { Workspace } from "@/control-plane/workspace"
 import { Worktree } from "@/worktree"
@@ -64,7 +63,6 @@ export const AppLayer = Layer.mergeAll(
   McpAuth.defaultLayer,
   Truncate.defaultLayer,
   Format.defaultLayer,
-  Project.defaultLayer,
   // F1c-0 — the cycle-free core deps the CLI session commands ride (createSessionRecord/
   // removeSessionRecord/SessionRead take {db, events, projects, store} as plain values;
   // Database + EventV2Bridge are already in this graph, these two complete the set) — the

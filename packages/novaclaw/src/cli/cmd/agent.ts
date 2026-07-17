@@ -79,7 +79,6 @@ const AgentCreateCommand = effectCmd({
         prompts.intro("Create agent")
       }
 
-      const project = ctx.project
 
       // Determine scope/path
       let targetPath: string
@@ -87,7 +86,7 @@ const AgentCreateCommand = effectCmd({
         targetPath = path.join(cliPath, "agents")
       } else {
         let scope: "global" | "project" = "global"
-        if (project.vcs === "git") {
+        if (ctx.vcs === "git") {
           const scopeResult = await prompts.select({
             message: "Location",
             options: [

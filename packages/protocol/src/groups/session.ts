@@ -2,7 +2,6 @@ import { SessionMessage } from "@novaclaw/schema/session-message"
 import { SessionInput } from "@novaclaw/schema/session-input"
 import { PromptInput } from "@novaclaw/schema/prompt-input"
 import { Session } from "@novaclaw/schema/session"
-import { Project } from "@novaclaw/schema/project"
 import { AbsolutePath, NonNegativeInt, PositiveInt, RelativePath, statics } from "@novaclaw/schema/schema"
 import { Workspace } from "@novaclaw/schema/workspace"
 import { Context, Effect, Encoding, Result, Schema, SchemaGetter, Struct } from "effect"
@@ -51,10 +50,10 @@ const SessionsDirectoryQuery = Schema.Struct({
   directory: AbsolutePath,
 })
 
-const SessionsProjectQuery = Schema.Struct({
+// T3 (entities.md): the project query is gone — "under a root" is the entity-free repo scope.
+const SessionsUnderQuery = Schema.Struct({
   ...SessionsQueryFields,
-  project: Project.ID,
-  subpath: RelativePath.pipe(Schema.optional),
+  under: AbsolutePath,
 })
 
 const SessionsAllQuery = Schema.Struct(SessionsQueryFields)
@@ -67,7 +66,7 @@ const withCursor = <Fields extends Schema.Struct.Fields>(schema: Schema.Struct<F
 
 const SessionsCursorInput = Schema.Union([
   withCursor(SessionsDirectoryQuery),
-  withCursor(SessionsProjectQuery),
+  withCursor(SessionsUnderQuery),
   withCursor(SessionsAllQuery),
 ])
 const SessionsCursorJson = Schema.fromJsonString(SessionsCursorInput)
@@ -111,8 +110,7 @@ const SessionsQueryCursor = SessionsCursor.annotate({
 export const SessionsQuery = Schema.Struct({
   ...SessionsQueryFields,
   directory: AbsolutePath.pipe(Schema.optional),
-  project: Project.ID.pipe(Schema.optional),
-  subpath: RelativePath.pipe(Schema.optional),
+  under: AbsolutePath.pipe(Schema.optional),
   cursor: SessionsQueryCursor.pipe(Schema.optional),
 }).annotate({ identifier: "SessionsQuery" })
 

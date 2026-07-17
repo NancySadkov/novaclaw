@@ -155,7 +155,6 @@ function formatSessionJSON(sessions: SessionSchema.Info[]): string {
     title: session.title,
     updated: DateTime.toEpochMillis(session.time.updated),
     created: DateTime.toEpochMillis(session.time.created),
-    projectId: session.projectID,
     directory: session.location.directory,
   }))
   return JSON.stringify(jsonData, null, 2)

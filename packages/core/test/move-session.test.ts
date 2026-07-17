@@ -10,8 +10,6 @@ import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
 import { Project } from "@novaclaw/core/project"
-import { ProjectTable } from "@novaclaw/core/project/sql"
-import { ProjectDirectories } from "@novaclaw/core/project/directories"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionProjector } from "@novaclaw/core/session/projector"
@@ -26,7 +24,6 @@ const it = testEffect(
       MoveSession.node,
       Database.node,
       EventV2.node,
-      ProjectDirectories.node,
       Project.node,
       SessionProjector.node,
       SessionStore.node,
@@ -72,15 +69,9 @@ describe("MoveSession", () => {
       const sessionID = SessionV2.ID.make("ses_move")
       const { db } = yield* Database.Service
       yield* db
-        .insert(ProjectTable)
-        .values({ id: projectID, worktree: source, sandboxes: [], time_created: 1, time_updated: 1 })
-        .run()
-        .pipe(Effect.orDie)
-      yield* db
         .insert(SessionTable)
         .values({
           id: sessionID,
-          project_id: projectID,
           slug: "move",
           directory: source,
           title: "move",
@@ -126,15 +117,9 @@ describe("MoveSession", () => {
       const sessionID = SessionV2.ID.make("ses_move_nested")
       const { db } = yield* Database.Service
       yield* db
-        .insert(ProjectTable)
-        .values({ id: projectID, worktree: source, sandboxes: [], time_created: 1, time_updated: 1 })
-        .run()
-        .pipe(Effect.orDie)
-      yield* db
         .insert(SessionTable)
         .values({
           id: sessionID,
-          project_id: projectID,
           slug: "move-nested",
           directory: source,
           title: "move nested",
@@ -192,15 +177,9 @@ describe("MoveSession", () => {
       const sessionID = SessionV2.ID.make("ses_move_nested_checkout")
       const { db } = yield* Database.Service
       yield* db
-        .insert(ProjectTable)
-        .values({ id: projectID, worktree: source, sandboxes: [], time_created: 1, time_updated: 1 })
-        .run()
-        .pipe(Effect.orDie)
-      yield* db
         .insert(SessionTable)
         .values({
           id: sessionID,
-          project_id: projectID,
           slug: "move-nested-checkout",
           directory: sourceDirectory,
           title: "move nested checkout",

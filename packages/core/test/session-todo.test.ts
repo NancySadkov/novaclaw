@@ -6,7 +6,6 @@ import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { EventV2 } from "@novaclaw/core/event"
 import { Project } from "@novaclaw/core/project"
-import { ProjectTable } from "@novaclaw/core/project/sql"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionTable, TodoTable } from "@novaclaw/core/session/sql"
@@ -19,15 +18,9 @@ const sessionID = SessionV2.ID.make("ses_todo_test")
 const setup = Effect.gen(function* () {
   const { db } = yield* Database.Service
   yield* db
-    .insert(ProjectTable)
-    .values({ id: Project.ID.global, worktree: AbsolutePath.make("/project"), sandboxes: [] })
-    .run()
-    .pipe(Effect.orDie)
-  yield* db
     .insert(SessionTable)
     .values({
       id: sessionID,
-      project_id: Project.ID.global,
       slug: "todo",
       directory: "/project",
       title: "todo",

@@ -8,7 +8,6 @@ import { EventV2 } from "@novaclaw/core/event"
 import { EventTable } from "@novaclaw/core/event/sql"
 import { ModelV2 } from "@novaclaw/core/model"
 import { Project } from "@novaclaw/core/project"
-import { ProjectTable } from "@novaclaw/core/project/sql"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
@@ -48,14 +47,9 @@ describe("SessionProjector", () => {
     Effect.gen(function* () {
       const db = (yield* Database.Service).db
       yield* db
-        .insert(ProjectTable)
-        .values({ id: Project.ID.global, worktree: AbsolutePath.make("/project"), sandboxes: [] })
-        .run()
-      yield* db
         .insert(SessionTable)
         .values({
           id: sessionID,
-          project_id: Project.ID.global,
           slug: "test",
           directory: "/project",
           title: "test",
@@ -100,15 +94,9 @@ describe("SessionProjector", () => {
     Effect.gen(function* () {
       const { db } = yield* Database.Service
       yield* db
-        .insert(ProjectTable)
-        .values({ id: Project.ID.global, worktree: AbsolutePath.make("/project"), sandboxes: [] })
-        .run()
-        .pipe(Effect.orDie)
-      yield* db
         .insert(SessionTable)
         .values({
           id: sessionID,
-          project_id: Project.ID.global,
           slug: "test",
           directory: "/project",
           title: "test",
@@ -169,15 +157,9 @@ describe("SessionProjector", () => {
     Effect.gen(function* () {
       const { db } = yield* Database.Service
       yield* db
-        .insert(ProjectTable)
-        .values({ id: Project.ID.global, worktree: AbsolutePath.make("/project"), sandboxes: [] })
-        .run()
-        .pipe(Effect.orDie)
-      yield* db
         .insert(SessionTable)
         .values({
           id: sessionID,
-          project_id: Project.ID.global,
           slug: "test",
           directory: "/project",
           title: "test",
@@ -213,15 +195,9 @@ describe("SessionProjector", () => {
     Effect.gen(function* () {
       const { db } = yield* Database.Service
       yield* db
-        .insert(ProjectTable)
-        .values({ id: Project.ID.global, worktree: AbsolutePath.make("/project"), sandboxes: [] })
-        .run()
-        .pipe(Effect.orDie)
-      yield* db
         .insert(SessionTable)
         .values({
           id: sessionID,
-          project_id: Project.ID.global,
           slug: "test",
           directory: "/project",
           title: "test",
@@ -340,15 +316,9 @@ describe("SessionProjector", () => {
     Effect.gen(function* () {
       const { db } = yield* Database.Service
       yield* db
-        .insert(ProjectTable)
-        .values({ id: Project.ID.global, worktree: AbsolutePath.make("/project"), sandboxes: [] })
-        .run()
-        .pipe(Effect.orDie)
-      yield* db
         .insert(SessionTable)
         .values({
           id: sessionID,
-          project_id: Project.ID.global,
           slug: "test",
           directory: "/project",
           title: "test",
@@ -406,15 +376,9 @@ describe("SessionProjector", () => {
     Effect.gen(function* () {
       const { db } = yield* Database.Service
       yield* db
-        .insert(ProjectTable)
-        .values({ id: Project.ID.global, worktree: AbsolutePath.make("/project"), sandboxes: [] })
-        .run()
-        .pipe(Effect.orDie)
-      yield* db
         .insert(SessionTable)
         .values({
           id: sessionID,
-          project_id: Project.ID.global,
           slug: "test",
           directory: "/project",
           title: "test",
@@ -464,15 +428,9 @@ describe("SessionProjector", () => {
     Effect.gen(function* () {
       const { db } = yield* Database.Service
       yield* db
-        .insert(ProjectTable)
-        .values({ id: Project.ID.global, worktree: AbsolutePath.make("/project"), sandboxes: [] })
-        .run()
-        .pipe(Effect.orDie)
-      yield* db
         .insert(SessionTable)
         .values({
           id: sessionID,
-          project_id: Project.ID.global,
           slug: "test",
           directory: "/project",
           title: "test",

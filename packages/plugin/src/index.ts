@@ -1,4 +1,4 @@
-import type { NovaclawClient, ConfigInfo, Project } from "@novaclaw/sdk/v2/client"
+import type { NovaclawClient, ConfigInfo } from "@novaclaw/sdk/v2/client"
 import type { ModelV2Info, Auth } from "@novaclaw/sdk/v2"
 
 import type { BunShell } from "./shell.js"
@@ -47,7 +47,8 @@ export type WorkspaceAdapter = {
 export type PluginInput = {
   /** The NATIVE client (the /api surface — the same client the app uses). */
   client: NovaclawClient
-  project: Project
+  /** T3 (entities.md): the rename-stable origin hash of the repo (no project entity). */
+  origin: string
   directory: string
   worktree: string
   experimental_workspace: {

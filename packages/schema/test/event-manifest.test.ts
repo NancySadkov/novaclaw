@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { FileSystem, Integration, Permission, Project, Reference, Session, Workspace } from "../src"
+import { FileSystem, Integration, Permission, Reference, Session, Workspace } from "../src"
 import { EventManifest } from "../src/event-manifest"
 import { IdeEvent } from "../src/ide-event"
 import { SessionEvent } from "../src/session-event"
@@ -9,8 +9,8 @@ import { WorkspaceEvent } from "../src/workspace-event"
 
 describe("public event manifest", () => {
   test("owns the complete public event surface", () => {
-    expect(EventManifest.ServerDefinitions.length).toBe(63)
-    expect(EventManifest.Definitions.length).toBe(85)
+    expect(EventManifest.ServerDefinitions.length).toBe(62)
+    expect(EventManifest.Definitions.length).toBe(83)
     // V1-nuke slice D: the record lifecycle events are native (Session.Info payloads, durable
     // v2); session.diff + command.executed died with the V1 wire schemas (no publishers).
     expect(SessionRecordEvent.Definitions).toEqual([
@@ -19,7 +19,7 @@ describe("public event manifest", () => {
       SessionRecordEvent.Deleted,
       SessionRecordEvent.Error,
     ])
-    expect(EventManifest.Latest.size).toBe(85)
+    expect(EventManifest.Latest.size).toBe(83)
     expect(EventManifest.Durable.size).toBe(38)
   })
 
@@ -30,8 +30,6 @@ describe("public event manifest", () => {
     expect(Workspace.Event.Definitions).toBe(WorkspaceEvent.Definitions)
     expect(EventManifest.Latest.get("session.next.step.ended")).toBe(SessionEvent.Step.Ended)
     expect(EventManifest.Latest.get("todo.updated")).toBe(SessionTodo.Event.Updated)
-    expect(EventManifest.Latest.get("project.updated")).toBe(Project.Event.Updated)
-    expect(Project.Event.Definitions).toEqual([Project.Event.Updated])
     expect(FileSystem.Event.Definitions).toEqual([FileSystem.Event.Edited])
     expect(Integration.Event.Definitions).toEqual([Integration.Event.Updated, Integration.Event.ConnectionUpdated])
     expect(Permission.Event.Definitions).toEqual([Permission.Event.Asked, Permission.Event.Replied])

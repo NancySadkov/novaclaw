@@ -20,7 +20,6 @@ import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
 import { ProjectV2 } from "@novaclaw/core/project"
-import { ProjectTable } from "@novaclaw/core/project/sql"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionSchema } from "@novaclaw/core/session/schema"
 import { SessionTable } from "@novaclaw/core/session/sql"
@@ -240,13 +239,10 @@ describe("DatabaseMigration", () => {
         yield* db.run(sql`PRAGMA foreign_keys = ON`)
         yield* DatabaseMigration.apply(db)
         yield* db.run(
-          sql`INSERT INTO project (id, worktree, time_created, time_updated, sandboxes) VALUES ('global', '/project', 1, 1, '[]')`,
-        )
-        yield* db.run(
           sql`INSERT INTO workspace (id, type, origin, time_used) VALUES ('workspace', 'local', 'global', 1)`,
         )
         yield* db.run(
-          sql`INSERT INTO session (id, project_id, workspace_id, slug, directory, title, version, time_created, time_updated) VALUES ('session', 'global', 'workspace', 'session', '/project', 'Before', 'test', 1, 1)`,
+          sql`INSERT INTO session (id, workspace_id, slug, directory, title, version, time_created, time_updated) VALUES ('session', 'workspace', 'session', '/project', 'Before', 'test', 1, 1)`,
         )
         // F1g: the legacy message/part tables are dropped by the full chain, so canonical V1 state
         // is witnessed by the session row + session_message/input/context_epoch instead.
@@ -273,7 +269,6 @@ describe("DatabaseMigration", () => {
             info: {
               id: SessionSchema.ID.make("session"),
               slug: "session",
-              projectID: ProjectV2.ID.global,
               location: { directory: AbsolutePath.make("/project") },
               title: "After",
               version: "test",
@@ -490,116 +485,6 @@ describe("DatabaseMigration", () => {
           directory: "/home/me/we\\ird",
           path: "src\\weird",
         })
-      }),
-    )
-  })
-
-  test("maps native Windows paths through database columns", async () => {
-    if (process.platform !== "win32") return
-    await run(
-      Effect.gen(function* () {
-        const db = yield* makeDb
-        yield* DatabaseMigration.apply(db)
-        const projectID = ProjectV2.ID.make("codec_project")
-        const worktree = AbsolutePath.make("C:\\Repo\\Thing")
-        const sandbox = AbsolutePath.make("C:\\Repo\\Thing\\sandbox")
-        const directory = "C:\\Repo\\Thing\\packages\\api"
-        const sessionID = SessionSchema.ID.make("ses_codec")
-
-        expect(() =>
-          Effect.runSync(
-            db
-              .insert(ProjectTable)
-              .values({
-                id: ProjectV2.ID.make("invalid_path"),
-                worktree: AbsolutePath.make("not-absolute"),
-                sandboxes: [],
-                time_created: 1,
-                time_updated: 1,
-              })
-              .run(),
-          ),
-        ).toThrow()
-
-        yield* db
-          .insert(ProjectTable)
-          .values({
-            id: projectID,
-            worktree,
-            sandboxes: [sandbox],
-            time_created: 1,
-            time_updated: 1,
-          })
-          .run()
-        yield* db
-          .insert(SessionTable)
-          .values({
-            id: sessionID,
-            project_id: projectID,
-            slug: "codec",
-            directory,
-            path: "packages\\api",
-            title: "Codec",
-            version: "test",
-            time_created: 1,
-            time_updated: 1,
-          })
-          .run()
-
-        expect(
-          yield* db.get<{ worktree: string; sandboxes: string }>(
-            sql`SELECT worktree, sandboxes FROM project WHERE id = ${projectID}`,
-          ),
-        ).toEqual({
-          worktree: "C:/Repo/Thing",
-          sandboxes: JSON.stringify(["C:/Repo/Thing/sandbox"]),
-        })
-        expect(
-          yield* db.get<{ directory: string; path: string }>(
-            sql`SELECT directory, path FROM session WHERE id = ${sessionID}`,
-          ),
-        ).toEqual({
-          directory: "C:/Repo/Thing/packages/api",
-          path: "packages/api",
-        })
-
-        const project = yield* db.select().from(ProjectTable).where(eq(ProjectTable.worktree, worktree)).get()
-        const session = yield* db.select().from(SessionTable).where(eq(SessionTable.directory, directory)).get()
-        expect(project?.worktree).toBe(worktree)
-        expect(project?.sandboxes).toEqual([sandbox])
-        expect(session?.directory).toBe(directory)
-        expect(session?.path).toBe("packages/api")
-
-        expect((yield* db.select().from(SessionTable).where(eq(SessionTable.path, "packages\\api")).get())?.id).toBe(
-          sessionID,
-        )
-
-        const moved = AbsolutePath.make("D:\\Moved\\Thing")
-        const updated = yield* db
-          .update(ProjectTable)
-          .set({ worktree: moved, sandboxes: [moved] })
-          .where(eq(ProjectTable.id, projectID))
-          .returning()
-          .get()
-        expect(updated?.worktree).toBe(moved)
-        expect(updated?.sandboxes).toEqual([moved])
-        expect(
-          yield* db.get<{ worktree: string; sandboxes: string }>(
-            sql`SELECT worktree, sandboxes FROM project WHERE id = ${projectID}`,
-          ),
-        ).toEqual({ worktree: "D:/Moved/Thing", sandboxes: JSON.stringify(["D:/Moved/Thing"]) })
-        expect(
-          (yield* db
-            .select()
-            .from(ProjectTable)
-            .where(inArray(ProjectTable.worktree, [moved]))
-            .get())?.id,
-        ).toBe(projectID)
-
-        yield* db.run(sql`UPDATE project SET worktree = ${"not-absolute"} WHERE id = ${projectID}`)
-        expect(() =>
-          Effect.runSync(db.select().from(ProjectTable).where(eq(ProjectTable.id, projectID)).get()),
-        ).toThrow()
       }),
     )
   })

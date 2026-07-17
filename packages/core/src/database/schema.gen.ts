@@ -189,33 +189,6 @@ export default {
         );
       `)
       yield* tx.run(`
-        CREATE TABLE \`project_directory\` (
-          \`project_id\` text NOT NULL,
-          \`directory\` text NOT NULL,
-          \`type\` text,
-          \`strategy\` text,
-          \`time_created\` integer NOT NULL,
-          CONSTRAINT \`project_directory_pk\` PRIMARY KEY(\`project_id\`, \`directory\`),
-          CONSTRAINT \`fk_project_directory_project_id_project_id_fk\` FOREIGN KEY (\`project_id\`) REFERENCES \`project\`(\`id\`) ON DELETE CASCADE
-        );
-      `)
-      yield* tx.run(`
-        CREATE TABLE \`project\` (
-          \`id\` text PRIMARY KEY,
-          \`worktree\` text NOT NULL,
-          \`vcs\` text,
-          \`name\` text,
-          \`icon_url\` text,
-          \`icon_url_override\` text,
-          \`icon_color\` text,
-          \`time_created\` integer NOT NULL,
-          \`time_updated\` integer NOT NULL,
-          \`time_initialized\` integer,
-          \`sandboxes\` text NOT NULL,
-          \`commands\` text
-        );
-      `)
-      yield* tx.run(`
         CREATE TABLE \`reference_config\` (
           \`name\` text PRIMARY KEY,
           \`layers\` text NOT NULL,
@@ -267,7 +240,6 @@ export default {
       yield* tx.run(`
         CREATE TABLE \`session\` (
           \`id\` text PRIMARY KEY,
-          \`project_id\` text NOT NULL,
           \`workspace_id\` text,
           \`parent_id\` text,
           \`slug\` text NOT NULL,
@@ -304,8 +276,7 @@ export default {
           \`time_created\` integer NOT NULL,
           \`time_updated\` integer NOT NULL,
           \`time_compacting\` integer,
-          \`time_archived\` integer,
-          CONSTRAINT \`fk_session_project_id_project_id_fk\` FOREIGN KEY (\`project_id\`) REFERENCES \`project\`(\`id\`) ON DELETE CASCADE
+          \`time_archived\` integer
         );
       `)
       yield* tx.run(`
@@ -365,7 +336,6 @@ export default {
         `CREATE INDEX \`session_message_session_time_created_id_idx\` ON \`session_message\` (\`session_id\`,\`time_created\`,\`id\`);`,
       )
       yield* tx.run(`CREATE INDEX \`session_message_time_created_idx\` ON \`session_message\` (\`time_created\`);`)
-      yield* tx.run(`CREATE INDEX \`session_project_idx\` ON \`session\` (\`project_id\`);`)
       yield* tx.run(`CREATE INDEX \`session_workspace_idx\` ON \`session\` (\`workspace_id\`);`)
       yield* tx.run(`CREATE INDEX \`session_parent_idx\` ON \`session\` (\`parent_id\`);`)
       yield* tx.run(`CREATE INDEX \`session_tag_tag_idx\` ON \`session_tag\` (\`tag\`);`)

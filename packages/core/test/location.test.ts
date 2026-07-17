@@ -12,14 +12,12 @@ const ref = { directory: AbsolutePath.make("/repo/packages/app"), workspaceID }
 const projectLayer = Layer.succeed(
   Project.Service,
   Project.Service.of({
-    directories: () => Effect.succeed([]),
     resolve: () =>
       Effect.succeed({
         id: Project.ID.make("project"),
         directory: AbsolutePath.make("/repo"),
         vcs: { type: "git", store: AbsolutePath.make("/repo/.git") },
       }),
-    commit: () => Effect.void,
   }),
 )
 const it = testEffect(AppNodeBuilder.build(Location.boundNode(ref), [[Project.node, projectLayer]]))

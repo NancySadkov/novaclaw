@@ -19,7 +19,6 @@ import { EventV2 } from "@novaclaw/core/event"
 import { PermissionV2 } from "@novaclaw/core/permission"
 import { EventTable } from "@novaclaw/core/event/sql"
 import { Project } from "@novaclaw/core/project"
-import { ProjectTable } from "@novaclaw/core/project/sql"
 import { QuestionV2 } from "@novaclaw/core/question"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
@@ -362,7 +361,6 @@ const insertSession = (id: SessionV2.ID) =>
       .insert(SessionTable)
       .values({
         id,
-        project_id: Project.ID.global,
         slug: id,
         directory: "/project",
         title: "test",
@@ -393,12 +391,6 @@ const setup = Effect.gen(function* () {
   toolExecutionsReady = 5
   activeToolExecutions = 0
   maxActiveToolExecutions = 0
-  yield* db
-    .insert(ProjectTable)
-    .values({ id: Project.ID.global, worktree: AbsolutePath.make("/project"), sandboxes: [] })
-    .onConflictDoNothing()
-    .run()
-    .pipe(Effect.orDie)
   yield* insertSession(sessionID)
 })
 

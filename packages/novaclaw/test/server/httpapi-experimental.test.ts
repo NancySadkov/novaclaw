@@ -36,7 +36,6 @@ function createSession(input?: { title?: string }): Effect.Effect<SeededSession,
       .insert(SessionTable)
       .values({
         id,
-        project_id: ProjectV2.ID.global,
         slug: id,
         directory: "C:/project",
         title,
