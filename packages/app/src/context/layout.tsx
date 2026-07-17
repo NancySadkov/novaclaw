@@ -7,7 +7,6 @@ import { useServerSync } from "./server-sync"
 import { useServerSDK } from "./server-sdk"
 import { ServerConnection, useServer } from "./server"
 import { usePlatform } from "./platform"
-import { Project } from "@novaclaw/sdk/v2"
 import { Persist, persisted, removePersisted } from "@/utils/persist"
 import { decode64 } from "@/utils/base64"
 import { same } from "@/utils/same"
@@ -73,7 +72,17 @@ type TabHandoff = {
   at: number
 }
 
-export type LocalProject = Partial<Project> & { worktree: string; expanded: boolean }
+// T3 (entities.md): the server entity died — a "project" is an opened folder plus optional
+// LOCAL display prefs (the ProjectMeta shape); sandboxes survive only as an optional local field.
+export type LocalProject = {
+  name?: string
+  icon?: { url?: string; override?: string; color?: string }
+  commands?: { start?: string }
+  sandboxes?: string[]
+  id?: string
+  worktree: string
+  expanded: boolean
+}
 export type HomeProjectSelection = { server: ServerConnection.Key; directory?: string }
 
 export type ReviewDiffStyle = "unified" | "split"
@@ -428,12 +437,10 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       return available[Math.floor(Math.random() * available.length)]
     }
 
-    function enrich(project: { worktree: string; expanded: boolean }) {
+    function enrich(project: { worktree: string; expanded: boolean; sandboxes?: string[]; id?: string }) {
       const [childStore] = serverSync().child(project.worktree, { bootstrap: false })
-      const projectID = childStore.project
-      const metadata = projectID
-        ? serverSync().data.project.find((x) => x.id === projectID)
-        : serverSync().data.project.find((x) => x.worktree === project.worktree)
+      // T3 (entities.md): the entity metadata died — the per-directory LOCAL meta is the source.
+      const metadata = childStore.projectMeta
 
       // Preserve local icon override from per-workspace localStorage cache (childStore.icon).
       // Without this, different subdirectories of the same git repo would share the same
@@ -445,16 +452,8 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       return base
     }
 
-    const roots = createMemo(() => {
-      const map = new Map<string, string>()
-      for (const project of serverSync().data.project) {
-        const sandboxes = project.sandboxes ?? []
-        for (const sandbox of sandboxes) {
-          map.set(sandbox, project.worktree)
-        }
-      }
-      return map
-    })
+    // T3 (entities.md): the sandbox->root grouping died with the entity.
+    const roots = createMemo(() => new Map<string, string>())
 
     const rootFor = (directory: string) => {
       const map = roots()
@@ -513,18 +512,6 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
     createEffect(() => {
       const projects = enriched()
       if (projects.length === 0) return
-      if (!serverSync().ready) return
-
-      for (const project of projects) {
-        if (!project.id) continue
-        if (project.id === "global") continue
-        serverSync().project.icon(project.worktree, project.icon?.override)
-      }
-    })
-
-    createEffect(() => {
-      const projects = enriched()
-      if (projects.length === 0) return
 
       for (const project of projects) {
         if (project.icon?.color) colorRequested.delete(project.worktree)
@@ -537,7 +524,7 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
       }
 
       for (const project of projects) {
-        if (project.icon?.color || project.icon?.override || project.icon?.url) continue
+        if (project.icon?.color || project.icon?.override) continue
         const worktree = project.worktree
         const existing = colors[worktree]
         const color = existing ?? pickAvailableColor(used)
@@ -551,16 +538,8 @@ export const { use: useLayout, provider: LayoutProvider } = createSimpleContext(
         if (requested === color) continue
         colorRequested.set(worktree, color)
 
-        if (project.id === "global") {
-          serverSync().project.meta(worktree, { icon: { color } })
-          continue
-        }
-
-        void serverSdk()
-          .client.project.update({ projectID: project.id, directory: worktree, icon: { color } })
-          .catch(() => {
-            if (colorRequested.get(worktree) === color) colorRequested.delete(worktree)
-          })
+        // T3 (entities.md): avatar colors are per-directory LOCAL prefs now.
+        serverSync().project.meta(worktree, { icon: { color } })
       }
     })
 

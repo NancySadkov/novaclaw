@@ -1,4 +1,4 @@
-import type { Config, NovaclawClient, Path, Project, ProviderAuthResponse, V2Event } from "@novaclaw/sdk/v2/client"
+import type { Config, NovaclawClient, Path, ProviderAuthResponse, V2Event } from "@novaclaw/sdk/v2/client"
 import { showToast } from "@/utils/toast"
 import { getFilename } from "@novaclaw/core/util/path"
 import { type Accessor, batch, createMemo, getOwner, onCleanup, onMount, untrack } from "solid-js"
@@ -13,7 +13,6 @@ import {
   loadAgentsQuery,
   loadGlobalConfigQuery,
   loadPathQuery,
-  loadProjectsQuery,
   loadProvidersQuery,
 } from "./global-sync/bootstrap"
 import { loadPersistedApps } from "@/apps/persisted"
@@ -46,7 +45,6 @@ type GlobalStore = {
   ready: boolean
   error?: InitError
   path: Path
-  project: Project[]
   provider: NormalizedProviderListResponse
   provider_auth: ProviderAuthResponse
   config: Config
@@ -66,7 +64,6 @@ function makeQueryOptionsApi(
 ) {
   return {
     globalConfig: () => loadGlobalConfigQuery(scope, serverSDK()),
-    projects: () => loadProjectsQuery(scope, serverSDK()),
     providers: (directory: PathKey | null) =>
       loadProvidersQuery(scope, directory, directory === null ? serverSDK() : sdkFor(directory)),
     path: (directory: PathKey | null) =>
@@ -110,7 +107,6 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     get ready() {
       return !bootstrap.isPending
     },
-    project: [],
     provider_auth: {},
     get path() {
       const EMPTY = { state: "", config: "", data: "", roots: [], worktree: "", directory: "", home: "" }
@@ -143,17 +139,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     if (eventTimer !== undefined) clearTimeout(eventTimer)
   })
 
-  const setProjects = (next: Project[] | ((draft: Project[]) => Project[])) => {
-    setGlobalStore("project", next)
-  }
-
-  const setBootStore = ((...input: unknown[]) => {
-    if (input[0] === "project" && Array.isArray(input[1])) {
-      setProjects(input[1] as Project[])
-      return input[1]
-    }
-    return (setGlobalStore as (...args: unknown[]) => unknown)(...input)
-  }) as typeof setGlobalStore
+  const setBootStore = setGlobalStore
 
   const bootstrap = useQuery(() => ({
     queryKey: [serverSDK.scope, "bootstrap"],
@@ -173,10 +159,6 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
   }))
 
   const set = ((...input: unknown[]) => {
-    if (input[0] === "project" && (Array.isArray(input[1]) || typeof input[1] === "function")) {
-      setProjects(input[1] as Project[] | ((draft: Project[]) => Project[]))
-      return input[1]
-    }
     return (setGlobalStore as (...args: unknown[]) => unknown)(...input)
   }) as typeof setGlobalStore
 
@@ -355,7 +337,6 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
         global: {
           config: globalStore.config,
           path: globalStore.path,
-          project: globalStore.project,
           provider: globalStore.provider,
         },
         sdk,
@@ -411,12 +392,10 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     if (directory === "global") {
       applyGlobalEvent({
         event,
-        project: globalStore.project,
         refresh: () => {
           if (recent) return
           bootstrap.refetch()
         },
-        setGlobalProject: setProjects,
       })
       if (event.type === "server.connected" || event.type === "global.disposed") {
         if (recent) return

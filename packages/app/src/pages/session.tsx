@@ -1,4 +1,3 @@
-import type { Project } from "@novaclaw/sdk/v2"
 import type { SessionMessageUser } from "@novaclaw/sdk/v2/client"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { createQuery, skipToken, useMutation, useQueryClient } from "@tanstack/solid-query"
@@ -247,7 +246,8 @@ export default function Page() {
   const info = createMemo(() => (params.id ? sync().session.get(params.id) : undefined))
   const isChildSession = createMemo(() => !!info()?.parentID)
   const diffs = createMemo(() => (params.id ? list(sync().data.session_diff[params.id]) : []))
-  const canReview = createMemo(() => !!sync().project)
+  // T3 (entities.md): review affordances gate on VCS data, not a project entity.
+  const canReview = createMemo(() => !!sync().data.vcs)
   const reviewTab = createMemo(() => isDesktop())
   const tabState = createSessionTabs({
     tabs,
@@ -363,16 +363,12 @@ export default function Page() {
   // Native: the session-changes review reads the session record's summary diffs
   // (`info().summary.diffs`), not a per-user-message summary (native user messages carry none).
   const turnDiffs = createMemo(() => list(info()?.summary?.diffs))
-  const nogit = createMemo(() => {
-    const project = sync().project
-    return !!project && project.vcs !== "git"
-  })
+  const nogit = createMemo(() => !sync().data.vcs)
   const changesOptions = createMemo<ChangeMode[]>(() => {
     const list: ChangeMode[] = []
-    const project = sync().project
     const vcs = sync().data.vcs
-    if (project?.vcs === "git") list.push("git")
-    if (project?.vcs === "git" && vcs?.branch && vcs?.default_branch && vcs.branch !== vcs.default_branch) {
+    if (vcs) list.push("git")
+    if (vcs?.branch && vcs?.default_branch && vcs.branch !== vcs.default_branch) {
       list.push("branch")
     }
     list.push("turn")
@@ -392,7 +388,7 @@ export default function Page() {
   )
   const vcsQuery = createQuery(() => {
     const mode = vcsMode()
-    const enabled = wantsReview() && sync().project?.vcs === "git"
+    const enabled = wantsReview() && !!sync().data.vcs
 
     return {
       queryKey: [...vcsKey(), mode] as const,
@@ -425,8 +421,6 @@ export default function Page() {
 
   const newSessionWorktree = createMemo(() => {
     if (store.newSessionWorktree === "create") return "create"
-    const project = sync().project
-    if (project && sdk().directory !== project.worktree) return sdk().directory
     return "main"
   })
 
@@ -485,45 +479,6 @@ export default function Page() {
 
     autoScroll.pause()
     scrollToMessage(msgs[targetIndex], "auto")
-  }
-
-  function upsert(next: Project) {
-    const list = serverSync().data.project
-    sync().set("project", next.id)
-    const idx = list.findIndex((item) => item.id === next.id)
-    if (idx >= 0) {
-      serverSync().set(
-        "project",
-        list.map((item, i) => (i === idx ? { ...item, ...next } : item)),
-      )
-      return
-    }
-    const at = list.findIndex((item) => item.id > next.id)
-    if (at >= 0) {
-      serverSync().set("project", [...list.slice(0, at), next, ...list.slice(at)])
-      return
-    }
-    serverSync().set("project", [...list, next])
-  }
-
-  const gitMutation = useMutation(() => ({
-    mutationFn: () => sdk().client.project.initGit(),
-    onSuccess: (x) => {
-      if (!x.data) return
-      upsert(x.data)
-    },
-    onError: (err) => {
-      showToast({
-        variant: "error",
-        title: language.t("common.requestFailed"),
-        description: formatServerError(err, language.t),
-      })
-    },
-  }))
-
-  function initGit() {
-    if (gitMutation.isPending) return
-    gitMutation.mutate()
   }
 
   let inputRef!: HTMLDivElement
@@ -743,7 +698,7 @@ export default function Page() {
   }
 
   createEffect(() => {
-    if (!sync().project) return
+    if (!sync().data.vcs) return
     const list = changesOptions()
     if (list.includes(store.changes)) return
     const next = list[0]
@@ -850,11 +805,6 @@ export default function Page() {
           {language.t("session.review.noVcs.createGit.description")}
         </div>
       </div>
-      <Button size="large" disabled={gitMutation.isPending} onClick={initGit}>
-        {gitMutation.isPending
-          ? language.t("session.review.noVcs.createGit.actionLoading")
-          : language.t("session.review.noVcs.createGit.action")}
-      </Button>
     </div>
   )
 

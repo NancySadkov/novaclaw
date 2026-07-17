@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { createStore } from "solid-js/store"
 import { QueryClient } from "@tanstack/solid-query"
-import type { Config, NovaclawClient, Path, Project } from "@novaclaw/sdk/v2/client"
+import type { Config, NovaclawClient, Path } from "@novaclaw/sdk/v2/client"
 import type { NormalizedProviderListResponse } from "@novaclaw/session-ui/context"
 import { bootstrapDirectory, loadPathQuery, loadProvidersQuery } from "./bootstrap"
 import type { State, VcsCache } from "./types"
@@ -16,7 +16,6 @@ describe("bootstrapDirectory", () => {
       status: "loading",
       agent: [],
       command: [],
-      project: "",
       projectMeta: undefined,
       icon: undefined,
       provider_ready: true,
@@ -46,7 +45,6 @@ describe("bootstrapDirectory", () => {
       global: {
         config: {} satisfies Config,
         path: { state: "", config: "", data: "", roots: [], worktree: "/project", directory: "/project", home: "/home" },
-        project: [{ id: "project", worktree: "/project" } as Project],
         provider,
       },
       sdk: {
@@ -112,7 +110,6 @@ describe("bootstrapDirectory path seeding", () => {
       status: "loading",
       agent: [],
       command: [],
-      project: "",
       projectMeta: undefined,
       icon: undefined,
       provider_ready: true,
@@ -150,7 +147,6 @@ describe("bootstrapDirectory path seeding", () => {
         global: {
           config: {} satisfies Config,
           path: seeded,
-          project: [{ id: "project", worktree: "/project" } as Project],
           provider,
         },
         sdk: {
@@ -202,7 +198,6 @@ describe("bootstrapDirectory path seeding", () => {
       status: "complete",
       agent: [],
       command: [],
-      project: "",
       projectMeta: undefined,
       icon: undefined,
       provider_ready: true,
@@ -234,7 +229,6 @@ describe("bootstrapDirectory path seeding", () => {
       global: {
         config: {} satisfies Config,
         path: { ...existing, state: "stale-global" },
-        project: [],
         provider,
       },
       sdk: {
@@ -250,7 +244,6 @@ describe("bootstrapDirectory path seeding", () => {
         question: { list: async () => ({ data: [] }) },
         mcp: { status: async () => ({ data: {} }) },
         provider: { list: async () => ({ data: { all: [], connected: [], default: {} } }) },
-        project: { current: async () => ({ data: { id: "project" } }) },
       } as unknown as NovaclawClient,
       store,
       setStore,

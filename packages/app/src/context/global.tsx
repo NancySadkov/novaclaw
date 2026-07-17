@@ -109,12 +109,10 @@ function createServerCtx(
   const sdk = createServerSdkContext(conn, scope)
   const sync = createServerSyncContext(sdk)
 
-  function enrich(project: { worktree: string; expanded: boolean }) {
+  function enrich(project: { worktree: string; expanded: boolean; sandboxes?: string[]; id?: string }) {
     const [childStore] = sync.child(project.worktree, { bootstrap: false })
-    const projectID = childStore.project
-    const metadata = projectID
-      ? sync.data.project.find((x) => x.id === projectID)
-      : sync.data.project.find((x) => x.worktree === project.worktree)
+    // T3 (entities.md): the entity metadata died — the per-directory LOCAL meta is the source.
+    const metadata = childStore.projectMeta
 
     // Preserve local icon override from per-workspace localStorage cache (childStore.icon).
     // Without this, different subdirectories of the same git repo would share the same

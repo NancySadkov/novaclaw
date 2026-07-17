@@ -38,6 +38,7 @@ export const ProjectDragOverlay = (props: {
   projects: Accessor<LocalProject[]>
   activeProject: Accessor<string | undefined>
 }): JSX.Element => {
+  const serverSync = useServerSync()
   const project = createMemo(() => props.projects().find((p) => p.worktree === props.activeProject()))
   return (
     <Show when={project()}>
@@ -73,6 +74,7 @@ const ProjectTile = (props: {
   setSuppressHover: (value: boolean) => void
   language: ReturnType<typeof useLanguage>
 }): JSX.Element => {
+  const serverSync = useServerSync()
   const notification = useNotification()
   const layout = useLayout()
   const unseenCount = createMemo(() =>
@@ -154,7 +156,7 @@ const ProjectTile = (props: {
           <ContextMenu.Item
             data-action="project-workspaces-toggle"
             data-project={base64Encode(props.project.worktree)}
-            disabled={props.project.vcs !== "git" && !props.workspacesEnabled(props.project)}
+            disabled={!serverSync().child(props.project.worktree, { bootstrap: false })[0].vcs && !props.workspacesEnabled(props.project)}
             onSelect={() => props.toggleProjectWorkspaces(props.project)}
           >
             <ContextMenu.ItemLabel>

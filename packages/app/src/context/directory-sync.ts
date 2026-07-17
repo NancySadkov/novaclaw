@@ -64,11 +64,6 @@ export const createDirSyncContext = (
     get ready() {
       return current()[0].status !== "loading"
     },
-    get project() {
-      const store = current()[0]
-      const match = Binary.search(serverSync.data.project, store.project, (project) => project.id)
-      if (match.found) return serverSync.data.project[match.index]
-    },
     session: {
       remember(session: Session) {
         serverSync.session.remember(session)

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import type { PermissionV2Request, Project, QuestionRequest, SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
+import type { PermissionV2Request, QuestionRequest, SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
 import { createStore } from "solid-js/store"
 import type { State } from "./types"
 import { applyDirectoryEvent, applyGlobalEvent } from "./event-reducer"
@@ -43,7 +43,6 @@ const baseState = (input: Partial<State> = {}) =>
     status: "complete",
     agent: [],
     command: [],
-    project: "",
     projectMeta: undefined,
     icon: undefined,
     provider: {} as State["provider"],
@@ -63,33 +62,13 @@ const baseState = (input: Partial<State> = {}) =>
   }) as State
 
 describe("applyGlobalEvent", () => {
-  test("upserts project.updated in sorted position", () => {
-    const project = [{ id: "a" }, { id: "c" }] as Project[]
-    let refreshCount = 0
-    applyGlobalEvent({
-      event: { type: "project.updated", properties: { id: "b" } },
-      project,
-      refresh: () => {
-        refreshCount += 1
-      },
-      setGlobalProject(next) {
-        if (typeof next === "function") next(project)
-      },
-    })
-
-    expect(project.map((x) => x.id)).toEqual(["a", "b", "c"])
-    expect(refreshCount).toBe(0)
-  })
-
   test("handles global.disposed by triggering refresh", () => {
     let refreshCount = 0
     applyGlobalEvent({
       event: { type: "global.disposed" },
-      project: [],
       refresh: () => {
         refreshCount += 1
       },
-      setGlobalProject() {},
     })
 
     expect(refreshCount).toBe(1)
@@ -99,11 +78,9 @@ describe("applyGlobalEvent", () => {
     let refreshCount = 0
     applyGlobalEvent({
       event: { type: "server.connected" },
-      project: [],
       refresh: () => {
         refreshCount += 1
       },
-      setGlobalProject() {},
     })
 
     expect(refreshCount).toBe(1)

@@ -55,13 +55,8 @@ export default function NewSessionPage() {
 
   const [store, setStore] = createStore<{ worktree?: string }>({})
 
-  const newSessionWorktree = createMemo(() => {
-    if (store.worktree) return store.worktree
-    const project = sync().project
-    if (project && sdk().directory !== project.worktree) return sdk().directory
-    return "main"
-  })
-  const projectRoot = createMemo(() => sync().project?.worktree ?? sdk().directory)
+  const newSessionWorktree = createMemo(() => store.worktree ?? "main")
+  const projectRoot = createMemo(() => sdk().directory)
   const localBranch = createMemo(() => serverSync().child(projectRoot())[0].vcs?.branch)
   const selectedBranch = createMemo(() => {
     const worktree = newSessionWorktree()
@@ -134,14 +129,12 @@ export default function NewSessionPage() {
                           <PromptWorkspaceSelector
                             value={newSessionWorktree()}
                             projectRoot={projectRoot()}
-                            workspaces={sync().project?.sandboxes ?? []}
+                            workspaces={[] as string[]}
                             branch={selectedBranch()}
                             onChange={(value) =>
                               setStore(
                                 "worktree",
-                                value === "main" && sync().project?.worktree !== sdk().directory
-                                  ? sync().project?.worktree
-                                  : value,
+                                value,
                               )
                             }
                             onDone={() => inputRef?.focus()}

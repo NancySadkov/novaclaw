@@ -188,7 +188,6 @@ export function createChildStoreManager(input: {
           const providerQuery = useQuery(() => input.queryOptions.providers(key))
 
           const child = createStore<State>({
-            project: "",
             projectMeta: initialMeta,
             icon: initialIcon,
             get provider_ready() {

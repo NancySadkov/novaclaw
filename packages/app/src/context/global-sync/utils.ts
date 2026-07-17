@@ -1,4 +1,4 @@
-import type { Agent, ModelV2Info, Project, ProviderListResponse } from "@novaclaw/sdk/v2/client"
+import type { Agent, ModelV2Info, ProviderListResponse } from "@novaclaw/sdk/v2/client"
 import { NormalizedProviderListResponse } from "@novaclaw/session-ui/context"
 export { pathKey as directoryKey, type PathKey as DirectoryKey } from "@/utils/path-key"
 
@@ -34,14 +34,4 @@ export function normalizeProviderList(input: ProviderListResponse): NormalizedPr
   }
 }
 
-export function sanitizeProject(project: Project) {
-  if (!project.icon?.url && !project.icon?.override) return project
-  return {
-    ...project,
-    icon: {
-      ...project.icon,
-      url: undefined,
-      override: undefined,
-    },
-  }
-}
+

@@ -523,18 +523,7 @@ export default function LegacyLayout(props: ParentProps) {
     const sandbox = projects.find((p) => p.sandboxes?.some((item) => pathKey(item) === key))
     if (sandbox) return sandbox
 
-    const direct = projects.find((p) => pathKey(p.worktree) === key)
-    if (direct) return direct
-
-    const [child] = serverSync().child(directory, { bootstrap: false })
-    const id = child.project
-    if (!id) return
-
-    const meta = serverSync().data.project.find((p) => p.id === id)
-    const root = meta?.worktree
-    if (!root) return
-
-    return projects.find((p) => p.worktree === root)
+    return projects.find((p) => pathKey(p.worktree) === key)
   })
 
   const [autoselecting] = createResource(async () => {
@@ -578,10 +567,12 @@ export default function LegacyLayout(props: ParentProps) {
   const workspaceLabel = (directory: string, branch?: string, projectId?: string) =>
     workspaceName(directory, projectId, branch) ?? branch ?? getFilename(directory)
 
+  // T3 (entities.md): git-ness comes from the per-directory vcs store, not an entity field.
+  const isGitProject = (worktree: string) => !!serverSync().child(worktree, { bootstrap: false })[0].vcs
   const workspaceSetting = createMemo(() => {
     const project = currentProject()
     if (!project) return false
-    if (project.vcs !== "git") return false
+    if (!isGitProject(project.worktree)) return false
     return layout.sidebar.workspaces(project.worktree)()
   })
 
@@ -609,7 +600,7 @@ export default function LegacyLayout(props: ParentProps) {
         (item) => pathKey(item.worktree) === key || item.sandboxes?.some((sandbox) => pathKey(sandbox) === key),
       )
       if (!project) continue
-      if (project.vcs === "git" && layout.sidebar.workspaces(project.worktree)()) continue
+      if (isGitProject(project.worktree) && layout.sidebar.workspaces(project.worktree)()) continue
       setStore("workspaceExpanded", directory, false)
     }
   })
@@ -1012,11 +1003,11 @@ export default function LegacyLayout(props: ParentProps) {
         description: language.t("command.workspace.toggle.description"),
         category: language.t("command.category.workspace"),
         slash: "workspace",
-        disabled: !currentProject() || currentProject()?.vcs !== "git",
+        disabled: !currentProject() || !isGitProject(currentProject()!.worktree),
         onSelect: () => {
           const project = currentProject()
           if (!project) return
-          if (project.vcs !== "git") return
+          if (!isGitProject(project.worktree)) return
           const wasEnabled = layout.sidebar.workspaces(project.worktree)()
           layout.sidebar.toggleWorkspaces(project.worktree)
           showToast({
@@ -1144,12 +1135,7 @@ export default function LegacyLayout(props: ParentProps) {
     )
     if (known) return known[0]
 
-    const [child] = serverSync().child(directory, { bootstrap: false })
-    const id = child.project
-    if (!id) return directory
-
-    const meta = serverSync().data.project.find((item) => item.id === id)
-    return meta?.worktree ?? directory
+    return directory
   }
 
   function activeProjectRoot(directory: string) {
@@ -1304,11 +1290,7 @@ export default function LegacyLayout(props: ParentProps) {
     if (next === current) return
     const name = next === getFilename(project.worktree) ? "" : next
 
-    if (project.id && project.id !== "global") {
-      await serverSDK().client.project.update({ projectID: project.id, directory: project.worktree, name })
-      return
-    }
-
+    // T3 (entities.md): names are per-directory LOCAL prefs.
     serverSync().project.meta(project.worktree, { name })
   }
 
@@ -1351,7 +1333,7 @@ export default function LegacyLayout(props: ParentProps) {
       layout.sidebar.toggleWorkspaces(project.worktree)
       return
     }
-    if (project.vcs !== "git") return
+    if (!isGitProject(project.worktree)) return
     layout.sidebar.toggleWorkspaces(project.worktree)
   }
 
@@ -1417,14 +1399,6 @@ export default function LegacyLayout(props: ParentProps) {
       clearLastProjectSession(root)
     }
 
-    serverSync().set(
-      "project",
-      produce((draft) => {
-        const project = draft.find((item) => item.worktree === root)
-        if (!project) return
-        project.sandboxes = (project.sandboxes ?? []).filter((sandbox) => sandbox !== directory)
-      }),
-    )
     setStore("workspaceOrder", root, (order) => (order ?? []).filter((workspace) => workspace !== directory))
 
     layout.projects.close(directory)
@@ -1915,7 +1889,7 @@ export default function LegacyLayout(props: ParentProps) {
     closeProject,
     showEditProjectDialog: (proj) => showEditProjectDialog(server.current!, proj),
     toggleProjectWorkspaces,
-    workspacesEnabled: (project) => project.vcs === "git" && layout.sidebar.workspaces(project.worktree)(),
+    workspacesEnabled: (project) => isGitProject(project.worktree) && layout.sidebar.workspaces(project.worktree)(),
     workspaceIds,
     workspaceLabel,
     sessionProps: {
@@ -1963,13 +1937,13 @@ export default function LegacyLayout(props: ParentProps) {
     const workspacesEnabled = createMemo(() => {
       const item = project()
       if (!item) return false
-      if (item.vcs !== "git") return false
+      if (!isGitProject(item.worktree)) return false
       return layout.sidebar.workspaces(item.worktree)()
     })
     const canToggle = createMemo(() => {
       const item = project()
       if (!item) return false
-      return item.vcs === "git" || layout.sidebar.workspaces(item.worktree)()
+      return isGitProject(item.worktree) || layout.sidebar.workspaces(item.worktree)()
     })
     const homedir = createMemo(() => serverSync().data.path.home)
 

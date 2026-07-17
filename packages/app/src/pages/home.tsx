@@ -103,7 +103,6 @@ function buildHomeSessionRecords(input: {
   sync: Pick<ServerSync, "child">
   projectDirectories: () => string[]
   projects: () => LocalProject[]
-  projectByID: () => Map<string, LocalProject>
 }) {
   return [
     ...new Map(
@@ -115,7 +114,7 @@ function buildHomeSessionRecords(input: {
   ]
     .sort((a, b) => (b.time.updated ?? b.time.created) - (a.time.updated ?? a.time.created))
     .flatMap((session) => {
-      const project = projectForSession(session, input.projects(), input.projectByID())
+      const project = projectForSession(session, input.projects())
       if (!project) return []
       return {
         session,
@@ -282,15 +281,11 @@ export function NewHome() {
     },
   }))
 
-  const projectByID = createMemo(
-    () => new Map(projects().flatMap((project) => (project.id ? [[project.id, project] as const] : []))),
-  )
   const allRecords = createMemo(() =>
     buildHomeSessionRecords({
       sync: focusedSync(),
       projectDirectories,
       projects,
-      projectByID,
     }),
   )
   const records = createMemo(() => allRecords().slice(0, HOME_SESSION_LIMIT))
@@ -435,11 +430,10 @@ export function NewHome() {
     if (conn) setSelection({ server: ServerConnection.key(conn) })
   })
 
-  // Surface the backend's known projects on a fresh client. The web build has no native directory
-  // picker, so a browser session would otherwise be stranded with an empty project list even though
-  // the server already tracks projects (its `sync.data.project`). If nothing is opened yet, open what
-  // the server knows (most-recent first) and mark it current so the Chats entry + sessions work. Runs
-  // once per mount and only when zero projects are opened, so a curated client is never disturbed.
+  // Surface a working folder on a fresh client. The web build has no native directory picker, so a
+  // browser session would otherwise be stranded with nothing opened; the server's own working
+  // directory (from the /path bootstrap) is the one folder it can meaningfully suggest. Runs once
+  // per mount and only when zero folders are opened, so a curated client is never disturbed.
   let surfacedBackendProjects = false
   createEffect(() => {
     const ctx = focusedServerCtx()
@@ -448,13 +442,13 @@ export function NewHome() {
       surfacedBackendProjects = true
       return
     }
-    const known = ctx.sync.data.project
-    if (known.length === 0) return
+    // T3 (entities.md): the server tracks no project list — its own working directory (the
+    // /path bootstrap data) is the one directory a fresh client can meaningfully open.
+    const cwd = ctx.sync.data.path.directory
+    if (!cwd) return
     surfacedBackendProjects = true
-    const sorted = [...known].sort((a, b) => (b.time?.updated ?? b.time?.created ?? 0) - (a.time?.updated ?? a.time?.created ?? 0))
-    for (const project of sorted) ctx.projects.open(project.worktree)
-    const first = sorted[0]
-    if (first) ctx.projects.touch(first.worktree)
+    ctx.projects.open(cwd)
+    ctx.projects.touch(cwd)
   })
 
   createEffect(() => {
@@ -521,7 +515,7 @@ export function NewHome() {
   }
 
   function openSession(session: Session) {
-    const project = projectForSession(session, projects(), projectByID())
+    const project = projectForSession(session, projects())
     const conn = focusedServer()
     if (!conn) return
     const directory = project?.worktree ?? session.location.directory
@@ -1359,11 +1353,11 @@ export function LegacyHome() {
   const language = useLanguage()
   const homedir = createMemo(() => sync().data.path.home)
   const serverUnreachable = createMemo(() => global.servers.health[server.key]?.healthy === false)
+  // T3 (entities.md): no server project list — the server's working directory is the one
+  // known folder to suggest.
   const recent = createMemo(() => {
-    return sync()
-      .data.project.slice()
-      .sort((a, b) => (b.time.updated ?? b.time.created) - (a.time.updated ?? a.time.created))
-      .slice(0, 5)
+    const cwd = sync().data.path.directory
+    return cwd ? [cwd] : []
   })
 
   const serverDotClass = createMemo(() => {
@@ -1421,7 +1415,7 @@ export function LegacyHome() {
         {server.name}
       </Button>
       <Switch>
-        <Match when={sync().data.project.length > 0}>
+        <Match when={recent().length > 0}>
           <div class="mt-20 w-full flex flex-col gap-4">
             <div class="flex gap-2 items-center justify-between pl-3">
               <div class="text-14-medium text-text-strong">{language.t("home.recentProjects")}</div>
@@ -1437,17 +1431,14 @@ export function LegacyHome() {
             </div>
             <ul class="flex flex-col gap-2">
               <For each={recent()}>
-                {(project) => (
+                {(worktree) => (
                   <Button
                     size="large"
                     variant="ghost"
                     class="text-14-mono text-left justify-between px-3"
-                    onClick={() => openProject(server.current!, project.worktree)}
+                    onClick={() => openProject(server.current!, worktree)}
                   >
-                    {project.worktree.replace(homedir(), "~")}
-                    <div class="text-14-regular text-text-weak">
-                      {DateTime.fromMillis(project.time.updated ?? project.time.created).toRelative()}
-                    </div>
+                    {worktree.replace(homedir(), "~")}
                   </Button>
                 )}
               </For>

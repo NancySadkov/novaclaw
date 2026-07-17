@@ -3,7 +3,6 @@ import type {
   NovaclawClient,
   Path,
   PermissionV2Request,
-  Project,
   ProviderAuthResponse,
   QuestionRequest,
   SessionV2Info as Session,
@@ -25,7 +24,6 @@ import { ScopedKey, type ServerScope } from "@/utils/server-scope"
 type GlobalStore = {
   ready: boolean
   path: Path
-  project: Project[]
   provider: NormalizedProviderListResponse
   provider_auth: ProviderAuthResponse
   config: Config
@@ -87,21 +85,6 @@ export const loadGlobalConfigQuery = (scope: ServerScope, sdk: NovaclawClient) =
     queryFn: () => retry(() => sdk.global.config.get().then((x) => x.data!)),
   })
 
-export const loadProjectsQuery = (scope: ServerScope, sdk: NovaclawClient) =>
-  queryOptions({
-    queryKey: [scope, "project"],
-    queryFn: () =>
-      retry(() =>
-        sdk.project.list().then((x) => {
-          return (x.data ?? [])
-            .filter((p) => !!p?.id)
-            .filter((p) => !!p.worktree && !p.worktree.includes("novaclaw-test"))
-            .slice()
-            .sort((a, b) => cmp(a.id, b.id))
-        }),
-      ),
-  })
-
 export async function bootstrapGlobal(input: {
   serverSDK: NovaclawClient
   scope: ServerScope
@@ -115,10 +98,6 @@ export async function bootstrapGlobal(input: {
     () => input.queryClient.fetchQuery(loadGlobalConfigQuery(input.scope, input.serverSDK)),
     () => input.queryClient.fetchQuery(loadProvidersQuery(input.scope, null, input.serverSDK)),
     () => input.queryClient.fetchQuery(loadPathQuery(input.scope, null, input.serverSDK)),
-    () =>
-      input.queryClient
-        .fetchQuery(loadProjectsQuery(input.scope, input.serverSDK))
-        .then((data) => input.setGlobalStore("project", data)),
   ]
   await runAll(slow)
   // showErrors({
@@ -137,10 +116,6 @@ function groupBySession<T extends { id: string; sessionID: string }>(input: T[])
     if (!list) acc[item.sessionID] = [item]
     return acc
   }, {})
-}
-
-function projectID(directory: string, projects: Project[]) {
-  return projects.find((project) => project.worktree === directory || project.sandboxes?.includes(directory))?.id
 }
 
 export function mergeSession(setStore: SetStoreFunction<State>, session: Session) {
@@ -208,16 +183,13 @@ export async function bootstrapDirectory(input: {
   global: {
     config: Config
     path: Path
-    project: Project[]
     provider: NormalizedProviderListResponse
   }
   queryClient: QueryClient
   session?: ServerSession
 }) {
   const loading = input.store.status !== "complete"
-  const seededProject = projectID(input.directory, input.global.project)
   const seededPath = input.global.path.directory === input.directory ? input.global.path : undefined
-  if (seededProject) input.setStore("project", seededProject)
   // Seed the QUERY cache, never the store: `State.path` is a getter over the per-directory
   // path query (child-store.ts), so a store write can't land — Solid merges it into the
   // query's own store proxy instead, which is exactly the dev "Cannot mutate a Store
@@ -272,14 +244,7 @@ export async function bootstrapDirectory(input: {
             if (!input.session) input.setStore("session_status", statuses)
           }),
         ),
-      !seededProject &&
-        (() => retry(() => input.sdk.project.current()).then((x) => input.setStore("project", x.data!.id))),
-      !seededPath &&
-        (() =>
-          input.queryClient.ensureQueryData(loadPathQuery(input.scope, input.directory, input.sdk)).then((data) => {
-            const next = projectID(data.directory ?? input.directory, input.global.project)
-            if (next) input.setStore("project", next)
-          })),
+      !seededPath && (() => input.queryClient.ensureQueryData(loadPathQuery(input.scope, input.directory, input.sdk))),
       () =>
         retry(() =>
           input.sdk.vcs.get().then((x) => {

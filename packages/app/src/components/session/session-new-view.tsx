@@ -20,19 +20,16 @@ export function NewSessionView(props: NewSessionViewProps) {
   const sdk = useSDK()
   const language = useLanguage()
 
-  const sandboxes = createMemo(() => sync().project?.sandboxes ?? [])
+  // T3 (entities.md): no entity — the opened folder is the root; sandboxes died with it.
+  const sandboxes = createMemo(() => [] as string[])
   const options = createMemo(() => [MAIN_WORKTREE, ...sandboxes(), CREATE_WORKTREE])
   const current = createMemo(() => {
     const selection = props.worktree
     if (options().includes(selection)) return selection
     return MAIN_WORKTREE
   })
-  const projectRoot = createMemo(() => sync().project?.worktree ?? sdk().directory)
-  const isWorktree = createMemo(() => {
-    const project = sync().project
-    if (!project) return false
-    return sdk().directory !== project.worktree
-  })
+  const projectRoot = createMemo(() => sdk().directory)
+  const isWorktree = createMemo(() => false)
 
   const label = (value: string) => {
     if (value === MAIN_WORKTREE) {
@@ -69,20 +66,6 @@ export function NewSessionView(props: NewSessionViewProps) {
                 {label(current())}
               </div>
             </div>
-            <Show when={sync().project}>
-              {(project) => (
-                <div class="flex items-start justify-center gap-3 min-h-5">
-                  <div class="text-12-medium text-text-weak leading-5 min-w-0 max-w-160 break-words text-center">
-                    {language.t("session.new.lastModified")}&nbsp;
-                    <span class="text-text-strong">
-                      {DateTime.fromMillis(project().time.updated ?? project().time.created)
-                        .setLocale(language.intl())
-                        .toRelative()}
-                    </span>
-                  </div>
-                </div>
-              )}
-            </Show>
           </div>
         </div>
       </div>
