@@ -51,6 +51,12 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   username: Schema.String.pipe(Schema.optional).annotate({
     description: "Username displayed in conversations and used for telemetry identity",
   }),
+  expertise: Schema.Literals(["normal", "advanced", "developer"])
+    .pipe(Schema.optional)
+    .annotate({
+      description:
+        "The user's expertise level, mirrored from the UI (uix.md §6) so the model can meet them there — 'normal' adds a plain-language system hint",
+    }),
   server: ConfigServer.Info.pipe(Schema.optional).annotate({
     description: "Server configuration for `novaclaw serve` and web commands (port/hostname/mDNS/CORS)",
   }),

@@ -3175,6 +3175,7 @@ export type ConfigInfo = {
    */
   autoupdate?: boolean | "notify"
   username?: string
+  expertise?: "normal" | "advanced" | "developer"
   server?: ConfigV2Server
   permissions?: PermissionV2Ruleset
   agents?: {

@@ -158,6 +158,12 @@ export const layer = Layer.effect(
     const personaBaseline = Persona.resolve(Config.latest(configEntries, "persona"), {
       notesDir: path.join(Global.Path.data, "notes"),
     })
+    // T9 (teach-don't-gatekeep): a Normal-level user gets a plain-language stance line, composed
+    // right after the persona baseline so it survives model swaps and per-session overrides.
+    const expertiseHint =
+      Config.latest(configEntries, "expertise") === "normal"
+        ? "The user is not a technical expert. Explain what you do in plain language, avoid unexplained jargon, and prefer simple summaries over technical detail."
+        : undefined
     // B4: the user profile is no longer injected into the system prompt here. When the user enables it,
     // the model reads it ON DEMAND via the `profile` tool (tool/profile.ts) — keeping local-model
     // context lean. Disabled = the profile is simply not shared.
@@ -496,7 +502,7 @@ export const layer = Layer.effect(
       const fullRequest = LLM.request({
         model,
         providerOptions: { openai: { promptCacheKey } },
-        system: [personaBaseline, config.systemPromptOverride, agent.info?.system, system.baseline]
+        system: [personaBaseline, expertiseHint, config.systemPromptOverride, agent.info?.system, system.baseline]
           .filter((part): part is string => part !== undefined && part.length > 0)
           .map(SystemPart.make),
         messages: [...toLLMMessages(context, model), ...(isLastStep ? [Message.assistant(MAX_STEPS_PROMPT)] : [])],

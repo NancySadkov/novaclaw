@@ -1,9 +1,10 @@
 import type { Config, NovaclawClient, Path, ProviderAuthResponse, V2Event } from "@novaclaw/sdk/v2/client"
 import { showToast } from "@/utils/toast"
 import { getFilename } from "@novaclaw/core/util/path"
-import { type Accessor, batch, createMemo, getOwner, onCleanup, onMount, untrack } from "solid-js"
+import { type Accessor, batch, createEffect, createMemo, getOwner, onCleanup, onMount, untrack } from "solid-js"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { useLanguage } from "@/context/language"
+import { useSettings } from "@/context/settings"
 import type { InitError } from "../pages/error"
 import { ServerSDK } from "./server-sdk"
 import {
@@ -463,6 +464,20 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
       children.projectIcon(directory, value)
     },
   }
+
+  // T9 (uix.md §6c): mirror the client expertise level into the instance config so the server
+  // side (the runner's plain-language hint) can meet the user at their level. Best-effort,
+  // last-writer-wins across devices; re-syncs whenever this client connects or the level changes.
+  const settings = useSettings()
+  createEffect(() => {
+    const level = settings.general.expertiseLevel()
+    if (!globalStore.ready) return
+    if (globalStore.config.expertise === level) return
+    void serverSDK.client.global.config
+      .update({ configInfo: { expertise: level } as Config })
+      .then(() => bootstrap.refetch())
+      .catch(() => {})
+  })
 
   const updateConfigMutation = useMutation(() => ({
     mutationFn: (config: Config) => serverSDK.client.global.config.update({ configInfo: config }),

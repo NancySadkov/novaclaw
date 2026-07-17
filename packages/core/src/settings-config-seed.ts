@@ -33,6 +33,7 @@ const DECODE_OPTIONS = { errors: "all", onExcessProperty: "ignore", propertyOrde
  */
 export const SETTINGS_KEYS = [
   "shell",
+  "expertise",
   "instructions",
   "disabled_providers",
   "enabled_providers",
