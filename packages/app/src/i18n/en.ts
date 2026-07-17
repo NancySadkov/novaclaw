@@ -1080,6 +1080,9 @@ export const dict = {
   "settings.general.row.shellBundle.provision": "Provision",
   "settings.general.row.shellBundle.reprovision": "Re-provision",
   "settings.general.row.shellBundle.provisioning": "Provisioning…",
+  "settings.general.row.telemetry.title": "Telemetry",
+  "settings.general.row.telemetry.description":
+    "Consent for future crash/usage reporting. Nothing is uploaded today — no telemetry system exists yet; this switch is the contract it will obey, and offline mode forces it off regardless.",
   "settings.general.row.offline.title": "Offline / airgap mode",
   "settings.general.row.offline.description": "Block all network access except your model providers, so nothing else can phone home (fail-closed: if in doubt, it's blocked). This stops package installs, usage/telemetry uploads, and any network calls the agent's shell tries to make. Restart the server to apply.",
   "settings.general.row.offline.active": "airgapped",

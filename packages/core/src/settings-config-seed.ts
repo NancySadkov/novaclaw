@@ -54,6 +54,7 @@ export const SETTINGS_KEYS = [
   "affective",
   "strict",
   "offline",
+  "telemetry",
   "kb",
   "quality",
   "experimental",

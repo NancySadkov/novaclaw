@@ -23,6 +23,7 @@ import {
   getDefaultServerUrl,
   preferAppEnv,
   setDefaultServerUrl,
+  checkOfflineEnabled,
   superviseLocalServer,
   type SidecarListener,
 } from "./server"
@@ -54,6 +55,8 @@ const jsCallStackFeature = "DocumentPolicyIncludeJSCallStacksInCrashReports"
 let logger: ReturnType<typeof initLogging>
 let mainWindow: BrowserWindow | null = null
 let server: SidecarListener | null = null
+// P6: set once the sidecar is up — lets the updater guard read the machine's offline status.
+let sidecarOfflineProbe: (() => Promise<boolean>) | undefined
 
 const pendingDeepLinks: string[] = []
 
@@ -266,8 +269,20 @@ const main = Effect.gen(function* () {
     recordFatalRendererError: (error) => writeLog("renderer", "fatal renderer error", { ...error }, "error"),
   })
   registerWslIpcHandlers(wslServers)
-  void updater.start()
-  const updateTimer = setInterval(() => void updater.check(), 10 * 60 * 1000)
+  // Dependability P6: airgap force-off — updater POLLING never runs when offline mode is on
+  // (NOVACLAW_OFFLINE, or the sidecar's offline status once it is up — the N/9 source of truth).
+  // Manual menu checks stay real attempts. The skip is logged so the gate is provable.
+  const pollUpdater = async (kind: "start" | "poll") => {
+    const env = process.env.NOVACLAW_OFFLINE
+    const airgapped = env === "true" || env === "1" || (sidecarOfflineProbe ? await sidecarOfflineProbe() : false)
+    if (airgapped) {
+      logger.log("updater check skipped — offline/airgap mode is on", { kind })
+      return
+    }
+    await (kind === "start" ? updater.start() : updater.check())
+  }
+  void pollUpdater("start")
+  const updateTimer = setInterval(() => void pollUpdater("poll"), 10 * 60 * 1000)
   updateTimer.unref()
   app.once("will-quit", () => clearInterval(updateTimer))
   yield* Effect.promise(() => startNetLog()).pipe(
@@ -323,6 +338,7 @@ const main = Effect.gen(function* () {
       }),
     )
     server = listener
+    sidecarOfflineProbe = () => checkOfflineEnabled(url, password, app.getPath("home"))
     yield* Deferred.succeed(serverReady, {
       url,
       username: "novaclaw",

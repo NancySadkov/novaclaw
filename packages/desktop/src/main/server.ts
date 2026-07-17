@@ -268,6 +268,27 @@ export async function superviseLocalServer(
   }
 }
 
+// Dependability P6: is the machine airgapped? Asks the sidecar's offline-status route (the same
+// source the N/9 Settings indicator reads — never re-derive the policy here). Used to force the
+// updater's polling OFF on an airgapped machine; false on any failure (a dead sidecar must not
+// block updates for a machine that is actually online).
+export async function checkOfflineEnabled(url: string, password: string, directory: string): Promise<boolean> {
+  try {
+    const target = new URL("/shell/offline", url)
+    target.searchParams.set("directory", directory)
+    const auth = Buffer.from(`novaclaw:${password}`).toString("base64")
+    const res = await fetch(target, {
+      headers: { authorization: `Basic ${auth}` },
+      signal: AbortSignal.timeout(3000),
+    })
+    if (!res.ok) return false
+    const status = (await res.json()) as { enabled?: boolean }
+    return status.enabled === true
+  } catch {
+    return false
+  }
+}
+
 export async function checkHealth(url: string, password?: string | null): Promise<boolean> {
   let healthUrl: URL
   try {

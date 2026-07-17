@@ -414,6 +414,19 @@ export const SettingsGeneralV2: Component<{
 
         <SettingsRowV2
           minLevel="developer"
+          title={language.t("settings.general.row.telemetry.title")}
+          description={language.t("settings.general.row.telemetry.description")}
+        >
+          <div data-action="settings-telemetry">
+            <Switch
+              checked={(serverSync().data.config as { telemetry?: { enabled?: boolean } }).telemetry?.enabled !== false}
+              onChange={(checked) => void serverSync().updateConfig({ telemetry: { enabled: checked } } as never)}
+            />
+          </div>
+        </SettingsRowV2>
+
+        <SettingsRowV2
+          minLevel="developer"
           title={language.t("settings.general.row.shellToolPartsExpanded.title")}
           description={language.t("settings.general.row.shellToolPartsExpanded.description")}
         >

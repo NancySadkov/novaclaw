@@ -115,6 +115,18 @@ export class Info extends Schema.Class<Info>("Config.Info")({
     description:
       "Offline/airgap mode (OFF-A): outbound HTTP restricted to loopback + configured provider hosts, fail-closed. GLOBAL config only — the chokepoint is machine-level",
   }),
+  // Dependability P6: the telemetry CONTRACT. No upload system exists today — nothing is ever sent
+  // regardless of this value; the field gates any future crash/usage reporting (which must obey the
+  // scrub spec: no user content, ever) and airgap mode force-disables it independently.
+  telemetry: Schema.Struct({
+    enabled: Schema.Boolean.pipe(Schema.optional).annotate({
+      description: "Allow future crash/usage telemetry uploads (default: true; offline mode forces off)",
+    }),
+  })
+    .pipe(Schema.optional)
+    .annotate({
+      description: "Telemetry consent — gates any future crash/usage reporting; no upload exists today",
+    }),
   kb: Schema.Struct({
     url: Schema.String.pipe(Schema.optional).annotate({
       description: "Base URL of an external KB server implementing the same /kb API; unset = the built-in store",
