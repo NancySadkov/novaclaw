@@ -177,7 +177,9 @@ Options:
                                                                           [boolean] [default: false]
       --mdns-domain  custom domain name for mDNS service (default: novaclaw.local)
                                                                 [string] [default: "novaclaw.local"]
-      --cors         additional domains to allow for CORS                      [array] [default: []]"
+      --cors         additional domains to allow for CORS                      [array] [default: []]
+      --supervise    restart the server automatically if it crashes (--no-supervise runs it bare)
+                                                                           [boolean] [default: true]"
 `;
 
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw web --help 1`] = `
