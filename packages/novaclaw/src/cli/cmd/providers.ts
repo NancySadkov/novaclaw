@@ -74,7 +74,6 @@ const handlePluginAuth = Effect.fn("Cli.providers.pluginAuth")(function* (
         const matches = prompt.when.op === "eq" ? value === prompt.when.value : value !== prompt.when.value
         if (!matches) continue
       }
-      if (prompt.condition && !prompt.condition(inputs)) continue
       if (prompt.type === "select") {
         const value = yield* Prompt.select({
           message: prompt.message,

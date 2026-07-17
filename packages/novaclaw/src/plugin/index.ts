@@ -7,7 +7,7 @@ import type {
   WorkspaceAdapter as PluginWorkspaceAdapter,
 } from "@novaclaw/plugin"
 import { Config } from "@/config/config"
-import { createNovaclawClient } from "@novaclaw/sdk"
+import { createNovaclawClient } from "@novaclaw/sdk/v2/client"
 import { ServerAuth } from "@/server/auth"
 import { SessionV1 } from "@novaclaw/core/v1/session"
 import { NamedError } from "@novaclaw/core/util/error"
@@ -116,7 +116,8 @@ export const layer = Layer.effect(
           baseUrl: serverUrl?.toString() ?? "http://localhost:4096",
           directory: ctx.directory,
           headers: ServerAuth.headers(),
-          ...(serverUrl ? {} : { fetch: async (...args) => Server.Default().app.fetch(...args) }),
+          // hey-api types fetch as the GLOBAL fetch (with Bun preconnect); the in-process adapter only needs the call signature.
+          ...(serverUrl ? {} : { fetch: (async (request: Request) => Server.Default().app.fetch(request)) as unknown as typeof fetch }),
         })
         const cfg = yield* config.get()
         const input: PluginInput = {
@@ -225,7 +226,7 @@ export const layer = Layer.effect(
           if (event.location?.directory !== ctx.directory) return Effect.void
           return Effect.sync(() => {
             for (const hook of hooks) {
-              void hook["event"]?.({ event: { id: event.id, type: event.type, properties: event.data } as any })
+              void hook["event"]?.({ event: { id: event.id, type: event.type, properties: event.data } })
             }
           })
         })
