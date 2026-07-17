@@ -293,16 +293,20 @@ export function withCliFixture<A, E>(
     })
 
     const serve = Effect.fn("novaclaw.serve")(function* (opts?: ServeOpts) {
-      const argv = ["serve"]
+      // Tests exercise the SERVER itself — run it bare. With supervision (the production default,
+      // dependability P4) the spawned process is a restart loop whose child survives a plain
+      // kill, leaking a supervisor+server pair per test.
+      const argv = ["serve", "--no-supervise"]
       // Default port 0 — let the OS pick a free port, parse the actual one
       // off stdout. Hard-coded ports flake under parallel tests.
       argv.push("--port", String(opts?.port ?? 0))
       if (opts?.hostname) argv.push("--hostname", opts.hostname)
       if (opts?.extraArgs) argv.push(...opts.extraArgs)
 
-      // Acquire the subprocess; release sends SIGTERM and awaits exit on
-      // scope close. Wrapped in Effect.ignore so a flaky kill doesn't surface
-      // as a finalizer error during test teardown.
+      // Acquire the subprocess; release TREE-kills and awaits exit on scope close — `bun run`
+      // re-execs the CLI as its own child, so killing only the direct process orphans the actual
+      // server (the bun-serve-smoke gotcha). Wrapped in Effect.ignore so a flaky kill doesn't
+      // surface as a finalizer error during test teardown.
       const proc = yield* Effect.acquireRelease(
         Effect.sync(() =>
           Bun.spawn(["bun", "run", "--conditions=browser", cliEntry, ...argv], {
@@ -314,6 +318,8 @@ export function withCliFixture<A, E>(
         ),
         (p) =>
           Effect.promise(() => {
+            if (process.platform === "win32")
+              Bun.spawnSync(["taskkill", "/pid", String(p.pid), "/f", "/t"], { stdout: "ignore", stderr: "ignore" })
             p.kill()
             return p.exited
           }).pipe(Effect.ignore),
