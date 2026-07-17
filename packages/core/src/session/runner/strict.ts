@@ -331,6 +331,67 @@ export function applyBack(winnerDir: string, dst: string, baseline: ReadonlyMap<
   return applied
 }
 
+// P14.1 materialization (legibility half): the engine actions surfaced as chat tool parts. Only
+// STATE-CHANGING actions + commands appear — reads/listings are engine working-set noise. The
+// executor SWAP onto registry tools stays deferred (the engine's measured behavior rides its own
+// tool semantics: tx gate, numbered workspace, fresh-shell run).
+const MATERIALIZED_TOOLS = new Set(["run", "write_file", "append_file", "edit_file", "replace_lines", "git_revert"])
+export const ACTION_ARG_CAP = 2_000
+export const ACTION_OUTPUT_CAP = 4_000
+
+export interface MaterializedAction {
+  readonly tool: string
+  /** Argument values truncated at capture — a whole written file must not flood the transcript. */
+  readonly args: Record<string, unknown>
+  readonly ok: boolean
+  readonly output: string
+}
+
+const truncate = (text: string, cap: number) =>
+  text.length > cap ? `${text.slice(0, cap)}\n… (${text.length - cap} more chars)` : text
+
+/** Executor decorator: report each completed state-changing action (post-hoc — an aborted run can
+ *  never leave a dangling unsettled part). Reporting failures never break the engine. */
+export function materializingExecutor(
+  executor: JhBasicTools.Executor,
+  onAction: (action: MaterializedAction) => Effect.Effect<void>,
+): JhBasicTools.Executor {
+  return {
+    run: (input) =>
+      executor.run(input).pipe(
+        Effect.tap((observation) => {
+          if (!MATERIALIZED_TOOLS.has(input.tool)) return Effect.void
+          const args: Record<string, unknown> = {}
+          for (const [key, value] of Object.entries(input.args ?? {}))
+            args[key] = typeof value === "string" ? truncate(value, ACTION_ARG_CAP) : value
+          return onAction({
+            tool: input.tool,
+            args,
+            ok: observation.ok,
+            output: truncate(observation.output, ACTION_OUTPUT_CAP),
+          }).pipe(Effect.ignore)
+        }),
+      ),
+  }
+}
+
+/** A resumed tree must be WORKABLE. A Stop (and some walls) lands while a node is in flight and
+ *  the terminal path leaves it — often the ROOT itself — status "blocked"; resuming that state
+ *  verbatim gives the engine nothing pending and it exits `no_progress` immediately (measured:
+ *  a run stopped mid-decomposition saved `root: blocked`, and "resume" blocked in one step).
+ *  Revive: every blocked node returns to pending so the engine re-attempts it under its normal
+ *  guards; committed work is never touched (never redone). */
+export function reviveForResume(state: JhEngine.State): JhEngine.State {
+  let changed = false
+  const nodes = new Map(state.tree.nodes)
+  for (const [id, node] of nodes)
+    if (node.status === "blocked") {
+      nodes.set(id, { ...node, status: "pending" })
+      changed = true
+    }
+  return changed ? { ...state, tree: { ...state.tree, nodes } } : state
+}
+
 export interface RunArgs {
   readonly task: string
   readonly cwd: string
@@ -347,6 +408,9 @@ export interface RunArgs {
   /** P14.1 resume: a JhStore-checkpointed state to continue from (crash/stop recovery). The engine
    *  picks up the existing tree instead of re-planning; completed steps are never redone. */
   readonly resume?: JhEngine.State
+  /** P14.1 materialization: called after each completed state-changing engine action — the runner
+   *  publishes it as a chat tool part. Post-hoc + best-effort; unset = no materialization (racing). */
+  readonly onAction?: (action: MaterializedAction) => Effect.Effect<void>
   readonly now?: () => number
 }
 
@@ -376,7 +440,10 @@ export function runTask(args: RunArgs): Effect.Effect<JhEngine.Report> {
     // The THINK/DO split (notes/jh-think-stage.md): opt-in via a non-zero reasoning budget, and
     // scoped to the steps the wall actually goes to — decomposition and recovery, not every atom.
     ...(reasonTokens !== undefined ? { think: withFlush(reasonTokens), thinkOn: THINK_ON } : {}),
-    executor: JhBasicTools.basicExecutor(runner),
+    executor:
+      args.onAction === undefined
+        ? JhBasicTools.basicExecutor(runner)
+        : materializingExecutor(JhBasicTools.basicExecutor(runner), args.onAction),
     runner,
     artifacts: JhArtifact.memory(),
     fileExists: (rel, base) => fs.existsSync(path.isAbsolute(rel) ? rel : path.join(base, rel)),
@@ -399,7 +466,7 @@ export function runTask(args: RunArgs): Effect.Effect<JhEngine.Report> {
     },
   }
   return Effect.gen(function* () {
-    const report = yield* JhEngine.runTask(deps, { goal: args.task }, args.resume)
+    const report = yield* JhEngine.runTask(deps, { goal: args.task }, args.resume && reviveForResume(args.resume))
     yield* flush
     return report
   })

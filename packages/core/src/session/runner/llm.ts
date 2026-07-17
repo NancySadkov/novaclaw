@@ -976,6 +976,38 @@ export const layer = Layer.effect(
         const completeAbortable = (system: string, user: string, maxTokens: number) =>
           Effect.raceFirst(completeOnce(system, user, maxTokens), abortWatch)
         let winnerIdx: number | undefined
+        // P14.1 materialization (legibility): SINGLE attempts share ONE assistant message for the
+        // whole run — every state-changing engine action lands on it as a real tool part (fed
+        // through the publisher as synthetic LLM tool events, so ordering/persistence/UI ride the
+        // normal pipeline), and the end-of-run summary streams onto the same message. Racing keeps
+        // notices only — N racers' interleaved actions on one message would be noise.
+        const runPublisher = single
+          ? createLLMEventPublisher(events, {
+              sessionID,
+              agent: String(resolved.agent ?? session.agent ?? "nova"),
+              model: {
+                id: ModelV2.ID.make(model.id),
+                providerID: ProviderV2.ID.make(model.provider),
+                ...(session.model?.variant === undefined ? {} : { variant: session.model.variant }),
+              },
+            })
+          : undefined
+        let actionSeq = 0
+        const publishAction = (action: SessionStrict.MaterializedAction) =>
+          Effect.gen(function* () {
+            if (runPublisher === undefined) return
+            const id = `jh_a${++actionSeq}`
+            yield* runPublisher.publish({ type: "tool-input-start", id, name: action.tool })
+            yield* runPublisher.publish({ type: "tool-call", id, name: action.tool, input: action.args })
+            yield* runPublisher.publish({
+              type: "tool-result",
+              id,
+              name: action.tool,
+              result: action.ok ? { type: "text", value: action.output } : { type: "error", value: action.output },
+            })
+          }).pipe(
+            Effect.catchCause((cause) => Effect.logWarning("strict action part failed", { sessionID, cause })),
+          )
         const runOne = (i: number, cwd: string) =>
           SessionStrict.runTask({
             task: goal,
@@ -985,6 +1017,7 @@ export const layer = Layer.effect(
             ...(resumeState === undefined ? {} : { resume: resumeState }),
             onMilestone: (text) => notice(single ? text : `[attempt ${i + 1}/${attempts}] ${text}`),
             aborted: () => stopRequested || (winnerIdx !== undefined && winnerIdx !== i),
+            ...(single ? { onAction: publishAction } : {}),
             checkpoint: single
               ? (state) =>
                   JhStore.save(db, { id: savedKey, goal, status: "running", state, now: Date.now() }).pipe(
@@ -1017,15 +1050,19 @@ export const layer = Layer.effect(
               milestones,
               appliedFiles,
             })
-            const publisher = createLLMEventPublisher(events, {
-              sessionID,
-              agent: String(resolved.agent ?? session.agent ?? "nova"),
-              model: {
-                id: ModelV2.ID.make(model.id),
-                providerID: ProviderV2.ID.make(model.provider),
-                ...(session.model?.variant === undefined ? {} : { variant: session.model.variant }),
-              },
-            })
+            // Single attempts reuse the RUN's publisher: the summary text streams onto the SAME
+            // assistant message that carries the tool parts (one message = the whole run).
+            const publisher =
+              runPublisher ??
+              createLLMEventPublisher(events, {
+                sessionID,
+                agent: String(resolved.agent ?? session.agent ?? "nova"),
+                model: {
+                  id: ModelV2.ID.make(model.id),
+                  providerID: ProviderV2.ID.make(model.provider),
+                  ...(session.model?.variant === undefined ? {} : { variant: session.model.variant }),
+                },
+              })
             yield* llm
               .stream(
                 LLM.request({
@@ -1049,6 +1086,22 @@ export const layer = Layer.effect(
               })
           }).pipe(
             Effect.catchCause((cause) => Effect.logWarning("strict summary failed", { sessionID, cause })),
+            // The run message may already exist (tool parts) — a failed/empty summary must not
+            // leave it visibly unsettled forever. Best-effort: settle with a plain stop.
+            Effect.andThen(
+              Effect.gen(function* () {
+                if (runPublisher === undefined || actionSeq === 0) return
+                if (runPublisher.stepSettlement() !== undefined) return
+                yield* events.publish(SessionEvent.Step.Ended, {
+                  sessionID,
+                  timestamp: yield* DateTime.now,
+                  assistantMessageID: yield* runPublisher.startAssistant(),
+                  finish: "stop",
+                  cost: 0,
+                  tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+                })
+              }).pipe(Effect.ignore),
+            ),
           )
         // The engine work + everything owed to the user afterwards runs on a DETACHED fiber: when the
         // drain is interrupted (Stop), this fiber survives, the latch stops the engine at its next

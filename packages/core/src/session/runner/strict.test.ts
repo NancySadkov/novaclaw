@@ -276,3 +276,88 @@ describe("SessionStrict token budgets", () => {
     expect(exec.every((c) => c.maxTokens === 8000)).toBe(true)
   })
 })
+
+describe("SessionStrict.materializingExecutor (P14.1 materialization)", () => {
+  const fake = (ok: boolean, output: string) => ({
+    run: (_input: { tool: string; args: Readonly<Record<string, unknown>>; produces: never[]; cwd: string }) =>
+      Effect.succeed({ ok, output, artifacts: new Map<string, string>() }),
+  })
+  const call = (tool: string, args: Record<string, unknown>, executor: ReturnType<typeof fake>, sink: unknown[]) =>
+    Effect.runPromise(
+      SessionStrict.materializingExecutor(executor as never, (action) =>
+        Effect.sync(() => void sink.push(action)),
+      ).run({ tool, args, produces: [], cwd: "." }),
+    )
+
+  test("state-changing tools + run are reported; reads and notes are not", async () => {
+    const seen: Array<{ tool: string }> = []
+    for (const tool of ["run", "write_file", "append_file", "edit_file", "replace_lines", "read_file", "note"])
+      await call(tool, { path: "x" }, fake(true, "ok"), seen)
+    expect(seen.map((a) => a.tool)).toEqual(["run", "write_file", "append_file", "edit_file", "replace_lines"])
+  })
+
+  test("the observation passes through untouched and ok/failure is reflected", async () => {
+    const seen: Array<{ ok: boolean; output: string }> = []
+    const good = await call("run", { command: "make" }, fake(true, "built"), seen)
+    const bad = await call("run", { command: "make" }, fake(false, "boom"), seen)
+    expect(good.ok).toBe(true)
+    expect(bad.ok).toBe(false)
+    expect(seen.map((a) => a.ok)).toEqual([true, false])
+    expect(seen.map((a) => a.output)).toEqual(["built", "boom"])
+  })
+
+  test("string args and output are truncated at capture (a whole file must not flood the chat)", async () => {
+    const seen: Array<{ args: Record<string, unknown>; output: string }> = []
+    const bigContent = "x".repeat(SessionStrict.ACTION_ARG_CAP + 500)
+    const bigOutput = "y".repeat(SessionStrict.ACTION_OUTPUT_CAP + 500)
+    await call("write_file", { path: "big.c", content: bigContent, lines: 42 }, fake(true, bigOutput), seen)
+    const action = seen[0]!
+    expect(String(action.args.content).length).toBeLessThan(SessionStrict.ACTION_ARG_CAP + 100)
+    expect(String(action.args.content)).toContain("more chars")
+    expect(action.args.path).toBe("big.c") // short strings untouched
+    expect(action.args.lines).toBe(42) // non-strings untouched
+    expect(action.output.length).toBeLessThan(SessionStrict.ACTION_OUTPUT_CAP + 100)
+  })
+
+  test("a throwing reporter never breaks the engine action", async () => {
+    const result = await Effect.runPromise(
+      SessionStrict.materializingExecutor(fake(true, "fine") as never, () =>
+        Effect.fail(new Error("reporter died")) as never,
+      ).run({ tool: "run", args: {}, produces: [], cwd: "." }),
+    )
+    expect(result.ok).toBe(true)
+  })
+})
+
+describe("SessionStrict.reviveForResume (P14.1 resume fix)", () => {
+  const node = (id: string, status: "pending" | "expanded" | "committed" | "blocked") =>
+    [id, { id, parent: undefined, draft: {}, children: [], status, depth: 0 }] as const
+
+  test("blocked nodes return to pending (a stop mid-step must not brick the resume)", () => {
+    const state = {
+      tree: { root: "root", nodes: new Map([node("root", "blocked")]) },
+      artifacts: [],
+      log: [],
+      telemetry: new Map(),
+    } as never
+    const revived = SessionStrict.reviveForResume(state) as never as { tree: { nodes: Map<string, { status: string }> } }
+    expect(revived.tree.nodes.get("root")!.status).toBe("pending")
+  })
+
+  test("committed and expanded work is never touched; untouched states return the SAME object", () => {
+    const nodes = new Map([node("root", "expanded"), node("root.1", "committed"), node("root.2", "pending")])
+    const state = { tree: { root: "root", nodes }, artifacts: [], log: [], telemetry: new Map() } as never
+    const revived = SessionStrict.reviveForResume(state)
+    expect(revived).toBe(state) // no blocked nodes → identity (no copy churn)
+    const mixed = {
+      tree: { root: "root", nodes: new Map([node("root", "expanded"), node("root.1", "committed"), node("root.2", "blocked")]) },
+      artifacts: [],
+      log: [],
+      telemetry: new Map(),
+    } as never
+    const out = SessionStrict.reviveForResume(mixed) as never as { tree: { nodes: Map<string, { status: string }> } }
+    expect(out.tree.nodes.get("root")!.status).toBe("expanded")
+    expect(out.tree.nodes.get("root.1")!.status).toBe("committed")
+    expect(out.tree.nodes.get("root.2")!.status).toBe("pending")
+  })
+})
