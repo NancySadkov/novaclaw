@@ -1,9 +1,16 @@
-// V1 READ-MODEL shapes the LEGACY session surface still traffics (the classic /:dir/session page,
-// the legacy sync store's optimistic inserts, and `data.ts`'s message builder). These are no longer
-// spec'd routes — the OpenAPI document (and therefore gen/types.gen.ts) speaks the native V2
-// `SessionMessage*` vocabulary — but the server's v1-read projection (core/session/v1-read.ts)
-// still SERVES these shapes on the legacy endpoints, so the types live here, hand-owned, verbatim
-// from the last V1-era generation. RETIRE together with the legacy session path (F-series).
+// ⚠️ SCHEDULED FOR DELETION — this file is V1 vocabulary debt, tolerated ONLY as the typed seam of
+// the unfinished native-session migration. It does NOT belong in the end-state (AGENTS.md:
+// architecture over legacy compat; the F-series' "no V1 vocabulary in the tree").
+//
+// What it types: the V1 READ-MODEL shapes the app's session surface still traffics — the session
+// page + ~21 files ride the V1 sync store (`app/src/context/sync.tsx`) and `data.ts`'s optimistic
+// message builder, served by the server's v1-read projection (core/session/v1-read.ts). The native
+// V2 transcript path (`SessionMessage*`, message-v2-store) exists behind
+// NOVACLAW_EXPERIMENTAL_NATIVE_SESSION and already renders the transcript.
+//
+// RETIREMENT TRIGGER (delete this file in the same change): the native-session migration flips to
+// default — retire app `sync.tsx` consumers + `data.ts`, then the server's v1-read projection.
+// Tracked in todo.md ("native-session migration residue"). Do NOT add new imports of these types.
 // Shared vocabulary that still exists in the V2 spec is imported, never duplicated.
 
 import type {
