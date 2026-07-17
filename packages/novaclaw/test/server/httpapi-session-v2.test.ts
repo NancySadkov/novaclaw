@@ -231,3 +231,45 @@ describe("promptAsync routes to the V2 native engine (F1b: one engine)", () => {
   // `message`/`part` tables — legacy transcripts can no longer be seeded, and the one-engine
   // routing it proved is covered by Case (a) above.
 })
+
+// V1-nuke A0: the native twins of the last live bare-/session operations — children, update
+// (rename), todo, fork, remove — served from /api/session/** with native Session.Info shapes.
+describe("native session twins (V1-nuke A0)", () => {
+  it.live(
+    "children/update/todo/fork/remove round-trip natively",
+    () =>
+      withFakeLlm(({ sdk, directory }) =>
+        Effect.gen(function* () {
+          const created = yield* Effect.promise(() => sdk.v2.session.create({ location: { directory } }))
+          const sessionID = String(record(record(created.data).data).id)
+          expect(sessionID).toStartWith("ses_")
+
+          // children: empty before any fork
+          const kids0 = yield* Effect.promise(() => sdk.v2.session.children({ sessionID }))
+          expect(kids0.data?.data?.length ?? -1).toBe(0)
+
+          // update: rename lands and the updated record comes back
+          const renamed = yield* Effect.promise(() => sdk.v2.session.update({ sessionID, title: "renamed-a0" }))
+          expect(record(record(renamed.data).data).title).toBe("renamed-a0")
+
+          // todo: empty list (native shape — an array, not a 404)
+          const todos = yield* Effect.promise(() => sdk.v2.session.todo({ sessionID }))
+          expect(todos.data?.data?.length ?? -1).toBe(0)
+
+          // fork: a clone appears and is a CHILD-less sibling with its own id... (the fork is a
+          // ROOT session per core semantics; it must simply exist and be retrievable)
+          const forked = yield* Effect.promise(() => sdk.v2.session.fork({ sessionID }))
+          const forkedID = String(record(record(forked.data).data).id)
+          expect(forkedID).toStartWith("ses_")
+          expect(forkedID).not.toBe(sessionID)
+
+          // remove: deletion is real — a follow-up get 404s
+          const removed = yield* Effect.promise(async () => (await sdk.v2.session.remove({ sessionID })).response.status)
+          expect(removed).toBe(204)
+          const gone = yield* Effect.promise(async () => (await sdk.v2.session.get({ sessionID })).response.status)
+          expect(gone).toBe(404)
+        }),
+      ),
+    30_000,
+  )
+})

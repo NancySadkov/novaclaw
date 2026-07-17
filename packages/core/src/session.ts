@@ -48,6 +48,7 @@ import { ExternalCommandSource } from "./command/external-command-source"
 import { SkillCommand } from "./command/skill-command"
 import { SkillV2 } from "./skill"
 import { SessionSpawner } from "./session/spawner"
+import { SessionTodo } from "./session/todo"
 import { AppProcess } from "./process"
 import { Shell } from "./shell"
 import { ChildProcess } from "effect/unstable/process"
@@ -264,6 +265,8 @@ export interface Interface {
     permission: PermissionV1.Ruleset
   }) => Effect.Effect<void, NotFoundError>
   readonly children: (sessionID: SessionSchema.ID) => Effect.Effect<SessionSchema.Info[], NotFoundError>
+  /** The agent-maintained todo list (native twin of the retired bare-/session read — V1-nuke A0). */
+  readonly todos: (sessionID: SessionSchema.ID) => Effect.Effect<ReadonlyArray<SessionTodo.Info>, NotFoundError>
   readonly fork: (input: {
     sessionID: SessionSchema.ID
     messageID?: SessionMessage.ID
@@ -896,6 +899,10 @@ export const layer = Layer.effect(
           .all()
           .pipe(Effect.orDie)
         return rows.map(fromRow)
+      }),
+      todos: Effect.fn("V2Session.todos")(function* (sessionID) {
+        yield* result.get(sessionID)
+        return yield* SessionTodo.readTodos(db, sessionID)
       }),
       // F1c — fork on the core engine, and a REPAIR: the V1 fork copied only the LEGACY
       // message store, which native sessions never write, so post-F1b a fork silently lost

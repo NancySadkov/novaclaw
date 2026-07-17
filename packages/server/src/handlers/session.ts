@@ -124,6 +124,114 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
           }
         }),
       )
+      // V1-nuke A0: native twins of the last live bare-/session operations. Same core ops the V1
+      // handlers routed to; the wire shape is the native Session.Info.
+      .handle(
+        "session.children",
+        Effect.fn(function* (ctx) {
+          return {
+            data: yield* session.children(ctx.params.sessionID).pipe(
+              Effect.catchTag(
+                "Session.NotFoundError",
+                (error) =>
+                  new SessionNotFoundError({
+                    sessionID: error.sessionID,
+                    message: `Session not found: ${error.sessionID}`,
+                  }),
+              ),
+            ),
+          }
+        }),
+      )
+      .handle(
+        "session.update",
+        Effect.fn(function* (ctx) {
+          const notFound = (error: { sessionID: string }) =>
+            new SessionNotFoundError({
+              sessionID: error.sessionID,
+              message: `Session not found: ${error.sessionID}`,
+            })
+          if (ctx.payload.title !== undefined)
+            yield* session
+              .setTitle({ sessionID: ctx.params.sessionID, title: ctx.payload.title })
+              .pipe(Effect.catchTag("Session.NotFoundError", (error) => notFound(error)))
+          if (ctx.payload.metadata !== undefined)
+            yield* session
+              .setMetadata({ sessionID: ctx.params.sessionID, metadata: ctx.payload.metadata })
+              .pipe(Effect.catchTag("Session.NotFoundError", (error) => notFound(error)))
+          return {
+            data: yield* session
+              .get(ctx.params.sessionID)
+              .pipe(Effect.catchTag("Session.NotFoundError", (error) => notFound(error))),
+          }
+        }),
+      )
+      .handle(
+        "session.remove",
+        Effect.fn(function* (ctx) {
+          yield* session.remove(ctx.params.sessionID).pipe(
+            Effect.catchTag(
+              "Session.NotFoundError",
+              (error) =>
+                new SessionNotFoundError({
+                  sessionID: error.sessionID,
+                  message: `Session not found: ${error.sessionID}`,
+                }),
+            ),
+          )
+          return HttpApiSchema.NoContent.make()
+        }),
+      )
+      .handle(
+        "session.fork",
+        Effect.fn(function* (ctx) {
+          return {
+            data: yield* session
+              .fork({
+                sessionID: ctx.params.sessionID,
+                messageID: ctx.query.messageID,
+              })
+              .pipe(
+                Effect.catchTag(
+                  "Session.NotFoundError",
+                  (error) =>
+                    new SessionNotFoundError({
+                      sessionID: error.sessionID,
+                      message: `Session not found: ${error.sessionID}`,
+                    }),
+                ),
+                Effect.catchTag(
+                  "Session.MessageNotFoundError",
+                  (error) =>
+                    new MessageNotFoundError({
+                      sessionID: ctx.params.sessionID,
+                      messageID: error.messageID,
+                      message: `Message not found: ${error.messageID}`,
+                    }),
+                ),
+                // A stored message that fails to decode is corrupt state, not a client error.
+                Effect.catchTag("Session.MessageDecodeError", (error) => Effect.die(error)),
+              ),
+          }
+        }),
+      )
+      .handle(
+        "session.todo",
+        Effect.fn(function* (ctx) {
+          return {
+            data: yield* session.todos(ctx.params.sessionID).pipe(
+              Effect.catchTag(
+                "Session.NotFoundError",
+                (error) =>
+                  new SessionNotFoundError({
+                    sessionID: error.sessionID,
+                    message: `Session not found: ${error.sessionID}`,
+                  }),
+              ),
+            ),
+          }
+        }),
+      )
       .handle(
         "session.switchAgent",
         Effect.fn(function* (ctx) {
