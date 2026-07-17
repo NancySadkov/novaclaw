@@ -12,9 +12,8 @@ export default {
           \`branch\` text,
           \`directory\` text,
           \`extra\` text,
-          \`project_id\` text NOT NULL,
-          \`time_used\` integer NOT NULL,
-          CONSTRAINT \`fk_workspace_project_id_project_id_fk\` FOREIGN KEY (\`project_id\`) REFERENCES \`project\`(\`id\`) ON DELETE CASCADE
+          \`origin\` text NOT NULL,
+          \`time_used\` integer NOT NULL
         );
       `)
       yield* tx.run(`

@@ -119,7 +119,7 @@ describe("plugin.workspace", () => {
         type,
         branch: null,
         extra: { key: "value" },
-        projectID: ctx.project.id,
+        origin: ctx.project.id,
       })
 
       expect(info.type).toBe(type)

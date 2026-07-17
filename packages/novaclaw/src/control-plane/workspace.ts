@@ -55,7 +55,7 @@ function fromRow(row: typeof WorkspaceTable.$inferSelect): Info {
     name: row.name,
     directory: row.directory,
     extra: row.extra,
-    projectID: row.project_id,
+    origin: row.origin,
     timeUsed: row.time_used,
   }
 }
@@ -64,7 +64,7 @@ export const CreateInput = Schema.Struct({
   id: Schema.optional(WorkspaceV2.ID),
   type: Info.fields.type,
   branch: Info.fields.branch,
-  projectID: ProjectV2.ID,
+  origin: Schema.String,
   extra: Schema.optional(Info.fields.extra),
 })
 export type CreateInput = Schema.Schema.Type<typeof CreateInput>
@@ -144,7 +144,7 @@ export interface Interface {
     signal?: AbortSignal,
     timeout?: number,
   ) => Effect.Effect<void, WaitForSyncError>
-  readonly startWorkspaceSyncing: (projectID: ProjectV2.ID) => Effect.Effect<void>
+  readonly startWorkspaceSyncing: (origin: string) => Effect.Effect<void>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/Workspace") {}
@@ -499,7 +499,7 @@ export const layer = Layer.effect(
 
     const create = Effect.fn("Workspace.create")(function* (input: CreateInput) {
       const id = WorkspaceV2.ID.ascending(input.id)
-      const adapter = getAdapter(input.projectID, input.type)
+      const adapter = getAdapter(input.origin, input.type)
       const config = yield* WorkspaceAdapterRuntime.configure(adapter, {
         ...input,
         id,
@@ -515,7 +515,7 @@ export const layer = Layer.effect(
         name: config.name ?? null,
         directory: config.directory ?? null,
         extra: config.extra ?? null,
-        projectID: input.projectID,
+        origin: input.origin,
         timeUsed: Date.now(),
       }
 
@@ -528,7 +528,7 @@ export const layer = Layer.effect(
           name: info.name,
           directory: info.directory,
           extra: info.extra,
-          project_id: info.projectID,
+          origin: info.origin,
           time_used: info.timeUsed,
         })
         .run()
@@ -596,7 +596,7 @@ export const layer = Layer.effect(
 
             // "claim" this session so any future events coming from
             // the old workspace are ignored
-            yield* events.claim(input.sessionID, input.workspaceID ?? previous.projectID)
+            yield* events.claim(input.sessionID, input.workspaceID ?? previous.origin)
           }
         }
 
@@ -727,7 +727,7 @@ export const layer = Layer.effect(
       return (yield* db
         .select()
         .from(WorkspaceTable)
-        .where(eq(WorkspaceTable.project_id, project.id))
+        .where(eq(WorkspaceTable.origin, project.id))
         .all()
         .pipe(Effect.orDie))
         .map(fromRow)
@@ -761,7 +761,7 @@ export const layer = Layer.effect(
               name: item.name,
               directory: item.directory,
               extra: item.extra,
-              projectID: item.projectID,
+              origin: item.origin,
               timeUsed: Date.now(),
             }
 
@@ -774,7 +774,7 @@ export const layer = Layer.effect(
                 name: info.name,
                 directory: info.directory,
                 extra: info.extra,
-                project_id: info.projectID,
+                origin: info.origin,
                 time_used: info.timeUsed,
               })
               .run()
@@ -865,11 +865,11 @@ export const layer = Layer.effect(
       )
     })
 
-    const startWorkspaceSyncing = Effect.fn("Workspace.startWorkspaceSyncing")(function* (projectID: ProjectV2.ID) {
+    const startWorkspaceSyncing = Effect.fn("Workspace.startWorkspaceSyncing")(function* (origin: string) {
       const rows = yield* db
         .selectDistinct({ workspace: WorkspaceTable })
         .from(WorkspaceTable)
-        .where(eq(WorkspaceTable.project_id, projectID))
+        .where(eq(WorkspaceTable.origin, origin))
         .all()
         .pipe(Effect.orDie)
 

@@ -122,16 +122,16 @@ const syncResponse = (request: HttpServerRequest.HttpServerRequest) => {
   return undefined
 }
 
-const createWorkspace = (input: { projectID: Project.Info["id"]; type: string; adapter: WorkspaceAdapter }) =>
+const createWorkspace = (input: { origin: Project.Info["id"]; type: string; adapter: WorkspaceAdapter }) =>
   Effect.acquireRelease(
     Effect.gen(function* () {
-      registerAdapter(input.projectID, input.type, input.adapter)
+      registerAdapter(input.origin, input.type, input.adapter)
       const workspace = yield* Workspace.Service
       return yield* workspace.create({
         type: input.type,
         branch: null,
         extra: null,
-        projectID: input.projectID,
+        origin: input.origin,
       })
     }),
     (info) => Workspace.use.remove(info.id).pipe(Effect.ignore),
@@ -148,14 +148,14 @@ const createRemoteWorkspace = (input: {
   // /global/event and /sync/history so middleware proxying sees the remote
   // workspace as active, just like production would.
   createWorkspace({
-    projectID: input.projectID,
+    origin: input.projectID,
     type: input.type,
     adapter: remoteAdapter(path.join(input.dir, `.${input.type}`), input.url, input.headers),
   })
 
 const createLocalWorkspace = (input: { projectID: Project.Info["id"]; type: string; directory: string }) =>
   createWorkspace({
-    projectID: input.projectID,
+    origin: input.projectID,
     type: input.type,
     adapter: localAdapter(input.directory),
   })
@@ -172,7 +172,7 @@ const insertRemoteWorkspaceWithoutSync = (input: {
     const { db } = yield* Database.Service
     yield* db
       .insert(WorkspaceTable)
-      .values({ id, type: input.type, project_id: input.projectID })
+      .values({ id, type: input.type, origin: input.projectID })
       .run()
       .pipe(Effect.orDie)
     return id
@@ -361,7 +361,7 @@ describe("HttpApi workspace routing middleware", () => {
                   name: "remote-http-fence-target",
                   directory: null,
                   extra: null,
-                  projectID: project.project.id,
+                  origin: project.project.id,
                   timeUsed: Date.now(),
                 }
               : undefined,

@@ -1,5 +1,4 @@
 import { Schema, Struct } from "effect"
-import { ProjectV2 } from "@novaclaw/core/project"
 import type { InstanceContext } from "@/project/instance-context"
 import { WorkspaceV2 } from "@novaclaw/core/workspace"
 import type { DeepMutable } from "@novaclaw/core/schema"
@@ -11,7 +10,8 @@ export const WorkspaceInfo = Schema.Struct({
   branch: Schema.optional(Schema.NullOr(Schema.String)),
   directory: Schema.optional(Schema.NullOr(Schema.String)),
   extra: Schema.optional(Schema.NullOr(Schema.Unknown)),
-  projectID: ProjectV2.ID,
+  // T2 (entities.md): scoped by the rename-stable origin hash, not a project entity.
+  origin: Schema.String,
 }).annotate({ identifier: "Workspace" })
 export type WorkspaceInfo = DeepMutable<Schema.Schema.Type<typeof WorkspaceInfo>>
 

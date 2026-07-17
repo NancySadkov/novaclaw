@@ -94,7 +94,7 @@ function listedAdapter(directory: string, type: string): WorkspaceAdapter {
           branch: "listed/main",
           directory,
           extra: { listed: true },
-          projectID: context?.instance?.project.id ?? missingAdapterContext(),
+          origin: context?.instance?.project.id ?? missingAdapterContext(),
         },
       ]
     },

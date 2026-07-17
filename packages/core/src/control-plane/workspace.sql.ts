@@ -1,8 +1,8 @@
 import { sqliteTable, text, integer } from "drizzle-orm/sqlite-core"
-import { ProjectTable } from "../project/sql"
-import { ProjectV2 } from "../project"
 import { WorkspaceV2 } from "../workspace"
 
+// T2 (notes/entities.md): workspaces are scoped by the rename-stable `origin` hash — a derived
+// substrate attribute of the repo they manage, not a foreign key into a project entity.
 export const WorkspaceTable = sqliteTable("workspace", {
   id: text().$type<WorkspaceV2.ID>().primaryKey(),
   type: text().notNull(),
@@ -10,10 +10,7 @@ export const WorkspaceTable = sqliteTable("workspace", {
   branch: text(),
   directory: text(),
   extra: text({ mode: "json" }),
-  project_id: text()
-    .$type<ProjectV2.ID>()
-    .notNull()
-    .references(() => ProjectTable.id, { onDelete: "cascade" }),
+  origin: text().notNull(),
   time_used: integer()
     .notNull()
     .$default(() => Date.now()),

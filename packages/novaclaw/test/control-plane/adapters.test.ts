@@ -3,7 +3,7 @@ import { getAdapter, registerAdapter } from "../../src/control-plane/adapters"
 import { ProjectV2 } from "@novaclaw/core/project"
 import type { WorkspaceInfo } from "../../src/control-plane/types"
 
-function info(projectID: WorkspaceInfo["projectID"], type: string): WorkspaceInfo {
+function info(origin: WorkspaceInfo["origin"], type: string): WorkspaceInfo {
   return {
     id: "workspace-test" as WorkspaceInfo["id"],
     type,
@@ -11,7 +11,7 @@ function info(projectID: WorkspaceInfo["projectID"], type: string): WorkspaceInf
     branch: null,
     directory: null,
     extra: null,
-    projectID,
+    origin,
   }
 }
 

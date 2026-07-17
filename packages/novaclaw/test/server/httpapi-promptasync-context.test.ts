@@ -90,7 +90,7 @@ const setupWorkspace = (kind: string) =>
     const projectID = yield* Project.Service.use((svc) => svc.fromDirectory(dir).pipe(Effect.map((p) => p.project.id)))
     registerAdapter(projectID, kind, localAdapter(dir))
     const workspace = yield* Workspace.Service.use((svc) =>
-      svc.create({ type: kind, branch: null, extra: null, projectID }),
+      svc.create({ type: kind, branch: null, extra: null, origin: projectID }),
     )
     return { dir, workspace }
   })

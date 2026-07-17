@@ -179,8 +179,8 @@ export const layer = Layer.effect(
                 .run()
               yield* d
                 .update(WorkspaceTable)
-                .set({ project_id: newID })
-                .where(eq(WorkspaceTable.project_id, oldID))
+                .set({ origin: newID })
+                .where(eq(WorkspaceTable.origin, oldID))
                 .run()
 
               if (oldProject) yield* d.delete(ProjectTable).where(eq(ProjectTable.id, oldID)).run()

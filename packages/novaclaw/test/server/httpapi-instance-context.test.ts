@@ -87,7 +87,7 @@ const createLocalWorkspace = (input: { projectID: Project.Info["id"]; type: stri
         type: input.type,
         branch: null,
         extra: null,
-        projectID: input.projectID,
+        origin: input.projectID,
       })
     }),
     (info) => Workspace.use.remove(info.id).pipe(Effect.ignore),

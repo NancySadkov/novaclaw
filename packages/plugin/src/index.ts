@@ -21,7 +21,7 @@ export type WorkspaceInfo = {
   branch: string | null
   directory: string | null
   extra: unknown | null
-  projectID: string
+  origin: string
 }
 
 export type WorkspaceTarget =

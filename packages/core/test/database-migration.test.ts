@@ -243,7 +243,7 @@ describe("DatabaseMigration", () => {
           sql`INSERT INTO project (id, worktree, time_created, time_updated, sandboxes) VALUES ('global', '/project', 1, 1, '[]')`,
         )
         yield* db.run(
-          sql`INSERT INTO workspace (id, type, project_id, time_used) VALUES ('workspace', 'local', 'global', 1)`,
+          sql`INSERT INTO workspace (id, type, origin, time_used) VALUES ('workspace', 'local', 'global', 1)`,
         )
         yield* db.run(
           sql`INSERT INTO session (id, project_id, workspace_id, slug, directory, title, version, time_created, time_updated) VALUES ('session', 'global', 'workspace', 'session', '/project', 'Before', 'test', 1, 1)`,
