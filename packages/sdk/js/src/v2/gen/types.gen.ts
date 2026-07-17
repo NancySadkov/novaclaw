@@ -1133,100 +1133,12 @@ export type NotFoundError = {
   }
 }
 
-export type Model = {
-  id: string
-  providerID: string
-  api: {
-    id: string
-    url: string
-    npm: string
-  }
-  name: string
-  family?: string
-  capabilities: {
-    temperature: boolean
-    reasoning: boolean
-    attachment: boolean
-    toolcall: boolean
-    input: {
-      text: boolean
-      audio: boolean
-      image: boolean
-      video: boolean
-      pdf: boolean
-    }
-    output: {
-      text: boolean
-      audio: boolean
-      image: boolean
-      video: boolean
-      pdf: boolean
-    }
-    interleaved:
-      | boolean
-      | {
-          field: "reasoning" | "reasoning_content" | "reasoning_details"
-        }
-  }
-  cost: {
-    input: number
-    output: number
-    cache: {
-      read: number
-      write: number
-    }
-    tiers?: Array<{
-      input: number
-      output: number
-      cache: {
-        read: number
-        write: number
-      }
-      tier: {
-        type: "context"
-        size: number
-      }
-    }>
-    experimentalOver200K?: {
-      input: number
-      output: number
-      cache: {
-        read: number
-        write: number
-      }
-    }
-  }
-  limit: {
-    context: number
-    input?: number
-    output: number
-  }
-  status: "alpha" | "beta" | "deprecated" | "active"
-  options: {
-    [key: string]: unknown
-  }
-  headers: {
+export type ProviderCatalog = {
+  providers: Array<ProviderV2Info>
+  models: Array<ModelV2Info>
+  connected: Array<string>
+  default: {
     [key: string]: string
-  }
-  release_date: string
-  variants?: {
-    [key: string]: {
-      [key: string]: unknown
-    }
-  }
-}
-
-export type Provider = {
-  id: string
-  name: string
-  source: "env" | "config" | "custom" | "api"
-  env: Array<string>
-  key?: string
-  options: {
-    [key: string]: unknown
-  }
-  models: {
-    [key: string]: Model
   }
 }
 
@@ -3457,6 +3369,94 @@ export type ConfigInfo = {
   enabled_providers?: Array<string>
 }
 
+export type ProviderRequest = {
+  headers: {
+    [key: string]: string
+  }
+  body: {
+    [key: string]: unknown
+  }
+}
+
+export type ProviderV2Info = {
+  id: string
+  integrationID?: string
+  name: string
+  disabled?: boolean
+  api: ProviderApi
+  request: ProviderRequest
+}
+
+export type ModelApi =
+  | {
+      id: string
+      type: "aisdk"
+      package: string
+      url?: string
+      settings?: {
+        [key: string]: unknown
+      }
+    }
+  | {
+      id: string
+      type: "native"
+      url?: string
+      settings: {
+        [key: string]: unknown
+      }
+    }
+
+export type ModelCost = {
+  tier?: {
+    type: "context"
+    size: number
+  }
+  input: number
+  output: number
+  cache: {
+    read: number
+    write: number
+  }
+}
+
+export type ModelV2Info = {
+  id: string
+  providerID: string
+  family?: string
+  name: string
+  api: ModelApi
+  capabilities: ModelCapabilities
+  request: {
+    headers: {
+      [key: string]: string
+    }
+    body: {
+      [key: string]: unknown
+    }
+    variant?: string
+  }
+  variants: Array<{
+    id: string
+    headers: {
+      [key: string]: string
+    }
+    body: {
+      [key: string]: unknown
+    }
+  }>
+  time: {
+    released: number
+  }
+  cost: Array<ModelCost>
+  status: "alpha" | "beta" | "deprecated" | "active"
+  enabled: boolean
+  limit: {
+    context: number
+    input?: number
+    output: number
+  }
+}
+
 export type KbStats = {
   active: number
   retracted: number
@@ -3537,15 +3537,6 @@ export type LocationInfo = {
   project: {
     id: string
     directory: string
-  }
-}
-
-export type ProviderRequest = {
-  headers: {
-    [key: string]: string
-  }
-  body: {
-    [key: string]: unknown
   }
 }
 
@@ -4327,85 +4318,6 @@ export type SessionNextRevertCommitted = {
     sessionID: string
     messageID: string
   }
-}
-
-export type ModelApi =
-  | {
-      id: string
-      type: "aisdk"
-      package: string
-      url?: string
-      settings?: {
-        [key: string]: unknown
-      }
-    }
-  | {
-      id: string
-      type: "native"
-      url?: string
-      settings: {
-        [key: string]: unknown
-      }
-    }
-
-export type ModelCost = {
-  tier?: {
-    type: "context"
-    size: number
-  }
-  input: number
-  output: number
-  cache: {
-    read: number
-    write: number
-  }
-}
-
-export type ModelV2Info = {
-  id: string
-  providerID: string
-  family?: string
-  name: string
-  api: ModelApi
-  capabilities: ModelCapabilities
-  request: {
-    headers: {
-      [key: string]: string
-    }
-    body: {
-      [key: string]: unknown
-    }
-    variant?: string
-  }
-  variants: Array<{
-    id: string
-    headers: {
-      [key: string]: string
-    }
-    body: {
-      [key: string]: unknown
-    }
-  }>
-  time: {
-    released: number
-  }
-  cost: Array<ModelCost>
-  status: "alpha" | "beta" | "deprecated" | "active"
-  enabled: boolean
-  limit: {
-    context: number
-    input?: number
-    output: number
-  }
-}
-
-export type ProviderV2Info = {
-  id: string
-  integrationID?: string
-  name: string
-  disabled?: boolean
-  api: ProviderApi
-  request: ProviderRequest
 }
 
 export type IntegrationWhen = {
@@ -6938,12 +6850,7 @@ export type ConfigProvidersResponses = {
   /**
    * List of providers
    */
-  200: {
-    providers: Array<Provider>
-    default: {
-      [key: string]: string
-    }
-  }
+  200: ProviderCatalog
 }
 
 export type ConfigProvidersResponse = ConfigProvidersResponses[keyof ConfigProvidersResponses]
@@ -9286,13 +9193,7 @@ export type ProviderListResponses = {
   /**
    * List of providers
    */
-  200: {
-    all: Array<Provider>
-    default: {
-      [key: string]: string
-    }
-    connected: Array<string>
-  }
+  200: ProviderCatalog
 }
 
 export type ProviderListResponse = ProviderListResponses[keyof ProviderListResponses]

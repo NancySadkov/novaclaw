@@ -200,11 +200,13 @@ export const SettingsModelsV2: Component = () => {
                                       modelID={key.modelID}
                                       modelName={item.name}
                                       defaults={{
-                                        reasoning: (item as { reasoning?: boolean }).reasoning,
-                                        tool_call: (item as { tool_call?: boolean }).tool_call,
-                                        limit: (item as { limit?: { context?: number; output?: number } }).limit,
-                                        modalities: (item as { modalities?: { input?: string[]; output?: string[] } })
-                                          .modalities,
+                                        reasoning: item.variants.length > 0,
+                                        tool_call: item.capabilities.tools,
+                                        limit: item.limit,
+                                        modalities: {
+                                          input: [...item.capabilities.input],
+                                          output: [...item.capabilities.output],
+                                        },
                                       }}
                                     />
                                   ))

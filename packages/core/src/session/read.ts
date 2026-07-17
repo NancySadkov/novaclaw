@@ -4,7 +4,7 @@ export * as SessionRead from "./read"
 // over a plain `db` handle returning native `SessionSchema.Info`, so CLI commands and other
 // service-less callers never need the full SessionV2.Service graph. The SERVICE's list delegates
 // here — exactly one implementation of the filter surface. V1-nuke slice A: this replaces
-// SessionV1Read for every consumer; delete v1-read.ts in slice D.
+// the session read seam for every consumer (CLI, middleware, service list).
 
 import { and, asc, desc, eq, gt, isNull, like, lt, or, type SQL } from "drizzle-orm"
 import { Effect } from "effect"

@@ -3,7 +3,6 @@ import type { SessionMessage, SessionMessageAssistant, SessionV2Info as Session 
 type Provider = {
   id: string
   name?: string
-  models: Record<string, Model | undefined>
 }
 
 type Model = {
@@ -12,6 +11,8 @@ type Model = {
     context: number
   }
 }
+
+export type ModelLookup = (providerID: string, modelID: string) => Model | undefined
 
 type Context = {
   message: SessionMessageAssistant
@@ -38,12 +39,16 @@ const lastAssistantWithTokens = (messages: readonly SessionMessage[]) => {
   }
 }
 
-const build = (messages: readonly SessionMessage[] = [], providers: Provider[] = []): Context | undefined => {
+const build = (
+  messages: readonly SessionMessage[] = [],
+  providers: Provider[] = [],
+  model_: ModelLookup = () => undefined,
+): Context | undefined => {
   const message = lastAssistantWithTokens(messages)
   if (!message) return undefined
 
   const provider = providers.find((item) => item.id === message.model.providerID)
-  const model = provider?.models[message.model.id]
+  const model = model_(message.model.providerID, message.model.id)
   const limit = model?.limit.context
   const total = tokenTotal(message)
 
@@ -59,8 +64,12 @@ const build = (messages: readonly SessionMessage[] = [], providers: Provider[] =
   }
 }
 
-export function getSessionContext(messages: readonly SessionMessage[] = [], providers: Provider[] = []) {
-  return build(messages, providers)
+export function getSessionContext(
+  messages: readonly SessionMessage[] = [],
+  providers: Provider[] = [],
+  model: ModelLookup = () => undefined,
+) {
+  return build(messages, providers, model)
 }
 
 export function getSessionTokenTotal(tokens: Session["tokens"] | undefined) {

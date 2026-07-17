@@ -17,7 +17,7 @@ const persist: typeof import("@/utils/persist").persisted = (_target, store) => 
 ]
 
 const child = () => createStore({} as State)
-const provider = { all: new Map(), connected: [], default: {} } satisfies NormalizedProviderListResponse
+const provider = { all: new Map(), models: new Map(), connected: [], default: {} } satisfies NormalizedProviderListResponse
 
 const queryOptionsApi = {
   globalConfig: () => ({ queryKey: ["globalConfig"], queryFn: async () => ({}) }),

@@ -14,7 +14,6 @@ import { DialogCustomProvider } from "./dialog-custom-provider"
 import { SettingsList } from "./settings-list"
 import { SettingsServerPicker, SettingsServerScope } from "./settings-server-picker"
 
-type ProviderSource = "env" | "api" | "config" | "custom"
 type ProviderItem = ReturnType<ReturnType<typeof useProviders>["connected"]>[number]
 
 // No bundled provider ships a note now (only the generic openai-compatible + dynamic remain).
@@ -49,26 +48,14 @@ const SettingsProvidersContent: Component = () => {
     return items
   })
 
-  const source = (item: ProviderItem): ProviderSource | undefined => {
-    if (!("source" in item)) return
-    const value = item.source
-    if (value === "env" || value === "api" || value === "config" || value === "custom") return value
-    return
-  }
-
+  // Native catalog: everything in this list is a connected (configured) provider —
+  // the old V1 `source` tag reduced to custom-vs-config; nothing is env-locked.
   const type = (item: ProviderItem) => {
-    const current = source(item)
-    if (current === "env") return language.t("settings.providers.tag.environment")
-    if (current === "api") return language.t("provider.connect.method.apiKey")
-    if (current === "config") {
-      if (isConfigCustom(item.id)) return language.t("settings.providers.tag.custom")
-      return language.t("settings.providers.tag.config")
-    }
-    if (current === "custom") return language.t("settings.providers.tag.custom")
-    return language.t("settings.providers.tag.other")
+    if (isConfigCustom(item.id)) return language.t("settings.providers.tag.custom")
+    return language.t("settings.providers.tag.config")
   }
 
-  const canDisconnect = (item: ProviderItem) => source(item) !== "env"
+  const canDisconnect = (_item: ProviderItem) => true
 
   const note = (id: string) => PROVIDER_NOTES.find((item) => item.match(id))?.key
 

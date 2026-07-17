@@ -1,54 +1,21 @@
-import { createNovaclawClient, createNovaclawServer } from "@novaclaw/sdk"
+import { createNovaclawClient, createNovaclawServer } from "@novaclaw/sdk/v2"
 import { pathToFileURL } from "bun"
 
 const server = await createNovaclawServer()
-const client = createNovaclawClient({ baseUrl: server.url })
+const client = createNovaclawClient({ baseUrl: server.url, directory: process.cwd() })
 
 const input = await Array.fromAsync(new Bun.Glob("packages/core/*.ts").scan())
 
-const tasks: Promise<void>[] = []
-for await (const file of input) {
-  console.log("processing", file)
-  const session = await client.session.create()
-  tasks.push(
-    client.session.promptAsync({
-      path: { id: session.data.id },
-      body: {
-        parts: [
-          {
-            type: "file",
-            mime: "text/plain",
-            url: pathToFileURL(file).href,
-          },
-          {
-            type: "text",
-            text: `Write tests for every public function in this file.`,
-          },
-        ],
-      },
-    }),
-  )
-  console.log("done", file)
-}
-
 await Promise.all(
   input.map(async (file) => {
-    const session = await client.session.create()
+    const session = await client.v2.session.create({})
+    const sessionID = session.data!.data.id
     console.log("processing", file)
-    await client.session.promptAsync({
-      path: { id: session.data.id },
-      body: {
-        parts: [
-          {
-            type: "file",
-            mime: "text/plain",
-            url: pathToFileURL(file).href,
-          },
-          {
-            type: "text",
-            text: `Write tests for every public function in this file.`,
-          },
-        ],
+    await client.v2.session.prompt({
+      sessionID,
+      prompt: {
+        text: "Write tests for every public function in this file.",
+        files: [{ uri: pathToFileURL(file).href, name: file }],
       },
     })
     console.log("done", file)

@@ -60,7 +60,6 @@ const AgentCreateCommand = effectCmd({
   handler: Effect.fn("Cli.agent.create")(function* (args) {
     const { InstanceRef } = yield* Effect.promise(() => import("@/effect/instance-ref"))
     const { Agent } = yield* Effect.promise(() => import("../../agent/agent"))
-    const { ProviderCatalogView } = yield* Effect.promise(() => import("@/provider/catalog-view"))
     const maybeCtx = yield* InstanceRef
     if (!maybeCtx) return yield* Effect.die("InstanceRef not provided")
     const ctx = maybeCtx
@@ -127,7 +126,8 @@ const AgentCreateCommand = effectCmd({
       // Generate agent
       const spinner = prompts.spinner()
       spinner.start("Generating agent configuration...")
-      const model = args.model ? ProviderCatalogView.parseModel(args.model) : undefined
+      const { ModelV2 } = await import("@novaclaw/core/model")
+      const model = args.model ? ModelV2.parse(args.model) : undefined
       const generated = await runLocalEffect(agentSvc.generate({ description, model })).catch((error) => {
         spinner.stop(`LLM failed to generate agent: ${error.message}`, 1)
         if (isFullyNonInteractive) process.exit(1)

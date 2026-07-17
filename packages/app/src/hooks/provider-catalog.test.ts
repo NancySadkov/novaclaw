@@ -3,11 +3,12 @@ import type { NormalizedProviderListResponse } from "@novaclaw/session-ui/contex
 import { selectProviderCatalog } from "./provider-catalog"
 
 const catalog = (id: string): NormalizedProviderListResponse => ({
-  all: new Map([[id, { id, name: id, source: "api", env: [], options: {}, models: {} }]]),
+  all: new Map([[id, { id, name: id, api: { type: "native", settings: {} }, request: { headers: {}, body: {} } }]]),
+  models: new Map(),
   connected: [id],
   default: { [id]: `${id}-model` },
 })
-const empty: NormalizedProviderListResponse = { all: new Map(), connected: [], default: {} }
+const empty: NormalizedProviderListResponse = { all: new Map(), models: new Map(), connected: [], default: {} }
 
 test("uses the ready directory catalog when it has connected providers", () => {
   const directory = catalog("directory")

@@ -66,7 +66,7 @@ export const AppLayer = Layer.mergeAll(
   Format.defaultLayer,
   Project.defaultLayer,
   // F1c-0 — the cycle-free core deps the CLI session commands ride (createSessionRecord/
-  // removeSessionRecord/SessionV1Read take {db, events, projects, store} as plain values;
+  // removeSessionRecord/SessionRead take {db, events, projects, store} as plain values;
   // Database + EventV2Bridge are already in this graph, these two complete the set) — the
   // CLI stays off the full `SessionV2` layer, whose graph needs `LocationServiceMap`.
   ProjectV2.defaultLayer,

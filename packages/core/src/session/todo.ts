@@ -24,7 +24,7 @@ export interface Interface {
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/SessionTodo") {}
 
 /**
- * Deps-taking read seam (cf. `SessionV1Read` / `SessionMessageRead`): the todo list is a plain
+ * Deps-taking read seam (cf. `SessionRead` / `SessionMessageRead`): the todo list is a plain
  * `TodoTable` read by `session_id` with NO Location dependency, so a caller holding `db` can serve
  * it without resolving the location-scoped `Service`. The F1f httpapi todo route uses this instead
  * of the V1 `Todo.Service` (both read the same table).

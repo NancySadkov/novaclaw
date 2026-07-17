@@ -13,6 +13,7 @@ import { Tooltip } from "@novaclaw/ui/tooltip"
 import { ModelTooltip } from "./model-tooltip"
 import { useLanguage } from "@/context/language"
 import { decode64 } from "@/utils/base64"
+import { modelCost } from "@/utils/model-catalog"
 
 const isFree = (provider: string, cost: { input: number } | undefined) =>
   provider === "novaclaw" && (!cost || cost.input === 0)
@@ -77,7 +78,7 @@ const ModelList: Component<{
           placement="right-start"
           gutter={12}
           openDelay={0}
-          value={<ModelTooltip model={item} latest={item.latest} free={isFree(item.provider.id, item.cost)} />}
+          value={<ModelTooltip model={item} latest={item.latest} free={isFree(item.provider.id, modelCost(item))} />}
         >
           {node}
         </Tooltip>
@@ -92,7 +93,7 @@ const ModelList: Component<{
       {(i) => (
         <div class="w-full flex items-center gap-x-2 text-13-regular">
           <span class="truncate">{i.name}</span>
-          <Show when={isFree(i.provider.id, i.cost)}>
+          <Show when={isFree(i.provider.id, modelCost(i))}>
             <Tag>{language.t("model.tag.free")}</Tag>
           </Show>
           <Show when={i.latest}>

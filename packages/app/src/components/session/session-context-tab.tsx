@@ -114,7 +114,7 @@ export function SessionContextTab() {
       }),
   )
 
-  const ctx = createMemo(() => getSessionContext(messages(), [...providers.all().values()]))
+  const ctx = createMemo(() => getSessionContext(messages(), [...providers.all().values()], providers.model))
   const tokens = createMemo(() => info()?.tokens)
   const formatter = createMemo(() => createSessionContextFormatter(language.intl()))
 

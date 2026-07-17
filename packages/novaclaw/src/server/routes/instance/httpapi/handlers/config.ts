@@ -1,7 +1,7 @@
 import { Config } from "@/config/config"
 import { Config as ConfigV2 } from "@novaclaw/core/config"
 import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
-import { ProviderCatalogView } from "@/provider/catalog-view"
+import { ProviderCatalogResult } from "@/provider/catalog-result"
 import { Catalog } from "@novaclaw/core/catalog"
 import { LocationServiceMap } from "@novaclaw/core/location-services"
 import { ServerLocationServiceMap } from "@/location-service-map"
@@ -40,8 +40,8 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
       return ctx.payload
     })
 
-    // F1-final: connected providers now come from the V2 `Catalog` (available =
-    // has credentials/integration), projected onto the V1 wire shape. Catalog is
+    // Connected providers come from the V2 `Catalog` (available = has
+    // credentials/integration), served as native catalog shapes. Catalog is
     // location-scoped — resolve it through the shared location-service map.
     const providers = Effect.fn("ConfigHttpApi.providers")(function* () {
       const directory = (yield* InstanceState.context).directory
@@ -49,7 +49,11 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
         const catalog = yield* Catalog.Service
         const available = yield* catalog.provider.available()
         const models = yield* catalog.model.all()
-        return ProviderCatalogView.configProvidersResult({ providers: available, models })
+        return ProviderCatalogResult.listResult({
+          providers: available,
+          models,
+          connected: available.map((p) => p.id),
+        })
       }).pipe(Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory) }))))
     })
 

@@ -107,8 +107,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     })
 
     const validModel = (model: ModelKey) => {
-      const provider = providers.all().get(model.providerID)
-      return !!provider?.models[model.modelID] && connected().has(model.providerID)
+      return !!providers.model(model.providerID, model.modelID) && connected().has(model.providerID)
     }
 
     const firstModel = (...items: Array<() => ModelKey | undefined>) => {
@@ -191,7 +190,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
           if (usableFallback(model)) return model
         }
 
-        for (const entry of Object.values(provider.models)) {
+        for (const entry of providers.models(provider.id)) {
           const model = { providerID: provider.id, modelID: entry.id }
           if (usableFallback(model)) return model
         }
@@ -321,7 +320,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         list() {
           const item = current()
           if (!item?.variants) return []
-          return Object.keys(item.variants)
+          return item.variants.map((v) => v.id)
         },
         set(value: string | undefined) {
           startTransition(() =>

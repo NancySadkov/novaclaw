@@ -1,5 +1,5 @@
 import type { NovaclawClient, ConfigInfo, Project } from "@novaclaw/sdk/v2/client"
-import type { Model as ModelV2, Auth } from "@novaclaw/sdk/v2"
+import type { ModelV2Info, Auth } from "@novaclaw/sdk/v2"
 
 import type { BunShell } from "./shell.js"
 
@@ -208,7 +208,7 @@ export interface Hooks {
   ) => Promise<void>
   /** Customize the agent-generation system prompt. */
   "experimental.chat.system.transform"?: (
-    input: { sessionID?: string; model: ModelV2 },
+    input: { sessionID?: string; model: ModelV2Info },
     output: {
       system: string[]
     },

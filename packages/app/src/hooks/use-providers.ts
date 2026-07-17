@@ -4,6 +4,7 @@ import { useParams } from "@solidjs/router"
 import { Iterable, pipe } from "effect"
 import type { Accessor } from "solid-js"
 import { selectProviderCatalog } from "./provider-catalog"
+import { modelCost } from "@/utils/model-catalog"
 
 // NovaClaw bundles only the generic OpenAI-compatible provider (local vLLM / any OpenAI-compatible
 // endpoint). Users add a local endpoint via it or a custom provider; see detach-triage.md.
@@ -27,6 +28,11 @@ export function useProviders(directory?: Accessor<string | undefined>) {
   }
   return {
     all: () => providers().all,
+    /** Non-deprecated models of one provider, catalog order. */
+    models: (providerID: string) => providers().models.get(providerID) ?? [],
+    /** One model by (providerID, modelID), if listed. */
+    model: (providerID: string, modelID: string) =>
+      (providers().models.get(providerID) ?? []).find((m) => m.id === modelID),
     default: () => providers().default,
     popular: () =>
       pipe(
@@ -51,7 +57,7 @@ export function useProviders(directory?: Accessor<string | undefined>) {
           providers().all,
           ([id]) =>
             connected.has(id) &&
-            (id !== "novaclaw" || Object.values(providers().all.get(id)?.models ?? {}).some((m) => m.cost?.input)),
+            (id !== "novaclaw" || (providers().models.get(id) ?? []).some((m) => modelCost(m)?.input)),
         ),
       ]
     },

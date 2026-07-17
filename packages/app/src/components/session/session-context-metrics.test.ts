@@ -38,26 +38,18 @@ const user = (id: string) => {
 }
 
 describe("getSessionContext", () => {
+  const model = (providerID: string, modelID: string) =>
+    providerID === "openai" && modelID === "gpt-4.1" ? { name: "GPT-4.1", limit: { context: 1000 } } : undefined
+
   test("computes usage from latest assistant with tokens", () => {
     const messages = [
       user("u1"),
       assistant("a1", { input: 0, output: 0, reasoning: 0, read: 0, write: 0 }, 0.5),
       assistant("a2", { input: 300, output: 100, reasoning: 50, read: 25, write: 25 }, 1.25),
     ]
-    const providers = [
-      {
-        id: "openai",
-        name: "OpenAI",
-        models: {
-          "gpt-4.1": {
-            name: "GPT-4.1",
-            limit: { context: 1000 },
-          },
-        },
-      },
-    ]
+    const providers = [{ id: "openai", name: "OpenAI" }]
 
-    const ctx = getSessionContext(messages, providers)
+    const ctx = getSessionContext(messages, providers, model)
 
     expect(ctx?.message.id).toBe("a2")
     expect(ctx?.usage).toBe(50)
@@ -67,9 +59,9 @@ describe("getSessionContext", () => {
 
   test("preserves fallback labels and null usage when model metadata is missing", () => {
     const messages = [assistant("a1", { input: 40, output: 10, reasoning: 0, read: 0, write: 0 }, 0.1, "p-1", "m-1")]
-    const providers = [{ id: "p-1", models: {} }]
+    const providers = [{ id: "p-1" }]
 
-    const ctx = getSessionContext(messages, providers)
+    const ctx = getSessionContext(messages, providers, model)
 
     expect(ctx?.providerLabel).toBe("p-1")
     expect(ctx?.modelLabel).toBe("m-1")
@@ -79,11 +71,11 @@ describe("getSessionContext", () => {
 
   test("recomputes when message array is mutated in place", () => {
     const messages = [assistant("a1", { input: 10, output: 10, reasoning: 10, read: 10, write: 10 }, 0.25)]
-    const providers = [{ id: "openai", models: {} }]
+    const providers = [{ id: "openai" }]
 
-    const one = getSessionContext(messages, providers)
+    const one = getSessionContext(messages, providers, model)
     messages.push(assistant("a2", { input: 100, output: 20, reasoning: 0, read: 0, write: 0 }, 0.75))
-    const two = getSessionContext(messages, providers)
+    const two = getSessionContext(messages, providers, model)
 
     expect(one?.message.id).toBe("a1")
     expect(two?.message.id).toBe("a2")

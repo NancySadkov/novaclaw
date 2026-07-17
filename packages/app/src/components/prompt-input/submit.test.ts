@@ -71,29 +71,11 @@ const clientFor = (directory: string) => {
           return { data: undefined }
         },
         switchAgent: async () => ({ data: undefined }),
+        shell: async () => {
+          sentShell.push(directory)
+          return { data: undefined }
+        },
       },
-    },
-    session: {
-      create: async () => {
-        createdSessions.push(directory)
-        return {
-          data: {
-            id: `session-${createdSessions.length}`,
-            title: `New session ${createdSessions.length}`,
-          },
-        }
-      },
-      shell: async () => {
-        sentShell.push(directory)
-        return { data: undefined }
-      },
-      prompt: async () => ({ data: undefined }),
-      promptAsync: async (body: { variant?: string }) => {
-        promptedVariants.push(body?.variant)
-        return { data: undefined }
-      },
-      command: async () => ({ data: undefined }),
-      abort: async () => ({ data: undefined }),
     },
     worktree: {
       create: async () => ({ data: { directory: `${directory}/new` } }),

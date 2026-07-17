@@ -1,6 +1,11 @@
 import type { NormalizedProviderListResponse } from "@novaclaw/session-ui/context"
 
-const emptyProviderCatalog: NormalizedProviderListResponse = { all: new Map(), connected: [], default: {} }
+const emptyProviderCatalog: NormalizedProviderListResponse = {
+  all: new Map(),
+  models: new Map(),
+  connected: [],
+  default: {},
+}
 
 type DirectoryCatalog = {
   ready: boolean

@@ -1,9 +1,11 @@
-import type { SessionV2Info as Session, SessionChangeDiff, SessionStatus, Provider } from "@novaclaw/sdk/v2"
+import type { SessionV2Info as Session, SessionChangeDiff, SessionStatus, ProviderV2Info, ModelV2Info } from "@novaclaw/sdk/v2"
 import { createSimpleContext } from "@novaclaw/ui/context"
 import { PreloadMultiFileDiffResult } from "@pierre/diffs/ssr"
 
 export type NormalizedProviderListResponse = {
-  all: Map<string, Provider>
+  all: Map<string, ProviderV2Info>
+  /** Non-deprecated models grouped by providerID. */
+  models: Map<string, ModelV2Info[]>
   default: {
     [key: string]: string
   }

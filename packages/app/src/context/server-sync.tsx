@@ -118,7 +118,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
       return pathQuery.data ?? EMPTY
     },
     get provider() {
-      const EMPTY = { all: new Map(), connected: [], default: {} }
+      const EMPTY = { all: new Map(), models: new Map(), connected: [], default: {} }
       if (providerQuery.isLoading) return EMPTY
       return providerQuery.data ?? EMPTY
     },

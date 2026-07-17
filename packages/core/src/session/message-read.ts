@@ -9,7 +9,7 @@ import { SessionSchema } from "./schema"
 import { SessionMessageTable } from "./sql"
 
 /**
- * Deps-taking native transcript reads (the `SessionV1Read` pattern): read a session's
+ * Deps-taking native transcript reads (the `SessionRead` pattern): read a session's
  * `session_message` rows with a plain `db` handle, so callers outside the location-service
  * graph (the CLI — F1c-0) don't need the `SessionV2` layer. `SessionV2.messages` delegates
  * here. Callers own the session-existence check: an unknown session reads as an empty

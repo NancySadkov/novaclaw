@@ -1,7 +1,7 @@
 import { ProviderAuth } from "@/provider/auth"
 import { Config } from "@/config/config"
 import { ModelsDev } from "@novaclaw/core/models-dev"
-import { ProviderCatalogView } from "@/provider/catalog-view"
+import { ProviderCatalogResult } from "@/provider/catalog-result"
 import { Catalog } from "@novaclaw/core/catalog"
 import { LocationServiceMap } from "@novaclaw/core/location-services"
 import { ServerLocationServiceMap } from "@/location-service-map"
@@ -53,7 +53,7 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
         const providers = yield* catalog.provider.all()
         const models = yield* catalog.model.all()
         const available = yield* catalog.provider.available()
-        return ProviderCatalogView.listResult({
+        return ProviderCatalogResult.listResult({
           providers,
           models,
           connected: available.map((p) => p.id),

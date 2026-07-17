@@ -61,7 +61,7 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
       }),
   )
 
-  const context = createMemo(() => getSessionContext(messages(), [...providers.all().values()]))
+  const context = createMemo(() => getSessionContext(messages(), [...providers.all().values()], providers.model))
   const tokens = createMemo(() => info()?.tokens)
   const cost = createMemo(() => {
     return usd().format(info()?.cost ?? 0)

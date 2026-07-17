@@ -7,7 +7,7 @@ import { bootstrapDirectory, loadPathQuery, loadProvidersQuery } from "./bootstr
 import type { State, VcsCache } from "./types"
 import { ServerScope } from "@/utils/server-scope"
 
-const provider = { all: new Map(), connected: [], default: {} } satisfies NormalizedProviderListResponse
+const provider = { all: new Map(), models: new Map(), connected: [], default: {} } satisfies NormalizedProviderListResponse
 
 describe("bootstrapDirectory", () => {
   test("marks a loading directory partial during bootstrap and complete after success", async () => {

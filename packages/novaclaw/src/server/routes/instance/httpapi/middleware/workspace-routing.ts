@@ -51,7 +51,7 @@ export class WorkspaceRouteContext extends Context.Service<
   }
 >()("@novaclaw/ExperimentalHttpApiWorkspaceRouteContext") {}
 
-// F1c: the per-request session lookup reads the raw row via core `SessionV1Read` (Database is a
+// F1c: the per-request session lookup reads the raw row via core `SessionRead` (Database is a
 // global singleton resolved at layer build), so the middleware no longer REQUIRES the V1
 // Session.Service from the route context.
 export class WorkspaceRoutingMiddleware extends HttpApiMiddleware.Service<

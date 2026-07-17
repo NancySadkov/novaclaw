@@ -21,52 +21,51 @@ const providerID = "test-oauth-parity"
 const oauthURL = "https://example.com/oauth"
 const oauthInstructions = "Finish OAuth"
 
-function providerListHasFetch(list: unknown) {
-  if (!Array.isArray(list)) return false
-  return list.some((item: unknown) => {
-    if (typeof item !== "object" || item === null || !("id" in item) || !("options" in item)) return false
-    if (item.id !== "google") return false
-    if (typeof item.options !== "object" || item.options === null) return false
-    return "fetch" in item.options
-  })
-}
-
-function hasProviderWithFetch(input: unknown, key: "all" | "providers") {
-  if (typeof input !== "object" || input === null) return false
-  if (key === "all") return "all" in input && providerListHasFetch(input.all)
-  return "providers" in input && providerListHasFetch(input.providers)
-}
-
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
-function providerList(input: unknown, key: "all" | "providers") {
-  if (!isRecord(input)) return []
-  if (!Array.isArray(input[key])) return []
-  return input[key]
+// Both /provider and /config providers serve the native catalog result:
+// { providers: ProviderV2Info[], models: ModelV2Info[], connected, default }.
+function providerByID(input: unknown, id: string) {
+  if (!isRecord(input) || !Array.isArray(input.providers)) return undefined
+  return input.providers.find((provider) => isRecord(provider) && provider.id === id)
 }
 
-function providerByID(input: unknown, key: "all" | "providers", id: string) {
-  return providerList(input, key).find((provider) => isRecord(provider) && provider.id === id)
+function providerModels(input: unknown, id: string) {
+  if (!isRecord(input) || !Array.isArray(input.models)) return []
+  return input.models.filter((model) => isRecord(model) && model.providerID === id)
 }
 
-function hasNonZeroModelCost(input: unknown, key: "all" | "providers", id: string) {
-  const provider = providerByID(input, key, id)
-  if (!isRecord(provider) || !isRecord(provider.models)) return false
-  return Object.values(provider.models).some((model) => {
-    if (!isRecord(model) || !isRecord(model.cost) || !isRecord(model.cost.cache)) return false
-    return [model.cost.input, model.cost.output, model.cost.cache.read, model.cost.cache.write].some(
-      (cost) => typeof cost === "number" && cost > 0,
+// Runtime auth-loader options (fetch et al.) must never leak onto the wire; on the
+// native shape they could only surface under api.settings.
+function hasProviderWithFetch(input: unknown, id = "google") {
+  const provider = providerByID(input, id)
+  if (!isRecord(provider)) return false
+  const api = provider.api
+  return isRecord(api) && isRecord(api.settings) && "fetch" in api.settings
+}
+
+function hasNonZeroModelCost(input: unknown, id: string) {
+  return providerModels(input, id).some((model) => {
+    if (!isRecord(model) || !Array.isArray(model.cost)) return false
+    return model.cost.some(
+      (entry) =>
+        isRecord(entry) &&
+        isRecord(entry.cache) &&
+        [entry.input, entry.output, entry.cache.read, entry.cache.write].some(
+          (cost) => typeof cost === "number" && cost > 0,
+        ),
     )
   })
 }
 
-function hasProviderMutationMarker(input: unknown, key: "all" | "providers", id: string) {
-  const provider = providerByID(input, key, id)
+function hasProviderMutationMarker(input: unknown, id: string) {
+  const provider = providerByID(input, id)
   if (!isRecord(provider)) return false
   if (provider.name === "mutated-provider") return true
-  return isRecord(provider.options) && provider.options.mutatedByPlugin === true
+  const api = provider.api
+  return isRecord(api) && isRecord(api.settings) && api.settings.mutatedByPlugin === true
 }
 
 function requestAuthorize(input: {
@@ -369,10 +368,10 @@ describe("provider HttpApi", () => {
 
       const providerBody = yield* providerResponse.json
       const configBody = yield* configResponse.json
-      expect(hasProviderWithFetch(providerBody, "all")).toBe(false)
-      expect(hasProviderWithFetch(configBody, "providers")).toBe(false)
-      expect(hasNonZeroModelCost(providerBody, "all", "google")).toBe(true)
-      expect(hasNonZeroModelCost(configBody, "providers", "google")).toBe(true)
+      expect(hasProviderWithFetch(providerBody)).toBe(false)
+      expect(hasProviderWithFetch(configBody)).toBe(false)
+      expect(hasNonZeroModelCost(providerBody, "google")).toBe(true)
+      expect(hasNonZeroModelCost(configBody, "google")).toBe(true)
     }),
     { ...projectOptions, init: writeFunctionOptionsPlugin },
   )
@@ -391,9 +390,9 @@ describe("provider HttpApi", () => {
 
       const providerBody = yield* providerResponse.json
       const configBody = yield* configResponse.json
-      expect(hasProviderMutationMarker(providerBody, "all", "google")).toBe(false)
-      expect(hasProviderMutationMarker(configBody, "providers", "google")).toBe(false)
-      expect(hasNonZeroModelCost(providerBody, "all", "google")).toBe(true)
+      expect(hasProviderMutationMarker(providerBody, "google")).toBe(false)
+      expect(hasProviderMutationMarker(configBody, "google")).toBe(false)
+      expect(hasNonZeroModelCost(providerBody, "google")).toBe(true)
     }),
     { ...projectOptions, init: writeProviderModelsMutationPlugin },
   )

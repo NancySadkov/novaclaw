@@ -11,7 +11,7 @@ describe("model variant", () => {
       model: {
         providerID: "openai",
         modelID: "gpt-5.2",
-        variants: { low: {}, high: {}, xhigh: {} },
+        variants: [{ id: "low" }, { id: "high" }, { id: "xhigh" }],
       },
     })
 
@@ -27,7 +27,7 @@ describe("model variant", () => {
       model: {
         providerID: "anthropic",
         modelID: "claude-sonnet-4",
-        variants: { low: {}, high: {}, xhigh: {} },
+        variants: [{ id: "low" }, { id: "high" }, { id: "xhigh" }],
       },
     })
 

@@ -75,11 +75,8 @@ export const DialogManageModels: Component = () => {
           const bRank = providerRank(b.items[0].provider.id)
           const aPopular = aRank >= 0
           const bPopular = bRank >= 0
-          const aConfig = (a.items[0].provider as any).source === "config"
-          const bConfig = (b.items[0].provider as any).source === "config"
-          // jh: config (local) providers first
-          if (aConfig && !bConfig) return -1
-          if (!aConfig && bConfig) return 1
+          // The list only carries connected providers, so the old source==="config"
+          // first-clause was a no-op; popularity is the remaining rank.
           if (aPopular && !bPopular) return -1
           if (!aPopular && bPopular) return 1
           return aRank - bRank

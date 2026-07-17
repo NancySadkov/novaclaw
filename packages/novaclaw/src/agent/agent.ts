@@ -2,7 +2,6 @@ import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { PermissionRuleset } from "@novaclaw/schema/permission-ruleset"
 import { Config } from "@/config/config"
 import { serviceUse } from "@novaclaw/core/effect/service-use"
-import { ProviderCatalogView } from "@/provider/catalog-view"
 
 import { Truncate } from "@/tool/truncate"
 import { LLM, LLMError, Message, SystemPart } from "@novaclaw/llm"
@@ -370,7 +369,7 @@ export const layer = Layer.effect(
             }
           // V2 ConfigAgent.Info: prompt→system, disable→disabled, permission(dict)→permissions(ruleset),
           // and options/temperature/top_p are folded into request.body (no top-level name — it is the key).
-          if (value.model) item.model = ProviderCatalogView.parseModel(value.model)
+          if (value.model) item.model = ModelV2.parse(value.model)
           item.variant = value.variant ?? item.variant
           item.prompt = value.system ?? item.prompt
           item.description = value.description ?? item.description
@@ -492,7 +491,7 @@ export const layer = Layer.effect(
             })
 
           // Let plugins customize the agent-generation system prompt.
-          yield* plugin.trigger("experimental.chat.system.transform", { model: selected as any }, { system })
+          yield* plugin.trigger("experimental.chat.system.transform", { model: selected }, { system })
 
           const provider = yield* catalog.provider.get(selected.providerID)
           const connection = yield* integrations.connection.active(

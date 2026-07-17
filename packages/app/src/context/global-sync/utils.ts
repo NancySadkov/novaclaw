@@ -1,4 +1,4 @@
-import type { Agent, Project, ProviderListResponse } from "@novaclaw/sdk/v2/client"
+import type { Agent, ModelV2Info, Project, ProviderListResponse } from "@novaclaw/sdk/v2/client"
 import { NormalizedProviderListResponse } from "@novaclaw/session-ui/context"
 export { pathKey as directoryKey, type PathKey as DirectoryKey } from "@/utils/path-key"
 
@@ -19,22 +19,18 @@ export function normalizeAgentList(input: unknown): Agent[] {
 }
 
 export function normalizeProviderList(input: ProviderListResponse): NormalizedProviderListResponse {
+  const models = new Map<string, ModelV2Info[]>()
+  for (const model of input.models) {
+    if (model.status === "deprecated") continue
+    const list = models.get(model.providerID) ?? []
+    list.push(model)
+    models.set(model.providerID, list)
+  }
   return {
-    ...input,
-    all: new Map(
-      input.all.map(
-        (provider) =>
-          [
-            provider.id,
-            {
-              ...provider,
-              models: Object.fromEntries(
-                Object.entries(provider.models).filter(([, info]) => info.status !== "deprecated"),
-              ),
-            },
-          ] as const,
-      ),
-    ),
+    all: new Map(input.providers.map((provider) => [provider.id, provider])),
+    models,
+    default: input.default,
+    connected: input.connected,
   }
 }
 

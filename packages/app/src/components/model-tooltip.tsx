@@ -3,7 +3,6 @@ import { useLanguage } from "@/context/language"
 import { useExpertise } from "@/context/expertise"
 
 type InputKey = "text" | "image" | "audio" | "video" | "pdf"
-type InputMap = Record<InputKey, boolean>
 
 type ModelInfo = {
   id: string
@@ -11,14 +10,10 @@ type ModelInfo = {
   provider: {
     name: string
   }
-  capabilities?: {
-    reasoning: boolean
-    input: InputMap
+  capabilities: {
+    input: ReadonlyArray<string>
   }
-  modalities?: {
-    input: Array<string>
-  }
-  reasoning?: boolean
+  variants: ReadonlyArray<{ id: string }>
   limit: {
     context: number
   }
@@ -54,26 +49,15 @@ export const ModelTooltip: Component<{ model: ModelInfo; latest?: boolean; free?
     return `${sourceName(props.model)} ${props.model.name}${suffix}`
   }
   const inputs = () => {
-    if (props.model.capabilities) {
-      const input = props.model.capabilities.input
-      const order: Array<InputKey> = ["text", "image", "audio", "video", "pdf"]
-      const entries = order.filter((key) => input[key]).map((key) => inputLabel(key))
-      return entries.length ? entries.join(", ") : undefined
-    }
-    const raw = props.model.modalities?.input
-    if (!raw) return
-    const entries = raw.map((value) => inputLabel(value))
+    const input = props.model.capabilities.input
+    const order: Array<InputKey> = ["text", "image", "audio", "video", "pdf"]
+    const entries = order.filter((key) => input.some((m) => m.startsWith(key))).map((key) => inputLabel(key))
     return entries.length ? entries.join(", ") : undefined
   }
-  const reasoning = () => {
-    if (props.model.capabilities)
-      return props.model.capabilities.reasoning
-        ? language.t("model.tooltip.reasoning.allowed")
-        : language.t("model.tooltip.reasoning.none")
-    return props.model.reasoning
+  const reasoning = () =>
+    props.model.variants.length > 0
       ? language.t("model.tooltip.reasoning.allowed")
       : language.t("model.tooltip.reasoning.none")
-  }
   const context = () => language.t("model.tooltip.context", { limit: props.model.limit.context.toLocaleString() })
 
   return (

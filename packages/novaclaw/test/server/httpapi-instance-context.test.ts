@@ -61,7 +61,7 @@ const instanceContextTestLayer = Layer.mergeAll(
   instanceContextLayer,
   workspaceRoutingLayer.pipe(
     Layer.provide(Socket.layerWebSocketConstructorGlobal),
-    // F1c: the routing middleware reads the session row via core SessionV1Read (Database),
+    // F1c: the routing middleware reads the session row via core SessionRead (Database),
     // not the V1 Session.Service.
     Layer.provide(Database.defaultLayer),
   ),
