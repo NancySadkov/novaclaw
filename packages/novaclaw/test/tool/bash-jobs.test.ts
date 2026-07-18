@@ -5,9 +5,16 @@ import { Effect, Layer } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { BashJobs } from "@novaclaw/core/tool/bash-jobs"
 import { AppProcess } from "@novaclaw/core/process"
+import { Database } from "@novaclaw/core/database/database"
 import { testEffect } from "../lib/effect"
 
-const it = testEffect(Layer.mergeAll(BashJobs.layer.pipe(Layer.provide(AppProcess.defaultLayer))))
+// T6: BashJobs write-throughs to the bash_job table now — an isolated in-memory DB keeps the
+// real instance database out of test reach.
+const it = testEffect(
+  Layer.mergeAll(
+    BashJobs.layer.pipe(Layer.provide(AppProcess.defaultLayer), Layer.provide(Database.layerFromPath(":memory:"))),
+  ),
+)
 
 const bunEval = (code: string) => ChildProcess.make("bun", ["-e", code], { stdin: "ignore" })
 

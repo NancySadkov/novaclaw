@@ -197,6 +197,19 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`bash_job\` (
+          \`id\` text PRIMARY KEY,
+          \`owner\` text NOT NULL,
+          \`command\` text NOT NULL,
+          \`status\` text NOT NULL,
+          \`exit\` integer,
+          \`output\` text DEFAULT '' NOT NULL,
+          \`truncated\` integer DEFAULT false NOT NULL,
+          \`time_started\` integer NOT NULL,
+          \`time_done\` integer
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`runtime_setting\` (
           \`key\` text PRIMARY KEY,
           \`value\` text NOT NULL,
@@ -311,6 +324,7 @@ export default {
       `)
       yield* tx.run(`CREATE UNIQUE INDEX \`event_aggregate_seq_idx\` ON \`event\` (\`aggregate_id\`,\`seq\`);`)
       yield* tx.run(`CREATE INDEX \`event_aggregate_type_seq_idx\` ON \`event\` (\`aggregate_id\`,\`type\`,\`seq\`);`)
+      yield* tx.run(`CREATE INDEX \`bash_job_owner_idx\` ON \`bash_job\` (\`owner\`);`)
       yield* tx.run(`CREATE INDEX \`kb_fact_subject_idx\` ON \`kb_fact\` (\`subject\`,\`valid_to\`);`)
       yield* tx.run(`CREATE INDEX \`kb_fact_predicate_idx\` ON \`kb_fact\` (\`predicate\`,\`valid_to\`);`)
       yield* tx.run(`CREATE INDEX \`kb_fact_object_idx\` ON \`kb_fact\` (\`object\`,\`valid_to\`);`)

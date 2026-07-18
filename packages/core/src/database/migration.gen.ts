@@ -60,5 +60,6 @@ export const migrations = (
     import("./migration/20260717120000_permission_origin"),
     import("./migration/20260717130000_workspace_origin"),
     import("./migration/20260717150000_drop_project_entity"),
+    import("./migration/20260717160000_add_bash_job"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]
