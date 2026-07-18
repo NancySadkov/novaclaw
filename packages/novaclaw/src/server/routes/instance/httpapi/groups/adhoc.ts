@@ -7,9 +7,8 @@ import { WorkspaceRoutingMiddleware, WorkspaceRoutingQuery } from "../middleware
 import { described } from "./metadata"
 
 // 4E — the review surface for SESSION-defined ad-hoc recipes: list what a session's model
-// invented, discard the junk, or PROMOTE the keepers into the project novaclaw.jsonc
-// (comment-preserving) so they become permanent. The store is global (keyed by session id);
-// `directory` routes the promote target (the project config).
+// invented, discard the junk, or PROMOTE the keepers into the instance-wide `adhoc_tools`
+// settings store so they become permanent (config-sqlite: the store is the config).
 
 const root = "/adhoc"
 
@@ -49,14 +48,14 @@ export const AdhocApi = HttpApi.make("adhoc")
         HttpApiEndpoint.post("promote", `${root}/session/:sessionID/:name/promote`, {
           params: { sessionID: Schema.String, name: Schema.String },
           query: WorkspaceRoutingQuery,
-          success: described(Schema.Struct({ promoted: Schema.String }), "The config file written"),
+          success: described(Schema.Struct({ promoted: Schema.String }), "The config key written"),
           error: ApiNotFoundError,
         }).annotateMerge(
           OpenApi.annotations({
             identifier: "adhoc.promote",
-            summary: "Promote a session recipe to project config (4E)",
+            summary: "Promote a session recipe to instance config (4E)",
             description:
-              "Write a session-defined recipe into the project novaclaw.jsonc adhoc_tools (comment-preserving), making it permanent.",
+              "Write a session-defined recipe into the instance adhoc_tools settings store, making it permanent.",
           }),
         ),
       )

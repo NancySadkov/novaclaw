@@ -1,16 +1,16 @@
 import { AdhocTools } from "@novaclaw/core/adhoc-tools"
-import * as InstanceState from "@/effect/instance-state"
+import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { Effect } from "effect"
-import fs from "node:fs/promises"
-import path from "node:path"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
 import { notFound } from "../errors"
 
 // 4E handlers — thin lowering onto the AdhocTools session store. Promote writes the
-// PROJECT novaclaw.jsonc (the routed directory) with a comment-preserving jsonc patch.
+// instance-wide `adhoc_tools` SETTINGS STORE (config-sqlite: nothing reads a project
+// jsonc at runtime anymore — the store IS the config; replace-by-name keeps it idempotent).
 export const adhocHandlers = HttpApiBuilder.group(InstanceHttpApi, "adhoc", (handlers) =>
   Effect.gen(function* () {
+    const settingsStore = yield* SettingsConfigStore.Service
     return handlers
       .handle(
         "list",
@@ -36,12 +36,13 @@ export const adhocHandlers = HttpApiBuilder.group(InstanceHttpApi, "adhoc", (han
             return yield* Effect.fail(
               notFound(`No recipe "${ctx.params.name}" defined in session ${ctx.params.sessionID}`),
             )
-          const directory = (yield* InstanceState.context).directory
-          const configPath = path.join(directory, "novaclaw.jsonc")
-          const existing = yield* Effect.promise(() => fs.readFile(configPath, "utf8").catch(() => ""))
-          const patched = AdhocTools.promoteRecipeToConfig(existing, recipe)
-          yield* Effect.promise(() => fs.writeFile(configPath, patched, "utf8"))
-          return { promoted: configPath }
+          const current = ((yield* settingsStore.all()).adhoc_tools ?? []) as Array<{ name: string }>
+          const next = [
+            ...current.filter((item) => item.name !== recipe.name),
+            { name: recipe.name, description: recipe.description, manual: recipe.manual },
+          ]
+          yield* settingsStore.set("adhoc_tools", next)
+          return { promoted: "adhoc_tools" }
         }),
       )
   }),

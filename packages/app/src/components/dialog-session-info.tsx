@@ -1,4 +1,4 @@
-import { Component, createMemo, createSignal, For, Show } from "solid-js"
+import { Component, createMemo, createResource, createSignal, For, Show } from "solid-js"
 import type { SessionV2Info as Session } from "@novaclaw/sdk/v2/client"
 import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
 import { Button } from "@novaclaw/ui/button"
@@ -10,7 +10,7 @@ import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
 import { subtreeRows, tokenTotals } from "@/pages/home-session-meta"
 import { sessionTitle } from "@/utils/session-title"
-import { switchPromptOverride } from "@/utils/fs-api"
+import { adhocDiscard, adhocList, adhocPromote, switchPromptOverride, type AdhocRecipe } from "@/utils/fs-api"
 
 // Chat details sheet (uix-improvement slice 5): everything a user may want to KNOW about a chat —
 // its working folder, agent + model, live status, file changes, timestamps, and token usage (this
@@ -94,6 +94,32 @@ export const DialogSessionInfo: Component<{ session: Session; projectName?: stri
     if (data.session_working(props.session.id)) return language.t("home.sessions.attention.working")
     return language.t("session.info.status.ready")
   })
+
+  // 4E (small-tails T5): the review surface for tools this chat's agent defined for itself
+  // (define_tool). Promote copies one into the instance-wide adhoc_tools config; Discard drops
+  // it from the session. Hidden entirely while the session has none.
+  const [recipes, { refetch: refetchRecipes }] = createResource(
+    () => (server.current ? { conn: server.current } : undefined),
+    ({ conn }) =>
+      adhocList(conn.http, { directory: props.session.location.directory, sessionID: props.session.id }).catch(
+        () => [] as AdhocRecipe[],
+      ),
+  )
+  const [promoted, setPromoted] = createSignal<string[]>([])
+  const promoteRecipe = (name: string) => {
+    const conn = server.current
+    if (!conn) return
+    void adhocPromote(conn.http, { directory: props.session.location.directory, sessionID: props.session.id, name })
+      .then(() => setPromoted((list) => (list.includes(name) ? list : [...list, name])))
+      .catch((error) => console.error("adhocPromote failed", error))
+  }
+  const discardRecipe = (name: string) => {
+    const conn = server.current
+    if (!conn) return
+    void adhocDiscard(conn.http, { directory: props.session.location.directory, sessionID: props.session.id, name })
+      .then(() => refetchRecipes())
+      .catch((error) => console.error("adhocDiscard failed", error))
+  }
 
   const changes = createMemo(() => {
     const summary = props.session.summary
@@ -231,6 +257,57 @@ export const DialogSessionInfo: Component<{ session: Session; projectName?: stri
                 {language.t("session.info.prompt.hint")}
               </p>
             </div>
+            <Show when={(recipes.latest ?? []).length > 0}>
+              <div class="mt-2 border-t border-v2-border-border-base pt-2" data-slot="session-info-adhoc">
+                <div class="py-1.5 text-[12px] text-v2-text-text-faint [font-weight:470]">
+                  {language.t("session.info.adhoc.title")}
+                </div>
+                <For each={recipes.latest ?? []}>
+                  {(recipe) => (
+                    <div class="flex flex-col gap-1 py-1.5" data-slot="session-info-adhoc-recipe">
+                      <div class="flex items-center gap-2">
+                        <span class="font-mono text-[12px] text-v2-text-text-base [font-weight:470]">{recipe.name}</span>
+                        <span class="min-w-0 flex-1 truncate text-[12px] text-v2-text-text-faint">
+                          {recipe.description}
+                        </span>
+                        <Show
+                          when={!promoted().includes(recipe.name)}
+                          fallback={
+                            <span class="text-[12px] text-v2-text-text-faint">
+                              {language.t("session.info.adhoc.promoted")}
+                            </span>
+                          }
+                        >
+                          <Button
+                            variant="ghost"
+                            type="button"
+                            data-action="session-info-adhoc-promote"
+                            onClick={() => promoteRecipe(recipe.name)}
+                          >
+                            {language.t("session.info.adhoc.promote")}
+                          </Button>
+                        </Show>
+                        <Button
+                          variant="ghost"
+                          type="button"
+                          data-action="session-info-adhoc-discard"
+                          onClick={() => discardRecipe(recipe.name)}
+                        >
+                          {language.t("session.info.adhoc.discard")}
+                        </Button>
+                      </div>
+                      <details class="text-[12px] text-v2-text-text-faint">
+                        <summary class="cursor-pointer select-none">{language.t("session.info.adhoc.manual")}</summary>
+                        <pre class="mt-1 whitespace-pre-wrap break-words font-mono text-[11px] leading-snug text-v2-text-text-base">{recipe.manual}</pre>
+                      </details>
+                    </div>
+                  )}
+                </For>
+                <p class="pt-1 text-[12px] leading-snug text-v2-text-text-faint">
+                  {language.t("session.info.adhoc.hint")}
+                </p>
+              </div>
+            </Show>
           </RequiresLevel>
         </div>
       </div>

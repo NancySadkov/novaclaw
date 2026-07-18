@@ -25,7 +25,7 @@ function headersFor(server: ServerConnection.HttpBase): Record<string, string> {
 
 async function call<T>(
   server: ServerConnection.HttpBase,
-  method: "GET" | "POST" | "PUT",
+  method: "GET" | "POST" | "PUT" | "DELETE",
   route: string,
   directory: string,
   body?: unknown,
@@ -198,4 +198,35 @@ export function switchPromptOverride(
   input: { directory: string; sessionID: string; override: string | null },
 ) {
   return sessionPost(server, input.directory, input.sessionID, "prompt-override", { override: input.override })
+}
+
+// 4E (small-tails T5): the session-defined ad-hoc recipe review surface.
+export type AdhocRecipe = { name: string; description: string; manual: string; enabled?: boolean }
+
+export function adhocList(server: ServerConnection.HttpBase, input: { directory: string; sessionID: string }) {
+  return call<AdhocRecipe[]>(server, "GET", `adhoc/session/${encodeURIComponent(input.sessionID)}`, input.directory)
+}
+
+export function adhocDiscard(
+  server: ServerConnection.HttpBase,
+  input: { directory: string; sessionID: string; name: string },
+) {
+  return call<{ removed: boolean }>(
+    server,
+    "DELETE",
+    `adhoc/session/${encodeURIComponent(input.sessionID)}/${encodeURIComponent(input.name)}`,
+    input.directory,
+  )
+}
+
+export function adhocPromote(
+  server: ServerConnection.HttpBase,
+  input: { directory: string; sessionID: string; name: string },
+) {
+  return call<{ promoted: string }>(
+    server,
+    "POST",
+    `adhoc/session/${encodeURIComponent(input.sessionID)}/${encodeURIComponent(input.name)}/promote`,
+    input.directory,
+  )
 }

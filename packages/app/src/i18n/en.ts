@@ -779,6 +779,13 @@ export const dict = {
   "session.info.tokens.rollup": "{{total}} across {{threads}} sub-agent threads",
   "session.info.tokens.hint":
     "Tokens are the pieces of text the AI reads and writes — a rough measure of how much work this chat has done.",
+  "session.info.adhoc.title": "Session tools",
+  "session.info.adhoc.promote": "Promote",
+  "session.info.adhoc.promoted": "Promoted",
+  "session.info.adhoc.discard": "Discard",
+  "session.info.adhoc.manual": "Manual",
+  "session.info.adhoc.hint":
+    "Tools this chat's agent defined for itself. Promote copies one into this instance's configuration for every chat; Discard throws it away.",
   "session.info.prompt.title": "System prompt (this chat)",
   "session.info.prompt.placeholder": "Extra standing instructions for this chat…",
   "session.info.prompt.hint":
