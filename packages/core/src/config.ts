@@ -117,6 +117,20 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   strict: ConfigStrict.Info.pipe(Schema.optional).annotate({
     description: "Strict mode — the Juvenile Harness posture for weak/local models: harness-owned decomposition, per-step verification, recovery (jh.md; E6)",
   }),
+  instances: Schema.Array(
+    Schema.Struct({
+      name: Schema.String.annotate({ description: "Peer name (also keys the NOVACLAW_INSTANCE_<NAME>_* env vars)" }),
+      url: Schema.String.annotate({ description: "The peer's base URL, e.g. http://127.0.0.1:4097" }),
+      token: Schema.String.pipe(Schema.optional).annotate({
+        description: "The peer's incoming API token (its server.password)",
+      }),
+    }),
+  )
+    .pipe(Schema.optional)
+    .annotate({
+      description:
+        "P2P: peer NovaClaw instances this instance's AGENTS may drive over HTTP (full API access — sessions, registry, config). Surfaced to models as env vars in bash plus a system-prompt line.",
+    }),
   virtualFs: Schema.Boolean.pipe(Schema.optional).annotate({
     description:
       "FS-3: force the app-private virtual filesystem root (phones/sandboxes without a browsable FS); the NOVACLAW_VIRTUAL_FS env flag also enables it",

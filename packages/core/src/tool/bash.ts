@@ -5,6 +5,7 @@ import { ToolFailure } from "@novaclaw/llm"
 import { Duration, Effect, Layer, Schema } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { Config } from "../config"
+import { SettingsConfigStore } from "../settings-config-store"
 import { makeLocationNode } from "../effect/app-node"
 import { FSUtil } from "../fs-util"
 import { LocationMutation } from "../location-mutation"
@@ -130,6 +131,7 @@ export const layer = Layer.effectDiscard(
     const mutation = yield* LocationMutation.Service
     const fs = yield* FSUtil.Service
     const config = yield* Config.Service
+    const settingsStore = yield* SettingsConfigStore.Service
     const permission = yield* PermissionV2.Service
     const bashJobs = yield* BashJobs.Service
     // OFF-C: the offline policy is a machine-level snapshot (flag-aware config dir);
@@ -205,9 +207,11 @@ export const layer = Layer.effectDiscard(
                 return yield* Effect.fail(new Error(`Working directory is not a directory: ${target.canonical}`))
 
               const entries = yield* config.entries()
-              const shell =
-                Object.assign({}, ...entries.flatMap((entry) => (entry.type === "document" ? [entry.info] : [])))
-                  .shell ?? defaultShell()
+              const mergedConfig = Object.assign(
+                {},
+                ...entries.flatMap((entry) => (entry.type === "document" ? [entry.info] : [])),
+              ) as { shell?: string }
+              const shell = mergedConfig.shell ?? defaultShell()
               // `bash -c` is not a login shell: prepend the bash's own userland to PATH
               // so git + coreutils resolve even on a machine with neither installed
               // (no-op for non-MSYS shells — envForBash returns undefined for them).
@@ -217,7 +221,26 @@ export const layer = Layer.effectDiscard(
               // npm/git) at a dead proxy sink with the allowlist in NO_PROXY, so the model's
               // own shell fails closed on WAN egress (no-op when offline mode is off).
               const egress = offline.egressEnv()
-              const childEnv = bundleEnv || egress ? { ...bundleEnv, ...egress } : undefined
+              // P2P: surface configured peer instances to the shell as env vars, so an agent can
+              // drive them free-form (curl -u novaclaw:$NOVACLAW_INSTANCE_<NAME>_TOKEN <url>/...).
+              // Read the LIVE settings store, NOT config.entries() — location config is snapshotted
+              // at boot, so a peer added later (Settings → Instances) would be invisible to a
+              // long-lived location otherwise (the flakiness this fixed).
+              const peers = ((yield* settingsStore.all()).instances ?? []) as ReadonlyArray<{
+                name: string
+                url: string
+                token?: string
+              }>
+              const peerEnv: Record<string, string> = {}
+              for (const peer of peers) {
+                const key = peer.name.toUpperCase().replace(/[^A-Z0-9]+/g, "_")
+                if (!key || !peer.url) continue
+                peerEnv[`NOVACLAW_INSTANCE_${key}_URL`] = peer.url
+                if (peer.token) peerEnv[`NOVACLAW_INSTANCE_${key}_TOKEN`] = peer.token
+              }
+              const hasPeers = Object.keys(peerEnv).length > 0
+              const childEnv =
+                bundleEnv || egress || hasPeers ? { ...bundleEnv, ...egress, ...peerEnv } : undefined
               const command = ChildProcess.make(commandText, [], {
                 cwd: target.canonical,
                 shell,
@@ -296,6 +319,7 @@ export const node = makeLocationNode({
     FSUtil.node,
     AppProcess.node,
     Config.node,
+    SettingsConfigStore.node,
     PermissionV2.node,
     BashJobs.node,
     Offline.node,

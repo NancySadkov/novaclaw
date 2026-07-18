@@ -12,6 +12,7 @@ import { useLanguage } from "@/context/language"
 import { ServerConnection, serverName } from "@/context/server"
 import { useServerManagementController } from "../dialog-select-server"
 import { DialogServerV2 } from "./dialog-server-v2"
+import { InstancesAccess } from "./instances-access"
 import { SettingsListV2 } from "./parts/list"
 import { AddServerMenu, isWslServer, useFilteredWslServers, WslServerSettings } from "@/wsl/settings"
 import "./settings-v2.css"
@@ -85,6 +86,7 @@ export const SettingsServersV2: Component = () => {
       </div>
 
       <div class="settings-v2-tab-body settings-v2-servers">
+        <InstancesAccess />
         <Show
           when={filtered().length > 0 || wslServers().length > 0}
           fallback={

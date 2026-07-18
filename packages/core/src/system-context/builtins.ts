@@ -8,17 +8,28 @@ import { InstructionContext } from "../instruction-context"
 import { SystemContextRegistry } from "./registry"
 import { FSUtil } from "../fs-util"
 import { Global } from "../global"
+import { SettingsConfigStore } from "../settings-config-store"
 
 const builtIns = Layer.effectDiscard(
   Effect.gen(function* () {
     const location = yield* Location.Service
     const registry = yield* SystemContextRegistry.Service
+    const settingsStore = yield* SettingsConfigStore.Service
+    // P2P: tell the model about configured peer instances — full free-form HTTP access with the
+    // token from env (the bash tool injects NOVACLAW_INSTANCE_<NAME>_URL/_TOKEN; tokens are never
+    // printed into the prompt itself).
+    const peers = ((yield* settingsStore.all()).instances ?? []) as Array<{ name: string; url: string }>
+    const peerLines = peers.map((peer) => {
+      const key = peer.name.toUpperCase().replace(/[^A-Z0-9]+/g, "_")
+      return `  Peer instance "${peer.name}": ${peer.url} — same HTTP API as this instance (sessions, registry, config). Drive it from bash, e.g. curl -u "novaclaw:$NOVACLAW_INSTANCE_${key}_TOKEN" $NOVACLAW_INSTANCE_${key}_URL/api/session (the env vars are preset).`
+    })
     const environment = [
       "<env>",
       `  Working directory: ${location.directory}`,
       `  Workspace root folder: ${location.root}`,
       `  Is directory a git repo: ${location.vcs?.type === "git" ? "yes" : "no"}`,
       `  Platform: ${process.platform}`,
+      ...peerLines,
       "</env>",
     ].join("\n")
     const context = SystemContext.combine([
@@ -52,5 +63,5 @@ export const locationLayer = layer
 export const node = makeLocationNode({
   name: "system-context-builtins",
   layer,
-  deps: [Location.node, SystemContextRegistry.node, InstructionContext.node, FSUtil.node, Global.node],
+  deps: [Location.node, SystemContextRegistry.node, InstructionContext.node, FSUtil.node, Global.node, SettingsConfigStore.node],
 })

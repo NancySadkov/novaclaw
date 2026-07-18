@@ -1,6 +1,7 @@
 export * as ServerAuth from "./auth"
 
 import { ConfigService } from "@/effect/config-service"
+import { ServerToken } from "@novaclaw/core/server-token"
 import { Flag } from "@novaclaw/core/flag/flag"
 import { Config as EffectConfig, Context, Option, Redacted } from "effect"
 
@@ -20,6 +21,13 @@ export class Config extends ConfigService.Service<Config>()("@novaclaw/ServerAut
 }) {}
 
 export type Info = Context.Service.Shape<typeof Config>
+
+/** P2P: env password wins; otherwise the settings store's server.password (live, TTL-cached). */
+export function effective(config: Info): Info {
+  if (Option.isSome(config.password) && config.password.value !== "") return config
+  const stored = ServerToken.storedPassword()
+  return stored ? { ...config, password: Option.some(stored) } : config
+}
 
 export function required(config: Info) {
   return Option.isSome(config.password) && config.password.value !== ""

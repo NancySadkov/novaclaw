@@ -100,11 +100,13 @@ function validateRawCredential<A, E, R>(
 
 export const authorizationRouterMiddleware = HttpRouter.middleware()(
   Effect.gen(function* () {
-    const config = yield* ServerAuth.Config
-    if (!ServerAuth.required(config)) return (effect) => effect
+    const envConfig = yield* ServerAuth.Config
 
+    // P2P: resolve per request (env → settings store) so token edits apply live.
     return (effect) =>
       Effect.gen(function* () {
+        const config = ServerAuth.effective(envConfig)
+        if (!ServerAuth.required(config)) return yield* effect
         const request = yield* HttpServerRequest.HttpServerRequest
         const url = new URL(request.url, "http://localhost")
         if (isPublicUIPath(request.method, url.pathname)) return yield* effect
@@ -118,10 +120,11 @@ export const authorizationRouterMiddleware = HttpRouter.middleware()(
 export const authorizationLayer = Layer.effect(
   Authorization,
   Effect.gen(function* () {
-    const config = yield* ServerAuth.Config
-    if (!ServerAuth.required(config)) return Authorization.of((effect) => effect)
+    const envConfig = yield* ServerAuth.Config
     return Authorization.of((effect) =>
       Effect.gen(function* () {
+        const config = ServerAuth.effective(envConfig)
+        if (!ServerAuth.required(config)) return yield* effect
         const request = yield* HttpServerRequest.HttpServerRequest
         return yield* credentialFromRequest(request).pipe(
           Effect.flatMap((credential) => validateCredential(effect, credential, config)),
@@ -134,10 +137,11 @@ export const authorizationLayer = Layer.effect(
 export const ptyConnectAuthorizationLayer = Layer.effect(
   PtyConnectAuthorization,
   Effect.gen(function* () {
-    const config = yield* ServerAuth.Config
-    if (!ServerAuth.required(config)) return PtyConnectAuthorization.of((effect) => effect)
+    const envConfig = yield* ServerAuth.Config
     return PtyConnectAuthorization.of((effect) =>
       Effect.gen(function* () {
+        const config = ServerAuth.effective(envConfig)
+        if (!ServerAuth.required(config)) return yield* effect
         const request = yield* HttpServerRequest.HttpServerRequest
         const url = new URL(request.url, "http://localhost")
         if (hasPtyConnectTicketURL(url)) return yield* effect

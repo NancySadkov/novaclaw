@@ -38,10 +38,13 @@ function credentialFromRequest(request: HttpServerRequest.HttpServerRequest) {
 export const authorizationLayer = Layer.effect(
   Authorization,
   Effect.gen(function* () {
-    const config = yield* ServerAuth.Config
-    if (!ServerAuth.required(config)) return Authorization.of((effect) => effect)
+    const envConfig = yield* ServerAuth.Config
+    // P2P: resolve the EFFECTIVE config per request (env override → the settings store's
+    // server.password) so a token set in Settings → Instances starts gating without a restart.
     return Authorization.of((effect) =>
       Effect.gen(function* () {
+        const config = ServerAuth.effective(envConfig)
+        if (!ServerAuth.required(config)) return yield* effect
         const request = yield* HttpServerRequest.HttpServerRequest
         // Browsers cannot set headers on WebSocket upgrades, so a ticketed PTY connect skips
         // credential checks here; the connect handler consumes and validates the ticket.

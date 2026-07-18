@@ -35,6 +35,7 @@ export const SETTINGS_KEYS = [
   "shell",
   "expertise",
   "virtualFs",
+  "instances",
   "instructions",
   "disabled_providers",
   "enabled_providers",
