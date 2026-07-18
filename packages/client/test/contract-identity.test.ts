@@ -10,7 +10,6 @@ import { Prompt as CorePrompt } from "@novaclaw/core/session/prompt"
 import { Agent } from "@novaclaw/schema/agent"
 import { Location } from "@novaclaw/schema/location"
 import { Model } from "@novaclaw/schema/model"
-import { Project } from "@novaclaw/schema/project"
 import { Provider } from "@novaclaw/schema/provider"
 import { Prompt } from "@novaclaw/schema/prompt"
 import { Session } from "@novaclaw/schema/session"
@@ -32,7 +31,6 @@ test("Core and Server reuse the authoritative Schema and Protocol values", () =>
   expect(Api.groups["server.session"].identifier).toBe("server.session")
   expect(Object.keys(ClientApi.groups)).toEqual(Object.keys(Api.groups))
   expect(Session.ID.create()).toStartWith("ses_")
-  expect(Project.ID.global).toBe("global")
   expect(Provider.ID.anthropic).toBe("anthropic")
   expect(Workspace.ID.create()).toStartWith("wrk_")
 })

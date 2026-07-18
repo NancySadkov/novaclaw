@@ -198,7 +198,8 @@ test("sessions.history retains the typed SessionNotFoundError", async () => {
 const session = {
   data: {
     id: "ses_test",
-    projectID: "project",
+    slug: "test",
+    version: "test",
     cost: 0,
     tokens: {
       input: 1,
