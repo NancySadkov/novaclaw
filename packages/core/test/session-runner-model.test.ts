@@ -6,6 +6,7 @@ import { Headers } from "effect/unstable/http"
 import { Credential } from "@novaclaw/core/credential"
 import { Integration } from "@novaclaw/core/integration"
 import { ModelV2 } from "@novaclaw/core/model"
+import { ProbeWindow } from "@novaclaw/core/probe-window"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { ProjectV2 } from "@novaclaw/core/project"
 import { SessionRunnerModel } from "@novaclaw/core/session/runner/model"
@@ -58,6 +59,26 @@ describe("SessionRunnerModel", () => {
           http: { body: { custom_extension: { enabled: true } } },
         },
       })
+    }),
+  )
+
+  it.effect("prefers a live probed window over the catalog context limit", () =>
+    Effect.gen(function* () {
+      ProbeWindow.clear()
+      ProbeWindow.remember("test-provider", "test-model", 32768)
+      const probed = yield* SessionRunnerModel.fromCatalogModel(
+        model({ type: "aisdk", package: "@ai-sdk/openai", url: "https://openai.example/v1" }),
+      )
+      expect(probed.route.defaults.limits).toMatchObject({ context: 32768, output: 20 })
+
+      // A window remembered for a DIFFERENT provider's model must not leak over.
+      ProbeWindow.clear()
+      ProbeWindow.remember("other-provider", "test-model", 4096)
+      const fallback = yield* SessionRunnerModel.fromCatalogModel(
+        model({ type: "aisdk", package: "@ai-sdk/openai", url: "https://openai.example/v1" }),
+      )
+      expect(fallback.route.defaults.limits).toMatchObject({ context: 100, output: 20 })
+      ProbeWindow.clear()
     }),
   )
 

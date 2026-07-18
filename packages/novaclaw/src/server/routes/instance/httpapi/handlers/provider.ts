@@ -1,6 +1,7 @@
 import { ProviderAuth } from "@/provider/auth"
 import { Config } from "@/config/config"
 import { ModelsDev } from "@novaclaw/core/models-dev"
+import { ProbeWindow } from "@novaclaw/core/probe-window"
 import { ProviderCatalogResult } from "@/provider/catalog-result"
 import { Catalog } from "@novaclaw/core/catalog"
 import { LocationServiceMap } from "@novaclaw/core/location-services"
@@ -174,6 +175,12 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
           detail: `Model "${ctx.payload.modelID}" is not in the server's /models list.`,
         }
       const window = found && typeof found.max_model_len === "number" ? found.max_model_len : undefined
+      // T3 — remember the honored window so model resolution sizes the 1M context pack from
+      // live truth, but only when this probed the SAVED provider endpoint: a payload baseURL
+      // is the New-Model discovery flow probing an UNSAVED endpoint, and caching that against
+      // the saved provider id would poison the runtime override.
+      if (window !== undefined && ctx.payload.modelID !== undefined && ctx.payload.baseURL === undefined)
+        ProbeWindow.remember(ctx.params.providerID, ctx.payload.modelID, window)
       return { status: "ok" as const, latencyMs, models, ...(window === undefined ? {} : { window }) }
     })
 

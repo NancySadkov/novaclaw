@@ -14,6 +14,7 @@ import { Credential } from "../../credential"
 import { Integration } from "../../integration"
 import { ModelV2 } from "../../model"
 import { PluginV2 } from "../../plugin"
+import { ProbeWindow } from "../../probe-window"
 import { ProviderV2 } from "../../provider"
 import { SessionSchema } from "../schema"
 
@@ -105,7 +106,13 @@ const withDefaults = (model: ModelV2.Info, route: AnyRoute) => {
     headers: model.request.headers,
     ...(Object.keys(split.generation).length > 0 ? { generation: split.generation } : {}),
     http: { body: split.http },
-    limits: { context: model.limit.context, output: model.limit.output },
+    // B15/T3 — a live probe's server-reported window (vLLM max_model_len) is the HONORED
+    // context size and beats the catalog limit, which lies whenever config drifts from the
+    // serving process. Runtime-only override; the catalog value stays the cold-start default.
+    limits: {
+      context: ProbeWindow.get(model.providerID, model.id) ?? model.limit.context,
+      output: model.limit.output,
+    },
   })
 }
 
