@@ -4,7 +4,6 @@ import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
-import { useTheme, type ColorScheme } from "@novaclaw/ui/theme/context"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
@@ -14,38 +13,14 @@ import { usePlatform } from "@/context/platform"
 import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
 import { useServerSDK } from "@/context/server-sdk"
+import { useSettings } from "@/context/settings"
 import { offlineStatus, shellProvision, shellStatus, type OfflineStatus, type ShellStatus } from "@/utils/fs-api"
 import { useUpdaterAction } from "../updater-action"
-import {
-  monoDefault,
-  monoFontFamily,
-  monoInput,
-  sansDefault,
-  sansFontFamily,
-  sansInput,
-  terminalDefault,
-  terminalFontFamily,
-  terminalInput,
-  useSettings,
-} from "@/context/settings"
-import { playSoundById, SOUND_OPTIONS } from "@/utils/sound"
 import { Link } from "../link"
 import { DialogExpertise } from "./dialog-expertise"
-import { ThemeSwatches } from "./parts/theme-swatches"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 import "./settings-v2.css"
-
-let demoSoundState = {
-  cleanup: undefined as (() => void) | undefined,
-  timeout: undefined as NodeJS.Timeout | undefined,
-  run: 0,
-}
-
-type ThemeOption = {
-  id: string
-  name: string
-}
 
 type ShellOption = {
   path: string
@@ -59,43 +34,15 @@ type ShellSelectOption = {
   label: string
 }
 
-// To prevent audio from overlapping/playing very quickly when navigating the settings menus,
-// delay the playback by 100ms during quick selection changes and pause existing sounds.
-const stopDemoSound = () => {
-  demoSoundState.run += 1
-  if (demoSoundState.cleanup) {
-    demoSoundState.cleanup()
-  }
-  clearTimeout(demoSoundState.timeout)
-  demoSoundState.cleanup = undefined
-}
-
-const playDemoSound = (id: string | undefined) => {
-  stopDemoSound()
-  if (!id) return
-
-  const run = ++demoSoundState.run
-  demoSoundState.timeout = setTimeout(() => {
-    void playSoundById(id).then((cleanup) => {
-      if (demoSoundState.run !== run) {
-        cleanup?.()
-        return
-      }
-      demoSoundState.cleanup = cleanup
-    })
-  }, 100)
-}
-
 export const SettingsGeneralV2: Component<{
   sessionID?: string
 }> = (props) => {
-  const theme = useTheme()
   const language = useLanguage()
+  const settings = useSettings()
   const expertise = useExpertise()
   const permission = usePermission()
   const platform = usePlatform()
   const dialog = useDialog()
-  const settings = useSettings()
   const serverSync = useServerSync()
   const serverSdk = useServerSDK()
   const mobile = createMediaQuery("(max-width: 767px)")
@@ -125,8 +72,6 @@ export const SettingsGeneralV2: Component<{
   }
   const desktop = createMemo(() => platform.platform === "desktop")
 
-  const themeOptions = createMemo<ThemeOption[]>(() => theme.ids().map((id) => ({ id, name: theme.name(id) })))
-
   const [shells] = createResource(
     () =>
       serverSdk()
@@ -135,10 +80,6 @@ export const SettingsGeneralV2: Component<{
         .catch(() => [] as ShellOption[]),
     { initialValue: [] as ShellOption[] },
   )
-
-  onMount(() => {
-    void theme.loadThemes()
-  })
 
   // B11 — bundled-shell substrate status + provisioner (raw-fetch endpoints, not in the SDK).
   const globalCtx = useGlobal()
@@ -243,51 +184,12 @@ export const SettingsGeneralV2: Component<{
     return options
   })
 
-  const colorSchemeOptions = createMemo((): { value: ColorScheme; label: string }[] => [
-    { value: "system", label: language.t("theme.scheme.system") },
-    { value: "light", label: language.t("theme.scheme.light") },
-    { value: "dark", label: language.t("theme.scheme.dark") },
-  ])
-
   const languageOptions = createMemo(() =>
     language.locales.map((locale) => ({
       value: locale,
       label: language.label(locale),
     })),
   )
-
-  const noneSound = { id: "none", label: "sound.option.none" } as const
-  const soundOptions = [noneSound, ...SOUND_OPTIONS]
-  const mono = () => monoInput(settings.appearance.font())
-  const sans = () => sansInput(settings.appearance.uiFont())
-  const terminal = () => terminalInput(settings.appearance.terminalFont())
-
-  const soundSelectProps = (
-    enabled: () => boolean,
-    current: () => string,
-    setEnabled: (value: boolean) => void,
-    set: (id: string) => void,
-  ) => ({
-    options: soundOptions,
-    current: enabled() ? (soundOptions.find((o) => o.id === current()) ?? noneSound) : noneSound,
-    value: (o: (typeof soundOptions)[number]) => o.id,
-    label: (o: (typeof soundOptions)[number]) => language.t(o.label),
-    onHighlight: (option: (typeof soundOptions)[number] | undefined) => {
-      if (!option) return
-      playDemoSound(option.id === "none" ? undefined : option.id)
-    },
-    onSelect: (option: (typeof soundOptions)[number] | null) => {
-      if (!option) return
-      if (option.id === "none") {
-        setEnabled(false)
-        stopDemoSound()
-        return
-      }
-      setEnabled(true)
-      set(option.id)
-      playDemoSound(option.id)
-    },
-  })
 
   // Dynamic i18n keys (level name/blurb) need the loose-key cast the translator otherwise forbids.
   const tk = (key: string) => language.t(key as Parameters<typeof language.t>[0])
