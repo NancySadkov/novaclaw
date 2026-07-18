@@ -1,8 +1,9 @@
 import { Popover as Kobalte } from "@kobalte/core/popover"
-import { type Accessor, Component, ComponentProps, createMemo, JSX, Show, ValidComponent } from "solid-js"
+import { type Accessor, Component, ComponentProps, createMemo, JSX, onMount, Show, ValidComponent } from "solid-js"
 import { createStore } from "solid-js/store"
 import { useLocal } from "@/context/local"
 import { useServer, type ServerConnection } from "@/context/server"
+import { providerProbe, type ProbeResult } from "@/utils/fs-api"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { Button } from "@novaclaw/ui/button"
 import { IconButton } from "@novaclaw/ui/icon-button"
@@ -17,6 +18,20 @@ import { modelCost } from "@/utils/model-catalog"
 
 const isFree = (provider: string, cost: { input: number } | undefined) =>
   provider === "novaclaw" && (!cost || cost.input === 0)
+
+// T3/B15 — one lazy probe per provider:model per app run, shared by every picker instance.
+// A successful probe renders the server's HONORED window as a chip (and, server-side, feeds the
+// ProbeWindow cache the 1M context pack sizes from); unreachable/model-missing dims the row.
+// "auth" does NOT dim: the probe can't see credential-store keys, so an auth failure may be a
+// perfectly healthy connected provider.
+const [probeCache, setProbeCache] = createStore<Record<string, ProbeResult | "probing">>({})
+const probeKey = (providerID: string, modelID: string) => `${providerID}:${modelID}`
+const PROBE_CAP = 16
+
+const probeResult = (providerID: string, modelID: string): ProbeResult | undefined => {
+  const entry = probeCache[probeKey(providerID, modelID)]
+  return typeof entry === "object" ? entry : undefined
+}
 
 type ModelState = ReturnType<typeof useLocal>["model"]
 
@@ -49,7 +64,9 @@ const ModelList: Component<{
   action?: JSX.Element
   model?: ModelState
 }> = (props) => {
-  const model = props.model ?? useLocal().model
+  const local = useLocal()
+  const server = useServer()
+  const model = props.model ?? local.model
   const language = useLanguage()
 
   const models = createMemo(() =>
@@ -58,6 +75,24 @@ const ModelList: Component<{
       .filter((m) => model.visible({ modelID: m.id, providerID: m.provider.id }))
       .filter((m) => (props.provider ? m.provider.id === props.provider : true)),
   )
+
+  // Lazy liveness probe on first open per app run (T10 iii rides T3): fire-and-forget, capped,
+  // cached at module level so reopening the picker (or the dialog twin) never re-probes.
+  onMount(() => {
+    const http = server.current?.http
+    const dir = decode64(local.slug())
+    if (!http || !dir) return
+    // Filter BEFORE capping: each open probes the next batch of never-probed models, so a long
+    // list fully covers across a few opens instead of stranding everything past the first slice.
+    const unprobed = models().filter((m) => probeCache[probeKey(m.provider.id, m.id)] === undefined)
+    for (const item of unprobed.slice(0, PROBE_CAP)) {
+      const id = probeKey(item.provider.id, item.id)
+      setProbeCache(id, "probing")
+      void providerProbe(http, { directory: dir, providerID: item.provider.id, modelID: item.id })
+        .then((result) => setProbeCache(id, result))
+        .catch(() => setProbeCache(id, { status: "error" }))
+    }
+  })
 
   return (
     <List
@@ -72,17 +107,25 @@ const ModelList: Component<{
       // grouping header. (The popularProviders group ordering was opencode cloud residue.)
       filterKeys={["provider.name", "name", "id"]}
       sortBy={(a, b) => a.name.localeCompare(b.name)}
-      itemWrapper={(item, node) => (
-        <Tooltip
-          class="w-full"
-          placement="right-start"
-          gutter={12}
-          openDelay={0}
-          value={<ModelTooltip model={item} latest={item.latest} free={isFree(item.provider.id, modelCost(item))} />}
-        >
-          {node}
-        </Tooltip>
-      )}
+      itemWrapper={(item, node) => {
+        // The tooltip's context line shows the probed (honored) window when one is known —
+        // same reuse of `model.tooltip.context`, no separate key.
+        const window = probeResult(item.provider.id, item.id)?.window
+        const tooltipModel = window === undefined ? item : { ...item, limit: { ...item.limit, context: window } }
+        return (
+          <Tooltip
+            class="w-full"
+            placement="right-start"
+            gutter={12}
+            openDelay={0}
+            value={
+              <ModelTooltip model={tooltipModel} latest={item.latest} free={isFree(item.provider.id, modelCost(item))} />
+            }
+          >
+            {node}
+          </Tooltip>
+        )
+      }}
       onSelect={(x) => {
         model.set(x ? { modelID: x.id, providerID: x.provider.id } : undefined, {
           recent: true,
@@ -90,18 +133,27 @@ const ModelList: Component<{
         props.onSelect()
       }}
     >
-      {(i) => (
-        <div class="w-full flex items-center gap-x-2 text-13-regular">
-          <span class="truncate">{i.name}</span>
-          <Show when={isFree(i.provider.id, modelCost(i))}>
-            <Tag>{language.t("model.tag.free")}</Tag>
-          </Show>
-          <Show when={i.latest}>
-            <Tag>{language.t("model.tag.latest")}</Tag>
-          </Show>
-          <span class="ml-auto shrink-0 truncate text-11-regular text-text-weak-base">{i.provider.name}</span>
-        </div>
-      )}
+      {(i) => {
+        const probe = () => probeResult(i.provider.id, i.id)
+        const window = () => (probe()?.status === "ok" ? probe()?.window : undefined)
+        const stale = () => {
+          const status = probe()?.status
+          return status === "unreachable" || status === "model-missing"
+        }
+        return (
+          <div class="w-full flex items-center gap-x-2 text-13-regular" classList={{ "opacity-50": stale() }}>
+            <span class="truncate">{i.name}</span>
+            <Show when={isFree(i.provider.id, modelCost(i))}>
+              <Tag>{language.t("model.tag.free")}</Tag>
+            </Show>
+            <Show when={i.latest}>
+              <Tag>{language.t("model.tag.latest")}</Tag>
+            </Show>
+            <Show when={window()}>{(w) => <Tag>{`${Math.round(w() / 1024)}k`}</Tag>}</Show>
+            <span class="ml-auto shrink-0 truncate text-11-regular text-text-weak-base">{i.provider.name}</span>
+          </div>
+        )
+      }}
     </List>
   )
 }
