@@ -14,6 +14,57 @@ const NAMES = ["config.json", "novaclaw.json", "novaclaw.jsonc"]
 const DECODE_OPTIONS = { errors: "all", onExcessProperty: "ignore", propertyOrder: "original" } as const
 const decodeInfo = Schema.decodeUnknownOption(Config.Info, DECODE_OPTIONS)
 
+// Models-primary P2 (notes/models-primary-plan.md): a model's endpoint URL HOST is its internal
+// provider group. The host carries no "/", so the pervasive `providerID/modelID` addressing stays
+// intact, and grouping-by-endpoint aligns with per-endpoint credentials (P5). URL-less or
+// malformed → the model is its own singleton provider (id = model id).
+export const providerIdForUrl = (url: string | undefined, fallback: string): string => {
+  if (!url) return fallback
+  try {
+    return new URL(url).host || fallback
+  } catch {
+    return fallback
+  }
+}
+
+// Expand a raw config's flat top-level `models` map (P1) into the nested `providers` shape the rest
+// of the seed already consumes, so the CatalogStore + model resolution stay UNCHANGED — the flip
+// lives entirely at this authoring boundary. Operates on RAW parsed JSON (before decode) to avoid
+// reconstructing schema classes. Each flat model's `url` becomes its synthesized provider's
+// openai-compatible `api`; `tier` is dropped (the nested Model has no tier — tier wiring is a later
+// slice); a bare default-model id is expanded to `providerID/modelID`. Configs without `models` pass
+// through untouched (no regression to the nested path). Merges into any hand-authored `providers`.
+export const expandFlatModels = (raw: unknown): unknown => {
+  if (typeof raw !== "object" || raw === null) return raw
+  const config = raw as Record<string, unknown>
+  const models = config.models
+  if (typeof models !== "object" || models === null) return raw
+  const providers: Record<string, Record<string, unknown>> = {
+    ...(typeof config.providers === "object" && config.providers !== null
+      ? (config.providers as Record<string, Record<string, unknown>>)
+      : {}),
+  }
+  for (const [modelId, value] of Object.entries(models as Record<string, unknown>)) {
+    if (typeof value !== "object" || value === null) continue
+    const { url, tier: _tier, ...modelFields } = value as Record<string, unknown>
+    const endpoint = typeof url === "string" ? url : undefined
+    const providerId = providerIdForUrl(endpoint, modelId)
+    const provider = (providers[providerId] = { ...providers[providerId] })
+    if (endpoint && provider.api === undefined)
+      provider.api = { type: "aisdk", package: "@ai-sdk/openai-compatible", url: endpoint }
+    provider.models = { ...(provider.models as Record<string, unknown>), [modelId]: modelFields }
+  }
+  const result: Record<string, unknown> = { ...config, providers }
+  delete result.models
+  const defaultModel = result.model
+  if (typeof defaultModel === "string" && Object.prototype.hasOwnProperty.call(models, defaultModel)) {
+    const entry = (models as Record<string, Record<string, unknown>>)[defaultModel]
+    const endpoint = typeof entry?.url === "string" ? entry.url : undefined
+    result.model = `${providerIdForUrl(endpoint, defaultModel)}/${defaultModel}`
+  }
+  return result
+}
+
 // Settings → SQLite migration: the transitional jsonc IMPORT. Reads providers/models/default from the
 // global config dir + a target directory's `novaclaw.jsonc` and writes them into the instance-wide
 // `CatalogStore`, so the catalog no longer depends on reading jsonc per-location at runtime. Runs once at
@@ -31,7 +82,8 @@ export const seedFromDirectory = (globalConfigDir: string, directory: string) =>
       const errors: ParseError[] = []
       const input: unknown = parse(text, errors, { allowTrailingComma: true })
       if (errors.length) return undefined
-      return Option.getOrUndefined(decodeInfo(input))
+      // P2: models-primary flat `models` → nested `providers` before decode (no-op without `models`).
+      return Option.getOrUndefined(decodeInfo(expandFlatModels(input)))
     }
 
     const loadInfo = (filepath: string) =>
