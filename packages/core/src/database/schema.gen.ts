@@ -23,6 +23,19 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`bash_job\` (
+          \`id\` text PRIMARY KEY,
+          \`owner\` text NOT NULL,
+          \`command\` text NOT NULL,
+          \`status\` text NOT NULL,
+          \`exit\` integer,
+          \`output\` text DEFAULT '' NOT NULL,
+          \`truncated\` integer DEFAULT false NOT NULL,
+          \`time_started\` integer NOT NULL,
+          \`time_done\` integer
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`account_state\` (
           \`id\` integer PRIMARY KEY,
           \`active_account_id\` text,
@@ -154,6 +167,33 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`kb_chunk\` (
+          \`id\` text PRIMARY KEY,
+          \`doc_id\` text NOT NULL,
+          \`seq\` integer NOT NULL,
+          \`text\` text NOT NULL,
+          \`token_estimate\` integer NOT NULL,
+          \`embed_status\` text NOT NULL
+        );
+      `)
+      yield* tx.run(`
+        CREATE TABLE \`kb_doc\` (
+          \`id\` text PRIMARY KEY,
+          \`title\` text NOT NULL,
+          \`text\` text NOT NULL,
+          \`relation\` text NOT NULL,
+          \`source\` text,
+          \`agent\` text,
+          \`confidence\` real,
+          \`content_hash\` text NOT NULL,
+          \`embed_model\` text,
+          \`valid_from\` integer NOT NULL,
+          \`valid_to\` integer,
+          \`superseded_by\` text,
+          \`time_created\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`kb_fact\` (
           \`id\` text PRIMARY KEY,
           \`subject\` text NOT NULL,
@@ -192,27 +232,6 @@ export default {
         CREATE TABLE \`reference_config\` (
           \`name\` text PRIMARY KEY,
           \`layers\` text NOT NULL,
-          \`time_created\` integer NOT NULL,
-          \`time_updated\` integer NOT NULL
-        );
-      `)
-      yield* tx.run(`
-        CREATE TABLE \`bash_job\` (
-          \`id\` text PRIMARY KEY,
-          \`owner\` text NOT NULL,
-          \`command\` text NOT NULL,
-          \`status\` text NOT NULL,
-          \`exit\` integer,
-          \`output\` text DEFAULT '' NOT NULL,
-          \`truncated\` integer DEFAULT false NOT NULL,
-          \`time_started\` integer NOT NULL,
-          \`time_done\` integer
-        );
-      `)
-      yield* tx.run(`
-        CREATE TABLE \`runtime_setting\` (
-          \`key\` text PRIMARY KEY,
-          \`value\` text NOT NULL,
           \`time_created\` integer NOT NULL,
           \`time_updated\` integer NOT NULL
         );
@@ -303,13 +322,6 @@ export default {
         );
       `)
       yield* tx.run(`
-        CREATE TABLE \`skill_config\` (
-          \`source\` text PRIMARY KEY,
-          \`time_created\` integer NOT NULL,
-          \`time_updated\` integer NOT NULL
-        );
-      `)
-      yield* tx.run(`
         CREATE TABLE \`todo\` (
           \`session_id\` text NOT NULL,
           \`content\` text NOT NULL,
@@ -322,9 +334,29 @@ export default {
           CONSTRAINT \`fk_todo_session_id_session_id_fk\` FOREIGN KEY (\`session_id\`) REFERENCES \`session\`(\`id\`) ON DELETE CASCADE
         );
       `)
+      yield* tx.run(`
+        CREATE TABLE \`runtime_setting\` (
+          \`key\` text PRIMARY KEY,
+          \`value\` text NOT NULL,
+          \`time_created\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`
+        CREATE TABLE \`skill_config\` (
+          \`source\` text PRIMARY KEY,
+          \`time_created\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`CREATE INDEX \`bash_job_owner_idx\` ON \`bash_job\` (\`owner\`);`)
       yield* tx.run(`CREATE UNIQUE INDEX \`event_aggregate_seq_idx\` ON \`event\` (\`aggregate_id\`,\`seq\`);`)
       yield* tx.run(`CREATE INDEX \`event_aggregate_type_seq_idx\` ON \`event\` (\`aggregate_id\`,\`type\`,\`seq\`);`)
-      yield* tx.run(`CREATE INDEX \`bash_job_owner_idx\` ON \`bash_job\` (\`owner\`);`)
+      yield* tx.run(`CREATE INDEX \`kb_chunk_doc_idx\` ON \`kb_chunk\` (\`doc_id\`,\`seq\`);`)
+      yield* tx.run(`CREATE INDEX \`kb_chunk_embed_status_idx\` ON \`kb_chunk\` (\`embed_status\`);`)
+      yield* tx.run(`CREATE INDEX \`kb_doc_relation_idx\` ON \`kb_doc\` (\`relation\`,\`valid_to\`);`)
+      yield* tx.run(`CREATE INDEX \`kb_doc_hash_idx\` ON \`kb_doc\` (\`content_hash\`,\`valid_to\`);`)
+      yield* tx.run(`CREATE INDEX \`kb_doc_source_idx\` ON \`kb_doc\` (\`source\`,\`valid_to\`);`)
       yield* tx.run(`CREATE INDEX \`kb_fact_subject_idx\` ON \`kb_fact\` (\`subject\`,\`valid_to\`);`)
       yield* tx.run(`CREATE INDEX \`kb_fact_predicate_idx\` ON \`kb_fact\` (\`predicate\`,\`valid_to\`);`)
       yield* tx.run(`CREATE INDEX \`kb_fact_object_idx\` ON \`kb_fact\` (\`object\`,\`valid_to\`);`)
