@@ -8,10 +8,9 @@
 //
 // Usage:
 //   bun script/kb/generate-rockfacts.ts --out rockfacts.jsonl --eval rockfacts-eval.jsonl
-//   bun script/kb/generate-rockfacts.ts --populate http://127.0.0.1:4096 --directory C:\proj
 //   Options: --bands 150  --seed 20260703  --relation core
 //
-// Fact shape (the /kb/populate AddInput): { subject, predicate, object, relation, source, confidence }
+// Fact shape: { subject, predicate, object, relation, source, confidence }
 // Subjects are lowercase-hyphen SLUGS (models can derive them from display names without
 // URL-encoding pain); every entity carries a `name` fact with the display string.
 
@@ -191,28 +190,9 @@ if (evalOut) {
   console.log(`eval  → ${evalOut}`)
 }
 
-const serve = args.get("populate")
-if (serve) {
-  const directory = args.get("directory") ?? process.cwd()
-  const started = Date.now()
-  let inserted = 0
-  for (let i = 0; i < facts.length; i += 500) {
-    const batch = facts.slice(i, i + 500)
-    const res = await fetch(`${serve.replace(/\/$/, "")}/kb/populate?directory=${encodeURIComponent(directory)}`, {
-      method: "POST",
-      headers: { "content-type": "application/json", "x-novaclaw-directory": directory },
-      body: JSON.stringify({ facts: batch }),
-    })
-    if (!res.ok) {
-      console.error(`populate batch failed: HTTP ${res.status} — ${await res.text().catch(() => "")}`)
-      process.exit(1)
-    }
-    inserted += batch.length
-  }
-  const secs = (Date.now() - started) / 1000
-  console.log(`populated ${inserted} facts in ${secs.toFixed(1)}s (${Math.round(inserted / secs)} facts/s) → ${serve}`)
-}
-if (!out && !evalOut && !serve) {
-  console.log("nothing to do: pass --out/--eval file paths and/or --populate <serve-url> --directory <abs-project-dir>")
+// (KB-V P4: the --populate mode died with the /kb triple routes — seed documents into an
+// instance with packages/core/script/kb-vec-seed.ts instead.)
+if (!out && !evalOut) {
+  console.log("nothing to do: pass --out/--eval file paths (seed docs via packages/core/script/kb-vec-seed.ts)")
   process.exit(1)
 }

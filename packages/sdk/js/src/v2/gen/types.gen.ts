@@ -2900,6 +2900,7 @@ export type SyncEventSessionNextRevertCommitted = {
 export type ConfigV2Server = {
   port?: number
   hostname?: string
+  password?: string
   mdns?: boolean
   mdnsDomain?: string
   cors?: Array<string>
@@ -3262,12 +3263,29 @@ export type ConfigInfo = {
      */
     reasoningTokens?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   }
+  instances?: Array<{
+    /**
+     * Peer name (also keys the NOVACLAW_INSTANCE_<NAME>_* env vars)
+     */
+    name: string
+    /**
+     * The peer's base URL, e.g. http://127.0.0.1:4097
+     */
+    url: string
+    token?: string
+  }>
+  virtualFs?: boolean
   offline?: boolean
   telemetry?: {
     enabled?: boolean
   }
   kb?: {
     url?: string
+    embedding?: {
+      url?: string
+      model?: string
+      dims?: number
+    }
   }
   quality?: {
     enabled?: boolean
@@ -3384,46 +3402,6 @@ export type ModelV2Info = {
     input?: number
     output: number
   }
-}
-
-export type KbStats = {
-  active: number
-  retracted: number
-  total: number
-  core: number
-  staged: number
-  backend: string
-}
-
-export type KbFact = {
-  id: string
-  subject: string
-  predicate: string
-  object: string
-  relation: "core" | "staged"
-  source?: string
-  agent?: string
-  confidence?: number
-  validFrom: number
-  validTo?: number
-  supersededBy?: string
-  timeCreated: number
-}
-
-export type KbAddInput = {
-  subject: string
-  predicate: string
-  object: string
-  relation?: "core" | "staged"
-  source?: string
-  agent?: string
-  confidence?: number
-}
-
-export type KbUpdateInput = {
-  object?: string
-  confidence?: number
-  source?: string
 }
 
 export type PtyTicketConnectToken = {
@@ -6616,7 +6594,7 @@ export type AdhocPromoteError = AdhocPromoteErrors[keyof AdhocPromoteErrors]
 
 export type AdhocPromoteResponses = {
   /**
-   * The config file written
+   * The config key written
    */
   200: {
     promoted: string
@@ -7772,254 +7750,6 @@ export type AppRegisterResponses = {
 }
 
 export type AppRegisterResponse = AppRegisterResponses[keyof AppRegisterResponses]
-
-export type KbStatsData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/kb/stats"
-}
-
-export type KbStatsErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type KbStatsError = KbStatsErrors[keyof KbStatsErrors]
-
-export type KbStatsResponses = {
-  /**
-   * KB stats + backend identity
-   */
-  200: KbStats
-}
-
-export type KbStatsResponse = KbStatsResponses[keyof KbStatsResponses]
-
-export type KbQueryData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-    subject?: string
-    predicate?: string
-    object?: string
-    relation?: "core" | "staged"
-    includeRetracted?: "true" | "false"
-    limit?: string
-  }
-  url: "/kb/fact"
-}
-
-export type KbQueryErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type KbQueryError = KbQueryErrors[keyof KbQueryErrors]
-
-export type KbQueryResponses = {
-  /**
-   * Matching facts
-   */
-  200: Array<KbFact>
-}
-
-export type KbQueryResponse = KbQueryResponses[keyof KbQueryResponses]
-
-export type KbAddData = {
-  body?: KbAddInput
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/kb/fact"
-}
-
-export type KbAddErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type KbAddError = KbAddErrors[keyof KbAddErrors]
-
-export type KbAddResponses = {
-  /**
-   * The stored fact (with id + provenance timestamps)
-   */
-  200: KbFact
-}
-
-export type KbAddResponse = KbAddResponses[keyof KbAddResponses]
-
-export type KbUpdateData = {
-  body?: KbUpdateInput
-  path: {
-    id: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/kb/fact/{id}/update"
-}
-
-export type KbUpdateErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-  /**
-   * NotFoundError
-   */
-  404: NotFoundError
-}
-
-export type KbUpdateError = KbUpdateErrors[keyof KbUpdateErrors]
-
-export type KbUpdateResponses = {
-  /**
-   * The replacing fact
-   */
-  200: KbFact
-}
-
-export type KbUpdateResponse = KbUpdateResponses[keyof KbUpdateResponses]
-
-export type KbRetractData = {
-  body?: never
-  path: {
-    id: string
-  }
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/kb/fact/{id}/retract"
-}
-
-export type KbRetractErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-  /**
-   * NotFoundError
-   */
-  404: NotFoundError
-}
-
-export type KbRetractError = KbRetractErrors[keyof KbRetractErrors]
-
-export type KbRetractResponses = {
-  /**
-   * The retracted fact (valid_to stamped)
-   */
-  200: KbFact
-}
-
-export type KbRetractResponse = KbRetractResponses[keyof KbRetractResponses]
-
-export type KbPopulateData = {
-  body?: {
-    facts: Array<KbAddInput>
-  }
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/kb/populate"
-}
-
-export type KbPopulateErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type KbPopulateError = KbPopulateErrors[keyof KbPopulateErrors]
-
-export type KbPopulateResponses = {
-  /**
-   * Bulk-load result
-   */
-  200: {
-    inserted: number
-  }
-}
-
-export type KbPopulateResponse = KbPopulateResponses[keyof KbPopulateResponses]
-
-export type KbBackupData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/kb/backup"
-}
-
-export type KbBackupErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type KbBackupError = KbBackupErrors[keyof KbBackupErrors]
-
-export type KbBackupResponses = {
-  /**
-   * Every fact, including retracted (the audit trail)
-   */
-  200: Array<KbFact>
-}
-
-export type KbBackupResponse = KbBackupResponses[keyof KbBackupResponses]
-
-export type KbClearData = {
-  body?: never
-  path?: never
-  query?: {
-    directory?: string
-    workspace?: string
-  }
-  url: "/kb/clear"
-}
-
-export type KbClearErrors = {
-  /**
-   * Bad request
-   */
-  400: BadRequestError
-}
-
-export type KbClearError = KbClearErrors[keyof KbClearErrors]
-
-export type KbClearResponses = {
-  /**
-   * Rows deleted
-   */
-  200: {
-    deleted: number
-  }
-}
-
-export type KbClearResponse = KbClearResponses[keyof KbClearResponses]
 
 export type McpStatusData = {
   body?: never

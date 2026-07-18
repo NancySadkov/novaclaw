@@ -46,7 +46,6 @@ import { Database } from "@novaclaw/core/database/database"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { httpClient } from "@novaclaw/core/effect/app-node-platform"
 import { EventV2 } from "@novaclaw/core/event"
-import { Kb } from "@novaclaw/core/kb"
 import { ModelsDev } from "@novaclaw/core/models-dev"
 import { Npm } from "@novaclaw/core/npm"
 import { PermissionSaved } from "@novaclaw/core/permission/saved"
@@ -81,7 +80,6 @@ import { experimentalHandlers } from "./handlers/experimental"
 import { fileHandlers } from "./handlers/file"
 import { globalHandlers } from "./handlers/global"
 import { instanceHandlers } from "./handlers/instance"
-import { kbHandlers } from "./handlers/kb"
 import { registryHandlers } from "./handlers/registry"
 import { mcpHandlers } from "./handlers/mcp"
 import { permissionHandlers } from "./handlers/permission"
@@ -157,7 +155,6 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
     experimentalHandlers,
     fileHandlers,
     instanceHandlers,
-    kbHandlers,
     registryHandlers,
     mcpHandlers,
     ptyHandlers,
@@ -253,7 +250,6 @@ const app = LayerNode.group([
   httpClient,
   EventV2.node,
   SessionTags.node,
-  Kb.node,
   ProjectV2.node,
   PtyTicket.node,
 ])
