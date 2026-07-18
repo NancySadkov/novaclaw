@@ -22,3 +22,9 @@ export const reasoningOpenDefault = (mode: ReasoningFoldMode, completed: boolean
       return !completed
   }
 }
+
+/** The default open-state for a tool card. Tool output is noisier than reasoning, so only the
+ *  Developer ("open") level expands it by default — Normal and Advanced keep the feed clean and
+ *  let the reader open a card on demand. (Unlike reasoning this is an UNCONTROLLED default: the
+ *  Collapsible owns user toggles, so no live→collapse transition applies.) */
+export const toolOpenDefault = (mode: ReasoningFoldMode): boolean => mode === "open"

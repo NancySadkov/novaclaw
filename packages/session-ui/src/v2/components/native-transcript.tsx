@@ -12,7 +12,7 @@ import type {
   SessionMessageUser,
 } from "@novaclaw/sdk/v2"
 import { Markdown } from "../../components/markdown"
-import { reasoningOpenDefault, type ReasoningFoldMode } from "../reasoning-fold"
+import { reasoningOpenDefault, toolOpenDefault, type ReasoningFoldMode } from "../reasoning-fold"
 import { BasicToolV2 } from "./basic-tool-v2"
 import { ToolErrorCardV2 } from "./tool-error-card-v2"
 import "./native-transcript.css"
@@ -248,6 +248,8 @@ function ChangedFilesStrip(props: { files: readonly string[] }) {
 
 function ToolPart(props: { part: SessionMessageAssistantTool }) {
   const meta = () => toolMeta(props.part)
+  // Level-aware default (UIX residue b): Developer sees tool cards expanded; others collapsed.
+  const foldMode = useContext(ReasoningFoldContext)
   return (
     <Switch>
       <Match when={props.part.name === "todowrite"}>
@@ -270,6 +272,7 @@ function ToolPart(props: { part: SessionMessageAssistantTool }) {
         <BasicToolV2
           data-slot="native-tool"
           status={props.part.state.status}
+          defaultOpen={toolOpenDefault(foldMode())}
           trigger={{
             title: meta().title,
             subtitle: meta().subtitle,
