@@ -2,14 +2,16 @@ import { $ } from "bun"
 import path from "path"
 
 // Regenerate EVERY NovaClaw brand raster from one master logo. Run after editing the logo:
-//   bun packages/desktop/scripts/generate-brand.ts [path/to/master-logo.png]
+//   bun packages/desktop/scripts/generate-brand.ts [path/to/master-logo.png] [path/to/glyph.png]
 // Default master: the repo-root logo.png (one level above the app repo). Requires ImageMagick 7.
 //
-// The master is the full LOCKUP (glyph + "NOVA CLAW" wordmark). It is used verbatim for the in-app
-// logo and, centered, for the social-share banners. A GLYPH is auto-cropped from the top of the
-// lockup (the wordmark band is dropped, then trimmed + squared) and drives the desktop app icons and
-// the browser/PWA favicons, where a wordmark would be illegible at small sizes. This is a manual/dev
-// step, not wired into the build, so CI without ImageMagick is unaffected.
+// The master is the full LOCKUP (glyph + wordmark). It is used verbatim for the in-app logo and,
+// centered, for the social-share banners. A GLYPH (no wordmark) drives the desktop app icons and
+// the browser/PWA favicons, where a wordmark would be illegible at small sizes. The glyph source is,
+// in order: the second argument, a logo-icon.png sitting next to the lockup master, or an auto-crop
+// of the top of the lockup (the wordmark band is dropped, then trimmed + squared) — a separate
+// glyph export wins because wordmarks that overlap the mark make every crop fraction wrong. This is
+// a manual/dev step, not wired into the build, so CI without ImageMagick is unaffected.
 
 const desktop = path.resolve(import.meta.dir, "..") // packages/desktop
 const repo = path.resolve(desktop, "../..") // novaclaw/
@@ -28,6 +30,13 @@ const master = path.resolve(process.argv[2] ?? path.join(repo, "..", "logo.png")
 if (!(await Bun.file(master).exists())) throw new Error(`master logo not found: ${master}`)
 console.log("master lockup:", master)
 
+const glyphCandidate = process.argv[3]
+  ? path.resolve(process.argv[3])
+  : path.join(path.dirname(master), "logo-icon.png")
+const glyphMaster = (await Bun.file(glyphCandidate).exists()) ? glyphCandidate : undefined
+if (process.argv[3] && !glyphMaster) throw new Error(`glyph master not found: ${glyphCandidate}`)
+console.log(glyphMaster ? `glyph master: ${glyphMaster}` : "glyph: auto-crop from lockup")
+
 const resizePng = (src: string, size: number, out: string) =>
   $`magick ${src} -resize ${size}x${size} -filter Lanczos -strip PNG32:${out}`
 
@@ -36,12 +45,17 @@ await $`cp ${master} ${appPublic}/logo.png`
 const lockup = `${appPublic}/logo.png`
 await resizePng(lockup, 186, `${appPublic}/novaclaw-logo.png`)
 
-// 2) Crop the glyph out of the TOP of the lockup, trim its transparent margin, then centre it in a
-//    square canvas with a little breathing room — this is the icon/favicon source.
+// 2) The icon/favicon source: the dedicated glyph export when present (trimmed + squared), else
+//    crop the glyph out of the TOP of the lockup. Either way it ends centred in a square canvas
+//    with a little breathing room.
 const glyph = `${iconsDir}/logo-source-1024.png`
-const [masterW, masterH] = (await $`magick identify -format "%w %h" ${master}`.text()).trim().split(" ").map(Number)
-const cropH = Math.round(masterH * GLYPH_CROP)
-await $`magick ${lockup} -crop ${masterW}x${cropH}+0+0 +repage -trim +repage -resize ${GLYPH_FILL}x${GLYPH_FILL} -background none -gravity center -extent 1024x1024 -strip PNG32:${glyph}`
+if (glyphMaster) {
+  await $`magick ${glyphMaster} -trim +repage -resize ${GLYPH_FILL}x${GLYPH_FILL} -background none -gravity center -extent 1024x1024 -strip PNG32:${glyph}`
+} else {
+  const [masterW, masterH] = (await $`magick identify -format "%w %h" ${master}`.text()).trim().split(" ").map(Number)
+  const cropH = Math.round(masterH * GLYPH_CROP)
+  await $`magick ${lockup} -crop ${masterW}x${cropH}+0+0 +repage -trim +repage -resize ${GLYPH_FILL}x${GLYPH_FILL} -background none -gravity center -extent 1024x1024 -strip PNG32:${glyph}`
+}
 
 // 3) Desktop app icons (all channels, identical today) from the glyph.
 const pngSizes: Record<string, number> = {
