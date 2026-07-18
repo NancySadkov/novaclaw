@@ -13,6 +13,8 @@ import { usePlatform } from "@/context/platform"
 import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
 import { useServerSDK } from "@/context/server-sdk"
+import { ServerConnection, serverName } from "@/context/server"
+import { useServerManagementController } from "../dialog-select-server"
 import { useSettings } from "@/context/settings"
 import { offlineStatus, shellProvision, shellStatus, type OfflineStatus, type ShellStatus } from "@/utils/fs-api"
 import { useUpdaterAction } from "../updater-action"
@@ -84,6 +86,16 @@ export const SettingsGeneralV2: Component<{
   // B11 — bundled-shell substrate status + provisioner (raw-fetch endpoints, not in the SDK).
   const globalCtx = useGlobal()
   const serverCtx = useServer()
+  // Settings-IA (i) — the quick instance picker (tie-break #7, P2P vision): redirect the UI at
+  // another known instance without opening the Instances tab. Hidden below two known instances —
+  // a one-item select is dead UI; the Instances tab stays the place instances are ADDED.
+  const serversCtl = useServerManagementController()
+  const instanceOptions = createMemo(() =>
+    serversCtl.sortedItems().map((item) => ({ value: ServerConnection.key(item), label: serverName(item), item })),
+  )
+  // The active key comes from the server context, not controller.current() — that memo is
+  // undefined by design under newLayoutDesigns. Fall back to the first item like it does.
+  const currentInstanceKey = createMemo(() => serverCtx.key ?? instanceOptions()[0]?.value)
   const shellConn = createMemo(() => serverCtx.current ?? globalCtx.servers.list()[0])
   const shellRouteDir = createMemo(() => {
     const conn = shellConn()
@@ -226,6 +238,27 @@ export const SettingsGeneralV2: Component<{
             onSelect={(option) => option && language.setLocale(option.value)}
           />
         </SettingsRowV2>
+
+        <Show when={instanceOptions().length > 1}>
+          <SettingsRowV2
+            title={language.t("settings.general.row.instance.title")}
+            description={language.t("settings.general.row.instance.description")}
+          >
+            <SelectV2
+              appearance="inline"
+              data-action="settings-instance-switch"
+              options={instanceOptions()}
+              placement="bottom-end"
+              gutter={6}
+              current={instanceOptions().find((option) => option.value === currentInstanceKey())}
+              value={(option) => option.value}
+              label={(option) => option.label}
+              onSelect={(option) => {
+                if (option && option.value !== currentInstanceKey()) void serversCtl.select(option.item)
+              }}
+            />
+          </SettingsRowV2>
+        </Show>
 
         <SettingsRowV2
           minLevel="advanced"

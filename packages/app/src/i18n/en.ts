@@ -1037,6 +1037,9 @@ export const dict = {
   "settings.general.section.feed": "Feed",
   "settings.general.section.display": "Display",
 
+  "settings.general.row.instance.title": "Connected instance",
+  "settings.general.row.instance.description":
+    "Which NovaClaw instance this window is talking to. Pick another to point the whole UI at it.",
   "settings.general.row.language.title": "Language",
   "settings.general.row.language.description": "Change the language NovaClaw is shown in.",
   "settings.general.row.shell.title": "Terminal Shell",
