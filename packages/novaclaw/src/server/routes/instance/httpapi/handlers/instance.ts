@@ -10,6 +10,7 @@ import * as InstanceState from "@/effect/instance-state"
 import { Format } from "@/format"
 import { AppRegistry } from "@novaclaw/core/app-registry"
 import { Global } from "@novaclaw/core/global"
+import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { VirtualFs } from "@novaclaw/core/virtual-fs"
 import { Scratch } from "@novaclaw/core/scratch"
 import { Vcs } from "@/project/vcs"
@@ -47,6 +48,7 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
     const format = yield* Format.Service
     const skill = yield* Skill.Service
     const vcs = yield* Vcs.Service
+    const settingsStore = yield* SettingsConfigStore.Service
 
     const dispose = Effect.fn("InstanceHttpApi.dispose")(function* () {
       yield* markInstanceForDisposal(yield* InstanceState.context)
@@ -57,7 +59,8 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
       const ctx = yield* InstanceState.context
       const roots: string[] = yield* Effect.promise(() => probeRoots())
       // FS-3: when the host has no browsable FS, provision + advertise the app-private root.
-      const virtual = VirtualFs.enabled()
+      // T7: the store-backed `virtualFs` setting joins the env flag as the on-switch.
+      const virtual = VirtualFs.enabled(yield* settingsStore.all())
       const virtualRoot = virtual ? yield* Effect.promise(() => VirtualFs.ensure()) : undefined
       // The shared default cwd for folder-less agents ("New Agent" with no project). Provisioned
       // always (idempotent) so the client can always start an agent without picking a folder.

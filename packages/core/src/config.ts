@@ -117,6 +117,10 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   strict: ConfigStrict.Info.pipe(Schema.optional).annotate({
     description: "Strict mode — the Juvenile Harness posture for weak/local models: harness-owned decomposition, per-step verification, recovery (jh.md; E6)",
   }),
+  virtualFs: Schema.Boolean.pipe(Schema.optional).annotate({
+    description:
+      "FS-3: force the app-private virtual filesystem root (phones/sandboxes without a browsable FS); the NOVACLAW_VIRTUAL_FS env flag also enables it",
+  }),
   offline: Schema.Boolean.pipe(Schema.optional).annotate({
     description:
       "Offline/airgap mode (OFF-A): outbound HTTP restricted to loopback + configured provider hosts, fail-closed. GLOBAL config only — the chokepoint is machine-level",

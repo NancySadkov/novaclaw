@@ -414,6 +414,19 @@ export const SettingsGeneralV2: Component<{
 
         <SettingsRowV2
           minLevel="developer"
+          title={language.t("settings.general.row.virtualFs.title")}
+          description={language.t("settings.general.row.virtualFs.description")}
+        >
+          <div data-action="settings-virtual-fs">
+            <Switch
+              checked={(serverSync().data.config as { virtualFs?: boolean }).virtualFs === true}
+              onChange={(checked) => void serverSync().updateConfig({ virtualFs: checked } as never)}
+            />
+          </div>
+        </SettingsRowV2>
+
+        <SettingsRowV2
+          minLevel="developer"
           title={language.t("settings.general.row.telemetry.title")}
           description={language.t("settings.general.row.telemetry.description")}
         >

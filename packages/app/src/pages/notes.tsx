@@ -46,13 +46,14 @@ export function NotesPage() {
   const [tick, setTick] = createSignal(0)
 
   // Resolve the notes dir: the server data root (PathInfo.data — read via cast, the generated SDK
-  // type predates the field) + "/notes", created idempotently on first visit.
+  // type predates the field) + "/notes", created idempotently on first visit. FS-3 (T7): under
+  // virtual mode, notes live in the app-private virtual root's own notes subdir instead.
   const [notesDir] = createResource(ctx, async (c) => {
     const info = await c.sdk.client.path
       .get()
-      .then((r) => r.data as { data?: string; home?: string } | undefined)
+      .then((r) => r.data as { data?: string; home?: string; virtual?: boolean; virtualRoot?: string } | undefined)
       .catch(() => undefined)
-    const data = info?.data
+    const data = info?.virtual && info.virtualRoot ? info.virtualRoot : info?.data
     if (!data) return undefined
     const cn = conn()
     if (!cn) return undefined

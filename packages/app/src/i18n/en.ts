@@ -1087,6 +1087,9 @@ export const dict = {
   "settings.general.row.offline.description": "Block all network access except your model providers, so nothing else can phone home (fail-closed: if in doubt, it's blocked). This stops package installs, usage/telemetry uploads, and any network calls the agent's shell tries to make. Restart the server to apply.",
   "settings.general.row.offline.active": "airgapped",
   "settings.general.row.offline.inactive": "ready (offline mode is off)",
+  "settings.general.row.virtualFs.title": "Virtual workspace",
+  "settings.general.row.virtualFs.description":
+    "Keep this instance's projects, notes, and files in an app-private folder — for hosts without a browsable filesystem.",
   "settings.general.row.shellToolPartsExpanded.title": "Expand shell tool parts",
   "settings.general.row.shellToolPartsExpanded.description":
     "Show shell tool parts expanded by default in the timeline",
