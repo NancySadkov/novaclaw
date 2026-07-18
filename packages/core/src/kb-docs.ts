@@ -13,12 +13,12 @@ export * as KbDocs from "./kb-docs"
 
 import { createHash } from "node:crypto"
 import { and, asc, eq, inArray, isNull } from "drizzle-orm"
-import { Context, Effect, Layer, Option, Schema } from "effect"
+import { Context, Effect, Layer, Schema } from "effect"
 import { ascending } from "@novaclaw/schema/identifier"
 import { Database } from "./database/database"
 import { makeGlobalNode } from "./effect/app-node"
 import { KbChunker } from "./kb-vec/chunker"
-import { KbEmbedder } from "./kb-vec/embedder"
+import type { KbEmbedder } from "./kb-vec/embedder"
 import { KbVecQuery } from "./kb-vec-query"
 import { KbVecStore } from "./kb-vec/store"
 import { KbChunkTable, KbDocTable } from "./kb-vec/sql"
@@ -58,10 +58,27 @@ export interface AddInput {
   readonly confidence?: number
 }
 
+// The embedding device rides each CALL, not the layer: KbDocs is instance-global (one DB) while
+// the embedder is location config — the KB tool resolves it per location and passes it in. No
+// embedder = keyword-only, always functional.
 export interface SearchInput {
   readonly query: string
   readonly k?: number
   readonly scope?: KbVecQuery.Scope
+  readonly embedder?: KbEmbedder.Interface
+}
+
+export interface RelatedInput {
+  readonly doc: string
+  readonly k?: number
+  readonly embedder?: KbEmbedder.Interface
+}
+
+export interface SourceCount {
+  readonly source?: string
+  readonly agent?: string
+  readonly relation: "core" | "staged"
+  readonly docs: number
 }
 
 export interface SearchHit {
@@ -101,8 +118,13 @@ export interface Interface {
   readonly update: (id: string, patch: Partial<AddInput>) => Effect.Effect<Doc, NotFoundError>
   readonly retract: (id: string) => Effect.Effect<Doc, NotFoundError>
   readonly search: (input: SearchInput) => Effect.Effect<SearchResult>
-  readonly drainEmbeddings: (options?: { batch?: number }) => Effect.Effect<DrainResult>
-  readonly stats: () => Effect.Effect<Stats>
+  readonly related: (input: RelatedInput) => Effect.Effect<SearchResult, NotFoundError>
+  readonly sources: () => Effect.Effect<SourceCount[]>
+  readonly drainEmbeddings: (options?: {
+    batch?: number
+    embedder?: KbEmbedder.Interface
+  }) => Effect.Effect<DrainResult>
+  readonly stats: (options?: { embedder?: KbEmbedder.Interface }) => Effect.Effect<Stats>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/KbDocs") {}
@@ -130,12 +152,13 @@ interface Unsafe {
   unsafe: (sql: string, params?: ReadonlyArray<unknown>) => Effect.Effect<ReadonlyArray<Record<string, unknown>>, unknown>
 }
 
-export const layer = Layer.effect(
-  Service,
+const make = (options?: { dims?: number }) =>
   Effect.gen(function* () {
     const { db } = yield* Database.Service
-    const embedder = Option.getOrUndefined(yield* Effect.serviceOption(KbEmbedder.Service))
-    const capability = yield* KbVecStore.ensure(db, embedder ? { dims: embedder.info.dims } : undefined)
+    // Dims are fixed at the store default for v0 (Qwen3-Embedding-0.6B = 1024); a differently-
+    // dimensioned device is the P6 re-embed/rebuild flow, not a silent table mismatch. The
+    // option exists for tests (small deterministic vectors), not for config.
+    const capability = yield* KbVecStore.ensure(db, options)
     const raw = (db as unknown as { $client: Unsafe }).$client
     const exec = <T = Record<string, unknown>>(statement: string, params?: ReadonlyArray<unknown>) =>
       raw.unsafe(statement, params).pipe(Effect.orDie) as Effect.Effect<ReadonlyArray<T>>
@@ -256,36 +279,10 @@ export const layer = Layer.effect(
       return toDoc(next)
     })
 
-    const search: Interface["search"] = Effect.fn("KbDocs.search")(function* (input) {
-      const k = Math.min(Math.max(1, Math.floor(input.k ?? 8)), 50)
-      const scope = input.scope ?? "all"
-      const limit = KbVecQuery.candidateLimit(k)
-      const scopeParams = scope === "all" ? [] : [scope]
-
-      const lists: KbVecQuery.Hit[][] = []
-      let vectorLeg = false
-      if (capability.vector && embedder !== undefined) {
-        const embedded = yield* embedder.embed([input.query]).pipe(
-          Effect.map((vectors) => vectors[0]),
-          Effect.catch(() => Effect.succeed(undefined)),
-        )
-        if (embedded !== undefined) {
-          lists.push([
-            ...(yield* exec<KbVecQuery.Hit>(KbVecQuery.knnSql(scope), [
-              KbVecStore.vecBlob(embedded),
-              limit,
-              ...scopeParams,
-            ])),
-          ])
-          vectorLeg = true
-        }
-      }
-      const match = KbVecQuery.ftsMatchExpr(input.query)
-      if (match !== undefined)
-        lists.push([...(yield* exec<KbVecQuery.Hit>(KbVecQuery.ftsSql(scope), [match, limit, ...scopeParams]))])
-
-      const fused = KbVecQuery.rrfFuse(lists, k)
-      if (fused.length === 0) return { hits: [], vector: vectorLeg }
+    // Join fused chunk hits back to their docs for titles + provenance. Defensive: a hit whose
+    // doc vanished mid-query (or was superseded) never surfaces.
+    const toHits = Effect.fnUntraced(function* (fused: ReadonlyArray<KbVecQuery.Fused>) {
+      if (fused.length === 0) return []
       const docs = yield* db
         .select()
         .from(KbDocTable)
@@ -293,9 +290,8 @@ export const layer = Layer.effect(
         .all()
         .pipe(Effect.orDie)
       const byID = new Map(docs.map((row) => [row.id, row]))
-      const hits = fused.flatMap((hit) => {
+      return fused.flatMap((hit) => {
         const doc = byID.get(hit.docID)
-        // Defensive: a vec row whose doc vanished mid-query (or was superseded) never surfaces.
         if (!doc || doc.valid_to !== null) return []
         return [
           {
@@ -310,11 +306,88 @@ export const layer = Layer.effect(
           } satisfies SearchHit,
         ]
       })
-      return { hits, vector: vectorLeg }
+    })
+
+    const knnList = Effect.fnUntraced(function* (
+      vector: ReadonlyArray<number>,
+      scope: KbVecQuery.Scope,
+      limit: number,
+    ) {
+      const scopeParams = scope === "all" ? [] : [scope]
+      return [
+        ...(yield* exec<KbVecQuery.Hit>(KbVecQuery.knnSql(scope), [KbVecStore.vecBlob(vector), limit, ...scopeParams])),
+      ]
+    })
+
+    const search: Interface["search"] = Effect.fn("KbDocs.search")(function* (input) {
+      const k = Math.min(Math.max(1, Math.floor(input.k ?? 8)), 50)
+      const scope = input.scope ?? "all"
+      const limit = KbVecQuery.candidateLimit(k)
+      const scopeParams = scope === "all" ? [] : [scope]
+
+      const lists: KbVecQuery.Hit[][] = []
+      let vectorLeg = false
+      if (capability.vector && input.embedder !== undefined) {
+        const embedded = yield* input.embedder.embed([input.query]).pipe(
+          Effect.map((vectors) => vectors[0]),
+          Effect.catch(() => Effect.succeed(undefined)),
+        )
+        if (embedded !== undefined) {
+          lists.push(yield* knnList(embedded, scope, limit))
+          vectorLeg = true
+        }
+      }
+      const match = KbVecQuery.ftsMatchExpr(input.query)
+      if (match !== undefined)
+        lists.push([...(yield* exec<KbVecQuery.Hit>(KbVecQuery.ftsSql(scope), [match, limit, ...scopeParams]))])
+
+      return { hits: yield* toHits(KbVecQuery.rrfFuse(lists, k)), vector: vectorLeg }
+    })
+
+    const related: Interface["related"] = Effect.fn("KbDocs.related")(function* (input) {
+      const row = yield* requireActive(input.doc)
+      const k = Math.min(Math.max(1, Math.floor(input.k ?? 5)), 25)
+      // Vector path: the doc's centroid (mean of its chunk vectors) against the whole index,
+      // self filtered out. Falls back to a title keyword search when no vectors exist yet.
+      if (capability.vector) {
+        const blobs = yield* exec<{ embedding: Uint8Array }>(
+          `SELECT embedding FROM kb_chunk_vec WHERE doc_id = ?`,
+          [row.id],
+        )
+        if (blobs.length > 0) {
+          const dims = blobs[0]!.embedding.byteLength / 4
+          const centroid = new Float32Array(dims)
+          for (const item of blobs) {
+            const vector = new Float32Array(item.embedding.buffer, item.embedding.byteOffset, dims)
+            for (let at = 0; at < dims; at++) centroid[at]! += vector[at]! / blobs.length
+          }
+          const candidates = yield* knnList([...centroid], "all", KbVecQuery.candidateLimit(k) + blobs.length)
+          const fused = KbVecQuery.rrfFuse([candidates.filter((hit) => hit.docID !== row.id)], k)
+          return { hits: yield* toHits(fused), vector: true }
+        }
+      }
+      const match = KbVecQuery.ftsMatchExpr(row.title)
+      if (match === undefined) return { hits: [], vector: false }
+      const candidates = yield* exec<KbVecQuery.Hit>(KbVecQuery.ftsSql("all"), [match, KbVecQuery.candidateLimit(k)])
+      const fused = KbVecQuery.rrfFuse([[...candidates].filter((hit) => hit.docID !== row.id)], k)
+      return { hits: yield* toHits(fused), vector: false }
+    })
+
+    const sources: Interface["sources"] = Effect.fn("KbDocs.sources")(function* () {
+      const rows = yield* exec<{ source: string | null; agent: string | null; relation: "core" | "staged"; docs: number }>(
+        `SELECT source, agent, relation, COUNT(*) AS docs FROM kb_doc WHERE valid_to IS NULL GROUP BY source, agent, relation ORDER BY docs DESC, source`,
+      )
+      return rows.map((row) => ({
+        ...(row.source !== null ? { source: row.source } : {}),
+        ...(row.agent !== null ? { agent: row.agent } : {}),
+        relation: row.relation,
+        docs: row.docs,
+      }))
     })
 
     const drainEmbeddings: Interface["drainEmbeddings"] = Effect.fn("KbDocs.drainEmbeddings")(function* (options) {
       const batch = Math.min(Math.max(1, Math.floor(options?.batch ?? 32)), 128)
+      const embedder = options?.embedder
       const pendingOf = () =>
         db
           .select({ count: KbChunkTable.id })
@@ -397,7 +470,8 @@ export const layer = Layer.effect(
       return { embedded: rows.length, failed: 0, remaining: yield* pendingOf() }
     })
 
-    const stats: Interface["stats"] = Effect.fn("KbDocs.stats")(function* () {
+    const stats: Interface["stats"] = Effect.fn("KbDocs.stats")(function* (options) {
+      const embedder = options?.embedder
       const docs = yield* db
         .select({ id: KbDocTable.id })
         .from(KbDocTable)
@@ -414,8 +488,12 @@ export const layer = Layer.effect(
       }
     })
 
-    return Service.of({ add, get, update, retract, search, drainEmbeddings, stats })
-  }),
-)
+    return Service.of({ add, get, update, retract, search, related, sources, drainEmbeddings, stats })
+  })
+
+export const layer = Layer.effect(Service, make())
+
+/** Test seam: a store with non-default vector dimensions. */
+export const layerWith = (options: { dims?: number }) => Layer.effect(Service, make(options))
 
 export const node = makeGlobalNode({ service: Service, layer, deps: [Database.node] })

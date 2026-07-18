@@ -18,14 +18,11 @@ const stubVector = (text: string): number[] => {
   if (/pasta|spaghetti|boil/.test(lower)) return [0, 1, 0, 0]
   return [0, 0, 1, 0]
 }
-const stub = KbEmbedder.layerStub(stubVector, { model: "stub-4d", dims: DIMS })
-const failingStub = Layer.succeed(
-  KbEmbedder.Service,
-  KbEmbedder.Service.of({
-    info: { model: "stub-4d", dims: DIMS },
-    embed: () => Effect.fail(new KbEmbedder.EmbedError({ reason: "device down" })),
-  }),
-)
+const stub = KbEmbedder.stub(stubVector, { model: "stub-4d", dims: DIMS })
+const failingStub: KbEmbedder.Interface = {
+  info: { model: "stub-4d", dims: DIMS },
+  embed: () => Effect.fail(new KbEmbedder.EmbedError({ reason: "device down" })),
+}
 
 // One physical :memory: DB per test; KbDocs layers (with different embedders) build over the
 // SAME Database so failure→recovery sequences see one store.
@@ -93,14 +90,14 @@ describe("KbDocs", () => {
         expect(again).toMatchObject({ deduped: true, doc: { id: first.doc.id } })
 
         // Keyword search works BEFORE any embedding drain (the forgiving-ingestion stance).
-        const found = yield* kb.search({ query: "borrowing lifetimes" })
+        const found = yield* kb.search({ query: "borrowing lifetimes", embedder: stub })
         expect(found.hits.map((hit) => hit.docID)).toEqual([first.doc.id])
         expect(found.hits[0]).toMatchObject({ title: RUST.title, relation: "core", source: "test" })
 
-        const stats = yield* kb.stats()
+        const stats = yield* kb.stats({ embedder: stub })
         expect(stats).toMatchObject({ docs: 1, vector: true, embedModel: "stub-4d" })
         expect(stats.pendingChunks).toBeGreaterThan(0)
-      }).pipe(Effect.provide(KbDocs.layer.pipe(Layer.provide(dbLayer), Layer.provide(stub)))),
+      }).pipe(Effect.provide(KbDocs.layerWith({ dims: DIMS }).pipe(Layer.provide(dbLayer)))),
     )
   })
 
@@ -111,26 +108,26 @@ describe("KbDocs", () => {
         const rust = (yield* kb.add(RUST)).doc
         const pasta = (yield* kb.add(PASTA)).doc
 
-        const drained = yield* kb.drainEmbeddings()
+        const drained = yield* kb.drainEmbeddings({ embedder: stub })
         expect(drained.failed).toBe(0)
         expect(drained.embedded).toBeGreaterThan(0)
         expect(drained.remaining).toBe(0)
-        expect((yield* kb.stats()).pendingChunks).toBe(0)
+        expect((yield* kb.stats({ embedder: stub })).pendingChunks).toBe(0)
         expect((yield* kb.get(rust.id))?.embedModel).toBe("stub-4d")
 
         // "memory safety" shares no keyword with the rust doc — only the vector leg finds it.
-        const semantic = yield* kb.search({ query: "memory safety borrow checker" })
+        const semantic = yield* kb.search({ query: "memory safety borrow checker", embedder: stub })
         expect(semantic.vector).toBe(true)
         expect(semantic.hits[0]?.docID).toBe(rust.id)
 
-        const scoped = yield* kb.search({ query: "boil spaghetti", scope: "staged" })
+        const scoped = yield* kb.search({ query: "boil spaghetti", scope: "staged", embedder: stub })
         expect(scoped.hits.map((hit) => hit.docID)).toEqual([pasta.id])
         // Scope is a hard wall: core-only can NEVER surface the staged doc. (It may still
         // surface a weakly-related core chunk — KNN is uncapped by design; thresholds are a
         // P5-eval decision, not a hardcode.)
-        const wrongScope = yield* kb.search({ query: "boil spaghetti", scope: "core" })
+        const wrongScope = yield* kb.search({ query: "boil spaghetti", scope: "core", embedder: stub })
         expect(wrongScope.hits.map((hit) => hit.docID)).not.toContain(pasta.id)
-      }).pipe(Effect.provide(KbDocs.layer.pipe(Layer.provide(dbLayer), Layer.provide(stub)))),
+      }).pipe(Effect.provide(KbDocs.layerWith({ dims: DIMS }).pipe(Layer.provide(dbLayer)))),
     )
   })
 
@@ -140,22 +137,22 @@ describe("KbDocs", () => {
         yield* Effect.gen(function* () {
           const kb = yield* KbDocs.Service
           yield* kb.add(RUST)
-          const drained = yield* kb.drainEmbeddings()
+          const drained = yield* kb.drainEmbeddings({ embedder: failingStub })
           expect(drained.embedded).toBe(0)
           expect(drained.failed).toBeGreaterThan(0)
           // Search still answers (FTS leg; the vector leg quietly skips on embed failure).
-          const found = yield* kb.search({ query: "ownership" })
+          const found = yield* kb.search({ query: "ownership", embedder: failingStub })
           expect(found.hits).toHaveLength(1)
           expect(found.vector).toBe(false)
-        }).pipe(Effect.provide(KbDocs.layer.pipe(Layer.provide(dbLayer), Layer.provide(failingStub))))
+        }).pipe(Effect.provide(KbDocs.layerWith({ dims: DIMS }).pipe(Layer.provide(dbLayer))))
 
         yield* Effect.gen(function* () {
           const kb = yield* KbDocs.Service
-          const drained = yield* kb.drainEmbeddings()
+          const drained = yield* kb.drainEmbeddings({ embedder: stub })
           expect(drained.failed).toBe(0)
           expect(drained.embedded).toBeGreaterThan(0)
           expect(drained.remaining).toBe(0)
-        }).pipe(Effect.provide(KbDocs.layer.pipe(Layer.provide(dbLayer), Layer.provide(stub))))
+        }).pipe(Effect.provide(KbDocs.layerWith({ dims: DIMS }).pipe(Layer.provide(dbLayer))))
       }),
     )
   })
@@ -165,16 +162,16 @@ describe("KbDocs", () => {
       Effect.gen(function* () {
         const kb = yield* KbDocs.Service
         const doc = (yield* kb.add(PASTA)).doc
-        yield* kb.drainEmbeddings()
+        yield* kb.drainEmbeddings({ embedder: stub })
         const retracted = yield* kb.retract(doc.id)
         expect(retracted.validTo).toBeDefined()
-        expect((yield* kb.search({ query: "spaghetti" })).hits).toEqual([])
-        expect((yield* kb.stats()).chunks).toBe(0)
+        expect((yield* kb.search({ query: "spaghetti", embedder: stub })).hits).toEqual([])
+        expect((yield* kb.stats({ embedder: stub })).chunks).toBe(0)
         // Dated move, not a delete: the row is still readable.
         expect((yield* kb.get(doc.id))?.validTo).toBeDefined()
         const missing = yield* kb.retract(doc.id).pipe(Effect.flip)
         expect(missing).toMatchObject({ _tag: "KbDocs.NotFoundError" })
-      }).pipe(Effect.provide(KbDocs.layer.pipe(Layer.provide(dbLayer), Layer.provide(stub)))),
+      }).pipe(Effect.provide(KbDocs.layerWith({ dims: DIMS }).pipe(Layer.provide(dbLayer)))),
     )
   })
 
@@ -183,15 +180,15 @@ describe("KbDocs", () => {
       Effect.gen(function* () {
         const kb = yield* KbDocs.Service
         const doc = (yield* kb.add(PASTA)).doc
-        yield* kb.drainEmbeddings()
+        yield* kb.drainEmbeddings({ embedder: stub })
         const next = yield* kb.update(doc.id, { text: "Bake the lasagna in the oven." })
         expect(next.id).not.toBe(doc.id)
         const old = yield* kb.get(doc.id)
         expect(old).toMatchObject({ supersededBy: next.id })
         expect(old?.validTo).toBeDefined()
-        expect((yield* kb.search({ query: "spaghetti" })).hits).toEqual([])
-        expect((yield* kb.search({ query: "lasagna" })).hits.map((hit) => hit.docID)).toEqual([next.id])
-      }).pipe(Effect.provide(KbDocs.layer.pipe(Layer.provide(dbLayer), Layer.provide(stub)))),
+        expect((yield* kb.search({ query: "spaghetti", embedder: stub })).hits).toEqual([])
+        expect((yield* kb.search({ query: "lasagna", embedder: stub })).hits.map((hit) => hit.docID)).toEqual([next.id])
+      }).pipe(Effect.provide(KbDocs.layerWith({ dims: DIMS }).pipe(Layer.provide(dbLayer)))),
     )
   })
 
@@ -207,7 +204,34 @@ describe("KbDocs", () => {
         expect(found).toMatchObject({ vector: false })
         expect(found.hits.map((hit) => hit.docID)).toEqual([doc.id])
         expect((yield* kb.stats()).vector).toBe(false)
-      }).pipe(Effect.provide(KbDocs.layer.pipe(Layer.provide(dbLayer)))),
+      }).pipe(Effect.provide(KbDocs.layerWith({ dims: DIMS }).pipe(Layer.provide(dbLayer)))),
+    )
+  })
+
+  test("related finds neighbors by centroid; sources aggregates provenance", async () => {
+    await run((dbLayer) =>
+      Effect.gen(function* () {
+        const kb = yield* KbDocs.Service
+        const rust = (yield* kb.add(RUST)).doc
+        const rust2 = (yield* kb.add({ ...RUST, title: "Borrow checker notes", text: "The borrow checker enforces ownership at compile time." })).doc
+        const pasta = (yield* kb.add(PASTA)).doc
+        yield* kb.drainEmbeddings({ embedder: stub })
+
+        const related = yield* kb.related({ doc: rust.id, k: 2 })
+        expect(related.vector).toBe(true)
+        expect(related.hits[0]?.docID).toBe(rust2.id)
+        expect(related.hits.map((hit) => hit.docID)).not.toContain(rust.id)
+
+        const missing = yield* kb.related({ doc: "doc_nope" }).pipe(Effect.flip)
+        expect(missing).toMatchObject({ _tag: "KbDocs.NotFoundError" })
+
+        const sources = yield* kb.sources()
+        expect(sources).toEqual([
+          { source: "test", relation: "core", docs: 2 },
+          { agent: "chef", relation: "staged", docs: 1 },
+        ])
+        void pasta
+      }).pipe(Effect.provide(KbDocs.layerWith({ dims: DIMS }).pipe(Layer.provide(dbLayer)))),
     )
   })
 })
