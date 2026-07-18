@@ -1,8 +1,9 @@
-import { createMemo, For, Show, Switch, Match } from "solid-js"
+import { createContext, createMemo, createSignal, For, Show, Switch, Match, useContext, type Accessor } from "solid-js"
 import type {
   LlmToolContent,
   SessionMessage,
   SessionMessageAssistant,
+  SessionMessageAssistantReasoning,
   SessionMessageAssistantTool,
   SessionMessageCompaction,
   SessionMessageShell,
@@ -11,9 +12,16 @@ import type {
   SessionMessageUser,
 } from "@novaclaw/sdk/v2"
 import { Markdown } from "../../components/markdown"
+import { reasoningOpenDefault, type ReasoningFoldMode } from "../reasoning-fold"
 import { BasicToolV2 } from "./basic-tool-v2"
 import { ToolErrorCardV2 } from "./tool-error-card-v2"
 import "./native-transcript.css"
+
+// Level-aware reasoning fold (UIX residue b / C4). Defaults to "collapsed" so any caller that
+// doesn't set it keeps today's folded-reasoning behavior; the app passes the expertise-derived
+// mode. Consumed by ReasoningPart, so the mode need not be prop-drilled through every message.
+const defaultReasoningFold: Accessor<ReasoningFoldMode> = () => "collapsed"
+const ReasoningFoldContext = createContext<Accessor<ReasoningFoldMode>>(defaultReasoningFold)
 
 /**
  * F1e S4-v3 — native `SessionMessage[]` transcript renderer (strategy B).
@@ -32,7 +40,11 @@ import "./native-transcript.css"
  */
 const isSwitchMarker = (m: SessionMessage) => m.type === "agent-switched" || m.type === "model-switched"
 
-export function NativeTranscript(props: { messages: readonly SessionMessage[]; class?: string }) {
+export function NativeTranscript(props: {
+  messages: readonly SessionMessage[]
+  class?: string
+  reasoningFold?: ReasoningFoldMode
+}) {
   // The native store captures the session's initial agent/model as `*-switched` messages,
   // but those are setup state (V1 shows them in the header, not the transcript). Drop the
   // LEADING run of switch markers; a switch that lands mid-conversation still renders as a
@@ -44,9 +56,11 @@ export function NativeTranscript(props: { messages: readonly SessionMessage[]; c
     return (messages as SessionMessage[]).filter((m, i) => i >= firstReal || !isSwitchMarker(m))
   })
   return (
-    <div data-component="native-transcript" class={props.class}>
-      <For each={visible()}>{(message) => <NativeMessage message={message} />}</For>
-    </div>
+    <ReasoningFoldContext.Provider value={() => props.reasoningFold ?? "collapsed"}>
+      <div data-component="native-transcript" class={props.class}>
+        <For each={visible()}>{(message) => <NativeMessage message={message} />}</For>
+      </div>
+    </ReasoningFoldContext.Provider>
   )
 }
 
@@ -134,12 +148,7 @@ function AssistantMessage(props: { message: SessionMessageAssistant }) {
             <Match when={part.type === "reasoning" && part}>
               {(p) => (
                 <Show when={p().text.trim()}>
-                  <details data-slot="native-reasoning">
-                    <summary>Reasoning</summary>
-                    <div data-slot="native-reasoning-body">
-                      <Markdown text={p().text} />
-                    </div>
-                  </details>
+                  <ReasoningPart part={p()} />
                 </Show>
               )}
             </Match>
@@ -185,6 +194,35 @@ function AssistantMessage(props: { message: SessionMessageAssistant }) {
         </div>
       </Show>
     </div>
+  )
+}
+
+/**
+ * A reasoning part with a level-aware default fold (uix.md §6 / UIX residue b). The fold mode
+ * comes from ReasoningFoldContext (expertise-derived); `open` is FULLY controlled off it so
+ * "live" mode can auto-collapse when the reasoning finishes. A user toggle wins forever after:
+ * the summary click is intercepted (`preventDefault` stops the native toggle) so a programmatic
+ * open/close never masquerades as a user override — only a real click latches `override`.
+ */
+function ReasoningPart(props: { part: SessionMessageAssistantReasoning }) {
+  const foldMode = useContext(ReasoningFoldContext)
+  const [override, setOverride] = createSignal<boolean | undefined>(undefined)
+  const completed = () => !!props.part.time?.completed
+  const open = () => override() ?? reasoningOpenDefault(foldMode(), completed())
+  return (
+    <details data-slot="native-reasoning" open={open()}>
+      <summary
+        onClick={(event) => {
+          event.preventDefault()
+          setOverride(!open())
+        }}
+      >
+        Reasoning
+      </summary>
+      <div data-slot="native-reasoning-body">
+        <Markdown text={props.part.text} />
+      </div>
+    </details>
   )
 }
 

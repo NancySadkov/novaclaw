@@ -1,7 +1,18 @@
 import { createEffect, createMemo, createSignal, onCleanup, onMount, Show } from "solid-js"
 import { NativeTranscript } from "@novaclaw/session-ui/v2/native-transcript"
+import type { ReasoningFoldMode } from "@novaclaw/session-ui/v2/reasoning-fold"
+import { useExpertise } from "@/context/expertise"
 import { useServerSync } from "@/context/server-sync"
 import { nextPinned } from "./native-scroll"
+
+// Level-aware reasoning fold (UIX residue b / C4, uix.md §6 teach-don't-gatekeep): a non-expert
+// sees the answer with reasoning folded; Advanced watches it think then it tidies away; a
+// Developer keeps the full trace open.
+const REASONING_FOLD: Record<string, ReasoningFoldMode> = {
+  normal: "collapsed",
+  advanced: "live",
+  developer: "open",
+}
 
 /**
  * F1e — the native `SessionMessage[]` timeline: the SOLE render path (F-d/F-e, owner-approved
@@ -12,6 +23,8 @@ import { nextPinned } from "./native-scroll"
  */
 export function NativeTimeline(props: { sessionID: string }) {
   const serverSync = useServerSync()
+  const expertise = useExpertise()
+  const reasoningFold = createMemo<ReasoningFoldMode>(() => REASONING_FOLD[expertise.level()] ?? "collapsed")
   const messages = createMemo(() => serverSync().nativeMessages.messages(props.sessionID) ?? [])
 
   let scroller: HTMLDivElement | undefined
@@ -83,7 +96,7 @@ export function NativeTimeline(props: { sessionID: string }) {
         }}
       >
         <div ref={(el) => (content = el)}>
-          <NativeTranscript messages={messages()} />
+          <NativeTranscript messages={messages()} reasoningFold={reasoningFold()} />
         </div>
       </div>
       <Show when={!pinned()}>

@@ -18,6 +18,7 @@
     "./context/*": "./src/context/*.tsx",
     "./styles": "./src/styles/index.css",
     "./v2/message-fold": "./src/v2/message-fold.ts",
+    "./v2/reasoning-fold": "./src/v2/reasoning-fold.ts",
     "./v2/*.css": "./src/v2/components/*.css",
     "./v2/*": "./src/v2/components/*.tsx"
   },
