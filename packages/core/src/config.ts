@@ -212,6 +212,13 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   }),
   experimental: ConfigExperimental.Experimental.pipe(Schema.optional),
   providers: Schema.Record(Schema.String, ConfigProvider.Info).pipe(Schema.optional),
+  // Models-primary (notes/models-primary-plan.md P1): the flat successor to `providers` — a map
+  // of models keyed by id, each with its OWN endpoint `url` + params + `tier`. Decoded in
+  // PARALLEL with `providers` (both accepted) until P6 retires the nested path. Inert until the
+  // P2 seed reads it; additive here so authored configs and the equivalence gate can use it.
+  models: Schema.Record(Schema.String, ConfigProvider.ModelEntry).pipe(Schema.optional).annotate({
+    description: "Models-primary flat model map (id → { url, params, tier, … }); successor to nested providers",
+  }),
   // Transitional — dies with the models-primary data model (a model is just a URL; there is
   // no first-class provider entity). Promoted into V2 (F1d D2) because the Settings UI and the
   // `/provider` filter still read these by name today.

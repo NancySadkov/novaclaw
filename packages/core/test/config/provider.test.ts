@@ -57,6 +57,55 @@ function request(headers: Record<string, string>, variant?: string) {
 
 const decode = Schema.decodeUnknownSync(Config.Info)
 
+// Models-primary (notes/models-primary-plan.md P1): the flat top-level `models` map is accepted
+// IN PARALLEL with the nested `providers` shape. This just proves the schema round-trips the flat
+// shape (url + params + tier + variants) and that the two shapes coexist in one document; the P2
+// seed-equivalence gate proves they produce the SAME catalog.
+describe("Config.Info models-primary schema (P1)", () => {
+  it.effect("decodes a flat top-level models map with url, params and tier", () =>
+    Effect.sync(() => {
+      const info = decode({
+        model: "qwen3.6-35b",
+        models: {
+          "qwen3.6-35b": {
+            name: "Qwen 3.6 35B",
+            url: "http://192.168.178.40:8000/v1",
+            tier: "small",
+            capabilities: { tools: true, input: ["text"], output: ["text"] },
+            request: { body: { temperature: 0.7, top_p: 0.8 } },
+            variants: [{ id: "high", body: { reasoning_effort: "high" } }],
+            limit: { context: 262144, output: 32768 },
+          },
+        },
+      })
+      const model = required(info.models?.["qwen3.6-35b"])
+      expect(model.url).toBe("http://192.168.178.40:8000/v1")
+      expect(model.tier).toBe("small")
+      expect(model.name).toBe("Qwen 3.6 35B")
+      expect(model.request?.body).toEqual({ temperature: 0.7, top_p: 0.8 })
+      expect(model.variants?.[0]?.id).toBe(ModelV2.VariantID.make("high"))
+      expect(model.limit?.context).toBe(262144)
+    }),
+  )
+
+  it.effect("accepts both the nested providers shape and the flat models shape in one document", () =>
+    Effect.sync(() => {
+      const info = decode({
+        providers: { legacy: { api: { type: "native", settings: {} }, models: { chat: { name: "Chat" } } } },
+        models: { "flat-model": { url: "https://flat.test/v1" } },
+      })
+      expect(info.providers?.legacy?.models?.chat?.name).toBe("Chat")
+      expect(info.models?.["flat-model"]?.url).toBe("https://flat.test/v1")
+    }),
+  )
+
+  it.effect("rejects an unknown capability tier", () =>
+    Effect.sync(() => {
+      expect(() => decode({ models: { m: { tier: "supergalactic" } } })).toThrow()
+    }),
+  )
+})
+
 describe("ConfigProviderPlugin.Plugin", () => {
   it.effect("keeps configured model variant bodies unchanged", () =>
     Effect.gen(function* () {
