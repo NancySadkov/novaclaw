@@ -1040,6 +1040,10 @@ export const dict = {
   "settings.general.row.instance.title": "Connected instance",
   "settings.general.row.instance.description":
     "Which NovaClaw instance this window is talking to. Pick another to point the whole UI at it.",
+  "settings.general.row.instance.default": "default",
+  "settings.general.row.instance.temporary":
+    "Temporarily connected — this window returns to {{default}} (the default) next launch.",
+  "settings.general.row.instance.return": "Return to default",
   "settings.general.row.language.title": "Language",
   "settings.general.row.language.description": "Change the language NovaClaw is shown in.",
   "settings.general.row.shell.title": "Terminal Shell",

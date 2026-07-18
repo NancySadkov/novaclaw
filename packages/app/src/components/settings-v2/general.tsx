@@ -96,6 +96,19 @@ export const SettingsGeneralV2: Component<{
   // The active key comes from the server context, not controller.current() — that memo is
   // undefined by design under newLayoutDesigns. Fall back to the first item like it does.
   const currentInstanceKey = createMemo(() => serverCtx.key ?? instanceOptions()[0]?.value)
+  // Settings-IA (iv) — temp-switch legibility. The picker's select() is non-persisting, so a
+  // switch is TEMPORARY: next launch boots the persisted default. Surface that plainly — tag the
+  // default option, and when the active instance is NOT the default, say so + offer a one-click
+  // return. defaultKey() is only meaningful where the platform persists a default (canDefault()).
+  const defaultInstanceKey = createMemo(() => (serversCtl.canDefault() ? serversCtl.defaultKey() : undefined))
+  const defaultInstance = createMemo(() => instanceOptions().find((option) => option.value === defaultInstanceKey()))
+  const tempSwitched = createMemo(
+    () => !!defaultInstanceKey() && !!currentInstanceKey() && currentInstanceKey() !== defaultInstanceKey(),
+  )
+  const returnToDefault = () => {
+    const target = defaultInstance()
+    if (target) void serversCtl.select(target.item)
+  }
   const shellConn = createMemo(() => serverCtx.current ?? globalCtx.servers.list()[0])
   const shellRouteDir = createMemo(() => {
     const conn = shellConn()
@@ -242,7 +255,28 @@ export const SettingsGeneralV2: Component<{
         <Show when={instanceOptions().length > 1}>
           <SettingsRowV2
             title={language.t("settings.general.row.instance.title")}
-            description={language.t("settings.general.row.instance.description")}
+            description={
+              <Show
+                when={tempSwitched()}
+                fallback={language.t("settings.general.row.instance.description")}
+              >
+                <span class="inline-flex flex-wrap items-center gap-x-1.5 gap-y-0.5">
+                  <span>
+                    {language.t("settings.general.row.instance.temporary", {
+                      default: serverName(defaultInstance()!.item),
+                    })}
+                  </span>
+                  <button
+                    type="button"
+                    data-action="settings-instance-return-default"
+                    class="text-v2-text-text-accent underline underline-offset-2 hover:opacity-80"
+                    onClick={returnToDefault}
+                  >
+                    {language.t("settings.general.row.instance.return")}
+                  </button>
+                </span>
+              </Show>
+            }
           >
             <SelectV2
               appearance="inline"
@@ -252,7 +286,11 @@ export const SettingsGeneralV2: Component<{
               gutter={6}
               current={instanceOptions().find((option) => option.value === currentInstanceKey())}
               value={(option) => option.value}
-              label={(option) => option.label}
+              label={(option) =>
+                option.value === defaultInstanceKey()
+                  ? `${option.label} · ${language.t("settings.general.row.instance.default")}`
+                  : option.label
+              }
               onSelect={(option) => {
                 if (option && option.value !== currentInstanceKey()) void serversCtl.select(option.item)
               }}
