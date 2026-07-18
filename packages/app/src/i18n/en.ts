@@ -1337,6 +1337,7 @@ export const dict = {
   "settings.models.new.discovering": "Checking…",
   "settings.models.new.noModels": "Connected, but this endpoint didn't list any models.",
   "settings.models.new.pick": "Pick models to add — {{count}} found",
+  "settings.models.new.preset": "{{family}} defaults",
   "settings.models.new.add": "Add selected",
   "settings.models.new.toast.added": "Models added",
   "settings.models.remove.confirm.title": "Remove {{model}}?",

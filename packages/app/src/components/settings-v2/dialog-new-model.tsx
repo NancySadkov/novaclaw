@@ -10,6 +10,7 @@ import { useServerSync } from "@/context/server-sync"
 import { useServerSDK } from "@/context/server-sdk"
 import { showToast } from "@/utils/toast"
 import { providerProbe, type ProbeResult } from "@/utils/fs-api"
+import { matchPreset } from "@/utils/model-presets"
 import type { ServerConnection } from "@/context/server"
 
 // "New Model": paste an access-point URL (+ optional key), NovaClaw PROBES it (GET {url}/models,
@@ -94,8 +95,15 @@ export const DialogNewModel: Component<{
       }
       const disabled = (cfg.disabled_providers ?? []).filter((id) => id !== providerID)
       const existing = cfg.providers?.[providerID] ?? {}
-      const modelsObj: Record<string, { name: string }> = { ...(existing.models as Record<string, { name: string }>) }
-      for (const id of ids) modelsObj[id] = { name: id }
+      const modelsObj: Record<string, { name: string; request?: { body: Record<string, number> } }> = {
+        ...(existing.models as Record<string, { name: string }>),
+      }
+      // Models (d) — a recognized family lands with its recommended sampling pre-filled
+      // (request.body is the same overlay the Configure dialog edits; unknown ids get none).
+      for (const id of ids) {
+        const preset = matchPreset(id)
+        modelsObj[id] = { name: id, ...(preset === undefined ? {} : { request: { body: preset.body } }) }
+      }
       await serverSync().updateConfig({
         providers: {
           [providerID]: {
@@ -183,9 +191,18 @@ export const DialogNewModel: Component<{
                     onClick={() => setPicked(id, !picked[id])}
                   >
                     <span class="truncate">{id}</span>
-                    <Show when={picked[id]}>
-                      <Icon name="check" size="small" class="shrink-0 text-v2-icon-icon-accent" />
-                    </Show>
+                    <span class="ml-auto flex shrink-0 items-center gap-2">
+                      <Show when={matchPreset(id)}>
+                        {(preset) => (
+                          <span class="text-[11px] text-v2-text-text-faint">
+                            {t("settings.models.new.preset", { family: preset().family })}
+                          </span>
+                        )}
+                      </Show>
+                      <Show when={picked[id]}>
+                        <Icon name="check" size="small" class="shrink-0 text-v2-icon-icon-accent" />
+                      </Show>
+                    </span>
                   </button>
                 )}
               </For>
