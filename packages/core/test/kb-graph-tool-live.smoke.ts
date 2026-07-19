@@ -75,4 +75,26 @@ describe("kb tool over the real WASM engine", () => {
       }).pipe(Effect.provide(graph()), Effect.scoped) as Effect.Effect<void>,
     )
   }, 40_000)
+
+  test("relate links two remembered entities and neighbors traverses it (real engine edge round-trip)", async () => {
+    await Effect.runPromise(
+      Effect.gen(function* () {
+        const registry = yield* ToolRegistry.Service
+        yield* waitReady
+        const idOf = (out: string) => out.match(/mem_[A-Za-z0-9]+/)?.[0] ?? ""
+        const ada = idOf(text(yield* executeTool(registry, call({ op: "remember", text: "Ada Lovelace, a mathematician", name: "Ada" }))))
+        const engine = idOf(text(yield* executeTool(registry, call({ op: "remember", text: "the Analytical Engine", name: "Engine" }))))
+        expect(ada).not.toBe("")
+        expect(engine).not.toBe("")
+        // relate → the tool's addEdge → the REAL WasmMemory edge table.
+        const linked = text(yield* executeTool(registry, call({ op: "relate", from: ada, to: engine, type: "wrote about" })))
+        expect(linked).toContain("Linked")
+        expect(linked).toContain("wrote_about")
+        // neighbors reads it back out of the real engine.
+        const nb = text(yield* executeTool(registry, call({ op: "neighbors", id: ada })))
+        expect(nb).toContain(engine)
+        expect(nb).toContain("wrote_about")
+      }).pipe(Effect.provide(graph()), Effect.scoped) as Effect.Effect<void>,
+    )
+  }, 40_000)
 })

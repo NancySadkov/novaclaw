@@ -40,4 +40,12 @@ describe("KbTool rendering", () => {
     expect(msg).toContain('"quarterly revenue"')
     expect(msg).toContain("remember")
   })
+
+  test("relType normalizes a relationship label to a clean predicate token", () => {
+    expect(KbTool.relType("works at")).toBe("works_at")
+    expect(KbTool.relType("  Wrote  ABOUT ")).toBe("wrote_about")
+    expect(KbTool.relType("located_in")).toBe("located_in")
+    expect(KbTool.relType("")).toBe("related_to")
+    expect(KbTool.relType("   ")).toBe("related_to")
+  })
 })

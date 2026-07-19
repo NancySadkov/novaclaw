@@ -53,7 +53,16 @@ const NeighborsOp = Schema.Struct({
   k: Schema.Finite.pipe(Schema.optional).annotate({ description: "Max results (default 10)" }),
 })
 
-export const Input = Schema.Union([SearchOp, RememberOp, ForgetOp, NeighborsOp])
+const RelateOp = Schema.Struct({
+  op: Schema.Literal("relate"),
+  from: Schema.String.annotate({ description: "The subject memory id (mem_… from a remember/search result)" }),
+  to: Schema.String.annotate({ description: "The object memory id (mem_… from a remember/search result)" }),
+  type: Schema.String.annotate({
+    description: "The relationship as a short verb phrase, e.g. works_at, wrote, located_in, part_of, depends_on",
+  }),
+})
+
+export const Input = Schema.Union([SearchOp, RememberOp, ForgetOp, NeighborsOp, RelateOp])
 
 const Output = Schema.Struct({
   ok: Schema.Boolean,
@@ -64,6 +73,10 @@ type Output = typeof Output.Type
 // --- linearized rendering (pure; unit-tested) --------------------------------------------------
 
 const oneLine = (text: string) => text.replaceAll(/\s+/g, " ").trim()
+
+// Normalize a relationship label to a clean predicate token ("works at" → "works_at") so links read
+// consistently and traverse predictably. Empty/garbage → a neutral default.
+export const relType = (type: string): string => oneLine(type).toLowerCase().replaceAll(/\s+/g, "_") || "related_to"
 
 export const formatHits = (hits: ReadonlyArray<MemoryClient.SearchHit>): string =>
   hits
@@ -94,10 +107,12 @@ export const layer = Layer.effectDiscard(
       .register({
         [name]: Tool.make({
           description:
-            "The agent's long-term memory. Ops: search (find things you've remembered, by keyword) · " +
-            "remember (save a fact so you recall it later — default durably across all chats) · forget " +
-            "(drop a memory by id) · neighbors (memories linked to one you found). Chain them: search " +
-            'first, remember what matters. Example: {"op":"remember","text":"The user prefers TypeScript strict mode"}.',
+            "The agent's long-term memory — a knowledge GRAPH. Ops: search (find things you've remembered, " +
+            "by keyword) · remember (save a fact; returns its id — default durably across all chats) · relate " +
+            "(link two remembered ids with a relationship like works_at, so you can later trace multi-step " +
+            "connections neighbors/search alone can't) · forget (drop a memory by id) · neighbors (memories " +
+            "linked to one you found). Chain them: remember the entities, then relate what connects them. " +
+            'Example: {"op":"remember","text":"Ada Lovelace","name":"Ada"} → {"op":"relate","from":"mem_…","to":"mem_…","type":"wrote"}.',
           input: Input,
           output: Output,
           toModelOutput: ({ output }) => [{ type: "text", text: output.message }],
@@ -158,9 +173,23 @@ export const layer = Layer.effectDiscard(
                   if (rows.length === 0)
                     return {
                       ok: false,
-                      message: `No memories linked to "${input.id}". Ids come from search results (mem_…).`,
+                      message: `No memories linked to "${input.id}" yet. Create links with {"op":"relate","from":"…","to":"…","type":"…"}; ids come from remember/search results (mem_…).`,
                     } satisfies Output
                   return { ok: true, message: formatNeighbors(rows) } satisfies Output
+                }
+                case "relate": {
+                  const type = relType(input.type)
+                  return yield* memory
+                    .addEdge({ from: input.from, to: input.to, type, scope: "global" })
+                    .pipe(
+                      Effect.as({ ok: true, message: `Linked ${input.from} —[${type}]→ ${input.to}.` } satisfies Output),
+                      Effect.catch((error) =>
+                        Effect.succeed({
+                          ok: false,
+                          message: `Couldn't link those (${error.reason}). Both ids come from remember/search results (mem_…).`,
+                        } satisfies Output),
+                      ),
+                    )
                 }
               }
             }),

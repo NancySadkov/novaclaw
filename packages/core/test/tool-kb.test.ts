@@ -84,16 +84,30 @@ describe("KbTool (memory)", () => {
     }),
   )
 
-  it.effect("neighbors lists linked memories", () =>
+  it.effect("relate links two remembered memories; neighbors then traverses the link", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service
-      // Seed two nodes + an edge straight into the shared stub (the tool has no link op yet).
-      yield* stub.addMemory({ id: "n_a", kind: "entity", text: "Alice", scope: "global" })
-      yield* stub.addMemory({ id: "n_b", kind: "entity", text: "Acme", scope: "global" })
-      yield* stub.addEdge({ from: "n_a", to: "n_b", type: "works_at", scope: "global" })
-      const nb = text(yield* executeTool(registry, call({ op: "neighbors", id: "n_a" })))
-      expect(nb).toContain("n_b")
-      expect(nb).toContain("works_at")
+      const idOf = (out: string) => out.match(/mem_[A-Za-z0-9]+/)?.[0] ?? ""
+      const a = idOf(text(yield* executeTool(registry, call({ op: "remember", text: "Ada Lovelace", name: "Ada" }))))
+      const b = idOf(text(yield* executeTool(registry, call({ op: "remember", text: "the Analytical Engine notes", name: "Note" }))))
+      expect(a).not.toBe("")
+      expect(b).not.toBe("")
+      // The relationship label is normalized to a clean predicate token.
+      const linked = text(yield* executeTool(registry, call({ op: "relate", from: a, to: b, type: "wrote about" })))
+      expect(linked).toContain("Linked")
+      expect(linked).toContain("wrote_about")
+      const nb = text(yield* executeTool(registry, call({ op: "neighbors", id: a })))
+      expect(nb).toContain(b)
+      expect(nb).toContain("wrote_about")
+    }),
+  )
+
+  it.effect("neighbors of an unlinked memory points at relate", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const lonely = text(yield* executeTool(registry, call({ op: "remember", text: "an unconnected note about narwhals" }))).match(/mem_[A-Za-z0-9]+/)?.[0] ?? ""
+      const nb = text(yield* executeTool(registry, call({ op: "neighbors", id: lonely })))
+      expect(nb).toContain("relate")
     }),
   )
 
