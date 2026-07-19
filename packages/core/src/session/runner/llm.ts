@@ -1053,26 +1053,34 @@ export const layer = Layer.effect(
         const completeAbortable = (system: string, user: string, maxTokens: number) =>
           Effect.raceFirst(completeOnce(system, user, maxTokens), abortWatch)
         let winnerIdx: number | undefined
-        // P14.1 materialization (legibility): SINGLE attempts share ONE assistant message for the
-        // whole run — every state-changing engine action lands on it as a real tool part (fed
-        // through the publisher as synthetic LLM tool events, so ordering/persistence/UI ride the
-        // normal pipeline), and the end-of-run summary streams onto the same message. Racing keeps
-        // notices only — N racers' interleaved actions on one message would be noise.
-        const runPublisher = single
-          ? createLLMEventPublisher(events, {
-              sessionID,
-              agent: String(resolved.agent ?? session.agent ?? "nova"),
-              model: {
-                id: ModelV2.ID.make(model.id),
-                providerID: ProviderV2.ID.make(model.provider),
-                ...(session.model?.variant === undefined ? {} : { variant: session.model.variant }),
-              },
-            })
-          : undefined
+        // P14.1 materialization (legibility): a run shares ONE assistant message — every state-
+        // changing engine action lands on it as a real tool part (fed through the publisher as
+        // synthetic LLM tool events, so ordering/persistence/UI ride the normal pipeline), and the
+        // end-of-run summary streams onto the same message. SINGLE attempts materialize LIVE; RACING
+        // buffers each racer's actions and replays only the WINNER's after the race resolves — N
+        // interleaved live racers would be noise, but the winner's clean action sequence is exactly
+        // what the user wants to read. The publisher is lazy (no message until the first publish), so
+        // creating it up-front for racing shows nothing until the post-race replay.
+        const runPublisher = createLLMEventPublisher(events, {
+          sessionID,
+          agent: String(resolved.agent ?? session.agent ?? "nova"),
+          model: {
+            id: ModelV2.ID.make(model.id),
+            providerID: ProviderV2.ID.make(model.provider),
+            ...(session.model?.variant === undefined ? {} : { variant: session.model.variant }),
+          },
+        })
+        // Per-racer action buffers (racing only): bounded, so the winner's can be replayed post-race.
+        const racerActions: SessionStrict.MaterializedAction[][] = single ? [] : forks.map(() => [])
+        const recordAction = (i: number) => (action: SessionStrict.MaterializedAction) =>
+          Effect.sync(() => {
+            const buf = racerActions[i]!
+            buf.push(action)
+            if (buf.length > SessionStrict.MATERIALIZED_ACTION_CAP) buf.shift()
+          })
         let actionSeq = 0
         const publishAction = (action: SessionStrict.MaterializedAction) =>
           Effect.gen(function* () {
-            if (runPublisher === undefined) return
             const id = `jh_a${++actionSeq}`
             yield* runPublisher.publish({ type: "tool-input-start", id, name: action.tool })
             yield* runPublisher.publish({ type: "tool-call", id, name: action.tool, input: action.args })
@@ -1094,7 +1102,7 @@ export const layer = Layer.effect(
             ...(resumeState === undefined ? {} : { resume: resumeState }),
             onMilestone: (text) => notice(single ? text : `[attempt ${i + 1}/${attempts}] ${text}`),
             aborted: () => stopRequested || (winnerIdx !== undefined && winnerIdx !== i),
-            ...(single ? { onAction: publishAction } : {}),
+            onAction: single ? publishAction : recordAction(i),
             checkpoint: single
               ? (state) =>
                   JhStore.save(db, { id: savedKey, goal, status: "running", state, now: Date.now() }).pipe(
@@ -1127,19 +1135,9 @@ export const layer = Layer.effect(
               milestones,
               appliedFiles,
             })
-            // Single attempts reuse the RUN's publisher: the summary text streams onto the SAME
-            // assistant message that carries the tool parts (one message = the whole run).
-            const publisher =
-              runPublisher ??
-              createLLMEventPublisher(events, {
-                sessionID,
-                agent: String(resolved.agent ?? session.agent ?? "nova"),
-                model: {
-                  id: ModelV2.ID.make(model.id),
-                  providerID: ProviderV2.ID.make(model.provider),
-                  ...(session.model?.variant === undefined ? {} : { variant: session.model.variant }),
-                },
-              })
+            // The summary streams onto the SAME run message that carries the tool parts (single =
+            // live actions; racing = the replayed winner's actions) — one message = the whole run.
+            const publisher = runPublisher
             yield* llm
               .stream(
                 LLM.request({
@@ -1167,7 +1165,7 @@ export const layer = Layer.effect(
             // leave it visibly unsettled forever. Best-effort: settle with a plain stop.
             Effect.andThen(
               Effect.gen(function* () {
-                if (runPublisher === undefined || actionSeq === 0) return
+                if (actionSeq === 0) return
                 if (runPublisher.stepSettlement() !== undefined) return
                 yield* events.publish(SessionEvent.Step.Ended, {
                   sessionID,
@@ -1216,6 +1214,11 @@ export const layer = Layer.effect(
                 ? `⏹️ Strict run stopped at your request after ${steps} steps — the best verified state was kept${single ? " in the working directory" : ""}. Say "resume" to pick it up again.`
                 : `⚠️ Strict run stopped (${report.reason ?? "blocked"}) after ${steps} steps — the best verified state was kept${single ? " in the working directory" : " in the attempt workspaces"}. Say "resume" to continue it.`,
           )
+          // Racing legibility: replay the WINNER's buffered actions as real tool parts on the run
+          // message (single attempts already materialized them live) — so a raced run reads like a
+          // normal run, not just notices. The summary then streams onto the same message.
+          if (!single && winnerIdx !== undefined)
+            for (const action of racerActions[winnerIdx]!) yield* publishAction(action)
           yield* publishSummary(report, appliedFiles)
           yield* postRunMaintenance(sessionID)
         }).pipe(

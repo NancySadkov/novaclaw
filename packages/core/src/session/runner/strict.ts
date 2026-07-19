@@ -338,6 +338,10 @@ export function applyBack(winnerDir: string, dst: string, baseline: ReadonlyMap<
 const MATERIALIZED_TOOLS = new Set(["run", "write_file", "append_file", "edit_file", "replace_lines", "git_revert"])
 export const ACTION_ARG_CAP = 2_000
 export const ACTION_OUTPUT_CAP = 4_000
+/** Racing buffers each racer's actions so the winner's can be replayed onto the run message post-race.
+ *  Cap the buffer per racer so a long grind can't grow it unbounded — oldest dropped, the recent tail
+ *  is what a user actually reads. */
+export const MATERIALIZED_ACTION_CAP = 500
 
 export interface MaterializedAction {
   readonly tool: string
@@ -409,7 +413,8 @@ export interface RunArgs {
    *  picks up the existing tree instead of re-planning; completed steps are never redone. */
   readonly resume?: JhEngine.State
   /** P14.1 materialization: called after each completed state-changing engine action — the runner
-   *  publishes it as a chat tool part. Post-hoc + best-effort; unset = no materialization (racing). */
+   *  publishes it as a chat tool part (single attempts), or buffers it to replay the WINNER's after
+   *  the race (racing). Post-hoc + best-effort; unset = no materialization. */
   readonly onAction?: (action: MaterializedAction) => Effect.Effect<void>
   readonly now?: () => number
 }
