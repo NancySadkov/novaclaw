@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json.schemastore.org/package.json",
+  "version": "0.0.1",
+  "name": "@novaclaw/kb-sidecar",
+  "type": "module",
+  "license": "MIT",
+  "private": true,
+  "description": "The Ladybug graph-memory engine sidecar (Node runtime — the native addon segfaults under Bun; see notes/kb-graph-plan.md §2.1). Tested under Node, not the Bun suite.",
+  "scripts": {
+    "typecheck": "tsgo --noEmit",
+    "test": "node --test --experimental-strip-types src/store.test.ts"
+  },
+  "exports": {
+    ".": "./src/index.ts",
+    "./store": "./src/store.ts"
+  },
+  "devDependencies": {
+    "@tsconfig/bun": "catalog:",
+    "@types/node": "catalog:",
+    "@typescript/native-preview": "catalog:"
+  },
+  "dependencies": {
+    "@ladybugdb/core": "0.18.2"
+  }
+}

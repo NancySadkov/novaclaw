@@ -95,7 +95,8 @@
     "esbuild",
     "node-pty",
     "protobufjs",
-    "electron"
+    "electron",
+    "@ladybugdb/core"
   ],
   "overrides": {
     "@types/bun": "catalog:",
