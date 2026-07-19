@@ -5,6 +5,7 @@ import { Effect, Layer, Schema } from "effect"
 import { makeLocationNode } from "../effect/app-node"
 import { MemoryClient } from "../kb-graph/memory-client"
 import { Memory } from "../kb-graph/memory"
+import { MemorySetting } from "../kb-graph/memory-setting"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
@@ -102,6 +103,10 @@ export const layer = Layer.effectDiscard(
           toModelOutput: ({ output }) => [{ type: "text", text: output.message }],
           execute: (input, context) =>
             Effect.gen(function* () {
+              // The user's Memory switch (Settings → Memory) is OFF → the tool stands down entirely:
+              // no recall AND no writing, so "memory off" is honest for the agent too.
+              if (!MemorySetting.memoryEnabled())
+                return { ok: false, message: "Long-term memory is turned off in Settings, so I can't recall or save memories right now." } satisfies Output
               const sessionScope = `session:${context.sessionID}`
               switch (input.op) {
                 case "search": {

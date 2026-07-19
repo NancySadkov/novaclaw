@@ -6,6 +6,7 @@ import { makeGlobalNode } from "../effect/app-node"
 import { Flag } from "../flag/flag"
 import { Global } from "../global"
 import { MemoryClient } from "./memory-client"
+import { MemorySetting } from "./memory-setting"
 import { WasmMemory } from "./wasm-engine"
 
 // Boot-wire the graph-memory engine INTO the instance (§2.0). The engine is now WASM IN-PROCESS — the
@@ -72,7 +73,8 @@ export const layerFromConfig = (cfg: MemoryConfig): Layer.Layer<MemoryClient.Ser
           for (;;) {
             yield* Effect.sleep(consolidateEvery)
             const live = engine
-            if (live) yield* Effect.tryPromise(() => live.consolidate()).pipe(Effect.ignore)
+            // Skip while the user has memory turned off — don't promote session facts to global.
+            if (live && MemorySetting.memoryEnabled()) yield* Effect.tryPromise(() => live.consolidate()).pipe(Effect.ignore)
           }
         }),
       )

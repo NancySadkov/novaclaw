@@ -51,6 +51,7 @@ import { SessionRecall } from "./recall"
 import { SessionExtract } from "./extract"
 import { Memory } from "../../kb-graph/memory"
 import { MemoryClient } from "../../kb-graph/memory-client"
+import { MemorySetting } from "../../kb-graph/memory-setting"
 import { SessionStrict } from "./strict"
 import { JhStore } from "../../jh/store"
 import type { JhEngine } from "../../jh/engine"
@@ -342,6 +343,7 @@ export const layer = Layer.effect(
     // content hash (re-extraction dedups). Best-effort + gated on the engine being live so a disabled/
     // still-opening memory costs no model call.
     const extractMemory = Effect.fn("SessionRunner.extractMemory")(function* (sessionID: SessionSchema.ID) {
+      if (!MemorySetting.memoryEnabled()) return // the user turned memory off — record nothing
       if (!(yield* memory.health())) return
       const exchange = SessionExtract.buildExchange(yield* getContext(sessionID))
       if (!exchange) return
@@ -524,7 +526,7 @@ export const layer = Layer.effect(
       // off/unavailable → no block, the turn proceeds. Budgeted DOWN for weak models (the JH floor).
       const recallQuery = SessionRecall.recallQuery(context)
       const memoryRecall =
-        recallQuery === undefined
+        recallQuery === undefined || !MemorySetting.memoryEnabled() // memory off → surface nothing
           ? undefined
           : SessionRecall.formatRecall(
               yield* memory

@@ -1410,6 +1410,9 @@ export const dict = {
   "settings.memory.title": "Memory",
   "settings.memory.description":
     "What NovaClaw remembers about you and your work. It learns as you chat — nothing to set up. Your memory stays on this device.",
+  "settings.memory.enabled.title": "Remember across chats",
+  "settings.memory.enabled.description":
+    "Let NovaClaw learn and recall things about you and your work as you chat. Turn off to stop all recall and saving — what's already stored stays until you clear it.",
   "settings.memory.io.hint":
     "Export a backup to keep or move to another instance, restore one here, or clear everything for a fresh start.",
   "settings.memory.export.action": "Export",

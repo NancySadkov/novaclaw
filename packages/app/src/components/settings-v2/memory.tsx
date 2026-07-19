@@ -1,11 +1,15 @@
 import { type Component, createMemo, createResource, createSignal, For, Show } from "solid-js"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
+import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { showToast } from "@/utils/toast"
 import { useLanguage } from "@/context/language"
 import { useServer } from "@/context/server"
 import { useGlobal } from "@/context/global"
+import { useServerSync } from "@/context/server-sync"
 import { useConfirm } from "@/components/dialog-confirm"
 import { RequiresLevel } from "@/context/expertise"
+import { SettingsListV2 } from "./parts/list"
+import { SettingsRowV2 } from "./parts/row"
 import {
   memoryClearScope,
   memoryInvalidate,
@@ -44,7 +48,26 @@ export const SettingsMemoryV2: Component<{ sessionID?: string }> = (props) => {
   const language = useLanguage()
   const server = useServer()
   const global = useGlobal()
+  const serverSync = useServerSync()
   const confirm = useConfirm()
+
+  // The on/off privacy switch (config.memory.enabled, default on). Off pauses the runtime flows
+  // (recall/extract/tool/consolidation) instance-wide; the list + export/clear below still work so you
+  // can manage what's already stored. Opt-out: enabled unless explicitly false.
+  const memoryConfig = createMemo(
+    () => (serverSync().data.config as { memory?: { enabled?: boolean } }).memory ?? {},
+  )
+  const enabled = () => memoryConfig().enabled !== false
+  const setEnabled = (value: boolean) =>
+    void serverSync()
+      .updateConfig({ memory: { ...memoryConfig(), enabled: value } } as never)
+      .catch((error: unknown) =>
+        showToast({
+          variant: "error",
+          title: language.t("settings.memory.toast.failed"),
+          description: error instanceof Error ? error.message : String(error),
+        }),
+      )
 
   const conn = createMemo(() => server.current ?? global.servers.list()[0])
   const ctx = createMemo(() => {
@@ -218,6 +241,21 @@ export const SettingsMemoryV2: Component<{ sessionID?: string }> = (props) => {
       </div>
 
       <div class="settings-v2-tab-body">
+        <div class="settings-v2-section">
+          <SettingsListV2>
+            <SettingsRowV2
+              title={language.t("settings.memory.enabled.title")}
+              description={language.t("settings.memory.enabled.description")}
+            >
+              <div data-action="settings-memory-enabled">
+                <Switch checked={enabled()} onChange={setEnabled} hideLabel>
+                  {language.t("settings.memory.enabled.title")}
+                </Switch>
+              </div>
+            </SettingsRowV2>
+          </SettingsListV2>
+        </div>
+
         <div class="settings-v2-section">
           <div class="flex flex-wrap gap-2">
             <ButtonV2 size="small" variant="neutral" disabled={busy()} onClick={() => void exportMemory()}>
