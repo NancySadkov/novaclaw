@@ -4,6 +4,7 @@
 //   KB_SIDECAR_PORT   loopback port, 0 = OS-assigned (default 0)
 //   KB_SIDECAR_DIM    embedding dimension (default 1024)
 //   KB_SIDECAR_TOKEN  shared bearer token gating every request (recommended)
+//   KB_SIDECAR_EXT_DIR  vendored vector/fts extensions root (airgap/OFF-C — LOAD by path, no network)
 // On listen it prints `KB_SIDECAR_LISTENING <port>` to stdout so the parent learns the chosen port
 // and knows the store finished opening (schema + extension load can take a beat).
 
@@ -18,8 +19,9 @@ if (!dbPath) {
 const port = Number(process.env.KB_SIDECAR_PORT ?? 0)
 const dim = Number(process.env.KB_SIDECAR_DIM ?? 1024)
 const token = process.env.KB_SIDECAR_TOKEN || undefined
+const extDir = process.env.KB_SIDECAR_EXT_DIR || undefined
 
-const store = await MemoryStore.open(dbPath, { dim })
+const store = await MemoryStore.open(dbPath, { dim, ...(extDir ? { extDir } : {}) })
 const server = createMemoryServer(store, { token })
 
 const shutdown = (signal: string) => {

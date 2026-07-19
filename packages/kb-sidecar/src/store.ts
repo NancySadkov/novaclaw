@@ -10,6 +10,8 @@
 // + FTS over text/name. Search is hybrid (vector KNN + FTS, RRF-fused, scope- and validity-filtered).
 
 import * as lbug from "@ladybugdb/core"
+import { existsSync } from "node:fs"
+import { join } from "node:path"
 
 export type MemoryKind = "entity" | "episode" | "passage"
 export type Relation = "staged" | "core"
@@ -72,20 +74,25 @@ export class MemoryStore {
   private readonly db: lbug.Database
   private readonly conn: lbug.Connection
   readonly dim: number
+  private readonly extDir?: string
 
-  private constructor(db: lbug.Database, conn: lbug.Connection, dim: number) {
+  private constructor(db: lbug.Database, conn: lbug.Connection, dim: number, extDir?: string) {
     this.db = db
     this.conn = conn
     this.dim = dim
+    this.extDir = extDir
   }
 
   /** Open (or create) the memory graph at `path`, load the vector+fts extensions, and ensure the
-   *  schema + indexes. Idempotent — safe to call on an existing store. */
-  static async open(path: string, opts: { dim?: number } = {}): Promise<MemoryStore> {
+   *  schema + indexes. Idempotent — safe to call on an existing store. `extDir` = a vendored
+   *  extensions root (for airgap/OFF-C): when a `lib{vector,fts}.lbug_extension` is found under it, the
+   *  extension is LOADed by absolute path with NO network — otherwise the load falls back to the named
+   *  ~/.lbdb cache (+ an online INSTALL as last resort). */
+  static async open(path: string, opts: { dim?: number; extDir?: string } = {}): Promise<MemoryStore> {
     const dim = opts.dim ?? DEFAULT_DIM
     const db = new lbug.Database(path)
     const conn = new lbug.Connection(db)
-    const store = new MemoryStore(db, conn, dim)
+    const store = new MemoryStore(db, conn, dim, opts.extDir)
     await store.loadExtensions()
     await store.ensureSchema()
     // Flush the freshly-created schema so even a crash immediately after boot leaves a clean WAL.
@@ -133,13 +140,33 @@ export class MemoryStore {
     }
   }
 
+  // Resolve a vendored extension binary under extDir, trying a per-ext subdir then a flat layout —
+  // e.g. `<extDir>/vector/libvector.lbug_extension` or `<extDir>/libvector.lbug_extension`. The
+  // packaging step places the right-platform binaries there; the filename is uniform across platforms
+  // (`lib<ext>.lbug_extension`, verified on win_amd64).
+  private vendoredExt(ext: string): string | undefined {
+    if (!this.extDir) return undefined
+    const file = `lib${ext}.lbug_extension`
+    for (const candidate of [join(this.extDir, ext, file), join(this.extDir, file)]) {
+      if (existsSync(candidate)) return candidate
+    }
+    return undefined
+  }
+
   private async loadExtensions(): Promise<void> {
     for (const ext of ["vector", "fts"]) {
+      // Airgap/OFF-C first: LOAD a pre-vendored binary by absolute path — zero network, no ~/.lbdb
+      // dependency (LOAD EXTENSION '<abs path>' is verified to work). The data plane never egresses.
+      const vendored = this.vendoredExt(ext)
+      if (vendored) {
+        await this.q(`LOAD EXTENSION '${vendored.replaceAll("\\", "/").replaceAll("'", "''")}'`)
+        continue
+      }
       try {
+        // Named load from the ~/.lbdb cache (populated by a prior INSTALL — P1a-verified offline once placed).
         await this.q(`LOAD EXTENSION ${ext}`)
       } catch {
-        // Not yet present in ~/.lbdb/extension — fetch it (online) then load. Airgap builds
-        // pre-vendor the binary so the first LOAD above already succeeds (P1a-verified).
+        // Last resort: fetch it online, then load. Only reached on a non-airgap host with a cold cache.
         await this.q(`INSTALL ${ext}`)
         await this.q(`LOAD EXTENSION ${ext}`)
       }

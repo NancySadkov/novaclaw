@@ -30,6 +30,8 @@ export interface SpawnOptions {
   readonly dim?: number
   /** Shared bearer token the kernel generates + the sidecar enforces. Strongly recommended. */
   readonly token?: string
+  /** Vendored vector/fts extensions root (airgap/OFF-C) — the sidecar LOADs them by path, no network. */
+  readonly extDir?: string
   /** Node executable. Default "node" (on PATH — a NovaClaw requirement). Node ≥22 for
    *  --experimental-strip-types (dev/Windows); the Spark's Node 18 needs pre-compiled JS + a `.js`
    *  entry (P1 remaining: the compile-first path). */
@@ -130,6 +132,7 @@ export const superviseSidecar = (opts: SpawnOptions): Supervisor => {
     KB_SIDECAR_PORT: "0",
     KB_SIDECAR_DIM: String(opts.dim ?? 1024),
     ...(opts.token ? { KB_SIDECAR_TOKEN: opts.token } : {}),
+    ...(opts.extDir ? { KB_SIDECAR_EXT_DIR: opts.extDir } : {}),
   }
 
   const loop = async (): Promise<void> => {

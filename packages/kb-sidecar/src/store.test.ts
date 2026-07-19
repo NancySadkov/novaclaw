@@ -3,10 +3,23 @@
 // (node --test) — on Windows and the aarch64 Spark (P0 platforms).
 import { test, before, after } from "node:test"
 import assert from "node:assert/strict"
-import { mkdtempSync, rmSync } from "node:fs"
-import { tmpdir } from "node:os"
+import { mkdtempSync, rmSync, mkdirSync, copyFileSync, readdirSync, existsSync } from "node:fs"
+import { tmpdir, homedir } from "node:os"
 import { join } from "node:path"
 import { MemoryStore } from "./store.ts"
+
+// Recursively find a file by name under a root (for locating the cached extension binaries).
+const findUnder = (root: string, name: string): string | undefined => {
+  if (!existsSync(root)) return undefined
+  for (const e of readdirSync(root, { withFileTypes: true })) {
+    const p = join(root, e.name)
+    if (e.isDirectory()) {
+      const hit = findUnder(p, name)
+      if (hit) return hit
+    } else if (e.name === name) return p
+  }
+  return undefined
+}
 
 const DIM = 8
 // Tiny deterministic embeddings — orthogonal-ish so cosine NN is unambiguous.
@@ -97,4 +110,39 @@ test("purge hard-deletes (secrets); clearScope wipes a scope", async () => {
   await store.clearScope("session:s2")
   const s2 = await store.search({ embedding: vec(5), scopes: ["session:s2"], k: 5 })
   assert.equal(s2.length, 0, "clearScope removed all session:s2 memories")
+})
+
+test("a bogus extDir falls back to the cache — never breaks open()", async () => {
+  const d = mkdtempSync(join(tmpdir(), "kb-extfallback-"))
+  // extDir points at an empty dir: vendoredExt() finds nothing → named/cache load path is used.
+  const s = await MemoryStore.open(join(d, "mem"), { dim: DIM, extDir: join(d, "does-not-exist") })
+  await s.addMemory({ id: "fb", kind: "entity", text: "fallback works", scope: "global", embedding: vec(1) })
+  assert.ok((await s.search({ query: "fallback", k: 3 })).some((h) => h.id === "fb"))
+  await s.close()
+  rmSync(d, { recursive: true, force: true })
+})
+
+test("vendored extDir: LOAD the vector/fts binaries by absolute path (airgap/OFF-C)", async (t) => {
+  // Copy the cached extension binaries into a vendored dir and open THROUGH extDir — this exercises
+  // the by-path LOAD branch (taken before any cache/network fallback). Skips on a host with no cache
+  // (nothing to copy); the full cache-aside airgap proof lives in notes/kb-graph-plan.md.
+  const vec0 = findUnder(join(homedir(), ".lbdb", "extension"), "libvector.lbug_extension")
+  const fts0 = findUnder(join(homedir(), ".lbdb", "extension"), "libfts.lbug_extension")
+  if (!vec0 || !fts0) return t.skip("no cached extensions to vendor")
+  const d = mkdtempSync(join(tmpdir(), "kb-vendored-"))
+  mkdirSync(join(d, "ext", "vector"), { recursive: true })
+  mkdirSync(join(d, "ext", "fts"), { recursive: true })
+  copyFileSync(vec0, join(d, "ext", "vector", "libvector.lbug_extension"))
+  copyFileSync(fts0, join(d, "ext", "fts", "libfts.lbug_extension"))
+  const s = await MemoryStore.open(join(d, "mem"), { dim: DIM, extDir: join(d, "ext") })
+  await s.addMemory({ id: "vd", kind: "entity", text: "vendored berlin", scope: "global", embedding: vec(2) })
+  assert.ok((await s.search({ query: "berlin", k: 3 })).some((h) => h.id === "vd"), "by-path vector+fts load works")
+  await s.close()
+  // Best-effort cleanup: a LOADed extension binary stays mmap'd in-process, so its file can't be
+  // removed on Windows until the process exits — leave the temp dir to OS cleanup rather than fail.
+  try {
+    rmSync(d, { recursive: true, force: true })
+  } catch {
+    /* extension binary still mapped — OS reclaims the temp dir */
+  }
 })
