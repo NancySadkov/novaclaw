@@ -1,53 +1,33 @@
 import { describe, expect } from "bun:test"
-import { Effect, Layer } from "effect"
-import { Config } from "@novaclaw/core/config"
-import { Database } from "@novaclaw/core/database/database"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
-import { KbDocs } from "@novaclaw/core/kb-docs"
+import { Memory } from "@novaclaw/core/kb-graph/memory"
+import { MemoryClient } from "@novaclaw/core/kb-graph/memory-client"
 import { SessionV2 } from "@novaclaw/core/session"
 import { KbTool } from "@novaclaw/core/tool/kb"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import { ToolOutputStore } from "@novaclaw/core/tool-output-store"
+import { Effect } from "effect"
 import { testEffect } from "./lib/effect"
 import { toolIdentity, executeTool, toolDefinitions } from "./lib/tool"
 
-// KB-V P3 — the kb tool end to end: decode → KbDocs → linearized text. The repair-loop
-// contract carries over from KB-E: a fruitless query settles as readable result TEXT the model
-// can act on — never a ToolFailure (reserved for infra). No embedding device is configured
-// here, so the tool runs the keyword-only path (the vector legs are covered by kb-docs tests).
+// The memory `kb` tool end to end: decode → MemoryClient → linearized text. Backed by the in-memory
+// `stub` (the WASM engine itself is covered by kb-graph-wasm-engine.smoke.ts). The repair-loop
+// contract from KB-E carries over: a fruitless query settles as readable result TEXT the model can act
+// on — never a ToolFailure (reserved for infra). Tests use distinct query terms so the shared stub
+// doesn't cross-contaminate.
 
 const sessionID = SessionV2.ID.make("ses_kb_tool_test")
 
-// Location config with no kb.embedding → the tool resolves NO embedder.
-const configLayer = Layer.succeed(Config.Service, Config.Service.of({ entries: () => Effect.succeed([]) }))
+// One shared in-memory memory client behind MemoryClient.Service (seed + tool ops hit the same store).
+const stub = MemoryClient.stub()
 
 const it = testEffect(
-  AppNodeBuilder.build(
-    LayerNode.group([Database.node, KbDocs.node, ToolRegistry.node, ToolRegistry.toolsNode, KbTool.node]),
-    [
-      [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig],
-      [Config.node, configLayer],
-    ],
-  ),
+  AppNodeBuilder.build(LayerNode.group([ToolRegistry.node, ToolRegistry.toolsNode, KbTool.node]), [
+    [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig],
+    [Memory.node, MemoryClient.layerWith(stub)],
+  ]),
 )
-
-const seed = Effect.gen(function* () {
-  const kb = yield* KbDocs.Service
-  const rust = yield* kb.add({
-    title: "Rust memory model",
-    text: "Rust ownership rules. Borrowing enforces lifetimes.",
-    relation: "core",
-    source: "wiki",
-  })
-  const pasta = yield* kb.add({
-    title: "Cooking pasta",
-    text: "Boil salted water. Add spaghetti and stir.",
-    relation: "staged",
-    agent: "chef",
-  })
-  return { rust: rust.doc, pasta: pasta.doc }
-})
 
 const call = (input: unknown, id = "call-kb") => ({
   sessionID,
@@ -60,72 +40,60 @@ const text = (result: { type: string; value: unknown }): string => {
   return String(result.value)
 }
 
-describe("KbTool", () => {
-  it.effect("registers and chains search → get over seeded documents", () =>
+describe("KbTool (memory)", () => {
+  it.effect("registers; remember → search finds it", () =>
     Effect.gen(function* () {
-      const { rust } = yield* seed
       const registry = yield* ToolRegistry.Service
-      expect((yield* toolDefinitions(registry)).map((tool) => tool.name)).toContain(KbTool.name)
+      expect((yield* toolDefinitions(registry)).map((t) => t.name)).toContain(KbTool.name)
 
-      const found = text(yield* executeTool(registry, call({ op: "search", query: "borrowing lifetimes" })))
-      expect(found).toContain(rust.id)
-      expect(found).toContain("Rust memory model")
-      expect(found).toContain("core/wiki")
+      const saved = text(yield* executeTool(registry, call({ op: "remember", text: "The user prefers strict typing", name: "prefs" })))
+      expect(saved).toContain("Remembered (mem_")
 
-      const got = text(yield* executeTool(registry, call({ op: "get", doc: rust.id })))
-      expect(got).toContain("Rust memory model")
-      expect(got).toContain("Borrowing enforces lifetimes.")
-      expect(got).toContain("source: wiki")
+      const found = text(yield* executeTool(registry, call({ op: "search", query: "strict" })))
+      expect(found).toContain("prefs")
+      expect(found).toContain("strict typing")
     }),
   )
 
-  it.effect("a fruitless search settles as repair text naming the degraded mode", () =>
+  it.effect("a fruitless search settles as repair text", () =>
     Effect.gen(function* () {
-      yield* seed
       const registry = yield* ToolRegistry.Service
-      const repair = text(yield* executeTool(registry, call({ op: "search", query: "quantum chromodynamics" })))
-      expect(repair).toContain("No matches")
-      expect(repair).toContain("Semantic search was unavailable")
-      expect(repair).toContain("sources")
+      const repair = text(yield* executeTool(registry, call({ op: "search", query: "chromodynamics" })))
+      expect(repair).toContain("No memories match")
+      expect(repair).toContain("remember")
     }),
   )
 
-  it.effect("scope walls staged docs out of core searches", () =>
+  it.effect("session-scoped memory stays out of a global-only search", () =>
     Effect.gen(function* () {
-      const { pasta } = yield* seed
       const registry = yield* ToolRegistry.Service
-      const staged = text(yield* executeTool(registry, call({ op: "search", query: "spaghetti", scope: "staged" })))
-      expect(staged).toContain(pasta.id)
-      const core = text(yield* executeTool(registry, call({ op: "search", query: "spaghetti", scope: "core" })))
-      expect(core).not.toContain(pasta.id)
+      yield* executeTool(registry, call({ op: "remember", text: "note about kangaroos", scope: "session" }))
+      expect(text(yield* executeTool(registry, call({ op: "search", query: "kangaroos", scope: "global" })))).toContain("No memories match")
+      expect(text(yield* executeTool(registry, call({ op: "search", query: "kangaroos", scope: "session" })))).toContain("kangaroos")
     }),
   )
 
-  it.effect("get on an unknown id and related on a retracted doc return readable repair text", () =>
+  it.effect("forget invalidates so it stops surfacing in search", () =>
     Effect.gen(function* () {
-      const { pasta } = yield* seed
-      const kb = yield* KbDocs.Service
-      yield* kb.retract(pasta.id)
       const registry = yield* ToolRegistry.Service
-      const missing = text(yield* executeTool(registry, call({ op: "get", doc: "doc_nope" })))
-      expect(missing).toContain("doc_nope")
-      expect(missing).toContain("search")
-      const related = text(yield* executeTool(registry, call({ op: "related", doc: pasta.id })))
-      expect(related).toContain("No active document")
+      const saved = text(yield* executeTool(registry, call({ op: "remember", text: "transient fact about zorblatt" })))
+      const id = saved.match(/mem_[A-Za-z0-9]+/)?.[0] ?? ""
+      expect(id).not.toBe("")
+      yield* executeTool(registry, call({ op: "forget", id }))
+      expect(text(yield* executeTool(registry, call({ op: "search", query: "zorblatt" })))).toContain("No memories match")
     }),
   )
 
-  it.effect("sources aggregates provenance; retracted docs stop matching search", () =>
+  it.effect("neighbors lists linked memories", () =>
     Effect.gen(function* () {
-      const { pasta } = yield* seed
-      const kb = yield* KbDocs.Service
-      yield* kb.retract(pasta.id)
       const registry = yield* ToolRegistry.Service
-      const sources = text(yield* executeTool(registry, call({ op: "sources" })))
-      expect(sources).toContain("wiki · core · 1 docs")
-      expect(sources).not.toContain("chef")
-      const gone = text(yield* executeTool(registry, call({ op: "search", query: "spaghetti" })))
-      expect(gone).toContain("No matches")
+      // Seed two nodes + an edge straight into the shared stub (the tool has no link op yet).
+      yield* stub.addMemory({ id: "n_a", kind: "entity", text: "Alice", scope: "global" })
+      yield* stub.addMemory({ id: "n_b", kind: "entity", text: "Acme", scope: "global" })
+      yield* stub.addEdge({ from: "n_a", to: "n_b", type: "works_at", scope: "global" })
+      const nb = text(yield* executeTool(registry, call({ op: "neighbors", id: "n_a" })))
+      expect(nb).toContain("n_b")
+      expect(nb).toContain("works_at")
     }),
   )
 
