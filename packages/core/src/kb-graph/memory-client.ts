@@ -189,6 +189,26 @@ export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2
 /** Test/wiring seam: provide a specific client Interface (a live `make`, or a `stub`). */
 export const layerWith = (client: Interface): Layer.Layer<Service> => Layer.succeed(Service, Service.of(client))
 
+/** A degraded client for when memory can't run here (not configured, no Node, engine unavailable):
+ *  health is false and every op fails with a clear MemoryError. So memory is never a HARD boot
+ *  dependency — the instance comes up and callers degrade (the "never breaks" stance) instead of a
+ *  missing engine bricking the app on a phone/cheap laptop. */
+export const disabled = (reason = "memory is not available"): Interface => {
+  const fail = <A>(): Effect.Effect<A, MemoryError> => Effect.fail(new MemoryError({ reason }))
+  return {
+    health: () => Effect.succeed(false),
+    addMemory: fail,
+    addEdge: fail,
+    search: fail,
+    neighbors: fail,
+    path: fail,
+    invalidate: fail,
+    purge: fail,
+    clearScope: fail,
+    stats: fail,
+  }
+}
+
 /** A deterministic in-memory client for downstream tests that don't want a real sidecar. Not a full
  *  graph engine — enough surface to exercise callers: add/search (substring + scope/kind filter),
  *  neighbors, invalidate/purge/clearScope, stats. Vector/FTS ranking is out of scope (that's the

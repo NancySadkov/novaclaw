@@ -24,7 +24,10 @@ const extDir = process.env.KB_SIDECAR_EXT_DIR || undefined
 const store = await MemoryStore.open(dbPath, { dim, ...(extDir ? { extDir } : {}) })
 const server = createMemoryServer(store, { token })
 
+let shuttingDown = false
 const shutdown = (signal: string) => {
+  if (shuttingDown) return
+  shuttingDown = true
   console.error(`kb-sidecar: ${signal} — shutting down`)
   server.close(() => {
     void store.close().finally(() => process.exit(0))
@@ -34,6 +37,15 @@ const shutdown = (signal: string) => {
 }
 process.on("SIGTERM", () => shutdown("SIGTERM"))
 process.on("SIGINT", () => shutdown("SIGINT"))
+
+// Orphan guard: the supervisor spawns us with a piped stdin it holds open. If the parent instance
+// dies ABRUPTLY (SIGKILL/crash/power-loss) — where no signal reaches us — the OS closes that pipe,
+// so an stdin 'end'/'close' means "the instance is gone; don't linger holding the single-writer
+// lock" (a lingering orphan would brick memory on the next boot, esp. on a cheap device that
+// restarts often). We shut down cleanly (checkpointed WAL → the next boot reopens fine).
+process.stdin.on("end", () => shutdown("stdin-closed (parent gone)"))
+process.stdin.on("close", () => shutdown("stdin-closed (parent gone)"))
+process.stdin.resume()
 
 server.listen(port, "127.0.0.1", () => {
   const addr = server.address()

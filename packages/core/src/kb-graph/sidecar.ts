@@ -138,7 +138,10 @@ export const superviseSidecar = (opts: SpawnOptions): Supervisor => {
   const loop = async (): Promise<void> => {
     for (;;) {
       const startedAt = Date.now()
-      proc = Bun.spawn(cmd, { stdin: "ignore", stdout: "pipe", stderr: "pipe", env })
+      // stdin is a PIPE we hold open (never write/close it): it's the child's orphan guard — if this
+      // supervisor (the instance) dies abruptly without killing the child, the OS closes the pipe and
+      // the sidecar sees stdin-EOF and self-exits, so no orphan lingers holding the single-writer lock.
+      proc = Bun.spawn(cmd, { stdin: "pipe", stdout: "pipe", stderr: "pipe", env })
       void pump(proc.stdout as ReadableStream<Uint8Array>, true)
       void pump(proc.stderr as ReadableStream<Uint8Array>, false)
       const code = await proc.exited
