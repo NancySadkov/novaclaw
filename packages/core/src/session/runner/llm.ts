@@ -47,6 +47,9 @@ import { SessionScheduler } from "../scheduler"
 import { type RunError, Service } from "./index"
 import { SessionRunnerModel } from "./model"
 import { TierScaffold } from "./tier-scaffold"
+import { SessionRecall } from "./recall"
+import { Memory } from "../../kb-graph/memory"
+import { MemoryClient } from "../../kb-graph/memory-client"
 import { SessionStrict } from "./strict"
 import { JhStore } from "../../jh/store"
 import type { JhEngine } from "../../jh/engine"
@@ -151,6 +154,7 @@ export const layer = Layer.effect(
     const snapshots = yield* Snapshot.Service
     const scheduler = yield* SessionScheduler.Service
     const compactionRequests = yield* SessionCompactionRequest.Service
+    const memory = yield* MemoryClient.Service
     const db = (yield* Database.Service).db
     const configEntries = yield* config.entries()
     const compaction = SessionCompaction.make({ events, llm, config: configEntries })
@@ -466,11 +470,22 @@ export const layer = Layer.effect(
         .pipe(Effect.tapError(surfacePreTurnFailure))
       // Models item (c): scaffold the system prompt harder for a weak model (jh.md thesis). Reads
       // the resolved model's capability tier; best-effort (never gates the turn).
-      const tierHint = TierScaffold.tierScaffold(
-        yield* models.tier({ ...session, model: config.model as typeof session.model }),
-      )
+      const tier = yield* models.tier({ ...session, model: config.model as typeof session.model })
+      const tierHint = TierScaffold.tierScaffold(tier)
       const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)
       const context = entries.map((entry) => entry.message)
+      // Auto-recall (kb-graph §1.3.1): surface relevant memories (this session ∪ global) into the
+      // system prompt so the model "just remembers" — no kb-tool call needed. Best-effort: memory
+      // off/unavailable → no block, the turn proceeds. Budgeted DOWN for weak models (the JH floor).
+      const recallQuery = SessionRecall.recallQuery(context)
+      const memoryRecall =
+        recallQuery === undefined
+          ? undefined
+          : SessionRecall.formatRecall(
+              yield* memory
+                .search({ query: recallQuery, k: SessionRecall.recallBudget(tier), scopes: [`session:${session.id}`, "global"] })
+                .pipe(Effect.orElseSucceed(() => [])),
+            )
       const isLastStep = agent.info?.steps !== undefined && currentStep >= agent.info.steps
       const toolMaterialization = isLastStep ? undefined : yield* tools.materialize(agent.info?.permissions)
       const promptCacheKey = /^ses_[0-9a-f]{64}$/.test(session.id) ? session.id.slice(4) : session.id
@@ -508,7 +523,7 @@ export const layer = Layer.effect(
       const fullRequest = LLM.request({
         model,
         providerOptions: { openai: { promptCacheKey } },
-        system: [personaBaseline, expertiseHint, tierHint, config.systemPromptOverride, agent.info?.system, system.baseline]
+        system: [personaBaseline, expertiseHint, tierHint, memoryRecall, config.systemPromptOverride, agent.info?.system, system.baseline]
           .filter((part): part is string => part !== undefined && part.length > 0)
           .map(SystemPart.make),
         messages: [...toLLMMessages(context, model), ...(isLastStep ? [Message.assistant(MAX_STEPS_PROMPT)] : [])],
@@ -1421,5 +1436,6 @@ export const node = makeLocationNode({
     SessionCompactionRequest.node,
     Database.node,
     AppProcess.node,
+    Memory.node,
   ],
 })
