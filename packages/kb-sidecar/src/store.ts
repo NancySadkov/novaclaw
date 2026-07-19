@@ -88,6 +88,8 @@ export class MemoryStore {
     const store = new MemoryStore(db, conn, dim)
     await store.loadExtensions()
     await store.ensureSchema()
+    // Flush the freshly-created schema so even a crash immediately after boot leaves a clean WAL.
+    await store.checkpoint()
     return store
   }
 
@@ -104,6 +106,22 @@ export class MemoryStore {
   private async rows(cypher: string, params?: Record<string, unknown>): Promise<Record<string, unknown>[]> {
     const result = await this.q(cypher, params)
     return (await result.getAll()) as Record<string, unknown>[]
+  }
+
+  // Flush the WAL into the main DB file after every mutation. ⚠️ This is not an optimization — it's a
+  // correctness fix: a bare reopen of a graph whose writer was HARD-KILLED with a dirty WAL (segfault,
+  // OOM, taskkill, power loss) CRASHES the native engine natively (no catchable error — measured,
+  // v0.18.2 on Windows), which would turn the supervisor's auto-restart into a crash loop. Checkpointing
+  // after each write keeps the on-disk WAL empty, so an abrupt death leaves a clean, reopenable graph
+  // (the "never breaks" vision). Affordable because memory writes are async + off the turn hot-path
+  // (§4.1). Best-effort: a transient "nothing to checkpoint / active transaction" is swallowed — the
+  // next mutation flushes it.
+  private async checkpoint(): Promise<void> {
+    try {
+      await this.q(`CHECKPOINT`)
+    } catch {
+      /* transient — the next mutation checkpoints */
+    }
   }
 
   /** DDL/idempotence helper: run and swallow "already exists" (so open() is repeatable). */
@@ -169,6 +187,7 @@ export class MemoryStore {
         ...(input.validFrom ? { validFrom: input.validFrom } : {}),
       },
     )
+    await this.checkpoint()
   }
 
   async addEdge(input: EdgeInput): Promise<void> {
@@ -185,6 +204,7 @@ export class MemoryStore {
         confidence: input.confidence ?? null,
       },
     )
+    await this.checkpoint()
   }
 
   /** Hybrid retrieval: vector KNN (if `embedding`) + FTS (if `query`), RRF-fused, filtered to the
@@ -287,16 +307,19 @@ export class MemoryStore {
       id,
       ...(at ? { at } : {}),
     })
+    await this.checkpoint()
   }
 
   /** Hard delete a memory and its edges — for secrets (§4.3); no history kept. */
   async purge(id: string): Promise<void> {
     await this.q(`MATCH (m:Memory {id: $id}) DETACH DELETE m`, { id })
+    await this.checkpoint()
   }
 
   /** Delete every memory (and its edges) in a scope — e.g. clear one chat's memory. */
   async clearScope(scope: string): Promise<void> {
     await this.q(`MATCH (m:Memory) WHERE m.scope = $scope DETACH DELETE m`, { scope })
+    await this.checkpoint()
   }
 
   async stats(): Promise<{ total: number; valid: number }> {
