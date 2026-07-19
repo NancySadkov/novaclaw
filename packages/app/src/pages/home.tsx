@@ -504,11 +504,13 @@ export function NewHome() {
 
   function unseenCount(conn: ServerConnection.Any, project: LocalProject) {
     const state = notification.ensureServerState(ServerConnection.key(conn))
+    if (!state) return 0
     return directories(project).reduce((total, directory) => total + state.project.unseenCount(directory), 0)
   }
 
   function clearNotifications(conn: ServerConnection.Any, project: LocalProject) {
     const state = notification.ensureServerState(ServerConnection.key(conn))
+    if (!state) return
     directories(project)
       .filter((directory) => state.project.unseenCount(directory) > 0)
       .forEach((directory) => state.project.markViewed(directory))

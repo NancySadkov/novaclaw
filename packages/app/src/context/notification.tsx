@@ -139,9 +139,7 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
     const activeDirectory = createMemo(() => decode64(params.dir))
     const activeSession = createMemo(() => params.id)
 
-    const ensure = (key: ServerConnection.Key) => {
-      const conn = global.servers.list().find((item) => ServerConnection.key(item) === key)
-      if (!conn) throw new Error(`Notification server not found: ${key}`)
+    const ensure = (conn: ServerConnection.Any) => {
       const ctx = global.ensureServerCtx(conn)
       const existing = states.get(ctx.sdk.scope)
       if (existing) return existing.state
@@ -166,7 +164,7 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
     }
 
     createEffect(() => {
-      global.servers.list().forEach((conn) => ensure(ServerConnection.key(conn)))
+      global.servers.list().forEach((conn) => ensure(conn))
     })
 
     createEffect(() => {
@@ -181,20 +179,23 @@ export const { use: useNotification, provider: NotificationProvider } = createSi
     onCleanup(() => states.forEach((value) => value.dispose()))
 
     // A server-scoped notification state exists only once its connection is registered in
-    // global.servers.list(). If activeServer() points at a not-yet-connected instance (e.g. a
-    // fresh page-load / deep-link of /server/{key}/session/{id} before the connection settles),
-    // DEGRADE to an empty state instead of throwing — the reactive list() re-runs these reads, so
-    // the UI recovers when the instance comes online. A reconnecting server must never fault the app.
-    const selected = (): NotificationState | undefined => {
-      const key = activeServer()
+    // global.servers.list(). If the requested key points at a not-yet-connected instance (a fresh
+    // page-load / deep-link of /server/{key}/session/{id} before the connection settles, or a
+    // home-launcher tile for a server that is still reconnecting), DEGRADE to undefined instead of
+    // throwing — the reactive list() re-runs these reads, so the UI recovers when the instance comes
+    // online. A reconnecting server must never fault the app. Both selected() and every external
+    // caller of ensureServerState ride this single guard, so the missing-server case has no path to
+    // the UI as a raw error.
+    const serverState = (key: ServerConnection.Key): NotificationState | undefined => {
       const conn = global.servers.list().find((item) => ServerConnection.key(item) === key)
       if (!conn) return undefined
-      return ensure(key)
+      return ensure(conn)
     }
+    const selected = (): NotificationState | undefined => serverState(activeServer())
 
     return {
       ready: () => selected()?.ready() ?? false,
-      ensureServerState: ensure,
+      ensureServerState: serverState,
       session: {
         all: (session: string) => selected()?.session.all(session) ?? NO_NOTIFICATIONS,
         unseen: (session: string) => selected()?.session.unseen(session) ?? NO_NOTIFICATIONS,
