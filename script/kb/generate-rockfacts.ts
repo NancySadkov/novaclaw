@@ -190,9 +190,9 @@ if (evalOut) {
   console.log(`eval  → ${evalOut}`)
 }
 
-// (KB-V P4: the --populate mode died with the /kb triple routes — seed documents into an
-// instance with packages/core/script/kb-vec-seed.ts instead.)
+// (The old --populate mode + the KB-V seed path are retired; this generator now just emits the
+// fact/eval JSONL that the query-eval harnesses read.)
 if (!out && !evalOut) {
-  console.log("nothing to do: pass --out/--eval file paths (seed docs via packages/core/script/kb-vec-seed.ts)")
+  console.log("nothing to do: pass --out and/or --eval file paths")
   process.exit(1)
 }

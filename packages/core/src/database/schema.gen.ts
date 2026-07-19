@@ -167,33 +167,6 @@ export default {
         );
       `)
       yield* tx.run(`
-        CREATE TABLE \`kb_chunk\` (
-          \`id\` text PRIMARY KEY,
-          \`doc_id\` text NOT NULL,
-          \`seq\` integer NOT NULL,
-          \`text\` text NOT NULL,
-          \`token_estimate\` integer NOT NULL,
-          \`embed_status\` text NOT NULL
-        );
-      `)
-      yield* tx.run(`
-        CREATE TABLE \`kb_doc\` (
-          \`id\` text PRIMARY KEY,
-          \`title\` text NOT NULL,
-          \`text\` text NOT NULL,
-          \`relation\` text NOT NULL,
-          \`source\` text,
-          \`agent\` text,
-          \`confidence\` real,
-          \`content_hash\` text NOT NULL,
-          \`embed_model\` text,
-          \`valid_from\` integer NOT NULL,
-          \`valid_to\` integer,
-          \`superseded_by\` text,
-          \`time_created\` integer NOT NULL
-        );
-      `)
-      yield* tx.run(`
         CREATE TABLE \`permission\` (
           \`id\` text PRIMARY KEY,
           \`origin\` text NOT NULL,
@@ -336,11 +309,6 @@ export default {
       yield* tx.run(`CREATE INDEX \`bash_job_owner_idx\` ON \`bash_job\` (\`owner\`);`)
       yield* tx.run(`CREATE UNIQUE INDEX \`event_aggregate_seq_idx\` ON \`event\` (\`aggregate_id\`,\`seq\`);`)
       yield* tx.run(`CREATE INDEX \`event_aggregate_type_seq_idx\` ON \`event\` (\`aggregate_id\`,\`type\`,\`seq\`);`)
-      yield* tx.run(`CREATE INDEX \`kb_chunk_doc_idx\` ON \`kb_chunk\` (\`doc_id\`,\`seq\`);`)
-      yield* tx.run(`CREATE INDEX \`kb_chunk_embed_status_idx\` ON \`kb_chunk\` (\`embed_status\`);`)
-      yield* tx.run(`CREATE INDEX \`kb_doc_relation_idx\` ON \`kb_doc\` (\`relation\`,\`valid_to\`);`)
-      yield* tx.run(`CREATE INDEX \`kb_doc_hash_idx\` ON \`kb_doc\` (\`content_hash\`,\`valid_to\`);`)
-      yield* tx.run(`CREATE INDEX \`kb_doc_source_idx\` ON \`kb_doc\` (\`source\`,\`valid_to\`);`)
       yield* tx.run(
         `CREATE UNIQUE INDEX \`permission_origin_action_resource_idx\` ON \`permission\` (\`origin\`,\`action\`,\`resource\`);`,
       )

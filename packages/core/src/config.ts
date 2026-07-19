@@ -151,29 +151,6 @@ export class Info extends Schema.Class<Info>("Config.Info")({
     .annotate({
       description: "Telemetry consent — gates any future crash/usage reporting; no upload exists today",
     }),
-  kb: Schema.Struct({
-    url: Schema.String.pipe(Schema.optional).annotate({
-      description: "Base URL of an external KB server implementing the same /kb API; unset = the built-in store",
-    }),
-    embedding: Schema.Struct({
-      url: Schema.String.pipe(Schema.optional).annotate({
-        description:
-          "OpenAI-compatible embeddings base URL (e.g. http://spark:8001/v1); unset = keyword-only KB search",
-      }),
-      model: Schema.String.pipe(Schema.optional).annotate({
-        description: "Embedding model id as served (e.g. qwen3-embedding)",
-      }),
-      dims: Schema.Finite.pipe(Schema.optional).annotate({
-        description: "Embedding dimensions (default 1024); changing it requires re-embedding the KB",
-      }),
-    })
-      .pipe(Schema.optional)
-      .annotate({
-        description: "KB-V embedding device — where document chunks get their vectors (LAN-local, airgap-safe)",
-      }),
-  })
-    .pipe(Schema.optional)
-    .annotate({ description: "Knowledge-base facade: consumers read this to find the KB endpoint + embedding device" }),
   memory: Schema.Struct({
     enabled: Schema.Boolean.pipe(Schema.optional).annotate({
       description:

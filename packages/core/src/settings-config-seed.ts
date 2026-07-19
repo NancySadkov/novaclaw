@@ -58,7 +58,6 @@ export const SETTINGS_KEYS = [
   "strict",
   "offline",
   "telemetry",
-  "kb",
   "memory",
   "quality",
   "experimental",
