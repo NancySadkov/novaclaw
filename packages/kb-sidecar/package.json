@@ -8,7 +8,7 @@
   "description": "The Ladybug graph-memory engine sidecar (Node runtime — the native addon segfaults under Bun; see notes/kb-graph-plan.md §2.1). Tested under Node, not the Bun suite.",
   "scripts": {
     "typecheck": "tsgo --noEmit",
-    "test": "node --test --experimental-strip-types src/store.test.ts"
+    "test": "node --test --experimental-strip-types src/store.test.ts src/server.test.ts"
   },
   "exports": {
     ".": "./src/index.ts",
