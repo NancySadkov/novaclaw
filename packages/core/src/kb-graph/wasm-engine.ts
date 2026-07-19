@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto"
 import { createRequire } from "node:module"
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 
 // The in-process Ladybug graph-memory engine (WASM) — the single engine that runs EVERYWHERE
@@ -175,6 +175,15 @@ export class WasmMemory {
       FS.mkdir(memfsDir)
     } catch {
       /* exists */
+    }
+    // Self-heal a stale/incompatible artifact at realDir. Memory is a re-derivable tier (§4.9), so a
+    // path we can't restore from must never brick the engine — we discard it and start fresh instead:
+    //   • a single FILE named `graph` left by the RETIRED native sidecar (native Ladybug DB = one file;
+    //     the WASM engine expects `graph/` to be a snapshot DIRECTORY) — the observed upgrade breakage,
+    //   • or any non-directory / unreadable path.
+    // Without this, `mkdirSync`/`readdirSync` throw ENOTDIR and memory silently degrades to disabled.
+    if (existsSync(realDir) && !statSync(realDir).isDirectory()) {
+      rmSync(realDir, { recursive: true, force: true })
     }
     // Restore our snapshot: copy the real-disk files into the scratch dir before opening.
     mkdirSync(realDir, { recursive: true })

@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
-import { mkdtempSync, readdirSync, rmSync } from "node:fs"
+import { mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { WasmMemory } from "@novaclaw/core/kb-graph/wasm-engine"
@@ -70,6 +70,20 @@ describe("WasmMemory (in-process, everywhere)", () => {
     await reopened.close()
   })
 
+  test("self-heals a stale non-directory at realDir (retired native-sidecar file) instead of bricking", async () => {
+    // The retired native sidecar persisted the graph as a single FILE named `graph`; the WASM engine
+    // expects that path to be a snapshot DIRECTORY. Opening over the stale file must recover (discard +
+    // start fresh) — memory is re-derivable — not throw ENOTDIR and silently degrade memory to disabled.
+    const stale = join(dir, "stale-native-db")
+    writeFileSync(stale, "native single-file db leftover")
+    expect(statSync(stale).isDirectory()).toBe(false)
+    const healed = await WasmMemory.open(stale, { dim: DIM })
+    expect(statSync(stale).isDirectory()).toBe(true)
+    await healed.addMemory({ id: "h", kind: "entity", text: "healed", scope: "global" })
+    expect((await healed.list()).some((m) => m.id === "h")).toBe(true)
+    await healed.close()
+  })
+
   test("list enumerates (no query) + graph returns nodes and the edges among them", async () => {
     const g = await WasmMemory.open(join(dir, "listgraph"), { dim: DIM })
     await g.addMemory({ id: "p", kind: "entity", name: "Alice", text: "Alice", scope: "global" })
@@ -119,5 +133,5 @@ describe("WasmMemory (in-process, everywhere)", () => {
     // Idempotent: a second pass finds nothing left to promote.
     expect(await c.consolidate()).toBe(0)
     await c.close()
-  })
+  }, 30_000) // heavy: many WASM ops + two consolidate passes — the 5s default flakes under suite/CI load
 })

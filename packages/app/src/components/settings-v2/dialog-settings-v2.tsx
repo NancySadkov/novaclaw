@@ -8,6 +8,7 @@ import { useExpertise } from "@/context/expertise"
 import type { ExpertiseLevel } from "@/context/settings"
 import { SettingsGeneralV2 } from "./general"
 import { SettingsProfileV2 } from "./profile"
+import { SettingsMemoryV2 } from "./memory"
 import { SettingsAboutV2 } from "./about"
 import { SettingsAppearanceV2 } from "./appearance"
 import { SettingsKeybinds } from "../settings-keybinds"
@@ -68,6 +69,12 @@ export const DialogSettings: Component<{
                     <TabsV2.Trigger value="profile">
                       <Icon name="user" />
                       {language.t("settings.tab.profile")}
+                    </TabsV2.Trigger>
+                    {/* Memory sits by Profile — both are lay "my data" surfaces. What NovaClaw remembers,
+                        with Export/Import/Clear (kb-graph P5). Normal level (everyone). */}
+                    <TabsV2.Trigger value="memory">
+                      <Icon name="archive" />
+                      {language.t("settings.memory.title")}
                     </TabsV2.Trigger>
                     {/* Models sits right under General — adding/configuring/importing models is the
                         high-value task while local hardware can't run the best model out of the box. */}
@@ -152,6 +159,9 @@ export const DialogSettings: Component<{
         </TabsV2.Content>
         <TabsV2.Content value="profile" class="settings-v2-panel">
           <SettingsProfileV2 />
+        </TabsV2.Content>
+        <TabsV2.Content value="memory" class="settings-v2-panel">
+          <SettingsMemoryV2 sessionID={props.sessionID} />
         </TabsV2.Content>
         <TabsV2.Content value="appearance" class="settings-v2-panel">
           <SettingsAppearanceV2 />
