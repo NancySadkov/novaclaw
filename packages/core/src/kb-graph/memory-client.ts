@@ -186,6 +186,56 @@ export const make = (options: Options): Interface => {
 // tests provide a client over a stub server (or the in-memory `stub`) via `layerWith`.
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/MemoryClient") {}
 
+/** The in-process engine surface the client adapts (WasmMemory satisfies this structurally). Keeps
+ *  memory-client free of any engine import — the engine is injected. */
+export interface Engine {
+  addMemory(input: MemoryInput): Promise<void>
+  addEdge(input: EdgeInput): Promise<void>
+  search(input: SearchInput): Promise<ReadonlyArray<SearchHit>>
+  neighbors(id: string, opts?: { scopes?: readonly string[]; k?: number }): Promise<ReadonlyArray<Neighbor>>
+  path(from: string, to: string, maxHops?: number): Promise<PathResult | null>
+  invalidate(id: string, at?: string): Promise<void>
+  purge(id: string): Promise<void>
+  clearScope(scope: string): Promise<void>
+  stats(): Promise<Stats>
+}
+
+/** Adapt an in-process engine (the WASM store) to the `MemoryClient` Interface: each op becomes an
+ *  Effect, faults collapse to a tagged MemoryError so callers degrade. This is the in-process
+ *  counterpart to `make` (which spoke HTTP to the retired Node sidecar). */
+export const fromEngine = (engine: Engine): Interface => {
+  const wrap = <A>(run: () => Promise<A>): Effect.Effect<A, MemoryError> =>
+    Effect.tryPromise({ try: run, catch: (cause) => new MemoryError({ reason: String(cause).slice(0, 300) }) })
+  return {
+    health: () => Effect.succeed(true),
+    addMemory: (input) => wrap(() => engine.addMemory(input)),
+    addEdge: (input) => wrap(() => engine.addEdge(input)),
+    search: (input) => wrap(() => engine.search(input)),
+    neighbors: (id, opts) => wrap(() => engine.neighbors(id, opts)),
+    path: (from, to, maxHops) => wrap(() => engine.path(from, to, maxHops)),
+    invalidate: (id, at) => wrap(() => engine.invalidate(id, at)),
+    purge: (id) => wrap(() => engine.purge(id)),
+    clearScope: (scope) => wrap(() => engine.clearScope(scope)),
+    stats: () => wrap(() => engine.stats()),
+  }
+}
+
+/** A client that resolves its delegate per call — lets the boot hand over a live client immediately
+ *  and swap the real engine in once it finishes opening in the background (ops degrade via the
+ *  delegate — a `disabled` client — until then). `Effect.suspend` defers the lookup to run time. */
+export const proxy = (get: () => Interface): Interface => ({
+  health: () => Effect.suspend(() => get().health()),
+  addMemory: (input) => Effect.suspend(() => get().addMemory(input)),
+  addEdge: (input) => Effect.suspend(() => get().addEdge(input)),
+  search: (input) => Effect.suspend(() => get().search(input)),
+  neighbors: (id, opts) => Effect.suspend(() => get().neighbors(id, opts)),
+  path: (from, to, maxHops) => Effect.suspend(() => get().path(from, to, maxHops)),
+  invalidate: (id, at) => Effect.suspend(() => get().invalidate(id, at)),
+  purge: (id) => Effect.suspend(() => get().purge(id)),
+  clearScope: (scope) => Effect.suspend(() => get().clearScope(scope)),
+  stats: () => Effect.suspend(() => get().stats()),
+})
+
 /** Test/wiring seam: provide a specific client Interface (a live `make`, or a `stub`). */
 export const layerWith = (client: Interface): Layer.Layer<Service> => Layer.succeed(Service, Service.of(client))
 

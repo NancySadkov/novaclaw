@@ -36,14 +36,11 @@ export const Flag = {
   NOVACLAW_SHOW_TTFD: truthy("NOVACLAW_SHOW_TTFD"),
   NOVACLAW_DISABLE_AUTOCOMPACT: truthy("NOVACLAW_DISABLE_AUTOCOMPACT"),
   NOVACLAW_DISABLE_MODELS_FETCH: truthy("NOVACLAW_DISABLE_MODELS_FETCH"),
-  // The Ladybug graph-memory sidecar the instance auto-spawns (a Node child — the native addon
-  // segfaults under Bun). Instance/deployment-level, so it rides env flags like NOVACLAW_DB, not
-  // location config: the LAUNCHER resolves ENTRY (dev = the source main.ts run via node
-  // --experimental-strip-types; packaged = the bundled JS with NODE_ARGS emptied). Unset ENTRY =
-  // memory disabled (the instance still boots — never a hard dependency).
-  NOVACLAW_KB_MEMORY_ENTRY: env("NOVACLAW_KB_MEMORY_ENTRY"),
-  NOVACLAW_KB_MEMORY_NODE: env("NOVACLAW_KB_MEMORY_NODE"),
-  NOVACLAW_KB_MEMORY_NODE_ARGS: env("NOVACLAW_KB_MEMORY_NODE_ARGS"),
+  // The Ladybug graph-memory engine (WASM, in-process — no sidecar; §2.0 pivot). Instance/deployment-
+  // level, so it rides an env flag like NOVACLAW_DB, not location config. ON enables it; the launcher
+  // sets it in real deployments so memory just works, while the test suite leaves it off (no engine
+  // boot). Never a hard dependency — off/unavailable → the instance still boots.
+  NOVACLAW_KB_MEMORY: truthy("NOVACLAW_KB_MEMORY"),
   NOVACLAW_KB_MEMORY_DIM: env("NOVACLAW_KB_MEMORY_DIM"),
   // Opt-IN: npm-install `@novaclaw/plugin` into each `.novaclaw` config dir so user
   // plugin/tool files can VALUE-import it. Default OFF: the package is not published
