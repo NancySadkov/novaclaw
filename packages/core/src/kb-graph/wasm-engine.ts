@@ -551,6 +551,40 @@ export class WasmMemory {
     })
   }
 
+  /** Forgetting / decay (§1.3.5, §4.7) — bound unbounded growth so noise never crowds out real facts
+   *  in retrieval. Curated `core` memories are NEVER forgotten; among still-valid `staged` memories in
+   *  the scope, once the count exceeds `maxStaged` the LOWEST-importance ones are invalidated (bitemporal
+   *  — kept in history, dropped from search), lowest-importance first. Importance = confidence (nulls
+   *  lowest), tie-broken by age (oldest first). Returns the number forgotten. Best-effort, off the turn
+   *  hot-path (the background fiber calls it beside consolidation). Access-recency weighting is a future
+   *  enhancement (needs a `last_accessed` column). */
+  prune(opts: { scope?: string; maxStaged?: number } = {}): Promise<number> {
+    return this.serialize(async () => {
+      const cap = Math.max(0, Math.floor(opts.maxStaged ?? 5000))
+      const scopeFilter = opts.scope ? `AND m.scope = $scope` : ``
+      const params = opts.scope ? { scope: opts.scope } : {}
+      const countRows = await this.rows(
+        `MATCH (m:Memory) WHERE m.t_invalid IS NULL AND m.relation = 'staged' ${scopeFilter} RETURN count(m) AS n`,
+        params,
+      )
+      const n = Number(countRows[0]?.n ?? 0)
+      if (n <= cap) return 0
+      const excess = n - cap
+      const victims = await this.rows(
+        `MATCH (m:Memory) WHERE m.t_invalid IS NULL AND m.relation = 'staged' ${scopeFilter}
+         RETURN m.id AS id
+         ORDER BY (CASE WHEN m.confidence IS NULL THEN 0.0 ELSE m.confidence END) ASC, m.t_created ASC
+         LIMIT ${excess}`,
+        params,
+      )
+      for (const v of victims) {
+        await this.q(`MATCH (m:Memory {id: $id}) SET m.t_invalid = current_timestamp()`, { id: String(v.id) })
+      }
+      if (victims.length > 0) this.touch()
+      return victims.length
+    })
+  }
+
   /** Flush a final snapshot and close the DB + connection. */
   async close(): Promise<void> {
     if (this.closed) return

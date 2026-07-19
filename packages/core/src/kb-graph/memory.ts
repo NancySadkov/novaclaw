@@ -30,7 +30,12 @@ export interface MemoryConfig {
   readonly dbDir?: string
   /** How often the background pass consolidates session memories → global (ms). Default 5 min. */
   readonly consolidateEveryMs?: number
+  /** Forgetting/decay cap: max valid `staged` GLOBAL memories before the background pass prunes the
+   *  lowest-importance (§4.7). Core is never pruned. Default 5000. */
+  readonly globalStagedCap?: number
 }
+
+const DEFAULT_GLOBAL_STAGED_CAP = 5000
 
 /** Resolve the memory config from env flags (the deployment-level source, per the global-DB precedent). */
 export const configFromFlags = (): MemoryConfig => ({
@@ -70,11 +75,17 @@ export const layerFromConfig = (cfg: MemoryConfig): Layer.Layer<MemoryClient.Ser
       const consolidateEvery = Duration.millis(cfg.consolidateEveryMs ?? 5 * 60_000)
       yield* Effect.forkScoped(
         Effect.gen(function* () {
+          const stagedCap = cfg.globalStagedCap ?? DEFAULT_GLOBAL_STAGED_CAP
           for (;;) {
             yield* Effect.sleep(consolidateEvery)
             const live = engine
-            // Skip while the user has memory turned off — don't promote session facts to global.
-            if (live && MemorySetting.memoryEnabled()) yield* Effect.tryPromise(() => live.consolidate()).pipe(Effect.ignore)
+            // Skip while the user has memory turned off — don't promote or forget anything.
+            if (live && MemorySetting.memoryEnabled()) {
+              // Consolidate session → global, then forget/decay: bound unbounded global staged growth
+              // (§1.3.5/§4.7) — drop the lowest-importance staged over the cap; core is never touched.
+              yield* Effect.tryPromise(() => live.consolidate()).pipe(Effect.ignore)
+              yield* Effect.tryPromise(() => live.prune({ scope: "global", maxStaged: stagedCap })).pipe(Effect.ignore)
+            }
           }
         }),
       )
