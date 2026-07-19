@@ -21,6 +21,12 @@ export interface Ref extends Schema.Schema.Type<typeof Ref> {}
 export const Family = Schema.String.pipe(Schema.brand("Family"))
 export type Family = typeof Family.Type
 
+// Models-primary capability tier (notes/models-primary-plan.md): scaffolds the harness harder for
+// weaker models (Micro..Frontier). Distinct from the COST context-tier on `Cost.tier`. "guess"
+// stays a CLIENT-only sentinel (app context/models.tsx), never on the wire.
+export const Tier = Schema.Literals(["micro", "tiny", "small", "medium", "large", "frontier"])
+export type Tier = typeof Tier.Type
+
 export interface Capabilities extends Schema.Schema.Type<typeof Capabilities> {}
 export const Capabilities = Schema.Struct({
   tools: Schema.Boolean,
@@ -61,6 +67,7 @@ export const Info = Schema.Struct({
   id: ID,
   providerID: Provider.ID,
   family: Family.pipe(optional),
+  tier: Tier.pipe(optional),
   name: Schema.String,
   api: Api,
   capabilities: Capabilities,

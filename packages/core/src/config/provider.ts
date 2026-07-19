@@ -4,6 +4,11 @@ import { Schema } from "effect"
 import { ProviderV2 } from "../provider"
 import { ModelV2 } from "../model"
 
+// Models-primary capability tier — the single source of truth is `ModelV2.Tier` (schema/model.ts),
+// re-exported here for config authoring. See notes/models-primary-plan.md.
+export const Tier = ModelV2.Tier
+export type Tier = ModelV2.Tier
+
 export class Request extends Schema.Class<Request>("ConfigV2.Provider.Request")({
   headers: Schema.Record(Schema.String, Schema.String).pipe(Schema.optional),
   body: Schema.Record(Schema.String, Schema.Unknown).pipe(Schema.optional),
@@ -58,6 +63,7 @@ class Model extends Schema.Class<Model>("ConfigV2.Model")({
     ...Request.fields,
   }).pipe(Schema.Array, Schema.optional),
   cost: Schema.Union([Cost, Cost.pipe(Schema.Array)]).pipe(Schema.optional),
+  tier: Tier.pipe(Schema.optional),
   disabled: Schema.Boolean.pipe(Schema.optional),
   limit: Limit.pipe(Schema.optional),
 }) {}
@@ -69,12 +75,6 @@ export class Info extends Schema.Class<Info>("ConfigV2.Provider")({
   request: Request.pipe(Schema.optional),
   models: Schema.Record(Schema.String, Model).pipe(Schema.optional),
 }) {}
-
-// Models-primary capability tier (notes/models-primary-plan.md §3 P1). This is the CAPABILITY
-// tier that scaffolds the harness (Micro..Frontier) — distinct from the COST context-tier on
-// `Cost.tier`. "guess" stays a CLIENT-only sentinel (context/models.tsx), never authored here.
-export const Tier = Schema.Literals(["micro", "tiny", "small", "medium", "large", "frontier"])
-export type Tier = typeof Tier.Type
 
 // The MODELS-PRIMARY model entry (notes/models-primary-plan.md): a top-level `Config.Info.models`
 // map keys these by model id, each carrying its OWN endpoint `url` + params + `tier` — the flat

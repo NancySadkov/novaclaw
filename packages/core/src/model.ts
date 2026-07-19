@@ -12,6 +12,9 @@ export type VariantID = typeof VariantID.Type
 export const Family = Model.Family
 export type Family = Model.Family
 
+export const Tier = Model.Tier
+export type Tier = Model.Tier
+
 export const Capabilities = Model.Capabilities
 export type Capabilities = Model.Capabilities
 

@@ -42,14 +42,14 @@ describe("expandFlatModels", () => {
     }
     const expanded = CatalogSeed.expandFlatModels(flat) as Record<string, unknown>
     // two hosts → two providers; same-host models share a provider; url → openai-compatible api;
-    // tier dropped; default expanded to host/id.
+    // tier rides through onto the model; default expanded to host/id.
     expect(expanded).toEqual({
       model: "192.168.178.40:8000/qwen",
       providers: {
         "192.168.178.40:8000": {
           api: { type: "aisdk", package: "@ai-sdk/openai-compatible", url: URL_A },
           models: {
-            qwen: { name: "Qwen", request: { body: { temperature: 0.7 } } },
+            qwen: { name: "Qwen", tier: "small", request: { body: { temperature: 0.7 } } },
             "qwen-fp8": { name: "Qwen FP8" },
           },
         },
@@ -68,6 +68,7 @@ describe("expandFlatModels", () => {
         qwen: {
           name: "Qwen",
           url: URL_A,
+          tier: "small",
           capabilities: { tools: true, input: ["text"], output: ["text"] },
           request: { body: { temperature: 0.7, top_p: 0.8 } },
           variants: [{ id: "high", body: { reasoning_effort: "high" } }],
@@ -83,6 +84,7 @@ describe("expandFlatModels", () => {
           models: {
             qwen: {
               name: "Qwen",
+              tier: "small",
               capabilities: { tools: true, input: ["text"], output: ["text"] },
               request: { body: { temperature: 0.7, top_p: 0.8 } },
               variants: [{ id: "high", body: { reasoning_effort: "high" } }],

@@ -3152,6 +3152,7 @@ export type ConfigV2Model = {
     }
   }>
   cost?: ConfigV2ModelCost | Array<ConfigV2ModelCost>
+  tier?: "micro" | "tiny" | "small" | "medium" | "large" | "frontier"
   disabled?: boolean
   limit?: ConfigV2ModelLimit
 }
@@ -3164,6 +3165,56 @@ export type ConfigV2Provider = {
   models?: {
     [key: string]: ConfigV2Model
   }
+}
+
+export type ConfigV2ModelEntry = {
+  name?: string
+  url?: string
+  family?: string
+  api?:
+    | {
+        id?: string
+        type: "aisdk"
+        package: string
+        url?: string
+        settings?: {
+          [key: string]: unknown
+        }
+      }
+    | {
+        id?: string
+        type: "native"
+        url?: string
+        settings: {
+          [key: string]: unknown
+        }
+      }
+    | {
+        id: string
+      }
+  capabilities?: ModelCapabilities
+  request?: {
+    headers?: {
+      [key: string]: string
+    }
+    body?: {
+      [key: string]: unknown
+    }
+    variant?: string
+  }
+  variants?: Array<{
+    id: string
+    headers?: {
+      [key: string]: string
+    }
+    body?: {
+      [key: string]: unknown
+    }
+  }>
+  cost?: ConfigV2ModelCost | Array<ConfigV2ModelCost>
+  tier?: "micro" | "tiny" | "small" | "medium" | "large" | "frontier"
+  disabled?: boolean
+  limit?: ConfigV2ModelLimit
 }
 
 export type ConfigInfo = {
@@ -3312,6 +3363,9 @@ export type ConfigInfo = {
   providers?: {
     [key: string]: ConfigV2Provider
   }
+  models?: {
+    [key: string]: ConfigV2ModelEntry
+  }
   disabled_providers?: Array<string>
   enabled_providers?: Array<string>
 }
@@ -3370,6 +3424,7 @@ export type ModelV2Info = {
   id: string
   providerID: string
   family?: string
+  tier?: "micro" | "tiny" | "small" | "medium" | "large" | "frontier"
   name: string
   api: ModelApi
   capabilities: ModelCapabilities

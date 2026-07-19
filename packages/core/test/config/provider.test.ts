@@ -104,6 +104,28 @@ describe("Config.Info models-primary schema (P1)", () => {
       expect(() => decode({ models: { m: { tier: "supergalactic" } } })).toThrow()
     }),
   )
+
+  it.effect("carries a configured capability tier through to the catalog ModelV2.Info", () =>
+    Effect.gen(function* () {
+      const catalog = yield* Catalog.Service
+      const store = yield* CatalogStore.Service
+      const providerID = ProviderV2.ID.make("tiered")
+      const modelID = ModelV2.ID.make("small-model")
+      yield* store.setLayers(providerID, [
+        decode({
+          providers: {
+            tiered: {
+              api: { type: "aisdk", package: "@ai-sdk/openai-compatible", url: "https://tiered.test/v1" },
+              models: { "small-model": { name: "Small", tier: "small" } },
+            },
+          },
+        }).providers!.tiered,
+      ])
+      yield* addPlugin()
+      const model = required(yield* catalog.model.get(providerID, modelID))
+      expect(model.tier).toBe("small")
+    }),
+  )
 })
 
 describe("ConfigProviderPlugin.Plugin", () => {

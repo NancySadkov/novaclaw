@@ -23448,6 +23448,10 @@
               }
             ]
           },
+          "tier": {
+            "type": "string",
+            "enum": ["micro", "tiny", "small", "medium", "large", "frontier"]
+          },
           "disabled": {
             "type": "boolean"
           },
@@ -23480,6 +23484,144 @@
             "additionalProperties": {
               "$ref": "#/components/schemas/ConfigV2Model"
             }
+          }
+        },
+        "additionalProperties": false
+      },
+      "ConfigV2ModelEntry": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "url": {
+            "type": "string"
+          },
+          "family": {
+            "type": "string"
+          },
+          "api": {
+            "anyOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": ["aisdk"]
+                  },
+                  "package": {
+                    "type": "string"
+                  },
+                  "url": {
+                    "type": "string"
+                  },
+                  "settings": {
+                    "type": "object"
+                  }
+                },
+                "required": ["type", "package"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": ["native"]
+                  },
+                  "url": {
+                    "type": "string"
+                  },
+                  "settings": {
+                    "type": "object"
+                  }
+                },
+                "required": ["type", "settings"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "additionalProperties": false
+              }
+            ]
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/ModelCapabilities"
+          },
+          "request": {
+            "type": "object",
+            "properties": {
+              "headers": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "string"
+                }
+              },
+              "body": {
+                "type": "object"
+              },
+              "variant": {
+                "type": "string"
+              }
+            },
+            "additionalProperties": false
+          },
+          "variants": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string"
+                },
+                "headers": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  }
+                },
+                "body": {
+                  "type": "object"
+                }
+              },
+              "required": ["id"],
+              "additionalProperties": false
+            }
+          },
+          "cost": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ConfigV2ModelCost"
+              },
+              {
+                "type": "array",
+                "items": {
+                  "$ref": "#/components/schemas/ConfigV2ModelCost"
+                }
+              }
+            ]
+          },
+          "tier": {
+            "type": "string",
+            "enum": ["micro", "tiny", "small", "medium", "large", "frontier"]
+          },
+          "disabled": {
+            "type": "boolean"
+          },
+          "limit": {
+            "$ref": "#/components/schemas/ConfigV2ModelLimit"
           }
         },
         "additionalProperties": false
@@ -23967,6 +24109,12 @@
               "$ref": "#/components/schemas/ConfigV2Provider"
             }
           },
+          "models": {
+            "type": "object",
+            "additionalProperties": {
+              "$ref": "#/components/schemas/ConfigV2ModelEntry"
+            }
+          },
           "disabled_providers": {
             "type": "array",
             "items": {
@@ -24121,6 +24269,10 @@
           },
           "family": {
             "type": "string"
+          },
+          "tier": {
+            "type": "string",
+            "enum": ["micro", "tiny", "small", "medium", "large", "frontier"]
           },
           "name": {
             "type": "string"
