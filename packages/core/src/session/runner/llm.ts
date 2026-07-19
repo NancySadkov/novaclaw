@@ -46,6 +46,7 @@ import { resolveSessionConfig, EFFECTIVE_CONFIG_DEFAULTS, type EffectiveConfig }
 import { SessionScheduler } from "../scheduler"
 import { type RunError, Service } from "./index"
 import { SessionRunnerModel } from "./model"
+import { TierScaffold } from "./tier-scaffold"
 import { SessionStrict } from "./strict"
 import { JhStore } from "../../jh/store"
 import type { JhEngine } from "../../jh/engine"
@@ -463,6 +464,11 @@ export const layer = Layer.effect(
       const model = yield* models
         .resolve({ ...session, model: config.model as typeof session.model })
         .pipe(Effect.tapError(surfacePreTurnFailure))
+      // Models item (c): scaffold the system prompt harder for a weak model (jh.md thesis). Reads
+      // the resolved model's capability tier; best-effort (never gates the turn).
+      const tierHint = TierScaffold.tierScaffold(
+        yield* models.tier({ ...session, model: config.model as typeof session.model }),
+      )
       const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)
       const context = entries.map((entry) => entry.message)
       const isLastStep = agent.info?.steps !== undefined && currentStep >= agent.info.steps
@@ -502,7 +508,7 @@ export const layer = Layer.effect(
       const fullRequest = LLM.request({
         model,
         providerOptions: { openai: { promptCacheKey } },
-        system: [personaBaseline, expertiseHint, config.systemPromptOverride, agent.info?.system, system.baseline]
+        system: [personaBaseline, expertiseHint, tierHint, config.systemPromptOverride, agent.info?.system, system.baseline]
           .filter((part): part is string => part !== undefined && part.length > 0)
           .map(SystemPart.make),
         messages: [...toLLMMessages(context, model), ...(isLastStep ? [Message.assistant(MAX_STEPS_PROMPT)] : [])],

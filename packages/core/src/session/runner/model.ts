@@ -76,12 +76,18 @@ export type Error =
 
 export interface Interface {
   readonly resolve: (session: SessionSchema.Info) => Effect.Effect<Model, Error>
+  /** Models item (c): the resolved catalog model's capability tier, for the system-prompt scaffold.
+   *  Best-effort — an unresolvable model yields `undefined` rather than failing the turn. */
+  readonly tier: (session: SessionSchema.Info) => Effect.Effect<ModelV2.Tier | undefined>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/SessionRunnerModel") {}
 
-/** Test or embedding seam for supplying a model resolver directly. */
-export const layerWith = (resolve: Interface["resolve"]) => Layer.succeed(Service, Service.of({ resolve }))
+/** Test or embedding seam. `tier` defaults to always-undefined so existing callers need not supply it. */
+export const layerWith = (
+  resolve: Interface["resolve"],
+  tier: Interface["tier"] = () => Effect.succeed(undefined),
+) => Layer.succeed(Service, Service.of({ resolve, tier }))
 
 const apiKey = (model: ModelV2.Info, credential?: Credential.Value) => {
   if (credential?.type === "key") return Auth.value(credential.key)
@@ -241,6 +247,11 @@ export const locationLayer = Layer.effect(
           selected,
           connection ? yield* integrations.connection.resolve(connection) : undefined,
         )
+      }),
+      // Models item (c): best-effort tier lookup for the system-prompt scaffold. Reuses `select`
+      // (no boot-latch wait — this only decorates the prompt, never gates the turn) and never fails.
+      tier: Effect.fn("SessionRunnerModel.tier")(function* (session) {
+        return (yield* select(session).pipe(Effect.orElseSucceed(() => undefined)))?.tier
       }),
     })
   }),
