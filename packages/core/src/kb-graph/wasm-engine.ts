@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto"
 import { createRequire } from "node:module"
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
@@ -411,6 +412,54 @@ export class WasmMemory {
       )
       const r = rows[0] ?? {}
       return { total: Number(r.total ?? 0), valid: Number(r.valid ?? 0) }
+    })
+  }
+
+  /** Consolidation (§1.3.4): promote each still-valid SESSION-scope memory to a GLOBAL twin (so
+   *  auto-extracted facts become cross-session), then supersede the session original bitemporally
+   *  (invalidate — kept in history, dropped from search). Deduped by a content-hash global id, so the
+   *  same fact from two sessions collapses to one global memory, and re-running is idempotent (already-
+   *  invalidated originals are skipped). Returns the number promoted. Safe to run repeatedly in the
+   *  background. */
+  consolidate(): Promise<number> {
+    return this.serialize(async () => {
+      // Only AUTO-EXTRACTED session memories flow up. A deliberate `remember` scoped "session" is a
+      // "this chat only" note the user chose — never force it global.
+      const rows = await this.rows(
+        `MATCH (m:Memory)
+         WHERE m.t_invalid IS NULL AND starts_with(m.scope, 'session:') AND m.source = 'auto-extract'
+         RETURN m.id AS id, m.kind AS kind, m.text AS text, m.name AS name,
+                m.source AS source, m.confidence AS confidence, m.relation AS relation`,
+      )
+      let promoted = 0
+      for (const row of rows) {
+        const text = String(row.text ?? "")
+        if (!text) continue
+        const gid = "mem_g" + createHash("sha256").update(`global\n${text.trim().toLowerCase()}`).digest("hex").slice(0, 24)
+        const existing = await this.rows(`MATCH (g:Memory {id: $gid}) WHERE g.t_invalid IS NULL RETURN g.id AS id`, { gid })
+        if (existing.length === 0) {
+          await this.q(
+            `CREATE (:Memory {
+               id: $id, kind: $kind, text: $text, name: $name, scope: 'global',
+               source: $source, confidence: $confidence, relation: $relation,
+               t_valid: current_timestamp(), t_created: current_timestamp() })`,
+            {
+              id: gid,
+              kind: String(row.kind ?? "episode"),
+              text,
+              name: (row.name as string | null) ?? null,
+              source: (row.source as string | null) ?? null,
+              confidence: (row.confidence as number | null) ?? null,
+              relation: (row.relation as string) ?? "staged",
+            },
+          )
+        }
+        // Supersede the session original (bitemporal): it's now represented globally.
+        await this.q(`MATCH (m:Memory {id: $id}) SET m.t_invalid = current_timestamp()`, { id: String(row.id) })
+        promoted++
+      }
+      if (promoted > 0) this.touch()
+      return promoted
     })
   }
 

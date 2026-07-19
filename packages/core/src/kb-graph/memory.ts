@@ -1,7 +1,7 @@
 export * as Memory from "./memory"
 
 import { join } from "node:path"
-import { Effect, Layer } from "effect"
+import { Duration, Effect, Layer } from "effect"
 import { makeGlobalNode } from "../effect/app-node"
 import { Flag } from "../flag/flag"
 import { Global } from "../global"
@@ -27,6 +27,8 @@ export interface MemoryConfig {
   readonly dim?: number
   /** On-disk graph directory (default `<instance data>/memory/graph`). */
   readonly dbDir?: string
+  /** How often the background pass consolidates session memories → global (ms). Default 5 min. */
+  readonly consolidateEveryMs?: number
 }
 
 /** Resolve the memory config from env flags (the deployment-level source, per the global-DB precedent). */
@@ -60,6 +62,19 @@ export const layerFromConfig = (cfg: MemoryConfig): Layer.Layer<MemoryClient.Ser
           Effect.tapError((cause) => Effect.logWarning(`kb-memory failed to open: ${cause}`)),
           Effect.ignore, // open failure stays degraded — never a hard boot dependency
         ),
+      )
+      // Background consolidation (§1.3.4): periodically promote this instance's session memories to
+      // global so auto-extracted facts become cross-session. Best-effort; a no-op until the engine is
+      // live. Runs off the turn hot-path (a forked fiber, stopped on scope close).
+      const consolidateEvery = Duration.millis(cfg.consolidateEveryMs ?? 5 * 60_000)
+      yield* Effect.forkScoped(
+        Effect.gen(function* () {
+          for (;;) {
+            yield* Effect.sleep(consolidateEvery)
+            const live = engine
+            if (live) yield* Effect.tryPromise(() => live.consolidate()).pipe(Effect.ignore)
+          }
+        }),
       )
       // Flush + close the engine on instance shutdown (best-effort; the snapshot persists the graph).
       yield* Effect.addFinalizer(() => Effect.promise(async () => engine && (await engine.close())))

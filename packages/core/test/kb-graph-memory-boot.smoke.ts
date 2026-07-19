@@ -46,6 +46,27 @@ describe("graph memory boots as part of the instance (in-process WASM)", () => {
     await Effect.runPromise(program.pipe(Effect.provide(layer), Effect.scoped) as Effect.Effect<void>)
   }, 30_000)
 
+  test("the background consolidation fiber promotes a session fact to global (cross-session)", async () => {
+    // A short interval so the fiber fires during the test instead of the 5-min default.
+    const layer = Memory.layerFromConfig({ enabled: true, dim: 8, dbDir: join(dir, "consolidate"), consolidateEveryMs: 300 })
+    const program = Effect.gen(function* () {
+      const mem = yield* MemoryClient.Service
+      expect(yield* waitHealthy(mem)).toBe(true)
+      yield* mem.addMemory({ id: "sess1", kind: "episode", text: "The user drives a Saab", scope: "session:demo", source: "auto-extract" })
+      // Not global yet.
+      expect(yield* mem.search({ query: "Saab", scopes: ["global"] })).toHaveLength(0)
+      // Wait for the background consolidation pass to promote it.
+      for (let i = 0; i < 40; i++) {
+        if ((yield* mem.search({ query: "Saab", scopes: ["global"] })).length > 0) break
+        yield* Effect.sleep("150 millis")
+      }
+      const global = yield* mem.search({ query: "Saab", scopes: ["global"] })
+      expect(global).toHaveLength(1)
+      expect(global[0]!.scope).toBe("global")
+    })
+    await Effect.runPromise(program.pipe(Effect.provide(layer), Effect.scoped) as Effect.Effect<void>)
+  }, 30_000)
+
   test("a disabled instance still boots — memory degrades, not a hard dependency", async () => {
     const layer = Memory.layerFromConfig({ enabled: false })
     const program = Effect.gen(function* () {

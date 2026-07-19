@@ -69,4 +69,34 @@ describe("WasmMemory (in-process, everywhere)", () => {
     expect((await reopened.search({ query: "Zorblatt", k: 5 })).some((h) => h.id === "temp")).toBe(false)
     await reopened.close()
   })
+
+  test("consolidate promotes session memories to global, dedups across sessions, is idempotent", async () => {
+    const c = await WasmMemory.open(join(dir, "consolidate"), { dim: DIM })
+    // Two sessions; the "lives in Kyoto" fact is stated in BOTH (same content).
+    await c.addMemory({ id: "s1a", kind: "episode", text: "The user lives in Kyoto", scope: "session:a", source: "auto-extract" })
+    await c.addMemory({ id: "s1b", kind: "episode", text: "The user likes Haskell", scope: "session:a", source: "auto-extract" })
+    await c.addMemory({ id: "s2a", kind: "episode", text: "The user lives in Kyoto", scope: "session:b", source: "auto-extract" })
+    // A deliberate "this chat only" note (no auto-extract source) must NOT be promoted.
+    await c.addMemory({ id: "note", kind: "entity", text: "Ephemeral chat note about pandas", scope: "session:a" })
+
+    const promoted = await c.consolidate()
+    expect(promoted).toBe(3) // the three auto-extracted originals; the deliberate note is left alone
+
+    // The deliberate session-only note stayed put (session, not global).
+    expect((await c.search({ query: "pandas", scopes: ["global"] }))).toHaveLength(0)
+    expect((await c.search({ query: "pandas", scopes: ["session:a"] }))).toHaveLength(1)
+
+    // A GLOBAL-only search now finds both facts (cross-session), deduped to one Kyoto memory.
+    const kyoto = await c.search({ query: "Kyoto", scopes: ["global"] })
+    expect(kyoto).toHaveLength(1)
+    expect(kyoto[0]!.scope).toBe("global")
+    expect((await c.search({ query: "Haskell", scopes: ["global"] }))).toHaveLength(1)
+
+    // The session originals were superseded (invalidated) — no longer in a session-scoped search.
+    expect((await c.search({ query: "Kyoto", scopes: ["session:a", "session:b"] }))).toHaveLength(0)
+
+    // Idempotent: a second pass finds nothing left to promote.
+    expect(await c.consolidate()).toBe(0)
+    await c.close()
+  })
 })
