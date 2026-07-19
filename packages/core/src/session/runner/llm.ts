@@ -48,6 +48,7 @@ import { type RunError, Service } from "./index"
 import { SessionRunnerModel } from "./model"
 import { TierScaffold } from "./tier-scaffold"
 import { SessionRecall } from "./recall"
+import { SessionExtract } from "./extract"
 import { Memory } from "../../kb-graph/memory"
 import { MemoryClient } from "../../kb-graph/memory-client"
 import { SessionStrict } from "./strict"
@@ -333,6 +334,50 @@ export const layer = Layer.effect(
       yield* SessionPatch.patchSessionRecord({ db, events }, sessionID, (info) =>
         SessionSchema.Info.make({ ...info, title, time: { ...info.time, updated: DateTime.makeUnsafe(Date.now()) } }),
       )
+    })
+
+    // Auto-extraction (kb-graph §1.3.3): after the drain settles, a model pass reads the latest
+    // exchange and records durable facts into SESSION-scope memory (staged) — so memory fills WITHOUT
+    // the agent calling `remember`, and auto-recall surfaces them in future turns. Idempotent by
+    // content hash (re-extraction dedups). Best-effort + gated on the engine being live so a disabled/
+    // still-opening memory costs no model call.
+    const extractMemory = Effect.fn("SessionRunner.extractMemory")(function* (sessionID: SessionSchema.ID) {
+      if (!(yield* memory.health())) return
+      const exchange = SessionExtract.buildExchange(yield* getContext(sessionID))
+      if (!exchange) return
+      const session = yield* getSession(sessionID)
+      const model = yield* models.resolve(session)
+      const chunks: string[] = []
+      yield* llm
+        .stream(
+          LLM.request({
+            model,
+            system: [SystemPart.make(SessionExtract.SYSTEM)],
+            messages: [Message.user(exchange)],
+            tools: [],
+            generation: { maxTokens: 512 },
+          }),
+        )
+        .pipe(
+          Stream.runForEach((event) => {
+            if (LLMEvent.is.textDelta(event)) chunks.push(event.text)
+            return Effect.void
+          }),
+        )
+      const scope = `session:${sessionID}`
+      for (const fact of SessionExtract.parseExtraction(chunks.join(""))) {
+        yield* memory
+          .addMemory({
+            id: SessionExtract.memoryID(scope, fact.text),
+            kind: "episode",
+            text: fact.text,
+            ...(fact.name === undefined ? {} : { name: fact.name }),
+            scope,
+            source: "auto-extract",
+            relation: "staged",
+          })
+          .pipe(Effect.ignore) // duplicate id = already remembered (dedup); never fail the drain
+      }
     })
 
     // The session-changes summary (the app's "Changes" review + the chats badge reads
@@ -826,6 +871,9 @@ export const layer = Layer.effect(
       )
       yield* generateTitle(sessionID).pipe(
         Effect.catchCause((cause) => Effect.logWarning("auto-title failed", { sessionID, cause })),
+      )
+      yield* extractMemory(sessionID).pipe(
+        Effect.catchCause((cause) => Effect.logWarning("memory extraction failed", { sessionID, cause })),
       )
     })
 
