@@ -45,6 +45,7 @@ const RESERVED_IDS = new Set([
   "files",
   "processes",
   "registry",
+  "memory-graph",
   "search",
   "terminal",
   "trash",

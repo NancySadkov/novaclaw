@@ -69,6 +69,7 @@ import { FilesPage } from "@/pages/files"
 import { NotesPage } from "@/pages/notes"
 import { DebugPage } from "@/pages/debug"
 import { RegistryPage } from "@/pages/registry"
+import { MemoryGraphPage } from "@/pages/memory-graph"
 import { TrashPage } from "@/pages/trash"
 import { installErrorLog } from "@/utils/error-log"
 
@@ -652,6 +653,7 @@ function Routes() {
         <Route path="/notes" component={NotesPage} />
         <Route path="/registry" component={RegistryPage} />
         <Route path="/debug" component={DebugPage} />
+        <Route path="/memory-graph" component={MemoryGraphPage} />
         <Route path="/trash" component={TrashPage} />
         <Route path="/:dir/session/:id" component={LegacyTargetSessionRoute} />
       </Show>

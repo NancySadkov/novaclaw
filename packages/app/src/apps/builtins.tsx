@@ -109,6 +109,18 @@ export function useBuiltinApps(): () => HomeApp[] {
       open: () => navigate("/debug"),
     },
     {
+      id: "memory-graph",
+      title: "Memory graph",
+      icon: "branch",
+      accent: "#8b5cf6",
+      subtitle: "Explore what NovaClaw remembers, as a graph",
+      source: "builtin",
+      // The advanced node-link view of the graph memory (kb-graph P5; the lay controls live in
+      // Settings → Memory). Path-tracing is a Developer surface (uix.md §6.4).
+      minLevel: "developer",
+      open: () => navigate("/memory-graph"),
+    },
+    {
       id: "trash",
       title: "Trash",
       icon: "trash",
