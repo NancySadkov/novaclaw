@@ -70,6 +70,36 @@ export interface SearchHit extends MemoryRow {
   readonly score: number
 }
 
+export interface ListInput {
+  readonly scopes?: readonly string[]
+  readonly kinds?: readonly MemoryKind[]
+  readonly includeInvalid?: boolean
+  readonly limit?: number
+  readonly offset?: number
+}
+
+export interface GraphInput {
+  readonly scopes?: readonly string[]
+  readonly limit?: number
+}
+
+export interface EdgeRow {
+  readonly from: string
+  readonly to: string
+  readonly type: string
+}
+
+const toRow = (r: Record<string, unknown>): MemoryRow => ({
+  id: String(r.id),
+  kind: r.kind as MemoryKind,
+  text: String(r.text ?? ""),
+  name: (r.name as string | null) ?? null,
+  scope: String(r.scope),
+  source: (r.source as string | null) ?? null,
+  confidence: (r.confidence as number | null) ?? null,
+  relation: (r.relation as Relation) ?? "staged",
+})
+
 const DEFAULT_DIM = 1024
 const RRF_K = 60
 const SNAPSHOT_DEBOUNCE_MS = 1_000
@@ -412,6 +442,55 @@ export class WasmMemory {
       )
       const r = rows[0] ?? {}
       return { total: Number(r.total ?? 0), valid: Number(r.valid ?? 0) }
+    })
+  }
+
+  /** Enumerate memories (for the viewer/editor), newest first, filterable by scope/kind/validity and
+   *  paginated. Unlike `search` this needs no query — it's the "show me everything" list. */
+  list(opts: ListInput = {}): Promise<MemoryRow[]> {
+    return this.serialize(async () => {
+      const validity = opts.includeInvalid ? `` : `AND m.t_invalid IS NULL`
+      const scopeFilter = opts.scopes ? `AND m.scope IN $scopes` : ``
+      const kindFilter = opts.kinds ? `AND m.kind IN $kinds` : ``
+      const limit = Math.max(1, Math.min(opts.limit ?? 200, 2000))
+      const offset = Math.max(0, opts.offset ?? 0)
+      const rows = await this.rows(
+        `MATCH (m:Memory) WHERE true ${validity} ${scopeFilter} ${kindFilter}
+         RETURN m.id AS id, m.kind AS kind, m.text AS text, m.name AS name, m.scope AS scope,
+                m.source AS source, m.confidence AS confidence, m.relation AS relation
+         ORDER BY m.t_created DESC SKIP ${offset} LIMIT ${limit}`,
+        {
+          ...(opts.scopes ? { scopes: opts.scopes } : {}),
+          ...(opts.kinds ? { kinds: opts.kinds } : {}),
+        },
+      )
+      return rows.map(toRow)
+    })
+  }
+
+  /** The graph slice for the visualizer: up to `limit` valid nodes + the valid edges among them. */
+  graph(opts: GraphInput = {}): Promise<{ nodes: MemoryRow[]; edges: EdgeRow[] }> {
+    return this.serialize(async () => {
+      const scopeFilter = opts.scopes ? `AND m.scope IN $scopes` : ``
+      const limit = Math.max(1, Math.min(opts.limit ?? 500, 5000))
+      const nodeRows = await this.rows(
+        `MATCH (m:Memory) WHERE m.t_invalid IS NULL ${scopeFilter}
+         RETURN m.id AS id, m.kind AS kind, m.text AS text, m.name AS name, m.scope AS scope,
+                m.source AS source, m.confidence AS confidence, m.relation AS relation
+         ORDER BY m.t_created DESC LIMIT ${limit}`,
+        { ...(opts.scopes ? { scopes: opts.scopes } : {}) },
+      )
+      const nodes = nodeRows.map(toRow)
+      const ids = new Set(nodes.map((n) => n.id))
+      // Edges among the returned nodes only (so the client never gets a dangling endpoint).
+      const edgeRows = await this.rows(
+        `MATCH (a:Memory)-[r:Rel]->(b:Memory) WHERE r.t_invalid IS NULL
+         RETURN a.id AS from, b.id AS to, r.type AS type LIMIT ${limit * 4}`,
+      )
+      const edges = edgeRows
+        .map((e) => ({ from: String(e.from), to: String(e.to), type: String(e.type ?? "") }))
+        .filter((e) => ids.has(e.from) && ids.has(e.to))
+      return { nodes, edges }
     })
   }
 

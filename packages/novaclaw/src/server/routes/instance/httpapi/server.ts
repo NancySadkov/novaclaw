@@ -43,6 +43,7 @@ import { Worktree } from "@/worktree"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { MoveSession } from "@novaclaw/core/control-plane/move-session"
 import { Database } from "@novaclaw/core/database/database"
+import { Memory } from "@novaclaw/core/kb-graph/memory"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { httpClient } from "@novaclaw/core/effect/app-node-platform"
 import { EventV2 } from "@novaclaw/core/event"
@@ -81,6 +82,7 @@ import { fileHandlers } from "./handlers/file"
 import { globalHandlers } from "./handlers/global"
 import { instanceHandlers } from "./handlers/instance"
 import { registryHandlers } from "./handlers/registry"
+import { memoryHandlers } from "./handlers/memory"
 import { mcpHandlers } from "./handlers/mcp"
 import { permissionHandlers } from "./handlers/permission"
 import { providerHandlers } from "./handlers/provider"
@@ -156,6 +158,7 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
     fileHandlers,
     instanceHandlers,
     registryHandlers,
+    memoryHandlers,
     mcpHandlers,
     ptyHandlers,
     questionHandlers,
@@ -216,6 +219,10 @@ const app = LayerNode.group([
   SkillConfigStore.node,
   ReferenceConfigStore.node,
   Database.node,
+  // The graph-memory engine — a per-process (per-instance) singleton like the DB. Provided at the
+  // server-global scope so the HTTP handlers AND the location-scoped runner/kb-tool share ONE engine
+  // (a second build would clobber the same on-disk snapshot). Opens only when NOVACLAW_KB_MEMORY is set.
+  Memory.node,
   Auth.node,
   Account.node,
   Config.node,

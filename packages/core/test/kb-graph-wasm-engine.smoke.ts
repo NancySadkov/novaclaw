@@ -70,6 +70,27 @@ describe("WasmMemory (in-process, everywhere)", () => {
     await reopened.close()
   })
 
+  test("list enumerates (no query) + graph returns nodes and the edges among them", async () => {
+    const g = await WasmMemory.open(join(dir, "listgraph"), { dim: DIM })
+    await g.addMemory({ id: "p", kind: "entity", name: "Alice", text: "Alice", scope: "global" })
+    await g.addMemory({ id: "q", kind: "entity", name: "Acme", text: "Acme", scope: "global" })
+    await g.addMemory({ id: "r", kind: "episode", text: "old news", scope: "session:z" })
+    await g.invalidate("r")
+    await g.addEdge({ from: "p", to: "q", type: "works_at", scope: "global" })
+
+    // list: valid only by default; scope + kind filters; invalidated 'r' excluded.
+    const all = await g.list()
+    expect(all.map((m) => m.id).sort()).toEqual(["p", "q"])
+    expect((await g.list({ scopes: ["global"], kinds: ["entity"] })).length).toBe(2)
+    expect((await g.list({ includeInvalid: true })).some((m) => m.id === "r")).toBe(true)
+
+    // graph: nodes + the edge among them (no dangling endpoints).
+    const graph = await g.graph()
+    expect(new Set(graph.nodes.map((n) => n.id))).toEqual(new Set(["p", "q"]))
+    expect(graph.edges).toEqual([{ from: "p", to: "q", type: "works_at" }])
+    await g.close()
+  })
+
   test("consolidate promotes session memories to global, dedups across sessions, is idempotent", async () => {
     const c = await WasmMemory.open(join(dir, "consolidate"), { dim: DIM })
     // Two sessions; the "lives in Kyoto" fact is stated in BOTH (same content).

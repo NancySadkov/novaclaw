@@ -56,6 +56,8 @@ describe("MemoryClient.fromEngine", () => {
       },
       clearScope: async () => {},
       stats: async () => ({ total: 1, valid: 1 }),
+      list: async () => [],
+      graph: async () => ({ nodes: [], edges: [] }),
     }
     const c = MemoryClient.fromEngine(engine)
     expect(await run(c.health())).toBe(true)

@@ -83,6 +83,30 @@ export interface Stats {
   readonly valid: number
 }
 
+export interface ListInput {
+  readonly scopes?: readonly string[]
+  readonly kinds?: readonly MemoryKind[]
+  readonly includeInvalid?: boolean
+  readonly limit?: number
+  readonly offset?: number
+}
+
+export interface GraphInput {
+  readonly scopes?: readonly string[]
+  readonly limit?: number
+}
+
+export interface EdgeRow {
+  readonly from: string
+  readonly to: string
+  readonly type: string
+}
+
+export interface MemoryGraph {
+  readonly nodes: ReadonlyArray<MemoryRow>
+  readonly edges: ReadonlyArray<EdgeRow>
+}
+
 export interface Interface {
   /** Liveness probe — never fails (returns false if the sidecar is unreachable). */
   readonly health: () => Effect.Effect<boolean>
@@ -98,6 +122,10 @@ export interface Interface {
   readonly purge: (id: string) => Effect.Effect<void, MemoryError>
   readonly clearScope: (scope: string) => Effect.Effect<void, MemoryError>
   readonly stats: () => Effect.Effect<Stats, MemoryError>
+  /** Enumerate memories (viewer/editor) — no query, newest first, filterable + paginated. */
+  readonly list: (input?: ListInput) => Effect.Effect<ReadonlyArray<MemoryRow>, MemoryError>
+  /** The graph slice for the visualizer: nodes + the edges among them. */
+  readonly graph: (input?: GraphInput) => Effect.Effect<MemoryGraph, MemoryError>
 }
 
 // The Effect service tag — the memory tier the kb tool + auto-recall/extract hooks depend on. The
@@ -117,6 +145,8 @@ export interface Engine {
   purge(id: string): Promise<void>
   clearScope(scope: string): Promise<void>
   stats(): Promise<Stats>
+  list(input?: ListInput): Promise<ReadonlyArray<MemoryRow>>
+  graph(input?: GraphInput): Promise<MemoryGraph>
 }
 
 /** Adapt an in-process engine (the WASM store) to the `MemoryClient` Interface: each op becomes an
@@ -136,6 +166,8 @@ export const fromEngine = (engine: Engine): Interface => {
     purge: (id) => wrap(() => engine.purge(id)),
     clearScope: (scope) => wrap(() => engine.clearScope(scope)),
     stats: () => wrap(() => engine.stats()),
+    list: (input) => wrap(() => engine.list(input)),
+    graph: (input) => wrap(() => engine.graph(input)),
   }
 }
 
@@ -153,6 +185,8 @@ export const proxy = (get: () => Interface): Interface => ({
   purge: (id) => Effect.suspend(() => get().purge(id)),
   clearScope: (scope) => Effect.suspend(() => get().clearScope(scope)),
   stats: () => Effect.suspend(() => get().stats()),
+  list: (input) => Effect.suspend(() => get().list(input)),
+  graph: (input) => Effect.suspend(() => get().graph(input)),
 })
 
 /** Test/wiring seam: provide a specific client Interface (a live `make`, or a `stub`). */
@@ -175,6 +209,8 @@ export const disabled = (reason = "memory is not available"): Interface => {
     purge: fail,
     clearScope: fail,
     stats: fail,
+    list: fail,
+    graph: fail,
   }
 }
 
@@ -232,6 +268,27 @@ export const stub = (): Interface => {
         for (const [id, m] of mems) if (m.scope === scope) mems.delete(id)
       }),
     stats: () => ok({ total: mems.size, valid: [...mems.values()].filter((m) => m.valid).length }),
+    list: (input) =>
+      ok(
+        [...mems.values()]
+          .filter((m) => (input?.includeInvalid ? true : m.valid))
+          .filter((m) => (input?.scopes ? input.scopes.includes(m.scope) : true))
+          .filter((m) => (input?.kinds ? input.kinds.includes(m.kind) : true))
+          .slice(input?.offset ?? 0, (input?.offset ?? 0) + (input?.limit ?? 200))
+          .map(stripValid),
+      ),
+    graph: (input) => {
+      const nodes = [...mems.values()]
+        .filter((m) => m.valid)
+        .filter((m) => (input?.scopes ? input.scopes.includes(m.scope) : true))
+        .slice(0, input?.limit ?? 500)
+        .map(stripValid)
+      const ids = new Set(nodes.map((n) => n.id))
+      const graphEdges = edges
+        .filter((e) => ids.has(e.from) && ids.has(e.to))
+        .map((e) => ({ from: e.from, to: e.to, type: e.type }))
+      return ok({ nodes, edges: graphEdges })
+    },
   }
 }
 
