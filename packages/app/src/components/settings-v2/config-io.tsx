@@ -1,6 +1,7 @@
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import type { Component } from "solid-js"
 import { showToast } from "@/utils/toast"
+import { formatServerError } from "@/utils/server-errors"
 import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
 import { useConfirm } from "@/components/dialog-confirm"
@@ -85,10 +86,12 @@ export const ConfigExportImport: Component = () => {
       .updateConfig(parsed as never)
       .then(() => true)
       .catch((err: unknown) => {
+        // Render the server's ConfigInvalidError through the friendly parser (path + per-issue
+        // "key: message" lines) instead of a raw error string — so a bad key reads as guidance.
         showToast({
           variant: "error",
           title: language.t("settings.providers.import.failed"),
-          description: err instanceof Error ? err.message : String(err),
+          description: formatServerError(err, language.t),
         })
         return false
       })

@@ -78,6 +78,40 @@ describe("SettingsConfigStore", () => {
     }),
   )
 
+  it.effect("resilient seed: a malformed key is skipped + reported, valid siblings still apply", () =>
+    Effect.gen(function* () {
+      const store = yield* SettingsConfigStore.Service
+      const dir = yield* Effect.promise(() => tmpdir())
+      yield* Effect.addFinalizer(() => Effect.promise(() => dir[Symbol.asyncDispose]()))
+      const globalDir = path.join(dir.path, "global")
+      const projectDir = path.join(dir.path, "project")
+      yield* Effect.promise(async () => {
+        await fs.mkdir(globalDir, { recursive: true })
+        await fs.mkdir(projectDir, { recursive: true })
+        // One bad key (`mcp` is a string, not an MCP config) among several valid ones — the
+        // OpenCode footgun that used to discard the ENTIRE document.
+        await fs.writeFile(
+          path.join(globalDir, "novaclaw.jsonc"),
+          JSON.stringify({ username: "seed-user", snapshots: false, shell: "bash", mcp: "not-a-valid-mcp-config" }),
+        )
+      })
+
+      const skipped = yield* SettingsConfigSeed.seedFromDirectory(globalDir, projectDir)
+
+      // The valid keys were applied despite the malformed sibling (per-key, not all-or-nothing).
+      const all = yield* store.all()
+      expect(all.username).toBe("seed-user")
+      expect(all.snapshots).toBe(false)
+      expect(all.shell).toBe("bash")
+      // The bad key did NOT land.
+      expect(all.mcp).toBeUndefined()
+      // ...and the user is told exactly which key was dropped, and from where (the notice payload).
+      expect(skipped.map((s) => s.key)).toEqual(["mcp"])
+      expect(skipped[0]?.source).toContain("novaclaw.jsonc")
+      expect(skipped[0]?.reason.length).toBeGreaterThan(0)
+    }),
+  )
+
   it.effect("settingsInfoFromStore builds the synthetic document latest() resolves FIRST", () =>
     Effect.sync(() => {
       const info = SettingsConfigSeed.settingsInfoFromStore({
