@@ -62,6 +62,12 @@ const RememberPayload = Schema.Struct({
 })
 const IdPayload = Schema.Struct({ id: Schema.String })
 const ScopePayload = Schema.Struct({ scope: Schema.String })
+const IngestPayload = Schema.Struct({
+  text: Schema.String,
+  name: Schema.String,
+  scope: Schema.optional(Schema.String),
+})
+const IngestResult = Schema.Struct({ stored: Schema.Number, passages: Schema.Number })
 
 const meta = (identifier: string, summary: string, description: string) =>
   OpenApi.annotations({ identifier, summary, description })
@@ -130,6 +136,20 @@ export const MemoryApi = HttpApi.make("memory").add(
         success: described(Schema.Boolean, "True on success"),
         error: InvalidRequestError,
       }).annotateMerge(meta("memory.purge", "Purge (hard delete)", "Hard-delete a memory with no history — for secrets.")),
+    )
+    .add(
+      HttpApiEndpoint.post("ingest", `${root}/ingest`, {
+        query: WorkspaceRoutingQuery,
+        payload: IngestPayload,
+        success: described(IngestResult, "How many passages were stored, and how many the document chunked into"),
+        error: InvalidRequestError,
+      }).annotateMerge(
+        meta(
+          "memory.ingest",
+          "Ingest a document",
+          "Chunk a text document into searchable passages. Idempotent: re-ingesting the same document stores nothing new.",
+        ),
+      ),
     )
     .add(
       HttpApiEndpoint.post("clearScope", `${root}/clearScope`, {

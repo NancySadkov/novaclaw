@@ -1,6 +1,5 @@
 export * as KbTool from "./kb"
 
-import { createHash } from "node:crypto"
 import { readFileSync, statSync } from "node:fs"
 import { basename } from "node:path"
 import { ascending } from "@novaclaw/schema/identifier"
@@ -86,10 +85,8 @@ export const Input = Schema.Union([SearchOp, RememberOp, ForgetOp, NeighborsOp, 
 
 /** Refuse pathological inputs rather than melting the index on a 500MB blob. */
 export const MAX_INGEST_BYTES = 4_000_000
-/** Content-addressed passage id: re-ingesting the same document is idempotent, not duplicated. */
-export const passageID = (label: string, text: string) =>
-  "mem_p" + createHash("sha256").update(`${label}
-${text}`).digest("hex").slice(0, 24)
+/** Re-exported so the tool surface stays stable; the rule lives with chunking (kb-graph/chunk.ts). */
+export const passageID = KbChunk.passageID
 
 const Output = Schema.Struct({
   ok: Schema.Boolean,
@@ -279,9 +276,12 @@ export const layer = Layer.effectDiscard(
                   const ingestScope = input.scope === "session" ? sessionScope : "global"
                   const passages = KbChunk.chunk(KbChunk.stripGutenberg(raw))
                   if (passages.length === 0) return { ok: false, message: `"${label}" has no readable text to ingest.` } satisfies Output
-                  let stored = 0
+                  // A duplicate id does NOT fail on the real engine (measured) — it dedupes by primary
+                  // key and addMemory still succeeds. Counting successful calls would claim we stored
+                  // passages we did not, so count the actual delta.
+                  const before = yield* memory.stats().pipe(Effect.orElseSucceed(() => ({ total: 0, valid: 0 })))
                   for (const text of passages) {
-                    const ok = yield* memory
+                    yield* memory
                       .addMemory({
                         id: passageID(label, text),
                         kind: "passage",
@@ -291,9 +291,10 @@ export const layer = Layer.effectDiscard(
                         source: "ingest",
                         relation: "staged",
                       })
-                      .pipe(Effect.as(true), Effect.orElseSucceed(() => false))
-                    if (ok) stored++
+                      .pipe(Effect.ignore)
                   }
+                  const after = yield* memory.stats().pipe(Effect.orElseSucceed(() => ({ total: 0, valid: 0 })))
+                  const stored = Math.max(0, after.total - before.total)
                   // Content-addressed ids make re-ingest idempotent: nothing new is not a failure.
                   if (stored === 0)
                     return {

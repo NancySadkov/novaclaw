@@ -1,3 +1,4 @@
+import { KbChunk } from "@novaclaw/core/kb-graph/chunk"
 import { MemoryClient } from "@novaclaw/core/kb-graph/memory-client"
 import { ascending } from "@novaclaw/schema/identifier"
 import { Effect } from "effect"
@@ -16,6 +17,9 @@ const csv = (value: string | undefined): string[] | undefined => {
   return parts.length ? parts : undefined
 }
 const truthy = (value: string | undefined) => value === "1" || value === "true"
+
+/** Bound a single ingest request; the 4MB tool cap in characters, roughly. */
+const MAX_INGEST_CHARS = 4_000_000
 
 const asBadRequest = <A, R>(effect: Effect.Effect<A, MemoryClient.MemoryError, R>) =>
   effect.pipe(Effect.catchTag("MemoryClient.MemoryError", (error) => Effect.fail(new InvalidRequestError({ message: error.reason }))))
@@ -112,6 +116,42 @@ export const memoryHandlers = HttpApiBuilder.group(InstanceHttpApi, "memory", (h
         Effect.fn("MemoryHttpApi.purge")(function* (ctx) {
           yield* asBadRequest(memory.purge(ctx.payload.id))
           return true
+        }),
+      )
+      .handle(
+        "ingest",
+        Effect.fn("MemoryHttpApi.ingest")(function* (ctx) {
+          // Takes document TEXT rather than a path: the caller may be a remote UI with no filesystem in
+          // common with this instance, and it keeps path/permission concerns out of the memory tier.
+          if (ctx.payload.text.length > MAX_INGEST_CHARS)
+            return yield* Effect.fail(
+              new InvalidRequestError({
+                message: `Document is too large to ingest in one request (${MAX_INGEST_CHARS} character limit). Split it and ingest the parts.`,
+              }),
+            )
+          const label = ctx.payload.name.trim() || "document"
+          const scope = ctx.payload.scope?.trim() || "global"
+          const passages = KbChunk.chunk(KbChunk.stripGutenberg(ctx.payload.text))
+          // MEASURED: a duplicate id does NOT fail on the real engine — addMemory succeeds and the row
+          // is deduped by primary key. So counting successful calls would report every passage as
+          // "stored" on a re-ingest and tell the user we added content we did not. Count the actual
+          // delta instead.
+          const before = yield* memory.stats().pipe(Effect.orElseSucceed(() => ({ total: 0, valid: 0 })))
+          for (const text of passages) {
+            yield* memory
+              .addMemory({
+                id: KbChunk.passageID(label, text),
+                kind: "passage",
+                text,
+                name: label,
+                scope,
+                source: "ingest",
+                relation: "staged",
+              })
+              .pipe(Effect.ignore)
+          }
+          const after = yield* memory.stats().pipe(Effect.orElseSucceed(() => ({ total: 0, valid: 0 })))
+          return { stored: Math.max(0, after.total - before.total), passages: passages.length }
         }),
       )
       .handle(

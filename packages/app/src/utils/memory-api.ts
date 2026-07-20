@@ -178,6 +178,17 @@ export function memoryPurge(server: ServerConnection.HttpBase, input: { director
   return call<boolean>(server, "POST", "memory/purge", input.directory, { id: input.id })
 }
 
+export function memoryIngest(
+  server: ServerConnection.HttpBase,
+  input: { directory: string; text: string; name: string; scope?: string },
+) {
+  return call<{ stored: number; passages: number }>(server, "POST", "memory/ingest", input.directory, {
+    text: input.text,
+    name: input.name,
+    ...(input.scope === undefined ? {} : { scope: input.scope }),
+  })
+}
+
 export function memoryClearScope(server: ServerConnection.HttpBase, input: { directory: string; scope: string }) {
   return call<boolean>(server, "POST", "memory/clearScope", input.directory, { scope: input.scope })
 }

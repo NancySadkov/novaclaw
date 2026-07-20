@@ -13,6 +13,7 @@ import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 import {
   memoryClearScope,
+  memoryIngest,
   memoryInvalidate,
   memoryList,
   memoryRemember,
@@ -144,6 +145,38 @@ export const SettingsMemoryV2: Component<{ sessionID?: string }> = (props) => {
   }
 
   let fileInput: HTMLInputElement | undefined
+  let docInput: HTMLInputElement | undefined
+
+  // Add a DOCUMENT to memory: the file is chunked into searchable passages server-side, so a big
+  // manual becomes findable without anyone pasting it into a chat.
+  const onDocumentPicked = async (event: Event) => {
+    const input = event.currentTarget as HTMLInputElement
+    const file = input.files?.[0]
+    input.value = ""
+    if (!file) return
+    const cn = conn()
+    if (!cn) return
+    setBusy(true)
+    const result = await memoryIngest(cn.http, {
+      directory: directory(),
+      text: await file.text(),
+      name: file.name,
+    }).catch((error: unknown) => {
+      failed(error)
+      return undefined
+    })
+    setBusy(false)
+    if (!result) return
+    refresh()
+    showToast({
+      variant: "success",
+      icon: "circle-check",
+      title:
+        result.stored === 0
+          ? language.t("settings.memory.ingest.already", { name: file.name })
+          : language.t("settings.memory.ingest.toast", { count: result.stored, name: file.name }),
+    })
+  }
   const onFilePicked = async (event: Event) => {
     const input = event.currentTarget as HTMLInputElement
     const file = input.files?.[0]
@@ -328,6 +361,9 @@ export const SettingsMemoryV2: Component<{ sessionID?: string }> = (props) => {
             <ButtonV2 size="small" variant="neutral" disabled={busy()} onClick={() => fileInput?.click()}>
               {language.t("settings.memory.import.action")}
             </ButtonV2>
+            <ButtonV2 size="small" variant="neutral" disabled={busy()} onClick={() => docInput?.click()}>
+              {language.t("settings.memory.ingest.action")}
+            </ButtonV2>
             <ButtonV2 size="small" variant="danger" disabled={busy()} onClick={() => void clearAll()}>
               {language.t("settings.memory.clearAll.action")}
             </ButtonV2>
@@ -336,6 +372,13 @@ export const SettingsMemoryV2: Component<{ sessionID?: string }> = (props) => {
                 {language.t("settings.memory.clearChat.action")}
               </ButtonV2>
             </Show>
+            <input
+              ref={docInput}
+              type="file"
+              accept=".txt,.md,.markdown,text/plain,text/markdown"
+              class="hidden"
+              onChange={(event) => void onDocumentPicked(event)}
+            />
             <input
               ref={fileInput}
               type="file"
