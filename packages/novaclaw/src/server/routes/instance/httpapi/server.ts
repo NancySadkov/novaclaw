@@ -43,6 +43,7 @@ import { Worktree } from "@/worktree"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { MoveSession } from "@novaclaw/core/control-plane/move-session"
 import { Database } from "@novaclaw/core/database/database"
+import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { Memory } from "@novaclaw/core/kb-graph/memory"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { httpClient } from "@novaclaw/core/effect/app-node-platform"
@@ -223,6 +224,9 @@ const app = LayerNode.group([
   // server-global scope so the HTTP handlers AND the location-scoped runner/kb-tool share ONE engine
   // (a second build would clobber the same on-disk snapshot). Opens only when NOVACLAW_KB_MEMORY is set.
   Memory.node,
+  // The EEVDF scheduler — a per-instance singleton, listed here so the HTTP diagnostics handler and the
+  // location-scoped runner share ONE ledger (two builds would report different worlds).
+  SessionScheduler.node,
   Auth.node,
   Account.node,
   Config.node,

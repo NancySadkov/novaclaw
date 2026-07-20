@@ -79,6 +79,23 @@ export class ApiVcsApplyError extends Schema.ErrorClass<ApiVcsApplyError>("VcsAp
   { httpApiStatus: 400 },
 ) {}
 
+// The live scheduler view — the `ps`-app story the EEVDF ledger's own snapshot() was written for:
+// ONE query surface over the running session world, shared by humans, agents and tests.
+const SchedulerLedgerEntry = Schema.Struct({
+  id: Schema.String,
+  weight: Schema.Number,
+  sliceTokens: Schema.Number,
+  lag: Schema.Number,
+  vdeadline: Schema.Number,
+})
+const SchedulerDevice = Schema.Struct({
+  deviceKey: Schema.String,
+  inFlightInteractive: Schema.Array(Schema.String),
+  inFlightBatch: Schema.Array(Schema.String),
+  waiting: Schema.Array(Schema.String),
+  ledger: Schema.Array(SchedulerLedgerEntry),
+})
+
 export const InstancePaths = {
   dispose: "/instance/dispose",
   path: "/path",
@@ -92,6 +109,7 @@ export const InstancePaths = {
   skill: "/skill",
   formatter: "/formatter",
   app: "/app",
+  scheduler: "/scheduler/snapshot",
 } as const
 
 export const InstanceApi = HttpApi.make("instance")
@@ -213,6 +231,16 @@ export const InstanceApi = HttpApi.make("instance")
             identifier: "formatter.status",
             summary: "Get formatter status",
             description: "Get formatter status",
+          }),
+        ),
+        HttpApiEndpoint.get("scheduler", InstancePaths.scheduler, {
+          query: WorkspaceRoutingQuery,
+          success: described(Schema.Array(SchedulerDevice), "Live scheduler state, one entry per device"),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "instance.scheduler",
+            summary: "Scheduler snapshot",
+            description: "Per-device in-flight and waiting sessions plus the EEVDF ledger — the live `ps` view.",
           }),
         ),
         HttpApiEndpoint.get("appList", InstancePaths.app, {

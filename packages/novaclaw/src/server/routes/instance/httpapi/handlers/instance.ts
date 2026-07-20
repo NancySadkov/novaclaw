@@ -15,6 +15,7 @@ import { VirtualFs } from "@novaclaw/core/virtual-fs"
 import { Scratch } from "@novaclaw/core/scratch"
 import { Vcs } from "@/project/vcs"
 import { Skill } from "@/skill"
+import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { Effect, Layer } from "effect"
 import fs from "fs/promises"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
@@ -184,6 +185,15 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
 
     return handlers
       .handle("dispose", dispose)
+      .handle(
+        "scheduler",
+        Effect.fn("InstanceHttpApi.scheduler")(function* () {
+          // Read-only introspection: never fails the request — an unbuilt scheduler reports empty
+          // rather than 500ing a diagnostics page.
+          const scheduler = yield* SessionScheduler.Service
+          return yield* scheduler.snapshot().pipe(Effect.orElseSucceed(() => []))
+        }),
+      )
       .handle("path", getPath)
       .handle("vcs", getVcs)
       .handle("vcsStatus", getVcsStatus)
