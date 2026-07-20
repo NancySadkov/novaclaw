@@ -37,6 +37,45 @@ export function memoryEnabled(dbFile?: string): boolean {
 export function bust() {
   cachedAt = 0
   cached = true
+  embedAt = 0
+  embedCached = undefined
+}
+
+export interface EmbeddingSettings {
+  readonly url: string
+  readonly model: string
+}
+
+let embedAt = 0
+let embedCached: EmbeddingSettings | undefined
+
+/** The memory VECTOR leg's device, or undefined when unconfigured (⇒ keyword-only search). Same
+ *  2s-TTL sync read of the `memory` settings row, so pointing at a device applies live. */
+export function embeddingSettings(dbFile?: string): EmbeddingSettings | undefined {
+  const now = Date.now()
+  if (dbFile === undefined && now - embedAt < TTL_MS) return embedCached
+  const value = readEmbedding(dbFile ?? DatabasePath.path())
+  if (dbFile === undefined) {
+    embedAt = now
+    embedCached = value
+  }
+  return value
+}
+
+function readEmbedding(dbFile: string): EmbeddingSettings | undefined {
+  try {
+    const rows = readRowsSync(dbFile, "SELECT value FROM runtime_setting WHERE key = 'memory'")
+    const raw = rows?.[0]?.value
+    if (typeof raw !== "string") return undefined
+    const parsed = JSON.parse(raw) as { embedding?: { url?: unknown; model?: unknown } }
+    const url = parsed.embedding?.url
+    const model = parsed.embedding?.model
+    // Both are required — a half-configured device would silently produce no vectors.
+    if (typeof url !== "string" || !url || typeof model !== "string" || !model) return undefined
+    return { url: url.replace(/\/+$/, ""), model }
+  } catch {
+    return undefined // unreadable → keyword-only, never a failure
+  }
 }
 
 function readEnabled(dbFile: string): boolean {

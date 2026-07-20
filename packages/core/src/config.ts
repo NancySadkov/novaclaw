@@ -156,6 +156,20 @@ export class Info extends Schema.Class<Info>("Config.Info")({
       description:
         "Remember things across chats (graph memory / KB-G). Default ON; OFF = the runtime flows stand down (no auto-recall, auto-extraction, `kb` tool, or consolidation) — a privacy switch. The engine still needs the NOVACLAW_KB_MEMORY env to run at all",
     }),
+    embedding: Schema.Struct({
+      url: Schema.String.pipe(Schema.optional).annotate({
+        description:
+          "OpenAI-compatible embeddings base URL for the LAN embedding device (e.g. http://spark:8001/v1). Unset = keyword-only (FTS) memory search",
+      }),
+      model: Schema.String.pipe(Schema.optional).annotate({
+        description: "Embedding model id as served (e.g. qwen3-embedding). Its width must match the graph's vector column (1024)",
+      }),
+    })
+      .pipe(Schema.optional)
+      .annotate({
+        description:
+          "The memory VECTOR leg (measured: hybrid vector+FTS retrieval 85% vs keyword-only 77%). LAN-local, airgap-safe; unreachable = degrade to FTS, never fail",
+      }),
   })
     .pipe(Schema.optional)
     .annotate({ description: "Graph-memory (KB-G) privacy switch — the lay Memory on/off (notes/kb-graph-plan.md §5)" }),

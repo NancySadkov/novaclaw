@@ -50,6 +50,7 @@ import { TierScaffold } from "./tier-scaffold"
 import { SessionRecall } from "./recall"
 import { SessionExtract } from "./extract"
 import { Memory } from "../../kb-graph/memory"
+import { KbEmbedder } from "../../kb-graph/embedder"
 import { MemoryClient } from "../../kb-graph/memory-client"
 import { MemorySetting } from "../../kb-graph/memory-setting"
 import { SessionStrict } from "./strict"
@@ -367,7 +368,13 @@ export const layer = Layer.effect(
           }),
         )
       const scope = `session:${sessionID}`
-      for (const fact of SessionExtract.parseExtraction(chunks.join(""))) {
+      const facts = SessionExtract.parseExtraction(chunks.join(""))
+      // Embed the extracted facts so they're reachable by the VECTOR leg later (measured: hybrid
+      // retrieval 85% vs 77% keyword-only). ONE batched call for the whole extraction, and this runs
+      // in postRunMaintenance — off the turn hot-path. No device ⇒ undefined ⇒ FTS-only memories.
+      const vectors = facts.length === 0 ? undefined : yield* Effect.promise(() => KbEmbedder.embed(facts.map((f) => f.text)))
+      for (const [index, fact] of facts.entries()) {
+        const vector = vectors?.[index]
         yield* memory
           .addMemory({
             id: SessionExtract.memoryID(scope, fact.text),
@@ -377,6 +384,7 @@ export const layer = Layer.effect(
             scope,
             source: "auto-extract",
             relation: "staged",
+            ...(vector === undefined ? {} : { embedding: vector }),
           })
           .pipe(Effect.ignore) // duplicate id = already remembered (dedup); never fail the drain
       }
@@ -525,14 +533,23 @@ export const layer = Layer.effect(
       // system prompt so the model "just remembers" — no kb-tool call needed. Best-effort: memory
       // off/unavailable → no block, the turn proceeds. Budgeted DOWN for weak models (the JH floor).
       const recallQuery = SessionRecall.recallQuery(context)
-      const memoryRecall =
-        recallQuery === undefined || !MemorySetting.memoryEnabled() // memory off → surface nothing
-          ? undefined
-          : SessionRecall.formatRecall(
-              yield* memory
-                .search({ query: recallQuery, k: SessionRecall.recallBudget(tier), scopes: [`session:${session.id}`, "global"] })
-                .pipe(Effect.orElseSucceed(() => [])),
-            )
+      let memoryRecall: string | undefined
+      if (recallQuery !== undefined && MemorySetting.memoryEnabled()) {
+        // The VECTOR leg: one short embedding of the recall query lets the engine fuse vector KNN with
+        // FTS (measured 85% vs 77% keyword-only). Bounded + degrading — no device, unreachable, or slow
+        // ⇒ undefined ⇒ keyword-only recall. Never blocks the turn on a failure.
+        const recallVector = yield* Effect.promise(() => KbEmbedder.embedOne(recallQuery))
+        memoryRecall = SessionRecall.formatRecall(
+          yield* memory
+            .search({
+              query: recallQuery,
+              k: SessionRecall.recallBudget(tier),
+              scopes: [`session:${session.id}`, "global"],
+              ...(recallVector === undefined ? {} : { embedding: recallVector }),
+            })
+            .pipe(Effect.orElseSucceed(() => [])),
+        )
+      }
       const isLastStep = agent.info?.steps !== undefined && currentStep >= agent.info.steps
       const toolMaterialization = isLastStep ? undefined : yield* tools.materialize(agent.info?.permissions)
       const promptCacheKey = /^ses_[0-9a-f]{64}$/.test(session.id) ? session.id.slice(4) : session.id
