@@ -34,6 +34,16 @@ export const recallBudget = (tier: ModelV2.Tier | undefined): number => {
   }
 }
 
+/** How many candidates to RETRIEVE before ranking — deliberately DECOUPLED from `recallBudget`.
+ *  The budget bounds what the model SEES (window pressure, correctly small for weak models); the pool
+ *  bounds what the ranker can CHOOSE FROM, which costs rerank latency, not context. Conflating them
+ *  penalised weak models exactly where recall matters most: MEASURED (notes/kb-graph-plan.md, the D20
+ *  bisection), a query with no rare anchor put its answer at hybrid rank 12 and 18 — so a micro tier's
+ *  3x3=9 pool could not contain it at all, while the model would still only have been shown 3.
+ *  Floor 16 covers the measured range; cap 40 bounds rerank cost (measured ~915ms at 24 candidates).
+ *  Never returns fewer candidates than the budget — you cannot show more than you retrieved. */
+export const recallPoolSize = (budget: number): number => Math.max(Math.min(Math.max(budget * 3, 16), 40), budget)
+
 /** Render recalled memories as a system-prompt block (undefined if none). Linearized; the model is
  *  told to USE it silently, not echo the list. */
 export const formatRecall = (hits: ReadonlyArray<MemoryClient.SearchHit>): string | undefined => {

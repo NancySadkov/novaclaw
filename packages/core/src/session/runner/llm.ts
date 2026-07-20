@@ -90,8 +90,6 @@ import { makeLocationNode } from "../../effect/app-node"
 import { llmClient } from "../../effect/app-node-platform"
 
 // Ordering can only choose among retrieved candidates — fetch wider than the recall budget.
-const RECALL_OVERFETCH = 3
-const RECALL_OVERFETCH_CAP = 40
 
 /**
  * Runs one durable coding-agent Session until it settles.
@@ -553,7 +551,7 @@ export const layer = Layer.effect(
         const recallCandidates = yield* memory
           .search({
             query: recallQuery,
-            k: Math.min(budget * RECALL_OVERFETCH, RECALL_OVERFETCH_CAP),
+            k: SessionRecall.recallPoolSize(budget),
             scopes: [`session:${session.id}`, "global"],
             ...(recallVector === undefined ? {} : { embedding: recallVector }),
           })
