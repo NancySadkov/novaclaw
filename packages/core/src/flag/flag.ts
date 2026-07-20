@@ -14,6 +14,15 @@ export function truthy(key: string) {
   return value === "true" || value === "1"
 }
 
+/** Opt-OUT capability flag: ON unless explicitly disabled (`0`/`false`/`off`). For a capability whose
+ *  env var exists as an ESCAPE HATCH for constrained hosts rather than as the way to turn a feature on
+ *  — where `truthy`'s default-false polarity would silently keep the feature dark for every user who
+ *  never heard of the variable. */
+export function truthyUnlessDisabled(key: string) {
+  const value = env(key)?.toLowerCase()
+  return !(value === "false" || value === "0" || value === "off")
+}
+
 const copy = env("NOVACLAW_EXPERIMENTAL_DISABLE_COPY_ON_SELECT")
 const fff = env("NOVACLAW_DISABLE_FFF")
 
@@ -40,7 +49,14 @@ export const Flag = {
   // level, so it rides an env flag like NOVACLAW_DB, not location config. ON enables it; the launcher
   // sets it in real deployments so memory just works, while the test suite leaves it off (no engine
   // boot). Never a hard dependency — off/unavailable → the instance still boots.
-  NOVACLAW_KB_MEMORY: truthy("NOVACLAW_KB_MEMORY"),
+  // Opt-OUT, not opt-in. This is the CAPABILITY gate ("can the engine open at all"), documented in
+  // kb-graph/memory-setting.ts as an escape hatch for a constrained host or airgap — but it was
+  // `truthy`, i.e. default FALSE, and NOTHING in the tree sets it (verified 2026-07-20: not the
+  // desktop app, not the launchers, not the packaged build). So the entire KB-G graph-memory tier —
+  // every phase P0-P8 — was dark for every real user, while the plan's §5 owner directive is
+  // "default-on out-of-the-box". The USER's switch is `memory.enabled` (default ON, a privacy
+  // control); this one only exists so a constrained host can say no.
+  NOVACLAW_KB_MEMORY: truthyUnlessDisabled("NOVACLAW_KB_MEMORY"),
   NOVACLAW_KB_MEMORY_DIM: env("NOVACLAW_KB_MEMORY_DIM"),
   // Opt-IN: npm-install `@novaclaw/plugin` into each `.novaclaw` config dir so user
   // plugin/tool files can VALUE-import it. Default OFF: the package is not published
