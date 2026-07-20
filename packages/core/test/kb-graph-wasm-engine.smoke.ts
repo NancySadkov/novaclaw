@@ -70,6 +70,23 @@ describe("WasmMemory (in-process, everywhere)", () => {
     await reopened.close()
   })
 
+  test("search returns VALID time, and an explicit validFrom is honoured (the P8 recency signal)", async () => {
+    const e = await WasmMemory.open(join(dir, "validat"), { dim: DIM })
+    const when = "2001-02-03T04:05:06.000Z"
+    await e.addMemory({ id: "dated", kind: "entity", text: "Zyxxaton was declared", scope: "global", validFrom: when })
+    await e.addMemory({ id: "undated", kind: "entity", text: "Zyxxaton mentioned again", scope: "global" })
+    const hits = await e.search({ query: "Zyxxaton", k: 5 })
+    const dated = hits.find((h) => h.id === "dated")
+    const undated = hits.find((h) => h.id === "undated")
+    expect(dated?.validAt).toBeDefined()
+    // The ranker keys off this — if the engine dropped it, recency would silently do nothing.
+    expect(Date.parse(dated!.validAt!)).toBe(Date.parse(when))
+    // An unset validFrom still gets a time (defaults to now), so recency is defined for every memory.
+    expect(undated?.validAt).toBeDefined()
+    expect(Date.parse(undated!.validAt!)).toBeGreaterThan(Date.parse(when))
+    await e.close()
+  }, 30_000)
+
   test("embed backfill: the pending queue drains, terminates, and a backfilled vector is searchable", async () => {
     const e = await WasmMemory.open(join(dir, "backfill"), { dim: DIM })
     // Two memories stored with NO vector (the pre-device / device-down case) and one already embedded.

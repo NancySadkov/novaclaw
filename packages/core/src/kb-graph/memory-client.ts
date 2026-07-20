@@ -65,6 +65,9 @@ export interface MemoryRow {
 
 export interface SearchHit extends MemoryRow {
   readonly score: number
+  /** Valid-time (ISO) — when the fact became true; the recency signal for P8 ordering. The engine
+   *  returns it, so the type must carry it or ranking silently loses recency. Absent = unknown. */
+  readonly validAt?: string
 }
 
 export interface Neighbor {

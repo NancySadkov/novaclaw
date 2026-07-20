@@ -5,6 +5,7 @@ import { Effect, Layer, Schema } from "effect"
 import { makeLocationNode } from "../effect/app-node"
 import { KbEmbedder } from "../kb-graph/embedder"
 import { MemoryClient } from "../kb-graph/memory-client"
+import { MemoryRanking } from "../kb-graph/ranking"
 import { Memory } from "../kb-graph/memory"
 import { MemorySetting } from "../kb-graph/memory-setting"
 import { ToolRegistry } from "./registry"
@@ -96,6 +97,10 @@ export const searchRepair = (query: string): string =>
 
 // -----------------------------------------------------------------------------------------------
 
+// Ordering can only choose among retrieved candidates, so fetch a wider pool than we return.
+const OVERFETCH = 3
+const OVERFETCH_CAP = 40
+
 const scopesForSearch = (session: string, scope: "session" | "global" | "all" | undefined): string[] =>
   scope === "session" ? [session] : scope === "global" ? ["global"] : [session, "global"]
 
@@ -129,15 +134,21 @@ export const layer = Layer.effectDiscard(
                   // The VECTOR leg: embedding the query makes the engine fuse vector KNN with FTS
                   // (measured 85% vs 77% keyword-only). Undefined = no device ⇒ keyword-only, never a failure.
                   const queryVector = yield* Effect.promise(() => KbEmbedder.embedOne(input.query))
-                  const hits = yield* memory
+                  const k = input.k ?? 8
+                  const candidates = yield* memory
                     .search({
                       query: input.query,
-                      k: input.k ?? 8,
+                      // Over-fetch, then re-rank down to k: ordering can only choose among what
+                      // retrieval returned, so the candidate pool must be wider than the answer.
+                      k: Math.min(k * OVERFETCH, OVERFETCH_CAP),
                       scopes: scopesForSearch(sessionScope, input.scope),
                       ...(queryVector === undefined ? {} : { embedding: queryVector }),
                     })
                     .pipe(Effect.orElseSucceed(() => []))
-                  if (hits.length === 0) return { ok: false, message: searchRepair(input.query) } satisfies Output
+                  if (candidates.length === 0) return { ok: false, message: searchRepair(input.query) } satisfies Output
+                  // P8: recency × authority re-rank (bounded — see ranking.ts). A no-op when the hits
+                  // share provenance and age.
+                  const hits = MemoryRanking.rankHits(candidates, Date.now()).slice(0, k)
                   return { ok: true, message: formatHits(hits) } satisfies Output
                 }
                 case "remember": {

@@ -52,6 +52,7 @@ import { SessionExtract } from "./extract"
 import { Memory } from "../../kb-graph/memory"
 import { KbEmbedder } from "../../kb-graph/embedder"
 import { MemoryClient } from "../../kb-graph/memory-client"
+import { MemoryRanking } from "../../kb-graph/ranking"
 import { MemorySetting } from "../../kb-graph/memory-setting"
 import { SessionStrict } from "./strict"
 import { JhStore } from "../../jh/store"
@@ -86,6 +87,10 @@ import { AppProcess } from "../../process"
 import { ChildProcess } from "effect/unstable/process"
 import { makeLocationNode } from "../../effect/app-node"
 import { llmClient } from "../../effect/app-node-platform"
+
+// Ordering can only choose among retrieved candidates — fetch wider than the recall budget.
+const RECALL_OVERFETCH = 3
+const RECALL_OVERFETCH_CAP = 40
 
 /**
  * Runs one durable coding-agent Session until it settles.
@@ -539,16 +544,20 @@ export const layer = Layer.effect(
         // FTS (measured 85% vs 77% keyword-only). Bounded + degrading — no device, unreachable, or slow
         // ⇒ undefined ⇒ keyword-only recall. Never blocks the turn on a failure.
         const recallVector = yield* Effect.promise(() => KbEmbedder.embedOne(recallQuery))
-        memoryRecall = SessionRecall.formatRecall(
-          yield* memory
-            .search({
-              query: recallQuery,
-              k: SessionRecall.recallBudget(tier),
-              scopes: [`session:${session.id}`, "global"],
-              ...(recallVector === undefined ? {} : { embedding: recallVector }),
-            })
-            .pipe(Effect.orElseSucceed(() => [])),
-        )
+        const budget = SessionRecall.recallBudget(tier)
+        // P8 ordering: over-fetch candidates, then re-rank by recency × authority and keep `budget` of
+        // them. What the model sees each turn is the SHORT list, so ordering matters most here — a
+        // recent authoritative fact must beat an old passive musing that merely echoes the wording.
+        // Bounded (ranking.ts) and a no-op when hits share provenance and age.
+        const recallCandidates = yield* memory
+          .search({
+            query: recallQuery,
+            k: Math.min(budget * RECALL_OVERFETCH, RECALL_OVERFETCH_CAP),
+            scopes: [`session:${session.id}`, "global"],
+            ...(recallVector === undefined ? {} : { embedding: recallVector }),
+          })
+          .pipe(Effect.orElseSucceed(() => []))
+        memoryRecall = SessionRecall.formatRecall(MemoryRanking.rankHits(recallCandidates, Date.now()).slice(0, budget))
       }
       const isLastStep = agent.info?.steps !== undefined && currentStep >= agent.info.steps
       const toolMaterialization = isLastStep ? undefined : yield* tools.materialize(agent.info?.permissions)

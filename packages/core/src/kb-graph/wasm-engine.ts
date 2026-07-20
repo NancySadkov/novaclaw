@@ -68,6 +68,16 @@ export interface MemoryRow {
 
 export interface SearchHit extends MemoryRow {
   readonly score: number
+  /** Valid-time (ISO) — when the fact became true. The recency signal for ranking; absent = unknown. */
+  readonly validAt?: string
+}
+
+/** Engine timestamps come back as a Date or a driver string; normalise to ISO, or undefined. */
+const isoTime = (value: unknown): string | undefined => {
+  if (value === null || value === undefined) return undefined
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? undefined : value.toISOString()
+  const parsed = new Date(String(value))
+  return Number.isNaN(parsed.getTime()) ? undefined : parsed.toISOString()
 }
 
 export interface ListInput {
@@ -364,7 +374,8 @@ export class WasmMemory {
     const props = await this.rows(
       `MATCH (m:Memory) WHERE m.id IN $ids AND m.t_invalid IS NULL ${scopeFilter} ${kindFilter}
        RETURN m.id AS id, m.kind AS kind, m.text AS text, m.name AS name, m.scope AS scope,
-              m.source AS source, m.confidence AS confidence, m.relation AS relation`,
+              m.source AS source, m.confidence AS confidence, m.relation AS relation,
+              m.t_valid AS validAt`,
       {
         ids: ordered,
         ...(input.scopes ? { scopes: input.scopes } : {}),
@@ -386,6 +397,10 @@ export class WasmMemory {
         confidence: (p.confidence as number | null) ?? null,
         relation: (p.relation as Relation) ?? "staged",
         score: ranks.get(id)!,
+        // VALID time (when the fact became true — e.g. the date of the statement), not ingestion time:
+        // the recency signal a ranker should weigh. Optional — an engine row predating this projection
+        // simply has none, and the ranker treats a missing time as neutral.
+        ...(isoTime(p.validAt) === undefined ? {} : { validAt: isoTime(p.validAt)! }),
       })
       if (hits.length >= k) break
     }
