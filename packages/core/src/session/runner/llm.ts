@@ -373,6 +373,8 @@ export const layer = Layer.effect(
         )
       const scope = `session:${sessionID}`
       const facts = SessionExtract.parseExtraction(chunks.join(""))
+      const namedFacts = facts.filter((f): f is SessionExtract.Extracted & { name: string } => !!f.name)
+      const names = [...new Set(namedFacts.map((f) => f.name))]
       // Embed the extracted facts so they're reachable by the VECTOR leg later (measured: hybrid
       // retrieval 85% vs 77% keyword-only). ONE batched call for the whole extraction, and this runs
       // in postRunMaintenance — off the turn hot-path. No device ⇒ undefined ⇒ FTS-only memories.
@@ -391,6 +393,48 @@ export const layer = Layer.effect(
             ...(vector === undefined ? {} : { embedding: vector }),
           })
           .pipe(Effect.ignore) // duplicate id = already remembered (dedup); never fail the drain
+      }
+      // Stage 2 (KB-D (a)): link the facts we just wrote. Deliberately AFTER the node writes — an edge
+      // needs its endpoints to exist, and more importantly a failing/slow link call must never cost us
+      // the memories themselves (computing links first would abort the whole extraction on any link
+      // error). Skipped entirely below 2 named facts: nothing to connect, so no model call.
+      const links =
+        names.length < 2
+          ? []
+          : yield* Effect.gen(function* () {
+              const linkChunks: string[] = []
+              yield* llm
+                .stream(
+                  LLM.request({
+                    model,
+                    system: [SystemPart.make(SessionExtract.LINK_SYSTEM)],
+                    messages: [Message.user(SessionExtract.buildLinkPrompt(exchange, names))],
+                    tools: [],
+                    generation: { maxTokens: 512 },
+                  }),
+                )
+                .pipe(
+                  Stream.runForEach((event) => {
+                    if (LLMEvent.is.textDelta(event)) linkChunks.push(event.text)
+                    return Effect.void
+                  }),
+                )
+              return SessionExtract.parseLinks(linkChunks.join(""), names)
+            }).pipe(Effect.catchCause(() => Effect.succeed([] as SessionExtract.ExtractedLink[])))
+      // `parseLinks` already guaranteed both endpoints are names from `names`, so every lookup here
+      // resolves; a name shared by several facts binds to the first (the node is the thing, not the
+      // sentence).
+      if (links.length > 0) {
+        const idByName = new Map<string, string>()
+        for (const fact of namedFacts) if (!idByName.has(fact.name)) idByName.set(fact.name, SessionExtract.memoryID(scope, fact.text))
+        for (const link of links) {
+          const from = idByName.get(link.from)
+          const to = idByName.get(link.to)
+          if (from === undefined || to === undefined) continue
+          yield* memory
+            .addEdge({ from, to, type: link.type, scope, source: "auto-extract" })
+            .pipe(Effect.ignore) // duplicate edge = already linked; never fail the drain
+        }
       }
     })
 

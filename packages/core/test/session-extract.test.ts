@@ -40,6 +40,54 @@ describe("SessionExtract.parseExtraction", () => {
   })
 })
 
+describe("SessionExtract.buildLinkPrompt", () => {
+  test("appends the closed SUBJECTS list to the exchange", () => {
+    expect(SessionExtract.buildLinkPrompt("User: hi", ["Acme", "Berlin"])).toBe("User: hi\n\nSUBJECTS:\n- Acme\n- Berlin")
+  })
+})
+
+describe("SessionExtract.parseLinks", () => {
+  const names = ["Nancy", "Acme Robotics", "Berlin"]
+
+  test("resolves endpoints to CANONICAL list names and normalizes the type", () => {
+    const out = SessionExtract.parseLinks('[{"from":"nancy","to":"Acme","type":"works at"}]', names)
+    expect(out).toEqual([{ from: "Nancy", to: "Acme Robotics", type: "works_at" }])
+  })
+
+  // The dangling guard — the whole reason stage 2 gets a CLOSED list. An off-list endpoint (the
+  // measured one-stage failure: "billing_service_owner") must never become an edge.
+  test("DROPS links with an off-list endpoint rather than writing a dangling edge", () => {
+    expect(SessionExtract.parseLinks('[{"from":"Nancy","to":"Sofia\'s Role","type":"knows"}]', names)).toEqual([])
+    expect(SessionExtract.parseLinks('[{"from":"Nobody","to":"Nowhere","type":"x"}]', names)).toEqual([])
+  })
+
+  test("drops self-links and duplicate pairs", () => {
+    expect(SessionExtract.parseLinks('[{"from":"Nancy","to":"Nancy","type":"is"}]', names)).toEqual([])
+    const dup = SessionExtract.parseLinks(
+      '[{"from":"Nancy","to":"Berlin","type":"lives_in"},{"from":"nancy","to":"berlin","type":"resides_in"}]',
+      names,
+    )
+    expect(dup).toHaveLength(1)
+  })
+
+  test("a bad or missing type falls back to related_to — a good pair is never lost to a bad label", () => {
+    expect(SessionExtract.parseLinks('[{"from":"Nancy","to":"Berlin"}]', names)[0]?.type).toBe("related_to")
+    expect(SessionExtract.parseLinks('[{"from":"Nancy","to":"Berlin","type":"!!!"}]', names)[0]?.type).toBe("related_to")
+  })
+
+  test("tolerates fences/prose, never throws, and needs ≥2 names to link anything", () => {
+    expect(SessionExtract.parseLinks('```json\n[{"from":"Nancy","to":"Berlin","type":"in"}]\n```', names)).toHaveLength(1)
+    expect(SessionExtract.parseLinks("not json", names)).toEqual([])
+    expect(SessionExtract.parseLinks("[]", names)).toEqual([])
+    expect(SessionExtract.parseLinks('[{"from":"Nancy","to":"Berlin","type":"in"}]', ["Nancy"])).toEqual([])
+  })
+
+  test("caps to max", () => {
+    const many = JSON.stringify(Array.from({ length: 30 }, (_, i) => ({ from: "Nancy", to: `T${i}`, type: "t" })))
+    expect(SessionExtract.parseLinks(many, ["Nancy", ...Array.from({ length: 30 }, (_, i) => `T${i}`)], 5)).toHaveLength(5)
+  })
+})
+
 describe("SessionExtract.memoryID", () => {
   test("deterministic + idempotent: same scope+text → same id, case/space-insensitive", () => {
     const a = SessionExtract.memoryID("session:x", "The user is named Nadia")
