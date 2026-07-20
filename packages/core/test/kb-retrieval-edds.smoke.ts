@@ -100,11 +100,21 @@ describe("EDDS retrieval (uncontaminated corpus, FTS)", () => {
     }, 60_000)
   }
 
-  // KNOWN GAP — the ordinal-key class, diagnosed and NOT yet fixed. "result of rolling a 1" shares no
-  // rare term with the row `1. Miss and actor gains Disadvantage`: the only discriminator is an
-  // ordinal, which carries almost no weight in a bag-of-words index, so the gold row loses to passages
-  // that merely repeat "D20 ATTACK". MEASURED: both miss even at k=20 — this is not a budget problem.
-  // Structured row lookup is the fix; until then these stay honest todos, not a weakened assertion.
-  test.todo("retrieves: D20 attack roll 1 → Miss and actor gains Disadvantage (ordinal-key class)", () => {})
-  test.todo("retrieves: D20 attack roll 9 → Hit unless HARD/ABSURD/THICK (ordinal-key class)", () => {})
+  // KNOWN GAP — the NO-RARE-ANCHOR class. (Earlier called "ordinal-key"; that label was WRONG and the
+  // fix it implied — structured row lookup — would have been wasted work. Measured 2026-07-20:)
+  //   • The gold row lives in the [D20 ATTACK] table chunk. For the query "D20 ATTACK" that chunk ranks
+  //     68th of 68 — LAST — despite containing the phrase.
+  //   • Cause is term frequency, not ordinals and not the heading format: "d20" occurs in 198/302 chunks
+  //     (idf 0.42) and "attack" in 68 (idf 1.48). Every term in the query is ubiquitous in a combat
+  //     rulebook, so the 68 matching chunks are near-tied and ordering among them is noise. The four
+  //     queries that DO pass above each contain a rare anchor — puzzle (1 chunk), cramped/braced (2).
+  //   • Removing the [brackets] changes nothing; repeating the heading only moves 68 -> 38. No lexical
+  //     weighting rescues a query with no rare term, so this is not FTS-tunable.
+  //   • The VECTOR leg does rescue it: FTS miss -> hybrid rank 12 and 18. So these stay todo HERE (this
+  //     smoke is deliberately FTS-only/hermetic) and are covered in the product by hybrid retrieval plus
+  //     over-fetch: default-tier auto-recall pulls 24 candidates (budget 8 x RECALL_OVERFETCH 3), which
+  //     contains both, and the reranker can promote them. Weak tiers (budget 3 -> 9 candidates) still
+  //     miss — an honest limit of the JH floor, not something to paper over.
+  test.todo("retrieves: D20 attack roll 1 → Miss and actor gains Disadvantage (no-rare-anchor class)", () => {})
+  test.todo("retrieves: D20 attack roll 9 → Hit unless HARD/ABSURD/THICK (no-rare-anchor class)", () => {})
 })
