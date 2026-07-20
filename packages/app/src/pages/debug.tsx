@@ -1,5 +1,5 @@
 import { A } from "@solidjs/router"
-import { createMemo, For, Show } from "solid-js"
+import { createMemo, createResource, createSignal, For, Show } from "solid-js"
 import { Icon } from "@novaclaw/ui/icon"
 import { useGlobal } from "@/context/global"
 import { useServer, ServerConnection } from "@/context/server"
@@ -7,8 +7,9 @@ import type { ServerStreamStatus } from "@/context/server-sdk"
 import { sessionHref } from "@/utils/session-route"
 import { clearErrorLog, errorLogEntries } from "@/utils/error-log"
 import { showToast } from "@/utils/toast"
+import { schedulerSnapshot } from "@/utils/scheduler-api"
 
-// The Debug app (dependability P5) — the Developer-mode diagnostic surface. Four read-only panels,
+// The Debug app (dependability P5) — the Developer-mode diagnostic surface. Read-only panels,
 // all fed from state the client ALREADY holds (no new server routes in v0): connection status per
 // server, the client error ring buffer, a `ps`-lite over the cached sessions, and the config
 // snapshot. Strings stay untranslated on purpose — a Developer-only surface, like Registry.
@@ -60,6 +61,24 @@ export function DebugPage() {
     }
   })
 
+  // The live scheduler view. Unlike the other panels this one is SERVER state (the per-instance EEVDF
+  // ledger), so it is fetched rather than read from the client store, and refreshed on demand.
+  const [schedTick, setSchedTick] = createSignal(0)
+  const schedDirectory = () => {
+    const conn = focused()
+    if (!conn) return undefined
+    const path = global.ensureServerCtx(conn).sync.data.path
+    return path?.home || path?.directory || ""
+  }
+  const [scheduler] = createResource(
+    () => {
+      const conn = focused()
+      const dir = schedDirectory()
+      return conn && dir !== undefined ? { conn, dir, t: schedTick() } : undefined
+    },
+    ({ conn, dir }) => schedulerSnapshot(conn.http, { directory: dir }).catch(() => undefined),
+  )
+
   const copyLog = () => {
     const text = errorLogEntries()
       .map((e) => `${new Date(e.at).toISOString()} [${e.level}] ${e.text}`)
@@ -82,7 +101,7 @@ export function DebugPage() {
       <div class="flex items-center gap-2 border-b border-v2-border-border-base px-4 py-3">
         <Icon name="console" size="small" class="text-v2-icon-icon-muted" />
         <span class="text-[14px] font-semibold text-v2-text-text-base">Debug</span>
-        <span class="text-[12px] text-v2-text-text-faint">client-side diagnostics — read-only</span>
+        <span class="text-[12px] text-v2-text-text-faint">diagnostics — read-only</span>
       </div>
       <div class="min-h-0 flex-1 overflow-y-auto">
         {/* ── Connection ─────────────────────────────────────────────────────────────── */}
@@ -109,6 +128,61 @@ export function DebugPage() {
                   )
                 }}
               </For>
+            </Show>
+          </div>
+        </div>
+
+        {/* ── Scheduler ──────────────────────────────────────────────────────────────── */}
+        <div class={section} data-panel="scheduler">
+          <div class={heading}>
+            <span class={title}>Scheduler</span>
+            <span class={hint}>live EEVDF state per device — in-flight, waiting, and the fair-share ledger</span>
+            <button class={`${btn} ml-auto`} onClick={() => setSchedTick((t) => t + 1)}>
+              Refresh
+            </button>
+          </div>
+          <div class="px-4 pb-3">
+            <Show
+              when={scheduler()}
+              fallback={
+                <div class={hint}>{scheduler.loading ? "loading…" : "unavailable (older server, or no instance connected)"}</div>
+              }
+            >
+              {(devices) => (
+                <Show
+                  when={devices().length > 0}
+                  fallback={<div class={hint}>idle — no device has run a turn yet this process</div>}
+                >
+                  <For each={devices()}>
+                    {(device) => (
+                      <div class="py-1.5">
+                        <div class="flex items-center gap-2 text-[12px]">
+                          <span class="font-mono font-medium text-v2-text-text-base">{device.deviceKey}</span>
+                          <span class={hint}>
+                            {device.inFlightInteractive.length + device.inFlightBatch.length} in flight ·{" "}
+                            {device.waiting.length} waiting
+                          </span>
+                        </div>
+                        <Show when={device.waiting.length > 0}>
+                          {/* Queued sessions are contention, not an error — inference is serialised per device. */}
+                          <div class="text-[11px] text-v2-state-fg-warning">queued: {device.waiting.join(", ")}</div>
+                        </Show>
+                        <For each={device.ledger}>
+                          {(entry) => (
+                            <div class="flex gap-3 py-0.5 font-mono text-[11px] text-v2-text-text-muted">
+                              <span class="truncate">{entry.id}</span>
+                              <span class="ml-auto shrink-0">w{entry.weight}</span>
+                              <span class="shrink-0">{entry.sliceTokens} tok</span>
+                              <span class="shrink-0">lag {entry.lag.toFixed(1)}</span>
+                              <span class="shrink-0">vd {entry.vdeadline.toFixed(1)}</span>
+                            </div>
+                          )}
+                        </For>
+                      </div>
+                    )}
+                  </For>
+                </Show>
+              )}
             </Show>
           </div>
         </div>
