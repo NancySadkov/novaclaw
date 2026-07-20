@@ -131,6 +131,11 @@ export function savedResources(
   return request.save ?? []
 }
 
+// ⚠️ The `resource` match is only as strong as what `resource` MEANS for that action. For path-shaped
+// actions (read/write/external_directory_*) it is a resolved, canonicalized path — a real semantic
+// gate. For `bash` the resource is the raw COMMAND STRING, and matching it is a prompt-reduction
+// convenience, NOT containment: see the boundary note in `util/wildcard.ts`. Do not add deny-rules
+// here expecting them to stop a prompt-injected command; that is the AgentJail program's job.
 export function evaluate(action: string, resource: string, ...rulesets: Permission.Ruleset[]): Permission.Rule {
   return (
     rulesets
