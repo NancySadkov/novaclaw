@@ -121,6 +121,15 @@ describe("recoverToolCallsFromText — qwen3_coder shapes", () => {
     expect(
       recoverToolCallsFromText("<|bash>\n<|command>\necho hello > f.txt\n</|command>\n</bash>", TOOLS),
     ).toEqual([{ name: "bash", arguments: '{"command":"echo hello > f.txt"}' }]))
+  test("tool_-prefixed name + mismatched close tags recover (the live <tool_write> emission)", () =>
+    expect(
+      recoverToolCallsFromText(
+        "<tool_write>\n<file_path>\nC:\\x\\final-probe.txt\n</file_content>\nhello\n</tool_write>",
+        TOOLS,
+      ),
+    ).toEqual([{ name: "write", arguments: '{"file_path":"C:\\\\x\\\\final-probe.txt"}' }]))
+  test("tool_ prefix never invents a call for a non-tool remainder", () =>
+    expect(recoverToolCallsFromText("<tool_frobnicate><x>1</x></tool_frobnicate>", TOOLS)).toEqual([]))
 })
 
 describe("recoverToolCallsFromText — mask-token wrapping + paren-call syntax", () => {

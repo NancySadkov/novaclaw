@@ -40,6 +40,12 @@ export function resolveToolName(raw: string, names: ReadonlyArray<string>): stri
   if (names.includes(scrubbed)) return scrubbed
   const insensitive = names.find((name) => name.toLowerCase() === scrubbed.toLowerCase())
   if (insensitive) return insensitive
+  // A derailed model prefixes the vocabulary word: `tool_write` -> `write` (observed live).
+  // Only applies when the remainder resolves against the whitelist, so it can never invent.
+  if (/^tool[_-]/i.test(scrubbed)) {
+    const stripped = resolveToolName(scrubbed.replace(/^tool[_-]/i, ""), names)
+    if (stripped) return stripped
+  }
   return closestName(scrubbed, names)
 }
 
@@ -186,6 +192,13 @@ function recoverXml(text: string, names: ReadonlyArray<string>): RecoveredCall[]
     if (Object.keys(args).length === 0) {
       const param = /<\|?([A-Za-z_][\w\-.]*)\s*>([\s\S]*?)<\/\|?\1\s*>/g
       while ((pm = param.exec(body))) args[pm[1]] = pm[2].trim()
+    }
+    if (Object.keys(args).length === 0) {
+      // Mismatched close tags (`<file_path>…</file_content>`, observed live): inside an
+      // already-whitelisted call block, accept `<tag>value</whatever>` pairs — the outer
+      // name gate has done the safety work by this point.
+      const sloppy = /<([A-Za-z_][\w\-.]*)\s*>([\s\S]*?)<\/[A-Za-z_][\w\-.]*\s*>/g
+      while ((pm = sloppy.exec(body))) args[pm[1]] = pm[2].trim()
     }
     if (Object.keys(args).length === 0) continue
     return [{ name, arguments: JSON.stringify(args) }]
