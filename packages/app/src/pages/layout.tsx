@@ -18,6 +18,7 @@ import { useServerSync } from "@/context/server-sync"
 import { Persist, persisted } from "@/utils/persist"
 import { base64Encode } from "@novaclaw/core/util/encode"
 import { decode64 } from "@/utils/base64"
+import { decodeDirectory } from "@/pages/directory-layout"
 import { ResizeHandle } from "@novaclaw/ui/resize-handle"
 import { Button } from "@novaclaw/ui/button"
 import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
@@ -123,11 +124,14 @@ export default function LegacyLayout(props: ParentProps) {
   const theme = useTheme()
   const language = useLanguage()
   createEffect(() => setV2Toast(false))
-  const initialDirectory = decode64(params.dir)
+  // decodeDirectory (round-trip + path-shape validated), NOT raw decode64: a bare word like
+  // "search" is valid base64 alphabet decoding to garbage bytes, and this memo feeds
+  // serverSync().peek — a raw decode fired doomed chat-list fetches for junk directories.
+  const initialDirectory = decodeDirectory(params.dir ?? "")
   const route = createMemo(() => {
     const slug = params.dir
     if (!slug) return { slug, dir: "" }
-    const dir = decode64(slug)
+    const dir = decodeDirectory(slug)
     if (!dir) return { slug, dir: "" }
     const store = serverSync().peek(dir, { bootstrap: false })
     return {

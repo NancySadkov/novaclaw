@@ -77,6 +77,7 @@ export const ProjectDirString = Schema.String.pipe(Schema.brand("ProjectDirStrin
 export type ProjectDirString = Schema.Schema.Type<typeof ProjectDirString>
 
 export function decodeDirectory(dir: string): ProjectDirString | undefined {
+  // decode64 itself validates (round-trip + absolute-path shape) — see utils/base64.
   const decoded = decode64(dir)
   if (!decoded) return
   return ProjectDirString.make(decoded)

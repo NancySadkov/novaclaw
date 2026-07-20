@@ -9,6 +9,7 @@ import { HttpApiProxy } from "./proxy"
 import * as Fence from "@/server/shared/fence"
 import { getWorkspaceRouteSessionID, isLocalWorkspaceRoute, workspaceProxyURL } from "@/server/shared/workspace-routing"
 import { Flag } from "@novaclaw/core/flag/flag"
+import { existsSync } from "node:fs"
 import { Context, Data, Effect, Layer, Option, Schema } from "effect"
 import { HttpClient, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiMiddleware } from "effect/unstable/httpapi"
@@ -31,6 +32,7 @@ type RemoteTarget = Extract<Target, { type: "remote" }>
 
 type RequestPlan = Data.TaggedEnum<{
   InvalidWorkspace: {}
+  InvalidDirectory: { readonly directory: string }
   MissingWorkspace: { readonly workspaceID: WorkspaceV2.ID }
   Local: { readonly directory: string; readonly workspaceID?: WorkspaceV2.ID }
   Remote: {
@@ -181,6 +183,18 @@ function planRequest(
       return yield* planWorkspaceRequest(request, url, workspace)
     }
 
+    // A CLIENT-supplied directory (query param / header) must exist on disk before we hand it
+    // to instance boot — any HTTP client could otherwise make the server create instances,
+    // bootstrap dirs, and file-watchers on arbitrary junk paths (seen live: a mis-decoded
+    // base64 route param booted instances on garbage-byte directories). Session-derived and
+    // cwd-default directories are server-side truth and stay unvalidated.
+    if (!session?.location.directory) {
+      const requested = url.searchParams.get("directory") || request.headers["x-novaclaw-directory"]
+      if (requested && !(yield* Effect.sync(() => existsSync(requested)))) {
+        return RequestPlan.InvalidDirectory({ directory: requested })
+      }
+    }
+
     return RequestPlan.Local({
       directory: session?.location.directory || defaultDirectory(request, url),
       workspaceID: envWorkspaceID ?? workspaceID,
@@ -201,6 +215,17 @@ function routeWorkspace<E>(
             message: "Invalid workspace query parameter",
             kind: "Query",
             field: "workspace",
+          }),
+          { status: 400 },
+        ),
+      ),
+    InvalidDirectory: ({ directory }) =>
+      Effect.succeed(
+        HttpServerResponse.jsonUnsafe(
+          new InvalidRequestError({
+            message: `Directory does not exist: ${directory}`,
+            kind: "Query",
+            field: "directory",
           }),
           { status: 400 },
         ),
