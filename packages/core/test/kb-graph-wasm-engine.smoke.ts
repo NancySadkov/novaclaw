@@ -179,6 +179,11 @@ describe("WasmMemory (in-process, everywhere)", () => {
     await c.addMemory({ id: "s2a", kind: "episode", text: "The user lives in Kyoto", scope: "session:b", source: "auto-extract" })
     // A deliberate "this chat only" note (no auto-extract source) must NOT be promoted.
     await c.addMemory({ id: "note", kind: "entity", text: "Ephemeral chat note about pandas", scope: "session:a" })
+    // An auto-extracted RELATIONSHIP between two promoted facts. This assertion exists because its
+    // absence let a real bug ship: consolidation promoted nodes but silently dropped every edge, so
+    // ~5 min after a chat the graph collapsed to disconnected facts (measured live: 3 nodes + 2 edges
+    // -> 3 global nodes + 0 edges). Asserting node promotion alone cannot catch that.
+    await c.addEdge({ from: "s1a", to: "s1b", type: "same_person", scope: "session:a", source: "auto-extract" })
 
     const promoted = await c.consolidate()
     expect(promoted).toBe(3) // the three auto-extracted originals; the deliberate note is left alone
@@ -196,8 +201,19 @@ describe("WasmMemory (in-process, everywhere)", () => {
     // The session originals were superseded (invalidated) — no longer in a session-scoped search.
     expect((await c.search({ query: "Kyoto", scopes: ["session:a", "session:b"] }))).toHaveLength(0)
 
+    // The EDGE was carried onto the global twins — the relationship survives consolidation.
+    const promotedGraph = await c.graph({ scopes: ["global"] })
+    expect(promotedGraph.edges).toHaveLength(1)
+    expect(promotedGraph.edges[0]!.type).toBe("same_person")
+    // ...and it connects the twins of the two originals, not some other pair.
+    const nameOf = new Map(promotedGraph.nodes.map((n) => [n.id, n.text]))
+    expect(nameOf.get(promotedGraph.edges[0]!.from)).toBe("The user lives in Kyoto")
+    expect(nameOf.get(promotedGraph.edges[0]!.to)).toBe("The user likes Haskell")
+
     // Idempotent: a second pass finds nothing left to promote.
     expect(await c.consolidate()).toBe(0)
+    // ...and does NOT duplicate the carried edge (consolidation re-runs every ~5 min in production).
+    expect((await c.graph({ scopes: ["global"] })).edges).toHaveLength(1)
     await c.close()
   }, 30_000) // heavy: many WASM ops + two consolidate passes — the 5s default flakes under suite/CI load
 })

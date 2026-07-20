@@ -535,6 +535,8 @@ export class WasmMemory {
                 m.source AS source, m.confidence AS confidence, m.relation AS relation`,
       )
       let promoted = 0
+      /** session memory id -> its global twin id, so promoted EDGES can be remapped below. */
+      const twinOf = new Map<string, string>()
       for (const row of rows) {
         const text = String(row.text ?? "")
         if (!text) continue
@@ -557,11 +559,49 @@ export class WasmMemory {
             },
           )
         }
+        twinOf.set(String(row.id), gid)
         // Supersede the session original (bitemporal): it's now represented globally.
         await this.q(`MATCH (m:Memory {id: $id}) SET m.t_invalid = current_timestamp()`, { id: String(row.id) })
         promoted++
       }
-      if (promoted > 0) this.touch()
+      // Carry the RELATIONSHIPS up with the nodes. Without this, consolidation silently destroyed every
+      // auto-extracted edge: the twins are NEW ids, the session originals get invalidated above, and
+      // `graph()` returns edges only among VALID nodes — so ~5 minutes after a chat the graph collapsed
+      // back to disconnected facts, defeating the whole point of KB-D (a). MEASURED before the fix:
+      // 3 session nodes + 2 edges -> 3 global nodes + 0 edges.
+      // Only edges whose BOTH endpoints were promoted can be carried (an edge to a non-promoted node has
+      // no global counterpart to point at). Idempotent: consolidation re-runs every ~5 min, so an
+      // existing twin edge of the same type must not be duplicated.
+      let edgesCarried = 0
+      if (twinOf.size > 0) {
+        const sessionIDs = [...twinOf.keys()]
+        const edges = await this.rows(
+          `MATCH (a:Memory)-[r:Rel]->(b:Memory)
+           WHERE r.t_invalid IS NULL AND list_contains($ids, a.id) AND list_contains($ids, b.id)
+           RETURN a.id AS from, b.id AS to, r.type AS type, r.source AS source, r.confidence AS confidence`,
+          { ids: sessionIDs },
+        )
+        for (const edge of edges) {
+          const from = twinOf.get(String(edge.from))
+          const to = twinOf.get(String(edge.to))
+          if (from === undefined || to === undefined || from === to) continue
+          const type = String(edge.type ?? "related_to")
+          const dup = await this.rows(
+            `MATCH (a:Memory {id: $from})-[r:Rel {type: $type}]->(b:Memory {id: $to})
+             WHERE r.t_invalid IS NULL RETURN r.type AS type`,
+            { from, to, type },
+          )
+          if (dup.length > 0) continue
+          await this.q(
+            `MATCH (a:Memory {id: $from}), (b:Memory {id: $to})
+             CREATE (a)-[:Rel { type: $type, scope: 'global', source: $source, confidence: $confidence,
+                                t_valid: current_timestamp(), t_created: current_timestamp() }]->(b)`,
+            { from, to, type, source: (edge.source as string | null) ?? null, confidence: (edge.confidence as number | null) ?? null },
+          )
+          edgesCarried++
+        }
+      }
+      if (promoted > 0 || edgesCarried > 0) this.touch()
       return promoted
     })
   }
