@@ -7,6 +7,7 @@ import { useServer } from "@/context/server"
 import { showToast } from "@/utils/toast"
 import {
   registryDeleteRow,
+  registryInsertRow,
   registryRows,
   registryTables,
   registryUpdateRow,
@@ -20,6 +21,11 @@ import {
 // Developer-only diagnostic surface, like the debug bar.
 
 const PAGE_SIZE = 100
+
+// Tables whose rows ARE live configuration. MEASURED 2026-07-20: inserting a row with an unrecognised
+// key into `runtime_setting` made the instance UNBOOTABLE — the config loader rejects unknown keys, so
+// the server crash-looped until the row was deleted by hand. Inserting here needs eyes open.
+const CONFIG_BACKED_TABLES = new Set(["runtime_setting"])
 const NULL_LABEL = "∅ NULL"
 
 function cellText(value: unknown): string {
@@ -53,6 +59,7 @@ export function RegistryPage() {
   const [selected, setSelected] = createSignal<string | undefined>()
   const [offset, setOffset] = createSignal(0)
   const [editing, setEditing] = createSignal<RegistryRow | undefined>()
+  const [creating, setCreating] = createSignal(false)
   const [draft, setDraft] = createStore<Record<string, string>>({})
 
   const [tables] = createResource(
@@ -89,6 +96,48 @@ export function RegistryPage() {
     const next: Record<string, string> = {}
     for (const [column, value] of Object.entries(row.values)) next[column] = cellText(value)
     setDraft(reconcile(next))
+  }
+
+  function openNewRow() {
+    setEditing(undefined)
+    const next: Record<string, string> = {}
+    for (const column of page()?.columns ?? []) next[column] = ""
+    setDraft(reconcile(next))
+    setCreating(true)
+  }
+
+  async function insertRow() {
+    const cn = conn()
+    const d = routeDir()
+    const table = selected()
+    if (!cn || !d || !table) return
+    if (CONFIG_BACKED_TABLES.has(table)) {
+      const proceed = await confirm({
+        title: `Insert into ${table}?`,
+        description:
+          `Rows in ${table} are live configuration. An unrecognised key makes the instance fail to start ` +
+          `(it crash-loops until the row is removed by hand). Only insert a key you know the config schema accepts.`,
+        confirmLabel: "Insert anyway",
+        destructive: true,
+      })
+      if (!proceed) return
+    }
+    // Blank fields are OMITTED rather than written as "": the column's DEFAULT (or NULL) is almost
+    // always what you want on a hand-made row, and "" would defeat a NOT NULL default.
+    const values: Record<string, unknown> = {}
+    for (const column of page()?.columns ?? []) {
+      const value = draft[column]
+      if (value !== undefined && value !== "") values[column] = value
+    }
+    try {
+      await registryInsertRow(cn.http, { directory: d, table, values })
+    } catch (error) {
+      // Constraint violations land here — show the database's own words, they are the useful part.
+      showToast({ variant: "error", title: "Insert failed", description: String(error) })
+      return
+    }
+    setCreating(false)
+    setTick((t) => t + 1)
   }
 
   async function saveRow() {
@@ -234,7 +283,48 @@ export function RegistryPage() {
                   >
                     Next →
                   </button>
+                  <button type="button" class={btn} onClick={openNewRow} disabled={!selected()}>
+                    Add row
+                  </button>
                 </div>
+                <Show when={creating()}>
+                  <div data-component="registry-new-row" class="border-t border-v2-border-border-base p-3">
+                    <div class="mb-2 flex items-center gap-2">
+                      <span class="text-[12px] font-semibold text-v2-text-text-base">New row in {selected()}</span>
+                      <Show when={CONFIG_BACKED_TABLES.has(selected() ?? "")}>
+                        <span class="text-[11px] text-v2-state-fg-warning">
+                          live config — an unknown key stops the instance booting
+                        </span>
+                      </Show>
+                      <div class="flex-1" />
+                      <button type="button" class={btn} onClick={() => void insertRow()}>
+                        Insert
+                      </button>
+                      <button type="button" class={btn} onClick={() => setCreating(false)}>
+                        Cancel
+                      </button>
+                    </div>
+                    <div class="grid gap-2" style={{ "grid-template-columns": "minmax(120px, 200px) 1fr" }}>
+                      <For each={page()?.columns ?? []}>
+                        {(column) => (
+                          <>
+                            <div class="pt-1 font-mono text-[12px] text-v2-text-text-faint">{column}</div>
+                            <textarea
+                              rows={1}
+                              data-registry-new-column={column}
+                              class="min-h-7 w-full resize-y rounded-[6px] border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1 font-mono text-[12px] text-v2-text-text-base outline-none focus:border-v2-border-border-focus"
+                              value={draft[column] ?? ""}
+                              onInput={(event) => setDraft(column, event.currentTarget.value)}
+                            />
+                          </>
+                        )}
+                      </For>
+                    </div>
+                    <div class="pt-2 text-[11px] text-v2-text-text-faint">
+                      Blank fields are left unset, so the column default (or NULL) applies.
+                    </div>
+                  </div>
+                </Show>
                 <Show when={editing()}>
                   {(row) => (
                     <div data-component="registry-editor" class="border-t border-v2-border-border-base p-3">

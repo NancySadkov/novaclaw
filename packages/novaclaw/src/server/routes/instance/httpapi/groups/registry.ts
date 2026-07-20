@@ -66,6 +66,20 @@ export const RegistryApi = HttpApi.make("registry").add(
           description: "Update the given columns of one row (by rowid). Unknown columns are rejected.",
         }),
       ),
+      HttpApiEndpoint.post("insertRow", `${root}/row/insert`, {
+        query: WorkspaceRoutingQuery,
+        payload: Schema.Struct({ table: Schema.String, values: Schema.Record(Schema.String, Schema.Unknown) }),
+        success: described(Schema.Boolean, "True on success"),
+        error: InvalidRequestError,
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "registry.insertRow",
+          summary: "Insert a row",
+          description: "Insert a new row into a table. Constraint violations come back as a readable error.",
+        }),
+      ),
+    )
+    .add(
       HttpApiEndpoint.post("deleteRow", `${root}/row/delete`, {
         query: WorkspaceRoutingQuery,
         payload: DeleteRowPayload,

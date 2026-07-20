@@ -44,6 +44,13 @@ export const registryHandlers = HttpApiBuilder.group(InstanceHttpApi, "registry"
         }),
       )
       .handle(
+        "insertRow",
+        Effect.fn("RegistryHttpApi.insertRow")(function* (ctx) {
+          yield* mapError(DbRegistry.insertRow({ table: ctx.payload.table, values: ctx.payload.values }))
+          return true
+        }),
+      )
+      .handle(
         "deleteRow",
         Effect.fn("RegistryHttpApi.deleteRow")(function* (ctx) {
           yield* mapError(DbRegistry.deleteRow({ table: ctx.payload.table, rowid: ctx.payload.rowid }))

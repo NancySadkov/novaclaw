@@ -78,6 +78,16 @@ export function registryUpdateRow(
   })
 }
 
+export function registryInsertRow(
+  server: ServerConnection.HttpBase,
+  input: { directory: string; table: string; values: Record<string, unknown> },
+) {
+  return call<boolean>(server, "POST", "registry/row/insert", input.directory, {
+    table: input.table,
+    values: input.values,
+  })
+}
+
 export function registryDeleteRow(
   server: ServerConnection.HttpBase,
   input: { directory: string; table: string; rowid: number },

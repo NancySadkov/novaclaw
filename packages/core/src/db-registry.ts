@@ -60,9 +60,14 @@ export const tables = Effect.fn("DbRegistry.tables")(function* () {
   const { db } = yield* Database.Service
   const result: TableSummary[] = []
   for (const name of yield* tableNames) {
+    // A table that cannot be counted must NOT take the whole listing down. MEASURED 2026-07-20: a dev
+    // DB still carried `kb_chunk_vec`, a sqlite-vec VIRTUAL table created lazily by the retired KB-V
+    // store and therefore never in any migration — once the extension stopped loading, `count(*)` threw
+    // `no such module: vec0`, `orDie` propagated, and `/registry/tables` 500'd, so the Registry app
+    // listed NOTHING. One unreadable table is a row with an unknown count, not a dead endpoint.
     const count = (yield* db
       .get(sql`SELECT count(*) AS count FROM ${sql.identifier(name)}`)
-      .pipe(Effect.orDie)) as { count: number } | undefined
+      .pipe(Effect.catchCause(() => Effect.succeed(undefined)))) as { count: number } | undefined
     result.push(TableSummary.make({ name, rowCount: count?.count ?? 0 }))
   }
   return result
@@ -111,6 +116,27 @@ export const updateRow = Effect.fn("DbRegistry.updateRow")(function* (input: {
   yield* db
     .run(sql`UPDATE ${sql.identifier(table)} SET ${sql.join(assignments, sql`, `)} WHERE rowid = ${input.rowid}`)
     .pipe(Effect.orDie)
+})
+
+/** Insert a row. Unlike update/delete (which target an existing rowid and rarely fail), an INSERT
+ *  routinely hits real constraints — NOT NULL, UNIQUE, foreign keys — and those are USER errors on a
+ *  hand-edited row, not defects. So the failure is mapped to a RegistryError the editor can show
+ *  verbatim, rather than `orDie`ing the request. */
+export const insertRow = Effect.fn("DbRegistry.insertRow")(function* (input: {
+  table: string
+  values: Record<string, unknown>
+}) {
+  const { db } = yield* Database.Service
+  const table = yield* assertTable(input.table)
+  const columns = yield* tableColumns(table)
+  // Same whitelist discipline as updateRow: unknown columns are dropped, never interpolated.
+  const entries = Object.entries(input.values).filter(([column]) => columns.includes(column))
+  if (entries.length === 0) return yield* new RegistryError({ message: "No known columns in the payload" })
+  const names = entries.map(([column]) => sql.identifier(column))
+  const values = entries.map(([, value]) => sql`${value as string | number | null}`)
+  yield* db
+    .run(sql`INSERT INTO ${sql.identifier(table)} (${sql.join(names, sql`, `)}) VALUES (${sql.join(values, sql`, `)})`)
+    .pipe(Effect.catch((cause) => new RegistryError({ message: `Insert failed: ${String((cause as { message?: string })?.message ?? cause)}` })))
 })
 
 export const deleteRow = Effect.fn("DbRegistry.deleteRow")(function* (input: { table: string; rowid: number }) {
