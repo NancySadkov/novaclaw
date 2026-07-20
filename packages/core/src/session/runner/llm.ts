@@ -53,6 +53,7 @@ import { Memory } from "../../kb-graph/memory"
 import { KbEmbedder } from "../../kb-graph/embedder"
 import { MemoryClient } from "../../kb-graph/memory-client"
 import { MemoryRanking } from "../../kb-graph/ranking"
+import { MemoryRerank } from "../../kb-graph/rerank"
 import { MemorySetting } from "../../kb-graph/memory-setting"
 import { SessionStrict } from "./strict"
 import { JhStore } from "../../jh/store"
@@ -557,7 +558,21 @@ export const layer = Layer.effect(
             ...(recallVector === undefined ? {} : { embedding: recallVector }),
           })
           .pipe(Effect.orElseSucceed(() => []))
-        memoryRecall = SessionRecall.formatRecall(MemoryRanking.rankHits(recallCandidates, Date.now()).slice(0, budget))
+        // P8d: let the MODEL order what it will actually see. Metadata ordering can't read
+        // authoritativeness out of the TEXT — a definitive older statement should outrank a newer
+        // offhand musing (measured 4/4 vs 1/4 for metadata alone). One short call (~0.4s at 5
+        // candidates). ANY failure — gate off, model down, unparseable reply — falls back to the
+        // deterministic ranker, so ordering degrades but the turn never breaks.
+        let ordered: ReadonlyArray<MemoryClient.SearchHit> = MemoryRanking.rankHits(recallCandidates, Date.now())
+        if (MemorySetting.rerankEnabled() && recallCandidates.length > 1) {
+          const prompt = MemoryRerank.buildRerankPrompt(recallQuery, recallCandidates, Date.now())
+          const reply = yield* judgeCompletion(session.id, `${prompt.system}\n\n${prompt.user}`).pipe(
+            Effect.orElseSucceed(() => ""),
+          )
+          const order = MemoryRerank.parseRerankOrder(reply, recallCandidates.length)
+          if (order) ordered = order.map((index) => recallCandidates[index]!)
+        }
+        memoryRecall = SessionRecall.formatRecall(ordered.slice(0, budget))
       }
       const isLastStep = agent.info?.steps !== undefined && currentStep >= agent.info.steps
       const toolMaterialization = isLastStep ? undefined : yield* tools.materialize(agent.info?.permissions)

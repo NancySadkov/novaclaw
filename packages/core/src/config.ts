@@ -156,6 +156,10 @@ export class Info extends Schema.Class<Info>("Config.Info")({
       description:
         "Remember things across chats (graph memory / KB-G). Default ON; OFF = the runtime flows stand down (no auto-recall, auto-extraction, `kb` tool, or consolidation) — a privacy switch. The engine still needs the NOVACLAW_KB_MEMORY env to run at all",
     }),
+    rerank: Schema.Boolean.pipe(Schema.optional).annotate({
+      description:
+        "Let the MODEL order recalled memories (it reads the wording, so a definitive older statement can outrank a newer offhand musing — measured 4/4 vs 1/4 for metadata ordering). Costs one short call per turn (~0.4s at 5 candidates). Default ON; off = metadata ordering only",
+    }),
     embedding: Schema.Struct({
       url: Schema.String.pipe(Schema.optional).annotate({
         description:

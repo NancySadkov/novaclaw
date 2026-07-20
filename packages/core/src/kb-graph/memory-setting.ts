@@ -39,6 +39,31 @@ export function bust() {
   cached = true
   embedAt = 0
   embedCached = undefined
+  rerankAt = 0
+  rerankCached = true
+}
+
+let rerankAt = 0
+let rerankCached = true
+
+/** Whether the MODEL orders recalled memories (default true). Off ⇒ metadata ordering only. Same
+ *  2s-TTL sync read; fail-open to ON, matching the other memory gates. */
+export function rerankEnabled(dbFile?: string): boolean {
+  const now = Date.now()
+  if (dbFile === undefined && now - rerankAt < TTL_MS) return rerankCached
+  let value = true
+  try {
+    const rows = readRowsSync(dbFile ?? DatabasePath.path(), "SELECT value FROM runtime_setting WHERE key = 'memory'")
+    const raw = rows?.[0]?.value
+    if (typeof raw === "string") value = (JSON.parse(raw) as { rerank?: unknown }).rerank !== false
+  } catch {
+    value = true
+  }
+  if (dbFile === undefined) {
+    rerankAt = now
+    rerankCached = value
+  }
+  return value
 }
 
 export interface EmbeddingSettings {
