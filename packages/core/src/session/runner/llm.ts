@@ -311,6 +311,23 @@ export const layer = Layer.effect(
     // the title is still a creation default, so a user rename is never clobbered and a failed
     // attempt simply retries at the next drain end. Seeds from the first REAL user message
     // (harness steers carry the 1N provenance prefix and never title a session).
+    // The UTILITY calls (auto-title · memory extraction · the KB-D link pass) ask for a short string or
+    // a JSON array — never for reasoning. Left to think, qwen3.6 frequently spends the ENTIRE token
+    // budget reasoning and returns EMPTY content, which parses to "nothing to record" and silently
+    // no-ops the whole pass. MEASURED 2026-07-20 against the Spark with the shipped extraction prompt:
+    //   max_tokens= 512 -> finish=stop,   completion= 348, content 132 chars (valid JSON)
+    //   max_tokens=2048 -> finish=length, completion=2048, content 0 chars
+    //   max_tokens=4096 -> finish=length, completion=4096, content 0 chars
+    // Note the INVERSION: a bigger budget is WORSE (a runaway thinking loop), so raising maxTokens is
+    // not the fix — turning thinking off is. Consistent with jh.md wave-20, which measured reasoning a
+    // net NEGATIVE on exactly this shape of task. This rides the per-request `http.body` overlay, which
+    // merges OVER the model's own body (route/model/request precedence in route/client.ts), so a
+    // model's sampling extras are preserved.
+    // ⚠️ PORTABILITY: `chat_template_kwargs` is a vLLM/Qwen-ism — our one test model per AGENTS.md. A
+    // provider that rejects unknown body keys would need this capability-gated; revisit when a
+    // non-vLLM backend is actually supported, and prefer a protocol-level "no reasoning" if one exists.
+    const NO_THINKING = { chat_template_kwargs: { enable_thinking: false } } as const
+
     const generateTitle = Effect.fn("SessionRunner.generateTitle")(function* (sessionID: SessionSchema.ID) {
       const session = yield* getSession(sessionID)
       if (!SessionTitle.isDefault(session.title)) return
@@ -325,8 +342,8 @@ export const layer = Layer.effect(
             system: [SystemPart.make(SessionTitle.SYSTEM)],
             messages: [Message.user(text)],
             tools: [],
-            // Room for a `<think>` block on reasoning models; `clean` strips it after.
             generation: { maxTokens: 512 },
+            http: { body: NO_THINKING }, // else the budget goes to reasoning and the reply is EMPTY
           }),
         )
         .pipe(
@@ -335,7 +352,11 @@ export const layer = Layer.effect(
             return Effect.void
           }),
         )
-      const title = SessionTitle.clean(chunks.join(""))
+      const raw = chunks.join("")
+      // An EMPTY completion is a broken call, not "no title worth writing" — say so. Silence here is
+      // exactly how this stayed dead across three shipped phases.
+      if (raw.trim() === "") yield* Effect.logWarning("auto-title: model returned an empty completion", { sessionID })
+      const title = SessionTitle.clean(raw)
       if (!title) return
       yield* SessionPatch.patchSessionRecord({ db, events }, sessionID, (info) =>
         SessionSchema.Info.make({ ...info, title, time: { ...info.time, updated: DateTime.makeUnsafe(Date.now()) } }),
@@ -363,6 +384,7 @@ export const layer = Layer.effect(
             messages: [Message.user(exchange)],
             tools: [],
             generation: { maxTokens: 512 },
+            http: { body: NO_THINKING }, // else the budget goes to reasoning and the reply is EMPTY
           }),
         )
         .pipe(
@@ -372,7 +394,12 @@ export const layer = Layer.effect(
           }),
         )
       const scope = `session:${sessionID}`
-      const facts = SessionExtract.parseExtraction(chunks.join(""))
+      const rawExtraction = chunks.join("")
+      // Distinguish "the model said there is nothing to remember" (a legitimate `[]`) from "the model
+      // returned NOTHING" (a broken call). Conflating them is what hid this failure for three phases.
+      if (rawExtraction.trim() === "")
+        yield* Effect.logWarning("memory extraction: model returned an empty completion", { sessionID })
+      const facts = SessionExtract.parseExtraction(rawExtraction)
       const namedFacts = facts.filter((f): f is SessionExtract.Extracted & { name: string } => !!f.name)
       const names = [...new Set(namedFacts.map((f) => f.name))]
       // Embed the extracted facts so they're reachable by the VECTOR leg later (measured: hybrid
@@ -411,6 +438,7 @@ export const layer = Layer.effect(
                     messages: [Message.user(SessionExtract.buildLinkPrompt(exchange, names))],
                     tools: [],
                     generation: { maxTokens: 512 },
+                    http: { body: NO_THINKING }, // else the budget goes to reasoning and the reply is EMPTY
                   }),
                 )
                 .pipe(
