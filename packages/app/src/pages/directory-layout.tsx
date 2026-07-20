@@ -77,9 +77,11 @@ export const ProjectDirString = Schema.String.pipe(Schema.brand("ProjectDirStrin
 export type ProjectDirString = Schema.Schema.Type<typeof ProjectDirString>
 
 export function decodeDirectory(dir: string): ProjectDirString | undefined {
-  // decode64 itself validates (round-trip + absolute-path shape) — see utils/base64.
+  // decode64 validates the round-trip (see utils/base64); a DIRECTORY slug must additionally
+  // decode to an absolute path shape — a round-tripping non-path word is still not a workspace.
   const decoded = decode64(dir)
   if (!decoded) return
+  if (!/^(?:[A-Za-z]:[\\/]|\/)/.test(decoded)) return
   return ProjectDirString.make(decoded)
 }
 
