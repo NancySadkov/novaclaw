@@ -100,16 +100,16 @@ export const fileHandlers = HttpApiBuilder.group(InstanceHttpApi, "file", (handl
       return yield* filesystem(
         FileSystem.Service.use((fs) => fs.read({ path: RelativePath.make(ctx.query.path) })),
       ).pipe(
-        Effect.flatMap((item) =>
-          Effect.gen(function* () {
-            const text = item.content.includes(0)
-              ? Option.none<string>()
-              : yield* Effect.sync(() => new TextDecoder("utf-8", { fatal: true }).decode(item.content)).pipe(
-                  Effect.option,
-                )
-            return { item, text }
-          }),
-        ),
+        Effect.map((item) => {
+          // Binary ⇔ contains NUL bytes. A fatal UTF-8 decode used to make the call, but one
+          // stray Latin-1 byte then reclassified a whole shell rc / config file as "binary
+          // application/octet-stream" in the Files preview — decode leniently instead
+          // (replacement chars beat a refusal for NUL-free content).
+          const text = item.content.includes(0)
+            ? Option.none<string>()
+            : Option.some(new TextDecoder("utf-8").decode(item.content))
+          return { item, text }
+        }),
         Effect.map(({ item, text }) =>
           Option.isSome(text)
             ? { type: "text" as const, content: text.value.trim() }

@@ -54,9 +54,12 @@ Your output must be:
 "@App.tsx add dark mode toggle" → Dark mode toggle in App
 </examples>`
 
-// Both the core default (`New session - <ISO>`) and the legacy V1 child default
-// (`Child session - <ISO>`) count — legacy-row sessions keep taking native turns post-F1b.
-const DEFAULT_TITLE_REGEX = /^(New session - |Child session - )\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/
+// The core default is now the bare `New session` (a raw ISO timestamp in the chat header is
+// machine noise to a lay user — the list already shows relative time). The older ISO-suffixed
+// forms (`New session - <ISO>`, legacy V1 `Child session - <ISO>`) still count so sessions
+// created before the change keep auto-titling away.
+const DEFAULT_TITLE_REGEX =
+  /^(New session|Child session)( - \d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z)?$/
 
 /** True while the title is still a creation default — the only state auto-title may replace. */
 export function isDefault(title: string): boolean {

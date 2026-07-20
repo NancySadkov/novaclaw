@@ -1,4 +1,5 @@
 import { Component, Show } from "solid-js"
+import { Dialog as KobalteDialog } from "@kobalte/core/dialog"
 import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
 import { TabsV2 } from "@novaclaw/ui/v2/tabs-v2"
 import { Icon } from "@novaclaw/ui/icon"
@@ -52,6 +53,13 @@ export const DialogSettings: Component<{
 
   return (
     <Dialog size="x-large" variant="settings" class="settings-v2-dialog">
+      {/* Every dialog needs a visible ✕ — the settings variant skips DialogHeader (the tab rail
+          owns the layout), so it mounts its own corner close button (uix: never trap a lay user). */}
+      <KobalteDialog.CloseButton class="settings-v2-close" aria-label={language.t("common.close")}>
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+          <path d="M12.4446 3.55469L3.55566 12.4436M3.55566 3.55469L12.4446 12.4436" stroke="currentColor" stroke-linejoin="round" />
+        </svg>
+      </KobalteDialog.CloseButton>
       <TabsV2 orientation="vertical" variant="settings" defaultValue={initialTab} class="settings-v2">
         <TabsV2.List>
           <div class="flex flex-col justify-between h-full w-full">

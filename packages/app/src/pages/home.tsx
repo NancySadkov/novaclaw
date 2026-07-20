@@ -679,6 +679,7 @@ export function NewHome() {
                       "bg-v2-background-bg-layer-02 text-v2-text-text-base": sortMode() === mode,
                       "text-v2-text-text-muted hover:bg-v2-background-bg-layer-01": sortMode() !== mode,
                     }}
+                    aria-pressed={sortMode() === mode}
                     onClick={() => setSortMode(mode)}
                   >
                     {language.t(`home.sessions.sort.${mode}`)}

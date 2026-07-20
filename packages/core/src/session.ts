@@ -343,7 +343,9 @@ export const createSessionRecord = (
         workspaceID: input.location.workspaceID ? WorkspaceV2.ID.make(input.location.workspaceID) : undefined,
       }),
       subpath: subpath ? RelativePath.make(subpath) : undefined,
-      title: input.title ?? `New session - ${new Date(now).toISOString()}`,
+      // Bare default — no ISO suffix (a raw timestamp in the chat header is machine noise; the
+      // Chats list shows relative time). SessionTitle.isDefault matches this AND the old form.
+      title: input.title ?? "New session",
       metadata: input.metadata,
       agent: input.agent,
       model: input.model

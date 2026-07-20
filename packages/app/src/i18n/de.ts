@@ -557,7 +557,7 @@ export const dict = {
   "settings.general.row.language.description": "Die Anzeigesprache für NovaClaw ändern",
   "settings.general.row.appearance.title": "Erscheinungsbild",
   "settings.general.row.appearance.description": "Anpassen, wie NovaClaw auf Ihrem Gerät aussieht",
-  "settings.general.row.colorScheme.title": "Farbschema",
+  "settings.general.row.colorScheme.title": "Modus",
   "settings.general.row.colorScheme.description":
     "Wählen Sie, ob NovaClaw dem System-, hellen oder dunklen Thema folgt",
   "settings.general.row.theme.title": "Thema",
@@ -770,6 +770,7 @@ export const dict = {
   "dialog.server.add.usernamePlaceholder": "Benutzername",
   "dialog.server.add.passwordPlaceholder": "Passwort",
   "server.row.noUsername": "Kein Benutzername",
+  "server.row.devBuild": "Dev-Build",
   "session.review.noVcs.createGit.title": "Git-Repository erstellen",
   "session.review.noVcs.createGit.description":
     "Änderungen in diesem Projekt verfolgen, überprüfen und rückgängig machen",

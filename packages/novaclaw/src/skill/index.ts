@@ -30,8 +30,10 @@ const SKILL_PATTERN = "**/SKILL.md"
 // when the model is asked to touch novaclaw's own config files gives it the
 // actual schemas instead of guesses.
 const CUSTOMIZE_NOVACLAW_SKILL_NAME = "customize-novaclaw"
+// Doubles as the slash-palette blurb — keep it human-readable; the trigger anchors are the
+// nouns (file names + artifact types), not prompt-ese imperatives.
 const CUSTOMIZE_NOVACLAW_SKILL_DESCRIPTION =
-  "Use ONLY when the user is editing or creating novaclaw's own configuration: novaclaw.json, novaclaw.jsonc, files under .novaclaw/, or files under ~/.config/novaclaw/. Also use when creating or fixing novaclaw agents, subagents, skills, plugins, MCP servers, or permission rules. Do not use for the user's own application code, or for any project that is not configuring novaclaw itself."
+  "Set up or fix NovaClaw's own configuration: novaclaw.json / novaclaw.jsonc, files under .novaclaw/ or ~/.config/novaclaw/, and NovaClaw agents, subagents, skills, plugins, MCP servers, or permission rules. Not for your own application code or projects that aren't configuring NovaClaw itself."
 const CUSTOMIZE_NOVACLAW_SKILL_BODY = SkillPlugin.CustomizeNovaclawContent
 
 export const Info = Schema.Struct({

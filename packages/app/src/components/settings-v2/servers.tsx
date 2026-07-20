@@ -112,7 +112,11 @@ export const SettingsServersV2: Component = () => {
                       <div class="settings-v2-servers-copy">
                         <span class="settings-v2-servers-name">{serverName(item)}</span>
                         <span class="settings-v2-servers-meta">
-                          <Show when={health()?.version}>v{health()?.version}</Show>
+                          {/* From-source instances report the literal version "local" — render it
+                              as a label instead of the nonsense "vlocal". */}
+                          <Show when={health()?.version}>
+                            {(v) => (v() === "local" ? language.t("server.row.devBuild") : `v${v()}`)}
+                          </Show>
                           <Show when={health()?.version && item.type === "http"}> • </Show>
                           <Show
                             when={item.type === "http" && item.http.username}

@@ -21,7 +21,12 @@ function user(text: string): SessionMessage.Message {
 }
 
 describe("SessionTitle.isDefault", () => {
-  it("matches the core creation default", () => {
+  it("matches the bare creation default", () => {
+    expect(SessionTitle.isDefault("New session")).toBe(true)
+    expect(SessionTitle.isDefault("Child session")).toBe(true)
+  })
+
+  it("matches the older ISO-suffixed core default", () => {
     expect(SessionTitle.isDefault(`New session - ${new Date(0).toISOString()}`)).toBe(true)
   })
 
@@ -33,6 +38,7 @@ describe("SessionTitle.isDefault", () => {
     expect(SessionTitle.isDefault("Debugging production 500 errors")).toBe(false)
     expect(SessionTitle.isDefault("New session - notes")).toBe(false)
     expect(SessionTitle.isDefault(`prefix New session - ${new Date(0).toISOString()}`)).toBe(false)
+    expect(SessionTitle.isDefault("New sessions")).toBe(false)
   })
 })
 

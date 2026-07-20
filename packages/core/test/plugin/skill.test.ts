@@ -17,7 +17,7 @@ describe("SkillPlugin.Plugin", () => {
       expect(yield* skill.list()).toContainEqual(
         expect.objectContaining({
           name: "customize-novaclaw",
-          description: expect.stringContaining("novaclaw's own configuration"),
+          description: expect.stringContaining("NovaClaw's own configuration"),
         }),
       )
     }),

@@ -43,6 +43,9 @@ export function FilesPage() {
   // Bumped after every mutation (trash/restore) to refetch the listing + trash panel.
   const [tick, setTick] = createSignal(0)
   const [showTrash, setShowTrash] = createSignal(false)
+  // A friendly Files app hides dotfiles and Windows system litter (NTUSER.DAT{…}, desktop.ini, …)
+  // unless the user flips the header toggle — first thing a lay user sees must not be registry noise.
+  const [showHidden, setShowHidden] = createSignal(false)
 
   // Resolve a starting directory + the host's filesystem roots (drives on Windows, "/" on POSIX);
   // /path is authoritative — `roots`/`data` postdate the generated SDK type, hence the cast.
@@ -96,6 +99,18 @@ export function FilesPage() {
       )
     },
   )
+
+  const isHiddenName = (name: string) =>
+    name.startsWith(".") ||
+    /^ntuser\./i.test(name) ||
+    /^(desktop\.ini|thumbs\.db|\$recycle\.bin|pagefile\.sys|hiberfil\.sys|swapfile\.sys|system volume information)$/i.test(
+      name,
+    )
+  const visibleEntries = createMemo(() => {
+    const list = entries()
+    if (!list || showHidden()) return list
+    return list.filter((e) => !isHiddenName(e.name))
+  })
 
   const [preview] = createResource(
     () => {
@@ -214,6 +229,15 @@ export function FilesPage() {
         <button
           type="button"
           class={btn}
+          classList={{ "bg-v2-background-bg-layer-02": showHidden() }}
+          aria-pressed={showHidden()}
+          onClick={() => setShowHidden((v) => !v)}
+        >
+          {language.t("files.showHidden")}
+        </button>
+        <button
+          type="button"
+          class={btn}
           classList={{ "bg-v2-background-bg-layer-02": showTrash() }}
           onClick={() => setShowTrash((v) => !v)}
           disabled={!conn() || !dir()}
@@ -228,7 +252,7 @@ export function FilesPage() {
       <div class="flex min-h-0 flex-1">
         <div class="w-1/2 min-w-0 overflow-auto border-r border-v2-border-border-base py-1">
           <Show
-            when={entries()}
+            when={visibleEntries()}
             fallback={
               <div class="px-4 py-3 text-sm text-v2-text-text-faint">
                 {entries.loading ? language.t("files.loading") : language.t("files.cantRead")}
@@ -236,10 +260,10 @@ export function FilesPage() {
             }
           >
             <Show
-              when={entries()!.length}
+              when={visibleEntries()!.length}
               fallback={<div class="px-4 py-3 text-sm text-v2-text-text-faint">{language.t("files.empty")}</div>}
             >
-              <For each={entries()}>
+              <For each={visibleEntries()}>
                 {(entry) => (
                   <div
                     class="group flex w-full items-center hover:bg-v2-background-bg-layer-02"
