@@ -27,8 +27,19 @@ describe("MODE_RULES overlays (1K)", () => {
     expect(effect("surgical", "create")).toBe("allow")
   })
 
-  test("ask is the identity overlay", () => {
-    expect(MODE_RULES.ask).toHaveLength(0)
+  test("ask sends the mutation/exec cluster through consent (never silent with an allow-all baseline)", () => {
+    for (const action of ["edit", "write", "create", "trash", "bash"]) expect(effect("ask", action)).toBe("ask")
+    expect(effect("ask", "read")).toBe("allow")
+  })
+
+  test("a saved allow-always quiets ask-mode consent (saved rules land after the overlay)", () => {
+    const all = [
+      ...agentDefaults,
+      ...MODE_RULES.ask,
+      { action: "write", resource: "*", effect: "allow" as const }, // saved allow-always
+    ]
+    expect(PermissionV2.evaluate("write", "src/x.ts", all).effect).toBe("allow")
+    expect(PermissionV2.evaluate("bash", "ls", all).effect).toBe("ask")
   })
 
   test("bypass allows in-project mutations but external still asks", () => {

@@ -269,13 +269,18 @@ export const layer = Layer.effect(
     const evaluateInput = EffectRuntime.fnUntraced(function* (input: AssertInput) {
       // 1K: the session's resolved permission MODE contributes a rule overlay. Appended after the
       // agent's configured rules (last-match-wins) so the user's explicit mode outranks agent
-      // defaults; included in the early hard-deny check so a saved allow-always can never override
-      // plan/surgical denies.
+      // defaults. The early hard-deny check runs over the configured chain and the mode overlay
+      // SEPARATELY: combined last-match would let a later non-deny mode rule (ask-mode's `ask`,
+      // bypass's `allow`) shadow an explicit configured deny — a mode may convert silent allows
+      // into consent or raise defaults, but never soften a deny; and a saved allow-always can
+      // never override plan/surgical mode denies.
       const mode: PermissionMode = yield* sessionMode(input.sessionID).pipe(
         EffectRuntime.catch(() => EffectRuntime.succeed("ask" as const)),
       )
-      const rules = [...(yield* configured(input.sessionID, input.agent)), ...MODE_RULES[mode]]
-      if (denied(input, rules)) return { effect: "deny" as const, rules }
+      const configuredRules = yield* configured(input.sessionID, input.agent)
+      const modeRules = MODE_RULES[mode]
+      const rules = [...configuredRules, ...modeRules]
+      if (denied(input, configuredRules) || denied(input, modeRules)) return { effect: "deny" as const, rules }
       const all = [...rules, ...(yield* savedRules())]
       const effects = input.resources.map((resource) => evaluate(input.action, resource, all).effect)
       const effect: Permission.Effect = effects.includes("deny") ? "deny" : effects.includes("ask") ? "ask" : "allow"

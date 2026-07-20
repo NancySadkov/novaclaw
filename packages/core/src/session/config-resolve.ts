@@ -27,10 +27,13 @@ export const moreRestrictive = (a: PermissionMode, b: PermissionMode): Permissio
  * 1K: the rule overlay each permission MODE contributes at evaluation time. Appended AFTER the
  * agent's configured rules (last-match-wins), so the user's explicit mode outranks agent defaults —
  * but scoped to the mutation/exec cluster only, so agent-level gating of non-file actions
- * (question, plan_exit, …) is never overridden. `ask` is the identity. External-directory classes
- * (1I) stay ask in every mode except yolo — bypass is "anything INSIDE the project".
- * Mode denies are HARD: they participate in the early deny check, so a saved allow-always can
- * never override plan/surgical.
+ * (question, plan_exit, …) is never overridden. `ask` sends the mutation/exec cluster through
+ * consent — the Settings copy promises "'Ask' checks with you first", and with the default
+ * agent's allow-all baseline an identity overlay silently made Ask ≡ Bypass (issues.md P1);
+ * saved allow-always decisions land AFTER the overlay, so granted trust still quiets the asks.
+ * External-directory classes (1I) stay ask in every mode except yolo — bypass is "anything
+ * INSIDE the project". Mode denies are HARD: they participate in the early deny check, so a
+ * saved allow-always can never override plan/surgical.
  */
 export const MODE_RULES: Record<PermissionMode, readonly PermissionRule[]> = {
   plan: [
@@ -40,7 +43,13 @@ export const MODE_RULES: Record<PermissionMode, readonly PermissionRule[]> = {
     { action: "trash", resource: "*", effect: "deny" },
     { action: "external_directory_write", resource: "*", effect: "deny" },
   ],
-  ask: [],
+  ask: [
+    { action: "edit", resource: "*", effect: "ask" },
+    { action: "write", resource: "*", effect: "ask" },
+    { action: "create", resource: "*", effect: "ask" },
+    { action: "trash", resource: "*", effect: "ask" },
+    { action: "bash", resource: "*", effect: "ask" },
+  ],
   // Surgical: precise edits + new files stay possible; regenerating a whole existing file is not.
   surgical: [{ action: "write", resource: "*", effect: "deny" }],
   bypass: [
