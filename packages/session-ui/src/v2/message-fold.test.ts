@@ -326,4 +326,17 @@ describe("mergeNativeMessages", () => {
     const fetched = [userMsg("msg_1", 1)] // snapshot predates the assistant
     expect(mergeNativeMessages(current, fetched).map((m) => m.id)).toEqual(["msg_1", "msg_2"])
   })
+
+  test("stale in-flight assistant: a COMPLETED fetched copy wins (heals missed step/reasoning.ended)", () => {
+    // The stream dropped events mid-turn, so the live copy never saw the turn end — the
+    // server-persisted completed copy is the truth, not a lagging snapshot. Keeping the
+    // live copy here would pin a forever-"streaming" message no reconcile could heal.
+    const current = [assistantMsg("msg_a", 1, { text: "partial (live)" })] // no completed → looks in-flight
+    const fetched = [assistantMsg("msg_a", 1, { completed: 5, text: "full (persisted)" })]
+    const merged = mergeNativeMessages(current, fetched)
+    expect(merged).toHaveLength(1)
+    const a = merged[0]!
+    expect(a.type === "assistant" && a.time.completed).toBe(5)
+    if (a.type === "assistant" && a.content[0]?.type === "text") expect(a.content[0].text).toBe("full (persisted)")
+  })
 })

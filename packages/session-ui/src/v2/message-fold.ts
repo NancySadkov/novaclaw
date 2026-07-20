@@ -353,6 +353,12 @@ function compareOldestFirst(a: SessionMessage, b: SessionMessage): number {
  * deltas — or (b) absent from the page (an in-flight tail the snapshot predates, or an
  * older page not re-fetched). Result is sorted oldest-first.
  *
+ * Exception to (a): when the FETCHED copy is a **completed** assistant, it wins even over
+ * an in-flight `current` — the server saying "this turn ended" means the live copy is not
+ * ahead, it is *stale* (the stream dropped events mid-turn: missed `reasoning.ended` /
+ * `step.ended` would otherwise pin a forever-"streaming" message that no later reconcile
+ * can heal, e.g. a reasoning fold stuck open/pulsing after an SSE flap).
+ *
  * Known limitation (deferred to the render-cutover slice): a full refresh does not drop
  * a message the server deleted that `current` still holds — server-side removals arrive
  * as `revert.*` events folded separately, so this is safe for the parallel store.
@@ -361,7 +367,9 @@ export function mergeNativeMessages(current: SessionMessage[], fetched: SessionM
   const byId = new Map<string, SessionMessage>()
   for (const message of fetched) byId.set(message.id, message)
   for (const message of current) {
-    if (!byId.has(message.id) || isInFlightAssistant(message)) byId.set(message.id, message)
+    const fetchedCopy = byId.get(message.id)
+    const fetchedCompleted = fetchedCopy?.type === "assistant" && !!fetchedCopy.time.completed
+    if (!fetchedCopy || (isInFlightAssistant(message) && !fetchedCompleted)) byId.set(message.id, message)
   }
   return [...byId.values()].sort(compareOldestFirst)
 }

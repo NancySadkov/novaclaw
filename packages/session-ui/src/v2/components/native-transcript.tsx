@@ -197,12 +197,21 @@ function AssistantMessage(props: { message: SessionMessageAssistant }) {
   )
 }
 
+/** Compact size label for the live reasoning counter ("845" → "1.2k"). */
+const reasoningCountLabel = (chars: number): string =>
+  chars < 1000 ? String(chars) : `${(chars / 1000).toFixed(1)}k`
+
 /**
  * A reasoning part with a level-aware default fold (uix.md §6 / UIX residue b). The fold mode
  * comes from ReasoningFoldContext (expertise-derived); `open` is FULLY controlled off it so
  * "live" mode can auto-collapse when the reasoning finishes. A user toggle wins forever after:
  * the summary click is intercepted (`preventDefault` stops the native toggle) so a programmatic
  * open/close never masquerades as a user override — only a real click latches `override`.
+ *
+ * While the part is still streaming, the summary is a live affordance instead of a static
+ * label: a pulsing dot plus a growing character counter shows the model is actively thinking
+ * even with the fold closed (a frozen counter = stalled), and opening it mid-stream shows the
+ * text arriving — so a user can check the model isn't looping without waiting for the answer.
  */
 function ReasoningPart(props: { part: SessionMessageAssistantReasoning }) {
   const foldMode = useContext(ReasoningFoldContext)
@@ -210,14 +219,20 @@ function ReasoningPart(props: { part: SessionMessageAssistantReasoning }) {
   const completed = () => !!props.part.time?.completed
   const open = () => override() ?? reasoningOpenDefault(foldMode(), completed())
   return (
-    <details data-slot="native-reasoning" open={open()}>
+    <details data-slot="native-reasoning" open={open()} data-streaming={completed() ? undefined : ""}>
       <summary
         onClick={(event) => {
           event.preventDefault()
           setOverride(!open())
         }}
       >
-        Reasoning
+        <Show when={!completed()} fallback={"Reasoning"}>
+          <span data-slot="native-reasoning-live">
+            <span data-slot="native-reasoning-live-dot" />
+            <span>Reasoning…</span>
+            <span data-slot="native-reasoning-count">{reasoningCountLabel(props.part.text.length)}</span>
+          </span>
+        </Show>
       </summary>
       <div data-slot="native-reasoning-body">
         <Markdown text={props.part.text} />
