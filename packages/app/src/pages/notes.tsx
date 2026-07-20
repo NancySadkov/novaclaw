@@ -44,6 +44,9 @@ export function NotesPage() {
   const [saveFailed, setSaveFailed] = createSignal(false)
   const [naming, setNaming] = createSignal(false)
   const [tick, setTick] = createSignal(0)
+  // True while a note's content is loading; the textarea is read-only during it so keystrokes
+  // can never land in a half-switched binding (the "New note overwrites the open note" data loss).
+  const [noteLoading, setNoteLoading] = createSignal(false)
 
   // Resolve the notes dir: the server data root (PathInfo.data — read via cast, the generated SDK
   // type predates the field) + "/notes", created idempotently on first visit. FS-3 (T7): under
@@ -102,6 +105,11 @@ export function NotesPage() {
     if (saveTimer) clearTimeout(saveTimer)
     saveTimer = setTimeout(() => {
       saveTimer = undefined
+      // The closure pairs the note NAME captured at schedule time with text() read at fire
+      // time — if the bound note changed in between, that pairing would smear one note's
+      // text into another's file. A switch always flushes synchronously first (openNote),
+      // so a stale-name fire is safe to drop.
+      if (current() !== name) return
       enqueueSave(name, text())
     }, AUTOSAVE_MS)
   }
@@ -115,28 +123,60 @@ export function NotesPage() {
   onCleanup(flushSave)
 
   async function openNote(name: string) {
+    // Flush the outgoing note's pending edit BEFORE any binding changes, while name+text are
+    // still a consistent pair; then rebind immediately so nothing typed during the load can
+    // ever be attributed to the previous note (the editor is read-only until the load lands).
     flushSave()
     const c = ctx()
     const d = notesDir()
     if (!c || !d) return
+    setNoteLoading(true)
+    setCurrent(name)
+    setText("")
+    setDirty(false)
     const res = await c.sdk.client.file
       .read({ directory: d, path: name })
       .then((r) => r.data as { type?: string; content?: string } | undefined)
       .catch(() => undefined)
-    setCurrent(name)
-    setText(res?.type === "text" ? (res.content ?? "") : "")
-    setDirty(false)
+    // Only lay the content in if this note is still the bound one (a faster later switch wins).
+    if (current() === name) {
+      setText(res?.type === "text" ? (res.content ?? "") : "")
+      setNoteLoading(false)
+    }
     localStorage.setItem(LAST_KEY, name)
   }
 
   async function createNote(raw: string) {
     const name = sanitizeName(raw)
+    const c = ctx()
     const cn = conn()
     const d = notesDir()
-    if (!name || !cn || !d) return
+    if (!name || !c || !cn || !d) return
     setNaming(false)
-    if (!entries()?.some((e) => e.name === name)) {
-      await fsWrite(cn.http, { directory: d, path: name, content: "" }).catch(() => undefined)
+    // Existence check against a FRESH server listing — not the entries() cache (undefined while
+    // the resource (re)loads; trusting it here used to truncate an existing note with ""), and
+    // not /file/content (it answers {type:"text",content:""} for MISSING files — file.ts:99 —
+    // so a read can never distinguish absent from empty).
+    const listing = await c.sdk.client.file
+      .list({ directory: d, path: "" })
+      .then((r) => r.data as Entry[] | undefined)
+      .catch(() => undefined)
+    if (!listing) {
+      // Can't tell whether the name exists — creating blind could truncate a real note.
+      setSaveFailed(true)
+      return
+    }
+    if (!listing.some((e) => e.type === "file" && e.name === name)) {
+      const created = await fsWrite(cn.http, { directory: d, path: name, content: "" }).then(
+        () => true,
+        () => false,
+      )
+      if (!created) {
+        // Creating failed — surface it and keep the previous note bound rather than pointing
+        // the editor at a file that doesn't exist (typed text would have nowhere real to go).
+        setSaveFailed(true)
+        return
+      }
       setTick((t) => t + 1)
       await refetchEntries()
     }
@@ -194,7 +234,11 @@ export function NotesPage() {
             >
               <input
                 type="text"
-                autofocus
+                // The autofocus ATTRIBUTE only applies during document parse — on a
+                // conditionally-rendered element it silently does nothing (focus stays on
+                // body, the typed name goes nowhere and the user's next keystrokes land in
+                // the editor, still bound to the previous note). Focus explicitly instead.
+                ref={(el) => setTimeout(() => el.focus())}
                 placeholder={language.t("notes.namePlaceholder")}
                 class="w-full rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2 py-1 text-sm outline-none"
                 onKeyDown={(e) => {
@@ -241,8 +285,9 @@ export function NotesPage() {
           >
             <textarea
               class="h-full w-full resize-none bg-transparent px-4 py-3 font-mono text-sm leading-relaxed outline-none"
-              placeholder={language.t("notes.placeholder")}
+              placeholder={noteLoading() ? language.t("notes.loading") : language.t("notes.placeholder")}
               value={text()}
+              readOnly={noteLoading()}
               onInput={(e) => {
                 setText(e.currentTarget.value)
                 scheduleSave()
