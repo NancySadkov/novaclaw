@@ -1598,6 +1598,9 @@ export const dict = {
   "settings.permissions.tool.doom_loop.title": "Doom Loop",
   "settings.permissions.tool.doom_loop.description": "Detect repeated tool calls with identical input",
 
+  "session.gone.title": "This chat was deleted or has expired",
+  "session.gone.body": "It may have been removed from another window or cleaned up automatically. Its tab has been closed.",
+  "session.gone.action": "Back to Home",
   "session.delete.failed.title": "Couldn't delete chat",
   "session.delete.title": "Delete chat",
   "session.delete.confirm": "Delete chat \"{{name}}\"?",

@@ -7,7 +7,7 @@ import { File } from "@novaclaw/session-ui/file"
 import { Font } from "@novaclaw/ui/font"
 import { ThemeProvider } from "@novaclaw/ui/theme/context"
 import { MetaProvider } from "@solidjs/meta"
-import { type BaseRouterProps, Navigate, Route, Router, useParams, useSearchParams } from "@solidjs/router"
+import { type BaseRouterProps, Navigate, Route, Router, useNavigate, useParams, useSearchParams } from "@solidjs/router"
 import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import { Effect } from "effect"
 import {
@@ -130,6 +130,27 @@ const TargetSessionRoute = () => {
   )
 }
 
+/** The calm scoped state for a chat that no longer exists — a normal lifecycle event in a
+ *  multi-client OS (deleted from another window, the API, or server auto-prune), never a
+ *  crash. Wire-accurate "Session not found" is wrong for humans: the chat was deleted. */
+function SessionGoneCard() {
+  const language = useLanguage()
+  const navigate = useNavigate()
+  return (
+    <div class="flex h-full flex-col items-center justify-center gap-3 p-8 text-center">
+      <span class="text-[15px] font-semibold text-v2-text-text-base">{language.t("session.gone.title")}</span>
+      <span class="max-w-sm text-sm text-v2-text-text-muted">{language.t("session.gone.body")}</span>
+      <button
+        type="button"
+        class="mt-2 rounded-md border border-v2-border-border-base px-3 py-1.5 text-sm text-v2-text-text-base transition-colors hover:bg-v2-background-bg-layer-02"
+        onClick={() => navigate("/")}
+      >
+        {language.t("session.gone.action")}
+      </button>
+    </div>
+  )
+}
+
 function ResolvedTargetSessionRoute() {
   const params = useParams<{ serverKey: string; id: string }>()
   const settings = useSettings()
@@ -148,7 +169,12 @@ function ResolvedTargetSessionRoute() {
         throw error
       }),
   )
-  const current = createMemo(() => selectSessionLineage(params.id, cached(), resolved()))
+  // Reading an ERRORED resource rethrows its error — without the state guard the throw skips
+  // the scoped fallback below and lands in the ROOT error boundary (the fatal "Something went
+  // wrong" screen a deleted/pruned chat used to cause — issues.md P2).
+  const current = createMemo(() =>
+    selectSessionLineage(params.id, cached(), resolved.state === "errored" ? undefined : resolved()),
+  )
   const directory = createMemo(() => current()?.session.location.directory)
   const targetDirectory = () => directory()!
 
@@ -163,7 +189,16 @@ function ResolvedTargetSessionRoute() {
 
   return (
     <TargetServerScopedProviders directory={directory} sessionID={() => params.id}>
-      <Show when={!!current() || resolved.state !== "errored"} fallback={<ErrorPage error={resolved.error} />}>
+      <Show
+        when={!!current() || resolved.state !== "errored"}
+        fallback={
+          isSessionNotFoundError(resolved.error, params.id) ? (
+            <SessionGoneCard />
+          ) : (
+            <ErrorPage error={resolved.error} />
+          )
+        }
+      >
         <Show when={directory()}>
           <Show
             when={settings.general.newLayoutDesigns()}

@@ -6,6 +6,7 @@ import { createStore, produce, reconcile } from "solid-js/store"
 import { useLanguage } from "@/context/language"
 import type { InitError } from "../pages/error"
 import { ServerSDK } from "./server-sdk"
+import { notifySessionTabsRemoved } from "@/components/titlebar-session-events"
 import {
   bootstrapDirectory,
   bootstrapGlobal,
@@ -365,6 +366,22 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     const recent = bootingRoot || Date.now() - bootedAt < 1500
 
     session.apply(event)
+
+    // A chat deleted from ANYWHERE — another client, the raw API, server auto-prune — must close
+    // its open tabs/routes too. UI-initiated deletes notify locally (which masked this gap); the
+    // event stream is the only signal for the rest, and a tab left alive 404s on its next fetch,
+    // which used to feed the ROOT error boundary and take down the whole shell (issues.md P2).
+    if ((event.type as string) === "session.deleted") {
+      const deleted = (event as { properties?: { info?: { id?: string; location?: { directory?: string } } } })
+        .properties?.info
+      if (deleted?.id) {
+        notifySessionTabsRemoved({
+          server: ServerConnection.key(serverSDK.server),
+          directory: deleted.location?.directory ?? directory,
+          sessionIDs: [deleted.id],
+        })
+      }
+    }
 
     // F1e (strategy B, parallel): also fold the raw session.next.* events into the native store.
     // The bridge emits them non-sync alongside the v1 translation, so they already arrive here;
