@@ -1,5 +1,6 @@
 import { type Component, createMemo, createResource, createSignal, For, Show } from "solid-js"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
+import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { showToast } from "@/utils/toast"
 import { useLanguage } from "@/context/language"
@@ -55,9 +56,25 @@ export const SettingsMemoryV2: Component<{ sessionID?: string }> = (props) => {
   // (recall/extract/tool/consolidation) instance-wide; the list + export/clear below still work so you
   // can manage what's already stored. Opt-out: enabled unless explicitly false.
   const memoryConfig = createMemo(
-    () => (serverSync().data.config as { memory?: { enabled?: boolean } }).memory ?? {},
+    () =>
+      (serverSync().data.config as { memory?: { enabled?: boolean; embedding?: { url?: string; model?: string } } }).memory ?? {},
   )
   const enabled = () => memoryConfig().enabled !== false
+  // The VECTOR leg's device (Advanced). Measured: hybrid vector+FTS retrieval 85% vs 77% keyword-only.
+  // Unset = keyword-only search, which is a valid configuration, not a broken one. The server reads
+  // this live (2s TTL), so pointing at a device takes effect without a restart; blanking a field is
+  // "use default" over the patch-merge wire, which the reader treats as unconfigured.
+  const embedding = () => memoryConfig().embedding ?? {}
+  const persistEmbedding = (patch: { url?: string; model?: string }) =>
+    void serverSync()
+      .updateConfig({ memory: { ...memoryConfig(), embedding: { ...embedding(), ...patch } } } as never)
+      .catch((error: unknown) =>
+        showToast({
+          variant: "error",
+          title: language.t("settings.memory.toast.failed"),
+          description: error instanceof Error ? error.message : String(error),
+        }),
+      )
   const setEnabled = (value: boolean) =>
     void serverSync()
       .updateConfig({ memory: { ...memoryConfig(), enabled: value } } as never)
@@ -255,6 +272,53 @@ export const SettingsMemoryV2: Component<{ sessionID?: string }> = (props) => {
             </SettingsRowV2>
           </SettingsListV2>
         </div>
+
+        {/* The vector leg's device. ADVANCED on purpose: a normal person should never have to type an
+            embedding endpoint — lay-first means it just works when a device is present at deployment. */}
+        <RequiresLevel min="advanced">
+          <div class="settings-v2-section">
+            <div class="settings-v2-section-title">{language.t("settings.memory.embedding.title")}</div>
+            <p class="settings-v2-field-description">{language.t("settings.memory.embedding.description")}</p>
+            <SettingsListV2>
+              <SettingsRowV2
+                title={language.t("settings.memory.embedding.url.title")}
+                description={language.t("settings.memory.embedding.url.description")}
+              >
+                <div class="w-full sm:w-[260px]">
+                  <TextInputV2
+                    type="text"
+                    appearance="base"
+                    value={embedding().url ?? ""}
+                    placeholder="http://192.168.178.40:8001/v1"
+                    spellcheck={false}
+                    autocomplete="off"
+                    data-action="settings-memory-embedding-url"
+                    onChange={(event) => persistEmbedding({ url: event.currentTarget.value.trim() })}
+                    aria-label={language.t("settings.memory.embedding.url.title")}
+                  />
+                </div>
+              </SettingsRowV2>
+              <SettingsRowV2
+                title={language.t("settings.memory.embedding.model.title")}
+                description={language.t("settings.memory.embedding.model.description")}
+              >
+                <div class="w-full sm:w-[260px]">
+                  <TextInputV2
+                    type="text"
+                    appearance="base"
+                    value={embedding().model ?? ""}
+                    placeholder="qwen3-embedding"
+                    spellcheck={false}
+                    autocomplete="off"
+                    data-action="settings-memory-embedding-model"
+                    onChange={(event) => persistEmbedding({ model: event.currentTarget.value.trim() })}
+                    aria-label={language.t("settings.memory.embedding.model.title")}
+                  />
+                </div>
+              </SettingsRowV2>
+            </SettingsListV2>
+          </div>
+        </RequiresLevel>
 
         <div class="settings-v2-section">
           <div class="flex flex-wrap gap-2">

@@ -1447,6 +1447,13 @@ export const dict = {
   "settings.memory.scope.global": "Always",
   "settings.memory.scope.chat": "This chat",
   "settings.memory.scope.otherChat": "Another chat",
+  "settings.memory.embedding.title": "Semantic search (advanced)",
+  "settings.memory.embedding.description":
+    "Point NovaClaw at a local embedding model and memory search also matches by MEANING, not just wording — it can find “favourite programming language” when you ask about a “coding tongue”. Leave blank to match on keywords only.",
+  "settings.memory.embedding.url.title": "Embedding server",
+  "settings.memory.embedding.url.description": "Address of an OpenAI-compatible embeddings server on your machine or network. Stays local.",
+  "settings.memory.embedding.model.title": "Embedding model",
+  "settings.memory.embedding.model.description": "The model id that server serves.",
   "settings.memory.forget.action": "Forget this",
   "settings.memory.toast.failed": "Something went wrong with memory",
   "settings.about.author": "by Nancy Sadkov",
