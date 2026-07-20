@@ -99,6 +99,53 @@ describe("recoverToolCallsFromText — XML-ish", () => {
     ]))
 })
 
+// qwen3_coder malformed variants — observed LIVE 2026-07-21 (issues.md mask-token P2): the
+// model's structured emission derails and the server-side parser passes raw text through.
+describe("recoverToolCallsFromText — qwen3_coder shapes", () => {
+  test("bare tool tag with <parameter=name> children (the live CLI emission)", () =>
+    expect(
+      recoverToolCallsFromText(
+        "<write>\n<parameter=path>\nmask-probe.txt\n</parameter>\n<parameter=content>\nhello\n</parameter>\n</write>",
+        TOOLS,
+      ),
+    ).toEqual([{ name: "write", arguments: '{"path":"mask-probe.txt","content":"hello"}' }]))
+  test("<function=name> opener without the <tool_call> wrapper", () =>
+    expect(
+      recoverToolCallsFromText("<function=write><parameter=path>a.txt</parameter></function>", TOOLS),
+    ).toEqual([{ name: "write", arguments: '{"path":"a.txt"}' }]))
+  test("unclosed trailing <parameter=…> still recovers (stream cut mid-call)", () =>
+    expect(recoverToolCallsFromText("<write><parameter=path>a.txt", TOOLS)).toEqual([
+      { name: "write", arguments: '{"path":"a.txt"}' },
+    ]))
+  test("special-token-fused tags recover (<|bash><|command>… — the live no-recall emission)", () =>
+    expect(
+      recoverToolCallsFromText("<|bash>\n<|command>\necho hello > f.txt\n</|command>\n</bash>", TOOLS),
+    ).toEqual([{ name: "bash", arguments: '{"command":"echo hello > f.txt"}' }]))
+})
+
+describe("recoverToolCallsFromText — mask-token wrapping + paren-call syntax", () => {
+  test("MTP mask tokens around a paren call (the live GUI emission)", () =>
+    expect(
+      recoverToolCallsFromText('\n\n<|mask_start|> write(path="perm-test.txt", content="hello")<|mask_end|>', TOOLS),
+    ).toEqual([{ name: "write", arguments: '{"path":"perm-test.txt","content":"hello"}' }]))
+  test("paren call with single quotes and escapes", () =>
+    expect(recoverToolCallsFromText("read(filePath='a \\'b\\'.ts')", TOOLS)).toEqual([
+      { name: "read", arguments: '{"filePath":"a \'b\'.ts"}' },
+    ]))
+  test("mask tokens around an XML call still recover", () =>
+    expect(
+      recoverToolCallsFromText("<|mask_start|><write><parameter=path>x</parameter></write><|mask_end|>", TOOLS),
+    ).toEqual([{ name: "write", arguments: '{"path":"x"}' }]))
+  test("pure mask-token garbage recovers nothing", () =>
+    expect(recoverToolCallsFromText("\n\n<|mask_start|><think>\n\n\n\n<|mask_start|><think>\n\n\n\n<|mask_end|>", TOOLS)).toEqual(
+      [],
+    ))
+  test("prose naming a tool with UNQUOTED parens never matches", () =>
+    expect(recoverToolCallsFromText("You can call write(path, content) to save files.", TOOLS)).toEqual([]))
+  test("prose with a quoted pair plus extra words never matches", () =>
+    expect(recoverToolCallsFromText('call write(path="a.txt" and more things) please', TOOLS)).toEqual([]))
+})
+
 // The load-bearing safety cases: ordinary prose / code with angle brackets or
 // JSON-shaped data must NEVER be misread as a tool call.
 describe("recoverToolCallsFromText — prose-misreading guards", () => {

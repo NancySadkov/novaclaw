@@ -186,6 +186,11 @@ interface ParserState {
   // Assistant text accumulated across deltas, so that on halt we can recover a
   // tool call a small model dumped into TEXT instead of the structured channel.
   readonly content: string
+  // Reasoning accumulated across deltas: when a thinking model derails, the tool call
+  // often lands INSIDE the reasoning channel (vLLM routes it to reasoning_content and its
+  // tool parser never sees it) while the visible text is only leaked mask-token debris.
+  // Scavenged as the LAST resort — see finalToolCallEvents.
+  readonly reasoning: string
 }
 
 const invalid = ProviderShared.invalidRequest
@@ -499,6 +504,7 @@ const step = (state: ParserState, event: OpenAIChatEvent) =>
         lifecycle,
         allowedToolNames: state.allowedToolNames,
         content: delta?.content ? state.content + delta.content : state.content,
+        reasoning: reasoningDelta ? state.reasoning + reasoningDelta : state.reasoning,
       },
       events,
     ] as const
@@ -515,13 +521,30 @@ const safeParseArgs = (json: string): Record<string, unknown> => {
   }
 }
 
+// True when the turn's visible text is nothing but whitespace and leaked special-token
+// debris (`<|mask_start|>`, stray `<think>` tags) — the model produced NO answer.
+const debrisOnly = (content: string) =>
+  content
+    .replace(/<\|[^|>]*\|>/g, "")
+    .replace(/<\/?think>/g, "")
+    .trim().length === 0
+
 // The tool-call events to finalize with. Prefer the structured calls; only when the
 // model emitted NONE do we try to recover one it dumped into assistant text. The
 // recovery core is whitelist-gated on `allowedToolNames`, so ordinary prose / code
-// with angle brackets is never misread as a call.
+// with angle brackets is never misread as a call. LAST resort: when the visible text
+// is pure debris (no answer at all — the doom-loop signature), scavenge the REASONING
+// channel, where a derailed thinking model often left the complete call.
 const finalToolCallEvents = (state: ParserState): ReadonlyArray<LLMEvent> => {
   if (state.toolCallEvents.length > 0) return state.toolCallEvents
-  return recoverToolCallsFromText(state.content, state.allowedToolNames).flatMap((call, index) => {
+  const fromText = recoverToolCallsFromText(state.content, state.allowedToolNames)
+  const calls =
+    fromText.length > 0
+      ? fromText
+      : debrisOnly(state.content)
+        ? recoverToolCallsFromText(state.reasoning, state.allowedToolNames)
+        : []
+  return calls.flatMap((call, index) => {
     const id = `call_recovered_${index}`
     return [
       LLMEvent.toolInputStart({ id, name: call.name }),
@@ -567,6 +590,7 @@ export const protocol = Protocol.make({
       lifecycle: Lifecycle.initial(),
       allowedToolNames: request.tools.map((tool) => tool.name),
       content: "",
+      reasoning: "",
     }),
     step,
     onHalt: finishEvents,

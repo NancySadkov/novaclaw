@@ -69,6 +69,59 @@ describe("openai-chat — text-dumped tool-call recovery (A2 wiring)", () => {
   })
 })
 
+const reasoning = (content: string) => ({ choices: [{ delta: { reasoning_content: content }, finish_reason: null }] })
+
+// The live 2026-07-21 doom-loop signature (issues.md mask-token P2): the thinking model
+// leaves the complete call in the REASONING channel while the visible text is only leaked
+// mask-token debris. Scavenging reasoning is the LAST resort — gated on the text carrying
+// no answer at all.
+describe("openai-chat — reasoning-channel scavenge", () => {
+  test("call in reasoning + mask-debris text recovers and continues the loop", () => {
+    const events = decode(
+      ["write", "read"],
+      [
+        reasoning('I need to create the file. write(path="perm-test.txt", content="hello")'),
+        text("\n\n<|mask_start|><think>\n\n<|mask_end|>"),
+        stop,
+      ],
+    )
+    const calls = toolCalls(events)
+    expect(calls.length).toBe(1)
+    expect(calls[0].name).toBe("write")
+    expect(calls[0].input).toEqual({ path: "perm-test.txt", content: "hello" })
+    expect(finishReason(events)).toBe("tool-calls")
+  })
+
+  test("reasoning is NOT scavenged when the text carries a real answer", () => {
+    const events = decode(
+      ["write"],
+      [reasoning('Maybe I could call write(path="x", content="y") here.'), text("Here is my final answer: 42."), stop],
+    )
+    expect(toolCalls(events).length).toBe(0)
+    expect(finishReason(events)).toBe("stop")
+  })
+
+  test("reasoning prose without a structured call recovers nothing", () => {
+    const events = decode(
+      ["write"],
+      [reasoning("The user wants a file created. I should use the write tool for this."), text("<|mask_start|>"), stop],
+    )
+    expect(toolCalls(events).length).toBe(0)
+  })
+
+  test("text-recovered call wins over reasoning content", () => {
+    const events = decode(
+      ["write", "read"],
+      [
+        reasoning('First I considered read(filePath="other.ts").'),
+        text("<write><parameter=path>a.txt</parameter></write>"),
+        stop,
+      ],
+    )
+    expect(toolCalls(events).map((c) => c.name)).toEqual(["write"])
+  })
+})
+
 describe("openai-chat — structured tool calls unaffected", () => {
   test("a normal structured call still decodes", () => {
     const events = decode(
