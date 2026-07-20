@@ -113,8 +113,12 @@ describe("EDDS retrieval (uncontaminated corpus, FTS)", () => {
   //   • The VECTOR leg does rescue it: FTS miss -> hybrid rank 12 and 18. So these stay todo HERE (this
   //     smoke is deliberately FTS-only/hermetic) and are covered in the product by hybrid retrieval plus
   //     over-fetch: default-tier auto-recall pulls 24 candidates (budget 8 x RECALL_OVERFETCH 3), which
-  //     contains both, and the reranker can promote them. Weak tiers (budget 3 -> 9 candidates) still
-  //     miss — an honest limit of the JH floor, not something to paper over.
+  //     contains both, and the reranker can promote them.
+  //   • Weak tiers: this line used to read "budget 3 -> 9 candidates, still miss". STALE since
+  //     9b4cfb7de decoupled the pool from the context budget (that decoupling came OUT of this very
+  //     bisection). recallPoolSize now floors at 16, so a budget-3 tier retrieves 16 and DOES contain
+  //     the rank-12 case; only the rank-18 one is still out of reach there. Half the gap closed, not
+  //     none and not all — an honest limit of the JH floor, not something to paper over.
   test.todo("retrieves: D20 attack roll 1 → Miss and actor gains Disadvantage (no-rare-anchor class)", () => {})
   test.todo("retrieves: D20 attack roll 9 → Hit unless HARD/ABSURD/THICK (no-rare-anchor class)", () => {})
 })
