@@ -229,6 +229,11 @@ export const stub = (): Interface => {
     health: () => Effect.succeed(true),
     addMemory: (input) =>
       Effect.sync(() => {
+        // FIDELITY: match the real engine on duplicate ids — MEASURED, a second addMemory with an
+        // existing id neither throws nor overwrites; the engine keeps the ORIGINAL row (first write
+        // wins). A stub that overwrote instead would be last-write-wins, so code relying on re-write
+        // semantics could pass here and behave differently in production.
+        if (mems.has(input.id)) return
         mems.set(input.id, {
           id: input.id,
           kind: input.kind,

@@ -85,3 +85,16 @@ describe("MemoryClient.proxy", () => {
     expect((await run(c.stats())).total).toBe(1)
   })
 })
+
+describe("stub fidelity vs the real engine", () => {
+  test("a duplicate id is IGNORED, keeping the FIRST write (engine-measured semantics)", async () => {
+    const c = MemoryClient.stub()
+    await run(c.addMemory({ id: "dup", kind: "entity", text: "original", scope: "global" }))
+    // Neither throws nor overwrites on the real engine — measured 2026-07-20.
+    await run(c.addMemory({ id: "dup", kind: "entity", text: "REPLACEMENT", scope: "global" }))
+    const rows = await run(c.list({ limit: 10 }))
+    expect(rows).toHaveLength(1)
+    // Last-write-wins here would let re-write code pass in tests and behave differently in production.
+    expect(rows[0]!.text).toBe("original")
+  })
+})

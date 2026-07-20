@@ -157,10 +157,15 @@ describe("KbTool (memory)", () => {
       // The point of ingest: the document never entered the model's context, yet is now retrievable.
       expect(text(yield* executeTool(registry, call({ op: "search", query: "BRACED" })))).toContain("BRACED")
 
-      // Content-addressed passage ids ⇒ re-ingesting the same document must not DUPLICATE it.
+      // Content-addressed passage ids ⇒ re-ingesting the same document must not DUPLICATE it...
       const before = (yield* stub.list({ limit: 1000 })).length
-      yield* executeTool(registry, call({ op: "ingest", path: "manual.txt" }))
+      const second = text(yield* executeTool(registry, call({ op: "ingest", path: "manual.txt" })))
       expect((yield* stub.list({ limit: 1000 })).length).toBe(before)
+      // ...AND must not CLAIM it stored anything. Asserting only the row count let a false report
+      // ship: the tool counted successful addMemory calls, but a duplicate id succeeds without
+      // storing, so a re-ingest announced "Ingested N passages" after storing zero.
+      expect(second).toContain("already in memory")
+      expect(second).not.toContain("Ingested")
     }),
   )
 
