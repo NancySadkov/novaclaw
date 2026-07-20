@@ -2,6 +2,7 @@ import { createEffect, createMemo } from "solid-js"
 import { useNavigate } from "@solidjs/router"
 import { isIconName } from "@novaclaw/ui/icon"
 import { useGlobal } from "@/context/global"
+import { usePlatform } from "@/context/platform"
 import { ServerConnection, useServer } from "@/context/server"
 import { useTabs } from "@/context/tabs"
 import { loadPersistedApps, persistedManifests, type AppManifest } from "./persisted"
@@ -21,6 +22,7 @@ const DEFAULT_ACCENT = "#38bdf8"
 export function useManifestApps(): () => HomeApp[] {
   const navigate = useNavigate()
   const global = useGlobal()
+  const platform = usePlatform()
   const server = useServer()
   const tabs = useTabs()
   const conn = createMemo(() => server.current ?? global.servers.list()[0])
@@ -32,7 +34,10 @@ export function useManifestApps(): () => HomeApp[] {
 
   const open = (manifest: AppManifest) => {
     if (manifest.open.type === "route") return navigate(manifest.open.value)
-    if (manifest.open.type === "url") return void window.open(manifest.open.value, "_blank", "noopener,noreferrer")
+    // platform.openLink, never bare window.open: on desktop it routes through the open-link
+    // IPC → shell.openExternal (the user's browser, not a raw Electron child window); on web
+    // it uses an anchor click that popup blockers can't silently eat.
+    if (manifest.open.type === "url") return platform.openLink(manifest.open.value)
     const c = conn()
     if (!c) return
     const ctx = global.ensureServerCtx(c)

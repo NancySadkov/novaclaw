@@ -81,7 +81,15 @@ const notify: Platform["notify"] = async (title, description, href) => {
 }
 
 const openLink: Platform["openLink"] = (url) => {
-  window.open(url, "_blank")
+  // window.open returns null when a popup blocker (or an embedding pane) eats it — with zero
+  // user feedback. A synthesized anchor click counts as user navigation and survives blockers.
+  const anchor = document.createElement("a")
+  anchor.href = url
+  anchor.target = "_blank"
+  anchor.rel = "noopener noreferrer"
+  document.body.append(anchor)
+  anchor.click()
+  anchor.remove()
 }
 
 const back: Platform["back"] = () => {

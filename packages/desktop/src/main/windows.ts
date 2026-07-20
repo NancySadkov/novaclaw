@@ -2,7 +2,7 @@ import windowState from "electron-window-state"
 import { resolveThemeVariant } from "@novaclaw/ui/theme/resolve"
 import type { DesktopTheme } from "@novaclaw/ui/theme/types"
 import oc2ThemeJson from "../../../ui/src/theme/themes/oc-2.json"
-import { app, BrowserWindow, dialog, net, nativeImage, nativeTheme, protocol } from "electron"
+import { app, BrowserWindow, dialog, net, nativeImage, nativeTheme, protocol, shell } from "electron"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import type { TitlebarTheme } from "../preload/types"
@@ -157,6 +157,15 @@ export function createMainWindow() {
 
   allowRendererPermissions(win)
   wireWindowRecovery(win, "main")
+
+  // Never spawn raw Electron child windows: anything the renderer window.opens (an http/https
+  // link from agent-drawn HTML, a URL home tile, a stray target=_blank) goes to the user's
+  // default browser; everything else is denied. The open-link IPC stays the intended path —
+  // this is the defensive net under it.
+  win.webContents.setWindowOpenHandler(({ url }) => {
+    if (/^https?:/i.test(url)) void shell.openExternal(url)
+    return { action: "deny" }
+  })
 
   win.webContents.session.webRequest.onBeforeSendHeaders((details, callback) => {
     const { requestHeaders } = details
