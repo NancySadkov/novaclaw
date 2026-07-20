@@ -104,6 +104,7 @@ import { disposeMiddleware } from "./lifecycle"
 import { memoMap } from "@novaclaw/core/effect/memo-map"
 import { compressionLayer } from "./middleware/compression"
 import { corsVaryFix } from "./middleware/cors-vary"
+import { emptyJsonBodyLayer } from "./middleware/empty-json-body"
 import { errorLayer } from "./middleware/error"
 import { fenceLayer } from "./middleware/fence"
 import { schemaErrorLayer } from "./middleware/schema-error"
@@ -295,6 +296,7 @@ export function createRoutes(
       compressionLayer,
       corsVaryFix,
       fenceLayer,
+      emptyJsonBodyLayer,
       cors(corsOptions),
       MoveSession.defaultLayer,
       HttpServer.layerServices,
