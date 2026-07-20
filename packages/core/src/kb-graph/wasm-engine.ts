@@ -573,6 +573,21 @@ export class WasmMemory {
    *  lowest), tie-broken by age (oldest first). Returns the number forgotten. Best-effort, off the turn
    *  hot-path (the background fiber calls it beside consolidation). Access-recency weighting is a future
    *  enhancement (needs a `last_accessed` column). */
+  /** Forgetting / decay (§1.3.5, §4.7): cap unbounded growth by superseding the LEAST valuable staged
+   *  memories once a scope exceeds `maxStaged`. `core` is never touched.
+   *
+   *  ⚠️ Eviction is IMPORTANCE-TIERED, not FIFO. Measured 2026-07-20: no writer ever sets `confidence`
+   *  (every occurrence is `input.confidence ?? null` plumbing), so ordering by confidence-then-age
+   *  collapsed to pure AGE — the naive policy §1.3.5 exists to avoid. That became a real hazard once
+   *  document ingestion landed: one ingested manual is hundreds of global staged passages, which under
+   *  FIFO would evict the user's deliberately-remembered facts first.
+   *
+   *  Tiers, evicted worst-first, using signals that already exist (no schema change):
+   *    0 `ingest`       bulk document passages — highest volume AND re-derivable (re-ingest is
+   *                     idempotent by content hash), so the cheapest thing to lose.
+   *    1 `auto-extract` model-guessed episodes — noisy and unreviewed.
+   *    2 everything else — a deliberate `kb remember`; the user chose to save it, so it dies last.
+   *  Age remains the tiebreak WITHIN a tier. */
   prune(opts: { scope?: string; maxStaged?: number } = {}): Promise<number> {
     return this.serialize(async () => {
       const cap = Math.max(0, Math.floor(opts.maxStaged ?? 5000))
@@ -588,7 +603,13 @@ export class WasmMemory {
       const victims = await this.rows(
         `MATCH (m:Memory) WHERE m.t_invalid IS NULL AND m.relation = 'staged' ${scopeFilter}
          RETURN m.id AS id
-         ORDER BY (CASE WHEN m.confidence IS NULL THEN 0.0 ELSE m.confidence END) ASC, m.t_created ASC
+         ORDER BY (CASE
+                     WHEN m.source = 'ingest' THEN 0
+                     WHEN m.source = 'auto-extract' THEN 1
+                     ELSE 2
+                   END) ASC,
+                  (CASE WHEN m.confidence IS NULL THEN 0.0 ELSE m.confidence END) ASC,
+                  m.t_created ASC
          LIMIT ${excess}`,
         params,
       )
