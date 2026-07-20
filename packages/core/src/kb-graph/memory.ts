@@ -5,6 +5,7 @@ import { Duration, Effect, Layer } from "effect"
 import { makeGlobalNode } from "../effect/app-node"
 import { Flag } from "../flag/flag"
 import { Global } from "../global"
+import { KbEmbedder } from "./embedder"
 import { MemoryClient } from "./memory-client"
 import { MemorySetting } from "./memory-setting"
 import { WasmMemory } from "./wasm-engine"
@@ -36,6 +37,8 @@ export interface MemoryConfig {
 }
 
 const DEFAULT_GLOBAL_STAGED_CAP = 5000
+// Backfill batch per idle pass — bounded so the drain never monopolises the engine lock or the device.
+const EMBED_DRAIN_BATCH = 64
 
 /** Resolve the memory config from env flags (the deployment-level source, per the global-DB precedent). */
 export const configFromFlags = (): MemoryConfig => ({
@@ -85,6 +88,21 @@ export const layerFromConfig = (cfg: MemoryConfig): Layer.Layer<MemoryClient.Ser
               // (§1.3.5/§4.7) — drop the lowest-importance staged over the cap; core is never touched.
               yield* Effect.tryPromise(() => live.consolidate()).pipe(Effect.ignore)
               yield* Effect.tryPromise(() => live.prune({ scope: "global", maxStaged: stagedCap })).pipe(Effect.ignore)
+              // Embed drain: attach vectors to memories stored BEFORE a device was configured (or while
+              // it was unreachable), so the vector leg covers the WHOLE graph rather than only new
+              // writes — otherwise an instance with history stays effectively keyword-only. Bounded per
+              // pass; no device ⇒ embed() yields undefined ⇒ skip and retry next cycle. Belongs here
+              // (off the turn hot-path) because bulk embedding costs ~0.2s per item.
+              yield* Effect.tryPromise(async () => {
+                const pending = await live.pendingEmbeddings(EMBED_DRAIN_BATCH)
+                if (pending.length === 0) return
+                const vectors = await KbEmbedder.embed(pending.map((row) => row.text))
+                if (vectors === undefined) return
+                for (const [index, row] of pending.entries()) {
+                  const vector = vectors[index]
+                  if (vector) await live.setEmbedding(row.id, vector)
+                }
+              }).pipe(Effect.ignore)
             }
           }
         }),

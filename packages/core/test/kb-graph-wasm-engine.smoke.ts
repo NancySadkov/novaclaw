@@ -70,6 +70,33 @@ describe("WasmMemory (in-process, everywhere)", () => {
     await reopened.close()
   })
 
+  test("embed backfill: the pending queue drains, terminates, and a backfilled vector is searchable", async () => {
+    const e = await WasmMemory.open(join(dir, "backfill"), { dim: DIM })
+    // Two memories stored with NO vector (the pre-device / device-down case) and one already embedded.
+    await e.addMemory({ id: "b1", kind: "entity", text: "Backfill one", scope: "global" })
+    await e.addMemory({ id: "b2", kind: "entity", text: "Backfill two", scope: "global" })
+    await e.addMemory({ id: "b3", kind: "entity", text: "Already vectorised", scope: "global", embedding: vec(5) })
+
+    // The queue holds exactly the un-embedded ones — an already-embedded memory must never re-queue,
+    // or the drain would loop forever re-embedding the same rows.
+    const pending = await e.pendingEmbeddings(10)
+    expect(new Set(pending.map((p) => p.id))).toEqual(new Set(["b1", "b2"]))
+    expect(pending.every((p) => p.text.length > 0)).toBe(true) // the drain needs text to embed
+
+    for (const row of pending) await e.setEmbedding(row.id, vec(row.id === "b1" ? 6 : 7))
+
+    // Drained: the queue is now empty, so the background pass settles instead of spinning.
+    expect(await e.pendingEmbeddings(10)).toEqual([])
+
+    // The payoff: a backfilled memory is now reachable through the VECTOR leg, not just FTS.
+    const hits = await e.search({ embedding: vec(6), k: 3 })
+    expect(hits.some((h) => h.id === "b1")).toBe(true)
+
+    // Guard the dimension contract — a mismatched vector would corrupt the index.
+    await expect(e.setEmbedding("b1", [1, 2, 3])).rejects.toThrow(/!=/)
+    await e.close()
+  }, 30_000)
+
   test("self-heals a stale non-directory at realDir (retired native-sidecar file) instead of bricking", async () => {
     // The retired native sidecar persisted the graph as a single FILE named `graph`; the WASM engine
     // expects that path to be a snapshot DIRECTORY. Opening over the stale file must recover (discard +

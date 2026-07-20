@@ -585,6 +585,31 @@ export class WasmMemory {
     })
   }
 
+  /** The backfill queue for the embed drain: still-valid memories that have NO vector yet — stored
+   *  before an embedding device was configured, or while it was unreachable. Without draining these,
+   *  the vector leg would only ever cover NEW writes and an instance with history stays keyword-only.
+   *  Newest first (recent memories are the ones most likely to be recalled). */
+  pendingEmbeddings(limit = 64): Promise<{ id: string; text: string }[]> {
+    return this.serialize(async () => {
+      const rows = await this.rows(
+        `MATCH (m:Memory) WHERE m.t_invalid IS NULL AND m.embedding IS NULL
+         RETURN m.id AS id, m.text AS text
+         ORDER BY m.t_created DESC LIMIT ${Math.max(1, Math.min(limit | 0, 512))}`,
+      )
+      return rows.map((r) => ({ id: String(r.id), text: String(r.text ?? "") })).filter((r) => r.text.length > 0)
+    })
+  }
+
+  /** Attach a vector to an existing memory (the embed drain). Idempotent — re-running is harmless. */
+  setEmbedding(id: string, embedding: readonly number[]): Promise<void> {
+    if (embedding.length !== this.dim)
+      return Promise.reject(new Error(`embedding length ${embedding.length} != store dim ${this.dim}`))
+    return this.serialize(async () => {
+      await this.q(`MATCH (m:Memory {id: $id}) SET m.embedding = ${vectorLiteral(embedding)}`, { id })
+      this.touch()
+    })
+  }
+
   /** Flush a final snapshot and close the DB + connection. */
   async close(): Promise<void> {
     if (this.closed) return
