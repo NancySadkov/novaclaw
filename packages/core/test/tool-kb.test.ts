@@ -1,4 +1,7 @@
 import { describe, expect } from "bun:test"
+import fs from "node:fs"
+import os from "node:os"
+import nodePath from "node:path"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { Memory } from "@novaclaw/core/kb-graph/memory"
@@ -7,7 +10,11 @@ import { SessionV2 } from "@novaclaw/core/session"
 import { KbTool } from "@novaclaw/core/tool/kb"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import { ToolOutputStore } from "@novaclaw/core/tool-output-store"
-import { Effect } from "effect"
+import { Effect, Layer } from "effect"
+import { Location } from "@novaclaw/core/location"
+import { PermissionV2 } from "@novaclaw/core/permission"
+import { AbsolutePath } from "@novaclaw/core/schema"
+import { location } from "./fixture/location"
 import { testEffect } from "./lib/effect"
 import { toolIdentity, executeTool, toolDefinitions } from "./lib/tool"
 
@@ -22,10 +29,32 @@ const sessionID = SessionV2.ID.make("ses_kb_tool_test")
 // One shared in-memory memory client behind MemoryClient.Service (seed + tool ops hit the same store).
 const stub = MemoryClient.stub()
 
+// `ingest` reads a real file through LocationMutation, so the tool now needs a Location to resolve
+// relative paths against.
+const workdir = fs.mkdtempSync(nodePath.join(os.tmpdir(), "kb-tool-"))
+const locationLayer = Layer.succeed(Location.Service, Location.Service.of(location({ directory: AbsolutePath.make(workdir) })))
+
+// Ingest reads a real file, so it must ride the permission gate like any other read. Record the
+// assertions so the test can PROVE the gate fires rather than assuming it.
+const permissionAsserts: { action: string; resources?: readonly string[] }[] = []
+const permissionLayer = Layer.succeed(
+  PermissionV2.Service,
+  PermissionV2.Service.of({
+    assert: (input) => Effect.sync(() => void permissionAsserts.push(input as never)),
+    ask: () => Effect.die("unused"),
+    reply: () => Effect.die("unused"),
+    get: () => Effect.die("unused"),
+    forSession: () => Effect.die("unused"),
+    list: () => Effect.die("unused"),
+  }),
+)
+
 const it = testEffect(
   AppNodeBuilder.build(LayerNode.group([ToolRegistry.node, ToolRegistry.toolsNode, KbTool.node]), [
     [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig],
     [Memory.node, MemoryClient.layerWith(stub)],
+    [Location.node, locationLayer],
+    [PermissionV2.node, permissionLayer],
   ]),
 )
 
@@ -108,6 +137,39 @@ describe("KbTool (memory)", () => {
       const lonely = text(yield* executeTool(registry, call({ op: "remember", text: "an unconnected note about narwhals" }))).match(/mem_[A-Za-z0-9]+/)?.[0] ?? ""
       const nb = text(yield* executeTool(registry, call({ op: "neighbors", id: lonely })))
       expect(nb).toContain("relate")
+    }),
+  )
+
+  it.effect("ingest: a document becomes searchable passages, without entering context", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      fs.writeFileSync(
+        nodePath.join(workdir, "manual.txt"),
+        ["D20 ATTACK", "1. Miss and actor gains Disadvantage", "", "BRACED", "Spend 10 XP (5 if CLEVER) to gain BRACED."].join(String.fromCharCode(10)),
+      )
+      permissionAsserts.length = 0
+      const first = text(yield* executeTool(registry, call({ op: "ingest", path: "manual.txt" })))
+      expect(first).toContain("Ingested")
+      expect(first).toContain("manual.txt")
+      // Reading a user's file into memory must be permission-gated, like any other read.
+      expect(permissionAsserts.some((a) => a.action === KbTool.name)).toBe(true)
+
+      // The point of ingest: the document never entered the model's context, yet is now retrievable.
+      expect(text(yield* executeTool(registry, call({ op: "search", query: "BRACED" })))).toContain("BRACED")
+
+      // Content-addressed passage ids ⇒ re-ingesting the same document must not DUPLICATE it.
+      const before = (yield* stub.list({ limit: 1000 })).length
+      yield* executeTool(registry, call({ op: "ingest", path: "manual.txt" }))
+      expect((yield* stub.list({ limit: 1000 })).length).toBe(before)
+    }),
+  )
+
+  it.effect("ingest: a missing file settles as readable text, never a tool failure", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const result = yield* executeTool(registry, call({ op: "ingest", path: "definitely-not-here.txt" }))
+      expect(result.type).toBe("text")
+      expect(String(result.value).toLowerCase()).toMatch(/no readable file|couldn't ingest/)
     }),
   )
 

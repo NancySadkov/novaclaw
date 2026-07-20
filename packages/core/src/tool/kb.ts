@@ -1,13 +1,19 @@
 export * as KbTool from "./kb"
 
+import { createHash } from "node:crypto"
+import { readFileSync, statSync } from "node:fs"
+import { basename } from "node:path"
 import { ascending } from "@novaclaw/schema/identifier"
 import { Effect, Layer, Schema } from "effect"
 import { makeLocationNode } from "../effect/app-node"
+import { KbChunk } from "../kb-graph/chunk"
 import { KbEmbedder } from "../kb-graph/embedder"
 import { MemoryClient } from "../kb-graph/memory-client"
 import { MemoryRanking } from "../kb-graph/ranking"
 import { Memory } from "../kb-graph/memory"
 import { MemorySetting } from "../kb-graph/memory-setting"
+import { LocationMutation } from "../location-mutation"
+import { PermissionV2 } from "../permission"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
@@ -64,7 +70,26 @@ const RelateOp = Schema.Struct({
   }),
 })
 
-export const Input = Schema.Union([SearchOp, RememberOp, ForgetOp, NeighborsOp, RelateOp])
+const IngestOp = Schema.Struct({
+  op: Schema.Literal("ingest"),
+  path: Schema.String.annotate({
+    description:
+      "Path to a text document to read into memory as searchable passages. The document does NOT enter your context — ingest a big file, then `search` it.",
+  }),
+  name: Schema.String.pipe(Schema.optional).annotate({ description: "Short label for the source (defaults to the file name)" }),
+  scope: Schema.Literals(["session", "global"])
+    .pipe(Schema.optional)
+    .annotate({ description: "global (default) = available in every chat · session = only this chat" }),
+})
+
+export const Input = Schema.Union([SearchOp, RememberOp, ForgetOp, NeighborsOp, RelateOp, IngestOp])
+
+/** Refuse pathological inputs rather than melting the index on a 500MB blob. */
+export const MAX_INGEST_BYTES = 4_000_000
+/** Content-addressed passage id: re-ingesting the same document is idempotent, not duplicated. */
+export const passageID = (label: string, text: string) =>
+  "mem_p" + createHash("sha256").update(`${label}
+${text}`).digest("hex").slice(0, 24)
 
 const Output = Schema.Struct({
   ok: Schema.Boolean,
@@ -108,6 +133,8 @@ export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
     const memory = yield* MemoryClient.Service
+    const mutation = yield* LocationMutation.Service
+    const permission = yield* PermissionV2.Service
 
     yield* tools
       .register({
@@ -117,7 +144,9 @@ export const layer = Layer.effectDiscard(
             "by keyword) · remember (save a fact; returns its id — default durably across all chats) · relate " +
             "(link two remembered ids with a relationship like works_at, so you can later trace multi-step " +
             "connections neighbors/search alone can't) · forget (drop a memory by id) · neighbors (memories " +
-            "linked to one you found). Chain them: remember the entities, then relate what connects them. " +
+            "linked to one you found) · ingest (read a text DOCUMENT at a path into memory as searchable " +
+            "passages — the file never enters your context, so ingest a big manual then search it). " +
+            "Chain them: remember the entities, then relate what connects them. " +
             'Example: {"op":"remember","text":"Ada Lovelace","name":"Ada"} → {"op":"relate","from":"mem_…","to":"mem_…","type":"wrote"}.',
           input: Input,
           output: Output,
@@ -201,6 +230,92 @@ export const layer = Layer.effectDiscard(
                     } satisfies Output
                   return { ok: true, message: formatNeighbors(rows) } satisfies Output
                 }
+                case "ingest": {
+                  // Path/permission faults settle as readable text like every other op here —
+                  // ToolFailure stays reserved for infra, so a denied read is guidance, not a crash.
+                  return yield* Effect.gen(function* () {
+                  // Read a document into memory as passages. The point is that the document NEVER
+                  // enters the model's context — ingest a 200KB manual, then `search` it.
+                  const source = { type: "tool" as const, messageID: context.assistantMessageID, callID: context.toolCallID }
+                  const target = yield* mutation.resolve({ path: input.path, kind: "file" })
+                  if (target.externalDirectory)
+                    yield* permission.assert({
+                      ...LocationMutation.externalDirectoryPermission(target.externalDirectory, "read"),
+                      sessionID: context.sessionID,
+                      agent: context.agent,
+                      source,
+                    })
+                  yield* permission.assert({
+                    action: name,
+                    resources: [target.resource],
+                    save: ["*"],
+                    sessionID: context.sessionID,
+                    agent: context.agent,
+                    source,
+                  })
+                  let stat: ReturnType<typeof statSync> | undefined
+                  try {
+                    stat = statSync(target.canonical)
+                  } catch {
+                    stat = undefined
+                  }
+                  if (stat === undefined || !stat.isFile())
+                    return { ok: false, message: `No readable file at "${input.path}".` } satisfies Output
+                  if (stat.size > MAX_INGEST_BYTES)
+                    return {
+                      ok: false,
+                      message: `That document is ~${Math.round(stat.size / 1e6)}MB — over the ${MAX_INGEST_BYTES / 1e6}MB ingest limit. Split it and ingest the parts.`,
+                    } satisfies Output
+                  let raw: string | undefined
+                  try {
+                    raw = readFileSync(target.canonical, "utf8")
+                  } catch {
+                    raw = undefined
+                  }
+                  if (raw === undefined) return { ok: false, message: `Couldn't read "${input.path}".` } satisfies Output
+                  if (raw.includes(" "))
+                    return { ok: false, message: `"${input.path}" looks like a binary file — ingest text documents only.` } satisfies Output
+                  const label = input.name?.trim() || basename(target.canonical)
+                  const ingestScope = input.scope === "session" ? sessionScope : "global"
+                  const passages = KbChunk.chunk(KbChunk.stripGutenberg(raw))
+                  if (passages.length === 0) return { ok: false, message: `"${label}" has no readable text to ingest.` } satisfies Output
+                  let stored = 0
+                  for (const text of passages) {
+                    const ok = yield* memory
+                      .addMemory({
+                        id: passageID(label, text),
+                        kind: "passage",
+                        text,
+                        name: label,
+                        scope: ingestScope,
+                        source: "ingest",
+                        relation: "staged",
+                      })
+                      .pipe(Effect.as(true), Effect.orElseSucceed(() => false))
+                    if (ok) stored++
+                  }
+                  // Content-addressed ids make re-ingest idempotent: nothing new is not a failure.
+                  if (stored === 0)
+                    return {
+                      ok: true,
+                      message: `"${label}" is already in memory (${passages.length} passages, nothing new).`,
+                    } satisfies Output
+                  return {
+                    ok: true,
+                    message:
+                      `Ingested "${label}" as ${stored} searchable passage${stored === 1 ? "" : "s"}` +
+                      `${ingestScope === "global" ? "" : " (this chat only)"}. Find things in it with {"op":"search","query":"…"}.`,
+                  } satisfies Output
+                  }).pipe(
+                    Effect.catch((error) => {
+                      // Name the failure class — "PathError: outside the location" is actionable;
+                      // a bare empty message is not.
+                      const e = error as { _tag?: string; message?: string; reason?: string }
+                      const detail = [e._tag, e.message || e.reason].filter(Boolean).join(": ") || String(error)
+                      return Effect.succeed({ ok: false, message: `Couldn't ingest "${input.path}" — ${detail}` } satisfies Output)
+                    }),
+                  )
+                }
                 case "relate": {
                   const type = relType(input.type)
                   return yield* memory
@@ -226,5 +341,5 @@ export const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/kb",
   layer,
-  deps: [ToolRegistry.node, Memory.node],
+  deps: [ToolRegistry.node, Memory.node, LocationMutation.node, PermissionV2.node],
 })
