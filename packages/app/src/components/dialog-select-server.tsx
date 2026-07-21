@@ -260,7 +260,9 @@ export function useServerManagementController(options: { onSelect?: () => void; 
       if (store.addServer.password && store.addServer.username) conn.http.username = store.addServer.username
       const result = await checkServerHealth(conn.http)
       if (!result.healthy) {
-        setStore("addServer", { error: language.t("dialog.server.add.error") })
+        setStore("addServer", {
+          error: language.t(result.reason === "auth" ? "dialog.server.add.error.auth" : "dialog.server.add.error"),
+        })
         return
       }
 
@@ -304,7 +306,9 @@ export function useServerManagementController(options: { onSelect?: () => void; 
       }
       const result = await checkServerHealth(conn.http)
       if (!result.healthy) {
-        setStore("editServer", { error: language.t("dialog.server.add.error") })
+        setStore("editServer", {
+          error: language.t(result.reason === "auth" ? "dialog.server.add.error.auth" : "dialog.server.add.error"),
+        })
         return
       }
       if (normalized === input.original.http.url) {

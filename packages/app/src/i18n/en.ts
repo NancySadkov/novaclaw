@@ -467,6 +467,7 @@ export const dict = {
   "dialog.server.add.url": "Server address",
   "dialog.server.add.placeholder": "http://localhost:4096",
   "dialog.server.add.error": "Could not connect to server",
+  "dialog.server.add.error.auth": "Wrong username or password",
   "dialog.server.add.checking": "Checking...",
   "dialog.server.add.button": "Add server",
   "dialog.server.add.name": "Server name (optional)",

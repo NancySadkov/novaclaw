@@ -1,10 +1,13 @@
-import { Component, Show } from "solid-js"
+import { Component, Show, createSignal } from "solid-js"
 import { Dialog as KobalteDialog } from "@kobalte/core/dialog"
 import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
 import { TabsV2 } from "@novaclaw/ui/v2/tabs-v2"
 import { Icon } from "@novaclaw/ui/icon"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
+import { useServer } from "@/context/server"
+import { ServerSDKProvider } from "@/context/server-sdk"
+import { ServerSyncProvider } from "@/context/server-sync"
 import { useExpertise } from "@/context/expertise"
 import type { ExpertiseLevel } from "@/context/settings"
 import { SettingsGeneralV2 } from "./general"
@@ -41,15 +44,19 @@ export const DialogSettings: Component<{
 }> = (props) => {
   const language = useLanguage()
   const platform = usePlatform()
+  const server = useServer()
   const { atLeast } = useExpertise()
   const tabVisible = (tab: string) => {
     const level = TAB_LEVELS[tab]
     return !level || atLeast(level)
   }
-  // Uncontrolled initial tab: never open on a tab the current level can't see (a deep-link into a
-  // now-hidden tab falls back to General rather than selecting a phantom Kobalte value).
+  // Never open on a tab the current level can't see (a deep-link into a now-hidden tab falls
+  // back to General rather than selecting a phantom Kobalte value).
   const requested = props.defaultTab ?? "general"
   const initialTab = tabVisible(requested) ? requested : "general"
+  // Controlled selection held OUTSIDE the keyed server boundary below, so an instance switch
+  // re-keys the panels without losing which tab the user is on.
+  const [tab, setTab] = createSignal(initialTab)
 
   return (
     <Dialog size="x-large" variant="settings" class="settings-v2-dialog">
@@ -60,7 +67,16 @@ export const DialogSettings: Component<{
           <path d="M12.4446 3.55469L3.55566 12.4436M3.55566 3.55469L12.4446 12.4436" stroke="currentColor" stroke-linejoin="round" />
         </svg>
       </KobalteDialog.CloseButton>
-      <TabsV2 orientation="vertical" variant="settings" defaultValue={initialTab} class="settings-v2">
+      {/* R8 residue fix: dialogs mount in a MANUAL root under an owner captured at show() time —
+          when the app's keyed ServerKey boundary disposes on an instance switch, an open dialog
+          survives but keeps reading the DISPOSED (frozen) server-sync ctx, so config-backed
+          controls showed the PREVIOUS instance's values (and an airgapped instance's reboot read
+          a stale offline=false). The dialog therefore mounts its OWN keyed server providers: the
+          live useServer().key re-keys the panels to the active instance's fresh ctx. */}
+      <Show when={server.key} keyed>
+        <ServerSDKProvider>
+          <ServerSyncProvider>
+      <TabsV2 orientation="vertical" variant="settings" value={tab()} onChange={setTab} class="settings-v2">
         <TabsV2.List>
           <div class="flex flex-col justify-between h-full w-full">
             <div class="flex flex-col gap-3 w-full">
@@ -220,6 +236,9 @@ export const DialogSettings: Component<{
           <SettingsAboutV2 />
         </TabsV2.Content>
       </TabsV2>
+          </ServerSyncProvider>
+        </ServerSDKProvider>
+      </Show>
     </Dialog>
   )
 }

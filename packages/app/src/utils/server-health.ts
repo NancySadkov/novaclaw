@@ -4,7 +4,10 @@ import { createSdkForServer } from "./server"
 import { Accessor, createEffect, onCleanup } from "solid-js"
 import { createStore, reconcile } from "solid-js/store"
 
-export type ServerHealth = { healthy: boolean; version?: string }
+/** `reason: "auth"` = the server answered but rejected the credentials (401/403) — legible
+ *  wrong-password feedback instead of a generic "could not connect" (R6 polish). Absent reason
+ *  on an unhealthy result = unreachable/timeout/other. */
+export type ServerHealth = { healthy: boolean; version?: string; reason?: "auth" }
 
 interface CheckServerHealthOptions {
   timeoutMs?: number
@@ -89,7 +92,17 @@ export async function checkServerHealth(
       signal,
     })
       .global.health()
-      .then((x) => (x.error ? next(count, x.error) : { healthy: x.data?.healthy === true, version: x.data?.version }))
+      .then((x) => {
+        if (x.error) {
+          // A 401/403 is an ANSWER, not an outage: the server is up and the credentials are
+          // wrong. Never retried (it won't heal), and reported distinctly so forms can say
+          // "wrong username or password" instead of "could not connect".
+          const status = (x as { response?: Response }).response?.status
+          if (status === 401 || status === 403) return { healthy: false, reason: "auth" } as const
+          return next(count, x.error)
+        }
+        return { healthy: x.data?.healthy === true, version: x.data?.version }
+      })
       .catch((error) => next(count, error))
   return attempt(0).finally(() => timeout?.clear?.())
 }
