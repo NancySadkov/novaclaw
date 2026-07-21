@@ -9,6 +9,7 @@ import { Config } from "../config"
 import { SettingsConfigStore } from "../settings-config-store"
 import { makeLocationNode } from "../effect/app-node"
 import { FSUtil } from "../fs-util"
+import { Location } from "../location"
 import { LocationMutation } from "../location-mutation"
 import { Offline } from "../offline"
 import { AppProcess } from "../process"
@@ -133,6 +134,7 @@ export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
     const mutation = yield* LocationMutation.Service
+    const location = yield* Location.Service
     const fs = yield* FSUtil.Service
     const config = yield* Config.Service
     const settingsStore = yield* SettingsConfigStore.Service
@@ -208,18 +210,19 @@ export const layer = Layer.effectDiscard(
                 source,
               })
 
-              // Agent Jail P0b (notes/agent-jail-plan.md §2.3): in an UNATTENDED chain (root type
-              // auto-prompting / goal-oriented) an assert success is auto-allow by definition —
-              // no human exists to answer — so raw host execution additionally requires a sandbox
-              // backend. None exists yet: unattended bash is denied with routing to the
-              // path-gated native tools. Attended chains (interactive roots + their sub-agents)
-              // are untouched. Post-assert placement is deliberate: consent flows stay unchanged,
-              // and no PermissionV2 API widening is needed. P1 replaces the deny arm with a
-              // confined spawn (wrap the ChildProcess spec below).
+              // Agent Jail P0b/P1 (notes/agent-jail-plan.md §2.3): in an UNATTENDED chain (root
+              // type auto-prompting / goal-oriented) an assert success is auto-allow by
+              // definition — no human exists to answer — so raw host execution additionally
+              // requires a sandbox. With a backend (Linux namespaces, P1) the command runs
+              // CONFINED — worktree-only FS, deny-all egress; with none it is denied with
+              // routing to the path-gated native tools. Attended chains (interactive roots +
+              // their sub-agents) are untouched. Post-assert placement is deliberate: consent
+              // flows stay unchanged, and no PermissionV2 API widening is needed.
               const rootType = yield* rootSessionType(context.sessionID, (id) =>
                 sessions.get(id as SessionV2.ID),
               )
-              if (AgentJail.decideBash({ rootType, backend: AgentJail.probe() }) === "deny")
+              const jailDecision = AgentJail.decideBash({ rootType, backend: AgentJail.probe() })
+              if (jailDecision === "deny")
                 return yield* Effect.fail(new ToolFailure({ message: AgentJail.denyMessage(rootType) }))
 
               if ((yield* fs.stat(target.canonical)).type !== "Directory")
@@ -260,14 +263,29 @@ export const layer = Layer.effectDiscard(
               const hasPeers = Object.keys(peerEnv).length > 0
               const childEnv =
                 bundleEnv || egress || hasPeers ? { ...bundleEnv, ...egress, ...peerEnv } : undefined
-              const command = ChildProcess.make(commandText, [], {
+              const spawnOptions = {
                 cwd: target.canonical,
-                shell,
                 ...(childEnv ? { env: childEnv, extendEnv: true } : {}),
                 stdin: "ignore",
                 detached: process.platform !== "win32",
                 forceKillAfter: Duration.seconds(3),
-              })
+              } as const
+              // P1: a confined command execs bwrap directly (the sandbox runs `<shell> -c` itself;
+              // no outer shell wrapping). The worktree = the session's location directory — the one
+              // writable bind, i.e. the blast radius.
+              const command =
+                jailDecision === "confined"
+                  ? ChildProcess.make(
+                      "bwrap",
+                      AgentJail.wrapArgs({
+                        worktree: location.directory,
+                        cwd: target.canonical,
+                        shell: String(shell),
+                        command: commandText,
+                      }),
+                      spawnOptions,
+                    )
+                  : ChildProcess.make(commandText, [], { ...spawnOptions, shell })
               // 1H: run as a JOB and wait up to the soft deadline. A command that
               // outlives it is NOT killed — the model gets the job id + partial
               // output and decides: keep working, wait, or stop.
@@ -335,6 +353,7 @@ export const node = makeLocationNode({
   deps: [
     ToolRegistry.node,
     LocationMutation.node,
+    Location.node,
     FSUtil.node,
     AppProcess.node,
     Config.node,

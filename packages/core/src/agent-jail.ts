@@ -15,6 +15,7 @@
  */
 export * as AgentJail from "./agent-jail"
 
+import { spawnSync } from "node:child_process"
 import type { SessionType } from "./session/config-resolve"
 
 /** The platform sandbox families the probe can report (notes/agent-jail-plan.md §2.2). */
@@ -29,15 +30,46 @@ export interface BackendInfo {
 }
 
 export const NO_BACKEND: BackendInfo = { kind: "none", fs: false, net: false }
+export const NAMESPACES: BackendInfo = { kind: "namespaces", fs: true, net: true }
 
 /**
- * What confinement this host can enforce RIGHT NOW. Honest by construction: no backend is
- * implemented yet, so every platform reports `none` — the policy below then denies unattended
- * raw bash instead of pretending. P1 replaces the Linux arm with a real runtime test
- * (userns/mountns/netns availability — TEST, never assume from the platform string alone).
+ * P1 Linux probe (pure half): decide the backend from a platform + a bwrap test-runner.
+ * The test command is the FULL sandbox shape (`--unshare-all` sets up the empty netns +
+ * loopback — the exact step Ubuntu's AppArmor userns restriction breaks when no bwrap
+ * profile is installed, measured on the Spark 2026-07-21), so a 0 exit proves BOTH
+ * boundaries, not merely that bwrap exists. TEST, never assume from the platform string.
+ */
+export const PROBE_ARGS = ["--die-with-parent", "--unshare-all", "--ro-bind", "/", "/", "true"] as const
+
+export function detectBackend(
+  platform: NodeJS.Platform,
+  run: (cmd: string, args: readonly string[]) => number | undefined,
+): BackendInfo {
+  if (platform !== "linux") return NO_BACKEND
+  return run("bwrap", PROBE_ARGS) === 0 ? NAMESPACES : NO_BACKEND
+}
+
+let probed: BackendInfo | undefined
+
+/**
+ * What confinement this host can enforce RIGHT NOW. Cached per process (the answer cannot
+ * change under a running instance, and bash calls must not each pay a spawn).
  */
 export function probe(): BackendInfo {
-  return NO_BACKEND
+  probed ??= detectBackend(process.platform, (cmd, args) => {
+    try {
+      const result = spawnSync(cmd, args as string[], { timeout: 5_000, stdio: "ignore" })
+      return result.status ?? undefined
+    } catch {
+      return undefined
+    }
+  })
+  return probed
+}
+
+/** Test seam: clear the per-process probe cache. */
+export function resetProbeCache(): void {
+  probed = undefined
 }
 
 /**
@@ -64,6 +96,41 @@ export function decideBash(input: { readonly rootType: SessionType; readonly bac
   if (attendedRoot(input.rootType)) return "raw"
   if (input.backend.fs && input.backend.net) return "confined"
   return "deny"
+}
+
+export interface WrapInput {
+  /** The session's location directory — the ONE writable bind (the blast radius). */
+  readonly worktree: string
+  /** The resolved working directory for the command (inside the worktree). */
+  readonly cwd: string
+  /** The shell binary path that will run the command (`<shell> -c <command>`). */
+  readonly shell: string
+  readonly command: string
+}
+
+/**
+ * P1: the bwrap argv for a confined command (pure — unit-testable on any platform; the shape
+ * is the one mechanism-gated live on the Spark 2026-07-21: egress fails closed, `rm -rf /`
+ * touches only the worktree bind, gcc compile+run works). Order is load-bearing: the
+ * `--tmpfs /home` mask precedes the worktree bind, so a worktree UNDER /home is re-bound
+ * writable while the rest of the user's home stays invisible. `/etc` is ro-bound (TLS certs,
+ * passwd) — read-only and egress-dead, an accepted P1 exposure; env scrubbing is P3.
+ */
+export function wrapArgs(input: WrapInput): string[] {
+  return [
+    "--die-with-parent",
+    "--unshare-all",
+    ...["/usr", "/lib", "/lib64", "/bin", "/sbin", "/etc", "/opt"].flatMap((dir) => ["--ro-bind-try", dir, dir]),
+    "--proc", "/proc",
+    "--dev", "/dev",
+    "--tmpfs", "/tmp",
+    "--tmpfs", "/home",
+    "--tmpfs", "/root",
+    "--bind", input.worktree, input.worktree,
+    "--chdir", input.cwd,
+    "--",
+    input.shell, "-c", input.command,
+  ]
 }
 
 /** The model-legible routing text for a `deny` (1P house style: teach the way forward). */
