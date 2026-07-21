@@ -96,7 +96,7 @@ export const fileHandlers = HttpApiBuilder.group(InstanceHttpApi, "file", (handl
       const directory = (yield* InstanceState.context).directory
       const file = path.resolve(directory, ctx.query.path)
       if (!FSUtil.contains(directory, file)) return yield* Effect.die(new Error("Path escapes the location"))
-      if (!(yield* FSUtil.Service.use((fs) => fs.existsSafe(file)))) return { type: "text" as const, content: "" }
+      if (!(yield* FSUtil.Service.use((fs) => fs.existsSafe(file)))) return { type: "missing" as const, content: "" }
       return yield* filesystem(
         FileSystem.Service.use((fs) => fs.read({ path: RelativePath.make(ctx.query.path) })),
       ).pipe(
@@ -137,9 +137,7 @@ export const fileHandlers = HttpApiBuilder.group(InstanceHttpApi, "file", (handl
       return file
     })
 
-    const write = Effect.fn("FileHttpApi.write")(function* (ctx: {
-      payload: { path: string; content: string }
-    }) {
+    const write = Effect.fn("FileHttpApi.write")(function* (ctx: { payload: { path: string; content: string } }) {
       const file = yield* resolveContained(ctx.payload.path)
       yield* Effect.tryPromise(async () => {
         await fs.mkdir(path.dirname(file), { recursive: true })

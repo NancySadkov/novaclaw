@@ -3313,6 +3313,194 @@
         ]
       }
     },
+    "/scheduler/snapshot": {
+      "get": {
+        "tags": ["instance"],
+        "operationId": "instance.scheduler",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Live scheduler state, one entry per device",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "deviceKey": {
+                        "type": "string"
+                      },
+                      "inFlightInteractive": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "inFlightBatch": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "waiting": {
+                        "type": "array",
+                        "items": {
+                          "type": "string"
+                        }
+                      },
+                      "ledger": {
+                        "type": "array",
+                        "items": {
+                          "type": "object",
+                          "properties": {
+                            "id": {
+                              "type": "string"
+                            },
+                            "weight": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["NaN"]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["Infinity"]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["-Infinity"]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["Infinity", "-Infinity", "NaN"]
+                                }
+                              ]
+                            },
+                            "sliceTokens": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["NaN"]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["Infinity"]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["-Infinity"]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["Infinity", "-Infinity", "NaN"]
+                                }
+                              ]
+                            },
+                            "lag": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["NaN"]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["Infinity"]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["-Infinity"]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["Infinity", "-Infinity", "NaN"]
+                                }
+                              ]
+                            },
+                            "vdeadline": {
+                              "anyOf": [
+                                {
+                                  "type": "number"
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["NaN"]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["Infinity"]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["-Infinity"]
+                                },
+                                {
+                                  "type": "string",
+                                  "enum": ["Infinity", "-Infinity", "NaN"]
+                                }
+                              ]
+                            }
+                          },
+                          "required": ["id", "weight", "sliceTokens", "lag", "vdeadline"],
+                          "additionalProperties": false
+                        }
+                      }
+                    },
+                    "required": ["deviceKey", "inFlightInteractive", "inFlightBatch", "waiting", "ledger"],
+                    "additionalProperties": false
+                  },
+                  "description": "Live scheduler state, one entry per device"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Per-device in-flight and waiting sessions plus the EEVDF ledger — the live `ps` view.",
+        "summary": "Scheduler snapshot",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.instance.scheduler({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/app": {
       "get": {
         "tags": ["instance"],
@@ -4102,6 +4290,1286 @@
           {
             "lang": "js",
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.mcp.disconnect({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/memory/stats": {
+      "get": {
+        "tags": ["memory"],
+        "operationId": "memory.stats",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Total + currently-valid memory counts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "total": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["NaN"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["-Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
+                    },
+                    "valid": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["NaN"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["-Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
+                    }
+                  },
+                  "required": ["total", "valid"],
+                  "additionalProperties": false,
+                  "description": "Total + currently-valid memory counts"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Total and currently-valid memory counts.",
+        "summary": "Memory counts",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.memory.stats({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/memory/list": {
+      "get": {
+        "tags": ["memory"],
+        "operationId": "memory.list",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "scopes",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "kinds",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "includeInvalid",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Memories, newest first (valid only unless includeInvalid)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "type": "string"
+                      },
+                      "text": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "scope": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "type": "string"
+                      },
+                      "confidence": {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["NaN"]
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["Infinity"]
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["-Infinity"]
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["Infinity", "-Infinity", "NaN"]
+                          }
+                        ]
+                      },
+                      "relation": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["id", "kind", "text", "name", "scope", "source", "confidence", "relation"],
+                    "additionalProperties": false
+                  },
+                  "description": "Memories, newest first (valid only unless includeInvalid)"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Enumerate memories (no query); filter by scope/kind/validity, paginated.",
+        "summary": "List memories",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.memory.list({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/memory/graph": {
+      "get": {
+        "tags": ["memory"],
+        "operationId": "memory.graph",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "scopes",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Graph slice: nodes + the edges among them",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "nodes": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "id": {
+                            "type": "string"
+                          },
+                          "kind": {
+                            "type": "string"
+                          },
+                          "text": {
+                            "type": "string"
+                          },
+                          "name": {
+                            "type": "string"
+                          },
+                          "scope": {
+                            "type": "string"
+                          },
+                          "source": {
+                            "type": "string"
+                          },
+                          "confidence": {
+                            "anyOf": [
+                              {
+                                "type": "number"
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["NaN"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["-Infinity"]
+                              },
+                              {
+                                "type": "string",
+                                "enum": ["Infinity", "-Infinity", "NaN"]
+                              }
+                            ]
+                          },
+                          "relation": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["id", "kind", "text", "name", "scope", "source", "confidence", "relation"],
+                        "additionalProperties": false
+                      }
+                    },
+                    "edges": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "from": {
+                            "type": "string"
+                          },
+                          "to": {
+                            "type": "string"
+                          },
+                          "type": {
+                            "type": "string"
+                          }
+                        },
+                        "required": ["from", "to", "type"],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": ["nodes", "edges"],
+                  "additionalProperties": false,
+                  "description": "Graph slice: nodes + the edges among them"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "A bounded graph slice for the visualizer: nodes + valid edges among them.",
+        "summary": "Memory graph",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.memory.graph({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/memory/search": {
+      "post": {
+        "tags": ["memory"],
+        "operationId": "memory.search",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Ranked memory hits",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "kind": {
+                        "type": "string"
+                      },
+                      "text": {
+                        "type": "string"
+                      },
+                      "name": {
+                        "type": "string"
+                      },
+                      "scope": {
+                        "type": "string"
+                      },
+                      "source": {
+                        "type": "string"
+                      },
+                      "confidence": {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["NaN"]
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["Infinity"]
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["-Infinity"]
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["Infinity", "-Infinity", "NaN"]
+                          }
+                        ]
+                      },
+                      "relation": {
+                        "type": "string"
+                      },
+                      "score": {
+                        "anyOf": [
+                          {
+                            "type": "number"
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["NaN"]
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["Infinity"]
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["-Infinity"]
+                          },
+                          {
+                            "type": "string",
+                            "enum": ["Infinity", "-Infinity", "NaN"]
+                          }
+                        ]
+                      }
+                    },
+                    "required": ["id", "kind", "text", "name", "scope", "source", "confidence", "relation", "score"],
+                    "additionalProperties": false
+                  },
+                  "description": "Ranked memory hits"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Keyword/FTS search over memory, scope-filtered.",
+        "summary": "Search memory",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "query": {
+                    "type": "string"
+                  },
+                  "k": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["NaN"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["-Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity", "-Infinity", "NaN"]
+                      }
+                    ]
+                  },
+                  "scopes": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "kinds": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": ["query"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.memory.search({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/memory/neighbors": {
+      "post": {
+        "tags": ["memory"],
+        "operationId": "memory.neighbors",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One-hop typed neighbours",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string"
+                      },
+                      "type": {
+                        "type": "string"
+                      },
+                      "text": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["id", "type", "text"],
+                    "additionalProperties": false
+                  },
+                  "description": "One-hop typed neighbours"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "The directly-linked memories of one node.",
+        "summary": "Memory neighbours",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  },
+                  "k": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["NaN"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["-Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity", "-Infinity", "NaN"]
+                      }
+                    ]
+                  }
+                },
+                "required": ["id"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.memory.neighbors({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/memory/path": {
+      "post": {
+        "tags": ["memory"],
+        "operationId": "memory.path",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Shortest path between two memories, if any",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ids": {
+                      "type": "array",
+                      "items": {
+                        "type": "string"
+                      }
+                    },
+                    "hops": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["NaN"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["-Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
+                    }
+                  },
+                  "required": ["ids", "hops"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Shortest path (by edge count) between two memories.",
+        "summary": "Memory path",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "from": {
+                    "type": "string"
+                  },
+                  "to": {
+                    "type": "string"
+                  },
+                  "maxHops": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["NaN"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["-Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity", "-Infinity", "NaN"]
+                      }
+                    ]
+                  }
+                },
+                "required": ["from", "to"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.memory.path({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/memory/remember": {
+      "post": {
+        "tags": ["memory"],
+        "operationId": "memory.remember",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The new memory's id",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "id": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["id"],
+                  "additionalProperties": false,
+                  "description": "The new memory's id"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Record a new memory (staged) in the given scope.",
+        "summary": "Add a memory",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "scope": {
+                    "type": "string"
+                  },
+                  "kind": {
+                    "type": "string"
+                  }
+                },
+                "required": ["text", "scope"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.memory.remember({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/memory/invalidate": {
+      "post": {
+        "tags": ["memory"],
+        "operationId": "memory.invalidate",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "True on success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean",
+                  "description": "True on success"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Supersede a memory bitemporally — kept in history, dropped from search.",
+        "summary": "Forget (invalidate)",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.memory.invalidate({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/memory/purge": {
+      "post": {
+        "tags": ["memory"],
+        "operationId": "memory.purge",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "True on success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean",
+                  "description": "True on success"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Hard-delete a memory with no history — for secrets.",
+        "summary": "Purge (hard delete)",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string"
+                  }
+                },
+                "required": ["id"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.memory.purge({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/memory/ingest": {
+      "post": {
+        "tags": ["memory"],
+        "operationId": "memory.ingest",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "How many passages were stored, and how many the document chunked into",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "stored": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["NaN"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["-Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
+                    },
+                    "passages": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["NaN"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["-Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
+                    }
+                  },
+                  "required": ["stored", "passages"],
+                  "additionalProperties": false,
+                  "description": "How many passages were stored, and how many the document chunked into"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Chunk a text document into searchable passages. Idempotent: re-ingesting the same document stores nothing new.",
+        "summary": "Ingest a document",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "text": {
+                    "type": "string"
+                  },
+                  "name": {
+                    "type": "string"
+                  },
+                  "scope": {
+                    "type": "string"
+                  }
+                },
+                "required": ["text", "name"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.memory.ingest({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/memory/clearScope": {
+      "post": {
+        "tags": ["memory"],
+        "operationId": "memory.clearScope",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "True on success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean",
+                  "description": "True on success"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Delete every memory in a scope (e.g. one chat, or all global).",
+        "summary": "Clear a scope",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "scope": {
+                    "type": "string"
+                  }
+                },
+                "required": ["scope"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.memory.clearScope({\n  ...\n})"
           }
         ]
       }
@@ -5146,6 +6614,87 @@
           {
             "lang": "js",
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.registry.updateRow({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/registry/row/insert": {
+      "post": {
+        "tags": ["registry"],
+        "operationId": "registry.insertRow",
+        "parameters": [
+          {
+            "name": "directory",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          },
+          {
+            "name": "workspace",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "required": false
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "True on success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "boolean",
+                  "description": "True on success"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          }
+        },
+        "description": "Insert a new row into a table. Constraint violations come back as a readable error.",
+        "summary": "Insert a row",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "table": {
+                    "type": "string"
+                  },
+                  "values": {
+                    "type": "object"
+                  }
+                },
+                "required": ["table", "values"],
+                "additionalProperties": false
+              }
+            }
+          }
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.registry.insertRow({\n  ...\n})"
           }
         ]
       }
@@ -17460,7 +19009,7 @@
         "properties": {
           "type": {
             "type": "string",
-            "enum": ["text", "binary"]
+            "enum": ["text", "binary", "missing"]
           },
           "content": {
             "type": "string"
@@ -23993,11 +25542,14 @@
             },
             "additionalProperties": false
           },
-          "kb": {
+          "memory": {
             "type": "object",
             "properties": {
-              "url": {
-                "type": "string"
+              "enabled": {
+                "type": "boolean"
+              },
+              "rerank": {
+                "type": "boolean"
               },
               "embedding": {
                 "type": "object",
@@ -24007,9 +25559,6 @@
                   },
                   "model": {
                     "type": "string"
-                  },
-                  "dims": {
-                    "type": "number"
                   }
                 },
                 "additionalProperties": false
@@ -32890,6 +34439,10 @@
     {
       "name": "mcp",
       "description": "Experimental HttpApi MCP routes."
+    },
+    {
+      "name": "memory",
+      "description": "The graph-memory viewer/editor API (kb-graph)."
     },
     {
       "name": "pty",

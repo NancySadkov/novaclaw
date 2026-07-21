@@ -1196,7 +1196,7 @@ export type FileNode = {
 }
 
 export type FileContent = {
-  type: "text" | "binary"
+  type: "text" | "binary" | "missing"
   content: string
   diff?: string
   patch?: {
@@ -3330,12 +3330,12 @@ export type ConfigInfo = {
   telemetry?: {
     enabled?: boolean
   }
-  kb?: {
-    url?: string
+  memory?: {
+    enabled?: boolean
+    rerank?: boolean
     embedding?: {
       url?: string
       model?: string
-      dims?: number
     }
   }
   quality?: {
@@ -7740,6 +7740,46 @@ export type FormatterStatusResponses = {
 
 export type FormatterStatusResponse = FormatterStatusResponses[keyof FormatterStatusResponses]
 
+export type InstanceSchedulerData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/scheduler/snapshot"
+}
+
+export type InstanceSchedulerErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type InstanceSchedulerError = InstanceSchedulerErrors[keyof InstanceSchedulerErrors]
+
+export type InstanceSchedulerResponses = {
+  /**
+   * Live scheduler state, one entry per device
+   */
+  200: Array<{
+    deviceKey: string
+    inFlightInteractive: Array<string>
+    inFlightBatch: Array<string>
+    waiting: Array<string>
+    ledger: Array<{
+      id: string
+      weight: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      sliceTokens: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      lag: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      vdeadline: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    }>
+  }>
+}
+
+export type InstanceSchedulerResponse = InstanceSchedulerResponses[keyof InstanceSchedulerResponses]
+
 export type AppListData = {
   body?: never
   path?: never
@@ -8079,6 +8119,398 @@ export type McpDisconnectResponses = {
 }
 
 export type McpDisconnectResponse = McpDisconnectResponses[keyof McpDisconnectResponses]
+
+export type MemoryStatsData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/memory/stats"
+}
+
+export type MemoryStatsErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type MemoryStatsError = MemoryStatsErrors[keyof MemoryStatsErrors]
+
+export type MemoryStatsResponses = {
+  /**
+   * Total + currently-valid memory counts
+   */
+  200: {
+    total: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    valid: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+}
+
+export type MemoryStatsResponse = MemoryStatsResponses[keyof MemoryStatsResponses]
+
+export type MemoryListData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+    scopes?: string
+    kinds?: string
+    includeInvalid?: string
+    limit?: string
+    offset?: string
+  }
+  url: "/memory/list"
+}
+
+export type MemoryListErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type MemoryListError = MemoryListErrors[keyof MemoryListErrors]
+
+export type MemoryListResponses = {
+  /**
+   * Memories, newest first (valid only unless includeInvalid)
+   */
+  200: Array<{
+    id: string
+    kind: string
+    text: string
+    name: string
+    scope: string
+    source: string
+    confidence: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    relation: string
+  }>
+}
+
+export type MemoryListResponse = MemoryListResponses[keyof MemoryListResponses]
+
+export type MemoryGraphData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+    scopes?: string
+    limit?: string
+  }
+  url: "/memory/graph"
+}
+
+export type MemoryGraphErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type MemoryGraphError = MemoryGraphErrors[keyof MemoryGraphErrors]
+
+export type MemoryGraphResponses = {
+  /**
+   * Graph slice: nodes + the edges among them
+   */
+  200: {
+    nodes: Array<{
+      id: string
+      kind: string
+      text: string
+      name: string
+      scope: string
+      source: string
+      confidence: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      relation: string
+    }>
+    edges: Array<{
+      from: string
+      to: string
+      type: string
+    }>
+  }
+}
+
+export type MemoryGraphResponse = MemoryGraphResponses[keyof MemoryGraphResponses]
+
+export type MemorySearchData = {
+  body?: {
+    query: string
+    k?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    scopes?: Array<string>
+    kinds?: Array<string>
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/memory/search"
+}
+
+export type MemorySearchErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type MemorySearchError = MemorySearchErrors[keyof MemorySearchErrors]
+
+export type MemorySearchResponses = {
+  /**
+   * Ranked memory hits
+   */
+  200: Array<{
+    id: string
+    kind: string
+    text: string
+    name: string
+    scope: string
+    source: string
+    confidence: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    relation: string
+    score: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }>
+}
+
+export type MemorySearchResponse = MemorySearchResponses[keyof MemorySearchResponses]
+
+export type MemoryNeighborsData = {
+  body?: {
+    id: string
+    k?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/memory/neighbors"
+}
+
+export type MemoryNeighborsErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type MemoryNeighborsError = MemoryNeighborsErrors[keyof MemoryNeighborsErrors]
+
+export type MemoryNeighborsResponses = {
+  /**
+   * One-hop typed neighbours
+   */
+  200: Array<{
+    id: string
+    type: string
+    text: string
+  }>
+}
+
+export type MemoryNeighborsResponse = MemoryNeighborsResponses[keyof MemoryNeighborsResponses]
+
+export type MemoryPathData = {
+  body?: {
+    from: string
+    to: string
+    maxHops?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/memory/path"
+}
+
+export type MemoryPathErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type MemoryPathError = MemoryPathErrors[keyof MemoryPathErrors]
+
+export type MemoryPathResponses = {
+  /**
+   * Shortest path between two memories, if any
+   */
+  200: {
+    ids: Array<string>
+    hops: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+}
+
+export type MemoryPathResponse = MemoryPathResponses[keyof MemoryPathResponses]
+
+export type MemoryRememberData = {
+  body?: {
+    text: string
+    name?: string
+    scope: string
+    kind?: string
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/memory/remember"
+}
+
+export type MemoryRememberErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+}
+
+export type MemoryRememberError = MemoryRememberErrors[keyof MemoryRememberErrors]
+
+export type MemoryRememberResponses = {
+  /**
+   * The new memory's id
+   */
+  200: {
+    id: string
+  }
+}
+
+export type MemoryRememberResponse = MemoryRememberResponses[keyof MemoryRememberResponses]
+
+export type MemoryInvalidateData = {
+  body?: {
+    id: string
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/memory/invalidate"
+}
+
+export type MemoryInvalidateErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+}
+
+export type MemoryInvalidateError = MemoryInvalidateErrors[keyof MemoryInvalidateErrors]
+
+export type MemoryInvalidateResponses = {
+  /**
+   * True on success
+   */
+  200: boolean
+}
+
+export type MemoryInvalidateResponse = MemoryInvalidateResponses[keyof MemoryInvalidateResponses]
+
+export type MemoryPurgeData = {
+  body?: {
+    id: string
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/memory/purge"
+}
+
+export type MemoryPurgeErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+}
+
+export type MemoryPurgeError = MemoryPurgeErrors[keyof MemoryPurgeErrors]
+
+export type MemoryPurgeResponses = {
+  /**
+   * True on success
+   */
+  200: boolean
+}
+
+export type MemoryPurgeResponse = MemoryPurgeResponses[keyof MemoryPurgeResponses]
+
+export type MemoryIngestData = {
+  body?: {
+    text: string
+    name: string
+    scope?: string
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/memory/ingest"
+}
+
+export type MemoryIngestErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+}
+
+export type MemoryIngestError = MemoryIngestErrors[keyof MemoryIngestErrors]
+
+export type MemoryIngestResponses = {
+  /**
+   * How many passages were stored, and how many the document chunked into
+   */
+  200: {
+    stored: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    passages: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+}
+
+export type MemoryIngestResponse = MemoryIngestResponses[keyof MemoryIngestResponses]
+
+export type MemoryClearScopeData = {
+  body?: {
+    scope: string
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/memory/clearScope"
+}
+
+export type MemoryClearScopeErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+}
+
+export type MemoryClearScopeError = MemoryClearScopeErrors[keyof MemoryClearScopeErrors]
+
+export type MemoryClearScopeResponses = {
+  /**
+   * True on success
+   */
+  200: boolean
+}
+
+export type MemoryClearScopeResponse = MemoryClearScopeResponses[keyof MemoryClearScopeResponses]
 
 export type PtyShellsData = {
   body?: never
@@ -8515,6 +8947,39 @@ export type RegistryUpdateRowResponses = {
 }
 
 export type RegistryUpdateRowResponse = RegistryUpdateRowResponses[keyof RegistryUpdateRowResponses]
+
+export type RegistryInsertRowData = {
+  body?: {
+    table: string
+    values: {
+      [key: string]: unknown
+    }
+  }
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/registry/row/insert"
+}
+
+export type RegistryInsertRowErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+}
+
+export type RegistryInsertRowError = RegistryInsertRowErrors[keyof RegistryInsertRowErrors]
+
+export type RegistryInsertRowResponses = {
+  /**
+   * True on success
+   */
+  200: boolean
+}
+
+export type RegistryInsertRowResponse = RegistryInsertRowResponses[keyof RegistryInsertRowResponses]
 
 export type RegistryDeleteRowData = {
   body?: {

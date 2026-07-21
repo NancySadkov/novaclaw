@@ -54,7 +54,10 @@ export const LegacyEntry = Schema.Struct({
 }).annotate({ identifier: "FileNode" })
 
 export const LegacyContent = Schema.Struct({
-  type: Schema.Literals(["text", "binary"]),
+  // "missing" = the path does not exist. It USED to masquerade as {type:"text",content:""},
+  // which made absent and empty indistinguishable for every consumer (issues.md P2 — this
+  // silently poisoned the Notes create flow's existence check).
+  type: Schema.Literals(["text", "binary", "missing"]),
   content: Schema.String,
   diff: Schema.optional(Schema.String),
   patch: Schema.optional(

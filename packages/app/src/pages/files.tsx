@@ -125,6 +125,9 @@ export function FilesPage() {
         .then((r) => r.data as { type?: string; content?: string; mimeType?: string } | undefined)
         .catch(() => undefined)
       if (!res) return { kind: "error" as const }
+      // The file vanished between listing and click (deleted/renamed outside) — an honest
+      // "can't read" beats rendering a phantom empty document.
+      if (res.type === "missing") return { kind: "error" as const }
       if (res.type === "binary") return { kind: "binary" as const, mime: res.mimeType ?? "" }
       const text = res.content ?? ""
       const MAX = 100_000

@@ -99,6 +99,8 @@ import type {
   GlobalUpgradeResponses,
   InstanceDisposeErrors,
   InstanceDisposeResponses,
+  InstanceSchedulerErrors,
+  InstanceSchedulerResponses,
   LocationRef,
   McpAddErrors,
   McpAddResponses,
@@ -116,6 +118,28 @@ import type {
   McpDisconnectResponses,
   McpStatusErrors,
   McpStatusResponses,
+  MemoryClearScopeErrors,
+  MemoryClearScopeResponses,
+  MemoryGraphErrors,
+  MemoryGraphResponses,
+  MemoryIngestErrors,
+  MemoryIngestResponses,
+  MemoryInvalidateErrors,
+  MemoryInvalidateResponses,
+  MemoryListErrors,
+  MemoryListResponses,
+  MemoryNeighborsErrors,
+  MemoryNeighborsResponses,
+  MemoryPathErrors,
+  MemoryPathResponses,
+  MemoryPurgeErrors,
+  MemoryPurgeResponses,
+  MemoryRememberErrors,
+  MemoryRememberResponses,
+  MemorySearchErrors,
+  MemorySearchResponses,
+  MemoryStatsErrors,
+  MemoryStatsResponses,
   ModelRef,
   MoveSessionDestination,
   PathGetErrors,
@@ -164,6 +188,8 @@ import type {
   QuestionV2Reply,
   RegistryDeleteRowErrors,
   RegistryDeleteRowResponses,
+  RegistryInsertRowErrors,
+  RegistryInsertRowResponses,
   RegistryRowsErrors,
   RegistryRowsResponses,
   RegistryTablesErrors,
@@ -2143,6 +2169,36 @@ export class Instance extends HeyApiClient {
       ...params,
     })
   }
+
+  /**
+   * Scheduler snapshot
+   *
+   * Per-device in-flight and waiting sessions plus the EEVDF ledger — the live `ps` view.
+   */
+  public scheduler<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<InstanceSchedulerResponses, InstanceSchedulerErrors, ThrowOnError>({
+      url: "/scheduler/snapshot",
+      ...options,
+      ...params,
+    })
+  }
 }
 
 export class Path extends HeyApiClient {
@@ -2686,6 +2742,430 @@ export class Mcp extends HeyApiClient {
   }
 }
 
+export class Memory extends HeyApiClient {
+  /**
+   * Memory counts
+   *
+   * Total and currently-valid memory counts.
+   */
+  public stats<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<MemoryStatsResponses, MemoryStatsErrors, ThrowOnError>({
+      url: "/memory/stats",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * List memories
+   *
+   * Enumerate memories (no query); filter by scope/kind/validity, paginated.
+   */
+  public list<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      scopes?: string
+      kinds?: string
+      includeInvalid?: string
+      limit?: string
+      offset?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "scopes" },
+            { in: "query", key: "kinds" },
+            { in: "query", key: "includeInvalid" },
+            { in: "query", key: "limit" },
+            { in: "query", key: "offset" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<MemoryListResponses, MemoryListErrors, ThrowOnError>({
+      url: "/memory/list",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Memory graph
+   *
+   * A bounded graph slice for the visualizer: nodes + valid edges among them.
+   */
+  public graph<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      scopes?: string
+      limit?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "query", key: "scopes" },
+            { in: "query", key: "limit" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<MemoryGraphResponses, MemoryGraphErrors, ThrowOnError>({
+      url: "/memory/graph",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Search memory
+   *
+   * Keyword/FTS search over memory, scope-filtered.
+   */
+  public search<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      query?: string
+      k?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      scopes?: Array<string>
+      kinds?: Array<string>
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "query" },
+            { in: "body", key: "k" },
+            { in: "body", key: "scopes" },
+            { in: "body", key: "kinds" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<MemorySearchResponses, MemorySearchErrors, ThrowOnError>({
+      url: "/memory/search",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Memory neighbours
+   *
+   * The directly-linked memories of one node.
+   */
+  public neighbors<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      id?: string
+      k?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "id" },
+            { in: "body", key: "k" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<MemoryNeighborsResponses, MemoryNeighborsErrors, ThrowOnError>({
+      url: "/memory/neighbors",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Memory path
+   *
+   * Shortest path (by edge count) between two memories.
+   */
+  public path<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      from?: string
+      to?: string
+      maxHops?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "from" },
+            { in: "body", key: "to" },
+            { in: "body", key: "maxHops" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<MemoryPathResponses, MemoryPathErrors, ThrowOnError>({
+      url: "/memory/path",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Add a memory
+   *
+   * Record a new memory (staged) in the given scope.
+   */
+  public remember<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      text?: string
+      name?: string
+      scope?: string
+      kind?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "text" },
+            { in: "body", key: "name" },
+            { in: "body", key: "scope" },
+            { in: "body", key: "kind" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<MemoryRememberResponses, MemoryRememberErrors, ThrowOnError>({
+      url: "/memory/remember",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Forget (invalidate)
+   *
+   * Supersede a memory bitemporally — kept in history, dropped from search.
+   */
+  public invalidate<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      id?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "id" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<MemoryInvalidateResponses, MemoryInvalidateErrors, ThrowOnError>({
+      url: "/memory/invalidate",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Purge (hard delete)
+   *
+   * Hard-delete a memory with no history — for secrets.
+   */
+  public purge<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      id?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "id" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<MemoryPurgeResponses, MemoryPurgeErrors, ThrowOnError>({
+      url: "/memory/purge",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Ingest a document
+   *
+   * Chunk a text document into searchable passages. Idempotent: re-ingesting the same document stores nothing new.
+   */
+  public ingest<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      text?: string
+      name?: string
+      scope?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "text" },
+            { in: "body", key: "name" },
+            { in: "body", key: "scope" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<MemoryIngestResponses, MemoryIngestErrors, ThrowOnError>({
+      url: "/memory/ingest",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Clear a scope
+   *
+   * Delete every memory in a scope (e.g. one chat, or all global).
+   */
+  public clearScope<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      scope?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "scope" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<MemoryClearScopeResponses, MemoryClearScopeErrors, ThrowOnError>({
+      url: "/memory/clearScope",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
 export class Pty extends HeyApiClient {
   /**
    * List available shells
@@ -3174,6 +3654,47 @@ export class Registry extends HeyApiClient {
     )
     return (options?.client ?? this.client).post<RegistryUpdateRowResponses, RegistryUpdateRowErrors, ThrowOnError>({
       url: "/registry/row/update",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Insert a row
+   *
+   * Insert a new row into a table. Constraint violations come back as a readable error.
+   */
+  public insertRow<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+      table?: string
+      values?: {
+        [key: string]: unknown
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+            { in: "body", key: "table" },
+            { in: "body", key: "values" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<RegistryInsertRowResponses, RegistryInsertRowErrors, ThrowOnError>({
+      url: "/registry/row/insert",
       ...options,
       ...params,
       headers: {
@@ -6307,6 +6828,11 @@ export class NovaclawClient extends HeyApiClient {
   private _mcp?: Mcp
   get mcp(): Mcp {
     return (this._mcp ??= new Mcp({ client: this.client }))
+  }
+
+  private _memory?: Memory
+  get memory(): Memory {
+    return (this._memory ??= new Memory({ client: this.client }))
   }
 
   private _pty?: Pty
