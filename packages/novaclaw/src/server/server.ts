@@ -197,6 +197,13 @@ function forceClose(state: ListenerState) {
 
 function serverLayer(opts: { port: number; hostname: string }) {
   const server = createServer()
+  // SSE event streams are legitimately INFINITE responses: Node's default requestTimeout
+  // (300s, whole-request clock) reaped them — the "connection lost — reconnecting…" blips
+  // minutes apart during healthy turns (issues.md P3). 0 disables the whole-response clock;
+  // headersTimeout (60s default) still guards the header phase against slow-loris, which is
+  // the vector that matters on a local-first server.
+  server.requestTimeout = 0
+  server.keepAliveTimeout = 65_000
   const serverRef = { closeStarted: false, forceStop: false }
   const close = server.close.bind(server)
   // Keep shutdown owned by NodeHttpServer, but honor listener.stop(true) by

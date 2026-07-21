@@ -60,7 +60,7 @@ function eventResponse(events: EventV2.Interface) {
       Stream.merge(disposed, { haltStrategy: "left" }),
       Stream.takeUntil((event) => event.type === "server.instance.disposed"),
     )
-    const heartbeat = Stream.tick("10 seconds").pipe(
+    const heartbeat = Stream.tick("5 seconds").pipe(
       Stream.drop(1),
       Stream.map(() => ({ id: eventID(), type: "server.heartbeat", properties: {} })),
     )
