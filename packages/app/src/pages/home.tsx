@@ -53,6 +53,7 @@ import {
 } from "@/pages/layout/helpers"
 import { SessionTabAvatar } from "@/pages/layout/session-tab-avatar"
 import { sessionTitle } from "@/utils/session-title"
+import { sessionTimeMillis } from "@/utils/session-time"
 import { pathKey } from "@/utils/path-key"
 import { useGlobal } from "@/context/global"
 import { Binary } from "@novaclaw/core/util/binary"
@@ -313,7 +314,8 @@ export function NewHome() {
     const mode = sortMode()
     if (mode === "recent") return []
     const items = visibleRecords().slice()
-    const updatedAt = (record: HomeSessionRecord) => record.session.time.updated ?? record.session.time.created
+    const updatedAt = (record: HomeSessionRecord) =>
+      sessionTimeMillis(record.session.time.updated ?? record.session.time.created)
     if (mode === "tokens") {
       // Generated tokens only (output + reasoning) — the same metric the row badge shows.
       const generated = (record: HomeSessionRecord) => {
@@ -367,8 +369,8 @@ export function NewHome() {
       .filter((item): item is { record: HomeSessionRecord; tier: number } => item.tier !== undefined)
       .sort((a, b) => {
         if (a.tier !== b.tier) return a.tier - b.tier
-        const at = a.record.session.time.updated ?? a.record.session.time.created
-        const bt = b.record.session.time.updated ?? b.record.session.time.created
+        const at = sessionTimeMillis(a.record.session.time.updated ?? a.record.session.time.created)
+        const bt = sessionTimeMillis(b.record.session.time.updated ?? b.record.session.time.created)
         return bt - at
       })
       .map((item) => item.record)
@@ -1337,14 +1339,16 @@ function HomeSessionSkeleton(props: { label: string }) {
 function groupSessions(records: HomeSessionRecord[], language: ReturnType<typeof useLanguage>): HomeSessionGroup[] {
   const now = DateTime.local()
   const yesterday = now.minus({ days: 1 })
-  const todaySessions = records.filter((record) =>
-    DateTime.fromMillis(record.session.time.updated ?? record.session.time.created).hasSame(now, "day"),
-  )
-  const yesterdaySessions = records.filter((record) =>
-    DateTime.fromMillis(record.session.time.updated ?? record.session.time.created).hasSame(yesterday, "day"),
-  )
+  // sessionTimeMillis, not a raw read: a live-event-folded record could carry ISO-string times
+  // (see utils/session-time.ts) and fromMillis THROWS on strings — this faulted the whole
+  // sessions pane (owner-hit 2026-07-21). Normalization at the store boundary is the real fix;
+  // the tolerant read keeps this pure function total regardless.
+  const recordDay = (record: HomeSessionRecord) =>
+    DateTime.fromMillis(sessionTimeMillis(record.session.time.updated ?? record.session.time.created))
+  const todaySessions = records.filter((record) => recordDay(record).hasSame(now, "day"))
+  const yesterdaySessions = records.filter((record) => recordDay(record).hasSame(yesterday, "day"))
   const olderSessions = records.filter((record) => {
-    const time = DateTime.fromMillis(record.session.time.updated ?? record.session.time.created)
+    const time = recordDay(record)
     return !time.hasSame(now, "day") && !time.hasSame(yesterday, "day")
   })
   const olderTitle =

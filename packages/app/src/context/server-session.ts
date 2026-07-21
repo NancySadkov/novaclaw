@@ -11,6 +11,7 @@ import type {
 import { createStore, produce, reconcile } from "solid-js/store"
 import { Binary } from "@novaclaw/core/util/binary"
 import { diffs as cleanDiffs } from "@/utils/diffs"
+import { normalizeSessionTimes } from "@/utils/session-time"
 import { rootSession } from "@/utils/session-route"
 import { applyControlPatch, controlPatch } from "./global-sync/control-fold"
 import { dropSessionCaches, pickSessionCacheEvictions, SESSION_CACHE_LIMIT } from "./global-sync/session-cache"
@@ -63,7 +64,10 @@ export function createServerSession(client: NovaclawClient, options?: { retry?: 
     at: {} as Record<string, number | undefined>,
   })
 
-  const remember = (session: Session) => {
+  const remember = (input: Session) => {
+    // Store-boundary contract: time fields are epoch millis (live-event payloads carry ISO
+    // strings — see utils/session-time.ts).
+    const session = normalizeSessionTimes(input)
     setData("info", session.id, reconcile(session))
     infoSeen.delete(session.id)
     infoSeen.add(session.id)

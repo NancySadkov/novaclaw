@@ -12,6 +12,7 @@ import type { State, VcsCache } from "./types"
 import { trimSessions } from "./session-trim"
 import { dropSessionCaches } from "./session-cache"
 import { diffs as list } from "@/utils/diffs"
+import { normalizeSessionTimes } from "@/utils/session-time"
 
 const SESSION_CONTENT_EVENTS = new Set([
   "session.diff",
@@ -93,7 +94,9 @@ export function applyDirectoryEvent(input: {
       return
     }
     case "session.created": {
-      const info = (event.properties as { info: Session }).info
+      // Store-boundary contract: time fields are epoch millis (live-event payloads carry ISO
+      // strings — see utils/session-time.ts).
+      const info = normalizeSessionTimes((event.properties as { info: Session }).info)
       const result = Binary.search(input.store.session, info.id, (s) => s.id)
       if (result.found) {
         input.setStore("session", result.index, reconcile(info))
@@ -108,7 +111,7 @@ export function applyDirectoryEvent(input: {
       break
     }
     case "session.updated": {
-      const info = (event.properties as { info: Session }).info
+      const info = normalizeSessionTimes((event.properties as { info: Session }).info)
       const result = Binary.search(input.store.session, info.id, (s) => s.id)
       if (info.time.archived) {
         if (input.store.session[result.index]!.time.archived === info.time.archived) break
