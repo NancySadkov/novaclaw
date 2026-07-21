@@ -3062,6 +3062,16 @@ export type ConfigV2Experimental = {
   policies?: Array<ConfigV2ExperimentalPolicy>
 }
 
+export type ConfigV2ProviderPreset = {
+  name?: string
+  description?: string
+  baseURL?: string
+  keyURL?: string
+  api?: "@ai-sdk/openai" | "@ai-sdk/anthropic" | "@ai-sdk/openai-compatible"
+  authStyle?: "bearer" | "anthropic"
+  hidden?: boolean
+}
+
 export type ProviderAisdk = {
   type: "aisdk"
   package: string
@@ -3360,6 +3370,9 @@ export type ConfigInfo = {
   }
   plugins?: Array<string | ConfigV2PluginEntry>
   experimental?: ConfigV2Experimental
+  provider_presets?: {
+    [key: string]: ConfigV2ProviderPreset
+  }
   providers?: {
     [key: string]: ConfigV2Provider
   }
@@ -9257,6 +9270,7 @@ export type ProviderProbeData = {
     modelID?: string
     baseURL?: string
     apiKey?: string
+    authStyle?: "bearer" | "anthropic"
   }
   path: {
     providerID: string
@@ -9291,6 +9305,36 @@ export type ProviderProbeResponses = {
 }
 
 export type ProviderProbeResponse = ProviderProbeResponses[keyof ProviderProbeResponses]
+
+export type ProviderPresetsData = {
+  body?: never
+  path?: never
+  query?: {
+    directory?: string
+    workspace?: string
+  }
+  url: "/provider/presets"
+}
+
+export type ProviderPresetsErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type ProviderPresetsError = ProviderPresetsErrors[keyof ProviderPresetsErrors]
+
+export type ProviderPresetsResponses = {
+  /**
+   * Provider import presets (builtins merged with config overrides)
+   */
+  200: {
+    [key: string]: ConfigV2ProviderPreset
+  }
+}
+
+export type ProviderPresetsResponse = ProviderPresetsResponses[keyof ProviderPresetsResponses]
 
 export type ShellStatusData = {
   body?: never

@@ -80,13 +80,38 @@ export interface ProbeResult {
 
 export function providerProbe(
   server: ServerConnection.HttpBase,
-  input: { directory: string; providerID: string; modelID?: string; baseURL?: string; apiKey?: string },
+  input: {
+    directory: string
+    providerID: string
+    modelID?: string
+    baseURL?: string
+    apiKey?: string
+    authStyle?: "bearer" | "anthropic"
+  },
 ) {
   return call<ProbeResult>(server, "POST", `provider/${encodeURIComponent(input.providerID)}/probe`, input.directory, {
     ...(input.modelID === undefined ? {} : { modelID: input.modelID }),
     ...(input.baseURL === undefined ? {} : { baseURL: input.baseURL }),
     ...(input.apiKey === undefined ? {} : { apiKey: input.apiKey }),
+    ...(input.authStyle === undefined ? {} : { authStyle: input.authStyle }),
   })
+}
+
+// Provider-import presets (Settings → Models → Add models): the server-merged view of the
+// builtin preset catalog ⊕ the `provider_presets` config overrides — fetched fresh on every
+// dialog open so a runtime endpoint repair (self-healing PATCH /config) shows immediately.
+export interface ProviderPreset {
+  readonly name?: string
+  readonly description?: string
+  readonly baseURL?: string
+  readonly keyURL?: string
+  readonly api?: "@ai-sdk/openai" | "@ai-sdk/anthropic" | "@ai-sdk/openai-compatible"
+  readonly authStyle?: "bearer" | "anthropic"
+  readonly hidden?: boolean
+}
+
+export function providerPresets(server: ServerConnection.HttpBase, input: { directory: string }) {
+  return call<Record<string, ProviderPreset>>(server, "GET", "provider/presets", input.directory)
 }
 
 // B11 — the bundled-shell substrate (status + provisioner). Provisioning downloads

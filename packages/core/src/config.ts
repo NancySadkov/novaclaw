@@ -22,6 +22,7 @@ import { ConfigMCP } from "./config/mcp"
 import { ConfigPersona } from "./config/persona"
 import { ConfigPlugin } from "./config/plugin"
 import { ConfigProvider } from "./config/provider"
+import { ConfigProviderPreset } from "./config/provider-preset"
 import { ConfigReference } from "./config/reference"
 import { ConfigServer } from "./config/server"
 import { ConfigStrict } from "./config/strict"
@@ -214,6 +215,16 @@ export class Info extends Schema.Class<Info>("Config.Info")({
     description: "Ordered external plugin packages to load",
   }),
   experimental: ConfigExperimental.Experimental.pipe(Schema.optional),
+  provider_presets: Schema.Record(Schema.String, ConfigProviderPreset.Info)
+    .pipe(Schema.optional)
+    .annotate({
+      description:
+        "Overrides/additions to the BUILT-IN provider import presets (Settings → Models → Add models). " +
+        "Merged field-wise over the builtins by id — e.g. {\"anthropic\":{\"baseURL\":\"https://…\"}} repairs a " +
+        "moved vendor endpoint at RUNTIME (self-healing: any working model can PATCH /config with this key; " +
+        "no config-file edits, no rebuild). Unknown ids add new presets; hidden:true hides one. " +
+        "Already-imported providers are repaired via providers.<id>.api.url instead — presets shape future imports only.",
+    }),
   providers: Schema.Record(Schema.String, ConfigProvider.Info).pipe(Schema.optional),
   // Models-primary (notes/models-primary-plan.md P1): the flat successor to `providers` — a map
   // of models keyed by id, each with its OWN endpoint `url` + params + `tier`. Decoded in

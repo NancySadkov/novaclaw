@@ -15,6 +15,7 @@ import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
 import { ProviderAuthApiError } from "../groups/provider"
+import { ConfigProviderPreset } from "@novaclaw/core/config/provider-preset"
 import { ProviderV2 } from "@novaclaw/core/provider"
 
 function mapProviderAuthError<A, R>(self: Effect.Effect<A, ProviderAuth.Error, R>) {
@@ -112,9 +113,22 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
     // validates URL + key + model listing and harvests the server-reported honored window
     // (vLLM max_model_len). Chosen over a root GET / (hangs on vLLM) and over a hello
     // completion (costs tokens). Never throws — every failure classifies into the result.
+    // Provider-import presets: builtin defaults merged with the `provider_presets` config key.
+    // Served fresh on every call so a runtime endpoint fix (self-healing PATCH /config) is
+    // visible to the next import-flow open with no cache dance.
+    const presets = Effect.fn("ProviderHttpApi.presets")(function* () {
+      const config = yield* cfg.get()
+      return ConfigProviderPreset.effective(config.provider_presets)
+    })
+
     const probe = Effect.fn("ProviderHttpApi.probe")(function* (ctx: {
       params: { providerID: ProviderV2.ID }
-      payload: { modelID?: string | undefined; baseURL?: string | undefined; apiKey?: string | undefined }
+      payload: {
+        modelID?: string | undefined
+        baseURL?: string | undefined
+        apiKey?: string | undefined
+        authStyle?: ConfigProviderPreset.AuthStyle | undefined
+      }
     }) {
       const config = yield* cfg.get()
       const entry = config.providers?.[ctx.params.providerID]
@@ -144,12 +158,25 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
         (ctx.payload.apiKey && ctx.payload.apiKey.length > 0 ? ctx.payload.apiKey : undefined) ??
         (typeof options.apiKey === "string" && options.apiKey.length > 0 ? options.apiKey : undefined)
       const url = `${baseURL.replace(/\/+$/, "")}/models`
+      // Discovery auth style: explicit payload wins (the import flow passes the preset's style);
+      // else infer from the saved provider's API channel; default bearer. Anthropic's /models
+      // requires x-api-key + anthropic-version instead of a Bearer header.
+      const authStyle =
+        ctx.payload.authStyle ??
+        (entry?.api?.type === "aisdk" && entry.api.package === "@ai-sdk/anthropic" ? "anthropic" : "bearer")
+      const authHeaders: Record<string, string> = apiKey
+        ? authStyle === "anthropic"
+          ? { "x-api-key": apiKey, "anthropic-version": "2023-06-01" }
+          : { authorization: `Bearer ${apiKey}` }
+        : authStyle === "anthropic"
+          ? { "anthropic-version": "2023-06-01" }
+          : {}
       const started = Date.now()
       const response = yield* Effect.tryPromise(() =>
         fetch(url, {
           method: "GET",
           signal: AbortSignal.timeout(5000),
-          headers: apiKey ? { authorization: `Bearer ${apiKey}` } : {},
+          headers: authHeaders,
         }),
       ).pipe(Effect.catch((error) => Effect.succeed(String((error as { cause?: unknown }).cause ?? error))))
       const latencyMs = Date.now() - started
@@ -190,5 +217,6 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
       .handleRaw("authorize", authorizeRaw)
       .handle("callback", callback)
       .handle("probe", probe)
+      .handle("presets", presets)
   }),
 ).pipe(Layer.provide(ServerLocationServiceMap.layer))

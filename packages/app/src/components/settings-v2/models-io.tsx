@@ -10,10 +10,11 @@ import { parseJSONC } from "./config-io"
 // T12 (small-tails): the curated MODEL-BUNDLE Export/Import — a portable "model setup" users hand
 // between instances (provider access points + model parameters), distinct from the Developer-gated
 // whole-config Export/Import beside it. Secrets never travel: any key/token/authorization-shaped
-// field and every `headers` object is stripped on export (credentials stay per-device via
-// auth.set — an imported provider may need reconnecting, which is correct). Import merges through
-// the same updateConfig patch path the config Import uses. Advanced+ (a portability power tool),
-// desktop-only (window.api file pickers are absent on web).
+// field and every `headers` object is stripped on export — this includes the provider-import
+// flow's inline `request.body.apiKey` (keys stay per-instance; an imported provider may need
+// reconnecting, which is correct). Import merges through the same updateConfig patch path the
+// config Import uses. Advanced+ (a portability power tool), desktop-only (window.api file
+// pickers are absent on web).
 
 const SECRET_KEY = /key|token|secret|authorization|password|credential/i
 

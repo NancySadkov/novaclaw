@@ -7,6 +7,7 @@ import { Authorization } from "../middleware/authorization"
 import { InstanceContextMiddleware } from "../middleware/instance-context"
 import { WorkspaceRoutingMiddleware, WorkspaceRoutingQuery } from "../middleware/workspace-routing"
 import { described } from "./metadata"
+import { ConfigProviderPreset } from "@novaclaw/core/config/provider-preset"
 import { ProviderV2 } from "@novaclaw/core/provider"
 
 const root = "/provider"
@@ -110,6 +111,10 @@ export const ProviderApi = HttpApi.make("provider")
             modelID: Schema.optional(Schema.String),
             baseURL: Schema.optional(Schema.String),
             apiKey: Schema.optional(Schema.String),
+            // Discovery auth style (provider-import presets): "anthropic" sends x-api-key +
+            // anthropic-version instead of a Bearer header. Absent = inferred from the saved
+            // provider's API channel, defaulting to bearer.
+            authStyle: Schema.optional(ConfigProviderPreset.AuthStyle),
           }),
           success: described(ProbeResult, "Provider probe result"),
         }).annotateMerge(
@@ -118,6 +123,20 @@ export const ProviderApi = HttpApi.make("provider")
             summary: "Probe a provider endpoint",
             description:
               "One-shot health probe: validates the provider URL, key, and (optionally) that a model is listed, in one GET /models round trip. Reports the server's honored context window where available.",
+          }),
+        ),
+        HttpApiEndpoint.get("presets", `${root}/presets`, {
+          query: WorkspaceRoutingQuery,
+          success: described(
+            Schema.Record(Schema.String, ConfigProviderPreset.Info),
+            "Provider import presets (builtins merged with config overrides)",
+          ),
+        }).annotateMerge(
+          OpenApi.annotations({
+            identifier: "provider.presets",
+            summary: "List provider import presets",
+            description:
+              "The effective provider-import preset catalog: built-in defaults merged field-wise with the `provider_presets` config key, so endpoint fixes applied at runtime (self-healing) are always reflected.",
           }),
         ),
       )

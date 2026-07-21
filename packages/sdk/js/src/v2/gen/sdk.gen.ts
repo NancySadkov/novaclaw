@@ -162,6 +162,8 @@ import type {
   ProviderOauthAuthorizeResponses,
   ProviderOauthCallbackErrors,
   ProviderOauthCallbackResponses,
+  ProviderPresetsErrors,
+  ProviderPresetsResponses,
   ProviderProbeErrors,
   ProviderProbeResponses,
   PtyConnectErrors,
@@ -4009,6 +4011,7 @@ export class Provider extends HeyApiClient {
       modelID?: string
       baseURL?: string
       apiKey?: string
+      authStyle?: "bearer" | "anthropic"
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -4023,6 +4026,7 @@ export class Provider extends HeyApiClient {
             { in: "body", key: "modelID" },
             { in: "body", key: "baseURL" },
             { in: "body", key: "apiKey" },
+            { in: "body", key: "authStyle" },
           ],
         },
       ],
@@ -4036,6 +4040,36 @@ export class Provider extends HeyApiClient {
         ...options?.headers,
         ...params.headers,
       },
+    })
+  }
+
+  /**
+   * List provider import presets
+   *
+   * The effective provider-import preset catalog: built-in defaults merged field-wise with the `provider_presets` config key, so endpoint fixes applied at runtime (self-healing) are always reflected.
+   */
+  public presets<ThrowOnError extends boolean = false>(
+    parameters?: {
+      directory?: string
+      workspace?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "query", key: "directory" },
+            { in: "query", key: "workspace" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).get<ProviderPresetsResponses, ProviderPresetsErrors, ThrowOnError>({
+      url: "/provider/presets",
+      ...options,
+      ...params,
     })
   }
 
