@@ -300,6 +300,12 @@ export const { use: useServer, provider: ServerProvider } = createSimpleContext(
       get key() {
         return state.active
       },
+      // The instance this window BOOTS into (the platform default when set, else the canonical
+      // local resolution from the entry point). The temp-switch UX measures "temporary" against
+      // this — it is the "returns to X next launch" X even when no explicit default was stored.
+      get defaultServer() {
+        return props.defaultServer
+      },
       get name() {
         return serverName(current())
       },

@@ -8,7 +8,7 @@ import { Font } from "@novaclaw/ui/font"
 import { ThemeProvider } from "@novaclaw/ui/theme/context"
 import { MetaProvider } from "@solidjs/meta"
 import { type BaseRouterProps, Navigate, Route, Router, useNavigate, useParams, useSearchParams } from "@solidjs/router"
-import { QueryClient, QueryClientProvider } from "@tanstack/solid-query"
+import { focusManager, QueryClient, QueryClientProvider } from "@tanstack/solid-query"
 import { Effect } from "effect"
 import {
   type Component,
@@ -307,6 +307,14 @@ declare global {
   }
 }
 
+// TanStack's retryer pauses between retries while the document is HIDDEN (focusManager), even
+// under networkMode "always" — so a background/embedded/minimized window whose fetch failed once
+// froze that query forever (refetch/invalidate dedupe into the paused attempt; measured live
+// 2026-07-21 in the web preview, visibilityState "hidden"). We never focus-refetch (all three
+// refetchOn* are off) and liveness rides the SSE stream, so focus-pausing buys nothing and
+// breaks the never-dead-ends promise: pin the manager to focused.
+focusManager.setFocused(true)
+
 function QueryProvider(props: ParentProps) {
   const client = new QueryClient({
     defaultOptions: {
@@ -314,6 +322,15 @@ function QueryProvider(props: ParentProps) {
         refetchOnReconnect: false,
         refetchOnMount: false,
         refetchOnWindowFocus: false,
+        // Local-first: queries target the user's OWN instances (loopback/LAN), which are
+        // reachable when the internet is not — TanStack's default networkMode "online" pauses a
+        // failed fetch until the browser reports online, which froze a down-at-boot instance ctx
+        // in fetchStatus "paused" forever (bootstrap never settled, refetch/invalidate no-oped;
+        // measured live 2026-07-21). Failures must FAIL so the SSE-reconnect recovery can refetch.
+        networkMode: "always",
+      },
+      mutations: {
+        networkMode: "always",
       },
     },
   })

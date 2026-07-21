@@ -364,7 +364,10 @@ export function useServerManagementController(options: { onSelect?: () => void; 
   })
 
   async function select(conn: ServerConnection.Any, persist?: boolean) {
-    if (!persist && global.servers.health[ServerConnection.key(conn)]?.healthy === false) return
+    // No health pre-check: switching to a currently-unreachable instance is allowed — the active
+    // ctx's SSE loop keeps retrying and the calm reconnect banner reports the outage honestly.
+    // The old stale-health guard silently swallowed the switch while the picker's internal
+    // selection still flipped, leaving the UI claiming a switch that never happened.
     options.onSelect?.()
     if (persist && conn.type === "http") {
       server.add(conn)

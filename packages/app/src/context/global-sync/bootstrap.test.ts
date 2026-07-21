@@ -1,13 +1,24 @@
 import { describe, expect, test } from "bun:test"
 import { createStore } from "solid-js/store"
-import { QueryClient } from "@tanstack/solid-query"
+import { CancelledError, QueryClient } from "@tanstack/solid-query"
 import type { Config, NovaclawClient, Path } from "@novaclaw/sdk/v2/client"
 import type { NormalizedProviderListResponse } from "@novaclaw/session-ui/context"
-import { bootstrapDirectory, loadPathQuery, loadProvidersQuery } from "./bootstrap"
+import { bootstrapDirectory, isCancelledError, loadPathQuery, loadProvidersQuery } from "./bootstrap"
 import type { State, VcsCache } from "./types"
 import { ServerScope } from "@/utils/server-scope"
 
 const provider = { all: new Map(), models: new Map(), connected: [], default: {} } satisfies NormalizedProviderListResponse
+
+describe("isCancelledError", () => {
+  // The SSE-reconnect recovery invalidates a scope with cancelRefetch — the cancellations it
+  // causes in in-flight fetches are the RECOVERY working, never a fault to toast.
+  test("recognizes TanStack cancellations and nothing else", () => {
+    expect(isCancelledError(new CancelledError())).toBe(true)
+    expect(isCancelledError(new Error("CancelledError"))).toBe(false)
+    expect(isCancelledError(new TypeError("Failed to fetch"))).toBe(false)
+    expect(isCancelledError(undefined)).toBe(false)
+  })
+})
 
 describe("bootstrapDirectory", () => {
   test("marks a loading directory partial during bootstrap and complete after success", async () => {

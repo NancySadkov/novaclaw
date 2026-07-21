@@ -16,7 +16,7 @@ import type { State, VcsCache } from "./types"
 import type { ServerSession } from "../server-session"
 import { cmp, normalizeAgentList, normalizeProviderList } from "./utils"
 import { formatServerError } from "@/utils/server-errors"
-import { QueryClient, queryOptions } from "@tanstack/solid-query"
+import { CancelledError, QueryClient, queryOptions } from "@tanstack/solid-query"
 import { loadMcpQuery } from "../server-sync"
 import { NormalizedProviderListResponse } from "@novaclaw/session-ui/context"
 import { ScopedKey, type ServerScope } from "@/utils/server-scope"
@@ -49,8 +49,18 @@ function waitForPaint() {
   })
 }
 
+// A TanStack cancellation is not a failure: the SSE-reconnect recovery invalidates a scope with
+// cancelRefetch, which cancels any in-flight fetch before re-running it — surfacing that as an
+// error toast would report the RECOVERY as a fault.
+export function isCancelledError(error: unknown) {
+  return error instanceof CancelledError
+}
+
 function errors(list: PromiseSettledResult<unknown>[]) {
-  return list.filter((item): item is PromiseRejectedResult => item.status === "rejected").map((item) => item.reason)
+  return list
+    .filter((item): item is PromiseRejectedResult => item.status === "rejected")
+    .map((item) => item.reason)
+    .filter((reason) => !isCancelledError(reason))
 }
 
 const providerRev = new Map<string, number>()
@@ -321,6 +331,7 @@ export async function bootstrapDirectory(input: {
       input.mcp && (() => input.queryClient.fetchQuery(loadMcpQuery(input.scope, input.directory, input.sdk))),
       () =>
         input.queryClient.fetchQuery(loadProvidersQuery(input.scope, input.directory, input.sdk)).catch((err) => {
+          if (isCancelledError(err)) return
           const project = getFilename(input.directory)
           showToast({
             variant: "error",

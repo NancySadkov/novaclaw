@@ -103,6 +103,11 @@ function createServerCtx(
         refetchOnReconnect: false,
         refetchOnMount: false,
         refetchOnWindowFocus: false,
+        // Instance traffic must not gate on internet-online — see QueryProvider (app.tsx).
+        networkMode: "always",
+      },
+      mutations: {
+        networkMode: "always",
       },
     },
   })

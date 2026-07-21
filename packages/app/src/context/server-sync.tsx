@@ -11,6 +11,7 @@ import {
   bootstrapDirectory,
   bootstrapGlobal,
   clearProviderRev,
+  isCancelledError,
   loadAgentsQuery,
   loadGlobalConfigQuery,
   loadPathQuery,
@@ -274,6 +275,7 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
               sessionMeta.set(key, { limit })
             })
             .catch((err) => {
+              if (isCancelledError(err)) return
               console.error("Failed to load sessions", err)
               const project = getFilename(directory)
               showToast({
@@ -411,7 +413,13 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
         event,
         refresh: () => {
           if (recent) return
-          bootstrap.refetch()
+          // The SSE loop is this ctx's recovery engine: on (re)connect, invalidate every query
+          // under this server's scope so the whole data plane refetches (cancelRefetch replaces
+          // any in-flight attempt). A bare `bootstrap.refetch()` here was a lost one-shot: when
+          // server.connected raced the still-failing boot fetch, TanStack deduped the refetch
+          // into the dying attempt and a server that was unreachable at ctx creation stayed
+          // frozen on its boot-time error forever (measured live 2026-07-21).
+          void queryClient.invalidateQueries({ predicate: (q) => q.queryKey[0] === serverSDK.scope })
         },
       })
       if (event.type === "server.connected" || event.type === "global.disposed") {

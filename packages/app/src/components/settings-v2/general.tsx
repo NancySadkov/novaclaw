@@ -97,10 +97,15 @@ export const SettingsGeneralV2: Component<{
   // undefined by design under newLayoutDesigns. Fall back to the first item like it does.
   const currentInstanceKey = createMemo(() => serverCtx.key ?? instanceOptions()[0]?.value)
   // Settings-IA (iv) — temp-switch legibility. The picker's select() is non-persisting, so a
-  // switch is TEMPORARY: next launch boots the persisted default. Surface that plainly — tag the
-  // default option, and when the active instance is NOT the default, say so + offer a one-click
-  // return. defaultKey() is only meaningful where the platform persists a default (canDefault()).
-  const defaultInstanceKey = createMemo(() => (serversCtl.canDefault() ? serversCtl.defaultKey() : undefined))
+  // switch is TEMPORARY: next launch boots the default. Surface that plainly — tag the default
+  // option, and when the active instance is NOT the default, say so + offer a one-click return.
+  // When no explicit platform default is stored (defaultKey() null — the common case), the boot
+  // default IS what next launch connects to, so fall back to it: without this the notice never
+  // rendered and a reload reverted silently (measured 2026-07-21).
+  const defaultInstanceKey = createMemo(() => {
+    if (!serversCtl.canDefault()) return serverCtx.defaultServer
+    return serversCtl.defaultKey() ?? serverCtx.defaultServer
+  })
   const defaultInstance = createMemo(() => instanceOptions().find((option) => option.value === defaultInstanceKey()))
   const tempSwitched = createMemo(
     () => !!defaultInstanceKey() && !!currentInstanceKey() && currentInstanceKey() !== defaultInstanceKey(),
