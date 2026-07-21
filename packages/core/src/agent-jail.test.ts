@@ -90,6 +90,34 @@ describe("AgentJail", () => {
     expect(Wildcard.match("rm -rf /data", denyPattern)).toBe(true)
   })
 
+  test("unattendedChildEnv (P3): copies functional keys, DROPS every secret/instance var", () => {
+    const env = AgentJail.unattendedChildEnv({
+      PATH: "/usr/bin:/bin",
+      HOME: "/home/nancy",
+      LANG: "en_US.UTF-8",
+      // secrets + instance identity that must NOT survive into a confined command:
+      NOVACLAW_INSTANCE_PEER_TOKEN: "s3cr3t",
+      OPENAI_API_KEY: "sk-live-xyz",
+      AWS_SECRET_ACCESS_KEY: "abc",
+      NOVACLAW_SERVER_PASSWORD: "hunter2",
+      SOME_RANDOM_EXPORT: "x",
+    })
+    expect(env.PATH).toBe("/usr/bin:/bin")
+    expect(env.HOME).toBe("/home/nancy")
+    expect(env.LANG).toBe("en_US.UTF-8")
+    // the allowlist is exhaustive — nothing outside SAFE_ENV_KEYS leaks through:
+    expect(Object.keys(env).sort()).toEqual(["HOME", "LANG", "PATH"])
+    expect(env.NOVACLAW_INSTANCE_PEER_TOKEN).toBeUndefined()
+    expect(env.OPENAI_API_KEY).toBeUndefined()
+    expect(env.NOVACLAW_SERVER_PASSWORD).toBeUndefined()
+  })
+
+  test("unattendedChildEnv: absent keys are omitted, not set to undefined", () => {
+    const env = AgentJail.unattendedChildEnv({ PATH: "/bin" })
+    expect(env).toEqual({ PATH: "/bin" })
+    expect("HOME" in env).toBe(false)
+  })
+
   test("deny routing text names the session type and the native-tool way forward", () => {
     const message = AgentJail.denyMessage("goal-oriented")
     expect(message).toContain("goal-oriented")

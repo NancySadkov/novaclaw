@@ -144,6 +144,42 @@ export function wrapArgs(input: WrapInput): string[] {
   ]
 }
 
+// P3 — privilege self-revocation: the functional, NON-SECRET env keys an unattended confined
+// command is allowed to inherit. Everything else — provider API keys, peer instance tokens, any
+// secret the operator exported into the serve process — is DROPPED. A confined command must never
+// carry credentials it cannot be supervised using; project-local needs come from the worktree
+// bind (a repo .env the command sources), never the host environment. The allowlist covers what a
+// build/shell legitimately needs (PATH to resolve binaries; HOME/USER/locale/term/tz/tmp), and
+// nothing that identifies or authenticates the instance.
+const SAFE_ENV_KEYS = [
+  "PATH",
+  "HOME",
+  "USER",
+  "LOGNAME",
+  "LANG",
+  "LC_ALL",
+  "LC_CTYPE",
+  "TERM",
+  "TZ",
+  "SHELL",
+  "TMPDIR",
+] as const
+
+/**
+ * The curated, secret-free base environment for an unattended confined command (P3). Copies only
+ * the SAFE_ENV_KEYS present in `processEnv`; the caller layers the tool's own functional overlays
+ * (shell-bundle PATH, offline egress) on top and passes it with NO env inheritance, so the child
+ * sees exactly this set — never the serve process's full environment.
+ */
+export function unattendedChildEnv(processEnv: Record<string, string | undefined>): Record<string, string> {
+  const out: Record<string, string> = {}
+  for (const key of SAFE_ENV_KEYS) {
+    const value = processEnv[key]
+    if (typeof value === "string") out[key] = value
+  }
+  return out
+}
+
 /** The model-legible routing text for a `deny` (1P house style: teach the way forward). */
 export function denyMessage(rootType: SessionType): string {
   return (

@@ -248,31 +248,35 @@ export const layer = Layer.effectDiscard(
               // Read the LIVE settings store, NOT config.entries() — location config is snapshotted
               // at boot, so a peer added later (Settings → Instances) would be invisible to a
               // long-lived location otherwise (the flakiness this fixed).
-              const peers = ((yield* settingsStore.all()).instances ?? []) as ReadonlyArray<{
-                name: string
-                url: string
-                token?: string
-              }>
+              // ⚠️ Agent Jail P3: peer TOKENS are credentials, injected ONLY on the attended/raw
+              // path. A confined (unattended) command self-revokes them — an injected command must
+              // not wield cross-instance credentials it can't be supervised using (and can't reach a
+              // peer through the netns anyway; this is the credential-zeroing half of that boundary).
               const peerEnv: Record<string, string> = {}
-              for (const peer of peers) {
-                const key = peer.name.toUpperCase().replace(/[^A-Z0-9]+/g, "_")
-                if (!key || !peer.url) continue
-                peerEnv[`NOVACLAW_INSTANCE_${key}_URL`] = peer.url
-                if (peer.token) peerEnv[`NOVACLAW_INSTANCE_${key}_TOKEN`] = peer.token
+              if (jailDecision !== "confined") {
+                const peers = ((yield* settingsStore.all()).instances ?? []) as ReadonlyArray<{
+                  name: string
+                  url: string
+                  token?: string
+                }>
+                for (const peer of peers) {
+                  const key = peer.name.toUpperCase().replace(/[^A-Z0-9]+/g, "_")
+                  if (!key || !peer.url) continue
+                  peerEnv[`NOVACLAW_INSTANCE_${key}_URL`] = peer.url
+                  if (peer.token) peerEnv[`NOVACLAW_INSTANCE_${key}_TOKEN`] = peer.token
+                }
               }
-              const hasPeers = Object.keys(peerEnv).length > 0
-              const childEnv =
-                bundleEnv || egress || hasPeers ? { ...bundleEnv, ...egress, ...peerEnv } : undefined
-              const spawnOptions = {
+              const baseSpawn = {
                 cwd: target.canonical,
-                ...(childEnv ? { env: childEnv, extendEnv: true } : {}),
                 stdin: "ignore",
                 detached: process.platform !== "win32",
                 forceKillAfter: Duration.seconds(3),
               } as const
               // P1: a confined command execs bwrap directly (the sandbox runs `<shell> -c` itself;
               // no outer shell wrapping). The worktree = the session's location directory — the one
-              // writable bind, i.e. the blast radius.
+              // writable bind, i.e. the blast radius. P3: it starts from a CURATED, secret-free env
+              // (extendEnv:false) — never the serve process's full environment (provider keys,
+              // operator exports) — plus only the tool's own functional overlays.
               const command =
                 jailDecision === "confined"
                   ? ChildProcess.make(
@@ -283,9 +287,19 @@ export const layer = Layer.effectDiscard(
                         shell: String(shell),
                         command: commandText,
                       }),
-                      spawnOptions,
+                      {
+                        ...baseSpawn,
+                        env: { ...AgentJail.unattendedChildEnv(process.env), ...bundleEnv, ...egress },
+                        extendEnv: false,
+                      },
                     )
-                  : ChildProcess.make(commandText, [], { ...spawnOptions, shell })
+                  : ChildProcess.make(commandText, [], {
+                      ...baseSpawn,
+                      shell,
+                      ...(bundleEnv || egress || Object.keys(peerEnv).length
+                        ? { env: { ...bundleEnv, ...egress, ...peerEnv }, extendEnv: true }
+                        : {}),
+                    })
               // 1H: run as a JOB and wait up to the soft deadline. A command that
               // outlives it is NOT killed — the model gets the job id + partial
               // output and decides: keep working, wait, or stop.
