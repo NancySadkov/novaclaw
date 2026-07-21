@@ -268,3 +268,33 @@ export const resolveSessionConfig = <E, R>(
     }
     return resolveConfig(defaults, chain)
   })
+
+/**
+ * The chain ROOT's thread type — attendance is a property of who answers at the root
+ * (Agent Jail P0b, notes/agent-jail-plan.md §2.1). Same root-ward walk + cycle guard as
+ * `resolveSessionConfig`, but returns the ROOT layer's type, not the target's resolution.
+ * A missing/broken/cyclic chain resolves to the default "interactive": fail-OPEN for
+ * attendance is deliberate at P0 — the permission mode still gates every command, and a
+ * store anomaly must not brick attended interactive turns; P3's entry ritual makes
+ * unattendance an explicit per-session fact instead of an inference.
+ */
+export const rootSessionType = <E, R>(
+  sessionID: string,
+  getSession: (id: string) => Effect.Effect<SessionLike | undefined, E, R>,
+): Effect.Effect<SessionType, E, R> =>
+  Effect.gen(function* () {
+    const seen = new Set<string>()
+    let id: string | undefined = sessionID
+    let root: SessionLike | undefined
+    while (id !== undefined && !seen.has(id)) {
+      seen.add(id)
+      const session: SessionLike | undefined = yield* getSession(id)
+      if (!session) break
+      root = session
+      if (session.parentID !== undefined && seen.has(session.parentID)) return EFFECTIVE_CONFIG_DEFAULTS.type
+      id = session.parentID
+    }
+    // `root` holds the last reachable ancestor; a chain broken mid-walk (missing parent row)
+    // still reports the highest KNOWN layer's type rather than guessing.
+    return root?.type ?? EFFECTIVE_CONFIG_DEFAULTS.type
+  })

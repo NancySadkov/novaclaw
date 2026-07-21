@@ -4,6 +4,7 @@ import path from "path"
 import { ToolFailure } from "@novaclaw/llm"
 import { Duration, Effect, Layer, Schema } from "effect"
 import { ChildProcess } from "effect/unstable/process"
+import { AgentJail } from "../agent-jail"
 import { Config } from "../config"
 import { SettingsConfigStore } from "../settings-config-store"
 import { makeLocationNode } from "../effect/app-node"
@@ -16,6 +17,9 @@ import { ShellBundle } from "../shell-bundle"
 import { BashJobs } from "./bash-jobs"
 import { PermissionV2 } from "../permission"
 import { PositiveInt } from "../schema"
+import { rootSessionType } from "../session/config-resolve"
+import type { SessionV2 } from "../session"
+import { SessionStore } from "../session/store"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
@@ -134,6 +138,7 @@ export const layer = Layer.effectDiscard(
     const settingsStore = yield* SettingsConfigStore.Service
     const permission = yield* PermissionV2.Service
     const bashJobs = yield* BashJobs.Service
+    const sessions = yield* SessionStore.Service
     // OFF-C: the offline policy is a machine-level snapshot (flag-aware config dir);
     // consume the shared service so the guard sees the SAME policy as the HttpClient.
     const offline = yield* Offline.Service
@@ -202,6 +207,20 @@ export const layer = Layer.effectDiscard(
                 agent: context.agent,
                 source,
               })
+
+              // Agent Jail P0b (notes/agent-jail-plan.md §2.3): in an UNATTENDED chain (root type
+              // auto-prompting / goal-oriented) an assert success is auto-allow by definition —
+              // no human exists to answer — so raw host execution additionally requires a sandbox
+              // backend. None exists yet: unattended bash is denied with routing to the
+              // path-gated native tools. Attended chains (interactive roots + their sub-agents)
+              // are untouched. Post-assert placement is deliberate: consent flows stay unchanged,
+              // and no PermissionV2 API widening is needed. P1 replaces the deny arm with a
+              // confined spawn (wrap the ChildProcess spec below).
+              const rootType = yield* rootSessionType(context.sessionID, (id) =>
+                sessions.get(id as SessionV2.ID),
+              )
+              if (AgentJail.decideBash({ rootType, backend: AgentJail.probe() }) === "deny")
+                return yield* Effect.fail(new ToolFailure({ message: AgentJail.denyMessage(rootType) }))
 
               if ((yield* fs.stat(target.canonical)).type !== "Directory")
                 return yield* Effect.fail(new Error(`Working directory is not a directory: ${target.canonical}`))
@@ -322,6 +341,7 @@ export const node = makeLocationNode({
     SettingsConfigStore.node,
     PermissionV2.node,
     BashJobs.node,
+    SessionStore.node,
     Offline.node,
   ],
 })

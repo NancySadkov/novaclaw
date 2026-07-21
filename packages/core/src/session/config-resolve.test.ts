@@ -4,6 +4,7 @@ import {
   moreRestrictive,
   resolveConfig,
   resolveSessionConfig,
+  rootSessionType,
   type EffectiveConfig,
   type SessionConfig,
   type SessionLike,
@@ -178,6 +179,42 @@ describe("resolveSessionConfig — the effectful parentID walk", () => {
         child: { id: "child", parentID: "root", systemPromptOverride: "child prompt" },
       }).systemPromptOverride,
     ).toBe("child prompt"))
+})
+
+describe("rootSessionType — the chain ROOT's thread type (Agent Jail P0b)", () => {
+  const rootOf = (sid: string, sessions: Record<string, SessionLike>) =>
+    Effect.runSync(rootSessionType(sid, (id) => Effect.succeed(sessions[id])))
+
+  test("a bare root reports its own type; untyped root defaults to interactive", () => {
+    expect(rootOf("r", { r: { id: "r", type: "goal-oriented" } })).toBe("goal-oriented")
+    expect(rootOf("r", { r: { id: "r" } })).toBe("interactive")
+  })
+
+  test("a sub-agent under a goal root is UNATTENDED (root type wins, not the target's)", () =>
+    expect(
+      rootOf("child", {
+        root: { id: "root", type: "goal-oriented" },
+        child: { id: "child", parentID: "root", type: "sub-agent" },
+      }),
+    ).toBe("goal-oriented"))
+
+  test("a sub-agent under an interactive root reports the interactive root", () =>
+    expect(
+      rootOf("child", {
+        root: { id: "root", type: "interactive" },
+        child: { id: "child", parentID: "root", type: "sub-agent" },
+      }),
+    ).toBe("interactive"))
+
+  test("a chain broken mid-walk reports the highest KNOWN layer's type", () =>
+    expect(rootOf("child", { child: { id: "child", parentID: "ghost", type: "auto-prompting" } })).toBe(
+      "auto-prompting",
+    ))
+
+  test("a missing session and a cyclic chain both fail OPEN to interactive", () => {
+    expect(rootOf("nope", {})).toBe("interactive")
+    expect(rootOf("a", { a: { id: "a", parentID: "b" }, b: { id: "b", parentID: "a" } })).toBe("interactive")
+  })
 })
 
 describe("resolveConfig — thread type + priority (K1)", () => {
