@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { AgentJail } from "./agent-jail"
+import { Wildcard } from "./util/wildcard"
 import type { SessionType } from "./session/config-resolve"
 
 const FULL: AgentJail.BackendInfo = { kind: "namespaces", fs: true, net: true }
@@ -68,6 +69,26 @@ describe("AgentJail", () => {
     test(`decideBash(${rootType}, ${backend.kind}/fs:${backend.fs}/net:${backend.net}) = ${expected}`, () => {
       expect(AgentJail.decideBash({ rootType, backend })).toBe(expected)
     })
+
+  // The unit half of the GuardFall battery (P6): prove a string matcher is BLIND to exactly the
+  // bypass classes the box contains — the reason confinement, not a blocklist, is the boundary.
+  // The mechanism half (tests/agent-jail-guardfall-smoke.sh) proves the box catches them all.
+  test("a command-string matcher is blind to every GuardFall bypass class (why the box is needed)", () => {
+    // A defender's naive deny-pattern for the destructive act:
+    const denyPattern = "rm -rf *"
+    const bypasses = [
+      "r''m -rf /data", // quote-splitting: the token "rm" never appears
+      "rm${IFS}-rf${IFS}/data", // IFS: the space is a variable
+      "$(echo rm) -rf /data", // command substitution: the verb is computed
+      "find / -delete", // a different binary — no rm token at all
+      "echo cm0gLXJmIC8= | base64 -d | sh", // base64 pipe: opaque until decoded
+    ]
+    for (const cmd of bypasses)
+      expect(Wildcard.match(cmd, denyPattern)).toBe(false) // every one sails past the matcher
+    // And the matcher only ever catches the LITERAL it was written for — proving it is a
+    // convenience, not containment (util/wildcard.ts + permission.ts boundary notes).
+    expect(Wildcard.match("rm -rf /data", denyPattern)).toBe(true)
+  })
 
   test("deny routing text names the session type and the native-tool way forward", () => {
     const message = AgentJail.denyMessage("goal-oriented")
