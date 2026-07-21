@@ -87,16 +87,22 @@ export function forked(title: string): string {
   return `${title} (fork #1)`
 }
 
+// A chat name must read like prose, never code: a titler echoing its seed produced the live
+// title `define_tool({"name": "greet_probe", …` (issues.md P3). Reject JSON openers, call
+// syntax with an object argument, tool-call tags, and leaked template special tokens.
+const CODE_SHAPED = /^[{[]|\(\{|<tool_call|<\|/
+
 /**
  * Normalize raw model output into a usable title (V1 parity): drop `<think>` blocks, take the
- * first non-empty line, cap at 100 characters. Returns undefined when nothing usable remains.
+ * first non-empty line that doesn't look like code, cap at 100 characters. Returns undefined
+ * when nothing usable remains (the titler simply retries at the next drain end).
  */
 export function clean(raw: string): string | undefined {
   const cleaned = raw
     .replace(/<think>[\s\S]*?<\/think>\s*/g, "")
     .split("\n")
     .map((line) => line.trim())
-    .find((line) => line.length > 0)
+    .find((line) => line.length > 0 && !CODE_SHAPED.test(line))
   if (!cleaned) return undefined
   return cleaned.length > 100 ? cleaned.substring(0, 97) + "..." : cleaned
 }

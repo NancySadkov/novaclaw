@@ -90,4 +90,16 @@ describe("SessionTitle.clean", () => {
     expect(SessionTitle.clean("")).toBeUndefined()
     expect(SessionTitle.clean("<think>only thoughts</think>\n \n")).toBeUndefined()
   })
+
+  it("skips code-shaped lines (the live define_tool leak) and falls through to prose", () => {
+    expect(SessionTitle.clean('define_tool({"name": "greet_probe", "description": "Say hello"})')).toBeUndefined()
+    expect(SessionTitle.clean('{"name": "greet_probe"}')).toBeUndefined()
+    expect(SessionTitle.clean("<tool_call>write</tool_call>")).toBeUndefined()
+    expect(SessionTitle.clean("<|mask_start|> something")).toBeUndefined()
+    expect(SessionTitle.clean('define_tool({"x":1})\nGreet probe smoke test')).toBe("Greet probe smoke test")
+  })
+
+  it("keeps ordinary prose with parentheses", () => {
+    expect(SessionTitle.clean("Fix parser (edge cases)")).toBe("Fix parser (edge cases)")
+  })
 })
