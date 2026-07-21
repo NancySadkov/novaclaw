@@ -10,8 +10,10 @@
 //     the runtime_setting SQLite row is the runtime truth; the jsonc file is only consulted
 //     before the FIRST boot has seeded the stores — at that moment it IS the declared config).
 //   - allowlist = hosts of every catalog_provider layer's `api.url` (V2 vocabulary; same pre-seed
-//     jsonc fallback; project-scoped providers are not visible to this global layer — in airgap
-//     mode, declare the provider globally or use the env escape hatch), plus
+//     jsonc fallback). Post config-sqlite the catalog is INSTANCE-WIDE (one `catalog_provider` row
+//     per provider, no location key), and `readStorePolicy` reads them ALL — so every provider the
+//     instance knows is on the allowlist; there is no separate per-location provider set to miss.
+//     (The old "project-scoped providers are invisible here" caveat predated config-sqlite.) Plus
 //   - `NOVACLAW_OFFLINE_ALLOW` env: comma-separated extra hosts (e.g. a LAN SearXNG).
 //   - Loopback (localhost / 127.0.0.0/8 / ::1) is ALWAYS allowed: the app talking to
 //     itself is not egress; the airgap threat model is the WAN. Layer 9 (OFF-C)
