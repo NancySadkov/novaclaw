@@ -29,6 +29,7 @@ import { getProjectAvatarVariant, useLayout, type HomeProjectSelection, type Loc
 import { useNavigate } from "@solidjs/router"
 import { base64Encode } from "@novaclaw/core/util/encode"
 import { Icon } from "@novaclaw/ui/icon"
+import { useNewAgentSpawn } from "@/pages/home-screen/new-agent-bar"
 import { usePlatform } from "@/context/platform"
 import { DateTime } from "luxon"
 import { useDialog } from "@novaclaw/ui/context/dialog"
@@ -240,6 +241,7 @@ export function NewHome() {
   const notification = useNotification()
   const marked = useMarked()
   const openSettings = useSettingsCommand()
+  const newAgent = useNewAgentSpawn()
   const selection = layout.home.selection
 
   const focusedServer = createMemo(
@@ -639,10 +641,23 @@ export function NewHome() {
           class="min-h-0 min-w-0 flex-1 flex flex-col pt-6 lg:pt-10 relative"
           aria-label={language.t("sidebar.project.recentSessions")}
         >
-          <div class="flex justify-center pb-5 pt-1 select-none">
+          <div class="relative flex items-center justify-center pb-5 pt-1 select-none">
             <h1 class="text-[20px] font-semibold tracking-tight text-v2-text-text-base">
               {language.t("home.sessions.title")}
             </h1>
+            {/* Owner 2026-07-22: the Chats page must offer chat CREATION directly — the old
+                empty-state-only New Agent routed back to the launcher. Same spawn flow as the
+                home bar (scratch cwd, reuse-empty-draft, opens the composer). */}
+            <ButtonV2
+              size="small"
+              variant="gold"
+              class="absolute right-0"
+              disabled={!newAgent.ready() || newAgent.spawning()}
+              onClick={() => void newAgent.spawn()}
+            >
+              <Icon name="plus-small" size="small" />
+              {language.t("command.session.new")}
+            </ButtonV2>
           </div>
           <div class="mt-3 flex min-w-0 items-start gap-2">
             <Show when={(tagUniverse()?.length ?? 0) > 0}>

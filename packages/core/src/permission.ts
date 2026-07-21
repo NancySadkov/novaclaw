@@ -90,7 +90,7 @@ export function denialMessage(error: unknown): string | undefined {
   if (error instanceof CorrectedError)
     return `The user declined this action and said: "${error.feedback}". Follow the user's direction instead of retrying the same call.`
   if (error instanceof RejectedError)
-    return `The user declined permission for this action. Do not retry the identical call — take a different approach or ask the user how to proceed.`
+    return `The user declined permission for this action. Do not retry the identical call. If the task can proceed another way (a different tool, a permitted path, or answering from what you already know), CONTINUE with that approach now; only stop to ask the user when no alternative exists.`
   return undefined
 }
 

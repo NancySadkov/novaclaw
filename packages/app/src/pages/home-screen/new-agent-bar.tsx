@@ -11,18 +11,18 @@ import { useDirectoryPicker } from "@/components/directory-picker"
 import { displayName, errorMessage } from "@/pages/layout/helpers"
 import { showToast } from "@/utils/toast"
 
-// The "New Agent" launch box — the home launcher's primary action, pinned at the BOTTOM of the
-// screen (the chat composer's position). CLICKING it creates a session in the shared scratch dir
-// (or a folder picked via the chip) and opens the new chat immediately — nothing is typed or
-// fired here (owner call 2026-07-14): the user lands in the real composer, configures the chat
-// (model, permission mode, Strict, Tuning, prompt override, folder), and sends when ready.
-export function NewAgentBar() {
+/**
+ * The shared "spawn a new agent chat" flow: create (or reuse a truly-empty draft) in the given
+ * folder — default the always-provisioned scratch dir — and open the chat. Consumed by the home
+ * launcher bar AND the Chats-page "New chat" header button (owner 2026-07-22: creating a chat
+ * must never require routing back to the launcher).
+ */
+export function useNewAgentSpawn() {
   const server = useServer()
   const global = useGlobal()
   const sync = useServerSync()
   const tabs = useTabs()
   const language = useLanguage()
-  const pickDirectory = useDirectoryPicker()
 
   const conn = createMemo(() => server.current)
   const ctx = createMemo(() => {
@@ -37,32 +37,11 @@ export function NewAgentBar() {
   // with no project picked. Read off PathInfo with a cast (the SDK type lags this field).
   const scratchDir = createMemo(() => (activeSync().data.path as { scratchDir?: string } | undefined)?.scratchDir)
 
-  const [targetFolder, setTargetFolder] = createSignal<string | undefined>()
   const [spawning, setSpawning] = createSignal(false)
-  const spawnFolder = createMemo(() => targetFolder() ?? scratchDir())
-  const canSpawn = createMemo(() => !!conn() && !!spawnFolder())
-  const folderLabel = createMemo(() => {
-    const folder = targetFolder()
-    if (!folder) return language.t("home.newAgent.folder.scratch")
-    return displayName({ worktree: folder })
-  })
 
-  function pickFolder() {
+  async function spawn(target?: string) {
     const c = conn()
-    if (!c) return
-    pickDirectory({
-      server: c,
-      title: language.t("command.project.open"),
-      onSelect: (result) => {
-        const directory = Array.isArray(result) ? result[0] : result
-        if (directory) setTargetFolder(directory)
-      },
-    })
-  }
-
-  async function spawn() {
-    const c = conn()
-    const directory = spawnFolder()
+    const directory = target ?? scratchDir()
     if (!c || !directory || spawning()) return
     setSpawning(true)
     try {
@@ -80,11 +59,21 @@ export function NewAgentBar() {
           (s.tokens?.input ?? 0) + (s.tokens?.output ?? 0) === 0,
       )
       if (reusable) {
-        startTransition(() => {
-          const tab = tabs.addSessionTab({ server: ServerConnection.key(c), sessionId: reusable.id })
-          tabs.select(tab)
-        })
-        return
+        // Server truth before reusing: title/tokens alone LIE for a chat whose sent message
+        // never produced a reply (turn failed → zero tokens, auto-title never ran) — reusing
+        // it opens an old conversation as "new" (owner-hit 2026-07-22). One 1-message page
+        // decides; on fetch error fall through to CREATE (never trap the user in an old chat).
+        const empty = await cx.sdk.client.v2.session
+          .messages({ sessionID: reusable.id, limit: 1 })
+          .then((result) => (result.data?.data ?? []).length === 0)
+          .catch(() => false)
+        if (empty) {
+          startTransition(() => {
+            const tab = tabs.addSessionTab({ server: ServerConnection.key(c), sessionId: reusable.id })
+            tabs.select(tab)
+          })
+          return
+        }
       }
       const created = await cx.sdk.client.v2.session.create({ location: { directory } })
       const sessionID = created.data?.data.id
@@ -105,6 +94,47 @@ export function NewAgentBar() {
     }
   }
 
+  return {
+    spawning,
+    ready: createMemo(() => !!conn() && !!scratchDir()),
+    spawn,
+  }
+}
+
+// The "New Agent" launch box — the home launcher's primary action, pinned at the BOTTOM of the
+// screen (the chat composer's position). CLICKING it creates a session in the shared scratch dir
+// (or a folder picked via the chip) and opens the new chat immediately — nothing is typed or
+// fired here (owner call 2026-07-14): the user lands in the real composer, configures the chat
+// (model, permission mode, Strict, Tuning, prompt override, folder), and sends when ready.
+export function NewAgentBar() {
+  const server = useServer()
+  const language = useLanguage()
+  const pickDirectory = useDirectoryPicker()
+  const agent = useNewAgentSpawn()
+
+  const conn = createMemo(() => server.current)
+  const spawning = agent.spawning
+  const [targetFolder, setTargetFolder] = createSignal<string | undefined>()
+  const canSpawn = createMemo(() => (targetFolder() ? !!conn() : agent.ready()))
+  const folderLabel = createMemo(() => {
+    const folder = targetFolder()
+    if (!folder) return language.t("home.newAgent.folder.scratch")
+    return displayName({ worktree: folder })
+  })
+
+  function pickFolder() {
+    const c = conn()
+    if (!c) return
+    pickDirectory({
+      server: c,
+      title: language.t("command.project.open"),
+      onSelect: (result) => {
+        const directory = Array.isArray(result) ? result[0] : result
+        if (directory) setTargetFolder(directory)
+      },
+    })
+  }
+
   // Owner call 2026-07-14: the CLICK creates the chat — no typing here. The bar sits at the
   // bottom of the launcher, the same screen position as the chat composer, so activating it
   // transitions straight into the new chat's composer without the input appearing to move.
@@ -119,7 +149,7 @@ export function NewAgentBar() {
       })
       return
     }
-    void spawn()
+    void agent.spawn(targetFolder())
   }
 
   return (
