@@ -36,20 +36,31 @@ export const { use: useGlobal, provider: GlobalProvider } = createSimpleContext(
 
     const serverCtxs = new Map<
       ServerConnection.Key,
-      { dispose: () => void; serverCtx: ReturnType<typeof createServerCtx> }
+      { dispose: () => void; serverCtx: ReturnType<typeof createServerCtx>; auth: string }
     >()
 
     const owner = getOwner()
 
+    // The ctx cache is keyed by URL, but the SDK clients inside bake the connection's
+    // CREDENTIALS into their auth header at creation — so editing an instance's username/
+    // password must rebuild its ctx, or every request keeps the stale header (observed live
+    // 2026-07-21: adding the token to a saved instance left the old credential-less ctx
+    // serving 401s despite correct saved creds).
+    const connAuth = (conn: ServerConnection.Any) => `${conn.http.username ?? ""}\0${conn.http.password ?? ""}`
+
     const ensureServerCtx = (conn: ServerConnection.Any) => {
       const key = ServerConnection.key(conn)
       const existing = serverCtxs.get(key)
-      if (existing) return existing.serverCtx
+      if (existing && existing.auth === connAuth(conn)) return existing.serverCtx
+      if (existing) {
+        existing.dispose()
+        serverCtxs.delete(key)
+      }
       const root = createRoot((dispose) => {
         const serverCtx = createServerCtx(conn, server.scope(key), server.projects.forServer(key))
         return { dispose, serverCtx }
       }, owner as any)
-      serverCtxs.set(key, root)
+      serverCtxs.set(key, { ...root, auth: connAuth(conn) })
       return root.serverCtx
     }
 

@@ -25,7 +25,13 @@ export function createTimelineModel(input: {
     () => input.sessionID(),
     async (id) => {
       if (!id) return
-      await serverSync().nativeMessages.load(id)
+      // Degrade, never dead-end: an errored resource RETHROWS at every read, and this one is
+      // read in the session shell — an auth/network failure here used to nuke the whole app
+      // onto the root ErrorPage (observed live 2026-07-21 via a stale-credential 401). The
+      // timeline renders empty and the reconnect/auth surfaces own the story instead.
+      await serverSync()
+        .nativeMessages.load(id)
+        .catch((error) => console.error("timeline message load failed", { sessionID: id, error }))
     },
   )
 
