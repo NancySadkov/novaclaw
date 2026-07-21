@@ -110,11 +110,22 @@ export interface WrapInput {
 
 /**
  * P1: the bwrap argv for a confined command (pure — unit-testable on any platform; the shape
- * is the one mechanism-gated live on the Spark 2026-07-21: egress fails closed, `rm -rf /`
- * touches only the worktree bind, gcc compile+run works). Order is load-bearing: the
- * `--tmpfs /home` mask precedes the worktree bind, so a worktree UNDER /home is re-bound
- * writable while the rest of the user's home stays invisible. `/etc` is ro-bound (TLS certs,
- * passwd) — read-only and egress-dead, an accepted P1 exposure; env scrubbing is P3.
+ * is the one mechanism-gated live on the Spark 2026-07-21: egress fails closed, a recursive
+ * delete of the fs root touches only the worktree bind, gcc compile+run works). Order is
+ * load-bearing: the `--tmpfs /home` mask precedes the worktree bind, so a worktree UNDER /home
+ * is re-bound writable while the rest of the user's home stays invisible. `/etc` is ro-bound
+ * (TLS certs, passwd) — read-only and egress-dead, an accepted P1 exposure; env scrubbing is P3.
+ *
+ * P2 — the network boundary IS the OFF-C backstop. `--unshare-all` includes `--unshare-net`:
+ * the command runs in an empty network namespace with only an isolated loopback, so ALL egress
+ * fails closed — loopback (the host vLLM), LAN, WAN, AND a raw socket (`/dev/tcp`) that ignores
+ * `*_PROXY` entirely. That raw-socket path is the exact static-binary class the OFF-C env
+ * overlay could never stop (offline.ts §OFF-C); the netns closes it. So for a confined
+ * (unattended) command the offline `*_PROXY` overlay is REDUNDANT — kept only as harmless
+ * belt-and-braces and as the sole guard on the raw/attended path. Proof: the committed
+ * `tests/agent-jail-netns-smoke.sh` (the OFF-C residue's named "network-namespace smoke test").
+ * Denying loopback/LAN too is correct, not a gap: the bash child never needs the provider (the
+ * KERNEL makes model calls) nor LAN search (the web/kb tools ride the kernel HttpClient).
  */
 export function wrapArgs(input: WrapInput): string[] {
   return [

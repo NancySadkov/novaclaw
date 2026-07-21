@@ -180,10 +180,13 @@ export function loadPolicy(input: {
 //   - NO_PROXY carries loopback + the allowlisted hosts, so those (the local vLLM, a LAN
 //     SearXNG/KB) bypass the sink and still work;
 //   - a lowercase alias set (curl uses lowercase) mirrors each var.
-// This is best-effort, not a jail: a determined static binary that ignores *_PROXY and
-// opens raw sockets escapes it (a real network namespace / firewall is the OS-level
-// backstop, per-OS, out of scope). It stops the common case — curl/pip/npm/git — cheaply
-// and portably. Loopback stays reachable (the app talking to itself is not egress).
+// This is best-effort for the RAW/attended path: a determined static binary that ignores
+// *_PROXY and opens raw sockets escapes it. That escape is CLOSED for confined (unattended)
+// commands — Agent Jail P2 (agent-jail.ts) runs them in an empty network namespace where a raw
+// socket also fails ("Network is unreachable"), the airgap-complete backstop this comment used
+// to call "out of scope" (proof: tests/agent-jail-netns-smoke.sh). The env overlay stays as the
+// portable common-case guard (curl/pip/npm/git) and the only guard where no netns applies.
+// Loopback stays reachable through the overlay (the app talking to itself is not egress).
 
 /** The unreachable sink every non-allowlisted request is pointed at. */
 export const PROXY_SINK = "http://127.0.0.1:9"
@@ -235,7 +238,7 @@ export function layerManifest(policy: Policy): { readonly enabled: boolean; read
     { layer: 6, name: "auto-update", active: on, detail: "update fetches ride the chokepoint" },
     { layer: 7, name: "LAN services", active: on, detail: "SearXNG/KB allowed as loopback/LAN hosts" },
     { layer: 8, name: "npm installs", active: on, detail: "package fetches fail closed (pre-provision or mirror)" },
-    { layer: 9, name: "process egress guard", active: on, detail: on ? "child *_PROXY → dead sink; allowlist in NO_PROXY" : "OFF-C" },
+    { layer: 9, name: "process egress guard", active: on, detail: on ? "child *_PROXY → dead sink; allowlist in NO_PROXY (confined commands: real deny-all netns, Agent Jail P2)" : "OFF-C" },
   ]
   return { enabled: on, active: on ? layers.length : 0, total: layers.length, layers }
 }
