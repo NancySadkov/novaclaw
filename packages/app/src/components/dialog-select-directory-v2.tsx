@@ -3,6 +3,8 @@ import { FileTree } from "@pierre/trees"
 import { Dialog, DialogBody, DialogFooter, DialogHeader, DialogTitle } from "@novaclaw/ui/v2/dialog-v2"
 import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
+import { Icon } from "@novaclaw/ui/icon"
+import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { createEffect, createMemo, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js"
 import { useGlobal } from "@/context/global"
@@ -99,6 +101,37 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
       fallbackPath()?.home ||
       fallbackPath()?.directory,
   )
+  // The Places rail: the instance host's existing well-known folders (server-probed) + the
+  // user's pinned bookmarks (the `folder_bookmarks` config key — instance-wide, exported with
+  // config, agent-editable per the self-healing law).
+  const places = createMemo(() => {
+    if (virtualRoot()) return []
+    const fromSync = (sync.data.path as { places?: readonly { name: string; path: string }[] }).places
+    const fromFallback = (fallbackPath() as { places?: readonly { name: string; path: string }[] } | undefined)
+      ?.places
+    return fromSync ?? fromFallback ?? []
+  })
+  const bookmarks = createMemo(
+    () => ((sync.data.config as { folder_bookmarks?: readonly string[] }).folder_bookmarks ?? []) as string[],
+  )
+  const baseName = (value: string) => {
+    const parts = value.split(/[\\/]/).filter(Boolean)
+    return parts[parts.length - 1] ?? value
+  }
+  const normalizedRoot = createMemo(() => root().replace(/[\\/]+$/, ""))
+  const rootPinned = createMemo(() => bookmarks().includes(normalizedRoot()))
+  const writeBookmarks = (next: string[]) =>
+    // Whole-value settings key: the array replaces wholesale (the updateConfig contract).
+    (sync.updateConfig({ folder_bookmarks: next } as never) as Promise<unknown>).catch(() => undefined)
+  const togglePin = () => {
+    const target = normalizedRoot()
+    if (!target || !rootValid()) return
+    void writeBookmarks(
+      rootPinned() ? bookmarks().filter((entry) => entry !== target) : [...bookmarks(), target],
+    )
+  }
+  const removePin = (target: string) => void writeBookmarks(bookmarks().filter((entry) => entry !== target))
+
   const search = createDirectorySearch({ sdk, home, base: () => root() || start() })
   const [suggestions] = createResource(input, async (value) => {
     const typed = cleanPickerInput(value).replace(/\/+$/, "")
@@ -200,18 +233,18 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
     setActiveSuggestion((current) => nextSuggestionIndex(current, delta, currentSuggestions().length))
   }
 
-  function activeSuggestionValue() {
-    const items = currentSuggestions()
-    return items[activeSuggestion()] ?? items[0]
-  }
-
   const keyActions: Partial<Record<string, () => void>> = {
     ArrowDown: () => moveSuggestion(1),
     ArrowUp: () => moveSuggestion(-1),
     Enter: () => {
-      const suggestion = activeSuggestionValue()
-      if (suggestion) chooseSuggestion(suggestion)
-      if (!suggestion) void navigate(input())
+      // Enter goes to the TYPED path unless the user arrow-highlighted a suggestion — the
+      // `?? items[0]` fallback used to hijack an exactly-typed absolute path onto the first
+      // fuzzy match (the "Select folder moved my chat to the wrong place" trap; Tab still
+      // completes with the top suggestion).
+      const items = currentSuggestions()
+      const highlighted = activeSuggestion() >= 0 ? items[activeSuggestion()] : undefined
+      if (highlighted) chooseSuggestion(highlighted)
+      else void navigate(input())
     },
     Tab: complete,
   }
@@ -330,6 +363,25 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
                 )}
               </For>
             </Show>
+            <TooltipV2
+              placement="top"
+              gutter={4}
+              value={language.t(rootPinned() ? "dialog.directory.unpin" : "dialog.directory.pin")}
+            >
+              <ButtonV2
+                size="small"
+                variant="ghost"
+                disabled={!normalizedRoot() || !rootValid()}
+                aria-pressed={rootPinned()}
+                onClick={togglePin}
+              >
+                <Icon
+                  name="folder-add-left"
+                  size="small"
+                  class={rootPinned() ? "text-v2-icon-icon-accent" : undefined}
+                />
+              </ButtonV2>
+            </TooltipV2>
           </div>
           <Show when={suggestionsOpen() && currentSuggestions().length > 0}>
             <div id="directory-picker-v2-suggestions" role="listbox" class="directory-picker-v2-suggestions">
@@ -351,9 +403,58 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
             </div>
           </Show>
         </div>
-        <div
-          class="directory-picker-v2-browser"
-          ref={container}
+        <div class="directory-picker-v2-main">
+          <div class="directory-picker-v2-rail">
+            <Show when={bookmarks().length > 0}>
+              <div class="directory-picker-v2-rail-title">{language.t("dialog.directory.bookmarks")}</div>
+              <For each={bookmarks()}>
+                {(pin) => (
+                  <div
+                    class="directory-picker-v2-rail-item"
+                    data-active={normalizedRoot() === pin ? "" : undefined}
+                    title={pin}
+                  >
+                    <button type="button" class="directory-picker-v2-rail-nav" onClick={() => void navigate(pin)}>
+                      <Icon name="folder" size="small" />
+                      <span>{baseName(pin)}</span>
+                    </button>
+                    <button
+                      type="button"
+                      class="directory-picker-v2-rail-remove"
+                      aria-label={language.t("dialog.directory.unpin")}
+                      onClick={() => removePin(pin)}
+                    >
+                      <Icon name="close-small" size="small" />
+                    </button>
+                  </div>
+                )}
+              </For>
+            </Show>
+            <div class="directory-picker-v2-rail-title">{language.t("dialog.directory.places")}</div>
+            <div class="directory-picker-v2-rail-item" data-active={normalizedRoot() === home().replace(/[\\/]+$/, "") ? "" : undefined} title={home()}>
+              <button type="button" class="directory-picker-v2-rail-nav" onClick={() => void navigate(home())}>
+                <Icon name="folder" size="small" />
+                <span>{language.t("dialog.directory.homePlace")}</span>
+              </button>
+            </div>
+            <For each={places()}>
+              {(place) => (
+                <div
+                  class="directory-picker-v2-rail-item"
+                  data-active={normalizedRoot() === place.path.replace(/[\\/]+$/, "") ? "" : undefined}
+                  title={place.path}
+                >
+                  <button type="button" class="directory-picker-v2-rail-nav" onClick={() => void navigate(place.path)}>
+                    <Icon name="folder" size="small" />
+                    <span>{place.name}</span>
+                  </button>
+                </div>
+              )}
+            </For>
+          </div>
+          <div
+            class="directory-picker-v2-browser"
+            ref={container}
           onWheel={(event) => {
             const scroller = tree
               ?.getFileTreeContainer()
@@ -371,12 +472,13 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
             scroller.dispatchEvent(new Event("scroll"))
           }}
         >
-          <Show when={loading()}>
-            <div class="directory-picker-v2-state">{language.t("common.loading")}</div>
-          </Show>
-          <Show when={!loading() && error()}>
-            <div class="directory-picker-v2-state">{language.t("dialog.directory.readError")}</div>
-          </Show>
+            <Show when={loading()}>
+              <div class="directory-picker-v2-state">{language.t("common.loading")}</div>
+            </Show>
+            <Show when={!loading() && error()}>
+              <div class="directory-picker-v2-state">{language.t("dialog.directory.readError")}</div>
+            </Show>
+          </div>
         </div>
         <div class="directory-picker-v2-selection">{policy.result(root(), selected(), rootValid())}</div>
       </DialogBody>

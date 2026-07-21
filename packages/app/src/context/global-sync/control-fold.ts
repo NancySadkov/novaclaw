@@ -41,7 +41,12 @@ export function controlPatch(event: Envelope): ControlPatch | undefined {
     case "session.next.moved": {
       const location = props.location as { directory?: string } | undefined
       if (!location?.directory) return undefined
-      return { sessionID, patch: { directory: location.directory } }
+      // T3 record shape: the directory lives INSIDE `location` (info.ts folds row.directory into
+      // the location struct) and the move's optional subdirectory is the record's `subpath`.
+      // Patching a top-level `directory` (the pre-T3 flat field) was a silent no-op for every
+      // reader — the composer folder chip and the Chats grouping kept the OLD folder until a
+      // full reload (owner-hit 2026-07-22).
+      return { sessionID, patch: { location, subpath: props.subdirectory ?? undefined } }
     }
     default:
       return undefined

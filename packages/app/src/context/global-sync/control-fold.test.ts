@@ -35,9 +35,17 @@ describe("controlPatch", () => {
     expect(
       controlPatch(envelope("session.next.prompt-override.switched", { sessionID: "s", override: "be brief" })),
     ).toEqual({ sessionID: "s", patch: { systemPromptOverride: "be brief" } })
+    // T3 shape: the move patches the record's `location` struct (+ subpath), never a flat
+    // top-level `directory` — that field doesn't exist on the record and patching it left every
+    // reader (folder chip, Chats grouping) on the OLD folder until reload.
     expect(
       controlPatch(envelope("session.next.moved", { sessionID: "s", location: { directory: "C:\\x" } })),
-    ).toEqual({ sessionID: "s", patch: { directory: "C:\\x" } })
+    ).toEqual({ sessionID: "s", patch: { location: { directory: "C:\\x" }, subpath: undefined } })
+    expect(
+      controlPatch(
+        envelope("session.next.moved", { sessionID: "s", location: { directory: "C:\\x" }, subdirectory: "sub" }),
+      ),
+    ).toEqual({ sessionID: "s", patch: { location: { directory: "C:\\x" }, subpath: "sub" } })
   })
 
   test("null clears map to undefined (field goes absent, matching a fresh server read)", () => {

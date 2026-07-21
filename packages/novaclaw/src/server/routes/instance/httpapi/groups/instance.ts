@@ -30,6 +30,10 @@ const PathInfo = Schema.Struct({
   // A real app-managed dir under `<data>/scratch`; the client uses it as the cwd when no folder
   // is picked. Optional so old clients ignore it.
   scratchDir: Schema.optional(Schema.String),
+  // The instance host's existing well-known user folders (+ Linux GTK bookmarks) — the
+  // directory-picker's "Places" rail. Existence-checked server-side; suppressed in virtual
+  // mode. Optional so old clients ignore it.
+  places: Schema.optional(Schema.Array(Schema.Struct({ name: Schema.String, path: Schema.String }))),
 }).annotate({ identifier: "Path" })
 
 // The persisted home-app registry (B14). Manifests are LAUNCHERS (route/URL/prompt), not code;

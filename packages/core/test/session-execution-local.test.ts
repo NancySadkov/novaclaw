@@ -39,7 +39,7 @@ const harness = (input: {
 
     const storeLayer = Layer.succeed(
       SessionStore.Service,
-      { get: () => Effect.succeed(record()) } as unknown as Context.Service.Type<typeof SessionStore.Service>,
+      { get: () => Effect.succeed(record()) } as unknown as SessionStore.Interface,
     )
     const locatedLayer = Layer.mergeAll(
       Layer.succeed(

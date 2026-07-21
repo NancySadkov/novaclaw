@@ -1242,6 +1242,10 @@ export type Path = {
   virtual?: boolean
   virtualRoot?: string
   scratchDir?: string
+  places?: Array<{
+    name: string
+    path: string
+  }>
 }
 
 export type VcsInfo = {
@@ -3335,6 +3339,7 @@ export type ConfigInfo = {
     url: string
     token?: string
   }>
+  folder_bookmarks?: Array<string>
   virtualFs?: boolean
   offline?: boolean
   telemetry?: {

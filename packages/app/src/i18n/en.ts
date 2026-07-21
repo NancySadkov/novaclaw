@@ -448,6 +448,11 @@ export const dict = {
   "dialog.directory.root": "Root",
   "dialog.directory.parent": "Parent",
   "dialog.directory.readError": "Can't open this folder — you may not have permission.",
+  "dialog.directory.bookmarks": "Bookmarks",
+  "dialog.directory.places": "Places",
+  "dialog.directory.homePlace": "Home",
+  "dialog.directory.pin": "Bookmark this folder",
+  "dialog.directory.unpin": "Remove bookmark",
 
   "app.server.unreachable": "Could not reach {{server}}",
   "app.server.retrying": "Retrying automatically...",

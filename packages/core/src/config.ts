@@ -132,6 +132,12 @@ export class Info extends Schema.Class<Info>("Config.Info")({
       description:
         "P2P: peer NovaClaw instances this instance's AGENTS may drive over HTTP (full API access — sessions, registry, config). Surfaced to models as env vars in bash plus a system-prompt line.",
     }),
+  folder_bookmarks: Schema.String.pipe(Schema.Array, Schema.optional).annotate({
+    description:
+      "User-pinned folder bookmarks shown in the directory picker's rail (absolute paths on the " +
+      "instance host). Instance-wide, exported with config, and agent-editable via PATCH /config " +
+      "(self-healing: an agent can add/fix pins; the array replaces wholesale per the patch contract).",
+  }),
   virtualFs: Schema.Boolean.pipe(Schema.optional).annotate({
     description:
       "FS-3: force the app-private virtual filesystem root (phones/sandboxes without a browsable FS); the NOVACLAW_VIRTUAL_FS env flag also enables it",

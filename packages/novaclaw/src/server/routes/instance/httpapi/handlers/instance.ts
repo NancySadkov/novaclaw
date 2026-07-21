@@ -14,6 +14,7 @@ import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { VirtualFs } from "@novaclaw/core/virtual-fs"
 import { Scratch } from "@novaclaw/core/scratch"
 import { Vcs } from "@/project/vcs"
+import { OsPlaces } from "@/server/os-places"
 import { Skill } from "@/skill"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { Effect, Layer } from "effect"
@@ -66,6 +67,13 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
       // The shared default cwd for folder-less agents ("New Agent" with no project). Provisioned
       // always (idempotent) so the client can always start an agent without picking a folder.
       const scratchDir = yield* Effect.promise(() => Scratch.ensure())
+      // The picker's Places rail: the host's existing well-known folders. Suppressed in virtual
+      // mode (no host FS to jump to); never fails the route (degrades to none).
+      const places = virtual
+        ? []
+        : yield* Effect.promise(() => OsPlaces.probePlaces(Global.Path.home)).pipe(
+            Effect.orElseSucceed(() => []),
+          )
       return {
         home: Global.Path.home,
         state: Global.Path.state,
@@ -75,6 +83,7 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
         directory: ctx.directory,
         roots,
         scratchDir,
+        ...(places.length > 0 ? { places } : {}),
         ...(virtual ? { virtual: true, virtualRoot } : {}),
       }
     })
