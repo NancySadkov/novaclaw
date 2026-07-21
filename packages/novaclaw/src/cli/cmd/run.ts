@@ -247,6 +247,18 @@ export const RunCommand = effectCmd({
     yield* Effect.promise(async () => {
       const thinking = args.thinking ?? false
 
+      // Wall-clock watchdog: a one-shot run that wedges mid-turn (observed live — a stuck
+      // await keeps the process alive indefinitely at ~1.5 GB, the OTHER half of the
+      // issues.md P2 orphan generator) becomes a bounded failure instead of an immortal
+      // orphan. Generous default; NOVACLAW_RUN_WALL_MS overrides for long agentic runs.
+      const wallMs = Number(process.env["NOVACLAW_RUN_WALL_MS"]) || 45 * 60 * 1000
+      const watchdog = setTimeout(() => {
+        UI.error(`run exceeded its wall clock (${Math.round(wallMs / 60000)}m) — exiting`)
+        process.exit(124)
+      }, wallMs)
+      // unref: the watchdog must never be the thing KEEPING the process alive.
+      if (typeof watchdog === "object" && "unref" in watchdog) watchdog.unref()
+
       let message = [...args.message, ...(args["--"] || [])]
         .map((arg) => (arg.includes(" ") ? `"${arg.replace(/"/g, '\\"')}"` : arg))
         .join(" ")
@@ -843,23 +855,32 @@ export const RunCommand = effectCmd({
 
       if (args.attach) {
         const sdk = attachSDK(directory)
-        return await execute(sdk)
+        await execute(sdk)
+      } else {
+        const fetchFn = (async (input: RequestInfo | URL, init?: RequestInit) => {
+          const { Server } = await import("@/server/server")
+          const request = new Request(input, init)
+          const headers = new Headers(request.headers)
+          const auth = ServerAuth.header()
+          if (auth) headers.set("Authorization", auth)
+          return Server.Default().app.fetch(new Request(request, { headers }))
+        }) as typeof globalThis.fetch
+        const sdk = createNovaclawClient({
+          baseUrl: "http://novaclaw.internal",
+          fetch: fetchFn,
+          directory,
+        })
+        await execute(sdk)
       }
 
-      const fetchFn = (async (input: RequestInfo | URL, init?: RequestInit) => {
-        const { Server } = await import("@/server/server")
-        const request = new Request(input, init)
-        const headers = new Headers(request.headers)
-        const auth = ServerAuth.header()
-        if (auth) headers.set("Authorization", auth)
-        return Server.Default().app.fetch(new Request(request, { headers }))
-      }) as typeof globalThis.fetch
-      const sdk = createNovaclawClient({
-        baseUrl: "http://novaclaw.internal",
-        fetch: fetchFn,
-        directory,
-      })
-      await execute(sdk)
+      // One-shot headless command (the header's contract: "…and exits"). The in-process
+      // instance keeps LIVE handles (file watchers, the event bus, the memory engine) that
+      // hold bun alive after the turn settles — every CLI/smoke run leaked a ~1.5 GB orphan
+      // (issues.md P2; the accumulation behind the 2026-07-20 OOM crash). Flush stdout,
+      // then exit explicitly — best-effort background housekeeping dies with the process,
+      // which is exactly the deal a one-shot CLI offers.
+      await new Promise<void>((resolve) => process.stdout.write("", () => resolve()))
+      process.exit(process.exitCode ?? 0)
     })
   }),
 })
