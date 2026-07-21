@@ -618,11 +618,6 @@ export const dict = {
   "settings.general.row.followup.description": "選擇後續追問提示是立即引導還是進入佇列等待",
   "settings.general.row.followup.option.queue": "佇列",
   "settings.general.row.followup.option.steer": "引導",
-
-  "settings.general.row.shellToolPartsExpanded.title": "展開 shell 工具區塊",
-  "settings.general.row.shellToolPartsExpanded.description": "在時間軸中預設展開 shell 工具區塊",
-  "settings.general.row.editToolPartsExpanded.title": "展開 edit 工具區塊",
-  "settings.general.row.editToolPartsExpanded.description": "在時間軸中預設展開 edit、write 和 patch 工具區塊",
   "settings.general.row.wayland.title": "使用原生 Wayland",
   "settings.general.row.wayland.description": "在 Wayland 上停用 X11 後備模式。需要重新啟動。",
   "settings.general.row.wayland.tooltip": "在混合更新率螢幕的 Linux 系統上，原生 Wayland 可能更穩定。",

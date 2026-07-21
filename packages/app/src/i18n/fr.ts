@@ -570,12 +570,6 @@ export const dict = {
     "Choisissez si les messages de suivi dirigent immédiatement ou attendent dans une file d'attente",
   "settings.general.row.followup.option.queue": "File d'attente",
   "settings.general.row.followup.option.steer": "Diriger",
-  "settings.general.row.shellToolPartsExpanded.title": "Développer les parties de l'outil shell",
-  "settings.general.row.shellToolPartsExpanded.description":
-    "Afficher les parties de l'outil shell développées par défaut dans la chronologie",
-  "settings.general.row.editToolPartsExpanded.title": "Développer les parties de l'outil edit",
-  "settings.general.row.editToolPartsExpanded.description":
-    "Afficher les parties des outils edit, write et patch développées par défaut dans la chronologie",
   "settings.general.row.wayland.title": "Utiliser Wayland natif",
   "settings.general.row.wayland.description": "Désactiver le repli X11 sur Wayland. Nécessite un redémarrage.",
   "settings.general.row.wayland.tooltip":

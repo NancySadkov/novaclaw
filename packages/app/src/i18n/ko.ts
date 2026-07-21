@@ -557,12 +557,6 @@ export const dict = {
   "settings.general.row.followup.description": "후속 프롬프트를 즉시 실행할지 대기열에 넣을지 선택하세요",
   "settings.general.row.followup.option.queue": "대기열",
   "settings.general.row.followup.option.steer": "조종",
-  "settings.general.row.shellToolPartsExpanded.title": "shell 도구 파트 펼치기",
-  "settings.general.row.shellToolPartsExpanded.description":
-    "타임라인에서 기본적으로 shell 도구 파트를 펼친 상태로 표시합니다",
-  "settings.general.row.editToolPartsExpanded.title": "edit 도구 파트 펼치기",
-  "settings.general.row.editToolPartsExpanded.description":
-    "타임라인에서 기본적으로 edit, write, patch 도구 파트를 펼친 상태로 표시합니다",
   "settings.general.row.wayland.title": "네이티브 Wayland 사용",
   "settings.general.row.wayland.description": "Wayland에서 X11 폴백을 비활성화합니다. 다시 시작해야 합니다.",
   "settings.general.row.wayland.tooltip":

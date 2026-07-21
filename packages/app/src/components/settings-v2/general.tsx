@@ -221,6 +221,13 @@ export const SettingsGeneralV2: Component<{
     })),
   )
 
+  // Feed expansion prefs (reasoning folds / tool cards): "auto" = the expertise-level default.
+  const feedDisplayOptions = createMemo(() => [
+    { value: "auto" as const, label: language.t("settings.general.feedDisplay.auto") },
+    { value: "expanded" as const, label: language.t("settings.general.feedDisplay.expanded") },
+    { value: "collapsed" as const, label: language.t("settings.general.feedDisplay.collapsed") },
+  ])
+
   // Dynamic i18n keys (level name/blurb) need the loose-key cast the translator otherwise forbids.
   const tk = (key: string) => language.t(key as Parameters<typeof language.t>[0])
   // push (not show) so it STACKS over Settings instead of disposing it — see ui/context/dialog.tsx.
@@ -417,27 +424,44 @@ export const SettingsGeneralV2: Component<{
         </SettingsRowV2>
 
         <SettingsRowV2
-          minLevel="developer"
-          title={language.t("settings.general.row.shellToolPartsExpanded.title")}
-          description={language.t("settings.general.row.shellToolPartsExpanded.description")}
+          title={language.t("settings.general.row.feedReasoning.title")}
+          description={language.t("settings.general.row.feedReasoning.description")}
         >
-          <div data-action="settings-feed-shell-tool-parts-expanded">
-            <Switch
-              checked={settings.general.shellToolPartsExpanded()}
-              onChange={(checked) => settings.general.setShellToolPartsExpanded(checked)}
+          <div data-action="settings-feed-reasoning-display">
+            <SelectV2
+              appearance="inline"
+              options={feedDisplayOptions()}
+              placement="bottom-end"
+              gutter={6}
+              current={feedDisplayOptions().find((o) => o.value === settings.general.feedReasoningDisplay())}
+              value={(o) => o.value}
+              label={(o) => o.label}
+              onSelect={(option) => {
+                // Kobalte re-emits unchanged values when options recreate — diff before writing.
+                if (option && option.value !== settings.general.feedReasoningDisplay())
+                  settings.general.setFeedReasoningDisplay(option.value)
+              }}
             />
           </div>
         </SettingsRowV2>
 
         <SettingsRowV2
-          minLevel="developer"
-          title={language.t("settings.general.row.editToolPartsExpanded.title")}
-          description={language.t("settings.general.row.editToolPartsExpanded.description")}
+          title={language.t("settings.general.row.feedTool.title")}
+          description={language.t("settings.general.row.feedTool.description")}
         >
-          <div data-action="settings-feed-edit-tool-parts-expanded">
-            <Switch
-              checked={settings.general.editToolPartsExpanded()}
-              onChange={(checked) => settings.general.setEditToolPartsExpanded(checked)}
+          <div data-action="settings-feed-tool-display">
+            <SelectV2
+              appearance="inline"
+              options={feedDisplayOptions()}
+              placement="bottom-end"
+              gutter={6}
+              current={feedDisplayOptions().find((o) => o.value === settings.general.feedToolDisplay())}
+              value={(o) => o.value}
+              label={(o) => o.label}
+              onSelect={(option) => {
+                if (option && option.value !== settings.general.feedToolDisplay())
+                  settings.general.setFeedToolDisplay(option.value)
+              }}
             />
           </div>
         </SettingsRowV2>

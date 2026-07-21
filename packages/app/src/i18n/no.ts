@@ -630,11 +630,6 @@ export const dict = {
   "settings.general.row.followup.description": "Velg om oppfølgingsspørsmål skal kjøres umiddelbart eller vente i kø",
   "settings.general.row.followup.option.queue": "Kø",
   "settings.general.row.followup.option.steer": "Styr",
-  "settings.general.row.shellToolPartsExpanded.title": "Utvid shell-verktøydeler",
-  "settings.general.row.shellToolPartsExpanded.description": "Vis shell-verktøydeler utvidet som standard i tidslinjen",
-  "settings.general.row.editToolPartsExpanded.title": "Utvid edit-verktøydeler",
-  "settings.general.row.editToolPartsExpanded.description":
-    "Vis edit-, write- og patch-verktøydeler utvidet som standard i tidslinjen",
   "settings.general.row.wayland.title": "Bruk innebygd Wayland",
   "settings.general.row.wayland.description": "Deaktiver X11-fallback på Wayland. Krever omstart.",
   "settings.general.row.wayland.tooltip":

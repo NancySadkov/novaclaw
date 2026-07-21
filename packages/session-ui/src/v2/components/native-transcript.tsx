@@ -17,11 +17,13 @@ import { BasicToolV2 } from "./basic-tool-v2"
 import { ToolErrorCardV2 } from "./tool-error-card-v2"
 import "./native-transcript.css"
 
-// Level-aware reasoning fold (UIX residue b / C4). Defaults to "collapsed" so any caller that
-// doesn't set it keeps today's folded-reasoning behavior; the app passes the expertise-derived
-// mode. Consumed by ReasoningPart, so the mode need not be prop-drilled through every message.
-const defaultReasoningFold: Accessor<ReasoningFoldMode> = () => "collapsed"
-const ReasoningFoldContext = createContext<Accessor<ReasoningFoldMode>>(defaultReasoningFold)
+// Level-aware fold modes (UIX residue b / C4). Reasoning and tool cards carry SEPARATE modes so
+// the user's explicit Settings prefs (feedReasoningDisplay/feedToolDisplay) can override each
+// independently of the expertise default; callers that pass nothing keep the folded behavior.
+// Consumed via context so the modes need not be prop-drilled through every message.
+type FoldModes = { reasoning: ReasoningFoldMode; tool: ReasoningFoldMode }
+const defaultFoldModes: Accessor<FoldModes> = () => ({ reasoning: "collapsed", tool: "collapsed" })
+const ReasoningFoldContext = createContext<Accessor<FoldModes>>(defaultFoldModes)
 
 /**
  * F1e S4-v3 — native `SessionMessage[]` transcript renderer (strategy B).
@@ -44,6 +46,7 @@ export function NativeTranscript(props: {
   messages: readonly SessionMessage[]
   class?: string
   reasoningFold?: ReasoningFoldMode
+  toolFold?: ReasoningFoldMode
 }) {
   // The native store captures the session's initial agent/model as `*-switched` messages,
   // but those are setup state (V1 shows them in the header, not the transcript). Drop the
@@ -56,7 +59,14 @@ export function NativeTranscript(props: {
     return (messages as SessionMessage[]).filter((m, i) => i >= firstReal || !isSwitchMarker(m))
   })
   return (
-    <ReasoningFoldContext.Provider value={() => props.reasoningFold ?? "collapsed"}>
+    <ReasoningFoldContext.Provider
+      value={() => ({
+        reasoning: props.reasoningFold ?? "collapsed",
+        // Tool cards historically followed the reasoning mode — keep that when no explicit
+        // tool mode is given so existing callers render unchanged.
+        tool: props.toolFold ?? props.reasoningFold ?? "collapsed",
+      })}
+    >
       <div data-component="native-transcript" class={props.class}>
         <For each={visible()}>{(message) => <NativeMessage message={message} />}</For>
       </div>
@@ -217,7 +227,7 @@ function ReasoningPart(props: { part: SessionMessageAssistantReasoning }) {
   const foldMode = useContext(ReasoningFoldContext)
   const [override, setOverride] = createSignal<boolean | undefined>(undefined)
   const completed = () => !!props.part.time?.completed
-  const open = () => override() ?? reasoningOpenDefault(foldMode(), completed())
+  const open = () => override() ?? reasoningOpenDefault(foldMode().reasoning, completed())
   return (
     <details data-slot="native-reasoning" open={open()} data-streaming={completed() ? undefined : ""}>
       <summary
@@ -287,7 +297,7 @@ function ToolPart(props: { part: SessionMessageAssistantTool }) {
         <BasicToolV2
           data-slot="native-tool"
           status={props.part.state.status}
-          defaultOpen={toolOpenDefault(foldMode())}
+          defaultOpen={toolOpenDefault(foldMode().tool)}
           trigger={{
             title: meta().title,
             subtitle: meta().subtitle,

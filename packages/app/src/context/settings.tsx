@@ -36,8 +36,12 @@ export interface Settings {
     showTerminal: boolean
     showReasoningSummaries: boolean
     defaultPermissionMode: "plan" | "ask" | "surgical" | "bypass" | "yolo"
-    shellToolPartsExpanded: boolean
-    editToolPartsExpanded: boolean
+    // Feed expansion prefs for the NATIVE transcript: "auto" = the expertise-level default
+    // (C4 — Normal collapsed, Advanced live, Developer open); explicit values always win.
+    // Replaced the dead V1-path shellToolPartsExpanded/editToolPartsExpanded switches, which
+    // the native transcript never read (owner-hit 2026-07-22).
+    feedReasoningDisplay: "auto" | "expanded" | "collapsed"
+    feedToolDisplay: "auto" | "expanded" | "collapsed"
     showCustomAgents: boolean
     mobileTitlebarPosition: "top" | "bottom"
     expertiseLevel: ExpertiseLevel
@@ -128,8 +132,8 @@ const defaultSettings: Settings = {
     showTerminal: false,
     showReasoningSummaries: true,
     defaultPermissionMode: "ask",
-    shellToolPartsExpanded: false,
-    editToolPartsExpanded: false,
+    feedReasoningDisplay: "auto",
+    feedToolDisplay: "auto",
     showCustomAgents: false,
     mobileTitlebarPosition: "top",
     expertiseLevel: "normal",
@@ -252,19 +256,16 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         setDefaultPermissionMode(value: Settings["general"]["defaultPermissionMode"]) {
           setStore("general", "defaultPermissionMode", value)
         },
-        shellToolPartsExpanded: withFallback(
-          () => store.general?.shellToolPartsExpanded,
-          defaultSettings.general.shellToolPartsExpanded,
+        feedReasoningDisplay: withFallback(
+          () => store.general?.feedReasoningDisplay,
+          defaultSettings.general.feedReasoningDisplay,
         ),
-        setShellToolPartsExpanded(value: boolean) {
-          setStore("general", "shellToolPartsExpanded", value)
+        setFeedReasoningDisplay(value: Settings["general"]["feedReasoningDisplay"]) {
+          setStore("general", "feedReasoningDisplay", value)
         },
-        editToolPartsExpanded: withFallback(
-          () => store.general?.editToolPartsExpanded,
-          defaultSettings.general.editToolPartsExpanded,
-        ),
-        setEditToolPartsExpanded(value: boolean) {
-          setStore("general", "editToolPartsExpanded", value)
+        feedToolDisplay: withFallback(() => store.general?.feedToolDisplay, defaultSettings.general.feedToolDisplay),
+        setFeedToolDisplay(value: Settings["general"]["feedToolDisplay"]) {
+          setStore("general", "feedToolDisplay", value)
         },
         showCustomAgents,
         setShowCustomAgents(value: boolean) {

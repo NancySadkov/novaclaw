@@ -3,6 +3,7 @@ import { NativeTranscript } from "@novaclaw/session-ui/v2/native-transcript"
 import type { ReasoningFoldMode } from "@novaclaw/session-ui/v2/reasoning-fold"
 import { useExpertise } from "@/context/expertise"
 import { useServerSync } from "@/context/server-sync"
+import { useSettings } from "@/context/settings"
 import { nextPinned } from "./native-scroll"
 
 // Level-aware reasoning fold (UIX residue b / C4, uix.md §6 teach-don't-gatekeep): a non-expert
@@ -24,7 +25,16 @@ const REASONING_FOLD: Record<string, ReasoningFoldMode> = {
 export function NativeTimeline(props: { sessionID: string }) {
   const serverSync = useServerSync()
   const expertise = useExpertise()
-  const reasoningFold = createMemo<ReasoningFoldMode>(() => REASONING_FOLD[expertise.level()] ?? "collapsed")
+  const settings = useSettings()
+  // The user's explicit Settings pref wins over the expertise-level default ("auto") — the
+  // feed-display selects in Settings → General (owner 2026-07-22: the level default alone left
+  // no way to keep reasoning/tool cards collapsed as a Developer, and the old shell/edit
+  // switches were dead V1-path settings).
+  const levelFold = () => REASONING_FOLD[expertise.level()] ?? "collapsed"
+  const applyPref = (pref: "auto" | "expanded" | "collapsed"): ReasoningFoldMode =>
+    pref === "expanded" ? "open" : pref === "collapsed" ? "collapsed" : levelFold()
+  const reasoningFold = createMemo<ReasoningFoldMode>(() => applyPref(settings.general.feedReasoningDisplay()))
+  const toolFold = createMemo<ReasoningFoldMode>(() => applyPref(settings.general.feedToolDisplay()))
   const messages = createMemo(() => serverSync().nativeMessages.messages(props.sessionID) ?? [])
 
   let scroller: HTMLDivElement | undefined
@@ -96,7 +106,7 @@ export function NativeTimeline(props: { sessionID: string }) {
         }}
       >
         <div ref={(el) => (content = el)}>
-          <NativeTranscript messages={messages()} reasoningFold={reasoningFold()} />
+          <NativeTranscript messages={messages()} reasoningFold={reasoningFold()} toolFold={toolFold()} />
         </div>
       </div>
       <Show when={!pinned()}>

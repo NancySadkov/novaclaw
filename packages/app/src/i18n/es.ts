@@ -631,12 +631,6 @@ export const dict = {
     "Elige si los prompts de seguimiento se dirigen inmediatamente o esperan en una cola",
   "settings.general.row.followup.option.queue": "Cola",
   "settings.general.row.followup.option.steer": "Dirigir",
-  "settings.general.row.shellToolPartsExpanded.title": "Expandir partes de la herramienta shell",
-  "settings.general.row.shellToolPartsExpanded.description":
-    "Mostrar las partes de la herramienta shell expandidas por defecto en la línea de tiempo",
-  "settings.general.row.editToolPartsExpanded.title": "Expandir partes de la herramienta de edición",
-  "settings.general.row.editToolPartsExpanded.description":
-    "Mostrar las partes de las herramientas de edición, escritura y parcheado expandidas por defecto en la línea de tiempo",
   "settings.general.row.wayland.title": "Usar Wayland nativo",
   "settings.general.row.wayland.description": "Deshabilitar fallback a X11 en Wayland. Requiere reinicio.",
   "settings.general.row.wayland.tooltip":

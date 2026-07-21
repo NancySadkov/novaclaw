@@ -561,12 +561,6 @@ export const dict = {
     "フォローアッププロンプトを即座に実行するか、キューで待機させるかを選択します",
   "settings.general.row.followup.option.queue": "キューに追加",
   "settings.general.row.followup.option.steer": "即座に実行 (Steer)",
-  "settings.general.row.shellToolPartsExpanded.title": "shell ツールパーツを展開",
-  "settings.general.row.shellToolPartsExpanded.description":
-    "タイムラインで shell ツールパーツをデフォルトで展開して表示します",
-  "settings.general.row.editToolPartsExpanded.title": "edit ツールパーツを展開",
-  "settings.general.row.editToolPartsExpanded.description":
-    "タイムラインで edit、write、patch ツールパーツをデフォルトで展開して表示します",
   "settings.general.row.wayland.title": "ネイティブWaylandを使用",
   "settings.general.row.wayland.description": "WaylandでのX11フォールバックを無効にします。再起動が必要です。",
   "settings.general.row.wayland.tooltip":

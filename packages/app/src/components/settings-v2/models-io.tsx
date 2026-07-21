@@ -101,10 +101,10 @@ export const ModelBundleIO: Component = () => {
     <RequiresLevel min="advanced">
       <div class="flex gap-2">
         <ButtonV2 size="small" variant="neutral" onClick={() => void exportModels()}>
-          {language.t("settings.providers.export.action")}
+          {language.t("settings.models.io.export")}
         </ButtonV2>
         <ButtonV2 size="small" variant="neutral" onClick={() => void importModels()}>
-          {language.t("settings.providers.import.action")}
+          {language.t("settings.models.io.import")}
         </ButtonV2>
       </div>
     </RequiresLevel>

@@ -555,12 +555,6 @@ export const dict = {
   "settings.general.row.followup.description": "اختر ما إذا كانت طلبات المتابعة توجه فورًا أو تنتظر في قائمة انتظار",
   "settings.general.row.followup.option.queue": "قائمة انتظار",
   "settings.general.row.followup.option.steer": "توجيه",
-  "settings.general.row.shellToolPartsExpanded.title": "توسيع أجزاء أداة shell",
-  "settings.general.row.shellToolPartsExpanded.description":
-    "إظهار أجزاء أداة shell موسعة بشكل افتراضي في الشريط الزمني",
-  "settings.general.row.editToolPartsExpanded.title": "توسيع أجزاء أداة edit",
-  "settings.general.row.editToolPartsExpanded.description":
-    "إظهار أجزاء أدوات edit و write و patch موسعة بشكل افتراضي في الشريط الزمني",
   "settings.general.row.wayland.title": "استخدام Wayland الأصلي",
   "settings.general.row.wayland.description": "تعطيل التراجع إلى X11 على Wayland. يتطلب إعادة التشغيل.",
   "settings.general.row.wayland.tooltip":

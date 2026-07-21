@@ -573,12 +573,6 @@ export const dict = {
     "Wählen Sie, ob Folgefragen sofort steuern oder in einer Warteschlange warten",
   "settings.general.row.followup.option.queue": "Warteschlange",
   "settings.general.row.followup.option.steer": "Steuern",
-  "settings.general.row.shellToolPartsExpanded.title": "Shell-Tool-Abschnitte ausklappen",
-  "settings.general.row.shellToolPartsExpanded.description":
-    "Shell-Tool-Abschnitte standardmäßig in der Timeline ausgeklappt anzeigen",
-  "settings.general.row.editToolPartsExpanded.title": "Edit-Tool-Abschnitte ausklappen",
-  "settings.general.row.editToolPartsExpanded.description":
-    "Edit-, Write- und Patch-Tool-Abschnitte standardmäßig in der Timeline ausgeklappt anzeigen",
   "settings.general.row.wayland.title": "Natives Wayland verwenden",
   "settings.general.row.wayland.description": "X11-Fallback unter Wayland deaktivieren. Erfordert Neustart.",
   "settings.general.row.wayland.tooltip":

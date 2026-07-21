@@ -561,12 +561,6 @@ export const dict = {
   "settings.general.row.followup.description": "Wybierz, czy kontynuacja ma być natychmiastowa, czy czekać w kolejce",
   "settings.general.row.followup.option.queue": "Kolejka",
   "settings.general.row.followup.option.steer": "Sterowanie",
-  "settings.general.row.shellToolPartsExpanded.title": "Rozwijaj elementy narzędzia shell",
-  "settings.general.row.shellToolPartsExpanded.description":
-    "Domyślnie pokazuj rozwinięte elementy narzędzia shell na osi czasu",
-  "settings.general.row.editToolPartsExpanded.title": "Rozwijaj elementy narzędzia edit",
-  "settings.general.row.editToolPartsExpanded.description":
-    "Domyślnie pokazuj rozwinięte elementy narzędzi edit, write i patch na osi czasu",
   "settings.general.row.wayland.title": "Użyj natywnego Wayland",
   "settings.general.row.wayland.description": "Wyłącz fallback X11 na Wayland. Wymaga restartu.",
   "settings.general.row.wayland.tooltip":

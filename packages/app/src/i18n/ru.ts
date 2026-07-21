@@ -628,13 +628,6 @@ export const dict = {
     "Выберите, отправлять ли уточняющие вопросы сразу или помещать их в очередь",
   "settings.general.row.followup.option.queue": "Очередь",
   "settings.general.row.followup.option.steer": "Направлять",
-
-  "settings.general.row.shellToolPartsExpanded.title": "Разворачивать элементы инструмента shell",
-  "settings.general.row.shellToolPartsExpanded.description":
-    "Показывать элементы инструмента shell в ленте развернутыми по умолчанию",
-  "settings.general.row.editToolPartsExpanded.title": "Разворачивать элементы инструмента edit",
-  "settings.general.row.editToolPartsExpanded.description":
-    "Показывать элементы инструментов edit, write и patch в ленте развернутыми по умолчанию",
   "settings.general.row.wayland.title": "Использовать нативный Wayland",
   "settings.general.row.wayland.description": "Отключить X11 fallback на Wayland. Требуется перезапуск.",
   "settings.general.row.wayland.tooltip":

@@ -746,12 +746,6 @@ export const dict = {
   "settings.general.row.showTerminal.description": "Показувати кнопку термінала в заголовку робочого столу",
   "settings.general.row.showStatus.title": "Статус сервера",
   "settings.general.row.showStatus.description": "Показувати кнопку статусу сервера в заголовку",
-  "settings.general.row.shellToolPartsExpanded.title": "Розгортати частини інструменту оболонки",
-  "settings.general.row.shellToolPartsExpanded.description":
-    "Показувати частини інструменту оболонки розгорнутими за замовчуванням на часовій шкалі",
-  "settings.general.row.editToolPartsExpanded.title": "Розгортати частини інструменту редагування",
-  "settings.general.row.editToolPartsExpanded.description":
-    "Показувати частини інструментів редагування, запису та патчів розгорнутими за замовчуванням на часовій шкалі",
 
   "settings.general.row.wayland.title": "Використовувати нативний Wayland",
   "settings.general.row.wayland.description": "Вимкнути резервний X11 на Wayland. Потребує перезапуску.",

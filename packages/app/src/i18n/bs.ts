@@ -627,13 +627,6 @@ export const dict = {
   "settings.general.row.followup.description": "Odaberi da li upiti nadovezivanja usmjeravaju odmah ili čekaju u redu",
   "settings.general.row.followup.option.queue": "Red čekanja",
   "settings.general.row.followup.option.steer": "Usmjeri",
-
-  "settings.general.row.shellToolPartsExpanded.title": "Proširi dijelove shell alata",
-  "settings.general.row.shellToolPartsExpanded.description":
-    "Prikaži dijelove shell alata podrazumijevano proširene na vremenskoj traci",
-  "settings.general.row.editToolPartsExpanded.title": "Proširi dijelove alata za uređivanje",
-  "settings.general.row.editToolPartsExpanded.description":
-    "Prikaži dijelove alata za uređivanje, pisanje i patch podrazumijevano proširene na vremenskoj traci",
   "settings.general.row.wayland.title": "Koristi nativni Wayland",
   "settings.general.row.wayland.description": "Onemogući X11 fallback na Waylandu. Zahtijeva restart.",
   "settings.general.row.wayland.tooltip":

@@ -635,12 +635,6 @@ export const dict = {
     "Takip komutlarının hemen yönlendirilmesini mi yoksa sırada beklemesini mi istediğinizi seçin",
   "settings.general.row.followup.option.queue": "Sıra",
   "settings.general.row.followup.option.steer": "Yönlendir",
-  "settings.general.row.shellToolPartsExpanded.title": "Kabuk araç bileşenlerini genişlet",
-  "settings.general.row.shellToolPartsExpanded.description":
-    "Zaman çizelgesinde kabuk araç bileşenlerini varsayılan olarak genişletilmiş göster",
-  "settings.general.row.editToolPartsExpanded.title": "Düzenleme araç bileşenlerini genişlet",
-  "settings.general.row.editToolPartsExpanded.description":
-    "Zaman çizelgesinde düzenleme, yazma ve yama araç bileşenlerini varsayılan olarak genişletilmiş göster",
 
   "settings.general.row.wayland.title": "Yerel Wayland kullan",
   "settings.general.row.wayland.description":

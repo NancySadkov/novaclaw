@@ -95,6 +95,10 @@ export const dict = {
     "This removes it and any saved credentials from this device. You can reconnect later.",
   "settings.providers.export.action": "Export",
   "settings.providers.import.action": "Import",
+  "settings.models.io.export": "Export models",
+  "settings.models.io.import": "Import models",
+  "settings.config.io.export": "Export config",
+  "settings.config.io.import": "Import config",
   "settings.providers.export.dialogTitle": "Export settings file (novaclaw.jsonc)",
   "settings.providers.import.dialogTitle": "Import settings file (novaclaw.jsonc)",
   "settings.providers.export.toast": "Configuration exported",
@@ -1165,12 +1169,15 @@ export const dict = {
   "settings.general.row.virtualFs.title": "Virtual workspace",
   "settings.general.row.virtualFs.description":
     "Keep this instance's projects, notes, and files in an app-private folder — for hosts without a browsable filesystem.",
-  "settings.general.row.shellToolPartsExpanded.title": "Expand shell tool parts",
-  "settings.general.row.shellToolPartsExpanded.description":
-    "Show shell tool parts expanded by default in the timeline",
-  "settings.general.row.editToolPartsExpanded.title": "Expand edit tool parts",
-  "settings.general.row.editToolPartsExpanded.description":
-    "Show edit, write, and patch tool parts expanded by default in the timeline",
+  "settings.general.row.feedReasoning.title": "Reasoning sections",
+  "settings.general.row.feedReasoning.description":
+    "How the model's reasoning shows in chat. Auto follows your expertise level.",
+  "settings.general.row.feedTool.title": "Tool and shell cards",
+  "settings.general.row.feedTool.description":
+    "How tool calls (shell commands, edits, …) show in chat. Auto follows your expertise level.",
+  "settings.general.feedDisplay.auto": "Auto",
+  "settings.general.feedDisplay.expanded": "Expanded",
+  "settings.general.feedDisplay.collapsed": "Collapsed",
   "settings.general.row.pinchZoom.title": "Pinch to zoom",
   "settings.general.row.pinchZoom.description": "Allow trackpad pinch and Ctrl-scroll gestures to zoom",
 

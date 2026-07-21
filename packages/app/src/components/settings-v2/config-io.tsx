@@ -103,10 +103,10 @@ export const ConfigExportImport: Component = () => {
     <RequiresLevel min="developer">
       <div class="flex gap-2">
         <ButtonV2 size="small" variant="neutral" onClick={() => void exportConfig()}>
-          {language.t("settings.providers.export.action")}
+          {language.t("settings.config.io.export")}
         </ButtonV2>
         <ButtonV2 size="small" variant="neutral" onClick={() => void importConfig()}>
-          {language.t("settings.providers.import.action")}
+          {language.t("settings.config.io.import")}
         </ButtonV2>
       </div>
     </RequiresLevel>
