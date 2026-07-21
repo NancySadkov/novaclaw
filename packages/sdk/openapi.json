@@ -19311,6 +19311,22 @@
           },
           "scratchDir": {
             "type": "string"
+          },
+          "places": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "path": {
+                  "type": "string"
+                }
+              },
+              "required": ["name", "path"],
+              "additionalProperties": false
+            }
           }
         },
         "required": ["home", "state", "config", "data", "worktree", "directory", "roots"],
@@ -25686,6 +25702,12 @@
               },
               "required": ["name", "url"],
               "additionalProperties": false
+            }
+          },
+          "folder_bookmarks": {
+            "type": "array",
+            "items": {
+              "type": "string"
             }
           },
           "virtualFs": {
