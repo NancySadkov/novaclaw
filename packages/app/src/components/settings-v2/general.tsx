@@ -15,6 +15,7 @@ import { useServerSync } from "@/context/server-sync"
 import { useServerSDK } from "@/context/server-sdk"
 import { ServerConnection, serverName } from "@/context/server"
 import { useServerManagementController } from "../dialog-select-server"
+import { ConfigExportImport } from "./config-io"
 import { useSettings } from "@/context/settings"
 import { offlineStatus, shellProvision, shellStatus, type OfflineStatus, type ShellStatus } from "@/utils/fs-api"
 import { useUpdaterAction } from "../updater-action"
@@ -604,7 +605,24 @@ export const SettingsGeneralV2: Component<{
 
         <NotificationsSection />
 
+        {/* Whole-instance config Export/Import (moved from the Models tab, owner 2026-07-22 —
+            it is general configuration, not a models tool). Desktop-gated with Updates: the
+            component drives the native file pickers (window.api), absent on web. */}
         <Show when={desktop()}>
+          <div class="settings-v2-section">
+            <SettingsListV2>
+              <SettingsRowV2
+                minLevel="developer"
+                title={language.t("settings.general.row.configIO.title")}
+                description={language.t("settings.general.row.configIO.description")}
+              >
+                <div data-action="settings-config-io">
+                  <ConfigExportImport />
+                </div>
+              </SettingsRowV2>
+            </SettingsListV2>
+          </div>
+
           <UpdatesSection />
         </Show>
       </div>

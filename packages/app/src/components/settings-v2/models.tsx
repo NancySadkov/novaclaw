@@ -17,7 +17,6 @@ import { DialogModelTier } from "./dialog-model-tier"
 import { DialogModelConfig } from "./dialog-model-config"
 import { DialogNewModel } from "./dialog-new-model"
 import { ModelBundleIO } from "./models-io"
-import { ConfigExportImport } from "./config-io"
 import { useConfirm } from "@/components/dialog-confirm"
 import "./settings-v2.css"
 
@@ -136,8 +135,9 @@ export const SettingsModelsV2: Component = () => {
         <div class="flex items-center justify-between gap-3 flex-wrap">
           <h2 class="settings-v2-tab-title">{language.t("settings.models.title")}</h2>
           <div class="flex items-center gap-2 flex-wrap justify-end">
+            {/* The whole-config Export/Import moved to Settings → General (owner 2026-07-22) —
+                it is instance configuration, not a models tool. */}
             <ModelBundleIO />
-            <ConfigExportImport />
             <ButtonV2 size="small" variant="neutral" onClick={openNewModel}>
               {language.t("settings.models.new.open")}
             </ButtonV2>
