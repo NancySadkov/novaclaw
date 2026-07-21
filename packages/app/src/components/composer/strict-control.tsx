@@ -101,9 +101,12 @@ export function ComposerStrictControl(props: { state: ComposerStrictControlState
           <label class="flex items-center justify-between gap-3">
             <span class="text-[13px] text-v2-text-text-base">{language.t("prompt.strict.popover.attempts")}</span>
             <div class="w-[90px]">
+              {/* TextInputV2 carries a fixed 280px default width — force it into the row's sizer
+                  or it overflows the w-80 popover (same !w-full override the settings forms use). */}
               <TextInputV2
                 type="number"
                 appearance="base"
+                class="!w-full"
                 min="1"
                 max="8"
                 step="1"
@@ -120,6 +123,7 @@ export function ComposerStrictControl(props: { state: ComposerStrictControlState
               <TextInputV2
                 type="number"
                 appearance="base"
+                class="!w-full"
                 min="1"
                 max="480"
                 step="1"
