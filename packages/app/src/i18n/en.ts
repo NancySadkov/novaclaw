@@ -431,7 +431,7 @@ export const dict = {
   "dialog.mcp.description": "{{enabled}} of {{total}} enabled",
   "dialog.mcp.empty": "No connections yet. Connect an external tool or service to let your agents use it.",
 
-  "dialog.plugins.empty": "Add-ons that extend NovaClaw. Configure them in your novaclaw.json config file.",
+  "dialog.plugins.empty": "Add-ons that extend NovaClaw. None are installed yet — ask an agent to set one up for you.",
 
   "mcp.status.connected": "connected",
   "mcp.status.failed": "failed",
@@ -453,6 +453,8 @@ export const dict = {
   "dialog.directory.homePlace": "Home",
   "dialog.directory.pin": "Bookmark this folder",
   "dialog.directory.unpin": "Remove bookmark",
+  "dialog.directory.pinShort": "Bookmark",
+  "dialog.directory.pinnedShort": "Bookmarked",
 
   "app.server.unreachable": "Could not reach {{server}}",
   "app.server.retrying": "Retrying automatically...",
@@ -708,7 +710,7 @@ export const dict = {
   "error.chain.responseBody": "Response body:\n{{body}}",
   "error.chain.didYouMean": "Did you mean: {{suggestions}}",
   "error.chain.modelNotFound": "Model not found: {{provider}}/{{model}}",
-  "error.chain.checkConfig": "Check the provider and model names in your config (novaclaw.json).",
+  "error.chain.checkConfig": "Check the model in Settings → Models — it may have been renamed or removed.",
   "error.chain.mcpFailed":
     "Couldn't connect to the MCP tool server \"{{name}}\". NovaClaw can't sign in to MCP servers that require authentication yet.",
   "error.chain.providerAuthFailed": "Provider authentication failed ({{provider}}): {{message}}",
@@ -1438,7 +1440,7 @@ export const dict = {
   "settings.quality.row.testTimeout.description": "Hard limit for the test gate — a hung test counts as a failure",
   "settings.quality.commands.title": "Provisioned commands",
   "settings.quality.commands.description":
-    "Empty = the step is skipped. {file} is replaced with the path of the file that was written (quoted). A project's novaclaw.jsonc can override these per project.",
+    "Empty = the step is skipped. {file} is replaced with the path of the file that was written (quoted). An agent can fill these in for you with the quality_provision tool.",
   "settings.quality.command.syntax.title": "Syntax check",
   "settings.quality.command.syntax.description": "Per-file parse on every write",
   "settings.quality.command.check.title": "Incremental verify",

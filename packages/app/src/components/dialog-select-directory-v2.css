@@ -162,6 +162,43 @@
   --trees-border-radius-override: 4px;
 }
 
+.directory-picker-v2-context-menu {
+  position: fixed;
+  z-index: 60;
+  display: flex;
+  min-width: 180px;
+  flex-direction: column;
+  padding: 4px;
+  border: 1px solid var(--v2-border-border-base);
+  border-radius: 6px;
+  background: var(--v2-background-bg-layer-02);
+  box-shadow: var(--v2-elevation-overlay);
+}
+
+.directory-picker-v2-context-menu-path {
+  overflow: hidden;
+  padding: 4px 8px 2px;
+  color: var(--v2-text-text-faint);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.directory-picker-v2-context-menu button {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-radius: 4px;
+  color: var(--v2-text-text-base);
+  font-size: 12px;
+  text-align: left;
+}
+
+.directory-picker-v2-context-menu button:hover {
+  background: var(--v2-overlay-simple-overlay-hover);
+}
+
 .directory-picker-v2-state {
   position: absolute;
   z-index: 1;

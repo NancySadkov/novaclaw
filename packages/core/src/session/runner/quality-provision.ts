@@ -12,14 +12,13 @@ export * as QualityProvision from "./quality-provision"
 //   rung 3 (gated) — actually INSTALLING a missing toolchain stays a bash-tool action
 //                    under its own permission gate — never automatic.
 
-import { applyEdits, modify } from "jsonc-parser"
 import type { Commands } from "./quality"
 
 /** The one-shot runner steer when quality mode is ON but nothing is provisioned. */
 export const NUDGE =
   "Quality mode is enabled for this project, but no quality commands are provisioned — the gates are inert. " +
   "Call the quality_provision tool now: it scans the project's manifests for check/typecheck/test/lint commands, " +
-  "verifies each candidate actually runs, and writes quality.commands into the project novaclaw.jsonc " +
+  "verifies each candidate actually runs, and saves quality.commands to the instance settings " +
   "(active for future sessions). If the scan finds nothing, re-call it passing explicit commands. Then continue your task."
 
 export interface ScanInput {
@@ -139,18 +138,6 @@ export function classifyRun(input: { readonly exit?: number; readonly output: st
   return "ran"
 }
 
-/**
- * Surgically patch `quality.commands.*` into a project novaclaw.jsonc, preserving the
- * file's comments/formatting (jsonc-parser edits — the same discipline as patchJsonc).
- */
-export function patchProjectConfig(text: string, commands: Commands): string {
-  let current = text.trim() ? text : "{}\n"
-  for (const [key, value] of Object.entries(commands)) {
-    if (!value) continue
-    const edits = modify(current, ["quality", "commands", key], value, {
-      formattingOptions: { insertSpaces: true, tabSize: 2 },
-    })
-    current = applyEdits(current, edits)
-  }
-  return current
-}
+// patchProjectConfig (surgical project-jsonc quality.commands patch) died with the
+// config-sqlite flip: nothing reads a project novaclaw.jsonc at runtime, so the tool
+// now saves to the instance settings store instead (tool/quality-provision.ts).

@@ -1,6 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import { parse } from "jsonc-parser"
-import { classifyRun, patchProjectConfig, scan } from "./quality-provision"
+import { classifyRun, scan } from "./quality-provision"
 
 const reader = (files: Record<string, string>) => (name: string) => files[name]
 
@@ -89,28 +88,5 @@ describe("QE-A run classification", () => {
   })
 })
 
-describe("QE-A project-config patch", () => {
-  test("creates quality.commands in an empty config", () => {
-    const patched = patchProjectConfig("", { test: "bun run test", lint: "bun run lint" })
-    const parsed = parse(patched) as { quality?: { commands?: Record<string, string> } }
-    expect(parsed.quality?.commands?.test).toBe("bun run test")
-    expect(parsed.quality?.commands?.lint).toBe("bun run lint")
-  })
-
-  test("preserves comments and unrelated keys in an existing jsonc", () => {
-    const original = `{
-  // my providers
-  "provider": { "dgx-spark": { "name": "Spark" } },
-  "quality": { "enabled": true }
-}`
-    const patched = patchProjectConfig(original, { typecheck: "bunx tsc --noEmit" })
-    expect(patched).toContain("// my providers")
-    const parsed = parse(patched) as {
-      provider?: Record<string, unknown>
-      quality?: { enabled?: boolean; commands?: Record<string, string> }
-    }
-    expect(parsed.provider?.["dgx-spark"]).toBeDefined()
-    expect(parsed.quality?.enabled).toBe(true)
-    expect(parsed.quality?.commands?.typecheck).toBe("bunx tsc --noEmit")
-  })
-})
+// The project-config patch suite died with patchProjectConfig (config-sqlite: the tool
+// saves to the instance settings store; nothing reads a project jsonc at runtime).

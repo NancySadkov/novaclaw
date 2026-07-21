@@ -17,18 +17,6 @@ import { useGlobal } from "@/context/global"
 import { useSettings } from "@/context/settings"
 import { useMcpToggle } from "@/context/mcp"
 
-const pluginEmptyMessage = (value: string, file: string): JSXElement => {
-  const parts = value.split(file)
-  if (parts.length === 1) return value
-  return (
-    <>
-      {parts[0]}
-      <code class="bg-surface-raised-base px-1.5 py-0.5 rounded-sm text-text-base">{file}</code>
-      {parts.slice(1).join(file)}
-    </>
-  )
-}
-
 const listServersByHealth = (
   list: ServerConnection.Any[],
   active: ServerConnection.Key | undefined,
@@ -286,7 +274,7 @@ export function StatusPopoverBody(props: { shown: Accessor<boolean> }) {
     (sync().data.config.plugins ?? []).map((item) => (typeof item === "string" ? item : item.package)),
   )
   const pluginCount = createMemo(() => plugins().length)
-  const pluginEmpty = createMemo(() => pluginEmptyMessage(language.t("dialog.plugins.empty"), "novaclaw.json"))
+  const pluginEmpty = createMemo(() => language.t("dialog.plugins.empty"))
 
   return (
     <div class="flex items-center gap-1 w-[360px] rounded-xl shadow-[var(--shadow-lg-border-base)]">

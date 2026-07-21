@@ -118,19 +118,53 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
     const parts = value.split(/[\\/]/).filter(Boolean)
     return parts[parts.length - 1] ?? value
   }
-  const normalizedRoot = createMemo(() => root().replace(/[\\/]+$/, ""))
-  const rootPinned = createMemo(() => bookmarks().includes(normalizedRoot()))
+  // One canonical key for pin compares/writes: forward slashes, no trailing separator — the
+  // picker's root() is forward-slashed while server places are OS-style, and mixing the two
+  // silently broke equality on Windows.
+  const pinKey = (value: string) => value.replace(/\\/g, "/").replace(/\/+$/, "")
+  const normalizedRoot = createMemo(() => pinKey(root()))
+  const isPinned = (target: string) => bookmarks().some((entry) => pinKey(entry) === pinKey(target))
+  const rootPinned = createMemo(() => isPinned(normalizedRoot()))
   const writeBookmarks = (next: string[]) =>
     // Whole-value settings key: the array replaces wholesale (the updateConfig contract).
     (sync.updateConfig({ folder_bookmarks: next } as never) as Promise<unknown>).catch(() => undefined)
-  const togglePin = () => {
-    const target = normalizedRoot()
-    if (!target || !rootValid()) return
+  const togglePinFor = (target: string) => {
+    const key = pinKey(target)
+    if (!key) return
     void writeBookmarks(
-      rootPinned() ? bookmarks().filter((entry) => entry !== target) : [...bookmarks(), target],
+      isPinned(key) ? bookmarks().filter((entry) => pinKey(entry) !== key) : [...bookmarks(), key],
     )
   }
-  const removePin = (target: string) => void writeBookmarks(bookmarks().filter((entry) => entry !== target))
+  const togglePin = () => {
+    if (!normalizedRoot() || !rootValid()) return
+    togglePinFor(normalizedRoot())
+  }
+  const removePin = (target: string) => void writeBookmarks(bookmarks().filter((entry) => pinKey(entry) !== pinKey(target)))
+  // Right-click bookmarking (the discoverable path): tree rows expose their tree-relative path
+  // as `data-item-path` through the shadow DOM (composedPath sees into it); rail rows pass
+  // their absolute path directly. One cursor-anchored menu, one action.
+  const [contextMenu, setContextMenu] = createSignal<{ x: number; y: number; path: string } | undefined>()
+  const openTreeContextMenu = (event: MouseEvent) => {
+    const row = event
+      .composedPath()
+      .find(
+        (node): node is HTMLElement =>
+          node instanceof HTMLElement && node.dataset?.itemPath !== undefined,
+      )
+    if (row && row.dataset.itemType !== "folder") return
+    event.preventDefault()
+    const target = row
+      ? absoluteTreePath(root(), row.dataset.itemPath!.replace(/\/+$/, ""))
+      : rootValid()
+        ? root()
+        : undefined
+    if (!target) return
+    setContextMenu({ x: event.clientX, y: event.clientY, path: target })
+  }
+  const openRailContextMenu = (event: MouseEvent, target: string) => {
+    event.preventDefault()
+    setContextMenu({ x: event.clientX, y: event.clientY, path: target })
+  }
 
   const search = createDirectorySearch({ sdk, home, base: () => root() || start() })
   const [suggestions] = createResource(input, async (value) => {
@@ -266,12 +300,24 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
 
   onMount(() => {
     const closeSuggestions = (event: PointerEvent) => {
+      if ((event.target as HTMLElement | null)?.closest?.(".directory-picker-v2-context-menu") == null)
+        setContextMenu(undefined)
       if (pathArea?.contains(event.target as Node)) return
       setSuggestionsOpen(false)
       setActiveSuggestion(-1)
     }
+    const closeMenuOnEscape = (event: KeyboardEvent) => {
+      if (event.key === "Escape" && contextMenu()) {
+        event.stopPropagation()
+        setContextMenu(undefined)
+      }
+    }
     document.addEventListener("pointerdown", closeSuggestions)
-    onCleanup(() => document.removeEventListener("pointerdown", closeSuggestions))
+    document.addEventListener("keydown", closeMenuOnEscape, true)
+    onCleanup(() => {
+      document.removeEventListener("pointerdown", closeSuggestions)
+      document.removeEventListener("keydown", closeMenuOnEscape, true)
+    })
     tree = new FileTree({
       paths: [],
       flattenEmptyDirectories: false,
@@ -380,6 +426,7 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
                   size="small"
                   class={rootPinned() ? "text-v2-icon-icon-accent" : undefined}
                 />
+                {language.t(rootPinned() ? "dialog.directory.pinnedShort" : "dialog.directory.pinShort")}
               </ButtonV2>
             </TooltipV2>
           </div>
@@ -411,8 +458,9 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
                 {(pin) => (
                   <div
                     class="directory-picker-v2-rail-item"
-                    data-active={normalizedRoot() === pin ? "" : undefined}
+                    data-active={normalizedRoot() === pinKey(pin) ? "" : undefined}
                     title={pin}
+                    onContextMenu={(event) => openRailContextMenu(event, pin)}
                   >
                     <button type="button" class="directory-picker-v2-rail-nav" onClick={() => void navigate(pin)}>
                       <Icon name="folder" size="small" />
@@ -431,7 +479,12 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
               </For>
             </Show>
             <div class="directory-picker-v2-rail-title">{language.t("dialog.directory.places")}</div>
-            <div class="directory-picker-v2-rail-item" data-active={normalizedRoot() === home().replace(/[\\/]+$/, "") ? "" : undefined} title={home()}>
+            <div
+              class="directory-picker-v2-rail-item"
+              data-active={normalizedRoot() === pinKey(home()) ? "" : undefined}
+              title={home()}
+              onContextMenu={(event) => openRailContextMenu(event, home())}
+            >
               <button type="button" class="directory-picker-v2-rail-nav" onClick={() => void navigate(home())}>
                 <Icon name="folder" size="small" />
                 <span>{language.t("dialog.directory.homePlace")}</span>
@@ -441,8 +494,9 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
               {(place) => (
                 <div
                   class="directory-picker-v2-rail-item"
-                  data-active={normalizedRoot() === place.path.replace(/[\\/]+$/, "") ? "" : undefined}
+                  data-active={normalizedRoot() === pinKey(place.path) ? "" : undefined}
                   title={place.path}
+                  onContextMenu={(event) => openRailContextMenu(event, place.path)}
                 >
                   <button type="button" class="directory-picker-v2-rail-nav" onClick={() => void navigate(place.path)}>
                     <Icon name="folder" size="small" />
@@ -455,6 +509,7 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
           <div
             class="directory-picker-v2-browser"
             ref={container}
+            onContextMenu={openTreeContextMenu}
           onWheel={(event) => {
             const scroller = tree
               ?.getFileTreeContainer()
@@ -481,6 +536,30 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
           </div>
         </div>
         <div class="directory-picker-v2-selection">{policy.result(root(), selected(), rootValid())}</div>
+        <Show when={contextMenu()}>
+          {(menu) => (
+            <div
+              class="directory-picker-v2-context-menu"
+              style={{ left: `${menu().x}px`, top: `${menu().y}px` }}
+              role="menu"
+            >
+              <div class="directory-picker-v2-context-menu-path" title={menu().path}>
+                {baseName(menu().path)}
+              </div>
+              <button
+                type="button"
+                role="menuitem"
+                onClick={() => {
+                  togglePinFor(menu().path)
+                  setContextMenu(undefined)
+                }}
+              >
+                <Icon name="folder-add-left" size="small" />
+                {language.t(isPinned(menu().path) ? "dialog.directory.unpin" : "dialog.directory.pin")}
+              </button>
+            </div>
+          )}
+        </Show>
       </DialogBody>
       <DialogFooter>
         <ButtonV2 variant="neutral" onClick={() => dialog.close()}>

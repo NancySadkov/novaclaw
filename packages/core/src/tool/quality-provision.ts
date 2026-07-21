@@ -5,8 +5,12 @@
  * the timeout is the fire-once rule; "toolchain missing" drops the candidate);
  * rung 2 is the calling model re-invoking with explicit commands for the gaps;
  * rung 3 (installing missing toolchains) deliberately stays a bash action under its
- * own permission gate. Resolved commands are written into the PROJECT novaclaw.jsonc
- * (`quality.commands`, comment-preserving patch) — active for future location boots.
+ * own permission gate. Resolved commands are written into the instance settings
+ * store (`quality.commands` — the same record the Settings → Quality tab edits),
+ * active for future location boots. ⚠️ The pre-config-sqlite version wrote a PROJECT
+ * novaclaw.jsonc instead — a silent no-op since step 9 (nothing reads project jsonc
+ * at runtime; the same dead-write class as the 4E promote bug). Per-PROJECT quality
+ * overrides need a per-location config store first (filed in todo.md).
  */
 export * as QualityProvisionTool from "./quality-provision"
 
@@ -17,10 +21,12 @@ import { Duration, Effect, Layer, Schema } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { makeLocationNode } from "../effect/app-node"
 import { Location } from "../location"
+import { MergePatch } from "../merge-patch"
 import { PermissionV2 } from "../permission"
 import { AppProcess } from "../process"
 import type { Commands } from "../session/runner/quality"
 import { QualityProvision } from "../session/runner/quality-provision"
+import { SettingsConfigStore } from "../settings-config-store"
 import { Shell } from "../shell"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
@@ -46,7 +52,7 @@ export const Input = Schema.Struct({
     description: "Run each candidate once to verify the toolchain exists (default true). Failing checks still count as verified — only 'command not found' drops a candidate.",
   }),
   write: Schema.Boolean.pipe(Schema.optional).annotate({
-    description: "Write the resolved commands into the project novaclaw.jsonc (default true).",
+    description: "Save the resolved commands to this instance's quality settings (default true).",
   }),
 })
 
@@ -66,8 +72,8 @@ export const toModelOutput = (output: Output) => {
     resolved.length ? `Provisioned quality commands:\n${resolved.join("\n")}` : "No quality commands could be resolved.",
     output.dropped.length ? `Dropped (toolchain missing or hung): ${output.dropped.join("; ")}` : "",
     output.written
-      ? "Written to the project novaclaw.jsonc (quality.commands) — active for FUTURE sessions; this session's gates keep the boot snapshot."
-      : "Not written (write: false or nothing resolved).",
+      ? "Saved to the instance quality settings (Settings → Quality) — active for FUTURE sessions; this session's gates keep the boot snapshot."
+      : "Not saved (write: false or nothing resolved).",
     "Missing toolchains are installed via bash under its own approval — never automatically.",
   ]
     .filter(Boolean)
@@ -80,13 +86,14 @@ export const layer = Layer.effectDiscard(
     const permission = yield* PermissionV2.Service
     const location = yield* Location.Service
     const appProcess = yield* AppProcess.Service
+    const settings = yield* SettingsConfigStore.Service
 
     yield* tools
       .register({
         [name]: Tool.withPermission(
           Tool.make({
             description:
-              "Provision this project's QUALITY commands (QE): scan the manifests (package.json/Cargo.toml/go.mod/pyproject/Makefile) for check/typecheck/test/lint commands, verify each candidate actually runs (a red check still verifies — only a missing toolchain drops it), and write the result into the project novaclaw.jsonc quality.commands. Pass explicit `commands` to override or fill gaps. Newly written commands activate for future sessions.",
+              "Provision this project's QUALITY commands (QE): scan the manifests (package.json/Cargo.toml/go.mod/pyproject/Makefile) for check/typecheck/test/lint commands, verify each candidate actually runs (a red check still verifies — only a missing toolchain drops it), and save the result to the instance quality settings (the record Settings → Quality edits). Pass explicit `commands` to override or fill gaps. Newly saved commands activate for future sessions.",
             input: Input,
             output: Output,
             toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
@@ -168,12 +175,11 @@ export const layer = Layer.effectDiscard(
                 const remaining = Object.entries(merged).filter(([, value]) => Boolean(value))
                 let written = false
                 if (input.write !== false && remaining.length > 0) {
-                  const configPath = path.join(directory, "novaclaw.jsonc")
-                  const existing = yield* Effect.tryPromise(() => fs.readFile(configPath, "utf8")).pipe(
-                    Effect.catch(() => Effect.succeed("")),
-                  )
-                  const patched = QualityProvision.patchProjectConfig(existing, merged)
-                  yield* Effect.tryPromise(() => fs.writeFile(configPath, patched, "utf8"))
+                  // The instance settings store — the SAME record Settings → Quality edits, and the
+                  // only quality config the runtime reads (config-sqlite step 9: project jsonc is
+                  // never read at runtime; writing it here was a silent no-op).
+                  const current = (yield* settings.all()).quality
+                  yield* settings.set("quality", MergePatch.mergePatch(current, { commands: merged }))
                   written = true
                 }
                 return { commands: merged, dropped, evidence: proposal.evidence, written }
@@ -198,5 +204,5 @@ export const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/quality-provision",
   layer,
-  deps: [ToolRegistry.node, PermissionV2.node, Location.node, AppProcess.node],
+  deps: [ToolRegistry.node, PermissionV2.node, Location.node, AppProcess.node, SettingsConfigStore.node],
 })
