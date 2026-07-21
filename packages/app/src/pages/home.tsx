@@ -342,7 +342,7 @@ export function NewHome() {
   const chatsAttention = useChatsAttentionSets()
   const attentionRecords = createMemo(() => {
     if (selection().server !== server.key) return []
-    const sets = chatsAttention()
+    const sets = chatsAttention() ?? { waiting: [], unseen: [] }
     if (!sets.waiting.length && !sets.unseen.length) return []
     const rank = new Map<string, number>()
     sets.waiting.forEach((id) => rank.set(id, 0))
@@ -351,7 +351,11 @@ export function NewHome() {
     // child bubbles to its root — the list shows roots).
     const recordRank = (record: HomeSessionRecord) => {
       let best = rank.get(record.session.id)
-      const [childStore] = sync().child(record.session.location.directory, { bootstrap: false })
+      // A record mid-fold (e.g. right after a session.next.moved event) can briefly lack its
+      // location — skip the subtree walk rather than throw the whole memo into a faulted state.
+      const directory = record.session.location?.directory
+      if (!directory) return best
+      const [childStore] = sync().child(directory, { bootstrap: false })
       for (const row of subtreeRows(childStore.session, record.session.id)) {
         const tier = rank.get(row.session.id)
         if (tier !== undefined && (best === undefined || tier < best)) best = tier
@@ -639,7 +643,7 @@ export function NewHome() {
             </h1>
           </div>
           <div class="mt-3 flex min-w-0 items-start gap-2">
-            <Show when={tagUniverse().length > 0}>
+            <Show when={(tagUniverse()?.length ?? 0) > 0}>
               <div data-slot="home-tag-filter" class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
               <button
                 type="button"
@@ -702,7 +706,14 @@ export function NewHome() {
               }
             >
               <Show
-                when={groups().length > 0 || attentionRecords().length > 0 || flatSorted().length > 0}
+                // `?.` on each list: a faulted/HMR-disposed memo reads as undefined (owner-hit
+                // 2026-07-21 — `.length` of undefined crashed the whole sessions pane); the
+                // degrade is an empty list, never a dead-end (dependability law).
+                when={
+                  (groups()?.length ?? 0) > 0 ||
+                  (attentionRecords()?.length ?? 0) > 0 ||
+                  (flatSorted()?.length ?? 0) > 0
+                }
                 fallback={<HomeSessionsEmpty onNewSession={() => navigate("/")} />}
               >
                 <div ref={sessionHeaderOpacity.setContentRef} class="flex flex-col pt-3 pr-3 pb-16">
@@ -728,7 +739,7 @@ export function NewHome() {
                       </div>
                     }
                   >
-                  <Show when={attentionRecords().length > 0}>
+                  <Show when={(attentionRecords()?.length ?? 0) > 0}>
                     <HomeSessionGroupHeader
                       title={language.t("home.sessions.group.attention")}
                       titleOpacity={1}
@@ -956,7 +967,7 @@ function HomeSessionAttention(props: { session: Session; activeServer: boolean }
       childStore.session,
       data.permission,
       props.session.id,
-      (item) => !permission.autoResponds(item, props.session.location.directory),
+      (item) => !permission.autoResponds(item, props.session.location?.directory),
     )
     if (ask) return true
     return !!sessionQuestionRequest(childStore.session, data.question, props.session.id)
@@ -1039,11 +1050,12 @@ function HomeSessionRow(props: {
   // the spawned-process structure is visible without a separate view. Children come from the
   // directory child store (the roots-only home query never carries them).
   const serverSyncForChildren = useServerSync()
-  const children = createMemo(() =>
-    props.activeServer
-      ? subtreeRows(serverSyncForChildren().child(props.record.session.location.directory, { bootstrap: false })[0].session, props.record.session.id)
-      : [],
-  )
+  const children = createMemo(() => {
+    if (!props.activeServer) return []
+    const directory = props.record.session.location?.directory
+    if (!directory) return []
+    return subtreeRows(serverSyncForChildren().child(directory, { bootstrap: false })[0].session, props.record.session.id)
+  })
   // Tags component (notes/entities.md T0): the chat's tag chips from the instance-wide tag map.
   const rowTags = createMemo(() =>
     props.activeServer ? (serverSyncForChildren().session.data.tag[props.record.session.id] ?? []) : [],

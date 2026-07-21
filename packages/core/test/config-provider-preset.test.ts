@@ -14,7 +14,7 @@ describe("ConfigProviderPreset", () => {
       expect(preset.name).toBeTruthy()
       expect(() => new URL(preset.baseURL!)).not.toThrow()
       expect(() => new URL(preset.keyURL!)).not.toThrow()
-      expect(["@ai-sdk/openai", "@ai-sdk/anthropic", "@ai-sdk/openai-compatible"]).toContain(preset.api)
+      expect(["@ai-sdk/openai", "@ai-sdk/anthropic", "@ai-sdk/openai-compatible"]).toContain(preset.api!)
     }
     expect(ConfigProviderPreset.BUILTINS.anthropic.authStyle).toBe("anthropic")
   })
