@@ -1,4 +1,5 @@
 import { createMemo, createSignal, Show, startTransition } from "solid-js"
+import { SessionTitle } from "@novaclaw/core/session/title"
 import { Icon } from "@novaclaw/ui/icon"
 import { Spinner } from "@novaclaw/ui/spinner"
 import { ServerConnection, useServer } from "@/context/server"
@@ -66,6 +67,25 @@ export function NewAgentBar() {
     setSpawning(true)
     try {
       const cx = global.ensureServerCtx(c)
+      // Anti-litter (issues.md P3): the click-creates-chat UX stays (owner call 2026-07-14),
+      // but a NEVER-USED chat in the target folder (default title, zero tokens) is REOPENED
+      // instead of minting a sibling — five stray clicks land in one chat, not five rows.
+      // The loaded list is best-effort: an unloaded store just falls through to create.
+      const [childStore] = cx.sync.peek(directory, { bootstrap: false })
+      const reusable = childStore.session.find(
+        (s) =>
+          !s.parentID &&
+          s.location.directory === directory &&
+          SessionTitle.isDefault(s.title) &&
+          (s.tokens?.input ?? 0) + (s.tokens?.output ?? 0) === 0,
+      )
+      if (reusable) {
+        startTransition(() => {
+          const tab = tabs.addSessionTab({ server: ServerConnection.key(c), sessionId: reusable.id })
+          tabs.select(tab)
+        })
+        return
+      }
       const created = await cx.sdk.client.v2.session.create({ location: { directory } })
       const sessionID = created.data?.data.id
       if (created.error || !sessionID) throw created.error ?? new Error("session create returned no id")
