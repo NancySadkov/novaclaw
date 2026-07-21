@@ -1,14 +1,23 @@
 import { createNovaclawClient } from "@novaclaw/sdk/v2/client"
 import type { ServerConnection } from "@/context/server"
-import { decode64 } from "@/utils/base64"
 
 export function authTokenFromCredentials(input: { username?: string; password: string }) {
   return btoa(`${input.username ?? "novaclaw"}:${input.password}`)
 }
 
 export function authFromToken(token: string | null) {
-  const decoded = decode64(token ?? undefined)
-  if (!decoded) return
+  if (!token) return
+  // NOT decode64: its round-trip guard re-encodes with the app's UNPADDED base64url encoder,
+  // so any PADDED standard-base64 token (btoa output — authTokenFromCredentials itself) fails
+  // the guard and silently drops the credentials. Auth tokens may arrive in either alphabet,
+  // padded or not; the ":" separator check below is the malformed-input filter.
+  let decoded: string
+  try {
+    const normalized = token.replace(/-/g, "+").replace(/_/g, "/")
+    decoded = atob(normalized + "=".repeat((4 - (normalized.length % 4)) % 4))
+  } catch {
+    return
+  }
   const separator = decoded.indexOf(":")
   if (separator === -1) return
   return {

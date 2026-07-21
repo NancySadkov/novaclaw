@@ -1101,10 +1101,13 @@ export default function LegacyLayout(props: ParentProps) {
   })
 
   function connectProvider() {
+    // Provider-import P3: the "connect a provider" entries land on Settings → Models, whose
+    // Add-models flow (preset cards → key → model multi-select) owns provider onboarding.
+    // Always the v2 dialog — the feature lives there even when the legacy shell is active.
     const run = ++dialogRun
-    void import("@/components/dialog-select-provider").then((x) => {
+    void import("@/components/settings-v2").then((x) => {
       if (dialogDead || dialogRun !== run) return
-      dialog.show(() => <x.DialogSelectProvider />)
+      dialog.show(() => <x.DialogSettings defaultTab="models" />)
     })
   }
 

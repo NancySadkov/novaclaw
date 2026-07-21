@@ -35,11 +35,11 @@ const probeResult = (providerID: string, modelID: string): ProbeResult | undefin
 
 type ModelState = ReturnType<typeof useLocal>["model"]
 
-// The model-picker "+" opens the local-first add-model flow: paste an OpenAI-compatible endpoint and
-// NovaClaw probes it (server-side GET /models) to discover the served models to pick from. Cloud
-// providers are no longer offered here — they live in Settings → Providers, an explicit Advanced path,
-// per the local-first vision. Falls back to the provider directory only when there is no live server
-// to probe against.
+// The model-picker "+" opens the Add-models flow (provider preset cards → key → model
+// multi-select — settings-v2/dialog-new-model). Without a live server + directory to probe
+// against there is nothing a picker dialog could save, so degrade to Settings → Models, which
+// resolves its own instance routing robustly (the old DialogSelectProvider fallback is retired
+// — provider-import P3).
 function openAddModel(
   dialog: ReturnType<typeof useDialog>,
   http: ServerConnection.HttpBase | undefined,
@@ -52,8 +52,8 @@ function openAddModel(
     })
     return
   }
-  void import("./dialog-select-provider").then((x) => {
-    dialog.show(() => <x.DialogSelectProvider directory={directory} />)
+  void import("./settings-v2").then((x) => {
+    dialog.show(() => <x.DialogSettings defaultTab="models" />)
   })
 }
 

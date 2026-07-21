@@ -5,20 +5,33 @@ import { Tooltip } from "@novaclaw/ui/tooltip"
 import { Button } from "@novaclaw/ui/button"
 import type { Component } from "solid-js"
 import { useLocal } from "@/context/local"
+import { useServer } from "@/context/server"
 import { popularProviders } from "@/hooks/use-providers"
 import { useLanguage } from "@/context/language"
 import { useDialog } from "@novaclaw/ui/context/dialog"
-import { DialogSelectProvider } from "./dialog-select-provider"
 import { decode64 } from "@/utils/base64"
 
 export const DialogManageModels: Component = () => {
   const local = useLocal()
+  const server = useServer()
   const language = useLanguage()
   const dialog = useDialog()
   const directory = () => decode64(local.slug())
 
+  // Provider-import P3: the Add-models flow owns provider onboarding; without a live
+  // server + directory, degrade to Settings → Models (which resolves its own routing).
   const handleConnectProvider = () => {
-    dialog.show(() => <DialogSelectProvider directory={directory} />)
+    const http = server.current?.http
+    const dir = directory()
+    if (http && dir) {
+      void import("./settings-v2/dialog-new-model").then((x) => {
+        dialog.show(() => <x.DialogNewModel http={http} directory={dir} />)
+      })
+      return
+    }
+    void import("./settings-v2").then((x) => {
+      dialog.show(() => <x.DialogSettings defaultTab="models" />)
+    })
   }
   const providerRank = (id: string) => popularProviders.indexOf(id)
   const providerList = (providerID: string) => local.model.list().filter((x) => x.provider.id === providerID)
