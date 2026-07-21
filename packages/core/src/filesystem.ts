@@ -62,7 +62,12 @@ const baseLayer = Layer.effect(
     const fs = yield* FSUtil.Service
     const location = yield* Location.Service
     const search = yield* FileSystemSearch.Service
-    const root = yield* fs.realPath(location.directory).pipe(Effect.orDie)
+    // Fall back to the raw path when the directory doesn't exist (same tolerance as the
+    // watcher and worktree layers): this layer builds during LOCATION BOOT, and dying here
+    // used to 500 every request routed to a session whose folder was since deleted —
+    // including the DELETE that would remove that very session. Per-op realPath below still
+    // fails op-level for actual file access.
+    const root = yield* fs.realPath(location.directory).pipe(Effect.catch(() => Effect.succeed(location.directory)))
     const resolve = Effect.fnUntraced(function* (input?: RelativePath) {
       const absolute = path.resolve(location.directory, input ?? ".")
       if (!FSUtil.contains(location.directory, absolute))

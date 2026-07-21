@@ -86,7 +86,11 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const fs = yield* FSUtil.Service
     const location = yield* Location.Service
-    const locationRoot = yield* fs.realPath(location.directory)
+    // Same boot tolerance as the FileSystem layer: a location whose directory was deleted
+    // must still boot far enough to serve DB-only requests (e.g. deleting its sessions).
+    const locationRoot = yield* fs
+      .realPath(location.directory)
+      .pipe(Effect.catch(() => Effect.succeed(location.directory)))
 
     function notFound<A>(effect: Effect.Effect<A, FSUtil.Error>) {
       return effect.pipe(Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(undefined)))
