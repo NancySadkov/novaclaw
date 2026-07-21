@@ -704,6 +704,21 @@
   border-radius: 6px;
 }
 
+/* R7: the discovered-on-LAN section under the saved list. */
+.settings-v2-servers-discovered {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: 24px;
+}
+
+.settings-v2-servers-discovered .settings-v2-tab-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
 .settings-v2-servers-row {
   display: flex;
   align-items: center;

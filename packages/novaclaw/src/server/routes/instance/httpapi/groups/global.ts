@@ -11,6 +11,23 @@ import { described } from "./metadata"
 const GlobalHealth = Schema.Struct({
   healthy: Schema.Literal(true),
   version: Schema.String,
+  // Remote-access R7: the instance's stable identity — lets a client recognize the SAME
+  // instance behind different URLs (mDNS name vs LAN IP vs tunnel).
+  instanceID: Schema.String,
+})
+
+// Remote-access R7: a point-in-time LAN scan for advertised NovaClaw instances (serve --mdns).
+const GlobalDiscovery = Schema.Struct({
+  instances: Schema.Array(
+    Schema.Struct({
+      name: Schema.String,
+      url: Schema.String,
+      instanceID: Schema.optional(Schema.String),
+      version: Schema.optional(Schema.String),
+      /** True when the discovered instance is THIS instance (matching identity). */
+      self: Schema.Boolean,
+    }),
+  ),
 })
 
 const SyncEventSchemas = EventManifest.Latest.values()
@@ -68,6 +85,7 @@ export const GlobalPaths = {
   config: "/global/config",
   dispose: "/global/dispose",
   upgrade: "/global/upgrade",
+  discovery: "/global/discovery",
 } as const
 
 export const GlobalApi = HttpApi.make("global").add(
@@ -129,6 +147,15 @@ export const GlobalApi = HttpApi.make("global").add(
           identifier: "global.upgrade",
           summary: "Upgrade novaclaw",
           description: "Upgrade novaclaw to the specified version or latest if not specified.",
+        }),
+      ),
+      HttpApiEndpoint.get("discovery", GlobalPaths.discovery, {
+        success: described(GlobalDiscovery, "NovaClaw instances discovered on the local network"),
+      }).annotateMerge(
+        OpenApi.annotations({
+          identifier: "global.discovery",
+          summary: "Discover LAN instances",
+          description: "Scan the local network (mDNS) for NovaClaw instances advertising themselves via serve --mdns.",
         }),
       ),
     )

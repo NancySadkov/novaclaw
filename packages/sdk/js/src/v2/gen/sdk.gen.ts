@@ -89,6 +89,8 @@ import type {
   GlobalConfigGetResponses,
   GlobalConfigUpdateErrors,
   GlobalConfigUpdateResponses,
+  GlobalDiscoveryErrors,
+  GlobalDiscoveryResponses,
   GlobalDisposeErrors,
   GlobalDisposeResponses,
   GlobalEventErrors,
@@ -1333,6 +1335,18 @@ export class Global extends HeyApiClient {
         ...options?.headers,
         ...params.headers,
       },
+    })
+  }
+
+  /**
+   * Discover LAN instances
+   *
+   * Scan the local network (mDNS) for NovaClaw instances advertising themselves via serve --mdns.
+   */
+  public discovery<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<GlobalDiscoveryResponses, GlobalDiscoveryErrors, ThrowOnError>({
+      url: "/global/discovery",
+      ...options,
     })
   }
 

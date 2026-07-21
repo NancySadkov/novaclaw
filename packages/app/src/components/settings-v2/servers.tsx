@@ -4,12 +4,13 @@ import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import fuzzysort from "fuzzysort"
-import { type Component, For, Show, createMemo } from "solid-js"
+import { type Component, For, Show, createMemo, createResource } from "solid-js"
 import { createStore } from "solid-js/store"
 import { ServerRowMenu } from "@/components/server/server-row-menu"
 import { ServerHealthIndicator } from "@/components/server/server-row"
 import { useLanguage } from "@/context/language"
-import { ServerConnection, serverName } from "@/context/server"
+import { ServerConnection, normalizeServerUrl, serverName } from "@/context/server"
+import { discoverInstances } from "@/utils/instance-discovery"
 import { useServerManagementController } from "../dialog-select-server"
 import { DialogServerV2 } from "./dialog-server-v2"
 import { InstancesAccess } from "./instances-access"
@@ -45,6 +46,29 @@ export const SettingsServersV2: Component = () => {
 
   const openEdit = (server: ServerConnection.Http) => {
     dialog.push(() => <DialogServerV2 mode="edit" server={server} />)
+  }
+
+  // R7: the LAN scan runs on an INSTANCE (the UI can't open multicast sockets) — prefer the
+  // local one (it shares the user's network); any known instance works as a fallback.
+  const scanner = createMemo(() => {
+    const candidates = controller.sortedItems().filter((item) => !isWslServer(item))
+    return candidates.find((item) => ServerConnection.local(item)) ?? candidates[0]
+  })
+  const [discovered, discoveredActions] = createResource(
+    () => scanner(),
+    (conn) => discoverInstances(conn.http).catch(() => []),
+    { initialValue: [] },
+  )
+  const knownUrls = createMemo(
+    () =>
+      new Set(controller.sortedItems().flatMap((item) => (item.http.url ? [normalizeServerUrl(item.http.url)] : []))),
+  )
+  const discoverable = createMemo(() =>
+    discovered.latest.filter((instance) => !instance.self && !knownUrls().has(normalizeServerUrl(instance.url))),
+  )
+
+  const openAddDiscovered = (url: string) => {
+    dialog.push(() => <DialogServerV2 mode="add" presetUrl={url} />)
   }
 
   return (
@@ -138,6 +162,54 @@ export const SettingsServersV2: Component = () => {
               }}
             </For>
           </SettingsListV2>
+        </Show>
+
+        {/* R7: NovaClaw instances advertising on the LAN (serve --mdns) — add one without typing
+            an address. Hidden while the scan finds nothing beyond what's already saved. */}
+        <Show when={discoverable().length > 0}>
+          <div class="settings-v2-servers-discovered">
+            <div class="settings-v2-tab-header-row">
+              <h3 class="settings-v2-section-title">{language.t("settings.instances.discovered.title")}</h3>
+              <IconButtonV2
+                type="button"
+                variant="ghost-muted"
+                size="small"
+                disabled={discovered.loading}
+                icon={<IconV2 name="refresh" size="large" class="text-v2-icon-icon-muted" />}
+                aria-label={language.t("settings.instances.discovered.rescan")}
+                onClick={() => void discoveredActions.refetch()}
+              />
+            </div>
+            <SettingsListV2>
+              <For each={discoverable()}>
+                {(instance) => (
+                  <div class="settings-v2-servers-row">
+                    <div class="settings-v2-servers-lead">
+                      <div class="settings-v2-servers-copy">
+                        <span class="settings-v2-servers-name">{instance.name}</span>
+                        <span class="settings-v2-servers-meta">
+                          {instance.url.replace(/^https?:\/\//, "")}
+                          <Show when={instance.version}>
+                            {(v) => <> • {v() === "local" ? language.t("server.row.devBuild") : `v${v()}`}</>}
+                          </Show>
+                        </span>
+                      </div>
+                    </div>
+                    <div class="settings-v2-servers-actions">
+                      <IconButtonV2
+                        type="button"
+                        variant="ghost-muted"
+                        size="small"
+                        icon={<IconV2 name="plus" size="large" class="text-v2-icon-icon-muted" />}
+                        aria-label={language.t("settings.instances.discovered.add")}
+                        onClick={() => openAddDiscovered(instance.url)}
+                      />
+                    </div>
+                  </div>
+                )}
+              </For>
+            </SettingsListV2>
+          </div>
         </Show>
       </div>
     </>

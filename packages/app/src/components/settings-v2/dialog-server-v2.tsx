@@ -12,6 +12,8 @@ import "./settings-v2.css"
 export const DialogServerV2: Component<{
   mode: "add" | "edit"
   server?: ServerConnection.Http
+  /** R7: pre-fill the URL (a discovered LAN instance) — the user only confirms/adds creds. */
+  presetUrl?: string
 }> = (props) => {
   const dialog = useDialog()
   const language = useLanguage()
@@ -22,7 +24,10 @@ export const DialogServerV2: Component<{
   const [opened, setOpened] = createSignal(false)
 
   onMount(() => {
-    if (props.mode === "add") controller.startAdd()
+    if (props.mode === "add") {
+      controller.startAdd()
+      if (props.presetUrl) controller.handleFormChange()(props.presetUrl)
+    }
     if (props.mode === "edit" && props.server) controller.startEdit(props.server)
     setOpened(true)
   })

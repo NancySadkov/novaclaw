@@ -6394,6 +6394,7 @@ export type GlobalHealthResponses = {
   200: {
     healthy: true
     version: string
+    instanceID: string
   }
 }
 
@@ -6533,6 +6534,39 @@ export type GlobalUpgradeResponses = {
 }
 
 export type GlobalUpgradeResponse = GlobalUpgradeResponses[keyof GlobalUpgradeResponses]
+
+export type GlobalDiscoveryData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/global/discovery"
+}
+
+export type GlobalDiscoveryErrors = {
+  /**
+   * Bad request
+   */
+  400: BadRequestError
+}
+
+export type GlobalDiscoveryError = GlobalDiscoveryErrors[keyof GlobalDiscoveryErrors]
+
+export type GlobalDiscoveryResponses = {
+  /**
+   * NovaClaw instances discovered on the local network
+   */
+  200: {
+    instances: Array<{
+      name: string
+      url: string
+      instanceID?: string
+      version?: string
+      self: boolean
+    }>
+  }
+}
+
+export type GlobalDiscoveryResponse = GlobalDiscoveryResponses[keyof GlobalDiscoveryResponses]
 
 export type EventSubscribeData = {
   body?: never

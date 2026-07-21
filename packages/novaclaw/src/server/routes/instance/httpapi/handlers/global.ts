@@ -5,6 +5,8 @@ import { GlobalBus, type GlobalEvent as GlobalBusEvent } from "@/bus/global"
 import { EffectBridge } from "@/effect/bridge"
 import { EventV2 } from "@novaclaw/core/event"
 import { Installation } from "@/installation"
+import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
+import { MDNS } from "@/server/mdns"
 import { disposeAllInstancesAndEmitGlobalDisposed } from "@/server/global-lifecycle"
 import { InstallationVersion } from "@novaclaw/core/installation/version"
 import { Effect, Queue, Schema } from "effect"
@@ -71,10 +73,25 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
   Effect.gen(function* () {
     const config = yield* Config.Service
     const installation = yield* Installation.Service
+    const identity = yield* InstanceIdentityStore.Service
     const bridge = yield* EffectBridge.make()
 
     const health = Effect.fn("GlobalHttpApi.health")(function* () {
-      return { healthy: true as const, version: InstallationVersion }
+      return { healthy: true as const, version: InstallationVersion, instanceID: yield* identity.get() }
+    })
+
+    // Remote-access R7: a bounded LAN scan for NovaClaw instances advertising via serve --mdns.
+    // Discovery is an INSTANCE capability (the UI is a thin client and may not be on the LAN or
+    // able to open multicast sockets at all — the web build cannot); the scanning instance is.
+    const discovery = Effect.fn("GlobalHttpApi.discovery")(function* () {
+      const self = yield* identity.get()
+      const found = yield* Effect.promise(() => MDNS.browse())
+      return {
+        instances: found.map((instance) => ({
+          ...instance,
+          self: instance.instanceID === self,
+        })),
+      }
     })
 
     const event = Effect.fn("GlobalHttpApi.event")(function* () {
@@ -170,5 +187,6 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
       .handle("configUpdate", configUpdate)
       .handle("dispose", dispose)
       .handleRaw("upgrade", upgradeRaw)
+      .handle("discovery", discovery)
   }),
 )

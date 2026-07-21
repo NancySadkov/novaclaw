@@ -291,9 +291,12 @@
                     },
                     "version": {
                       "type": "string"
+                    },
+                    "instanceID": {
+                      "type": "string"
                     }
                   },
-                  "required": ["healthy", "version"],
+                  "required": ["healthy", "version", "instanceID"],
                   "additionalProperties": false,
                   "description": "Health information"
                 }
@@ -569,6 +572,73 @@
           {
             "lang": "js",
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.global.upgrade({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/global/discovery": {
+      "get": {
+        "tags": ["global"],
+        "operationId": "global.discovery",
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "NovaClaw instances discovered on the local network",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "instances": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "name": {
+                            "type": "string"
+                          },
+                          "url": {
+                            "type": "string"
+                          },
+                          "instanceID": {
+                            "type": "string"
+                          },
+                          "version": {
+                            "type": "string"
+                          },
+                          "self": {
+                            "type": "boolean"
+                          }
+                        },
+                        "required": ["name", "url", "self"],
+                        "additionalProperties": false
+                      }
+                    }
+                  },
+                  "required": ["instances"],
+                  "additionalProperties": false,
+                  "description": "NovaClaw instances discovered on the local network"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BadRequestError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Scan the local network (mDNS) for NovaClaw instances advertising themselves via serve --mdns.",
+        "summary": "Discover LAN instances",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.global.discovery({\n  ...\n})"
           }
         ]
       }

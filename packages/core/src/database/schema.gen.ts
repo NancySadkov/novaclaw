@@ -300,6 +300,13 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`instance_identity\` (
+          \`id\` text PRIMARY KEY,
+          \`time_created\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`skill_config\` (
           \`source\` text PRIMARY KEY,
           \`time_created\` integer NOT NULL,

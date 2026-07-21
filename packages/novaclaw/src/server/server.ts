@@ -5,6 +5,8 @@ import { ConfigProvider, Context, Effect, Exit, Layer, Scope } from "effect"
 import { HttpRouter, HttpServer } from "effect/unstable/http"
 import { OpenApi } from "effect/unstable/httpapi"
 import { createServer } from "node:http"
+import { InstallationVersion } from "@novaclaw/core/installation/version"
+import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
 import { MDNS } from "./mdns"
 import { HttpApiApp } from "./routes/instance/httpapi/server"
 import { disposeMiddleware } from "./routes/instance/httpapi/lifecycle"
@@ -157,7 +159,16 @@ function setupMdns(opts: ListenOptions, port: number, scope: Scope.Scope) {
       opts.mdns && port && opts.hostname !== "127.0.0.1" && opts.hostname !== "localhost" && opts.hostname !== "::1"
     if (publish) {
       const unpublish = yield* Effect.cached(Effect.sync(() => MDNS.unpublish()))
-      yield* Effect.sync(() => MDNS.publish(port, opts.mdnsDomain))
+      // R7: advertise the instance's stable identity (+ version) in the TXT record so a
+      // discovering client can dedup the same instance behind different addresses. Best-effort:
+      // an identity-store failure must never block the listener coming up.
+      const txt = yield* InstanceIdentityStore.Service.pipe(
+        Effect.flatMap((identity) => identity.get()),
+        Effect.provide(InstanceIdentityStore.defaultLayer),
+        Effect.map((id) => ({ id, v: InstallationVersion })),
+        Effect.catch(() => Effect.succeed(undefined)),
+      )
+      yield* Effect.sync(() => MDNS.publish(port, opts.mdnsDomain, txt))
       yield* Scope.addFinalizer(scope, unpublish)
       return unpublish
     }

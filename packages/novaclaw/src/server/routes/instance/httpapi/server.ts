@@ -9,6 +9,7 @@ import { CatalogStore } from "@novaclaw/core/catalog-store"
 import { CommandConfigStore } from "@novaclaw/core/command-config-store"
 import { PluginConfigStore } from "@novaclaw/core/plugin-config-store"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
+import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
 import { Global } from "@novaclaw/core/global"
@@ -218,6 +219,7 @@ const app = LayerNode.group([
   CommandConfigStore.node,
   PluginConfigStore.node,
   SettingsConfigStore.node,
+  InstanceIdentityStore.node,
   SkillConfigStore.node,
   ReferenceConfigStore.node,
   Database.node,

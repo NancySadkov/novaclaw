@@ -59,31 +59,40 @@ export const dict = {
   "settings.expertise.current": "Current",
   "settings.expertise.cancel": "Cancel",
   "settings.expertise.level.normal.name": "Normal",
-  "settings.expertise.level.normal.blurb": "The essentials — chat with your agents, keep notes and files, connect models. The recommended way to use NovaClaw.",
+  "settings.expertise.level.normal.blurb":
+    "The essentials — chat with your agents, keep notes and files, connect models. The recommended way to use NovaClaw.",
   "settings.expertise.level.advanced.name": "Advanced",
-  "settings.expertise.level.advanced.blurb": "More controls — the agent's instructions, its step-by-step reasoning, permission tuning, and custom tools.",
+  "settings.expertise.level.advanced.blurb":
+    "More controls — the agent's instructions, its step-by-step reasoning, permission tuning, and custom tools.",
   "settings.expertise.level.developer.name": "Developer",
-  "settings.expertise.level.developer.blurb": "Everything, including internals — raw model IDs, engine tuning, the shell, and unsafe permission modes.",
+  "settings.expertise.level.developer.blurb":
+    "Everything, including internals — raw model IDs, engine tuning, the shell, and unsafe permission modes.",
   "settings.expertise.action.unlock": "Unlock {{level}}",
   "settings.expertise.action.switch": "Switch to {{level}}",
-  "settings.expertise.confirm.advanced": "Advanced mode shows more controls — you can change the agent's instructions, see its step-by-step reasoning, tune permissions, and define custom tools. Nothing changes until you change it, and you can switch back anytime — your settings are kept.",
-  "settings.expertise.confirm.developer": "Developer mode exposes internals — raw model IDs, engine tuning, the shell, and unsafe permission modes like running commands without asking. Only turn this on if you know what these do.",
+  "settings.expertise.confirm.advanced":
+    "Advanced mode shows more controls — you can change the agent's instructions, see its step-by-step reasoning, tune permissions, and define custom tools. Nothing changes until you change it, and you can switch back anytime — your settings are kept.",
+  "settings.expertise.confirm.developer":
+    "Developer mode exposes internals — raw model IDs, engine tuning, the shell, and unsafe permission modes like running commands without asking. Only turn this on if you know what these do.",
   "settings.expertise.confirm.downgrade": "Your advanced settings stay saved and active — unlock again to see them.",
   "settings.expertise.confirm.typePrompt": "Type {{word}} to confirm",
   "settings.expertise.confirm.cta": "Confirm",
   "settings.expertise.activeHidden.title": "An advanced setting is active",
-  "settings.expertise.activeHidden.description": "A permission mode you set earlier is still in effect but hidden at this level. Unlock it to review.",
+  "settings.expertise.activeHidden.description":
+    "A permission mode you set earlier is still in effect but hidden at this level. Unlock it to review.",
   "settings.expertise.discover.advanced.title": "Looking for more?",
-  "settings.expertise.discover.advanced.description": "Unlock Advanced features — the agent's instructions, reasoning, and custom tools.",
+  "settings.expertise.discover.advanced.description":
+    "Unlock Advanced features — the agent's instructions, reasoning, and custom tools.",
   "settings.expertise.discover.developer.title": "Need the internals?",
-  "settings.expertise.discover.developer.description": "Unlock Developer features — raw model IDs, engine tuning, and the shell.",
+  "settings.expertise.discover.developer.description":
+    "Unlock Developer features — raw model IDs, engine tuning, and the shell.",
   "settings.expertise.discover.action": "Unlock…",
 
   // Confirm dialogs on destructive/whole-config actions (uix.md §3.4 / P1).
   "settings.tools.confirm.title": "Delete this tool?",
   "settings.tools.confirm.description": "This permanently removes the “{{name}}” tool recipe. This can’t be undone.",
   "settings.providers.disconnect.confirm.title": "Disconnect {{provider}}?",
-  "settings.providers.disconnect.confirm.description": "This removes it and any saved credentials from this device. You can reconnect later.",
+  "settings.providers.disconnect.confirm.description":
+    "This removes it and any saved credentials from this device. You can reconnect later.",
   "settings.providers.export.action": "Export",
   "settings.providers.import.action": "Import",
   "settings.providers.export.dialogTitle": "Export settings file (novaclaw.jsonc)",
@@ -94,7 +103,8 @@ export const dict = {
   "settings.providers.import.invalid.description": "Could not parse the config file.",
   "settings.providers.import.failed": "Import failed",
   "settings.providers.import.confirm.title": "Import configuration?",
-  "settings.providers.import.confirm.description": "This merges the selected file into your current settings, overwriting any matching providers and models. Settings not present in the file are kept.",
+  "settings.providers.import.confirm.description":
+    "This merges the selected file into your current settings, overwriting any matching providers and models. Settings not present in the file are kept.",
   "settings.providers.import.confirm.action": "Import",
   "command.category.suggested": "Suggested",
   "command.category.view": "View",
@@ -236,7 +246,8 @@ export const dict = {
   "provider.connect.toast.connected.description": "{{provider}} models are now available to use.",
 
   "provider.custom.title": "Custom provider",
-  "provider.custom.description.prefix": "Connect any AI service that speaks the OpenAI API format (many local and third-party servers do). See the ",
+  "provider.custom.description.prefix":
+    "Connect any AI service that speaks the OpenAI API format (many local and third-party servers do). See the ",
   "provider.custom.description.link": "provider config docs",
   "provider.custom.description.suffix": ".",
   "provider.custom.field.providerID.label": "Provider ID",
@@ -248,7 +259,8 @@ export const dict = {
   "provider.custom.field.baseURL.placeholder": "https://api.myprovider.com/v1",
   "provider.custom.field.apiKey.label": "API key",
   "provider.custom.field.apiKey.placeholder": "API key",
-  "provider.custom.field.apiKey.description": "Optional. Leave empty if you pass credentials through custom headers instead.",
+  "provider.custom.field.apiKey.description":
+    "Optional. Leave empty if you pass credentials through custom headers instead.",
   "provider.custom.models.label": "Models",
   "provider.custom.models.id.label": "ID",
   "provider.custom.models.id.placeholder": "model-id",
@@ -318,7 +330,8 @@ export const dict = {
   "prompt.mode.shell": "Shell",
   "prompt.mode.normal": "Chat",
   "prompt.mode.shell.exit": "esc to exit",
-  "session.child.promptDisabled": "This is a helper the main chat started. You can't message it directly — go back to the main chat to continue.",
+  "session.child.promptDisabled":
+    "This is a helper the main chat started. You can't message it directly — go back to the main chat to continue.",
   "session.child.backToParent": "Back to the main chat.",
 
   "prompt.example.1": "Fix a TODO in the codebase",
@@ -370,7 +383,8 @@ export const dict = {
   "prompt.permissionMode.bypass": "Bypass (in project)",
   "prompt.permissionMode.yolo": "YOLO (everything)",
 
-  "prompt.strict.tooltip": "Strict mode: the harness plans, verifies every step, and recovers — built for small local models",
+  "prompt.strict.tooltip":
+    "Strict mode: the harness plans, verifies every step, and recovers — built for small local models",
   "prompt.strict.off": "Strict",
   "prompt.strict.on": "Strict: on",
   "prompt.strict.popover.title": "Run this chat in Strict mode",
@@ -388,11 +402,14 @@ export const dict = {
   "prompt.features.popover.description":
     "These switches apply to this chat only (chats spawned from it inherit them). Everything else about each helper is configured in Settings.",
   "prompt.features.introspection.title": "Stuck detector",
-  "prompt.features.introspection.description": "A judge model periodically checks whether the agent is stuck and nudges it to change approach.",
+  "prompt.features.introspection.description":
+    "A judge model periodically checks whether the agent is stuck and nudges it to change approach.",
   "prompt.features.quality.title": "Quality gates",
-  "prompt.features.quality.description": "Compiles and tests after the agent edits code, and steers it to fix failures before finishing.",
+  "prompt.features.quality.description":
+    "Compiles and tests after the agent edits code, and steers it to fix failures before finishing.",
   "prompt.features.affective.title": "Mood sampling",
-  "prompt.features.affective.description": "Adapts the model's sampling to its appraised mood — steadier when frustrated, freer when exploring.",
+  "prompt.features.affective.description":
+    "Adapts the model's sampling to its appraised mood — steadier when frustrated, freer when exploring.",
 
   "prompt.folder.tooltip": "This chat's working folder — click to move the chat somewhere else",
   "prompt.folder.tooltip.working": "The agent is working — you can move the chat once it's idle",
@@ -436,7 +453,8 @@ export const dict = {
   "app.server.retrying": "Retrying automatically...",
   "app.server.otherServers": "Other servers",
   "app.server.none": "No instance connected",
-  "app.server.noneHint": "NovaClaw's instance isn't running yet. It usually starts by itself — this screen will clear as soon as it comes up.",
+  "app.server.noneHint":
+    "NovaClaw's instance isn't running yet. It usually starts by itself — this screen will clear as soon as it comes up.",
   "app.connection.reconnecting": "Connection lost — reconnecting…",
   "app.connection.stillTrying": "Still trying. Your work is safe; this clears by itself once the instance is back.",
   "app.connection.restored": "Reconnected",
@@ -515,15 +533,18 @@ export const dict = {
   "wsl.onboarding.install": "Install",
   "wsl.onboarding.installing": "Installing...",
   "wsl.onboarding.installDistro": "Install distro",
-  "wsl.onboarding.wsl2Required": "This needs WSL 2, a newer version of Windows' Linux support. NovaClaw can help you upgrade it.",
-  "wsl.onboarding.toolsRequired": "This Linux system is missing some tools NovaClaw needs. Open it once (button below) to finish setup.",
+  "wsl.onboarding.wsl2Required":
+    "This needs WSL 2, a newer version of Windows' Linux support. NovaClaw can help you upgrade it.",
+  "wsl.onboarding.toolsRequired":
+    "This Linux system is missing some tools NovaClaw needs. Open it once (button below) to finish setup.",
   "wsl.onboarding.openTerminal": "Open terminal",
   "wsl.onboarding.path": "Path: {{path}}",
   "wsl.onboarding.notFound": "not found",
   "wsl.onboarding.version": "Version: {{version}}",
   "wsl.onboarding.unknown": "unknown",
   "wsl.onboarding.desktopVersion": "desktop {{version}}",
-  "wsl.onboarding.versionMismatch": "The NovaClaw installed in Linux is a different version than this app. Update it below to match.",
+  "wsl.onboarding.versionMismatch":
+    "The NovaClaw installed in Linux is a different version than this app. Update it below to match.",
   "wsl.onboarding.adding": "Adding...",
   "server.row.noUsername": "no username",
   "server.row.devBuild": "dev build",
@@ -546,7 +567,8 @@ export const dict = {
   "dialog.releaseNotes.media.alt": "Release preview",
 
   "context.breakdown.title": "Context Breakdown",
-  "context.breakdown.note": "Rough split of what's taking up the model's context. \"Other\" covers tool definitions and system overhead.",
+  "context.breakdown.note":
+    "Rough split of what's taking up the model's context. \"Other\" covers tool definitions and system overhead.",
   "context.breakdown.system": "System",
   "context.breakdown.user": "User",
   "context.breakdown.assistant": "Assistant",
@@ -681,7 +703,8 @@ export const dict = {
   "error.chain.didYouMean": "Did you mean: {{suggestions}}",
   "error.chain.modelNotFound": "Model not found: {{provider}}/{{model}}",
   "error.chain.checkConfig": "Check the provider and model names in your config (novaclaw.json).",
-  "error.chain.mcpFailed": "Couldn't connect to the MCP tool server \"{{name}}\". NovaClaw can't sign in to MCP servers that require authentication yet.",
+  "error.chain.mcpFailed":
+    "Couldn't connect to the MCP tool server \"{{name}}\". NovaClaw can't sign in to MCP servers that require authentication yet.",
   "error.chain.providerAuthFailed": "Provider authentication failed ({{provider}}): {{message}}",
   "error.chain.providerInitFailed":
     'Failed to initialize provider "{{provider}}". Check credentials and configuration.',
@@ -721,21 +744,29 @@ export const dict = {
   "help.tour.next": "Next",
   "help.tour.getStarted": "Get started",
   "help.tour.step.welcome.title": "Welcome to NovaClaw",
-  "help.tour.step.welcome.body": "Your private AI workspace — an operating system where AI helpers work for you like apps. It runs on your own hardware, so your conversations and data stay with you.",
+  "help.tour.step.welcome.body":
+    "Your private AI workspace — an operating system where AI helpers work for you like apps. It runs on your own hardware, so your conversations and data stay with you.",
   "help.tour.step.apps.title": "A home screen of apps",
-  "help.tour.step.apps.body": "Tap a tile to open an app. The big gold tile is Chats — that’s where everything starts, and its Recent and Active views show what the AI is doing right now. Notes keeps your everyday things, and Files lets AI work on your folders.",
+  "help.tour.step.apps.body":
+    "Tap a tile to open an app. The big gold tile is Chats — that’s where everything starts, and its Recent and Active views show what the AI is doing right now. Notes keeps your everyday things, and Files lets AI work on your folders.",
   "help.tour.step.home.title": "The logo is your Home button",
-  "help.tour.step.home.body": "See the NovaClaw logo in the top-left corner? Click it anytime to jump back to this home screen — from any chat or app. Think of it as your Start button.",
+  "help.tour.step.home.body":
+    "See the NovaClaw logo in the top-left corner? Click it anytime to jump back to this home screen — from any chat or app. Think of it as your Start button.",
   "help.tour.step.chat.title": "Chat, and let AI help",
-  "help.tour.step.chat.body": "A helper can break a big job into smaller ones, use tools on your behalf, and hand back the result. It can even draw charts and small visualizations right inside the chat — not just text.",
+  "help.tour.step.chat.body":
+    "A helper can break a big job into smaller ones, use tools on your behalf, and hand back the result. It can even draw charts and small visualizations right inside the chat — not just text.",
   "help.tour.step.build.title": "Ask for your own apps",
-  "help.tour.step.build.body": "Want something this screen doesn’t have? Just ask — “make me a stock prices app on the home screen” — and a helper builds it and pins it as a new tile.",
+  "help.tour.step.build.body":
+    "Want something this screen doesn’t have? Just ask — “make me a stock prices app on the home screen” — and a helper builds it and pins it as a new tile.",
   "help.tour.step.settings.title": "Set up your models",
-  "help.tour.step.settings.body": "Open Settings to connect the AI models your helpers use and to manage servers. Settings is also home to Recovery, where you can reset or restore things if you ever need to.",
+  "help.tour.step.settings.body":
+    "Open Settings to connect the AI models your helpers use and to manage servers. Settings is also home to Recovery, where you can reset or restore things if you ever need to.",
   "help.tour.step.data.title": "Your data is yours — and safe",
-  "help.tour.step.data.body": "Notes are shared with your AI helpers so they know your context. When AI edits or removes files, deletions go to a Trash you can restore from — so an accidental change is easy to undo.",
+  "help.tour.step.data.body":
+    "Notes are shared with your AI helpers so they know your context. When AI edits or removes files, deletions go to a Trash you can restore from — so an accidental change is easy to undo.",
   "help.tour.step.done.title": "You’re all set",
-  "help.tour.step.done.body": "Open Chats and say hi. Hover any tile for a hint of what it does, and reopen this tour anytime from the Help app.",
+  "help.tour.step.done.body":
+    "Open Chats and say hi. Hover any tile for a hint of what it does, and reopen this tour anytime from the Help app.",
   "home.server.collapse": "Collapse server projects",
   "home.server.expand": "Expand server projects",
   "home.sessions.search.placeholder": "Search chats",
@@ -806,12 +837,14 @@ export const dict = {
   "session.review.change.other": "Changes",
   "session.review.loadingChanges": "Loading changes...",
   "session.review.empty": "No changes in this chat yet",
-  "session.review.noVcs": "This folder isn't tracked by Git yet, so there's nothing to review. Create a Git repository below to track changes.",
+  "session.review.noVcs":
+    "This folder isn't tracked by Git yet, so there's nothing to review. Create a Git repository below to track changes.",
   "session.review.noVcs.createGit.title": "Create a Git repository",
   "session.review.noVcs.createGit.description": "Track, review, and undo changes in this project",
   "session.review.noVcs.createGit.actionLoading": "Creating Git repository...",
   "session.review.noVcs.createGit.action": "Create Git repository",
-  "session.review.noSnapshot": "Snapshot tracking is turned off, so per-session changes aren't available. Turn it on in settings to see them.",
+  "session.review.noSnapshot":
+    "Snapshot tracking is turned off, so per-session changes aren't available. Turn it on in settings to see them.",
   "session.review.noChanges": "No changes",
   "session.review.noUncommittedChanges": "No uncommitted changes yet",
   "session.review.noBranchChanges": "No branch changes yet",
@@ -907,7 +940,6 @@ export const dict = {
   "session.share.action.view": "View",
   "session.share.copy.copied": "Copied",
   "session.share.copy.copyLink": "Copy link",
-
 
   "prompt.loading": "Loading prompt...",
   "terminal.loading": "Loading terminal...",
@@ -1007,7 +1039,8 @@ export const dict = {
   "settings.tab.about": "About",
 
   "settings.recovery.row.resetUi.title": "Reset appearance and layout",
-  "settings.recovery.row.resetUi.description": "Reset how NovaClaw looks and is laid out back to the defaults — theme, the welcome tour, and view options. Your chats, files, and connected models are kept.",
+  "settings.recovery.row.resetUi.description":
+    "Reset how NovaClaw looks and is laid out back to the defaults — theme, the welcome tour, and view options. Your chats, files, and connected models are kept.",
   "settings.recovery.row.resetUi.action": "Reset",
   "settings.recovery.row.resetUi.confirm": "Click again to confirm",
   "settings.recovery.row.factory.title": "Factory reset",
@@ -1028,7 +1061,8 @@ export const dict = {
   "settings.appearance.section.visual": "Visual",
   // Color-scheme presets (uix.md §7).
   "settings.appearance.theme.title": "Color scheme",
-  "settings.appearance.theme.description": "Pick a color palette. Each pairs one warm highlight color with a calm background.",
+  "settings.appearance.theme.description":
+    "Pick a color palette. Each pairs one warm highlight color with a calm background.",
   "settings.appearance.theme.nova": "Nova",
   "settings.appearance.theme.summer": "Summer",
   "settings.appearance.theme.autumn": "Autumn",
@@ -1046,6 +1080,9 @@ export const dict = {
   "settings.general.row.instance.temporary":
     "Temporarily connected — this window returns to {{default}} (the default) next launch.",
   "settings.general.row.instance.return": "Return to default",
+  "settings.instances.discovered.title": "Discovered on your network",
+  "settings.instances.discovered.rescan": "Scan again",
+  "settings.instances.discovered.add": "Add this instance",
   "settings.general.row.language.title": "Language",
   "settings.general.row.language.description": "Change the language NovaClaw is shown in.",
   "settings.general.row.shell.title": "Terminal Shell",
@@ -1058,7 +1095,8 @@ export const dict = {
   "settings.general.row.colorScheme.title": "Mode",
   "settings.general.row.colorScheme.description": "Use light mode, dark mode, or match your system setting.",
   "settings.general.row.theme.title": "Theme",
-  "settings.general.row.theme.description": "Choose a full visual style, including colors and fonts. Or browse more themes.",
+  "settings.general.row.theme.description":
+    "Choose a full visual style, including colors and fonts. Or browse more themes.",
   "settings.general.row.font.title": "Code Font",
   "settings.general.row.font.description": "Set the font used for code shown in chats. Leave blank to use the default.",
   "settings.general.row.terminalFont.title": "Terminal Font",
@@ -1085,7 +1123,8 @@ export const dict = {
   "settings.general.row.showCustomAgents.title": "Custom agents",
   "settings.general.row.showCustomAgents.description": "Show the agent picker in the composer",
   "settings.general.row.defaultPermissionMode.title": "Default permission mode",
-  "settings.general.row.defaultPermissionMode.description": "How much a new chat can do on its own before asking you. \"Plan\" and \"Ask\" check with you first; the higher modes act without asking, which is faster but riskier — only pick those for trusted work.",
+  "settings.general.row.defaultPermissionMode.description":
+    'How much a new chat can do on its own before asking you. "Plan" and "Ask" check with you first; the higher modes act without asking, which is faster but riskier — only pick those for trusted work.',
   "settings.general.row.shellBundle.title": "Shell environment",
   "settings.general.row.shellBundle.description":
     "The bash + git substrate agents run on. Provisioning downloads the pinned PortableGit bundle (~59 MB) so every machine gets the same environment — do it before going airgapped",
@@ -1100,7 +1139,8 @@ export const dict = {
   "settings.general.row.telemetry.description":
     "Consent for future crash/usage reporting. Nothing is uploaded today — no telemetry system exists yet; this switch is the contract it will obey, and offline mode forces it off regardless.",
   "settings.general.row.offline.title": "Offline / airgap mode",
-  "settings.general.row.offline.description": "Block all network access except your model providers, so nothing else can phone home (fail-closed: if in doubt, it's blocked). This stops package installs, usage/telemetry uploads, and any network calls the agent's shell tries to make. Restart the server to apply.",
+  "settings.general.row.offline.description":
+    "Block all network access except your model providers, so nothing else can phone home (fail-closed: if in doubt, it's blocked). This stops package installs, usage/telemetry uploads, and any network calls the agent's shell tries to make. Restart the server to apply.",
   "settings.general.row.offline.active": "airgapped",
   "settings.general.row.offline.inactive": "ready (offline mode is off)",
   "settings.instances.access.title": "This instance",
@@ -1132,7 +1172,7 @@ export const dict = {
     "On Linux with mixed refresh-rate monitors, native Wayland can be more stable.",
 
   "settings.general.row.releaseNotes.title": "Release notes",
-  "settings.general.row.releaseNotes.description": "Show a \"What's New\" summary after NovaClaw updates.",
+  "settings.general.row.releaseNotes.description": 'Show a "What\'s New" summary after NovaClaw updates.',
 
   "settings.updates.row.startup.title": "Check for updates on startup",
   "settings.updates.row.startup.description": "Automatically check for updates when NovaClaw launches",
@@ -1225,18 +1265,21 @@ export const dict = {
   "settings.shortcuts.group.prompt": "Prompt",
 
   "settings.providers.title": "Providers",
-  "settings.providers.description": "Connect the AI services you want to use — Anthropic, OpenAI, Google, and more. Your keys stay on this device.",
+  "settings.providers.description":
+    "Connect the AI services you want to use — Anthropic, OpenAI, Google, and more. Your keys stay on this device.",
   "settings.providers.section.connected": "Connected providers",
   "settings.providers.connected.empty": "No connected providers",
   "settings.providers.connected.environmentDescription": "Connected from your environment variables",
   "settings.providers.section.popular": "Popular providers",
-  "settings.providers.custom.description": "Add another AI service that uses the OpenAI API format — just point it at the server's address.",
+  "settings.providers.custom.description":
+    "Add another AI service that uses the OpenAI API format — just point it at the server's address.",
   "settings.providers.tag.environment": "Environment",
   "settings.providers.tag.config": "Config",
   "settings.providers.tag.custom": "Custom",
   "settings.providers.tag.other": "Other",
   "settings.models.title": "Models",
-  "settings.models.description": "Choose which AI models show up when you pick one for a chat, and check that each one is reachable.",
+  "settings.models.description":
+    "Choose which AI models show up when you pick one for a chat, and check that each one is reachable.",
   "settings.models.probe.test": "Test",
   "settings.models.probe.probing": "Testing…",
   "settings.models.probe.ok": "OK",
@@ -1252,57 +1295,75 @@ export const dict = {
   "settings.models.tier.pick": "Set capability tier",
   "settings.models.tier.guess.name": "Guess",
   "settings.models.tier.guess.range": "auto",
-  "settings.models.tier.guess.blurb": "Let NovaClaw estimate the tier by probing the model. Choose a specific tier if you already know its size.",
+  "settings.models.tier.guess.blurb":
+    "Let NovaClaw estimate the tier by probing the model. Choose a specific tier if you already know its size.",
   "settings.models.tier.micro.name": "Micro",
   "settings.models.tier.micro.range": "under 7B",
-  "settings.models.tier.micro.blurb": "Phone- and edge-sized models (e.g. Gemma 3 4B, Qwen3 4B, Llama 3.2 3B). Fast and cheap, but need small, well-scoped steps and heavy guidance.",
+  "settings.models.tier.micro.blurb":
+    "Phone- and edge-sized models (e.g. Gemma 3 4B, Qwen3 4B, Llama 3.2 3B). Fast and cheap, but need small, well-scoped steps and heavy guidance.",
   "settings.models.tier.tiny.name": "Tiny",
   "settings.models.tier.tiny.range": "7B–24B",
-  "settings.models.tier.tiny.blurb": "Small local models (e.g. Qwen3 8B/14B, Gemma 3 12B, Mistral Small). Good for everyday tasks with clear instructions; still benefit from being broken into steps.",
+  "settings.models.tier.tiny.blurb":
+    "Small local models (e.g. Qwen3 8B/14B, Gemma 3 12B, Mistral Small). Good for everyday tasks with clear instructions; still benefit from being broken into steps.",
   "settings.models.tier.small.name": "Small",
   "settings.models.tier.small.range": "~24B–~64B",
-  "settings.models.tier.small.blurb": "Capable local models (e.g. Qwen3 32B, Gemma 3 27B). Solid general assistants that can follow a multi-step plan with light scaffolding.",
+  "settings.models.tier.small.blurb":
+    "Capable local models (e.g. Qwen3 32B, Gemma 3 27B). Solid general assistants that can follow a multi-step plan with light scaffolding.",
   "settings.models.tier.medium.name": "Medium",
   "settings.models.tier.medium.range": "~64B–~128B",
-  "settings.models.tier.medium.blurb": "Strong open models (e.g. Llama 3.3 70B, gpt-oss 120B). Reliable reasoning and tool use across most tasks.",
+  "settings.models.tier.medium.blurb":
+    "Strong open models (e.g. Llama 3.3 70B, gpt-oss 120B). Reliable reasoning and tool use across most tasks.",
   "settings.models.tier.large.name": "Large",
   "settings.models.tier.large.range": "~128B–~256B",
-  "settings.models.tier.large.blurb": "Near-frontier open models (e.g. DeepSeek V3, GLM-4.6, Qwen3 235B). Roughly Claude Sonnet class — they handle complex, long-running work with little hand-holding.",
+  "settings.models.tier.large.blurb":
+    "Near-frontier open models (e.g. DeepSeek V3, GLM-4.6, Qwen3 235B). Roughly Claude Sonnet class — they handle complex, long-running work with little hand-holding.",
   "settings.models.tier.frontier.name": "Frontier",
   "settings.models.tier.frontier.range": "256B+ / closed",
-  "settings.models.tier.frontier.blurb": "The strongest models (e.g. Claude Opus & Sonnet, GPT-5, Gemini 2.5 Pro). Best judgment and reliability; they need the least guidance.",
+  "settings.models.tier.frontier.blurb":
+    "The strongest models (e.g. Claude Opus & Sonnet, GPT-5, Gemini 2.5 Pro). Best judgment and reliability; they need the least guidance.",
   "settings.models.tier.dialog.title": "Model size",
-  "settings.models.tier.dialog.description": "About how large is {{model}}? NovaClaw uses this to give it the right amount of guidance — smaller models get more scaffolding.",
+  "settings.models.tier.dialog.description":
+    "About how large is {{model}}? NovaClaw uses this to give it the right amount of guidance — smaller models get more scaffolding.",
   "settings.models.config.open": "Configure",
   "settings.models.config.title": "Configure {{model}}",
-  "settings.models.config.description": "Set how this model runs. Leave a field blank to use the model's or provider's own default.",
+  "settings.models.config.description":
+    "Set how this model runs. Leave a field blank to use the model's or provider's own default.",
   "settings.models.config.defaultPlaceholder": "default",
   "settings.models.config.section.sampling": "Sampling",
   "settings.models.config.section.limits": "Limits",
   "settings.models.config.section.capabilities": "Capabilities",
   "settings.models.config.section.modalities": "What it handles",
   "settings.models.config.temperature.name": "Temperature",
-  "settings.models.config.temperature.desc": "Higher is more creative and varied; lower is more focused and repeatable. Around 0.7 for chat, 0 for code.",
+  "settings.models.config.temperature.desc":
+    "Higher is more creative and varied; lower is more focused and repeatable. Around 0.7 for chat, 0 for code.",
   "settings.models.config.top_p.name": "Top-P (nucleus)",
-  "settings.models.config.top_p.desc": "Only consider the most likely words that together make up this share of the probability. 1 = off.",
+  "settings.models.config.top_p.desc":
+    "Only consider the most likely words that together make up this share of the probability. 1 = off.",
   "settings.models.config.top_k.name": "Top-K",
   "settings.models.config.top_k.desc": "Only consider the K most likely next words. 0 or blank = off.",
   "settings.models.config.min_p.name": "Min-P",
-  "settings.models.config.min_p.desc": "Drop words less likely than this fraction of the top word — a gentler alternative to Top-P. 0 = off.",
+  "settings.models.config.min_p.desc":
+    "Drop words less likely than this fraction of the top word — a gentler alternative to Top-P. 0 = off.",
   "settings.models.config.repetition_penalty.name": "Repetition penalty",
-  "settings.models.config.repetition_penalty.desc": "Discourages repeating the same words. 1 = off; around 1.1 helps stop loops.",
+  "settings.models.config.repetition_penalty.desc":
+    "Discourages repeating the same words. 1 = off; around 1.1 helps stop loops.",
   "settings.models.config.presence_penalty.name": "Presence penalty",
-  "settings.models.config.presence_penalty.desc": "Discourages reusing any word already used, nudging toward new topics. 0 = off.",
+  "settings.models.config.presence_penalty.desc":
+    "Discourages reusing any word already used, nudging toward new topics. 0 = off.",
   "settings.models.config.frequency_penalty.name": "Frequency penalty",
-  "settings.models.config.frequency_penalty.desc": "Discourages words the more often they have already appeared. 0 = off.",
+  "settings.models.config.frequency_penalty.desc":
+    "Discourages words the more often they have already appeared. 0 = off.",
   "settings.models.config.context.name": "Context window",
-  "settings.models.config.context.desc": "How many tokens of the conversation the model can see at once. Match the model's real limit.",
+  "settings.models.config.context.desc":
+    "How many tokens of the conversation the model can see at once. Match the model's real limit.",
   "settings.models.config.maxTokens.name": "Max response length",
   "settings.models.config.maxTokens.desc": "The most tokens the model may generate in a single reply.",
   "settings.models.config.reasoning.name": "Thinking",
-  "settings.models.config.reasoning.desc": "Let the model think privately before answering. Turn on only if the model supports reasoning.",
+  "settings.models.config.reasoning.desc":
+    "Let the model think privately before answering. Turn on only if the model supports reasoning.",
   "settings.models.config.tool_call.name": "Tool use",
-  "settings.models.config.tool_call.desc": "Let the model use NovaClaw's tools — read and edit files, run commands, search. Turn off for models that can't.",
+  "settings.models.config.tool_call.desc":
+    "Let the model use NovaClaw's tools — read and edit files, run commands, search. Turn off for models that can't.",
   "settings.models.config.modalities.in.name": "Accepts",
   "settings.models.config.modalities.in.desc": "What you can send this model.",
   "settings.models.config.modalities.out.name": "Produces",
@@ -1329,7 +1390,8 @@ export const dict = {
   "settings.models.config.toast.failed": "Couldn't save model settings",
   "settings.models.new.open": "New model",
   "settings.models.new.title": "Add a model",
-  "settings.models.new.description": "Point NovaClaw at a model endpoint. It checks the connection and lists the models it serves, so you can pick which to add.",
+  "settings.models.new.description":
+    "Point NovaClaw at a model endpoint. It checks the connection and lists the models it serves, so you can pick which to add.",
   "settings.models.new.field.baseURL.label": "Endpoint URL",
   "settings.models.new.field.baseURL.placeholder": "http://localhost:8000/v1",
   "settings.models.new.field.providerID.label": "Short name (ID)",
@@ -1347,7 +1409,8 @@ export const dict = {
   "settings.models.new.add": "Add selected",
   "settings.models.new.toast.added": "Models added",
   "settings.models.remove.confirm.title": "Remove {{model}}?",
-  "settings.models.remove.confirm.description": "This removes the model from your list here. It doesn't delete anything on the model server, and you can add it back later.",
+  "settings.models.remove.confirm.description":
+    "This removes the model from your list here. It doesn't delete anything on the model server, and you can add it back later.",
   "settings.models.remove.confirm.action": "Remove",
   "settings.quality.title": "Quality",
   "settings.quality.description":
@@ -1360,7 +1423,8 @@ export const dict = {
   "settings.quality.row.testTimeout.title": "Test timeout (ms)",
   "settings.quality.row.testTimeout.description": "Hard limit for the test gate — a hung test counts as a failure",
   "settings.quality.commands.title": "Provisioned commands",
-  "settings.quality.commands.description": "Empty = the step is skipped. {file} is replaced with the path of the file that was written (quoted). A project's novaclaw.jsonc can override these per project.",
+  "settings.quality.commands.description":
+    "Empty = the step is skipped. {file} is replaced with the path of the file that was written (quoted). A project's novaclaw.jsonc can override these per project.",
   "settings.quality.command.syntax.title": "Syntax check",
   "settings.quality.command.syntax.description": "Per-file parse on every write",
   "settings.quality.command.check.title": "Incremental verify",
@@ -1377,7 +1441,8 @@ export const dict = {
   "settings.systemPrompt.toast.failed": "Saving system-prompt settings failed",
   "settings.systemPrompt.persona.title": "Persona",
   "settings.systemPrompt.persona.enabled.title": "Persona baseline",
-  "settings.systemPrompt.persona.enabled.description": "Add the persona to the start of every agent's system prompt, so its behavior stays consistent even when you switch models.",
+  "settings.systemPrompt.persona.enabled.description":
+    "Add the persona to the start of every agent's system prompt, so its behavior stays consistent even when you switch models.",
   "settings.systemPrompt.persona.name.title": "Assistant name",
   "settings.systemPrompt.persona.name.description": "Rename the assistant without forking the prompt text",
   "settings.systemPrompt.persona.prompt.title": "Persona prompt",
@@ -1408,7 +1473,8 @@ export const dict = {
   "settings.profile.about.title": "About you",
   "settings.profile.about.description":
     "Anything worth knowing: your role, expertise, the projects you work on, how you like answers.",
-  "settings.profile.about.placeholder": "e.g. systems programmer building a local-LLM agent OS; prefers concise, direct answers",
+  "settings.profile.about.placeholder":
+    "e.g. systems programmer building a local-LLM agent OS; prefers concise, direct answers",
   "settings.memory.title": "Memory",
   "settings.memory.description":
     "What NovaClaw remembers about you and your work. It learns as you chat — nothing to set up. Your memory stays on this device.",
@@ -1456,7 +1522,8 @@ export const dict = {
   "settings.memory.embedding.description":
     "Point NovaClaw at a local embedding model and memory search also matches by MEANING, not just wording — it can find “favourite programming language” when you ask about a “coding tongue”. Leave blank to match on keywords only.",
   "settings.memory.embedding.url.title": "Embedding server",
-  "settings.memory.embedding.url.description": "Address of an OpenAI-compatible embeddings server on your machine or network. Stays local.",
+  "settings.memory.embedding.url.description":
+    "Address of an OpenAI-compatible embeddings server on your machine or network. Stays local.",
   "settings.memory.embedding.model.title": "Embedding model",
   "settings.memory.embedding.model.description": "The model id that server serves.",
   "settings.memory.forget.action": "Forget this",
@@ -1477,7 +1544,8 @@ export const dict = {
   "settings.introspection.row.cadence.title": "Cadence",
   "settings.introspection.row.cadence.description": "Judge every N continuation steps within a turn.",
   "settings.introspection.row.model.title": "Judge model",
-  "settings.introspection.row.model.description": "Model that judges, as provider/model. Empty = same as the session's model.",
+  "settings.introspection.row.model.description":
+    "Model that judges, as provider/model. Empty = same as the session's model.",
   "settings.introspection.row.model.placeholder": "same as active model",
   "settings.introspection.row.generate.title": "Generate the interjection",
   "settings.introspection.row.generate.description":
@@ -1489,7 +1557,8 @@ export const dict = {
   "settings.introspection.row.interjection.description":
     "Text injected into the session when the judge answers YES. Empty = the default redirect.",
   "settings.affective.title": "Affective",
-  "settings.affective.description": "Emotion-modulated sampling: a per-session mood (derived from tool errors, repeated actions, and time-on-task) nudges temperature and related sampling parameters around the model's baseline, and injects a redirect when frustration runs high.",
+  "settings.affective.description":
+    "Emotion-modulated sampling: a per-session mood (derived from tool errors, repeated actions, and time-on-task) nudges temperature and related sampling parameters around the model's baseline, and injects a redirect when frustration runs high.",
   "settings.affective.toast.failed": "Saving affective settings failed",
   "settings.affective.row.enabled.title": "Enable affective mode",
   "settings.affective.row.enabled.description": "Modulate sampling by session mood and nudge on frustration/urgency.",
@@ -1522,7 +1591,8 @@ export const dict = {
   "settings.strict.row.attempts.description":
     "Run several isolated attempts at the same task on separate copies of your project and keep the first one that verifiably succeeds — a lost race leaves your folder untouched. More attempts = better odds and more compute; your local hardware runs them nearly in parallel. Works for folders up to ~5000 files / 256 MB (larger ones fall back to a single attempt). Empty or 1 = off.",
   "settings.strict.row.wallMinutes.title": "Time budget (minutes)",
-  "settings.strict.row.wallMinutes.description": "Wall-clock budget per Strict task; at exhaustion the best verified state is delivered. Empty = 45.",
+  "settings.strict.row.wallMinutes.description":
+    "Wall-clock budget per Strict task; at exhaustion the best verified state is delivered. Empty = 45.",
   "settings.strict.row.executionTokens.title": "Execution budget (tokens)",
   "settings.strict.row.executionTokens.description":
     "How much room each working step gets to write its answer — file edits, commands, and the like. A step that runs out mid-file is wasted work, so leave headroom: one non-trivial source file already runs to 13–15k tokens. Empty = 24576.",
@@ -1530,7 +1600,8 @@ export const dict = {
   "settings.strict.row.reasoningTokens.description":
     "Let the model think a step through before it acts, and give that thinking its own room. Reasoning is all-or-nothing: a model cut off mid-thought returns nothing at all, so this needs to be generous — 24576 works, 8192 returns empty. Costs an extra call on the steps that plan and recover. Empty or 0 = off.",
   "settings.tools.title": "Tools",
-  "settings.tools.description": "Ad-hoc tool recipes: a name, a one-line description the model sees in its prompt, and a manual it pulls on demand (the API shape plus a curl example). The model runs them from the shell — no MCP server to set up.",
+  "settings.tools.description":
+    "Ad-hoc tool recipes: a name, a one-line description the model sees in its prompt, and a manual it pulls on demand (the API shape plus a curl example). The model runs them from the shell — no MCP server to set up.",
   "settings.tools.empty": "No ad-hoc tools defined yet.",
   "settings.tools.add": "Add tool",
   "settings.tools.edit": "Edit",
@@ -1592,19 +1663,23 @@ export const dict = {
   "settings.permissions.tool.external_directory.title": "External Directory",
   "settings.permissions.tool.external_directory.description": "Access files outside the project directory",
   "settings.permissions.tool.external_directory_read.title": "Read External Directory",
-  "settings.permissions.tool.external_directory_read.description": "Read files outside the project directory (never grants writes there)",
+  "settings.permissions.tool.external_directory_read.description":
+    "Read files outside the project directory (never grants writes there)",
   "settings.permissions.tool.external_directory_write.title": "Write External Directory",
-  "settings.permissions.tool.external_directory_write.description": "Modify, create, or delete files outside the project directory",
+  "settings.permissions.tool.external_directory_write.description":
+    "Modify, create, or delete files outside the project directory",
   "settings.permissions.tool.doom_loop.title": "Doom Loop",
   "settings.permissions.tool.doom_loop.description": "Detect repeated tool calls with identical input",
 
   "session.gone.title": "This chat was deleted or has expired",
-  "session.gone.body": "It may have been removed from another window or cleaned up automatically. Its tab has been closed.",
+  "session.gone.body":
+    "It may have been removed from another window or cleaned up automatically. Its tab has been closed.",
   "session.gone.action": "Back to Home",
   "session.delete.failed.title": "Couldn't delete chat",
   "session.delete.title": "Delete chat",
-  "session.delete.confirm": "Delete chat \"{{name}}\"?",
-  "session.delete.description": "The whole conversation and its history are removed permanently. Files in your project folder are not touched.",
+  "session.delete.confirm": 'Delete chat "{{name}}"?',
+  "session.delete.description":
+    "The whole conversation and its history are removed permanently. Files in your project folder are not touched.",
   "session.delete.button": "Delete chat",
 
   "workspace.new": "New workspace",
