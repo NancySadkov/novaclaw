@@ -742,6 +742,40 @@ describe("MessengerGateway pipeline", () => {
     }),
   )
 
+  it.live("an audience binding COALESCES inbound — a batch flushes as one turn (§0.1)", () =>
+    Effect.gen(function* () {
+      const { store, gateway, account, queue } = yield* online("coalesce")
+      yield* store.createBinding({ accountID: account.id, chatID: "600", sessionID: "ses_beta", trust: "audience" })
+      const promptsBefore = session.prompts.length
+
+      // Nineteen messages buffer silently — no turn yet (well under the size cap of 20).
+      for (let i = 1; i <= 19; i++) {
+        yield* Queue.offer(queue, message("600", { text: `heckle ${i}`, sender: `u${i}` }))
+      }
+      yield* Effect.sleep(Duration.millis(200))
+      expect(session.prompts.length).toBe(promptsBefore)
+
+      // The twentieth trips the size cap → exactly ONE queued turn carrying the whole batch.
+      yield* Queue.offer(queue, message("600", { text: "heckle 20", sender: "u20" }))
+      yield* eventually(
+        Effect.sync(() => session.prompts.slice(promptsBefore)),
+        (prompts) => prompts.length === 1,
+        "batch flushed as one turn",
+      )
+      const batch = session.prompts.slice(promptsBefore)
+      expect(batch).toHaveLength(1)
+      expect(batch[0]?.sessionID).toBe("ses_beta")
+      // The batch carries every message + the moderation framing (audience = observations).
+      expect(batch[0]?.text).toContain("heckle 1")
+      expect(batch[0]?.text).toContain("heckle 20")
+      expect(batch[0]?.text).toContain("20 messages")
+      expect(batch[0]?.text).toContain("moderating")
+
+      yield* store.removeAccount(account.id)
+      yield* gateway.reload()
+    }),
+  )
+
   it.live("an audience binding does NOT auto-relay (the agent lurks)", () =>
     Effect.gen(function* () {
       const { store, gateway, account } = yield* online("lurk")
