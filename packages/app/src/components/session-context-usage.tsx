@@ -66,6 +66,14 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
   const cost = createMemo(() => {
     return usd().format(info()?.cost ?? 0)
   })
+  // Visual urgency thresholds (the context gauge): calm below 65%, amber to 85%, red above —
+  // "aware of context issues" means the ring changes color before compaction territory.
+  const tone = createMemo<"warning" | "danger" | undefined>(() => {
+    const usage = context()?.usage ?? 0
+    if (usage >= 85) return "danger"
+    if (usage >= 65) return "warning"
+    return undefined
+  })
 
   const openContext = () => {
     if (!params.id) return
@@ -88,19 +96,24 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
   )
   const circleV2 = () => (
     <div class="flex items-center justify-center">
-      <ProgressCircleV2 percentage={context()?.usage ?? 0} />
+      <ProgressCircleV2 percentage={context()?.usage ?? 0} tone={tone()} />
     </div>
   )
 
+  const windowed = createMemo(() => {
+    const ctx = context()
+    return ctx?.limit ? ctx : undefined
+  })
+
   const tooltipValue = () => (
     <div>
-      <Show when={tokens()}>
-        {(value) => (
+      <Show when={windowed()}>
+        {(ctx) => (
           <div class="flex items-center gap-2">
             <span class="text-text-invert-strong">
-              {getSessionTokenTotal(value())?.toLocaleString(language.intl())}
+              {ctx().total.toLocaleString(language.intl())} / {ctx().limit!.toLocaleString(language.intl())}
             </span>
-            <span class="text-text-invert-base">{language.t("context.usage.tokens")}</span>
+            <span class="text-text-invert-base">{language.t("context.usage.window")}</span>
           </div>
         )}
       </Show>
@@ -109,6 +122,16 @@ export function SessionContextUsage(props: SessionContextUsageProps) {
           <div class="flex items-center gap-2">
             <span class="text-text-invert-strong">{ctx().usage ?? 0}%</span>
             <span class="text-text-invert-base">{language.t("context.usage.usage")}</span>
+          </div>
+        )}
+      </Show>
+      <Show when={tokens()}>
+        {(value) => (
+          <div class="flex items-center gap-2">
+            <span class="text-text-invert-strong">
+              {getSessionTokenTotal(value())?.toLocaleString(language.intl())}
+            </span>
+            <span class="text-text-invert-base">{language.t("context.usage.tokens")}</span>
           </div>
         )}
       </Show>

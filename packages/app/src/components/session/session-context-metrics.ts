@@ -22,6 +22,8 @@ type Context = {
   modelLabel: string
   limit: number | undefined
   input: number
+  /** The last turn's full token footprint (prompt + generation) — what the next request carries. */
+  total: number
   usage: number | null
 }
 
@@ -60,6 +62,7 @@ const build = (
     modelLabel: model?.name ?? message.model.id,
     limit,
     input: message.tokens?.input ?? 0,
+    total,
     usage: limit ? Math.round((total / limit) * 100) : null,
   }
 }

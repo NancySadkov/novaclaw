@@ -5,10 +5,12 @@ export interface ProgressCircleV2Props extends Pick<ComponentProps<"svg">, "clas
   percentage: number
   size?: number
   strokeWidth?: number
+  /** Visual urgency of the filled arc (the context gauge): default muted, warning amber, danger red. */
+  tone?: "warning" | "danger"
 }
 
 export function ProgressCircleV2(props: ProgressCircleV2Props) {
-  const [split, rest] = splitProps(props, ["percentage", "size", "strokeWidth", "class", "classList"])
+  const [split, rest] = splitProps(props, ["percentage", "size", "strokeWidth", "tone", "class", "classList"])
 
   const size = () => split.size ?? 14
   const strokeWidth = () => split.strokeWidth ?? 1.5
@@ -26,6 +28,7 @@ export function ProgressCircleV2(props: ProgressCircleV2Props) {
       viewBox={`0 0 ${viewBoxSize} ${viewBoxSize}`}
       fill="none"
       data-component="progress-circle-v2"
+      data-tone={split.tone}
       classList={{
         ...split.classList,
         [split.class ?? ""]: !!split.class,

@@ -37,6 +37,7 @@ import { KeybindV2 } from "@novaclaw/ui/v2/keybind-v2"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import { IconButton } from "@novaclaw/ui/icon-button"
 import { useDialog } from "@novaclaw/ui/context/dialog"
+import { SessionContextUsage } from "@/components/session-context-usage"
 import { useCommand } from "@/context/command"
 import { usePermission } from "@/context/permission"
 import { useLanguage } from "@/context/language"
@@ -1258,6 +1259,13 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     />
                   </Show>
                 </div>
+                {/* The context gauge (owner 2026-07-22): a Claude Code-style pie showing how full
+                    the model's context window is, right where the user types — colored amber/red
+                    as it fills so context trouble is visible BEFORE it bites. Session-scoped
+                    (drafts have no context yet); clicking opens the session's Context tab. */}
+                <Show when={props.controls.session?.id}>
+                  <SessionContextUsage buttonAppearance="v2" placement="top" />
+                </Show>
                 <TooltipV2 placement="top" inactive={!working() && blank()} value={tip()}>
                   <IconButton
                     data-action="prompt-submit"
