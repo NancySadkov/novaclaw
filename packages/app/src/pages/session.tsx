@@ -43,7 +43,6 @@ import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
 import { PromptInput } from "@/components/prompt-input"
-import { useSettingsCommand } from "@/components/settings-dialog"
 import { type FollowupDraft, sendFollowupDraft } from "@/components/prompt-input/submit"
 import {
   createPromptInputController,
@@ -751,7 +750,6 @@ export default function Page() {
   }
 
   useComposerCommands()
-  useSettingsCommand()
   useSessionCommands({
     navigateMessageByOffset,
     setActiveMessage,

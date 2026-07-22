@@ -36,7 +36,6 @@ import { usePlatform } from "@/context/platform"
 import { DateTime } from "luxon"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useDirectoryPicker } from "@/components/directory-picker"
-import { useSettingsCommand } from "@/components/settings-dialog"
 import { DialogSelectServer, useServerManagementController } from "@/components/dialog-select-server"
 import { DialogServerV2 } from "@/components/settings-v2/dialog-server-v2"
 import { ServerConnection, useServer } from "@/context/server"
@@ -242,7 +241,6 @@ export function NewHome() {
   const tabs = useTabs()
   const notification = useNotification()
   const marked = useMarked()
-  const openSettings = useSettingsCommand()
   const newAgent = useNewAgentSpawn()
   const selection = layout.home.selection
 

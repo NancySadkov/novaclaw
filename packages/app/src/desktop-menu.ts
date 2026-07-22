@@ -2,6 +2,11 @@
 // packages/desktop/src/main/menu.ts). Windows/Linux have no app menu: the in-titlebar
 // hamburger menu was retired 2026-07-22 — its entries pointed at commands the launcher
 // redesign removed; everything lives in the HTML shell (launcher tiles, Chats, Settings).
+//
+// INVARIANT: this menu is built ONCE at app startup and never reflects renderer state, so an
+// entry may only reference (a) a native Electron role, (b) a main-process DesktopMenuAction,
+// or (c) a command that is registered on EVERY route — i.e. from NewLayout or the Titlebar,
+// never from a page. A page-scoped command here silently no-ops whenever its page is closed.
 export type DesktopMenuAction =
   | "app.checkForUpdates"
   | "app.relaunch"
@@ -93,13 +98,6 @@ export const DESKTOP_MENU: DesktopMenu[] = [
     items: [
       {
         type: "item",
-        label: "New Session",
-        command: "session.new",
-        accelerator: "Shift+Cmd+S",
-      },
-      { type: "item", label: "Open Project...", command: "project.open", accelerator: "Cmd+O" },
-      {
-        type: "item",
         label: "New Window",
         action: "window.new",
         accelerator: "Cmd+Shift+N",
@@ -131,10 +129,6 @@ export const DESKTOP_MENU: DesktopMenu[] = [
     id: "view",
     label: "View",
     items: [
-      { type: "item", label: "Toggle Sidebar", command: "sidebar.toggle" },
-      { type: "item", label: "Toggle Terminal", command: "terminal.toggle", accelerator: "Ctrl+`" },
-      { type: "item", label: "Toggle File Tree", command: "fileTree.toggle" },
-      { type: "separator" },
       { type: "item", label: "Reload", action: "view.reload", role: "reload" },
       { type: "item", label: "Toggle Developer Tools", action: "view.toggleDevTools", role: "toggleDevTools" },
       { type: "separator" },
@@ -157,21 +151,14 @@ export const DESKTOP_MENU: DesktopMenu[] = [
       { type: "item", label: "Back", command: "common.goBack", accelerator: "Cmd+[" },
       { type: "item", label: "Forward", command: "common.goForward", accelerator: "Cmd+]" },
       { type: "separator" },
-      { type: "item", label: "Previous Session", command: "session.previous", accelerator: "Option+Up" },
-      { type: "item", label: "Next Session", command: "session.next", accelerator: "Option+Down" },
+      { type: "item", label: "Previous Tab", command: "tab.prev", accelerator: "Ctrl+Shift+Tab" },
+      { type: "item", label: "Next Tab", command: "tab.next", accelerator: "Ctrl+Tab" },
       { type: "separator" },
-      {
-        type: "item",
-        label: "Previous Project",
-        command: "project.previous",
-        accelerator: "Cmd+Option+Up",
-      },
-      {
-        type: "item",
-        label: "Next Project",
-        command: "project.next",
-        accelerator: "Cmd+Option+Down",
-      },
+      // No Cmd+B accelerator on Home: the legacy layout binds mod+b to its sidebar toggle and a
+      // menu accelerator would intercept the key before the renderer sees it. mod+b still works
+      // in the new layout via the renderer keybind on home.toggle.
+      { type: "item", label: "Home", command: "home.toggle" },
+      { type: "item", label: "The Chat That Needs You", command: "chats.jumpToAttention", accelerator: "Cmd+J" },
     ],
   },
   {
