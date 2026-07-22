@@ -100,8 +100,10 @@ export interface Connection {
 
 export interface ConnectContext {
   readonly account: Messenger.AccountInfo
-  /** The resolved secret (bot token / API key) from the credential store. Drivers hold it in
-   *  memory for the connection's lifetime only — never persist, never log, never echo. */
+  /** The resolved secret from the credential store — a bot token for `key` auth, OR the user's
+   *  session credential for `login` auth (acting AS the user, messenger-plan §0.2). The driver
+   *  holds it in memory for the connection's lifetime only — never persist, never log, never echo;
+   *  and `connect` does not care which kind it is (the acquisition flow differs, the use does not). */
   readonly secret: string | undefined
   /** Durable resume state (Telegram update offset, IMAP UIDVALIDITY+UID, Discord seq) — load at
    *  connect, save as you acknowledge, so restarts never double-deliver or drop. */

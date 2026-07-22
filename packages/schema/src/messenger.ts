@@ -91,15 +91,22 @@ export const Capabilities = Schema.Struct({
   maxBytes: optional(Schema.Number),
 }).annotate({ identifier: "Messenger.Capabilities" })
 
+/** How an account authenticates (messenger-plan §0.2): `login` = act as the USER's own account
+ *  (phone → code → 2FA via the Integration attempt flow — the lay default so nobody registers a
+ *  bot) · `key` = a bot/app token (opt-in power path) · `none` = anonymous/self-hosted. Either way
+ *  the resolved secret lands in the credential store; the driver's `connect` never cares which. */
+export const Auth = Schema.Literals(["login", "key", "none"]).annotate({ identifier: "Messenger.Auth" })
+export type Auth = typeof Auth.Type
+
 /** Driver self-description the Settings UI renders the "Add account" form from. `settings` reuses
- *  the Integration prompt vocabulary (text/select fields); the SECRET (bot token, API key) never
- *  rides here — it goes through the Integration key/oauth connect flow into the credential store. */
+ *  the Integration prompt vocabulary (text/select fields); the SECRET (bot token or the user's
+ *  session credential) never rides here — it goes through the credential store. */
 export interface DriverMeta extends Schema.Schema.Type<typeof DriverMeta> {}
 export const DriverMeta = Schema.Struct({
   id: Schema.String,
   name: Schema.String,
   icon: Schema.String,
-  auth: Schema.Literals(["key", "oauth", "none"]),
+  auth: Auth,
   settings: Schema.Array(Integration.Prompt),
   capabilities: Capabilities,
 }).annotate({ identifier: "Messenger.DriverMeta" })
