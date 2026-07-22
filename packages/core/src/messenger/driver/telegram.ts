@@ -147,8 +147,21 @@ export const make = (fetchImpl: FetchLike): Driver => ({
           catch: (error) => new ConnectError({ reason: `Telegram ${method} failed: ${String(error)}` }),
         })
 
-      // Identify ourselves so echo-suppression works (getMe → our bot user id).
+      // Identify ourselves so echo-suppression works (getMe → our bot user id). getMe doubles as
+      // the TOKEN GATE: Telegram answers ok:false (401) for a bad/revoked token — failing here is
+      // honest and legible, where the old tolerate-everything path left the account "connected"
+      // while silently polling 401s forever (found by the P2 settings walkthrough with a fake
+      // token). A TRANSPORT miss (network blip) stays tolerated — the poll loop owns retries.
       const me = decodeGetMe(yield* call("getMe").pipe(Effect.orElseSucceed(() => undefined)))
+      if (me._tag === "Some" && me.value.ok === false)
+        return yield* Effect.fail(
+          new ConnectError({
+            reason:
+              `Telegram rejected this bot token` +
+              (me.value.description ? ` (${me.value.description})` : "") +
+              ` — check it in Settings → Messengers.`,
+          }),
+        )
       const selfID = me._tag === "Some" && me.value.result ? me.value.result.id : undefined
 
       const send = (chatID: string, message: { text?: string; replyTo?: string }) =>
@@ -183,9 +196,17 @@ export const make = (fetchImpl: FetchLike): Driver => ({
         while (true) {
           const raw = yield* call("getUpdates", { offset, timeout: LONG_POLL_SECONDS, allowed_updates: ["message"] })
           const decoded = decodeUpdates(raw)
-          if (decoded._tag === "None" || decoded.value.ok === false) {
+          if (decoded._tag === "None") {
             yield* Effect.sleep("1 second")
             continue
+          }
+          if (decoded.value.ok === false) {
+            // The API REFUSED (revoked token mid-run, or another instance stole the long-poll —
+            // edge #16): end the connection instead of spinning silently; the gateway's backoff +
+            // reconnect owns recovery, and the reconnect's getMe gate surfaces the legible reason.
+            return yield* Effect.fail(
+              new ConnectError({ reason: `Telegram getUpdates refused: ${decoded.value.description ?? "unknown error"}` }),
+            )
           }
           const batch = decoded.value.result ?? []
           for (const update of batch) {

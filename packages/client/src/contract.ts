@@ -54,6 +54,7 @@ export const endpointNames = {
   "messenger.account.create": "createAccount",
   "messenger.account.update": "updateAccount",
   "messenger.account.remove": "removeAccount",
+  "messenger.account.pair": "mintPairing",
   "messenger.login.begin": "loginBegin",
   "messenger.login.status": "loginStatus",
   "messenger.login.complete": "loginComplete",

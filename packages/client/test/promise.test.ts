@@ -40,6 +40,7 @@ test("exposes every standard HTTP API group", () => {
     "createAccount",
     "updateAccount",
     "removeAccount",
+    "mintPairing",
     "loginBegin",
     "loginStatus",
     "loginComplete",

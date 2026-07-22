@@ -3728,6 +3728,13 @@ export type MessengerRemoveAccountInput = { readonly accountID: { readonly accou
 
 export type MessengerRemoveAccountOutput = void
 
+export type MessengerMintPairingInput = {
+  readonly accountID: { readonly accountID: string }["accountID"]
+  readonly trust: { readonly trust: "operator" | "client" }["trust"]
+}
+
+export type MessengerMintPairingOutput = { readonly code: string; readonly expiresAt: number }
+
 export type MessengerLoginBeginInput = {
   readonly accountID: { readonly accountID: string }["accountID"]
   readonly inputs: { readonly inputs: { readonly [x: string]: string } }["inputs"]

@@ -93,6 +93,21 @@ export const MessengerGroup = HttpApiGroup.make("server.messenger")
     ),
   )
   .add(
+    HttpApiEndpoint.post("messenger.account.pair", "/api/messenger/account/:accountID/pair", {
+      params: { accountID: Messenger.AccountID },
+      payload: Schema.Struct({ trust: Schema.Literals(["operator", "client"]) }),
+      success: Schema.Struct({ code: Schema.String, expiresAt: Schema.Number }),
+      error: InvalidRequestError,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.messenger.account.pair",
+        summary: "Mint pairing code",
+        description:
+          "Mint a single-use, 10-minute pairing code. A remote sender redeems it with /pair <code> in a DM to become a paired contact at the chosen trust.",
+      }),
+    ),
+  )
+  .add(
     HttpApiEndpoint.post("messenger.login.begin", "/api/messenger/account/:accountID/login", {
       params: { accountID: Messenger.AccountID },
       payload: Schema.Struct({ inputs: Schema.Record(Schema.String, Schema.String) }),

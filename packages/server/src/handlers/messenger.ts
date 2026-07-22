@@ -132,6 +132,19 @@ export const MessengerHandler = HttpApiBuilder.group(Api, "server.messenger", (h
         }),
       )
       .handle(
+        "messenger.account.pair",
+        Effect.fn(function* (ctx) {
+          const store = yield* MessengerStore.Service
+          const gateway = yield* MessengerGateway.Service
+          const account = yield* store.getAccount(ctx.params.accountID)
+          if (account === undefined)
+            return yield* Effect.fail(
+              new InvalidRequestError({ message: "Unknown messenger account.", kind: "messenger_account_unknown" }),
+            )
+          return yield* gateway.mintPairingCode(account.id, ctx.payload.trust)
+        }),
+      )
+      .handle(
         "messenger.login.begin",
         Effect.fn(function* (ctx) {
           const login = yield* MessengerLogin.Service

@@ -109,6 +109,27 @@ describe("TelegramDriver", () => {
     }),
   )
 
+  it.live("a rejected bot token fails connect legibly instead of showing connected", () =>
+    Effect.gen(function* () {
+      // Regression (found by the P2 settings walkthrough): a bad token used to leave the account
+      // "connected" while it silently polled 401s forever — getMe is the token gate now.
+      const fetchImpl: FetchLike = async () =>
+        Response.json({ ok: false, error_code: 401, description: "Unauthorized" })
+      const failure = yield* Effect.scoped(
+        TelegramDriver.make(fetchImpl).connect({
+          account: { id: "msa_x" as never, driverID: "telegram", label: "t", enabled: true, settings: {} } as never,
+          secret: "BAD-TOKEN",
+          cursor: { get: () => Effect.succeed(undefined), set: () => Effect.void },
+        }),
+      ).pipe(Effect.flip)
+      expect(failure._tag).toBe("MessengerDriver.ConnectError")
+      if (failure._tag === "MessengerDriver.ConnectError") {
+        expect(failure.reason).toContain("rejected this bot token")
+        expect(failure.reason).toContain("Unauthorized")
+      }
+    }),
+  )
+
   it.live("advances and persists the update offset (durable cursor)", () =>
     Effect.gen(function* () {
       const cursorStore = { value: undefined as unknown }

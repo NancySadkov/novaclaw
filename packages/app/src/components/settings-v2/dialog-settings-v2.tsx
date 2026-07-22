@@ -26,6 +26,7 @@ import { SettingsStrictV2 } from "./strict"
 import { SettingsToolsV2 } from "./tools"
 import { SettingsQualityV2 } from "./quality"
 import { SettingsRecoveryV2 } from "./recovery"
+import { SettingsMessengersV2 } from "./messengers"
 
 // Tabs above Normal are hidden until unlocked (uix.md §6.4). Bootstrap/manage/reset stay universal:
 // General, Appearance, Shortcuts, Instances, Models, Recovery carry no entry (= Normal).
@@ -118,6 +119,12 @@ export const DialogSettings: Component<{
                       <Icon name="share" />
                       {language.t("settings.tab.instances")}
                     </TabsV2.Trigger>
+                    {/* Messengers — a headline lay feature (messenger-plan §6.1): connect Telegram
+                        & friends so the agent covers chats while you're away. Normal level. */}
+                    <TabsV2.Trigger value="messengers">
+                      <Icon name="speech-bubble" />
+                      {language.t("settings.messengers.title")}
+                    </TabsV2.Trigger>
                     <Show when={tabVisible("system-prompt")}>
                       <TabsV2.Trigger value="system-prompt">
                         <Icon name="prompt" />
@@ -195,6 +202,9 @@ export const DialogSettings: Component<{
         </TabsV2.Content>
         <TabsV2.Content value="servers" class="settings-v2-panel">
           <SettingsServersV2 />
+        </TabsV2.Content>
+        <TabsV2.Content value="messengers" class="settings-v2-panel">
+          <SettingsMessengersV2 />
         </TabsV2.Content>
         <TabsV2.Content value="models" class="settings-v2-panel">
           <SettingsModelsV2 />

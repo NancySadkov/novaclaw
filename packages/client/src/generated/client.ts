@@ -102,6 +102,8 @@ import type {
   MessengerUpdateAccountOutput,
   MessengerRemoveAccountInput,
   MessengerRemoveAccountOutput,
+  MessengerMintPairingInput,
+  MessengerMintPairingOutput,
   MessengerLoginBeginInput,
   MessengerLoginBeginOutput,
   MessengerLoginStatusInput,
@@ -970,6 +972,18 @@ export function make(options: ClientOptions) {
             successStatus: 204,
             declaredStatuses: [401, 400],
             empty: true,
+          },
+          requestOptions,
+        ),
+      mintPairing: (input: MessengerMintPairingInput, requestOptions?: RequestOptions) =>
+        request<MessengerMintPairingOutput>(
+          {
+            method: "POST",
+            path: `/api/messenger/account/${encodeURIComponent(input.accountID)}/pair`,
+            body: { trust: input["trust"] },
+            successStatus: 200,
+            declaredStatuses: [400, 401],
+            empty: false,
           },
           requestOptions,
         ),
