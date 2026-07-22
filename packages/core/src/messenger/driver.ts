@@ -16,6 +16,14 @@ export class ConnectError extends Schema.TaggedErrorClass<ConnectError>()("Messe
   reason: Schema.String,
 }) {}
 
+// The provider demanded a CAPTCHA / verification / device-approval (traffic rules §2.3). A driver
+// raises this instead of retrying blindly; the gateway parks the account as `challenge` and
+// notifies the operator to resolve it out of band. NovaClaw NEVER auto-solves or evades — that is
+// both a platform-safety rule and a hard product rule.
+export class ChallengeError extends Schema.TaggedErrorClass<ChallengeError>()("MessengerDriver.ChallengeError", {
+  message: Schema.String,
+}) {}
+
 export class SendError extends Schema.TaggedErrorClass<SendError>()("MessengerDriver.SendError", {
   reason: Schema.String,
   /** true = a transport hiccup worth retrying; false = permanent (bad chat id, payload too big). */
@@ -118,6 +126,7 @@ export interface Driver {
   readonly meta: Messenger.DriverMeta
   /** Effective capabilities for THIS account (settings may narrow the platform defaults). */
   readonly capabilities: (account: Messenger.AccountInfo) => Messenger.Capabilities
-  /** Open the connection as a scoped resource; closing the scope must release sockets/pollers. */
-  readonly connect: (ctx: ConnectContext) => Effect.Effect<Connection, ConnectError, Scope.Scope>
+  /** Open the connection as a scoped resource; closing the scope must release sockets/pollers.
+   *  A `ChallengeError` parks the account for operator resolution instead of blind reconnection. */
+  readonly connect: (ctx: ConnectContext) => Effect.Effect<Connection, ConnectError | ChallengeError, Scope.Scope>
 }

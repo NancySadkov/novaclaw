@@ -11,6 +11,7 @@ import { FSUtil } from "@novaclaw/core/fs-util"
 import { Offline } from "@novaclaw/core/offline"
 import { SessionV2 } from "@novaclaw/core/session"
 import { MessengerDriver } from "@novaclaw/core/messenger/driver"
+import { MessengerPace } from "@novaclaw/core/messenger/pace"
 import { MessengerDrivers } from "@novaclaw/core/messenger/drivers"
 import { MessengerGateway } from "@novaclaw/core/messenger/gateway"
 import { MessengerStore } from "@novaclaw/core/messenger/store"
@@ -57,6 +58,7 @@ const makeFakeDriver = () => {
     queue: undefined as Queue.Queue<MessengerDriver.InboundEvent> | undefined,
     sent: [] as { chatID: string; text: string | undefined }[],
     failNext: false,
+    challengeNext: false,
     open: 0,
   }
   const driver: MessengerDriver.Driver = {
@@ -67,6 +69,10 @@ const makeFakeDriver = () => {
       Effect.gen(function* () {
         state.connects += 1
         state.secrets.push(ctx.secret)
+        if (state.challengeNext) {
+          state.challengeNext = false
+          return yield* Effect.fail(new MessengerDriver.ChallengeError({ message: "solve this CAPTCHA" }))
+        }
         if (state.failNext) {
           state.failNext = false
           return yield* Effect.fail(new MessengerDriver.ConnectError({ reason: "boom" }))
@@ -106,6 +112,9 @@ const it = testEffect(
     [MessengerDrivers.node, Layer.succeed(MessengerDrivers.Service, MessengerDrivers.Service.of(MessengerDrivers.make([fake.driver])))],
     [Offline.node, offlineMock(false)],
     [SessionV2.node, session.layer],
+    // Instant, still-serialized pacing: these tests exercise routing LOGIC; the real human-typing
+    // timing is proven directly in messenger-pace.test.ts.
+    [MessengerPace.node, MessengerPace.layerWith({ sleep: () => Effect.void })],
   ]),
 )
 
@@ -292,6 +301,53 @@ describe("MessengerGateway pipeline", () => {
     }),
   )
 
+  it.live("a provider challenge parks the account (no retry-loop) — traffic rules §2.3", () =>
+    Effect.gen(function* () {
+      const store = yield* MessengerStore.Service
+      const gateway = yield* MessengerGateway.Service
+      fake.state.challengeNext = true
+      const account = yield* store.createAccount({ driverID: "fake", label: "captcha", enabled: true, settings: {} })
+      yield* gateway.reload()
+      const status = yield* eventually(
+        gateway.status(),
+        (map) => map.get(account.id)?.state === "challenge",
+        "challenge",
+      )
+      const parked = status.get(account.id)
+      expect(parked?.state === "challenge" && parked.message).toContain("CAPTCHA")
+      yield* store.removeAccount(account.id)
+      yield* gateway.reload()
+    }),
+  )
+
+  it.live("gateway.send is cold-start-guarded then paced (traffic rules §2.3)", () =>
+    Effect.gen(function* () {
+      const { store, gateway, account, queue } = yield* online("send")
+      // A chat we've never heard from: initiating is refused by default.
+      const cold = yield* gateway.send({ accountID: account.id, chatID: "999", text: "hi there" })
+      expect(cold.ok).toBe(false)
+      if (!cold.ok) expect(cold.reason).toContain("never messaged us")
+
+      // With explicit initiate it goes (and counts against the daily bucket).
+      const sentBefore = fake.state.sent.length
+      const initiated = yield* gateway.send({ accountID: account.id, chatID: "999", text: "hi there", initiate: true })
+      expect(initiated.ok).toBe(true)
+
+      // A chat that HAS messaged us is a reply, never a cold start — allowed without initiate.
+      yield* Queue.offer(queue, message("888", { text: "hello", sender: "friend" }))
+      yield* eventually(store.hasChat(account.id, "888"), (seen) => seen === true, "seen 888")
+      const reply = yield* gateway.send({ accountID: account.id, chatID: "888", text: "welcome back" })
+      expect(reply.ok).toBe(true)
+      yield* eventually(
+        Effect.sync(() => fake.state.sent.slice(sentBefore)),
+        (sent) => sent.some((s) => s.chatID === "888" && s.text === "welcome back"),
+        "reply delivered",
+      )
+      yield* store.removeAccount(account.id)
+      yield* gateway.reload()
+    }),
+  )
+
   it.live("an audience binding does NOT auto-relay (the agent lurks)", () =>
     Effect.gen(function* () {
       const { store, gateway, account } = yield* online("lurk")
@@ -324,6 +380,7 @@ const itAirgap = testEffect(
     ],
     [Offline.node, offlineMock(true)],
     [SessionV2.node, makeSessionMock().layer],
+    [MessengerPace.node, MessengerPace.layerWith({ sleep: () => Effect.void })],
   ]),
 )
 

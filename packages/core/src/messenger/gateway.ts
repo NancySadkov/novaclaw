@@ -12,6 +12,7 @@ import { SessionV2 } from "../session"
 import { MessengerCommands } from "./commands"
 import type { Connection, Driver, InboundEvent } from "./driver"
 import { MessengerDrivers } from "./drivers"
+import { MessengerPace } from "./pace"
 import { MessengerPipeline } from "./pipeline"
 import { MessengerStore } from "./store"
 
@@ -28,6 +29,11 @@ const BACKOFF_BASE_MS = 1_000
 const BACKOFF_FACTOR = 3
 const BACKOFF_CAP_MS = 300_000
 const PAIRING_TTL_MS = 10 * 60_000
+// Traffic rules (§2.3): how many brand-new conversations NovaClaw may START in one day. Replies to
+// inbound don't count — only cold-starts. Providers flag accounts that spray new chats; this caps it.
+const DAILY_NEW_CONVERSATION_CAP = 20
+
+export type SendOutcome = { readonly ok: true } | { readonly ok: false; readonly reason: string }
 
 export interface PairingCode {
   readonly code: string
@@ -42,6 +48,16 @@ export interface Interface {
   /** Mint a single-use pairing code (10-min TTL) a sender redeems with `/pair <code>` to become a
    *  contact at `trust`. This is how a stranger becomes somebody (messenger-plan §7). */
   readonly mintPairingCode: (accountID: Messenger.AccountID, trust: Messenger.ContactTrust) => Effect.Effect<PairingCode>
+  /** A proactive/tool-driven send, governed by the traffic rules (§2.3): paced at human speed and
+   *  cold-start-guarded. Replying to a chat we've heard from is always allowed; STARTING a new
+   *  conversation (`initiate`) is capped by the daily new-conversation bucket. The `messenger`
+   *  tool calls this (after its own `messenger.initiate` permission check for cold starts). */
+  readonly send: (input: {
+    readonly accountID: Messenger.AccountID
+    readonly chatID: string
+    readonly text: string
+    readonly initiate?: boolean
+  }) => Effect.Effect<SendOutcome>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/MessengerGateway") {}
@@ -74,6 +90,9 @@ export const layer = Layer.effect(
     const offline = yield* Offline.Service
     const credentials = yield* Credential.Service
     const sessions = yield* SessionV2.Service
+    // The ONE pacer for the whole instance — every outbound message across every account and chat
+    // serializes through it at human typing speed (§2.3). This is "one hand".
+    const pacer = yield* MessengerPace.Service
     const fork = yield* FiberSet.makeRuntime<never, void, never>()
     const reloadLock = Semaphore.makeUnsafe(1)
 
@@ -81,6 +100,13 @@ export const layer = Layer.effect(
     const pairing = new Map<string, { accountID: Messenger.AccountID; trust: Messenger.ContactTrust; expiresAt: number }>()
     // Last `/sessions` listing per operator chat, so `/use N` indexes exactly what they saw.
     const listings = new Map<string, string[]>()
+    // The daily cold-start bucket (traffic rules §2.3).
+    const initiations = { day: "", count: 0 }
+
+    // Every outbound message — command replies, relayed assistant text, proactive tool sends —
+    // goes through the pacer, so nothing ever bursts or posts instantly.
+    const paceSend = (connection: Connection, chatID: string, text: string) =>
+      pacer.paced(text, connection.send(chatID, { text }))
 
     const setStatus = (accountID: Messenger.AccountID, entry: Entry, status: Messenger.AccountStatus) =>
       Effect.gen(function* () {
@@ -98,12 +124,26 @@ export const layer = Layer.effect(
 
     // ── inbound ────────────────────────────────────────────────────────────────────────────────
 
-    const reply = (send: Connection["send"], chatID: string, text: string) =>
-      send(chatID, { text }).pipe(Effect.ignore)
+    const reply = (connection: Connection, chatID: string, text: string) =>
+      paceSend(connection, chatID, text).pipe(Effect.ignore)
+
+    // Best-effort: DM the operator on any OTHER still-connected account (e.g. to flag a CAPTCHA on
+    // the account that's parked). The Settings banner is the always-available fallback.
+    const notifyOperator = (text: string) =>
+      Effect.gen(function* () {
+        for (const [accountID, entry] of entries) {
+          if (entry.connection === undefined) continue
+          const bindings = yield* store.bindingsForAccount(accountID).pipe(Effect.orElseSucceed(() => []))
+          for (const binding of bindings) {
+            if (binding.trust !== "operator") continue
+            yield* paceSend(entry.connection, binding.chatID, text).pipe(Effect.ignore)
+          }
+        }
+      })
 
     const handleCommand = (
       account: Messenger.AccountInfo,
-      send: Connection["send"],
+      connection: Connection,
       event: Extract<InboundEvent, { kind: "message" }>,
       command: MessengerCommands.Command,
       trust: Messenger.ContactTrust | undefined,
@@ -115,7 +155,7 @@ export const layer = Layer.effect(
           const now = Date.now()
           const record = pairing.get(command.code)
           if (record === undefined || record.accountID !== account.id || record.expiresAt < now) {
-            yield* reply(send, event.chat.chatID, "That pairing code is invalid or expired. Mint a fresh one in Settings → Messengers.")
+            yield* reply(connection, event.chat.chatID, "That pairing code is invalid or expired. Mint a fresh one in Settings → Messengers.")
             return
           }
           pairing.delete(command.code)
@@ -126,22 +166,22 @@ export const layer = Layer.effect(
             trust: record.trust,
             pairedAt: now,
           })
-          yield* reply(send, event.chat.chatID, `Paired — you're set as "${record.trust}". Send /help to see what you can do.`)
+          yield* reply(connection, event.chat.chatID, `Paired — you're set as "${record.trust}". Send /help to see what you can do.`)
           return
         }
         // Everything else is operator-only, in a DM.
         if (trust !== "operator" || event.chat.kind !== "dm") {
-          yield* reply(send, event.chat.chatID, "Only the operator can run that, and only in a direct message.")
+          yield* reply(connection, event.chat.chatID, "Only the operator can run that, and only in a direct message.")
           return
         }
         switch (command.kind) {
           case "help":
-            yield* reply(send, event.chat.chatID, MessengerPipeline.HELP_TEXT)
+            yield* reply(connection, event.chat.chatID, MessengerPipeline.HELP_TEXT)
             return
           case "status": {
             const binding = yield* store.bindingForChat(account.id, event.chat.chatID)
             yield* reply(
-              send,
+              connection,
               event.chat.chatID,
               binding === undefined
                 ? "This chat isn't driving any session. /sessions then /use <n>."
@@ -159,14 +199,14 @@ export const layer = Layer.effect(
               })),
             )
             listings.set(key, rendered.ids)
-            yield* reply(send, event.chat.chatID, rendered.text)
+            yield* reply(connection, event.chat.chatID, rendered.text)
             return
           }
           case "use": {
             const ids = listings.get(key) ?? []
             const sessionID = ids[command.index - 1]
             if (sessionID === undefined) {
-              yield* reply(send, event.chat.chatID, "Run /sessions first, then /use a number from that list.")
+              yield* reply(connection, event.chat.chatID, "Run /sessions first, then /use a number from that list.")
               return
             }
             const existing = yield* store.bindingForChat(account.id, event.chat.chatID)
@@ -178,7 +218,7 @@ export const layer = Layer.effect(
               yield* events
                 .publish(Messenger.Event.BindingUpdated, { bindingID: binding.id, sessionID: sessionID as Session.ID })
                 .pipe(Effect.ignore)
-            yield* reply(send, event.chat.chatID, `This chat now drives session ${sessionID}. Just type to talk to it.`)
+            yield* reply(connection, event.chat.chatID, `This chat now drives session ${sessionID}. Just type to talk to it.`)
             return
           }
           case "new":
@@ -186,7 +226,7 @@ export const layer = Layer.effect(
             // Both need machinery P1 defers (a working-directory pick / a drain interrupt seam) —
             // honest degrade, tracked as P1b, never a silent no-op.
             yield* reply(
-              send,
+              connection,
               event.chat.chatID,
               command.kind === "new"
                 ? "Creating a new session from chat is coming soon — for now make one in the app, then /use its number."
@@ -194,12 +234,12 @@ export const layer = Layer.effect(
             )
             return
           case "unknown":
-            yield* reply(send, event.chat.chatID, `Unknown command /${command.name}. /help for the list.`)
+            yield* reply(connection, event.chat.chatID, `Unknown command /${command.name}. /help for the list.`)
             return
         }
       })
 
-    const routeInbound = (account: Messenger.AccountInfo, send: Connection["send"], event: InboundEvent) =>
+    const routeInbound = (account: Messenger.AccountInfo, connection: Connection, event: InboundEvent) =>
       Effect.gen(function* () {
         if (event.kind !== "message") return
         if (event.sender.isSelf) return // echo guard #1
@@ -217,7 +257,7 @@ export const layer = Layer.effect(
 
         const command = event.text ? MessengerCommands.parse(event.text) : undefined
         if (command !== undefined) {
-          yield* handleCommand(account, send, event, command, contact?.trust)
+          yield* handleCommand(account, connection, event, command, contact?.trust)
           return
         }
 
@@ -228,19 +268,19 @@ export const layer = Layer.effect(
             // Unpaired stranger: silence by default (never a model turn — cost + injection surface).
             return
           }
-          yield* reply(send, event.chat.chatID, "No session is linked here yet. /sessions then /use <n>.")
+          yield* reply(connection, event.chat.chatID, "No session is linked here yet. /sessions then /use <n>.")
           return
         }
         const text = MessengerPipeline.provenance(event, account.driverID, binding.trust)
         yield* sessions
           .prompt({ sessionID: binding.sessionID as Session.ID, prompt: { text }, delivery: "queue" })
           .pipe(
-            Effect.catch(() => reply(send, event.chat.chatID, "That session is no longer available. /sessions to pick another.")),
+            Effect.catch(() => reply(connection, event.chat.chatID, "That session is no longer available. /sessions to pick another.")),
           )
       })
 
     const consume = (account: Messenger.AccountInfo, connection: Connection) =>
-      connection.inbound.pipe(Stream.runForEach((event) => routeInbound(account, connection.send, event)))
+      connection.inbound.pipe(Stream.runForEach((event) => routeInbound(account, connection, event)))
 
     // ── outbound relay ───────────────────────────────────────────────────────────────────────────
 
@@ -254,7 +294,8 @@ export const layer = Layer.effect(
             if (binding.status !== "active" || binding.trust === "audience") continue
             const entry = entries.get(binding.accountID)
             if (entry?.connection === undefined) continue
-            yield* entry.connection.send(binding.chatID, { text: payload.data.text }).pipe(Effect.ignore)
+            // Relaying a reply to a chat the session came from is never a cold-start; still paced.
+            yield* paceSend(entry.connection, binding.chatID, payload.data.text).pipe(Effect.ignore)
           }
         }),
       ),
@@ -281,17 +322,39 @@ export const layer = Layer.effect(
         }),
       )
 
+    type Outcome =
+      | { readonly kind: "ended" }
+      | { readonly kind: "challenge"; readonly message: string }
+      | { readonly kind: "error"; readonly reason: string }
+
     const connectionLoop = (account: Messenger.AccountInfo, driver: Driver, entry: Entry) =>
       Effect.gen(function* () {
         let failures = 0
         while (true) {
           yield* setStatus(account.id, entry, { state: "connecting" })
-          const reason = yield* attempt(account, driver, entry).pipe(
-            Effect.as("connection ended"),
-            Effect.catch((error) => Effect.succeed(error.reason)),
+          const outcome: Outcome = yield* attempt(account, driver, entry).pipe(
+            Effect.as({ kind: "ended" } as Outcome),
+            Effect.catch((error) =>
+              Effect.succeed(
+                error._tag === "MessengerDriver.ChallengeError"
+                  ? ({ kind: "challenge", message: error.message } as Outcome)
+                  : ({ kind: "error", reason: error.reason } as Outcome),
+              ),
+            ),
           )
+          // Traffic rules §2.3: a CAPTCHA/verification parks the account for the operator; we do
+          // NOT retry-loop against a challenge (that's what looks like an attack + never resolves).
+          if (outcome.kind === "challenge") {
+            yield* setStatus(account.id, entry, { state: "challenge", message: outcome.message })
+            yield* notifyOperator(
+              `⚠️ ${account.label}: the provider is asking for verification (${outcome.message}). ` +
+                `Resolve it in the app, then re-enable this account.`,
+            ).pipe(Effect.ignore)
+            return
+          }
           failures += 1
           const delay = backoffDelay(failures)
+          const reason = outcome.kind === "error" ? outcome.reason : "connection ended"
           yield* setStatus(account.id, entry, { state: "backoff", until: Date.now() + delay, message: reason })
           yield* Effect.sleep(Duration.millis(delay))
         }
@@ -365,6 +428,39 @@ export const layer = Layer.effect(
           pairing.set(code, { accountID, trust, expiresAt: Date.now() + PAIRING_TTL_MS })
           return { code, expiresAt: Date.now() + PAIRING_TTL_MS }
         }),
+      send: (input) =>
+        Effect.gen(function* () {
+          const entry = entries.get(input.accountID)
+          if (entry?.connection === undefined)
+            return { ok: false, reason: "That messenger account isn't connected right now." } satisfies SendOutcome
+          const known = yield* store.hasChat(input.accountID, input.chatID).pipe(Effect.orElseSucceed(() => false))
+          const bound = yield* store.bindingForChat(input.accountID, input.chatID).pipe(Effect.orElseSucceed(() => undefined))
+          const coldStart = !known && bound === undefined
+          if (coldStart) {
+            // Traffic rules §2.3: the agent must be invited to write first. Starting a brand-new
+            // conversation is gated (the tool checks `messenger.initiate` permission) AND capped.
+            if (!input.initiate)
+              return {
+                ok: false,
+                reason:
+                  "This chat has never messaged us — starting a new conversation isn't allowed by default. " +
+                  "Ask the person to message first, or (if you have permission) retry as an explicit initiation.",
+              } satisfies SendOutcome
+            const today = new Date(Date.now()).toISOString().slice(0, 10)
+            if (initiations.day !== today) {
+              initiations.day = today
+              initiations.count = 0
+            }
+            if (initiations.count >= DAILY_NEW_CONVERSATION_CAP)
+              return {
+                ok: false,
+                reason: `Daily new-conversation limit (${DAILY_NEW_CONVERSATION_CAP}) reached — pacing to avoid a provider flag. Try again tomorrow.`,
+              } satisfies SendOutcome
+            initiations.count += 1
+          }
+          yield* paceSend(entry.connection, input.chatID, input.text).pipe(Effect.ignore)
+          return { ok: true } satisfies SendOutcome
+        }),
     })
   }),
 )
@@ -372,5 +468,13 @@ export const layer = Layer.effect(
 export const node = makeGlobalNode({
   service: Service,
   layer,
-  deps: [MessengerStore.node, MessengerDrivers.node, EventV2.node, Offline.node, Credential.node, SessionV2.node],
+  deps: [
+    MessengerStore.node,
+    MessengerDrivers.node,
+    MessengerPace.node,
+    EventV2.node,
+    Offline.node,
+    Credential.node,
+    SessionV2.node,
+  ],
 })

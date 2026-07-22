@@ -53,13 +53,16 @@ export const BindingStatus = Schema.Literals(["active", "paused"]).annotate({
 export type BindingStatus = typeof BindingStatus.Type
 
 /** The gateway's per-account connection state machine. `airgapped` is its own honest state:
- *  offline/airgap mode force-disables every messenger (the OFF-C stance), and the UI says why. */
+ *  offline/airgap mode force-disables every messenger (the OFF-C stance), and the UI says why.
+ *  `challenge` = the provider demanded a CAPTCHA/verification (traffic rules §2.3): the account
+ *  parks and the operator is notified; NovaClaw never auto-solves or evades bot-detection. */
 export const AccountStatus = Schema.Union([
   Schema.Struct({ state: Schema.Literal("disabled") }),
   Schema.Struct({ state: Schema.Literal("airgapped") }),
   Schema.Struct({ state: Schema.Literal("connecting") }),
   Schema.Struct({ state: Schema.Literal("connected") }),
   Schema.Struct({ state: Schema.Literal("backoff"), until: Schema.Number, message: Schema.String }),
+  Schema.Struct({ state: Schema.Literal("challenge"), message: Schema.String }),
   Schema.Struct({ state: Schema.Literal("error"), message: Schema.String }),
 ])
   .pipe(Schema.toTaggedUnion("state"))

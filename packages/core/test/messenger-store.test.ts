@@ -54,6 +54,10 @@ describe("MessengerStore", () => {
       expect(chats.map((chat) => chat.chatID)).toEqual(["77", "42"])
       expect(chats[1]?.title).toBe("Nancy L")
       expect(chats[1]?.lastSeen).toBe(200)
+
+      // hasChat is the cold-start test (traffic rules §2.3): a seen chat is known, others aren't.
+      expect(yield* store.hasChat(account.id, "42")).toBe(true)
+      expect(yield* store.hasChat(account.id, "never-heard-of")).toBe(false)
     }),
   )
 

@@ -63,6 +63,9 @@ export interface Interface {
     readonly at: number
   }) => Effect.Effect<void>
   readonly listChats: (accountID: Messenger.AccountID) => Effect.Effect<Messenger.ChatInfo[]>
+  /** True if we've ever seen this chat (an inbound message put it in the cache) — the cold-start
+   *  test for the traffic-rules governor: a chat we've never heard from is a NEW conversation. */
+  readonly hasChat: (accountID: Messenger.AccountID, chatID: string) => Effect.Effect<boolean>
 
   readonly upsertContact: (contact: ContactInfo) => Effect.Effect<void>
   readonly getContact: (accountID: Messenger.AccountID, senderID: string) => Effect.Effect<ContactInfo | undefined>
@@ -217,6 +220,15 @@ export const layer = Layer.effect(
           .all()
           .pipe(Effect.orDie)
         return rows.map(chatFromRow).sort((a, b) => b.lastSeen - a.lastSeen)
+      }),
+      hasChat: Effect.fn("MessengerStore.hasChat")(function* (accountID, chatID) {
+        const row = yield* db
+          .select()
+          .from(MessengerChatTable)
+          .where(and(eq(MessengerChatTable.account_id, accountID), eq(MessengerChatTable.chat_id, chatID)))
+          .get()
+          .pipe(Effect.orDie)
+        return row !== undefined
       }),
 
       upsertContact: Effect.fn("MessengerStore.upsertContact")(function* (contact) {
