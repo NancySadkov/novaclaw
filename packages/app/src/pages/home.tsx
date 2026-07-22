@@ -9,6 +9,7 @@ import {
   For,
   Match,
   onCleanup,
+  onMount,
   Show,
   startTransition,
   Switch,
@@ -332,6 +333,34 @@ export function NewHome() {
       else current.add(id)
       return current
     })
+  const setMembership = (id: string, value: boolean) =>
+    setSelectedIDs((current) => {
+      if (value) current.add(id)
+      else current.delete(id)
+      return current
+    })
+  // Drag-select (owner 2026-07-22): press on a row and sweep — every row entered while the
+  // pointer is down gets the SAME membership the anchor row toggled to (the file-manager
+  // rubber-band feel without the geometry). Pointer-path only: keyboard toggles never start a
+  // drag, and a document-level pointerup always ends it.
+  let dragSelectValue: boolean | undefined
+  const [dragSelecting, setDragSelecting] = createSignal(false)
+  const beginDragSelect = (session: Session) => {
+    const next = !selectedIDs().has(session.id)
+    setMembership(session.id, next)
+    dragSelectValue = next
+    setDragSelecting(true)
+  }
+  const dragSelectOver = (session: Session) => {
+    if (!dragSelecting() || dragSelectValue === undefined) return
+    setMembership(session.id, dragSelectValue)
+  }
+  onMount(() => {
+    const endDrag = () => setDragSelecting(false)
+    document.addEventListener("pointerup", endDrag)
+    onCleanup(() => document.removeEventListener("pointerup", endDrag))
+  })
+  const selectAllFiltered = () => setSelectedIDs(new Set(visibleRecords().map((record) => record.session.id)))
   const clearSelection = () => {
     setSelecting(false)
     setSelectedIDs(new Set<string>())
@@ -713,11 +742,12 @@ export function NewHome() {
               selection mode; tag pills get their own wrap row below when tags exist. */}
           <div class="flex min-w-0 items-center gap-2 pt-1">
             <div class="relative min-w-0 flex-1">
-              <Icon
-                name="magnifying-glass"
-                size="small"
-                class="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-v2-icon-icon-muted"
-              />
+              {/* Position the icon via a wrapper span — Icon renders its own sized <div>, and
+                  absolute classes on the Icon itself land on the inner svg, detaching it from
+                  its size box (the giant-glyph bug, owner-hit 2026-07-22). */}
+              <span class="pointer-events-none absolute left-2 top-1/2 z-10 flex -translate-y-1/2 items-center text-v2-icon-icon-muted">
+                <Icon name="magnifying-glass" size="small" />
+              </span>
               <TextInputV2
                 type="search"
                 appearance="base"
@@ -736,6 +766,9 @@ export function NewHome() {
                   <span class="shrink-0 text-[12px] leading-none text-v2-text-text-muted [font-weight:500]">
                     {language.t("home.sessions.selectedCount", { count: selectedIDs().size })}
                   </span>
+                  <ButtonV2 size="small" variant="ghost-muted" onClick={selectAllFiltered}>
+                    {language.t("home.sessions.selectAll")}
+                  </ButtonV2>
                   <ButtonV2
                     size="small"
                     variant="neutral"
@@ -865,6 +898,8 @@ export function NewHome() {
                               selecting={selecting()}
                               selected={selectedIDs().has(record.session.id)}
                               onToggleSelect={(session) => toggleSelected(session.id)}
+                              onSelectStart={beginDragSelect}
+                              onSelectOver={dragSelectOver}
                             />
                           )}
                         </For>
@@ -896,6 +931,8 @@ export function NewHome() {
                             selecting={selecting()}
                             selected={selectedIDs().has(record.session.id)}
                             onToggleSelect={(session) => toggleSelected(session.id)}
+                            onSelectStart={beginDragSelect}
+                            onSelectOver={dragSelectOver}
                           />
                         )}
                       </For>
@@ -928,6 +965,8 @@ export function NewHome() {
                                 selecting={selecting()}
                                 selected={selectedIDs().has(record.session.id)}
                                 onToggleSelect={(session) => toggleSelected(session.id)}
+                                onSelectStart={beginDragSelect}
+                                onSelectOver={dragSelectOver}
                               />
                             )}
                           </For>
@@ -1169,10 +1208,13 @@ function HomeSessionRow(props: {
   cloneSession: (session: Session) => Promise<void>
   deleteSession: (session: Session) => Promise<void>
   // Selection mode (mass delete/archive): clicking toggles membership instead of opening,
-  // a leading check indicator renders, and the hover action strip stands down.
+  // a leading check indicator renders, and the hover action strip stands down. The pointer
+  // pair (start/over) powers drag-select; onToggleSelect stays the keyboard path.
   selecting?: boolean
   selected?: boolean
   onToggleSelect?: (session: Session) => void
+  onSelectStart?: (session: Session) => void
+  onSelectOver?: (session: Session) => void
 }) {
   const language = useLanguage()
   const dialog = useDialog()
@@ -1228,9 +1270,22 @@ function HomeSessionRow(props: {
         data-component="home-session-row"
         aria-pressed={props.selecting ? !!props.selected : undefined}
         class={`${HOME_ROW} h-10 min-w-0 flex-1 gap-2 py-3 pl-3 pr-10`}
-        onClick={() =>
-          props.selecting ? props.onToggleSelect?.(props.record.session) : props.openSession(props.record.session)
-        }
+        onPointerDown={(event) => {
+          if (props.selecting && event.button === 0) {
+            // preventDefault keeps the press from starting text selection while sweeping.
+            event.preventDefault()
+            props.onSelectStart?.(props.record.session)
+          }
+        }}
+        onPointerEnter={() => {
+          if (props.selecting) props.onSelectOver?.(props.record.session)
+        }}
+        onClick={(event) => {
+          if (!props.selecting) props.openSession(props.record.session)
+          // Keyboard activation only (detail 0): the pointer path already toggled on
+          // pointerdown — letting the trailing click toggle again would undo it.
+          else if (event.detail === 0) props.onToggleSelect?.(props.record.session)
+        }}
       >
         <Show when={props.selecting}>
           <span
@@ -1238,10 +1293,14 @@ function HomeSessionRow(props: {
             class="flex size-4 shrink-0 items-center justify-center rounded-full ring-1 transition-colors"
             classList={{
               "ring-v2-text-text-accent bg-v2-background-bg-layer-02 text-v2-icon-icon-accent": !!props.selected,
-              "ring-v2-border-border-base text-transparent": !props.selected,
+              "ring-v2-border-border-base": !props.selected,
             }}
           >
-            <Icon name="check-small" size="small" />
+            {/* Render the check ONLY when selected — sprite strokes don't inherit
+                text-transparent, so an always-mounted check read as "prefilled". */}
+            <Show when={props.selected}>
+              <Icon name="check-small" size="small" />
+            </Show>
           </span>
         </Show>
         <HomeSessionLeading

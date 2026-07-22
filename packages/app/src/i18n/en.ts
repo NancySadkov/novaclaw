@@ -97,6 +97,7 @@ export const dict = {
   "settings.providers.import.action": "Import",
   "home.sessions.new": "New Session",
   "home.sessions.select": "Select",
+  "home.sessions.selectAll": "Select all",
   "home.sessions.selectedCount": "{{count}} selected",
   "home.sessions.bulk.delete.title": "Delete the selected chats ({{count}})?",
   "home.sessions.bulk.archive.title": "Archive the selected chats ({{count}})?",
