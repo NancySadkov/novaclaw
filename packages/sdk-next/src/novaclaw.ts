@@ -34,7 +34,17 @@ export const create = Effect.fn("NovaClaw.create")(function* () {
     ),
     (web) => Effect.promise(web.dispose),
   )
-  const fetch = Object.assign((input: RequestInfo | URL, init?: RequestInit) => web.handler(new Request(input, init)), {
+  // `createEmbeddedRoutes` provides every handler service internally (its `serviceLayer` builds
+  // Database/EventV2/SessionV2/Credential/Messenger*/… — all of them), so this web handler is
+  // fully self-contained: at runtime `handler(request)` resolves each service from the router's
+  // own built context (the second `context` arg is optional and merged in only when present).
+  // effect's request-scope typing, though, doesn't count those build-scope provides as satisfying
+  // the instance-global handlers (messenger, credential, event) that read services per request, so
+  // `web.handler` types as the "needs a Context" branch. Assert the truth — that no external
+  // context is needed. We must NOT provide fresh layers to satisfy the type: that would build a
+  // SECOND Database/MessengerGateway (two long-polls on one account, edge #16).
+  const handler = web.handler as (request: globalThis.Request) => Promise<Response>
+  const fetch = Object.assign((input: RequestInfo | URL, init?: RequestInit) => handler(new Request(input, init)), {
     preconnect: () => undefined,
   }) satisfies typeof globalThis.fetch
   const client = yield* NovaClaw.make({ baseUrl: "http://novaclaw.local" }).pipe(
