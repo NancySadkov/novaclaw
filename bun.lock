@@ -469,6 +469,7 @@
       "dependencies": {
         "@novaclaw/core": "workspace:*",
         "@novaclaw/protocol": "workspace:*",
+        "@novaclaw/schema": "workspace:*",
         "drizzle-orm": "catalog:",
         "effect": "catalog:",
       },

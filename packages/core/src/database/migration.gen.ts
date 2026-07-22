@@ -64,5 +64,6 @@ export const migrations = (
     import("./migration/20260718150000_drop_kb_fact"),
     import("./migration/20260720120000_drop_kb_vec_leftovers"),
     import("./migration/20260721190000_add_instance_identity"),
+    import("./migration/20260722135926_add_messenger"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]

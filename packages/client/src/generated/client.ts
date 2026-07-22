@@ -36,6 +36,8 @@ import type {
   SessionsSwitchStrictOutput,
   SessionsSwitchFeatureInput,
   SessionsSwitchFeatureOutput,
+  SessionsSwitchTypeInput,
+  SessionsSwitchTypeOutput,
   SessionsSwitchPromptOverrideInput,
   SessionsSwitchPromptOverrideOutput,
   SessionsShellInput,
@@ -92,6 +94,14 @@ import type {
   CredentialsUpdateOutput,
   CredentialsRemoveInput,
   CredentialsRemoveOutput,
+  MessengerListDriversOutput,
+  MessengerListAccountsOutput,
+  MessengerCreateAccountInput,
+  MessengerCreateAccountOutput,
+  MessengerUpdateAccountInput,
+  MessengerUpdateAccountOutput,
+  MessengerRemoveAccountInput,
+  MessengerRemoveAccountOutput,
   PermissionsListRequestsInput,
   PermissionsListRequestsOutput,
   PermissionsListSavedInput,
@@ -523,6 +533,18 @@ export function make(options: ClientOptions) {
           },
           requestOptions,
         ),
+      switchType: (input: SessionsSwitchTypeInput, requestOptions?: RequestOptions) =>
+        request<SessionsSwitchTypeOutput>(
+          {
+            method: "POST",
+            path: `/api/session/${encodeURIComponent(input.sessionID)}/type`,
+            body: { type: input["type"] },
+            successStatus: 204,
+            declaredStatuses: [404, 400, 401],
+            empty: true,
+          },
+          requestOptions,
+        ),
       switchPromptOverride: (input: SessionsSwitchPromptOverrideInput, requestOptions?: RequestOptions) =>
         request<SessionsSwitchPromptOverrideOutput>(
           {
@@ -867,6 +889,76 @@ export function make(options: ClientOptions) {
             method: "DELETE",
             path: `/api/credential/${encodeURIComponent(input.credentialID)}`,
             query: { location: input["location"] },
+            successStatus: 204,
+            declaredStatuses: [401, 400],
+            empty: true,
+          },
+          requestOptions,
+        ),
+    },
+    messenger: {
+      listDrivers: (requestOptions?: RequestOptions) =>
+        request<MessengerListDriversOutput>(
+          {
+            method: "GET",
+            path: `/api/messenger/driver`,
+            successStatus: 200,
+            declaredStatuses: [401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      listAccounts: (requestOptions?: RequestOptions) =>
+        request<MessengerListAccountsOutput>(
+          {
+            method: "GET",
+            path: `/api/messenger/account`,
+            successStatus: 200,
+            declaredStatuses: [401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      createAccount: (input: MessengerCreateAccountInput, requestOptions?: RequestOptions) =>
+        request<MessengerCreateAccountOutput>(
+          {
+            method: "POST",
+            path: `/api/messenger/account`,
+            body: {
+              driverID: input["driverID"],
+              label: input["label"],
+              enabled: input["enabled"],
+              settings: input["settings"],
+              secret: input["secret"],
+            },
+            successStatus: 200,
+            declaredStatuses: [400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      updateAccount: (input: MessengerUpdateAccountInput, requestOptions?: RequestOptions) =>
+        request<MessengerUpdateAccountOutput>(
+          {
+            method: "PATCH",
+            path: `/api/messenger/account/${encodeURIComponent(input.accountID)}`,
+            body: {
+              label: input["label"],
+              enabled: input["enabled"],
+              settings: input["settings"],
+              secret: input["secret"],
+            },
+            successStatus: 204,
+            declaredStatuses: [400, 401],
+            empty: true,
+          },
+          requestOptions,
+        ),
+      removeAccount: (input: MessengerRemoveAccountInput, requestOptions?: RequestOptions) =>
+        request<MessengerRemoveAccountOutput>(
+          {
+            method: "DELETE",
+            path: `/api/messenger/account/${encodeURIComponent(input.accountID)}`,
             successStatus: 204,
             declaredStatuses: [401, 400],
             empty: true,

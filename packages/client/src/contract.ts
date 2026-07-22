@@ -26,6 +26,7 @@ export const groupNames = {
   "server.provider": "providers",
   "server.integration": "integrations",
   "server.credential": "credentials",
+  "server.messenger": "messenger",
   "server.permission": "permissions",
   "server.fs": "files",
   "server.command": "commands",
@@ -48,6 +49,11 @@ export const endpointNames = {
   "permission.saved.list": "listSaved",
   "permission.saved.remove": "removeSaved",
   "question.request.list": "listRequests",
+  "messenger.driver.list": "listDrivers",
+  "messenger.account.list": "listAccounts",
+  "messenger.account.create": "createAccount",
+  "messenger.account.update": "updateAccount",
+  "messenger.account.remove": "removeAccount",
 } as const
 
 export const omitEndpoints = new Set(["fs.read", "pty.connect", "pty.connectToken"])

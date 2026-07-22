@@ -14,6 +14,7 @@ test("exposes every standard HTTP API group", () => {
     "providers",
     "integrations",
     "credentials",
+    "messenger",
     "permissions",
     "files",
     "commands",
@@ -32,6 +33,13 @@ test("exposes every standard HTTP API group", () => {
     "attemptStatus",
     "attemptComplete",
     "attemptCancel",
+  ])
+  expect(Object.keys(client.messenger)).toEqual([
+    "listDrivers",
+    "listAccounts",
+    "createAccount",
+    "updateAccount",
+    "removeAccount",
   ])
   expect(Object.keys(client.files)).toEqual(["list", "find"])
   expect(Object.keys(client.ptys)).toEqual(["list", "create", "get", "update", "remove"])

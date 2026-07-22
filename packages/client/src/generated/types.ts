@@ -1027,6 +1027,13 @@ export type SessionsSwitchFeatureInput = {
 
 export type SessionsSwitchFeatureOutput = void
 
+export type SessionsSwitchTypeInput = {
+  readonly sessionID: { readonly sessionID: string }["sessionID"]
+  readonly type: { readonly type: "interactive" | "auto-prompting" | "goal-oriented" }["type"]
+}
+
+export type SessionsSwitchTypeOutput = void
+
 export type SessionsSwitchPromptOverrideInput = {
   readonly sessionID: { readonly sessionID: string }["sessionID"]
   readonly override: { readonly override: string | null }["override"]
@@ -1487,6 +1494,19 @@ export type SessionsHistoryOutput = {
           readonly messageID: string
           readonly feature: "introspection" | "quality" | "affective"
           readonly enabled: boolean | null
+        }
+      }
+    | {
+        readonly id: string
+        readonly metadata?: { readonly [x: string]: JsonValue }
+        readonly type: "session.next.type.switched"
+        readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+        readonly location?: { readonly directory: string; readonly workspaceID?: string }
+        readonly data: {
+          readonly timestamp: number
+          readonly sessionID: string
+          readonly messageID: string
+          readonly sessionType: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
         }
       }
     | {
@@ -2203,6 +2223,19 @@ export type SessionsEventsOutput =
         readonly messageID: string
         readonly feature: "introspection" | "quality" | "affective"
         readonly enabled: boolean | null
+      }
+    }
+  | {
+      readonly id: string
+      readonly metadata?: { readonly [x: string]: unknown }
+      readonly type: "session.next.type.switched"
+      readonly durable?: { readonly aggregateID: string; readonly seq: number; readonly version: number }
+      readonly location?: { readonly directory: string; readonly workspaceID?: string }
+      readonly data: {
+        readonly timestamp: number
+        readonly sessionID: string
+        readonly messageID: string
+        readonly sessionType: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
       }
     }
   | {
@@ -3174,6 +3207,7 @@ export type ModelsListOutput = {
     readonly id: string
     readonly providerID: string
     readonly family?: string
+    readonly tier?: "micro" | "tiny" | "small" | "medium" | "large" | "frontier"
     readonly name: string
     readonly api:
       | {
@@ -3533,6 +3567,149 @@ export type CredentialsRemoveInput = {
 }
 
 export type CredentialsRemoveOutput = void
+
+export type MessengerListDriversOutput = ReadonlyArray<{
+  readonly id: string
+  readonly name: string
+  readonly icon: string
+  readonly auth: "key" | "oauth" | "none"
+  readonly settings: ReadonlyArray<
+    | {
+        readonly type: "text"
+        readonly key: string
+        readonly message: string
+        readonly placeholder?: string
+        readonly when?: { readonly key: string; readonly op: "eq" | "neq"; readonly value: string }
+      }
+    | {
+        readonly type: "select"
+        readonly key: string
+        readonly message: string
+        readonly options: ReadonlyArray<{ readonly label: string; readonly value: string; readonly hint?: string }>
+        readonly when?: { readonly key: string; readonly op: "eq" | "neq"; readonly value: string }
+      }
+  >
+  readonly capabilities: {
+    readonly listChats: "full" | "seen" | "none"
+    readonly files: {
+      readonly up: boolean
+      readonly down: boolean
+      readonly maxBytes?: number | "Infinity" | "-Infinity" | "NaN"
+    }
+    readonly edits: boolean
+    readonly typing: boolean
+    readonly threads: boolean
+    readonly moderation: {
+      readonly delete: boolean
+      readonly ban: boolean
+      readonly kick: boolean
+      readonly mute: boolean
+      readonly pin: boolean
+    }
+    readonly format: "plain" | "markdown" | "html"
+    readonly maxChars: number | "Infinity" | "-Infinity" | "NaN"
+    readonly maxBytes?: number | "Infinity" | "-Infinity" | "NaN"
+  }
+}>
+
+export type MessengerListAccountsOutput = ReadonlyArray<{
+  readonly account: {
+    readonly id: string
+    readonly driverID: string
+    readonly label: string
+    readonly enabled: boolean
+    readonly credentialID?: string
+    readonly settings: { readonly [x: string]: string }
+  }
+  readonly status:
+    | { readonly state: "disabled" }
+    | { readonly state: "airgapped" }
+    | { readonly state: "connecting" }
+    | { readonly state: "connected" }
+    | { readonly state: "backoff"; readonly until: number | "Infinity" | "-Infinity" | "NaN"; readonly message: string }
+    | { readonly state: "error"; readonly message: string }
+}>
+
+export type MessengerCreateAccountInput = {
+  readonly driverID: {
+    readonly driverID: string
+    readonly label: string
+    readonly enabled: boolean
+    readonly settings: { readonly [x: string]: string }
+    readonly secret?: string | undefined
+  }["driverID"]
+  readonly label: {
+    readonly driverID: string
+    readonly label: string
+    readonly enabled: boolean
+    readonly settings: { readonly [x: string]: string }
+    readonly secret?: string | undefined
+  }["label"]
+  readonly enabled: {
+    readonly driverID: string
+    readonly label: string
+    readonly enabled: boolean
+    readonly settings: { readonly [x: string]: string }
+    readonly secret?: string | undefined
+  }["enabled"]
+  readonly settings: {
+    readonly driverID: string
+    readonly label: string
+    readonly enabled: boolean
+    readonly settings: { readonly [x: string]: string }
+    readonly secret?: string | undefined
+  }["settings"]
+  readonly secret?: {
+    readonly driverID: string
+    readonly label: string
+    readonly enabled: boolean
+    readonly settings: { readonly [x: string]: string }
+    readonly secret?: string | undefined
+  }["secret"]
+}
+
+export type MessengerCreateAccountOutput = {
+  readonly id: string
+  readonly driverID: string
+  readonly label: string
+  readonly enabled: boolean
+  readonly credentialID?: string
+  readonly settings: { readonly [x: string]: string }
+}
+
+export type MessengerUpdateAccountInput = {
+  readonly accountID: { readonly accountID: string }["accountID"]
+  readonly label?: {
+    readonly label?: string | undefined
+    readonly enabled?: boolean | undefined
+    readonly settings?: { readonly [x: string]: string } | undefined
+    readonly secret?: string | undefined
+  }["label"]
+  readonly enabled?: {
+    readonly label?: string | undefined
+    readonly enabled?: boolean | undefined
+    readonly settings?: { readonly [x: string]: string } | undefined
+    readonly secret?: string | undefined
+  }["enabled"]
+  readonly settings?: {
+    readonly label?: string | undefined
+    readonly enabled?: boolean | undefined
+    readonly settings?: { readonly [x: string]: string } | undefined
+    readonly secret?: string | undefined
+  }["settings"]
+  readonly secret?: {
+    readonly label?: string | undefined
+    readonly enabled?: boolean | undefined
+    readonly settings?: { readonly [x: string]: string } | undefined
+    readonly secret?: string | undefined
+  }["secret"]
+}
+
+export type MessengerUpdateAccountOutput = void
+
+export type MessengerRemoveAccountInput = { readonly accountID: { readonly accountID: string }["accountID"] }
+
+export type MessengerRemoveAccountOutput = void
 
 export type PermissionsListRequestsInput = {
   readonly location?: {

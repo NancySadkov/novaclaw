@@ -9,6 +9,7 @@ import { FileSystemWatcher } from "./filesystem-watcher"
 import { InstallationEvent } from "./installation-event"
 import { Integration } from "./integration"
 import { McpEvent } from "./mcp-event"
+import { Messenger } from "./messenger"
 import { ModelsDev } from "./models-dev"
 import { Permission } from "./permission"
 import { PermissionRuleset } from "./permission-ruleset"
@@ -51,6 +52,7 @@ const featureDefinitions = Event.inventory(
   ...FileSystemWatcher.Event.Definitions,
   ...Pty.Event.Definitions,
   ...Question.Event.Definitions,
+  ...Messenger.Event.Definitions,
 )
 
 export const ServerDefinitions = Event.inventory(

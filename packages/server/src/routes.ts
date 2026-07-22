@@ -10,6 +10,9 @@ import { SessionV2 } from "@novaclaw/core/session"
 import { SessionTags } from "@novaclaw/core/session/tags"
 import { SessionExecution } from "@novaclaw/core/session/execution"
 import { LocationServiceMap } from "@novaclaw/core/location-service-map"
+import { MessengerDrivers } from "@novaclaw/core/messenger/drivers"
+import { MessengerGateway } from "@novaclaw/core/messenger/gateway"
+import { MessengerStore } from "@novaclaw/core/messenger/store"
 import { SessionExecutionLocal } from "@novaclaw/core/session/execution/local"
 import { ToolOutputStore } from "@novaclaw/core/tool-output-store"
 import { HttpRouter, HttpServer } from "effect/unstable/http"
@@ -37,6 +40,9 @@ const applicationServices = LayerNode.group([
   Credential.node,
   PtyEnvironment.node,
   LocationServiceMap.node,
+  MessengerStore.node,
+  MessengerDrivers.node,
+  MessengerGateway.node,
 ])
 
 export function createRoutes(password?: string) {
