@@ -95,6 +95,7 @@ export const dict = {
     "This removes it and any saved credentials from this device. You can reconnect later.",
   "settings.providers.export.action": "Export",
   "settings.providers.import.action": "Import",
+  "home.sessions.new": "New Session",
   "settings.general.row.configIO.title": "Configuration file",
   "settings.general.row.configIO.description":
     "Export this instance's full configuration as a file, or import one. Model API keys ride along — treat exports as secrets.",

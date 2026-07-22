@@ -641,25 +641,10 @@ export function NewHome() {
           class="min-h-0 min-w-0 flex-1 flex flex-col pt-6 lg:pt-10 relative"
           aria-label={language.t("sidebar.project.recentSessions")}
         >
-          <div class="relative flex items-center justify-center pb-5 pt-1 select-none">
-            <h1 class="text-[20px] font-semibold tracking-tight text-v2-text-text-base">
-              {language.t("home.sessions.title")}
-            </h1>
-            {/* Owner 2026-07-22: the Chats page must offer chat CREATION directly — the old
-                empty-state-only New Agent routed back to the launcher. Same spawn flow as the
-                home bar (scratch cwd, reuse-empty-draft, opens the composer). */}
-            <ButtonV2
-              size="small"
-              variant="gold"
-              class="absolute right-0"
-              disabled={!newAgent.ready() || newAgent.spawning()}
-              onClick={() => void newAgent.spawn()}
-            >
-              <Icon name="plus-small" size="small" />
-              {language.t("command.session.new")}
-            </ButtonV2>
-          </div>
-          <div class="mt-3 flex min-w-0 items-start gap-2">
+          {/* Owner 2026-07-22: no "Sessions" heading — the page is self-evident; the top is ONE
+              functional row (tag filter · sort · New Session). The button uses the same spawn
+              flow as the home bar (scratch cwd, reuse-empty-draft, opens the composer). */}
+          <div class="flex min-w-0 items-start gap-2 pt-1">
             <Show when={(tagUniverse()?.length ?? 0) > 0}>
               <div data-slot="home-tag-filter" class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
               <button
@@ -708,6 +693,16 @@ export function NewHome() {
                 )}
               </For>
             </div>
+            <ButtonV2
+              size="small"
+              variant="gold"
+              class="shrink-0"
+              disabled={!newAgent.ready() || newAgent.spawning()}
+              onClick={() => void newAgent.spawn()}
+            >
+              <Icon name="plus-small" size="small" />
+              {language.t("home.sessions.new")}
+            </ButtonV2>
           </div>
           <ScrollView
             class="mt-3 -mr-3 min-h-0 flex-1 relative"
