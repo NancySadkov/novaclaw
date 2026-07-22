@@ -129,10 +129,12 @@ describe("EmailOAuth response parsing", () => {
 // ── raw IMAP/SMTP pure helpers (the testable half of the live-gated wire client) ──────────────────
 
 describe("EmailImapSmtp pure helpers", () => {
-  it.effect("xoauth2 encodes the SASL initial response", () =>
+  it.effect("xoauth2 + saslPlain encode the SASL initial responses (token vs app-password auth)", () =>
     Effect.sync(() => {
-      const encoded = EmailImapSmtp.xoauth2("me@outlook.com", "TOKEN")
-      expect(Buffer.from(encoded, "base64").toString("utf8")).toBe("user=me@outlook.com\x01auth=Bearer TOKEN\x01\x01")
+      const xo = EmailImapSmtp.xoauth2("me@outlook.com", "TOKEN")
+      expect(Buffer.from(xo, "base64").toString("utf8")).toBe("user=me@outlook.com\x01auth=Bearer TOKEN\x01\x01")
+      const plain = EmailImapSmtp.saslPlain("me@gmail.com", "app-pass")
+      expect(Buffer.from(plain, "base64").toString("utf8")).toBe("\x00me@gmail.com\x00app-pass")
     }),
   )
 
@@ -266,6 +268,7 @@ const makeFakeMail = () => {
       uidValidity: state.uidValidity,
       messages: state.inbox.filter((email) => email.uid > sinceUid),
     }),
+    fetchRecent: async (limit: number) => ({ messages: state.inbox.slice(-limit) }),
     send: async (email) => {
       state.sent.push(email)
       return { messageID: `sent-${state.sent.length}` }
@@ -274,8 +277,8 @@ const makeFakeMail = () => {
       state.closed = true
     },
   }
-  const factory = async (config: { auth: { accessToken?: string } }) => {
-    state.auth = config.auth.accessToken
+  const factory = async (config: { auth: { accessToken?: string; password?: string } }) => {
+    state.auth = config.auth.accessToken ?? (config.auth.password ? `pw:${config.auth.password}` : undefined)
     return client
   }
   return { factory, state }
@@ -456,6 +459,66 @@ describe("EmailDriver connect (IMAP poll → thread mapping → SMTP reply)", ()
       const failure = yield* driver.connect(ctxFor(signedIn, { value: undefined })).pipe(Effect.scoped, Effect.flip)
       expect(failure._tag).toBe("MessengerDriver.ChallengeError")
       if (failure._tag === "MessengerDriver.ChallengeError") expect(failure.message).toContain("sign in again")
+    }),
+  )
+
+  it.live("an app-password credential uses Basic Auth (no OAuth) — Gmail/generic path", () =>
+    Effect.gen(function* () {
+      const oauth = makeFakeOAuth()
+      const mail = makeFakeMail()
+      // A Gmail-style account: no clientId, the secret is the app password itself (not OAuth JSON).
+      const gmail = new Messenger.AccountInfo({
+        id: Messenger.AccountID.make("msa_gmail"),
+        driverID: "email",
+        label: "Gmail",
+        enabled: true,
+        settings: { email: "me@gmail.com", imapHost: "imap.gmail.com", smtpHost: "smtp.gmail.com" },
+      })
+      const driver = EmailDriver.make(mail.factory, oauth.factory, { pollIntervalMs: 5 })
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          yield* driver.connect({
+            account: gmail,
+            secret: "abcd efgh ijkl mnop", // the app password
+            cursor: { get: () => Effect.succeed(undefined), set: () => Effect.void },
+          })
+          // The password reached the transport as Basic Auth; OAuth was NOT invoked.
+          expect(mail.state.auth).toBe("pw:abcd efgh ijkl mnop")
+          expect(oauth.state.refreshed).toBe(0)
+        }),
+      )
+    }),
+  )
+
+  it.live("history + listChats read recent inbox mail (the agent's 'summarize my emails' path)", () =>
+    Effect.gen(function* () {
+      const oauth = makeFakeOAuth()
+      const mail = makeFakeMail()
+      mail.state.inbox = [
+        email({ uid: 1, messageID: "a", subject: "Invoice #42", fromAddress: "billing@acme.com", fromName: "Acme Billing", text: "Please pay." }),
+        email({ uid: 2, messageID: "b", subject: "Re: Logo", fromAddress: "client@studio.com", fromName: "Studio", references: ["root"], text: "Looks great!" }),
+      ]
+      const driver = EmailDriver.make(mail.factory, oauth.factory, { pollIntervalMs: 5 })
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const conn = yield* driver.connect(ctxFor(signedIn, { value: undefined }))
+          if (conn.history === undefined || conn.listChats === undefined) throw new Error("email driver must expose read ops")
+
+          const hist = yield* conn.history("inbox", 10)
+          expect(hist.map((h) => h.senderName)).toEqual(["Acme Billing", "Studio"])
+          expect(hist[0]?.text).toContain("Subject: Invoice #42")
+          expect(hist[0]?.text).toContain("Please pay.")
+
+          const chats = yield* conn.listChats()
+          expect(chats.map((c) => c.title)).toEqual(["Invoice #42 — Acme Billing", "Logo — Studio"])
+          expect(chats[1]?.chatID).toBe("root") // threaded reply → References root
+
+          // Reading also remembers the thread, so a reply now addresses the right person.
+          const reply = yield* conn.send("root", { text: "thanks!" })
+          expect(reply.messageID).toBe("sent-1")
+          expect(mail.state.sent[0]).toMatchObject({ to: "client@studio.com", subject: "Re: Logo" })
+        }),
+      )
     }),
   )
 })

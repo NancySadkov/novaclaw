@@ -19,6 +19,18 @@ import type { EmailClient, EmailClientFactory, EmailTransportConfig, OutboundEma
 export const xoauth2 = (user: string, accessToken: string): string =>
   Buffer.from(`user=${user}\x01auth=Bearer ${accessToken}\x01\x01`, "utf8").toString("base64")
 
+/** The SASL PLAIN initial response (base64) — `\0user\0password` — for Basic-Auth providers
+ *  (Gmail/Fastmail/Zoho app passwords, local test servers). The transport picks XOAUTH2 when an
+ *  access token is present, PLAIN when a password is. */
+export const saslPlain = (user: string, password: string): string =>
+  Buffer.from(`\x00${user}\x00${password}`, "utf8").toString("base64")
+
+/** The IMAP AUTHENTICATE argument for this account's auth kind (XOAUTH2 token vs PLAIN password). */
+const imapAuth = (auth: { user: string; accessToken?: string; password?: string }): string =>
+  auth.accessToken !== undefined && auth.accessToken.length > 0
+    ? `AUTHENTICATE XOAUTH2 ${xoauth2(auth.user, auth.accessToken)}`
+    : `AUTHENTICATE PLAIN ${saslPlain(auth.user, auth.password ?? "")}`
+
 /** Unfold RFC 5322 headers (a continuation line starts with SP/TAB) and index them lower-cased.
  *  Only the header BLOCK is passed (everything before the blank line). Repeated headers keep the
  *  first (fine for the fields we read). */
@@ -278,7 +290,7 @@ const connectStream = async (host: string, port: number, tls: boolean): Promise<
 
 const HEADER_FIELDS = "MESSAGE-ID IN-REPLY-TO REFERENCES FROM SUBJECT DATE"
 
-const imapConnect = async (config: EmailTransportConfig): Promise<{ stream: ByteStream; uidValidity: number }> => {
+const imapConnect = async (config: EmailTransportConfig): Promise<{ stream: ByteStream; uidValidity: number; exists: number }> => {
   const stream = await connectStream(config.imapHost, config.imapPort, config.secure !== false)
   await stream.line() // greeting (* OK ...)
   let tag = 0
@@ -303,15 +315,18 @@ const imapConnect = async (config: EmailTransportConfig): Promise<{ stream: Byte
       lines.push(raw)
     }
   }
-  await command(`AUTHENTICATE XOAUTH2 ${xoauth2(config.auth.user, config.auth.accessToken ?? "")}`)
+  await command(imapAuth(config.auth))
   let uidValidity = 0
+  let exists = 0
   await command("SELECT INBOX", {
     collectUntagged: (raw) => {
-      const match = /UIDVALIDITY (\d+)/i.exec(raw)
-      if (match) uidValidity = Number(match[1])
+      const validity = /UIDVALIDITY (\d+)/i.exec(raw)
+      if (validity) uidValidity = Number(validity[1])
+      const count = /^\* (\d+) EXISTS/i.exec(raw)
+      if (count) exists = Number(count[1])
     },
   })
-  return { stream, uidValidity }
+  return { stream, uidValidity, exists }
 }
 
 // Parse one FETCH item block (the lines between a `* n FETCH (` and its close) into headers+text via
@@ -344,8 +359,18 @@ const smtpSend = async (config: EmailTransportConfig, mime: string, to: string):
     stream.write(`EHLO novaclaw\r\n`)
     await expect("250")
   }
-  stream.write(`AUTH XOAUTH2 ${xoauth2(config.auth.user, config.auth.accessToken ?? "")}\r\n`)
-  await expect("235")
+  if (config.auth.accessToken !== undefined && config.auth.accessToken.length > 0) {
+    stream.write(`AUTH XOAUTH2 ${xoauth2(config.auth.user, config.auth.accessToken)}\r\n`)
+    await expect("235")
+  } else {
+    // Basic-Auth (app password): AUTH LOGIN — server prompts (334) for base64 user then password.
+    stream.write(`AUTH LOGIN\r\n`)
+    await expect("334")
+    stream.write(`${Buffer.from(config.auth.user, "utf8").toString("base64")}\r\n`)
+    await expect("334")
+    stream.write(`${Buffer.from(config.auth.password ?? "", "utf8").toString("base64")}\r\n`)
+    await expect("235")
+  }
   stream.write(`MAIL FROM:<${config.auth.user}>\r\n`)
   await expect("250")
   stream.write(`RCPT TO:<${to}>\r\n`)
@@ -363,16 +388,17 @@ let outSeq = 0
 export const factory: EmailClientFactory = async (config: EmailTransportConfig): Promise<EmailClient> => {
   const { stream, uidValidity } = await imapConnect(config)
   let tag = 100
-  const fetchSince: EmailClient["fetchSince"] = async (sinceUid) => {
+
+  // Run one FETCH command (UID FETCH or sequence FETCH) and parse its items — the literal-aware
+  // read loop shared by fetchSince (new mail) and fetchRecent (last N, for the read ops).
+  const runFetch = async (fetchCommand: string): Promise<RawEmail[]> => {
     const id = `b${++tag}`
-    const range = `${sinceUid + 1}:*`
-    stream.write(`${id} UID FETCH ${range} (UID BODY.PEEK[HEADER.FIELDS (${HEADER_FIELDS})] BODY.PEEK[TEXT])\r\n`)
+    stream.write(`${id} ${fetchCommand}\r\n`)
     const messages: RawEmail[] = []
     let current = ""
     const flush = () => {
       const parsed = current.trim().length > 0 ? extractFetch(current) : undefined
-      if (parsed && parsed.uid > sinceUid)
-        messages.push(assembleEmail({ uid: parsed.uid, headerBlock: parsed.headerBlock, text: parsed.text, fallbackAt: Date.now() }))
+      if (parsed) messages.push(assembleEmail({ uid: parsed.uid, headerBlock: parsed.headerBlock, text: parsed.text, fallbackAt: Date.now() }))
       current = ""
     }
     while (true) {
@@ -385,7 +411,7 @@ export const factory: EmailClientFactory = async (config: EmailTransportConfig):
       }
       if (raw.startsWith(`${id} `)) {
         flush()
-        if (!/^\S+\s+OK/i.test(raw)) throw new Error(`IMAP UID FETCH failed: ${raw}`)
+        if (!/^\S+\s+OK/i.test(raw)) throw new Error(`IMAP FETCH failed: ${raw}`)
         break
       }
       if (/^\* \d+ FETCH/i.test(raw)) {
@@ -393,12 +419,38 @@ export const factory: EmailClientFactory = async (config: EmailTransportConfig):
         current = raw
       } else current += "\n" + raw
     }
+    return messages
+  }
+  const BODY = `(UID BODY.PEEK[HEADER.FIELDS (${HEADER_FIELDS})] BODY.PEEK[TEXT])`
+
+  const fetchSince: EmailClient["fetchSince"] = async (sinceUid) => {
+    const messages = (await runFetch(`UID FETCH ${sinceUid + 1}:* ${BODY}`)).filter((m) => m.uid > sinceUid)
     return { uidValidity, messages }
+  }
+  // The last `limit` inbox messages (a fresh SELECT refreshes the EXISTS count) — the read ops
+  // (history / listChats) that let an agent "summarize my recent emails" without waiting for new mail.
+  const fetchRecent: EmailClient["fetchRecent"] = async (limit) => {
+    let exists = 0
+    await runFetch("NOOP").catch(() => [])
+    // A cheap re-SELECT to learn the current message count, then a sequence-number range for the tail.
+    const id = `b${++tag}`
+    stream.write(`${id} SELECT INBOX\r\n`)
+    while (true) {
+      const raw = await stream.line()
+      const count = /^\* (\d+) EXISTS/i.exec(raw)
+      if (count) exists = Number(count[1])
+      if (raw.startsWith(`${id} `)) break
+    }
+    if (exists === 0) return { messages: [] }
+    const start = Math.max(1, exists - limit + 1)
+    const messages = await runFetch(`FETCH ${start}:${exists} ${BODY}`)
+    // Newest last (chronological), matching the history contract.
+    return { messages }
   }
   const send: EmailClient["send"] = async (email) => {
     const messageID = `novaclaw-${Date.now()}-${++outSeq}@${config.auth.user.split("@")[1] ?? "novaclaw.local"}`
     await smtpSend(config, buildMime(email, config.auth.user, messageID), email.to)
     return { messageID }
   }
-  return { fetchSince, send, close: async () => stream.close() }
+  return { fetchSince, fetchRecent, send, close: async () => stream.close() }
 }

@@ -26,7 +26,7 @@ import { ChallengeError, ConnectError, LoginCodeError, SendError } from "../driv
 // (for providers/local servers that still allow it), but the shipped auth is OAuth.
 
 const CAPS: Messenger.Capabilities = {
-  listChats: "none", // a mailbox isn't an enumerable chat list; threads accumulate from traffic
+  listChats: "full", // we can list recent inbox threads on demand (fetchRecent), so an agent can read
   files: { up: false, down: false }, // MIME attachments are P9 residue (text threads first)
   edits: false,
   typing: false,
@@ -68,6 +68,9 @@ export interface EmailClient {
   /** Fetch messages with UID strictly greater than `sinceUid` (0 = all). Returns the mailbox's
    *  current UIDVALIDITY so a validity CHANGE (mailbox rebuilt) resets the cursor, never drops mail. */
   readonly fetchSince: (sinceUid: number) => Promise<{ readonly uidValidity: number; readonly messages: readonly RawEmail[] }>
+  /** The last `limit` inbox messages, newest last — the READ path an agent uses to summarize recent
+   *  mail without waiting for new arrivals (drives the `history`/`listChats` ops). */
+  readonly fetchRecent: (limit: number) => Promise<{ readonly messages: readonly RawEmail[] }>
   readonly send: (email: OutboundEmail) => Promise<{ readonly messageID: string }>
   readonly close: () => Promise<void>
 }
@@ -214,7 +217,8 @@ interface EmailAccountConfig {
   readonly imapPort: number
   readonly smtpHost: string
   readonly smtpPort: number
-  readonly clientId: string
+  /** Present only for the OAuth (login) auth path; a Basic-Auth (app-password) account omits it. */
+  readonly clientId: string | undefined
   readonly tenant: string
 }
 
@@ -239,20 +243,15 @@ const parseAccountConfig = (account: Messenger.AccountInfo): Effect.Effect<Email
     const clientId = (account.settings["clientId"] ?? "").trim()
     if (email.length === 0)
       return yield* Effect.fail(new ConnectError({ reason: "This email account needs the mailbox address — fill it in Settings → Messengers." }))
-    if (clientId.length === 0)
-      return yield* Effect.fail(
-        new ConnectError({
-          reason:
-            "This email account needs an OAuth client ID (from an Azure app registration) — Microsoft requires OAuth for Outlook/365. Add it in Settings → Messengers.",
-        }),
-      )
+    // clientId is required ONLY for the OAuth path (Outlook/365); a Basic-Auth (app-password)
+    // account leaves it empty. connect() enforces the OAuth requirement when it takes that branch.
     const port = (key: string, fallback: number) => {
       const value = Number((account.settings[key] ?? "").trim())
       return Number.isInteger(value) && value > 0 && value <= 65535 ? value : fallback
     }
     return {
       email,
-      clientId,
+      clientId: clientId.length > 0 ? clientId : undefined,
       imapHost: (account.settings["imapHost"] ?? "").trim() || DEFAULTS.imapHost,
       imapPort: port("imapPort", DEFAULTS.imapPort),
       smtpHost: (account.settings["smtpHost"] ?? "").trim() || DEFAULTS.smtpHost,
@@ -289,14 +288,21 @@ export const make = (
   options?: { readonly pollIntervalMs?: number },
 ): Driver => {
   const pollIntervalMs = options?.pollIntervalMs ?? POLL_INTERVAL_MS
-  const oauthFor = (config: EmailAccountConfig): OAuthClient =>
-    oauthFactory({ clientId: config.clientId, tenant: config.tenant, scopes: OAUTH_SCOPES, email: config.email })
+  const oauthFor = (config: EmailAccountConfig, clientId: string): OAuthClient =>
+    oauthFactory({ clientId, tenant: config.tenant, scopes: OAUTH_SCOPES, email: config.email })
 
   const login: LoginSupport = {
     begin: ({ account }) =>
       Effect.gen(function* () {
         const config = yield* parseAccountConfig(account)
-        const oauth = oauthFor(config)
+        if (config.clientId === undefined)
+          return yield* Effect.fail(
+            new ConnectError({
+              reason:
+                "OAuth sign-in needs a client ID (an Azure app registration). Add it in Settings, or use an app-password account instead (paste the password as the secret — no OAuth).",
+            }),
+          )
+        const oauth = oauthFor(config, config.clientId)
         const start = yield* Effect.tryPromise({
           try: () => oauth.startDeviceCode(),
           catch: (error) => new ConnectError({ reason: `Could not start Microsoft sign-in: ${String(error)}` }),
@@ -337,24 +343,32 @@ export const make = (
       const config = yield* parseAccountConfig(ctx.account)
       if (ctx.secret === undefined || ctx.secret.length === 0)
         return yield* Effect.fail(
-          new ConnectError({ reason: "This mailbox isn't signed in yet — finish the Microsoft sign-in in Settings → Messengers." }),
-        )
-      const stored = parseStored(ctx.secret)
-      if (stored === undefined)
-        return yield* Effect.fail(
-          new ConnectError({ reason: "This mailbox's saved sign-in is unreadable — sign in again in Settings → Messengers." }),
+          new ConnectError({ reason: "This mailbox isn't signed in yet — sign in (or paste an app password) in Settings → Messengers." }),
         )
 
-      // Refresh the OAuth token → the XOAUTH2 access token. A refresh failure that isn't transient
-      // (revoked consent, password change) is a CHALLENGE: park for the operator, never spin.
-      const oauth = oauthFor(config)
-      const token = yield* Effect.tryPromise({
-        try: () => oauth.refresh(stored.refreshToken),
-        catch: (error) =>
-          new ChallengeError({
-            message: `Microsoft rejected the saved sign-in for ${config.email} (${String(error)}) — sign in again in Settings → Messengers.`,
-          }),
-      })
+      // Two auth kinds behind one driver (§0.2): the stored credential is EITHER our OAuth JSON
+      // (Outlook/365 — refresh → XOAUTH2) OR a plain app password (Gmail/Fastmail/Zoho/generic —
+      // Basic Auth). Detect by shape; the transport picks XOAUTH2 or SASL PLAIN from which field is set.
+      const stored = parseStored(ctx.secret)
+      const auth: EmailAuth = yield* stored !== undefined
+        ? Effect.gen(function* () {
+            if (config.clientId === undefined)
+              return yield* Effect.fail(
+                new ConnectError({ reason: "This OAuth mailbox is missing its client ID — re-add it in Settings → Messengers." }),
+              )
+            // Refresh the OAuth token → the XOAUTH2 access token. A non-transient refresh failure
+            // (revoked consent, password change) is a CHALLENGE: park for the operator, never spin.
+            const oauth = oauthFor(config, config.clientId)
+            const token = yield* Effect.tryPromise({
+              try: () => oauth.refresh(stored.refreshToken),
+              catch: (error) =>
+                new ChallengeError({
+                  message: `Microsoft rejected the saved sign-in for ${config.email} (${String(error)}) — sign in again in Settings → Messengers.`,
+                }),
+            })
+            return { user: config.email, accessToken: token.accessToken } satisfies EmailAuth
+          })
+        : Effect.succeed({ user: config.email, password: ctx.secret } satisfies EmailAuth)
 
       const client = yield* Effect.acquireRelease(
         Effect.tryPromise({
@@ -364,7 +378,7 @@ export const make = (
               imapPort: config.imapPort,
               smtpHost: config.smtpHost,
               smtpPort: config.smtpPort,
-              auth: { user: config.email, accessToken: token.accessToken },
+              auth,
             }),
           catch: (error) => new ConnectError({ reason: `Could not reach the mail server for ${config.email}: ${String(error)}` }),
         }),
@@ -441,7 +455,54 @@ export const make = (
           return { messageID: last.messageID || `email-out-${sentSeq}` }
         })
 
-      return { inbound: Stream.fromQueue(queue), send } satisfies Connection
+      // The READ ops (the integration use case: an agent summarizing recent mail). `history` returns
+      // the last `limit` inbox emails as chronological entries; `listChats` presents recent threads
+      // so the agent can see what's in the inbox. Both remember reply state so a subsequent reply
+      // addresses the right person (email is otherwise reply-only).
+      const recent = (limit: number) =>
+        Effect.tryPromise({
+          try: () => client.fetchRecent(Math.max(1, Math.min(limit, 50))),
+          catch: (error) => new ConnectError({ reason: `Could not read recent mail for ${config.email}: ${String(error)}` }),
+        }).pipe(
+          Effect.tap((batch) =>
+            Effect.sync(() => {
+              for (const mail of batch.messages) {
+                const event = toInbound(mail, config.email)
+                if (event.kind === "message" && event.sender.isSelf !== true) threads.set(event.chat.chatID, threadStateFrom(mail))
+              }
+            }),
+          ),
+        )
+
+      const history = (_chatID: string, limit: number) =>
+        recent(limit).pipe(
+          Effect.map((batch) =>
+            batch.messages.map((mail) => {
+              const isSelf = mail.fromAddress.trim().toLowerCase() === config.email.trim().toLowerCase()
+              return {
+                messageID: mail.messageID,
+                senderID: mail.fromAddress,
+                senderName: mail.fromName?.trim() || mail.fromAddress,
+                outgoing: isSelf,
+                text: `${mail.subject ? `Subject: ${mail.subject}\n` : ""}${mail.text}`,
+                at: mail.at,
+              }
+            }),
+          ),
+        )
+
+      const listChats = () =>
+        recent(20).pipe(
+          Effect.map((batch) =>
+            batch.messages.map((mail) => ({
+              chatID: threadRoot(mail),
+              kind: "thread" as const,
+              title: normalizeSubject(mail.subject) + ` — ${mail.fromName?.trim() || mail.fromAddress}`,
+            })),
+          ),
+        )
+
+      return { inbound: Stream.fromQueue(queue), send, history, listChats } satisfies Connection
     })
 
   return {
