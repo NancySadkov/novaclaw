@@ -11,6 +11,7 @@ import type {
   SessionMessageSystem,
   SessionMessageUser,
 } from "@novaclaw/sdk/v2"
+import { isSteerText, stripSteerProvenance } from "@novaclaw/core/session/steer-provenance"
 import { Markdown } from "../../components/markdown"
 import { reasoningOpenDefault, toolOpenDefault, type ReasoningFoldMode } from "../reasoning-fold"
 import { BasicToolV2 } from "./basic-tool-v2"
@@ -77,7 +78,13 @@ export function NativeTranscript(props: {
 function NativeMessage(props: { message: SessionMessage }) {
   return (
     <Switch>
-      <Match when={props.message.type === "user" && props.message}>{(m) => <UserMessage message={m()} />}</Match>
+      <Match when={props.message.type === "user" && props.message}>
+        {(m) => (
+          <Show when={!isSteerText(m().text)} fallback={<SteerMessage text={stripSteerProvenance(m().text)} />}>
+            <UserMessage message={m()} />
+          </Show>
+        )}
+      </Match>
       <Match when={props.message.type === "assistant" && props.message}>
         {(m) => <AssistantMessage message={m()} />}
       </Match>
@@ -118,6 +125,23 @@ function UserMessage(props: { message: SessionMessageUser }) {
         </Show>
       </div>
     </div>
+  )
+}
+
+/**
+ * A harness-injected steer (the 1N provenance prefix marks it — doom-loop redirects, affective
+ * nudges, denial redirects). It reaches the model as a user-role message, but it is NOT the user
+ * speaking, so the transcript folds it away like reasoning instead of showing a user bubble —
+ * a curious reader can expand it; nobody gets barked at by their own harness.
+ */
+function SteerMessage(props: { text: string }) {
+  return (
+    <details data-slot="native-notice" data-kind="steer">
+      <summary>Automated nudge</summary>
+      <div data-slot="native-notice-body">
+        <Markdown text={props.text} />
+      </div>
+    </details>
   )
 }
 

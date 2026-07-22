@@ -1592,10 +1592,11 @@ export const dict = {
     "Text injected into the session when the judge answers YES. Empty = the default redirect.",
   "settings.affective.title": "Affective",
   "settings.affective.description":
-    "Emotion-modulated sampling: a per-session mood (derived from tool errors, repeated actions, and time-on-task) nudges temperature and related sampling parameters around the model's baseline, and injects a redirect when frustration runs high.",
+    "Emotion-modulated sampling: a per-session mood (derived from tool errors, repeated actions, and time-on-task) nudges temperature and related sampling parameters around the model's baseline. Unattended agent runs additionally get a redirect nudge when frustration or urgency runs high — attended chats never do.",
   "settings.affective.toast.failed": "Saving affective settings failed",
   "settings.affective.row.enabled.title": "Enable affective mode",
-  "settings.affective.row.enabled.description": "Modulate sampling by session mood and nudge on frustration/urgency.",
+  "settings.affective.row.enabled.description":
+    "Modulate sampling by session mood; unattended agent runs also get a nudge on frustration/urgency.",
   "settings.affective.row.temperature.title": "Baseline temperature",
   "settings.affective.row.temperature.description":
     "Calm-state temperature used when the model config sets none. Empty = 0.7.",

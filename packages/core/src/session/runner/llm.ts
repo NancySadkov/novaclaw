@@ -42,7 +42,8 @@ import { SessionSchema } from "../schema"
 import { SessionStore } from "../store"
 import { SessionTitle } from "../title"
 
-import { resolveSessionConfig, EFFECTIVE_CONFIG_DEFAULTS, type EffectiveConfig } from "../config-resolve"
+import { resolveSessionConfig, rootSessionType, EFFECTIVE_CONFIG_DEFAULTS, type EffectiveConfig } from "../config-resolve"
+import { AgentJail } from "../../agent-jail"
 import { SessionScheduler } from "../scheduler"
 import { type RunError, Service } from "./index"
 import { SessionRunnerModel } from "./model"
@@ -674,9 +675,18 @@ export const layer = Layer.effect(
             extended: affectiveConfig?.extended === true,
           },
         )
+        // Behavioural nudges ("act NOW", "stop repeating") are pressure for a model working
+        // ALONE. In an ATTENDED chain the user is present and talking IS the deliverable —
+        // urgency climbs on every talk-only step and never decays, so a normal discussion
+        // used to trip the "stop deliberating" steer within a few replies. Attendance is the
+        // chain ROOT's property (the Agent Jail doctrine — AgentJail.attendedRoot); sampling
+        // modulation above stays active either way.
         const nudge = Affective.intervention(mood)
         const wasCalm = Affective.intervention(previous) === undefined
-        if (nudge && wasCalm) yield* SessionInput.steer(db, events, session.id, nudge)
+        if (nudge && wasCalm) {
+          const rootType = yield* rootSessionType(session.id, (id) => store.get(id as SessionSchema.ID))
+          if (!AgentJail.attendedRoot(rootType)) yield* SessionInput.steer(db, events, session.id, nudge)
+        }
       }
       const fullRequest = LLM.request({
         model,

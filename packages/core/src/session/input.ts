@@ -81,18 +81,15 @@ export const admit = Effect.fn("SessionInput.admit")(function* (
 })
 
 /**
- * 1N (codehamr A1) — every harness-injected steer carries this provenance prefix. A ~30B model
- * reads a bare mid-turn injected message as an *empty user turn* and just stops; naming the note as
- * an automated check (not the user speaking) keeps it acting. Baked into `steer` itself so EVERY
- * consumer inherits it — doom-loop redirects, forgiving-loop nudges, denial redirects, introspection
- * and affective interjections. (Our steers already project to a `user`-role message on the wire — see
+ * 1N (codehamr A1) — the provenance prefix baked into `steer` itself so EVERY consumer inherits
+ * it: doom-loop redirects, forgiving-loop nudges, denial redirects, introspection and affective
+ * interjections. (Our steers already project to a `user`-role message on the wire — see
  * `to-llm-message.ts` — so codehamr's separate wire-demotion pass is unnecessary here.)
+ * Definitions live in the pure `steer-provenance` module so the browser renderer can import
+ * them without dragging this module's db/Effect graph; re-exported here for existing callers.
  */
-export const STEER_PROVENANCE_PREFIX = "[Automated NovaClaw check — not a message from your user.] "
-
-/** Prepend the 1N provenance prefix unless the text already carries it (idempotent). */
-export const applySteerProvenance = (text: string) =>
-  text.startsWith(STEER_PROVENANCE_PREFIX) ? text : STEER_PROVENANCE_PREFIX + text
+export { STEER_PROVENANCE_PREFIX, applySteerProvenance } from "./steer-provenance"
+import { applySteerProvenance } from "./steer-provenance"
 
 /**
  * F2 — inject a one-shot **steer** nudge (promoted on the next turn). The shared primitive
