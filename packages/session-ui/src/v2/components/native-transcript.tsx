@@ -12,6 +12,7 @@ import type {
   SessionMessageUser,
 } from "@novaclaw/sdk/v2"
 import { isSteerText, stripSteerProvenance } from "@novaclaw/core/session/steer-provenance"
+import { SessionOrigin } from "@novaclaw/core/session/origin"
 import { Markdown } from "../../components/markdown"
 import { reasoningOpenDefault, toolOpenDefault, type ReasoningFoldMode } from "../reasoning-fold"
 import { BasicToolV2 } from "./basic-tool-v2"
@@ -107,9 +108,23 @@ function NativeMessage(props: { message: SessionMessage }) {
 // ── user ───────────────────────────────────────────────────────────────────────
 
 function UserMessage(props: { message: SessionMessageUser }) {
+  // P6: a remote/delegated turn shows a sender badge from its structured origin; a local-user turn
+  // (no origin) shows nothing extra. The stored text is clean — the model-facing provenance header
+  // is applied at lowering, not here.
+  const badge = () => SessionOrigin.badge(props.message.origin)
   return (
     <div data-slot="native-user">
       <div data-slot="native-user-bubble">
+        <Show when={badge()}>
+          {(b) => (
+            <div data-slot="native-user-origin" data-tone={b().tone}>
+              <span data-slot="native-user-origin-label">{b().label}</span>
+              <Show when={b().detail}>
+                <span data-slot="native-user-origin-detail">{b().detail}</span>
+              </Show>
+            </div>
+          )}
+        </Show>
         <Show when={props.message.text.trim()}>
           <Markdown text={props.message.text} />
         </Show>

@@ -47,6 +47,9 @@ export const User = Schema.Struct({
   text: Prompt.fields.text,
   files: Prompt.fields.files,
   agents: Prompt.fields.agents,
+  // Provenance (P6) — carried onto the message record so lowering renders the model header and the
+  // UI renders a sender badge. Absent = the local human.
+  origin: Prompt.fields.origin,
   type: Schema.Literal("user"),
 }).annotate({ identifier: "Session.Message.User" })
 

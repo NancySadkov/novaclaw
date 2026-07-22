@@ -69,6 +69,9 @@ export type Event =
   | EventQuestionV2Asked
   | EventQuestionV2Replied
   | EventQuestionV2Rejected
+  | EventMessengerAccountStatus
+  | EventMessengerChatSeen
+  | EventMessengerBindingUpdated
   | EventTodoUpdated
   | EventSessionTagsUpdated
   | EventPermissionAsked
@@ -158,6 +161,7 @@ export type Prompt = {
   text: string
   files?: Array<PromptFileAttachment>
   agents?: Array<PromptAgentAttachment>
+  origin?: PromptOrigin
 }
 
 export type Pty = {
@@ -898,6 +902,30 @@ export type GlobalEvent = {
       }
     | {
         id: string
+        type: "messenger.account.status"
+        properties: {
+          accountID: string
+          status: MessengerAccountStatus2
+        }
+      }
+    | {
+        id: string
+        type: "messenger.chat.seen"
+        properties: {
+          accountID: string
+          chatID: string
+        }
+      }
+    | {
+        id: string
+        type: "messenger.binding.updated"
+        properties: {
+          bindingID: string
+          sessionID: string
+        }
+      }
+    | {
+        id: string
         type: "todo.updated"
         properties: {
           sessionID: string
@@ -1553,6 +1581,7 @@ export type PromptInput = {
   text: string
   files?: Array<PromptInputFileAttachment>
   agents?: Array<PromptAgentAttachment>
+  origin?: PromptOrigin
 }
 
 export type ConflictError = {
@@ -1630,6 +1659,24 @@ export type ProviderNotFoundError = {
   _tag: "ProviderNotFoundError"
   providerID: string
   message: string
+}
+
+export type MessengerAccountStatus = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "messenger.account.status"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    accountID: string
+    status: MessengerAccountStatus1
+  }
 }
 
 export type SessionStatus2 = {
@@ -1752,6 +1799,9 @@ export type V2Event =
   | QuestionV2Asked
   | QuestionV2Replied
   | QuestionV2Rejected
+  | MessengerAccountStatus
+  | MessengerChatSeen
+  | MessengerBindingUpdated
   | TodoUpdated
   | SessionTagsUpdated
   | PermissionAsked
@@ -1913,6 +1963,27 @@ export type PromptAgentAttachment = {
   source?: PromptSource
 }
 
+export type PromptOrigin =
+  | {
+      via: "agent"
+      sessionID: string
+      label?: string
+    }
+  | {
+      via: "messenger"
+      driver: string
+      accountID: string
+      chatID: string
+      chatKind?: string
+      chatTitle?: string
+      senderID: string
+      senderName: string
+      messageID: string
+      replyTo?: string
+      trust: "operator" | "client" | "audience"
+      at?: number
+    }
+
 export type SessionMessageAgentSwitched = {
   id: string
   metadata?: {
@@ -1948,6 +2019,7 @@ export type SessionMessageUser = {
   text: string
   files?: Array<PromptFileAttachment>
   agents?: Array<PromptAgentAttachment>
+  origin?: PromptOrigin
   type: "user"
 }
 
@@ -2218,6 +2290,33 @@ export type QuestionV2Tool = {
 }
 
 export type QuestionV2Answer = Array<string>
+
+export type MessengerAccountStatus2 =
+  | {
+      state: "disabled"
+    }
+  | {
+      state: "airgapped"
+    }
+  | {
+      state: "connecting"
+    }
+  | {
+      state: "connected"
+    }
+  | {
+      state: "backoff"
+      until: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      message: string
+    }
+  | {
+      state: "challenge"
+      message: string
+    }
+  | {
+      state: "error"
+      message: string
+    }
 
 export type EventServerInstanceDisposed = {
   id: string
@@ -4449,6 +4548,88 @@ export type IntegrationAttemptStatus =
       }
     }
 
+export type MessengerAuth = "login" | "key" | "none"
+
+export type MessengerCapabilities = {
+  listChats: "full" | "seen" | "none"
+  files: {
+    up: boolean
+    down: boolean
+    maxBytes?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+  edits: boolean
+  typing: boolean
+  threads: boolean
+  moderation: {
+    delete: boolean
+    ban: boolean
+    kick: boolean
+    mute: boolean
+    pin: boolean
+  }
+  format: "plain" | "markdown" | "html"
+  maxChars: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  maxBytes?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type MessengerDriverMeta = {
+  id: string
+  name: string
+  icon: string
+  auth: MessengerAuth
+  settings: Array<IntegrationTextPrompt | IntegrationSelectPrompt>
+  loginPrompts?: Array<IntegrationTextPrompt | IntegrationSelectPrompt>
+  capabilities: MessengerCapabilities
+}
+
+export type MessengerAccountInfo = {
+  id: string
+  driverID: string
+  label: string
+  enabled: boolean
+  credentialID?: string
+  settings: {
+    [key: string]: string
+  }
+}
+
+export type MessengerAccountWithStatus = {
+  account: MessengerAccountInfo
+  status: MessengerAccountStatus2
+}
+
+export type MessengerChatKind = "dm" | "group" | "channel" | "thread" | "mailbox" | "topic"
+
+export type MessengerChatInfo = {
+  accountID: string
+  chatID: string
+  kind: MessengerChatKind
+  title: string
+  lastSeen: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type MessengerTrust = "operator" | "client" | "audience"
+
+export type MessengerBindingStatus = "active" | "paused"
+
+export type MessengerBindingInfo = {
+  id: string
+  accountID: string
+  chatID: string
+  sessionID: string
+  trust: MessengerTrust
+  status: MessengerBindingStatus
+}
+
+export type MessengerLoginAttempt = {
+  attemptID: string
+  instructions: string
+  time: {
+    created: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    expires: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+}
+
 export type PermissionV2Request = {
   id: string
   sessionID: string
@@ -5007,6 +5188,69 @@ export type QuestionV2Rejected = {
   data: {
     sessionID: string
     requestID: string
+  }
+}
+
+export type MessengerAccountStatus1 =
+  | {
+      state: "disabled"
+    }
+  | {
+      state: "airgapped"
+    }
+  | {
+      state: "connecting"
+    }
+  | {
+      state: "connected"
+    }
+  | {
+      state: "backoff"
+      until: number | "NaN" | "Infinity" | "-Infinity"
+      message: string
+    }
+  | {
+      state: "challenge"
+      message: string
+    }
+  | {
+      state: "error"
+      message: string
+    }
+
+export type MessengerChatSeen = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "messenger.chat.seen"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    accountID: string
+    chatID: string
+  }
+}
+
+export type MessengerBindingUpdated = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "messenger.binding.updated"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    bindingID: string
+    sessionID: string
   }
 }
 
@@ -6080,6 +6324,33 @@ export type EventQuestionV2Rejected = {
   properties: {
     sessionID: string
     requestID: string
+  }
+}
+
+export type EventMessengerAccountStatus = {
+  id: string
+  type: "messenger.account.status"
+  properties: {
+    accountID: string
+    status: MessengerAccountStatus1
+  }
+}
+
+export type EventMessengerChatSeen = {
+  id: string
+  type: "messenger.chat.seen"
+  properties: {
+    accountID: string
+    chatID: string
+  }
+}
+
+export type EventMessengerBindingUpdated = {
+  id: string
+  type: "messenger.binding.updated"
+  properties: {
+    bindingID: string
+    sessionID: string
   }
 }
 
@@ -11790,6 +12061,475 @@ export type V2CredentialUpdateResponses = {
 }
 
 export type V2CredentialUpdateResponse = V2CredentialUpdateResponses[keyof V2CredentialUpdateResponses]
+
+export type V2MessengerDriverListData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/messenger/driver"
+}
+
+export type V2MessengerDriverListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2MessengerDriverListError = V2MessengerDriverListErrors[keyof V2MessengerDriverListErrors]
+
+export type V2MessengerDriverListResponses = {
+  /**
+   * Success
+   */
+  200: Array<MessengerDriverMeta>
+}
+
+export type V2MessengerDriverListResponse = V2MessengerDriverListResponses[keyof V2MessengerDriverListResponses]
+
+export type V2MessengerAccountListData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/messenger/account"
+}
+
+export type V2MessengerAccountListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2MessengerAccountListError = V2MessengerAccountListErrors[keyof V2MessengerAccountListErrors]
+
+export type V2MessengerAccountListResponses = {
+  /**
+   * Success
+   */
+  200: Array<MessengerAccountWithStatus>
+}
+
+export type V2MessengerAccountListResponse = V2MessengerAccountListResponses[keyof V2MessengerAccountListResponses]
+
+export type V2MessengerAccountCreateData = {
+  body: {
+    driverID: string
+    label: string
+    enabled: boolean
+    settings: {
+      [key: string]: string
+    }
+    secret?: string
+  }
+  path?: never
+  query?: never
+  url: "/api/messenger/account"
+}
+
+export type V2MessengerAccountCreateErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2MessengerAccountCreateError = V2MessengerAccountCreateErrors[keyof V2MessengerAccountCreateErrors]
+
+export type V2MessengerAccountCreateResponses = {
+  /**
+   * Messenger.AccountInfo
+   */
+  200: MessengerAccountInfo
+}
+
+export type V2MessengerAccountCreateResponse =
+  V2MessengerAccountCreateResponses[keyof V2MessengerAccountCreateResponses]
+
+export type V2MessengerAccountRemoveData = {
+  body?: never
+  path: {
+    accountID: string
+  }
+  query?: never
+  url: "/api/messenger/account/{accountID}"
+}
+
+export type V2MessengerAccountRemoveErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2MessengerAccountRemoveError = V2MessengerAccountRemoveErrors[keyof V2MessengerAccountRemoveErrors]
+
+export type V2MessengerAccountRemoveResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2MessengerAccountRemoveResponse =
+  V2MessengerAccountRemoveResponses[keyof V2MessengerAccountRemoveResponses]
+
+export type V2MessengerAccountUpdateData = {
+  body: {
+    label?: string
+    enabled?: boolean
+    settings?: {
+      [key: string]: string
+    }
+    secret?: string
+  }
+  path: {
+    accountID: string
+  }
+  query?: never
+  url: "/api/messenger/account/{accountID}"
+}
+
+export type V2MessengerAccountUpdateErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2MessengerAccountUpdateError = V2MessengerAccountUpdateErrors[keyof V2MessengerAccountUpdateErrors]
+
+export type V2MessengerAccountUpdateResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2MessengerAccountUpdateResponse =
+  V2MessengerAccountUpdateResponses[keyof V2MessengerAccountUpdateResponses]
+
+export type V2MessengerAccountPairData = {
+  body: {
+    trust: "operator" | "client"
+  }
+  path: {
+    accountID: string
+  }
+  query?: never
+  url: "/api/messenger/account/{accountID}/pair"
+}
+
+export type V2MessengerAccountPairErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2MessengerAccountPairError = V2MessengerAccountPairErrors[keyof V2MessengerAccountPairErrors]
+
+export type V2MessengerAccountPairResponses = {
+  /**
+   * Success
+   */
+  200: {
+    code: string
+    expiresAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+}
+
+export type V2MessengerAccountPairResponse = V2MessengerAccountPairResponses[keyof V2MessengerAccountPairResponses]
+
+export type V2MessengerAccountChatsData = {
+  body?: never
+  path: {
+    accountID: string
+  }
+  query?: never
+  url: "/api/messenger/account/{accountID}/chats"
+}
+
+export type V2MessengerAccountChatsErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2MessengerAccountChatsError = V2MessengerAccountChatsErrors[keyof V2MessengerAccountChatsErrors]
+
+export type V2MessengerAccountChatsResponses = {
+  /**
+   * Success
+   */
+  200: {
+    ok: boolean
+    chats: Array<MessengerChatInfo>
+    reason?: string
+  }
+}
+
+export type V2MessengerAccountChatsResponse = V2MessengerAccountChatsResponses[keyof V2MessengerAccountChatsResponses]
+
+export type V2MessengerBindingListData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/messenger/binding"
+}
+
+export type V2MessengerBindingListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2MessengerBindingListError = V2MessengerBindingListErrors[keyof V2MessengerBindingListErrors]
+
+export type V2MessengerBindingListResponses = {
+  /**
+   * Success
+   */
+  200: Array<{
+    binding: MessengerBindingInfo
+    chatTitle?: string
+  }>
+}
+
+export type V2MessengerBindingListResponse = V2MessengerBindingListResponses[keyof V2MessengerBindingListResponses]
+
+export type V2MessengerBindingCreateData = {
+  body: {
+    accountID: string
+    chatID: string
+    sessionID: string
+    trust: MessengerTrust
+    steal?: boolean
+  }
+  path?: never
+  query?: never
+  url: "/api/messenger/binding"
+}
+
+export type V2MessengerBindingCreateErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2MessengerBindingCreateError = V2MessengerBindingCreateErrors[keyof V2MessengerBindingCreateErrors]
+
+export type V2MessengerBindingCreateResponses = {
+  /**
+   * Messenger.BindingInfo
+   */
+  200: MessengerBindingInfo
+}
+
+export type V2MessengerBindingCreateResponse =
+  V2MessengerBindingCreateResponses[keyof V2MessengerBindingCreateResponses]
+
+export type V2MessengerBindingRemoveData = {
+  body?: never
+  path: {
+    bindingID: string
+  }
+  query?: never
+  url: "/api/messenger/binding/{bindingID}"
+}
+
+export type V2MessengerBindingRemoveErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2MessengerBindingRemoveError = V2MessengerBindingRemoveErrors[keyof V2MessengerBindingRemoveErrors]
+
+export type V2MessengerBindingRemoveResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2MessengerBindingRemoveResponse =
+  V2MessengerBindingRemoveResponses[keyof V2MessengerBindingRemoveResponses]
+
+export type V2MessengerLoginBeginData = {
+  body: {
+    inputs: {
+      [key: string]: string
+    }
+  }
+  path: {
+    accountID: string
+  }
+  query?: never
+  url: "/api/messenger/account/{accountID}/login"
+}
+
+export type V2MessengerLoginBeginErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2MessengerLoginBeginError = V2MessengerLoginBeginErrors[keyof V2MessengerLoginBeginErrors]
+
+export type V2MessengerLoginBeginResponses = {
+  /**
+   * Messenger.LoginAttempt
+   */
+  200: MessengerLoginAttempt
+}
+
+export type V2MessengerLoginBeginResponse = V2MessengerLoginBeginResponses[keyof V2MessengerLoginBeginResponses]
+
+export type V2MessengerLoginCancelData = {
+  body?: never
+  path: {
+    attemptID: string
+  }
+  query?: never
+  url: "/api/messenger/login/{attemptID}"
+}
+
+export type V2MessengerLoginCancelErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2MessengerLoginCancelError = V2MessengerLoginCancelErrors[keyof V2MessengerLoginCancelErrors]
+
+export type V2MessengerLoginCancelResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2MessengerLoginCancelResponse = V2MessengerLoginCancelResponses[keyof V2MessengerLoginCancelResponses]
+
+export type V2MessengerLoginStatusData = {
+  body?: never
+  path: {
+    attemptID: string
+  }
+  query?: never
+  url: "/api/messenger/login/{attemptID}"
+}
+
+export type V2MessengerLoginStatusErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2MessengerLoginStatusError = V2MessengerLoginStatusErrors[keyof V2MessengerLoginStatusErrors]
+
+export type V2MessengerLoginStatusResponses = {
+  /**
+   * Integration.AttemptStatus
+   */
+  200: IntegrationAttemptStatus
+}
+
+export type V2MessengerLoginStatusResponse = V2MessengerLoginStatusResponses[keyof V2MessengerLoginStatusResponses]
+
+export type V2MessengerLoginCompleteData = {
+  body: {
+    code: string
+  }
+  path: {
+    attemptID: string
+  }
+  query?: never
+  url: "/api/messenger/login/{attemptID}/complete"
+}
+
+export type V2MessengerLoginCompleteErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2MessengerLoginCompleteError = V2MessengerLoginCompleteErrors[keyof V2MessengerLoginCompleteErrors]
+
+export type V2MessengerLoginCompleteResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2MessengerLoginCompleteResponse =
+  V2MessengerLoginCompleteResponses[keyof V2MessengerLoginCompleteResponses]
 
 export type V2PermissionRequestListData = {
   body?: never

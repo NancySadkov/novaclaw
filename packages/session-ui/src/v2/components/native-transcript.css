@@ -32,6 +32,25 @@
   background: var(--v2-background-bg-layer-02);
   border: 1px solid var(--v2-border-border-muted);
 }
+/* P6: the sender badge on a remote/delegated turn. `tone` distinguishes an untrusted source. */
+[data-slot="native-user-origin"] {
+  display: flex;
+  align-items: baseline;
+  gap: 0.375rem;
+  margin-bottom: 0.375rem;
+  font-size: var(--font-size-small);
+  color: var(--v2-text-text-muted);
+}
+[data-slot="native-user-origin-label"] {
+  font-weight: 560;
+}
+[data-slot="native-user-origin"][data-tone="client"] [data-slot="native-user-origin-label"],
+[data-slot="native-user-origin"][data-tone="audience"] [data-slot="native-user-origin-label"] {
+  color: var(--v2-state-fg-warning);
+}
+[data-slot="native-user-origin-detail"] {
+  color: var(--v2-text-text-faint);
+}
 [data-slot="native-user-attachments"] {
   display: flex;
   flex-wrap: wrap;

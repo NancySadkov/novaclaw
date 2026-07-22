@@ -142,6 +142,7 @@ import type {
   MemorySearchResponses,
   MemoryStatsErrors,
   MemoryStatsResponses,
+  MessengerTrust,
   ModelRef,
   MoveSessionDestination,
   PathGetErrors,
@@ -253,6 +254,34 @@ import type {
   V2IntegrationListResponses,
   V2LocationGetErrors,
   V2LocationGetResponses,
+  V2MessengerAccountChatsErrors,
+  V2MessengerAccountChatsResponses,
+  V2MessengerAccountCreateErrors,
+  V2MessengerAccountCreateResponses,
+  V2MessengerAccountListErrors,
+  V2MessengerAccountListResponses,
+  V2MessengerAccountPairErrors,
+  V2MessengerAccountPairResponses,
+  V2MessengerAccountRemoveErrors,
+  V2MessengerAccountRemoveResponses,
+  V2MessengerAccountUpdateErrors,
+  V2MessengerAccountUpdateResponses,
+  V2MessengerBindingCreateErrors,
+  V2MessengerBindingCreateResponses,
+  V2MessengerBindingListErrors,
+  V2MessengerBindingListResponses,
+  V2MessengerBindingRemoveErrors,
+  V2MessengerBindingRemoveResponses,
+  V2MessengerDriverListErrors,
+  V2MessengerDriverListResponses,
+  V2MessengerLoginBeginErrors,
+  V2MessengerLoginBeginResponses,
+  V2MessengerLoginCancelErrors,
+  V2MessengerLoginCancelResponses,
+  V2MessengerLoginCompleteErrors,
+  V2MessengerLoginCompleteResponses,
+  V2MessengerLoginStatusErrors,
+  V2MessengerLoginStatusResponses,
   V2ModelListErrors,
   V2ModelListResponses,
   V2PermissionRequestListErrors,
@@ -6187,6 +6216,448 @@ export class Credential extends HeyApiClient {
   }
 }
 
+export class Driver extends HeyApiClient {
+  /**
+   * List messenger drivers
+   *
+   * Retrieve the installed messenger platform drivers and their capabilities.
+   */
+  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      V2MessengerDriverListResponses,
+      V2MessengerDriverListErrors,
+      ThrowOnError
+    >({ url: "/api/messenger/driver", ...options })
+  }
+}
+
+export class Account extends HeyApiClient {
+  /**
+   * List messenger accounts
+   *
+   * Retrieve every configured messenger account with its live connection status.
+   */
+  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      V2MessengerAccountListResponses,
+      V2MessengerAccountListErrors,
+      ThrowOnError
+    >({ url: "/api/messenger/account", ...options })
+  }
+
+  /**
+   * Create messenger account
+   *
+   * Configure a messenger account for an installed driver. The optional secret (bot token, API key) is stored in the credential store and never returned.
+   */
+  public create<ThrowOnError extends boolean = false>(
+    parameters?: {
+      driverID?: string
+      label?: string
+      enabled?: boolean
+      settings?: {
+        [key: string]: string
+      }
+      secret?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "body", key: "driverID" },
+            { in: "body", key: "label" },
+            { in: "body", key: "enabled" },
+            { in: "body", key: "settings" },
+            { in: "body", key: "secret" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      V2MessengerAccountCreateResponses,
+      V2MessengerAccountCreateErrors,
+      ThrowOnError
+    >({
+      url: "/api/messenger/account",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Remove messenger account
+   *
+   * Remove a messenger account, its stored credential, seen chats, contacts, bindings, and cursor.
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      accountID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "accountID" }] }])
+    return (options?.client ?? this.client).delete<
+      V2MessengerAccountRemoveResponses,
+      V2MessengerAccountRemoveErrors,
+      ThrowOnError
+    >({
+      url: "/api/messenger/account/{accountID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Update messenger account
+   *
+   * Update a messenger account's label, enabled state, settings, or stored secret.
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      accountID: string
+      label?: string
+      enabled?: boolean
+      settings?: {
+        [key: string]: string
+      }
+      secret?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "accountID" },
+            { in: "body", key: "label" },
+            { in: "body", key: "enabled" },
+            { in: "body", key: "settings" },
+            { in: "body", key: "secret" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).patch<
+      V2MessengerAccountUpdateResponses,
+      V2MessengerAccountUpdateErrors,
+      ThrowOnError
+    >({
+      url: "/api/messenger/account/{accountID}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Mint pairing code
+   *
+   * Mint a single-use, 10-minute pairing code. A remote sender redeems it with /pair <code> in a DM to become a paired contact at the chosen trust.
+   */
+  public pair<ThrowOnError extends boolean = false>(
+    parameters: {
+      accountID: string
+      trust?: "operator" | "client"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "accountID" },
+            { in: "body", key: "trust" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      V2MessengerAccountPairResponses,
+      V2MessengerAccountPairErrors,
+      ThrowOnError
+    >({
+      url: "/api/messenger/account/{accountID}/pair",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * List an account's chats
+   *
+   * The account's known chats — the live driver list where the platform allows enumeration (seeding the seen-cache), else the seen-cache. `ok:false` carries a plain-words reason (not connected, nothing seen yet).
+   */
+  public chats<ThrowOnError extends boolean = false>(
+    parameters: {
+      accountID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "accountID" }] }])
+    return (options?.client ?? this.client).get<
+      V2MessengerAccountChatsResponses,
+      V2MessengerAccountChatsErrors,
+      ThrowOnError
+    >({
+      url: "/api/messenger/account/{accountID}/chats",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class Binding extends HeyApiClient {
+  /**
+   * List chat bindings
+   *
+   * Every live session↔chat binding on this instance, with the chat's human title from the seen-cache where known.
+   */
+  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      V2MessengerBindingListResponses,
+      V2MessengerBindingListErrors,
+      ThrowOnError
+    >({ url: "/api/messenger/binding", ...options })
+  }
+
+  /**
+   * Bind a session to a chat
+   *
+   * Link a session to a remote chat at an explicit trust tier (operator | client | audience — always user-chosen, never inferred). One session per chat: if the chat is already bound the call fails naming the holding session; pass steal:true to rebind deliberately.
+   */
+  public create<ThrowOnError extends boolean = false>(
+    parameters?: {
+      accountID?: string
+      chatID?: string
+      sessionID?: string
+      trust?: MessengerTrust
+      steal?: boolean
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "body", key: "accountID" },
+            { in: "body", key: "chatID" },
+            { in: "body", key: "sessionID" },
+            { in: "body", key: "trust" },
+            { in: "body", key: "steal" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      V2MessengerBindingCreateResponses,
+      V2MessengerBindingCreateErrors,
+      ThrowOnError
+    >({
+      url: "/api/messenger/binding",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Unbind a chat
+   *
+   * Remove a session↔chat binding. The chat stops driving (or reporting to) the session immediately.
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      bindingID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "bindingID" }] }])
+    return (options?.client ?? this.client).delete<
+      V2MessengerBindingRemoveResponses,
+      V2MessengerBindingRemoveErrors,
+      ThrowOnError
+    >({
+      url: "/api/messenger/binding/{bindingID}",
+      ...options,
+      ...params,
+    })
+  }
+}
+
+export class Login extends HeyApiClient {
+  /**
+   * Begin messenger login
+   *
+   * Start a login-auth attempt for an account whose driver signs into the user's own messenger account (inputs answer the driver's loginPrompts — e.g. phone and optional 2FA password). The provider sends a confirmation code; complete the attempt with it.
+   */
+  public begin<ThrowOnError extends boolean = false>(
+    parameters: {
+      accountID: string
+      inputs?: {
+        [key: string]: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "accountID" },
+            { in: "body", key: "inputs" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      V2MessengerLoginBeginResponses,
+      V2MessengerLoginBeginErrors,
+      ThrowOnError
+    >({
+      url: "/api/messenger/account/{accountID}/login",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Cancel messenger login
+   *
+   * Abandon a pending messenger login attempt and release its resources.
+   */
+  public cancel<ThrowOnError extends boolean = false>(
+    parameters: {
+      attemptID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "attemptID" }] }])
+    return (options?.client ?? this.client).delete<
+      V2MessengerLoginCancelResponses,
+      V2MessengerLoginCancelErrors,
+      ThrowOnError
+    >({
+      url: "/api/messenger/login/{attemptID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Messenger login attempt status
+   *
+   * Retrieve the state of a pending or recently finished messenger login attempt.
+   */
+  public status<ThrowOnError extends boolean = false>(
+    parameters: {
+      attemptID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "attemptID" }] }])
+    return (options?.client ?? this.client).get<
+      V2MessengerLoginStatusResponses,
+      V2MessengerLoginStatusErrors,
+      ThrowOnError
+    >({
+      url: "/api/messenger/login/{attemptID}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Complete messenger login
+   *
+   * Finish a login attempt with the confirmation code the provider sent. On success the session credential is stored and the account reconnects; a mistyped code keeps the attempt pending (error kind messenger_login_retry).
+   */
+  public complete<ThrowOnError extends boolean = false>(
+    parameters: {
+      attemptID: string
+      code?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "attemptID" },
+            { in: "body", key: "code" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      V2MessengerLoginCompleteResponses,
+      V2MessengerLoginCompleteErrors,
+      ThrowOnError
+    >({
+      url: "/api/messenger/login/{attemptID}/complete",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
+export class Messenger extends HeyApiClient {
+  private _driver?: Driver
+  get driver(): Driver {
+    return (this._driver ??= new Driver({ client: this.client }))
+  }
+
+  private _account?: Account
+  get account(): Account {
+    return (this._account ??= new Account({ client: this.client }))
+  }
+
+  private _binding?: Binding
+  get binding(): Binding {
+    return (this._binding ??= new Binding({ client: this.client }))
+  }
+
+  private _login?: Login
+  get login(): Login {
+    return (this._login ??= new Login({ client: this.client }))
+  }
+}
+
 export class Request extends HeyApiClient {
   /**
    * List pending permission requests
@@ -6781,6 +7252,11 @@ export class V2 extends HeyApiClient {
   private _credential?: Credential
   get credential(): Credential {
     return (this._credential ??= new Credential({ client: this.client }))
+  }
+
+  private _messenger?: Messenger
+  get messenger(): Messenger {
+    return (this._messenger ??= new Messenger({ client: this.client }))
   }
 
   private _permission?: Permission3

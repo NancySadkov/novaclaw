@@ -1,7 +1,7 @@
 export * as PromptInput from "./prompt-input"
 
 import { Schema } from "effect"
-import { AgentAttachment, Source } from "./prompt"
+import { AgentAttachment, Origin, Source } from "./prompt"
 import { optional, statics } from "./schema"
 
 export interface FileAttachment extends Schema.Schema.Type<typeof FileAttachment> {}
@@ -23,4 +23,7 @@ export const Prompt = Schema.Struct({
   text: Schema.String,
   files: Schema.Array(FileAttachment).pipe(optional),
   agents: Schema.Array(AgentAttachment).pipe(optional),
+  // Provenance of this input (the Messenger gateway sets it; local composer omits it — default
+  // "user"). Passed straight through to the durable Prompt (session.ts resolvePrompt).
+  origin: Origin.pipe(optional),
 }).annotate({ identifier: "PromptInput" })

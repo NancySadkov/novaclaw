@@ -8,6 +8,7 @@ import {
   type ProviderMetadata,
 } from "@novaclaw/llm"
 import { SessionMessage } from "../message"
+import { SessionOrigin } from "../origin"
 import type { FileAttachment } from "../prompt"
 
 const media = (file: FileAttachment): ContentPart => ({
@@ -160,7 +161,13 @@ function toLLMMessage(message: SessionMessage.Message, model: Model): Message[] 
         Message.make({
           id: message.id,
           role: "user",
-          content: [{ type: "text", text: message.text }, ...(message.files ?? []).map(attachment)],
+          // P6: the provenance header + untrusted-input framing are rendered HERE (from the
+          // structured origin), never baked into the stored text — so the model sees who wrote in
+          // and how much to trust it, while the transcript keeps clean text + a sender badge.
+          content: [
+            { type: "text", text: SessionOrigin.modelHeader(message.origin) + message.text },
+            ...(message.files ?? []).map(attachment),
+          ],
           metadata: {
             ...message.metadata,
             ...(message.agents?.length ? { agents: message.agents } : {}),

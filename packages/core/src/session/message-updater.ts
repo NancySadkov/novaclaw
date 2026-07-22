@@ -148,6 +148,7 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
             text: event.data.prompt.text,
             files: event.data.prompt.files,
             agents: event.data.prompt.agents,
+            origin: event.data.prompt.origin,
             time: { created: event.data.timestamp },
           }),
         )

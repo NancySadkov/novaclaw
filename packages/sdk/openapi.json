@@ -13050,6 +13050,984 @@
         ]
       }
     },
+    "/api/messenger/driver": {
+      "get": {
+        "tags": ["messenger"],
+        "operationId": "v2.messenger.driver.list",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MessengerDriverMeta"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Retrieve the installed messenger platform drivers and their capabilities.",
+        "summary": "List messenger drivers",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.messenger.driver.list({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/messenger/account": {
+      "get": {
+        "tags": ["messenger"],
+        "operationId": "v2.messenger.account.list",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MessengerAccountWithStatus"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Retrieve every configured messenger account with its live connection status.",
+        "summary": "List messenger accounts",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.messenger.account.list({\n  ...\n})"
+          }
+        ]
+      },
+      "post": {
+        "tags": ["messenger"],
+        "operationId": "v2.messenger.account.create",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Messenger.AccountInfo",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessengerAccountInfo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Configure a messenger account for an installed driver. The optional secret (bot token, API key) is stored in the credential store and never returned.",
+        "summary": "Create messenger account",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "driverID": {
+                    "type": "string"
+                  },
+                  "label": {
+                    "type": "string"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "settings": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "secret": {
+                    "type": "string"
+                  }
+                },
+                "required": ["driverID", "label", "enabled", "settings"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.messenger.account.create({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/messenger/account/{accountID}": {
+      "patch": {
+        "tags": ["messenger"],
+        "operationId": "v2.messenger.account.update",
+        "parameters": [
+          {
+            "name": "accountID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^msa_"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Update a messenger account's label, enabled state, settings, or stored secret.",
+        "summary": "Update messenger account",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "label": {
+                    "type": "string"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "settings": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  },
+                  "secret": {
+                    "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.messenger.account.update({\n  ...\n})"
+          }
+        ]
+      },
+      "delete": {
+        "tags": ["messenger"],
+        "operationId": "v2.messenger.account.remove",
+        "parameters": [
+          {
+            "name": "accountID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^msa_"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Remove a messenger account, its stored credential, seen chats, contacts, bindings, and cursor.",
+        "summary": "Remove messenger account",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.messenger.account.remove({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/messenger/account/{accountID}/pair": {
+      "post": {
+        "tags": ["messenger"],
+        "operationId": "v2.messenger.account.pair",
+        "parameters": [
+          {
+            "name": "accountID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^msa_"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "code": {
+                      "type": "string"
+                    },
+                    "expiresAt": {
+                      "anyOf": [
+                        {
+                          "type": "number"
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["NaN"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["-Infinity"]
+                        },
+                        {
+                          "type": "string",
+                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        }
+                      ]
+                    }
+                  },
+                  "required": ["code", "expiresAt"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Mint a single-use, 10-minute pairing code. A remote sender redeems it with /pair <code> in a DM to become a paired contact at the chosen trust.",
+        "summary": "Mint pairing code",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "trust": {
+                    "type": "string",
+                    "enum": ["operator", "client"]
+                  }
+                },
+                "required": ["trust"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.messenger.account.pair({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/messenger/account/{accountID}/chats": {
+      "get": {
+        "tags": ["messenger"],
+        "operationId": "v2.messenger.account.chats",
+        "parameters": [
+          {
+            "name": "accountID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^msa_"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "ok": {
+                      "type": "boolean"
+                    },
+                    "chats": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/MessengerChatInfo"
+                      }
+                    },
+                    "reason": {
+                      "type": "string"
+                    }
+                  },
+                  "required": ["ok", "chats"],
+                  "additionalProperties": false
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "The account's known chats — the live driver list where the platform allows enumeration (seeding the seen-cache), else the seen-cache. `ok:false` carries a plain-words reason (not connected, nothing seen yet).",
+        "summary": "List an account's chats",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.messenger.account.chats({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/messenger/binding": {
+      "get": {
+        "tags": ["messenger"],
+        "operationId": "v2.messenger.binding.list",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "binding": {
+                        "$ref": "#/components/schemas/MessengerBindingInfo"
+                      },
+                      "chatTitle": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["binding"],
+                    "additionalProperties": false
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Every live session↔chat binding on this instance, with the chat's human title from the seen-cache where known.",
+        "summary": "List chat bindings",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.messenger.binding.list({\n  ...\n})"
+          }
+        ]
+      },
+      "post": {
+        "tags": ["messenger"],
+        "operationId": "v2.messenger.binding.create",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Messenger.BindingInfo",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessengerBindingInfo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Link a session to a remote chat at an explicit trust tier (operator | client | audience — always user-chosen, never inferred). One session per chat: if the chat is already bound the call fails naming the holding session; pass steal:true to rebind deliberately.",
+        "summary": "Bind a session to a chat",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "accountID": {
+                    "type": "string",
+                    "pattern": "^msa_"
+                  },
+                  "chatID": {
+                    "type": "string"
+                  },
+                  "sessionID": {
+                    "type": "string"
+                  },
+                  "trust": {
+                    "$ref": "#/components/schemas/MessengerTrust"
+                  },
+                  "steal": {
+                    "type": "boolean"
+                  }
+                },
+                "required": ["accountID", "chatID", "sessionID", "trust"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.messenger.binding.create({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/messenger/binding/{bindingID}": {
+      "delete": {
+        "tags": ["messenger"],
+        "operationId": "v2.messenger.binding.remove",
+        "parameters": [
+          {
+            "name": "bindingID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^msb_"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Remove a session↔chat binding. The chat stops driving (or reporting to) the session immediately.",
+        "summary": "Unbind a chat",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.messenger.binding.remove({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/messenger/account/{accountID}/login": {
+      "post": {
+        "tags": ["messenger"],
+        "operationId": "v2.messenger.login.begin",
+        "parameters": [
+          {
+            "name": "accountID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^msa_"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Messenger.LoginAttempt",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MessengerLoginAttempt"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Start a login-auth attempt for an account whose driver signs into the user's own messenger account (inputs answer the driver's loginPrompts — e.g. phone and optional 2FA password). The provider sends a confirmation code; complete the attempt with it.",
+        "summary": "Begin messenger login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "inputs": {
+                    "type": "object",
+                    "additionalProperties": {
+                      "type": "string"
+                    }
+                  }
+                },
+                "required": ["inputs"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.messenger.login.begin({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/messenger/login/{attemptID}": {
+      "get": {
+        "tags": ["messenger"],
+        "operationId": "v2.messenger.login.status",
+        "parameters": [
+          {
+            "name": "attemptID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^mla_"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Integration.AttemptStatus",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IntegrationAttemptStatus"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Retrieve the state of a pending or recently finished messenger login attempt.",
+        "summary": "Messenger login attempt status",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.messenger.login.status({\n  ...\n})"
+          }
+        ]
+      },
+      "delete": {
+        "tags": ["messenger"],
+        "operationId": "v2.messenger.login.cancel",
+        "parameters": [
+          {
+            "name": "attemptID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^mla_"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Abandon a pending messenger login attempt and release its resources.",
+        "summary": "Cancel messenger login",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.messenger.login.cancel({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/messenger/login/{attemptID}/complete": {
+      "post": {
+        "tags": ["messenger"],
+        "operationId": "v2.messenger.login.complete",
+        "parameters": [
+          {
+            "name": "attemptID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^mla_"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Finish a login attempt with the confirmation code the provider sent. On success the session credential is stored and the account reconnects; a mistyped code keeps the attempt pending (error kind messenger_login_retry).",
+        "summary": "Complete messenger login",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "code": {
+                    "type": "string"
+                  }
+                },
+                "required": ["code"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.messenger.login.complete({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/permission/request": {
       "get": {
         "tags": ["permissions"],
@@ -15540,6 +16518,15 @@
             "$ref": "#/components/schemas/EventQuestionV2Rejected"
           },
           {
+            "$ref": "#/components/schemas/EventMessengerAccountStatus"
+          },
+          {
+            "$ref": "#/components/schemas/EventMessengerChatSeen"
+          },
+          {
+            "$ref": "#/components/schemas/EventMessengerBindingUpdated"
+          },
+          {
             "$ref": "#/components/schemas/EventTodoUpdated"
           },
           {
@@ -15809,6 +16796,9 @@
             "items": {
               "$ref": "#/components/schemas/PromptAgentAttachment"
             }
+          },
+          "origin": {
+            "$ref": "#/components/schemas/PromptOrigin"
           }
         },
         "required": ["text"],
@@ -18304,6 +19294,94 @@
                   },
                   "type": {
                     "type": "string",
+                    "enum": ["messenger.account.status"]
+                  },
+                  "properties": {
+                    "type": "object",
+                    "properties": {
+                      "accountID": {
+                        "type": "string",
+                        "pattern": "^msa_"
+                      },
+                      "status": {
+                        "$ref": "#/components/schemas/MessengerAccountStatus"
+                      }
+                    },
+                    "required": ["accountID", "status"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["id", "type", "properties"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^evt_"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": ["messenger.chat.seen"]
+                  },
+                  "properties": {
+                    "type": "object",
+                    "properties": {
+                      "accountID": {
+                        "type": "string",
+                        "pattern": "^msa_"
+                      },
+                      "chatID": {
+                        "type": "string"
+                      }
+                    },
+                    "required": ["accountID", "chatID"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["id", "type", "properties"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^evt_"
+                  },
+                  "type": {
+                    "type": "string",
+                    "enum": ["messenger.binding.updated"]
+                  },
+                  "properties": {
+                    "type": "object",
+                    "properties": {
+                      "bindingID": {
+                        "type": "string",
+                        "pattern": "^msb_"
+                      },
+                      "sessionID": {
+                        "type": "string",
+                        "pattern": "^ses"
+                      }
+                    },
+                    "required": ["bindingID", "sessionID"],
+                    "additionalProperties": false
+                  }
+                },
+                "required": ["id", "type", "properties"],
+                "additionalProperties": false
+              },
+              {
+                "type": "object",
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "pattern": "^evt_"
+                  },
+                  "type": {
+                    "type": "string",
                     "enum": ["todo.updated"]
                   },
                   "properties": {
@@ -20395,6 +21473,9 @@
             "items": {
               "$ref": "#/components/schemas/PromptAgentAttachment"
             }
+          },
+          "origin": {
+            "$ref": "#/components/schemas/PromptOrigin"
           }
         },
         "required": ["text"],
@@ -20626,6 +21707,57 @@
           }
         },
         "required": ["_tag", "providerID", "message"],
+        "additionalProperties": false
+      },
+      "messenger.account.status": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["messenger.account.status"]
+          },
+          "durable": {
+            "type": "object",
+            "properties": {
+              "aggregateID": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": ["aggregateID", "seq", "version"],
+            "additionalProperties": false
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationRef"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "accountID": {
+                "type": "string",
+                "pattern": "^msa_"
+              },
+              "status": {
+                "$ref": "#/components/schemas/MessengerAccountStatus1"
+              }
+            },
+            "required": ["accountID", "status"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "data"],
         "additionalProperties": false
       },
       "session.status": {
@@ -20982,6 +22114,15 @@
           },
           {
             "$ref": "#/components/schemas/QuestionV2Rejected"
+          },
+          {
+            "$ref": "#/components/schemas/messenger.account.status"
+          },
+          {
+            "$ref": "#/components/schemas/MessengerChatSeen"
+          },
+          {
+            "$ref": "#/components/schemas/MessengerBindingUpdated"
           },
           {
             "$ref": "#/components/schemas/TodoUpdated"
@@ -21461,6 +22602,72 @@
         "required": ["name"],
         "additionalProperties": false
       },
+      "PromptOrigin": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "via": {
+                "type": "string",
+                "enum": ["agent"]
+              },
+              "sessionID": {
+                "type": "string"
+              },
+              "label": {
+                "type": "string"
+              }
+            },
+            "required": ["via", "sessionID"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "via": {
+                "type": "string",
+                "enum": ["messenger"]
+              },
+              "driver": {
+                "type": "string"
+              },
+              "accountID": {
+                "type": "string"
+              },
+              "chatID": {
+                "type": "string"
+              },
+              "chatKind": {
+                "type": "string"
+              },
+              "chatTitle": {
+                "type": "string"
+              },
+              "senderID": {
+                "type": "string"
+              },
+              "senderName": {
+                "type": "string"
+              },
+              "messageID": {
+                "type": "string"
+              },
+              "replyTo": {
+                "type": "string"
+              },
+              "trust": {
+                "type": "string",
+                "enum": ["operator", "client", "audience"]
+              },
+              "at": {
+                "type": "number"
+              }
+            },
+            "required": ["via", "driver", "accountID", "chatID", "senderID", "senderName", "messageID", "trust"],
+            "additionalProperties": false
+          }
+        ]
+      },
       "SessionMessageAgentSwitched": {
         "type": "object",
         "properties": {
@@ -21557,6 +22764,9 @@
             "items": {
               "$ref": "#/components/schemas/PromptAgentAttachment"
             }
+          },
+          "origin": {
+            "$ref": "#/components/schemas/PromptOrigin"
           },
           "type": {
             "type": "string",
@@ -22252,6 +23462,119 @@
         "items": {
           "type": "string"
         }
+      },
+      "MessengerAccountStatus": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": ["disabled"]
+              }
+            },
+            "required": ["state"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": ["airgapped"]
+              }
+            },
+            "required": ["state"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": ["connecting"]
+              }
+            },
+            "required": ["state"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": ["connected"]
+              }
+            },
+            "required": ["state"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": ["backoff"]
+              },
+              "until": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": ["state", "until", "message"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": ["challenge"]
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": ["state", "message"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": ["error"]
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": ["state", "message"],
+            "additionalProperties": false
+          }
+        ]
       },
       "EventServerInstanceDisposed": {
         "type": "object",
@@ -29342,6 +30665,378 @@
           }
         ]
       },
+      "MessengerAuth": {
+        "type": "string",
+        "enum": ["login", "key", "none"]
+      },
+      "MessengerCapabilities": {
+        "type": "object",
+        "properties": {
+          "listChats": {
+            "type": "string",
+            "enum": ["full", "seen", "none"]
+          },
+          "files": {
+            "type": "object",
+            "properties": {
+              "up": {
+                "type": "boolean"
+              },
+              "down": {
+                "type": "boolean"
+              },
+              "maxBytes": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              }
+            },
+            "required": ["up", "down"],
+            "additionalProperties": false
+          },
+          "edits": {
+            "type": "boolean"
+          },
+          "typing": {
+            "type": "boolean"
+          },
+          "threads": {
+            "type": "boolean"
+          },
+          "moderation": {
+            "type": "object",
+            "properties": {
+              "delete": {
+                "type": "boolean"
+              },
+              "ban": {
+                "type": "boolean"
+              },
+              "kick": {
+                "type": "boolean"
+              },
+              "mute": {
+                "type": "boolean"
+              },
+              "pin": {
+                "type": "boolean"
+              }
+            },
+            "required": ["delete", "ban", "kick", "mute", "pin"],
+            "additionalProperties": false
+          },
+          "format": {
+            "type": "string",
+            "enum": ["plain", "markdown", "html"]
+          },
+          "maxChars": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "maxBytes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          }
+        },
+        "required": ["listChats", "files", "edits", "typing", "threads", "moderation", "format", "maxChars"],
+        "additionalProperties": false
+      },
+      "MessengerDriverMeta": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "icon": {
+            "type": "string"
+          },
+          "auth": {
+            "$ref": "#/components/schemas/MessengerAuth"
+          },
+          "settings": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/IntegrationTextPrompt"
+                },
+                {
+                  "$ref": "#/components/schemas/IntegrationSelectPrompt"
+                }
+              ]
+            }
+          },
+          "loginPrompts": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "$ref": "#/components/schemas/IntegrationTextPrompt"
+                },
+                {
+                  "$ref": "#/components/schemas/IntegrationSelectPrompt"
+                }
+              ]
+            }
+          },
+          "capabilities": {
+            "$ref": "#/components/schemas/MessengerCapabilities"
+          }
+        },
+        "required": ["id", "name", "icon", "auth", "settings", "capabilities"],
+        "additionalProperties": false
+      },
+      "MessengerAccountInfo": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^msa_"
+          },
+          "driverID": {
+            "type": "string"
+          },
+          "label": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "credentialID": {
+            "type": "string"
+          },
+          "settings": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["id", "driverID", "label", "enabled", "settings"],
+        "additionalProperties": false
+      },
+      "MessengerAccountWithStatus": {
+        "type": "object",
+        "properties": {
+          "account": {
+            "$ref": "#/components/schemas/MessengerAccountInfo"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MessengerAccountStatus"
+          }
+        },
+        "required": ["account", "status"],
+        "additionalProperties": false
+      },
+      "MessengerChatKind": {
+        "type": "string",
+        "enum": ["dm", "group", "channel", "thread", "mailbox", "topic"]
+      },
+      "MessengerChatInfo": {
+        "type": "object",
+        "properties": {
+          "accountID": {
+            "type": "string",
+            "pattern": "^msa_"
+          },
+          "chatID": {
+            "type": "string"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/MessengerChatKind"
+          },
+          "title": {
+            "type": "string"
+          },
+          "lastSeen": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          }
+        },
+        "required": ["accountID", "chatID", "kind", "title", "lastSeen"],
+        "additionalProperties": false
+      },
+      "MessengerTrust": {
+        "type": "string",
+        "enum": ["operator", "client", "audience"]
+      },
+      "MessengerBindingStatus": {
+        "type": "string",
+        "enum": ["active", "paused"]
+      },
+      "MessengerBindingInfo": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^msb_"
+          },
+          "accountID": {
+            "type": "string",
+            "pattern": "^msa_"
+          },
+          "chatID": {
+            "type": "string"
+          },
+          "sessionID": {
+            "type": "string",
+            "pattern": "^ses"
+          },
+          "trust": {
+            "$ref": "#/components/schemas/MessengerTrust"
+          },
+          "status": {
+            "$ref": "#/components/schemas/MessengerBindingStatus"
+          }
+        },
+        "required": ["id", "accountID", "chatID", "sessionID", "trust", "status"],
+        "additionalProperties": false
+      },
+      "MessengerLoginAttempt": {
+        "type": "object",
+        "properties": {
+          "attemptID": {
+            "type": "string",
+            "pattern": "^mla_"
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "time": {
+            "type": "object",
+            "properties": {
+              "created": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              },
+              "expires": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              }
+            },
+            "required": ["created", "expires"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["attemptID", "instructions", "time"],
+        "additionalProperties": false
+      },
       "PermissionV2Request": {
         "type": "object",
         "properties": {
@@ -30903,6 +32598,218 @@
               }
             },
             "required": ["sessionID", "requestID"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "data"],
+        "additionalProperties": false
+      },
+      "MessengerAccountStatus1": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": ["disabled"]
+              }
+            },
+            "required": ["state"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": ["airgapped"]
+              }
+            },
+            "required": ["state"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": ["connecting"]
+              }
+            },
+            "required": ["state"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": ["connected"]
+              }
+            },
+            "required": ["state"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": ["backoff"]
+              },
+              "until": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  }
+                ]
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": ["state", "until", "message"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": ["challenge"]
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": ["state", "message"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "state": {
+                "type": "string",
+                "enum": ["error"]
+              },
+              "message": {
+                "type": "string"
+              }
+            },
+            "required": ["state", "message"],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "MessengerChatSeen": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["messenger.chat.seen"]
+          },
+          "durable": {
+            "type": "object",
+            "properties": {
+              "aggregateID": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": ["aggregateID", "seq", "version"],
+            "additionalProperties": false
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationRef"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "accountID": {
+                "type": "string",
+                "pattern": "^msa_"
+              },
+              "chatID": {
+                "type": "string"
+              }
+            },
+            "required": ["accountID", "chatID"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "data"],
+        "additionalProperties": false
+      },
+      "MessengerBindingUpdated": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "metadata": {
+            "type": "object"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["messenger.binding.updated"]
+          },
+          "durable": {
+            "type": "object",
+            "properties": {
+              "aggregateID": {
+                "type": "string"
+              },
+              "seq": {
+                "type": "integer"
+              },
+              "version": {
+                "type": "integer"
+              }
+            },
+            "required": ["aggregateID", "seq", "version"],
+            "additionalProperties": false
+          },
+          "location": {
+            "$ref": "#/components/schemas/LocationRef"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "bindingID": {
+                "type": "string",
+                "pattern": "^msb_"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              }
+            },
+            "required": ["bindingID", "sessionID"],
             "additionalProperties": false
           }
         },
@@ -34161,6 +36068,94 @@
         "required": ["id", "type", "properties"],
         "additionalProperties": false
       },
+      "EventMessengerAccountStatus": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["messenger.account.status"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "accountID": {
+                "type": "string",
+                "pattern": "^msa_"
+              },
+              "status": {
+                "$ref": "#/components/schemas/MessengerAccountStatus1"
+              }
+            },
+            "required": ["accountID", "status"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventMessengerChatSeen": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["messenger.chat.seen"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "accountID": {
+                "type": "string",
+                "pattern": "^msa_"
+              },
+              "chatID": {
+                "type": "string"
+              }
+            },
+            "required": ["accountID", "chatID"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
+      "EventMessengerBindingUpdated": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "pattern": "^evt_"
+          },
+          "type": {
+            "type": "string",
+            "enum": ["messenger.binding.updated"]
+          },
+          "properties": {
+            "type": "object",
+            "properties": {
+              "bindingID": {
+                "type": "string",
+                "pattern": "^msb_"
+              },
+              "sessionID": {
+                "type": "string",
+                "pattern": "^ses"
+              }
+            },
+            "required": ["bindingID", "sessionID"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["id", "type", "properties"],
+        "additionalProperties": false
+      },
       "EventTodoUpdated": {
         "type": "object",
         "properties": {
@@ -34989,6 +36984,10 @@
     {
       "name": "novaclaw HttpApi",
       "description": "Experimental HttpApi surface for selected instance routes."
+    },
+    {
+      "name": "messenger",
+      "description": "Messenger driver discovery and account routes."
     },
     {
       "name": "permissions",

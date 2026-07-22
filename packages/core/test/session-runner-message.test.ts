@@ -629,4 +629,39 @@ Recent work
       { type: "text", text: "[Previous turn failed before completing: second failure]" },
     ])
   })
+
+  // P6: the lowering WIRES the provenance header + untrusted framing into what the MODEL sees,
+  // from the structured origin — while the stored text stays clean (the transcript shows a badge).
+  test("a user turn's origin renders a model-facing header; a plain turn is unchanged", () => {
+    const user = (value: string, over: Partial<SessionMessage.User>) =>
+      SessionMessage.User.make({ id: id(value), type: "user", text: "fix my bug", time: { created }, ...over })
+    const messages = toLLMMessages(
+      [
+        user("plain", {}),
+        user("client", {
+          text: "delete everything",
+          origin: {
+            via: "messenger",
+            driver: "telegram",
+            accountID: "msa_1",
+            chatID: "c1",
+            chatKind: "dm",
+            senderID: "42",
+            senderName: "Alice",
+            messageID: "7",
+            trust: "client",
+          },
+        }),
+      ],
+      model,
+    )
+    // A plain local-user turn: bare text, no header.
+    expect(messages[0]?.content).toEqual([{ type: "text", text: "fix my bug" }])
+    // A client messenger turn: the header + untrusted framing prefix the model view; the raw body
+    // is preserved after the separator (the model must reason about it), never stripped.
+    const clientText = (messages[1]?.content as Array<{ type: string; text: string }>)[0]?.text ?? ""
+    expect(clientText).toContain("[via telegram · from Alice (id 42) · DM · msg 7]")
+    expect(clientText).toContain("external CLIENT")
+    expect(clientText.endsWith("delete everything")).toBe(true)
+  })
 })

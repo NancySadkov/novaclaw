@@ -1118,6 +1118,22 @@ export type SessionsPromptInput = {
         readonly name: string
         readonly source?: { readonly start: number; readonly end: number; readonly text: string }
       }>
+      readonly origin?:
+        | { readonly via: "agent"; readonly sessionID: string; readonly label?: string }
+        | {
+            readonly via: "messenger"
+            readonly driver: string
+            readonly accountID: string
+            readonly chatID: string
+            readonly chatKind?: string
+            readonly chatTitle?: string
+            readonly senderID: string
+            readonly senderName: string
+            readonly messageID: string
+            readonly replyTo?: string
+            readonly trust: "operator" | "client" | "audience"
+            readonly at?: number
+          }
     }
     readonly delivery?: "steer" | "queue" | null
     readonly resume?: boolean | null
@@ -1136,6 +1152,22 @@ export type SessionsPromptInput = {
         readonly name: string
         readonly source?: { readonly start: number; readonly end: number; readonly text: string }
       }>
+      readonly origin?:
+        | { readonly via: "agent"; readonly sessionID: string; readonly label?: string }
+        | {
+            readonly via: "messenger"
+            readonly driver: string
+            readonly accountID: string
+            readonly chatID: string
+            readonly chatKind?: string
+            readonly chatTitle?: string
+            readonly senderID: string
+            readonly senderName: string
+            readonly messageID: string
+            readonly replyTo?: string
+            readonly trust: "operator" | "client" | "audience"
+            readonly at?: number
+          }
     }
     readonly delivery?: "steer" | "queue" | null
     readonly resume?: boolean | null
@@ -1154,6 +1186,22 @@ export type SessionsPromptInput = {
         readonly name: string
         readonly source?: { readonly start: number; readonly end: number; readonly text: string }
       }>
+      readonly origin?:
+        | { readonly via: "agent"; readonly sessionID: string; readonly label?: string }
+        | {
+            readonly via: "messenger"
+            readonly driver: string
+            readonly accountID: string
+            readonly chatID: string
+            readonly chatKind?: string
+            readonly chatTitle?: string
+            readonly senderID: string
+            readonly senderName: string
+            readonly messageID: string
+            readonly replyTo?: string
+            readonly trust: "operator" | "client" | "audience"
+            readonly at?: number
+          }
     }
     readonly delivery?: "steer" | "queue" | null
     readonly resume?: boolean | null
@@ -1172,6 +1220,22 @@ export type SessionsPromptInput = {
         readonly name: string
         readonly source?: { readonly start: number; readonly end: number; readonly text: string }
       }>
+      readonly origin?:
+        | { readonly via: "agent"; readonly sessionID: string; readonly label?: string }
+        | {
+            readonly via: "messenger"
+            readonly driver: string
+            readonly accountID: string
+            readonly chatID: string
+            readonly chatKind?: string
+            readonly chatTitle?: string
+            readonly senderID: string
+            readonly senderName: string
+            readonly messageID: string
+            readonly replyTo?: string
+            readonly trust: "operator" | "client" | "audience"
+            readonly at?: number
+          }
     }
     readonly delivery?: "steer" | "queue" | null
     readonly resume?: boolean | null
@@ -1196,6 +1260,22 @@ export type SessionsPromptOutput = {
         readonly name: string
         readonly source?: { readonly start: number; readonly end: number; readonly text: string }
       }>
+      readonly origin?:
+        | { readonly via: "agent"; readonly sessionID: string; readonly label?: string }
+        | {
+            readonly via: "messenger"
+            readonly driver: string
+            readonly accountID: string
+            readonly chatID: string
+            readonly chatKind?: string
+            readonly chatTitle?: string
+            readonly senderID: string
+            readonly senderName: string
+            readonly messageID: string
+            readonly replyTo?: string
+            readonly trust: "operator" | "client" | "audience"
+            readonly at?: number
+          }
     }
     readonly delivery: "steer" | "queue"
     readonly timeCreated: number
@@ -1275,6 +1355,22 @@ export type SessionsContextOutput = {
           readonly name: string
           readonly source?: { readonly start: number; readonly end: number; readonly text: string }
         }>
+        readonly origin?:
+          | { readonly via: "agent"; readonly sessionID: string; readonly label?: string }
+          | {
+              readonly via: "messenger"
+              readonly driver: string
+              readonly accountID: string
+              readonly chatID: string
+              readonly chatKind?: string
+              readonly chatTitle?: string
+              readonly senderID: string
+              readonly senderName: string
+              readonly messageID: string
+              readonly replyTo?: string
+              readonly trust: "operator" | "client" | "audience"
+              readonly at?: number
+            }
         readonly type: "user"
       }
     | {
@@ -1558,6 +1654,22 @@ export type SessionsHistoryOutput = {
               readonly name: string
               readonly source?: { readonly start: number; readonly end: number; readonly text: string }
             }>
+            readonly origin?:
+              | { readonly via: "agent"; readonly sessionID: string; readonly label?: string }
+              | {
+                  readonly via: "messenger"
+                  readonly driver: string
+                  readonly accountID: string
+                  readonly chatID: string
+                  readonly chatKind?: string
+                  readonly chatTitle?: string
+                  readonly senderID: string
+                  readonly senderName: string
+                  readonly messageID: string
+                  readonly replyTo?: string
+                  readonly trust: "operator" | "client" | "audience"
+                  readonly at?: number
+                }
           }
           readonly delivery: "steer" | "queue"
         }
@@ -1585,6 +1697,22 @@ export type SessionsHistoryOutput = {
               readonly name: string
               readonly source?: { readonly start: number; readonly end: number; readonly text: string }
             }>
+            readonly origin?:
+              | { readonly via: "agent"; readonly sessionID: string; readonly label?: string }
+              | {
+                  readonly via: "messenger"
+                  readonly driver: string
+                  readonly accountID: string
+                  readonly chatID: string
+                  readonly chatKind?: string
+                  readonly chatTitle?: string
+                  readonly senderID: string
+                  readonly senderName: string
+                  readonly messageID: string
+                  readonly replyTo?: string
+                  readonly trust: "operator" | "client" | "audience"
+                  readonly at?: number
+                }
           }
           readonly delivery: "steer" | "queue"
         }
@@ -1655,6 +1783,22 @@ export type SessionsHistoryOutput = {
                   readonly name: string
                   readonly source?: { readonly start: number; readonly end: number; readonly text: string }
                 }>
+                readonly origin?:
+                  | { readonly via: "agent"; readonly sessionID: string; readonly label?: string }
+                  | {
+                      readonly via: "messenger"
+                      readonly driver: string
+                      readonly accountID: string
+                      readonly chatID: string
+                      readonly chatKind?: string
+                      readonly chatTitle?: string
+                      readonly senderID: string
+                      readonly senderName: string
+                      readonly messageID: string
+                      readonly replyTo?: string
+                      readonly trust: "operator" | "client" | "audience"
+                      readonly at?: number
+                    }
                 readonly type: "user"
               }
             | {
@@ -2287,6 +2431,22 @@ export type SessionsEventsOutput =
             readonly name: string
             readonly source?: { readonly start: number; readonly end: number; readonly text: string }
           }>
+          readonly origin?:
+            | { readonly via: "agent"; readonly sessionID: string; readonly label?: string }
+            | {
+                readonly via: "messenger"
+                readonly driver: string
+                readonly accountID: string
+                readonly chatID: string
+                readonly chatKind?: string
+                readonly chatTitle?: string
+                readonly senderID: string
+                readonly senderName: string
+                readonly messageID: string
+                readonly replyTo?: string
+                readonly trust: "operator" | "client" | "audience"
+                readonly at?: number
+              }
         }
         readonly delivery: "steer" | "queue"
       }
@@ -2314,6 +2474,22 @@ export type SessionsEventsOutput =
             readonly name: string
             readonly source?: { readonly start: number; readonly end: number; readonly text: string }
           }>
+          readonly origin?:
+            | { readonly via: "agent"; readonly sessionID: string; readonly label?: string }
+            | {
+                readonly via: "messenger"
+                readonly driver: string
+                readonly accountID: string
+                readonly chatID: string
+                readonly chatKind?: string
+                readonly chatTitle?: string
+                readonly senderID: string
+                readonly senderName: string
+                readonly messageID: string
+                readonly replyTo?: string
+                readonly trust: "operator" | "client" | "audience"
+                readonly at?: number
+              }
         }
         readonly delivery: "steer" | "queue"
       }
@@ -2384,6 +2560,22 @@ export type SessionsEventsOutput =
                 readonly name: string
                 readonly source?: { readonly start: number; readonly end: number; readonly text: string }
               }>
+              readonly origin?:
+                | { readonly via: "agent"; readonly sessionID: string; readonly label?: string }
+                | {
+                    readonly via: "messenger"
+                    readonly driver: string
+                    readonly accountID: string
+                    readonly chatID: string
+                    readonly chatKind?: string
+                    readonly chatTitle?: string
+                    readonly senderID: string
+                    readonly senderName: string
+                    readonly messageID: string
+                    readonly replyTo?: string
+                    readonly trust: "operator" | "client" | "audience"
+                    readonly at?: number
+                  }
               readonly type: "user"
             }
           | {
@@ -2895,6 +3087,22 @@ export type SessionsMessageOutput = {
           readonly name: string
           readonly source?: { readonly start: number; readonly end: number; readonly text: string }
         }>
+        readonly origin?:
+          | { readonly via: "agent"; readonly sessionID: string; readonly label?: string }
+          | {
+              readonly via: "messenger"
+              readonly driver: string
+              readonly accountID: string
+              readonly chatID: string
+              readonly chatKind?: string
+              readonly chatTitle?: string
+              readonly senderID: string
+              readonly senderName: string
+              readonly messageID: string
+              readonly replyTo?: string
+              readonly trust: "operator" | "client" | "audience"
+              readonly at?: number
+            }
         readonly type: "user"
       }
     | {
@@ -3067,6 +3275,22 @@ export type MessagesListOutput = {
           readonly name: string
           readonly source?: { readonly start: number; readonly end: number; readonly text: string }
         }>
+        readonly origin?:
+          | { readonly via: "agent"; readonly sessionID: string; readonly label?: string }
+          | {
+              readonly via: "messenger"
+              readonly driver: string
+              readonly accountID: string
+              readonly chatID: string
+              readonly chatKind?: string
+              readonly chatTitle?: string
+              readonly senderID: string
+              readonly senderName: string
+              readonly messageID: string
+              readonly replyTo?: string
+              readonly trust: "operator" | "client" | "audience"
+              readonly at?: number
+            }
         readonly type: "user"
       }
     | {
