@@ -16,6 +16,18 @@
   }
 }
 
+/* The counterpart of hover-reveal for content the revealed layer draws OVER (a row's meta
+   cluster under hover actions): pair with group-hover/…:opacity-0 for the pointer case; this
+   utility handles touch, where hover-reveal is ALWAYS visible so the underlay must yield
+   permanently. */
+@utility hover-conceal {
+  @apply transition-opacity;
+
+  @media (hover: none) {
+    opacity: 0;
+  }
+}
+
 @utility badge-mask {
   -webkit-mask-image: radial-gradient(circle 5px at calc(100% - 4px) 4px, transparent 5px, black 5.5px);
   mask-image: radial-gradient(circle 5px at calc(100% - 4px) 4px, transparent 5px, black 5.5px);

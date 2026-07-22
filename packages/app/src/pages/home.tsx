@@ -1120,7 +1120,12 @@ function HomeSessionRow(props: {
             {props.record.projectName}
           </span>
         </Show>
-        <span class="ml-auto flex shrink-0 items-center gap-2">
+        {/* The whole meta cluster (tags · attention · changes · tokens · time) yields to the
+            hover-reveal action icons — hiding only the time left the icons drawn OVER the
+            token/changes badges (owner-hit 2026-07-22). opacity keeps layout, so the title
+            never slides under the icons; hover-conceal handles touch, where the icons are
+            always visible. */}
+        <span class="ml-auto flex shrink-0 items-center gap-2 hover-conceal group-hover/session:opacity-0 group-focus-within/session:opacity-0">
           <Show when={rowTags().length > 0}>
             <span data-slot="home-session-tags" class="flex shrink-0 items-center gap-1">
               <For each={rowTags().slice(0, 2)}>
@@ -1164,17 +1169,18 @@ function HomeSessionRow(props: {
               {compactTokens(tokens().generated)}
             </span>
           </Show>
-          {/* The hover-reveal action icons overlay the row's right edge — hide the date under
-              them (hover + keyboard focus, symmetric with the icons' own reveal). */}
           <span
             data-slot="home-session-time"
-            class="shrink-0 text-[11px] leading-none tabular-nums text-v2-text-text-faint [font-weight:440] transition-opacity group-hover/session:opacity-0 group-focus-within/session:opacity-0"
+            class="shrink-0 text-[11px] leading-none tabular-nums text-v2-text-text-faint [font-weight:440]"
           >
             {timeLabel()}
           </span>
         </span>
       </button>
-      <div class="hover-reveal absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-1 group-hover/session:opacity-100 focus-within:opacity-100">
+      {/* group-focus-within (not just self focus-within): keyboard-focusing the ROW must reveal
+          the actions in the same beat it hides the meta cluster — self-only focus left a focused
+          row with meta hidden and nothing shown in its place. */}
+      <div class="hover-reveal absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-1 group-hover/session:opacity-100 group-focus-within/session:opacity-100">
         <Show when={working()}>
           <TooltipV2 class="flex shrink-0 items-center" placement="bottom" value={language.t("home.session.stop")}>
             <IconButtonV2
