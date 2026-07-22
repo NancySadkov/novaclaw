@@ -10,8 +10,11 @@ import { FSUtil } from "../fs-util"
 import { Location } from "../location"
 import { MessengerDrivers } from "../messenger/drivers"
 import { MessengerGatewayHandle } from "../messenger/gateway-handle"
+import { MessengerPipeline } from "../messenger/pipeline"
 import { MessengerStore } from "../messenger/store"
 import { PermissionV2 } from "../permission"
+import { EFFECTIVE_CONFIG_DEFAULTS, resolveSessionConfig } from "../session/config-resolve"
+import { SessionStore } from "../session/store"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
@@ -68,6 +71,10 @@ const ConnectOp = Schema.Struct({
   }),
   account: Schema.String.pipe(Schema.optional).annotate({
     description: "Account id (msa_…) or label — omit when only one account exists",
+  }),
+  force: Schema.Boolean.pipe(Schema.optional).annotate({
+    description:
+      "Set true ONLY after confirming with the user, to bind an untrusted client/audience chat to a session that auto-approves everything (bypass/yolo permission mode).",
   }),
 })
 
@@ -149,6 +156,7 @@ export const layer = Layer.effectDiscard(
     const drivers = yield* MessengerDrivers.Service
     const permission = yield* PermissionV2.Service
     const location = yield* Location.Service
+    const sessions = yield* SessionStore.Service
 
     const OFFLINE_GATEWAY =
       "The messenger service isn't running on this instance (offline/airgapped, or still starting). Check Settings → Messengers."
@@ -287,6 +295,22 @@ export const layer = Layer.effectDiscard(
                 case "connect": {
                   const resolved = yield* resolveAccount(input.account)
                   if (resolved.account === undefined) return { ok: false, message: resolved.error } satisfies Output
+                  // Bypass-bind warning (§3.4): wiring an UNTRUSTED client/audience chat into a
+                  // session that auto-approves every tool call (bypass/yolo) hands a stranger an
+                  // agent with no consent gate. Refuse unless the model confirms with the user and
+                  // retries with force — the calm-warning pattern, not a hard block (the operator
+                  // may genuinely want it, e.g. a curated-ruleset preset).
+                  if (input.trust !== "operator" && input.force !== true) {
+                    const effective = yield* resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, context.sessionID, (id) =>
+                      sessions.get(id as never),
+                    ).pipe(Effect.orElseSucceed(() => EFFECTIVE_CONFIG_DEFAULTS))
+                    const refusal = MessengerPipeline.bypassBindRefusal({
+                      trust: input.trust,
+                      permissionMode: effective.permissionMode,
+                      force: false, // the outer guard already handled force:true
+                    })
+                    if (refusal !== undefined) return { ok: false, message: refusal } satisfies Output
+                  }
                   // Binding a chat to a session shapes where the agent listens — gated so a hostile
                   // client can't wire the agent into an arbitrary chat. Resource = the chat.
                   yield* permission.assert({
@@ -439,5 +463,5 @@ export const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/messenger",
   layer,
-  deps: [ToolRegistry.node, MessengerStore.node, MessengerDrivers.node, PermissionV2.node, Location.node],
+  deps: [ToolRegistry.node, MessengerStore.node, MessengerDrivers.node, PermissionV2.node, Location.node, SessionStore.node],
 })

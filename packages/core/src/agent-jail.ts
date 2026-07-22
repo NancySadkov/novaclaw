@@ -92,8 +92,15 @@ export type BashDecision = "raw" | "confined" | "deny"
  *   the semantic native tools, which are already path-gated. Removing GuardFall's
  *   precondition structurally, not by filtering.
  */
-export function decideBash(input: { readonly rootType: SessionType; readonly backend: BackendInfo }): BashDecision {
-  if (attendedRoot(input.rootType)) return "raw"
+export function decideBash(input: {
+  readonly rootType: SessionType
+  readonly backend: BackendInfo
+  /** A messenger client/audience-driven turn (messenger-plan §3.4): an untrusted stranger — not
+   *  the operator — is on the other end, so it is unattended hostile input regardless of the
+   *  (usually interactive) chain-root type. Treated exactly like an unattended root. */
+  readonly hostileInput?: boolean
+}): BashDecision {
+  if (attendedRoot(input.rootType) && input.hostileInput !== true) return "raw"
   if (input.backend.fs && input.backend.net) return "confined"
   return "deny"
 }
@@ -180,11 +187,15 @@ export function unattendedChildEnv(processEnv: Record<string, string | undefined
   return out
 }
 
-/** The model-legible routing text for a `deny` (1P house style: teach the way forward). */
-export function denyMessage(rootType: SessionType): string {
+/** The model-legible routing text for a `deny` (1P house style: teach the way forward). The
+ *  `hostileInput` case names the real reason (a client/audience-driven turn) rather than the
+ *  chain-root type, which for those turns is usually the misleading "interactive". */
+export function denyMessage(rootType: SessionType, hostileInput?: boolean): string {
+  const reason = hostileInput
+    ? `This turn is driven by an untrusted messenger chat, so raw shell execution is unavailable and this host has no sandbox backend yet. `
+    : `Raw shell execution is not available to ${rootType} sessions on this host: unattended commands require sandbox confinement, and this platform has no sandbox backend yet. `
   return (
-    `Raw shell execution is not available to ${rootType} sessions on this host: unattended ` +
-    `commands require sandbox confinement, and this platform has no sandbox backend yet. ` +
+    reason +
     `Use the native tools instead — read/edit/write/create/glob/grep cover file work and are ` +
     `permission-gated per path. Do not retry the same command.`
   )

@@ -70,6 +70,28 @@ describe("AgentJail", () => {
       expect(AgentJail.decideBash({ rootType, backend })).toBe(expected)
     })
 
+  // messenger-plan §3.4: a client/audience-driven turn is unattended hostile input even on an
+  // interactive root — so `hostileInput` flips an otherwise-raw interactive chain to the
+  // unattended arm (confined under a backend, deny without one), while never RELAXING an already
+  // unattended decision, and being a no-op when false.
+  test("hostileInput treats an interactive turn as unattended (confine or deny)", () => {
+    expect(AgentJail.decideBash({ rootType: "interactive", backend: AgentJail.NO_BACKEND, hostileInput: true })).toBe("deny")
+    expect(AgentJail.decideBash({ rootType: "interactive", backend: FULL, hostileInput: true })).toBe("confined")
+    expect(AgentJail.decideBash({ rootType: "sub-agent", backend: FS_ONLY, hostileInput: true })).toBe("deny")
+    // false / omitted is a no-op — attended stays raw.
+    expect(AgentJail.decideBash({ rootType: "interactive", backend: AgentJail.NO_BACKEND, hostileInput: false })).toBe("raw")
+    expect(AgentJail.decideBash({ rootType: "interactive", backend: AgentJail.NO_BACKEND })).toBe("raw")
+    // An already-unattended root ignores the flag (still confined/deny by backend).
+    expect(AgentJail.decideBash({ rootType: "goal-oriented", backend: FULL, hostileInput: true })).toBe("confined")
+  })
+
+  test("denyMessage names the hostile-chat reason, not the misleading interactive root type", () => {
+    const hostile = AgentJail.denyMessage("interactive", true)
+    expect(hostile).toContain("untrusted messenger chat")
+    expect(hostile).not.toContain("interactive sessions")
+    expect(AgentJail.denyMessage("goal-oriented")).toContain("goal-oriented sessions")
+  })
+
   // The unit half of the GuardFall battery (P6): prove a string matcher is BLIND to exactly the
   // bypass classes the box contains — the reason confinement, not a blocklist, is the boundary.
   // The mechanism half (tests/agent-jail-guardfall-smoke.sh) proves the box catches them all.

@@ -115,6 +115,25 @@ export const renderDispatchDone = (title: string | undefined, result: string): s
   return body.length === 0 ? head : `${head}\n${body}`
 }
 
+// The bypass-bind warning (§3.4), as a pure decision so it's unit-testable away from the tool
+// graph. Wiring an UNTRUSTED client/audience chat into a session that auto-approves every tool
+// call (bypass/yolo) hands a stranger an agent with no consent gate — refuse unless the caller
+// confirmed and forced. operator trust (the owner/family) is exempt; `force` overrides. Returns
+// the refusal text, or undefined when the bind is allowed.
+export const bypassBindRefusal = (input: {
+  readonly trust: Messenger.Trust
+  readonly permissionMode: string
+  readonly force: boolean
+}): string | undefined => {
+  if (input.trust === "operator" || input.force) return undefined
+  if (input.permissionMode !== "bypass" && input.permissionMode !== "yolo") return undefined
+  return (
+    `This session is in "${input.permissionMode}" permission mode — it auto-approves every tool call. ` +
+    `Binding an untrusted ${input.trust} chat to it means a stranger's messages drive an agent with no consent gate. ` +
+    `Confirm with the user that this is intended (ideally switch to a curated agent preset first), then retry with force:true.`
+  )
+}
+
 export const HELP_TEXT = [
   "NovaClaw remote control:",
   "/sessions — list your chats",

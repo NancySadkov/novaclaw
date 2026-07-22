@@ -57,6 +57,13 @@ const ATTACHMENT_RING_CAPACITY = 500
 // comes first — this many messages, or this long.
 const AUDIENCE_BATCH_SIZE = 20
 const AUDIENCE_BATCH_MS = 30_000
+// Flood cap (§7.6): a single chat that fires faster than a human — a runaway loop, a flooding
+// stranger, or an abusive client — must not churn the model per message (cost + injection
+// surface). Turn-driving inbound is rate-limited per chat over a rolling window; over the cap,
+// messages are DROPPED with a single throttled "slow down" reply (never silent loss, never a
+// warning per dropped message). Well above any human pace, so a real person never trips it.
+const MAX_INBOUND_PER_MINUTE = 30
+const INBOUND_WINDOW_MS = 60_000
 
 export type SendOutcome = { readonly ok: true } | { readonly ok: false; readonly reason: string }
 
@@ -165,6 +172,26 @@ export const layer = Layer.effect(
     const initiations = { day: "", count: 0 }
     // §0.1.5 dispatcher: chatKey -> recent task-spawn timestamps (the per-chat rate guard).
     const dispatchRate = new Map<string, number[]>()
+    // Flood cap (§7.6): chatKey -> recent turn-driving inbound timestamps + whether we've already
+    // warned this over-cap streak (so the "slow down" reply fires once, not per dropped message).
+    const inboundRate = new Map<string, { times: number[]; warned: boolean }>()
+    // Returns whether this inbound may drive a turn; when refused, `warn` is true exactly once per
+    // over-cap streak so the chat is told to slow down without the warning itself flooding.
+    const floodClear = (key: string): { ok: true } | { ok: false; warn: boolean } => {
+      const now = Date.now()
+      const entry = inboundRate.get(key) ?? { times: [], warned: false }
+      entry.times = entry.times.filter((at) => now - at < INBOUND_WINDOW_MS)
+      if (entry.times.length >= MAX_INBOUND_PER_MINUTE) {
+        const warn = !entry.warned
+        entry.warned = true
+        inboundRate.set(key, entry)
+        return { ok: false, warn }
+      }
+      entry.times.push(now)
+      entry.warned = false
+      inboundRate.set(key, entry)
+      return { ok: true }
+    }
     // Recent attachments by (account:chat:message) — bounded FIFO; the `download` op's index.
     const attachments = new Map<string, readonly MessengerDriverContract.FileRef[]>()
     const attachmentOrder: string[] = []
@@ -532,6 +559,15 @@ export const layer = Layer.effect(
             return
           }
           yield* reply(connection, event.chat.chatID, "No session is linked here yet. /sessions then /use <n>.")
+          return
+        }
+        // Flood cap (§7.6): a chat firing faster than a human gets dropped past the cap, with a
+        // single throttled slow-down reply. (Audience already coalesces, but a hard flood would
+        // still flush size-batches back-to-back — the cap bounds that too.)
+        const flood = floodClear(MessengerPipeline.chatKey(account.id, event.chat.chatID))
+        if (!flood.ok) {
+          if (flood.warn)
+            yield* reply(connection, event.chat.chatID, "You're sending faster than I can keep up — I'll skip some messages until it slows down.")
           return
         }
         // Files in (P5): materialize attachments into prompt files + note lines BEFORE framing,

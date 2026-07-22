@@ -129,3 +129,23 @@ describe("MessengerPipeline dispatch helpers (SS0.1.5 rule 3 — spawn, don't in
     expect(MessengerPipeline.renderDispatchDone("", "")).toBe("✅ Task finished")
   })
 })
+
+describe("MessengerPipeline.bypassBindRefusal (§3.4 bypass-bind warning)", () => {
+  test("refuses an untrusted client/audience bind to a bypass/yolo session", () => {
+    const client = MessengerPipeline.bypassBindRefusal({ trust: "client", permissionMode: "bypass", force: false })
+    expect(client).toContain("bypass")
+    expect(client).toContain("no consent gate")
+    expect(client).toContain("force:true")
+    expect(MessengerPipeline.bypassBindRefusal({ trust: "audience", permissionMode: "yolo", force: false })).toContain("yolo")
+  })
+
+  test("operator is exempt, force overrides, and safe modes pass", () => {
+    // The owner/family through their own chat is trusted — never warned.
+    expect(MessengerPipeline.bypassBindRefusal({ trust: "operator", permissionMode: "bypass", force: false })).toBeUndefined()
+    // Explicit confirmation.
+    expect(MessengerPipeline.bypassBindRefusal({ trust: "client", permissionMode: "bypass", force: true })).toBeUndefined()
+    // A gated mode has a consent gate — no warning needed.
+    expect(MessengerPipeline.bypassBindRefusal({ trust: "client", permissionMode: "ask", force: false })).toBeUndefined()
+    expect(MessengerPipeline.bypassBindRefusal({ trust: "audience", permissionMode: "surgical", force: false })).toBeUndefined()
+  })
+})

@@ -16,6 +16,7 @@ import { AppProcess } from "../process"
 import { Shell } from "../shell"
 import { ShellBundle } from "../shell-bundle"
 import { BashJobs } from "./bash-jobs"
+import { MessengerStore } from "../messenger/store"
 import { PermissionV2 } from "../permission"
 import { PositiveInt } from "../schema"
 import { rootSessionType } from "../session/config-resolve"
@@ -141,9 +142,29 @@ export const layer = Layer.effectDiscard(
     const permission = yield* PermissionV2.Service
     const bashJobs = yield* BashJobs.Service
     const sessions = yield* SessionStore.Service
+    const messengerStore = yield* MessengerStore.Service
     // OFF-C: the offline policy is a machine-level snapshot (flag-aware config dir);
     // consume the shared service so the guard sees the SAME policy as the HttpClient.
     const offline = yield* Offline.Service
+
+    // messenger-plan §3.4 — is any session in this chain bound to a client/audience chat? Walk
+    // parents (cycle-guarded) and check each for an active untrusted binding. Short chains; most
+    // sessions have no binding so each check is a fast empty indexed lookup.
+    const chainHasHostileBinding = (sessionID: string): Effect.Effect<boolean> =>
+      Effect.gen(function* () {
+        const seen = new Set<string>()
+        let id: string | undefined = sessionID
+        while (id !== undefined && !seen.has(id)) {
+          seen.add(id)
+          const bindings = yield* messengerStore.bindingsForSession(id).pipe(Effect.orElseSucceed(() => []))
+          if (bindings.some((b) => b.status === "active" && (b.trust === "client" || b.trust === "audience"))) return true
+          const session: SessionV2.Info | undefined = yield* sessions
+            .get(id as SessionV2.ID)
+            .pipe(Effect.orElseSucceed(() => undefined))
+          id = session?.parentID
+        }
+        return false
+      })
 
     yield* tools
       .register({
@@ -221,9 +242,14 @@ export const layer = Layer.effectDiscard(
               const rootType = yield* rootSessionType(context.sessionID, (id) =>
                 sessions.get(id as SessionV2.ID),
               )
-              const jailDecision = AgentJail.decideBash({ rootType, backend: AgentJail.probe() })
+              // messenger-plan §3.4: a client/audience messenger binding ANYWHERE in this chain
+              // makes the turn unattended hostile input — an untrusted stranger drives it, and the
+              // recommended pattern (a bound session spawning a worker sub-agent) means the binding
+              // can sit on an ancestor, so the whole chain is checked, not just this session.
+              const hostileInput = yield* chainHasHostileBinding(context.sessionID)
+              const jailDecision = AgentJail.decideBash({ rootType, backend: AgentJail.probe(), hostileInput })
               if (jailDecision === "deny")
-                return yield* Effect.fail(new ToolFailure({ message: AgentJail.denyMessage(rootType) }))
+                return yield* Effect.fail(new ToolFailure({ message: AgentJail.denyMessage(rootType, hostileInput) }))
 
               if ((yield* fs.stat(target.canonical)).type !== "Directory")
                 return yield* Effect.fail(new Error(`Working directory is not a directory: ${target.canonical}`))
@@ -375,6 +401,7 @@ export const node = makeLocationNode({
     PermissionV2.node,
     BashJobs.node,
     SessionStore.node,
+    MessengerStore.node,
     Offline.node,
   ],
 })
