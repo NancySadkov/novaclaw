@@ -120,17 +120,34 @@ const connectStream = async (host: string, port: number, tls: boolean): Promise<
   let buffer = Buffer.alloc(0)
   let failed: Error | undefined
   let wake: (() => void) | undefined
+  // After a STARTTLS upgrade the raw socket keeps emitting ENCRYPTED bytes to the same handlers, so
+  // we must ignore anything not from the TLS socket or the ciphertext corrupts the plaintext stream.
+  // Only relevant POST-upgrade (two sockets coexist); before that there is one socket and we accept
+  // all data — guarding earlier would race the connect and drop the greeting.
+  let tlsSocket: unknown
+  // Resolves when the upgraded TLS socket finishes its handshake (its `open` fires) — writing before
+  // that drops the plaintext, so upgradeTLS awaits it.
+  let tlsReady: (() => void) | undefined
   const settle = () => {
     const w = wake
     wake = undefined
     w?.()
   }
   const handlers = {
-    data: (_s: unknown, data: Buffer) => {
+    open: (s: unknown) => {
+      if (s === tlsSocket && tlsReady !== undefined) {
+        const resolve = tlsReady
+        tlsReady = undefined
+        resolve()
+      }
+    },
+    data: (s: unknown, data: Buffer) => {
+      if (tlsSocket !== undefined && s !== tlsSocket) return // leftover ciphertext from the raw socket
       buffer = Buffer.concat([buffer, data])
       settle()
     },
-    close: () => {
+    close: (s: unknown) => {
+      if (tlsSocket !== undefined && s !== tlsSocket) return
       failed ??= new Error("connection closed")
       settle()
     },
@@ -171,11 +188,19 @@ const connectStream = async (host: string, port: number, tls: boolean): Promise<
     readExact,
     write: (data) => void (socket as { write: (d: string) => void }).write(data),
     upgradeTLS: async (tlsHost) => {
-      // Bun's socket.upgradeTLS returns a [raw, tls] tuple — swap to the TLS socket for later writes.
+      // Bun's socket.upgradeTLS needs a `tls` option (SNI serverName) and returns a [raw, tls]
+      // tuple. Switch reads+writes to the TLS socket, mark it active (so leftover raw ciphertext is
+      // ignored), and DROP any bytes buffered before the handshake (they're the TLS handshake).
       const upgrade = (socket as unknown as { upgradeTLS?: (o: unknown) => [unknown, typeof socket] }).upgradeTLS
       if (typeof upgrade !== "function") throw new Error("STARTTLS not supported by this runtime (no socket.upgradeTLS)")
-      const result = upgrade.call(socket, { hostname: tlsHost, socket: handlers })
+      const ready = new Promise<void>((resolve) => (tlsReady = resolve))
+      const result = upgrade.call(socket, { tls: { serverName: tlsHost }, socket: handlers })
       if (Array.isArray(result) && result[1]) socket = result[1] as typeof socket
+      tlsSocket = socket
+      buffer = Buffer.alloc(0)
+      // Wait for the handshake (the TLS socket's `open`) before returning, so the caller's next
+      // write is encrypted rather than dropped. A bounded wait — a wedged handshake must not hang.
+      await Promise.race([ready, new Promise<void>((resolve) => setTimeout(resolve, 15_000))])
     },
     close: () => void (socket as { end: () => void }).end(),
   }
