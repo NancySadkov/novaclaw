@@ -1,7 +1,7 @@
 export * as PermissionV2 from "./permission"
 
 import { makeLocationNode } from "./effect/app-node"
-import { Context, Deferred, Effect as EffectRuntime, Layer, Schema } from "effect"
+import { Context, Deferred, Effect as EffectRuntime, FiberSet, Layer, Schema } from "effect"
 import { Permission } from "@novaclaw/schema/permission"
 import { EventV2 } from "./event"
 import { Location } from "./location"
@@ -227,12 +227,30 @@ export const layer = Layer.effect(
 
     // A deleted session takes its pending asks with it. `session.deleted` is the session-level
     // V1 event the engine still emits for every delete (kept through F1g), so this covers both
-    // engines with one subscription.
-    const unsubscribe = yield* events.listen((event) =>
-      event.type === "session.deleted"
-        ? rejectSessionPending(String((event.data as { sessionID?: string }).sessionID ?? ""))
-        : EffectRuntime.void,
-    )
+    // engines with one subscription. A SETTLED DRAIN does too (owner-hit 2026-07-22): the only
+    // thing that can consume an answer is the tool awaiting it inside the drain, so once the
+    // drain publishes idle/exited (Stop, exit, error — the fiber is gone) every still-pending
+    // ask is an orphan. Left alone it wedged the chat permanently: the ask dock replaces the
+    // composer while asks are pending, so after an interrupt the user faced stale Allow/Deny
+    // buttons with no composer, no Stop, and no way to re-prompt.
+    // ⚠️ The sweep must run DETACHED from the publishing fiber: the idle status is published
+    // from the interrupted drain's finalizer under `Effect.ignore`, and a listener effect run
+    // inline there dies with the fiber and is swallowed (measured live 2026-07-22 — idle on the
+    // wire, no Replied). The service-scoped FiberSet runs it on a healthy fiber instead.
+    const fork = yield* FiberSet.makeRuntime<never, void, never>()
+    const settledOrphans = (event: { type: string; data: unknown }) => {
+      if (event.type === "session.deleted")
+        return rejectSessionPending(String((event.data as { sessionID?: string }).sessionID ?? ""))
+      if (event.type === "session.status") {
+        const data = event.data as { sessionID?: string; status?: { type?: string } }
+        if (data.status?.type === "idle" || data.status?.type === "exited")
+          return EffectRuntime.sync(() => fork(rejectSessionPending(String(data.sessionID ?? "")))).pipe(
+            EffectRuntime.asVoid,
+          )
+      }
+      return EffectRuntime.void
+    }
+    const unsubscribe = yield* events.listen(settledOrphans)
     yield* EffectRuntime.addFinalizer(() => unsubscribe)
 
     const savedRules = EffectRuntime.fnUntraced(function* () {
@@ -334,7 +352,27 @@ export const layer = Layer.effect(
           return yield* restore(Deferred.await(item.deferred)).pipe(
             EffectRuntime.ensuring(
               EffectRuntime.sync(() => {
-                pending.delete(item.request.id)
+                // The awaiting tool is going away — settled or INTERRUPTED (Stop). An entry
+                // still pending here means nobody replied, so tell every client the ask is
+                // dead (Replied/reject), or the ask dock wedges on a stale card with the
+                // composer gone (owner-hit 2026-07-22). Detached via the service FiberSet:
+                // this finalizer runs on the dying drain fiber, where an inline publish dies
+                // with the fiber and is silently swallowed. (A settled reply deletes the
+                // entry first, so this publishes nothing on the normal path.)
+                if (pending.delete(item.request.id))
+                  fork(
+                    events
+                      .publish(
+                        Event.Replied,
+                        {
+                          sessionID: item.request.sessionID,
+                          requestID: item.request.id,
+                          reply: "reject",
+                        },
+                        { location: eventLocation },
+                      )
+                      .pipe(EffectRuntime.asVoid),
+                  )
               }),
             ),
           )

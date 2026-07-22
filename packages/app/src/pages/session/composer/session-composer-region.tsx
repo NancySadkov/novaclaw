@@ -59,6 +59,7 @@ export function SessionComposerRegion(props: {
                   controller.onResponseSubmit()
                   controller.state.decide(reply, message)
                 }}
+                onStop={controller.state.stop}
               />
             </div>
           )}

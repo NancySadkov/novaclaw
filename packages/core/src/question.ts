@@ -1,7 +1,7 @@
 export * as QuestionV2 from "./question"
 
 import { makeLocationNode } from "./effect/app-node"
-import { Context, Deferred, Effect, Layer, Schema } from "effect"
+import { Context, Deferred, Effect, FiberSet, Layer, Schema } from "effect"
 import { Question } from "@novaclaw/schema/question"
 import { EventV2 } from "./event"
 import { Location } from "./location"
@@ -123,11 +123,22 @@ export const layer = Layer.effect(
           }
         }),
       )
-    const unsubscribe = yield* events.listen((event) =>
-      event.type === "session.deleted"
-        ? rejectSessionPending(String((event.data as { sessionID?: string }).sessionID ?? ""))
-        : Effect.void,
-    )
+    // Same drain-settled sweep as PermissionV2: once the session's drain published idle/exited,
+    // the tool awaiting this question is gone — reject so clients clear (and the composer,
+    // which the question dock replaces while pending, comes back). Detached via the FiberSet:
+    // the idle status is published from the dying drain fiber's finalizer, where an inline
+    // listener effect dies with the fiber and is silently swallowed.
+    const fork = yield* FiberSet.makeRuntime<never, void, never>()
+    const unsubscribe = yield* events.listen((event) => {
+      if (event.type === "session.deleted")
+        return rejectSessionPending(String((event.data as { sessionID?: string }).sessionID ?? ""))
+      if (event.type === "session.status") {
+        const data = event.data as { sessionID?: string; status?: { type?: string } }
+        if (data.status?.type === "idle" || data.status?.type === "exited")
+          return Effect.sync(() => fork(rejectSessionPending(String(data.sessionID ?? "")))).pipe(Effect.asVoid)
+      }
+      return Effect.void
+    })
     yield* Effect.addFinalizer(() => unsubscribe)
 
     const ask = Effect.fn("QuestionV2.ask")((input: AskInput) =>
@@ -141,7 +152,19 @@ export const layer = Layer.effect(
             Effect.andThen(restore(Deferred.await(deferred))),
             Effect.ensuring(
               Effect.sync(() => {
-                pending.delete(id)
+                // Same contract as PermissionV2.assert: a still-pending entry here means the
+                // awaiting tool died unanswered (Stop/interrupt) — publish Rejected, detached,
+                // so the question dock clears instead of wedging on a stale card.
+                if (pending.delete(id))
+                  fork(
+                    events
+                      .publish(
+                        Event.Rejected,
+                        { sessionID: request.sessionID, requestID: request.id },
+                        { location: eventLocation },
+                      )
+                      .pipe(Effect.asVoid),
+                  )
               }),
             ),
           )

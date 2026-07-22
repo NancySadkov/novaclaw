@@ -822,6 +822,7 @@ export const dict = {
   "home.session.tokens.title":
     "{{generated}} tokens generated ({{output}} text · {{reasoning}} reasoning), sub-agent threads included",
   "home.session.live.title": "Generating right now — approximate tokens this run and current speed",
+  "home.scratch.name": "Scratch",
   "session.info.folder": "Folder",
   "session.info.tags": "Tags",
   "common.remove": "Remove",

@@ -106,7 +106,13 @@ function buildHomeSessionRecords(input: {
   sync: Pick<ServerSync, "child">
   projectDirectories: () => string[]
   projects: () => LocalProject[]
+  // The always-provisioned scratch cwd (new-agent-bar's default home for a chat started with no
+  // project picked). Chats is the TASK MANAGER — a chat living outside every opened project must
+  // still list (owner-hit 2026-07-22: launcher chats were invisible forever), so scratch-dir
+  // sessions get a synthetic "Scratch" group instead of being dropped by the project filter.
+  scratch?: { directory: string; name: string }
 }) {
+  const scratchKey = input.scratch ? pathKey(input.scratch.directory) : undefined
   return [
     ...new Map(
       input
@@ -118,7 +124,16 @@ function buildHomeSessionRecords(input: {
     .sort((a, b) => (b.time.updated ?? b.time.created) - (a.time.updated ?? a.time.created))
     .flatMap((session) => {
       const project = projectForSession(session, input.projects())
-      if (!project) return []
+      if (!project) {
+        if (scratchKey && pathKey(session.location.directory) === scratchKey && input.scratch) {
+          return {
+            session,
+            project: { worktree: input.scratch.directory } as LocalProject,
+            projectName: input.scratch.name,
+          }
+        }
+        return []
+      }
       return {
         session,
         project,
@@ -262,9 +277,20 @@ export function NewHome() {
       projects()[0],
   )
   const directories = (project: LocalProject) => [project.worktree, ...(project.sandboxes ?? [])]
+  // The scratch cwd (new-agent-bar's default chat home) — its sessions list under a synthetic
+  // "Scratch" group; a chat must never be invisible in the task manager just because it lives
+  // outside every opened project. Only in the all-projects view: picking a workspace means
+  // "show me that project".
+  const scratchDir = createMemo(() => (focusedSync().data.path as { scratchDir?: string } | undefined)?.scratchDir)
   const projectDirectories = createMemo(() => {
     const project = selectedProject()
-    if (!project) return projects().flatMap(directories)
+    if (!project) {
+      const scratch = scratchDir()
+      const opened = projects().flatMap(directories)
+      return scratch && !opened.some((directory) => pathKey(directory) === pathKey(scratch))
+        ? [...opened, scratch]
+        : opened
+    }
     return directories(project)
   })
   const sessionLoad = useQuery(() => ({
@@ -284,13 +310,15 @@ export function NewHome() {
     },
   }))
 
-  const allRecords = createMemo(() =>
-    buildHomeSessionRecords({
+  const allRecords = createMemo(() => {
+    const scratch = scratchDir()
+    return buildHomeSessionRecords({
       sync: focusedSync(),
       projectDirectories,
       projects,
-    }),
-  )
+      ...(scratch ? { scratch: { directory: scratch, name: language.t("home.scratch.name") } } : {}),
+    })
+  })
   const records = createMemo(() => allRecords().slice(0, HOME_SESSION_LIMIT))
   // Tags component (notes/entities.md T0): the tag filter over chat processes. The universe is the
   // tags of the currently listed roots; picking one narrows the list (attention cluster included).
@@ -624,8 +652,13 @@ export function NewHome() {
     if (!conn) return
     const directory = project?.worktree ?? session.location.directory
     const ctx = global.ensureServerCtx(conn)
-    ctx.projects.open(directory)
-    ctx.projects.touch(directory)
+    // The scratch cwd is server plumbing, not a user folder — opening it as a project would
+    // pin a "scratch" workspace into the projects list forever. Its chats open by tab alone.
+    const scratch = scratchDir()
+    if (!scratch || pathKey(directory) !== pathKey(scratch)) {
+      ctx.projects.open(directory)
+      ctx.projects.touch(directory)
+    }
     startTransition(() => {
       const tab = tabs.addSessionTab({ server: ServerConnection.key(conn), sessionId: session.id })
       tabs.select(tab)

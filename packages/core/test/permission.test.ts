@@ -15,6 +15,7 @@ import { SessionV2 } from "@novaclaw/core/session"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { SessionStore } from "@novaclaw/core/session/store"
 import { SessionRecordEvent } from "@novaclaw/schema/session-record-event"
+import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
 import { eq } from "drizzle-orm"
 import { location } from "./fixture/location"
 import { testEffect } from "./lib/effect"
@@ -294,6 +295,37 @@ describe("PermissionV2", () => {
       expect(exit._tag).toBe("Failure")
       expect(yield* service.list()).toEqual([])
       expect(yield* service.get(request.id)).toBeUndefined()
+    }),
+  )
+
+  // A SETTLED DRAIN takes its pending asks with it too (owner-hit 2026-07-22): once the drain
+  // publishes idle/exited (Stop, exit, error) the tool awaiting the answer is gone, and a stale
+  // ask wedged the chat — the ask dock replaces the composer, leaving no Stop and no way to
+  // re-prompt.
+  it.effect("rejects a settled drain's pending asks on the idle status", () =>
+    Effect.gen(function* () {
+      yield* setup()
+      const { service, fiber, request } = yield* waitForRequest()
+      expect(yield* service.list()).toEqual([request])
+
+      const events = yield* EventV2.Service
+      const replied = yield* Deferred.make<{ requestID: string; reply: string }>()
+      const unsubscribe = yield* events.listen((event) =>
+        event.type === PermissionV2.Event.Replied.type
+          ? Deferred.succeed(replied, event.data as { requestID: string; reply: string }).pipe(Effect.asVoid)
+          : Effect.void,
+      )
+      yield* Effect.addFinalizer(() => unsubscribe)
+
+      yield* events.publish(SessionStatusEvent.Status, {
+        sessionID: request.sessionID,
+        status: { type: "idle" },
+      })
+
+      expect(yield* Deferred.await(replied)).toMatchObject({ requestID: request.id, reply: "reject" })
+      const exit = yield* Fiber.await(fiber)
+      expect(exit._tag).toBe("Failure")
+      expect(yield* service.list()).toEqual([])
     }),
   )
 

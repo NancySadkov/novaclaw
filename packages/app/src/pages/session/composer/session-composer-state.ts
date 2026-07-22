@@ -64,6 +64,22 @@ export function createSessionComposerController(options?: { closeMs?: number | (
     return store.responding === perm.id
   })
 
+  // The ask-flood escape hatch (owner 2026-07-22): Stop from the ask dock interrupts the RUN.
+  // The server's drain-settled sweep then rejects the now-orphaned asks (PermissionV2/QuestionV2
+  // listen for the idle status), their Replied/Rejected events clear every client store, and the
+  // composer returns. Without this, a run waiting on an ask had NO Stop anywhere — the dock
+  // replaces the composer — so a 20-file write plan meant 20 decisions or a wedged chat.
+  const stop = () => {
+    const sessionID = params.id
+    if (!sessionID) return
+    sdk()
+      .client.v2.session.interrupt({ sessionID })
+      .catch((err: unknown) => {
+        const description = err instanceof Error ? err.message : String(err)
+        showToast({ title: language.t("common.requestFailed"), description })
+      })
+  }
+
   // 1K: six verdict-scope replies + an optional deny reason. F1e S6: rides the native V2
   // session-scoped reply route; the generated SDK type still lags the nine-literal union the
   // server schema accepts, hence the cast (golden rule: never edit sdk/gen).
@@ -188,6 +204,7 @@ export function createSessionComposerController(options?: { closeMs?: number | (
     permissionRequest,
     permissionResponding,
     decide,
+    stop,
     todos,
     dock: () =>
       store.sessionID === params.id

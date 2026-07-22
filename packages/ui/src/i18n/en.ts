@@ -152,6 +152,7 @@ export const dict: Record<string, string> = {
   "ui.permission.denyFile": "Deny file",
   "ui.permission.denyAlways": "Deny always",
   "ui.permission.reason.placeholder": "Optional — tell the model why, or what to do instead. This note is sent only when you deny.",
+  "ui.permission.stopRun": "Stop the run",
 
   "ui.message.expand": "Expand message",
   "ui.message.collapse": "Collapse message",

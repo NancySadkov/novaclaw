@@ -12,6 +12,8 @@ export function SessionPermissionDock(props: {
   request: PermissionV2Request
   responding: boolean
   onDecide: (reply: PermissionReply, message?: string) => void
+  /** Stop the whole run (the ask-flood escape hatch) — interrupts; the orphaned asks then clear. */
+  onStop?: () => void
 }) {
   const language = useLanguage()
   const [reason, setReason] = createSignal("")
@@ -37,6 +39,20 @@ export function SessionPermissionDock(props: {
             <Icon name="warning" size="normal" />
           </span>
           <div data-slot="permission-header-title">{language.t("notification.permission.title")}</div>
+          <Show when={props.onStop}>
+            {(onStop) => (
+              <Button
+                variant="ghost"
+                size="normal"
+                class="ml-auto shrink-0"
+                data-action="permission-stop-run"
+                onClick={() => onStop()()}
+              >
+                <Icon name="stop" size="small" />
+                {language.t("ui.permission.stopRun")}
+              </Button>
+            )}
+          </Show>
         </div>
       }
       footer={
