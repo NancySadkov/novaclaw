@@ -1,4 +1,7 @@
 import { describe, expect } from "bun:test"
+import nodeFs from "node:fs"
+import os from "node:os"
+import nodePath from "node:path"
 import { DateTime, Duration, Effect, Layer, Queue, Stream } from "effect"
 import { Messenger } from "@novaclaw/schema/messenger"
 import { SessionEvent } from "@novaclaw/schema/session-event"
@@ -29,21 +32,27 @@ type MockInfo = {
   parentID?: string
   type?: string
 }
+// A real (temp) workspace directory, so the P5 big-attachment leg can prove the on-disk write.
+const WORKDIR = nodeFs.mkdtempSync(nodePath.join(os.tmpdir(), "novaclaw-gw-test-"))
 const makeSessionMock = () => {
-  const prompts: { sessionID: string; text: string }[] = []
+  const prompts: { sessionID: string; text: string; files?: { uri: string; mime: string; name?: string }[] }[] = []
   const created: MockInfo[] = []
   const infos = new Map<string, MockInfo>()
-  infos.set("ses_alpha", { id: "ses_alpha", title: "Fix the login bug", location: { directory: "C:/work" } })
-  infos.set("ses_beta", { id: "ses_beta", title: "Design a logo", location: { directory: "C:/work" } })
+  infos.set("ses_alpha", { id: "ses_alpha", title: "Fix the login bug", location: { directory: WORKDIR } })
+  infos.set("ses_beta", { id: "ses_beta", title: "Design a logo", location: { directory: WORKDIR } })
   const sessionList: { id: string; title?: string; agent?: string }[] = [
     { id: "ses_alpha", title: "Fix the login bug", agent: "build" },
     { id: "ses_beta", title: "Design a logo" },
   ]
   let childSeq = 0
   const layer = Layer.mock(SessionV2.Service, {
-    prompt: (input: { sessionID: string; prompt: { text: string } }) =>
+    prompt: (input: { sessionID: string; prompt: { text: string; files?: { uri: string; mime: string; name?: string }[] } }) =>
       Effect.sync(() => {
-        prompts.push({ sessionID: input.sessionID, text: input.prompt.text })
+        prompts.push({
+          sessionID: input.sessionID,
+          text: input.prompt.text,
+          ...(input.prompt.files === undefined ? {} : { files: input.prompt.files }),
+        })
         return undefined as never
       }),
     list: () => Effect.succeed(sessionList as never),
@@ -96,12 +105,15 @@ const makeFakeDriver = () => {
     connects: 0,
     secrets: [] as (string | undefined)[],
     queue: undefined as Queue.Queue<MessengerDriver.InboundEvent> | undefined,
-    sent: [] as { chatID: string; text: string | undefined }[],
+    sent: [] as { chatID: string; text: string | undefined; fileName?: string }[],
     failNext: false,
     challengeNext: false,
     open: 0,
     liveChats: undefined as readonly MessengerDriver.ChatSnapshot[] | undefined,
     history: {} as Record<string, readonly MessengerDriver.HistoryEntry[]>,
+    // P5: downloadable file bytes by FileRef id; download call log.
+    files: {} as Record<string, Uint8Array>,
+    downloads: [] as string[],
   }
   const driver: MessengerDriver.Driver = {
     id: "fake",
@@ -127,11 +139,23 @@ const makeFakeDriver = () => {
           inbound: Stream.fromQueue(queue),
           send: (chatID, message) =>
             Effect.sync(() => {
-              state.sent.push({ chatID, text: message.text })
+              state.sent.push({
+                chatID,
+                text: message.text,
+                ...(message.file === undefined ? {} : { fileName: message.file.name }),
+              })
               return { messageID: "m" + state.sent.length }
             }),
           ...(state.liveChats === undefined ? {} : { listChats: () => Effect.succeed(state.liveChats!) }),
           history: (chatID, limit) => Effect.succeed((state.history[chatID] ?? []).slice(-limit)),
+          downloadFile: (ref) =>
+            Effect.suspend(() => {
+              state.downloads.push(ref.id)
+              const data = state.files[ref.id]
+              return data === undefined
+                ? Effect.fail(new MessengerDriver.FileError({ reason: "no such file" }))
+                : Effect.succeed(data)
+            }),
         } satisfies MessengerDriver.Connection
       }),
   }
@@ -173,6 +197,7 @@ const message = (
     text?: string
     sender?: string
     kind?: Messenger.ChatKind
+    attachments?: readonly MessengerDriver.FileRef[]
   },
 ): MessengerDriver.InboundEvent => ({
   kind: "message",
@@ -185,6 +210,7 @@ const message = (
     ...(opts?.owner ? { owner: true } : {}),
   },
   text: opts?.text ?? "hello",
+  ...(opts?.attachments === undefined ? {} : { attachments: opts.attachments }),
   at: Date.now(),
 })
 
@@ -416,7 +442,7 @@ describe("MessengerGateway pipeline", () => {
       expect(child.parentID).toBe("ses_alpha")
       expect(child.type).toBe("goal-oriented")
       expect(child.title).toBe("summarize my inbox")
-      expect(child.location.directory).toBe("C:/work")
+      expect(child.location.directory).toBe(WORKDIR)
       expect(MessengerPipeline.dispatchTarget(child.metadata)).toEqual({ accountID: account.id, chatID: "self1" })
 
       // The task prompt went to the CHILD (address stripped, provenance framed) — the console
@@ -537,6 +563,102 @@ describe("MessengerGateway pipeline", () => {
       })
       yield* Effect.sleep(Duration.millis(150))
       expect(fake.state.sent.slice(quietBefore).some((s) => s.text?.includes("should not be posted"))).toBe(false)
+
+      yield* store.removeAccount(account.id)
+      yield* gateway.reload()
+    }),
+  )
+
+  it.live("inbound attachments materialize as prompt files — small inline, big on disk (P5)", () =>
+    Effect.gen(function* () {
+      const { store, gateway, account, queue } = yield* online("files-in")
+      yield* store.createBinding({ accountID: account.id, chatID: "900", sessionID: "ses_beta", trust: "operator" })
+      const promptsBefore = session.prompts.length
+      fake.state.files["small-1"] = new TextEncoder().encode("tiny spec content")
+      fake.state.files["big-1"] = new Uint8Array(1_100_000).fill(65)
+
+      // Small file → inline data: URI the model sees at lowering.
+      yield* Queue.offer(queue, message("900", { text: "here's the spec", attachments: [{ id: "small-1", name: "spec.txt", mime: "text/plain", size: 17 }] }))
+      yield* eventually(
+        Effect.sync(() => session.prompts.slice(promptsBefore)),
+        (prompts) => prompts.some((p) => p.files !== undefined),
+        "small file inlined",
+      )
+      const small = session.prompts.slice(promptsBefore).find((p) => p.files !== undefined)
+      expect(small?.files?.[0]?.uri.startsWith("data:text/plain;base64,")).toBe(true)
+      expect(small?.files?.[0]?.name).toBe("spec.txt")
+
+      // Big file → written under the session workspace's downloads/, noted in the text.
+      yield* Queue.offer(queue, message("900", { text: "and the raw dump", attachments: [{ id: "big-1", name: "dump.bin", mime: "application/octet-stream" }] }))
+      yield* eventually(
+        Effect.sync(() => session.prompts.slice(promptsBefore)),
+        (prompts) => prompts.some((p) => p.text.includes("saved to")),
+        "big file saved",
+      )
+      const big = session.prompts.slice(promptsBefore).find((p) => p.text.includes("saved to"))
+      const fileUri = big?.files?.find((f) => f.uri.startsWith("file://"))
+      expect(fileUri?.uri.includes("dump.bin")).toBe(true)
+      const saved = nodeFs
+        .readdirSync(nodePath.join(WORKDIR, "downloads"))
+        .filter((entry) => entry.endsWith("dump.bin"))
+      expect(saved).toHaveLength(1)
+      expect(nodeFs.statSync(nodePath.join(WORKDIR, "downloads", saved[0]!)).size).toBe(1_100_000)
+
+      // A ref the driver can't serve degrades to a legible note, never a dropped turn.
+      yield* Queue.offer(queue, message("900", { text: "and this one", attachments: [{ id: "ghost", name: "gone.pdf", mime: "application/pdf" }] }))
+      yield* eventually(
+        Effect.sync(() => session.prompts.slice(promptsBefore)),
+        (prompts) => prompts.some((p) => p.text.includes("failed to download")),
+        "failure noted",
+      )
+
+      yield* store.removeAccount(account.id)
+      yield* gateway.reload()
+    }),
+  )
+
+  it.live("gateway.sendFile is cold-start-guarded and paced; gateway.attachment serves the ring (P5)", () =>
+    Effect.gen(function* () {
+      const { store, gateway, account, queue } = yield* online("files-out")
+      fake.state.files["ref-9"] = new TextEncoder().encode("attachment bytes")
+
+      // A chat that never messaged us: a file cannot open a conversation.
+      const cold = yield* gateway.sendFile({
+        accountID: account.id,
+        chatID: "cold-chat",
+        file: { name: "logo.svg", mime: "image/svg+xml", data: new TextEncoder().encode("<svg/>") },
+      })
+      expect(cold.ok).toBe(false)
+      if (!cold.ok) expect(cold.reason).toContain("never messaged us")
+
+      // A known chat takes the file (with caption), through the paced send.
+      yield* Queue.offer(queue, message("77", { text: "send me the logo", sender: "client7", attachments: [{ id: "ref-9", name: "brief.pdf", mime: "application/pdf" }] }))
+      yield* eventually(store.hasChat(account.id, "77"), (seen) => seen === true, "chat seen")
+      const sentBefore = fake.state.sent.length
+      const sent = yield* gateway.sendFile({
+        accountID: account.id,
+        chatID: "77",
+        file: { name: "logo-v2.svg", mime: "image/svg+xml", data: new TextEncoder().encode("<svg>2</svg>") },
+        caption: "second draft",
+      })
+      expect(sent.ok).toBe(true)
+      yield* eventually(
+        Effect.sync(() => fake.state.sent.slice(sentBefore)),
+        (entries) => entries.some((s) => s.chatID === "77" && s.fileName === "logo-v2.svg" && s.text === "second draft"),
+        "file delivered",
+      )
+
+      // The ring serves the attachment the inbound pipeline indexed (chat "77" is unbound — the
+      // download op must work for lurk/audience flows too).
+      const fetched = yield* gateway.attachment({ accountID: account.id, chatID: "77", messageID: "msg-" + messageSeq })
+      expect(fetched.ok).toBe(true)
+      if (fetched.ok) {
+        expect(fetched.name).toBe("brief.pdf")
+        expect(new TextDecoder().decode(fetched.data)).toBe("attachment bytes")
+      }
+      const missing = yield* gateway.attachment({ accountID: account.id, chatID: "77", messageID: "nope" })
+      expect(missing.ok).toBe(false)
+      if (!missing.ok) expect(missing.reason).toContain("No attachment")
 
       yield* store.removeAccount(account.id)
       yield* gateway.reload()

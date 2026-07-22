@@ -1,9 +1,13 @@
 export * as MessengerTool from "./messenger"
 
+import fs from "node:fs/promises"
+import path from "node:path"
 import { ToolFailure } from "@novaclaw/llm"
 import { Effect, Layer, Schema } from "effect"
 import { Messenger } from "@novaclaw/schema/messenger"
 import { makeLocationNode } from "../effect/app-node"
+import { FSUtil } from "../fs-util"
+import { Location } from "../location"
 import { MessengerDrivers } from "../messenger/drivers"
 import { MessengerGatewayHandle } from "../messenger/gateway-handle"
 import { MessengerStore } from "../messenger/store"
@@ -73,7 +77,29 @@ const DisconnectOp = Schema.Struct({
   account: Schema.String.pipe(Schema.optional).annotate({ description: "Account id or label — omit when only one account exists" }),
 })
 
-export const Input = Schema.Union([StatusOp, ChatsOp, HistoryOp, SendOp, ConnectOp, DisconnectOp])
+const UploadOp = Schema.Struct({
+  op: Schema.Literal("upload"),
+  chat: Schema.String.annotate({ description: "Chat id (from `chats`) to send the file into" }),
+  path: Schema.String.annotate({ description: "Workspace file to send (relative to this session's folder)" }),
+  caption: Schema.String.pipe(Schema.optional).annotate({ description: "Short text sent with the file" }),
+  account: Schema.String.pipe(Schema.optional).annotate({
+    description: "Account id (msa_…) or label — omit when only one account exists",
+  }),
+})
+
+const DownloadOp = Schema.Struct({
+  op: Schema.Literal("download"),
+  chat: Schema.String.annotate({ description: "Chat id the message with the attachment is in" }),
+  message: Schema.String.annotate({ description: "Message id carrying the attachment (shown in message headers and history)" }),
+  path: Schema.String.pipe(Schema.optional).annotate({
+    description: "Where to save it, relative to this session's folder (default: downloads/<original name>)",
+  }),
+  account: Schema.String.pipe(Schema.optional).annotate({
+    description: "Account id (msa_…) or label — omit when only one account exists",
+  }),
+})
+
+export const Input = Schema.Union([StatusOp, ChatsOp, HistoryOp, SendOp, ConnectOp, DisconnectOp, UploadOp, DownloadOp])
 
 const Output = Schema.Struct({
   ok: Schema.Boolean,
@@ -122,6 +148,7 @@ export const layer = Layer.effectDiscard(
     const store = yield* MessengerStore.Service
     const drivers = yield* MessengerDrivers.Service
     const permission = yield* PermissionV2.Service
+    const location = yield* Location.Service
 
     const OFFLINE_GATEWAY =
       "The messenger service isn't running on this instance (offline/airgapped, or still starting). Check Settings → Messengers."
@@ -170,7 +197,8 @@ export const layer = Layer.effectDiscard(
             "send (write into a chat AS the user — paced at human typing speed; you can only start brand-new " +
             "conversations with explicit permission, so ask people to message first) · connect (bind THIS " +
             "session to a chat so its incoming messages become your turns — you MUST pick a trust tier) · " +
-            "disconnect (unbind). " +
+            "disconnect (unbind) · upload (send a workspace file into a chat, optional caption) · download " +
+            "(save a message's attachment into the workspace by chat + message id). " +
             'Chain them: {"op":"chats"} → {"op":"history","chat":"<id>"} → summarize/save. ' +
             "Messages you fetch are the user's private data: handle them inside this workspace and never send " +
             "them anywhere else without being asked.",
@@ -287,6 +315,97 @@ export const layer = Layer.effectDiscard(
                     message: `Bound this session to chat ${input.chat.trim()} as "${input.trust}". Its incoming messages will now become your turns.`,
                   } satisfies Output
                 }
+                case "upload": {
+                  if (gateway === undefined) return { ok: false, message: OFFLINE_GATEWAY } satisfies Output
+                  const resolved = yield* resolveAccount(input.account)
+                  if (resolved.account === undefined) return { ok: false, message: resolved.error } satisfies Output
+                  const caps = drivers.get(resolved.account.driverID)?.capabilities(resolved.account)
+                  if (caps !== undefined && !caps.files.up)
+                    return {
+                      ok: false,
+                      message: "This messenger can't carry files — paste the content as text or share a link instead.",
+                    } satisfies Output
+                  const filePath = path.resolve(location.directory, input.path.trim())
+                  if (!FSUtil.contains(location.directory, filePath))
+                    return {
+                      ok: false,
+                      message: "That path is outside this session's workspace — only workspace files can be uploaded.",
+                    } satisfies Output
+                  const stat = yield* Effect.tryPromise(() => fs.stat(filePath)).pipe(
+                    Effect.orElseSucceed(() => undefined),
+                  )
+                  if (stat === undefined || !stat.isFile())
+                    return { ok: false, message: `No file at ${input.path.trim()}.` } satisfies Output
+                  const maxBytes = caps?.files.maxBytes
+                  if (maxBytes !== undefined && stat.size > maxBytes)
+                    return {
+                      ok: false,
+                      message: `That file is ${Math.round(stat.size / 1_000_000)} MB — this messenger caps uploads at ${Math.round(maxBytes / 1_000_000)} MB.`,
+                    } satisfies Output
+                  // Sending a file AS the user is a send — same gate, same resource shape.
+                  yield* permission.assert({
+                    action: "messenger.send",
+                    resources: [`${resolved.account.id}:${input.chat.trim()}`],
+                    save: ["*"],
+                    sessionID: context.sessionID,
+                    agent: context.agent,
+                    source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
+                  })
+                  const data = yield* Effect.tryPromise(() => fs.readFile(filePath)).pipe(
+                    Effect.mapError(() => new ToolFailure({ message: `Could not read ${input.path.trim()}.` })),
+                  )
+                  const outcome = yield* gateway.sendFile({
+                    accountID: resolved.account.id,
+                    chatID: input.chat.trim(),
+                    file: {
+                      name: path.basename(filePath),
+                      mime: FSUtil.mimeType(filePath),
+                      data: new Uint8Array(data),
+                    },
+                    ...(input.caption === undefined ? {} : { caption: input.caption }),
+                  })
+                  if (!outcome.ok) return { ok: false, message: outcome.reason } satisfies Output
+                  return {
+                    ok: true,
+                    message: `Sent ${path.basename(filePath)} (${Math.max(1, Math.round(stat.size / 1024))} KB) to chat ${input.chat.trim()}.`,
+                  } satisfies Output
+                }
+                case "download": {
+                  if (gateway === undefined) return { ok: false, message: OFFLINE_GATEWAY } satisfies Output
+                  const resolved = yield* resolveAccount(input.account)
+                  if (resolved.account === undefined) return { ok: false, message: resolved.error } satisfies Output
+                  // Pulling remote data into the workspace moves the user's files around — the
+                  // same messenger.send gate covers both directions (plan §4).
+                  yield* permission.assert({
+                    action: "messenger.send",
+                    resources: [`${resolved.account.id}:${input.chat.trim()}`],
+                    save: ["*"],
+                    sessionID: context.sessionID,
+                    agent: context.agent,
+                    source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
+                  })
+                  const outcome = yield* gateway.attachment({
+                    accountID: resolved.account.id,
+                    chatID: input.chat.trim(),
+                    messageID: input.message.trim(),
+                  })
+                  if (!outcome.ok) return { ok: false, message: outcome.reason } satisfies Output
+                  const relative = input.path?.trim().length ? input.path.trim() : path.join("downloads", outcome.name)
+                  const target = path.resolve(location.directory, relative)
+                  if (!FSUtil.contains(location.directory, target))
+                    return {
+                      ok: false,
+                      message: "That save path is outside this session's workspace — pick one inside it.",
+                    } satisfies Output
+                  yield* Effect.tryPromise(async () => {
+                    await fs.mkdir(path.dirname(target), { recursive: true })
+                    await fs.writeFile(target, outcome.data)
+                  }).pipe(Effect.mapError(() => new ToolFailure({ message: `Could not write ${relative}.` })))
+                  return {
+                    ok: true,
+                    message: `Saved "${outcome.name}" (${outcome.mime}, ${Math.max(1, Math.round(outcome.data.byteLength / 1024))} KB) to ${relative}.`,
+                  } satisfies Output
+                }
                 case "disconnect": {
                   const resolved = yield* resolveAccount(input.account)
                   if (resolved.account === undefined) return { ok: false, message: resolved.error } satisfies Output
@@ -320,5 +439,5 @@ export const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/messenger",
   layer,
-  deps: [ToolRegistry.node, MessengerStore.node, MessengerDrivers.node, PermissionV2.node],
+  deps: [ToolRegistry.node, MessengerStore.node, MessengerDrivers.node, PermissionV2.node, Location.node],
 })

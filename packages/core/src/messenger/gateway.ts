@@ -1,7 +1,10 @@
 export * as MessengerGateway from "./gateway"
 
+import fs from "node:fs/promises"
+import path from "node:path"
 import { Context, Duration, Effect, Fiber, FiberSet, Layer, Semaphore, Stream } from "effect"
 import { Messenger } from "@novaclaw/schema/messenger"
+import type { FileAttachment } from "@novaclaw/schema/prompt"
 import { Session } from "@novaclaw/schema/session"
 import { SessionEvent } from "@novaclaw/schema/session-event"
 import { copySessionRecipes } from "../adhoc-tools"
@@ -40,6 +43,15 @@ const DAILY_NEW_CONVERSATION_CAP = 20
 // Human-typed `Nova, …` prompts land far under it; a paste-flood gets a legible refusal.
 const MAX_DISPATCHES_PER_MINUTE = 10
 const DISPATCH_RATE_WINDOW_MS = 60_000
+// Files both ways (P5, edge #6): attachments at or under the inline cap ride the prompt as
+// data: URIs; bigger ones land on disk under the session location's downloads/ as file:// refs.
+// The fetch cap bounds what we'll pull at all (a poisoned 2 GB "brief" must not fill the disk).
+const INLINE_FILE_CAP_BYTES = 1_000_000
+const FETCH_FILE_CAP_BYTES = 50_000_000
+const MAX_ATTACHMENTS_PER_MESSAGE = 5
+// The recent-attachment ring: (account:chat:message) → FileRefs, so the tool's `download` op can
+// fetch a file the operator points at by message id (ids are in the provenance headers).
+const ATTACHMENT_RING_CAPACITY = 500
 
 export type SendOutcome = { readonly ok: true } | { readonly ok: false; readonly reason: string }
 
@@ -54,6 +66,10 @@ export type ChatsOutcome =
 
 export type HistoryOutcome =
   | { readonly ok: true; readonly messages: readonly MessengerDriverContract.HistoryEntry[] }
+  | { readonly ok: false; readonly reason: string }
+
+export type AttachmentOutcome =
+  | { readonly ok: true; readonly name: string; readonly mime: string; readonly data: Uint8Array }
   | { readonly ok: false; readonly reason: string }
 
 export interface Interface {
@@ -83,6 +99,21 @@ export interface Interface {
     readonly text: string
     readonly initiate?: boolean
   }) => Effect.Effect<SendOutcome>
+  /** Send one file into a chat (the tool's `upload` op) — same traffic rules as `send`: paced by
+   *  the one hand, never a cold start (a file is a reply, not an opener). */
+  readonly sendFile: (input: {
+    readonly accountID: Messenger.AccountID
+    readonly chatID: string
+    readonly file: MessengerDriverContract.OutboundFile
+    readonly caption?: string
+  }) => Effect.Effect<SendOutcome>
+  /** Fetch an attachment by the message that carried it (the tool's `download` op) — served from
+   *  the recent-attachment ring the inbound pipeline maintains. */
+  readonly attachment: (input: {
+    readonly accountID: Messenger.AccountID
+    readonly chatID: string
+    readonly messageID: string
+  }) => Effect.Effect<AttachmentOutcome>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/MessengerGateway") {}
@@ -129,6 +160,19 @@ export const layer = Layer.effect(
     const initiations = { day: "", count: 0 }
     // §0.1.5 dispatcher: chatKey -> recent task-spawn timestamps (the per-chat rate guard).
     const dispatchRate = new Map<string, number[]>()
+    // Recent attachments by (account:chat:message) — bounded FIFO; the `download` op's index.
+    const attachments = new Map<string, readonly MessengerDriverContract.FileRef[]>()
+    const attachmentOrder: string[] = []
+    const rememberAttachments = (key: string, refs: readonly MessengerDriverContract.FileRef[]) => {
+      if (!attachments.has(key)) {
+        attachmentOrder.push(key)
+        if (attachmentOrder.length > ATTACHMENT_RING_CAPACITY) {
+          const evicted = attachmentOrder.shift()
+          if (evicted !== undefined) attachments.delete(evicted)
+        }
+      }
+      attachments.set(key, refs)
+    }
 
     // Every outbound message — command replies, relayed assistant text, proactive tool sends —
     // goes through the pacer, so nothing ever bursts or posts instantly.
@@ -154,6 +198,68 @@ export const layer = Layer.effect(
     const reply = (connection: Connection, chatID: string, text: string) =>
       paceSend(connection, chatID, text).pipe(Effect.ignore)
 
+    // Files IN (P5, edge #6): fetch each attachment and hand it to the session as a normal
+    // prompt file — small ones inline (data: URI, model-visible at lowering), big ones land in
+    // the session workspace's downloads/ with a note naming the path (the agent reads it with
+    // its own tools). Every failure is a legible note line, never a dropped turn.
+    const safeFileName = (raw: string): string => {
+      const cleaned = raw.replaceAll(/[^\w.\- ()]+/g, "_").trim()
+      return (cleaned.length === 0 ? "file" : cleaned).slice(-96)
+    }
+    const materializeAttachments = (
+      connection: Connection,
+      directory: string | undefined,
+      refs: readonly MessengerDriverContract.FileRef[],
+    ): Effect.Effect<{ files: FileAttachment[]; notes: string[] }> =>
+      Effect.gen(function* () {
+        const files: FileAttachment[] = []
+        const notes: string[] = []
+        for (const ref of refs.slice(0, MAX_ATTACHMENTS_PER_MESSAGE)) {
+          const name = safeFileName(ref.name ?? ref.id)
+          if (ref.size !== undefined && ref.size > FETCH_FILE_CAP_BYTES) {
+            notes.push(`[attachment "${name}" skipped — ${Math.round(ref.size / 1_000_000)} MB is over the ${FETCH_FILE_CAP_BYTES / 1_000_000} MB fetch cap]`)
+            continue
+          }
+          const download = connection.downloadFile
+          if (download === undefined) {
+            notes.push(`[attachment "${name}" cannot be fetched — this messenger has no file download]`)
+            continue
+          }
+          const outcome = yield* download(ref).pipe(
+            Effect.map((data) => ({ data }) as { data?: Uint8Array; reason?: string }),
+            Effect.catch((error) => Effect.succeed({ reason: error.reason } as { data?: Uint8Array; reason?: string })),
+          )
+          if (outcome.data === undefined) {
+            notes.push(`[attachment "${name}" failed to download: ${outcome.reason ?? "unknown error"}]`)
+            continue
+          }
+          const mime = ref.mime ?? "application/octet-stream"
+          if (outcome.data.byteLength <= INLINE_FILE_CAP_BYTES) {
+            files.push({ uri: `data:${mime};base64,${Buffer.from(outcome.data).toString("base64")}`, mime, name })
+            continue
+          }
+          if (directory === undefined) {
+            notes.push(`[attachment "${name}" is too large to inline and this session has no workspace to save it]`)
+            continue
+          }
+          const dir = path.join(directory, "downloads")
+          const target = path.join(dir, `${Date.now().toString(36)}-${name}`)
+          const wrote = yield* Effect.tryPromise(async () => {
+            await fs.mkdir(dir, { recursive: true })
+            await fs.writeFile(target, outcome.data!)
+          }).pipe(Effect.as(true), Effect.catch(() => Effect.succeed(false)))
+          if (!wrote) {
+            notes.push(`[attachment "${name}" could not be saved to the workspace]`)
+            continue
+          }
+          files.push({ uri: `file://${target.replaceAll("\\", "/")}`, mime, name })
+          notes.push(`[attachment "${name}" saved to ${target}]`)
+        }
+        if (refs.length > MAX_ATTACHMENTS_PER_MESSAGE)
+          notes.push(`[${refs.length - MAX_ATTACHMENTS_PER_MESSAGE} more attachments ignored — max ${MAX_ATTACHMENTS_PER_MESSAGE} per message]`)
+        return { files, notes }
+      })
+
     // §0.1.5 rule 3 — the console DISPATCHES, it never inlines. Each `Nova, …` prompt in the
     // self-chat becomes a CHILD session: parent = the console's bound session (so agent/model/
     // permissions inherit via the config walk — the binding is the task template), type
@@ -168,6 +274,7 @@ export const layer = Layer.effect(
       binding: Messenger.BindingInfo,
       task: string,
       prompt: string,
+      files: readonly FileAttachment[] = [],
     ) =>
       Effect.gen(function* () {
         const key = MessengerPipeline.chatKey(account.id, event.chat.chatID)
@@ -193,7 +300,11 @@ export const layer = Layer.effect(
           })
           // Spawn parity (4D): the child inherits the console session's ad-hoc recipes. Best-effort.
           yield* Effect.tryPromise(() => copySessionRecipes(parent.id, child.id)).pipe(Effect.ignore)
-          yield* sessions.prompt({ sessionID: child.id, prompt: { text: prompt }, delivery: "queue" })
+          yield* sessions.prompt({
+            sessionID: child.id,
+            prompt: { text: prompt, ...(files.length === 0 ? {} : { files: [...files] }) },
+            delivery: "queue",
+          })
           return true
         }).pipe(Effect.catch(() => Effect.succeed(false)))
         yield* reply(
@@ -339,6 +450,10 @@ export const layer = Layer.effect(
           at: event.at,
         })
         yield* events.publish(Messenger.Event.ChatSeen, { accountID: account.id, chatID: event.chat.chatID }).pipe(Effect.ignore)
+        // Index attachments for the tool's `download` op — for EVERY seen message (an audience
+        // agent lurks but may still be asked to fetch a file someone posted).
+        if (event.attachments !== undefined && event.attachments.length > 0)
+          rememberAttachments(`${account.id}:${event.chat.chatID}:${event.messageID}`, event.attachments)
 
         const contact = yield* store.getContact(account.id, event.sender.id)
         if (contact?.trust === "blocked") return // dropped before anything else sees it
@@ -376,19 +491,33 @@ export const layer = Layer.effect(
           yield* reply(connection, event.chat.chatID, "No session is linked here yet. /sessions then /use <n>.")
           return
         }
+        // Files in (P5): materialize attachments into prompt files + note lines BEFORE framing,
+        // so the notes ride inside the provenance body the model reads.
+        const bound = yield* sessions.get(binding.sessionID as Session.ID).pipe(Effect.orElseSucceed(() => undefined))
+        const materialized =
+          event.attachments !== undefined && event.attachments.length > 0
+            ? yield* materializeAttachments(connection, bound?.location.directory, event.attachments)
+            : { files: [], notes: [] }
+        const body = [promptText ?? event.text, ...materialized.notes].filter(
+          (line): line is string => line !== undefined && line.length > 0,
+        )
         const text = MessengerPipeline.provenance(
-          { ...event, ...(promptText === undefined ? {} : { text: promptText }) },
+          { ...event, ...(body.length === 0 ? {} : { text: body.join("\n") }) },
           account.driverID,
           binding.trust,
         )
         // §0.1.5 rule 3: the self-chat console spawns a task per addressed prompt — it never
         // drives its bound session inline. Every other chat routes as before.
         if (event.chat.self === true) {
-          yield* dispatch(account, connection, event, binding, promptText ?? "", text)
+          yield* dispatch(account, connection, event, binding, promptText ?? "", text, materialized.files)
           return
         }
         yield* sessions
-          .prompt({ sessionID: binding.sessionID as Session.ID, prompt: { text }, delivery: "queue" })
+          .prompt({
+            sessionID: binding.sessionID as Session.ID,
+            prompt: { text, ...(materialized.files.length === 0 ? {} : { files: materialized.files }) },
+            delivery: "queue",
+          })
           .pipe(
             Effect.catch(() => reply(connection, event.chat.chatID, "That session is no longer available. /sessions to pick another.")),
           )
@@ -670,6 +799,64 @@ export const layer = Layer.effect(
           }
           yield* paceSend(entry.connection, input.chatID, input.text).pipe(Effect.ignore)
           return { ok: true } satisfies SendOutcome
+        }),
+      sendFile: (input) =>
+        Effect.gen(function* () {
+          const entry = entries.get(input.accountID)
+          if (entry?.connection === undefined)
+            return { ok: false, reason: "That messenger account isn't connected right now." } satisfies SendOutcome
+          const known = yield* store.hasChat(input.accountID, input.chatID).pipe(Effect.orElseSucceed(() => false))
+          const boundChat = yield* store
+            .bindingForChat(input.accountID, input.chatID)
+            .pipe(Effect.orElseSucceed(() => undefined))
+          if (!known && boundChat === undefined)
+            return {
+              ok: false,
+              reason:
+                "This chat has never messaged us — a file can't open a new conversation (traffic rules). Ask the person to message first.",
+            } satisfies SendOutcome
+          // Paced like any outbound (the one hand), but send errors surface — an oversized or
+          // refused upload must come back legible, never vanish.
+          return yield* pacer
+            .paced(
+              `${input.file.name} ${input.caption ?? ""}`,
+              entry.connection.send(input.chatID, {
+                file: input.file,
+                ...(input.caption === undefined || input.caption.length === 0 ? {} : { text: input.caption }),
+              }),
+            )
+            .pipe(
+              Effect.map(() => ({ ok: true }) satisfies SendOutcome),
+              Effect.catch((error) => Effect.succeed({ ok: false, reason: error.reason } satisfies SendOutcome)),
+            )
+        }),
+      attachment: (input) =>
+        Effect.gen(function* () {
+          const entry = entries.get(input.accountID)
+          if (entry?.connection === undefined)
+            return { ok: false, reason: "That messenger account isn't connected right now." } satisfies AttachmentOutcome
+          const refs = attachments.get(`${input.accountID}:${input.chatID}:${input.messageID}`)
+          const ref = refs?.[0]
+          if (ref === undefined)
+            return {
+              ok: false,
+              reason: "No attachment is on record for that message — only recently seen messages are indexed.",
+            } satisfies AttachmentOutcome
+          const download = entry.connection.downloadFile
+          if (download === undefined)
+            return { ok: false, reason: "This messenger can't download files." } satisfies AttachmentOutcome
+          return yield* download(ref).pipe(
+            Effect.map(
+              (data) =>
+                ({
+                  ok: true,
+                  name: safeFileName(ref.name ?? ref.id),
+                  mime: ref.mime ?? "application/octet-stream",
+                  data,
+                }) satisfies AttachmentOutcome,
+            ),
+            Effect.catch((error) => Effect.succeed({ ok: false, reason: error.reason } satisfies AttachmentOutcome)),
+          )
         }),
     })
     // Publish the runtime handle the `messenger` tool reads at call time (gateway-handle.ts —

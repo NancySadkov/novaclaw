@@ -3,8 +3,18 @@ export * as TelegramUserDriver from "./telegram-user"
 import { Effect, Queue, Stream } from "effect"
 import type { Messenger } from "@novaclaw/schema/messenger"
 import { MessengerFormat } from "../format"
-import type { ChatSnapshot, Connection, ConnectContext, Driver, InboundEvent, LoginPending, LoginSupport } from "../driver"
-import { ChallengeError, ConnectError, LoginCodeError, SendError } from "../driver"
+import type {
+  ChatSnapshot,
+  Connection,
+  ConnectContext,
+  Driver,
+  FileRef,
+  InboundEvent,
+  LoginPending,
+  LoginSupport,
+  OutboundFile,
+} from "../driver"
+import { ChallengeError, ConnectError, FileError, LoginCodeError, SendError } from "../driver"
 
 // The Telegram USER-ACCOUNT driver (messenger-plan §0.2 + §2.2 owner decision): the agent logs
 // into the user's OWN Telegram account (MTProto) and acts as them while they're AFK — the lay
@@ -63,6 +73,8 @@ export interface UserMessage {
   /** Sent BY the account itself (from any device — the agent, or the human on their phone). */
   readonly outgoing: boolean
   readonly text?: string
+  /** Downloadable media on the message (document/photo), already normalized to FileRefs. */
+  readonly attachments?: readonly FileRef[]
   readonly replyTo?: string
   readonly at: number
 }
@@ -87,6 +99,14 @@ export interface UserClient {
   /** Recent messages of one chat, newest LAST (chronological), up to `limit`. */
   readonly history: (chatID: string, limit: number) => Promise<readonly UserMessage[]>
   readonly sendText: (chatID: string, text: string) => Promise<{ readonly messageID: string }>
+  /** Upload + send one file (a document), with an optional caption. */
+  readonly sendFile: (
+    chatID: string,
+    file: OutboundFile,
+    caption?: string,
+  ) => Promise<{ readonly messageID: string }>
+  /** Download a file by the platform file id a FileRef carries. */
+  readonly downloadFile: (fileID: string) => Promise<Uint8Array>
   readonly close: () => Promise<void>
 }
 
@@ -327,6 +347,9 @@ export const make = (factory: UserClientFactory): Driver => {
                   ...(message.outgoing && !sentByUs ? { owner: true } : {}),
                 },
                 ...(message.text !== undefined && message.text.length > 0 ? { text: message.text } : {}),
+                ...(message.attachments !== undefined && message.attachments.length > 0
+                  ? { attachments: message.attachments }
+                  : {}),
                 ...(message.replyTo !== undefined ? { replyTo: message.replyTo } : {}),
                 at: message.at,
               })
@@ -335,26 +358,34 @@ export const make = (factory: UserClientFactory): Driver => {
         })
         yield* Effect.forkScoped(pump.pipe(Effect.catchCause(() => Queue.shutdown(queue))))
 
-        const send = (chatID: string, message: { text?: string; replyTo?: string }) =>
+        const mapSendError = (error: unknown) => {
+          if (error instanceof UserClientError)
+            return new SendError({ reason: failureText(error.failure), retryable: error.failure.kind === "flood" })
+          return new SendError({ reason: String(error), retryable: true })
+        }
+
+        const send = (chatID: string, message: { text?: string; file?: OutboundFile; replyTo?: string }) =>
           Effect.gen(function* () {
+            let lastID = "0"
+            if (message.file !== undefined) {
+              // A file message: the text rides as the caption (Telegram semantics); no chunking —
+              // captions are short by construction (the tool caps them).
+              const result = yield* Effect.tryPromise({
+                try: () => client.sendFile(chatID, message.file!, message.text),
+                catch: mapSendError,
+              })
+              sent.add(chatID, result.messageID)
+              return { messageID: result.messageID }
+            }
             if (message.text === undefined || message.text.length === 0) return { messageID: "0" }
             const chunks = MessengerFormat.chunk(MessengerFormat.downgrade(message.text, "plain"), {
               maxChars: CAPS.maxChars,
             })
-            let lastID = "0"
             for (const chunk of chunks) {
               const result = yield* Effect.tryPromise({
                 try: () => client.sendText(chatID, chunk),
-                catch: (error) => error,
-              }).pipe(
-                Effect.catch((error) => {
-                  if (error instanceof UserClientError)
-                    return Effect.fail(
-                      new SendError({ reason: failureText(error.failure), retryable: error.failure.kind === "flood" }),
-                    )
-                  return Effect.fail(new SendError({ reason: String(error), retryable: true }))
-                }),
-              )
+                catch: mapSendError,
+              })
               sent.add(chatID, result.messageID)
               lastID = result.messageID
             }
@@ -371,6 +402,14 @@ export const make = (factory: UserClientFactory): Driver => {
         return {
           inbound: Stream.fromQueue(queue),
           send,
+          downloadFile: (ref) =>
+            Effect.tryPromise({
+              try: () => client.downloadFile(ref.id),
+              catch: (error) =>
+                new FileError({
+                  reason: error instanceof UserClientError ? failureText(error.failure) : String(error),
+                }),
+            }),
           listChats: () =>
             demoteChallenge(
               tryClient(() =>

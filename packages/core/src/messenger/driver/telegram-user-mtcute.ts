@@ -76,8 +76,38 @@ export const classify = (error: unknown): UserClientError => {
 const peerKind = (peer: MtcutePeer): Messenger.ChatKind =>
   peer.type === "user" ? "dm" : peer.chatType === "channel" ? "channel" : "group"
 
+/** Downloadable media → a FileRef (the `fileId` string round-trips into downloadAsBuffer).
+ *  Documents and photos only in v1 — the shapes the "client sends a brief, agent reads it" use
+ *  case actually needs; anything else (polls, stickers, locations) is not a file. */
+const toAttachments = (message: MtcuteMessage): UserMessage["attachments"] => {
+  const media = message.media
+  if (media === null || media === undefined) return undefined
+  if (media.type === "document") {
+    return [
+      {
+        id: media.fileId,
+        name: media.fileName ?? "document",
+        mime: media.mimeType,
+        ...(typeof media.fileSize === "number" ? { size: media.fileSize } : {}),
+      },
+    ]
+  }
+  if (media.type === "photo") {
+    return [
+      {
+        id: media.fileId,
+        name: `photo-${message.id}.jpg`,
+        mime: "image/jpeg",
+        ...(typeof media.fileSize === "number" ? { size: media.fileSize } : {}),
+      },
+    ]
+  }
+  return undefined
+}
+
 const toUserMessage = (message: MtcuteMessage): UserMessage => {
   const replyTo = message.replyToMessage?.id ?? null
+  const attachments = toAttachments(message)
   return {
     chatID: String(message.chat.id),
     chatKind: peerKind(message.chat),
@@ -87,6 +117,7 @@ const toUserMessage = (message: MtcuteMessage): UserMessage => {
     senderName: message.sender.displayName,
     outgoing: message.isOutgoing,
     ...(message.text.length > 0 ? { text: message.text } : {}),
+    ...(attachments === undefined ? {} : { attachments }),
     ...(replyTo === null ? {} : { replyTo: String(replyTo) }),
     at: message.date.getTime(),
   }
@@ -201,6 +232,19 @@ export const factory: UserClientFactory = async (config: UserClientConfig): Prom
         const sent = await client.sendText(peer, text)
         return { messageID: String(sent.id) }
       }),
+    sendFile: (chatID, file, caption) =>
+      wrap(async () => {
+        const peer = selfID !== undefined && chatID === selfID ? "self" : Number(chatID)
+        const sent = await client.sendMedia(peer, {
+          type: "document",
+          file: file.data,
+          fileName: file.name,
+          fileMime: file.mime,
+          ...(caption !== undefined && caption.length > 0 ? { caption } : {}),
+        })
+        return { messageID: String(sent.id) }
+      }),
+    downloadFile: (fileID) => wrap(() => client.downloadAsBuffer(fileID)),
     close: () => client.destroy().catch(() => undefined),
   }
 }

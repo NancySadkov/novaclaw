@@ -29,6 +29,8 @@ const makeFakeClient = (opts: FakeOptions = {}) => {
     configs: [] as UserClientConfig[],
     closed: 0,
     sent: [] as { chatID: string; text: string }[],
+    sentFiles: [] as { chatID: string; name: string; mime: string; bytes: number; caption?: string }[],
+    downloads: [] as string[],
     signIns: [] as string[],
     passwordChecks: [] as string[],
     sessionExports: 0,
@@ -76,6 +78,21 @@ const makeFakeClient = (opts: FakeOptions = {}) => {
         state.sent.push({ chatID, text })
         sendSeq += 1
         return { messageID: "out-" + sendSeq }
+      },
+      sendFile: async (chatID, file, caption) => {
+        state.sentFiles.push({
+          chatID,
+          name: file.name,
+          mime: file.mime,
+          bytes: file.data.byteLength,
+          ...(caption === undefined ? {} : { caption }),
+        })
+        sendSeq += 1
+        return { messageID: "out-" + sendSeq }
+      },
+      downloadFile: async (fileID) => {
+        state.downloads.push(fileID)
+        return new TextEncoder().encode("bytes-of-" + fileID)
       },
       close: async () => {
         state.closed += 1
@@ -322,6 +339,50 @@ describe("TelegramUserDriver connect", () => {
       )
       expect(chats.map((chat) => chat.title)).toEqual(["Saved Messages", "Freelance clients"])
       expect(TelegramUserDriver.make(factory).meta.capabilities.listChats).toBe("full")
+    }),
+  )
+
+  it.live("files both ways: attachments pass through inbound; sendFile captions + tracks; downloads map (P5)", () =>
+    Effect.gen(function* () {
+      const batches: UserMessage[][] = [
+        [
+          userMessage({
+            messageID: "in-file",
+            text: "here's the brief",
+            attachments: [{ id: "file-abc", name: "brief.pdf", mime: "application/pdf", size: 1234 }],
+          }),
+        ],
+      ]
+      const { factory, state } = makeFakeClient({ pullBatches: batches })
+      const received: InboundEvent[] = []
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const connection = yield* connect(factory, "session-string-1")
+          yield* connection.inbound.pipe(
+            Stream.take(1),
+            Stream.runForEach((event) => Effect.sync(() => received.push(event))),
+          )
+          // Files out: rides sendFile with the text as the caption, and is sent-tracked.
+          const sent = yield* connection.send("555", {
+            file: { name: "logo-v2.svg", mime: "image/svg+xml", data: new TextEncoder().encode("<svg/>") },
+            text: "second draft",
+          })
+          expect(sent.messageID).toBe("out-1")
+          // Files in, by ref: the driver's downloadFile maps to the client.
+          const bytes = yield* connection.downloadFile!({ id: "file-abc" })
+          expect(new TextDecoder().decode(bytes)).toBe("bytes-of-file-abc")
+        }),
+      )
+      const inbound = received[0]
+      expect(inbound?.kind).toBe("message")
+      if (inbound?.kind === "message") {
+        expect(inbound.attachments).toHaveLength(1)
+        expect(inbound.attachments?.[0]?.name).toBe("brief.pdf")
+      }
+      expect(state.sentFiles).toEqual([
+        { chatID: "555", name: "logo-v2.svg", mime: "image/svg+xml", bytes: 6, caption: "second draft" },
+      ])
+      expect(state.downloads).toEqual(["file-abc"])
     }),
   )
 })

@@ -3,8 +3,8 @@ export * as TelegramDriver from "./telegram"
 import { Effect, Queue, Schema, Stream } from "effect"
 import { Messenger } from "@novaclaw/schema/messenger"
 import { MessengerFormat } from "../format"
-import type { ChatSnapshot, Connection, ConnectContext, Driver, InboundEvent } from "../driver"
-import { ConnectError, SendError } from "../driver"
+import type { ChatSnapshot, Connection, ConnectContext, Driver, FileRef, InboundEvent, OutboundFile } from "../driver"
+import { ConnectError, FileError, SendError } from "../driver"
 
 // The Telegram BOT-API driver (messenger-plan §2.1): raw HTTPS/JSON, zero dependencies — the
 // fakeable Telegram protocol that proves the whole gateway pipeline + the `key` auth path.
@@ -48,6 +48,12 @@ const TgDocument = Schema.Struct({
   mime_type: Schema.optional(Schema.String),
   file_size: Schema.optional(Schema.Number),
 })
+const TgPhotoSize = Schema.Struct({
+  file_id: Schema.String,
+  width: Schema.Number,
+  height: Schema.Number,
+  file_size: Schema.optional(Schema.Number),
+})
 const TgMessage = Schema.Struct({
   message_id: Schema.Number,
   from: Schema.optional(TgUser),
@@ -56,7 +62,12 @@ const TgMessage = Schema.Struct({
   text: Schema.optional(Schema.String),
   caption: Schema.optional(Schema.String),
   document: Schema.optional(TgDocument),
+  photo: Schema.optional(Schema.Array(TgPhotoSize)),
   reply_to_message: Schema.optional(Schema.Struct({ message_id: Schema.Number })),
+})
+const TgFile = Schema.Struct({
+  file_id: Schema.String,
+  file_path: Schema.optional(Schema.String),
 })
 const TgUpdate = Schema.Struct({
   update_id: Schema.Number,
@@ -67,10 +78,12 @@ const TgResponse = <A, I>(result: Schema.Codec<A, I>) =>
 const UpdatesResponse = TgResponse(Schema.Array(TgUpdate))
 const MessageResponse = TgResponse(TgMessage)
 const GetMeResponse = TgResponse(TgUser)
+const FileResponse = TgResponse(TgFile)
 
 const decodeUpdates = Schema.decodeUnknownOption(UpdatesResponse)
 const decodeMessage = Schema.decodeUnknownOption(MessageResponse)
 const decodeGetMe = Schema.decodeUnknownOption(GetMeResponse)
+const decodeFile = Schema.decodeUnknownOption(FileResponse)
 
 type TgMessageType = typeof TgMessage.Type
 
@@ -93,7 +106,9 @@ export const toInbound = (message: TgMessageType, selfID: number | undefined): I
     kind: chatKind(message.chat.type),
     title: chatTitle(message.chat),
   }
-  const attachments = message.document
+  // A photo update carries every size — the LAST entry is the biggest (Bot API contract).
+  const photo = message.photo?.at(-1)
+  const attachments: FileRef[] | undefined = message.document
     ? [
         {
           id: message.document.file_id,
@@ -102,7 +117,16 @@ export const toInbound = (message: TgMessageType, selfID: number | undefined): I
           ...(message.document.file_size === undefined ? {} : { size: message.document.file_size }),
         },
       ]
-    : undefined
+    : photo
+      ? [
+          {
+            id: photo.file_id,
+            name: `photo-${message.message_id}.jpg`,
+            mime: "image/jpeg",
+            ...(photo.file_size === undefined ? {} : { size: photo.file_size }),
+          },
+        ]
+      : undefined
   return {
     kind: "message",
     chat,
@@ -164,8 +188,27 @@ export const make = (fetchImpl: FetchLike): Driver => ({
         )
       const selfID = me._tag === "Some" && me.value.result ? me.value.result.id : undefined
 
-      const send = (chatID: string, message: { text?: string; replyTo?: string }) =>
+      const send = (chatID: string, message: { text?: string; file?: OutboundFile; replyTo?: string }) =>
         Effect.gen(function* () {
+          if (message.file !== undefined) {
+            // sendDocument is multipart (the file bytes ride the form); text rides as the caption.
+            const form = new FormData()
+            form.set("chat_id", chatID)
+            form.set("document", new Blob([message.file.data as BlobPart], { type: message.file.mime }), message.file.name)
+            if (message.text !== undefined && message.text.length > 0) form.set("caption", message.text.slice(0, 1024))
+            const raw = yield* Effect.tryPromise({
+              try: () => fetchImpl(`${API_BASE}/bot${token}/sendDocument`, { method: "POST", body: form }).then((r) => r.json()),
+              catch: (error) => new SendError({ reason: `Telegram sendDocument failed: ${String(error)}`, retryable: true }),
+            })
+            const decoded = decodeMessage(raw)
+            if (decoded._tag === "Some" && decoded.value.ok === false)
+              return yield* Effect.fail(
+                new SendError({ reason: decoded.value.description ?? "sendDocument rejected", retryable: false }),
+              )
+            return {
+              messageID: decoded._tag === "Some" && decoded.value.result ? String(decoded.value.result.message_id) : "0",
+            }
+          }
           if (message.text === undefined || message.text.length === 0) return { messageID: "0" }
           const chunks = MessengerFormat.chunk(MessengerFormat.downgrade(message.text, "html"), { maxChars: CAPS.maxChars })
           let lastID = "0"
@@ -231,9 +274,36 @@ export const make = (fetchImpl: FetchLike): Driver => ({
         ),
       )
 
+      // getFile → file_path → the file endpoint (a separate URL space from method calls).
+      const downloadFile = (ref: FileRef) =>
+        Effect.gen(function* () {
+          const raw = yield* call("getFile", { file_id: ref.id }).pipe(
+            Effect.mapError((error) => new FileError({ reason: error.reason })),
+          )
+          const decoded = decodeFile(raw)
+          if (decoded._tag === "None" || decoded.value.ok === false || decoded.value.result?.file_path === undefined)
+            return yield* Effect.fail(
+              new FileError({
+                reason:
+                  decoded._tag === "Some" && decoded.value.description
+                    ? `Telegram refused the download: ${decoded.value.description}`
+                    : "Telegram did not return a download path for that file (bots can only fetch files up to 20 MB).",
+              }),
+            )
+          return yield* Effect.tryPromise({
+            try: () =>
+              fetchImpl(`${API_BASE}/file/bot${token}/${decoded.value.result!.file_path}`).then(async (response) => {
+                if (!response.ok) throw new Error(`HTTP ${response.status}`)
+                return new Uint8Array(await response.arrayBuffer())
+              }),
+            catch: (error) => new FileError({ reason: `Telegram file download failed: ${String(error)}` }),
+          })
+        })
+
       return {
         inbound: Stream.fromQueue(queue),
         send,
+        downloadFile,
       } satisfies Connection
     }),
 })
