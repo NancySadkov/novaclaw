@@ -86,6 +86,9 @@ export interface EmailTransportConfig {
   readonly smtpHost: string
   readonly smtpPort: number
   readonly auth: EmailAuth
+  /** TLS on the wire (IMAP implicit TLS + SMTP STARTTLS). Default true — production ALWAYS uses it;
+   *  only the in-process loopback wire test runs plaintext (`false`). */
+  readonly secure?: boolean
 }
 
 export type EmailClientFactory = (config: EmailTransportConfig) => Promise<EmailClient>

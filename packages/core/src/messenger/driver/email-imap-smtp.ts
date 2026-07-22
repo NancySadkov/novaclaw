@@ -186,7 +186,7 @@ const connectStream = async (host: string, port: number, tls: boolean): Promise<
 const HEADER_FIELDS = "MESSAGE-ID IN-REPLY-TO REFERENCES FROM SUBJECT DATE"
 
 const imapConnect = async (config: EmailTransportConfig): Promise<{ stream: ByteStream; uidValidity: number }> => {
-  const stream = await connectStream(config.imapHost, config.imapPort, true)
+  const stream = await connectStream(config.imapHost, config.imapPort, config.secure !== false)
   await stream.line() // greeting (* OK ...)
   let tag = 0
   const command = async (text: string, opts?: { collectUntagged?: (line: string) => void; literals?: boolean }): Promise<string[]> => {
@@ -244,11 +244,13 @@ const smtpSend = async (config: EmailTransportConfig, mime: string, to: string):
   await expect("220")
   stream.write(`EHLO novaclaw\r\n`)
   await expect("250")
-  stream.write(`STARTTLS\r\n`)
-  await expect("220")
-  await stream.upgradeTLS(config.smtpHost)
-  stream.write(`EHLO novaclaw\r\n`)
-  await expect("250")
+  if (config.secure !== false) {
+    stream.write(`STARTTLS\r\n`)
+    await expect("220")
+    await stream.upgradeTLS(config.smtpHost)
+    stream.write(`EHLO novaclaw\r\n`)
+    await expect("250")
+  }
   stream.write(`AUTH XOAUTH2 ${xoauth2(config.auth.user, config.auth.accessToken ?? "")}\r\n`)
   await expect("235")
   stream.write(`MAIL FROM:<${config.auth.user}>\r\n`)
