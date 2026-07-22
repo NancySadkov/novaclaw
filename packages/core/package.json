@@ -67,6 +67,7 @@
     "@ff-labs/fff-bun": "0.9.4",
     "@ladybugdb/wasm-core": "0.18.2",
     "@lydell/node-pty": "catalog:",
+    "@mtcute/bun": "0.31.0",
     "@novaclaw/effect-drizzle-sqlite": "workspace:*",
     "@novaclaw/effect-sqlite-node": "workspace:*",
     "@novaclaw/llm": "workspace:*",

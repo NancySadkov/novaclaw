@@ -3572,8 +3572,24 @@ export type MessengerListDriversOutput = ReadonlyArray<{
   readonly id: string
   readonly name: string
   readonly icon: string
-  readonly auth: "key" | "oauth" | "none"
+  readonly auth: "login" | "key" | "none"
   readonly settings: ReadonlyArray<
+    | {
+        readonly type: "text"
+        readonly key: string
+        readonly message: string
+        readonly placeholder?: string
+        readonly when?: { readonly key: string; readonly op: "eq" | "neq"; readonly value: string }
+      }
+    | {
+        readonly type: "select"
+        readonly key: string
+        readonly message: string
+        readonly options: ReadonlyArray<{ readonly label: string; readonly value: string; readonly hint?: string }>
+        readonly when?: { readonly key: string; readonly op: "eq" | "neq"; readonly value: string }
+      }
+  >
+  readonly loginPrompts?: ReadonlyArray<
     | {
         readonly type: "text"
         readonly key: string
@@ -3627,6 +3643,7 @@ export type MessengerListAccountsOutput = ReadonlyArray<{
     | { readonly state: "connecting" }
     | { readonly state: "connected" }
     | { readonly state: "backoff"; readonly until: number | "Infinity" | "-Infinity" | "NaN"; readonly message: string }
+    | { readonly state: "challenge"; readonly message: string }
     | { readonly state: "error"; readonly message: string }
 }>
 
@@ -3710,6 +3727,40 @@ export type MessengerUpdateAccountOutput = void
 export type MessengerRemoveAccountInput = { readonly accountID: { readonly accountID: string }["accountID"] }
 
 export type MessengerRemoveAccountOutput = void
+
+export type MessengerLoginBeginInput = {
+  readonly accountID: { readonly accountID: string }["accountID"]
+  readonly inputs: { readonly inputs: { readonly [x: string]: string } }["inputs"]
+}
+
+export type MessengerLoginBeginOutput = {
+  readonly attemptID: string
+  readonly instructions: string
+  readonly time: { readonly created: number; readonly expires: number }
+}
+
+export type MessengerLoginStatusInput = { readonly attemptID: { readonly attemptID: string }["attemptID"] }
+
+export type MessengerLoginStatusOutput =
+  | { readonly status: "pending"; readonly time: { readonly created: number; readonly expires: number } }
+  | { readonly status: "complete"; readonly time: { readonly created: number; readonly expires: number } }
+  | {
+      readonly status: "failed"
+      readonly message: string
+      readonly time: { readonly created: number; readonly expires: number }
+    }
+  | { readonly status: "expired"; readonly time: { readonly created: number; readonly expires: number } }
+
+export type MessengerLoginCompleteInput = {
+  readonly attemptID: { readonly attemptID: string }["attemptID"]
+  readonly code: { readonly code: string }["code"]
+}
+
+export type MessengerLoginCompleteOutput = void
+
+export type MessengerLoginCancelInput = { readonly attemptID: { readonly attemptID: string }["attemptID"] }
+
+export type MessengerLoginCancelOutput = void
 
 export type PermissionsListRequestsInput = {
   readonly location?: {

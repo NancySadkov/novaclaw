@@ -12,6 +12,7 @@ import { SessionExecution } from "@novaclaw/core/session/execution"
 import { LocationServiceMap } from "@novaclaw/core/location-service-map"
 import { MessengerDrivers } from "@novaclaw/core/messenger/drivers"
 import { MessengerGateway } from "@novaclaw/core/messenger/gateway"
+import { MessengerLogin } from "@novaclaw/core/messenger/login"
 import { MessengerStore } from "@novaclaw/core/messenger/store"
 import { SessionExecutionLocal } from "@novaclaw/core/session/execution/local"
 import { ToolOutputStore } from "@novaclaw/core/tool-output-store"
@@ -43,6 +44,7 @@ const applicationServices = LayerNode.group([
   MessengerStore.node,
   MessengerDrivers.node,
   MessengerGateway.node,
+  MessengerLogin.node,
 ])
 
 export function createRoutes(password?: string) {

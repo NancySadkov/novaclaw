@@ -103,7 +103,10 @@ export type Auth = typeof Auth.Type
 
 /** Driver self-description the Settings UI renders the "Add account" form from. `settings` reuses
  *  the Integration prompt vocabulary (text/select fields); the SECRET (bot token or the user's
- *  session credential) never rides here — it goes through the credential store. */
+ *  session credential) never rides here — it goes through the credential store. `login` drivers
+ *  additionally carry `loginPrompts` — the inputs the login wizard collects BEFORE the provider
+ *  round-trip (phone number, optional 2FA password); the mid-flow code has its own prompt in the
+ *  returned attempt's instructions. */
 export interface DriverMeta extends Schema.Schema.Type<typeof DriverMeta> {}
 export const DriverMeta = Schema.Struct({
   id: Schema.String,
@@ -111,8 +114,27 @@ export const DriverMeta = Schema.Struct({
   icon: Schema.String,
   auth: Auth,
   settings: Schema.Array(Integration.Prompt),
+  loginPrompts: optional(Schema.Array(Integration.Prompt)),
   capabilities: Capabilities,
 }).annotate({ identifier: "Messenger.DriverMeta" })
+
+/** A pending `login`-auth attempt (messenger-plan §0.2): begin (phone → the provider sends a
+ *  code) hands back this ticket; complete(attemptID, code) finishes and stores the session
+ *  credential. Mirrors the Integration attempt vocabulary (status responses ARE
+ *  `Integration.AttemptStatus`) but lives in the messenger namespace — messenger accounts are
+ *  instance-global while integration attempts are location-scoped. */
+export const LoginAttemptID = Schema.String.check(Schema.isStartsWith("mla_")).pipe(
+  Schema.brand("Messenger.LoginAttemptID"),
+  statics((schema) => ({ create: () => schema.make("mla_" + ascending()) })),
+)
+export type LoginAttemptID = typeof LoginAttemptID.Type
+
+export class LoginAttempt extends Schema.Class<LoginAttempt>("Messenger.LoginAttempt")({
+  attemptID: LoginAttemptID,
+  /** Human instructions for the next step ("Telegram sent a code to your app — enter it here"). */
+  instructions: Schema.String,
+  time: Schema.Struct({ created: Schema.Number, expires: Schema.Number }),
+}) {}
 
 export class AccountInfo extends Schema.Class<AccountInfo>("Messenger.AccountInfo")({
   id: AccountID,

@@ -43,9 +43,16 @@ import { Truncate } from "@/tool/truncate"
 import { Worktree } from "@/worktree"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { MoveSession } from "@novaclaw/core/control-plane/move-session"
+import { Credential } from "@novaclaw/core/credential"
 import { Database } from "@novaclaw/core/database/database"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { Memory } from "@novaclaw/core/kb-graph/memory"
+import { MessengerDrivers } from "@novaclaw/core/messenger/drivers"
+import { MessengerGateway } from "@novaclaw/core/messenger/gateway"
+import { MessengerLogin } from "@novaclaw/core/messenger/login"
+import { MessengerPace } from "@novaclaw/core/messenger/pace"
+import { MessengerStore } from "@novaclaw/core/messenger/store"
+import { Offline } from "@novaclaw/core/offline"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { httpClient } from "@novaclaw/core/effect/app-node-platform"
 import { EventV2 } from "@novaclaw/core/event"
@@ -268,6 +275,23 @@ const app = LayerNode.group([
   PtyTicket.node,
 ])
 
+// The Messenger stack (messenger-plan §3.2: "the gateway is instance-global — it lives on the
+// INSTANCE, server-side"). The /api/messenger group is instance-global (no location middleware),
+// so unlike the location-scoped groups its services must be provided to the HTTP context here.
+// Wiring rules: siblings that need each other are provided INTERNALLY (base → gateway/login);
+// everything else (Database, EventV2, SessionV2, Global) is left as a requirement so the pipe's
+// LATER provides satisfy it with the SAME instances every other route uses — the gateway must
+// prompt into THE SessionV2, never a second one (the one-LocationServiceMap lesson generalized).
+// ⚠️ Found 2026-07-22 (P1.7 boot smoke): P0/P1 never added this — every /api/messenger route
+// 500'd "Service not found" on the real serve path (the fake-proven pipeline all ran against the
+// @novaclaw/server test assembly). This block is what makes the messenger real in the product.
+const messengerBase = Layer.mergeAll(MessengerStore.layer, MessengerDrivers.layer, Credential.layer)
+const messengerServices = Layer.mergeAll(
+  messengerBase,
+  MessengerGateway.layer.pipe(Layer.provide([messengerBase, MessengerPace.layer, Offline.layer])),
+  MessengerLogin.layer.pipe(Layer.provide(messengerBase)),
+)
+
 // Settings → SQLite: run the ONE first-boot import pass (every per-subsystem store) at server
 // startup, BEFORE any location boots — so every dir (incl. the shared scratch dir) sees the
 // same settings, rather than a scratch-first access finding empty stores. Idempotent + best-
@@ -309,6 +333,9 @@ export function createRoutes(
     Layer.provide(sessionLocationLayer),
     Layer.provide(locationLayer),
     Layer.provide(PtyEnvironment.layer),
+    // Before the SessionV2/app provides so the messenger stack's own requirements (SessionV2,
+    // EventV2, Database, Global) resolve to the SAME memoized instances the routes use.
+    Layer.provide(messengerServices),
     Layer.provide(
       SessionV2.defaultLayer.pipe(
         Layer.provide(SessionExecutionLocal.defaultLayer),

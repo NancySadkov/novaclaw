@@ -102,6 +102,14 @@ import type {
   MessengerUpdateAccountOutput,
   MessengerRemoveAccountInput,
   MessengerRemoveAccountOutput,
+  MessengerLoginBeginInput,
+  MessengerLoginBeginOutput,
+  MessengerLoginStatusInput,
+  MessengerLoginStatusOutput,
+  MessengerLoginCompleteInput,
+  MessengerLoginCompleteOutput,
+  MessengerLoginCancelInput,
+  MessengerLoginCancelOutput,
   PermissionsListRequestsInput,
   PermissionsListRequestsOutput,
   PermissionsListSavedInput,
@@ -959,6 +967,52 @@ export function make(options: ClientOptions) {
           {
             method: "DELETE",
             path: `/api/messenger/account/${encodeURIComponent(input.accountID)}`,
+            successStatus: 204,
+            declaredStatuses: [401, 400],
+            empty: true,
+          },
+          requestOptions,
+        ),
+      loginBegin: (input: MessengerLoginBeginInput, requestOptions?: RequestOptions) =>
+        request<MessengerLoginBeginOutput>(
+          {
+            method: "POST",
+            path: `/api/messenger/account/${encodeURIComponent(input.accountID)}/login`,
+            body: { inputs: input["inputs"] },
+            successStatus: 200,
+            declaredStatuses: [400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      loginStatus: (input: MessengerLoginStatusInput, requestOptions?: RequestOptions) =>
+        request<MessengerLoginStatusOutput>(
+          {
+            method: "GET",
+            path: `/api/messenger/login/${encodeURIComponent(input.attemptID)}`,
+            successStatus: 200,
+            declaredStatuses: [400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      loginComplete: (input: MessengerLoginCompleteInput, requestOptions?: RequestOptions) =>
+        request<MessengerLoginCompleteOutput>(
+          {
+            method: "POST",
+            path: `/api/messenger/login/${encodeURIComponent(input.attemptID)}/complete`,
+            body: { code: input["code"] },
+            successStatus: 204,
+            declaredStatuses: [400, 401],
+            empty: true,
+          },
+          requestOptions,
+        ),
+      loginCancel: (input: MessengerLoginCancelInput, requestOptions?: RequestOptions) =>
+        request<MessengerLoginCancelOutput>(
+          {
+            method: "DELETE",
+            path: `/api/messenger/login/${encodeURIComponent(input.attemptID)}`,
             successStatus: 204,
             declaredStatuses: [401, 400],
             empty: true,

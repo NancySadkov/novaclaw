@@ -1,6 +1,7 @@
 import { Credential } from "@novaclaw/core/credential"
 import { MessengerDrivers } from "@novaclaw/core/messenger/drivers"
 import { MessengerGateway } from "@novaclaw/core/messenger/gateway"
+import { MessengerLogin } from "@novaclaw/core/messenger/login"
 import { MessengerStore } from "@novaclaw/core/messenger/store"
 import type { Integration } from "@novaclaw/schema/integration"
 import { Messenger } from "@novaclaw/schema/messenger"
@@ -12,7 +13,15 @@ import { Api } from "../api"
 // P0 handlers (notes/messenger-plan.md §5): driver discovery + account CRUD. Secrets go through
 // the credential store under a PER-ACCOUNT synthetic integration id — Credential.create replaces
 // any credential for an integration, so two accounts on one platform must not share one id. The
-// gateway reloads after every mutation so status reflects the store immediately.
+// gateway reloads after every mutation so status reflects the store immediately. P1.7 adds the
+// login-attempt trio for `login`-auth drivers; a successful complete also reloads the gateway so
+// the freshly-credentialed account connects without further user action.
+
+const loginError = (error: MessengerLogin.LoginError) =>
+  new InvalidRequestError({
+    message: error.message,
+    kind: error.retryable ? "messenger_login_retry" : "messenger_login_failed",
+  })
 
 const credentialIntegrationID = (driverID: string, accountID: Messenger.AccountID): Integration.ID =>
   `messenger.${driverID}.${accountID}` as Integration.ID
@@ -119,6 +128,41 @@ export const MessengerHandler = HttpApiBuilder.group(Api, "server.messenger", (h
           if (account?.credentialID !== undefined) yield* credentials.remove(account.credentialID as Credential.ID)
           if (account !== undefined) yield* store.removeAccount(account.id)
           yield* gateway.reload()
+          return HttpApiSchema.NoContent.make()
+        }),
+      )
+      .handle(
+        "messenger.login.begin",
+        Effect.fn(function* (ctx) {
+          const login = yield* MessengerLogin.Service
+          return yield* login
+            .begin({ accountID: ctx.params.accountID, inputs: ctx.payload.inputs })
+            .pipe(Effect.mapError(loginError))
+        }),
+      )
+      .handle(
+        "messenger.login.status",
+        Effect.fn(function* (ctx) {
+          const login = yield* MessengerLogin.Service
+          return yield* login.status(ctx.params.attemptID).pipe(Effect.mapError(loginError))
+        }),
+      )
+      .handle(
+        "messenger.login.complete",
+        Effect.fn(function* (ctx) {
+          const login = yield* MessengerLogin.Service
+          const gateway = yield* MessengerGateway.Service
+          yield* login.complete({ attemptID: ctx.params.attemptID, code: ctx.payload.code }).pipe(Effect.mapError(loginError))
+          // The account now holds its session credential — connect it right away.
+          yield* gateway.reload()
+          return HttpApiSchema.NoContent.make()
+        }),
+      )
+      .handle(
+        "messenger.login.cancel",
+        Effect.fn(function* (ctx) {
+          const login = yield* MessengerLogin.Service
+          yield* login.cancel(ctx.params.attemptID)
           return HttpApiSchema.NoContent.make()
         }),
       )

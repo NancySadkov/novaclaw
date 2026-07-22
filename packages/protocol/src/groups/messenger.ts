@@ -1,3 +1,4 @@
+import { Integration } from "@novaclaw/schema/integration"
 import { Messenger } from "@novaclaw/schema/messenger"
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
@@ -7,7 +8,9 @@ import { InvalidRequestError } from "../errors"
 // account CRUD. INSTANCE-GLOBAL routes (no location middleware — accounts span locations, like
 // health). Secrets ride the `secret` payload field into the credential store and NEVER come back
 // out: every response carries `credentialID` references only. Chats/bindings/pairing land with
-// P1/P3.
+// P1/P3. P1.7 adds the `login`-auth attempt trio (begin/status/complete + cancel) for drivers
+// where the account is the USER'S OWN (Telegram user-account): the session credential the flow
+// yields is stored server-side; the wire only ever carries the phone/code the user types.
 
 const AccountWithStatus = Schema.Struct({
   account: Messenger.AccountInfo,
@@ -86,6 +89,61 @@ export const MessengerGroup = HttpApiGroup.make("server.messenger")
         summary: "Remove messenger account",
         description:
           "Remove a messenger account, its stored credential, seen chats, contacts, bindings, and cursor.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post("messenger.login.begin", "/api/messenger/account/:accountID/login", {
+      params: { accountID: Messenger.AccountID },
+      payload: Schema.Struct({ inputs: Schema.Record(Schema.String, Schema.String) }),
+      success: Messenger.LoginAttempt,
+      error: InvalidRequestError,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.messenger.login.begin",
+        summary: "Begin messenger login",
+        description:
+          "Start a login-auth attempt for an account whose driver signs into the user's own messenger account (inputs answer the driver's loginPrompts — e.g. phone and optional 2FA password). The provider sends a confirmation code; complete the attempt with it.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.get("messenger.login.status", "/api/messenger/login/:attemptID", {
+      params: { attemptID: Messenger.LoginAttemptID },
+      success: Integration.AttemptStatus,
+      error: InvalidRequestError,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.messenger.login.status",
+        summary: "Messenger login attempt status",
+        description: "Retrieve the state of a pending or recently finished messenger login attempt.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post("messenger.login.complete", "/api/messenger/login/:attemptID/complete", {
+      params: { attemptID: Messenger.LoginAttemptID },
+      payload: Schema.Struct({ code: Schema.String }),
+      success: HttpApiSchema.NoContent,
+      error: InvalidRequestError,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.messenger.login.complete",
+        summary: "Complete messenger login",
+        description:
+          "Finish a login attempt with the confirmation code the provider sent. On success the session credential is stored and the account reconnects; a mistyped code keeps the attempt pending (error kind messenger_login_retry).",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.delete("messenger.login.cancel", "/api/messenger/login/:attemptID", {
+      params: { attemptID: Messenger.LoginAttemptID },
+      success: HttpApiSchema.NoContent,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.messenger.login.cancel",
+        summary: "Cancel messenger login",
+        description: "Abandon a pending messenger login attempt and release its resources.",
       }),
     ),
   )

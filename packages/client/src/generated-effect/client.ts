@@ -644,12 +644,47 @@ type Endpoint9_4Input = { readonly accountID: Endpoint9_4Request["params"]["acco
 const Endpoint9_4 = (raw: RawClient["server.messenger"]) => (input: Endpoint9_4Input) =>
   raw["messenger.account.remove"]({ params: { accountID: input["accountID"] } }).pipe(Effect.mapError(mapClientError))
 
+type Endpoint9_5Request = Parameters<RawClient["server.messenger"]["messenger.login.begin"]>[0]
+type Endpoint9_5Input = {
+  readonly accountID: Endpoint9_5Request["params"]["accountID"]
+  readonly inputs: Endpoint9_5Request["payload"]["inputs"]
+}
+const Endpoint9_5 = (raw: RawClient["server.messenger"]) => (input: Endpoint9_5Input) =>
+  raw["messenger.login.begin"]({
+    params: { accountID: input["accountID"] },
+    payload: { inputs: input["inputs"] },
+  }).pipe(Effect.mapError(mapClientError))
+
+type Endpoint9_6Request = Parameters<RawClient["server.messenger"]["messenger.login.status"]>[0]
+type Endpoint9_6Input = { readonly attemptID: Endpoint9_6Request["params"]["attemptID"] }
+const Endpoint9_6 = (raw: RawClient["server.messenger"]) => (input: Endpoint9_6Input) =>
+  raw["messenger.login.status"]({ params: { attemptID: input["attemptID"] } }).pipe(Effect.mapError(mapClientError))
+
+type Endpoint9_7Request = Parameters<RawClient["server.messenger"]["messenger.login.complete"]>[0]
+type Endpoint9_7Input = {
+  readonly attemptID: Endpoint9_7Request["params"]["attemptID"]
+  readonly code: Endpoint9_7Request["payload"]["code"]
+}
+const Endpoint9_7 = (raw: RawClient["server.messenger"]) => (input: Endpoint9_7Input) =>
+  raw["messenger.login.complete"]({ params: { attemptID: input["attemptID"] }, payload: { code: input["code"] } }).pipe(
+    Effect.mapError(mapClientError),
+  )
+
+type Endpoint9_8Request = Parameters<RawClient["server.messenger"]["messenger.login.cancel"]>[0]
+type Endpoint9_8Input = { readonly attemptID: Endpoint9_8Request["params"]["attemptID"] }
+const Endpoint9_8 = (raw: RawClient["server.messenger"]) => (input: Endpoint9_8Input) =>
+  raw["messenger.login.cancel"]({ params: { attemptID: input["attemptID"] } }).pipe(Effect.mapError(mapClientError))
+
 const adaptGroup9 = (raw: RawClient["server.messenger"]) => ({
   listDrivers: Endpoint9_0(raw),
   listAccounts: Endpoint9_1(raw),
   createAccount: Endpoint9_2(raw),
   updateAccount: Endpoint9_3(raw),
   removeAccount: Endpoint9_4(raw),
+  loginBegin: Endpoint9_5(raw),
+  loginStatus: Endpoint9_6(raw),
+  loginComplete: Endpoint9_7(raw),
+  loginCancel: Endpoint9_8(raw),
 })
 
 type Endpoint10_0Request = Parameters<RawClient["server.permission"]["permission.request.list"]>[0]

@@ -40,6 +40,10 @@ test("exposes every standard HTTP API group", () => {
     "createAccount",
     "updateAccount",
     "removeAccount",
+    "loginBegin",
+    "loginStatus",
+    "loginComplete",
+    "loginCancel",
   ])
   expect(Object.keys(client.files)).toEqual(["list", "find"])
   expect(Object.keys(client.ptys)).toEqual(["list", "create", "get", "update", "remove"])

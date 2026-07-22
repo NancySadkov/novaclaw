@@ -38,6 +38,14 @@ export class ModerationError extends Schema.TaggedErrorClass<ModerationError>()(
   reason: Schema.String,
 }) {}
 
+/** A login-attempt completion failure. `retryable: true` means the attempt is STILL PENDING and
+ *  the user may simply re-enter the code (a mistyped Telegram code stays valid to retry against
+ *  the same phoneCodeHash); false ends the attempt (wrong 2FA setup, expired code, provider veto). */
+export class LoginCodeError extends Schema.TaggedErrorClass<LoginCodeError>()("MessengerDriver.LoginCodeError", {
+  reason: Schema.String,
+  retryable: Schema.Boolean,
+}) {}
+
 /** A platform file handle (attachment id / URL token) a driver can later download. */
 export interface FileRef {
   readonly id: string
@@ -121,6 +129,26 @@ export interface ConnectContext {
   }
 }
 
+/** The in-flight half of a `login` acquisition (messenger-plan §0.2): begin() has already made the
+ *  provider send a code; complete(code) finishes and yields the durable session credential the
+ *  gateway will pass back as `ConnectContext.secret` on every reconnect. The pending state is a
+ *  scoped resource — the provider ties the code to the live connection that requested it, so the
+ *  attempt's scope must stay open until complete/cancel/expiry. */
+export interface LoginPending {
+  /** Human instructions for the code step ("Telegram sent a code to your app — enter it here"). */
+  readonly instructions: string
+  readonly complete: (code: string) => Effect.Effect<{ session: string }, LoginCodeError | ChallengeError>
+}
+
+export interface LoginSupport {
+  /** Starts a login attempt: `inputs` are the answers to `meta.loginPrompts` (phone, optional 2FA
+   *  password — collected up front so the flow stays one code round-trip). */
+  readonly begin: (ctx: {
+    readonly account: Messenger.AccountInfo
+    readonly inputs: Record<string, string>
+  }) => Effect.Effect<LoginPending, ConnectError | ChallengeError, Scope.Scope>
+}
+
 export interface Driver {
   readonly id: string
   readonly meta: Messenger.DriverMeta
@@ -129,4 +157,6 @@ export interface Driver {
   /** Open the connection as a scoped resource; closing the scope must release sockets/pollers.
    *  A `ChallengeError` parks the account for operator resolution instead of blind reconnection. */
   readonly connect: (ctx: ConnectContext) => Effect.Effect<Connection, ConnectError | ChallengeError, Scope.Scope>
+  /** Required exactly when `meta.auth === "login"` — the user's-own-account acquisition flow. */
+  readonly login?: LoginSupport
 }
