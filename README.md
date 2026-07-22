@@ -1,39 +1,101 @@
 # NovaClaw
 
-**A local-first, model-agnostic AI agent OS.**
+**A local-first AI agent OS — your models, your machine, your data.**
 
-NovaClaw runs AI coding/agent sessions against **local models** (e.g. a vLLM server on a DGX Spark) or
-any OpenAI-compatible endpoint — no paid APIs required. It ships a desktop app (Electron), a TUI, and a
-server, and treats agent **sessions as OS-like threads** (spawn / exit / wait, an inheritable per-session
-system prompt, and a shell-style home with apps).
+NovaClaw runs AI agent sessions against **local models** (for example a vLLM server on your own
+hardware) or any OpenAI-compatible endpoint — no paid APIs required, and your chats, code, and
+knowledge base never leave your machine. It ships a friendly desktop app (Electron) with the same
+HTML UI available in the browser, plus a headless server for remote or LAN instances.
 
-## Status
+The organizing idea: an **operating system whose processes are agent sessions**. Sessions spawn
+sub-sessions, exit with results a parent can join, inherit configuration down the parent chain, and
+show up in a task manager like any other process. Home is an app launcher — Chats, Processes,
+Settings, Notes, Files, Search — not a terminal.
 
-Proprietary software, © Nancy Sadkov. Version 0.0.1, in active development. See [`LICENSE`](LICENSE).
+## Highlights
 
-## Models
+- **Private / local-LLM first.** The data plane (chats, code, knowledge) never egresses; fully
+  airgappable. Any OpenAI-compatible `/v1` endpoint works — vLLM, llama.cpp, LM Studio, Ollama, or a
+  hosted key if you bring one.
+- **Built for small models.** A deterministic harness wraps the model: task decomposition, per-step
+  verification, and tolerance for imperfect tool calls — so local open-weight models finish jobs
+  that usually get thrown at frontier APIs.
+- **Easy to deploy.** Unpack the desktop app anywhere and run it; the server sidecar is bundled.
+  Headless instances are one command and can be driven from another machine's UI (every instance is
+  a node — URL + token).
+- **Self-healing by design.** A crashed server auto-restarts and the UI reconnects; operational
+  settings live in runtime-editable stores, so a working agent can repair its own instance.
+- **No bloat.** No ads, no telemetry of your content, no bundled cloud upsells.
 
-NovaClaw is designed for **local, open-weight models** served over an OpenAI-compatible API
-(`/v1/chat/completions` + `/v1/models`). Configure any endpoint via the built-in `openai-compatible`
-provider; a few well-known providers (Anthropic, OpenAI, Google) are bundled only to help you bootstrap
-with an existing key. Provider/model config lives in `novaclaw.jsonc`.
+## Requirements
+
+- [Bun](https://bun.sh) 1.3.14
+- Node.js 24+
+- Windows, macOS, or Linux for development. **Windows x64 is the currently shipped desktop build**;
+  macOS/Linux packaging targets exist in the build config but are not yet released.
 
 ## Build
 
-Requires Bun 1.3.14, Node 24+, and a Rust toolchain for some native deps.
-
 ```sh
 bun install
-# desktop app:
-bun --cwd packages/desktop dev
-# server/CLI (headless):
+```
+
+Desktop app (development):
+
+```sh
+bun run dev:desktop
+```
+
+Web UI (development, in a browser):
+
+```sh
+bun run dev:web
+```
+
+Headless server / CLI:
+
+```sh
 bun run --cwd packages/novaclaw --conditions=browser src/index.ts serve
 ```
 
+Packaged portable Windows build (what ships on [novaclaw.app](https://novaclaw.app)):
+
+```sh
+cd packages/desktop
+# PowerShell: $env:NOVACLAW_CHANNEL = "prod"
+NOVACLAW_CHANNEL=prod bun run prebuild
+NOVACLAW_CHANNEL=prod bun run build
+NOVACLAW_CHANNEL=prod bunx electron-builder --win dir --config electron-builder.config.ts --publish never
+```
+
+The app lands in `packages/desktop/dist/win-unpacked/` — copy that folder anywhere and run
+`NovaClaw.exe`.
+
+Tests:
+
+```sh
+bun run test
+```
+
+## Configuration
+
+Settings (providers, models, permissions) live in the app's own store and are edited in-app under
+**Settings**; a JSONC import/export (`novaclaw.jsonc`) is available for bootstrapping and backup.
+Point NovaClaw at any OpenAI-compatible endpoint (`/v1/chat/completions` + `/v1/models`).
+
+## Author
+
+NovaClaw is designed and developed by **Nancy Sadkov**.
+
+## Status
+
+Version 0.0.1, in active development. Proprietary software, © Nancy Sadkov; the source code is
+published for transparency and evaluation. See [`LICENSE`](LICENSE).
+
 ## Attribution
 
-NovaClaw began as a fork of [opencode](https://github.com/anomalyco/opencode) (MIT). Portions of this
-codebase are based on opencode; that MIT license and copyright are retained in
-[`licenses/opencode-LICENSE-MIT.txt`](licenses/opencode-LICENSE-MIT.txt) and [`NOTICE`](NOTICE) — the one
-upstream reference kept by design. NovaClaw itself is proprietary and is not affiliated with or endorsed
-by the opencode project.
+NovaClaw began as a fork of [opencode](https://github.com/anomalyco/opencode) (MIT). Portions of
+this codebase are based on opencode; that MIT license and copyright are retained in
+[`licenses/opencode-LICENSE-MIT.txt`](licenses/opencode-LICENSE-MIT.txt) and [`NOTICE`](NOTICE) —
+the one upstream reference kept by design. NovaClaw itself is proprietary and is not affiliated
+with or endorsed by the opencode project.
