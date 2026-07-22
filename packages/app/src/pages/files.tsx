@@ -57,11 +57,17 @@ export function FilesPage() {
     roots?: readonly string[]
     virtual?: boolean
     virtualRoot?: string
+    places?: readonly { name: string; path: string }[]
   }
   const shape = (p: PathLike | undefined) =>
     p?.virtual && p.virtualRoot
-      ? { start: p.virtualRoot, roots: [] as readonly string[] }
-      : { start: p?.home || p?.directory || "", roots: p?.roots ?? [] }
+      ? { start: p.virtualRoot, roots: [] as readonly string[], home: "", places: [] as readonly { name: string; path: string }[] }
+      : {
+          start: p?.home || p?.directory || "",
+          roots: p?.roots ?? [],
+          home: p?.home ?? "",
+          places: p?.places ?? [],
+        }
   const [pathInfo] = createResource(ctx, async (c) => {
     const p = c.sync.data.path as PathLike | undefined
     if (p && (p.virtual ? p.virtualRoot : (p.home || p.directory) && p.roots?.length)) return shape(p)
@@ -81,6 +87,34 @@ export function FilesPage() {
     const d = dir().toLowerCase()
     return roots().find((r) => d.startsWith(r.toLowerCase())) ?? ""
   })
+
+  // Places + Bookmarks rail (owner 2026-07-22) — the same sources the folder picker uses: the
+  // instance host's existing well-known dirs (/path `places`) and the user's `folder_bookmarks`
+  // config pins (instance-wide, agent-editable). One canonical slash-normalized key for compares.
+  const pinKey = (value: string) => value.replace(/\\/g, "/").replace(/\/+$/, "")
+  const places = createMemo(() => pathInfo()?.places ?? [])
+  const homeDir = createMemo(() => pathInfo()?.home ?? "")
+  const bookmarks = createMemo(
+    () => ((ctx()?.sync.data.config as { folder_bookmarks?: readonly string[] } | undefined)?.folder_bookmarks ?? []) as string[],
+  )
+  const isPinned = (target: string) => bookmarks().some((entry) => pinKey(entry) === pinKey(target))
+  const writeBookmarks = (next: string[]) =>
+    void (ctx()?.sync.updateConfig({ folder_bookmarks: next } as never) as Promise<unknown> | undefined)?.catch(
+      () => undefined,
+    )
+  const toggleCurrentPin = () => {
+    const target = pinKey(dir())
+    if (!target) return
+    writeBookmarks(isPinned(target) ? bookmarks().filter((entry) => pinKey(entry) !== target) : [...bookmarks(), target])
+  }
+  const baseName = (value: string) => {
+    const parts = value.split(/[\\/]/).filter(Boolean)
+    return parts[parts.length - 1] ?? value
+  }
+  const goTo = (target: string) => {
+    setSelected(undefined)
+    setDir(target)
+  }
 
   const [entries] = createResource(
     () => {
@@ -228,6 +262,17 @@ export function FilesPage() {
             <For each={roots()}>{(root) => <option value={root}>{root}</option>}</For>
           </select>
         </Show>
+        <button
+          type="button"
+          class={btn}
+          classList={{ "bg-v2-background-bg-layer-02": isPinned(dir()) }}
+          aria-pressed={isPinned(dir())}
+          title={language.t(isPinned(dir()) ? "dialog.directory.unpin" : "dialog.directory.pin")}
+          onClick={toggleCurrentPin}
+          disabled={!ctx() || !dir()}
+        >
+          {language.t(isPinned(dir()) ? "dialog.directory.pinnedShort" : "dialog.directory.pinShort")}
+        </button>
         <span class="min-w-0 flex-1 truncate font-mono text-xs text-v2-text-text-faint">{dir() || "…"}</span>
         <button
           type="button"
@@ -253,6 +298,68 @@ export function FilesPage() {
       </div>
 
       <div class="flex min-h-0 flex-1">
+        <div class="flex w-44 shrink-0 flex-col gap-0.5 overflow-y-auto border-r border-v2-border-border-base p-2">
+          <Show when={bookmarks().length > 0}>
+            <div class="px-1.5 pb-0.5 pt-1 text-[11px] font-semibold uppercase tracking-wide text-v2-text-text-faint">
+              {language.t("dialog.directory.bookmarks")}
+            </div>
+            <For each={bookmarks()}>
+              {(pin) => (
+                <div
+                  class="group/pin flex min-w-0 items-center rounded-md text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-01"
+                  classList={{ "bg-v2-background-bg-layer-01 text-v2-text-text-base": pinKey(dir()) === pinKey(pin) }}
+                  title={pin}
+                >
+                  <button
+                    type="button"
+                    class="flex min-w-0 flex-1 items-center gap-1.5 overflow-hidden px-1.5 py-1 text-left"
+                    onClick={() => goTo(pin)}
+                  >
+                    <Icon name="folder" size="small" class="shrink-0" />
+                    <span class="truncate">{baseName(pin)}</span>
+                  </button>
+                  <button
+                    type="button"
+                    class="hidden shrink-0 px-1 text-v2-text-text-faint hover:text-v2-text-text-base group-hover/pin:block"
+                    aria-label={language.t("dialog.directory.unpin")}
+                    onClick={() => writeBookmarks(bookmarks().filter((entry) => pinKey(entry) !== pinKey(pin)))}
+                  >
+                    <Icon name="close-small" size="small" />
+                  </button>
+                </div>
+              )}
+            </For>
+          </Show>
+          <div class="px-1.5 pb-0.5 pt-1 text-[11px] font-semibold uppercase tracking-wide text-v2-text-text-faint">
+            {language.t("dialog.directory.places")}
+          </div>
+          <Show when={homeDir()}>
+            <button
+              type="button"
+              class="flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-01"
+              classList={{ "bg-v2-background-bg-layer-01 text-v2-text-text-base": pinKey(dir()) === pinKey(homeDir()) }}
+              title={homeDir()}
+              onClick={() => goTo(homeDir())}
+            >
+              <Icon name="folder" size="small" class="shrink-0" />
+              <span class="truncate">{language.t("dialog.directory.homePlace")}</span>
+            </button>
+          </Show>
+          <For each={places()}>
+            {(place) => (
+              <button
+                type="button"
+                class="flex min-w-0 items-center gap-1.5 rounded-md px-1.5 py-1 text-left text-xs text-v2-text-text-muted hover:bg-v2-background-bg-layer-01"
+                classList={{ "bg-v2-background-bg-layer-01 text-v2-text-text-base": pinKey(dir()) === pinKey(place.path) }}
+                title={place.path}
+                onClick={() => goTo(place.path)}
+              >
+                <Icon name="folder" size="small" class="shrink-0" />
+                <span class="truncate">{place.name}</span>
+              </button>
+            )}
+          </For>
+        </div>
         <div class="w-1/2 min-w-0 overflow-auto border-r border-v2-border-border-base py-1">
           <Show
             when={visibleEntries()}
