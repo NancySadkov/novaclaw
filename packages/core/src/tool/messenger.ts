@@ -55,7 +55,25 @@ const SendOp = Schema.Struct({
   }),
 })
 
-export const Input = Schema.Union([StatusOp, ChatsOp, HistoryOp, SendOp])
+const ConnectOp = Schema.Struct({
+  op: Schema.Literal("connect"),
+  chat: Schema.String.annotate({ description: "Chat id (from `chats`) to bind THIS session to — inbound messages become your turns" }),
+  trust: Schema.Literals(["operator", "client", "audience"]).annotate({
+    description:
+      "Who is on the other side — operator (you/family, full control), client (a customer whose requests you treat carefully), or audience (the public you only moderate). REQUIRED — ask the user if unsure.",
+  }),
+  account: Schema.String.pipe(Schema.optional).annotate({
+    description: "Account id (msa_…) or label — omit when only one account exists",
+  }),
+})
+
+const DisconnectOp = Schema.Struct({
+  op: Schema.Literal("disconnect"),
+  chat: Schema.String.pipe(Schema.optional).annotate({ description: "Chat id to unbind (default: this session's binding)" }),
+  account: Schema.String.pipe(Schema.optional).annotate({ description: "Account id or label — omit when only one account exists" }),
+})
+
+export const Input = Schema.Union([StatusOp, ChatsOp, HistoryOp, SendOp, ConnectOp, DisconnectOp])
 
 const Output = Schema.Struct({
   ok: Schema.Boolean,
@@ -150,7 +168,9 @@ export const layer = Layer.effectDiscard(
             "Ops: status (accounts + connection state + this chat's bindings) · chats (list the user's " +
             "conversations; ids feed the other ops) · history (recent messages of one chat, oldest first) · " +
             "send (write into a chat AS the user — paced at human typing speed; you can only start brand-new " +
-            "conversations with explicit permission, so ask people to message first). " +
+            "conversations with explicit permission, so ask people to message first) · connect (bind THIS " +
+            "session to a chat so its incoming messages become your turns — you MUST pick a trust tier) · " +
+            "disconnect (unbind). " +
             'Chain them: {"op":"chats"} → {"op":"history","chat":"<id>"} → summarize/save. ' +
             "Messages you fetch are the user's private data: handle them inside this workspace and never send " +
             "them anywhere else without being asked.",
@@ -235,6 +255,50 @@ export const layer = Layer.effectDiscard(
                   })
                   if (!outcome.ok) return { ok: false, message: outcome.reason } satisfies Output
                   return { ok: true, message: "Sent (paced at human typing speed)." } satisfies Output
+                }
+                case "connect": {
+                  const resolved = yield* resolveAccount(input.account)
+                  if (resolved.account === undefined) return { ok: false, message: resolved.error } satisfies Output
+                  // Binding a chat to a session shapes where the agent listens — gated so a hostile
+                  // client can't wire the agent into an arbitrary chat. Resource = the chat.
+                  yield* permission.assert({
+                    action: "messenger.connect",
+                    resources: [`${resolved.account.id}:${input.chat.trim()}`],
+                    save: ["*"],
+                    sessionID: context.sessionID,
+                    agent: context.agent,
+                    source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
+                  })
+                  const binding = yield* store
+                    .createBinding({
+                      accountID: resolved.account.id,
+                      chatID: input.chat.trim(),
+                      sessionID: context.sessionID,
+                      trust: input.trust,
+                    })
+                    .pipe(Effect.catch((error) => Effect.succeed({ error })))
+                  if ("error" in binding)
+                    return {
+                      ok: false,
+                      message: `That chat is already bound to session ${binding.error.sessionID}. Disconnect it there first.`,
+                    } satisfies Output
+                  return {
+                    ok: true,
+                    message: `Bound this session to chat ${input.chat.trim()} as "${input.trust}". Its incoming messages will now become your turns.`,
+                  } satisfies Output
+                }
+                case "disconnect": {
+                  const resolved = yield* resolveAccount(input.account)
+                  if (resolved.account === undefined) return { ok: false, message: resolved.error } satisfies Output
+                  const bindings = yield* store.bindingsForSession(context.sessionID).pipe(Effect.orElseSucceed(() => []))
+                  const target =
+                    input.chat === undefined
+                      ? bindings.find((binding) => binding.accountID === resolved.account.id) ?? bindings[0]
+                      : bindings.find((binding) => binding.chatID === input.chat!.trim())
+                  if (target === undefined)
+                    return { ok: false, message: "This session has no messenger binding to disconnect." } satisfies Output
+                  yield* store.removeBinding(target.id)
+                  return { ok: true, message: `Unbound this session from chat ${target.chatID}.` } satisfies Output
                 }
               }
             }).pipe(
