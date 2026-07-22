@@ -60,6 +60,8 @@ const makeFakeDriver = () => {
     failNext: false,
     challengeNext: false,
     open: 0,
+    liveChats: undefined as readonly MessengerDriver.ChatSnapshot[] | undefined,
+    history: {} as Record<string, readonly MessengerDriver.HistoryEntry[]>,
   }
   const driver: MessengerDriver.Driver = {
     id: "fake",
@@ -88,6 +90,8 @@ const makeFakeDriver = () => {
               state.sent.push({ chatID, text: message.text })
               return { messageID: "m" + state.sent.length }
             }),
+          ...(state.liveChats === undefined ? {} : { listChats: () => Effect.succeed(state.liveChats!) }),
+          history: (chatID, limit) => Effect.succeed((state.history[chatID] ?? []).slice(-limit)),
         } satisfies MessengerDriver.Connection
       }),
   }
@@ -121,12 +125,25 @@ const it = testEffect(
 let messageSeq = 0
 const message = (
   chatID: string,
-  opts?: { isSelf?: boolean; title?: string; text?: string; sender?: string; kind?: Messenger.ChatKind },
+  opts?: {
+    isSelf?: boolean
+    owner?: boolean
+    self?: boolean
+    title?: string
+    text?: string
+    sender?: string
+    kind?: Messenger.ChatKind
+  },
 ): MessengerDriver.InboundEvent => ({
   kind: "message",
-  chat: { chatID, kind: opts?.kind ?? "dm", title: opts?.title ?? "Chat " + chatID },
+  chat: { chatID, kind: opts?.kind ?? "dm", title: opts?.title ?? "Chat " + chatID, ...(opts?.self ? { self: true } : {}) },
   messageID: "msg-" + ++messageSeq,
-  sender: { id: opts?.sender ?? "u1", name: "Nancy", isSelf: opts?.isSelf ?? false },
+  sender: {
+    id: opts?.sender ?? "u1",
+    name: "Nancy",
+    isSelf: opts?.isSelf ?? false,
+    ...(opts?.owner ? { owner: true } : {}),
+  },
   text: opts?.text ?? "hello",
   at: Date.now(),
 })
@@ -315,6 +332,101 @@ describe("MessengerGateway pipeline", () => {
       )
       const parked = status.get(account.id)
       expect(parked?.state === "challenge" && parked.message).toContain("CAPTCHA")
+      yield* store.removeAccount(account.id)
+      yield* gateway.reload()
+    }),
+  )
+
+  it.live("the account owner is a born-paired operator — /sessions works with zero pairing (§0.1.5)", () =>
+    Effect.gen(function* () {
+      const { store, gateway, account, queue } = yield* online("owner")
+      const sentBefore = fake.state.sent.length
+      // No contact row exists; the driver marked the sender as the account OWNER.
+      yield* Queue.offer(queue, message("500", { text: "/sessions", owner: true }))
+      yield* eventually(
+        Effect.sync(() => fake.state.sent.slice(sentBefore)),
+        (sent) => sent.some((s) => s.text?.includes("Fix the login bug")),
+        "owner ran /sessions unpaired",
+      )
+      yield* store.removeAccount(account.id)
+      yield* gateway.reload()
+    }),
+  )
+
+  it.live("the self-chat console routes only addressed prompts, stripped of the address (§0.1.5)", () =>
+    Effect.gen(function* () {
+      const { store, gateway, account, queue } = yield* online("console")
+      yield* store.createBinding({ accountID: account.id, chatID: "self1", sessionID: "ses_alpha", trust: "operator" })
+      const promptsBefore = session.prompts.length
+
+      // The user's own note — never a model turn.
+      yield* Queue.offer(queue, message("self1", { text: "buy milk and stamps", owner: true, self: true }))
+      // An addressed prompt — routed with the address stripped.
+      yield* Queue.offer(queue, message("self1", { text: "Nova, summarize my inbox", owner: true, self: true }))
+      yield* eventually(
+        Effect.sync(() => session.prompts.slice(promptsBefore)),
+        (prompts) => prompts.some((p) => p.sessionID === "ses_alpha" && p.text.includes("summarize my inbox")),
+        "addressed prompt routed",
+      )
+      const routed = session.prompts.slice(promptsBefore)
+      expect(routed).toHaveLength(1)
+      expect(routed[0]?.text).not.toContain("Nova,")
+      expect(routed.some((p) => p.text.includes("buy milk"))).toBe(false)
+
+      // A custom agent name via the per-account `address` setting.
+      yield* store.updateAccount(account.id, { settings: { address: "Jarvis" } })
+      yield* gateway.reload()
+      yield* eventually(gateway.status(), (map) => map.get(account.id)?.state === "connected", "reconnected")
+      const queue2 = fake.state.queue
+      if (queue2 === undefined) throw new Error("driver queue missing")
+      yield* Queue.offer(queue2, message("self1", { text: "Nova, wrong name", owner: true, self: true }))
+      yield* Queue.offer(queue2, message("self1", { text: "Jarvis: right name", owner: true, self: true }))
+      yield* eventually(
+        Effect.sync(() => session.prompts.slice(promptsBefore)),
+        (prompts) => prompts.some((p) => p.text.includes("right name")),
+        "custom address routed",
+      )
+      expect(session.prompts.slice(promptsBefore).some((p) => p.text.includes("wrong name"))).toBe(false)
+
+      // Ordinary (non-self) chats need no prefix — unchanged behavior.
+      yield* Queue.offer(queue2, message("700", { text: "no prefix needed", sender: "u1" }))
+      yield* store.createBinding({ accountID: account.id, chatID: "700", sessionID: "ses_beta", trust: "operator" })
+      yield* Queue.offer(queue2, message("700", { text: "plain routed", sender: "u1" }))
+      yield* eventually(
+        Effect.sync(() => session.prompts.slice(promptsBefore)),
+        (prompts) => prompts.some((p) => p.sessionID === "ses_beta" && p.text.includes("plain routed")),
+        "non-self chat routes unprefixed",
+      )
+
+      yield* store.removeAccount(account.id)
+      yield* gateway.reload()
+    }),
+  )
+
+  it.live("gateway.chats serves the live driver list and seeds the seen-cache; history fetches", () =>
+    Effect.gen(function* () {
+      fake.state.liveChats = [
+        { chatID: "self1", kind: "dm", title: "Saved Messages", self: true },
+        { chatID: "-1001", kind: "group", title: "Flea market" },
+      ]
+      fake.state.history["-1001"] = [
+        { messageID: "1", senderID: "9", senderName: "Buyer", outgoing: false, text: "still available?", at: 1000 },
+        { messageID: "2", senderID: "me", senderName: "Nancy", outgoing: true, text: "yes!", at: 2000 },
+      ]
+      const { store, gateway, account } = yield* online("chats")
+      const chats = yield* gateway.chats(account.id)
+      expect(chats.ok).toBe(true)
+      if (chats.ok) expect(chats.chats.map((chat) => chat.title)).toEqual(["Saved Messages", "Flea market"])
+      // The live list seeded the seen-cache — replying to an EXISTING conversation is never a cold start.
+      expect(yield* store.hasChat(account.id, "-1001")).toBe(true)
+      const reply = yield* gateway.send({ accountID: account.id, chatID: "-1001", text: "bump" })
+      expect(reply.ok).toBe(true)
+
+      const history = yield* gateway.history({ accountID: account.id, chatID: "-1001", limit: 10 })
+      expect(history.ok).toBe(true)
+      if (history.ok) expect(history.messages.map((m) => m.text)).toEqual(["still available?", "yes!"])
+
+      fake.state.liveChats = undefined
       yield* store.removeAccount(account.id)
       yield* gateway.reload()
     }),

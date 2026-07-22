@@ -72,3 +72,29 @@ describe("MessengerPipeline.chatKey", () => {
     expect(MessengerPipeline.chatKey("msa_1" as never, "42")).not.toBe(MessengerPipeline.chatKey("msa_2" as never, "42"))
   })
 })
+
+describe("MessengerPipeline.addressed (SS0.1.5 self-chat gate)", () => {
+  test("routes only messages addressed to the agent, stripping the address", () => {
+    expect(MessengerPipeline.addressed("Nova, list my chats", "Nova")).toBe("list my chats")
+    expect(MessengerPipeline.addressed("nova: do it", "Nova")).toBe("do it")
+    expect(MessengerPipeline.addressed("  NOVA ,   spaced  ", "Nova")).toBe("spaced")
+  })
+
+  test("ignores the user's own notes (unaddressed, or address mid-sentence)", () => {
+    expect(MessengerPipeline.addressed("buy milk", "Nova")).toBeUndefined()
+    expect(MessengerPipeline.addressed("tell Nova, later", "Nova")).toBeUndefined()
+    expect(MessengerPipeline.addressed("Novato, hi", "Nova")).toBeUndefined()
+    expect(MessengerPipeline.addressed("Nova,", "Nova")).toBeUndefined() // address with no prompt
+  })
+
+  test("honors a custom agent name and escapes regex metacharacters", () => {
+    expect(MessengerPipeline.addressed("Jarvis: status", "Jarvis")).toBe("status")
+    expect(MessengerPipeline.addressed("Nova, hi", "Jarvis")).toBeUndefined()
+    expect(MessengerPipeline.addressed("R2.D2, beep", "R2.D2")).toBe("beep")
+    expect(MessengerPipeline.addressed("R2xD2, beep", "R2.D2")).toBeUndefined()
+  })
+
+  test("an empty/blank configured address falls back to the default", () => {
+    expect(MessengerPipeline.addressed("Nova, hello", "  ")).toBe("hello")
+  })
+})

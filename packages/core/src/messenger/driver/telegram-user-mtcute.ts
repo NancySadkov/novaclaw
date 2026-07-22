@@ -178,6 +178,13 @@ export const factory: UserClientFactory = async (config: UserClientConfig): Prom
         }
         return out
       }),
+    history: (chatID, limit) =>
+      wrap(async () => {
+        // Telegram serves history newest-first; the driver contract wants chronological.
+        const peer = selfID !== undefined && chatID === selfID ? "self" : Number(chatID)
+        const page = await client.getHistory(peer, { limit })
+        return [...page].map(toUserMessage).reverse()
+      }),
     sendText: (chatID, text) =>
       wrap(async () => {
         // The self-chat (Saved Messages) is addressed as "self" — never needs an access hash.

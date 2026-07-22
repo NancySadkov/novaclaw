@@ -49,6 +49,25 @@ export const renderSessions = (
   }
 }
 
+/** The default agent address in the self-chat console (§0.1.5) — the product name; a per-account
+ *  `address` setting overrides it ("whatever name the user picked for the agent"). */
+export const DEFAULT_ADDRESS = "Nova"
+
+const escapeRegex = (text: string): string => text.replaceAll(/[.*+?^${}()|[\]\\]/g, "\\$&")
+
+/** §0.1.5 — the self-chat address gate. Operator and agent share one pen in Saved Messages, so
+ *  only messages addressed to the agent ("Nova, do X" / "nova: do X") are commands; everything
+ *  else is the user's own notes and must be IGNORED. Returns the prompt with the address stripped,
+ *  or undefined when the message is not addressed to the agent. Gateway `/commands` never reach
+ *  this ("/" is already an address). */
+export const addressed = (text: string, address: string): string | undefined => {
+  const name = address.trim() || DEFAULT_ADDRESS
+  const match = text.match(new RegExp(`^\\s*${escapeRegex(name)}\\s*[,:]\\s*`, "i"))
+  if (match === null) return undefined
+  const prompt = text.slice(match[0].length).trim()
+  return prompt.length > 0 ? prompt : undefined
+}
+
 export const HELP_TEXT = [
   "NovaClaw remote control:",
   "/sessions — list your chats",

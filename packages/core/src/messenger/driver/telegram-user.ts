@@ -84,6 +84,8 @@ export interface UserClient {
    *  message arrived — an exhausted source HOLDS (the caller's scope interrupt ends the wait). */
   readonly pull: () => Promise<readonly UserMessage[]>
   readonly dialogs: (limit: number) => Promise<readonly ChatSnapshot[]>
+  /** Recent messages of one chat, newest LAST (chronological), up to `limit`. */
+  readonly history: (chatID: string, limit: number) => Promise<readonly UserMessage[]>
   readonly sendText: (chatID: string, text: string) => Promise<{ readonly messageID: string }>
   readonly close: () => Promise<void>
 }
@@ -305,14 +307,24 @@ export const make = (factory: UserClientFactory): Driver => {
           while (true) {
             const batch = yield* tryClient(() => client.pull())
             for (const message of batch) {
+              const sentByUs = sent.has(message.chatID, message.messageID)
               yield* Queue.offer(queue, {
                 kind: "message",
-                chat: { chatID: message.chatID, kind: message.chatKind, title: message.chatTitle },
+                chat: {
+                  chatID: message.chatID,
+                  kind: message.chatKind,
+                  title: message.chatTitle,
+                  // Saved Messages — the shared operator console (§0.1.5 address-prefix rule).
+                  ...(message.chatID === me.id ? { self: true } : {}),
+                },
                 messageID: message.messageID,
                 sender: {
                   id: message.senderID,
                   name: message.senderName,
-                  isSelf: isSelfMessage(message, me.id, sent.has(message.chatID, message.messageID)),
+                  isSelf: isSelfMessage(message, me.id, sentByUs),
+                  // Outgoing we did NOT send = the account's human typing (any device) — the
+                  // born-paired operator; no pairing ceremony on a login account.
+                  ...(message.outgoing && !sentByUs ? { owner: true } : {}),
                 },
                 ...(message.text !== undefined && message.text.length > 0 ? { text: message.text } : {}),
                 ...(message.replyTo !== undefined ? { replyTo: message.replyTo } : {}),
@@ -349,13 +361,37 @@ export const make = (factory: UserClientFactory): Driver => {
             return { messageID: lastID }
           })
 
+        const demoteChallenge = <A>(effect: Effect.Effect<A, ConnectError | ChallengeError>) =>
+          effect.pipe(
+            Effect.mapError((error) =>
+              error._tag === "MessengerDriver.ChallengeError" ? new ConnectError({ reason: error.message }) : error,
+            ),
+          )
+
         return {
           inbound: Stream.fromQueue(queue),
           send,
           listChats: () =>
-            tryClient(() => client.dialogs(100)).pipe(
-              Effect.mapError((error) =>
-                error._tag === "MessengerDriver.ChallengeError" ? new ConnectError({ reason: error.message }) : error,
+            demoteChallenge(
+              tryClient(() =>
+                client.dialogs(100).then((chats) =>
+                  chats.map((chat) => (chat.chatID === me.id ? { ...chat, self: true, title: "Saved Messages" } : chat)),
+                ),
+              ),
+            ),
+          history: (chatID, limit) =>
+            demoteChallenge(
+              tryClient(() =>
+                client.history(chatID, limit).then((messages) =>
+                  messages.map((message) => ({
+                    messageID: message.messageID,
+                    senderID: message.senderID,
+                    senderName: message.senderName,
+                    outgoing: message.outgoing,
+                    ...(message.text !== undefined && message.text.length > 0 ? { text: message.text } : {}),
+                    at: message.at,
+                  })),
+                ),
               ),
             ),
         } satisfies Connection

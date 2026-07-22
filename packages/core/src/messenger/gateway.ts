@@ -11,6 +11,8 @@ import { Offline } from "../offline"
 import { SessionV2 } from "../session"
 import { MessengerCommands } from "./commands"
 import type { Connection, Driver, InboundEvent } from "./driver"
+import * as MessengerDriverContract from "./driver"
+import { MessengerGatewayHandle } from "./gateway-handle"
 import { MessengerDrivers } from "./drivers"
 import { MessengerPace } from "./pace"
 import { MessengerPipeline } from "./pipeline"
@@ -40,6 +42,14 @@ export interface PairingCode {
   readonly expiresAt: number
 }
 
+export type ChatsOutcome =
+  | { readonly ok: true; readonly chats: readonly Messenger.ChatInfo[] }
+  | { readonly ok: false; readonly reason: string }
+
+export type HistoryOutcome =
+  | { readonly ok: true; readonly messages: readonly MessengerDriverContract.HistoryEntry[] }
+  | { readonly ok: false; readonly reason: string }
+
 export interface Interface {
   /** Live per-account connection status (accounts the store knows, whether running or not). */
   readonly status: () => Effect.Effect<ReadonlyMap<Messenger.AccountID, Messenger.AccountStatus>>
@@ -48,6 +58,15 @@ export interface Interface {
   /** Mint a single-use pairing code (10-min TTL) a sender redeems with `/pair <code>` to become a
    *  contact at `trust`. This is how a stranger becomes somebody (messenger-plan §7). */
   readonly mintPairingCode: (accountID: Messenger.AccountID, trust: Messenger.ContactTrust) => Effect.Effect<PairingCode>
+  /** The account's chats: the live driver list where the capability exists (seeding the seen-cache —
+   *  a conversation that EXISTS in the user's account is never a cold start), else the seen-cache. */
+  readonly chats: (accountID: Messenger.AccountID) => Effect.Effect<ChatsOutcome>
+  /** Recent messages of one chat, chronological — the tool's conversation-fetching leg. */
+  readonly history: (input: {
+    readonly accountID: Messenger.AccountID
+    readonly chatID: string
+    readonly limit: number
+  }) => Effect.Effect<HistoryOutcome>
   /** A proactive/tool-driven send, governed by the traffic rules (§2.3): paced at human speed and
    *  cold-start-guarded. Replying to a chat we've heard from is always allowed; STARTING a new
    *  conversation (`initiate`) is capped by the daily new-conversation bucket. The `messenger`
@@ -254,24 +273,45 @@ export const layer = Layer.effect(
 
         const contact = yield* store.getContact(account.id, event.sender.id)
         if (contact?.trust === "blocked") return // dropped before anything else sees it
+        // §0.1.5 turnkey: on a `login` account the human owner IS the operator — born-paired, no
+        // pairing ceremony. An explicit contact row still wins (it's how an owner could be narrowed).
+        const trust = contact?.trust ?? (event.sender.owner === true ? ("operator" as const) : undefined)
 
         const command = event.text ? MessengerCommands.parse(event.text) : undefined
         if (command !== undefined) {
-          yield* handleCommand(account, connection, event, command, contact?.trust)
+          yield* handleCommand(account, connection, event, command, trust)
           return
+        }
+
+        // §0.1.5 — the self-chat is the shared operator console: operator and agent write with one
+        // pen, and the user also keeps ordinary notes there. Only messages ADDRESSED to the agent
+        // ("Nova, …" — configurable per account) are prompts; everything else is ignored, silently
+        // (reacting to grocery lists is how an assistant gets uninstalled).
+        let promptText = event.text
+        if (event.chat.self === true) {
+          const stripped =
+            event.text === undefined
+              ? undefined
+              : MessengerPipeline.addressed(event.text, account.settings["address"] ?? MessengerPipeline.DEFAULT_ADDRESS)
+          if (stripped === undefined) return
+          promptText = stripped
         }
 
         // Not a command → route to the bound session (a genuine queued user turn), or guide.
         const binding = yield* store.bindingForChat(account.id, event.chat.chatID)
         if (binding === undefined) {
-          if (contact === undefined) {
+          if (trust === undefined) {
             // Unpaired stranger: silence by default (never a model turn — cost + injection surface).
             return
           }
           yield* reply(connection, event.chat.chatID, "No session is linked here yet. /sessions then /use <n>.")
           return
         }
-        const text = MessengerPipeline.provenance(event, account.driverID, binding.trust)
+        const text = MessengerPipeline.provenance(
+          { ...event, ...(promptText === undefined ? {} : { text: promptText }) },
+          account.driverID,
+          binding.trust,
+        )
         yield* sessions
           .prompt({ sessionID: binding.sessionID as Session.ID, prompt: { text }, delivery: "queue" })
           .pipe(
@@ -416,10 +456,14 @@ export const layer = Layer.effect(
 
     const reload = () => reloadLock.withPermit(reconcile)
 
+    // Exactly-once proof line: the gateway must be a process singleton (two gateways = two
+    // long-polls on one account, edge #16 self-inflicted). If this line ever logs twice in one
+    // serve, the layer graph regressed into building a second instance.
+    yield* Effect.logInfo("messenger gateway starting")
     yield* Effect.forkScoped(relay.pipe(Effect.catchCause(() => Effect.void)))
     yield* reload().pipe(Effect.ignore)
 
-    return Service.of({
+    const service = Service.of({
       status: () => Effect.sync(() => new Map([...entries].map(([id, entry]) => [id, entry.status]))),
       reload,
       mintPairingCode: (accountID, trust) =>
@@ -427,6 +471,50 @@ export const layer = Layer.effect(
           const code = newPairingCode()
           pairing.set(code, { accountID, trust, expiresAt: Date.now() + PAIRING_TTL_MS })
           return { code, expiresAt: Date.now() + PAIRING_TTL_MS }
+        }),
+      chats: (accountID) =>
+        Effect.gen(function* () {
+          const entry = entries.get(accountID)
+          const cached = yield* store.listChats(accountID).pipe(Effect.orElseSucceed(() => []))
+          const live = entry?.connection?.listChats
+          if (live === undefined) {
+            if (entry?.connection === undefined && cached.length === 0)
+              return {
+                ok: false,
+                reason: "That messenger account isn't connected right now, and no chats are cached yet.",
+              } satisfies ChatsOutcome
+            return { ok: true, chats: cached } satisfies ChatsOutcome
+          }
+          const listed = yield* live().pipe(Effect.orElseSucceed(() => undefined))
+          if (listed === undefined) return { ok: true, chats: cached } satisfies ChatsOutcome
+          // Seed the seen-cache: a conversation that EXISTS in the account is a known chat — the
+          // traffic-rules cold-start guard must never treat replying there as cold outreach.
+          const now = Date.now()
+          for (const chat of listed) {
+            yield* store
+              .seenChat({ accountID, chatID: chat.chatID, kind: chat.kind, title: chat.title, at: now })
+              .pipe(Effect.ignore)
+          }
+          return {
+            ok: true,
+            chats: listed.map(
+              (chat) =>
+                new Messenger.ChatInfo({ accountID, chatID: chat.chatID, kind: chat.kind, title: chat.title, lastSeen: now }),
+            ),
+          } satisfies ChatsOutcome
+        }),
+      history: (input) =>
+        Effect.gen(function* () {
+          const entry = entries.get(input.accountID)
+          if (entry?.connection === undefined)
+            return { ok: false, reason: "That messenger account isn't connected right now." } satisfies HistoryOutcome
+          const fetchHistory = entry.connection.history
+          if (fetchHistory === undefined)
+            return { ok: false, reason: "This messenger can't fetch past messages — only new ones arrive." } satisfies HistoryOutcome
+          return yield* fetchHistory(input.chatID, input.limit).pipe(
+            Effect.map((messages) => ({ ok: true, messages }) satisfies HistoryOutcome),
+            Effect.catch((error) => Effect.succeed({ ok: false, reason: error.reason } satisfies HistoryOutcome)),
+          )
         }),
       send: (input) =>
         Effect.gen(function* () {
@@ -462,6 +550,11 @@ export const layer = Layer.effect(
           return { ok: true } satisfies SendOutcome
         }),
     })
+    // Publish the runtime handle the `messenger` tool reads at call time (gateway-handle.ts —
+    // the module-graph law: the tool must never import this module).
+    MessengerGatewayHandle.set(service)
+    yield* Effect.addFinalizer(() => Effect.sync(() => MessengerGatewayHandle.clear(service)))
+    return service
   }),
 )
 

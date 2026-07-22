@@ -21,6 +21,7 @@ type FakeOptions = {
   readonly correctPassword?: string
   readonly pullBatches?: UserMessage[][]
   readonly challengeOnMe?: boolean
+  readonly historyByChat?: Record<string, UserMessage[]>
 }
 
 const makeFakeClient = (opts: FakeOptions = {}) => {
@@ -69,6 +70,8 @@ const makeFakeClient = (opts: FakeOptions = {}) => {
         { chatID: SELF_ID, kind: "dm", title: "Saved Messages" },
         { chatID: "-100200", kind: "group", title: "Freelance clients" },
       ],
+      history: async (chatID, limit) =>
+        (opts.historyByChat?.[chatID] ?? []).slice(-limit),
       sendText: async (chatID, text) => {
         state.sent.push({ chatID, text })
         sendSeq += 1

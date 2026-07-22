@@ -59,12 +59,29 @@ export interface Sender {
   readonly name: string
   /** The account's own outbound echoed back by the platform — the gateway drops these unconditionally. */
   readonly isSelf: boolean
+  /** The ACCOUNT OWNER typing (a `login` account's human, from any of their devices) — the gateway
+   *  treats them as a born-paired `operator`, no pairing ceremony (§0.1.5 turnkey). Bot accounts
+   *  never set this. */
+  readonly owner?: boolean
 }
 
 export interface ChatSnapshot {
   readonly chatID: string
   readonly kind: Messenger.ChatKind
   readonly title: string
+  /** The account's SELF-chat (Telegram Saved Messages) — the shared operator console where the
+   *  §0.1.5 address-prefix rule applies. Only `login` drivers ever set this. */
+  readonly self?: boolean
+}
+
+/** One past message, for the tool's `history` op — same normalization as inbound. */
+export interface HistoryEntry {
+  readonly messageID: string
+  readonly senderID: string
+  readonly senderName: string
+  readonly outgoing: boolean
+  readonly text?: string
+  readonly at: number
 }
 
 export type InboundEvent =
@@ -109,6 +126,8 @@ export interface Connection {
   /** Only for capability `listChats: "full"` (Discord, forums). "seen" platforms rely on the
    *  gateway's seen-chat cache instead (a Telegram bot cannot enumerate its chats). */
   readonly listChats?: () => Effect.Effect<readonly ChatSnapshot[], ConnectError>
+  /** Recent messages of one chat, newest last — the tool's `history` op (conversation fetching). */
+  readonly history?: (chatID: string, limit: number) => Effect.Effect<readonly HistoryEntry[], ConnectError>
   readonly downloadFile?: (ref: FileRef) => Effect.Effect<Uint8Array, FileError>
   readonly typing?: (chatID: string, on: boolean) => Effect.Effect<void>
   readonly moderate?: (chatID: string, act: ModerationAct) => Effect.Effect<void, ModerationError>

@@ -11,6 +11,7 @@ import { GlobTool } from "./glob"
 import { GrepTool } from "./grep"
 import { JsTool } from "./js"
 import { KbTool } from "./kb"
+import { MessengerTool } from "./messenger"
 import { ProfileTool } from "./profile"
 import { QualityProvisionTool } from "./quality-provision"
 import { QuestionTool } from "./question"
@@ -54,6 +55,7 @@ export const locationLayer = Layer.mergeAll(
   GrepTool.layer,
   JsTool.layer,
   KbTool.layer,
+  MessengerTool.layer,
   ProfileTool.layer,
   QualityProvisionTool.layer,
   QuestionTool.layer,
@@ -87,6 +89,7 @@ export const node = makeLocationNode({
     GrepTool.node,
     JsTool.node,
     KbTool.node,
+    MessengerTool.node,
     ProfileTool.node,
     QualityProvisionTool.node,
     QuestionTool.node,
