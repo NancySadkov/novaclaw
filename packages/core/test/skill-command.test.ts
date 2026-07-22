@@ -20,7 +20,7 @@ describe("SkillCommand.template (P6)", () => {
   })
 
   test("an embedded built-in skill gets NO base-directory note", () => {
-    const result = SkillCommand.template(skill("/builtin/customize-novaclaw.md", "Built-in body."))
+    const result = SkillCommand.template(skill("/builtin/example.md", "Built-in body."))
     expect(result).toBe("Built-in body.")
   })
 

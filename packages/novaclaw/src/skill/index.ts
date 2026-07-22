@@ -6,7 +6,6 @@ import type { Agent } from "@/agent/agent"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { InstanceState } from "@/effect/instance-state"
 import { Global } from "@novaclaw/core/global"
-import { SkillPlugin } from "@novaclaw/core/plugin/skill"
 import { Permission } from "@/permission"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { Config } from "@/config/config"
@@ -24,17 +23,11 @@ const EXTERNAL_SKILL_PATTERN = "skills/**/SKILL.md"
 const NOVACLAW_SKILL_PATTERN = "{skill,skills}/**/SKILL.md"
 const SKILL_PATTERN = "**/SKILL.md"
 
-// Built-in skill that ships with novaclaw. The model's intuition for what an
-// novaclaw.json should look like is often wrong, and novaclaw hard-fails on
-// invalid config, so users hit cryptic startup errors. Loading this skill
-// when the model is asked to touch novaclaw's own config files gives it the
-// actual schemas instead of guesses.
-const CUSTOMIZE_NOVACLAW_SKILL_NAME = "customize-novaclaw"
-// Doubles as the slash-palette blurb — keep it human-readable; the trigger anchors are the
-// nouns (file names + artifact types), not prompt-ese imperatives.
-const CUSTOMIZE_NOVACLAW_SKILL_DESCRIPTION =
-  "Set up or fix NovaClaw's own configuration: novaclaw.json / novaclaw.jsonc, files under .novaclaw/ or ~/.config/novaclaw/, and NovaClaw agents, subagents, skills, plugins, MCP servers, or permission rules. Not for your own application code or projects that aren't configuring NovaClaw itself."
-const CUSTOMIZE_NOVACLAW_SKILL_BODY = SkillPlugin.CustomizeNovaclawContent
+// The old built-in "customize-novaclaw" skill is RETIRED (2026-07-22): it taught the jsonc-file
+// config world (novaclaw.json schemas, edit-then-restart) that the settings-in-SQLite migration
+// removed — exactly the wrong instructions for the live HTTP config surface. Config repair is the
+// self-healing rule's territory (AGENTS.md: runtime-editable stores behind PATCH /config), not a
+// file-schema cheat sheet. Skills on disk with the same name still load normally.
 
 export const Info = Schema.Struct({
   name: Schema.String,
@@ -279,14 +272,6 @@ export const layer = Layer.effect(
     const state = yield* InstanceState.make(
       Effect.fn("Skill.state")(function* () {
         const s: State = { skills: {}, dirs: new Set() }
-        // Register the built-in skill BEFORE disk discovery so a user-disk
-        // skill with the same name can override it.
-        s.skills[CUSTOMIZE_NOVACLAW_SKILL_NAME] = {
-          name: CUSTOMIZE_NOVACLAW_SKILL_NAME,
-          description: CUSTOMIZE_NOVACLAW_SKILL_DESCRIPTION,
-          location: "<built-in>",
-          content: CUSTOMIZE_NOVACLAW_SKILL_BODY,
-        }
         yield* loadSkills(s, yield* InstanceState.get(discovered), events)
         return s
       }),

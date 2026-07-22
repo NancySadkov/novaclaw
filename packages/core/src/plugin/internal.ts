@@ -37,7 +37,6 @@ import { FetchHttpClient, HttpClient } from "effect/unstable/http"
 import { AgentPlugin } from "./agent"
 import { CommandPlugin } from "./command"
 import { ModelsDevPlugin } from "./models-dev"
-import { SkillPlugin } from "./skill"
 import { VariantPlugin } from "./variant"
 
 export type Requirements =
@@ -119,7 +118,6 @@ const layer = Layer.effectDiscard(
         yield* add(ConfigReferencePlugin.Plugin)
         yield* add(AgentPlugin.Plugin)
         yield* add(CommandPlugin.Plugin)
-        yield* add(SkillPlugin.Plugin)
         yield* add(ModelsDevPlugin)
         yield* add(ConfigAgentPlugin.Plugin)
         yield* add(ConfigCommandPlugin.Plugin)
