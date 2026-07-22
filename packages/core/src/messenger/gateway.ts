@@ -4,6 +4,7 @@ import { Context, Duration, Effect, Fiber, FiberSet, Layer, Semaphore, Stream } 
 import { Messenger } from "@novaclaw/schema/messenger"
 import { Session } from "@novaclaw/schema/session"
 import { SessionEvent } from "@novaclaw/schema/session-event"
+import { copySessionRecipes } from "../adhoc-tools"
 import { Credential } from "../credential"
 import { makeGlobalNode } from "../effect/app-node"
 import { EventV2 } from "../event"
@@ -34,6 +35,11 @@ const PAIRING_TTL_MS = 10 * 60_000
 // Traffic rules (§2.3): how many brand-new conversations NovaClaw may START in one day. Replies to
 // inbound don't count — only cold-starts. Providers flag accounts that spray new chats; this caps it.
 const DAILY_NEW_CONVERSATION_CAP = 20
+// §0.1.5 dispatcher: max console task-spawns per chat per rolling minute — the fork-bomb-guard
+// parity rule (a spawn seam must ship with a rate cap; SessionSpawner carries the same number).
+// Human-typed `Nova, …` prompts land far under it; a paste-flood gets a legible refusal.
+const MAX_DISPATCHES_PER_MINUTE = 10
+const DISPATCH_RATE_WINDOW_MS = 60_000
 
 export type SendOutcome = { readonly ok: true } | { readonly ok: false; readonly reason: string }
 
@@ -121,6 +127,8 @@ export const layer = Layer.effect(
     const listings = new Map<string, string[]>()
     // The daily cold-start bucket (traffic rules §2.3).
     const initiations = { day: "", count: 0 }
+    // §0.1.5 dispatcher: chatKey -> recent task-spawn timestamps (the per-chat rate guard).
+    const dispatchRate = new Map<string, number[]>()
 
     // Every outbound message — command replies, relayed assistant text, proactive tool sends —
     // goes through the pacer, so nothing ever bursts or posts instantly.
@@ -145,6 +153,57 @@ export const layer = Layer.effect(
 
     const reply = (connection: Connection, chatID: string, text: string) =>
       paceSend(connection, chatID, text).pipe(Effect.ignore)
+
+    // §0.1.5 rule 3 — the console DISPATCHES, it never inlines. Each `Nova, …` prompt in the
+    // self-chat becomes a CHILD session: parent = the console's bound session (so agent/model/
+    // permissions inherit via the config walk — the binding is the task template), type
+    // "goal-oriented" (the child self-drives to `exit(result)`, runner/drive.ts), stamped with a
+    // dispatch target in its metadata so the relay reports progress + the exit result back to
+    // this chat. The console session itself never takes a turn — its context stays flat across
+    // weeks of use, which is the whole point of spawn-don't-inline.
+    const dispatch = (
+      account: Messenger.AccountInfo,
+      connection: Connection,
+      event: Extract<InboundEvent, { kind: "message" }>,
+      binding: Messenger.BindingInfo,
+      task: string,
+      prompt: string,
+    ) =>
+      Effect.gen(function* () {
+        const key = MessengerPipeline.chatKey(account.id, event.chat.chatID)
+        const now = Date.now()
+        const recent = (dispatchRate.get(key) ?? []).filter((at) => now - at < DISPATCH_RATE_WINDOW_MS)
+        if (recent.length >= MAX_DISPATCHES_PER_MINUTE) {
+          yield* reply(
+            connection,
+            event.chat.chatID,
+            `That's a lot of tasks in one minute (max ${MAX_DISPATCHES_PER_MINUTE}) — give the ones running a moment, then ask again.`,
+          )
+          return
+        }
+        dispatchRate.set(key, [...recent, now])
+        const started = yield* Effect.gen(function* () {
+          const parent = yield* sessions.get(binding.sessionID as Session.ID)
+          const child = yield* sessions.create({
+            parentID: parent.id,
+            location: parent.location,
+            type: "goal-oriented",
+            title: MessengerPipeline.dispatchTitle(task),
+            metadata: MessengerPipeline.dispatchMetadata({ accountID: account.id, chatID: event.chat.chatID }),
+          })
+          // Spawn parity (4D): the child inherits the console session's ad-hoc recipes. Best-effort.
+          yield* Effect.tryPromise(() => copySessionRecipes(parent.id, child.id)).pipe(Effect.ignore)
+          yield* sessions.prompt({ sessionID: child.id, prompt: { text: prompt }, delivery: "queue" })
+          return true
+        }).pipe(Effect.catch(() => Effect.succeed(false)))
+        yield* reply(
+          connection,
+          event.chat.chatID,
+          started
+            ? MessengerPipeline.DISPATCH_ACK
+            : "I couldn't start that task — the linked session may be gone. /sessions to relink this console.",
+        )
+      })
 
     // Best-effort: DM the operator on any OTHER still-connected account (e.g. to flag a CAPTCHA on
     // the account that's parked). The Settings banner is the always-available fallback.
@@ -199,12 +258,15 @@ export const layer = Layer.effect(
             return
           case "status": {
             const binding = yield* store.bindingForChat(account.id, event.chat.chatID)
+            const address = account.settings["address"] ?? MessengerPipeline.DEFAULT_ADDRESS
             yield* reply(
               connection,
               event.chat.chatID,
               binding === undefined
                 ? "This chat isn't driving any session. /sessions then /use <n>."
-                : `This chat drives session ${binding.sessionID} (${binding.trust}).`,
+                : event.chat.self === true
+                  ? `This is your agent console — "${address}, <task>" here spawns a task under session ${binding.sessionID}.`
+                  : `This chat drives session ${binding.sessionID} (${binding.trust}).`,
             )
             return
           }
@@ -237,7 +299,14 @@ export const layer = Layer.effect(
               yield* events
                 .publish(Messenger.Event.BindingUpdated, { bindingID: binding.id, sessionID: sessionID as Session.ID })
                 .pipe(Effect.ignore)
-            yield* reply(connection, event.chat.chatID, `This chat now drives session ${sessionID}. Just type to talk to it.`)
+            const address = account.settings["address"] ?? MessengerPipeline.DEFAULT_ADDRESS
+            yield* reply(
+              connection,
+              event.chat.chatID,
+              event.chat.self === true
+                ? `This console now spawns tasks under session ${sessionID}. Say "${address}, <task>" to start one.`
+                : `This chat now drives session ${sessionID}. Just type to talk to it.`,
+            )
             return
           }
           case "new":
@@ -312,6 +381,12 @@ export const layer = Layer.effect(
           account.driverID,
           binding.trust,
         )
+        // §0.1.5 rule 3: the self-chat console spawns a task per addressed prompt — it never
+        // drives its bound session inline. Every other chat routes as before.
+        if (event.chat.self === true) {
+          yield* dispatch(account, connection, event, binding, promptText ?? "", text)
+          return
+        }
         yield* sessions
           .prompt({ sessionID: binding.sessionID as Session.ID, prompt: { text }, delivery: "queue" })
           .pipe(
@@ -323,6 +398,19 @@ export const layer = Layer.effect(
       connection.inbound.pipe(Stream.runForEach((event) => routeInbound(account, connection, event)))
 
     // ── outbound relay ───────────────────────────────────────────────────────────────────────────
+
+    // §0.1.5 dispatcher: resolve a session to its dispatch target (the console chat that spawned
+    // it), if it has one AND that account is currently connected. Dispatched children have no
+    // binding row — this metadata lookup is their whole relay contract.
+    const dispatchTargetOf = (sessionID: Session.ID) =>
+      Effect.gen(function* () {
+        const info = yield* sessions.get(sessionID).pipe(Effect.orElseSucceed(() => undefined))
+        const target = info === undefined ? undefined : MessengerPipeline.dispatchTarget(info.metadata)
+        if (target === undefined) return undefined
+        const entry = entries.get(target.accountID as Messenger.AccountID)
+        if (entry?.connection === undefined) return undefined
+        return { connection: entry.connection, chatID: target.chatID, title: info?.title }
+      })
 
     // ONE cross-session tap on finished assistant text → send to every chat bound to that session.
     // `audience` bindings do NOT auto-relay (the agent lurks; it speaks via explicit tool ops).
@@ -337,6 +425,38 @@ export const layer = Layer.effect(
             // Relaying a reply to a chat the session came from is never a cold-start; still paced.
             yield* paceSend(entry.connection, binding.chatID, payload.data.text).pipe(Effect.ignore)
           }
+          // A dispatched task's finished text parts are its progress narration — the operator
+          // watches it work from the phone, without the console session hearing a word.
+          const target = yield* dispatchTargetOf(payload.data.sessionID as Session.ID)
+          if (target !== undefined) yield* paceSend(target.connection, target.chatID, payload.data.text).pipe(Effect.ignore)
+        }),
+      ),
+    )
+
+    // The dispatcher's completion leg: a dispatched child's exit(result) reports back to the chat
+    // that asked — ✅ + the task title (several tasks may run at once) + the result.
+    const dispatchCompleted = events.subscribe(SessionEvent.Completed).pipe(
+      Stream.runForEach((payload) =>
+        Effect.gen(function* () {
+          const target = yield* dispatchTargetOf(payload.data.sessionID as Session.ID)
+          if (target === undefined) return
+          const raw = payload.data.result
+          const result = raw === undefined ? "" : typeof raw === "string" ? raw : JSON.stringify(raw)
+          yield* paceSend(target.connection, target.chatID, MessengerPipeline.renderDispatchDone(target.title, result)).pipe(
+            Effect.ignore,
+          )
+        }),
+      ),
+    )
+
+    // Synthetic notices (self-drive caps, runner error explanations) relay to the dispatching
+    // chat too — a paused task must never go silent on the phone (edge #11's spirit).
+    const dispatchNotices = events.subscribe(SessionEvent.Synthetic).pipe(
+      Stream.runForEach((payload) =>
+        Effect.gen(function* () {
+          const target = yield* dispatchTargetOf(payload.data.sessionID as Session.ID)
+          if (target === undefined) return
+          yield* paceSend(target.connection, target.chatID, payload.data.text).pipe(Effect.ignore)
         }),
       ),
     )
@@ -461,6 +581,8 @@ export const layer = Layer.effect(
     // serve, the layer graph regressed into building a second instance.
     yield* Effect.logInfo("messenger gateway starting")
     yield* Effect.forkScoped(relay.pipe(Effect.catchCause(() => Effect.void)))
+    yield* Effect.forkScoped(dispatchCompleted.pipe(Effect.catchCause(() => Effect.void)))
+    yield* Effect.forkScoped(dispatchNotices.pipe(Effect.catchCause(() => Effect.void)))
     yield* reload().pipe(Effect.ignore)
 
     const service = Service.of({

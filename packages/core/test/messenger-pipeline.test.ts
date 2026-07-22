@@ -98,3 +98,34 @@ describe("MessengerPipeline.addressed (SS0.1.5 self-chat gate)", () => {
     expect(MessengerPipeline.addressed("Nova, hello", "  ")).toBe("hello")
   })
 })
+
+describe("MessengerPipeline dispatch helpers (SS0.1.5 rule 3 — spawn, don't inline)", () => {
+  test("dispatch metadata round-trips through the session-metadata key", () => {
+    const metadata = MessengerPipeline.dispatchMetadata({ accountID: "msa_1", chatID: "self" })
+    expect(MessengerPipeline.dispatchTarget(metadata)).toEqual({ accountID: "msa_1", chatID: "self" })
+  })
+
+  test("dispatchTarget rejects absent or malformed metadata", () => {
+    expect(MessengerPipeline.dispatchTarget(undefined)).toBeUndefined()
+    expect(MessengerPipeline.dispatchTarget({})).toBeUndefined()
+    expect(MessengerPipeline.dispatchTarget({ [MessengerPipeline.DISPATCH_KEY]: "junk" })).toBeUndefined()
+    expect(MessengerPipeline.dispatchTarget({ [MessengerPipeline.DISPATCH_KEY]: { accountID: 5, chatID: "c" } })).toBeUndefined()
+    expect(MessengerPipeline.dispatchTarget({ other: { accountID: "a", chatID: "c" } })).toBeUndefined()
+  })
+
+  test("dispatchTitle flattens whitespace and truncates with an ellipsis", () => {
+    expect(MessengerPipeline.dispatchTitle("  fix   the\nflaky test  ")).toBe("fix the flaky test")
+    const long = "a".repeat(100)
+    const title = MessengerPipeline.dispatchTitle(long)
+    expect(title.length).toBeLessThanOrEqual(64)
+    expect(title.endsWith("…")).toBe(true)
+    expect(MessengerPipeline.dispatchTitle("a".repeat(64))).toBe("a".repeat(64))
+  })
+
+  test("renderDispatchDone names the task and carries the result; degrades honestly", () => {
+    expect(MessengerPipeline.renderDispatchDone("fix the test", "All green.")).toBe("✅ fix the test\nAll green.")
+    expect(MessengerPipeline.renderDispatchDone("fix the test", "  ")).toBe("✅ fix the test")
+    expect(MessengerPipeline.renderDispatchDone(undefined, "done")).toBe("✅ Task finished\ndone")
+    expect(MessengerPipeline.renderDispatchDone("", "")).toBe("✅ Task finished")
+  })
+})

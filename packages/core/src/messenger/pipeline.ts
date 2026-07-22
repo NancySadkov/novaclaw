@@ -68,6 +68,53 @@ export const addressed = (text: string, address: string): string | undefined => 
   return prompt.length > 0 ? prompt : undefined
 }
 
+// ── the self-chat dispatcher (§0.1.5 rule 3 — spawn, don't inline) ─────────────────────────────
+// The console session never takes a turn: each `Nova, …` prompt becomes a CHILD session, and the
+// child carries a DISPATCH TARGET in its session metadata — the chat its progress and exit result
+// report back to. Metadata, deliberately NOT a binding row: a dispatched task must not behave like
+// a bound chat (no inbound routing, no steal-protected UNIQUE(chat) slot — many tasks, one chat).
+
+/** The session-metadata key a console dispatch stamps on the child it spawns. */
+export const DISPATCH_KEY = "messengerDispatch"
+
+export interface DispatchTarget {
+  readonly accountID: string
+  readonly chatID: string
+}
+
+export const dispatchMetadata = (target: DispatchTarget): Record<string, unknown> => ({
+  [DISPATCH_KEY]: { accountID: target.accountID, chatID: target.chatID },
+})
+
+/** Read a dispatch target back off session metadata; undefined when absent or malformed. */
+export const dispatchTarget = (
+  metadata: { readonly [key: string]: unknown } | undefined,
+): DispatchTarget | undefined => {
+  const raw = metadata?.[DISPATCH_KEY]
+  if (typeof raw !== "object" || raw === null) return undefined
+  const { accountID, chatID } = raw as { readonly [key: string]: unknown }
+  return typeof accountID === "string" && typeof chatID === "string" ? { accountID, chatID } : undefined
+}
+
+/** The dispatched child's title — the task itself, flattened + truncated so ps/Chats read well.
+ *  A custom title also keeps auto-title off (SessionTitle.isDefault fails), which is right: the
+ *  task IS the best name for a task session. */
+export const dispatchTitle = (task: string): string => {
+  const flat = task.replaceAll(/\s+/g, " ").trim()
+  return flat.length <= 64 ? flat : `${flat.slice(0, 63).trimEnd()}…`
+}
+
+/** The console's dispatch acknowledgement — short, because the pacer types it like a human. */
+export const DISPATCH_ACK = "🚀 On it — I'll report back here when it's done."
+
+/** The completion report for a dispatched task: the child's exit(result), relayed to the chat
+ *  that asked. The title identifies WHICH task finished (several may run at once). */
+export const renderDispatchDone = (title: string | undefined, result: string): string => {
+  const head = title === undefined || title.trim().length === 0 ? "✅ Task finished" : `✅ ${title.trim()}`
+  const body = result.trim()
+  return body.length === 0 ? head : `${head}\n${body}`
+}
+
 export const HELP_TEXT = [
   "NovaClaw remote control:",
   "/sessions — list your chats",

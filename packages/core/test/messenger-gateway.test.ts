@@ -14,17 +14,32 @@ import { MessengerDriver } from "@novaclaw/core/messenger/driver"
 import { MessengerPace } from "@novaclaw/core/messenger/pace"
 import { MessengerDrivers } from "@novaclaw/core/messenger/drivers"
 import { MessengerGateway } from "@novaclaw/core/messenger/gateway"
+import { MessengerPipeline } from "@novaclaw/core/messenger/pipeline"
 import { MessengerStore } from "@novaclaw/core/messenger/store"
 import { testEffect } from "./lib/effect"
 
 // Mock SessionV2 so the gateway graph never boots the real runner / LocationServiceMap. The
-// gateway only calls prompt (records the injected turn) and list (feeds /sessions).
+// gateway calls prompt (records the injected turn), list (feeds /sessions), and — for the §0.1.5
+// dispatcher — get (parent lookup + dispatch-target resolution) and create (task spawn).
+type MockInfo = {
+  id: string
+  title?: string
+  location: { directory: string }
+  metadata?: Record<string, unknown>
+  parentID?: string
+  type?: string
+}
 const makeSessionMock = () => {
   const prompts: { sessionID: string; text: string }[] = []
+  const created: MockInfo[] = []
+  const infos = new Map<string, MockInfo>()
+  infos.set("ses_alpha", { id: "ses_alpha", title: "Fix the login bug", location: { directory: "C:/work" } })
+  infos.set("ses_beta", { id: "ses_beta", title: "Design a logo", location: { directory: "C:/work" } })
   const sessionList: { id: string; title?: string; agent?: string }[] = [
     { id: "ses_alpha", title: "Fix the login bug", agent: "build" },
     { id: "ses_beta", title: "Design a logo" },
   ]
+  let childSeq = 0
   const layer = Layer.mock(SessionV2.Service, {
     prompt: (input: { sessionID: string; prompt: { text: string } }) =>
       Effect.sync(() => {
@@ -32,8 +47,33 @@ const makeSessionMock = () => {
         return undefined as never
       }),
     list: () => Effect.succeed(sessionList as never),
+    get: (sessionID: string) =>
+      Effect.suspend(() => {
+        const info = infos.get(sessionID)
+        return info === undefined ? Effect.fail({ _tag: "Session.NotFoundError" }) : Effect.succeed(info)
+      }),
+    create: (input: {
+      parentID?: string
+      title?: string
+      location: { directory: string }
+      metadata?: Record<string, unknown>
+      type?: string
+    }) =>
+      Effect.sync(() => {
+        const info: MockInfo = {
+          id: `ses_child${++childSeq}`,
+          title: input.title,
+          location: input.location,
+          metadata: input.metadata,
+          parentID: input.parentID,
+          type: input.type,
+        }
+        infos.set(info.id, info)
+        created.push(info)
+        return info
+      }),
   } as never)
-  return { layer, prompts, sessionList }
+  return { layer, prompts, created, infos, sessionList }
 }
 
 // P0 gates (notes/messenger-plan.md §8): the gateway's account state machine — boot/reload
@@ -353,25 +393,52 @@ describe("MessengerGateway pipeline", () => {
     }),
   )
 
-  it.live("the self-chat console routes only addressed prompts, stripped of the address (§0.1.5)", () =>
+  it.live("the self-chat console DISPATCHES addressed prompts as child tasks — never inline (§0.1.5)", () =>
     Effect.gen(function* () {
       const { store, gateway, account, queue } = yield* online("console")
       yield* store.createBinding({ accountID: account.id, chatID: "self1", sessionID: "ses_alpha", trust: "operator" })
       const promptsBefore = session.prompts.length
+      const createdBefore = session.created.length
+      const sentBefore = fake.state.sent.length
 
-      // The user's own note — never a model turn.
+      // The user's own note — never a model turn, never a spawn.
       yield* Queue.offer(queue, message("self1", { text: "buy milk and stamps", owner: true, self: true }))
-      // An addressed prompt — routed with the address stripped.
+      // An addressed prompt — SPAWNS a goal-oriented child under the bound session (rule 3:
+      // spawn-don't-inline; the console session itself must stay flat).
       yield* Queue.offer(queue, message("self1", { text: "Nova, summarize my inbox", owner: true, self: true }))
       yield* eventually(
+        Effect.sync(() => session.created.slice(createdBefore)),
+        (list) => list.length === 1,
+        "task spawned",
+      )
+      const child = session.created[createdBefore]
+      if (child === undefined) throw new Error("no child created")
+      expect(child.parentID).toBe("ses_alpha")
+      expect(child.type).toBe("goal-oriented")
+      expect(child.title).toBe("summarize my inbox")
+      expect(child.location.directory).toBe("C:/work")
+      expect(MessengerPipeline.dispatchTarget(child.metadata)).toEqual({ accountID: account.id, chatID: "self1" })
+
+      // The task prompt went to the CHILD (address stripped, provenance framed) — the console
+      // session received NOTHING (its context stays flat, the P4.5 gate).
+      yield* eventually(
         Effect.sync(() => session.prompts.slice(promptsBefore)),
-        (prompts) => prompts.some((p) => p.sessionID === "ses_alpha" && p.text.includes("summarize my inbox")),
-        "addressed prompt routed",
+        (prompts) => prompts.some((p) => p.sessionID === child.id && p.text.includes("summarize my inbox")),
+        "task prompt reached the child",
       )
       const routed = session.prompts.slice(promptsBefore)
       expect(routed).toHaveLength(1)
+      expect(routed[0]?.text).toContain("[via fake")
       expect(routed[0]?.text).not.toContain("Nova,")
+      expect(routed.some((p) => p.sessionID === "ses_alpha")).toBe(false)
       expect(routed.some((p) => p.text.includes("buy milk"))).toBe(false)
+
+      // The console acknowledged the dispatch in-chat.
+      yield* eventually(
+        Effect.sync(() => fake.state.sent.slice(sentBefore)),
+        (sent) => sent.some((s) => s.chatID === "self1" && s.text === MessengerPipeline.DISPATCH_ACK),
+        "dispatch acknowledged",
+      )
 
       // A custom agent name via the per-account `address` setting.
       yield* store.updateAccount(account.id, { settings: { address: "Jarvis" } })
@@ -384,20 +451,113 @@ describe("MessengerGateway pipeline", () => {
       yield* eventually(
         Effect.sync(() => session.prompts.slice(promptsBefore)),
         (prompts) => prompts.some((p) => p.text.includes("right name")),
-        "custom address routed",
+        "custom address dispatched",
       )
       expect(session.prompts.slice(promptsBefore).some((p) => p.text.includes("wrong name"))).toBe(false)
 
-      // Ordinary (non-self) chats need no prefix — unchanged behavior.
+      // Ordinary (non-self) chats need no prefix and still route INLINE — dispatch is
+      // console-only behavior.
       yield* Queue.offer(queue2, message("700", { text: "no prefix needed", sender: "u1" }))
       yield* store.createBinding({ accountID: account.id, chatID: "700", sessionID: "ses_beta", trust: "operator" })
       yield* Queue.offer(queue2, message("700", { text: "plain routed", sender: "u1" }))
       yield* eventually(
         Effect.sync(() => session.prompts.slice(promptsBefore)),
         (prompts) => prompts.some((p) => p.sessionID === "ses_beta" && p.text.includes("plain routed")),
-        "non-self chat routes unprefixed",
+        "non-self chat routes unprefixed, inline",
       )
 
+      yield* store.removeAccount(account.id)
+      yield* gateway.reload()
+    }),
+  )
+
+  it.live("a dispatched task reports progress, notices, and its exit result back to the console (§0.1.5)", () =>
+    Effect.gen(function* () {
+      const { store, gateway, account, queue } = yield* online("dispatch-report")
+      const events = yield* EventV2.Service
+      yield* store.createBinding({ accountID: account.id, chatID: "self2", sessionID: "ses_alpha", trust: "operator" })
+      const createdBefore = session.created.length
+      yield* Queue.offer(queue, message("self2", { text: "Nova, fix the flaky test", owner: true, self: true }))
+      const child = (yield* eventually(
+        Effect.sync(() => session.created.slice(createdBefore)),
+        (list) => list.length === 1,
+        "task spawned",
+      ))[0]
+      if (child === undefined) throw new Error("no child created")
+
+      // Progress: the child's finished text parts relay to the dispatching chat (no binding row).
+      const sentBefore = fake.state.sent.length
+      yield* events.publish(SessionEvent.Text.Ended, {
+        sessionID: child.id as never,
+        assistantMessageID: SessionMessage.ID.make("msg_prog"),
+        textID: "t1",
+        text: "Reproduced it — the mock leaks a timer.",
+        timestamp: DateTime.makeUnsafe(1),
+      })
+      yield* eventually(
+        Effect.sync(() => fake.state.sent.slice(sentBefore)),
+        (sent) => sent.some((s) => s.chatID === "self2" && s.text?.includes("leaks a timer")),
+        "progress relayed",
+      )
+
+      // A synthetic notice (self-drive cap, runner error) relays too — never silent.
+      yield* events.publish(SessionEvent.Synthetic, {
+        sessionID: child.id as never,
+        messageID: SessionMessage.ID.make("msg_notice"),
+        text: "⏸️ Autonomous run paused after 24 self-prompted rounds without calling exit.",
+        timestamp: DateTime.makeUnsafe(2),
+      })
+      yield* eventually(
+        Effect.sync(() => fake.state.sent.slice(sentBefore)),
+        (sent) => sent.some((s) => s.chatID === "self2" && s.text?.includes("paused after 24")),
+        "notice relayed",
+      )
+
+      // Completion: exit(result) → ✅ + the task title + the result.
+      yield* events.publish(SessionEvent.Completed, {
+        sessionID: child.id as never,
+        result: "All 13 tests green.",
+        timestamp: DateTime.makeUnsafe(3),
+      })
+      const done = yield* eventually(
+        Effect.sync(() => fake.state.sent.slice(sentBefore)),
+        (sent) => sent.some((s) => s.chatID === "self2" && s.text?.includes("All 13 tests green.")),
+        "result relayed",
+      )
+      const report = done.find((s) => s.text?.includes("All 13 tests green."))
+      expect(report?.text).toContain("✅ fix the flaky test")
+
+      // A completion for a session with NO dispatch target stays silent (bound sessions have
+      // their own relay; unknown sessions are not ours to report).
+      const quietBefore = fake.state.sent.length
+      yield* events.publish(SessionEvent.Completed, {
+        sessionID: "ses_beta" as never,
+        result: "should not be posted",
+        timestamp: DateTime.makeUnsafe(4),
+      })
+      yield* Effect.sleep(Duration.millis(150))
+      expect(fake.state.sent.slice(quietBefore).some((s) => s.text?.includes("should not be posted"))).toBe(false)
+
+      yield* store.removeAccount(account.id)
+      yield* gateway.reload()
+    }),
+  )
+
+  it.live("console dispatch is rate-capped per minute with a legible refusal", () =>
+    Effect.gen(function* () {
+      const { store, gateway, account, queue } = yield* online("dispatch-rate")
+      yield* store.createBinding({ accountID: account.id, chatID: "self3", sessionID: "ses_alpha", trust: "operator" })
+      const createdBefore = session.created.length
+      const sentBefore = fake.state.sent.length
+      for (let i = 1; i <= 11; i++) {
+        yield* Queue.offer(queue, message("self3", { text: `Nova, task number ${i}`, owner: true, self: true }))
+      }
+      yield* eventually(
+        Effect.sync(() => fake.state.sent.slice(sentBefore)),
+        (sent) => sent.some((s) => s.chatID === "self3" && (s.text?.includes("a lot of tasks") ?? false)),
+        "rate refusal sent",
+      )
+      expect(session.created.slice(createdBefore)).toHaveLength(10)
       yield* store.removeAccount(account.id)
       yield* gateway.reload()
     }),
