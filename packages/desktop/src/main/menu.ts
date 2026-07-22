@@ -1,11 +1,6 @@
 import { BrowserWindow, Menu, shell } from "electron"
 import type { MenuItemConstructorOptions } from "electron"
-import {
-  DESKTOP_MENU,
-  desktopMenuVisible,
-  type DesktopMenuEntry,
-  type DesktopMenuRole,
-} from "@novaclaw/app/desktop-menu"
+import { DESKTOP_MENU, type DesktopMenuEntry, type DesktopMenuRole } from "@novaclaw/app/desktop-menu"
 
 import { UPDATER_ENABLED } from "./constants"
 import { runDesktopMenuAction } from "./desktop-menu-actions"
@@ -19,13 +14,11 @@ type Deps = {
 export function createMenu(deps: Deps) {
   if (process.platform !== "darwin") return
 
-  const template = DESKTOP_MENU.filter((menu) => desktopMenuVisible(menu, "macos")).map((menu) => {
+  const template = DESKTOP_MENU.map((menu) => {
     if (menu.role) return { role: nativeRole(menu.role) }
     return {
       label: menu.label,
-      submenu: menu.items
-        ?.filter((entry) => desktopMenuVisible(entry, "macos"))
-        .map((entry) => nativeItem(entry, deps)),
+      submenu: menu.items?.map((entry) => nativeItem(entry, deps)),
     }
   })
 
@@ -38,7 +31,7 @@ function nativeItem(entry: DesktopMenuEntry, deps: Deps): MenuItemConstructorOpt
 
   const item: MenuItemConstructorOptions = {
     label: entry.label,
-    accelerator: entry.accelerator?.macos,
+    accelerator: entry.accelerator,
     enabled: entry.enabled === "updater" ? UPDATER_ENABLED : undefined,
   }
 

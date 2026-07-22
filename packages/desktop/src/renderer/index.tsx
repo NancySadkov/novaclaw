@@ -22,7 +22,7 @@ import { render } from "solid-js/web"
 import pkg from "../../package.json"
 import { initI18n, t } from "./i18n"
 import { initializationData, initializationReady } from "./initialization"
-import { resetZoom, setPinchZoomEnabled, webviewZoom, zoomIn, zoomOut } from "./webview-zoom"
+import { setPinchZoomEnabled, webviewZoom } from "./webview-zoom"
 import { availableStartupServer, readyWslConnections } from "./wsl/connections"
 import "./styles.css"
 import { useTheme } from "@novaclaw/ui/theme/context"
@@ -61,22 +61,6 @@ const createPlatform = (): Platform => {
     if (ua.includes("Linux")) return "linux"
     return undefined
   })()
-
-  const runDesktopMenuAction: Platform["runDesktopMenuAction"] = (action) => {
-    switch (action) {
-      case "view.resetZoom":
-        resetZoom()
-        return
-      case "view.zoomIn":
-        zoomIn()
-        return
-      case "view.zoomOut":
-        zoomOut()
-        return
-    }
-
-    return window.api.runDesktopMenuAction(action)
-  }
 
   const storage = (() => {
     const cache = new Map<string, AsyncStorage>()
@@ -233,8 +217,6 @@ const createPlatform = (): Platform => {
     getPinchZoomEnabled: () => window.api.getPinchZoomEnabled(),
 
     setPinchZoomEnabled,
-
-    runDesktopMenuAction,
 
     checkAppExists: async (appName: string) => {
       return window.api.checkAppExists(appName)

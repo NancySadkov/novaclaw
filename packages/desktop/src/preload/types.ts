@@ -1,4 +1,3 @@
-import type { DesktopMenuAction } from "@novaclaw/app/desktop-menu"
 import type { WslServersPlatform } from "@novaclaw/app/wsl/types"
 import type { UpdaterState } from "@novaclaw/app/updater"
 export type {
@@ -95,7 +94,6 @@ export type ElectronAPI = {
   onPinchZoomEnabledChanged: (cb: (enabled: boolean) => void) => () => void
   onZoomFactorChanged: (cb: (factor: number) => void) => () => void
   setTitlebar: (theme: TitlebarTheme) => Promise<void>
-  runDesktopMenuAction: (action: DesktopMenuAction) => Promise<void>
   setBackgroundColor: (color: string) => Promise<void>
   exportDebugLogs: () => Promise<string>
   recordFatalRendererError: (error: FatalRendererError) => Promise<void>

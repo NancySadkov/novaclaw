@@ -16,7 +16,6 @@ import { usePlatform } from "@/context/platform"
 import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
-import { WindowsAppMenu } from "./windows-app-menu"
 import { applyPath, backPath, forwardPath } from "./titlebar-history"
 import { TitlebarTabStrip } from "@/components/titlebar-tab-strip"
 import { NovaClawWordmark } from "@/components/brand"
@@ -78,7 +77,6 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
   const mac = createMemo(() => platform.platform === "desktop" && platform.os === "macos")
   const windows = createMemo(() => platform.platform === "desktop" && platform.os === "windows")
   const electronWindows = createMemo(() => windows() && !tauriApi())
-  const linux = createMemo(() => platform.platform === "desktop" && platform.os === "linux")
   const web = createMemo(() => platform.platform === "web")
   const zoom = () => platform.webviewZoom?.() ?? 1
   const titlebarZoom = () => (windows() ? Math.max(zoom(), minTitlebarZoom) : zoom())
@@ -392,13 +390,10 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                 }}
               >
                 <BrandBadge />
-                {/* Session-nav (app menu + Home + Chats) is hidden on the launcher ("/") — you launch
+                {/* Session-nav (Chats) is hidden on the launcher ("/") — you launch
                     apps from the tiles there; the nav returns inside a chat/session. */}
                 {/* Home lives on the brand badge now (Start-button style) — no separate Home button. */}
                 <Show when={location.pathname !== "/"}>
-                  <Show when={windows() || linux()}>
-                    <WindowsAppMenu command={command} platform={platform} variant="v2" />
-                  </Show>
                   <TooltipV2 placement="bottom" value={language.t("nav.chats")} class="shrink-0">
                     <IconButtonV2
                       type="button"
@@ -448,9 +443,6 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                 "pl-2": !mac(),
               }}
             >
-              <Show when={windows() || linux()}>
-                <WindowsAppMenu command={command} platform={platform} />
-              </Show>
               <Show when={mac()}>
                 {/*<div class="h-full shrink-0" style={{ width: `${72 / zoom()}px` }} />*/}
                 <div class="xl:hidden w-10 shrink-0 flex items-center justify-center">

@@ -1,5 +1,7 @@
-export type DesktopMenuPlatform = "macos" | "windows"
-
+// The macOS native menu-bar definition (consumed by the Electron main process in
+// packages/desktop/src/main/menu.ts). Windows/Linux have no app menu: the in-titlebar
+// hamburger menu was retired 2026-07-22 — its entries pointed at commands the launcher
+// redesign removed; everything lives in the HTML shell (launcher tiles, Chats, Settings).
 export type DesktopMenuAction =
   | "app.checkForUpdates"
   | "app.relaunch"
@@ -49,14 +51,12 @@ export type DesktopMenuItem = {
   action?: DesktopMenuAction
   role?: DesktopMenuRole
   href?: string
-  accelerator?: Partial<Record<DesktopMenuPlatform, string>>
+  accelerator?: string
   enabled?: "updater"
-  platforms?: DesktopMenuPlatform[]
 }
 
 export type DesktopMenuSeparator = {
   type: "separator"
-  platforms?: DesktopMenuPlatform[]
 }
 
 export type DesktopMenuEntry = DesktopMenuItem | DesktopMenuSeparator
@@ -66,18 +66,16 @@ export type DesktopMenu = {
   label: string
   role?: DesktopMenuRole
   items?: DesktopMenuEntry[]
-  platforms?: DesktopMenuPlatform[]
 }
 
 export const DESKTOP_MENU: DesktopMenu[] = [
   {
     id: "app",
     label: "NovaClaw",
-    platforms: ["macos"],
     items: [
       { type: "item", role: "about" },
       { type: "item", label: "Check for Updates...", action: "app.checkForUpdates", enabled: "updater" },
-      { type: "item", label: "Settings", command: "settings.open", accelerator: { macos: "Cmd+," } },
+      { type: "item", label: "Settings", command: "settings.open", accelerator: "Cmd+," },
       { type: "item", label: "Reload Webview", action: "view.reload" },
       { type: "item", label: "Restart", action: "app.relaunch" },
       { type: "item", label: "Export Logs...", command: "logs.export" },
@@ -97,21 +95,14 @@ export const DESKTOP_MENU: DesktopMenu[] = [
         type: "item",
         label: "New Session",
         command: "session.new",
-        accelerator: { macos: "Shift+Cmd+S" },
+        accelerator: "Shift+Cmd+S",
       },
-      { type: "item", label: "Open Project...", command: "project.open", accelerator: { macos: "Cmd+O" } },
-      {
-        type: "item",
-        label: "Settings",
-        command: "settings.open",
-        accelerator: { windows: "Ctrl+," },
-        platforms: ["windows"],
-      },
+      { type: "item", label: "Open Project...", command: "project.open", accelerator: "Cmd+O" },
       {
         type: "item",
         label: "New Window",
         action: "window.new",
-        accelerator: { macos: "Cmd+Shift+N", windows: "Ctrl+Shift+N" },
+        accelerator: "Cmd+Shift+N",
       },
       { type: "separator" },
       { type: "item", label: "Close Window", action: "window.close", role: "close" },
@@ -121,19 +112,18 @@ export const DESKTOP_MENU: DesktopMenu[] = [
     id: "edit",
     label: "Edit",
     items: [
-      { type: "item", label: "Undo", action: "edit.undo", role: "undo", accelerator: { windows: "Ctrl+Z" } },
-      { type: "item", label: "Redo", action: "edit.redo", role: "redo", accelerator: { windows: "Ctrl+Y" } },
+      { type: "item", label: "Undo", action: "edit.undo", role: "undo" },
+      { type: "item", label: "Redo", action: "edit.redo", role: "redo" },
       { type: "separator" },
-      { type: "item", label: "Cut", action: "edit.cut", role: "cut", accelerator: { windows: "Ctrl+X" } },
-      { type: "item", label: "Copy", action: "edit.copy", role: "copy", accelerator: { windows: "Ctrl+C" } },
-      { type: "item", label: "Paste", action: "edit.paste", role: "paste", accelerator: { windows: "Ctrl+V" } },
+      { type: "item", label: "Cut", action: "edit.cut", role: "cut" },
+      { type: "item", label: "Copy", action: "edit.copy", role: "copy" },
+      { type: "item", label: "Paste", action: "edit.paste", role: "paste" },
       { type: "item", label: "Delete", action: "edit.delete" },
       {
         type: "item",
         label: "Select All",
         action: "edit.selectAll",
         role: "selectAll",
-        accelerator: { windows: "Ctrl+A" },
       },
     ],
   },
@@ -142,7 +132,7 @@ export const DESKTOP_MENU: DesktopMenu[] = [
     label: "View",
     items: [
       { type: "item", label: "Toggle Sidebar", command: "sidebar.toggle" },
-      { type: "item", label: "Toggle Terminal", command: "terminal.toggle", accelerator: { macos: "Ctrl+`" } },
+      { type: "item", label: "Toggle Terminal", command: "terminal.toggle", accelerator: "Ctrl+`" },
       { type: "item", label: "Toggle File Tree", command: "fileTree.toggle" },
       { type: "separator" },
       { type: "item", label: "Reload", action: "view.reload", role: "reload" },
@@ -153,10 +143,9 @@ export const DESKTOP_MENU: DesktopMenu[] = [
         label: "Actual Size",
         action: "view.resetZoom",
         role: "resetZoom",
-        accelerator: { windows: "Ctrl+0" },
       },
-      { type: "item", label: "Zoom In", action: "view.zoomIn", role: "zoomIn", accelerator: { windows: "Ctrl++" } },
-      { type: "item", label: "Zoom Out", action: "view.zoomOut", role: "zoomOut", accelerator: { windows: "Ctrl+-" } },
+      { type: "item", label: "Zoom In", action: "view.zoomIn", role: "zoomIn" },
+      { type: "item", label: "Zoom Out", action: "view.zoomOut", role: "zoomOut" },
       { type: "separator" },
       { type: "item", label: "Toggle Full Screen", action: "view.toggleFullscreen", role: "togglefullscreen" },
     ],
@@ -165,23 +154,23 @@ export const DESKTOP_MENU: DesktopMenu[] = [
     id: "go",
     label: "Go",
     items: [
-      { type: "item", label: "Back", command: "common.goBack", accelerator: { macos: "Cmd+[" } },
-      { type: "item", label: "Forward", command: "common.goForward", accelerator: { macos: "Cmd+]" } },
+      { type: "item", label: "Back", command: "common.goBack", accelerator: "Cmd+[" },
+      { type: "item", label: "Forward", command: "common.goForward", accelerator: "Cmd+]" },
       { type: "separator" },
-      { type: "item", label: "Previous Session", command: "session.previous", accelerator: { macos: "Option+Up" } },
-      { type: "item", label: "Next Session", command: "session.next", accelerator: { macos: "Option+Down" } },
+      { type: "item", label: "Previous Session", command: "session.previous", accelerator: "Option+Up" },
+      { type: "item", label: "Next Session", command: "session.next", accelerator: "Option+Down" },
       { type: "separator" },
       {
         type: "item",
         label: "Previous Project",
         command: "project.previous",
-        accelerator: { macos: "Cmd+Option+Up" },
+        accelerator: "Cmd+Option+Up",
       },
       {
         type: "item",
         label: "Next Project",
         command: "project.next",
-        accelerator: { macos: "Cmd+Option+Down" },
+        accelerator: "Cmd+Option+Down",
       },
     ],
   },
@@ -205,7 +194,3 @@ export const DESKTOP_MENU: DesktopMenu[] = [
     ],
   },
 ]
-
-export function desktopMenuVisible(item: { platforms?: DesktopMenuPlatform[] }, platform: DesktopMenuPlatform) {
-  return !item.platforms || item.platforms.includes(platform)
-}
