@@ -345,6 +345,7 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       const permissionMode = local.permissionMode.current()
       const strict = local.strict.current()
       const features = local.features.current()
+      const mode = local.mode.current()
       const created = await client.v2.session
         .create({
           ...(permissionMode !== "ask" ? { permissionMode } : {}),
@@ -352,6 +353,9 @@ export function createPromptSubmit(input: PromptSubmitInput) {
           ...(features?.introspection !== undefined ? { introspection: features.introspection } : {}),
           ...(features?.quality !== undefined ? { quality: features.quality } : {}),
           ...(features?.affective !== undefined ? { affective: features.affective } : {}),
+          // The composer's Mode choice becomes the session's kernel thread type at create time
+          // (interactive is the server default — only an explicit unattended choice is sent).
+          ...(mode !== undefined && mode !== "interactive" ? { type: mode } : {}),
         })
         .then((x) => x.data?.data ?? undefined)
         .catch((err) => {

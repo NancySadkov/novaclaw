@@ -249,6 +249,10 @@ export interface Interface {
     feature: "introspection" | "quality" | "affective"
     enabled: boolean | null
   }) => Effect.Effect<void, NotFoundError>
+  readonly switchType: (input: {
+    sessionID: SessionSchema.ID
+    type: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
+  }) => Effect.Effect<void, NotFoundError>
   readonly switchPromptOverride: (input: {
     sessionID: SessionSchema.ID
     override: string | null
@@ -802,6 +806,19 @@ export const layer = Layer.effect(
           timestamp: yield* DateTime.now,
           feature: input.feature,
           enabled: input.enabled,
+        })
+      }),
+      // The chat's kernel thread type (the composer's Mode control). Attendance derives from the
+      // chain ROOT's type, so flipping a root chat to auto-prompting/goal-oriented is the "keep
+      // working without me" switch (asks auto-allow, bash confined by the Agent Jail, affective
+      // nudges engage). Consumers read the projected column fresh, so it applies immediately.
+      switchType: Effect.fn("V2Session.switchType")(function* (input) {
+        yield* result.get(input.sessionID)
+        yield* events.publish(SessionEvent.TypeSwitched, {
+          sessionID: input.sessionID,
+          messageID: SessionMessage.ID.create(),
+          timestamp: yield* DateTime.now,
+          sessionType: input.type,
         })
       }),
       // B4/T2: the per-session system-prompt override layer (info-sheet editor + the reconfigure

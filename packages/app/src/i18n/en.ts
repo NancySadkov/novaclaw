@@ -426,6 +426,19 @@ export const dict = {
   "prompt.features.affective.description":
     "Adapts the model's sampling to its appraised mood — steadier when frustrated, freer when exploring.",
 
+  "prompt.mode.title": "Mode",
+  "prompt.mode.description": "How this chat runs — with you, or working alone.",
+  "prompt.mode.interactive.title": "Interactive",
+  "prompt.mode.interactive.description": "You drive: the agent answers and waits for you.",
+  "prompt.mode.auto-prompting.title": "Auto-prompting",
+  "prompt.mode.auto-prompting.description":
+    "Unattended: the agent keeps prompting itself until the task is done. Permission asks are auto-approved and shell commands run sandboxed.",
+  "prompt.mode.goal-oriented.title": "Goal-oriented",
+  "prompt.mode.goal-oriented.description":
+    "Unattended: the agent loops toward the goal you set until it's reached. Same guardrails as auto-prompting.",
+  "prompt.mode.short.auto-prompting": "Auto",
+  "prompt.mode.short.goal-oriented": "Goal",
+
   "prompt.folder.tooltip": "This chat's working folder — click to move the chat somewhere else",
   "prompt.folder.tooltip.working": "The agent is working — you can move the chat once it's idle",
   "prompt.folder.pick.title": "Move this chat to a folder",

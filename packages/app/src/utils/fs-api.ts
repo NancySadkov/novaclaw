@@ -216,6 +216,18 @@ export function switchFeature(
   })
 }
 
+// The chat's kernel thread type (the composer's Mode control). Attendance derives from the chain
+// root's type: an unattended chat (auto-prompting · goal-oriented) auto-allows asks and runs bash
+// confined by the Agent Jail. "sub-agent" is spawn-only, so the switch offers these three.
+export type SessionModeName = "interactive" | "auto-prompting" | "goal-oriented"
+
+export function switchType(
+  server: ServerConnection.HttpBase,
+  input: { directory: string; sessionID: string; type: SessionModeName },
+) {
+  return sessionPost(server, input.directory, input.sessionID, "type", { type: input.type })
+}
+
 // B4/T2: the per-session system-prompt override layer (the info-sheet editor; the agent-side
 // counterpart is the `reconfigure` tool). `override: null` clears the layer.
 export function switchPromptOverride(

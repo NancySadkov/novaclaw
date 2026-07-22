@@ -11,6 +11,7 @@ import { FileAttachment, Prompt } from "./prompt"
 import { SessionFeature } from "./session-feature"
 import { SessionID } from "./session-id"
 import { SessionStrict } from "./session-strict"
+import { SessionType } from "./session-type"
 import { Location } from "./location"
 import { SessionMessage } from "./session-message"
 import { Revert } from "./revert"
@@ -130,6 +131,23 @@ export const FeatureSwitched = Event.define({
   },
 })
 export type FeatureSwitched = typeof FeatureSwitched.Type
+
+// The chat's kernel thread type (the composer's Mode control — architecture.md typed threads).
+// Attendance derives from the chain ROOT's type (agent-jail doctrine), so switching a root chat
+// to an unattended type is the "keep working without me" flag: asks auto-allow, bash runs
+// confined (or is denied without a jail backend), affective nudges engage, and the EEVDF
+// scheduler reweights. The projector writes the column; consumers (rootSessionType, the
+// scheduler) read session rows fresh, so the flip applies immediately.
+export const TypeSwitched = Event.define({
+  type: "session.next.type.switched",
+  ...options,
+  schema: {
+    ...Base,
+    messageID: SessionMessage.ID,
+    sessionType: SessionType.Info,
+  },
+})
+export type TypeSwitched = typeof TypeSwitched.Type
 
 // B4/T2: the per-session system-prompt OVERRIDE layer (the info-sheet editor + the agent's own
 // guardrailed `reconfigure` tool). The override composes after the persona baseline and before the
@@ -555,6 +573,7 @@ export const DurableDefinitions = Event.inventory(
   ModeSwitched,
   StrictSwitched,
   FeatureSwitched,
+  TypeSwitched,
   PromptOverrideSwitched,
   Moved,
   Prompted,
@@ -593,6 +612,7 @@ export const Definitions = Event.inventory(
   ModeSwitched,
   StrictSwitched,
   FeatureSwitched,
+  TypeSwitched,
   PromptOverrideSwitched,
   Moved,
   Prompted,

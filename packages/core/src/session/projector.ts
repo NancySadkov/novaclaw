@@ -323,6 +323,16 @@ export const layer = Layer.effectDiscard(
         .run()
         .pipe(Effect.orDie, Effect.andThen(run(db, event)))
     })
+    // The kernel thread type (the composer's Mode control) — same shape; rootSessionType and the
+    // scheduler read the column fresh, so attendance flips as soon as the row is written.
+    yield* events.project(SessionEvent.TypeSwitched, (event) =>
+      db
+        .update(SessionTable)
+        .set({ type: event.data.sessionType, time_updated: DateTime.toEpochMillis(event.data.timestamp) })
+        .where(eq(SessionTable.id, event.data.sessionID))
+        .run()
+        .pipe(Effect.orDie, Effect.andThen(run(db, event))),
+    )
     yield* events.project(SessionEvent.Prompted, (event) =>
       Effect.gen(function* () {
         if (event.durable === undefined) return yield* Effect.die("Durable Session event is missing aggregate sequence")

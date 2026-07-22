@@ -15,7 +15,7 @@ import type { QueryOptionsApi } from "@/context/server-sync"
 import { useServerSDK } from "@/context/server-sdk"
 import { serverName, ServerConnection, useServer } from "@/context/server"
 import { useSDK } from "@/context/sdk"
-import { switchFeature, switchMode, switchStrict, type SessionFeatureName } from "@/utils/fs-api"
+import { switchFeature, switchMode, switchStrict, switchType, type SessionFeatureName, type SessionModeName } from "@/utils/fs-api"
 import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useSessionView } from "@/pages/session/use-session-view"
@@ -87,6 +87,16 @@ export function createPromptInputController(input: {
     const pick = (feature: SessionFeatureName) =>
       draft?.[feature] ?? record?.[feature] ?? (config[feature]?.enabled === true)
     return { introspection: pick("introspection"), quality: pick("quality"), affective: pick("affective") }
+  }
+
+  // The Mode control (kernel thread type) — same local-first precedence: this browser's explicit
+  // choice, then the live session record's type, then the "interactive" default. A "sub-agent"
+  // record (viewing a spawned child) displays as interactive; the switch only offers root types.
+  const modeCurrent = (): SessionModeName => {
+    const record = (sessionView.record() as { type?: string } | undefined)?.type
+    const fromRecord =
+      record === "interactive" || record === "auto-prompting" || record === "goal-oriented" ? record : undefined
+    return local.mode.current() ?? fromRecord ?? "interactive"
   }
 
   return createMemo<PromptInputControls>(() => ({
@@ -175,6 +185,22 @@ export function createPromptInputController(input: {
         if (id && conn && directory)
           void switchFeature(conn.http, { directory, sessionID: id, feature, enabled }).catch((error) =>
             console.error("switchFeature failed", error),
+          )
+      },
+    },
+    mode: {
+      current: modeCurrent(),
+      set: (value) => {
+        // Same contract as the feature toggles: the draft signal is the instant UI truth (and the
+        // create-time payload); a live session ALSO flips the kernel thread type server-side —
+        // attendance (asks auto-allow, Agent Jail confinement) applies immediately.
+        local.mode.set(value)
+        const id = input.sessionID()
+        const conn = server.current
+        const directory = sessionView.directory()
+        if (id && conn && directory)
+          void switchType(conn.http, { directory, sessionID: id, type: value }).catch((error) =>
+            console.error("switchType failed", error),
           )
       },
     },

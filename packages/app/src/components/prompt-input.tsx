@@ -116,6 +116,12 @@ export type PromptInputControls = {
     current: Record<"introspection" | "quality" | "affective", boolean>
     set: (feature: "introspection" | "quality" | "affective", enabled: boolean) => void
   }
+  // The per-chat Mode control (kernel thread type): interactive, or the unattended pair
+  // (auto-prompting · goal-oriented — asks auto-allow, bash confined by the Agent Jail).
+  mode: {
+    current: "interactive" | "auto-prompting" | "goal-oriented"
+    set: (value: "interactive" | "auto-prompting" | "goal-oriented") => void
+  }
   // The per-chat Strict-harness switch (jh.md): current = the effective state (session override →
   // draft → global Settings default); set writes the per-session override (and stages it on drafts).
   strict: {
@@ -1103,8 +1109,10 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   }))
   const featuresControlState = createMemo<ComposerFeaturesControlState>(() => ({
     current: props.controls.features.current,
+    mode: props.controls.mode.current,
     style: control(),
     set: (feature, enabled) => props.controls.features.set(feature, enabled),
+    setMode: (value) => props.controls.mode.set(value),
     onClose: restoreFocus,
   }))
   const folderControlState = createMemo<ComposerFolderControlState>(() => ({

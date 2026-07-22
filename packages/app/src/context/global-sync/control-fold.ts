@@ -36,6 +36,8 @@ export function controlPatch(event: Envelope): ControlPatch | undefined {
       if (feature !== "introspection" && feature !== "quality" && feature !== "affective") return undefined
       return { sessionID, patch: { [feature]: props.enabled ?? undefined } }
     }
+    case "session.next.type.switched":
+      return { sessionID, patch: { type: props.sessionType } }
     case "session.next.prompt-override.switched":
       return { sessionID, patch: { systemPromptOverride: props.override ?? undefined } }
     case "session.next.moved": {

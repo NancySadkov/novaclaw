@@ -35,6 +35,9 @@ describe("controlPatch", () => {
     expect(
       controlPatch(envelope("session.next.prompt-override.switched", { sessionID: "s", override: "be brief" })),
     ).toEqual({ sessionID: "s", patch: { systemPromptOverride: "be brief" } })
+    expect(
+      controlPatch(envelope("session.next.type.switched", { sessionID: "s", sessionType: "auto-prompting" })),
+    ).toEqual({ sessionID: "s", patch: { type: "auto-prompting" } })
     // T3 shape: the move patches the record's `location` struct (+ subpath), never a flat
     // top-level `directory` — that field doesn't exist on the record and patching it left every
     // reader (folder chip, Chats grouping) on the OLD folder until reload.

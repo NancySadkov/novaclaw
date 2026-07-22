@@ -19,6 +19,7 @@ export type Event =
   | EventSessionNextModeSwitched
   | EventSessionNextStrictSwitched
   | EventSessionNextFeatureSwitched
+  | EventSessionNextTypeSwitched
   | EventSessionNextPromptOverrideSwitched
   | EventSessionNextMoved
   | EventSessionNextPrompted
@@ -370,6 +371,16 @@ export type GlobalEvent = {
           messageID: string
           feature: "introspection" | "quality" | "affective"
           enabled: boolean
+        }
+      }
+    | {
+        id: string
+        type: "session.next.type.switched"
+        properties: {
+          timestamp: number
+          sessionID: string
+          messageID: string
+          sessionType: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
         }
       }
     | {
@@ -1073,6 +1084,7 @@ export type GlobalEvent = {
     | SyncEventSessionNextModeSwitched
     | SyncEventSessionNextStrictSwitched
     | SyncEventSessionNextFeatureSwitched
+    | SyncEventSessionNextTypeSwitched
     | SyncEventSessionNextPromptOverrideSwitched
     | SyncEventSessionNextMoved
     | SyncEventSessionNextPrompted
@@ -1569,6 +1581,7 @@ export type SessionDurableEvent =
   | SessionNextModeSwitched
   | SessionNextStrictSwitched
   | SessionNextFeatureSwitched
+  | SessionNextTypeSwitched
   | SessionNextPromptOverrideSwitched
   | SessionNextMoved
   | SessionNextPrompted
@@ -1689,6 +1702,7 @@ export type V2Event =
   | SessionNextModeSwitched
   | SessionNextStrictSwitched
   | SessionNextFeatureSwitched
+  | SessionNextTypeSwitched
   | SessionNextPromptOverrideSwitched
   | SessionNextMoved
   | SessionNextPrompted
@@ -2373,6 +2387,23 @@ export type SyncEventSessionNextFeatureSwitched = {
       messageID: string
       feature: "introspection" | "quality" | "affective"
       enabled: boolean
+    }
+  }
+}
+
+export type SyncEventSessionNextTypeSwitched = {
+  type: "sync"
+  id: string
+  syncEvent: {
+    type: "session.next.type.switched.1"
+    id: string
+    seq: number
+    aggregateID: string
+    data: {
+      timestamp: number
+      sessionID: string
+      messageID: string
+      sessionType: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
     }
   }
 }
@@ -3682,6 +3713,26 @@ export type SessionNextFeatureSwitched = {
     messageID: string
     feature: "introspection" | "quality" | "affective"
     enabled: boolean
+  }
+}
+
+export type SessionNextTypeSwitched = {
+  id: string
+  metadata?: {
+    [key: string]: unknown
+  }
+  type: "session.next.type.switched"
+  durable?: {
+    aggregateID: string
+    seq: number
+    version: number
+  }
+  location?: LocationRef
+  data: {
+    timestamp: number
+    sessionID: string
+    messageID: string
+    sessionType: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
   }
 }
 
@@ -5456,6 +5507,17 @@ export type EventSessionNextFeatureSwitched = {
     messageID: string
     feature: "introspection" | "quality" | "affective"
     enabled: boolean
+  }
+}
+
+export type EventSessionNextTypeSwitched = {
+  id: string
+  type: "session.next.type.switched"
+  properties: {
+    timestamp: number
+    sessionID: string
+    messageID: string
+    sessionType: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
   }
 }
 
@@ -10571,6 +10633,43 @@ export type V2SessionSwitchFeatureResponses = {
 }
 
 export type V2SessionSwitchFeatureResponse = V2SessionSwitchFeatureResponses[keyof V2SessionSwitchFeatureResponses]
+
+export type V2SessionSwitchTypeData = {
+  body: {
+    type: "interactive" | "auto-prompting" | "goal-oriented"
+  }
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/type"
+}
+
+export type V2SessionSwitchTypeErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+}
+
+export type V2SessionSwitchTypeError = V2SessionSwitchTypeErrors[keyof V2SessionSwitchTypeErrors]
+
+export type V2SessionSwitchTypeResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2SessionSwitchTypeResponse = V2SessionSwitchTypeResponses[keyof V2SessionSwitchTypeResponses]
 
 export type V2SessionSwitchPromptOverrideData = {
   body: {

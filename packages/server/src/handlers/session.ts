@@ -340,6 +340,22 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
         }),
       )
       .handle(
+        "session.switchType",
+        Effect.fn(function* (ctx) {
+          yield* session.switchType({ sessionID: ctx.params.sessionID, type: ctx.payload.type }).pipe(
+            Effect.catchTag("Session.NotFoundError", (error) =>
+              Effect.fail(
+                new SessionNotFoundError({
+                  sessionID: error.sessionID,
+                  message: `Session not found: ${error.sessionID}`,
+                }),
+              ),
+            ),
+          )
+          return HttpApiSchema.NoContent.make()
+        }),
+      )
+      .handle(
         "session.switchPromptOverride",
         Effect.fn(function* (ctx) {
           yield* session

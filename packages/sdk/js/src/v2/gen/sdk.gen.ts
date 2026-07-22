@@ -353,6 +353,8 @@ import type {
   V2SessionSwitchResponderResponses,
   V2SessionSwitchStrictErrors,
   V2SessionSwitchStrictResponses,
+  V2SessionSwitchTypeErrors,
+  V2SessionSwitchTypeResponses,
   V2SessionTagsAllErrors,
   V2SessionTagsAllResponses,
   V2SessionTagsSetErrors,
@@ -5287,6 +5289,43 @@ export class Session2 extends HeyApiClient {
         ...params.headers,
       },
     })
+  }
+
+  /**
+   * Set the session's kernel thread type (Mode)
+   *
+   * Switch this chat between interactive and the unattended types (auto-prompting · goal-oriented). Attendance derives from the chain root's type: an unattended chat auto-allows permission asks and runs shell commands confined by the Agent Jail. Applies immediately.
+   */
+  public switchType<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      type?: "interactive" | "auto-prompting" | "goal-oriented"
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "body", key: "type" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2SessionSwitchTypeResponses, V2SessionSwitchTypeErrors, ThrowOnError>(
+      {
+        url: "/api/session/{sessionID}/type",
+        ...options,
+        ...params,
+        headers: {
+          "Content-Type": "application/json",
+          ...options?.headers,
+          ...params.headers,
+        },
+      },
+    )
   }
 
   /**

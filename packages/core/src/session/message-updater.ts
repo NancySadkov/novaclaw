@@ -135,6 +135,8 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
       "session.next.strict.switched": () => Effect.void,
       // Per-session feature toggles are likewise control signals (the projector writes the column).
       "session.next.feature.switched": () => Effect.void,
+      // The kernel thread type (Mode) is likewise a control signal (the projector writes the column).
+      "session.next.type.switched": () => Effect.void,
       // The per-session prompt-override layer is likewise a control signal.
       "session.next.prompt-override.switched": () => Effect.void,
       "session.next.prompted": (event) => {

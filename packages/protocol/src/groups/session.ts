@@ -416,6 +416,25 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
         ),
     )
     .add(
+      // The composer's Mode control. "sub-agent" is spawn-only (it means "supervised by a parent
+      // agent"), so the switch offers the user-meaningful types: interactive vs the unattended pair.
+      HttpApiEndpoint.post("session.switchType", "/api/session/:sessionID/type", {
+        params: { sessionID: Session.ID },
+        payload: Schema.Struct({ type: Schema.Literals(["interactive", "auto-prompting", "goal-oriented"]) }),
+        success: HttpApiSchema.NoContent,
+        error: SessionNotFoundError,
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.switchType",
+            summary: "Set the session's kernel thread type (Mode)",
+            description:
+              "Switch this chat between interactive and the unattended types (auto-prompting · goal-oriented). Attendance derives from the chain root's type: an unattended chat auto-allows permission asks and runs shell commands confined by the Agent Jail. Applies immediately.",
+          }),
+        ),
+    )
+    .add(
       HttpApiEndpoint.post("session.switchPromptOverride", "/api/session/:sessionID/prompt-override", {
         params: { sessionID: Session.ID },
         payload: Schema.Struct({ override: Schema.NullOr(Schema.String) }),

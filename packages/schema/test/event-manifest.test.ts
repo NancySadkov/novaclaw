@@ -9,8 +9,8 @@ import { WorkspaceEvent } from "../src/workspace-event"
 
 describe("public event manifest", () => {
   test("owns the complete public event surface", () => {
-    expect(EventManifest.ServerDefinitions.length).toBe(62)
-    expect(EventManifest.Definitions.length).toBe(83)
+    expect(EventManifest.ServerDefinitions.length).toBe(63)
+    expect(EventManifest.Definitions.length).toBe(84)
     // V1-nuke slice D: the record lifecycle events are native (Session.Info payloads, durable
     // v2); session.diff + command.executed died with the V1 wire schemas (no publishers).
     expect(SessionRecordEvent.Definitions).toEqual([
@@ -19,8 +19,8 @@ describe("public event manifest", () => {
       SessionRecordEvent.Deleted,
       SessionRecordEvent.Error,
     ])
-    expect(EventManifest.Latest.size).toBe(83)
-    expect(EventManifest.Durable.size).toBe(38)
+    expect(EventManifest.Latest.size).toBe(84)
+    expect(EventManifest.Durable.size).toBe(39)
   })
 
   test("uses canonical definitions for current public events", () => {

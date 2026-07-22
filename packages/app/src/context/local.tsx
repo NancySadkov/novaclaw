@@ -24,6 +24,9 @@ export type StrictChoice = { enabled: boolean; attempts?: number; wallMinutes?: 
 /** The composer's per-chat harness-feature stances (the Tuning control); absent key = inherit. */
 export type FeatureChoices = { introspection?: boolean; quality?: boolean; affective?: boolean }
 
+/** The composer's Mode choice (kernel thread type): attended, or the unattended pair. */
+export type SessionModeChoice = "interactive" | "auto-prompting" | "goal-oriented"
+
 type State = {
   agent?: string
   model?: ModelKey
@@ -31,6 +34,7 @@ type State = {
   permissionMode?: PermissionMode
   strict?: StrictChoice
   features?: FeatureChoices
+  mode?: SessionModeChoice
 }
 
 type Saved = {
@@ -239,6 +243,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         permissionMode: scope()?.permissionMode,
         strict: scope()?.strict,
         features: scope()?.features,
+        mode: scope()?.mode,
       } satisfies State
     }
 
@@ -384,6 +389,16 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       },
     }
 
+    // The composer's Mode control (kernel thread type — interactive vs the unattended pair).
+    // Same contract as `strict`: the local state is the new-session draft; a live session ALSO
+    // persists the switch server-side (the switchType route).
+    const mode = {
+      current: (): SessionModeChoice | undefined => scope()?.mode,
+      set(value: SessionModeChoice | undefined) {
+        write({ mode: value })
+      },
+    }
+
     const result = {
       slug: createMemo(() => base64Encode(sdk().directory)),
       model,
@@ -391,6 +406,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       permissionMode,
       strict,
       features,
+      mode,
       session: {
         reset() {
           setStore("draft", undefined)
