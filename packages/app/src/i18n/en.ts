@@ -96,6 +96,12 @@ export const dict = {
   "settings.providers.export.action": "Export",
   "settings.providers.import.action": "Import",
   "home.sessions.new": "New Session",
+  "home.sessions.select": "Select",
+  "home.sessions.selectedCount": "{{count}} selected",
+  "home.sessions.bulk.delete.title": "Delete the selected chats ({{count}})?",
+  "home.sessions.bulk.archive.title": "Archive the selected chats ({{count}})?",
+  "home.sessions.bulk.archive.description":
+    "Archived chats leave this list. Their transcripts are kept on the instance.",
   "settings.general.row.configIO.title": "Configuration file",
   "settings.general.row.configIO.description":
     "Export this instance's full configuration as a file, or import one. Model API keys ride along — treat exports as secrets.",

@@ -30,6 +30,7 @@ import { useNavigate } from "@solidjs/router"
 import { base64Encode } from "@novaclaw/core/util/encode"
 import { Icon } from "@novaclaw/ui/icon"
 import { useNewAgentSpawn } from "@/pages/home-screen/new-agent-bar"
+import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { usePlatform } from "@/context/platform"
 import { DateTime } from "luxon"
 import { useDialog } from "@novaclaw/ui/context/dialog"
@@ -302,12 +303,78 @@ export function NewHome() {
     for (const record of records()) for (const tag of map[record.session.id] ?? []) universe.add(tag)
     return [...universe].sort()
   })
+  // Toolbar search: a plain client-side text filter over title + project/folder name — the
+  // task-manager's find-as-you-type (owner 2026-07-22). Composes with the tag filter.
+  const [searchQuery, setSearchQuery] = createSignal("")
   const visibleRecords = createMemo(() => {
     const tag = selectedTag()
-    if (!tag) return records()
-    const map = sync().session.data.tag
-    return records().filter((record) => (map[record.session.id] ?? []).includes(tag))
+    const query = searchQuery().trim().toLowerCase()
+    let list = records()
+    if (tag) {
+      const map = sync().session.data.tag
+      list = list.filter((record) => (map[record.session.id] ?? []).includes(tag))
+    }
+    if (query) {
+      list = list.filter((record) => {
+        const title = (sessionTitle(record.session.title) || record.session.id).toLowerCase()
+        return title.includes(query) || (record.projectName ?? "").toLowerCase().includes(query)
+      })
+    }
+    return list
   })
+  // Selection mode (mass delete/archive): Select toggles it; row clicks then toggle membership
+  // instead of opening; the toolbar becomes the bulk-action bar. Both bulk actions confirm.
+  const [selecting, setSelecting] = createSignal(false)
+  const [selectedIDs, setSelectedIDs] = createSignal<Set<string>>(new Set(), { equals: false })
+  const toggleSelected = (id: string) =>
+    setSelectedIDs((current) => {
+      if (current.has(id)) current.delete(id)
+      else current.add(id)
+      return current
+    })
+  const clearSelection = () => {
+    setSelecting(false)
+    setSelectedIDs(new Set<string>())
+  }
+  const selectedSessions = createMemo(() => {
+    const ids = selectedIDs()
+    return visibleRecords()
+      .filter((record) => ids.has(record.session.id))
+      .map((record) => record.session)
+  })
+  const runBulk = async (action: (session: Session) => Promise<void>) => {
+    // Sequential on purpose: each call folds the store + tab state; parallel removes raced the
+    // per-directory store writes when several sessions share a folder.
+    for (const session of selectedSessions()) await action(session)
+    clearSelection()
+  }
+  const confirmBulkDelete = () => {
+    const count = selectedSessions().length
+    if (count === 0) return
+    void dialog.show(() => (
+      <DialogBulkSessions
+        count={count}
+        danger
+        title={language.t("home.sessions.bulk.delete.title", { count })}
+        description={language.t("session.delete.description")}
+        actionLabel={language.t("session.delete.button")}
+        onConfirm={() => runBulk(deleteSession)}
+      />
+    ))
+  }
+  const confirmBulkArchive = () => {
+    const count = selectedSessions().length
+    if (count === 0) return
+    void dialog.show(() => (
+      <DialogBulkSessions
+        count={count}
+        title={language.t("home.sessions.bulk.archive.title", { count })}
+        description={language.t("home.sessions.bulk.archive.description")}
+        actionLabel={language.t("common.archive")}
+        onConfirm={() => runBulk(archiveSession)}
+      />
+    ))
+  }
   // T1: sortable process list. "recent" keeps the day groups + pinned attention cluster; the
   // metric sorts (activity status · consumed tokens) render a FLAT ordered list instead — a
   // grouping only makes sense for the time axis.
@@ -641,12 +708,91 @@ export function NewHome() {
           class="min-h-0 min-w-0 flex-1 flex flex-col pt-6 lg:pt-10 relative"
           aria-label={language.t("sidebar.project.recentSessions")}
         >
-          {/* Owner 2026-07-22: no "Sessions" heading — the page is self-evident; the top is ONE
-              functional row (tag filter · sort · New Session). The button uses the same spawn
-              flow as the home bar (scratch cwd, reuse-empty-draft, opens the composer). */}
-          <div class="flex min-w-0 items-start gap-2 pt-1">
-            <Show when={(tagUniverse()?.length ?? 0) > 0}>
-              <div data-slot="home-tag-filter" class="flex min-w-0 flex-1 flex-wrap items-center gap-1.5">
+          {/* Owner 2026-07-22: no "Sessions" heading — the top is ONE functional row
+              (search · sort · Select · New Session), swapping to the bulk-action bar in
+              selection mode; tag pills get their own wrap row below when tags exist. */}
+          <div class="flex min-w-0 items-center gap-2 pt-1">
+            <div class="relative min-w-0 flex-1">
+              <Icon
+                name="magnifying-glass"
+                size="small"
+                class="pointer-events-none absolute left-2 top-1/2 -translate-y-1/2 text-v2-icon-icon-muted"
+              />
+              <TextInputV2
+                type="search"
+                appearance="base"
+                class="!w-full !pl-7"
+                value={searchQuery()}
+                placeholder={language.t("home.sessions.search.placeholder")}
+                spellcheck={false}
+                autocomplete="off"
+                onInput={(event) => setSearchQuery(event.currentTarget.value)}
+              />
+            </div>
+            <Show
+              when={!selecting()}
+              fallback={
+                <>
+                  <span class="shrink-0 text-[12px] leading-none text-v2-text-text-muted [font-weight:500]">
+                    {language.t("home.sessions.selectedCount", { count: selectedIDs().size })}
+                  </span>
+                  <ButtonV2
+                    size="small"
+                    variant="neutral"
+                    disabled={selectedIDs().size === 0}
+                    onClick={confirmBulkArchive}
+                  >
+                    {language.t("common.archive")}
+                  </ButtonV2>
+                  <ButtonV2
+                    size="small"
+                    variant="danger"
+                    disabled={selectedIDs().size === 0}
+                    onClick={confirmBulkDelete}
+                  >
+                    {language.t("session.delete.button")}
+                  </ButtonV2>
+                  <ButtonV2 size="small" variant="ghost-muted" onClick={clearSelection}>
+                    {language.t("common.cancel")}
+                  </ButtonV2>
+                </>
+              }
+            >
+            <div data-slot="home-sort" class="flex shrink-0 items-center gap-1">
+              <For each={["recent", "active", "tokens"] as const}>
+                {(mode) => (
+                  <button
+                    type="button"
+                    class="rounded-full px-2 py-1 text-[12px] leading-none [font-weight:500] transition-colors"
+                    classList={{
+                      "bg-v2-background-bg-layer-02 text-v2-text-text-base": sortMode() === mode,
+                      "text-v2-text-text-muted hover:bg-v2-background-bg-layer-01": sortMode() !== mode,
+                    }}
+                    aria-pressed={sortMode() === mode}
+                    onClick={() => setSortMode(mode)}
+                  >
+                    {language.t(`home.sessions.sort.${mode}`)}
+                  </button>
+                )}
+              </For>
+            </div>
+            <ButtonV2 size="small" variant="ghost-muted" class="shrink-0" onClick={() => setSelecting(true)}>
+              {language.t("home.sessions.select")}
+            </ButtonV2>
+            <ButtonV2
+              size="small"
+              variant="gold"
+              class="shrink-0"
+              disabled={!newAgent.ready() || newAgent.spawning()}
+              onClick={() => void newAgent.spawn()}
+            >
+              <Icon name="plus-small" size="small" />
+              {language.t("home.sessions.new")}
+            </ButtonV2>
+            </Show>
+          </div>
+          <Show when={(tagUniverse()?.length ?? 0) > 0}>
+            <div data-slot="home-tag-filter" class="mt-2 flex min-w-0 flex-wrap items-center gap-1.5">
               <button
                 type="button"
                 class="rounded-full px-2 py-1 text-[12px] leading-none [font-weight:500] transition-colors"
@@ -673,37 +819,8 @@ export function NewHome() {
                   </button>
                 )}
               </For>
-              </div>
-            </Show>
-            <div data-slot="home-sort" class="ml-auto flex shrink-0 items-center gap-1">
-              <For each={["recent", "active", "tokens"] as const}>
-                {(mode) => (
-                  <button
-                    type="button"
-                    class="rounded-full px-2 py-1 text-[12px] leading-none [font-weight:500] transition-colors"
-                    classList={{
-                      "bg-v2-background-bg-layer-02 text-v2-text-text-base": sortMode() === mode,
-                      "text-v2-text-text-muted hover:bg-v2-background-bg-layer-01": sortMode() !== mode,
-                    }}
-                    aria-pressed={sortMode() === mode}
-                    onClick={() => setSortMode(mode)}
-                  >
-                    {language.t(`home.sessions.sort.${mode}`)}
-                  </button>
-                )}
-              </For>
             </div>
-            <ButtonV2
-              size="small"
-              variant="gold"
-              class="shrink-0"
-              disabled={!newAgent.ready() || newAgent.spawning()}
-              onClick={() => void newAgent.spawn()}
-            >
-              <Icon name="plus-small" size="small" />
-              {language.t("home.sessions.new")}
-            </ButtonV2>
-          </div>
+          </Show>
           <ScrollView
             class="mt-3 -mr-3 min-h-0 flex-1 relative"
             viewportRef={sessionHeaderOpacity.setViewport}
@@ -745,6 +862,9 @@ export function NewHome() {
                               stopSession={stopSession}
                               cloneSession={cloneSession}
                               deleteSession={deleteSession}
+                              selecting={selecting()}
+                              selected={selectedIDs().has(record.session.id)}
+                              onToggleSelect={(session) => toggleSelected(session.id)}
                             />
                           )}
                         </For>
@@ -773,6 +893,9 @@ export function NewHome() {
                             stopSession={stopSession}
                             cloneSession={cloneSession}
                             deleteSession={deleteSession}
+                            selecting={selecting()}
+                            selected={selectedIDs().has(record.session.id)}
+                            onToggleSelect={(session) => toggleSelected(session.id)}
                           />
                         )}
                       </For>
@@ -802,6 +925,9 @@ export function NewHome() {
                                 stopSession={stopSession}
                                 cloneSession={cloneSession}
                                 deleteSession={deleteSession}
+                                selecting={selecting()}
+                                selected={selectedIDs().has(record.session.id)}
+                                onToggleSelect={(session) => toggleSelected(session.id)}
                               />
                             )}
                           </For>
@@ -1042,6 +1168,11 @@ function HomeSessionRow(props: {
   stopSession: (session: Session) => Promise<void>
   cloneSession: (session: Session) => Promise<void>
   deleteSession: (session: Session) => Promise<void>
+  // Selection mode (mass delete/archive): clicking toggles membership instead of opening,
+  // a leading check indicator renders, and the hover action strip stands down.
+  selecting?: boolean
+  selected?: boolean
+  onToggleSelect?: (session: Session) => void
 }) {
   const language = useLanguage()
   const dialog = useDialog()
@@ -1090,14 +1221,29 @@ function HomeSessionRow(props: {
     <>
     <div
       class="group/session relative flex h-10 min-w-0 items-center rounded-[6px]"
-      classList={{ group: !!showProjectName() }}
+      classList={{ group: !!showProjectName(), "bg-v2-background-bg-layer-01": !!props.selected }}
     >
       <button
         type="button"
         data-component="home-session-row"
+        aria-pressed={props.selecting ? !!props.selected : undefined}
         class={`${HOME_ROW} h-10 min-w-0 flex-1 gap-2 py-3 pl-3 pr-10`}
-        onClick={() => props.openSession(props.record.session)}
+        onClick={() =>
+          props.selecting ? props.onToggleSelect?.(props.record.session) : props.openSession(props.record.session)
+        }
       >
+        <Show when={props.selecting}>
+          <span
+            data-slot="home-session-check"
+            class="flex size-4 shrink-0 items-center justify-center rounded-full ring-1 transition-colors"
+            classList={{
+              "ring-v2-text-text-accent bg-v2-background-bg-layer-02 text-v2-icon-icon-accent": !!props.selected,
+              "ring-v2-border-border-base text-transparent": !props.selected,
+            }}
+          >
+            <Icon name="check-small" size="small" />
+          </span>
+        </Show>
         <HomeSessionLeading
           project={props.record.project}
           session={props.record.session}
@@ -1120,7 +1266,13 @@ function HomeSessionRow(props: {
             token/changes badges (owner-hit 2026-07-22). opacity keeps layout, so the title
             never slides under the icons; hover-conceal handles touch, where the icons are
             always visible. */}
-        <span class="ml-auto flex shrink-0 items-center gap-2 hover-conceal group-hover/session:opacity-0 group-focus-within/session:opacity-0">
+        <span
+          class="ml-auto flex shrink-0 items-center gap-2"
+          classList={{
+            // In selection mode the action strip stands down, so the meta needn't yield.
+            "hover-conceal group-hover/session:opacity-0 group-focus-within/session:opacity-0": !props.selecting,
+          }}
+        >
           <Show when={rowTags().length > 0}>
             <span data-slot="home-session-tags" class="flex shrink-0 items-center gap-1">
               <For each={rowTags().slice(0, 2)}>
@@ -1174,7 +1326,8 @@ function HomeSessionRow(props: {
       </button>
       {/* group-focus-within (not just self focus-within): keyboard-focusing the ROW must reveal
           the actions in the same beat it hides the meta cluster — self-only focus left a focused
-          row with meta hidden and nothing shown in its place. */}
+          row with meta hidden and nothing shown in its place. Stands down in selection mode. */}
+      <Show when={!props.selecting}>
       <div class="hover-reveal absolute right-1.5 top-1/2 flex -translate-y-1/2 items-center gap-1 group-hover/session:opacity-100 group-focus-within/session:opacity-100">
         <Show when={working()}>
           <TooltipV2 class="flex shrink-0 items-center" placement="bottom" value={language.t("home.session.stop")}>
@@ -1253,6 +1406,7 @@ function HomeSessionRow(props: {
           </TooltipV2>
         </Show>
       </div>
+      </Show>
     </div>
     <For each={children()}>
       {(row) => (
@@ -1283,6 +1437,45 @@ function HomeSessionRow(props: {
 }
 
 /** Deleting a chat is permanent (messages + history) — always confirm explicitly. */
+/** Bulk-action confirm (mass delete/archive — owner 2026-07-22). One dialog, parameterized:
+ *  the danger variant marks the irreversible delete; archive reuses it for symmetry. */
+function DialogBulkSessions(props: {
+  count: number
+  title: string
+  description: string
+  actionLabel: string
+  danger?: boolean
+  onConfirm: () => Promise<void>
+}) {
+  const dialog = useDialog()
+  const language = useLanguage()
+  const [busy, setBusy] = createSignal(false)
+  return (
+    <Dialog title={props.title} fit>
+      <div class="flex flex-col gap-4 pl-6 pr-2.5 pb-3">
+        <span class="text-12-regular text-text-weak">{props.description}</span>
+        <div class="flex justify-end gap-2">
+          <Button variant="ghost" size="large" onClick={() => dialog.close()}>
+            {language.t("common.cancel")}
+          </Button>
+          <Button
+            variant={props.danger ? "primary" : "secondary"}
+            size="large"
+            data-action="home-session-bulk-confirm"
+            disabled={busy()}
+            onClick={() => {
+              setBusy(true)
+              void props.onConfirm().finally(() => dialog.close())
+            }}
+          >
+            {props.actionLabel}
+          </Button>
+        </div>
+      </div>
+    </Dialog>
+  )
+}
+
 function DialogDeleteSession(props: { name: string; onConfirm: () => Promise<void> }) {
   const dialog = useDialog()
   const language = useLanguage()
