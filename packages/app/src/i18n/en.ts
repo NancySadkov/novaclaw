@@ -821,6 +821,7 @@ export const dict = {
   "home.session.clone": "Clone chat",
   "home.session.tokens.title":
     "{{generated}} tokens generated ({{output}} text · {{reasoning}} reasoning), sub-agent threads included",
+  "home.session.live.title": "Generating right now — approximate tokens this run and current speed",
   "session.info.folder": "Folder",
   "session.info.tags": "Tags",
   "common.remove": "Remove",

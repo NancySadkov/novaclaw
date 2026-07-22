@@ -890,6 +890,12 @@ export const layer = Layer.effect(
               ...dispatchSlot,
               costTokens: stepSettlement.tokens.input + stepSettlement.tokens.output,
             })
+            // ps freshness (owner 2026-07-22): Step.Ended's projection just folded this step's
+            // tokens into the session row (applyUsage), but nothing published the record — task
+            // managers kept a stale token count until reload. Re-publish the full record so the
+            // per-step totals tick live everywhere; the within-step estimate rides the delta
+            // stream client-side. Identity merge = "publish the row as it now stands".
+            yield* SessionPatch.patchSessionRecord({ db, events }, session.id, (info) => info).pipe(Effect.ignore)
             // 1M/A6(7) — ctx_pressure tripwire: the server-REPORTED prompt size vs the window.
             // At ≥95% the real prompt has outgrown the chars/4 estimate; the next request risks
             // silent server-side truncation. Logs actual-vs-estimate for calibration.
@@ -1462,6 +1468,12 @@ export const layer = Layer.effect(
       }
       let promotion: SessionInput.Delivery | undefined = hasSteer ? "steer" : hasQueue ? "queue" : undefined
       let shouldRun = input.force || hasSteer || hasQueue
+      // The drain-stop (architecture.md step 5): `exit(result)` ends the RUN, not just the drive.
+      // Snapshot the pre-drain state so only the exit TRANSITION stops this drain — a session
+      // whose result was already recorded (the user talking to a completed chat) runs normally.
+      const alreadyExited =
+        (yield* store.get(input.sessionID).pipe(Effect.orElseSucceed(() => undefined)))?.result !== undefined
+      let exitedMidDrain = false
       while (shouldRun) {
         let needsContinuation = true
         let step = 1
@@ -1470,6 +1482,22 @@ export const layer = Layer.effect(
           needsContinuation = result.needsContinuation
           step = result.step + 1
           promotion = "steer"
+          // exit(result) landed during this turn → stop the run NOW: no tool-call continuation,
+          // no steer re-arm, no nudge machinery (post-exit, harness steers used to resurrect the
+          // "finished" agent — owner-hit 2026-07-22 on a story-writing goal session). Input that
+          // arrived meanwhile is safe: its admission fired a wake, and the coordinator's
+          // pendingWake starts a FRESH drain (where alreadyExited = true → normal conversation).
+          if (!alreadyExited) {
+            const latest = yield* store.get(input.sessionID).pipe(Effect.orElseSucceed(() => undefined))
+            if (latest?.result !== undefined) {
+              exitedMidDrain = true
+              yield* Effect.logInfo("exit(result) recorded — stopping the drain", {
+                sessionID: input.sessionID,
+                step,
+              })
+              break
+            }
+          }
           const context = yield* getContext(input.sessionID)
           // 1E doom-loop break: only while the model is still acting (made a tool call).
           // If its last few tool calls are byte-identical, inject a one-shot redirect as a
@@ -1579,6 +1607,7 @@ export const layer = Layer.effect(
           }
           if (!needsContinuation) needsContinuation = yield* SessionInput.hasPending(db, input.sessionID, "steer")
         }
+        if (exitedMidDrain) break
         shouldRun = yield* SessionInput.hasPending(db, input.sessionID, "queue")
         promotion = shouldRun ? "queue" : undefined
         if (!shouldRun) {

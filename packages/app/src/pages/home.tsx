@@ -1251,6 +1251,11 @@ function HomeSessionRow(props: {
   const working = createMemo(
     () => props.activeServer && serverSyncForChildren().session.data.session_working(props.record.session.id),
   )
+  // Live generation telemetry (ps shows CPU%): ~tokens streamed this run + current t/s, from the
+  // SSE delta stream via the throttled session_live reader. Only rendered while the agent works.
+  const live = createMemo(() =>
+    working() ? serverSyncForChildren().session.data.session_live(props.record.session.id) : undefined,
+  )
   const confirmDelete = () => {
     void dialog.show(() => (
       <DialogDeleteSession name={title()} onConfirm={() => props.deleteSession(props.record.session)} />
@@ -1356,6 +1361,21 @@ function HomeSessionRow(props: {
               >
                 <span class="text-v2-state-fg-success">+{c().additions}</span>
                 <span class="text-v2-state-fg-danger">−{c().deletions}</span>
+              </span>
+            )}
+          </Show>
+          <Show when={live()}>
+            {(stats) => (
+              <span
+                data-slot="home-session-live"
+                class="shrink-0 flex items-center gap-1 rounded-[4px] bg-v2-background-bg-layer-01 px-1.5 py-0.5 text-[11px] leading-none tabular-nums text-v2-text-text-accent [font-weight:530]"
+                title={language.t("home.session.live.title")}
+              >
+                <span
+                  aria-hidden="true"
+                  class="size-1.5 rounded-full bg-v2-icon-icon-accent motion-safe:animate-pulse"
+                />
+                ~{compactTokens(stats().approxTokens)} · {stats().tps} t/s
               </span>
             )}
           </Show>

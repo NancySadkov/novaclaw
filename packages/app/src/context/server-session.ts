@@ -8,12 +8,14 @@ import type {
   SessionChangeDiff,
   Todo,
 } from "@novaclaw/sdk/v2/client"
+import { createSignal } from "solid-js"
 import { createStore, produce, reconcile } from "solid-js/store"
 import { Binary } from "@novaclaw/core/util/binary"
 import { diffs as cleanDiffs } from "@/utils/diffs"
 import { normalizeSessionTimes } from "@/utils/session-time"
 import { rootSession } from "@/utils/session-route"
 import { applyControlPatch, controlPatch } from "./global-sync/control-fold"
+import * as LiveRate from "./global-sync/live-rate"
 import { dropSessionCaches, pickSessionCacheEvictions, SESSION_CACHE_LIMIT } from "./global-sync/session-cache"
 
 const cmp = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0)
@@ -31,6 +33,31 @@ function runInflight(map: Map<string, Promise<void>>, key: string, task: () => P
 
 export function createServerSession(client: NovaclawClient, options?: { retry?: typeof retry }) {
   void options
+  // Live generation telemetry (Chats ps row): per-session delta accumulation lives OUTSIDE the
+  // reactive store (deltas arrive at token-chunk frequency); a throttled version signal wakes
+  // readers ≤ ~1.5x/sec. Cleared when the session's status settles (idle/exited).
+  const liveRates = new Map<string, LiveRate.LiveRateState>()
+  const [liveVersion, setLiveVersion] = createSignal(0)
+  let livePending = false
+  const noteLive = (sessionID: string, chars: number) => {
+    let state = liveRates.get(sessionID)
+    if (!state) {
+      state = LiveRate.createState()
+      liveRates.set(sessionID, state)
+    }
+    LiveRate.note(state, chars, Date.now())
+    if (!livePending) {
+      livePending = true
+      setTimeout(() => {
+        livePending = false
+        setLiveVersion((version) => version + 1)
+      }, 700)
+    }
+  }
+  const clearLive = (sessionID: string) => {
+    if (!liveRates.delete(sessionID)) return
+    setLiveVersion((version) => version + 1)
+  }
   const [data, setData] = createStore({
     info: {} as Record<string, Session | undefined>,
     session_status: {} as Record<string, SessionStatus>,
@@ -43,6 +70,14 @@ export function createServerSession(client: NovaclawClient, options?: { retry?: 
     tag: {} as Record<string, string[]>,
     session_working(id: string) {
       return (this.session_status[id]?.type ?? "idle") !== "idle"
+    },
+    // Live ~tokens + t/s for a RUNNING agent (undefined when nothing is streaming). Reads the
+    // throttled version signal, so a Chats row re-renders at the throttle cadence, not per delta.
+    session_live(id: string): LiveRate.LiveRateSnapshot | undefined {
+      liveVersion()
+      const state = liveRates.get(id)
+      if (!state) return undefined
+      return LiveRate.snapshot(state, Date.now())
     },
   })
   const requests = new Map<string, Promise<Session>>()
@@ -242,6 +277,15 @@ export function createServerSession(client: NovaclawClient, options?: { retry?: 
       )
         void resolve(eventID).catch(() => {})
     }
+    // Live-rate accumulation (Chats ps row): text/reasoning stream fragments are live-only
+    // events — count their chars toward the running agent's ~tokens/t-s badge. Nothing else
+    // folds them here, so short-circuit after noting.
+    if (event.type === "session.next.text.delta" || event.type === "session.next.reasoning.delta") {
+      const props = event.properties as { sessionID?: string; delta?: string }
+      if (typeof props.sessionID === "string" && typeof props.delta === "string")
+        noteLive(props.sessionID, props.delta.length)
+      return
+    }
     // P2 (ui-arch-hardening): fold V2 CONTROL events into the cached record so open views stay
     // live (an uncached record was already queued for a fetch above, which returns fresh).
     const control = controlPatch(event)
@@ -293,6 +337,8 @@ export function createServerSession(client: NovaclawClient, options?: { retry?: 
       case "session.status": {
         const props = event.properties as { sessionID: string; status: SessionStatus }
         setData("session_status", props.sessionID, reconcile(props.status))
+        // The run settled — drop its live-rate tracker so the ps badge clears with the spinner.
+        if (props.status.type === "idle" || props.status.type === "exited") clearLive(props.sessionID)
         return
       }
       // F1e S6: native `permission.v2.*` vocab; the V1 projection is ignored (retires in S7).

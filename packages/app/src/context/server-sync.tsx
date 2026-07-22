@@ -431,8 +431,19 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
       return
     }
 
-    const existing = children.children[key]
-    if (!existing) return
+    let existing = children.children[key]
+    if (!existing) {
+      // The session RECORD lifecycle (created/updated/deleted) defines list MEMBERSHIP — Chats,
+      // sidebars, grouping all render from these stores. Dropping such an event because this
+      // directory's store hadn't materialized yet made a fresh chat invisible until its first
+      // response (the later session.updated found a store built by navigating into the chat and
+      // inserted the record — owner-hit 2026-07-22). Materialize the store and fold; every OTHER
+      // event type still requires an existing store, so message-level traffic can't build stores
+      // for never-opened folders (the unbounded-growth guard this early return exists for).
+      const type = event.type as string
+      if (!key || (type !== "session.created" && type !== "session.updated" && type !== "session.deleted")) return
+      existing = children.ensureChild(directory)
+    }
     children.mark(key)
     const [store, setStore] = existing
     applyDirectoryEvent({
