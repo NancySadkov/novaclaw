@@ -10,6 +10,8 @@ export {
   ComposerFeaturesControl,
   type ComposerFeature,
   type ComposerFeaturesControlState,
+  type ComposerRemoteChatState,
+  type ComposerRemoteTrust,
 } from "./features-control"
 export { ComposerFolderControl, type ComposerFolderControlState } from "./folder-control"
 export { ComposerVariantControl, type ComposerVariantControlState } from "./variant-control"

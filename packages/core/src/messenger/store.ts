@@ -84,6 +84,7 @@ export interface Interface {
   ) => Effect.Effect<Messenger.BindingInfo | undefined>
   readonly bindingsForSession: (sessionID: string) => Effect.Effect<Messenger.BindingInfo[]>
   readonly bindingsForAccount: (accountID: Messenger.AccountID) => Effect.Effect<Messenger.BindingInfo[]>
+  readonly listBindings: () => Effect.Effect<Messenger.BindingInfo[]>
   readonly removeBinding: (id: Messenger.BindingID) => Effect.Effect<void>
   readonly setBindingStatus: (id: Messenger.BindingID, status: Messenger.BindingStatus) => Effect.Effect<void>
 
@@ -335,6 +336,10 @@ export const layer = Layer.effect(
           .where(eq(MessengerBindingTable.account_id, accountID))
           .all()
           .pipe(Effect.orDie)
+        return rows.map(bindingFromRow)
+      }),
+      listBindings: Effect.fn("MessengerStore.listBindings")(function* () {
+        const rows = yield* db.select().from(MessengerBindingTable).all().pipe(Effect.orDie)
         return rows.map(bindingFromRow)
       }),
       removeBinding: Effect.fn("MessengerStore.removeBinding")(function* (id) {

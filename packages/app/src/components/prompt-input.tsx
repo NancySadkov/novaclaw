@@ -53,6 +53,7 @@ import {
   type ComposerFolderControlState,
   type ComposerModelControlState,
   type ComposerPermissionModeControlState,
+  type ComposerRemoteChatState,
   type ComposerStrictControlState,
 } from "@/components/composer"
 import { usePlatform } from "@/context/platform"
@@ -123,6 +124,9 @@ export type PromptInputControls = {
     current: "interactive" | "auto-prompting" | "goal-oriented"
     set: (value: "interactive" | "auto-prompting" | "goal-oriented") => void
   }
+  // The Remote-chat control (messenger-plan §6.2): which messenger chat this session lives in
+  // remotely — accounts, this session's binding, and the connect/disconnect actions.
+  remote: ComposerRemoteChatState
   // The per-chat Strict-harness switch (jh.md): current = the effective state (session override →
   // draft → global Settings default); set writes the per-session override (and stages it on drafts).
   strict: {
@@ -1111,6 +1115,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const featuresControlState = createMemo<ComposerFeaturesControlState>(() => ({
     current: props.controls.features.current,
     mode: props.controls.mode.current,
+    remote: props.controls.remote,
     style: control(),
     set: (feature, enabled) => props.controls.features.set(feature, enabled),
     setMode: (value) => props.controls.mode.set(value),

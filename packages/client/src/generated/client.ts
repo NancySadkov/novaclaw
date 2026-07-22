@@ -104,6 +104,13 @@ import type {
   MessengerRemoveAccountOutput,
   MessengerMintPairingInput,
   MessengerMintPairingOutput,
+  MessengerListAccountChatsInput,
+  MessengerListAccountChatsOutput,
+  MessengerListBindingsOutput,
+  MessengerCreateBindingInput,
+  MessengerCreateBindingOutput,
+  MessengerRemoveBindingInput,
+  MessengerRemoveBindingOutput,
   MessengerLoginBeginInput,
   MessengerLoginBeginOutput,
   MessengerLoginStatusInput,
@@ -984,6 +991,57 @@ export function make(options: ClientOptions) {
             successStatus: 200,
             declaredStatuses: [400, 401],
             empty: false,
+          },
+          requestOptions,
+        ),
+      listAccountChats: (input: MessengerListAccountChatsInput, requestOptions?: RequestOptions) =>
+        request<MessengerListAccountChatsOutput>(
+          {
+            method: "GET",
+            path: `/api/messenger/account/${encodeURIComponent(input.accountID)}/chats`,
+            successStatus: 200,
+            declaredStatuses: [401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      listBindings: (requestOptions?: RequestOptions) =>
+        request<MessengerListBindingsOutput>(
+          {
+            method: "GET",
+            path: `/api/messenger/binding`,
+            successStatus: 200,
+            declaredStatuses: [401, 400],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      createBinding: (input: MessengerCreateBindingInput, requestOptions?: RequestOptions) =>
+        request<MessengerCreateBindingOutput>(
+          {
+            method: "POST",
+            path: `/api/messenger/binding`,
+            body: {
+              accountID: input["accountID"],
+              chatID: input["chatID"],
+              sessionID: input["sessionID"],
+              trust: input["trust"],
+              steal: input["steal"],
+            },
+            successStatus: 200,
+            declaredStatuses: [400, 401],
+            empty: false,
+          },
+          requestOptions,
+        ),
+      removeBinding: (input: MessengerRemoveBindingInput, requestOptions?: RequestOptions) =>
+        request<MessengerRemoveBindingOutput>(
+          {
+            method: "DELETE",
+            path: `/api/messenger/binding/${encodeURIComponent(input.bindingID)}`,
+            successStatus: 204,
+            declaredStatuses: [401, 400],
+            empty: true,
           },
           requestOptions,
         ),

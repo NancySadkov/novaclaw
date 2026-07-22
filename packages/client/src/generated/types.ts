@@ -3735,6 +3735,83 @@ export type MessengerMintPairingInput = {
 
 export type MessengerMintPairingOutput = { readonly code: string; readonly expiresAt: number }
 
+export type MessengerListAccountChatsInput = { readonly accountID: { readonly accountID: string }["accountID"] }
+
+export type MessengerListAccountChatsOutput = {
+  readonly ok: boolean
+  readonly chats: ReadonlyArray<{
+    readonly accountID: string
+    readonly chatID: string
+    readonly kind: "dm" | "group" | "channel" | "thread" | "mailbox" | "topic"
+    readonly title: string
+    readonly lastSeen: number
+  }>
+  readonly reason?: string | undefined
+}
+
+export type MessengerListBindingsOutput = ReadonlyArray<{
+  readonly binding: {
+    readonly id: string
+    readonly accountID: string
+    readonly chatID: string
+    readonly sessionID: string
+    readonly trust: "operator" | "client" | "audience"
+    readonly status: "active" | "paused"
+  }
+  readonly chatTitle?: string | undefined
+}>
+
+export type MessengerCreateBindingInput = {
+  readonly accountID: {
+    readonly accountID: string
+    readonly chatID: string
+    readonly sessionID: string
+    readonly trust: "operator" | "client" | "audience"
+    readonly steal?: boolean | undefined
+  }["accountID"]
+  readonly chatID: {
+    readonly accountID: string
+    readonly chatID: string
+    readonly sessionID: string
+    readonly trust: "operator" | "client" | "audience"
+    readonly steal?: boolean | undefined
+  }["chatID"]
+  readonly sessionID: {
+    readonly accountID: string
+    readonly chatID: string
+    readonly sessionID: string
+    readonly trust: "operator" | "client" | "audience"
+    readonly steal?: boolean | undefined
+  }["sessionID"]
+  readonly trust: {
+    readonly accountID: string
+    readonly chatID: string
+    readonly sessionID: string
+    readonly trust: "operator" | "client" | "audience"
+    readonly steal?: boolean | undefined
+  }["trust"]
+  readonly steal?: {
+    readonly accountID: string
+    readonly chatID: string
+    readonly sessionID: string
+    readonly trust: "operator" | "client" | "audience"
+    readonly steal?: boolean | undefined
+  }["steal"]
+}
+
+export type MessengerCreateBindingOutput = {
+  readonly id: string
+  readonly accountID: string
+  readonly chatID: string
+  readonly sessionID: string
+  readonly trust: "operator" | "client" | "audience"
+  readonly status: "active" | "paused"
+}
+
+export type MessengerRemoveBindingInput = { readonly bindingID: { readonly bindingID: string }["bindingID"] }
+
+export type MessengerRemoveBindingOutput = void
+
 export type MessengerLoginBeginInput = {
   readonly accountID: { readonly accountID: string }["accountID"]
   readonly inputs: { readonly inputs: { readonly [x: string]: string } }["inputs"]

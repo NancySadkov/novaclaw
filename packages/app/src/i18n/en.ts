@@ -439,6 +439,33 @@ export const dict = {
   "prompt.mode.short.auto-prompting": "Auto",
   "prompt.mode.short.goal-oriented": "Goal",
 
+  "prompt.remote.title": "Remote chat",
+  "prompt.remote.draft": "Start the chat first — then you can link it to a messenger here.",
+  "prompt.remote.none": "No messenger accounts yet — add one in Settings",
+  "prompt.remote.link": "Link this chat to a messenger…",
+  "prompt.remote.pickAccount": "Which messenger?",
+  "prompt.remote.pickChat": "Which conversation?",
+  "prompt.remote.loading": "Loading conversations…",
+  "prompt.remote.chatsEmpty":
+    "No conversations known yet. Send the account a message once and it appears here.",
+  "prompt.remote.manual": "Or type a chat id / handle",
+  "prompt.remote.manualUse": "Use",
+  "prompt.remote.trust.title": "Who is on the other side?",
+  "prompt.remote.trust.operator.title": "Me or my family",
+  "prompt.remote.trust.operator.description": "Full control of NovaClaw through this chat.",
+  "prompt.remote.trust.client.title": "A client",
+  "prompt.remote.trust.client.description":
+    "The agent works for them — their messages are requests to consider, never commands.",
+  "prompt.remote.trust.audience.title": "The public",
+  "prompt.remote.trust.audience.description":
+    "The agent only watches and moderates; it speaks in the chat only on purpose.",
+  "prompt.remote.conflict": "That conversation already drives another chat.",
+  "prompt.remote.conflict.steal": "Move it here instead",
+  "prompt.remote.connected": "via {{driver}} · {{chat}}",
+  "prompt.remote.disconnect": "Disconnect",
+  "prompt.remote.back": "Back",
+  "prompt.remote.toast.failed": "Messenger link failed",
+
   "prompt.folder.tooltip": "This chat's working folder — click to move the chat somewhere else",
   "prompt.folder.tooltip.working": "The agent is working — you can move the chat once it's idle",
   "prompt.folder.pick.title": "Move this chat to a folder",

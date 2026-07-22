@@ -7,8 +7,9 @@ import { InvalidRequestError } from "../errors"
 // The Messenger module's HTTP surface (notes/messenger-plan.md §5), P0 slice: driver discovery +
 // account CRUD. INSTANCE-GLOBAL routes (no location middleware — accounts span locations, like
 // health). Secrets ride the `secret` payload field into the credential store and NEVER come back
-// out: every response carries `credentialID` references only. Chats/bindings/pairing land with
-// P1/P3. P1.7 adds the `login`-auth attempt trio (begin/status/complete + cancel) for drivers
+// out: every response carries `credentialID` references only. P3 adds the picker's data (an
+// account's chats) + the binding surface (list/create/remove — trust always explicit, edge #3
+// steal semantics). P1.7 adds the `login`-auth attempt trio (begin/status/complete + cancel) for drivers
 // where the account is the USER'S OWN (Telegram user-account): the session credential the flow
 // yields is stored server-side; the wire only ever carries the phone/code the user types.
 
@@ -104,6 +105,72 @@ export const MessengerGroup = HttpApiGroup.make("server.messenger")
         summary: "Mint pairing code",
         description:
           "Mint a single-use, 10-minute pairing code. A remote sender redeems it with /pair <code> in a DM to become a paired contact at the chosen trust.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.get("messenger.account.chats", "/api/messenger/account/:accountID/chats", {
+      params: { accountID: Messenger.AccountID },
+      success: Schema.Struct({
+        ok: Schema.Boolean,
+        chats: Schema.Array(Messenger.ChatInfo),
+        reason: Schema.optional(Schema.String),
+      }),
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.messenger.account.chats",
+        summary: "List an account's chats",
+        description:
+          "The account's known chats — the live driver list where the platform allows enumeration (seeding the seen-cache), else the seen-cache. `ok:false` carries a plain-words reason (not connected, nothing seen yet).",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.get("messenger.binding.list", "/api/messenger/binding", {
+      success: Schema.Array(
+        Schema.Struct({
+          binding: Messenger.BindingInfo,
+          chatTitle: Schema.optional(Schema.String),
+        }),
+      ),
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.messenger.binding.list",
+        summary: "List chat bindings",
+        description:
+          "Every live session↔chat binding on this instance, with the chat's human title from the seen-cache where known.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post("messenger.binding.create", "/api/messenger/binding", {
+      payload: Schema.Struct({
+        accountID: Messenger.AccountID,
+        chatID: Schema.String,
+        sessionID: Schema.String,
+        trust: Messenger.Trust,
+        steal: Schema.optional(Schema.Boolean),
+      }),
+      success: Messenger.BindingInfo,
+      error: InvalidRequestError,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.messenger.binding.create",
+        summary: "Bind a session to a chat",
+        description:
+          "Link a session to a remote chat at an explicit trust tier (operator | client | audience — always user-chosen, never inferred). One session per chat: if the chat is already bound the call fails naming the holding session; pass steal:true to rebind deliberately.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.delete("messenger.binding.remove", "/api/messenger/binding/:bindingID", {
+      params: { bindingID: Messenger.BindingID },
+      success: HttpApiSchema.NoContent,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.messenger.binding.remove",
+        summary: "Unbind a chat",
+        description: "Remove a session↔chat binding. The chat stops driving (or reporting to) the session immediately.",
       }),
     ),
   )

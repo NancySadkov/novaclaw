@@ -654,35 +654,67 @@ const Endpoint9_5 = (raw: RawClient["server.messenger"]) => (input: Endpoint9_5I
     Effect.mapError(mapClientError),
   )
 
-type Endpoint9_6Request = Parameters<RawClient["server.messenger"]["messenger.login.begin"]>[0]
-type Endpoint9_6Input = {
-  readonly accountID: Endpoint9_6Request["params"]["accountID"]
-  readonly inputs: Endpoint9_6Request["payload"]["inputs"]
-}
+type Endpoint9_6Request = Parameters<RawClient["server.messenger"]["messenger.account.chats"]>[0]
+type Endpoint9_6Input = { readonly accountID: Endpoint9_6Request["params"]["accountID"] }
 const Endpoint9_6 = (raw: RawClient["server.messenger"]) => (input: Endpoint9_6Input) =>
+  raw["messenger.account.chats"]({ params: { accountID: input["accountID"] } }).pipe(Effect.mapError(mapClientError))
+
+const Endpoint9_7 = (raw: RawClient["server.messenger"]) => () =>
+  raw["messenger.binding.list"]({}).pipe(Effect.mapError(mapClientError))
+
+type Endpoint9_8Request = Parameters<RawClient["server.messenger"]["messenger.binding.create"]>[0]
+type Endpoint9_8Input = {
+  readonly accountID: Endpoint9_8Request["payload"]["accountID"]
+  readonly chatID: Endpoint9_8Request["payload"]["chatID"]
+  readonly sessionID: Endpoint9_8Request["payload"]["sessionID"]
+  readonly trust: Endpoint9_8Request["payload"]["trust"]
+  readonly steal?: Endpoint9_8Request["payload"]["steal"]
+}
+const Endpoint9_8 = (raw: RawClient["server.messenger"]) => (input: Endpoint9_8Input) =>
+  raw["messenger.binding.create"]({
+    payload: {
+      accountID: input["accountID"],
+      chatID: input["chatID"],
+      sessionID: input["sessionID"],
+      trust: input["trust"],
+      steal: input["steal"],
+    },
+  }).pipe(Effect.mapError(mapClientError))
+
+type Endpoint9_9Request = Parameters<RawClient["server.messenger"]["messenger.binding.remove"]>[0]
+type Endpoint9_9Input = { readonly bindingID: Endpoint9_9Request["params"]["bindingID"] }
+const Endpoint9_9 = (raw: RawClient["server.messenger"]) => (input: Endpoint9_9Input) =>
+  raw["messenger.binding.remove"]({ params: { bindingID: input["bindingID"] } }).pipe(Effect.mapError(mapClientError))
+
+type Endpoint9_10Request = Parameters<RawClient["server.messenger"]["messenger.login.begin"]>[0]
+type Endpoint9_10Input = {
+  readonly accountID: Endpoint9_10Request["params"]["accountID"]
+  readonly inputs: Endpoint9_10Request["payload"]["inputs"]
+}
+const Endpoint9_10 = (raw: RawClient["server.messenger"]) => (input: Endpoint9_10Input) =>
   raw["messenger.login.begin"]({
     params: { accountID: input["accountID"] },
     payload: { inputs: input["inputs"] },
   }).pipe(Effect.mapError(mapClientError))
 
-type Endpoint9_7Request = Parameters<RawClient["server.messenger"]["messenger.login.status"]>[0]
-type Endpoint9_7Input = { readonly attemptID: Endpoint9_7Request["params"]["attemptID"] }
-const Endpoint9_7 = (raw: RawClient["server.messenger"]) => (input: Endpoint9_7Input) =>
+type Endpoint9_11Request = Parameters<RawClient["server.messenger"]["messenger.login.status"]>[0]
+type Endpoint9_11Input = { readonly attemptID: Endpoint9_11Request["params"]["attemptID"] }
+const Endpoint9_11 = (raw: RawClient["server.messenger"]) => (input: Endpoint9_11Input) =>
   raw["messenger.login.status"]({ params: { attemptID: input["attemptID"] } }).pipe(Effect.mapError(mapClientError))
 
-type Endpoint9_8Request = Parameters<RawClient["server.messenger"]["messenger.login.complete"]>[0]
-type Endpoint9_8Input = {
-  readonly attemptID: Endpoint9_8Request["params"]["attemptID"]
-  readonly code: Endpoint9_8Request["payload"]["code"]
+type Endpoint9_12Request = Parameters<RawClient["server.messenger"]["messenger.login.complete"]>[0]
+type Endpoint9_12Input = {
+  readonly attemptID: Endpoint9_12Request["params"]["attemptID"]
+  readonly code: Endpoint9_12Request["payload"]["code"]
 }
-const Endpoint9_8 = (raw: RawClient["server.messenger"]) => (input: Endpoint9_8Input) =>
+const Endpoint9_12 = (raw: RawClient["server.messenger"]) => (input: Endpoint9_12Input) =>
   raw["messenger.login.complete"]({ params: { attemptID: input["attemptID"] }, payload: { code: input["code"] } }).pipe(
     Effect.mapError(mapClientError),
   )
 
-type Endpoint9_9Request = Parameters<RawClient["server.messenger"]["messenger.login.cancel"]>[0]
-type Endpoint9_9Input = { readonly attemptID: Endpoint9_9Request["params"]["attemptID"] }
-const Endpoint9_9 = (raw: RawClient["server.messenger"]) => (input: Endpoint9_9Input) =>
+type Endpoint9_13Request = Parameters<RawClient["server.messenger"]["messenger.login.cancel"]>[0]
+type Endpoint9_13Input = { readonly attemptID: Endpoint9_13Request["params"]["attemptID"] }
+const Endpoint9_13 = (raw: RawClient["server.messenger"]) => (input: Endpoint9_13Input) =>
   raw["messenger.login.cancel"]({ params: { attemptID: input["attemptID"] } }).pipe(Effect.mapError(mapClientError))
 
 const adaptGroup9 = (raw: RawClient["server.messenger"]) => ({
@@ -692,10 +724,14 @@ const adaptGroup9 = (raw: RawClient["server.messenger"]) => ({
   updateAccount: Endpoint9_3(raw),
   removeAccount: Endpoint9_4(raw),
   mintPairing: Endpoint9_5(raw),
-  loginBegin: Endpoint9_6(raw),
-  loginStatus: Endpoint9_7(raw),
-  loginComplete: Endpoint9_8(raw),
-  loginCancel: Endpoint9_9(raw),
+  listAccountChats: Endpoint9_6(raw),
+  listBindings: Endpoint9_7(raw),
+  createBinding: Endpoint9_8(raw),
+  removeBinding: Endpoint9_9(raw),
+  loginBegin: Endpoint9_10(raw),
+  loginStatus: Endpoint9_11(raw),
+  loginComplete: Endpoint9_12(raw),
+  loginCancel: Endpoint9_13(raw),
 })
 
 type Endpoint10_0Request = Parameters<RawClient["server.permission"]["permission.request.list"]>[0]

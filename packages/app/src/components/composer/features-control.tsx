@@ -1,4 +1,4 @@
-import { createSignal, type JSX } from "solid-js"
+import { createSignal, For, Show, type JSX } from "solid-js"
 import { Popover as KobaltePopover } from "@kobalte/core/popover"
 import { Icon } from "@novaclaw/ui/icon"
 import { Switch as SwitchToggle } from "@novaclaw/ui/v2/switch-v2"
@@ -8,9 +8,49 @@ import { useLanguage } from "@/context/language"
 export type ComposerFeature = "introspection" | "quality" | "affective"
 export type ComposerMode = "interactive" | "auto-prompting" | "goal-oriented"
 
+// The Remote-chat section (messenger-plan §6.2): where does THIS chat live remotely? The trust
+// tier is a REQUIRED, user-chosen step of every connect (§0.1) — three plain-language cards, never
+// inferred, never skippable.
+export type ComposerRemoteTrust = "operator" | "client" | "audience"
+
+export type ComposerRemoteAccount = {
+  id: string
+  label: string
+  driverName: string
+  state: string // AccountStatus["state"] — drives the status dot
+}
+
+export type ComposerRemoteBinding = {
+  id: string
+  driverName: string
+  chatTitle: string
+  trust: ComposerRemoteTrust
+  accountState: string
+}
+
+export type ComposerRemoteChatChoice = { chatID: string; title: string }
+
+export type ComposerRemoteChatState = {
+  /** false for a draft — there is no sessionID to bind yet (edge #15). */
+  bindable: boolean
+  accounts: readonly ComposerRemoteAccount[]
+  binding: ComposerRemoteBinding | undefined
+  loadChats: (accountID: string) => Promise<{ ok: boolean; chats: readonly ComposerRemoteChatChoice[]; reason?: string }>
+  /** "bound" = the chat already drives another session — offer an explicit steal (edge #3). */
+  connect: (input: {
+    accountID: string
+    chatID: string
+    trust: ComposerRemoteTrust
+    steal?: boolean
+  }) => Promise<"ok" | "bound" | "failed">
+  disconnect: () => Promise<void>
+  openSettings: () => void
+}
+
 export type ComposerFeaturesControlState = {
   current: Record<ComposerFeature, boolean>
   mode: ComposerMode
+  remote: ComposerRemoteChatState
   style: JSX.CSSProperties | undefined
   set: (feature: ComposerFeature, enabled: boolean) => void
   setMode: (value: ComposerMode) => void
@@ -19,6 +59,267 @@ export type ComposerFeaturesControlState = {
 
 const COMPOSER_FEATURES: readonly ComposerFeature[] = ["introspection", "quality", "affective"]
 const COMPOSER_MODES: readonly ComposerMode[] = ["interactive", "auto-prompting", "goal-oriented"]
+const REMOTE_TRUSTS: readonly ComposerRemoteTrust[] = ["operator", "client", "audience"]
+
+const REMOTE_DOT: Record<string, string> = {
+  connected: "bg-v2-state-fg-success",
+  connecting: "bg-v2-state-fg-warning",
+  backoff: "bg-v2-state-fg-warning",
+  challenge: "bg-v2-state-fg-danger",
+  error: "bg-v2-state-fg-danger",
+  disabled: "bg-v2-icon-icon-muted",
+  airgapped: "bg-v2-icon-icon-muted",
+}
+
+/** The Remote-chat picker: messaging app → chat → the required access-level step (§0.1). */
+function RemoteChatSection(props: { remote: ComposerRemoteChatState }) {
+  const language = useLanguage()
+  const [stage, setStage] = createSignal<"idle" | "account" | "chat" | "trust">("idle")
+  const [account, setAccount] = createSignal<ComposerRemoteAccount | undefined>(undefined)
+  const [chats, setChats] = createSignal<
+    { loading: boolean; ok: boolean; list: readonly ComposerRemoteChatChoice[]; reason?: string } | undefined
+  >(undefined)
+  const [chat, setChat] = createSignal<ComposerRemoteChatChoice | undefined>(undefined)
+  const [manual, setManual] = createSignal("")
+  const [busy, setBusy] = createSignal(false)
+  const [conflict, setConflict] = createSignal(false)
+
+  const reset = () => {
+    setStage("idle")
+    setAccount(undefined)
+    setChats(undefined)
+    setChat(undefined)
+    setManual("")
+    setConflict(false)
+  }
+
+  const pickAccount = (entry: ComposerRemoteAccount) => {
+    setAccount(entry)
+    setStage("chat")
+    setChats({ loading: true, ok: true, list: [] })
+    void props.remote.loadChats(entry.id).then((result) =>
+      setChats({ loading: false, ok: result.ok, list: result.chats, ...(result.reason ? { reason: result.reason } : {}) }),
+    )
+  }
+
+  const finish = (trust: ComposerRemoteTrust, steal?: boolean) => {
+    const chosenAccount = account()
+    const chosenChat = chat()
+    if (!chosenAccount || !chosenChat || busy()) return
+    setBusy(true)
+    void props.remote
+      .connect({ accountID: chosenAccount.id, chatID: chosenChat.chatID, trust, ...(steal ? { steal: true } : {}) })
+      .then((outcome) => {
+        setBusy(false)
+        if (outcome === "ok") reset()
+        else if (outcome === "bound") setConflict(true)
+      })
+  }
+  // Remember the picked trust so the steal retry reuses it.
+  const [pickedTrust, setPickedTrust] = createSignal<ComposerRemoteTrust>("operator")
+
+  const row =
+    "flex items-start justify-between gap-3 rounded-md border border-transparent px-2.5 py-1.5 text-left hover:bg-v2-background-bg-subtle"
+
+  return (
+    <div class="flex flex-col gap-1.5" data-section="remote-chat">
+      <span class="text-[13px] font-[560] text-v2-text-text-base">{language.t("prompt.remote.title")}</span>
+      <Show
+        when={props.remote.binding}
+        fallback={
+          <Show
+            when={props.remote.bindable}
+            fallback={<span class="text-[12px] leading-4 text-v2-text-text-faint">{language.t("prompt.remote.draft")}</span>}
+          >
+            <Show
+              when={props.remote.accounts.length > 0}
+              fallback={
+                <button
+                  type="button"
+                  data-action="remote-open-settings"
+                  class="self-start text-[13px] text-v2-text-text-base underline decoration-dotted hover:text-v2-text-text-strong"
+                  onClick={() => props.remote.openSettings()}
+                >
+                  {language.t("prompt.remote.none")}
+                </button>
+              }
+            >
+              <Show
+                when={stage() !== "idle"}
+                fallback={
+                  <button
+                    type="button"
+                    data-action="remote-link"
+                    class={row}
+                    onClick={() => setStage("account")}
+                  >
+                    <span class="text-[13px] text-v2-text-text-base">{language.t("prompt.remote.link")}</span>
+                    <Icon name="chevron-right" size="small" class="mt-0.5 shrink-0 text-v2-icon-icon-muted" />
+                  </button>
+                }
+              >
+                <Show when={stage() === "account"}>
+                  <span class="text-[12px] text-v2-text-text-faint">{language.t("prompt.remote.pickAccount")}</span>
+                  <For each={props.remote.accounts}>
+                    {(entry) => (
+                      <button type="button" data-remote-account={entry.id} class={row} onClick={() => pickAccount(entry)}>
+                        <span class="flex items-center gap-2">
+                          <span class={`size-2 shrink-0 rounded-full ${REMOTE_DOT[entry.state] ?? "bg-v2-icon-icon-muted"}`} />
+                          <span class="text-[13px] text-v2-text-text-base">{entry.label}</span>
+                          <span class="text-[12px] text-v2-text-text-faint">{entry.driverName}</span>
+                        </span>
+                      </button>
+                    )}
+                  </For>
+                </Show>
+                <Show when={stage() === "chat"}>
+                  <span class="text-[12px] text-v2-text-text-faint">{language.t("prompt.remote.pickChat")}</span>
+                  <Show
+                    when={!chats()?.loading}
+                    fallback={<span class="text-[12px] text-v2-text-text-faint">{language.t("prompt.remote.loading")}</span>}
+                  >
+                    <Show when={chats()?.ok === false}>
+                      <span class="text-[12px] leading-4 text-v2-text-text-faint">{chats()?.reason}</span>
+                    </Show>
+                    <Show when={chats()?.ok !== false && (chats()?.list.length ?? 0) === 0}>
+                      <span class="text-[12px] leading-4 text-v2-text-text-faint">
+                        {language.t("prompt.remote.chatsEmpty")}
+                      </span>
+                    </Show>
+                    <div class="flex max-h-40 flex-col gap-0.5 overflow-y-auto">
+                      <For each={chats()?.list ?? []}>
+                        {(entry) => (
+                          <button
+                            type="button"
+                            data-remote-chat={entry.chatID}
+                            class={row}
+                            onClick={() => {
+                              setChat(entry)
+                              setStage("trust")
+                            }}
+                          >
+                            <span class="text-[13px] text-v2-text-text-base">{entry.title || entry.chatID}</span>
+                          </button>
+                        )}
+                      </For>
+                    </div>
+                    {/* Manual handle entry — IRC/email style drivers can't enumerate (§6.2). */}
+                    <div class="flex items-center gap-1.5">
+                      <input
+                        type="text"
+                        data-action="remote-manual"
+                        class="h-7 min-w-0 flex-1 rounded-md border border-border-base bg-transparent px-2 text-[13px] text-v2-text-text-base placeholder:text-v2-text-text-faint outline-none"
+                        placeholder={language.t("prompt.remote.manual")}
+                        value={manual()}
+                        onInput={(event) => setManual(event.currentTarget.value)}
+                      />
+                      <button
+                        type="button"
+                        data-action="remote-manual-use"
+                        class="h-7 rounded-md px-2 text-[13px] text-v2-text-text-base hover:bg-v2-background-bg-subtle disabled:opacity-50"
+                        disabled={manual().trim().length === 0}
+                        onClick={() => {
+                          const value = manual().trim()
+                          if (!value) return
+                          setChat({ chatID: value, title: value })
+                          setStage("trust")
+                        }}
+                      >
+                        {language.t("prompt.remote.manualUse")}
+                      </button>
+                    </div>
+                  </Show>
+                </Show>
+                <Show when={stage() === "trust"}>
+                  <span class="text-[12px] font-[560] text-v2-text-text-base">{language.t("prompt.remote.trust.title")}</span>
+                  <Show when={conflict()}>
+                    <div class="flex flex-col gap-1 rounded-md border border-border-base px-2.5 py-1.5">
+                      <span class="text-[12px] leading-4 text-v2-text-text-faint">
+                        {language.t("prompt.remote.conflict")}
+                      </span>
+                      <button
+                        type="button"
+                        data-action="remote-steal"
+                        class="self-start text-[13px] text-v2-text-text-base underline decoration-dotted"
+                        disabled={busy()}
+                        onClick={() => finish(pickedTrust(), true)}
+                      >
+                        {language.t("prompt.remote.conflict.steal")}
+                      </button>
+                    </div>
+                  </Show>
+                  <For each={REMOTE_TRUSTS}>
+                    {(trust) => (
+                      <button
+                        type="button"
+                        data-remote-trust={trust}
+                        class={row}
+                        disabled={busy()}
+                        onClick={() => {
+                          setPickedTrust(trust)
+                          finish(trust)
+                        }}
+                      >
+                        <span class="flex flex-col gap-0.5">
+                          <span class="text-[13px] text-v2-text-text-base">
+                            {language.t(`prompt.remote.trust.${trust}.title` as Parameters<typeof language.t>[0])}
+                          </span>
+                          <span class="text-[12px] leading-4 text-v2-text-text-faint">
+                            {language.t(`prompt.remote.trust.${trust}.description` as Parameters<typeof language.t>[0])}
+                          </span>
+                        </span>
+                      </button>
+                    )}
+                  </For>
+                </Show>
+                <button
+                  type="button"
+                  data-action="remote-back"
+                  class="self-start text-[12px] text-v2-text-text-faint hover:text-v2-text-text-base"
+                  onClick={() => {
+                    if (stage() === "trust") {
+                      setConflict(false)
+                      setChat(undefined)
+                      setStage("chat")
+                    } else if (stage() === "chat") {
+                      setChats(undefined)
+                      setAccount(undefined)
+                      setStage("account")
+                    } else reset()
+                  }}
+                >
+                  {language.t("prompt.remote.back")}
+                </button>
+              </Show>
+            </Show>
+          </Show>
+        }
+      >
+        {(binding) => (
+          <div class="flex items-center justify-between gap-2 rounded-md border border-border-base px-2.5 py-1.5" data-remote-bound>
+            <span class="flex min-w-0 items-center gap-2">
+              <span class={`size-2 shrink-0 rounded-full ${REMOTE_DOT[binding().accountState] ?? "bg-v2-icon-icon-muted"}`} />
+              <span class="truncate text-[13px] text-v2-text-text-base">
+                {language.t("prompt.remote.connected", { driver: binding().driverName, chat: binding().chatTitle })}
+              </span>
+              <span class="shrink-0 rounded-sm bg-v2-background-bg-subtle px-1.5 text-[11px] text-v2-text-text-faint">
+                {language.t(`prompt.remote.trust.${binding().trust}.title` as Parameters<typeof language.t>[0])}
+              </span>
+            </span>
+            <button
+              type="button"
+              data-action="remote-disconnect"
+              class="shrink-0 text-[12px] text-v2-text-text-faint hover:text-v2-text-text-base"
+              onClick={() => void props.remote.disconnect()}
+            >
+              {language.t("prompt.remote.disconnect")}
+            </button>
+          </div>
+        )}
+      </Show>
+    </div>
+  )
+}
 
 /**
  * The per-chat Tuning control (T1, Advanced+): the chat's Mode (kernel thread type — interactive
@@ -122,6 +423,7 @@ export function ComposerFeaturesControl(props: { state: ComposerFeaturesControlS
               ))}
             </div>
           </div>
+          <RemoteChatSection remote={props.state.remote} />
           {COMPOSER_FEATURES.map((feature) => (
             <div class="flex items-start justify-between gap-3" data-feature={feature}>
               <div class="flex flex-col gap-0.5">

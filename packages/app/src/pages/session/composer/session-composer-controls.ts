@@ -1,8 +1,19 @@
 import { base64Encode } from "@novaclaw/core/util/encode"
 import { createQuery } from "@tanstack/solid-query"
 import { useNavigate, useParams, useSearchParams } from "@solidjs/router"
-import { type Accessor, createMemo } from "solid-js"
+import { type Accessor, createMemo, createResource, onCleanup, onMount } from "solid-js"
 import type { PromptInputControls } from "@/components/prompt-input"
+import type { ComposerRemoteChatState } from "@/components/composer"
+import { useSettingsDialog } from "@/components/settings-dialog"
+import {
+  MessengerApiError,
+  messengerAccountChats,
+  messengerAccounts,
+  messengerBindings,
+  messengerCreateBinding,
+  messengerDrivers,
+  messengerRemoveBinding,
+} from "@/utils/messenger-api"
 import type { PromptProjectControls } from "@/components/prompt-project-selector"
 import { useDirectoryPicker } from "@/components/directory-picker"
 import { useLanguage } from "@/context/language"
@@ -87,6 +98,95 @@ export function createPromptInputController(input: {
     const pick = (feature: SessionFeatureName) =>
       draft?.[feature] ?? record?.[feature] ?? (config[feature]?.enabled === true)
     return { introspection: pick("introspection"), quality: pick("quality"), affective: pick("affective") }
+  }
+
+  // The Remote-chat control (messenger-plan §6.2): which messenger chat drives THIS session.
+  // Data mirrors the Settings → Messengers pattern — small truthful lists, refetched on any
+  // messenger.* bus event (no client-side folding). Live sessions only (edge #15: a draft has no
+  // sessionID to bind).
+  const serverSDK = useServerSDK()
+  const openMessengerSettings = useSettingsDialog("messengers")
+  const messengerServer = () => serverSDK().server.http
+  const [remoteDrivers] = createResource(() => messengerServer(), messengerDrivers, { initialValue: [] })
+  const [remoteAccounts, remoteAccountsRes] = createResource(() => messengerServer(), messengerAccounts, {
+    initialValue: [],
+  })
+  const [remoteBindings, remoteBindingsRes] = createResource(() => messengerServer(), messengerBindings, {
+    initialValue: [],
+  })
+  onMount(() => {
+    const unsub = serverSDK().event.listen((e) => {
+      if ((e.details.type as string).startsWith("messenger.")) {
+        void remoteAccountsRes.refetch()
+        void remoteBindingsRes.refetch()
+      }
+    })
+    onCleanup(unsub)
+  })
+  const remoteDriverName = (driverID: string) => remoteDrivers.latest.find((d) => d.id === driverID)?.name ?? driverID
+  const remoteFail = (error: unknown) =>
+    showToast({
+      variant: "error",
+      title: language.t("prompt.remote.toast.failed"),
+      description: error instanceof Error ? error.message : String(error),
+    })
+  const remoteCurrent = (): ComposerRemoteChatState => {
+    const id = input.sessionID()
+    const row = id === undefined ? undefined : remoteBindings.latest.find((entry) => entry.binding.sessionID === id)
+    const account = row === undefined ? undefined : remoteAccounts.latest.find((a) => a.account.id === row.binding.accountID)
+    return {
+      bindable: id !== undefined,
+      accounts: remoteAccounts.latest
+        .filter((entry) => entry.account.enabled)
+        .map((entry) => ({
+          id: entry.account.id,
+          label: entry.account.label,
+          driverName: remoteDriverName(entry.account.driverID),
+          state: entry.status.state,
+        })),
+      binding:
+        row === undefined
+          ? undefined
+          : {
+              id: row.binding.id,
+              driverName: remoteDriverName(account?.account.driverID ?? row.binding.accountID),
+              chatTitle: row.chatTitle ?? row.binding.chatID,
+              trust: row.binding.trust,
+              accountState: account?.status.state ?? "disabled",
+            },
+      loadChats: (accountID) =>
+        messengerAccountChats(messengerServer(), accountID).catch((error: unknown) => ({
+          ok: false,
+          chats: [],
+          reason: error instanceof Error ? error.message : String(error),
+        })),
+      connect: async (connectInput) => {
+        const sessionID = input.sessionID()
+        if (sessionID === undefined) return "failed"
+        try {
+          await messengerCreateBinding(messengerServer(), { ...connectInput, sessionID })
+          void remoteBindingsRes.refetch()
+          return "ok"
+        } catch (error) {
+          if (error instanceof MessengerApiError && error.kind === "messenger_chat_bound" && connectInput.steal !== true)
+            return "bound"
+          remoteFail(error)
+          return "failed"
+        }
+      },
+      disconnect: async () => {
+        const current = input.sessionID()
+        const bound = current === undefined ? undefined : remoteBindings.latest.find((entry) => entry.binding.sessionID === current)
+        if (bound === undefined) return
+        try {
+          await messengerRemoveBinding(messengerServer(), bound.binding.id)
+          void remoteBindingsRes.refetch()
+        } catch (error) {
+          remoteFail(error)
+        }
+      },
+      openSettings: openMessengerSettings,
+    }
   }
 
   // The Mode control (kernel thread type) — same local-first precedence: this browser's explicit
@@ -188,6 +288,7 @@ export function createPromptInputController(input: {
           )
       },
     },
+    remote: remoteCurrent(),
     mode: {
       current: modeCurrent(),
       set: (value) => {

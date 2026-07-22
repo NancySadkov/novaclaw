@@ -150,6 +150,55 @@ export function messengerMintPairing(
   return call<PairingCode>(server, "POST", `api/messenger/account/${accountID}/pair`, { trust })
 }
 
+export interface ChatInfo {
+  readonly accountID: string
+  readonly chatID: string
+  readonly kind: "dm" | "group" | "channel" | "thread" | "mailbox" | "topic"
+  readonly title: string
+  readonly lastSeen: number
+}
+
+export interface ChatsResult {
+  readonly ok: boolean
+  readonly chats: readonly ChatInfo[]
+  readonly reason?: string
+}
+
+export type BindingTrust = "operator" | "client" | "audience"
+
+export interface BindingInfo {
+  readonly id: string
+  readonly accountID: string
+  readonly chatID: string
+  readonly sessionID: string
+  readonly trust: BindingTrust
+  readonly status: "active" | "paused"
+}
+
+export function messengerAccountChats(server: ServerConnection.HttpBase, accountID: string) {
+  return call<ChatsResult>(server, "GET", `api/messenger/account/${accountID}/chats`)
+}
+
+export interface BindingRow {
+  readonly binding: BindingInfo
+  readonly chatTitle?: string
+}
+
+export function messengerBindings(server: ServerConnection.HttpBase) {
+  return call<BindingRow[]>(server, "GET", "api/messenger/binding")
+}
+
+export function messengerCreateBinding(
+  server: ServerConnection.HttpBase,
+  input: { accountID: string; chatID: string; sessionID: string; trust: BindingTrust; steal?: boolean },
+) {
+  return call<BindingInfo>(server, "POST", "api/messenger/binding", input)
+}
+
+export function messengerRemoveBinding(server: ServerConnection.HttpBase, bindingID: string) {
+  return call<void>(server, "DELETE", `api/messenger/binding/${bindingID}`)
+}
+
 export function messengerLoginBegin(
   server: ServerConnection.HttpBase,
   accountID: string,

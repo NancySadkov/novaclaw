@@ -59,6 +59,10 @@ export const endpointNames = {
   "messenger.login.status": "loginStatus",
   "messenger.login.complete": "loginComplete",
   "messenger.login.cancel": "loginCancel",
+  "messenger.account.chats": "listAccountChats",
+  "messenger.binding.list": "listBindings",
+  "messenger.binding.create": "createBinding",
+  "messenger.binding.remove": "removeBinding",
 } as const
 
 export const omitEndpoints = new Set(["fs.read", "pty.connect", "pty.connectToken"])
