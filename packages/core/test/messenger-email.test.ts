@@ -162,6 +162,36 @@ describe("EmailImapSmtp pure helpers", () => {
     }),
   )
 
+  it.effect("extractPlainText pulls the text/plain part from real MIME multipart bodies", () => {
+    // The exact shape a real Gmail→Outlook message fetched as BODY[TEXT] (proven in the live gate).
+    const multipart = [
+      "--BOUND",
+      'Content-Type: text/plain; charset="UTF-8"',
+      "",
+      "Hey, Nova! This is a test.",
+      "",
+      "--BOUND",
+      'Content-Type: text/html; charset="UTF-8"',
+      "",
+      "<div>Hey, <b>Nova</b>!</div>",
+      "--BOUND--",
+    ].join("\r\n")
+    return Effect.sync(() => {
+      expect(EmailImapSmtp.extractPlainText(multipart)).toBe("Hey, Nova! This is a test.")
+      // quoted-printable decode
+      const qp = ["--B", "Content-Type: text/plain", "Content-Transfer-Encoding: quoted-printable", "", "caf=C3=A9 =", "au lait", "--B--"].join("\r\n")
+      expect(EmailImapSmtp.extractPlainText(qp)).toBe("café au lait")
+      // base64 decode
+      const b64 = ["--B", "Content-Type: text/plain", "Content-Transfer-Encoding: base64", "", Buffer.from("hello world").toString("base64"), "--B--"].join("\r\n")
+      expect(EmailImapSmtp.extractPlainText(b64)).toBe("hello world")
+      // html-only falls back to stripped text
+      const htmlOnly = ["--B", "Content-Type: text/html", "", "<p>Bold <b>text</b></p>", "--B--"].join("\r\n")
+      expect(EmailImapSmtp.extractPlainText(htmlOnly)).toBe("Bold text")
+      // a plain (non-MIME) body passes through untouched
+      expect(EmailImapSmtp.extractPlainText("just a plain reply\n")).toBe("just a plain reply")
+    })
+  })
+
   it.effect("buildMime writes threaded headers; dotStuff escapes a leading-dot line + terminates", () =>
     Effect.sync(() => {
       const mime = EmailImapSmtp.buildMime(

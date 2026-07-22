@@ -58,6 +58,73 @@ export const parseDate = (value: string | undefined, fallback: number): number =
   return Number.isNaN(ms) ? fallback : ms
 }
 
+const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+
+/** Decode a MIME part body per its Content-Transfer-Encoding (base64 / quoted-printable / plain). */
+const decodeCTE = (body: string, cte: string | undefined): string => {
+  if (cte === "base64") {
+    try {
+      return Buffer.from(body.replace(/\s/g, ""), "base64").toString("utf8")
+    } catch {
+      return body
+    }
+  }
+  if (cte === "quoted-printable") {
+    // Decode soft line breaks + `=XX` escapes to BYTES (latin1), then read as UTF-8 (an `=C3=A9`
+    // pair is one UTF-8 char, not two latin1 chars).
+    const bytes = body.replace(/=\r?\n/g, "").replace(/=([0-9A-Fa-f]{2})/g, (_m, h: string) => String.fromCharCode(parseInt(h, 16)))
+    return Buffer.from(bytes, "latin1").toString("utf8")
+  }
+  return body
+}
+
+/** Best-effort strip of an HTML body to readable text (the fallback when there is no text/plain part). */
+const stripHtml = (html: string): string =>
+  html
+    .replace(/<(style|script)[\s\S]*?<\/\1>/gi, "")
+    .replace(/<br\s*\/?>(?=)/gi, "\n")
+    .replace(/<\/(p|div|tr|h[1-6])>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/[ \t]+/g, " ")
+    .replace(/\n{3,}/g, "\n\n")
+
+/**
+ * Extract the human-readable plain text from a fetched BODY[TEXT] — real mail is usually MIME
+ * multipart/alternative (text + HTML), so the raw body is boundary markers + both parts. Pull the
+ * text/plain part (decoding base64 / quoted-printable), fall back to a stripped text/html part, else
+ * return the body as-is (a non-MIME plain mail). One level of nesting (multipart/mixed wrapping
+ * multipart/alternative) is followed; deeper structures are best-effort. Pure — unit-tested.
+ */
+export const extractPlainText = (raw: string): string => {
+  const body = raw.replace(/\r\n/g, "\n")
+  const boundary = body.match(/^--([^\s-][^\s]*?)-*\s*$/m)?.[1]
+  if (boundary === undefined || !/content-type:/i.test(body)) return body.trim()
+  const parts = body.split(new RegExp(`\\n?--${escapeRe(boundary)}(?:--)?[ \\t]*(?:\\n|$)`))
+  let plain: string | undefined
+  let html: string | undefined
+  for (const part of parts) {
+    const split = part.match(/^([\s\S]*?)\n\n([\s\S]*)$/)
+    if (!split) continue
+    const headers = split[1]!
+    const content = split[2]!
+    const ct = headers.match(/content-type:\s*([^;\n]+)/i)?.[1]?.toLowerCase().trim()
+    const cte = headers.match(/content-transfer-encoding:\s*([^\n]+)/i)?.[1]?.toLowerCase().trim()
+    if (ct?.startsWith("multipart/")) {
+      const nested = extractPlainText(part)
+      if (nested.length > 0 && plain === undefined) plain = nested
+    } else if (ct === "text/plain") {
+      if (plain === undefined) plain = decodeCTE(content, cte)
+    } else if (ct === "text/html") {
+      if (html === undefined) html = stripHtml(decodeCTE(content, cte))
+    }
+  }
+  return (plain ?? html ?? body).trim()
+}
+
 /** Assemble a RawEmail from a fetched UID + its header block + text body. Pure — the whole
  *  message→event shape is testable without a socket. */
 export const assembleEmail = (input: { uid: number; headerBlock: string; text: string; fallbackAt: number }): RawEmail => {
@@ -76,7 +143,8 @@ export const assembleEmail = (input: { uid: number; headerBlock: string; text: s
     ...(inReplyTo === undefined ? {} : { inReplyTo }),
     references,
     at: parseDate(headers.get("date"), input.fallbackAt),
-    text: input.text.replace(/\r\n/g, "\n").trim(),
+    // Real mail is MIME multipart — surface just the readable plain text to the agent.
+    text: extractPlainText(input.text).replace(/\r\n/g, "\n").trim(),
   }
 }
 
