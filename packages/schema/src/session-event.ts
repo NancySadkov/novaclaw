@@ -178,8 +178,8 @@ export type Moved = typeof Moved.Type
 
 // Agent-OS lifecycle (architecture.md step 5): a session's `exit(result)` — the complement to spawn.
 // Durable so `wait(childID)` can observe it after the fact; the projector writes `result` to the
-// session row (for ps/list). The drain-stop refinement (exit ends auto-prompting) is a follow-up —
-// today the drain already ends when input runs out, so there is no runaway loop to stop yet.
+// session row (for ps/list). The projected `result` is also the self-drive terminal test: an
+// auto-prompting/goal-oriented drain keeps re-prompting itself until it lands (runner/drive.ts).
 export const Completed = Event.define({
   type: "session.next.completed",
   ...options,

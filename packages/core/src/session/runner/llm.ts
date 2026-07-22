@@ -63,6 +63,7 @@ import { createLLMEventPublisher } from "./publish-llm-event"
 import { toLLMMessages } from "./to-llm-message"
 import { AdhocGuidance } from "../../adhoc-tools/guidance"
 import { Affective } from "./affective"
+import { SessionDrive } from "./drive"
 import { ContextPack } from "./context-pack"
 import {
   detectDoomLoop,
@@ -1440,6 +1441,9 @@ export const layer = Layer.effect(
       let consecutiveEmpty = 0
       let regrounded = false
       const quality = Quality.initialState()
+      // Self-drive state (architecture.md "run until exit()"): per-DRAIN round/wall counters —
+      // a fresh drain (any new message) re-arms a cap-paused autonomous session.
+      const driveState = SessionDrive.initialState(DateTime.toEpochMillis(yield* DateTime.now))
       // T1 per-session feature stances (the composer's Tuning toggles), resolved through the
       // config walk above: an explicit true/false on the chain wins; no stance = global config.
       // Only the ON/OFF is per-session — cadence/commands/model internals stay global.
@@ -1577,6 +1581,44 @@ export const layer = Layer.effect(
         }
         shouldRun = yield* SessionInput.hasPending(db, input.sessionID, "queue")
         promotion = shouldRun ? "queue" : undefined
+        if (!shouldRun) {
+          // The auto-prompt SELF-DRIVE (architecture.md "run until exit()"): an auto-prompting /
+          // goal-oriented session whose queue ran dry keeps working — the harness injects the next
+          // prompt as a provenance-prefixed steer — until `exit(result)` lands on the session row
+          // or the round/wall caps trip (todo.md Vision: goal agents carry budget/step caps + a
+          // watchdog). Keyed on the session's OWN declared type (never the inherited walk) so
+          // spawned children and forks don't silently self-drive; Stop interrupts this very
+          // fiber, so it remains the unconditional kill switch. See runner/drive.ts.
+          const latest = yield* store.get(input.sessionID).pipe(Effect.orElseSucceed(() => undefined))
+          const decision = SessionDrive.decide(
+            latest,
+            driveState,
+            DateTime.toEpochMillis(yield* DateTime.now),
+          )
+          if (decision.kind === "continue") {
+            driveState.rounds++
+            yield* Effect.logInfo("self-drive continuation", {
+              sessionID: input.sessionID,
+              round: driveState.rounds,
+            })
+            yield* SessionInput.steer(db, events, input.sessionID, decision.message)
+            shouldRun = true
+            promotion = "steer"
+          } else if (decision.kind === "cap") {
+            yield* Effect.logWarning("self-drive cap reached", {
+              sessionID: input.sessionID,
+              rounds: driveState.rounds,
+            })
+            yield* Effect.gen(function* () {
+              yield* events.publish(SessionEvent.Synthetic, {
+                sessionID: input.sessionID,
+                messageID: SessionMessage.ID.create(),
+                timestamp: yield* DateTime.now,
+                text: decision.notice,
+              })
+            }).pipe(Effect.ignore)
+          }
+        }
       }
       yield* postRunMaintenance(input.sessionID)
     })

@@ -13,9 +13,9 @@ import { Tools } from "./tools"
 // exit(result) — an agent's "return" (architecture.md step 5), the complement to spawn. Publishes the
 // durable `session.next.completed` event (result rides in it; the projector writes it to the session
 // row for ps/list + for `wait`). Depends on EventV2 directly (a global, cycle-free — no seam needed,
-// unlike spawn which needed create+enqueue). NOTE: this RECORDS completion; it does not yet STOP the
-// drain — the drain already ends when input runs out, so there's no runaway loop to halt. The
-// drain-stop refinement lands with autonomous auto-prompt loops (todo Vision / architecture.md step 5).
+// unlike spawn which needed create+enqueue). This is also what ENDS the self-drive loop: an
+// auto-prompting/goal-oriented session keeps re-prompting itself at drain-end until the projected
+// `result` lands on its row (runner/drive.ts reads `result !== undefined` as the terminal test).
 
 export const name = "exit"
 
