@@ -280,7 +280,7 @@ const DialogAddMessengerAccount: Component<{
                     nobody should need a blog post to set up a support desk. */}
                 <Show when={chosen().setup}>
                   {(setup) => (
-                    <div class="flex w-full min-w-0 flex-col gap-2 rounded-md bg-background-element p-3">
+                    <div class="flex w-full min-w-0 flex-col gap-2 rounded-md bg-v2-background-bg-layer-02 p-3">
                       <span class="settings-v2-server-dialog-label">{language.t("settings.messengers.setup.title")}</span>
                       <ol class="settings-v2-field-description flex list-decimal flex-col gap-1 pl-4">
                         <For each={setup().steps}>{(step) => <li>{step}</li>}</For>

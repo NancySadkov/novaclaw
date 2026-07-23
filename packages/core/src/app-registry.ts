@@ -56,6 +56,7 @@ const RESERVED_IDS = new Set([
   "terminal",
   "trash",
   "help",
+  "social",
   "settings",
 ])
 

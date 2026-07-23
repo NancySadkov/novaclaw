@@ -4,6 +4,7 @@ import { useChatsAttention } from "@/apps/chats-attention"
 import { useSettingsDialog } from "@/components/settings-dialog"
 import { AppPlaceholder } from "@/pages/home-screen/app-placeholder"
 import { HelpTour } from "@/pages/home-screen/help-tour"
+import { SocialPanel } from "@/pages/home-screen/social-panel"
 import type { HomeApp } from "./registry"
 
 // The built-in NovaClaw apps. Each `open()` REUSES an existing opener (route navigation, a dialog, the
@@ -129,6 +130,17 @@ export function useBuiltinApps(): () => HomeApp[] {
       subtitle: "Restore anything deleted in the last 2 days",
       source: "builtin",
       open: () => navigate("/trash"),
+    },
+    {
+      id: "social",
+      title: "Community",
+      icon: "discord",
+      // Discord blurple — cool, so it doesn't compete with the gold hero (uix.md §3/P3).
+      accent: "#5865f2",
+      subtitle: "Discord, Reddit and the website — other people who run NovaClaw",
+      source: "builtin",
+      // Sits next to Help on purpose: when the tour doesn't answer it, humans do.
+      open: () => void dialog.show(() => <SocialPanel />),
     },
     {
       id: "help",
