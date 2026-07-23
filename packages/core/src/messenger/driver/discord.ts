@@ -42,7 +42,7 @@ const CAPS: Messenger.Capabilities = {
   edits: true,
   typing: true,
   threads: true,
-  moderation: { delete: true, ban: true, kick: true, mute: true, pin: true },
+  moderation: { delete: true, ban: true, kick: true, mute: true, pin: true, lock: true, approve: false },
   format: "markdown",
   maxChars: 2000,
 }
@@ -536,6 +536,18 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
             }
             case "kick":
               return yield* call(`/guilds/${yield* guildID}/members/${act.userID}`, { method: "DELETE" })
+            case "lock":
+              // Discord locks THREADS (a resolved support post); a whole channel is closed with
+              // permissions, which is a server-config act, not a moderation one.
+              return yield* call(`/channels/${chatID}`, {
+                method: "PATCH",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ locked: true }),
+              })
+            case "approve":
+              return yield* Effect.fail(
+                new ModerationError({ reason: "Discord has no approval queue — messages are live until deleted." }),
+              )
             case "mute": {
               // Discord "timeout": communication_disabled_until, capped at 28 days.
               const seconds = Math.max(1, Math.min(act.seconds ?? 600, 28 * 24 * 3600))

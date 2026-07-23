@@ -88,6 +88,11 @@ export const Capabilities = Schema.Struct({
     kick: Schema.Boolean,
     mute: Schema.Boolean,
     pin: Schema.Boolean,
+    /** Optional because most chat platforms have no such thing. A QUEUE-based platform (Reddit)
+     *  makes them the main job: `approve` clears a removal/report so the item goes back into the
+     *  listings, and `lock` closes a thread to new replies. Absent = the driver can't. */
+    approve: optional(Schema.Boolean),
+    lock: optional(Schema.Boolean),
   }),
   format: Schema.Literals(["plain", "markdown", "html"]),
   maxChars: Schema.Number,

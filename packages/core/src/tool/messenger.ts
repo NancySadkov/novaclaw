@@ -114,10 +114,11 @@ const DownloadOp = Schema.Struct({
 const ModerateOp = Schema.Struct({
   op: Schema.Literal("moderate"),
   chat: Schema.String.annotate({ description: "Chat id (from `chats`) the moderation acts in" }),
-  act: Schema.Literals(["delete", "ban", "kick", "mute", "pin"]).annotate({
-    description: "delete a message · ban/kick/mute a member (needs a SERVER chat) · pin a message",
+  act: Schema.Literals(["delete", "ban", "kick", "mute", "pin", "approve", "lock"]).annotate({
+    description:
+      "delete a message · ban/kick/mute a member (needs a SERVER chat) · pin a message · approve a removed or reported item back into the listings · lock this chat against new replies. Not every platform has every act — a miss comes back saying so.",
   }),
-  message: Schema.String.pipe(Schema.optional).annotate({ description: "Message id — required for delete and pin" }),
+  message: Schema.String.pipe(Schema.optional).annotate({ description: "Message id — required for delete, pin and approve" }),
   user: Schema.String.pipe(Schema.optional).annotate({ description: "User id — required for ban, kick, and mute" }),
   seconds: Schema.Finite.pipe(Schema.optional).annotate({
     description:
@@ -132,7 +133,7 @@ export const Input = Schema.Union([StatusOp, ChatsOp, HistoryOp, SendOp, Connect
 
 /** Build the driver `ModerationAct` from the flat op, validating the target this act needs. Pure. */
 export const buildModerationAct = (input: {
-  readonly act: "delete" | "ban" | "kick" | "mute" | "pin"
+  readonly act: "delete" | "ban" | "kick" | "mute" | "pin" | "approve" | "lock"
   readonly message?: string
   readonly user?: string
   readonly seconds?: number
@@ -144,6 +145,11 @@ export const buildModerationAct = (input: {
       return message ? { act: "delete", messageID: message } : { error: "delete needs a message id (from history/chat headers)." }
     case "pin":
       return message ? { act: "pin", messageID: message } : { error: "pin needs a message id." }
+    case "approve":
+      return message ? { act: "approve", messageID: message } : { error: "approve needs the message id of the item to restore." }
+    case "lock":
+      // Locking targets the CHAT the op already names — no message id to ask for.
+      return { act: "lock" }
     case "ban":
       return user
         ? { act: "ban", userID: user, ...(input.seconds === undefined ? {} : { purgeSeconds: Math.max(0, Math.floor(input.seconds)) }) }

@@ -12,6 +12,7 @@ import { EmailOAuth } from "./driver/email-oauth"
 import { EmailOAuthGoogle } from "./driver/email-oauth-google"
 import { IrcDriver } from "./driver/irc"
 import { OAuthLoopback } from "./oauth-loopback"
+import { RedditDriver } from "./driver/reddit"
 import { TelegramDriver } from "./driver/telegram"
 import { TelegramUserDriver } from "./driver/telegram-user"
 import { TelegramUserMtcute } from "./driver/telegram-user-mtcute"
@@ -25,7 +26,9 @@ import { TelegramUserMtcute } from "./driver/telegram-user-mtcute"
 // OAuth2 device-code login since Microsoft killed Basic Auth; the raw wire + Microsoft HTTP are the
 // live-gated factory files) and its Gmail sibling (the friendly "Sign in with Google" auth-code +
 // loopback browser flow — reuses the email connection pump, swaps only the auth: Google client +
-// loopback catcher factories). Tests mock this service with fakes; a future ExternalDriverSource seam
+// loopback catcher factories); P12 adds Reddit — a SUBREDDIT is the chat you bind and every post
+// is a thread under it, so one binding moderates a live community (the parent-routing shape).
+// Tests mock this service with fakes; a future ExternalDriverSource seam
 // (plugin-contributed drivers) would compose here, exactly like ExternalToolSource does for tools.
 
 const builtin: readonly Driver[] = [
@@ -35,6 +38,7 @@ const builtin: readonly Driver[] = [
   TelegramDriver.driver,
   DiscordDriver.driver,
   IrcDriver.driver,
+  RedditDriver.make((url, init) => fetch(url, init), OAuthLoopback.startLoopback, OAuthLoopback.openBrowser),
 ]
 
 export interface Interface {

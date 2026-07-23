@@ -23,6 +23,14 @@ describe("MessengerTool.buildModerationAct", () => {
     expect(MessengerTool.buildModerationAct({ act: "mute", user: "u7", seconds: 90.7 })).toEqual({ act: "mute", userID: "u7", seconds: 90 })
   })
 
+  // Queue moderation (Reddit): approve puts a removed item back; lock closes the chat the op
+  // already names, so it asks for no ids at all.
+  test("approve needs the item; lock targets the chat and needs nothing", () => {
+    expect(MessengerTool.buildModerationAct({ act: "approve", message: "t1_x" })).toEqual({ act: "approve", messageID: "t1_x" })
+    expect(MessengerTool.buildModerationAct({ act: "approve" })).toEqual({ error: expect.stringContaining("message id") })
+    expect(MessengerTool.buildModerationAct({ act: "lock" })).toEqual({ act: "lock" })
+  })
+
   // On a spam wave, banning the account while its posts stay up leaves the cleanup to a human —
   // `seconds` on a ban is the purge window (Discord deletes that member's recent messages).
   test("ban with seconds purges that member's recent messages", () => {

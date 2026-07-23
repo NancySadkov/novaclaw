@@ -126,6 +126,12 @@ export type ModerationAct =
   | { readonly act: "kick"; readonly userID: string }
   | { readonly act: "mute"; readonly userID: string; readonly seconds?: number }
   | { readonly act: "pin"; readonly messageID: string }
+  /** Put a removed/reported item back in the listings — the other half of queue moderation, where
+   *  the decision is keep-or-remove rather than delete-or-ignore (Reddit's modqueue). */
+  | { readonly act: "approve"; readonly messageID: string }
+  /** Close the CHAT the op names to new replies (a resolved support thread, a heated post). Targets
+   *  the conversation, not a message — `moderate(chatID, …)` already carries the target. */
+  | { readonly act: "lock" }
 
 export interface Connection {
   /** Normalized platform events. The stream failing (after the driver's own transport-level
