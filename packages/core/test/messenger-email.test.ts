@@ -138,6 +138,16 @@ describe("EmailImapSmtp pure helpers", () => {
     }),
   )
 
+  it.effect("decodeEncodedWords decodes RFC 2047 subjects/names (B + Q, folded, plain passthrough)", () =>
+    Effect.sync(() => {
+      // base64 UTF-8 (Cyrillic), Q-encoding (`_`=space, =XX), adjacent folded words, and a plain value.
+      expect(EmailImapSmtp.decodeEncodedWords("=?UTF-8?B?0J/RgNC40LLQtdGC?=")).toBe("Привет")
+      expect(EmailImapSmtp.decodeEncodedWords("=?UTF-8?Q?caf=C3=A9_au_lait?=")).toBe("café au lait")
+      expect(EmailImapSmtp.decodeEncodedWords("=?UTF-8?B?4oKs?= 38,00")).toBe("€ 38,00")
+      expect(EmailImapSmtp.decodeEncodedWords("Plain Subject")).toBe("Plain Subject")
+    }),
+  )
+
   it.effect("parseHeaders unfolds continuations; messageIds + parseFrom extract the threading fields", () =>
     Effect.sync(() => {
       const headers = EmailImapSmtp.parseHeaders(

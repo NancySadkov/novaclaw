@@ -57,10 +57,32 @@ export const parseFrom = (value: string | undefined): { address: string; name?: 
   if (value === undefined) return { address: "" }
   const angle = value.match(/^(.*)<([^>]+)>\s*$/)
   if (angle) {
-    const name = angle[1]!.trim().replace(/^"(.*)"$/, "$1").trim()
+    const name = decodeEncodedWords(angle[1]!.trim().replace(/^"(.*)"$/, "$1").trim())
     return { address: angle[2]!.trim(), ...(name.length > 0 ? { name } : {}) }
   }
   return { address: value.trim() }
+}
+
+/** Decode RFC 2047 encoded-words in a header value — `=?charset?B?base64?=` / `=?charset?Q?qp?=` —
+ *  so non-ASCII subjects and display names read as text, not `=?UTF-8?B?…?=`. Adjacent encoded-words
+ *  separated by whitespace fold together (RFC 2047 §6.2). charset best-effort: UTF-8 + latin1. */
+export const decodeEncodedWords = (value: string): string => {
+  if (!value.includes("=?")) return value
+  const folded = value.replace(/\?=\s+=\?/g, "?==?") // drop whitespace between adjacent words
+  return folded.replace(/=\?([^?]+)\?([BbQq])\?([^?]*)\?=/g, (whole, charset: string, enc: string, text: string) => {
+    try {
+      const bytes =
+        enc.toUpperCase() === "B"
+          ? Buffer.from(text, "base64")
+          : Buffer.from(
+              text.replace(/_/g, " ").replace(/=([0-9A-Fa-f]{2})/g, (_m, h: string) => String.fromCharCode(parseInt(h, 16))),
+              "latin1",
+            )
+      return bytes.toString(/8859-1|latin1/i.test(charset) ? "latin1" : "utf8")
+    } catch {
+      return whole
+    }
+  })
 }
 
 /** Best-effort RFC 5322 date → epoch ms (falls back to `fallback` on an unparseable date). */
@@ -151,7 +173,7 @@ export const assembleEmail = (input: { uid: number; headerBlock: string; text: s
     messageID: ownIds[0] ?? `imap-uid-${input.uid}@novaclaw.local`,
     fromAddress: from.address,
     ...(from.name === undefined ? {} : { fromName: from.name }),
-    subject: (headers.get("subject") ?? "").trim(),
+    subject: decodeEncodedWords((headers.get("subject") ?? "").trim()),
     ...(inReplyTo === undefined ? {} : { inReplyTo }),
     references,
     at: parseDate(headers.get("date"), input.fallbackAt),
