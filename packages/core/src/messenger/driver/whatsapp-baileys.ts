@@ -73,9 +73,17 @@ export interface WAMessage {
   readonly at: number
 }
 
-/** How linking started: a QR string to scan, OR a pairing code to type (phone-number mode). */
+/** How linking started: a QR to scan, OR a pairing code to type (phone-number mode).
+ *
+ *  ⚠️ The QR ROTATES. WhatsApp hands the socket a small batch of pairing refs and expires each after
+ *  ~20s (~60s for the first); a QR shown past its ref is silently unscannable — the phone just sits
+ *  there. So the link is a LIVE value, not a one-shot: the factory re-renders on every rotation and
+ *  the driver republishes it through `LoginPending.progress`. `qr` is the raw payload (protocol
+ *  detail, kept for tests/logs); `qrImage` is what a human can act on. */
 export interface WALink {
   readonly qr?: string
+  /** The QR rendered as a `data:image/png;base64,…` URL — the scannable artifact. */
+  readonly qrImage?: string
   readonly pairingCode?: string
 }
 
@@ -87,6 +95,9 @@ export interface WAClient {
   /** Begin linking a credential-less socket: returns a QR to scan, or (if `phone` is given) a
    *  pairing code to enter in WhatsApp → Linked Devices → Link with phone number. */
   readonly startLink: (phone?: string) => Promise<WALink>
+  /** The link as it stands NOW — the newest QR after any rotation, or the unchanged pairing code.
+   *  Synchronous and side-effect-free: the login wizard polls it on a timer. */
+  readonly currentLink: () => WALink
   /** Resolve when the socket reaches `open` (linking finished); reject (`logged-out`) on a terminal
    *  close. The login flow awaits this instead of a typed code. */
   readonly waitForOpen: () => Promise<void>
@@ -163,13 +174,24 @@ export const isSelfMessage = (
   return message.chatID !== selfID
 }
 
-/** Human instructions for the link step, from whichever mode the factory started. */
+/** Human instructions for the link step, from whichever mode the factory started. When we rendered
+ *  the QR, the image IS the instruction — the text only says what to do with it (and warns that it
+ *  refreshes, so nobody thinks a re-render means something went wrong). Without a rendered image we
+ *  fall back to the raw payload: useless to scan, but the honest thing to show a developer. */
 export const linkInstructions = (link: WALink): string =>
   link.pairingCode !== undefined
     ? `Open WhatsApp on your phone → Linked Devices → Link a device → Link with phone number, then enter this code: ${link.pairingCode}`
-    : link.qr !== undefined
-      ? `Open WhatsApp on your phone → Linked Devices → Link a device, then scan the QR code shown here.\n\n${link.qr}`
-      : "Open WhatsApp → Linked Devices → Link a device to finish."
+    : link.qrImage !== undefined
+      ? "Open WhatsApp on your phone → Linked Devices → Link a device, then scan this code. It refreshes every few seconds — just scan whichever one is on screen."
+      : link.qr !== undefined
+        ? `Open WhatsApp on your phone → Linked Devices → Link a device, then scan the QR code shown here.\n\n${link.qr}`
+        : "Open WhatsApp → Linked Devices → Link a device to finish."
+
+/** The link as a login step the wizard can render. */
+const linkProgress = (link: WALink) => ({
+  instructions: linkInstructions(link),
+  ...(link.qrImage !== undefined ? { qrImage: link.qrImage } : {}),
+})
 
 export const make = (factory: WAClientFactory): Driver => {
   const acquire = (config: WAClientConfig) =>
@@ -217,7 +239,14 @@ export const make = (factory: WAClientFactory): Driver => {
             return { session: yield* Deferred.await(result) }
           })
 
-        return { instructions: linkInstructions(link), complete } satisfies LoginPending
+        // The QR expires every ~20s, so the wizard re-reads the live link on a timer; the socket
+        // factory keeps it fresh (and re-links when WhatsApp's ref batch runs out). Without this the
+        // user stares at the first frame and every scan silently fails.
+        return {
+          ...linkProgress(link),
+          progress: () => Effect.sync(() => linkProgress(client.currentLink())),
+          complete,
+        } satisfies LoginPending
       }),
   }
 

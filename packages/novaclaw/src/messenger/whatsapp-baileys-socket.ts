@@ -12,8 +12,9 @@ import makeWASocket, {
   type SignalDataTypeMap,
   type WAMessage as BaileysMessage,
 } from "@whiskeysockets/baileys"
+import QRCode from "qrcode"
 import type { ChatSnapshot } from "@novaclaw/core/messenger/driver"
-import type { WAClient, WAClientConfig, WAClientFactory, WAMessage } from "@novaclaw/core/messenger/driver/whatsapp-baileys"
+import type { WAClient, WAClientConfig, WAClientFactory, WALink, WAMessage } from "@novaclaw/core/messenger/driver/whatsapp-baileys"
 import { WAClientError } from "@novaclaw/core/messenger/driver/whatsapp-baileys"
 
 // The Baileys socket factory — the ONLY file that imports @whiskeysockets/baileys (the ToS-gray,
@@ -22,9 +23,28 @@ import { WAClientError } from "@novaclaw/core/messenger/driver/whatsapp-baileys"
 // drives. All WhatsApp-specific realities are handled here so the policy half stays pure:
 //   - in-memory, serializable auth ({creds,keys} via BufferJSON) → one session string, our credential
 //     model (mutated in place by Baileys; serialize() snapshots the live state);
-//   - pairing-code linking (requestPairingCode) — the friendly headless path (no QR to render);
+//   - QR linking: rendering each rotating QR to a scannable PNG and keeping a fresh one on screen
+//     (see "the rotating QR" below) — plus pairing-code linking (requestPairingCode) as the
+//     phone-number alternative;
 //   - the post-link `restartRequired` (515) reconnect Baileys demands after the first pairing;
 //   - push (messages.upsert) → pull (the seam's batch-await) buffering.
+//
+// ⚠️ THE ROTATING QR — the whole reason this is more than "show the first qr". WhatsApp hands the
+// socket ONE `pair-device` stanza carrying a small BATCH of pairing refs, and Baileys pops one ref
+// per QR: the first lives ~60s, each next ~20s (Socket/socket.js `genPairQR`). Consequences we must
+// honour, because getting any of them wrong looks identical to the user — they scan and nothing
+// happens:
+//   1. NEVER raise `qrTimeout`. It is not "how long the user gets"; it is how long we sit on a ref
+//      the SERVER already expired. A 120s timeout means ~100s of showing a dead code.
+//   2. Publish EVERY rotation, not just the first (`currentLink()` is read by the login wizard on a
+//      timer), and render each one — a raw ref payload is unscannable text.
+//   3. When the batch runs out Baileys ends the socket (`QR refs attempts ended` → timedOut). That
+//      is routine, not a failure: reconnect for a fresh batch so the wizard never dead-ends.
+
+// Baileys' own logger is silenced (below), so these few lines are the ONLY window into the link
+// lifecycle — and linking is the step most likely to need diagnosing from a user's report ("I
+// scanned and nothing happened"). One line per QR rotation and per reconnect, no payloads.
+const trace = (message: string) => console.log(`[whatsapp] ${message}`)
 
 // A no-op ILogger (Baileys requires one; we don't want its noise on our stdout).
 const silentLogger: any = {
@@ -106,12 +126,34 @@ export const factory: WAClientFactory = async (config: WAClientConfig): Promise<
     }
   })
 
-  // qr latch (QR-mode linking): resolves with the first QR string Baileys emits.
-  let onQr: ((qr: string) => void) | undefined
-  let firstQr: string | undefined
-  const qrPromise = new Promise<string>((resolve) => {
-    onQr = resolve
+  // The LIVE link (see "the rotating QR" above). `link` always holds the newest rendered code;
+  // `firstLink` is what startLink() awaits. Rendering is async, so a rotation lands a beat after the
+  // event — the wizard picks it up on its next poll. A generation counter drops a slow render whose
+  // QR has already been superseded, so `link` can never go backwards to an expired code.
+  let link: WALink = {}
+  let onFirstLink: ((value: WALink) => void) | undefined
+  const firstLink = new Promise<WALink>((resolve) => {
+    onFirstLink = resolve
   })
+  let generation = 0
+  const publishQr = (qr: string) => {
+    const mine = ++generation
+    const settle = (value: WALink) => {
+      if (mine !== generation) return
+      link = value
+      trace(`qr #${mine}${value.qrImage === undefined ? " (render failed)" : ""}`)
+      onFirstLink?.(value)
+      onFirstLink = undefined
+    }
+    // Error-correction "L": the payload is long, and the fewer modules a fixed-width code has the
+    // bigger each square renders — which is what a phone camera actually needs. A screen is a clean
+    // scanning surface, so the redundancy higher levels buy is wasted here. `margin: 4` is the QR
+    // spec's quiet zone in modules — do not shrink it to win pixels; scanners rely on it to find the
+    // symbol at all, and a code that fails to acquire looks exactly like a code that expired.
+    void QRCode.toDataURL(qr, { margin: 4, width: 320, errorCorrectionLevel: "L" })
+      .then((qrImage) => settle({ qr, qrImage }))
+      .catch(() => settle({ qr })) // render failed → publish the payload anyway, honestly unscannable
+  }
 
   // connecting latch: pairing-code requests must wait until the ws is establishing.
   let markConnecting!: () => void
@@ -153,12 +195,23 @@ export const factory: WAClientFactory = async (config: WAClientConfig): Promise<
     .then((info) => info.version)
     .catch(() => undefined)
 
+  // ⚠️ Socket GENERATIONS. Ending a socket makes it emit its own `close`, and a dying socket keeps
+  // emitting for a while after — so a handler that blindly acts on `sock` will, one tick later, end
+  // the healthy REPLACEMENT it just spawned. (Observed live: the QR froze a few seconds in, because
+  // the dead socket's trailing close killed its successor and the survivors fought over `sock`.)
+  // Every socket claims a sequence number at birth and ignores everything once superseded.
+  let sequence = 0
+
   const createSocket = () => {
+    const mine = ++sequence
+    const current = () => mine === sequence
     const socket = makeWASocket({
       auth: state,
       browser: Browsers.ubuntu("Chrome"),
       markOnlineOnConnect: false,
       syncFullHistory: false,
+      // NO qrTimeout override — Baileys' 60s-then-20s cadence tracks WhatsApp's own ref expiry.
+      // Raising it does not give the user longer, it just shows a code the server already retired.
       logger: silentLogger,
       ...(version ? { version } : {}),
     })
@@ -166,11 +219,9 @@ export const factory: WAClientFactory = async (config: WAClientConfig): Promise<
       /* creds mutate in place; serialize() reads the live object — nothing to persist here */
     })
     socket.ev.on("connection.update", (update) => {
+      if (!current()) return // a superseded socket's trailing events are noise
       if (update.connection === "connecting") markConnecting()
-      if (update.qr !== undefined && firstQr === undefined) {
-        firstQr = update.qr
-        onQr?.(update.qr)
-      }
+      if (update.qr !== undefined) publishQr(update.qr) // EVERY rotation, not just the first
       if (update.connection === "open") onOpen()
       if (update.connection === "close") {
         if (intentionalClose) return
@@ -180,13 +231,19 @@ export const factory: WAClientFactory = async (config: WAClientConfig): Promise<
           onOpenFail(error)
           pullFail?.(error)
         } else {
-          // restartRequired (515, expected right after the first pairing) or a transient drop →
-          // recreate the socket with the now-saved creds and keep waiting for a stable `open`.
-          recreate()
+          // restartRequired (515, expected right after the first pairing) → reconnect at once.
+          // timedOut is the routine end of a QR ref batch mid-scan — near-immediate, because the
+          // user is watching a dead code until the next one lands. Anything else waits a beat so a
+          // persistent fault can't spin us.
+          trace(`close (${statusCode ?? "?"}) → reconnecting`)
+          recreate(
+            statusCode === DisconnectReason.restartRequired ? 0 : statusCode === DisconnectReason.timedOut ? 250 : 1500,
+          )
         }
       }
     })
     socket.ev.on("messages.upsert", (event) => {
+      if (!current()) return
       if (event.type !== "notify") return // new arrivals only, not a history backfill
       for (const message of event.messages) {
         const normalized = normalize(message)
@@ -200,13 +257,20 @@ export const factory: WAClientFactory = async (config: WAClientConfig): Promise<
     return socket
   }
 
-  const recreate = () => {
+  const recreate = (delayMs: number) => {
+    sequence++ // retire the outgoing socket FIRST: everything it emits from here on is ignored
     try {
       sock.end(undefined)
     } catch {
       /* already down */
     }
-    sock = createSocket()
+    const spawn = () => {
+      if (intentionalClose) return
+      sock = createSocket()
+      trace("reconnected")
+    }
+    if (delayMs <= 0) spawn()
+    else setTimeout(spawn, delayMs).unref?.()
   }
 
   sock = createSocket()
@@ -224,10 +288,12 @@ export const factory: WAClientFactory = async (config: WAClientConfig): Promise<
         await Promise.race([connecting, new Promise<void>((resolve) => setTimeout(resolve, 4000))])
         const digits = phone.replace(/[^0-9]/g, "")
         const code = await sock.requestPairingCode(digits)
-        return { pairingCode: code }
+        link = { pairingCode: code } // fixed for the attempt — unlike a QR, it does not rotate
+        return link
       }
-      return { qr: await qrPromise }
+      return firstLink
     },
+    currentLink: () => link,
     waitForOpen: () => whenOpen,
     exportAuth: async () => serialize(),
     pull: async () => {

@@ -4579,6 +4579,7 @@ export type MessengerDriverMeta = {
   auth: MessengerAuth
   settings: Array<IntegrationTextPrompt | IntegrationSelectPrompt>
   loginPrompts?: Array<IntegrationTextPrompt | IntegrationSelectPrompt>
+  loginStyle?: "code" | "browser"
   capabilities: MessengerCapabilities
 }
 
@@ -4624,6 +4625,18 @@ export type MessengerBindingInfo = {
 export type MessengerLoginAttempt = {
   attemptID: string
   instructions: string
+  qrImage?: string
+  time: {
+    created: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    expires: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }
+}
+
+export type MessengerLoginStatus = {
+  status: "pending" | "complete" | "failed" | "expired"
+  message?: string
+  instructions?: string
+  qrImage?: string
   time: {
     created: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
     expires: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
@@ -12490,9 +12503,9 @@ export type V2MessengerLoginStatusError = V2MessengerLoginStatusErrors[keyof V2M
 
 export type V2MessengerLoginStatusResponses = {
   /**
-   * Integration.AttemptStatus
+   * Messenger.LoginStatus
    */
-  200: IntegrationAttemptStatus
+  200: MessengerLoginStatus
 }
 
 export type V2MessengerLoginStatusResponse = V2MessengerLoginStatusResponses[keyof V2MessengerLoginStatusResponses]

@@ -13857,11 +13857,11 @@
         "security": [],
         "responses": {
           "200": {
-            "description": "Integration.AttemptStatus",
+            "description": "Messenger.LoginStatus",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/IntegrationAttemptStatus"
+                  "$ref": "#/components/schemas/MessengerLoginStatus"
                 }
               }
             }
@@ -13894,7 +13894,7 @@
             }
           }
         },
-        "description": "Retrieve the state of a pending or recently finished messenger login attempt.",
+        "description": "Retrieve the state of a pending or recently finished messenger login attempt, including the step's CURRENT instructions and scannable image — poll this while an attempt is pending, because providers may rotate what the user must act on (WhatsApp mints a fresh linked-device QR every ~20s).",
         "summary": "Messenger login attempt status",
         "x-codeSamples": [
           {
@@ -30838,6 +30838,10 @@
               ]
             }
           },
+          "loginStyle": {
+            "type": "string",
+            "enum": ["code", "browser"]
+          },
           "capabilities": {
             "$ref": "#/components/schemas/MessengerCapabilities"
           }
@@ -30980,6 +30984,9 @@
           "instructions": {
             "type": "string"
           },
+          "qrImage": {
+            "type": "string"
+          },
           "time": {
             "type": "object",
             "properties": {
@@ -31035,6 +31042,79 @@
           }
         },
         "required": ["attemptID", "instructions", "time"],
+        "additionalProperties": false
+      },
+      "MessengerLoginStatus": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["pending", "complete", "failed", "expired"]
+          },
+          "message": {
+            "type": "string"
+          },
+          "instructions": {
+            "type": "string"
+          },
+          "qrImage": {
+            "type": "string"
+          },
+          "time": {
+            "type": "object",
+            "properties": {
+              "created": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              },
+              "expires": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              }
+            },
+            "required": ["created", "expires"],
+            "additionalProperties": false
+          }
+        },
+        "required": ["status", "time"],
         "additionalProperties": false
       },
       "PermissionV2Request": {

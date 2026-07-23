@@ -5,6 +5,7 @@ import { Integration } from "@novaclaw/schema/integration"
 import { Messenger } from "@novaclaw/schema/messenger"
 import { Credential } from "../credential"
 import { makeGlobalNode } from "../effect/app-node"
+import type { LoginProgress } from "./driver"
 import { MessengerDrivers } from "./drivers"
 import { MessengerStore } from "./store"
 
@@ -28,7 +29,9 @@ export interface Interface {
     readonly accountID: Messenger.AccountID
     readonly inputs: Record<string, string>
   }) => Effect.Effect<Messenger.LoginAttempt, LoginError>
-  readonly status: (attemptID: Messenger.LoginAttemptID) => Effect.Effect<Integration.AttemptStatus, LoginError>
+  /** The attempt's live state — including the step's CURRENT instructions/QR for a driver whose
+   *  step rotates (WhatsApp's linked-device QR expires every ~20s). The wizard polls this. */
+  readonly status: (attemptID: Messenger.LoginAttemptID) => Effect.Effect<Messenger.LoginStatus, LoginError>
   /** Completes the attempt: stores the session credential and points the account at it. The
    *  CALLER owns the follow-up `gateway.reload()` (login is deliberately gateway-agnostic). */
   readonly complete: (input: {
@@ -52,6 +55,9 @@ type PendingAttempt = {
   driverID: string
   label: string
   complete: (code: string) => Effect.Effect<{ session: string }, unknown>
+  /** The driver's live step presentation, when it rotates (WhatsApp QR); absent = `instructions` stands. */
+  progress: (() => Effect.Effect<LoginProgress>) | undefined
+  instructions: string
   scope: Scope.Closeable
   time: AttemptTime
 }
@@ -146,12 +152,19 @@ export const layer = Layer.effect(
               driverID: account.driverID,
               label: account.label,
               complete: pending.complete,
+              progress: pending.progress,
+              instructions: pending.instructions,
               scope: attemptScope,
               time,
             }),
           ),
         )
-        return new Messenger.LoginAttempt({ attemptID, instructions: pending.instructions, time })
+        return new Messenger.LoginAttempt({
+          attemptID,
+          instructions: pending.instructions,
+          ...(pending.qrImage !== undefined ? { qrImage: pending.qrImage } : {}),
+          time,
+        })
       }),
 
       status: Effect.fn("MessengerLogin.status")(function* (attemptID) {
@@ -159,8 +172,20 @@ export const layer = Layer.effect(
         if (attempt === undefined)
           return yield* Effect.fail(new LoginError({ message: "Unknown or expired login attempt.", retryable: false }))
         if (attempt.status === "failed")
-          return { status: "failed", message: attempt.message ?? "Login failed.", time: attempt.time } as const
-        return { status: attempt.status, time: attempt.time } as const
+          return new Messenger.LoginStatus({ status: "failed", message: attempt.message ?? "Login failed.", time: attempt.time })
+        if (attempt.status !== "pending") return new Messenger.LoginStatus({ status: attempt.status, time: attempt.time })
+        // Pending: re-ask the driver what the user should be looking at NOW. A rotating step (the
+        // WhatsApp QR) has almost certainly changed since begin(); a driver without `progress` keeps
+        // its original instructions. A progress failure must never break polling — fall back.
+        const live = attempt.progress
+          ? yield* attempt.progress().pipe(Effect.catchCause(() => Effect.succeed({ instructions: attempt.instructions } as LoginProgress)))
+          : ({ instructions: attempt.instructions } satisfies LoginProgress)
+        return new Messenger.LoginStatus({
+          status: "pending",
+          instructions: live.instructions,
+          ...(live.qrImage !== undefined ? { qrImage: live.qrImage } : {}),
+          time: attempt.time,
+        })
       }),
 
       complete: Effect.fn("MessengerLogin.complete")(function* (input) {

@@ -153,9 +153,21 @@ export interface ConnectContext {
  *  gateway will pass back as `ConnectContext.secret` on every reconnect. The pending state is a
  *  scoped resource — the provider ties the code to the live connection that requested it, so the
  *  attempt's scope must stay open until complete/cancel/expiry. */
-export interface LoginPending {
-  /** Human instructions for the code step ("Telegram sent a code to your app — enter it here"). */
+/** What the user must act on RIGHT NOW. Most drivers hand this back once at `begin` and it stands
+ *  for the whole attempt; a driver whose step rotates reports it again through `LoginPending.progress`. */
+export interface LoginProgress {
   readonly instructions: string
+  /** A scannable image as a `data:image/png;base64,…` URL, when the step is scanned not typed. The
+   *  driver renders it (the raw payload is unscannable text a human cannot act on). */
+  readonly qrImage?: string
+}
+
+export interface LoginPending extends LoginProgress {
+  /** The step's CURRENT presentation, for drivers whose step expires while the user is acting on it
+   *  — WhatsApp mints a fresh linked-device QR every ~20s and a stale one silently will not scan.
+   *  Absent = the `begin` instructions stand for the whole attempt (every typed-code driver). Must
+   *  be cheap and side-effect-free: the wizard polls it on a timer. */
+  readonly progress?: () => Effect.Effect<LoginProgress>
   readonly complete: (code: string) => Effect.Effect<{ session: string }, LoginCodeError | ChallengeError>
 }
 

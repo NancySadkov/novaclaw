@@ -18,6 +18,7 @@ import {
   messengerLoginBegin,
   messengerLoginCancel,
   messengerLoginComplete,
+  messengerLoginStatus,
   messengerMintPairing,
   messengerRemoveAccount,
   messengerUpdateAccount,
@@ -335,12 +336,21 @@ const DialogMessengerLogin: Component<{
   const [code, setCode] = createSignal("")
   const [busy, setBusy] = createSignal(false)
   const [error, setError] = createSignal<string>()
+  // The step's LIVE presentation. Some providers rotate what the user must act on while they act on
+  // it — WhatsApp mints a fresh linked-device QR every ~20s and an expired one simply will not scan,
+  // with no feedback on the phone. So what `begin` returned is only the first frame; the poll below
+  // keeps this current and the dialog renders from here.
+  const [live, setLive] = createSignal<{ instructions: string; qrImage?: string }>()
+  const instructions = () => live()?.instructions ?? attempt()?.instructions ?? ""
+  const qrImage = () => live()?.qrImage ?? attempt()?.qrImage
 
   const begin = async () => {
     setBusy(true)
     setError(undefined)
     try {
-      setAttempt(await messengerLoginBegin(sdk().server.http, props.account.id, inputs()))
+      const started = await messengerLoginBegin(sdk().server.http, props.account.id, inputs())
+      setAttempt(started)
+      setLive({ instructions: started.instructions, ...(started.qrImage ? { qrImage: started.qrImage } : {}) })
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause))
     } finally {
@@ -382,6 +392,7 @@ const DialogMessengerLogin: Component<{
         // Terminal: back to the inputs step so the user can restart cleanly.
         setError(cause instanceof Error ? cause.message : String(cause))
         setAttempt(undefined)
+        setLive(undefined)
         setCode("")
       }
     } finally {
@@ -392,12 +403,20 @@ const DialogMessengerLogin: Component<{
   const complete = () => submit()
 
   // Browser flow: once the attempt exists, poll completion until it resolves or terminally fails. A
-  // one-in-flight latch avoids overlapping completes (the server rejects concurrent ones).
+  // one-in-flight latch avoids overlapping completes (the server rejects concurrent ones). The same
+  // tick refreshes the step's presentation first, so a rotating QR on screen is never the expired
+  // one. A status failure is not fatal — keep polling completion regardless.
   let polling = false
   const pollOnce = async () => {
     if (polling) return
     polling = true
     try {
+      const pending = attempt()
+      if (pending) {
+        const status = await messengerLoginStatus(sdk().server.http, pending.attemptID).catch(() => undefined)
+        if (status?.status === "pending" && status.instructions)
+          setLive({ instructions: status.instructions, ...(status.qrImage ? { qrImage: status.qrImage } : {}) })
+      }
       await submit({ silent: true })
     } finally {
       polling = false
@@ -450,17 +469,36 @@ const DialogMessengerLogin: Component<{
               </>
             }
           >
-            {(pending) => (
+            {(_pending) => (
               <div class="flex w-full min-w-0 flex-col gap-2">
                 <p class="settings-v2-field-description" style={{ "white-space": "pre-line" }}>
-                  {pending().instructions}
+                  {instructions()}
                 </p>
+                {/* A scanned step (WhatsApp's linked-device QR). The PNG carries its own white
+                    quiet-zone, so it stays scannable in either theme without a themed wrapper. */}
+                <Show when={qrImage()}>
+                  {(image) => (
+                    <div class="flex w-full justify-center py-1">
+                      <img
+                        src={image()}
+                        alt="QR code to scan in WhatsApp → Linked Devices"
+                        width={320}
+                        height={320}
+                        class="h-auto w-full max-w-[280px] rounded-md"
+                      />
+                    </div>
+                  )}
+                </Show>
                 <Show
                   when={!isBrowser()}
                   fallback={
                     // Browser flow: nothing to type — we poll while the sign-in finishes. (en-only; rides
                     // the next localization pass, like the driver-supplied instructions above.)
-                    <p class="settings-v2-field-description">Waiting for you to finish signing in in your browser…</p>
+                    <p class="settings-v2-field-description">
+                      {qrImage()
+                        ? "Waiting for you to scan the code with your phone…"
+                        : "Waiting for you to finish signing in in your browser…"}
+                    </p>
                   }
                 >
                   <TextInputV2

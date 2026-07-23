@@ -2,7 +2,7 @@ import { describe, expect } from "bun:test"
 import { Duration, Effect, Stream } from "effect"
 import type { Messenger } from "@novaclaw/schema/messenger"
 import { WhatsAppBaileysDriver } from "@novaclaw/core/messenger/driver/whatsapp-baileys"
-import type { WAClient, WAMessage } from "@novaclaw/core/messenger/driver/whatsapp-baileys"
+import type { WAClient, WALink, WAMessage } from "@novaclaw/core/messenger/driver/whatsapp-baileys"
 import type { ChatSnapshot, ConnectContext, OutboundFile } from "@novaclaw/core/messenger/driver"
 import { WAClientError } from "@novaclaw/core/messenger/driver/whatsapp-baileys"
 import { it } from "./lib/effect"
@@ -26,6 +26,8 @@ const makeFakeWA = () => {
     closed: false,
     exported: 0,
     linkPhone: undefined as string | undefined,
+    /** The live link the socket publishes — reassigned to simulate a QR rotation. */
+    link: {} as WALink,
     meThrows: undefined as WAClientError | undefined,
   }
   let resolveOpen!: () => void
@@ -42,8 +44,10 @@ const makeFakeWA = () => {
     },
     startLink: async (phone) => {
       state.linkPhone = phone
-      return phone ? { pairingCode: "ABCD-1234" } : { qr: "QR-BLOB-DATA" }
+      state.link = phone ? { pairingCode: "ABCD-1234" } : { qr: "QR-BLOB-DATA" }
+      return state.link
     },
+    currentLink: () => state.link,
     waitForOpen: () => openPromise,
     exportAuth: async () => {
       state.exported += 1
@@ -113,6 +117,16 @@ describe("WhatsAppBaileys pure policy", () => {
       expect(WhatsAppBaileysDriver.linkInstructions({ pairingCode: "ABCD-1234" })).toContain("ABCD-1234")
     }),
   )
+
+  it.effect("a rendered QR instructs the user about the image, not the raw payload", () =>
+    Effect.sync(() => {
+      const rendered = WhatsAppBaileysDriver.linkInstructions({ qr: "RAW-PAYLOAD", qrImage: "data:image/png;base64,AAA" })
+      // The image is the instruction; leaking the unscannable payload into the text would only
+      // confuse a lay user — and it must say the code refreshes, so a re-render doesn't read as a fault.
+      expect(rendered).not.toContain("RAW-PAYLOAD")
+      expect(rendered).toContain("refreshes")
+    }),
+  )
 })
 
 // ── login (out-of-band QR/pairing → open) ────────────────────────────────────────────────────────
@@ -139,6 +153,28 @@ describe("WhatsAppBaileys login", () => {
           const done = yield* pending.complete("")
           expect(done.session).toBe("WA-SESSION-BLOB")
           expect(fake.state.exported).toBe(1)
+        }),
+      )
+    }),
+  )
+
+  it.live("progress() republishes the ROTATED QR, so the wizard never shows an expired code", () =>
+    Effect.gen(function* () {
+      const fake = makeFakeWA()
+      const driver = WhatsAppBaileysDriver.make(factoryFor(fake))
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const pending = yield* driver.login!.begin({ account, inputs: {} })
+          expect(pending.progress).toBeDefined()
+          const first = yield* pending.progress!()
+          expect(first.instructions).toContain("QR-BLOB-DATA")
+          expect(first.qrImage).toBeUndefined()
+
+          // WhatsApp expires the ref ~20s in and Baileys emits the next one; the socket re-renders.
+          fake.state.link = { qr: "QR-ROUND-2", qrImage: "data:image/png;base64,ROUND2" }
+          const rotated = yield* pending.progress!()
+          expect(rotated.qrImage).toBe("data:image/png;base64,ROUND2")
+          expect(rotated.instructions).not.toContain("QR-BLOB-DATA")
         }),
       )
     }),

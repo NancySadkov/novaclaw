@@ -139,6 +139,25 @@ export class LoginAttempt extends Schema.Class<LoginAttempt>("Messenger.LoginAtt
   attemptID: LoginAttemptID,
   /** Human instructions for the next step ("Telegram sent a code to your app — enter it here"). */
   instructions: Schema.String,
+  /** A scannable image (a `data:image/png;base64,…` URL) when the step is scanned, not typed —
+   *  WhatsApp's linked-device QR. ROTATES: re-read it from the status route while the step is open
+   *  (see `LoginStatus.qrImage`); the one here is only the first frame. */
+  qrImage: optional(Schema.String),
+  time: Schema.Struct({ created: Schema.Number, expires: Schema.Number }),
+}) {}
+
+/** The live state of a login attempt. Mirrors `Integration.AttemptStatus` (same status vocabulary)
+ *  but carries the step's CURRENT presentation too, because some providers rotate it while the user
+ *  is still acting on it: WhatsApp mints a fresh linked-device QR every ~20s and a stale one simply
+ *  will not scan. The wizard polls this route and re-renders, so what's on screen is always live. */
+export class LoginStatus extends Schema.Class<LoginStatus>("Messenger.LoginStatus")({
+  status: Schema.Literals(["pending", "complete", "failed", "expired"]),
+  /** Failure detail — present only for `failed`. */
+  message: optional(Schema.String),
+  /** The step's current human instructions (a pending attempt whose driver reports progress). */
+  instructions: optional(Schema.String),
+  /** The step's current scannable image, refreshed on every rotation. */
+  qrImage: optional(Schema.String),
   time: Schema.Struct({ created: Schema.Number, expires: Schema.Number }),
 }) {}
 

@@ -51,6 +51,19 @@ export interface AccountWithStatus {
 export interface LoginAttempt {
   readonly attemptID: string
   readonly instructions: string
+  /** A scannable `data:image/png;base64,…` code, when the step is scanned rather than typed. */
+  readonly qrImage?: string
+  readonly time: { readonly created: number; readonly expires: number }
+}
+
+/** The live state of an attempt. `instructions`/`qrImage` are the step's CURRENT presentation —
+ *  WhatsApp rotates its linked-device QR every ~20s and a stale one silently will not scan, so the
+ *  wizard polls this and re-renders rather than trusting what `begin` handed back. */
+export interface LoginStatus {
+  readonly status: "pending" | "complete" | "failed" | "expired"
+  readonly message?: string
+  readonly instructions?: string
+  readonly qrImage?: string
   readonly time: { readonly created: number; readonly expires: number }
 }
 
@@ -209,6 +222,10 @@ export function messengerLoginBegin(
   inputs: Record<string, string>,
 ) {
   return call<LoginAttempt>(server, "POST", `api/messenger/account/${accountID}/login`, { inputs })
+}
+
+export function messengerLoginStatus(server: ServerConnection.HttpBase, attemptID: string) {
+  return call<LoginStatus>(server, "GET", `api/messenger/login/${attemptID}`)
 }
 
 export function messengerLoginComplete(server: ServerConnection.HttpBase, attemptID: string, code: string) {

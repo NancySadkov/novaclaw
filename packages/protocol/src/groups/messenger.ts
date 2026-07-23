@@ -1,4 +1,3 @@
-import { Integration } from "@novaclaw/schema/integration"
 import { Messenger } from "@novaclaw/schema/messenger"
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
@@ -192,13 +191,14 @@ export const MessengerGroup = HttpApiGroup.make("server.messenger")
   .add(
     HttpApiEndpoint.get("messenger.login.status", "/api/messenger/login/:attemptID", {
       params: { attemptID: Messenger.LoginAttemptID },
-      success: Integration.AttemptStatus,
+      success: Messenger.LoginStatus,
       error: InvalidRequestError,
     }).annotateMerge(
       OpenApi.annotations({
         identifier: "v2.messenger.login.status",
         summary: "Messenger login attempt status",
-        description: "Retrieve the state of a pending or recently finished messenger login attempt.",
+        description:
+          "Retrieve the state of a pending or recently finished messenger login attempt, including the step's CURRENT instructions and scannable image — poll this while an attempt is pending, because providers may rotate what the user must act on (WhatsApp mints a fresh linked-device QR every ~20s).",
       }),
     ),
   )

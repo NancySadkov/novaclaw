@@ -6576,7 +6576,7 @@ export class Login extends HeyApiClient {
   /**
    * Messenger login attempt status
    *
-   * Retrieve the state of a pending or recently finished messenger login attempt.
+   * Retrieve the state of a pending or recently finished messenger login attempt, including the step's CURRENT instructions and scannable image — poll this while an attempt is pending, because providers may rotate what the user must act on (WhatsApp mints a fresh linked-device QR every ~20s).
    */
   public status<ThrowOnError extends boolean = false>(
     parameters: {
