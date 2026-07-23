@@ -35,6 +35,12 @@ import type { LoopbackFactory } from "../oauth-loopback"
 const WWW = "https://www.reddit.com"
 const OAUTH = "https://oauth.reddit.com"
 
+// ⚠️ Reddit matches the OAuth redirect URI EXACTLY (unlike Google, which ignores the loopback
+// port for Desktop clients). So the port is FIXED and the URI is a single constant the user must
+// register verbatim — the setup recipe below tells them this exact string. Change one, change both.
+export const LOOPBACK_PORT = 8080
+export const REDIRECT_URI = `http://127.0.0.1:${LOOPBACK_PORT}`
+
 // Everything this driver actually calls, and nothing more (Reddit's grant is moderation-scoped).
 export const SCOPES = "identity read submit privatemessages modposts modcontributors modmail modlog edit"
 
@@ -364,7 +370,9 @@ export const make = (fetchImpl: FetchLike, loopbackFactory: LoopbackFactory, ope
       Effect.gen(function* () {
         const config = yield* parseConfig(account)
         const state = crypto.randomUUID()
-        const loopback = yield* loopbackFactory({ expectedState: state, provider: "Reddit" })
+        // Fixed port + exact URI: Reddit rejects a redirect that doesn't match what was registered,
+        // so this must equal the string the setup recipe told the user to enter (REDIRECT_URI).
+        const loopback = yield* loopbackFactory({ expectedState: state, provider: "Reddit", port: LOOPBACK_PORT, redirectUri: REDIRECT_URI })
         // `duration=permanent` is what earns a refresh token — without it the login dies in an hour.
         const url =
           `${WWW}/api/v1/authorize?` +
@@ -705,11 +713,12 @@ export const make = (fetchImpl: FetchLike, loopbackFactory: LoopbackFactory, ope
         url: "https://www.reddit.com/prefs/apps",
         urlLabel: "Open your Reddit app settings",
         steps: [
-          "Reddit requires approval before an app may use its data API, and it asks what stops you using its hosted platform (Devvit). The honest answer: NovaClaw runs on your own machine under your own account, so a Reddit-hosted backend cannot work. Request access first — the rest of this waits on it.",
-          "At reddit.com/prefs/apps press 'create another app...', choose 'installed app' (no secret to leak), and set the redirect URI to http://127.0.0.1:8080 — NovaClaw catches the redirect locally.",
-          "Copy the client ID (the short string under the app name, NOT the secret) into the field below, along with the bot account's username and the subreddit it moderates.",
-          "Make that account a moderator of the subreddit with at least the posts, access and mail permissions, and accept the invite from the account itself.",
-          "Press Add & log in: a browser opens, you approve NovaClaw as that account, and the sign-in is stored. Reddit's rate limit is per app, which is why you use your own client ID rather than a shared one.",
+          "Sign in as the account that will moderate (or a dedicated bot account), then at reddit.com/prefs/apps press 'create another app…'.",
+          "Choose 'installed app' (it has no secret to leak) and set the redirect URI to EXACTLY http://127.0.0.1:8080 — Reddit matches it character for character, and NovaClaw catches the redirect on that port locally.",
+          "Copy the client ID — the short string just under the app's name, NOT the secret — into the field below, with the bot account's username and the subreddit it moderates.",
+          "Make that account a moderator of the subreddit with at least the Posts, Access and Mail permissions, and accept the mod invite from the account itself.",
+          "Press Add & log in: a browser opens, you approve NovaClaw as that account, and the sign-in is stored. The rate limit is per app, which is why you use your own client ID rather than a shared one.",
+          "Keep the User-Agent honest (NovaClaw sends your username in it — Reddit's rule) and, if Reddit later asks you to register the app for a label, do so; creating the app is enough to start.",
         ],
       },
       capabilities: CAPS,

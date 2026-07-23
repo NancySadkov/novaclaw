@@ -32,6 +32,14 @@ export interface LoopbackParams {
   /** Reject waitForCode if no redirect arrives in this many ms (default 5 min; the attempt scope
    *  also caps the whole login at 10 min). */
   readonly timeoutMs?: number
+  /** A FIXED loopback port, for providers that match the redirect URI EXACTLY (Reddit) instead of
+   *  ignoring the port like Google does for Desktop clients. When set, the URI is deterministic so
+   *  the user can register it up front; a busy port fails legibly instead of silently mismatching. */
+  readonly port?: number
+  /** The exact redirect URI string to advertise, when it must match a value registered by hand
+   *  (Reddit). Defaults to `http://127.0.0.1:<bound port>/`. Whatever is passed here is what the
+   *  user must have registered — keep it byte-identical to the setup instructions. */
+  readonly redirectUri?: string
 }
 
 export type LoopbackFactory = (params: LoopbackParams) => Effect.Effect<Loopback, ConnectError, import("effect").Scope.Scope>
@@ -96,9 +104,18 @@ export const startLoopback: LoopbackFactory = (params) =>
           new Promise<ReturnType<typeof createServer>>((resolve, reject) => {
             const s = createServer(handler)
             s.once("error", reject)
-            s.listen(0, "127.0.0.1", () => resolve(s))
+            // Port 0 = an ephemeral port (Google ignores it); a fixed port is for providers that
+            // match the redirect URI exactly (Reddit) — see LoopbackParams.port.
+            s.listen(params.port ?? 0, "127.0.0.1", () => resolve(s))
           }),
-        catch: (error) => new ConnectError({ reason: `Could not start the local sign-in listener: ${String(error)}` }),
+        catch: (error) => {
+          const busy = (error as { code?: string })?.code === "EADDRINUSE" && params.port !== undefined
+          return new ConnectError({
+            reason: busy
+              ? `The sign-in port ${params.port} is already in use — close whatever is using it (another sign-in, or another app) and try again.`
+              : `Could not start the local sign-in listener: ${String(error)}`,
+          })
+        },
       }),
       (s) =>
         Effect.sync(() => {
@@ -119,7 +136,7 @@ export const startLoopback: LoopbackFactory = (params) =>
     const timer = setTimeout(() => rejectCode(new Error("Timed out waiting for the browser sign-in — try again.")), timeoutMs)
     yield* Effect.addFinalizer(() => Effect.sync(() => clearTimeout(timer)))
 
-    return { redirectUri: `http://127.0.0.1:${port}/`, waitForCode: codePromise }
+    return { redirectUri: params.redirectUri ?? `http://127.0.0.1:${port}/`, waitForCode: codePromise }
   })
 
 /** Best-effort: open the user's default browser at `url`. Failure is fine — the login instructions

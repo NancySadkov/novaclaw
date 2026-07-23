@@ -71,7 +71,10 @@ const makeFakeReddit = () => {
   return { state, fetchImpl }
 }
 
-const loopback = () => Effect.succeed({ redirectUri: "http://127.0.0.1:9999/", waitForCode: Promise.resolve("code-1") })
+// The fake echoes back whatever redirectUri the driver asked for — so a test can prove the driver
+// advertises the SAME string it told the user to register (Reddit matches it exactly).
+const loopback = (params?: { redirectUri?: string }) =>
+  Effect.succeed({ redirectUri: params?.redirectUri ?? "http://127.0.0.1:9999/", waitForCode: Promise.resolve("code-1") })
 const connect = (fake: ReturnType<typeof makeFakeReddit>, cursor?: unknown, onCursor?: (value: unknown) => void) =>
   RedditDriver.make(fake.fetchImpl, loopback as never, () => Effect.void, { pollIntervalMs: 50 }).connect({
     account: ACCOUNT,
@@ -334,7 +337,12 @@ describe("RedditDriver connection", () => {
     Effect.gen(function* () {
       const fake = makeFakeReddit()
       const opened: string[] = []
-      const driver = RedditDriver.make(fake.fetchImpl, loopback as never, (url) => Effect.sync(() => void opened.push(url)))
+      const loopbackParams: { port?: number; redirectUri?: string }[] = []
+      const capturingLoopback = (params: { port?: number; redirectUri?: string }) => {
+        loopbackParams.push(params)
+        return loopback(params)
+      }
+      const driver = RedditDriver.make(fake.fetchImpl, capturingLoopback as never, (url) => Effect.sync(() => void opened.push(url)))
       const session = yield* Effect.scoped(
         Effect.gen(function* () {
           const pending = yield* driver.login!.begin({ account: ACCOUNT, inputs: {} })
@@ -355,8 +363,14 @@ describe("RedditDriver connection", () => {
       expect(url.searchParams.get("response_type")).toBe("code") // implicit grants can't be permanent
       expect(url.searchParams.get("client_id")).toBe("cid")
       expect(url.searchParams.get("scope")).toContain("modposts")
+      // ⚠️ Reddit matches the redirect URI EXACTLY. The driver must request the fixed port and the
+      // canonical URI the setup recipe told the user to register — a random port would fail at the
+      // browser every time. The authorize link and the token exchange must carry that same string.
+      expect(loopbackParams[0]?.port).toBe(RedditDriver.LOOPBACK_PORT)
+      expect(loopbackParams[0]?.redirectUri).toBe(RedditDriver.REDIRECT_URI)
+      expect(url.searchParams.get("redirect_uri")).toBe(RedditDriver.REDIRECT_URI)
       const exchange = fake.state.calls.find((call) => call.url.includes("access_token"))
-      expect(exchange?.form).toMatchObject({ grant_type: "authorization_code", code: "code-1" })
+      expect(exchange?.form).toMatchObject({ grant_type: "authorization_code", code: "code-1", redirect_uri: RedditDriver.REDIRECT_URI })
     }),
   )
 
