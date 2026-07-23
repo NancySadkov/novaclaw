@@ -4,7 +4,7 @@ import { DividerV2 } from "@novaclaw/ui/v2/divider-v2"
 import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { useDialog } from "@novaclaw/ui/context/dialog"
-import { type Component, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js"
+import { type Component, createEffect, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js"
 import { useConfirm } from "@/components/dialog-confirm"
 import { useLanguage } from "@/context/language"
 import { useServerSDK } from "@/context/server-sdk"
@@ -348,11 +348,21 @@ const DialogMessengerLogin: Component<{
     }
   }
 
-  const complete = async () => {
+  // "browser" login (Gmail's Sign in with Google): NovaClaw opens the browser and the loopback
+  // catches the redirect server-side, so there is no code to type — the wizard just polls complete()
+  // until it resolves. "code" logins (Telegram SMS, Outlook device-code) keep the typed-code step.
+  const isBrowser = () => props.driver.loginStyle === "browser"
+
+  // One completion path. `silent` (the browser auto-poll) suppresses the busy spinner and the
+  // "still waiting" error so a normal wait doesn't flash red on every poll.
+  const submit = async (options?: { silent?: boolean }) => {
     const pending = attempt()
     if (!pending) return
-    setBusy(true)
-    setError(undefined)
+    const silent = options?.silent ?? false
+    if (!silent) {
+      setBusy(true)
+      setError(undefined)
+    }
     try {
       await messengerLoginComplete(sdk().server.http, pending.attemptID, code())
       // The server stored the session credential and reconnected the account.
@@ -362,9 +372,12 @@ const DialogMessengerLogin: Component<{
       props.onDone()
     } catch (cause) {
       if (cause instanceof MessengerApiError && cause.retryableLogin) {
-        // A mistyped code — the attempt is still alive, just re-ask.
-        setError(cause.message)
-        setCode("")
+        // Still pending: a mistyped code (code flow) or the browser sign-in not finished yet (browser
+        // flow, the normal case). Re-ask; stay quiet while auto-polling.
+        if (!silent) {
+          setError(cause.message)
+          setCode("")
+        }
       } else {
         // Terminal: back to the inputs step so the user can restart cleanly.
         setError(cause instanceof Error ? cause.message : String(cause))
@@ -372,9 +385,31 @@ const DialogMessengerLogin: Component<{
         setCode("")
       }
     } finally {
-      setBusy(false)
+      if (!silent) setBusy(false)
     }
   }
+
+  const complete = () => submit()
+
+  // Browser flow: once the attempt exists, poll completion until it resolves or terminally fails. A
+  // one-in-flight latch avoids overlapping completes (the server rejects concurrent ones).
+  let polling = false
+  const pollOnce = async () => {
+    if (polling) return
+    polling = true
+    try {
+      await submit({ silent: true })
+    } finally {
+      polling = false
+    }
+  }
+  createEffect(() => {
+    const pending = attempt()
+    if (!pending || !isBrowser()) return
+    void pollOnce()
+    const timer = setInterval(() => void pollOnce(), 2500)
+    onCleanup(() => clearInterval(timer))
+  })
 
   const cancel = () => {
     const pending = attempt()
@@ -417,21 +452,32 @@ const DialogMessengerLogin: Component<{
           >
             {(pending) => (
               <div class="flex w-full min-w-0 flex-col gap-2">
-                <p class="settings-v2-field-description">{pending().instructions}</p>
-                <TextInputV2
-                  type="text"
-                  appearance="large"
-                  class="!w-full self-stretch"
-                  value={code()}
-                  placeholder={language.t("settings.messengers.login.codePlaceholder")}
-                  disabled={busy()}
-                  spellcheck={false}
-                  autocomplete="one-time-code"
-                  onInput={(event) => setCode(event.currentTarget.value)}
-                  onKeyDown={(event: KeyboardEvent) => {
-                    if (event.key === "Enter" && !event.isComposing) void complete()
-                  }}
-                />
+                <p class="settings-v2-field-description" style={{ "white-space": "pre-line" }}>
+                  {pending().instructions}
+                </p>
+                <Show
+                  when={!isBrowser()}
+                  fallback={
+                    // Browser flow: nothing to type — we poll while the sign-in finishes. (en-only; rides
+                    // the next localization pass, like the driver-supplied instructions above.)
+                    <p class="settings-v2-field-description">Waiting for you to finish signing in in your browser…</p>
+                  }
+                >
+                  <TextInputV2
+                    type="text"
+                    appearance="large"
+                    class="!w-full self-stretch"
+                    value={code()}
+                    placeholder={language.t("settings.messengers.login.codePlaceholder")}
+                    disabled={busy()}
+                    spellcheck={false}
+                    autocomplete="one-time-code"
+                    onInput={(event) => setCode(event.currentTarget.value)}
+                    onKeyDown={(event: KeyboardEvent) => {
+                      if (event.key === "Enter" && !event.isComposing) void complete()
+                    }}
+                  />
+                </Show>
               </div>
             )}
           </Show>
@@ -452,9 +498,19 @@ const DialogMessengerLogin: Component<{
             </ButtonV2>
           }
         >
-          <ButtonV2 variant="contrast" disabled={busy() || code().trim().length === 0} onClick={() => void complete()}>
-            {busy() ? language.t("settings.messengers.login.checking") : language.t("settings.messengers.login.finish")}
-          </ButtonV2>
+          <Show
+            when={!isBrowser()}
+            fallback={
+              // Browser flow: no Finish button — completion is automatic once the browser sign-in lands.
+              <ButtonV2 variant="contrast" disabled={true}>
+                {language.t("settings.messengers.login.checking")}
+              </ButtonV2>
+            }
+          >
+            <ButtonV2 variant="contrast" disabled={busy() || code().trim().length === 0} onClick={() => void complete()}>
+              {busy() ? language.t("settings.messengers.login.checking") : language.t("settings.messengers.login.finish")}
+            </ButtonV2>
+          </Show>
         </Show>
       </DialogFooter>
     </Dialog>

@@ -22,6 +22,10 @@ export interface DriverMeta {
   readonly auth: "login" | "key" | "none"
   readonly settings: readonly DriverPrompt[]
   readonly loginPrompts?: readonly DriverPrompt[]
+  /** For `login` drivers: "code" (default) = the user types a code the provider sends; "browser" =
+   *  an auth-code + loopback flow (Gmail "Sign in with Google") where NovaClaw opens the browser and
+   *  catches the redirect — nothing to type, the wizard just waits + polls. */
+  readonly loginStyle?: "code" | "browser"
 }
 
 export type AccountStatus =

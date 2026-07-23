@@ -115,6 +115,12 @@ export const DriverMeta = Schema.Struct({
   auth: Auth,
   settings: Schema.Array(Integration.Prompt),
   loginPrompts: optional(Schema.Array(Integration.Prompt)),
+  /** For `login` drivers, how the mid-flow step is completed. "code" (the default when absent) = the
+   *  provider sends a code the user types back (Telegram SMS, Outlook device-code). "browser" = an
+   *  auth-code + loopback flow: NovaClaw opens the browser to the provider's consent page and catches
+   *  the 127.0.0.1 redirect, so there is NOTHING to type (Gmail's friendly "Sign in with Google").
+   *  The login wizard renders a waiting state instead of a code field for "browser". */
+  loginStyle: optional(Schema.Literals(["code", "browser"])),
   capabilities: Capabilities,
 }).annotate({ identifier: "Messenger.DriverMeta" })
 

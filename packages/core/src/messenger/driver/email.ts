@@ -24,8 +24,12 @@ import { ChallengeError, ConnectError, LoginCodeError, SendError } from "../driv
 // here is an OAuth2 device-code flow yielding a refresh token; `connect` refreshes it to an access
 // token and authenticates IMAP/SMTP with XOAUTH2. The transport seam also accepts a plain password
 // (for providers/local servers that still allow it), but the shipped auth is OAuth.
+//
+// The connection pump + read ops are provider-agnostic and shared via `makeConnect`; the sibling
+// Gmail driver (email-gmail.ts) reuses them, differing only in host defaults and the auth flow
+// (Google's auth-code + loopback "Sign in with Google" instead of the Microsoft device-code).
 
-const CAPS: Messenger.Capabilities = {
+export const CAPS: Messenger.Capabilities = {
   listChats: "full", // we can list recent inbox threads on demand (fetchRecent), so an agent can read
   files: { up: false, down: false }, // MIME attachments are P9 residue (text threads first)
   edits: false,
@@ -215,7 +219,7 @@ export const toInbound = (email: RawEmail, selfAddress: string): InboundEvent =>
 
 // ── account config ──────────────────────────────────────────────────────────────────────────────
 
-interface EmailAccountConfig {
+export interface EmailAccountConfig {
   readonly email: string
   readonly imapHost: string
   readonly imapPort: number
@@ -223,32 +227,50 @@ interface EmailAccountConfig {
   readonly smtpPort: number
   /** Present only for the OAuth (login) auth path; a Basic-Auth (app-password) account omits it. */
   readonly clientId: string | undefined
+  /** Google "Desktop app" clients pair the id with a (non-confidential) secret; Outlook's device-code
+   *  flow needs none, so it stays undefined there. */
+  readonly clientSecret: string | undefined
   readonly tenant: string
 }
 
-// Outlook/365 defaults (the shipped target). A different provider overrides host/port in settings.
-const DEFAULTS = {
+/** Provider host/port defaults an account's settings override. Outlook/365 is the generic `email`
+ *  driver's target; the Gmail driver passes Gmail's defaults into the same parser. */
+export interface EmailDefaults {
+  readonly imapHost: string
+  readonly imapPort: number
+  readonly smtpHost: string
+  readonly smtpPort: number
+  readonly tenant: string
+}
+
+// Outlook/365 defaults (the shipped target of the generic `email` driver).
+const OUTLOOK_DEFAULTS: EmailDefaults = {
   imapHost: "outlook.office365.com",
   imapPort: 993,
   smtpHost: "smtp.office365.com",
   smtpPort: 587,
   tenant: "consumers",
-} as const
+}
 
-const OAUTH_SCOPES = [
+const OUTLOOK_SCOPES = [
   "https://outlook.office.com/IMAP.AccessAsUser.All",
   "https://outlook.office.com/SMTP.Send",
   "offline_access",
 ] as const
 
-const parseAccountConfig = (account: Messenger.AccountInfo): Effect.Effect<EmailAccountConfig, ConnectError> =>
+/** Parse an account's settings into transport config, filling host/port/tenant from `defaults`.
+ *  Shared by the Outlook (`email`) and Gmail drivers — only the defaults differ. `clientId` is
+ *  required ONLY for the OAuth path; a Basic-Auth (app-password) account leaves it empty. */
+export const parseEmailConfig = (
+  account: Messenger.AccountInfo,
+  defaults: EmailDefaults,
+): Effect.Effect<EmailAccountConfig, ConnectError> =>
   Effect.gen(function* () {
     const email = (account.settings["email"] ?? "").trim()
     const clientId = (account.settings["clientId"] ?? "").trim()
+    const clientSecret = (account.settings["clientSecret"] ?? "").trim()
     if (email.length === 0)
       return yield* Effect.fail(new ConnectError({ reason: "This email account needs the mailbox address — fill it in Settings → Messengers." }))
-    // clientId is required ONLY for the OAuth path (Outlook/365); a Basic-Auth (app-password)
-    // account leaves it empty. connect() enforces the OAuth requirement when it takes that branch.
     const port = (key: string, fallback: number) => {
       const value = Number((account.settings[key] ?? "").trim())
       return Number.isInteger(value) && value > 0 && value <= 65535 ? value : fallback
@@ -256,22 +278,23 @@ const parseAccountConfig = (account: Messenger.AccountInfo): Effect.Effect<Email
     return {
       email,
       clientId: clientId.length > 0 ? clientId : undefined,
-      imapHost: (account.settings["imapHost"] ?? "").trim() || DEFAULTS.imapHost,
-      imapPort: port("imapPort", DEFAULTS.imapPort),
-      smtpHost: (account.settings["smtpHost"] ?? "").trim() || DEFAULTS.smtpHost,
-      smtpPort: port("smtpPort", DEFAULTS.smtpPort),
-      tenant: (account.settings["tenant"] ?? "").trim() || DEFAULTS.tenant,
+      clientSecret: clientSecret.length > 0 ? clientSecret : undefined,
+      imapHost: (account.settings["imapHost"] ?? "").trim() || defaults.imapHost,
+      imapPort: port("imapPort", defaults.imapPort),
+      smtpHost: (account.settings["smtpHost"] ?? "").trim() || defaults.smtpHost,
+      smtpPort: port("smtpPort", defaults.smtpPort),
+      tenant: (account.settings["tenant"] ?? "").trim() || defaults.tenant,
     }
   })
 
 /** The credential we store after login — the durable OAuth refresh token + what connect() needs to
  *  refresh it. NEVER the access token (short-lived) or a password. Serialized as the `session`. */
-interface StoredCredential {
+export interface StoredCredential {
   readonly refreshToken: string
   readonly email: string
 }
 
-const parseStored = (secret: string): StoredCredential | undefined => {
+export const parseStored = (secret: string): StoredCredential | undefined => {
   try {
     const value = JSON.parse(secret) as { refreshToken?: unknown; email?: unknown }
     if (typeof value.refreshToken === "string" && typeof value.email === "string")
@@ -282,97 +305,61 @@ const parseStored = (secret: string): StoredCredential | undefined => {
   return undefined
 }
 
-// ── the driver ────────────────────────────────────────────────────────────────────────────────
+/** Turn a stored secret into `EmailAuth`: our OAuth JSON → refresh to an XOAUTH2 access token via
+ *  `makeRefresh` (Microsoft or Google); anything else → a plain app password (Basic Auth). A
+ *  non-transient refresh failure is a CHALLENGE (revoked consent / password change) so the account
+ *  parks for the operator instead of spinning. Shared by both email-family drivers. */
+export const resolveEmailAuth = (
+  config: EmailAccountConfig,
+  secret: string,
+  makeRefresh: (config: EmailAccountConfig) => ((refreshToken: string) => Promise<TokenSet>) | undefined,
+  providerLabel: string,
+): Effect.Effect<EmailAuth, ConnectError | ChallengeError> =>
+  Effect.gen(function* () {
+    const stored = parseStored(secret)
+    if (stored === undefined) return { user: config.email, password: secret }
+    const refresh = makeRefresh(config)
+    if (refresh === undefined)
+      return yield* Effect.fail(
+        new ConnectError({ reason: "This OAuth mailbox is missing its client ID — re-add it in Settings → Messengers." }),
+      )
+    const token = yield* Effect.tryPromise({
+      try: () => refresh(stored.refreshToken),
+      catch: (error) =>
+        new ChallengeError({
+          message: `${providerLabel} rejected the saved sign-in for ${config.email} (${String(error)}) — sign in again in Settings → Messengers.`,
+        }),
+    })
+    return { user: config.email, accessToken: token.accessToken } satisfies EmailAuth
+  })
+
+// ── the shared connection (IMAP poll pump + SMTP send + read ops) ────────────────────────────────
 
 const POLL_INTERVAL_MS = 15_000
 
-export const make = (
-  mailFactory: EmailClientFactory,
-  oauthFactory: OAuthFactory,
-  options?: { readonly pollIntervalMs?: number },
-): Driver => {
-  const pollIntervalMs = options?.pollIntervalMs ?? POLL_INTERVAL_MS
-  const oauthFor = (config: EmailAccountConfig, clientId: string): OAuthClient =>
-    oauthFactory({ clientId, tenant: config.tenant, scopes: OAUTH_SCOPES, email: config.email })
-
-  const login: LoginSupport = {
-    begin: ({ account }) =>
-      Effect.gen(function* () {
-        const config = yield* parseAccountConfig(account)
-        if (config.clientId === undefined)
-          return yield* Effect.fail(
-            new ConnectError({
-              reason:
-                "OAuth sign-in needs a client ID (an Azure app registration). Add it in Settings, or use an app-password account instead (paste the password as the secret — no OAuth).",
-            }),
-          )
-        const oauth = oauthFor(config, config.clientId)
-        const start = yield* Effect.tryPromise({
-          try: () => oauth.startDeviceCode(),
-          catch: (error) => new ConnectError({ reason: `Could not start Microsoft sign-in: ${String(error)}` }),
-        })
-        // Device-code: the user authorizes in a browser; `complete()` polls the token endpoint and
-        // reports "still waiting" (retryable) until they finish. No code is typed back into NovaClaw.
-        const complete: LoginPending["complete"] = () =>
-          Effect.gen(function* () {
-            const result = yield* Effect.tryPromise({
-              try: () => oauth.pollToken(start.deviceCode),
-              catch: (error) => new LoginCodeError({ reason: `Sign-in check failed: ${String(error)}`, retryable: true }),
-            })
-            if (result.kind === "pending" || result.kind === "slow-down")
-              return yield* Effect.fail(
-                new LoginCodeError({
-                  reason: "Still waiting for you to approve the sign-in in your browser — finish that, then click Done again.",
-                  retryable: true,
-                }),
-              )
-            if (result.kind === "error")
-              return yield* Effect.fail(
-                result.retryable
-                  ? new LoginCodeError({ reason: result.message, retryable: true })
-                  : new ChallengeError({ message: result.message }),
-              )
-            const stored: StoredCredential = { refreshToken: result.token.refreshToken, email: config.email }
-            return { session: JSON.stringify(stored) }
-          })
-        return {
-          instructions: `Open ${start.verificationUri} in a browser and enter the code ${start.userCode} to sign ${config.email} in, then click Done.`,
-          complete,
-        } satisfies LoginPending
-      }),
-  }
-
-  const connect = (ctx: ConnectContext) =>
+/** Build the driver's `connect` for any email-family provider. Everything here is provider-agnostic
+ *  — the IMAP UID cursor pump (durable resume, UIDVALIDITY reset), per-thread reply state, chunked
+ *  SMTP send, and the read ops (history/listChats). The two provider-varying inputs are injected:
+ *  `resolveConfig` (which host defaults) and `resolveAuth` (which OAuth refresh, or an app password). */
+export const makeConnect =
+  (
+    mailFactory: EmailClientFactory,
+    pollIntervalMs: number,
+    resolveConfig: (account: Messenger.AccountInfo) => Effect.Effect<EmailAccountConfig, ConnectError>,
+    resolveAuth: (config: EmailAccountConfig, secret: string) => Effect.Effect<EmailAuth, ConnectError | ChallengeError>,
+  ) =>
+  (ctx: ConnectContext) =>
     Effect.gen(function* () {
-      const config = yield* parseAccountConfig(ctx.account)
+      const config = yield* resolveConfig(ctx.account)
       if (ctx.secret === undefined || ctx.secret.length === 0)
         return yield* Effect.fail(
           new ConnectError({ reason: "This mailbox isn't signed in yet — sign in (or paste an app password) in Settings → Messengers." }),
         )
 
       // Two auth kinds behind one driver (§0.2): the stored credential is EITHER our OAuth JSON
-      // (Outlook/365 — refresh → XOAUTH2) OR a plain app password (Gmail/Fastmail/Zoho/generic —
-      // Basic Auth). Detect by shape; the transport picks XOAUTH2 or SASL PLAIN from which field is set.
-      const stored = parseStored(ctx.secret)
-      const auth: EmailAuth = yield* stored !== undefined
-        ? Effect.gen(function* () {
-            if (config.clientId === undefined)
-              return yield* Effect.fail(
-                new ConnectError({ reason: "This OAuth mailbox is missing its client ID — re-add it in Settings → Messengers." }),
-              )
-            // Refresh the OAuth token → the XOAUTH2 access token. A non-transient refresh failure
-            // (revoked consent, password change) is a CHALLENGE: park for the operator, never spin.
-            const oauth = oauthFor(config, config.clientId)
-            const token = yield* Effect.tryPromise({
-              try: () => oauth.refresh(stored.refreshToken),
-              catch: (error) =>
-                new ChallengeError({
-                  message: `Microsoft rejected the saved sign-in for ${config.email} (${String(error)}) — sign in again in Settings → Messengers.`,
-                }),
-            })
-            return { user: config.email, accessToken: token.accessToken } satisfies EmailAuth
-          })
-        : Effect.succeed({ user: config.email, password: ctx.secret } satisfies EmailAuth)
+      // (refresh → XOAUTH2) OR a plain app password (Basic Auth). `resolveAuth` picks per provider;
+      // the transport then chooses XOAUTH2 or SASL PLAIN from which field is set.
+      const auth = yield* resolveAuth(config, ctx.secret)
 
       const client = yield* Effect.acquireRelease(
         Effect.tryPromise({
@@ -513,6 +500,72 @@ export const make = (
       return { inbound: Stream.fromQueue(queue), send, history, listChats } satisfies Connection
     })
 
+// ── the driver (Outlook/365 + generic IMAP; OAuth device-code or app-password) ───────────────────
+
+export const make = (
+  mailFactory: EmailClientFactory,
+  oauthFactory: OAuthFactory,
+  options?: { readonly pollIntervalMs?: number },
+): Driver => {
+  const pollIntervalMs = options?.pollIntervalMs ?? POLL_INTERVAL_MS
+  const oauthFor = (config: EmailAccountConfig, clientId: string): OAuthClient =>
+    oauthFactory({ clientId, tenant: config.tenant, scopes: OUTLOOK_SCOPES, email: config.email })
+
+  const login: LoginSupport = {
+    begin: ({ account }) =>
+      Effect.gen(function* () {
+        const config = yield* parseEmailConfig(account, OUTLOOK_DEFAULTS)
+        if (config.clientId === undefined)
+          return yield* Effect.fail(
+            new ConnectError({
+              reason:
+                "OAuth sign-in needs a client ID (an Azure app registration). Add it in Settings, or use an app-password account instead (paste the password as the secret — no OAuth).",
+            }),
+          )
+        const oauth = oauthFor(config, config.clientId)
+        const start = yield* Effect.tryPromise({
+          try: () => oauth.startDeviceCode(),
+          catch: (error) => new ConnectError({ reason: `Could not start Microsoft sign-in: ${String(error)}` }),
+        })
+        // Device-code: the user authorizes in a browser; `complete()` polls the token endpoint and
+        // reports "still waiting" (retryable) until they finish. No code is typed back into NovaClaw.
+        const complete: LoginPending["complete"] = () =>
+          Effect.gen(function* () {
+            const result = yield* Effect.tryPromise({
+              try: () => oauth.pollToken(start.deviceCode),
+              catch: (error) => new LoginCodeError({ reason: `Sign-in check failed: ${String(error)}`, retryable: true }),
+            })
+            if (result.kind === "pending" || result.kind === "slow-down")
+              return yield* Effect.fail(
+                new LoginCodeError({
+                  reason: "Still waiting for you to approve the sign-in in your browser — finish that, then click Done again.",
+                  retryable: true,
+                }),
+              )
+            if (result.kind === "error")
+              return yield* Effect.fail(
+                result.retryable
+                  ? new LoginCodeError({ reason: result.message, retryable: true })
+                  : new ChallengeError({ message: result.message }),
+              )
+            const stored: StoredCredential = { refreshToken: result.token.refreshToken, email: config.email }
+            return { session: JSON.stringify(stored) }
+          })
+        return {
+          instructions: `Open ${start.verificationUri} in a browser and enter the code ${start.userCode} to sign ${config.email} in, then click Done.`,
+          complete,
+        } satisfies LoginPending
+      }),
+  }
+
+  const connect = makeConnect(
+    mailFactory,
+    pollIntervalMs,
+    (account) => parseEmailConfig(account, OUTLOOK_DEFAULTS),
+    (config, secret) =>
+      resolveEmailAuth(config, secret, (c) => (c.clientId === undefined ? undefined : oauthFor(c, c.clientId).refresh), "Microsoft"),
+  )
+
   return {
     id: "email",
     meta: {
@@ -528,10 +581,10 @@ export const make = (
           message: "OAuth client ID (Azure app registration — Microsoft requires OAuth for Outlook/365)",
           placeholder: "00000000-0000-0000-0000-000000000000",
         },
-        { type: "text", key: "imapHost", message: "IMAP host (default: Outlook)", placeholder: DEFAULTS.imapHost },
-        { type: "text", key: "imapPort", message: "IMAP port", placeholder: String(DEFAULTS.imapPort) },
-        { type: "text", key: "smtpHost", message: "SMTP host (default: Outlook)", placeholder: DEFAULTS.smtpHost },
-        { type: "text", key: "smtpPort", message: "SMTP port", placeholder: String(DEFAULTS.smtpPort) },
+        { type: "text", key: "imapHost", message: "IMAP host (default: Outlook)", placeholder: OUTLOOK_DEFAULTS.imapHost },
+        { type: "text", key: "imapPort", message: "IMAP port", placeholder: String(OUTLOOK_DEFAULTS.imapPort) },
+        { type: "text", key: "smtpHost", message: "SMTP host (default: Outlook)", placeholder: OUTLOOK_DEFAULTS.smtpHost },
+        { type: "text", key: "smtpPort", message: "SMTP port", placeholder: String(OUTLOOK_DEFAULTS.smtpPort) },
       ],
       // No upfront prompts: the device-code flow needs nothing typed — begin() returns a URL + code
       // to visit, and complete() polls until the browser consent lands.
