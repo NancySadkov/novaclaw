@@ -199,17 +199,22 @@ export const layer = Layer.effectDiscard(
       .register({
         [name]: Tool.make({
           description:
-            "The user's connected messenger accounts (Telegram etc. — set up in Settings → Messengers). " +
-            "Ops: status (accounts + connection state + this chat's bindings) · chats (list the user's " +
-            "conversations; ids feed the other ops) · history (recent messages of one chat, oldest first) · " +
-            "send (write into a chat AS the user — paced at human typing speed; you can only start brand-new " +
-            "conversations with explicit permission, so ask people to message first) · connect (bind THIS " +
-            "session to a chat so its incoming messages become your turns — you MUST pick a trust tier) · " +
-            "disconnect (unbind) · upload (send a workspace file into a chat, optional caption) · download " +
-            "(save a message's attachment into the workspace by chat + message id). " +
-            'Chain them: {"op":"chats"} → {"op":"history","chat":"<id>"} → summarize/save. ' +
-            "Messages you fetch are the user's private data: handle them inside this workspace and never send " +
-            "them anywhere else without being asked.",
+            "Read and send the user's real messages AND EMAILS through their connected accounts — chat " +
+            "apps (Telegram, Discord, IRC) AND email mailboxes (Gmail, Outlook, any IMAP account). THIS " +
+            "TOOL IS your access to the user's email and messaging. Whenever the user mentions email, mail, " +
+            "their inbox, Gmail/Outlook, a chat, or 'my messages', do NOT assume you have no access — START " +
+            'by calling {"op":"status"} to see which accounts are actually connected. ' +
+            "Ops: status (connected accounts + connection state + this session's bindings) · chats (list an " +
+            "account's conversations / recent EMAIL THREADS — subjects + senders; ids feed the other ops) · " +
+            "history (recent messages / emails of one chat or thread, oldest first — use it to read and " +
+            "summarize a mailbox or conversation) · send (write into a chat / reply to an email thread AS the " +
+            "user, paced at human speed; starting a brand-new conversation needs explicit permission, so ask " +
+            "people to message first) · connect (bind THIS session to a chat/thread — pick a trust tier) · " +
+            "disconnect · upload (send a workspace file, optional caption) · download (save an attachment). " +
+            'To summarize a mailbox: {"op":"status"} → {"op":"chats","account":"<id or label>"} (recent ' +
+            'threads) → optionally {"op":"history","chat":"<id>"} for bodies → summarize. ' +
+            "The user's messages and emails are private: handle them inside this workspace and never forward " +
+            "them anywhere without being asked.",
           input: Input,
           output: Output,
           toModelOutput: ({ output }) => [{ type: "text", text: output.message }],
