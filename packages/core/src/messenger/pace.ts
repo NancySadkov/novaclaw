@@ -29,6 +29,24 @@ export interface PaceOptions {
   readonly maxMs?: number
 }
 
+// Per-account typing-speed bounds (the Settings → Messengers control). The user MAY go fast, but a
+// hard ceiling keeps even a reckless setting from effectively turning pacing off (which is what
+// gets an account banned). Above RISKY the UI shows a ban warning.
+export const PACE_CPS_DEFAULT = CHARS_PER_SECOND
+export const PACE_CPS_MIN = 3
+export const PACE_CPS_MAX = 80
+export const PACE_CPS_RISKY = 30
+/** The account-settings key the Messengers tab writes the per-account typing speed into. */
+export const PACE_SETTING_KEY = "paceCharsPerSecond"
+
+/** Read the per-account pacing from account settings (empty/invalid → the human default), clamped to
+ *  the safe range. Only the typing SPEED is user-tunable; the min/max clamps stay at their defaults. */
+export const paceFromSettings = (settings: Record<string, string>): PaceOptions | undefined => {
+  const raw = Number((settings[PACE_SETTING_KEY] ?? "").trim())
+  if (!Number.isFinite(raw) || raw <= 0) return undefined
+  return { charsPerSecond: Math.min(PACE_CPS_MAX, Math.max(PACE_CPS_MIN, raw)) }
+}
+
 /** The human-typing delay for one outbound message, in ms. Pure — unit-tested. */
 export const typingDelayMs = (text: string, options?: PaceOptions): number => {
   const cps = options?.charsPerSecond ?? CHARS_PER_SECOND
@@ -40,8 +58,14 @@ export const typingDelayMs = (text: string, options?: PaceOptions): number => {
 
 export interface Pacer {
   /** Run one outbound send under the global pace: acquire the single "hand", wait the typing
-   *  delay for `text`, perform `send`, then a small gap before releasing. Serializes ALL sends. */
-  readonly paced: <A, E, R>(text: string, send: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R>
+   *  delay for `text`, perform `send`, then a small gap before releasing. Serializes ALL sends.
+   *  `perСall` overrides the typing speed / clamps for THIS message (per-account setting, §2.3) —
+   *  the serialization ("one hand") stays global no matter what. */
+  readonly paced: <A, E, R>(
+    text: string,
+    send: Effect.Effect<A, E, R>,
+    perCall?: PaceOptions,
+  ) => Effect.Effect<A, E, R>
 }
 
 /** Build a process-global pacer. `sleep` is injectable so tests run instantly while still proving
@@ -51,10 +75,12 @@ export const make = (options?: PaceOptions & { readonly sleep?: (ms: number) => 
   const sleep = options?.sleep ?? ((ms: number) => Effect.sleep(Duration.millis(ms)))
   const gap = options?.sleep !== undefined ? 0 : INTER_MESSAGE_GAP_MS
   return {
-    paced: (text, send) =>
+    paced: (text, send, perCall) =>
       gate.withPermit(
         Effect.gen(function* () {
-          yield* sleep(typingDelayMs(text, options))
+          // Per-account speed/clamps override the pacer defaults for this message; a test-injected
+          // `sleep` still wins so the suite stays instant.
+          yield* sleep(typingDelayMs(text, { ...options, ...perCall }))
           const result = yield* send
           yield* sleep(gap)
           return result

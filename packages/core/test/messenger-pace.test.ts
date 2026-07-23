@@ -54,3 +54,27 @@ describe("MessengerPace serialization", () => {
     }),
   )
 })
+
+describe("MessengerPace per-account typing speed (Settings → Messengers)", () => {
+  it.effect("paceFromSettings reads the speed, clamps to the safe range, defaults on empty/invalid", () =>
+    Effect.sync(() => {
+      expect(MessengerPace.paceFromSettings({ [MessengerPace.PACE_SETTING_KEY]: "40" })).toEqual({ charsPerSecond: 40 })
+      // Above the hard ceiling clamps (a reckless value can't turn pacing off — the ban risk).
+      expect(MessengerPace.paceFromSettings({ [MessengerPace.PACE_SETTING_KEY]: "9999" })).toEqual({
+        charsPerSecond: MessengerPace.PACE_CPS_MAX,
+      })
+      expect(MessengerPace.paceFromSettings({ [MessengerPace.PACE_SETTING_KEY]: "1" })).toEqual({ charsPerSecond: MessengerPace.PACE_CPS_MIN })
+      expect(MessengerPace.paceFromSettings({})).toBeUndefined()
+      expect(MessengerPace.paceFromSettings({ [MessengerPace.PACE_SETTING_KEY]: "abc" })).toBeUndefined()
+    }),
+  )
+
+  it.effect("a faster per-account speed shortens the typing delay for the same text", () =>
+    Effect.sync(() => {
+      const text = "x".repeat(120)
+      const slow = MessengerPace.typingDelayMs(text, { charsPerSecond: 5 })
+      const fast = MessengerPace.typingDelayMs(text, { charsPerSecond: 60 })
+      expect(fast).toBeLessThan(slow) // faster typist = less delay = higher ban risk (UI warns)
+    }),
+  )
+})

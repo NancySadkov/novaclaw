@@ -212,10 +212,16 @@ export const layer = Layer.effect(
     type AudienceBuffer = { lines: string[]; files: FileAttachment[]; timer?: Fiber.Fiber<void, never> }
     const audienceBuffers = new Map<string, AudienceBuffer>()
 
+    // Per-account typing speed (§2.3, user-tunable in Settings → Messengers): recorded per live
+    // connection so paceSend applies the right speed without threading the account through every
+    // call site. Set when the connection opens (attempt); the WeakMap drops it when the connection
+    // is GC'd. The global serialization ("one hand") is unaffected — only the per-message delay.
+    const connectionPace = new WeakMap<Connection, MessengerPace.PaceOptions>()
+
     // Every outbound message — command replies, relayed assistant text, proactive tool sends —
     // goes through the pacer, so nothing ever bursts or posts instantly.
     const paceSend = (connection: Connection, chatID: string, text: string) =>
-      pacer.paced(text, connection.send(chatID, { text }))
+      pacer.paced(text, connection.send(chatID, { text }), connectionPace.get(connection))
 
     const setStatus = (accountID: Messenger.AccountID, entry: Entry, status: Messenger.AccountStatus) =>
       Effect.gen(function* () {
@@ -718,6 +724,9 @@ export const layer = Layer.effect(
             },
           })
           entry.connection = connection
+          // Apply this account's user-set typing speed (Settings → Messengers) to its outbound.
+          const pace = MessengerPace.paceFromSettings(account.settings)
+          if (pace !== undefined) connectionPace.set(connection, pace)
           yield* Effect.addFinalizer(() => Effect.sync(() => (entry.connection = undefined)))
           yield* setStatus(account.id, entry, { state: "connected" })
           yield* consume(account, connection)

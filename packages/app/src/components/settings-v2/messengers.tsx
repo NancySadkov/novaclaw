@@ -119,6 +119,10 @@ export const SettingsMessengersV2: Component = () => {
     dialog.push(() => <DialogPairingCode accountID={row.account.id} label={row.account.label} />)
   }
 
+  const openSpeed = (row: AccountWithStatus) => {
+    dialog.push(() => <DialogMessengerSpeed account={row.account} onDone={() => void refetch()} />)
+  }
+
   return (
     <>
       <div class="settings-v2-tab-header settings-v2-tab-header--stacked">
@@ -164,6 +168,9 @@ export const SettingsMessengersV2: Component = () => {
                     </Show>
                     <ButtonV2 variant="neutral" size="small" onClick={() => openPair(row)}>
                       {language.t("settings.messengers.pair")}
+                    </ButtonV2>
+                    <ButtonV2 variant="neutral" size="small" onClick={() => openSpeed(row)}>
+                      {language.t("settings.messengers.speed")}
                     </ButtonV2>
                     <ButtonV2 variant="neutral" size="small" onClick={() => void remove(row)}>
                       {language.t("settings.messengers.remove.confirm.action")}
@@ -496,6 +503,93 @@ const DialogPairingCode: Component<{ accountID: string; label: string }> = (prop
       <DialogFooter>
         <ButtonV2 variant="contrast" onClick={() => dialog.close()}>
           {language.t("common.close")}
+        </ButtonV2>
+      </DialogFooter>
+    </Dialog>
+  )
+}
+
+// ── Typing speed / throttling (traffic rules §2.3) ─────────────────────────────────────────────────
+// Per-account outbound typing speed. NovaClaw paces its messages at human typing speed so a real
+// person's account is never flagged as a bot; the user MAY speed it up, but going too fast is the
+// single biggest ban risk, so we warn above the "risky" mark. The value writes into the account's
+// settings (paceCharsPerSecond); the gateway's pacer honours it (core/messenger/pace.ts). Constants
+// mirror core PACE_CPS_* — kept local so this browser panel never imports the server pace module.
+const PACE_KEY = "paceCharsPerSecond"
+const PACE_DEFAULT = 15
+const PACE_MIN = 3
+const PACE_MAX = 80
+const PACE_RISKY = 30
+
+const DialogMessengerSpeed: Component<{
+  account: { id: string; label: string; settings: Record<string, string> }
+  onDone: () => void
+}> = (props) => {
+  const dialog = useDialog()
+  const language = useLanguage()
+  const sdk = useServerSDK()
+  const initial = Number(props.account.settings[PACE_KEY] ?? "")
+  const [cps, setCps] = createSignal(Number.isFinite(initial) && initial > 0 ? String(Math.round(initial)) : String(PACE_DEFAULT))
+  const [busy, setBusy] = createSignal(false)
+  const [error, setError] = createSignal<string>()
+  const value = () => {
+    const n = Number(cps())
+    return Number.isFinite(n) ? Math.min(PACE_MAX, Math.max(PACE_MIN, Math.round(n))) : PACE_DEFAULT
+  }
+  const risky = () => value() > PACE_RISKY
+
+  const save = async () => {
+    setBusy(true)
+    setError(undefined)
+    try {
+      await messengerUpdateAccount(sdk().server.http, props.account.id, {
+        settings: { ...props.account.settings, [PACE_KEY]: String(value()) },
+      })
+      props.onDone()
+      dialog.close()
+    } catch (err) {
+      setError(err instanceof MessengerApiError ? err.message : String(err))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <Dialog fit class="settings-v2-server-dialog">
+      <DialogHeader hideClose={true}>
+        <DialogTitle>{language.t("settings.messengers.speed.title", { label: props.account.label })}</DialogTitle>
+      </DialogHeader>
+      <DividerV2 />
+      <DialogBody class="flex w-full min-w-0 flex-1 flex-col px-4 pt-4 pb-2">
+        <div class="flex w-full min-w-0 flex-col gap-3">
+          <p class="settings-v2-field-description">{language.t("settings.messengers.speed.description")}</p>
+          <label class="flex items-center gap-2">
+            <TextInputV2
+              type="number"
+              min={PACE_MIN}
+              max={PACE_MAX}
+              value={cps()}
+              onInput={(event) => setCps(event.currentTarget.value)}
+            />
+            <span class="settings-v2-field-description">{language.t("settings.messengers.speed.unit")}</span>
+          </label>
+          <p class="settings-v2-field-description">
+            {language.t("settings.messengers.speed.human", { default: String(PACE_DEFAULT) })}
+          </p>
+          <Show when={risky()}>
+            <p class="settings-v2-server-dialog-error">{language.t("settings.messengers.speed.warning")}</p>
+          </Show>
+          <Show when={error()}>
+            <span class="settings-v2-server-dialog-error">{error()}</span>
+          </Show>
+        </div>
+      </DialogBody>
+      <DialogFooter>
+        <ButtonV2 variant="neutral" onClick={() => dialog.close()} disabled={busy()}>
+          {language.t("common.cancel")}
+        </ButtonV2>
+        <ButtonV2 variant="contrast" onClick={() => void save()} disabled={busy()}>
+          {language.t("common.save")}
         </ButtonV2>
       </DialogFooter>
     </Dialog>

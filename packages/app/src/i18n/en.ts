@@ -1528,6 +1528,14 @@ export const dict = {
   "settings.messengers.pair.instructions":
     "From the phone you want to control NovaClaw with, send this message to the connected account:",
   "settings.messengers.pair.expiry": "The code works once and expires in 10 minutes.",
+  "settings.messengers.speed": "Speed",
+  "settings.messengers.speed.title": "Typing speed — {{label}}",
+  "settings.messengers.speed.description":
+    "NovaClaw types replies at a human pace, across all chats at once, so this account is never flagged as a bot. This sets how fast it types, in characters per second.",
+  "settings.messengers.speed.unit": "characters / second",
+  "settings.messengers.speed.human": "A person types around {{default}}/s. Lower is safer; higher is faster but riskier.",
+  "settings.messengers.speed.warning":
+    "⚠️ This is faster than a human types. Messaging providers watch for bot-like speed and may flag or BAN your account for posting too fast. Only go this high if you accept that risk.",
   "settings.quality.title": "Quality",
   "settings.quality.description":
     "Quality Enforcement: your provisioned checks run automatically at write and turn boundaries; a failure steers the agent to fix it and re-run — a change doesn't count as done until the checks pass.",
