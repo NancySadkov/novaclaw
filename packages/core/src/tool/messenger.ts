@@ -58,6 +58,10 @@ const SendOp = Schema.Struct({
   op: Schema.Literal("send"),
   chat: Schema.String.annotate({ description: "Chat id (from `chats`) to write into" }),
   text: Schema.String.annotate({ description: "The message text — sent AS the user, paced at human typing speed" }),
+  reply: Schema.String.pipe(Schema.optional).annotate({
+    description:
+      "Message id this answers (from the `msg …` in a message header, or from history) — attaches the reply to that message. Use it in busy group chats so people can tell what you're answering.",
+  }),
   account: Schema.String.pipe(Schema.optional).annotate({
     description: "Account id (msa_…) or label — omit when only one account exists",
   }),
@@ -115,7 +119,10 @@ const ModerateOp = Schema.Struct({
   }),
   message: Schema.String.pipe(Schema.optional).annotate({ description: "Message id — required for delete and pin" }),
   user: Schema.String.pipe(Schema.optional).annotate({ description: "User id — required for ban, kick, and mute" }),
-  seconds: Schema.Finite.pipe(Schema.optional).annotate({ description: "Mute (timeout) duration in seconds — default 600, platform-capped" }),
+  seconds: Schema.Finite.pipe(Schema.optional).annotate({
+    description:
+      "For mute: how long the timeout lasts (default 600, platform-capped). For ban: also delete that member's messages from the last N seconds — use it on a spam wave so the posts go with the account.",
+  }),
   account: Schema.String.pipe(Schema.optional).annotate({
     description: "Account id (msa_…) or label — omit when only one account exists",
   }),
@@ -138,7 +145,9 @@ export const buildModerationAct = (input: {
     case "pin":
       return message ? { act: "pin", messageID: message } : { error: "pin needs a message id." }
     case "ban":
-      return user ? { act: "ban", userID: user } : { error: "ban needs a user id." }
+      return user
+        ? { act: "ban", userID: user, ...(input.seconds === undefined ? {} : { purgeSeconds: Math.max(0, Math.floor(input.seconds)) }) }
+        : { error: "ban needs a user id." }
     case "kick":
       return user ? { act: "kick", userID: user } : { error: "kick needs a user id." }
     case "mute":
@@ -335,6 +344,7 @@ export const layer = Layer.effectDiscard(
                     accountID: resolved.account.id,
                     chatID: input.chat.trim(),
                     text: input.text,
+                    ...(input.reply === undefined || input.reply.trim().length === 0 ? {} : { replyTo: input.reply.trim() }),
                   })
                   if (!outcome.ok) return { ok: false, message: outcome.reason } satisfies Output
                   return { ok: true, message: "Sent (paced at human typing speed)." } satisfies Output

@@ -18,6 +18,24 @@ const GATEWAY_URL = "wss://gateway.discord.gg/?v=10&encoding=json"
 // GUILDS + GUILD_MESSAGES + DIRECT_MESSAGES + MESSAGE_CONTENT
 const INTENTS = 1 | 512 | 4096 | 32768
 
+// Discord channel types we care about. A support server keeps its traffic in text channels AND
+// in FORUMS, where every user post is its own thread — so threads are first-class here: they
+// carry `parent_id`, and the gateway routes a thread's messages to the parent's binding
+// (driver.ts ChatSnapshot.parentID), which is the only way one binding can cover a live forum.
+const CHANNEL_TEXT = 0
+const CHANNEL_ANNOUNCEMENT = 5
+const CHANNEL_FORUM = 15
+const CHANNEL_MEDIA = 16
+const THREAD_TYPES = new Set([10, 11, 12])
+const LISTABLE_TYPES = new Set([CHANNEL_TEXT, CHANNEL_ANNOUNCEMENT, CHANNEL_FORUM, CHANNEL_MEDIA])
+
+const chatKindOf = (type: number | undefined, dm: boolean): Messenger.ChatKind => {
+  if (dm) return "dm"
+  if (type !== undefined && THREAD_TYPES.has(type)) return "thread"
+  if (type === CHANNEL_ANNOUNCEMENT) return "channel"
+  return "group"
+}
+
 const CAPS: Messenger.Capabilities = {
   listChats: "full", // guilds → text channels; DMs join via the seen-cache
   files: { up: true, down: true, maxBytes: 8_000_000 },
@@ -70,7 +88,9 @@ const Channel = Schema.Struct({
   id: Schema.String,
   type: Schema.Number,
   name: Schema.optional(Schema.NullOr(Schema.String)),
+  parent_id: Schema.optional(Schema.NullOr(Schema.String)),
 })
+const ActiveThreads = Schema.Struct({ threads: Schema.Array(Channel) })
 const SentMessage = Schema.Struct({ id: Schema.String })
 
 const decodeFrame = Schema.decodeUnknownOption(Frame)
@@ -81,6 +101,7 @@ const decodeMe = Schema.decodeUnknownOption(Me)
 const decodeGuilds = Schema.decodeUnknownOption(Schema.Array(Guild))
 const decodeChannels = Schema.decodeUnknownOption(Schema.Array(Channel))
 const decodeChannel = Schema.decodeUnknownOption(Channel)
+const decodeActiveThreads = Schema.decodeUnknownOption(ActiveThreads)
 const decodeSent = Schema.decodeUnknownOption(SentMessage)
 
 export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>
@@ -113,18 +134,27 @@ export const readCursor = (value: unknown): Cursor | undefined => {
 
 const authorName = (author: typeof Author.Type): string => author.global_name ?? author.username ?? author.id
 
-/** Normalize one MESSAGE_CREATE. Channel titles come from the caller's name cache (the gateway
- *  event carries none). */
+/** What the caller's channel cache knows about the message's channel (the gateway event carries
+ *  ids only — no name, no type, no parent). */
+export interface ChannelMeta {
+  readonly title?: string
+  readonly type?: number
+  readonly parentID?: string
+}
+
+/** Normalize one MESSAGE_CREATE. A thread (a forum post is one) reports its parent channel, so a
+ *  single binding on the forum covers every post inside it. */
 export const toInbound = (
   message: typeof MessageCreate.Type,
   selfID: string | undefined,
-  channelTitle: string | undefined,
+  channel: ChannelMeta | undefined,
 ): InboundEvent => {
   const dm = message.guild_id === undefined
   const chat: ChatSnapshot = {
     chatID: message.channel_id,
-    kind: dm ? "dm" : "group",
-    title: channelTitle ?? (dm ? authorName(message.author) : `#${message.channel_id}`),
+    kind: chatKindOf(channel?.type, dm),
+    title: channel?.title ?? (dm ? authorName(message.author) : `#${message.channel_id}`),
+    ...(channel?.parentID === undefined ? {} : { parentID: channel.parentID }),
   }
   const attachments: FileRef[] | undefined =
     message.attachments === undefined || message.attachments.length === 0
@@ -190,18 +220,28 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
       const me = decodeMe(meResponse.body)
       const selfID = me._tag === "Some" ? me.value.id : undefined
 
-      // Lazily learned channel titles (the gateway events carry ids only).
-      const channelNames = new Map<string, string>()
-      const channelTitle = (channelID: string, dm: boolean) =>
+      // Lazily learned channel metadata — name, type, and (for a thread / forum post) its parent.
+      // The gateway events carry ids only, and the parent is what makes ONE binding cover a whole
+      // support forum, so this lookup is load-bearing, not cosmetic.
+      const channelMeta = new Map<string, ChannelMeta>()
+      const describeChannel = (channelID: string, dm: boolean) =>
         Effect.gen(function* () {
           if (dm) return undefined
-          const known = channelNames.get(channelID)
+          const known = channelMeta.get(channelID)
           if (known !== undefined) return known
           const response = yield* rest(`/channels/${channelID}`).pipe(Effect.orElseSucceed(() => undefined))
           const channel = response === undefined ? undefined : decodeChannel(response.body)
-          const name = channel !== undefined && channel._tag === "Some" && channel.value.name != null ? `#${channel.value.name}` : undefined
-          if (name !== undefined) channelNames.set(channelID, name)
-          return name
+          if (channel === undefined || channel._tag === "None") return undefined
+          // A thread's name is a POST TITLE ("Crash on save"), not a channel handle — only
+          // channels get the leading #.
+          const label = channel.value.name == null ? undefined : THREAD_TYPES.has(channel.value.type) ? channel.value.name : `#${channel.value.name}`
+          const meta: ChannelMeta = {
+            ...(label === undefined ? {} : { title: label }),
+            type: channel.value.type,
+            ...(channel.value.parent_id == null ? {} : { parentID: channel.value.parent_id }),
+          }
+          channelMeta.set(channelID, meta)
+          return meta
         })
 
       const queue = yield* Queue.unbounded<InboundEvent>()
@@ -302,8 +342,8 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
               if (t === "MESSAGE_CREATE") {
                 const message = decodeMessageCreate(d)
                 if (message._tag === "Some") {
-                  const title = yield* channelTitle(message.value.channel_id, message.value.guild_id === undefined)
-                  yield* Queue.offer(queue, toInbound(message.value, selfID, title))
+                  const meta = yield* describeChannel(message.value.channel_id, message.value.guild_id === undefined)
+                  yield* Queue.offer(queue, toInbound(message.value, selfID, meta))
                   yield* persistCursor
                 }
                 continue
@@ -317,8 +357,13 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
       })
       yield* Effect.forkScoped(pump.pipe(Effect.catchCause(() => Queue.shutdown(queue))))
 
-      const send = (chatID: string, message: { text?: string; file?: OutboundFile }) =>
+      const send = (chatID: string, message: { text?: string; file?: OutboundFile; replyTo?: string }) =>
         Effect.gen(function* () {
+          // Reply reference: in a channel with a dozen people talking, an unattached answer is
+          // noise. `fail_if_not_exists: false` so a deleted question still gets its answer posted
+          // (a hard failure would swallow the reply entirely).
+          const reference =
+            message.replyTo === undefined ? {} : { message_reference: { message_id: message.replyTo, fail_if_not_exists: false } }
           const post = (body: RequestInit) =>
             rest(`/channels/${chatID}/messages`, { method: "POST", ...body }).pipe(
               Effect.mapError((error) => new SendError({ reason: error.reason, retryable: true })),
@@ -341,7 +386,10 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
             const form = new FormData()
             form.set(
               "payload_json",
-              JSON.stringify(message.text !== undefined && message.text.length > 0 ? { content: message.text.slice(0, 2000) } : {}),
+              JSON.stringify({
+                ...(message.text !== undefined && message.text.length > 0 ? { content: message.text.slice(0, 2000) } : {}),
+                ...reference,
+              }),
             )
             form.set("files[0]", new Blob([message.file.data as BlobPart], { type: message.file.mime }), message.file.name)
             const response = yield* post({ body: form })
@@ -353,11 +401,14 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
             maxChars: CAPS.maxChars,
           })
           let lastID = "0"
+          let first = true
           for (const chunk of chunks) {
+            // Only the first chunk quotes the question — a reply chain of five quotes reads awful.
             const response = yield* post({
               headers: { "content-type": "application/json" },
-              body: JSON.stringify({ content: chunk }),
+              body: JSON.stringify({ content: chunk, ...(first ? reference : {}) }),
             })
+            first = false
             const sent = decodeSent(response.body)
             if (sent._tag === "Some") lastID = sent.value.id
           }
@@ -373,12 +424,39 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
           for (const guild of guilds.value.slice(0, 20)) {
             const channelsResponse = yield* rest(`/guilds/${guild.id}/channels`).pipe(Effect.orElseSucceed(() => undefined))
             const channels = channelsResponse === undefined ? undefined : decodeChannels(channelsResponse.body)
-            if (channels === undefined || channels._tag === "None") continue
-            for (const channel of channels.value) {
-              if (channel.type !== 0 || channel.name == null) continue // text channels only
-              const title = `#${channel.name} (${guild.name})`
-              channelNames.set(channel.id, `#${channel.name}`)
-              out.push({ chatID: channel.id, kind: "group", title })
+            if (channels !== undefined && channels._tag === "Some")
+              for (const channel of channels.value) {
+                if (!LISTABLE_TYPES.has(channel.type) || channel.name == null) continue // no voice/categories
+                const kind = chatKindOf(channel.type, false)
+                // A forum is where support posts LAND, so say so — binding it covers every post.
+                const what = channel.type === CHANNEL_FORUM || channel.type === CHANNEL_MEDIA ? " · forum" : ""
+                channelMeta.set(channel.id, {
+                  title: `#${channel.name}`,
+                  type: channel.type,
+                  ...(channel.parent_id == null ? {} : { parentID: channel.parent_id }),
+                })
+                out.push({ chatID: channel.id, kind, title: `#${channel.name} (${guild.name}${what})` })
+              }
+            // Live threads (every open forum post is one). They route to their parent's binding,
+            // but they're listed so an operator can bind or read a single conversation.
+            const threadsResponse = yield* rest(`/guilds/${guild.id}/threads/active`).pipe(Effect.orElseSucceed(() => undefined))
+            const threads = threadsResponse === undefined ? undefined : decodeActiveThreads(threadsResponse.body)
+            if (threads === undefined || threads._tag === "None") continue
+            for (const thread of threads.value.threads) {
+              if (thread.name == null) continue
+              const parentID = thread.parent_id ?? undefined
+              const parent = parentID === undefined ? undefined : channelMeta.get(parentID)?.title
+              channelMeta.set(thread.id, {
+                title: thread.name,
+                type: thread.type,
+                ...(parentID === undefined ? {} : { parentID }),
+              })
+              out.push({
+                chatID: thread.id,
+                kind: "thread",
+                title: `${thread.name} (${parent === undefined ? guild.name : `${parent} · ${guild.name}`})`,
+                ...(parentID === undefined ? {} : { parentID }),
+              })
             }
           }
           return out
@@ -429,8 +507,16 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
               return yield* call(`/channels/${chatID}/messages/${act.messageID}`, { method: "DELETE" })
             case "pin":
               return yield* call(`/channels/${chatID}/pins/${act.messageID}`, { method: "PUT" })
-            case "ban":
-              return yield* call(`/guilds/${yield* guildID}/bans/${act.userID}`, { method: "PUT" })
+            case "ban": {
+              // A spam wave needs the posts gone too, not just the account — Discord deletes the
+              // member's messages from the last N seconds (max 7 days) on the ban itself.
+              const purge = act.purgeSeconds === undefined ? undefined : Math.max(0, Math.min(Math.floor(act.purgeSeconds), 7 * 24 * 3600))
+              return yield* call(`/guilds/${yield* guildID}/bans/${act.userID}`, {
+                method: "PUT",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify(purge === undefined ? {} : { delete_message_seconds: purge }),
+              })
+            }
             case "kick":
               return yield* call(`/guilds/${yield* guildID}/members/${act.userID}`, { method: "DELETE" })
             case "mute": {

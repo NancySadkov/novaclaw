@@ -25,7 +25,7 @@ describe("SessionOrigin.modelHeader", () => {
 
   test("operator gets an attribution header, NO untrusted framing", () => {
     const header = SessionOrigin.modelHeader(messenger())
-    expect(header).toContain("[via telegram · from Alice (id 42) · DM · msg 7]")
+    expect(header).toContain("[via telegram · from Alice (id 42) · DM · chat c1 · msg 7]")
     expect(header).not.toContain("CLIENT")
     expect(header).not.toContain("MODERATING")
     expect(header.endsWith("\n")).toBe(true)
@@ -56,9 +56,19 @@ describe("SessionOrigin.modelHeader", () => {
 describe("SessionOrigin.headerLine (bare attribution, for audience batches)", () => {
   test("is the [via …] line only — no framing, no trailing separator", () => {
     const line = SessionOrigin.headerLine(messenger({ trust: "audience", chatKind: "group", chatTitle: "Flea" }))
-    expect(line).toBe('[via telegram · from Alice (id 42) · group "Flea" · msg 7]')
+    expect(line).toBe('[via telegram · from Alice (id 42) · group "Flea" · chat c1 · msg 7]')
     expect(line).not.toContain("MODERATING")
     expect(SessionOrigin.headerLine(undefined)).toBe("")
+  })
+
+  // A moderating agent acts by id: `messenger send`/`moderate` both take the CHAT id, and in a
+  // forum every post is its own chat — so the line must carry the chat it came from, not just the
+  // binding's. All three ids the tool needs are here.
+  test("carries every id the messenger tool takes — chat, sender, message", () => {
+    const line = SessionOrigin.headerLine(messenger({ chatID: "post-77", chatKind: "thread", chatTitle: "Crash on save" }))
+    expect(line).toContain("chat post-77")
+    expect(line).toContain("id 42")
+    expect(line).toContain("msg 7")
   })
 })
 

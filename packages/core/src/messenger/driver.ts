@@ -72,6 +72,12 @@ export interface ChatSnapshot {
   /** The account's SELF-chat (Telegram Saved Messages) — the shared operator console where the
    *  §0.1.5 address-prefix rule applies. Only `login` drivers ever set this. */
   readonly self?: boolean
+  /** The chat this one lives INSIDE, for platforms that nest conversations: a Discord thread's
+   *  channel, a forum post's forum, a Telegram topic's supergroup. A binding on the parent covers
+   *  every child — the gateway falls back to it when the child chat isn't bound itself, so
+   *  moderating a support forum takes ONE binding instead of one per post (and posts appear
+   *  continuously, so per-post binding could never work). Replies still target the child chat id. */
+  readonly parentID?: string
 }
 
 /** One past message, for the tool's `history` op — same normalization as inbound. */
@@ -113,7 +119,10 @@ export interface OutboundMessage {
 
 export type ModerationAct =
   | { readonly act: "delete"; readonly messageID: string }
-  | { readonly act: "ban"; readonly userID: string }
+  /** `purgeSeconds` also deletes that member's recent messages where the platform supports it
+   *  (Discord `delete_message_seconds`) — the spam-wave action: without it a banned spammer's
+   *  posts stay up and someone has to delete them one by one. */
+  | { readonly act: "ban"; readonly userID: string; readonly purgeSeconds?: number }
   | { readonly act: "kick"; readonly userID: string }
   | { readonly act: "mute"; readonly userID: string; readonly seconds?: number }
   | { readonly act: "pin"; readonly messageID: string }

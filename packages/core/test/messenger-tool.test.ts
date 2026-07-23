@@ -22,4 +22,19 @@ describe("MessengerTool.buildModerationAct", () => {
     // A fractional seconds floors to a whole second.
     expect(MessengerTool.buildModerationAct({ act: "mute", user: "u7", seconds: 90.7 })).toEqual({ act: "mute", userID: "u7", seconds: 90 })
   })
+
+  // On a spam wave, banning the account while its posts stay up leaves the cleanup to a human —
+  // `seconds` on a ban is the purge window (Discord deletes that member's recent messages).
+  test("ban with seconds purges that member's recent messages", () => {
+    expect(MessengerTool.buildModerationAct({ act: "ban", user: "spammer", seconds: 3600 })).toEqual({
+      act: "ban",
+      userID: "spammer",
+      purgeSeconds: 3600,
+    })
+    expect(MessengerTool.buildModerationAct({ act: "ban", user: "spammer", seconds: -5 })).toEqual({
+      act: "ban",
+      userID: "spammer",
+      purgeSeconds: 0,
+    })
+  })
 })

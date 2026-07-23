@@ -124,7 +124,7 @@ const makeFakeDriver = () => {
     connects: 0,
     secrets: [] as (string | undefined)[],
     queue: undefined as Queue.Queue<MessengerDriver.InboundEvent> | undefined,
-    sent: [] as { chatID: string; text: string | undefined; fileName?: string }[],
+    sent: [] as { chatID: string; text: string | undefined; fileName?: string; replyTo?: string }[],
     failNext: false,
     challengeNext: false,
     open: 0,
@@ -162,6 +162,7 @@ const makeFakeDriver = () => {
                 chatID,
                 text: message.text,
                 ...(message.file === undefined ? {} : { fileName: message.file.name }),
+                ...(message.replyTo === undefined ? {} : { replyTo: message.replyTo }),
               })
               return { messageID: "m" + state.sent.length }
             }),
@@ -217,10 +218,17 @@ const message = (
     sender?: string
     kind?: Messenger.ChatKind
     attachments?: readonly MessengerDriver.FileRef[]
+    parentID?: string
   },
 ): MessengerDriver.InboundEvent => ({
   kind: "message",
-  chat: { chatID, kind: opts?.kind ?? "dm", title: opts?.title ?? "Chat " + chatID, ...(opts?.self ? { self: true } : {}) },
+  chat: {
+    chatID,
+    kind: opts?.kind ?? "dm",
+    title: opts?.title ?? "Chat " + chatID,
+    ...(opts?.self ? { self: true } : {}),
+    ...(opts?.parentID === undefined ? {} : { parentID: opts.parentID }),
+  },
   messageID: "msg-" + ++messageSeq,
   sender: {
     id: opts?.sender ?? "u1",
@@ -922,6 +930,76 @@ describe("MessengerGateway pipeline", () => {
       expect(batch[0]?.text).toContain("[via fake") // per-line attribution present
       // A multi-sender batch has no single structured origin.
       expect(batch[0]?.origin).toBeUndefined()
+
+      yield* store.removeAccount(account.id)
+      yield* gateway.reload()
+    }),
+  )
+
+  it.live("a THREAD routes to its parent's binding, and the reply goes back to the thread", () =>
+    Effect.gen(function* () {
+      const { store, gateway, account, queue } = yield* online("forum")
+      // ONE binding on the support forum — its posts are threads that appear continuously, so
+      // binding each post is impossible; without the parent fallback the agent is deaf to them.
+      yield* store.createBinding({ accountID: account.id, chatID: "forum-1", sessionID: "ses_alpha", trust: "client" })
+      const promptsBefore = session.prompts.length
+      const sentBefore = fake.state.sent.length
+
+      yield* Queue.offer(
+        queue,
+        message("post-77", { kind: "thread", parentID: "forum-1", title: "Crash on save", text: "it crashes when I save", sender: "u5" }),
+      )
+      yield* eventually(
+        Effect.sync(() => session.prompts.slice(promptsBefore)),
+        (prompts) => prompts.some((p) => p.sessionID === "ses_alpha"),
+        "thread message reached the forum's session",
+      )
+      const injected = session.prompts.slice(promptsBefore).find((p) => p.sessionID === "ses_alpha")
+      expect(injected?.text).toContain("it crashes when I save")
+      // The origin names the THREAD (what an answer must target), not the forum root.
+      expect(injected?.origin).toMatchObject({ via: "messenger", trust: "client" })
+      expect((injected?.origin as { chatID?: string })?.chatID).toBe("post-77")
+
+      // The auto-relay answers in the thread that asked — not in the forum root.
+      const events = yield* EventV2.Service
+      yield* events.publish(SessionEvent.Text.Ended, {
+        sessionID: "ses_alpha" as never,
+        assistantMessageID: SessionMessage.ID.make("msg_forum"),
+        textID: "t-forum",
+        text: "Thanks — which version are you on?",
+        timestamp: DateTime.makeUnsafe(1),
+      })
+      const relayed = yield* eventually(
+        Effect.sync(() => fake.state.sent.slice(sentBefore)),
+        (sent) => sent.some((s) => s.text === "Thanks — which version are you on?"),
+        "reply relayed",
+      )
+      expect(relayed.find((s) => s.text === "Thanks — which version are you on?")?.chatID).toBe("post-77")
+
+      yield* store.removeAccount(account.id)
+      yield* gateway.reload()
+    }),
+  )
+
+  it.live("a moderating batch tells the agent its reply text goes nowhere, and names the ops", () =>
+    Effect.gen(function* () {
+      const { store, gateway, account, queue } = yield* online("levers")
+      yield* store.createBinding({ accountID: account.id, chatID: "700", sessionID: "ses_beta", trust: "audience" })
+      const promptsBefore = session.prompts.length
+
+      // Trip the size cap rather than waiting out the 30s window (the timer leg is covered above).
+      for (let i = 1; i <= 20; i++) yield* Queue.offer(queue, message("700", { text: `question ${i}`, sender: `u${i}` }))
+      const flushed = yield* eventually(
+        Effect.sync(() => session.prompts.slice(promptsBefore)),
+        (prompts) => prompts.length === 1,
+        "batch flushed",
+      )
+      const text = flushed[0]?.text ?? ""
+      expect(text).toContain("MODERATING") // the framing survives
+      expect(text).toContain("does NOT reach the chat") // an audience agent speaks only via the tool
+      expect(text).toContain('"op":"send"')
+      expect(text).toContain('"op":"moderate"')
+      expect(text).toContain("chat 700") // the ids the ops need are on the message line
 
       yield* store.removeAccount(account.id)
       yield* gateway.reload()

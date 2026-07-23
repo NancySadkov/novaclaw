@@ -19,9 +19,17 @@ const makeFakeGateway = () => {
     reject401: false,
     moderationForbidden: false,
     guilds: [{ id: "g1", name: "NovaClaw HQ" }],
-    channels: { g1: [{ id: "c-support", type: 0, name: "support" }, { id: "c-voice", type: 2, name: "lounge" }] } as Record<
+    channels: {
+      g1: [
+        { id: "c-support", type: 0, name: "support" },
+        { id: "c-voice", type: 2, name: "lounge" },
+        { id: "c-bugs", type: 15, name: "bug-reports" }, // a FORUM — where support posts land
+      ],
+    } as Record<string, { id: string; type: number; name: string }[]>,
+    // Live forum posts: each is a thread whose parent is the forum channel.
+    activeThreads: { g1: [{ id: "t-crash", type: 11, name: "Crash on save", parent_id: "c-bugs" }] } as Record<
       string,
-      { id: string; type: number; name: string }[]
+      { id: string; type: number; name: string; parent_id: string }[]
     >,
   }
   let handlers: Parameters<DiscordSocketFactory>[1] | undefined
@@ -43,8 +51,15 @@ const makeFakeGateway = () => {
     if (url.endsWith("/users/@me/guilds")) return json(state.guilds)
     const guildChannels = url.match(/\/guilds\/([^/]+)\/channels$/)
     if (guildChannels) return json(state.channels[guildChannels[1]!] ?? [])
+    const activeThreads = url.match(/\/guilds\/([^/]+)\/threads\/active$/)
+    if (activeThreads) return json({ threads: state.activeThreads[activeThreads[1]!] ?? [] })
     const channel = url.match(/\/channels\/([^/]+)$/)
-    if (channel) return json({ id: channel[1], type: 0, name: "support", guild_id: "g1" })
+    if (channel) {
+      const id = channel[1]!
+      const thread = Object.values(state.activeThreads).flat().find((t) => t.id === id)
+      if (thread) return json({ ...thread, guild_id: "g1" })
+      return json({ id, type: 0, name: "support", guild_id: "g1" })
+    }
     if (/\/channels\/[^/]+\/messages$/.test(url)) return json({ id: "sent-" + state.restCalls.length })
     // Moderation routes (all succeed with an empty 200 unless a test flips a flag).
     if (state.moderationForbidden) return json({ message: "Missing Permissions" }, 403)
@@ -276,7 +291,7 @@ describe("DiscordDriver", () => {
     }),
   )
 
-  it.live("listChats maps guild text channels (voice skipped) and caches their names", () =>
+  it.live("listChats maps text channels, FORUMS, and live threads (voice skipped)", () =>
     Effect.gen(function* () {
       const fake = makeFakeGateway()
       const chats = yield* Effect.scoped(
@@ -285,8 +300,78 @@ describe("DiscordDriver", () => {
           return yield* connection.listChats!()
         }),
       )
-      expect(chats).toEqual([{ chatID: "c-support", kind: "group", title: "#support (NovaClaw HQ)" }])
+      expect(chats).toEqual([
+        { chatID: "c-support", kind: "group", title: "#support (NovaClaw HQ)" },
+        // A forum is pickable and SAYS it's a forum — binding it covers every post inside.
+        { chatID: "c-bugs", kind: "group", title: "#bug-reports (NovaClaw HQ · forum)" },
+        // Each live post is a thread, listed under its forum, carrying the parent that routes it.
+        { chatID: "t-crash", kind: "thread", title: "Crash on save (#bug-reports · NovaClaw HQ)", parentID: "c-bugs" },
+      ])
       expect(DiscordDriver.driver.meta.capabilities.listChats).toBe("full")
+    }),
+  )
+
+  it.live("a message in a forum post arrives as a THREAD carrying its parent forum", () =>
+    Effect.gen(function* () {
+      const fake = makeFakeGateway()
+      const received: InboundEvent[] = []
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const connection = yield* connect(fake)
+          yield* eventually(() => fake.state.wsSent, (sent) => sent.some((f) => f.op === 2), "IDENTIFY sent")
+          fake.push({ op: 0, s: 1, t: "READY", d: { session_id: "sess-1", user: { id: "bot-1" } } })
+          fake.push({
+            op: 0,
+            s: 2,
+            t: "MESSAGE_CREATE",
+            d: { id: "m9", channel_id: "t-crash", guild_id: "g1", author: { id: "u5", username: "dave" }, content: "it crashes when I save" },
+          })
+          yield* connection.inbound.pipe(
+            Stream.take(1),
+            Stream.runForEach((event) => Effect.sync(() => received.push(event))),
+          )
+        }),
+      )
+      const post = received[0]
+      if (post?.kind !== "message") throw new Error("expected a message")
+      // Without parentID the gateway could never match this to the forum's binding — every
+      // support post would be silently unheard.
+      expect(post.chat).toEqual({ chatID: "t-crash", kind: "thread", title: "Crash on save", parentID: "c-bugs" })
+    }),
+  )
+
+  it.live("a reply attaches to the message that asked — first chunk only", () =>
+    Effect.gen(function* () {
+      const fake = makeFakeGateway()
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const connection = yield* connect(fake)
+          yield* connection.send("c-support", { text: "word ".repeat(600), replyTo: "m1" }) // >2000 chars
+        }),
+      )
+      const posts = fake.state.restCalls.filter((call) => call.method === "POST" && !call.form)
+      expect(posts.length).toBeGreaterThan(1)
+      const references = posts.map((call) => (call.body as { message_reference?: { message_id: string } }).message_reference)
+      expect(references[0]).toEqual({ message_id: "m1", fail_if_not_exists: false } as never)
+      // A five-deep quote chain reads awful — only the opening chunk quotes.
+      expect(references.slice(1).every((reference) => reference === undefined)).toBe(true)
+    }),
+  )
+
+  it.live("ban can take the spammer's recent messages with it (delete_message_seconds)", () =>
+    Effect.gen(function* () {
+      const fake = makeFakeGateway()
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const connection = yield* connect(fake)
+          yield* connection.moderate!("c-support", { act: "ban", userID: "spammer", purgeSeconds: 3600 })
+          yield* connection.moderate!("c-support", { act: "ban", userID: "u9" })
+        }),
+      )
+      const bans = fake.state.restCalls.filter((call) => call.method === "PUT" && /\/guilds\/g1\/bans\//.test(call.url))
+      expect((bans[0]?.body as { delete_message_seconds?: number }).delete_message_seconds).toBe(3600)
+      // A plain ban stays a plain ban — no messages deleted unless asked.
+      expect((bans[1]?.body as { delete_message_seconds?: number }).delete_message_seconds).toBeUndefined()
     }),
   )
 })

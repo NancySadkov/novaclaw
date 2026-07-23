@@ -28,7 +28,10 @@ const messengerHeaderLine = (origin: Extract<Origin, { via: "messenger" }>): str
     origin.chatKind === undefined || origin.chatKind === "dm"
       ? "DM"
       : `${origin.chatKind}${origin.chatTitle ? ` "${origin.chatTitle}"` : ""}`
-  return `[via ${origin.driver} · from ${who} · ${where} · msg ${origin.messageID}]`
+  // Every id the messenger tool takes is on this line — chat, sender, message. A moderating agent
+  // reads one line and can reply, quote, or act; without the chat id it would have to go hunting
+  // (and in a forum, each post is its OWN chat, so the binding's id is not the one to answer in).
+  return `[via ${origin.driver} · from ${who} · ${where} · chat ${origin.chatID} · msg ${origin.messageID}]`
 }
 
 /**
