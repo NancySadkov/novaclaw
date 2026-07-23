@@ -128,7 +128,7 @@ describe("WhatsAppBaileys pure policy", () => {
 
   it.effect("linkInstructions describes QR vs pairing-code linking", () =>
     Effect.sync(() => {
-      expect(WhatsAppBaileysDriver.linkInstructions({ qr: "QR" })).toContain("scan")
+      expect(WhatsAppBaileysDriver.linkInstructions({ qr: "QR" })).toContain("Link a device")
       expect(WhatsAppBaileysDriver.linkInstructions({ pairingCode: "ABCD-1234" })).toContain("ABCD-1234")
     }),
   )
@@ -140,6 +140,22 @@ describe("WhatsAppBaileys pure policy", () => {
       // confuse a lay user — and it must say the code refreshes, so a re-render doesn't read as a fault.
       expect(rendered).not.toContain("RAW-PAYLOAD")
       expect(rendered).toContain("refreshes")
+    }),
+  )
+
+  it.effect("link instructions steer away from WhatsApp's WRONG QR scanner", () =>
+    Effect.sync(() => {
+      // The owner's first real link failed here: WhatsApp's most prominent QR button is on the chats
+      // screen and scans CONTACT codes, not device links. Naming the right menu isn't enough — by
+      // the time they read it they have already found a scanner, so the wrong one must be named too.
+      for (const link of [
+        { qr: "RAW", qrImage: "data:image/png;base64,AAA" },
+        { qr: "RAW" }, // the unrendered fallback gets the same steering
+      ])
+        for (const needle of ["Linked devices", "Link a device", "chats screen", "adds a contact"])
+          expect(WhatsAppBaileysDriver.linkInstructions(link)).toContain(needle)
+      // The pairing-code path reaches the same menu by a different leaf.
+      expect(WhatsAppBaileysDriver.linkInstructions({ pairingCode: "ABCD-1234" })).toContain("Linked devices")
     }),
   )
 })

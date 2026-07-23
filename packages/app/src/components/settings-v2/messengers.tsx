@@ -67,6 +67,12 @@ export const SettingsMessengersV2: Component = () => {
   const [drivers] = createResource(() => server(), messengerDrivers, { initialValue: [] })
   const [accounts, { refetch }] = createResource(() => server(), messengerAccounts, { initialValue: [] })
 
+  // What the operator must prefix a self-chat message with for the console to hear it. Per-account
+  // (`address`), defaulting to the kernel's "Nova" — read from an account that overrides it so the
+  // hint quotes what the user must actually type, not what we ship.
+  const consoleAddress = () =>
+    accounts.latest.map((row) => row.account.settings["address"]?.trim()).find((address) => address) ?? "Nova"
+
   // Live status: any messenger.* bus event → refetch the small list (always truthful, no client fold).
   onMount(() => {
     const unsub = sdk().event.listen((e) => {
@@ -139,6 +145,16 @@ export const SettingsMessengersV2: Component = () => {
       <div class="settings-v2-tab-body">
         <Show when={airgapped()}>
           <p class="settings-v2-field-description">{language.t("settings.messengers.airgapped")}</p>
+        </Show>
+
+        {/* Connecting an account is only half of knowing how to use one: the §0.1.5 console ignores
+            anything not addressed to it, which from the outside is indistinguishable from a broken
+            account. Shown once there is an account to use it with. */}
+        <Show when={accounts.latest.length > 0}>
+          <div class="flex w-full min-w-0 flex-col gap-1">
+            <p class="settings-v2-field-description">{language.t("settings.messengers.consoleHint", { address: consoleAddress() })}</p>
+            <p class="settings-v2-field-description">{language.t("settings.messengers.consoleHintWhy")}</p>
+          </div>
         </Show>
 
         <Show

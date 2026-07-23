@@ -1492,6 +1492,13 @@ export const dict = {
   "settings.messengers.title": "Messengers",
   "settings.messengers.description":
     "Connect NovaClaw to your messaging apps — the agent can answer chats while you're away, and you can drive NovaClaw from your phone.",
+  // How the operator actually USES a connected account from their phone. Without this the §0.1.5
+  // address rule is invisible: an unaddressed message is silently ignored (by design — your notes to
+  // self must stay yours), which is indistinguishable from a broken account.
+  "settings.messengers.consoleHint":
+    'To give NovaClaw a task from your phone, message YOURSELF — "Message Yourself" on WhatsApp, "Saved Messages" on Telegram — and start the message with "{{address}}, ". For example: "{{address}}, what\'s on my calendar today?"',
+  "settings.messengers.consoleHintWhy":
+    "Messages there that don't start with that are ignored, so your own notes to self stay private. The first one you send links that chat to a new session automatically.",
   "settings.messengers.add": "Add account",
   "settings.messengers.addThenLogin": "Add & log in",
   "settings.messengers.empty": "No messenger accounts yet. Add one to let NovaClaw talk where you talk.",

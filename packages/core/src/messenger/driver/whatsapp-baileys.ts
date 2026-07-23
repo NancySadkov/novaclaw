@@ -185,18 +185,36 @@ export const isSelfMessage = (
   return message.chatID !== selfID
 }
 
-/** Human instructions for the link step, from whichever mode the factory started. When we rendered
- *  the QR, the image IS the instruction — the text only says what to do with it (and warns that it
- *  refreshes, so nobody thinks a re-render means something went wrong). Without a rendered image we
- *  fall back to the raw payload: useless to scan, but the honest thing to show a developer. */
+/** Human instructions for the link step, from whichever mode the factory started.
+ *
+ *  ⚠️ The wrong scanner is the more obvious one. WhatsApp puts a QR button right on the chats
+ *  screen, and it is NOT for linking a device — it scans a contact's personal QR code. Pointing it
+ *  at our code does nothing useful, and nothing explains why. (The owner hit exactly this on the
+ *  first real link, 2026-07-23.) A single run-on line naming the right menu was not enough, because
+ *  the reader has already found a QR scanner by the time they read it — so the steps are numbered,
+ *  the menu is named per platform, and the wrong button is called out by name.
+ *
+ *  When we rendered the QR the image IS the instruction; the text only says how to reach the right
+ *  scanner, and warns that the code refreshes so a re-render never reads as a fault. Without a
+ *  rendered image we fall back to the raw payload — useless to scan, but honest for a developer. */
+const SCAN_STEPS =
+  "On your phone, open WhatsApp and go to:\n" +
+  "1. Settings (iPhone) — or the ⋮ menu (Android)\n" +
+  "2. Linked devices\n" +
+  "3. Link a device\n" +
+  "4. Point it at the code below.\n\n" +
+  "⚠️ Not the QR button on the main chats screen — that one adds a contact and will never link " +
+  "NovaClaw. It has to be Linked devices → Link a device."
+
 export const linkInstructions = (link: WALink): string =>
   link.pairingCode !== undefined
-    ? `Open WhatsApp on your phone → Linked Devices → Link a device → Link with phone number, then enter this code: ${link.pairingCode}`
+    ? "On your phone, open WhatsApp → Settings (iPhone) or the ⋮ menu (Android) → Linked devices → " +
+      `Link a device → Link with phone number instead, then enter this code: ${link.pairingCode}`
     : link.qrImage !== undefined
-      ? "Open WhatsApp on your phone → Linked Devices → Link a device, then scan this code. It refreshes every few seconds — just scan whichever one is on screen."
+      ? `${SCAN_STEPS}\n\nThe code refreshes every few seconds — just scan whichever one is on screen.`
       : link.qr !== undefined
-        ? `Open WhatsApp on your phone → Linked Devices → Link a device, then scan the QR code shown here.\n\n${link.qr}`
-        : "Open WhatsApp → Linked Devices → Link a device to finish."
+        ? `${SCAN_STEPS}\n\n${link.qr}`
+        : "On your phone, open WhatsApp → Linked devices → Link a device to finish."
 
 /** The link as a login step the wizard can render. */
 const linkProgress = (link: WALink) => ({
