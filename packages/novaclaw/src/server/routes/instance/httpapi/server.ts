@@ -48,7 +48,7 @@ import { Database } from "@novaclaw/core/database/database"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { Memory } from "@novaclaw/core/kb-graph/memory"
 import { MessengerDrivers } from "@novaclaw/core/messenger/drivers"
-import { ExternalDriverSource } from "@novaclaw/core/messenger/external-driver-source"
+import { NovaclawExternalDriverSource } from "../../../../messenger/external-driver-source"
 import { MessengerGateway } from "@novaclaw/core/messenger/gateway"
 import { MessengerLogin } from "@novaclaw/core/messenger/login"
 import { MessengerPace } from "@novaclaw/core/messenger/pace"
@@ -286,11 +286,12 @@ const app = LayerNode.group([
 // ⚠️ Found 2026-07-22 (P1.7 boot smoke): P0/P1 never added this — every /api/messenger route
 // 500'd "Service not found" on the real serve path (the fake-proven pipeline all ran against the
 // @novaclaw/server test assembly). This block is what makes the messenger real in the product.
-// MessengerDrivers now composes builtin ∪ ExternalDriverSource (§3.6 plugin-driver seam); the empty
-// default source = builtin-only (a plugin-backed source replaces it once out-of-kernel drivers ship).
+// MessengerDrivers now composes builtin ∪ ExternalDriverSource (§3.6 plugin-driver seam). The
+// novaclaw-side source contributes out-of-kernel drivers the instance opts into (WhatsApp/Baileys
+// behind NOVACLAW_ENABLE_WHATSAPP); it's builtin-only when nothing is enabled.
 const messengerBase = Layer.mergeAll(
   MessengerStore.layer,
-  MessengerDrivers.layer.pipe(Layer.provide(ExternalDriverSource.layer)),
+  MessengerDrivers.layer.pipe(Layer.provide(NovaclawExternalDriverSource.layer)),
   Credential.layer,
 )
 const messengerServices = Layer.mergeAll(
