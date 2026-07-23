@@ -273,6 +273,8 @@ const makeFakeMail = () => {
       state.sent.push(email)
       return { messageID: `sent-${state.sent.length}` }
     },
+    startUid: 0,
+    uidValidity: state.uidValidity,
     close: async () => {
       state.closed = true
     },

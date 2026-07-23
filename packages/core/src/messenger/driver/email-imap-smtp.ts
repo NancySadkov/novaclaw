@@ -290,7 +290,7 @@ const connectStream = async (host: string, port: number, tls: boolean): Promise<
 
 const HEADER_FIELDS = "MESSAGE-ID IN-REPLY-TO REFERENCES FROM SUBJECT DATE"
 
-const imapConnect = async (config: EmailTransportConfig): Promise<{ stream: ByteStream; uidValidity: number; exists: number }> => {
+const imapConnect = async (config: EmailTransportConfig): Promise<{ stream: ByteStream; uidValidity: number; exists: number; uidNext: number }> => {
   const stream = await connectStream(config.imapHost, config.imapPort, config.secure !== false)
   await stream.line() // greeting (* OK ...)
   let tag = 0
@@ -318,25 +318,18 @@ const imapConnect = async (config: EmailTransportConfig): Promise<{ stream: Byte
   await command(imapAuth(config.auth))
   let uidValidity = 0
   let exists = 0
+  let uidNext = 0
   await command("SELECT INBOX", {
     collectUntagged: (raw) => {
       const validity = /UIDVALIDITY (\d+)/i.exec(raw)
       if (validity) uidValidity = Number(validity[1])
       const count = /^\* (\d+) EXISTS/i.exec(raw)
       if (count) exists = Number(count[1])
+      const next = /UIDNEXT (\d+)/i.exec(raw)
+      if (next) uidNext = Number(next[1])
     },
   })
-  return { stream, uidValidity, exists }
-}
-
-// Parse one FETCH item block (the lines between a `* n FETCH (` and its close) into headers+text via
-// the two BODY[...] literal segments we asked for.
-const extractFetch = (block: string): { uid: number; headerBlock: string; text: string } | undefined => {
-  const uid = /UID (\d+)/i.exec(block)?.[1]
-  if (uid === undefined) return undefined
-  // Our FETCH asks for BODY[HEADER.FIELDS (...)] then BODY[TEXT]; each arrives as `{n}<data>`.
-  const segments = Array.from(block.matchAll(/\{(\d+)\}([\s\S]*?)(?=(?:BODY|\)|$))/g), (m) => m[2] ?? "")
-  return { uid: Number(uid), headerBlock: segments[0] ?? "", text: segments[1] ?? "" }
+  return { stream, uidValidity, exists, uidNext }
 }
 
 // ── SMTP ──────────────────────────────────────────────────────────────────────────────────────
@@ -386,71 +379,96 @@ const smtpSend = async (config: EmailTransportConfig, mime: string, to: string):
 let outSeq = 0
 
 export const factory: EmailClientFactory = async (config: EmailTransportConfig): Promise<EmailClient> => {
-  const { stream, uidValidity } = await imapConnect(config)
+  const { stream, uidValidity, uidNext } = await imapConnect(config)
+  // The highest EXISTING UID at connect — the driver starts the inbound cursor here so first
+  // connect delivers only NEW mail, never the entire back-catalogue (a real inbox is huge: a live
+  // Gmail had 14,408 messages, and `UID FETCH 1:*` on that hangs). History is served by fetchRecent.
+  const startUid = Math.max(0, uidNext - 1)
   let tag = 100
 
-  // Run one FETCH command (UID FETCH or sequence FETCH) and parse its items — the literal-aware
-  // read loop shared by fetchSince (new mail) and fetchRecent (last N, for the read ops).
+  // ONE IMAP connection is shared by the background poll (fetchSince) and the read ops
+  // (fetchRecent) — but IMAP is strictly one command at a time, so their tagged responses would
+  // interleave and desync if they overlapped. Serialize every command through this lock.
+  let lock: Promise<unknown> = Promise.resolve()
+  const withLock = <T>(fn: () => Promise<T>): Promise<T> => {
+    const run = lock.then(fn, fn)
+    lock = run.then(
+      () => undefined,
+      () => undefined,
+    )
+    return run
+  }
+
+  // Run one FETCH command and parse its items. Literals are read as EXACT BYTES (so multibyte UTF-8
+  // is intact) and associated with their BODY[<label>] — because servers may REORDER the requested
+  // items (Gmail returns BODY[TEXT] before BODY[HEADER.FIELDS] regardless of the request order), so
+  // position can't be trusted; the label is authoritative. A FETCH-start line can itself carry the
+  // UID and a trailing literal (`* 3 FETCH (UID 9 BODY[TEXT] {n}`), so it's handled in one pass.
   const runFetch = async (fetchCommand: string): Promise<RawEmail[]> => {
     const id = `b${++tag}`
     stream.write(`${id} ${fetchCommand}\r\n`)
-    const messages: RawEmail[] = []
-    let current = ""
-    const flush = () => {
-      const parsed = current.trim().length > 0 ? extractFetch(current) : undefined
-      if (parsed) messages.push(assembleEmail({ uid: parsed.uid, headerBlock: parsed.headerBlock, text: parsed.text, fallbackAt: Date.now() }))
-      current = ""
+    const items: { uid?: number; header?: string; text?: string }[] = []
+    let cur: { uid?: number; header?: string; text?: string } | undefined
+    const takeUid = (line: string) => {
+      const u = /UID (\d+)/i.exec(line)
+      if (u && cur) cur.uid = Number(u[1])
     }
     while (true) {
       const raw = await stream.line()
-      const lit = /\{(\d+)\}$/.exec(raw)
-      if (lit) {
-        const data = await stream.readExact(Number(lit[1]))
-        current += raw + data.toString("utf8")
-        continue
-      }
       if (raw.startsWith(`${id} `)) {
-        flush()
+        if (cur) items.push(cur)
         if (!/^\S+\s+OK/i.test(raw)) throw new Error(`IMAP FETCH failed: ${raw}`)
         break
       }
       if (/^\* \d+ FETCH/i.test(raw)) {
-        flush()
-        current = raw
-      } else current += "\n" + raw
+        if (cur) items.push(cur)
+        cur = {}
+      }
+      takeUid(raw)
+      // A trailing literal `… BODY[<label>] {n}` (or a bare `{n}`) — read exactly n bytes as data.
+      const labelled = /BODY\[([^\]]*)\][^{]*\{(\d+)\}\s*$/i.exec(raw)
+      const bare = labelled ? null : /\{(\d+)\}\s*$/.exec(raw)
+      if (labelled || bare) {
+        const size = Number(labelled ? labelled[2] : bare![1])
+        const data = (await stream.readExact(size)).toString("utf8")
+        if (cur === undefined) cur = {}
+        if (labelled && /HEADER/i.test(labelled[1]!)) cur.header = data
+        else cur.text = data // BODY[TEXT] / BODY[] / an unlabelled literal
+      }
     }
-    return messages
+    return items
+      .filter((item) => item.uid !== undefined)
+      .map((item) => assembleEmail({ uid: item.uid!, headerBlock: item.header ?? "", text: item.text ?? "", fallbackAt: Date.now() }))
   }
   const BODY = `(UID BODY.PEEK[HEADER.FIELDS (${HEADER_FIELDS})] BODY.PEEK[TEXT])`
 
-  const fetchSince: EmailClient["fetchSince"] = async (sinceUid) => {
-    const messages = (await runFetch(`UID FETCH ${sinceUid + 1}:* ${BODY}`)).filter((m) => m.uid > sinceUid)
-    return { uidValidity, messages }
-  }
-  // The last `limit` inbox messages (a fresh SELECT refreshes the EXISTS count) — the read ops
-  // (history / listChats) that let an agent "summarize my recent emails" without waiting for new mail.
-  const fetchRecent: EmailClient["fetchRecent"] = async (limit) => {
-    let exists = 0
-    await runFetch("NOOP").catch(() => [])
-    // A cheap re-SELECT to learn the current message count, then a sequence-number range for the tail.
-    const id = `b${++tag}`
-    stream.write(`${id} SELECT INBOX\r\n`)
-    while (true) {
-      const raw = await stream.line()
-      const count = /^\* (\d+) EXISTS/i.exec(raw)
-      if (count) exists = Number(count[1])
-      if (raw.startsWith(`${id} `)) break
-    }
-    if (exists === 0) return { messages: [] }
-    const start = Math.max(1, exists - limit + 1)
-    const messages = await runFetch(`FETCH ${start}:${exists} ${BODY}`)
-    // Newest last (chronological), matching the history contract.
-    return { messages }
-  }
+  const fetchSince: EmailClient["fetchSince"] = (sinceUid) =>
+    withLock(async () => {
+      const messages = (await runFetch(`UID FETCH ${sinceUid + 1}:* ${BODY}`)).filter((m) => m.uid > sinceUid)
+      return { uidValidity, messages }
+    })
+  // The last `limit` inbox messages — a fresh SELECT INBOX refreshes the EXISTS count, then a
+  // sequence-number range fetches the tail. The read ops (history / listChats) that let an agent
+  // summarize recent mail without waiting for new arrivals. Serialized with the poll (one connection).
+  const fetchRecent: EmailClient["fetchRecent"] = (limit) =>
+    withLock(async () => {
+      let exists = 0
+      const id = `b${++tag}`
+      stream.write(`${id} SELECT INBOX\r\n`)
+      while (true) {
+        const raw = await stream.line()
+        const count = /^\* (\d+) EXISTS/i.exec(raw)
+        if (count) exists = Number(count[1])
+        if (raw.startsWith(`${id} `)) break
+      }
+      if (exists === 0) return { messages: [] }
+      const start = Math.max(1, exists - limit + 1)
+      return { messages: await runFetch(`FETCH ${start}:${exists} ${BODY}`) }
+    })
   const send: EmailClient["send"] = async (email) => {
     const messageID = `novaclaw-${Date.now()}-${++outSeq}@${config.auth.user.split("@")[1] ?? "novaclaw.local"}`
     await smtpSend(config, buildMime(email, config.auth.user, messageID), email.to)
     return { messageID }
   }
-  return { fetchSince, fetchRecent, send, close: async () => stream.close() }
+  return { fetchSince, fetchRecent, send, startUid, uidValidity, close: async () => stream.close() }
 }

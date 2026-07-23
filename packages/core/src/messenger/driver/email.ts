@@ -72,6 +72,10 @@ export interface EmailClient {
    *  mail without waiting for new arrivals (drives the `history`/`listChats` ops). */
   readonly fetchRecent: (limit: number) => Promise<{ readonly messages: readonly RawEmail[] }>
   readonly send: (email: OutboundEmail) => Promise<{ readonly messageID: string }>
+  /** The highest existing UID at connect — a FRESH inbound cursor starts here, so first connect
+   *  delivers only NEW mail, never the whole back-catalogue (`UID FETCH 1:*` on a 14k inbox hangs). */
+  readonly startUid: number
+  readonly uidValidity: number
   readonly close: () => Promise<void>
 }
 
@@ -397,7 +401,11 @@ export const make = (
           const value = raw as { uid: unknown; uidValidity: unknown }
           if (typeof value.uid === "number" && typeof value.uidValidity === "number") return value as { uid: number; uidValidity: number }
         }
-        return { uid: 0, uidValidity: 0 }
+        // No stored cursor → start at the current mailbox head, so the pump delivers only mail that
+        // arrives AFTER this first connect (never the entire history). Persist it immediately.
+        const fresh = { uid: client.startUid, uidValidity: client.uidValidity }
+        yield* ctx.cursor.set(fresh).pipe(Effect.ignore)
+        return fresh
       })
 
       const pump = Effect.gen(function* () {
