@@ -103,6 +103,10 @@ const decodeChannels = Schema.decodeUnknownOption(Schema.Array(Channel))
 const decodeChannel = Schema.decodeUnknownOption(Channel)
 const decodeActiveThreads = Schema.decodeUnknownOption(ActiveThreads)
 const decodeSent = Schema.decodeUnknownOption(SentMessage)
+const decodeMessages = Schema.decodeUnknownOption(Schema.Array(MessageCreate))
+// A cap on catch-up per channel: after a very long downtime we replay the most recent page and note
+// the gap rather than paging endlessly through a backlog nobody will read.
+const BACKFILL_PAGE = 100
 
 export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>
 
@@ -130,6 +134,23 @@ export const readCursor = (value: unknown): Cursor | undefined => {
   const { sessionID, seq, resumeURL } = value as Record<string, unknown>
   if (typeof sessionID !== "string" || typeof seq !== "number") return undefined
   return { sessionID, seq, ...(typeof resumeURL === "string" ? { resumeURL } : {}) }
+}
+
+/**
+ * Per-channel "last message id I delivered" anchors, persisted ALONGSIDE the resume state and —
+ * critically — surviving an invalid-session wipe. Discord's gateway does not replay messages a bot
+ * missed while it was disconnected (a laptop asleep, a phone backgrounded); on a fresh reconnect the
+ * driver replays them itself over REST, starting after these anchors. So they must outlive the very
+ * event (op 9) that clears the resume session — which is exactly when catch-up is needed. Read
+ * independently of `readCursor` for that reason.
+ */
+export const readAnchors = (value: unknown): Record<string, string> => {
+  if (typeof value !== "object" || value === null) return {}
+  const anchors = (value as Record<string, unknown>)["anchors"]
+  if (typeof anchors !== "object" || anchors === null) return {}
+  const out: Record<string, string> = {}
+  for (const [channelID, messageID] of Object.entries(anchors)) if (typeof messageID === "string") out[channelID] = messageID
+  return out
 }
 
 const authorName = (author: typeof Author.Type): string => author.global_name ?? author.username ?? author.id
@@ -262,10 +283,29 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
         })
 
       const queue = yield* Queue.unbounded<InboundEvent>()
-      const stored = readCursor(yield* ctx.cursor.get().pipe(Effect.orElseSucceed(() => undefined)))
+      const rawCursor = yield* ctx.cursor.get().pipe(Effect.orElseSucceed(() => undefined))
+      const stored = readCursor(rawCursor)
+      // Per-channel catch-up anchors survive an invalid-session wipe (see readAnchors) — they are
+      // what the REST backfill starts after so a laptop that slept doesn't drop its support channel.
+      const anchors = new Map<string, string>(Object.entries(readAnchors(rawCursor)))
       let session: Cursor | undefined = stored
       let seq = stored?.seq ?? 0
       let acked = true
+
+      // Dedup shared by the live pump and the reconnect backfill: a brief drop RESUMEs (gateway
+      // replay) while backfill also runs, so the same message can arrive twice — deliver it once.
+      const delivered = new Set<string>()
+      const deliveredOrder: string[] = []
+      const deliverOnce = (messageID: string): boolean => {
+        if (delivered.has(messageID)) return false
+        delivered.add(messageID)
+        deliveredOrder.push(messageID)
+        if (deliveredOrder.length > 2000) {
+          const evicted = deliveredOrder.shift()
+          if (evicted !== undefined) delivered.delete(evicted)
+        }
+        return true
+      }
 
       const socketHolder: { current?: DiscordSocket } = {}
       const sendFrame = (frame: unknown) => Effect.sync(() => socketHolder.current?.send(JSON.stringify(frame)))
@@ -297,9 +337,50 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
           }
         })
 
+      // Persist the resume state AND the anchors together; anchors are written even with no live
+      // session (after an invalid-session wipe) so the next fresh connect can still catch up.
       const persistCursor = Effect.suspend(() =>
-        session === undefined ? Effect.void : ctx.cursor.set({ ...session, seq }).pipe(Effect.ignore),
+        ctx.cursor
+          .set({
+            ...(session === undefined ? {} : { sessionID: session.sessionID, seq, ...(session.resumeURL === undefined ? {} : { resumeURL: session.resumeURL }) }),
+            anchors: Object.fromEntries(anchors),
+          })
+          .pipe(Effect.ignore),
       )
+
+      // Deliver one normalized message, moving its channel anchor forward. Used by both the live
+      // pump and the backfill so anchoring and dedup are identical on either path.
+      const deliver = (message: typeof MessageCreate.Type, meta: ChannelMeta | undefined) =>
+        Effect.gen(function* () {
+          anchors.set(message.channel_id, message.id) // anchor on EVERY message (incl. our own) so we never refetch it
+          if (!deliverOnce(message.id)) return
+          yield* Queue.offer(queue, toInbound(message, selfID, meta))
+        })
+
+      // Reconnect catch-up: Discord replays nothing a bot missed while disconnected, so on a FRESH
+      // identify (no resume session) we pull each known channel's messages since its anchor and feed
+      // them through as if they had arrived live — oldest first. Poll-based drivers get this for
+      // free; a push driver must do it by hand or a sleeping instance silently loses messages.
+      const backfill = Effect.gen(function* () {
+        for (const [channelID, afterID] of [...anchors.entries()]) {
+          const response = yield* rest(`/channels/${channelID}/messages?after=${afterID}&limit=${BACKFILL_PAGE}`).pipe(
+            Effect.orElseSucceed(() => undefined),
+          )
+          if (response === undefined || response.status >= 400) continue
+          const decoded = decodeMessages(response.body)
+          if (decoded._tag === "None" || decoded.value.length === 0) continue
+          const meta = yield* describeChannel(channelID, false)
+          // Discord returns newest-first; replay chronologically so threads read in order.
+          for (const message of [...decoded.value].reverse()) yield* deliver(message, meta)
+          yield* persistCursor
+          if (decoded.value.length >= BACKFILL_PAGE)
+            yield* Effect.logInfo(`discord: caught up ${BACKFILL_PAGE}+ missed messages in ${channelID}; older ones beyond the page were skipped`)
+        }
+      })
+      // Only on a fresh identify: a RESUME already replays the gap through the gateway, and running
+      // both would double-deliver (the dedup set guards the overlap, but skipping the REST burst
+      // when it isn't needed is cheaper and kinder to the rate limit).
+      if (stored === undefined && anchors.size > 0) yield* Effect.forkScoped(backfill.pipe(Effect.catchCause(() => Effect.void)))
 
       const pump = Effect.gen(function* () {
         while (true) {
@@ -339,9 +420,10 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
               // The server asks us to reconnect — end cleanly; backoff + RESUME pick it up.
               return yield* Effect.fail(new ConnectError({ reason: "Discord asked to reconnect (resumable)" }))
             case 9:
-              // Invalid session: drop the resume state; the next attempt identifies fresh.
+              // Invalid session: drop the resume state but KEEP the catch-up anchors — the next
+              // fresh identify uses them to backfill exactly the messages this gap would have lost.
               session = undefined
-              yield* ctx.cursor.set(undefined).pipe(Effect.ignore)
+              yield* persistCursor
               return yield* Effect.fail(new ConnectError({ reason: "Discord session invalidated — re-identifying" }))
             case 0: {
               if (t === "READY") {
@@ -360,7 +442,7 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
                 const message = decodeMessageCreate(d)
                 if (message._tag === "Some") {
                   const meta = yield* describeChannel(message.value.channel_id, message.value.guild_id === undefined)
-                  yield* Queue.offer(queue, toInbound(message.value, selfID, meta))
+                  yield* deliver(message.value, meta)
                   yield* persistCursor
                 }
                 continue

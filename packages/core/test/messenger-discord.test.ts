@@ -31,6 +31,8 @@ const makeFakeGateway = () => {
       string,
       { id: string; type: number; name: string; parent_id: string }[]
     >,
+    // Messages a channel returns to `GET /channels/:id/messages?after=…` (newest-first, like Discord).
+    backfill: {} as Record<string, { id: string; channel_id: string; author: { id: string; username: string }; content: string }[]>,
   }
   let handlers: Parameters<DiscordSocketFactory>[1] | undefined
   const push = (frame: unknown) => handlers?.onMessage(JSON.stringify(frame))
@@ -60,6 +62,9 @@ const makeFakeGateway = () => {
       if (thread) return json({ ...thread, guild_id: "g1" })
       return json({ id, type: 0, name: "support", guild_id: "g1" })
     }
+    // Reconnect backfill: messages posted while the bot was disconnected, fetched after an anchor.
+    const backfillMatch = url.match(/\/channels\/([^/]+)\/messages\?after=/)
+    if (backfillMatch && method === "GET") return json(state.backfill[backfillMatch[1]!] ?? [])
     if (/\/channels\/[^/]+\/messages$/.test(url)) return json({ id: "sent-" + state.restCalls.length })
     // Moderation routes (all succeed with an empty 200 unless a test flips a flag).
     if (state.moderationForbidden) return json({ message: "Missing Permissions" }, 403)
@@ -205,14 +210,14 @@ describe("DiscordDriver", () => {
     }),
   )
 
-  it.live("a stored cursor RESUMEs (op 6) against the resume url; op 9 clears it", () =>
+  it.live("a stored cursor RESUMEs (op 6); op 9 drops the session but KEEPS the catch-up anchors", () =>
     Effect.gen(function* () {
       const fake = makeFakeGateway()
       const cursors: unknown[] = []
       yield* Effect.scoped(
         Effect.gen(function* () {
           const connection = yield* connect(fake, {
-            cursor: { sessionID: "sess-9", seq: 41, resumeURL: "wss://resume.example" },
+            cursor: { sessionID: "sess-9", seq: 41, resumeURL: "wss://resume.example", anchors: { "c-support": "m10" } },
             onCursor: (value) => cursors.push(value),
           })
           yield* eventually(() => fake.state.wsSent, (sent) => sent.some((f) => f.op === 6), "RESUME sent")
@@ -220,12 +225,16 @@ describe("DiscordDriver", () => {
           expect(resume.session_id).toBe("sess-9")
           expect(resume.seq).toBe(41)
           expect(fake.state.connectedURLs[0]).toBe("wss://resume.example")
-          // The server invalidates the session — the connection ends and the cursor clears.
+          // The server invalidates the session — the connection ends and the RESUME state clears…
           fake.push({ op: 9, d: false })
           yield* connection.inbound.pipe(Stream.runDrain, Effect.exit)
         }),
       )
-      expect(cursors).toContain(undefined)
+      // …but the anchors persist through it, so the next fresh connect can still backfill the gap
+      // (clearing them here — the old behaviour — is what silently lost a sleeping instance's mail).
+      const afterInvalidation = cursors.at(-1) as { sessionID?: string; anchors?: Record<string, string> } | undefined
+      expect(afterInvalidation?.sessionID).toBeUndefined()
+      expect(afterInvalidation?.anchors).toEqual({ "c-support": "m10" })
     }),
   )
 
@@ -337,6 +346,51 @@ describe("DiscordDriver", () => {
       // Without parentID the gateway could never match this to the forum's binding — every
       // support post would be silently unheard.
       expect(post.chat).toEqual({ chatID: "t-crash", kind: "thread", title: "Crash on save", parentID: "c-bugs" })
+    }),
+  )
+
+  // The product's users run on laptops that sleep and phones that background — and Discord replays
+  // NOTHING a bot missed while disconnected. On a fresh reconnect the driver must pull the gap over
+  // REST from the per-channel anchor, or a sleeping instance silently loses its support channel.
+  it.live("on a fresh reconnect, messages missed while disconnected are replayed from the anchor", () =>
+    Effect.gen(function* () {
+      const fake = makeFakeGateway()
+      // Two messages arrived in #support after the last one we processed (m10) while we were asleep.
+      fake.state.backfill["c-support"] = [
+        { id: "m12", channel_id: "c-support", author: { id: "u9", username: "alice" }, content: "second while away" },
+        { id: "m11", channel_id: "c-support", author: { id: "u9", username: "alice" }, content: "first while away" },
+      ]
+      const received: InboundEvent[] = []
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          // No resume session (a real sleep invalidates it) but a durable anchor at m10 → backfill.
+          const connection = yield* connect(fake, { cursor: { anchors: { "c-support": "m10" } } })
+          yield* eventually(() => fake.state.wsSent, (sent) => sent.some((f) => f.op === 2), "fresh IDENTIFY (not resume)")
+          yield* connection.inbound.pipe(
+            Stream.take(2),
+            Stream.runForEach((event) => Effect.sync(() => received.push(event))),
+          )
+        }),
+      )
+      // The REST fetch used the anchor as `after`, and the two missed messages arrive in ORDER.
+      expect(fake.state.restCalls.some((call) => /\/channels\/c-support\/messages\?after=m10/.test(call.url))).toBe(true)
+      expect(received.map((event) => (event.kind === "message" ? event.text : undefined))).toEqual(["first while away", "second while away"])
+    }),
+  )
+
+  it.live("with a valid resume session, the gateway replay is trusted — no REST backfill burst", () =>
+    Effect.gen(function* () {
+      const fake = makeFakeGateway()
+      fake.state.backfill["c-support"] = [{ id: "m11", channel_id: "c-support", author: { id: "u9", username: "alice" }, content: "should not be pulled" }]
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          // A resume session PRESENT → the gateway replays the gap; a REST burst would double-deliver.
+          yield* connect(fake, { cursor: { sessionID: "sess-9", seq: 5, resumeURL: "wss://resume.example", anchors: { "c-support": "m10" } } })
+          yield* eventually(() => fake.state.wsSent, (sent) => sent.some((f) => f.op === 6), "RESUME, not backfill")
+          yield* Effect.sleep(Duration.millis(50)) // give any (unwanted) backfill a chance to fire
+        }),
+      )
+      expect(fake.state.restCalls.some((call) => /messages\?after=/.test(call.url))).toBe(false)
     }),
   )
 
