@@ -1,8 +1,9 @@
 export * as MessengerDrivers from "./drivers"
 
-import { Context, Layer } from "effect"
+import { Context, Effect, Layer } from "effect"
 import { makeGlobalNode } from "../effect/app-node"
 import type { Driver } from "./driver"
+import { ExternalDriverSource } from "./external-driver-source"
 import { DiscordDriver } from "./driver/discord"
 import { EmailDriver } from "./driver/email"
 import { EmailGmailDriver } from "./driver/email-gmail"
@@ -48,6 +49,17 @@ export const make = (drivers: readonly Driver[]): Interface => ({
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/MessengerDrivers") {}
 
-export const layer = Layer.succeed(Service, Service.of(make(builtin)))
+// builtin ∪ external (plugin-contributed, §3.6). The external set is snapshotted when this layer
+// builds (plugins load first); built-ins come first, so a contributed driver can never shadow a
+// kernel transport (get() returns the first id match). Default empty source → builtin-only, no
+// behavior change until a plugin registers a driver.
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const external = yield* ExternalDriverSource.Service
+    const contributed = yield* external.drivers()
+    return make([...builtin, ...contributed])
+  }),
+)
 
-export const node = makeGlobalNode({ service: Service, layer, deps: [] })
+export const node = makeGlobalNode({ service: Service, layer, deps: [ExternalDriverSource.node] })
