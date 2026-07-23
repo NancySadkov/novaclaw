@@ -69,7 +69,7 @@ export const locationLayer = Layer.mergeAll(
   ToolManualTool.layer,
   TrashTool.layer,
   WebFetchTool.layer,
-  WebSearchTool.layer.pipe(Layer.provide(WebSearchTool.defaultConfigLayer)),
+  WebSearchTool.layer,
   WriteTool.layer,
   WriteHexTool.layer,
   SpawnTool.layer,

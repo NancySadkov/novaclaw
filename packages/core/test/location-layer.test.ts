@@ -138,6 +138,7 @@ describe("LocationServiceMap", () => {
             "trash",
             "wait",
             "webfetch",
+            "websearch",
             "write",
             "write-hex",
           ])
@@ -172,6 +173,7 @@ describe("LocationServiceMap", () => {
             "trash",
             "wait",
             "webfetch",
+            "websearch",
             "write",
             "write-hex",
           ])

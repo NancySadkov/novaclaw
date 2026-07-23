@@ -1,318 +1,233 @@
-import { beforeEach, describe, expect, test } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import { Effect, Layer, Schema } from "effect"
-import { HttpClient, HttpClientResponse } from "effect/unstable/http"
-import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
-import { LayerNode } from "@novaclaw/core/effect/layer-node"
-import { LayerNodePlatform } from "@novaclaw/core/effect/app-node-platform"
-import { PermissionV2 } from "@novaclaw/core/permission"
-import { SessionV2 } from "@novaclaw/core/session"
-import { ToolRegistry } from "@novaclaw/core/tool/registry"
+import { WebSearchEngine } from "@novaclaw/core/websearch/engine"
+import { WebSearch } from "@novaclaw/core/websearch/service"
 import { WebSearchTool } from "@novaclaw/core/tool/websearch"
-import { ToolOutputStore } from "@novaclaw/core/tool-output-store"
-import { testEffect } from "./lib/effect"
-import { toolIdentity, executeTool, settleTool, toolDefinitions } from "./lib/tool"
+import { Offline } from "@novaclaw/core/offline"
+import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
+import { it } from "./lib/effect"
 
-const sessionID = SessionV2.ID.make("ses_websearch_test")
-const payload = (text: string) =>
-  JSON.stringify({
-    jsonrpc: "2.0",
-    id: 1,
-    result: { content: [{ type: "text", text }] },
+// Built-in web search (todo.md → "a fallback so it just works for lay users"). The test that lived
+// here covered the inherited Exa/Parallel product backends, which this replaced: paid APIs, branded
+// providers in the kernel, and no working search at all on a fresh instance.
+//
+// What matters now: the airgap gate holds, a configured SearXNG beats the built-ins, one dead
+// engine never costs the user the others' results, and an all-engines-failed search says so rather
+// than returning an empty list that reads like "the web has nothing".
+
+const DDG_HTML = `
+<div class="result results_links">
+  <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fbun.sh%2Fdocs&amp;rut=x">Bun &amp; docs</a>
+  <a class="result__snippet" href="x">All about <b>Bun</b>, the runtime.</a>
+</div>
+<div class="result results_links">
+  <a class="result__a" href="https://example.com/two">Second result</a>
+  <a class="result__snippet" href="x">Another page.</a>
+</div>`
+
+const json = (body: unknown) => new Response(JSON.stringify(body), { status: 200, headers: { "content-type": "application/json" } })
+
+describe("WebSearchEngine parsing", () => {
+  test("DuckDuckGo results survive redirect wrapping and HTML entities", () => {
+    const results = WebSearchEngine.parseDuckDuckGo(DDG_HTML, 10)
+    expect(results).toHaveLength(2)
+    // The real URL is inside the redirect, not the redirect itself.
+    expect(results[0]?.url).toBe("https://bun.sh/docs")
+    expect(results[0]?.title).toBe("Bun & docs")
+    expect(results[0]?.snippet).toBe("All about Bun, the runtime.")
+    expect(results[1]?.url).toBe("https://example.com/two")
   })
 
-describe("WebSearchTool provider selection", () => {
-  test("rejects out-of-range numeric controls", () => {
-    const decode = Schema.decodeUnknownSync(WebSearchTool.Input)
-    expect(() => decode({ query: "x", numResults: 0 })).toThrow()
-    expect(() => decode({ query: "x", numResults: WebSearchTool.MAX_NUM_RESULTS + 1 })).toThrow()
-    expect(() => decode({ query: "x", contextMaxCharacters: WebSearchTool.MAX_CONTEXT_CHARACTERS + 1 })).toThrow()
-  })
-  test("selects a stable provider per session", () => {
-    expect(WebSearchTool.selectProvider(sessionID)).toBe(WebSearchTool.selectProvider(sessionID))
+  test("a layout change degrades to fewer results, never to a crash", () => {
+    expect(WebSearchEngine.parseDuckDuckGo("<html><body>nothing familiar</body></html>", 10)).toEqual([])
   })
 
-  test("supports an explicit operational override", () => {
-    expect(WebSearchTool.selectProvider(sessionID, { enableExa: false, enableParallel: false }, "parallel")).toBe(
-      "parallel",
+  // ⚠️ Full-text search, NOT opensearch: opensearch matches title prefixes, so "bun javascript
+  // runtime" returned zero results against the live API. Caught by probing, not by reading docs.
+  test("Wikipedia full-text results decode, with the highlight markup stripped", () => {
+    const results = WebSearchEngine.parseWikipedia(
+      { query: { search: [{ title: "Bun (software)", snippet: 'A <span class="searchmatch">JavaScript</span> runtime' }, { title: "Bun" }] } },
+      10,
     )
-    expect(WebSearchTool.selectProvider(sessionID, { enableExa: false, enableParallel: false }, "exa")).toBe("exa")
+    expect(results).toHaveLength(2)
+    expect(results[0]).toEqual({
+      title: "Bun (software)",
+      url: "https://en.wikipedia.org/wiki/Bun%20(software)".replace("%20", "_"),
+      snippet: "A JavaScript runtime",
+      engine: "wikipedia",
+    })
+    expect(WebSearchEngine.parseWikipedia({ not: "the shape" }, 10)).toEqual([])
   })
 
-  test("prefers Parallel when both explicit flags are enabled", () => {
-    expect(WebSearchTool.selectProvider(sessionID, { enableExa: true, enableParallel: true })).toBe("parallel")
+  test("a SearXNG JSON body decodes", () => {
+    const results = WebSearchEngine.parseSearxng({ results: [{ title: "T", url: "https://x.test/", content: "S" }] }, 10)
+    expect(results[0]).toEqual({ title: "T", url: "https://x.test/", snippet: "S", engine: "searxng" })
   })
 
-  test("prefers Exa when only its explicit flag is enabled", () => {
-    expect(WebSearchTool.selectProvider(sessionID, { enableExa: true, enableParallel: false })).toBe("exa")
+  test("the same page at different addresses is one result", () => {
+    const canonical = WebSearchEngine.canonicalUrl("https://www.Example.com/a/?utm_source=x#frag")
+    expect(canonical).toBe(WebSearchEngine.canonicalUrl("https://example.com/a"))
+    expect(canonical).not.toBe(WebSearchEngine.canonicalUrl("https://example.com/b"))
+  })
+
+  // Agreement between independent engines is the only quality signal available without crawling
+  // anything ourselves — that IS what a metasearch engine is for.
+  test("merging ranks a page two engines agree on above one engine's top hit", () => {
+    const merged = WebSearchEngine.mergeResults(
+      [
+        [
+          { title: "Only A", url: "https://a.test/", engine: "duckduckgo" },
+          { title: "Both", url: "https://both.test/", engine: "duckduckgo" },
+        ],
+        [{ title: "Both", url: "https://both.test/", snippet: "a fuller description", engine: "wikipedia" }],
+      ],
+      5,
+    )
+    expect(merged[0]?.url).toBe("https://both.test/")
+    expect(merged[0]?.engine).toBe("duckduckgo+wikipedia") // provenance survives the merge
+    expect(merged[0]?.snippet).toBe("a fuller description") // the fullest description wins
+    expect(merged).toHaveLength(2)
   })
 })
 
-describe("WebSearchTool MCP response parser", () => {
-  test("parses plain JSON-RPC responses", async () => {
-    expect(await Effect.runPromise(WebSearchTool.parseResponse(payload("search results")))).toBe("search results")
+describe("WebSearch settings + precedence", () => {
+  const unusedFetch: WebSearchEngine.FetchLike = () => Promise.reject(new Error("unused"))
+
+  test("a configured SearXNG REPLACES the built-ins (the user's instance wins)", () => {
+    expect(WebSearch.resolveEngines(unusedFetch, { searxngUrl: "https://searx.example" }).map((engine) => engine.id)).toEqual(["searxng"])
   })
 
-  test("parses SSE JSON-RPC responses and ignores non-JSON frames", async () => {
-    expect(
-      await Effect.runPromise(
-        WebSearchTool.parseResponse(`data: [DONE]\nevent: message\ndata: ${payload("search results")}\n\n`),
+  test("with nothing configured the built-ins run — and one can be disabled live", () => {
+    expect(WebSearch.resolveEngines(unusedFetch, {}).map((engine) => engine.id)).toEqual(["duckduckgo", "wikipedia"])
+    expect(WebSearch.resolveEngines(unusedFetch, { disabledEngines: ["duckduckgo"] }).map((engine) => engine.id)).toEqual(["wikipedia"])
+  })
+
+  test("junk settings decode to defaults rather than throwing", () => {
+    expect(WebSearch.readSettings(undefined)).toEqual({})
+    expect(WebSearch.readSettings({ searxngUrl: "  " })).toEqual({})
+    expect(WebSearch.readSettings({ searxngUrl: "https://s.test", timeoutMs: 500 })).toEqual({ searxngUrl: "https://s.test", timeoutMs: 500 })
+  })
+})
+
+const settingsMock = (settings: Record<string, unknown>) =>
+  Layer.mock(SettingsConfigStore.Service, {
+    all: () => Effect.succeed(settings),
+    set: () => Effect.void,
+    remove: () => Effect.void,
+    isEmpty: () => Effect.succeed(Object.keys(settings).length === 0),
+  } as never)
+
+const offlineMock = (enabled: boolean) =>
+  Layer.mock(Offline.Service)({
+    policy: { enabled, allowedHosts: new Set<string>() },
+    check: () => ({ allowed: true }) as const,
+    egressEnv: () => undefined,
+    manifest: () => ({ enabled, active: enabled ? 9 : 0, total: 9, layers: [] }),
+  })
+
+const service = (fetchImpl: WebSearchEngine.FetchLike, options?: { offline?: boolean; settings?: Record<string, unknown> }) =>
+  WebSearch.layerWith(fetchImpl).pipe(
+    Layer.provide(offlineMock(options?.offline ?? false)),
+    Layer.provide(settingsMock(options?.settings ?? {})),
+  )
+
+describe("WebSearch service", () => {
+  it.live("merges what the engines returned, and names one that dropped out", () =>
+    Effect.gen(function* () {
+      const search = yield* WebSearch.Service
+      const outcome = yield* search.search("bun runtime")
+      expect(outcome.ok).toBe(true)
+      expect(outcome.results.map((result) => result.url)).toContain("https://bun.sh/docs")
+      // Wikipedia failed here; DuckDuckGo's results still came back, flagged as partial.
+      expect(outcome.degraded).toEqual(["Wikipedia"])
+    }).pipe(
+      Effect.provide(
+        service(async (url) => {
+          if (url.includes("wikipedia")) throw new Error("429 Too Many Requests")
+          return new Response(DDG_HTML, { status: 200 })
+        }),
       ),
-    ).toBe("search results")
+    ),
+  )
+
+  // An empty list reads as "the web has nothing", which is a lie when every engine refused us.
+  it.live("says WHY when every engine fails, instead of returning nothing", () =>
+    Effect.gen(function* () {
+      const search = yield* WebSearch.Service
+      const outcome = yield* search.search("anything")
+      expect(outcome.ok).toBe(false)
+      expect(outcome.reason).toContain("No search engine answered")
+      expect(outcome.reason).toContain("DuckDuckGo")
+      expect(outcome.reason).toContain("SearXNG") // the way out is named
+    }).pipe(Effect.provide(service(async () => new Response("nope", { status: 503 })))),
+  )
+
+  it.live("AIRGAP refuses before any request leaves the machine", () =>
+    Effect.gen(function* () {
+      const reached: string[] = []
+      const outcome = yield* Effect.gen(function* () {
+        const search = yield* WebSearch.Service
+        const result = yield* search.search("anything")
+        const described = yield* search.describe()
+        return { result, described }
+      }).pipe(
+        Effect.provide(
+          service(
+            async (url) => {
+              reached.push(url)
+              return new Response("", { status: 200 })
+            },
+            { offline: true },
+          ),
+        ),
+      )
+      expect(outcome.result.ok).toBe(false)
+      expect(outcome.result.reason).toContain("offline")
+      expect(reached).toEqual([]) // the gate is before the socket, not after it
+      expect(outcome.described.mode).toBe("airgapped")
+    }),
+  )
+
+  it.live("a configured SearXNG is the only engine asked", () =>
+    Effect.gen(function* () {
+      const asked: string[] = []
+      const outcome = yield* Effect.gen(function* () {
+        const search = yield* WebSearch.Service
+        const result = yield* search.search("bun")
+        const described = yield* search.describe()
+        return { result, described }
+      }).pipe(
+        Effect.provide(
+          service(
+            async (url) => {
+              asked.push(url)
+              return json({ results: [{ title: "From my own instance", url: "https://x.test/", content: "c" }] })
+            },
+            { settings: { web_search: { searxngUrl: "https://searx.example" } } },
+          ),
+        ),
+      )
+      expect(outcome.result.ok).toBe(true)
+      expect(outcome.result.results[0]?.engine).toBe("searxng")
+      expect(asked.every((url) => url.startsWith("https://searx.example"))).toBe(true)
+      expect(outcome.described.mode).toBe("searxng")
+    }),
+  )
+})
+
+describe("WebSearchTool rendering", () => {
+  test("results linearize with their source, and a long snippet is trimmed", () => {
+    const text = WebSearchTool.formatResults([
+      { title: "Bun", url: "https://bun.sh/", snippet: "x".repeat(500), engine: "duckduckgo+wikipedia" },
+    ])
+    expect(text).toContain("1. Bun")
+    expect(text).toContain("https://bun.sh/ [duckduckgo+wikipedia]")
+    expect(text).not.toContain("x".repeat(401))
   })
-})
 
-interface Request {
-  readonly url: string
-  readonly headers: Record<string, string>
-  readonly body: unknown
-}
-
-const requests: Request[] = []
-const assertions: PermissionV2.AssertInput[] = []
-let responseBody = payload("search results")
-let makeResponse = () => new Response(responseBody, { status: 200 })
-// The tool registers only when a provider is enabled, and that gate is read at LAYER-BUILD
-// time (before a test body runs), so the default here must enable a provider.
-let config: WebSearchTool.Config = { provider: "exa", enableExa: true, enableParallel: false }
-
-beforeEach(() => {
-  responseBody = payload("search results")
-  makeResponse = () => new Response(responseBody, { status: 200 })
-})
-
-const http = Layer.succeed(
-  HttpClient.HttpClient,
-  HttpClient.make((request) =>
-    Effect.sync(() => {
-      if (request.body._tag !== "Uint8Array") throw new Error(`Unexpected request body: ${request.body._tag}`)
-      requests.push({
-        url: request.url,
-        headers: request.headers,
-        body: JSON.parse(new TextDecoder().decode(request.body.body)),
-      })
-      return HttpClientResponse.fromWeb(request, makeResponse())
-    }),
-  ),
-)
-const permission = Layer.succeed(
-  PermissionV2.Service,
-  PermissionV2.Service.of({
-    assert: (input) => Effect.sync(() => assertions.push(input)),
-    ask: () => Effect.die("unused"),
-    reply: () => Effect.die("unused"),
-    get: () => Effect.die("unused"),
-    forSession: () => Effect.die("unused"),
-    list: () => Effect.die("unused"),
-  }),
-)
-const websearchConfig = Layer.succeed(
-  WebSearchTool.ConfigService,
-  WebSearchTool.ConfigService.of({
-    get provider() {
-      return config.provider
-    },
-    get enableExa() {
-      return config.enableExa
-    },
-    get enableParallel() {
-      return config.enableParallel
-    },
-    get exaApiKey() {
-      return config.exaApiKey
-    },
-    get parallelApiKey() {
-      return config.parallelApiKey
-    },
-  }),
-)
-const it = testEffect(
-  AppNodeBuilder.build(
-    LayerNode.group([ToolRegistry.node, ToolRegistry.toolsNode, WebSearchTool.configNode, WebSearchTool.node]),
-    [
-      [PermissionV2.node, permission],
-      [LayerNodePlatform.httpClient, http],
-      [WebSearchTool.configNode, websearchConfig],
-      [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig],
-    ],
-  ),
-)
-
-describe("WebSearchTool registration", () => {
-  it.effect("registers websearch, asserts query permission, and calls Exa", () =>
-    Effect.gen(function* () {
-      requests.length = 0
-      assertions.length = 0
-      responseBody = payload("exa results")
-      config = { provider: "exa", enableExa: true, enableParallel: false }
-      const registry = yield* ToolRegistry.Service
-
-      expect((yield* toolDefinitions(registry)).map((tool) => tool.name)).toEqual(["websearch"])
-      expect(
-        yield* executeTool(registry, {
-          sessionID,
-          ...toolIdentity,
-          call: {
-            type: "tool-call",
-            id: "call-exa",
-            name: "websearch",
-            input: {
-              query: "effect typescript",
-              numResults: 3,
-              livecrawl: "preferred",
-              type: "fast",
-              contextMaxCharacters: 2500,
-            },
-          },
-        }),
-      ).toEqual({ type: "text", value: "exa results" })
-      expect(assertions).toMatchObject([
-        {
-          sessionID,
-          action: "websearch",
-          resources: ["effect typescript"],
-          save: ["*"],
-          metadata: {
-            query: "effect typescript",
-            numResults: 3,
-            livecrawl: "preferred",
-            type: "fast",
-            contextMaxCharacters: 2500,
-            provider: "exa",
-          },
-        },
-      ])
-      expect(requests).toEqual([
-        {
-          url: WebSearchTool.EXA_URL,
-          headers: expect.any(Object),
-          body: {
-            jsonrpc: "2.0",
-            id: 1,
-            method: "tools/call",
-            params: {
-              name: "web_search_exa",
-              arguments: {
-                query: "effect typescript",
-                type: "fast",
-                numResults: 3,
-                livecrawl: "preferred",
-                contextMaxCharacters: 2500,
-              },
-            },
-          },
-        },
-      ])
-    }),
-  )
-
-  it.effect("calls Parallel with session ID and keeps bearer credentials out of output", () =>
-    Effect.gen(function* () {
-      requests.length = 0
-      assertions.length = 0
-      responseBody = payload("parallel results")
-      config = { provider: "parallel", enableExa: false, enableParallel: false, parallelApiKey: "parallel-secret" }
-      const registry = yield* ToolRegistry.Service
-
-      const settled = yield* settleTool(registry, {
-        sessionID,
-        ...toolIdentity,
-        call: { type: "tool-call", id: "call-parallel", name: "websearch", input: { query: "effect layers" } },
-      })
-
-      expect(requests[0]).toMatchObject({
-        url: WebSearchTool.PARALLEL_URL,
-        headers: { authorization: "Bearer parallel-secret" },
-        body: {
-          jsonrpc: "2.0",
-          id: 1,
-          method: "tools/call",
-          params: {
-            name: "web_search",
-            arguments: { objective: "effect layers", search_queries: ["effect layers"], session_id: sessionID },
-          },
-        },
-      })
-      expect(requests[0]?.body).not.toHaveProperty("params.arguments.model_name")
-      expect(settled).toEqual({
-        result: { type: "text", value: "parallel results" },
-        output: {
-          structured: { provider: "parallel", text: "parallel results" },
-          content: [{ type: "text", text: "parallel results" }],
-        },
-      })
-      expect(JSON.stringify(settled)).not.toContain("parallel-secret")
-    }),
-  )
-
-  it.effect("keeps an Exa credential in the transport URL and out of model output", () =>
-    Effect.gen(function* () {
-      requests.length = 0
-      assertions.length = 0
-      responseBody = payload("credentialed exa results")
-      config = { provider: "exa", enableExa: false, enableParallel: false, exaApiKey: "exa secret" }
-      const registry = yield* ToolRegistry.Service
-
-      const settled = yield* settleTool(registry, {
-        sessionID,
-        ...toolIdentity,
-        call: { type: "tool-call", id: "call-exa-key", name: "websearch", input: { query: "effect schema" } },
-      })
-
-      expect(requests[0]?.url).toBe(`${WebSearchTool.EXA_URL}?exaApiKey=exa+secret`)
-      expect(JSON.stringify(settled)).not.toContain("exa secret")
-    }),
-  )
-
-  it.effect("returns the legacy no-results fallback as concise model text", () =>
-    Effect.gen(function* () {
-      requests.length = 0
-      assertions.length = 0
-      responseBody = ""
-      config = { provider: "exa", enableExa: false, enableParallel: false }
-      const registry = yield* ToolRegistry.Service
-
-      expect(
-        yield* executeTool(registry, {
-          sessionID,
-          ...toolIdentity,
-          call: { type: "tool-call", id: "call-empty", name: "websearch", input: { query: "nothing" } },
-        }),
-      ).toEqual({ type: "text", value: WebSearchTool.NO_RESULTS })
-    }),
-  )
-
-  it.effect("rejects oversized MCP response bodies", () =>
-    Effect.gen(function* () {
-      requests.length = 0
-      assertions.length = 0
-      let chunksRead = 0
-      let cancelled = false
-      makeResponse = () =>
-        new Response(
-          new ReadableStream({
-            pull(controller) {
-              chunksRead++
-              if (chunksRead === 10) throw new Error("response was not stopped at the byte limit")
-              controller.enqueue(new Uint8Array(64 * 1024))
-            },
-            cancel() {
-              cancelled = true
-            },
-          }),
-          { status: 200 },
-        )
-      config = { provider: "exa", enableExa: false, enableParallel: false }
-      const registry = yield* ToolRegistry.Service
-
-      expect(
-        yield* executeTool(registry, {
-          sessionID,
-          ...toolIdentity,
-          call: { type: "tool-call", id: "call-large-response", name: "websearch", input: { query: "too much" } },
-        }),
-      ).toEqual({ type: "error", value: "Unable to search the web for too much" })
-      expect(chunksRead).toBeLessThan(10)
-      expect(cancelled).toBe(true)
-    }),
-  )
+  test("the input caps result count", () => {
+    const decode = Schema.decodeUnknownSync(WebSearchTool.Input)
+    expect(decode({ query: "x" }).query).toBe("x")
+    expect(() => decode({ query: "x", numResults: WebSearchTool.MAX_NUM_RESULTS + 1 })).toThrow()
+  })
 })
