@@ -17,6 +17,7 @@ const makeFakeGateway = () => {
     restCalls: [] as { url: string; method: string; body?: unknown; form?: boolean }[],
     connectedURLs: [] as string[],
     reject401: false,
+    moderationForbidden: false,
     guilds: [{ id: "g1", name: "NovaClaw HQ" }],
     channels: { g1: [{ id: "c-support", type: 0, name: "support" }, { id: "c-voice", type: 2, name: "lounge" }] } as Record<
       string,
@@ -43,8 +44,14 @@ const makeFakeGateway = () => {
     const guildChannels = url.match(/\/guilds\/([^/]+)\/channels$/)
     if (guildChannels) return json(state.channels[guildChannels[1]!] ?? [])
     const channel = url.match(/\/channels\/([^/]+)$/)
-    if (channel) return json({ id: channel[1], type: 0, name: "support" })
+    if (channel) return json({ id: channel[1], type: 0, name: "support", guild_id: "g1" })
     if (/\/channels\/[^/]+\/messages$/.test(url)) return json({ id: "sent-" + state.restCalls.length })
+    // Moderation routes (all succeed with an empty 200 unless a test flips a flag).
+    if (state.moderationForbidden) return json({ message: "Missing Permissions" }, 403)
+    if (/\/channels\/[^/]+\/messages\/[^/]+$/.test(url) && method === "DELETE") return json({}, 200)
+    if (/\/channels\/[^/]+\/pins\/[^/]+$/.test(url) && method === "PUT") return json({}, 200)
+    if (/\/guilds\/[^/]+\/bans\/[^/]+$/.test(url) && method === "PUT") return json({}, 200)
+    if (/\/guilds\/[^/]+\/members\/[^/]+$/.test(url) && (method === "DELETE" || method === "PATCH")) return json({}, 200)
     if (url.startsWith("https://cdn.example/")) return new Response(new TextEncoder().encode("cdn-bytes"))
     return json({}, 404)
   }
@@ -225,6 +232,47 @@ describe("DiscordDriver", () => {
       expect(textPosts.length).toBeGreaterThan(1)
       for (const post of textPosts) expect(((post.body as { content: string }).content).length).toBeLessThanOrEqual(2000)
       expect(posts.some((call) => call.form)).toBe(true)
+    }),
+  )
+
+  it.live("moderate routes to the right Discord REST call per act; resolves the channel's guild", () =>
+    Effect.gen(function* () {
+      const fake = makeFakeGateway()
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const connection = yield* connect(fake)
+          if (connection.moderate === undefined) throw new Error("Discord must expose moderation")
+          yield* connection.moderate("c-support", { act: "delete", messageID: "m1" })
+          yield* connection.moderate("c-support", { act: "pin", messageID: "m2" })
+          yield* connection.moderate("c-support", { act: "ban", userID: "u9" })
+          yield* connection.moderate("c-support", { act: "kick", userID: "u8" })
+          yield* connection.moderate("c-support", { act: "mute", userID: "u7", seconds: 300 })
+        }),
+      )
+      const calls = fake.state.restCalls
+      const seen = (method: string, re: RegExp) => calls.some((c) => c.method === method && re.test(c.url))
+      expect(seen("DELETE", /\/channels\/c-support\/messages\/m1$/)).toBe(true)
+      expect(seen("PUT", /\/channels\/c-support\/pins\/m2$/)).toBe(true)
+      expect(seen("PUT", /\/guilds\/g1\/bans\/u9$/)).toBe(true) // guild resolved from the channel
+      expect(seen("DELETE", /\/guilds\/g1\/members\/u8$/)).toBe(true)
+      const mute = calls.find((c) => c.method === "PATCH" && /\/guilds\/g1\/members\/u7$/.test(c.url))
+      expect(mute).toBeDefined()
+      expect(typeof (mute!.body as { communication_disabled_until?: unknown }).communication_disabled_until).toBe("string")
+    }),
+  )
+
+  it.live("a moderation refusal (missing permission) surfaces as a ModerationError", () =>
+    Effect.gen(function* () {
+      const fake = makeFakeGateway()
+      fake.state.moderationForbidden = true
+      const error = yield* Effect.scoped(
+        Effect.gen(function* () {
+          const connection = yield* connect(fake)
+          return yield* connection.moderate!("c-support", { act: "delete", messageID: "m1" }).pipe(Effect.flip)
+        }),
+      )
+      expect(error._tag).toBe("MessengerDriver.ModerationError")
+      if (error._tag === "MessengerDriver.ModerationError") expect(error.reason).toContain("403")
     }),
   )
 

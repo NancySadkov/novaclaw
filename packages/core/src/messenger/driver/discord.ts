@@ -3,8 +3,8 @@ export * as DiscordDriver from "./discord"
 import { Duration, Effect, Queue, Schema, Stream } from "effect"
 import { Messenger } from "@novaclaw/schema/messenger"
 import { MessengerFormat } from "../format"
-import type { ChatSnapshot, Connection, ConnectContext, Driver, FileRef, InboundEvent, OutboundFile } from "../driver"
-import { ConnectError, FileError, SendError } from "../driver"
+import type { ChatSnapshot, Connection, ConnectContext, Driver, FileRef, InboundEvent, ModerationAct, OutboundFile } from "../driver"
+import { ConnectError, FileError, ModerationError, SendError } from "../driver"
 
 // The Discord BOT driver (messenger-plan §2.1): REST over HTTPS + the Gateway WebSocket, both
 // behind injectable seams (fetch + a socket factory) so tests drive fakes. `key` auth = a bot
@@ -395,11 +395,63 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
           catch: (error) => new FileError({ reason: `Discord attachment download failed: ${String(error)}` }),
         })
 
+      // Moderation (the account's bot needs the matching permissions; a 403 comes back legible).
+      // delete/pin act on the channel; ban/kick/mute act on a GUILD MEMBER, so resolve the
+      // channel's guild first (a DM channel has none — a legible refusal, not a crash).
+      const moderate = (chatID: string, act: ModerationAct) =>
+        Effect.gen(function* () {
+          const call = (route: string, init: RequestInit) =>
+            rest(route, init).pipe(
+              Effect.mapError((error) => new ModerationError({ reason: error.reason })),
+              Effect.flatMap((response) =>
+                response.status >= 400
+                  ? Effect.fail(
+                      new ModerationError({
+                        reason: `Discord refused (${response.status}${
+                          typeof (response.body as { message?: unknown })?.message === "string"
+                            ? `: ${(response.body as { message: string }).message}`
+                            : ""
+                        })`,
+                      }),
+                    )
+                  : Effect.void,
+              ),
+            )
+          const guildID = Effect.gen(function* () {
+            const response = yield* rest(`/channels/${chatID}`).pipe(Effect.mapError((error) => new ModerationError({ reason: error.reason })))
+            const gid = (response.body as { guild_id?: unknown })?.guild_id
+            if (typeof gid !== "string")
+              return yield* Effect.fail(new ModerationError({ reason: "That chat isn't in a server — ban/kick/mute need a server channel." }))
+            return gid
+          })
+          switch (act.act) {
+            case "delete":
+              return yield* call(`/channels/${chatID}/messages/${act.messageID}`, { method: "DELETE" })
+            case "pin":
+              return yield* call(`/channels/${chatID}/pins/${act.messageID}`, { method: "PUT" })
+            case "ban":
+              return yield* call(`/guilds/${yield* guildID}/bans/${act.userID}`, { method: "PUT" })
+            case "kick":
+              return yield* call(`/guilds/${yield* guildID}/members/${act.userID}`, { method: "DELETE" })
+            case "mute": {
+              // Discord "timeout": communication_disabled_until, capped at 28 days.
+              const seconds = Math.max(1, Math.min(act.seconds ?? 600, 28 * 24 * 3600))
+              const until = new Date(Date.now() + seconds * 1000).toISOString()
+              return yield* call(`/guilds/${yield* guildID}/members/${act.userID}`, {
+                method: "PATCH",
+                headers: { "content-type": "application/json" },
+                body: JSON.stringify({ communication_disabled_until: until }),
+              })
+            }
+          }
+        })
+
       return {
         inbound: Stream.fromQueue(queue),
         send,
         listChats,
         downloadFile,
+        moderate,
       } satisfies Connection
     }),
 })

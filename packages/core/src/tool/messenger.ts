@@ -5,6 +5,7 @@ import path from "node:path"
 import { ToolFailure } from "@novaclaw/llm"
 import { Effect, Layer, Schema } from "effect"
 import { Messenger } from "@novaclaw/schema/messenger"
+import type { ModerationAct } from "../messenger/driver"
 import { makeLocationNode } from "../effect/app-node"
 import { FSUtil } from "../fs-util"
 import { Location } from "../location"
@@ -106,7 +107,46 @@ const DownloadOp = Schema.Struct({
   }),
 })
 
-export const Input = Schema.Union([StatusOp, ChatsOp, HistoryOp, SendOp, ConnectOp, DisconnectOp, UploadOp, DownloadOp])
+const ModerateOp = Schema.Struct({
+  op: Schema.Literal("moderate"),
+  chat: Schema.String.annotate({ description: "Chat id (from `chats`) the moderation acts in" }),
+  act: Schema.Literals(["delete", "ban", "kick", "mute", "pin"]).annotate({
+    description: "delete a message · ban/kick/mute a member (needs a SERVER chat) · pin a message",
+  }),
+  message: Schema.String.pipe(Schema.optional).annotate({ description: "Message id — required for delete and pin" }),
+  user: Schema.String.pipe(Schema.optional).annotate({ description: "User id — required for ban, kick, and mute" }),
+  seconds: Schema.Finite.pipe(Schema.optional).annotate({ description: "Mute (timeout) duration in seconds — default 600, platform-capped" }),
+  account: Schema.String.pipe(Schema.optional).annotate({
+    description: "Account id (msa_…) or label — omit when only one account exists",
+  }),
+})
+
+export const Input = Schema.Union([StatusOp, ChatsOp, HistoryOp, SendOp, ConnectOp, DisconnectOp, UploadOp, DownloadOp, ModerateOp])
+
+/** Build the driver `ModerationAct` from the flat op, validating the target this act needs. Pure. */
+export const buildModerationAct = (input: {
+  readonly act: "delete" | "ban" | "kick" | "mute" | "pin"
+  readonly message?: string
+  readonly user?: string
+  readonly seconds?: number
+}): ModerationAct | { readonly error: string } => {
+  const message = input.message?.trim()
+  const user = input.user?.trim()
+  switch (input.act) {
+    case "delete":
+      return message ? { act: "delete", messageID: message } : { error: "delete needs a message id (from history/chat headers)." }
+    case "pin":
+      return message ? { act: "pin", messageID: message } : { error: "pin needs a message id." }
+    case "ban":
+      return user ? { act: "ban", userID: user } : { error: "ban needs a user id." }
+    case "kick":
+      return user ? { act: "kick", userID: user } : { error: "kick needs a user id." }
+    case "mute":
+      return user
+        ? { act: "mute", userID: user, ...(input.seconds === undefined ? {} : { seconds: Math.max(1, Math.floor(input.seconds)) }) }
+        : { error: "mute needs a user id." }
+  }
+}
 
 const Output = Schema.Struct({
   ok: Schema.Boolean,
@@ -210,7 +250,9 @@ export const layer = Layer.effectDiscard(
             "summarize a mailbox or conversation) · send (write into a chat / reply to an email thread AS the " +
             "user, paced at human speed; starting a brand-new conversation needs explicit permission, so ask " +
             "people to message first) · connect (bind THIS session to a chat/thread — pick a trust tier) · " +
-            "disconnect · upload (send a workspace file, optional caption) · download (save an attachment). " +
+            "disconnect · upload (send a workspace file, optional caption) · download (save an attachment) · " +
+            "moderate (delete a message, or ban/kick/mute/pin a member — for chats you moderate, where the " +
+            "platform supports it). " +
             'To summarize a mailbox: {"op":"status"} → {"op":"chats","account":"<id or label>"} (recent ' +
             'threads) → optionally {"op":"history","chat":"<id>"} for bodies → summarize. ' +
             "The user's messages and emails are private: handle them inside this workspace and never forward " +
@@ -447,6 +489,30 @@ export const layer = Layer.effectDiscard(
                     return { ok: false, message: "This session has no messenger binding to disconnect." } satisfies Output
                   yield* store.removeBinding(target.id)
                   return { ok: true, message: `Unbound this session from chat ${target.chatID}.` } satisfies Output
+                }
+                case "moderate": {
+                  if (gateway === undefined) return { ok: false, message: OFFLINE_GATEWAY } satisfies Output
+                  const resolved = yield* resolveAccount(input.account)
+                  if (resolved.account === undefined) return { ok: false, message: resolved.error } satisfies Output
+                  const built = buildModerationAct(input)
+                  if ("error" in built) return { ok: false, message: built.error } satisfies Output
+                  // Moderating a chat is consequential (deletes/bans act on other people) — gated like
+                  // send, resource = the chat so rules can scope per conversation.
+                  yield* permission.assert({
+                    action: "messenger.moderate",
+                    resources: [`${resolved.account.id}:${input.chat.trim()}`],
+                    save: ["*"],
+                    sessionID: context.sessionID,
+                    agent: context.agent,
+                    source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
+                  })
+                  const outcome = yield* gateway.moderate({
+                    accountID: resolved.account.id,
+                    chatID: input.chat.trim(),
+                    act: built,
+                  })
+                  if (!outcome.ok) return { ok: false, message: outcome.reason } satisfies Output
+                  return { ok: true, message: `Done (${input.act}).` } satisfies Output
                 }
               }
             }).pipe(

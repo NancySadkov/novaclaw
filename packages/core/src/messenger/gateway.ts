@@ -85,6 +85,8 @@ export type AttachmentOutcome =
   | { readonly ok: true; readonly name: string; readonly mime: string; readonly data: Uint8Array }
   | { readonly ok: false; readonly reason: string }
 
+export type ModerationOutcome = { readonly ok: true } | { readonly ok: false; readonly reason: string }
+
 export interface Interface {
   /** Live per-account connection status (accounts the store knows, whether running or not). */
   readonly status: () => Effect.Effect<ReadonlyMap<Messenger.AccountID, Messenger.AccountStatus>>
@@ -127,6 +129,14 @@ export interface Interface {
     readonly chatID: string
     readonly messageID: string
   }) => Effect.Effect<AttachmentOutcome>
+  /** Moderate a chat (the tool's `moderate` op) — delete a message, or ban/kick/mute/pin a member.
+   *  Not paced (moderation isn't outbound social traffic); refused legibly where the driver lacks
+   *  the capability or the account lacks the platform permission. */
+  readonly moderate: (input: {
+    readonly accountID: Messenger.AccountID
+    readonly chatID: string
+    readonly act: MessengerDriverContract.ModerationAct
+  }) => Effect.Effect<ModerationOutcome>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/MessengerGateway") {}
@@ -978,6 +988,19 @@ export const layer = Layer.effect(
                 }) satisfies AttachmentOutcome,
             ),
             Effect.catch((error) => Effect.succeed({ ok: false, reason: error.reason } satisfies AttachmentOutcome)),
+          )
+        }),
+      moderate: (input) =>
+        Effect.gen(function* () {
+          const entry = entries.get(input.accountID)
+          if (entry?.connection === undefined)
+            return { ok: false, reason: "That messenger account isn't connected right now." } satisfies ModerationOutcome
+          const act = entry.connection.moderate
+          if (act === undefined)
+            return { ok: false, reason: "This messenger has no moderation controls." } satisfies ModerationOutcome
+          return yield* act(input.chatID, input.act).pipe(
+            Effect.map(() => ({ ok: true }) satisfies ModerationOutcome),
+            Effect.catch((error) => Effect.succeed({ ok: false, reason: error.reason } satisfies ModerationOutcome)),
           )
         }),
     })
