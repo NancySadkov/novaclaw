@@ -113,6 +113,45 @@ export const dispatchTitle = (task: string): string => {
 /** The console's dispatch acknowledgement — short, because the pacer types it like a human. */
 export const DISPATCH_ACK = "🚀 On it — I'll report back here when it's done."
 
+/** How long a dispatched task may run before it is worth saying "on it" at all. An answer that
+ *  beats this never gets an ack: telling someone you have started, and then finishing one message
+ *  later, costs them two notifications to learn one thing. */
+export const DISPATCH_ACK_DELAY_MS = 6_000
+
+/** Does a finished task's result tell the operator anything they have not already read?
+ *
+ *  A dispatched task narrates as it works (every finished assistant text relays to the chat) and
+ *  then reports its `exit(result)`. For real work those differ and both earn their place. For a
+ *  QUESTION — the common case on a phone — the answer already went out as narration and the report
+ *  is the same thing said twice, in worse words: live, "It's Thursday, July 23, 2026" was followed
+ *  by "✅ Answered user's question about current time: Thursday, July 23, 2026".
+ *
+ *  Wording alone can't catch that (a paraphrase isn't a substring), so the real signal is `didWork`:
+ *  whether the task called any tool other than `exit`. A task that only talked has already
+ *  delivered everything it has; a task that edited files or ran commands owes a summary of what it
+ *  did. Silence is the one failure worse than repetition, so a task that never narrated always
+ *  reports — even with an empty result. */
+export const dispatchDoneNeeded = (result: string, lastRelayed: string | undefined, didWork: boolean): boolean => {
+  const flat = (text: string) => text.replaceAll(/\s+/g, " ").trim()
+  const body = flat(result)
+  const seen = lastRelayed === undefined ? undefined : flat(lastRelayed)
+  if (seen === undefined) return true // nothing reached the operator yet — always report
+  if (!didWork) return false // it only talked, and the operator already read what it said
+  if (body.length === 0) return false
+  // Equal, or the result merely restates a slice of what was already said.
+  return body !== seen && !seen.includes(body)
+}
+
+/** How long a dispatched task's narration waits before it is relayed to the operator's chat.
+ *
+ *  The last thing an agent says before calling `exit` is a sign-off ("already answered — no further
+ *  action needed"), and the completion report says the same thing better. Nothing on the text event
+ *  marks it as final, but the exit lands a beat later — so holding each narration briefly and
+ *  dropping it if the task has meanwhile ended removes the sign-off without needing a new signal.
+ *  Ordinary progress lines are unaffected: they are followed by more work, not by an exit, and a
+ *  couple of seconds is invisible next to the human-paced typing they are queued behind. */
+export const NARRATION_SETTLE_MS = 2_500
+
 /** The completion report for a dispatched task: the child's exit(result), relayed to the chat
  *  that asked. The title identifies WHICH task finished (several may run at once). */
 export const renderDispatchDone = (title: string | undefined, result: string): string => {

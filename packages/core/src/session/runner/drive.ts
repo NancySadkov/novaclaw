@@ -53,11 +53,20 @@ const AUTO_CONTINUE =
   "Continue working on your task now: take the next concrete action. When the task is genuinely " +
   "finished, call the `exit` tool with a short result summary — that is how this session ends."
 
+// ⚠️ "the goal you were given" was a lie the model could see through. Nothing hands a
+// goal-oriented session a goal out of band — the goal IS the request that opened it, so a session
+// spawned for a one-line question would hunt for a goal it never received, narrate that it couldn't
+// find one, and exit with THAT as its result (observed live 2026-07-23 on the WhatsApp console:
+// "No goal was assigned to this unattended session"). Point it at the real thing, and say plainly
+// that an already-answered question is finished — self-driving exists to keep long work moving, not
+// to manufacture work after the answer is in.
 const GOAL_CONTINUE =
   "You are an unattended goal-oriented session — no user is present and none will reply. " +
-  "Check your progress against the goal you were given, then take the next concrete action toward " +
-  "it. When the goal is reached (or you can prove it is unreachable), call the `exit` tool with a " +
-  "short result summary — that is how this session ends."
+  "Your goal is the request that opened this session (its first message). Check your progress " +
+  "against that request, then take the next concrete action toward it. If the request was a " +
+  "question and you have already answered it, you are done. When the goal is reached (or you can " +
+  "prove it is unreachable), call the `exit` tool with a short result summary — for a question, " +
+  "that summary is simply your answer. Calling `exit` is how this session ends."
 
 const capNotice = (reason: string) =>
   `⏸️ Autonomous run paused ${reason} without calling exit. ` +

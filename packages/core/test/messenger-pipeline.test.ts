@@ -131,6 +131,35 @@ describe("MessengerPipeline dispatch helpers (SS0.1.5 rule 3 — spawn, don't in
     expect(MessengerPipeline.renderDispatchDone(undefined, "done")).toBe("✅ Task finished\ndone")
     expect(MessengerPipeline.renderDispatchDone("", "")).toBe("✅ Task finished")
   })
+
+  test("dispatchDoneNeeded suppresses a completion report that only repeats the narration", () => {
+    // The live complaint: "Nova, what time is it?" cost four messages. A question's answer and its
+    // exit(result) are the same sentence, so the ✅ report is that sentence twice.
+    const answer = "It's currently 10:45 AM UTC."
+    const talked = false // no tool call but exit — the task only answered
+    const worked = true // it ran commands / edited files, so its result summarizes real work
+    expect(MessengerPipeline.dispatchDoneNeeded(answer, answer, worked)).toBe(false)
+    expect(MessengerPipeline.dispatchDoneNeeded("  It's currently   10:45 AM UTC.\n", answer, worked)).toBe(false) // whitespace-insensitive
+    expect(MessengerPipeline.dispatchDoneNeeded("10:45 AM UTC", "The time is 10:45 AM UTC right now", worked)).toBe(false) // a restated slice
+
+    // The live case wording alone could NOT catch — a paraphrase of the answer it already sent.
+    // `didWork: false` is what makes it suppressible.
+    expect(
+      MessengerPipeline.dispatchDoneNeeded(
+        "Answered user's question about current time: Thursday, July 23, 2026.",
+        "It's **Thursday, July 23, 2026**. I don't have your timezone.",
+        talked,
+      ),
+    ).toBe(false)
+
+    // Real work: the result says something the narration did not.
+    expect(MessengerPipeline.dispatchDoneNeeded("All 42 tests pass.", "Running the suite…", worked)).toBe(true)
+    // Silence is worse than repetition: a task that never narrated still reports, even bare.
+    expect(MessengerPipeline.dispatchDoneNeeded("", undefined, worked)).toBe(true)
+    expect(MessengerPipeline.dispatchDoneNeeded("done", undefined, talked)).toBe(true)
+    // …but a bare exit after narrating adds nothing.
+    expect(MessengerPipeline.dispatchDoneNeeded("", "I finished the refactor.", worked)).toBe(false)
+  })
 })
 
 describe("MessengerPipeline.bypassBindRefusal (§3.4 bypass-bind warning)", () => {

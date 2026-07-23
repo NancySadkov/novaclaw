@@ -7,6 +7,7 @@ import { Messenger } from "@novaclaw/schema/messenger"
 import type { FileAttachment, Origin as PromptOrigin } from "@novaclaw/schema/prompt"
 import { Session } from "@novaclaw/schema/session"
 import { SessionEvent } from "@novaclaw/schema/session-event"
+import { AbsolutePath } from "../schema"
 import { copySessionRecipes } from "../adhoc-tools"
 import { Credential } from "../credential"
 import { makeGlobalNode } from "../effect/app-node"
@@ -183,6 +184,10 @@ export const layer = Layer.effect(
     const initiations = { day: "", count: 0 }
     // §0.1.5 dispatcher: chatKey -> recent task-spawn timestamps (the per-chat rate guard).
     const dispatchRate = new Map<string, number[]>()
+    // §0.1.5 dispatcher: dispatched sessionID -> the last narration already relayed to its chat, so
+    // the completion report can stay silent when it would only repeat itself. Cleared on completion;
+    // an entry outlives its task only if the task never completes, and the spawn rate guard bounds that.
+    const lastNarration = new Map<Session.ID, string>()
     // Flood cap (§7.6): chatKey -> recent turn-driving inbound timestamps + whether we've already
     // warned this over-cap streak (so the "slow down" reply fires once, not per dropped message).
     const inboundRate = new Map<string, { times: number[]; warned: boolean }>()
@@ -321,6 +326,32 @@ export const layer = Layer.effect(
     // dispatch target in its metadata so the relay reports progress + the exit result back to
     // this chat. The console session itself never takes a turn — its context stays flat across
     // weeks of use, which is the whole point of spawn-don't-inline.
+    // The operator's own self-chat ("Message Yourself", Telegram Saved Messages) IS the console, so
+    // it should work the moment they type in it. Making someone run `/sessions` then `/use <n>`
+    // before their own phone can talk to their own agent OS is setup ceremony for a question with
+    // exactly one sensible answer — and it is the first thing they hit, before anything has proven
+    // itself useful. So the first addressed message in a self-chat binds itself a console session.
+    //
+    // Deliberately LAZY rather than on connect: it costs nothing per reconnect, needs no
+    // `listChats` (drivers with `listChats: "none"` cannot enumerate a self-chat at all), and never
+    // mints a session for an account the operator never speaks to. A failure here is not fatal —
+    // it falls through to the manual `/sessions` guidance, which still works.
+    const ensureConsoleBinding = (account: Messenger.AccountInfo, chatID: string) =>
+      Effect.gen(function* () {
+        const session = yield* sessions.create({
+          location: { directory: AbsolutePath.make(process.cwd()) },
+          title: `${account.label} console`,
+        })
+        const binding = yield* store.createBinding({
+          accountID: account.id,
+          chatID,
+          sessionID: session.id,
+          trust: "operator",
+        })
+        yield* Effect.logInfo(`messenger: bound the ${account.label} self-chat to a fresh console session`)
+        return binding
+      }).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
+
     const dispatch = (
       account: Messenger.AccountInfo,
       connection: Connection,
@@ -344,7 +375,7 @@ export const layer = Layer.effect(
           return
         }
         dispatchRate.set(key, [...recent, now])
-        const started = yield* Effect.gen(function* () {
+        const startedID = yield* Effect.gen(function* () {
           const parent = yield* sessions.get(binding.sessionID as Session.ID)
           const child = yield* sessions.create({
             parentID: parent.id,
@@ -364,14 +395,22 @@ export const layer = Layer.effect(
             },
             delivery: "queue",
           })
-          return true
-        }).pipe(Effect.catch(() => Effect.succeed(false)))
-        yield* reply(
-          connection,
-          event.chat.chatID,
-          started
-            ? MessengerPipeline.DISPATCH_ACK
-            : "I couldn't start that task — the linked session may be gone. /sessions to relink this console.",
+          return child.id
+        }).pipe(Effect.catch(() => Effect.succeed(undefined)))
+        if (startedID === undefined) {
+          yield* reply(connection, event.chat.chatID, "I couldn't start that task — the linked session may be gone. /sessions to relink this console.")
+          return
+        }
+        // The ack WAITS. A question answered in a few seconds should cost the operator one message,
+        // not "on it" followed by the answer — so we only announce a task that is still running
+        // once the delay has passed. Long work still gets its immediate-feeling acknowledgement.
+        fork(
+          Effect.gen(function* () {
+            yield* Effect.sleep(Duration.millis(MessengerPipeline.DISPATCH_ACK_DELAY_MS))
+            const info = yield* sessions.get(startedID).pipe(Effect.orElseSucceed(() => undefined))
+            if (info?.result !== undefined) return // already finished — its report says everything
+            yield* reply(connection, event.chat.chatID, MessengerPipeline.DISPATCH_ACK)
+          }).pipe(Effect.catchCause(() => Effect.void)),
         )
       })
 
@@ -584,7 +623,11 @@ export const layer = Layer.effect(
         }
 
         // Not a command → route to the bound session (a genuine queued user turn), or guide.
-        const binding = yield* store.bindingForChat(account.id, event.chat.chatID)
+        // The operator's OWN self-chat binds itself on first use (see ensureConsoleBinding) — that
+        // conversation has exactly one sensible answer, so we don't make them pick it by hand.
+        const binding =
+          (yield* store.bindingForChat(account.id, event.chat.chatID)) ??
+          (event.chat.self === true && trust !== undefined ? yield* ensureConsoleBinding(account, event.chat.chatID) : undefined)
         if (binding === undefined) {
           if (trust === undefined) {
             // Unpaired stranger: silence by default (never a model turn — cost + injection surface).
@@ -684,9 +727,24 @@ export const layer = Layer.effect(
             yield* paceSend(entry.connection, binding.chatID, payload.data.text).pipe(Effect.ignore)
           }
           // A dispatched task's finished text parts are its progress narration — the operator
-          // watches it work from the phone, without the console session hearing a word.
+          // watches it work from the phone, without the console session hearing a word. Remember the
+          // last thing it said, so the completion report can tell whether it would just repeat it.
           const target = yield* dispatchTargetOf(payload.data.sessionID as Session.ID)
-          if (target !== undefined) yield* paceSend(target.connection, target.chatID, payload.data.text).pipe(Effect.ignore)
+          if (target !== undefined) {
+            const sessionID = payload.data.sessionID as Session.ID
+            const text = payload.data.text
+            // Held briefly, then dropped if the task has ended meanwhile: the text of the turn that
+            // calls `exit` is a sign-off the completion report already covers. See NARRATION_SETTLE_MS.
+            fork(
+              Effect.gen(function* () {
+                yield* Effect.sleep(Duration.millis(MessengerPipeline.NARRATION_SETTLE_MS))
+                const info = yield* sessions.get(sessionID).pipe(Effect.orElseSucceed(() => undefined))
+                if (info?.result !== undefined) return
+                lastNarration.set(sessionID, text)
+                yield* paceSend(target.connection, target.chatID, text).pipe(Effect.ignore)
+              }).pipe(Effect.catchCause(() => Effect.void)),
+            )
+          }
         }),
       ),
     )
@@ -696,10 +754,28 @@ export const layer = Layer.effect(
     const dispatchCompleted = events.subscribe(SessionEvent.Completed).pipe(
       Stream.runForEach((payload) =>
         Effect.gen(function* () {
-          const target = yield* dispatchTargetOf(payload.data.sessionID as Session.ID)
+          const sessionID = payload.data.sessionID as Session.ID
+          const target = yield* dispatchTargetOf(sessionID)
+          const narrated = lastNarration.get(sessionID)
+          lastNarration.delete(sessionID)
           if (target === undefined) return
           const raw = payload.data.result
           const result = raw === undefined ? "" : typeof raw === "string" ? raw : JSON.stringify(raw)
+          // Did this task DO anything, or did it only talk? A tool call other than `exit` is the
+          // difference between "I refactored X" (owes a summary) and "it's 10:45" (already said it).
+          // ⚠️ Fail SAFE: if the history can't be read (lookup failed, nothing recorded), assume it
+          // worked and report. Suppression is an optimization; swallowing a real result is a defect
+          // — and one the operator could never notice, because nothing arrives to look wrong.
+          const history = yield* sessions.messages({ sessionID, limit: 100 }).pipe(Effect.orElseSucceed(() => undefined))
+          const didWork =
+            history === undefined ||
+            history.length === 0 ||
+            history.some(
+              (message) => message.type === "assistant" && message.content.some((part) => part.type === "tool" && part.name !== "exit"),
+            )
+          // A question's answer and its exit(result) are the same sentence — report only what adds
+          // something the operator has not already read on their phone.
+          if (!MessengerPipeline.dispatchDoneNeeded(result, narrated, didWork)) return
           yield* paceSend(target.connection, target.chatID, MessengerPipeline.renderDispatchDone(target.title, result)).pipe(
             Effect.ignore,
           )

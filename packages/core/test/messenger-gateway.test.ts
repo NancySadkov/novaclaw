@@ -50,6 +50,8 @@ const makeSessionMock = () => {
     { id: "ses_alpha", title: "Fix the login bug", agent: "build" },
     { id: "ses_beta", title: "Design a logo" },
   ]
+  // sessionID -> transcript, for the "did this task DO anything or only talk?" check.
+  const histories = new Map<string, { type: string; content: { type: string; name?: string }[] }[]>()
   let childSeq = 0
   const layer = Layer.mock(SessionV2.Service, {
     prompt: (input: {
@@ -66,6 +68,9 @@ const makeSessionMock = () => {
         return undefined as never
       }),
     list: () => Effect.succeed(sessionList as never),
+    // The dispatcher reads a finished task's history to decide whether its exit(result) is worth
+    // relaying: a task that only TALKED already said everything it has (see dispatchDoneNeeded).
+    messages: (input: { sessionID: string }) => Effect.succeed((histories.get(input.sessionID) ?? []) as never),
     get: (sessionID: string) =>
       Effect.suspend(() => {
         const info = infos.get(sessionID)
@@ -92,8 +97,12 @@ const makeSessionMock = () => {
         return info
       }),
   } as never)
-  return { layer, prompts, created, infos, sessionList }
+  return { layer, prompts, created, infos, sessionList, histories }
 }
+
+/** A transcript for a task that ran tools (owes a result summary) vs one that only answered. */
+const workedTranscript = [{ type: "assistant", content: [{ type: "tool", name: "bash" }, { type: "text" }] }]
+const talkedTranscript = [{ type: "assistant", content: [{ type: "text" }, { type: "tool", name: "exit" }] }]
 
 // P0 gates (notes/messenger-plan.md §8): the gateway's account state machine — boot/reload
 // reconcile, connected/backoff/error/disabled/airgapped statuses, inbound seen-chat upkeep,
@@ -224,9 +233,9 @@ const message = (
   at: Date.now(),
 })
 
-const eventually = <A>(effect: Effect.Effect<A>, predicate: (value: A) => boolean, label: string) =>
+const eventually = <A>(effect: Effect.Effect<A>, predicate: (value: A) => boolean, label: string, rounds = 200) =>
   Effect.gen(function* () {
-    for (let round = 0; round < 200; round++) {
+    for (let round = 0; round < rounds; round++) {
       const value = yield* effect
       if (predicate(value)) return value
       yield* Effect.sleep(Duration.millis(25))
@@ -429,6 +438,42 @@ describe("MessengerGateway pipeline", () => {
     }),
   )
 
+  it.live("the operator's self-chat binds ITSELF a console session on first use (no /sessions + /use)", () =>
+    Effect.gen(function* () {
+      const { store, account, queue } = yield* online("autobind")
+      const createdBefore = session.created.length
+      const sentBefore = fake.state.sent.length
+
+      // Nothing is bound to this chat, and the operator has NOT run /sessions or /use. Their own
+      // self-chat is the console — asking it to pick a session is setup ceremony with one answer.
+      expect(yield* store.bindingForChat(account.id, "selfauto")).toBeUndefined()
+      yield* Queue.offer(queue, message("selfauto", { text: "Nova, summarize my inbox", owner: true, self: true }))
+
+      const binding = yield* eventually(
+        store.bindingForChat(account.id, "selfauto"),
+        (found) => found !== undefined,
+        "self-chat bound itself",
+      )
+      expect(binding?.trust).toBe("operator")
+      // It bound a REAL new session, and the prompt still dispatched as a child of it.
+      const consoleSession = session.created.slice(createdBefore).find((s) => s.id === binding?.sessionID)
+      expect(consoleSession).toBeDefined()
+      expect(consoleSession?.title).toContain("console")
+      yield* eventually(
+        Effect.sync(() => session.created.slice(createdBefore)),
+        (list) => list.some((s) => s.parentID === binding?.sessionID && s.type === "goal-oriented"),
+        "task spawned under the auto-bound console",
+      )
+      // And it never told the operator to go run /sessions.
+      expect(fake.state.sent.slice(sentBefore).some((s) => (s.text ?? "").includes("/sessions"))).toBe(false)
+
+      // A STRANGER's chat is untouched by this — auto-binding is only ever the operator's own.
+      yield* Queue.offer(queue, message("stranger1", { text: "Nova, do my bidding" }))
+      yield* Effect.sleep(Duration.millis(300))
+      expect(yield* store.bindingForChat(account.id, "stranger1")).toBeUndefined()
+    }),
+  )
+
   it.live("the self-chat console DISPATCHES addressed prompts as child tasks — never inline (§0.1.5)", () =>
     Effect.gen(function* () {
       const { store, gateway, account, queue } = yield* online("console")
@@ -470,11 +515,16 @@ describe("MessengerGateway pipeline", () => {
       expect(routed.some((p) => p.sessionID === "ses_alpha")).toBe(false)
       expect(routed.some((p) => p.text.includes("buy milk"))).toBe(false)
 
-      // The console acknowledged the dispatch in-chat.
+      // The ack does NOT fire yet. A task that finishes quickly should cost the operator ONE
+      // message — its answer — not "on it" followed a beat later by the answer itself. The ack is
+      // held for DISPATCH_ACK_DELAY_MS and only sent if the task is still running by then.
+      expect(fake.state.sent.slice(sentBefore).some((s) => s.text === MessengerPipeline.DISPATCH_ACK)).toBe(false)
+      // Still running once the delay passes → now it announces itself (this fake never completes).
       yield* eventually(
         Effect.sync(() => fake.state.sent.slice(sentBefore)),
         (sent) => sent.some((s) => s.chatID === "self1" && s.text === MessengerPipeline.DISPATCH_ACK),
-        "dispatch acknowledged",
+        "delayed dispatch acknowledgement",
+        Math.ceil(MessengerPipeline.DISPATCH_ACK_DELAY_MS / 25) + 200,
       )
 
       // A custom agent name via the per-account `address` setting.
@@ -508,6 +558,64 @@ describe("MessengerGateway pipeline", () => {
     }),
   )
 
+  it.live("a question costs ONE message: the sign-off narration and the redundant ✅ are both dropped", () =>
+    Effect.gen(function* () {
+      // The live complaint (2026-07-23): "Nova, what time is it?" came back as four messages — an
+      // ack, the answer, a "no further action needed" sign-off, and a ✅ restating the answer.
+      const { store, account, queue } = yield* online("terse")
+      const events = yield* EventV2.Service
+      yield* store.createBinding({ accountID: account.id, chatID: "self3", sessionID: "ses_alpha", trust: "operator" })
+      const createdBefore = session.created.length
+      yield* Queue.offer(queue, message("self3", { text: "Nova, what time is it?", owner: true, self: true }))
+      const child = (yield* eventually(
+        Effect.sync(() => session.created.slice(createdBefore)),
+        (list) => list.length === 1,
+        "task spawned",
+      ))[0]
+      if (child === undefined) throw new Error("no child created")
+      session.histories.set(child.id, talkedTranscript) // it only answered — no tool but exit
+      const sentBefore = fake.state.sent.length
+
+      // The answer.
+      yield* events.publish(SessionEvent.Text.Ended, {
+        sessionID: child.id as never,
+        assistantMessageID: SessionMessage.ID.make("msg_answer"),
+        textID: "t1",
+        text: "It's Thursday, July 23, 2026.",
+        timestamp: DateTime.makeUnsafe(1),
+      })
+      yield* eventually(
+        Effect.sync(() => fake.state.sent.slice(sentBefore)),
+        (sent) => sent.some((s) => s.text?.includes("Thursday, July 23, 2026")),
+        "answer relayed",
+      )
+
+      // The sign-off the model emits in the same turn it calls exit, followed by the exit itself.
+      // The narration is held briefly and must be DROPPED once the task has ended.
+      yield* events.publish(SessionEvent.Text.Ended, {
+        sessionID: child.id as never,
+        assistantMessageID: SessionMessage.ID.make("msg_signoff"),
+        textID: "t2",
+        text: "The question has already been answered — no further action needed.",
+        timestamp: DateTime.makeUnsafe(2),
+      })
+      session.infos.set(child.id, { ...child, result: "Answered the user's question about the current time." } as never)
+      yield* events.publish(SessionEvent.Completed, {
+        sessionID: child.id as never,
+        result: "Answered the user's question about the current time.",
+        timestamp: DateTime.makeUnsafe(3),
+      })
+
+      // Well past both the narration settle and any pacing: exactly one message, the answer.
+      yield* Effect.sleep(Duration.millis(MessengerPipeline.NARRATION_SETTLE_MS + 1500))
+      const sent = fake.state.sent.slice(sentBefore).filter((s) => s.chatID === "self3")
+      expect(sent.some((s) => s.text?.includes("no further action needed"))).toBe(false)
+      expect(sent.some((s) => s.text?.includes("✅"))).toBe(false)
+      expect(sent).toHaveLength(1)
+      expect(sent[0]?.text).toContain("Thursday, July 23, 2026")
+    }),
+  )
+
   it.live("a dispatched task reports progress, notices, and its exit result back to the console (§0.1.5)", () =>
     Effect.gen(function* () {
       const { store, gateway, account, queue } = yield* online("dispatch-report")
@@ -521,6 +629,7 @@ describe("MessengerGateway pipeline", () => {
         "task spawned",
       ))[0]
       if (child === undefined) throw new Error("no child created")
+      session.histories.set(child.id, workedTranscript) // it ran tools → its result summarizes work
 
       // Progress: the child's finished text parts relay to the dispatching chat (no binding row).
       const sentBefore = fake.state.sent.length
