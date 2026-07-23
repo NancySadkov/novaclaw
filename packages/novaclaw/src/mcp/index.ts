@@ -322,7 +322,7 @@ export const layer = Layer.effect(
                 lastStatus = { status: "needs_auth" as const }
                 return Effect.logWarning("MCP server requires authentication", {
                   server: key,
-                  hint: `novaclaw mcp auth ${key}`,
+                  hint: `nova-cli mcp auth ${key}`,
                 }).pipe(Effect.as(undefined))
               }
             }

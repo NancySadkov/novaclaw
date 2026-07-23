@@ -29,7 +29,7 @@ const args = hideBin(process.argv)
 
 function show(out: string) {
   const text = out.trimStart()
-  if (!text.startsWith("novaclaw ")) {
+  if (!text.startsWith("nova-cli ")) {
     process.stderr.write(UI.logo() + EOL + EOL)
     process.stderr.write(text + EOL)
     return
@@ -39,7 +39,7 @@ function show(out: string) {
 
 const cli = yargs(args)
   .parserConfiguration({ "populate--": true })
-  .scriptName("novaclaw")
+  .scriptName("nova-cli")
   .wrap(100)
   .help("help", "show help")
   .alias("help", "h")

@@ -12,9 +12,6 @@
     "test": "bun test --only-failures",
     "typecheck": "tsgo --noEmit"
   },
-  "bin": {
-    "novaclaw": "./bin/novaclaw"
-  },
   "exports": {
     "./effect/layer-node": "./src/effect/layer-node.ts",
     "./effect/app-node": "./src/effect/app-node.ts",

@@ -64,7 +64,7 @@ export function FormatError(input: unknown): string | undefined {
     return [
       `Model not found: ${stringField(providerModelNotFound, "providerID")}/${stringField(providerModelNotFound, "modelID")}`,
       ...(suggestions.length ? ["Did you mean: " + suggestions.join(", ")] : []),
-      `Try: \`novaclaw models\` to list available models`,
+      `Try: \`nova-cli models\` to list available models`,
       `Or check the model in Settings → Models (the app) — it may have been renamed or removed`,
     ].join("\n")
   }
@@ -102,7 +102,7 @@ export function FormatError(input: unknown): string | undefined {
     return [
       `Failed to load remote config${remote ? ` from ${remote}` : ""}: the server returned a login page instead of JSON.`,
       `Authentication is missing or has expired (the endpoint is likely behind an SSO or identity-aware proxy).`,
-      ...(url ? [`Run \`novaclaw auth login ${url}\` to re-authenticate.`] : []),
+      ...(url ? [`Run \`nova-cli auth login ${url}\` to re-authenticate.`] : []),
     ].join("\n")
   }
 

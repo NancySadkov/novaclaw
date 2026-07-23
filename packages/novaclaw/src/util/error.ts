@@ -25,7 +25,7 @@ export function cliErrorMessage(input: unknown): string | undefined {
     return [
       `Model not found: ${field(model, "providerID")}/${field(model, "modelID")}`,
       ...(suggestions.length ? ["Did you mean: " + suggestions.join(", ")] : []),
-      "Try: `novaclaw models` to list available models",
+      "Try: `nova-cli models` to list available models",
       "Or check the model in Settings → Models (the app) — it may have been renamed or removed",
     ].join("\n")
   }

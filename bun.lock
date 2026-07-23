@@ -107,9 +107,6 @@
     "packages/core": {
       "name": "@novaclaw/core",
       "version": "0.0.1",
-      "bin": {
-        "novaclaw": "./bin/novaclaw",
-      },
       "dependencies": {
         "@effect/opentelemetry": "catalog:",
         "@effect/platform-node": "catalog:",
@@ -306,7 +303,7 @@
       "name": "novaclaw",
       "version": "0.0.1",
       "bin": {
-        "novaclaw": "./bin/novaclaw",
+        "nova-cli": "./bin/novaclaw",
       },
       "dependencies": {
         "@clack/prompts": "1.0.0-alpha.1",

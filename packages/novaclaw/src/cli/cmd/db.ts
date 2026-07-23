@@ -26,7 +26,7 @@ const QueryCommand = effectCmd({
   handler: Effect.fn("Cli.db.query")(function* (args: { query?: string; format: string }) {
     const query = args.query as string | undefined
     if (!query) {
-      console.log("Pass a SQL query, e.g. `novaclaw db \"select count(*) from session\"`.")
+      console.log("Pass a SQL query, e.g. `nova-cli db \"select count(*) from session\"`.")
       console.log("For interactive browsing use the Registry app (Developer mode) in the NovaClaw UI.")
       return
     }

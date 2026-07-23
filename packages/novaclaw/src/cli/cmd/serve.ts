@@ -73,7 +73,7 @@ const superviseLoop = async (): Promise<"clean" | "giveup"> => {
     if (decision.action === "giveup") {
       console.error(
         `[supervise] crash loop: ${FAST_CRASH_GIVEUP} consecutive exits within ${FAST_CRASH_MS / 1000}s — giving up. ` +
-          `Check the log above for the cause (an occupied port stays occupied), then run \`novaclaw serve\` again.`,
+          `Check the log above for the cause (an occupied port stays occupied), then run \`nova-cli serve\` again.`,
       )
       return "giveup"
     }

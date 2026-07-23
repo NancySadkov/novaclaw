@@ -15,7 +15,7 @@
     "dev:temporary": "bun run --conditions=browser ./src/temporary.ts"
   },
   "bin": {
-    "novaclaw": "./bin/novaclaw"
+    "nova-cli": "./bin/novaclaw"
   },
   "exports": {
     "./*": "./src/*.ts"

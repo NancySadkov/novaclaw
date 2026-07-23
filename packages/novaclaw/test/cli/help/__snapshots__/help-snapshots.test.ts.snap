@@ -1,16 +1,16 @@
 // Bun Snapshot v1, https://bun.sh/docs/test/snapshots
 
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw mcp --help 1`] = `
-"novaclaw mcp
+"nova-cli mcp
 
 manage MCP (Model Context Protocol) servers
 
 Commands:
-  novaclaw mcp add [name]     add an MCP server
-  novaclaw mcp list           list MCP servers and their status                        [aliases: ls]
-  novaclaw mcp auth [name]    authenticate with an OAuth-enabled MCP server
-  novaclaw mcp logout [name]  remove OAuth credentials for an MCP server
-  novaclaw mcp debug <name>   debug OAuth connection for an MCP server
+  nova-cli mcp add [name]     add an MCP server
+  nova-cli mcp list           list MCP servers and their status                        [aliases: ls]
+  nova-cli mcp auth [name]    authenticate with an OAuth-enabled MCP server
+  nova-cli mcp logout [name]  remove OAuth credentials for an MCP server
+  nova-cli mcp debug <name>   debug OAuth connection for an MCP server
 
 Options:
   -h, --help        show help                                                              [boolean]
@@ -21,7 +21,7 @@ Options:
 `;
 
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw run --help 1`] = `
-"novaclaw run [message..]
+"nova-cli run [message..]
 
 run novaclaw with a message
 
@@ -64,23 +64,22 @@ Options:
 `;
 
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw debug --help 1`] = `
-"novaclaw debug
+"nova-cli debug
 
 debugging and troubleshooting tools
 
 Commands:
-  novaclaw debug config        show resolved configuration
-  novaclaw debug rg            ripgrep debugging utilities
-  novaclaw debug file          file system debugging utilities
-  novaclaw debug scrap         list all known projects
-  novaclaw debug skill         list all available skills
-  novaclaw debug snapshot      snapshot debugging utilities
-  novaclaw debug startup       print startup timing
-  novaclaw debug agent <name>  show agent configuration details
-  novaclaw debug v2            debug v2 catalog and built-in plugins
-  novaclaw debug info          show debug information
-  novaclaw debug paths         show global paths (data, config, cache, state)
-  novaclaw debug wait          wait indefinitely (for debugging)
+  nova-cli debug config        show resolved configuration
+  nova-cli debug rg            ripgrep debugging utilities
+  nova-cli debug file          file system debugging utilities
+  nova-cli debug skill         list all available skills
+  nova-cli debug snapshot      snapshot debugging utilities
+  nova-cli debug startup       print startup timing
+  nova-cli debug agent <name>  show agent configuration details
+  nova-cli debug v2            debug v2 catalog and built-in plugins
+  nova-cli debug info          show debug information
+  nova-cli debug paths         show global paths (data, config, cache, state)
+  nova-cli debug wait          wait indefinitely (for debugging)
 
 Options:
   -h, --help        show help                                                              [boolean]
@@ -91,14 +90,14 @@ Options:
 `;
 
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw providers --help 1`] = `
-"novaclaw providers
+"nova-cli providers
 
 manage AI providers and credentials
 
 Commands:
-  novaclaw providers list               list providers and credentials                 [aliases: ls]
-  novaclaw providers login [url]        log in to a provider
-  novaclaw providers logout [provider]  log out from a configured provider
+  nova-cli providers list               list providers and credentials                 [aliases: ls]
+  nova-cli providers login [url]        log in to a provider
+  nova-cli providers logout [provider]  log out from a configured provider
 
 Options:
   -h, --help        show help                                                              [boolean]
@@ -109,13 +108,13 @@ Options:
 `;
 
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw agent --help 1`] = `
-"novaclaw agent
+"nova-cli agent
 
 manage agents
 
 Commands:
-  novaclaw agent create  create a new agent
-  novaclaw agent list    list all available agents
+  nova-cli agent create  create a new agent
+  nova-cli agent list    list all available agents
 
 Options:
   -h, --help        show help                                                              [boolean]
@@ -126,7 +125,7 @@ Options:
 `;
 
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw upgrade --help 1`] = `
-"novaclaw upgrade [target]
+"nova-cli upgrade [target]
 
 upgrade novaclaw to the latest or a specific version
 
@@ -144,7 +143,7 @@ Options:
 `;
 
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw uninstall --help 1`] = `
-"novaclaw uninstall
+"nova-cli uninstall
 
 uninstall novaclaw and remove all related files
 
@@ -161,7 +160,7 @@ Options:
 `;
 
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw serve --help 1`] = `
-"novaclaw serve
+"nova-cli serve
 
 starts a headless novaclaw server
 
@@ -183,7 +182,7 @@ Options:
 `;
 
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw web --help 1`] = `
-"novaclaw web
+"nova-cli web
 
 start novaclaw server and open web interface
 
@@ -203,7 +202,7 @@ Options:
 `;
 
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw models --help 1`] = `
-"novaclaw models [provider]
+"nova-cli models [provider]
 
 list all available models
 
@@ -221,7 +220,7 @@ Options:
 `;
 
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw stats --help 1`] = `
-"novaclaw stats
+"nova-cli stats
 
 show token usage and cost statistics
 
@@ -235,11 +234,11 @@ Options:
       --tools       number of tools to show (default: all)                                  [number]
       --models      show model statistics (default: hidden). Pass a number to show top N, otherwise
                     shows all
-      --project     filter by project (default: all projects, empty string: current project)[string]"
+      --project     filter by folder (default: all; empty string: the current repo root)    [string]"
 `;
 
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw export --help 1`] = `
-"novaclaw export [sessionID]
+"nova-cli export [sessionID]
 
 export session data as JSON
 
@@ -262,23 +261,23 @@ exports[`novaclaw CLI help-text snapshots every documented command emits stable 
 ▀  ▀ ▀▀▀▀  ▀▀  ▀  ▀ ▀▀▀▀ ▀▀▀▀ ▀  ▀ ▀▀▀▀▀
 
 Commands:
-  novaclaw completion          generate shell completion script
-  novaclaw mcp                 manage MCP (Model Context Protocol) servers
-  novaclaw run [message..]     run novaclaw with a message
-  novaclaw debug               debugging and troubleshooting tools
-  novaclaw providers           manage AI providers and credentials                   [aliases: auth]
-  novaclaw agent               manage agents
-  novaclaw upgrade [target]    upgrade novaclaw to the latest or a specific version
-  novaclaw uninstall           uninstall novaclaw and remove all related files
-  novaclaw serve               starts a headless novaclaw server
-  novaclaw web                 start novaclaw server and open web interface
-  novaclaw models [provider]   list all available models
-  novaclaw stats               show token usage and cost statistics
-  novaclaw export [sessionID]  export session data as JSON
-  novaclaw pr <number>         fetch and checkout a GitHub PR branch, then run novaclaw
-  novaclaw session             manage sessions
-  novaclaw plugin <module>     install plugin and update config                      [aliases: plug]
-  novaclaw db                  database tools
+  nova-cli completion          generate shell completion script
+  nova-cli mcp                 manage MCP (Model Context Protocol) servers
+  nova-cli run [message..]     run novaclaw with a message
+  nova-cli debug               debugging and troubleshooting tools
+  nova-cli providers           manage AI providers and credentials                   [aliases: auth]
+  nova-cli agent               manage agents
+  nova-cli upgrade [target]    upgrade novaclaw to the latest or a specific version
+  nova-cli uninstall           uninstall novaclaw and remove all related files
+  nova-cli serve               starts a headless novaclaw server
+  nova-cli web                 start novaclaw server and open web interface
+  nova-cli models [provider]   list all available models
+  nova-cli stats               show token usage and cost statistics
+  nova-cli export [sessionID]  export session data as JSON
+  nova-cli pr <number>         fetch and checkout a GitHub PR branch, then run novaclaw
+  nova-cli session             manage sessions
+  nova-cli plugin <module>     install plugin and update config                      [aliases: plug]
+  nova-cli db                  database tools
 
 Options:
   -h, --help        show help                                                              [boolean]
@@ -290,7 +289,7 @@ Options:
 `;
 
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw pr --help 1`] = `
-"novaclaw pr <number>
+"nova-cli pr <number>
 
 fetch and checkout a GitHub PR branch, then run novaclaw
 
@@ -306,13 +305,13 @@ Options:
 `;
 
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw session --help 1`] = `
-"novaclaw session
+"nova-cli session
 
 manage sessions
 
 Commands:
-  novaclaw session list                list sessions
-  novaclaw session delete <sessionID>  delete a session
+  nova-cli session list                list sessions
+  nova-cli session delete <sessionID>  delete a session
 
 Options:
   -h, --help        show help                                                              [boolean]
@@ -323,7 +322,7 @@ Options:
 `;
 
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw plugin --help 1`] = `
-"novaclaw plugin <module>
+"nova-cli plugin <module>
 
 install plugin and update config
 
@@ -341,13 +340,13 @@ Options:
 `;
 
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw db --help 1`] = `
-"novaclaw db
+"nova-cli db
 
 database tools
 
 Commands:
-  novaclaw db [query]     open an interactive sqlite3 shell or run a query                 [default]
-  novaclaw db path        print the database path
+  nova-cli db [query]     run a SQL query against the instance database                    [default]
+  nova-cli db path        print the database path
 
 Positionals:
   query  SQL query to execute                                                               [string]
@@ -362,7 +361,7 @@ Options:
 `;
 
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw mcp list --help 1`] = `
-"novaclaw mcp list
+"nova-cli mcp list
 
 list MCP servers and their status
 
@@ -375,7 +374,7 @@ Options:
 `;
 
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw mcp add --help 1`] = `
-"novaclaw mcp add [name]
+"nova-cli mcp add [name]
 
 add an MCP server
 
@@ -394,12 +393,12 @@ Options:
 `;
 
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw mcp auth --help 1`] = `
-"novaclaw mcp auth [name]
+"nova-cli mcp auth [name]
 
 authenticate with an OAuth-enabled MCP server
 
 Commands:
-  novaclaw mcp auth list  list OAuth-capable MCP servers and their auth status         [aliases: ls]
+  nova-cli mcp auth list  list OAuth-capable MCP servers and their auth status         [aliases: ls]
 
 Positionals:
   name  name of the MCP server                                                              [string]
@@ -413,7 +412,7 @@ Options:
 `;
 
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw mcp logout --help 1`] = `
-"novaclaw mcp logout [name]
+"nova-cli mcp logout [name]
 
 remove OAuth credentials for an MCP server
 
@@ -429,7 +428,7 @@ Options:
 `;
 
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw providers list --help 1`] = `
-"novaclaw providers list
+"nova-cli providers list
 
 list providers and credentials
 
@@ -442,7 +441,7 @@ Options:
 `;
 
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw providers login --help 1`] = `
-"novaclaw providers login [url]
+"nova-cli providers login [url]
 
 log in to a provider
 
@@ -460,7 +459,7 @@ Options:
 `;
 
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw providers logout --help 1`] = `
-"novaclaw providers logout [provider]
+"nova-cli providers logout [provider]
 
 log out from a configured provider
 
@@ -476,7 +475,7 @@ Options:
 `;
 
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw agent create --help 1`] = `
-"novaclaw agent create
+"nova-cli agent create
 
 create a new agent
 
@@ -496,7 +495,7 @@ Options:
 `;
 
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw agent list --help 1`] = `
-"novaclaw agent list
+"nova-cli agent list
 
 list all available agents
 
@@ -509,7 +508,7 @@ Options:
 `;
 
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw session list --help 1`] = `
-"novaclaw session list
+"nova-cli session list
 
 list sessions
 
@@ -524,7 +523,7 @@ Options:
 `;
 
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw session delete --help 1`] = `
-"novaclaw session delete <sessionID>
+"nova-cli session delete <sessionID>
 
 delete a session
 
@@ -540,7 +539,7 @@ Options:
 `;
 
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw db path --help 1`] = `
-"novaclaw db path
+"nova-cli db path
 
 print the database path
 
