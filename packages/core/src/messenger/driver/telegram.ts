@@ -151,6 +151,18 @@ export const make = (fetchImpl: FetchLike): Driver => ({
     icon: "speech-bubble",
     auth: "key",
     settings: [],
+    // The same teaching duty as Discord, but Telegram makes it short — the one trap worth naming
+    // is group privacy mode, which hides ordinary messages from bots and looks like deafness.
+    setup: {
+      url: "https://t.me/BotFather",
+      urlLabel: "Open BotFather in Telegram",
+      steps: [
+        "Send /newbot to BotFather and answer its two questions (a display name, then a username ending in bot).",
+        "It replies with a token that looks like 123456:ABC… — paste that below.",
+        "If the bot should work in a GROUP, send /setprivacy to BotFather, pick your bot and choose Disable — otherwise Telegram hides ordinary group messages from it and it will seem to ignore everyone.",
+        "Message your new bot once from your own Telegram so NovaClaw can see the chat (bots cannot list conversations they have never received a message in).",
+      ],
+    },
     capabilities: CAPS,
   },
   capabilities: () => CAPS,

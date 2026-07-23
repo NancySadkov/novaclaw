@@ -189,6 +189,23 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
     icon: "speech-bubble",
     auth: "key",
     settings: [],
+    // Discord is the one messenger where the credential takes a trip through a developer portal,
+    // and two of its switches fail SILENTLY when missed (message content arrives empty without the
+    // intent; a private app refuses to save while an install link is set). So the recipe names
+    // every button, in order, including the traps.
+    setup: {
+      url: "https://discord.com/developers/applications",
+      urlLabel: "Open the Discord Developer Portal",
+      steps: [
+        "Press New Application, give it the name your users will see, and accept the terms.",
+        "Open Bot in the left sidebar, press Reset Token, and copy the token into the field below — Discord shows it only once.",
+        "Still on Bot, switch ON Message Content Intent (under Privileged Gateway Intents). Without it your bot receives every message EMPTY and will look like it is ignoring people.",
+        "Recommended: switch OFF Public Bot so only you can add it. If Discord refuses to save, first set Installation → Install Link to None, then try again.",
+        "Open OAuth2 → URL Generator: tick the scope bot, choose Integration Type Guild Install, then tick View Channels, Send Messages, Send Messages in Threads and Read Message History. For moderation duty add Manage Messages, Moderate Members, Kick Members and Ban Members.",
+        "Open the URL it builds at the bottom, pick your server, and confirm. The bot appears in your member list — offline until you finish here.",
+        "Paste the token below and save. Then open a chat's Tuning → Remote chat to point NovaClaw at the channel it should work in.",
+      ],
+    },
     capabilities: CAPS,
   },
   capabilities: () => CAPS,

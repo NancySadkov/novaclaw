@@ -121,6 +121,21 @@ export const DriverMeta = Schema.Struct({
    *  the 127.0.0.1 redirect, so there is NOTHING to type (Gmail's friendly "Sign in with Google").
    *  The login wizard renders a waiting state instead of a code field for "browser". */
   loginStyle: optional(Schema.Literals(["code", "browser"])),
+  /** How a normal person GETS the credential this driver wants, in plain words. Some messengers
+   *  hand it over in two clicks; a Discord bot takes a trip through a developer portal with an
+   *  intent switch that fails silently if you miss it. Nobody should have to find a blog post to
+   *  set up a support desk, so the driver carries its own recipe and the Add-account dialog shows
+   *  it right where the empty field is (teach, don't gatekeep). Authored by the driver in English
+   *  like `settings`/`loginPrompts` messages. */
+  setup: optional(
+    Schema.Struct({
+      /** Where the journey starts — offered as a link the user can open. */
+      url: optional(Schema.String),
+      urlLabel: optional(Schema.String),
+      /** Numbered steps. Each one sentence or two; name the exact buttons the provider uses. */
+      steps: Schema.Array(Schema.String),
+    }),
+  ),
   capabilities: Capabilities,
 }).annotate({ identifier: "Messenger.DriverMeta" })
 

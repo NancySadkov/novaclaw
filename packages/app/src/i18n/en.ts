@@ -1509,6 +1509,8 @@ export const dict = {
   "settings.messengers.secret": "Access token",
   "settings.messengers.label": "Name",
   "settings.messengers.pickDriver": "Which messenger?",
+  "settings.messengers.setup.title": "How to get this",
+  "settings.messengers.setup.open": "Open the setup page",
   "settings.messengers.auth.login": "NovaClaw signs into your own account and answers as you while you're away. You stay in control — flip the responder any time.",
   "settings.messengers.auth.key": "Uses a bot or app token you paste — a separate identity from your own account.",
   "settings.messengers.auth.none": "Connects with just the settings below — no credentials needed.",

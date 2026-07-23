@@ -26,6 +26,14 @@ export interface DriverMeta {
    *  an auth-code + loopback flow (Gmail "Sign in with Google") where NovaClaw opens the browser and
    *  catches the redirect — nothing to type, the wizard just waits + polls. */
   readonly loginStyle?: "code" | "browser"
+  /** Plain-words recipe for GETTING this driver's credential (creating a Discord bot, asking
+   *  BotFather for a token). Shown as numbered steps in the Add-account dialog — a normal person
+   *  should never have to leave the app to find out what to paste here. */
+  readonly setup?: {
+    readonly url?: string
+    readonly urlLabel?: string
+    readonly steps: readonly string[]
+  }
 }
 
 export type AccountStatus =

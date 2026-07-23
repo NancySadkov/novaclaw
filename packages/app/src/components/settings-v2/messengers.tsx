@@ -6,6 +6,7 @@ import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { type Component, createEffect, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js"
 import { useConfirm } from "@/components/dialog-confirm"
+import { Link } from "@/components/link"
 import { useLanguage } from "@/context/language"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServerSync } from "@/context/server-sync"
@@ -274,6 +275,26 @@ const DialogAddMessengerAccount: Component<{
                 <p class="settings-v2-field-description">
                   {language.t(`settings.messengers.auth.${chosen().auth}`)}
                 </p>
+                {/* The credential recipe, right where the empty field is. A Discord bot takes a
+                    trip through a developer portal with switches that fail silently when missed —
+                    nobody should need a blog post to set up a support desk. */}
+                <Show when={chosen().setup}>
+                  {(setup) => (
+                    <div class="flex w-full min-w-0 flex-col gap-2 rounded-md bg-background-element p-3">
+                      <span class="settings-v2-server-dialog-label">{language.t("settings.messengers.setup.title")}</span>
+                      <ol class="settings-v2-field-description flex list-decimal flex-col gap-1 pl-4">
+                        <For each={setup().steps}>{(step) => <li>{step}</li>}</For>
+                      </ol>
+                      <Show when={setup().url}>
+                        {(url) => (
+                          <Link class="settings-v2-link" href={url()}>
+                            {setup().urlLabel ?? language.t("settings.messengers.setup.open")}
+                          </Link>
+                        )}
+                      </Show>
+                    </div>
+                  )}
+                </Show>
                 <div class="flex w-full min-w-0 flex-col gap-2">
                   <label class="settings-v2-server-dialog-label">{language.t("settings.messengers.label")}</label>
                   <TextInputV2
