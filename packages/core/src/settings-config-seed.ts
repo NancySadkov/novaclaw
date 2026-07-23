@@ -61,6 +61,7 @@ export const SETTINGS_KEYS = [
   "telemetry",
   "memory",
   "quality",
+  "web_search",
   "provider_presets",
   "experimental",
 ] as const satisfies readonly (keyof Config.Info)[]

@@ -1733,6 +1733,20 @@ export const dict = {
   "settings.strict.row.reasoningTokens.title": "Reasoning budget (tokens)",
   "settings.strict.row.reasoningTokens.description":
     "Let the model think a step through before it acts, and give that thinking its own room. Reasoning is all-or-nothing: a model cut off mid-thought returns nothing at all, so this needs to be generous — 24576 works, 8192 returns empty. Costs an extra call on the steps that plan and recover. Empty or 0 = off.",
+  "settings.webSearch.title": "Web Search",
+  "settings.webSearch.description":
+    "Web search just works out of the box — NovaClaw searches free engines in-process, no setup. Point it at your own SearXNG for richer results, or turn a built-in engine off if it starts misbehaving.",
+  "settings.webSearch.status": "Right now",
+  "settings.webSearch.status.builtin": "Using NovaClaw's built-in search (DuckDuckGo + Wikipedia).",
+  "settings.webSearch.status.searxng": "Using your SearXNG instance.",
+  "settings.webSearch.status.airgapped": "Off — NovaClaw is in offline / airgap mode, so nothing leaves this machine.",
+  "settings.webSearch.row.searxng.title": "Your SearXNG instance",
+  "settings.webSearch.row.searxng.description": "A SearXNG URL to use instead of the built-in engines. Leave empty to use the built-in search.",
+  "settings.webSearch.builtin.title": "Built-in engines",
+  "settings.webSearch.builtin.description": "NovaClaw asks these free engines directly and merges the results. Turn one off if it starts failing.",
+  "settings.webSearch.builtin.overridden": "Your SearXNG instance is handling search, so the built-in engines are off.",
+  "settings.webSearch.builtin.engineHint": "Included in built-in search",
+  "settings.webSearch.toast.failed": "Couldn't save web search settings",
   "settings.tools.title": "Tools",
   "settings.tools.description":
     "Ad-hoc tool recipes: a name, a one-line description the model sees in its prompt, and a manual it pulls on demand (the API shape plus a curl example). The model runs them from the shell — no MCP server to set up.",

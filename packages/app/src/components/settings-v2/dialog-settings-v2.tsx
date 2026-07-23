@@ -27,6 +27,7 @@ import { SettingsToolsV2 } from "./tools"
 import { SettingsQualityV2 } from "./quality"
 import { SettingsRecoveryV2 } from "./recovery"
 import { SettingsMessengersV2 } from "./messengers"
+import { SettingsWebSearchV2 } from "./web-search"
 
 // Tabs above Normal are hidden until unlocked (uix.md §6.4). Bootstrap/manage/reset stay universal:
 // General, Appearance, Shortcuts, Instances, Models, Recovery carry no entry (= Normal).
@@ -34,6 +35,9 @@ const TAB_LEVELS: Record<string, ExpertiseLevel> = {
   "system-prompt": "advanced",
   tools: "advanced",
   strict: "advanced",
+  // Web search "just works" for a normal user via the built-in; the override (own SearXNG) +
+  // per-engine toggles are a power-user surface → Advanced (and therefore Developer too).
+  "web-search": "advanced",
   introspection: "developer",
   affective: "developer",
   quality: "developer",
@@ -155,6 +159,12 @@ export const DialogSettings: Component<{
                         {language.t("settings.tools.title")}
                       </TabsV2.Trigger>
                     </Show>
+                    <Show when={tabVisible("web-search")}>
+                      <TabsV2.Trigger value="web-search">
+                        <Icon name="magnifying-glass" />
+                        {language.t("settings.webSearch.title")}
+                      </TabsV2.Trigger>
+                    </Show>
                     <Show when={tabVisible("quality")}>
                       <TabsV2.Trigger value="quality">
                         <Icon name="checklist" />
@@ -232,6 +242,11 @@ export const DialogSettings: Component<{
         <Show when={tabVisible("tools")}>
           <TabsV2.Content value="tools" class="settings-v2-panel">
             <SettingsToolsV2 />
+          </TabsV2.Content>
+        </Show>
+        <Show when={tabVisible("web-search")}>
+          <TabsV2.Content value="web-search" class="settings-v2-panel">
+            <SettingsWebSearchV2 />
           </TabsV2.Content>
         </Show>
         <Show when={tabVisible("quality")}>

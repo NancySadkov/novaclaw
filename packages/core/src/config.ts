@@ -205,6 +205,20 @@ export class Info extends Schema.Class<Info>("Config.Info")({
       description:
         "Quality Enforcement mode (QE): provisioned check commands run at write/turn boundaries; failures steer the agent to fix and re-run — per-project override is first-class",
     }),
+  web_search: Schema.Struct({
+    searxngUrl: Schema.String.pipe(Schema.optional).annotate({
+      description: "A SearXNG instance URL (e.g. http://localhost:8080). When set it REPLACES the built-in engines.",
+    }),
+    disabledEngines: Schema.String.pipe(Schema.Array, Schema.optional).annotate({
+      description: "Built-in engine ids to turn off (currently: duckduckgo, wikipedia) — for one that starts misbehaving.",
+    }),
+    timeoutMs: Schema.Finite.pipe(Schema.optional).annotate({ description: "Per-engine timeout in ms (default 8000)" }),
+  })
+    .pipe(Schema.optional)
+    .annotate({
+      description:
+        "Web search: a power user's own SearXNG when set, else NovaClaw's built-in in-process meta-search (no setup, offline-gated). GLOBAL config only.",
+    }),
   skills: Schema.String.pipe(Schema.Array, Schema.optional).annotate({
     description: "Additional paths or URLs to discover skills from",
   }),
