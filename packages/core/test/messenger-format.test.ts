@@ -100,4 +100,21 @@ describe("MessengerFormat.chunk", () => {
       expect(MessengerFormat.utf8Length(piece)).toBeLessThanOrEqual(510)
     }
   })
+
+  test("CJK + Arabic outbound chunk within a byte budget, lossless and never severed (core markets)", () => {
+    // 3-byte CJK, mixed Arabic (2-byte), and an emoji (4-byte / surrogate pair) — a tight byte
+    // budget must split BETWEEN code points only, keep every chunk valid UTF-8, and lose nothing.
+    for (const text of ["订单已确认，正在处理您的请求。".repeat(20), "تم تأكيد طلبك ويتم معالجته الآن. 🧩".repeat(20)]) {
+      const chunks = MessengerFormat.chunk(text, { maxChars: 9999, maxBytes: 30 })
+      for (const piece of chunks) {
+        expect(MessengerFormat.utf8Length(piece)).toBeLessThanOrEqual(30)
+        // fatal UTF-8 decode throws on a severed sequence / lone surrogate — passing = every chunk
+        // is intact multibyte text.
+        expect(new TextDecoder("utf-8", { fatal: true }).decode(new TextEncoder().encode(piece))).toBe(piece)
+      }
+      // No CONTENT code point is dropped (only word-wrap spaces at chunk boundaries, which become the
+      // message breaks between the separate outbound messages — same as the Cyrillic case above).
+      expect(chunks.join("").replace(/\s+/g, "")).toBe(text.replace(/\s+/g, ""))
+    }
+  })
 })

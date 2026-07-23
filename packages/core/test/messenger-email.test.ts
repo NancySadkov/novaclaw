@@ -148,6 +148,20 @@ describe("EmailImapSmtp pure helpers", () => {
     }),
   )
 
+  it.effect("decodeEncodedWords round-trips CJK / Arabic / emoji cleanly (core-market non-Latin)", () =>
+    Effect.sync(() => {
+      // Build real base64 encoded-words from UTF-8 (no hand-encoding), then prove the decode restores
+      // the exact original — the encoding paths our China/Russia/Arabic user base depends on.
+      const b = (text: string) => `=?UTF-8?B?${Buffer.from(text, "utf8").toString("base64")}?=`
+      for (const text of ["你好，世界", "مرحبا بالعالم", "Здравствуй, мир", "予約の確認 🧩"]) {
+        expect(EmailImapSmtp.decodeEncodedWords(b(text))).toBe(text)
+      }
+      // Q-encoded Chinese also decodes as UTF-8 (not per-byte latin1).
+      const qp = `=?UTF-8?Q?${Buffer.from("你好", "utf8").toString("hex").replace(/(..)/g, "=$1").toUpperCase()}?=`
+      expect(EmailImapSmtp.decodeEncodedWords(qp)).toBe("你好")
+    }),
+  )
+
   it.effect("parseHeaders unfolds continuations; messageIds + parseFrom extract the threading fields", () =>
     Effect.sync(() => {
       const headers = EmailImapSmtp.parseHeaders(
