@@ -4,7 +4,6 @@ import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
 import { TabsV2 } from "@novaclaw/ui/v2/tabs-v2"
 import { Icon } from "@novaclaw/ui/icon"
 import { useLanguage } from "@/context/language"
-import { usePlatform } from "@/context/platform"
 import { useServer } from "@/context/server"
 import { ServerSDKProvider } from "@/context/server-sdk"
 import { ServerSyncProvider } from "@/context/server-sync"
@@ -48,7 +47,6 @@ export const DialogSettings: Component<{
   defaultTab?: string
 }> = (props) => {
   const language = useLanguage()
-  const platform = usePlatform()
   const server = useServer()
   const { atLeast } = useExpertise()
   const tabVisible = (tab: string) => {
@@ -188,10 +186,6 @@ export const DialogSettings: Component<{
                   </div>
                 </div>
               </div>
-            </div>
-            <div class="settings-v2-nav-footer">
-              <span>{language.t("app.name.desktop")}</span>
-              <span>v{platform.version}</span>
             </div>
           </div>
         </TabsV2.List>
