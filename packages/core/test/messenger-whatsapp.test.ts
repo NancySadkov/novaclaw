@@ -111,6 +111,21 @@ describe("WhatsAppBaileys pure policy", () => {
     }),
   )
 
+  it.effect("foldSelfAddress folds the account's LID onto its phone JID (the console depends on it)", () =>
+    Effect.sync(() => {
+      const self = { id: "31638898568@s.whatsapp.net", lid: "177914775654512@lid" }
+      // Found live: the operator's own "Message Yourself" message arrives LID-addressed. Unfolded,
+      // chatID !== me.id → the §0.1.5 console never fires and the message is dropped as an echo.
+      expect(WhatsAppBaileysDriver.foldSelfAddress(self.lid, self)).toBe(self.id)
+      expect(WhatsAppBaileysDriver.foldSelfAddress(self.id, self)).toBe(self.id)
+      // Somebody ELSE's LID is a different person — folding that would merge strangers into self.
+      expect(WhatsAppBaileysDriver.foldSelfAddress("999@lid", self)).toBe("999@lid")
+      expect(WhatsAppBaileysDriver.foldSelfAddress("c1@g.us", self)).toBe("c1@g.us")
+      // An account with no LID (older WhatsApp) folds nothing.
+      expect(WhatsAppBaileysDriver.foldSelfAddress("177914775654512@lid", { id: self.id })).toBe("177914775654512@lid")
+    }),
+  )
+
   it.effect("linkInstructions describes QR vs pairing-code linking", () =>
     Effect.sync(() => {
       expect(WhatsAppBaileysDriver.linkInstructions({ qr: "QR" })).toContain("scan")

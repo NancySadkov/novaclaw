@@ -15,7 +15,7 @@ import makeWASocket, {
 import QRCode from "qrcode"
 import type { ChatSnapshot } from "@novaclaw/core/messenger/driver"
 import type { WAClient, WAClientConfig, WAClientFactory, WALink, WAMessage } from "@novaclaw/core/messenger/driver/whatsapp-baileys"
-import { WAClientError } from "@novaclaw/core/messenger/driver/whatsapp-baileys"
+import { WAClientError, WhatsAppBaileysDriver } from "@novaclaw/core/messenger/driver/whatsapp-baileys"
 
 // The Baileys socket factory — the ONLY file that imports @whiskeysockets/baileys (the ToS-gray,
 // out-of-kernel bridge; loaded via a gated DYNAMIC import in external-driver-source.ts, never at
@@ -167,23 +167,38 @@ export const factory: WAClientFactory = async (config: WAClientConfig): Promise<
   let pullFail: ((error: Error) => void) | undefined
   const seenChats = new Map<string, ChatSnapshot>()
 
-  const selfId = () => (sock.user ? jidNormalizedUser(sock.user.id) : undefined)
+  // Every inbound jid is folded onto the phone JID — see `foldSelfAddress` for why that is
+  // load-bearing (the LID-addressed self-chat is what the §0.1.5 console runs on).
+  const selfIds = () => {
+    const user = sock.user
+    if (user === undefined) return undefined
+    const lid = user.lid !== undefined && user.lid.length > 0 ? jidNormalizedUser(user.lid) : undefined
+    return { id: jidNormalizedUser(user.id), ...(lid !== undefined ? { lid } : {}) }
+  }
+  const selfId = () => selfIds()?.id
+
+  const canonical = (jid: string) => {
+    const self = selfIds()
+    return self === undefined ? jid : WhatsAppBaileysDriver.foldSelfAddress(jid, self)
+  }
 
   const normalize = (message: BaileysMessage): WAMessage | undefined => {
-    const jid = message.key.remoteJid ?? undefined
-    if (jid === undefined || jid === "status@broadcast") return undefined
+    const raw = message.key.remoteJid ?? undefined
+    if (raw === undefined || raw === "status@broadcast") return undefined
+    const jid = canonical(jidNormalizedUser(raw))
     const fromMe = message.key.fromMe === true
     const text = textOf(message.message)
     const isGroup = jid.endsWith("@g.us")
     const self = selfId()
+    const title = jid === self ? "Message Yourself" : (message.pushName ?? jid)
     if (!seenChats.has(jid))
-      seenChats.set(jid, { chatID: jid, kind: isGroup ? "group" : "dm", title: message.pushName ?? jid, ...(jid === self ? { self: true } : {}) })
+      seenChats.set(jid, { chatID: jid, kind: isGroup ? "group" : "dm", title, ...(jid === self ? { self: true } : {}) })
     return {
       chatID: jid,
       chatKind: isGroup ? "group" : "dm",
-      chatTitle: message.pushName ?? jid,
+      chatTitle: title,
       messageID: message.key.id ?? "",
-      senderID: fromMe ? self ?? jid : message.key.participant ?? jid,
+      senderID: fromMe ? (self ?? jid) : canonical(jidNormalizedUser(message.key.participant ?? raw)),
       senderName: message.pushName ?? message.key.participant ?? jid,
       outgoing: fromMe,
       ...(text !== undefined && text.length > 0 ? { text } : {}),
@@ -222,7 +237,11 @@ export const factory: WAClientFactory = async (config: WAClientConfig): Promise<
       if (!current()) return // a superseded socket's trailing events are noise
       if (update.connection === "connecting") markConnecting()
       if (update.qr !== undefined) publishQr(update.qr) // EVERY rotation, not just the first
-      if (update.connection === "open") onOpen()
+      if (update.connection === "open") {
+        const self = selfIds()
+        trace(`linked as ${self?.id ?? "?"}${self?.lid !== undefined ? ` (lid ${self.lid})` : " (no lid)"}`)
+        onOpen()
+      }
       if (update.connection === "close") {
         if (intentionalClose) return
         const statusCode = (update.lastDisconnect?.error as { output?: { statusCode?: number } } | undefined)?.output?.statusCode

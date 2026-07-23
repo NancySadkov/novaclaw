@@ -158,6 +158,17 @@ const sentTracker = (capacity: number) => {
   }
 }
 
+/** ONE account, TWO addresses. WhatsApp identifies users both by phone JID (`…@s.whatsapp.net`) and
+ *  by **LID** (`…@lid`, the privacy-preserving id), and which one an inbound message carries depends
+ *  on the surface — the operator's own "Message Yourself" messages arrive under the LID. Folding
+ *  them is load-bearing, not tidiness: unfolded, the self-chat looks like a chat with a stranger who
+ *  happens to share our identity, so the §0.1.5 console (whose whole test is `chatID === me.id`)
+ *  never fires, the message reads as "the human using their own account elsewhere" and is dropped as
+ *  an echo, and the account grows two chat rows for one conversation. The phone JID stays canonical.
+ *  (Found live 2026-07-23: the first real console message landed as `…@lid` and vanished silently.) */
+export const foldSelfAddress = (jid: string, self: { readonly id: string; readonly lid?: string }): string =>
+  self.lid !== undefined && self.lid.length > 0 && jid === self.lid ? self.id : jid
+
 /** The self-echo policy for a linked WhatsApp account (the human and the agent share one identity):
  *  - incoming (not fromMe) → never self.
  *  - fromMe that WE sent → self (drop: our own relay echoing back).
