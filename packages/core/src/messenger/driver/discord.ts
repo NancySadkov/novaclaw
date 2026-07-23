@@ -525,6 +525,13 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
             case "pin":
               return yield* call(`/channels/${chatID}/pins/${act.messageID}`, { method: "PUT" })
             case "ban": {
+              // Discord bans are permanent; a "ban for 7 days" would silently become forever.
+              if (act.durationDays !== undefined)
+                return yield* Effect.fail(
+                  new ModerationError({
+                    reason: "Discord has no temporary ban — ban permanently, or time the member out (mute) for a while instead.",
+                  }),
+                )
               // A spam wave needs the posts gone too, not just the account — Discord deletes the
               // member's messages from the last N seconds (max 7 days) on the ban itself.
               const purge = act.purgeSeconds === undefined ? undefined : Math.max(0, Math.min(Math.floor(act.purgeSeconds), 7 * 24 * 3600))

@@ -122,7 +122,11 @@ const ModerateOp = Schema.Struct({
   user: Schema.String.pipe(Schema.optional).annotate({ description: "User id — required for ban, kick, and mute" }),
   seconds: Schema.Finite.pipe(Schema.optional).annotate({
     description:
-      "For mute: how long the timeout lasts (default 600, platform-capped). For ban: also delete that member's messages from the last N seconds — use it on a spam wave so the posts go with the account.",
+      "For mute: how long the timeout lasts (default 600, platform-capped). For ban: ALSO delete that member's messages from the last N seconds, where the platform can (a spam wave) — not every platform can, and one that can't says so.",
+  }),
+  days: Schema.Finite.pipe(Schema.optional).annotate({
+    description:
+      "Ban only: make it temporary, this many days. Platforms without temporary bans refuse rather than ban forever.",
   }),
   account: Schema.String.pipe(Schema.optional).annotate({
     description: "Account id (msa_…) or label — omit when only one account exists",
@@ -137,6 +141,7 @@ export const buildModerationAct = (input: {
   readonly message?: string
   readonly user?: string
   readonly seconds?: number
+  readonly days?: number
 }): ModerationAct | { readonly error: string } => {
   const message = input.message?.trim()
   const user = input.user?.trim()
@@ -152,7 +157,12 @@ export const buildModerationAct = (input: {
       return { act: "lock" }
     case "ban":
       return user
-        ? { act: "ban", userID: user, ...(input.seconds === undefined ? {} : { purgeSeconds: Math.max(0, Math.floor(input.seconds)) }) }
+        ? {
+            act: "ban",
+            userID: user,
+            ...(input.seconds === undefined ? {} : { purgeSeconds: Math.max(0, Math.floor(input.seconds)) }),
+            ...(input.days === undefined ? {} : { durationDays: Math.max(1, Math.floor(input.days)) }),
+          }
         : { error: "ban needs a user id." }
     case "kick":
       return user ? { act: "kick", userID: user } : { error: "kick needs a user id." }

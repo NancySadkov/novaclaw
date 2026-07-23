@@ -87,6 +87,34 @@ export const normalizeSubreddit = (raw: string): string =>
 /** The chat id for a subreddit — prefixed so it can never collide with a `t3_…` post thread. */
 export const subredditChatID = (subreddit: string): string => `r/${subreddit}`
 
+/**
+ * The modqueue as a CHAT. Reported and spam-filtered items are the actual job of moderating a
+ * subreddit, and they do not show up in `/new`: a report can land on a week-old comment. Rather
+ * than invent a tool op nothing else has, the queue is a conversation the agent can read with
+ * `history` and that pushes an item when something arrives — parented to the subreddit, so the
+ * ONE binding already covers it.
+ */
+export const modqueueChatID = (subreddit: string): string => `r/${subreddit}/modqueue`
+
+export const isModqueueChat = (chatID: string): boolean => chatID.endsWith("/modqueue")
+
+/** Why this item is sitting in the queue, in the words a moderator would use. */
+export const queueReason = (data: Record<string, unknown>): string => {
+  const reports = typeof data["num_reports"] === "number" ? data["num_reports"] : 0
+  const bannedBy = data["banned_by"]
+  const parts: string[] = []
+  if (reports > 0) parts.push(`${reports} report${reports === 1 ? "" : "s"}`)
+  // `banned_by` is Reddit's field for "removed by", and the literal `true` means its spam filter.
+  if (bannedBy === true) parts.push("caught by the spam filter")
+  else if (typeof bannedBy === "string" && bannedBy.length > 0) parts.push(`removed by ${bannedBy}`)
+  const userReports = Array.isArray(data["user_reports"]) ? data["user_reports"] : []
+  const reasons = userReports
+    .map((entry) => (Array.isArray(entry) && typeof entry[0] === "string" ? entry[0] : undefined))
+    .filter((reason): reason is string => reason !== undefined)
+  if (reasons.length > 0) parts.push(`reported as: ${reasons.slice(0, 3).join(", ")}`)
+  return parts.length === 0 ? "awaiting review" : parts.join(" · ")
+}
+
 export const isPostChat = (chatID: string): boolean => chatID.startsWith("t3_")
 
 /** Reddit ids are `<type>_<base36>`; some endpoints want the bare base36 ("article"), and mixing
@@ -134,13 +162,17 @@ export const moderationRequest = (
     case "approve":
       return { path: "/api/approve", form: { id: act.messageID } }
     case "ban":
+      // Reddit CANNOT delete a banned user's back catalogue as part of the ban — say so instead of
+      // banning them and quietly leaving the spam up, which reads as success.
+      if (act.purgeSeconds !== undefined)
+        return { refusal: "Reddit can't remove a user's past posts as part of a ban — ban them, then remove the items (they're in the queue)." }
       return {
         path: `/r/${subreddit}/api/friend`,
         form: {
           type: "banned",
           name: act.userID,
           api_type: "json",
-          ...(act.purgeSeconds === undefined ? {} : { duration: String(Math.max(1, Math.min(999, Math.round(act.purgeSeconds / 86_400)))) }),
+          ...(act.durationDays === undefined ? {} : { duration: String(Math.max(1, Math.min(999, Math.round(act.durationDays)))) }),
         },
       }
     case "mute":
@@ -185,6 +217,41 @@ export const postInbound = (subreddit: string, data: Record<string, unknown>, se
     // `moderate ban` needs to receive from the message header.
     sender: { id: author, name: author, isSelf: selfName !== undefined && author.toLowerCase() === selfName.toLowerCase() },
     text,
+    at: (num(data["created_utc"]) ?? Date.now() / 1000) * 1000,
+  }
+}
+
+/**
+ * A queued item as a message in the modqueue chat. It carries the SAME fullname as the item itself,
+ * so the id the agent reads here is exactly the id `moderate approve|delete` takes — and because it
+ * lands in the queue chat rather than the post's thread, an item that was already delivered when it
+ * was posted doesn't read as a duplicate of itself.
+ */
+export const modqueueInbound = (subreddit: string, data: Record<string, unknown>, selfName: string | undefined): InboundEvent | undefined => {
+  const name = str(data["name"])
+  const author = str(data["author"])
+  if (name === undefined || author === undefined) return undefined
+  const isPost = name.startsWith("t3_")
+  const body = isPost
+    ? [str(data["title"]), str(data["selftext"])].filter((part): part is string => part !== undefined && part.length > 0).join("\n\n")
+    : (str(data["body"]) ?? "")
+  const where = str(data["link_title"])
+  return {
+    kind: "message",
+    chat: {
+      chatID: modqueueChatID(subreddit),
+      kind: "mailbox",
+      title: `r/${subreddit} moderation queue`,
+      parentID: subredditChatID(subreddit),
+    },
+    messageID: name,
+    sender: { id: author, name: author, isSelf: selfName !== undefined && author.toLowerCase() === selfName.toLowerCase() },
+    text: [
+      `[${isPost ? "post" : "comment"} · ${queueReason(data)}]${where !== undefined && !isPost ? ` on "${where}"` : ""}`,
+      body,
+    ]
+      .filter((part) => part.length > 0)
+      .join("\n"),
     at: (num(data["created_utc"]) ?? Date.now() / 1000) * 1000,
   }
 }
@@ -234,7 +301,7 @@ export const advanceCursor = (
   return { cursor: { before: fullnames[0], seen: merged }, fresh }
 }
 
-export const readCursor = (value: unknown): { posts: ListingCursor; comments: ListingCursor } => {
+export const readCursor = (value: unknown): { posts: ListingCursor; comments: ListingCursor; modqueue: ListingCursor } => {
   const raw = (value ?? {}) as Record<string, unknown>
   const one = (key: string): ListingCursor => {
     const entry = (raw[key] ?? {}) as Record<string, unknown>
@@ -242,7 +309,7 @@ export const readCursor = (value: unknown): { posts: ListingCursor; comments: Li
     const before = str(entry["before"])
     return before === undefined ? { seen } : { before, seen }
   }
-  return { posts: one("posts"), comments: one("comments") }
+  return { posts: one("posts"), comments: one("comments"), modqueue: one("modqueue") }
 }
 
 // ── the driver ──────────────────────────────────────────────────────────────────────────────────
@@ -441,7 +508,7 @@ export const make = (fetchImpl: FetchLike, loopbackFactory: LoopbackFactory, ope
       }
 
       /** One poll of one listing: newest-first from Reddit, emitted oldest-first. */
-      const pollListing = (path: string, key: "posts" | "comments", toEvent: (data: Record<string, unknown>) => InboundEvent | undefined) =>
+      const pollListing = (path: string, key: "posts" | "comments" | "modqueue", toEvent: (data: Record<string, unknown>) => InboundEvent | undefined) =>
         Effect.gen(function* () {
           const cursor = cursors[key]
           const query = new URLSearchParams({ limit: "100", ...(cursor.before === undefined ? {} : { before: cursor.before }) })
@@ -467,6 +534,13 @@ export const make = (fetchImpl: FetchLike, loopbackFactory: LoopbackFactory, ope
         while (true) {
           yield* pollListing(`/r/${config.subreddit}/new`, "posts", (data) => postInbound(config.subreddit, data, selfName))
           yield* pollListing(`/r/${config.subreddit}/comments`, "comments", (data) => commentInbound(config.subreddit, data, selfName))
+          // The queue is polled too: a report can land on a week-old comment that no `/new` poll
+          // will ever surface again, and a report is precisely what should wake a moderator. A
+          // failure here is NOT fatal — the bot may simply lack the `posts` mod permission, and
+          // losing the public listings over that would be a worse outcome than a quiet queue.
+          yield* pollListing(`/r/${config.subreddit}/about/modqueue`, "modqueue", (data) => modqueueInbound(config.subreddit, data, selfName)).pipe(
+            Effect.catchCause(() => Effect.void),
+          )
           yield* Effect.sleep(Duration.millis(pollIntervalMs))
         }
       })
@@ -511,6 +585,12 @@ export const make = (fetchImpl: FetchLike, loopbackFactory: LoopbackFactory, ope
         Effect.gen(function* () {
           const out: ChatSnapshot[] = [
             { chatID: subredditChatID(config.subreddit), kind: "channel", title: `r/${config.subreddit}` },
+            {
+              chatID: modqueueChatID(config.subreddit),
+              kind: "mailbox",
+              title: `r/${config.subreddit} moderation queue (reported + filtered)`,
+              parentID: subredditChatID(config.subreddit),
+            },
           ]
           const response = yield* api(`/r/${config.subreddit}/new?limit=25`)
           if (response.status >= 400) return out
@@ -526,6 +606,27 @@ export const make = (fetchImpl: FetchLike, loopbackFactory: LoopbackFactory, ope
       const history = (chatID: string, limit: number) =>
         Effect.gen(function* () {
           const entries: HistoryEntry[] = []
+          // Reading the queue is how an agent triages on purpose rather than only when pushed.
+          if (isModqueueChat(chatID)) {
+            const response = yield* api(`/r/${config.subreddit}/about/modqueue?limit=${Math.min(100, limit)}`)
+            if (response.status === 403)
+              return yield* Effect.fail(
+                new ConnectError({ reason: "Reddit refused the moderation queue — this account needs the `posts` moderator permission on the subreddit." }),
+              )
+            for (const thing of [...children(response.body)].reverse()) {
+              const event = modqueueInbound(config.subreddit, thing.data, selfName)
+              if (event?.kind !== "message") continue
+              entries.push({
+                messageID: event.messageID,
+                senderID: event.sender.id,
+                senderName: event.sender.name,
+                outgoing: event.sender.isSelf,
+                ...(event.text === undefined ? {} : { text: event.text }),
+                at: event.at,
+              })
+            }
+            return entries
+          }
           if (!isPostChat(chatID)) {
             // The subreddit's own "history" is its recent posts.
             const response = yield* api(`/r/${config.subreddit}/new?limit=${Math.min(100, limit)}`)

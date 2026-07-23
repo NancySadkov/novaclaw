@@ -119,10 +119,12 @@ export interface OutboundMessage {
 
 export type ModerationAct =
   | { readonly act: "delete"; readonly messageID: string }
-  /** `purgeSeconds` also deletes that member's recent messages where the platform supports it
-   *  (Discord `delete_message_seconds`) — the spam-wave action: without it a banned spammer's
-   *  posts stay up and someone has to delete them one by one. */
-  | { readonly act: "ban"; readonly userID: string; readonly purgeSeconds?: number }
+  /** Two INDEPENDENT modifiers, because platforms split the concept: `purgeSeconds` also deletes
+   *  the member's recent messages (Discord `delete_message_seconds` — the spam-wave action, or a
+   *  banned spammer's posts stay up for a human to clear by hand), while `durationDays` makes the
+   *  ban temporary (Reddit). A driver that cannot honour one REFUSES rather than silently doing
+   *  something else: a "7-day ban" quietly applied forever is worse than the caller asked for. */
+  | { readonly act: "ban"; readonly userID: string; readonly purgeSeconds?: number; readonly durationDays?: number }
   | { readonly act: "kick"; readonly userID: string }
   | { readonly act: "mute"; readonly userID: string; readonly seconds?: number }
   | { readonly act: "pin"; readonly messageID: string }

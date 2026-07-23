@@ -42,6 +42,8 @@ const makeFakeReddit = () => {
     calls: [] as { url: string; method: string; form?: Record<string, string>; agent?: string }[],
     posts: [post("aaa", "dave", "Crash on save", "it dies when I press save")],
     comments: [] as ReturnType<typeof comment>[],
+    queue: [] as { kind: string; data: Record<string, unknown> }[],
+    queueStatus: 200,
     refreshFails: undefined as string | undefined,
     commentReply: { json: { errors: [], data: { things: [{ kind: "t1", data: { name: "t1_reply" } }] } } } as unknown,
   }
@@ -59,6 +61,7 @@ const makeFakeReddit = () => {
       return json({ access_token: "at-1", expires_in: 3600, refresh_token: "rt-new" })
     }
     if (url.includes("/api/v1/me")) return json({ name: "novaclaw-bot" })
+    if (url.includes("/about/modqueue")) return json(state.queueStatus === 200 ? { data: { children: state.queue } } : { message: "Forbidden" }, state.queueStatus)
     if (url.includes("/r/novaclaw/new")) return json({ data: { children: state.posts } })
     if (url.includes("/r/novaclaw/comments/")) return json([{ data: { children: state.posts } }, { data: { children: state.comments } }])
     if (url.includes("/r/novaclaw/comments")) return json({ data: { children: state.comments } })
@@ -158,8 +161,35 @@ describe("RedditDriver pure helpers", () => {
     expect(RedditDriver.readCursor({ posts: { before: "t3_a", seen: ["t3_a"] }, comments: { seen: [] } })).toEqual({
       posts: { before: "t3_a", seen: ["t3_a"] },
       comments: { seen: [] },
+      modqueue: { seen: [] },
     })
-    expect(RedditDriver.readCursor("junk")).toEqual({ posts: { seen: [] }, comments: { seen: [] } })
+    expect(RedditDriver.readCursor("junk")).toEqual({ posts: { seen: [] }, comments: { seen: [] }, modqueue: { seen: [] } })
+  })
+
+  // The queue is the actual job of moderating: a report can land on a week-old comment that no
+  // /new poll will ever surface again.
+  test("a queued item says WHY it is queued, and keeps the id moderation takes", () => {
+    const event = RedditDriver.modqueueInbound(
+      "novaclaw",
+      { name: "t1_x", author: "spammer", body: "buy my thing", link_title: "Crash on save", num_reports: 2, user_reports: [["spam", 2]], created_utc: 1_700_000_000 },
+      "novaclaw-bot",
+    )
+    if (event?.kind !== "message") throw new Error("expected a message")
+    // It lands in the QUEUE chat, not the post's thread — so an item already delivered when it was
+    // posted doesn't read as a duplicate of itself.
+    expect(event.chat.chatID).toBe("r/novaclaw/modqueue")
+    expect(event.chat.parentID).toBe("r/novaclaw") // the one binding covers it
+    expect(event.messageID).toBe("t1_x") // exactly what `moderate approve|delete` takes
+    expect(event.text).toContain("2 reports")
+    expect(event.text).toContain("reported as: spam")
+    expect(event.text).toContain("buy my thing")
+  })
+
+  test("the queue reason distinguishes the spam filter from a human removal", () => {
+    expect(RedditDriver.queueReason({ banned_by: true })).toContain("spam filter")
+    expect(RedditDriver.queueReason({ banned_by: "nancy" })).toContain("removed by nancy")
+    expect(RedditDriver.queueReason({ num_reports: 1 })).toBe("1 report")
+    expect(RedditDriver.queueReason({})).toBe("awaiting review")
   })
 
   test("a post becomes a thread parented to the subreddit — the shape one binding needs", () => {
@@ -282,7 +312,7 @@ describe("RedditDriver connection", () => {
     }),
   )
 
-  it.live("listChats returns the subreddit plus its live posts, each parented to it", () =>
+  it.live("listChats returns the subreddit, its moderation queue, and its live posts", () =>
     Effect.gen(function* () {
       const fake = makeFakeReddit()
       const chats = yield* Effect.scoped(
@@ -292,7 +322,9 @@ describe("RedditDriver connection", () => {
         }),
       )
       expect(chats[0]).toEqual({ chatID: "r/novaclaw", kind: "channel", title: "r/novaclaw" })
-      expect(chats[1]).toEqual({ chatID: "t3_aaa", kind: "thread", title: "Crash on save", parentID: "r/novaclaw" })
+      // The queue is offered as a place you can go, not only something that pushes at you.
+      expect(chats[1]).toMatchObject({ chatID: "r/novaclaw/modqueue", kind: "mailbox", parentID: "r/novaclaw" })
+      expect(chats[2]).toEqual({ chatID: "t3_aaa", kind: "thread", title: "Crash on save", parentID: "r/novaclaw" })
     }),
   )
 
@@ -325,6 +357,62 @@ describe("RedditDriver connection", () => {
       expect(url.searchParams.get("scope")).toContain("modposts")
       const exchange = fake.state.calls.find((call) => call.url.includes("access_token"))
       expect(exchange?.form).toMatchObject({ grant_type: "authorization_code", code: "code-1" })
+    }),
+  )
+
+  it.live("the modqueue is polled and pushed — reports on old items reach the moderator", () =>
+    Effect.gen(function* () {
+      const fake = makeFakeReddit()
+      fake.state.posts = []
+      fake.state.queue = [{ kind: "t1", data: { name: "t1_old", author: "spammer", body: "buy my thing", num_reports: 3, created_utc: 1_600_000_000 } }]
+      const received: InboundEvent[] = []
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const connection = yield* connect(fake)
+          yield* connection.inbound.pipe(
+            Stream.take(1),
+            Stream.runForEach((event) => Effect.sync(() => received.push(event))),
+          )
+        }),
+      )
+      const queued = received[0]
+      if (queued?.kind !== "message") throw new Error("expected a queued item")
+      expect(queued.chat.chatID).toBe("r/novaclaw/modqueue")
+      expect(queued.text).toContain("3 reports")
+    }),
+  )
+
+  // Losing the public listings because the bot lacks one mod permission would be a worse outcome
+  // than a quiet queue — so a refused queue must not take the connection down with it.
+  it.live("a forbidden modqueue does NOT kill the rest of the driver", () =>
+    Effect.gen(function* () {
+      const fake = makeFakeReddit()
+      fake.state.queueStatus = 403
+      const received: InboundEvent[] = []
+      yield* Effect.scoped(
+        Effect.gen(function* () {
+          const connection = yield* connect(fake)
+          yield* connection.inbound.pipe(
+            Stream.take(1),
+            Stream.runForEach((event) => Effect.sync(() => received.push(event))),
+          )
+        }),
+      )
+      expect(received[0]?.kind === "message" && received[0].chat.chatID).toBe("t3_aaa") // the post still arrived
+    }),
+  )
+
+  it.live("reading the queue with no mod permission blames the permission, not the network", () =>
+    Effect.gen(function* () {
+      const fake = makeFakeReddit()
+      fake.state.queueStatus = 403
+      const error = yield* Effect.scoped(
+        Effect.gen(function* () {
+          const connection = yield* connect(fake)
+          return yield* connection.history!("r/novaclaw/modqueue", 10).pipe(Effect.flip)
+        }),
+      )
+      expect(error.reason).toContain("posts` moderator permission")
     }),
   )
 
