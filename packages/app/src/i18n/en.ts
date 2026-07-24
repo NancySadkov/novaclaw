@@ -1434,6 +1434,9 @@ export const dict = {
     "How many tokens of the conversation the model can see at once. Match the model's real limit.",
   "settings.models.config.maxTokens.name": "Max response length",
   "settings.models.config.maxTokens.desc": "The most tokens the model may generate in a single reply.",
+  "settings.models.config.thinkingBudget.name": "Thinking budget",
+  "settings.models.config.thinkingBudget.desc":
+    "Soft cap on the model's reasoning per turn. When it's reached, the harness nudges the model to wrap up and answer — curbing runaway thinking in smaller models. Blank uses the default (¼ of the context).",
   "settings.models.config.reasoning.name": "Thinking",
   "settings.models.config.reasoning.desc":
     "Let the model think privately before answering. Turn on only if the model supports reasoning.",

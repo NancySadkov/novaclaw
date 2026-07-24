@@ -99,14 +99,19 @@ const apiKey = (model: ModelV2.Info, credential?: Credential.Value) => {
 
 const withDefaults = (model: ModelV2.Info, route: AnyRoute) => {
   const body = model.request.body
-  const httpBody = Object.hasOwn(body, "apiKey")
-    ? Object.fromEntries(Object.entries(body).filter(([key]) => key !== "apiKey"))
-    : body
+  // `thinkingBudget` is a harness-side knob carried in `request.body` (see the config seeder), not
+  // a sampling param — pull it out before the split so it never reaches the wire.
+  const rawBudget = body.thinkingBudget
+  const configuredBudget = typeof rawBudget === "number" ? rawBudget : undefined
+  const httpBody = Object.fromEntries(
+    Object.entries(body).filter(([key]) => key !== "apiKey" && key !== "thinkingBudget"),
+  )
   // Protocol-owned sampling (temperature/top_p/top_k/penalties/…) must go through the
   // canonical `generation` options, not the http.body overlay — the native transport
   // rejects those keys in an overlay. Only provider extras (min_p, repetition_penalty, …)
   // stay in http.body. See sampling-split.ts.
   const split = splitModelSampling(httpBody)
+  const context = ProbeWindow.get(model.providerID, model.id) ?? model.limit.context
   return route.with({
     provider: model.providerID,
     endpoint: model.api.url === undefined ? undefined : { baseURL: model.api.url },
@@ -117,10 +122,22 @@ const withDefaults = (model: ModelV2.Info, route: AnyRoute) => {
     // context size and beats the catalog limit, which lies whenever config drifts from the
     // serving process. Runtime-only override; the catalog value stays the cold-start default.
     limits: {
-      context: ProbeWindow.get(model.providerID, model.id) ?? model.limit.context,
+      context,
       output: model.limit.output,
+      // MindControl (notes/experimental.md): default the reasoning budget to context/4 when the
+      // config doesn't set one, capped at the output limit so no single reasoning phase asks for
+      // more tokens than the server can return. 0 (or a 0-context model) leaves it off.
+      thinkingBudget: defaultThinkingBudget(configuredBudget, context, model.limit.output),
     },
   })
+}
+
+/** context/4 (capped at the output limit) unless the config pins an explicit per-model value. */
+const defaultThinkingBudget = (configured: number | undefined, context: number, output: number): number => {
+  if (configured !== undefined) return Math.max(0, configured)
+  if (context <= 0) return 0
+  const quarter = Math.floor(context / 4)
+  return output > 0 ? Math.min(quarter, output) : quarter
 }
 
 const withVariant = (

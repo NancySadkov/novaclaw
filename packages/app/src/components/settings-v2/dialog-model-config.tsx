@@ -28,8 +28,13 @@ type ModelConfig = {
 
 const MODALITIES = ["text", "image", "audio"] as const
 const SAMPLING = ["temperature", "top_p", "top_k", "min_p", "repetition_penalty", "presence_penalty", "frequency_penalty"] as const
-type FieldKey = (typeof SAMPLING)[number] | "context" | "maxTokens"
+type FieldKey = (typeof SAMPLING)[number] | "context" | "maxTokens" | "thinkingBudget"
 const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1)
+
+// MindControl thinking budget is stored in request.body (the free-form record the runtime reads),
+// NOT under `options`/`limit` — see reasoning-budget.ts. Read/written directly by this dialog.
+type WithRequestBody = { request?: { headers?: Record<string, string>; body?: Record<string, unknown>; variant?: string } }
+const bodyBudget = (m: unknown): unknown => (m as WithRequestBody | undefined)?.request?.body?.thinkingBudget
 
 // Presets per field. `{}` = "use the default" (blank). `word` is a shared i18n intensity term; `size`
 // is a literal unit label (context/output are token counts, not intensities). The number is the value.
@@ -44,6 +49,7 @@ const PRESETS: Record<FieldKey, RawPreset[]> = {
   frequency_penalty: [{}, { word: "off", num: 0 }, { word: "light", num: 0.3 }, { word: "moderate", num: 0.6 }, { word: "strong", num: 1 }],
   context: [{}, { size: "4K", num: 4096 }, { size: "8K", num: 8192 }, { size: "16K", num: 16384 }, { size: "32K", num: 32768 }, { size: "64K", num: 65536 }, { size: "128K", num: 131072 }, { size: "256K", num: 262144 }],
   maxTokens: [{}, { size: "512", num: 512 }, { size: "1K", num: 1024 }, { size: "2K", num: 2048 }, { size: "4K", num: 4096 }, { size: "8K", num: 8192 }, { size: "16K", num: 16384 }, { size: "32K", num: 32768 }],
+  thinkingBudget: [{}, { size: "2K", num: 2048 }, { size: "4K", num: 4096 }, { size: "6K", num: 6144 }, { size: "8K", num: 8192 }, { size: "16K", num: 16384 }, { size: "32K", num: 32768 }],
 }
 
 type Opt = { id: string; num: number | undefined; label: string }
@@ -82,6 +88,7 @@ export const DialogModelConfig: Component<{
     frequency_penalty: optNum("frequency_penalty"),
     context: nstr(init.limit?.context ?? d.limit?.context),
     maxTokens: nstr(init.limit?.output ?? d.limit?.output),
+    thinkingBudget: nstr(bodyBudget(init) ?? bodyBudget(d)),
     reasoning: init.reasoning ?? d.reasoning ?? false,
     tool_call: init.tool_call ?? d.tool_call ?? true,
     inText: inMod.includes("text"),
@@ -119,17 +126,28 @@ export const DialogModelConfig: Component<{
     const input = MODALITIES.filter((m) => form[`in${cap(m)}` as "inText" | "inImage" | "inAudio"])
     const output = MODALITIES.filter((m) => form[`out${cap(m)}` as "outText" | "outImage" | "outAudio"])
 
+    // Thinking budget rides request.body (the runtime carrier), preserving any other body params.
+    const saved = savedModel()
+    const savedRequest = (saved as WithRequestBody).request
+    const body: Record<string, unknown> = { ...(savedRequest?.body ?? {}) }
+    const tb = num(form.thinkingBudget)
+    if (tb !== undefined) body.thinkingBudget = tb
+    else delete body.thinkingBudget
+
     const model: ModelConfig = {
-      ...savedModel(),
+      ...saved,
       reasoning: form.reasoning,
       tool_call: form.tool_call,
       limit,
       modalities: { input, output },
       options,
+      request: { ...(savedRequest ?? {}), body },
     }
     const provider = providerCfg()
+    // The config key is `providers` (plural) — the schema drops a stray `provider`, which silently
+    // discarded every save this dialog made (pre-existing bug, fixed 2026-07-24).
     const patch = {
-      provider: {
+      providers: {
         [props.providerID]: { ...provider, models: { ...(provider.models ?? {}), [props.modelID]: model } },
       },
     }
@@ -258,6 +276,7 @@ export const DialogModelConfig: Component<{
           <SettingsListV2>
             {paramRow("context")}
             {paramRow("maxTokens")}
+            {paramRow("thinkingBudget")}
           </SettingsListV2>
 
           {section("capabilities")}

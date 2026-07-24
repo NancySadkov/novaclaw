@@ -124,6 +124,8 @@ export const mergeGenerationOptions = (...items: ReadonlyArray<GenerationOptions
 export class ModelLimits extends Schema.Class<ModelLimits>("LLM.ModelLimits")({
   context: Schema.optional(Schema.Number),
   output: Schema.optional(Schema.Number),
+  // MindControl reasoning budget (tokens/turn), resolved from config or defaulted to context/4.
+  thinkingBudget: Schema.optional(Schema.Number),
 }) {}
 
 export namespace ModelLimits {

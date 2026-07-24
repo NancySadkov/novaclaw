@@ -6,6 +6,7 @@ import {
   Message,
   SystemPart,
   isContextOverflowFailure,
+  type LLMRequest,
   type ProviderErrorEvent,
 } from "@novaclaw/llm"
 import { Cause, DateTime, Duration, Effect, Fiber, FiberSet, Layer, Option, Semaphore, Stream } from "effect"
@@ -82,6 +83,7 @@ import {
 } from "./doom-loop"
 import { Introspection } from "./introspection"
 import { MAX_STEPS_PROMPT } from "./max-steps"
+import { ReasoningBudget } from "./reasoning-budget"
 import { ProviderRetry } from "./provider-retry"
 import { Quality } from "./quality"
 import { QualityProvision } from "./quality-provision"
@@ -329,6 +331,13 @@ export const layer = Layer.effect(
     // provider that rejects unknown body keys would need this capability-gated; revisit when a
     // non-vLLM backend is actually supported, and prefer a protocol-level "no reasoning" if one exists.
     const NO_THINKING = { chat_template_kwargs: { enable_thinking: false } } as const
+
+    // True unless the turn explicitly disabled reasoning via the `NO_THINKING` overlay above — the
+    // thinking-budget controller only engages when the model is actually allowed to reason.
+    const thinkingEnabled = (req: LLMRequest): boolean => {
+      const body = req.http?.body as { chat_template_kwargs?: { enable_thinking?: boolean } } | undefined
+      return body?.chat_template_kwargs?.enable_thinking !== false
+    }
 
     const generateTitle = Effect.fn("SessionRunner.generateTitle")(function* (sessionID: SessionSchema.ID) {
       const session = yield* getSession(sessionID)
@@ -739,7 +748,22 @@ export const layer = Layer.effect(
       // partially-streamed output) — only pure pre-stream failures (connection refused,
       // an HTTP error before the first SSE event) are transparently retried below.
       let sawProviderEvent = false
-      const providerStream = llm.stream(request).pipe(
+      // MindControl thinking budget (reasoning-budget.ts): when the model carries a budget and this
+      // isn't the tool-less final step, run the turn through the budget controller — it monitors the
+      // reasoning stream and, only if the model runs past the budget still thinking, stops and
+      // continues with a nudge (and a forced `</think>` close at the end). A model that answers on
+      // its own streams through untouched. Skipped when thinking is explicitly disabled for the turn.
+      const thinkingBudget = model.route.defaults.limits?.thinkingBudget ?? 0
+      const budgetedSource =
+        thinkingBudget > 0 && !isLastStep && thinkingEnabled(request)
+          ? ReasoningBudget.stream({
+              request,
+              stream: (next) => llm.stream(next),
+              budget: thinkingBudget,
+              answerMaxTokens: model.route.defaults.limits?.output ?? thinkingBudget,
+            })
+          : llm.stream(request)
+      const providerStream = budgetedSource.pipe(
         Stream.runForEach((event) =>
           Effect.gen(function* () {
             sawProviderEvent = true
