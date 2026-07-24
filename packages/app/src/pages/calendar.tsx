@@ -1,6 +1,8 @@
 import { createMemo, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js"
 import { Icon } from "@novaclaw/ui/icon"
 import { useServerSDK } from "@/context/server-sdk"
+import { useServer } from "@/context/server"
+import { useDirectoryPicker } from "@/components/directory-picker"
 import {
   createSchedule,
   listFires,
@@ -69,6 +71,12 @@ const CARD = "rounded-lg border border-v2-border-border-base bg-v2-background-bg
 export function CalendarPage() {
   const sdk = useServerSDK()
   const httpBase = createMemo(() => sdk()?.server?.http)
+
+  // The folder browser reuses the app's directory picker (browses the SERVER host's filesystem — where the
+  // scheduled agent actually runs, not the client). Same hook the "new agent" folder chip uses.
+  const server = useServer()
+  const conn = createMemo(() => server.current)
+  const pickDirectory = useDirectoryPicker()
 
   // Live clock — bump every second; refresh the list every 10s so next/last-fire stays current.
   const [now, setNow] = createSignal(Date.now())
@@ -195,6 +203,19 @@ export function CalendarPage() {
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
     }
+  }
+
+  function pickFolder() {
+    const c = conn()
+    if (!c) return
+    pickDirectory({
+      server: c,
+      title: "Choose the schedule's work folder",
+      onSelect: (result) => {
+        const directory = Array.isArray(result) ? result[0] : result
+        if (directory) setFolder(directory)
+      },
+    })
   }
 
   const clockDate = createMemo(() =>
@@ -372,11 +393,14 @@ export function CalendarPage() {
           <div class="flex flex-wrap items-center gap-2">
             <label class="text-sm text-v2-text-text-muted">Folder</label>
             <input
-              class={`${FIELD} min-w-[260px] flex-1`}
+              class={`${FIELD} min-w-[220px] flex-1`}
               placeholder="Work folder — where it reads inputs + writes the report (blank = instance home)"
               value={folder()}
               onInput={(e) => setFolder(e.currentTarget.value)}
             />
+            <button type="button" class={BTN} onClick={pickFolder} disabled={!conn()}>
+              Browse…
+            </button>
           </div>
 
           <div class="flex flex-wrap items-center gap-2">
