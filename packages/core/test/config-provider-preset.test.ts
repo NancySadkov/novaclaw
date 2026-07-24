@@ -7,9 +7,9 @@ import { ConfigProviderPreset } from "@novaclaw/core/config/provider-preset"
 // must fix ONE field without losing the rest of the builtin).
 
 describe("ConfigProviderPreset", () => {
-  it("ships the four builtin presets with valid URLs and in-tree API channels", () => {
+  it("ships the five builtin presets with valid URLs and in-tree API channels", () => {
     const ids = Object.keys(ConfigProviderPreset.BUILTINS)
-    expect(ids.sort()).toEqual(["anthropic", "deepseek", "moonshot", "openai"])
+    expect(ids.sort()).toEqual(["anthropic", "deepseek", "moonshot", "openai", "zai"])
     for (const preset of Object.values(ConfigProviderPreset.BUILTINS)) {
       expect(preset.name).toBeTruthy()
       expect(() => new URL(preset.baseURL!)).not.toThrow()

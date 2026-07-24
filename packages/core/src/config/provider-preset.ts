@@ -47,7 +47,9 @@ export class Info extends Schema.Class<Info>("ConfigV2.ProviderPreset")({
   }),
 }) {}
 
-/** Built-in defaults. URLs verified live 2026-07-21 (each answers GET {baseURL}/models). */
+/** Built-in defaults. URLs verified live 2026-07-21 (each answers GET {baseURL}/models; z.ai
+ *  added + verified 2026-07-24 — its /models is auth-gated, like anthropic's, so it lists once a
+ *  key is supplied). */
 export const BUILTINS: Record<string, Info> = {
   deepseek: Info.make({
     name: "DeepSeek",
@@ -76,6 +78,13 @@ export const BUILTINS: Record<string, Info> = {
     description: "Kimi models from Moonshot AI",
     baseURL: "https://api.moonshot.ai/v1",
     keyURL: "https://platform.moonshot.ai/console/api-keys",
+    api: "@ai-sdk/openai-compatible",
+  }),
+  zai: Info.make({
+    name: "Z.ai (GLM)",
+    description: "GLM chat, reasoning, and coding models from Z.ai",
+    baseURL: "https://api.z.ai/api/paas/v4",
+    keyURL: "https://z.ai/manage-apikey/apikey-list",
     api: "@ai-sdk/openai-compatible",
   }),
 }
