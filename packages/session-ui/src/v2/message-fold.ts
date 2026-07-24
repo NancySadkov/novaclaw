@@ -332,6 +332,8 @@ export function applySessionNextEvent(messages: SessionMessage[], event: V2Event
       // boundary (seq > boundary), keeping the boundary message itself. Message ids are ascending,
       // so `id > boundary` is exactly that set. Prune in place — the store MERGES on load and never
       // drops server-deleted rows, so without this the reverted tail would linger on screen.
+      // The "before everything" sentinel `msg_` (reverting the first prompt) sorts before every real
+      // id, so `id > "msg_"` matches ALL messages and the whole transcript clears — no special case.
       const boundary = event.data.messageID
       for (let i = messages.length - 1; i >= 0; i--) if (messages[i]!.id > boundary) messages.splice(i, 1)
       break

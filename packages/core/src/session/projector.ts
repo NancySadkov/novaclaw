@@ -9,6 +9,7 @@ import { SessionEvent } from "./event"
 import { SessionRecordEvent } from "@novaclaw/schema/session-record-event"
 import { WorkspaceTable } from "../control-plane/workspace.sql"
 import { SessionMessage } from "./message"
+import { SessionRevert } from "./revert"
 import { SessionMessageUpdater } from "./message-updater"
 import { SessionInput } from "./input"
 import { WorkspaceV2 } from "../workspace"
@@ -421,17 +422,20 @@ export const layer = Layer.effectDiscard(
     )
     yield* events.project(SessionEvent.RevertEvent.Committed, (event) =>
       Effect.gen(function* () {
-        const boundary = yield* db
-          .select({ seq: SessionMessageTable.seq })
-          .from(SessionMessageTable)
-          .where(
-            and(
-              eq(SessionMessageTable.session_id, event.data.sessionID),
-              eq(SessionMessageTable.id, event.data.messageID),
-            ),
-          )
-          .get()
-          .pipe(Effect.orDie)
+        const boundary =
+          event.data.messageID === SessionRevert.BEFORE_ALL
+            ? { seq: 0 } // revert to the empty session: delete every message/input (seq > 0)
+            : yield* db
+                .select({ seq: SessionMessageTable.seq })
+                .from(SessionMessageTable)
+                .where(
+                  and(
+                    eq(SessionMessageTable.session_id, event.data.sessionID),
+                    eq(SessionMessageTable.id, event.data.messageID),
+                  ),
+                )
+                .get()
+                .pipe(Effect.orDie)
         if (!boundary) return yield* Effect.die(`Revert boundary message not found: ${event.data.messageID}`)
         yield* db
           .delete(SessionMessageTable)

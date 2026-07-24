@@ -19,6 +19,15 @@ export class MessageNotFoundError extends Schema.TaggedErrorClass<MessageNotFoun
   },
 ) {}
 
+/**
+ * "Before everything" revert boundary. Message ids are `msg_<ascending>`, so the bare prefix `msg_`
+ * sorts LEXICALLY BEFORE every real id — a boundary of seq 0. Used to revert the FIRST prompt (which
+ * has no predecessor to keep up to): the whole transcript rewinds to the empty session. It passes the
+ * `startsWith("msg_")` id check, so it rides the ordinary stage/commit path and the client prune
+ * (`id > boundary`) drops every message. Any other prompt keeps its real predecessor as the boundary.
+ */
+export const BEFORE_ALL = SessionMessage.ID.make("msg_")
+
 interface BoundaryInput {
   readonly sessionID: SessionSchema.ID
   readonly messageID: SessionMessage.ID
@@ -31,12 +40,15 @@ interface BoundaryInput {
  */
 export const plan = Effect.fn("SessionRevert.plan")(function* (input: BoundaryInput) {
   const db = (yield* Database.Service).db
-  const boundary = yield* db
-    .select({ seq: SessionMessageTable.seq })
-    .from(SessionMessageTable)
-    .where(and(eq(SessionMessageTable.session_id, input.sessionID), eq(SessionMessageTable.id, input.messageID)))
-    .get()
-    .pipe(Effect.orDie)
+  const boundary =
+    input.messageID === BEFORE_ALL
+      ? { seq: 0 } // revert to the empty session — every message (seq > 0) is after the boundary
+      : yield* db
+          .select({ seq: SessionMessageTable.seq })
+          .from(SessionMessageTable)
+          .where(and(eq(SessionMessageTable.session_id, input.sessionID), eq(SessionMessageTable.id, input.messageID)))
+          .get()
+          .pipe(Effect.orDie)
   if (!boundary) return yield* new MessageNotFoundError(input)
   const rows = yield* db
     .select()

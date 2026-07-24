@@ -31,6 +31,8 @@ const assistantMsg = (id: string, created: number, opts?: { completed?: number; 
     content: opts?.text !== undefined ? [{ type: "text", id: `${id}-t`, text: opts.text }] : [],
     time: { created, completed: opts?.completed },
   }) as SessionMessage
+const reverted = (sessionID: string, messageID: string) =>
+  ev("session.next.revert.committed", { timestamp: 9, sessionID, messageID })
 
 describe("appendMessage", () => {
   test("appends oldest-first and dedups by id", () => {
@@ -45,6 +47,21 @@ describe("appendMessage", () => {
 })
 
 describe("applySessionNextEvent", () => {
+  test("revert.committed prunes messages after the boundary, keeping the boundary itself", () => {
+    const messages = [userMsg("msg_1", 1), assistantMsg("msg_2", 2), userMsg("msg_3", 3), assistantMsg("msg_4", 4)]
+    fold(messages, reverted("s", "msg_2"))
+    expect(messages.map((m) => m.id)).toEqual(["msg_1", "msg_2"])
+  })
+
+  test("revert.committed with the before-everything sentinel (msg_) clears the whole transcript", () => {
+    // Reverting the FIRST prompt has no predecessor boundary → the sentinel `msg_` sorts before every
+    // real id, so every message is "after" it and the transcript empties (owner-hit: the first prompt
+    // used to linger because the fallback kept it as its own boundary).
+    const messages = [userMsg("msg_1", 1), assistantMsg("msg_2", 2)]
+    fold(messages, reverted("s", "msg_"))
+    expect(messages).toHaveLength(0)
+  })
+
   test("prompted → user message", () => {
     const messages = fold([], prompted("s", "msg_u", "hello"))
     expect(messages).toHaveLength(1)

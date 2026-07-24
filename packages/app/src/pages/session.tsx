@@ -1479,13 +1479,15 @@ export default function Page() {
   const revertToPrompt = async (messageID: string) => {
     const sessionID = params.id
     if (!sessionID || revertingPrompt || reverting()) return
-    // The commit boundary is the message immediately before this prompt (any type — the leading
-    // agent/model-switched markers count, which handles reverting to the very first prompt: the
-    // whole transcript clears). If somehow nothing precedes it, fall back to the prompt itself.
+    // The commit boundary is the message immediately before this prompt: the revert KEEPS the boundary
+    // and drops everything after, so keeping the predecessor deletes this prompt and its turn. When
+    // this is the FIRST prompt (nothing precedes it), rewind to the empty session via the "before
+    // everything" sentinel (`msg_` — sorts before every real id) so the prompt itself is dropped too;
+    // otherwise it would linger on screen and in the DB (owner-hit 2026-07-24).
     const all = serverSync().nativeMessages.messages(sessionID) ?? []
     const index = all.findIndex((m) => m.id === messageID)
     if (index < 0) return
-    const boundaryID = all[index - 1]?.id ?? messageID
+    const boundaryID = all[index - 1]?.id ?? "msg_"
     const proceed = await confirm({
       title: language.t("session.revert.confirm.title"),
       description: language.t("session.revert.confirm.description"),
