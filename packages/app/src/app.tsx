@@ -67,6 +67,7 @@ import { NewHome, LegacyHome } from "@/pages/home"
 import { HomeScreen } from "@/pages/home-screen/home-screen"
 import { FilesPage } from "@/pages/files"
 import { NotesPage } from "@/pages/notes"
+import { CalendarPage } from "@/pages/calendar"
 import { DebugPage } from "@/pages/debug"
 import { RegistryPage } from "@/pages/registry"
 import { MemoryGraphPage } from "@/pages/memory-graph"
@@ -703,6 +704,7 @@ function Routes() {
         <Route path="/chats" component={NewHome} />
         <Route path="/files" component={FilesPage} />
         <Route path="/notes" component={NotesPage} />
+        <Route path="/calendar" component={CalendarPage} />
         <Route path="/registry" component={RegistryPage} />
         <Route path="/debug" component={DebugPage} />
         <Route path="/memory-graph" component={MemoryGraphPage} />

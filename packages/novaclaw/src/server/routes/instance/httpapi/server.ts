@@ -46,6 +46,7 @@ import { MoveSession } from "@novaclaw/core/control-plane/move-session"
 import { Credential } from "@novaclaw/core/credential"
 import { Database } from "@novaclaw/core/database/database"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
+import { CalendarScheduler } from "@novaclaw/core/schedule/scheduler"
 import { Memory } from "@novaclaw/core/kb-graph/memory"
 import { MessengerDrivers } from "@novaclaw/core/messenger/drivers"
 import { NovaclawExternalDriverSource } from "../../../../messenger/external-driver-source"
@@ -344,6 +345,10 @@ export function createRoutes(
     // Before the SessionV2/app provides so the messenger stack's own requirements (SessionV2,
     // EventV2, Database, Global) resolve to the SAME memoized instances the routes use.
     Layer.provide(messengerServices),
+    // Calendar scheduler poll loop — same requirement-leaving pattern as the messenger: it must reach the
+    // SHARED SessionV2/Database/Global (never a second SessionV2), so it is provided BEFORE the SessionV2
+    // provide. provideMerge (like catalogSeedStartup) guarantees the background fiber is built + started.
+    Layer.provideMerge(CalendarScheduler.layer),
     Layer.provide(
       SessionV2.defaultLayer.pipe(
         Layer.provide(SessionExecutionLocal.defaultLayer),

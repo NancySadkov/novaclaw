@@ -52,6 +52,7 @@ const RESERVED_IDS = new Set([
   "help",
   "social",
   "settings",
+  "calendar",
 ])
 
 /** Register (or replace, by id) a dynamically-contributed app. */

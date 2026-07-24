@@ -1,0 +1,87 @@
+import { Schema } from "effect"
+import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
+import { InvalidRequestError } from "../errors"
+
+// The Calendar / cron-session-creator HTTP surface (notes/calendar-cron-plan.md). INSTANCE-GLOBAL
+// (schedules span locations, like messenger accounts — no location middleware). Backed by CalendarStore
+// (core/schedule/store.ts); the CalendarScheduler poll loop fires due schedules into new goal-oriented
+// sessions. `recurrence` is a structured discriminated union (never a cron string — anti-obscurantist).
+
+const HM = Schema.Struct({ hour: Schema.Number, minute: Schema.Number })
+
+const Recurrence = Schema.Union([
+  Schema.Struct({ kind: Schema.Literals(["once"]), at: Schema.Number }),
+  Schema.Struct({ kind: Schema.Literals(["daily"]), time: HM }),
+  Schema.Struct({ kind: Schema.Literals(["weekly"]), time: HM, weekdays: Schema.Array(Schema.Number) }),
+  Schema.Struct({ kind: Schema.Literals(["monthly"]), time: HM, day: Schema.Number }),
+  Schema.Struct({ kind: Schema.Literals(["yearly"]), time: HM, month: Schema.Number, day: Schema.Number }),
+]).annotate({ identifier: "Calendar.Recurrence" })
+
+const Schedule = Schema.Struct({
+  id: Schema.String,
+  title: Schema.String,
+  recurrence: Recurrence,
+  tzOffsetMin: Schema.Number,
+  prompt: Schema.String,
+  agent: Schema.NullOr(Schema.String),
+  model: Schema.NullOr(Schema.String),
+  location: Schema.NullOr(Schema.String),
+  enabled: Schema.Boolean,
+  nextFireAt: Schema.NullOr(Schema.Number),
+  lastFiredAt: Schema.NullOr(Schema.Number),
+  timeCreated: Schema.Number,
+  timeUpdated: Schema.Number,
+}).annotate({ identifier: "Calendar.Schedule" })
+
+const CreateInput = Schema.Struct({
+  title: Schema.optional(Schema.String),
+  recurrence: Recurrence,
+  tzOffsetMin: Schema.optional(Schema.Number),
+  prompt: Schema.String,
+  agent: Schema.optional(Schema.String),
+  model: Schema.optional(Schema.String),
+  location: Schema.optional(Schema.String),
+  enabled: Schema.optional(Schema.Boolean),
+}).annotate({ identifier: "Calendar.CreateInput" })
+
+export const CalendarGroup = HttpApiGroup.make("server.calendar")
+  .add(
+    HttpApiEndpoint.get("calendar.schedule.list", "/api/calendar/schedule", {
+      success: Schema.Array(Schedule),
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.calendar.schedule.list",
+        summary: "List calendar schedules",
+        description: "Retrieve every scheduled agent-launch task with its next-fire time.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.post("calendar.schedule.create", "/api/calendar/schedule", {
+      payload: CreateInput,
+      success: Schedule,
+      error: InvalidRequestError,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.calendar.schedule.create",
+        summary: "Create a calendar schedule",
+        description:
+          "Schedule a repeatable or one-shot agent launch. The recurrence is structured (once/daily/weekly/monthly/yearly); the fired session runs the given prompt.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.delete("calendar.schedule.remove", "/api/calendar/schedule/:id", {
+      params: { id: Schema.String },
+      success: HttpApiSchema.NoContent,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.calendar.schedule.remove",
+        summary: "Remove a calendar schedule",
+        description: "Delete a scheduled agent-launch task by id.",
+      }),
+    ),
+  )
+  .annotateMerge(
+    OpenApi.annotations({ title: "calendar", description: "Scheduled + repeatable agent launches." }),
+  )

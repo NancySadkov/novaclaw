@@ -58,6 +58,7 @@ const RESERVED_IDS = new Set([
   "help",
   "social",
   "settings",
+  "calendar",
 ])
 
 /** Derive a valid id from a title ("Stock Prices" -> "stock-prices"). */

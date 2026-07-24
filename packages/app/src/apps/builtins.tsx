@@ -53,6 +53,15 @@ export function useBuiltinApps(): () => HomeApp[] {
       open: () => navigate("/notes"),
     },
     {
+      id: "calendar",
+      title: "Calendar",
+      icon: "calendar",
+      accent: "#6366f1",
+      subtitle: "Schedule agents to run on a repeating date",
+      source: "builtin",
+      open: () => navigate("/calendar"),
+    },
+    {
       id: "files",
       title: "Files",
       icon: "folder",
