@@ -88,6 +88,47 @@ describe("applyGlobalEvent", () => {
 })
 
 describe("applyDirectoryEvent", () => {
+  const sessionWithDir = (id: string, directory: string) =>
+    ({ id, time: { created: 1, updated: 1 }, location: { directory } }) as unknown as Session
+
+  test("folds a folder move onto the stale copy so the Chats list stops double-rendering", () => {
+    const [store, setStore] = createStore(
+      baseState({
+        path: { directory: "C:\\scratch" } as State["path"],
+        session: [sessionWithDir("ses_1", "C:\\scratch")],
+        sessionTotal: 1,
+      }),
+    )
+    applyDirectoryEvent({
+      event: {
+        type: "session.next.moved",
+        properties: { sessionID: "ses_1", location: { directory: "C:\\picalc" }, subdirectory: "sub" },
+      },
+      store,
+      setStore,
+      push: () => {},
+      directory: "C:\\scratch",
+    })
+    // The old folder's copy now carries the NEW directory → the home dedup (directory+id) collapses
+    // it against the new folder's copy instead of rendering a second "New session" row.
+    expect((store.session[0] as unknown as { location: { directory: string } }).location.directory).toBe("C:\\picalc")
+    expect((store.session[0] as unknown as { subpath?: string }).subpath).toBe("sub")
+    expect(store.session).toHaveLength(1)
+    expect(store.sessionTotal).toBe(1) // a move is neither a create nor a delete — totals unchanged
+  })
+
+  test("ignores a move for a session this directory store does not hold", () => {
+    const [store, setStore] = createStore(baseState({ session: [], sessionTotal: 0 }))
+    applyDirectoryEvent({
+      event: { type: "session.next.moved", properties: { sessionID: "ghost", location: { directory: "C:\\x" } } },
+      store,
+      setStore,
+      push: () => {},
+      directory: "C:\\other",
+    })
+    expect(store.session).toHaveLength(0)
+  })
+
   test("preserves a Home-specific retained session limit", () => {
     const [store, setStore] = createStore(
       baseState({

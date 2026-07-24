@@ -431,6 +431,25 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
       return
     }
 
+    // A control-plane folder move (session.next.moved) is stamped with ONE directory, but the OLD
+    // folder's store also holds a copy that now carries a stale directory — which leaves the Chats
+    // list rendering the chat twice (see event-reducer's moved case). Fan the move to EVERY open
+    // directory store so whichever one holds the session folds the new location onto it; the rest no-op.
+    if ((event.type as string) === "session.next.moved") {
+      for (const entry of Object.values(children.children)) {
+        if (!entry) continue
+        const [moveStore, moveSetStore] = entry
+        applyDirectoryEvent({
+          event,
+          directory: moveStore.path.directory,
+          store: moveStore,
+          setStore: moveSetStore,
+          push: queue.push,
+        })
+      }
+      return
+    }
+
     let existing = children.children[key]
     if (!existing) {
       // The session RECORD lifecycle (created/updated/deleted) defines list MEMBERSHIP — Chats,

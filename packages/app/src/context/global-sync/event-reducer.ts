@@ -155,6 +155,33 @@ export function applyDirectoryEvent(input: {
       input.setStore("sessionTotal", (value) => Math.max(0, value - 1))
       break
     }
+    case "session.next.moved": {
+      // The composer's folder chip migrates a chat to a new directory via moveSession → this control
+      // event. The id-keyed record store folds it (control-fold), but this PER-DIRECTORY list must
+      // too: otherwise the OLD folder's store keeps a copy carrying the stale directory while the NEW
+      // folder's store holds the fresh one, and the Chats list — which dedups by directory+id —
+      // renders the chat TWICE, one row per folder (owner-hit 2026-07-24). Folding the move's new
+      // location onto our copy converges the two copies to the same directory so the dedup collapses
+      // them to one row. Fanned to every open directory store by the dispatcher, so whichever store
+      // holds the stale copy gets corrected regardless of which directory the event was stamped with.
+      const props = event.properties as {
+        sessionID?: string
+        location?: { directory?: string }
+        subdirectory?: string
+      }
+      if (!props.sessionID || !props.location?.directory) break
+      const result = Binary.search(input.store.session, props.sessionID, (s) => s.id)
+      if (!result.found) break
+      input.setStore(
+        "session",
+        result.index,
+        produce((draft) => {
+          draft.location = props.location as Session["location"]
+          ;(draft as unknown as Record<string, unknown>).subpath = props.subdirectory ?? undefined
+        }),
+      )
+      break
+    }
     case "session.diff": {
       const props = event.properties as { sessionID: string; diff: SessionChangeDiff[] }
       input.setStore("session_diff", props.sessionID, reconcile(list(props.diff), { key: "file" }))
