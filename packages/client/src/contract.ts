@@ -27,6 +27,7 @@ export const groupNames = {
   "server.integration": "integrations",
   "server.credential": "credentials",
   "server.messenger": "messenger",
+  "server.calendar": "calendar",
   "server.permission": "permissions",
   "server.fs": "files",
   "server.command": "commands",
@@ -63,6 +64,13 @@ export const endpointNames = {
   "messenger.binding.list": "listBindings",
   "messenger.binding.create": "createBinding",
   "messenger.binding.remove": "removeBinding",
+  // Calendar: the generated client name is the LAST dot-segment, so schedule.list and fires.list
+  // would both be `list` — name every endpoint explicitly, as messenger does.
+  "calendar.schedule.list": "listSchedules",
+  "calendar.schedule.create": "createSchedule",
+  "calendar.schedule.update": "updateSchedule",
+  "calendar.schedule.remove": "removeSchedule",
+  "calendar.fires.list": "listFires",
 } as const
 
 export const omitEndpoints = new Set(["fs.read", "pty.connect", "pty.connectToken"])
