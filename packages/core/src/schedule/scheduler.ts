@@ -8,8 +8,11 @@ export * as CalendarScheduler from "./scheduler"
 // replayed (no thundering herd). A launch failure is isolated (never wedges the loop), recorded as `error`,
 // and the schedule still advances.
 
-import { Effect } from "effect"
-import type { Database } from "../database/database"
+import { Cause, Clock, Duration, Effect, Layer, Schedule } from "effect"
+import { Database } from "../database/database"
+import { Global } from "../global"
+import { AbsolutePath } from "../schema"
+import { SessionV2 } from "../session"
 import type { EpochMillis } from "./recurrence"
 import { CalendarStore } from "./store"
 
@@ -74,3 +77,55 @@ export const tick = (db: Db, launch: Launch, now: EpochMillis): Effect.Effect<Ti
     }
     return { fired, skipped }
   })
+
+/**
+ * The real launch seam (P3): create a goal-oriented session at the schedule's location (its own directory,
+ * else the instance home) and QUEUE its prompt. Typed to only the two SessionV2 methods it uses, so it is
+ * unit-testable with a fake. Returns the new session id. `metadata` stamps the schedule + occurrence so a
+ * fired run is traceable back to its schedule.
+ */
+export const makeLaunch =
+  (sessions: Pick<SessionV2.Interface, "create" | "prompt">, homeDir: string): Launch =>
+  (input) =>
+    Effect.gen(function* () {
+      const directory = input.schedule.location ?? homeDir
+      const session = yield* sessions.create({
+        location: { directory: AbsolutePath.make(directory) },
+        type: "goal-oriented",
+        title: input.schedule.title || "Scheduled run",
+        metadata: { calendarScheduleID: input.schedule.id, occurrenceMillis: input.occurrenceMillis },
+      })
+      yield* sessions.prompt({
+        sessionID: session.id,
+        prompt: { text: input.schedule.prompt },
+        delivery: "queue",
+      })
+      return session.id
+    })
+
+/** Seconds between poll ticks. Sub-minute so a schedule due "now" fires promptly; the scan is index-cheap. */
+export const TICK_INTERVAL_SECONDS = 30
+
+/**
+ * The background poll loop (P3). Leaves Database + SessionV2 + Global as UNSATISFIED requirements so the
+ * serve binds them to the SHARED singletons (mirror the messenger gateway): wire this as a plain layer merged
+ * BEFORE the SessionV2 provide, never as a node in the app group — compiling a second SessionV2 would launch
+ * scheduled sessions into a different instance than the routes/runner use.
+ */
+export const layer = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const { db } = yield* Database.Service
+    const sessions = yield* SessionV2.Service
+    const global = yield* Global.Service
+    const launch = makeLaunch(sessions, global.home)
+    yield* Effect.gen(function* () {
+      const now = yield* Clock.currentTimeMillis
+      yield* tick(db, launch, now)
+    }).pipe(
+      Effect.catchCause((cause) => Effect.logError("calendar-scheduler tick failed", { cause: Cause.pretty(cause) })),
+      Effect.repeat(Schedule.spaced(Duration.seconds(TICK_INTERVAL_SECONDS))),
+      Effect.delay(Duration.seconds(5)),
+      Effect.forkScoped,
+    )
+  }),
+)

@@ -10,6 +10,7 @@ import { DatabaseMigration } from "../database/migration"
 import { CalendarScheduler } from "./scheduler"
 import { CalendarStore } from "./store"
 import type { Recurrence } from "./recurrence"
+import type { SessionV2 } from "../session"
 
 const makeDb = EffectDrizzleSqlite.makeWithDefaults()
 const withDb = <A>(fn: (db: Database.Interface["db"]) => Effect.Effect<A>): Promise<A> =>
@@ -145,5 +146,73 @@ describe("CalendarScheduler.tick", () => {
     expect(out.result).toEqual({ fired: 0, skipped: 1 })
     expect(out.fires[0]!.status).toBe("error")
     expect(out.after?.nextFireAt).toBe(MAR11_0900) // advanced despite the failure
+  })
+})
+
+describe("CalendarScheduler.makeLaunch", () => {
+  // A fake SessionV2 (only the two methods makeLaunch uses) that records its calls.
+  const fakeSessions = (created: unknown[], prompted: unknown[]) =>
+    ({
+      create: (input: unknown) =>
+        Effect.sync(() => {
+          created.push(input)
+          return { id: "ses_new" }
+        }),
+      prompt: (input: unknown) =>
+        Effect.sync(() => {
+          prompted.push(input)
+          return {}
+        }),
+    }) as unknown as Pick<SessionV2.Interface, "create" | "prompt">
+
+  const sample = (over: Partial<CalendarStore.Schedule> = {}): CalendarStore.Schedule => ({
+    id: "cal_1",
+    title: "NY Greeting",
+    recurrence: { kind: "yearly", time: { hour: 9, minute: 0 }, month: 1, day: 1 },
+    tzOffsetMin: 0,
+    prompt: "Congratulate clients",
+    agent: null,
+    model: null,
+    location: null,
+    enabled: true,
+    nextFireAt: 123,
+    lastFiredAt: null,
+    timeCreated: 0,
+    timeUpdated: 0,
+    ...over,
+  })
+
+  test("creates a goal-oriented session at the instance home and queues the prompt", async () => {
+    const created: any[] = []
+    const prompted: any[] = []
+    const id = await Effect.runPromise(
+      CalendarScheduler.makeLaunch(fakeSessions(created, prompted), "/home/nancy")({
+        schedule: sample(),
+        occurrenceMillis: 123,
+        firedAt: 130,
+      }),
+    )
+    expect(id).toBe("ses_new")
+    expect(created[0].location.directory).toBe("/home/nancy")
+    expect(created[0].type).toBe("goal-oriented")
+    expect(created[0].title).toBe("NY Greeting")
+    expect(created[0].metadata.calendarScheduleID).toBe("cal_1")
+    expect(created[0].metadata.occurrenceMillis).toBe(123)
+    expect(prompted[0].sessionID).toBe("ses_new")
+    expect(prompted[0].prompt.text).toBe("Congratulate clients")
+    expect(prompted[0].delivery).toBe("queue")
+  })
+
+  test("uses the schedule's own location when set", async () => {
+    const created: any[] = []
+    const prompted: any[] = []
+    await Effect.runPromise(
+      CalendarScheduler.makeLaunch(fakeSessions(created, prompted), "/home/nancy")({
+        schedule: sample({ location: "/srv/clients" }),
+        occurrenceMillis: 1,
+        firedAt: 1,
+      }),
+    )
+    expect(created[0].location.directory).toBe("/srv/clients")
   })
 })
