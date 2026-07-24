@@ -2,6 +2,7 @@ export * as SessionRunnerModel from "./model"
 
 import { makeLocationNode } from "../../effect/app-node"
 import { splitModelSampling } from "./sampling-split"
+import { withRepetitionFloor } from "./repetition-floor"
 import { type Model } from "@novaclaw/llm"
 import * as AnthropicMessages from "@novaclaw/llm/protocols/anthropic-messages"
 import * as OpenAICompatibleChat from "@novaclaw/llm/protocols/openai-compatible-chat"
@@ -175,8 +176,11 @@ export const fromCatalogModel = (
     )
   }
   if (resolved.api.type === "aisdk" && resolved.api.package === "@ai-sdk/openai-compatible" && resolved.api.url) {
+    // Unattended-safety floor: local/compatible models loop without a repetition penalty, so
+    // default it to 1.05 here (openai-compatible only — OpenAI/Anthropic reject the key). See
+    // repetition-floor.ts. Overridable by the model's own config.
     return Effect.succeed(
-      withDefaults(resolved, OpenAICompatibleChat.route)
+      withDefaults(withRepetitionFloor(resolved), OpenAICompatibleChat.route)
         .with({ auth: key === undefined ? Auth.none : Auth.bearer(key) })
         .model({ id: resolved.api.id }),
     )
