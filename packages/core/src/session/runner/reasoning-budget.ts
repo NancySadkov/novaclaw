@@ -19,13 +19,16 @@ import type { FinishReason, LLMRequest, StepFinish } from "@novaclaw/llm"
  *   2. **~70%** — the first phase runs the NORMAL request. We count reasoning tokens from the live
  *      `reasoning` deltas and, once they cross 0.7·budget while still thinking, tear the request down
  *      and CONTINUE the reasoning by prefilling `<think>\n{reasoning so far}\n{mid nudge}\n`.
- *   3. **Budget end** — the next phase stops when reasoning crosses the full budget; then it injects
- *      a real `</think>` close + end nudge and continues, forcing the answer out (this avoids the
- *      empty-reply trap where truncating an *unclosed* `<think>` returns nothing — jh think-stage.md).
+ *   3. **Budget end** — the next phase stops when reasoning crosses the full budget; it injects a
+ *      stronger end nudge into the still-OPEN `<think>` and continues, prompting the model to wrap up
+ *      and answer on its own. (We deliberately do NOT prefill a *closed* `</think>`: qwen's chat
+ *      template strips complete think blocks, which empties the message and 400s the continuation.)
  *
- * Each phase's `max_tokens` stays GENEROUS (the output limit): the budget is enforced by the
- * mid-stream checkpoint, never by `max_tokens`, so an answer that starts inside a phase always
- * completes rather than being guillotined. A model that finishes reasoning on its own (emits answer
+ * Each phase inherits the base request's own `max_tokens` (typically UNSET → the server uses the
+ * remaining context window): the budget is enforced by the mid-stream checkpoint, never by
+ * `max_tokens`, so an answer that starts inside a phase always completes rather than being
+ * guillotined, and `prompt + max_tokens` can never overflow the window. A model that finishes
+ * reasoning on its own (emits answer
  * `content`) short-circuits with NO continuation — the common, cheap path, and the reason phase 1
  * carries no prefill: a non-thinking model just answers and the mechanism is a no-op. The whole turn
  * is stitched into a single assistant message: one reasoning block (model reasoning + injected
@@ -41,7 +44,7 @@ export interface Nudges {
   readonly opening: (budget: number) => string
   /** Injected into the reasoning at ~70% of budget (checkpoint 2). */
   readonly mid: string
-  /** Injected with the `</think>` close at budget end (checkpoint 3). */
+  /** Injected into the still-open `<think>` at budget end (checkpoint 3) to force a conclusion. */
   readonly end: string
 }
 
@@ -197,9 +200,14 @@ export const stream = <E, R>(input: Input<E, R>): Stream.Stream<LLMEvent, E, R> 
     }
     // Phase 1 runs the model normally (no forced `<think>`) so non-thinking models simply answer.
     if (phase === "opening") return LLM.request(base)
-    // mid CONTINUES the accumulated `<think>` (kept OPEN) after the injected nudge; end injects a
-    // real `</think>` close so the model is forced out into its answer.
-    const prefill = phase === "end" ? `<think>\n${state.think}\n</think>\n\n` : `<think>\n${state.think}\n`
+    // Both continuations keep the `<think>` block OPEN and rely on the injected nudge to make the model
+    // wrap up and answer on its own. ⚠️ Do NOT prefill a CLOSED `<think>…</think>`: qwen's chat template
+    // STRIPS complete think blocks from the assistant message, so a closed prefill leaves an EMPTY final
+    // message and vLLM rejects the continuation ("continue_final_message is set but the final message
+    // does not appear in the chat after applying the chat template"). An open block has no close tag to
+    // match, so it survives — verified live. With max_tokens unset (above) the model reasons then
+    // answers without the empty-reply truncation the old forced `</think>` close used to guard against.
+    const prefill = `<think>\n${state.think}\n`
     return LLM.request({
       ...base,
       messages: [...input.request.messages, Message.assistant(prefill)],

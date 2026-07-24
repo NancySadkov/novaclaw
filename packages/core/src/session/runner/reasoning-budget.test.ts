@@ -98,11 +98,13 @@ describe("ReasoningBudget", () => {
       "step-finish",
     ])
     expect(requests).toHaveLength(3)
-    // phase 1 = normal request; mid keeps the think OPEN; end injects a real close.
+    // phase 1 = normal request; mid AND end both keep the think OPEN (a closed `</think>` prefill is
+    // stripped by qwen's chat template and 400s the continuation — see phaseRequest).
     expect(prefillOf(requests[0]!)).toBe("")
     expect(prefillOf(requests[1]!)).toStartWith("<think>\n")
     expect(prefillOf(requests[1]!)).not.toContain("</think>")
-    expect(prefillOf(requests[2]!)).toContain("</think>")
+    expect(prefillOf(requests[2]!)).toStartWith("<think>\n")
+    expect(prefillOf(requests[2]!)).not.toContain("</think>")
     // each continuation carries the accumulated reasoning forward.
     expect(prefillOf(requests[1]!)).toContain("r".repeat(300))
     // budget rides the mid-stream checkpoint, NOT max_tokens — phases INHERIT the base request's own
@@ -131,7 +133,8 @@ describe("ReasoningBudget", () => {
       "step-finish",
     ])
     expect(requests).toHaveLength(2)
-    expect(prefillOf(requests[1]!)).toContain("</think>")
+    expect(prefillOf(requests[1]!)).toStartWith("<think>\n")
+    expect(prefillOf(requests[1]!)).not.toContain("</think>")
   })
 
   test("continuation failure degrades gracefully — no crash, reasoning closed", () => {
