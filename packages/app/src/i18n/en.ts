@@ -944,6 +944,13 @@ export const dict = {
   "session.revertDock.expand": "Expand rolled back messages",
   "session.revertDock.restore": "Restore message",
 
+  "session.revert.confirm.title": "Revert to this prompt?",
+  "session.revert.confirm.description":
+    "This rewinds the chat to before this prompt: it and every later message are removed, and your working files are restored to that point. The prompt is placed back in the composer to edit and resend. This can't be undone.",
+  "session.revert.confirm.action": "Revert",
+  "session.revert.error.title": "Revert failed",
+  "session.revert.error.description": "Could not revert to this prompt. Check the server logs and try again.",
+
   "session.responderDock.operator": "You have control",
   "session.responderDock.operatorHint": "Nova is paused — you're replying in this conversation for now.",
   "session.responderDock.handBack": "Hand back to Nova",

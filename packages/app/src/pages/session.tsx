@@ -1,4 +1,4 @@
-import type { SessionMessageUser } from "@novaclaw/sdk/v2/client"
+import type { SessionMessageUser, V2Event } from "@novaclaw/sdk/v2/client"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { createQuery, skipToken, useMutation, useQueryClient } from "@tanstack/solid-query"
 import {
@@ -31,6 +31,7 @@ import { showToast } from "@/utils/toast"
 import { base64Encode, checksum } from "@novaclaw/core/util/encode"
 import { useLocation, useNavigate, useSearchParams } from "@solidjs/router"
 import { NewSessionView, SessionHeader } from "@/components/session"
+import { useConfirm } from "@/components/dialog-confirm"
 import { useComments } from "@/context/comments"
 import { useServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
@@ -120,6 +121,7 @@ export default function Page() {
   const sync = useSync()
   const queryClient = useQueryClient()
   const dialog = useDialog()
+  const confirm = useConfirm()
   const language = useLanguage()
   const sdk = useSDK()
   const serverSDK = useServerSDK()
@@ -1465,6 +1467,65 @@ export default function Page() {
       .map((item) => ({ id: item.id, text: line(item.id) }))
   })
 
+  // Per-user-prompt "revert to this prompt" button (native transcript). A confirmed, decisive
+  // rewind to the state *before* this prompt: restore the working files to that point (stage) and
+  // permanently delete this prompt and everything after it (commit), then drop the prompt's text
+  // into the composer to edit and resend. The commit boundary is the message BEFORE the prompt —
+  // `commit` deletes everything AFTER its boundary, so anchoring on the previous message removes the
+  // prompt itself too (leaving a clean, non-dangling transcript). Unlike the staged `/undo`, it
+  // leaves NO revert boundary, so continuing the chat behaves normally. Gated behind a confirm so an
+  // accidental click never discards a run (uix.md §3.4 — destructive actions confirm first).
+  let revertingPrompt = false
+  const revertToPrompt = async (messageID: string) => {
+    const sessionID = params.id
+    if (!sessionID || revertingPrompt || reverting()) return
+    // The commit boundary is the message immediately before this prompt (any type — the leading
+    // agent/model-switched markers count, which handles reverting to the very first prompt: the
+    // whole transcript clears). If somehow nothing precedes it, fall back to the prompt itself.
+    const all = serverSync().nativeMessages.messages(sessionID) ?? []
+    const index = all.findIndex((m) => m.id === messageID)
+    if (index < 0) return
+    const boundaryID = all[index - 1]?.id ?? messageID
+    const proceed = await confirm({
+      title: language.t("session.revert.confirm.title"),
+      description: language.t("session.revert.confirm.description"),
+      confirmLabel: language.t("session.revert.confirm.action"),
+      destructive: true,
+    })
+    if (!proceed) return
+    // Capture the prompt's composer draft before it is pruned from the store.
+    const draftValue = draft(messageID)
+    revertingPrompt = true
+    const client = sdk().client
+    const promptSession = prompt.capture()
+    try {
+      await halt(sessionID)
+      await client.v2.session.revert.stage({ sessionID, messageID: boundaryID })
+      await client.v2.session.revert.commit({ sessionID })
+      // The commit deletes the truncated messages server-side, but the native store MERGES on load
+      // and never drops server-deleted rows — drive the prune directly (idempotent with the SSE
+      // `revert.committed` event) so the transcript converges immediately.
+      serverSync().nativeMessages.apply({
+        type: "session.next.revert.committed",
+        data: { sessionID, messageID: boundaryID },
+      } as unknown as V2Event)
+      // Refetch the record so any client-side revert state clears and time_updated is fresh.
+      const rec = await client.v2.session.get({ sessionID })
+      if (rec.data?.data) merge(rec.data.data)
+      // Load the reverted prompt into the composer so it can be edited and resent.
+      promptSession.set(draftValue)
+    } catch (error) {
+      console.error("revert to prompt failed", { sessionID, messageID, error })
+      showToast({
+        variant: "error",
+        title: language.t("session.revert.error.title"),
+        description: language.t("session.revert.error.description"),
+      })
+    } finally {
+      revertingPrompt = false
+    }
+  }
+
   const actions = { revert }
 
   createEffect(() => {
@@ -1662,7 +1723,7 @@ export default function Page() {
               <Switch>
                 <Match when={params.id}>
                   <Show when={messagesReady() ? params.id : undefined} keyed>
-                    {(_id) => <NativeTimeline sessionID={_id} />}
+                    {(_id) => <NativeTimeline sessionID={_id} onRevert={revertToPrompt} />}
                   </Show>
                 </Match>
                 <Match when={true}>

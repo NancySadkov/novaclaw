@@ -327,6 +327,17 @@ export function applySessionNextEvent(messages: SessionMessage[], event: V2Event
         time: { created: event.data.timestamp },
       })
       break
+    case "session.next.revert.committed": {
+      // A committed revert truncates the transcript: the core deletes every message AFTER the
+      // boundary (seq > boundary), keeping the boundary message itself. Message ids are ascending,
+      // so `id > boundary` is exactly that set. Prune in place — the store MERGES on load and never
+      // drops server-deleted rows, so without this the reverted tail would linger on screen.
+      const boundary = event.data.messageID
+      for (let i = messages.length - 1; i >= 0; i--) if (messages[i]!.id > boundary) messages.splice(i, 1)
+      break
+    }
+    // `revert.staged` / `revert.cleared` don't change the transcript (staged is a reversible
+    // file/preview op) — they stay no-ops here, folded into the session row instead.
   }
 }
 

@@ -22,7 +22,7 @@ const REASONING_FOLD: Record<string, ReasoningFoldMode> = {
  * the user is at the bottom + a scroll-to-bottom button. (Hash-scroll deep-link + history
  * pagination + virtualization are deferred long-session hardening.)
  */
-export function NativeTimeline(props: { sessionID: string }) {
+export function NativeTimeline(props: { sessionID: string; onRevert?: (messageID: string) => void }) {
   const serverSync = useServerSync()
   const expertise = useExpertise()
   const settings = useSettings()
@@ -106,7 +106,12 @@ export function NativeTimeline(props: { sessionID: string }) {
         }}
       >
         <div ref={(el) => (content = el)}>
-          <NativeTranscript messages={messages()} reasoningFold={reasoningFold()} toolFold={toolFold()} />
+          <NativeTranscript
+            messages={messages()}
+            reasoningFold={reasoningFold()}
+            toolFold={toolFold()}
+            onRevert={props.onRevert}
+          />
         </div>
       </div>
       <Show when={!pinned()}>

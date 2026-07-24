@@ -27,6 +27,12 @@ type FoldModes = { reasoning: ReasoningFoldMode; tool: ReasoningFoldMode }
 const defaultFoldModes: Accessor<FoldModes> = () => ({ reasoning: "collapsed", tool: "collapsed" })
 const ReasoningFoldContext = createContext<Accessor<FoldModes>>(defaultFoldModes)
 
+// Per-message actions the host app can wire into the transcript (e.g. "revert to this prompt").
+// Injected via context so `session-ui` stays decoupled from the app's SDK/dialog layer: the app
+// passes a callback and owns confirmation + the actual revert mutation. Absent callback = no button.
+type TranscriptActions = { onRevert?: (messageID: string) => void }
+const TranscriptActionsContext = createContext<Accessor<TranscriptActions>>(() => ({}))
+
 /**
  * F1e S4-v3 — native `SessionMessage[]` transcript renderer (strategy B).
  *
@@ -49,6 +55,8 @@ export function NativeTranscript(props: {
   class?: string
   reasoningFold?: ReasoningFoldMode
   toolFold?: ReasoningFoldMode
+  /** Wire a per-user-message "revert to this prompt" action; omit to hide the button. */
+  onRevert?: (messageID: string) => void
 }) {
   // The native store captures the session's initial agent/model as `*-switched` messages,
   // but those are setup state (V1 shows them in the header, not the transcript). Drop the
@@ -69,9 +77,11 @@ export function NativeTranscript(props: {
         tool: props.toolFold ?? props.reasoningFold ?? "collapsed",
       })}
     >
-      <div data-component="native-transcript" class={props.class}>
-        <For each={visible()}>{(message) => <NativeMessage message={message} />}</For>
-      </div>
+      <TranscriptActionsContext.Provider value={() => ({ onRevert: props.onRevert })}>
+        <div data-component="native-transcript" class={props.class}>
+          <For each={visible()}>{(message) => <NativeMessage message={message} />}</For>
+        </div>
+      </TranscriptActionsContext.Provider>
     </ReasoningFoldContext.Provider>
   )
 }
@@ -112,6 +122,7 @@ function UserMessage(props: { message: SessionMessageUser }) {
   // (no origin) shows nothing extra. The stored text is clean — the model-facing provenance header
   // is applied at lowering, not here.
   const badge = () => SessionOrigin.badge(props.message.origin)
+  const actions = useContext(TranscriptActionsContext)
   return (
     <div data-slot="native-user">
       <div data-slot="native-user-bubble">
@@ -139,6 +150,19 @@ function UserMessage(props: { message: SessionMessageUser }) {
           </div>
         </Show>
       </div>
+      <Show when={actions().onRevert}>
+        <div data-slot="native-msg-actions">
+          <button
+            type="button"
+            data-slot="native-revert"
+            aria-label="Revert to this prompt"
+            title="Revert the conversation and files back to this prompt"
+            onClick={() => actions().onRevert?.(props.message.id)}
+          >
+            Revert
+          </button>
+        </div>
+      </Show>
     </div>
   )
 }
