@@ -55,6 +55,20 @@ const CreateInput = Schema.Struct({
   enabled: Schema.optional(Schema.Boolean),
 }).annotate({ identifier: "Calendar.CreateInput" })
 
+// Every field optional — the common case is a one-field pause/resume (`enabled`). An omitted field is
+// left untouched; the store recomputes next_fire_at from whatever the merged recurrence/tz/enabled are.
+const UpdateInput = Schema.Struct({
+  title: Schema.optional(Schema.String),
+  recurrence: Schema.optional(Recurrence),
+  tzOffsetMin: Schema.optional(Schema.Number),
+  prompt: Schema.optional(Schema.String),
+  agent: Schema.optional(Schema.NullOr(Schema.String)),
+  model: Schema.optional(Schema.NullOr(Schema.String)),
+  location: Schema.optional(Schema.NullOr(Schema.String)),
+  permissionMode: Schema.optional(Schema.NullOr(Schema.String)),
+  enabled: Schema.optional(Schema.Boolean),
+}).annotate({ identifier: "Calendar.UpdateInput" })
+
 export const CalendarGroup = HttpApiGroup.make("server.calendar")
   .add(
     HttpApiEndpoint.get("calendar.schedule.list", "/api/calendar/schedule", {
@@ -78,6 +92,21 @@ export const CalendarGroup = HttpApiGroup.make("server.calendar")
         summary: "Create a calendar schedule",
         description:
           "Schedule a repeatable or one-shot agent launch. The recurrence is structured (once/daily/weekly/monthly/yearly); the fired session runs the given prompt.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.patch("calendar.schedule.update", "/api/calendar/schedule/:id", {
+      params: { id: Schema.String },
+      payload: UpdateInput,
+      success: Schedule,
+      error: InvalidRequestError,
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.calendar.schedule.update",
+        summary: "Update a calendar schedule",
+        description:
+          "Patch a scheduled agent-launch task — pause/resume it (enabled), or change its title, prompt, recurrence, model, folder, or permission mode. The next-fire time is recomputed; a disabled schedule has none.",
       }),
     ),
   )

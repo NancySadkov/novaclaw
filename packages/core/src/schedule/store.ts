@@ -54,6 +54,7 @@ export interface UpdateInput {
   readonly agent?: string | null
   readonly model?: string | null
   readonly location?: string | null
+  readonly permissionMode?: string | null
   readonly enabled?: boolean
 }
 
@@ -157,6 +158,7 @@ export const update = (
         ...(patch.agent !== undefined ? { agent: patch.agent } : {}),
         ...(patch.model !== undefined ? { model: patch.model } : {}),
         ...(patch.location !== undefined ? { location_json: patch.location } : {}),
+        ...(patch.permissionMode !== undefined ? { permission_mode: patch.permissionMode } : {}),
         enabled,
         next_fire_at: computeNext(recurrence, enabled, tz, now),
       })

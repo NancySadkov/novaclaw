@@ -8,6 +8,7 @@ import {
   listFires,
   listSchedules,
   removeSchedule,
+  updateSchedule,
   type Fire,
   type Recurrence,
   type Schedule,
@@ -194,6 +195,18 @@ export function CalendarPage() {
     }
   }
 
+  /** Pause/resume. Disabling clears next_fire_at server-side; enabling recomputes it from now. */
+  async function toggle(s: Schedule) {
+    const base = httpBase()
+    if (!base) return
+    try {
+      await updateSchedule(base, s.id, { enabled: !s.enabled })
+      await refetch()
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err))
+    }
+  }
+
   async function del(id: string) {
     const base = httpBase()
     if (!base) return
@@ -298,6 +311,13 @@ export function CalendarPage() {
                         </Show>
                       </div>
                     </div>
+                    <button
+                      class={BTN}
+                      onClick={() => void toggle(s)}
+                      title={s.enabled ? "Pause this task" : "Resume this task"}
+                    >
+                      {s.enabled ? "Pause" : "Resume"}
+                    </button>
                     <button class={BTN} onClick={() => void del(s.id)} title="Delete task">
                       <Icon name="trash" size="small" />
                     </button>

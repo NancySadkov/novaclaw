@@ -83,6 +83,24 @@ export const listSchedules = (server: ServerConnection.HttpBase) =>
 export const createSchedule = (server: ServerConnection.HttpBase, input: CreateScheduleInput) =>
   call<Schedule>(server, "POST", "api/calendar/schedule", input)
 
+export interface UpdateScheduleInput {
+  readonly title?: string
+  readonly recurrence?: Recurrence
+  readonly tzOffsetMin?: number
+  readonly prompt?: string
+  readonly agent?: string | null
+  readonly model?: string | null
+  readonly location?: string | null
+  readonly permissionMode?: string | null
+  readonly enabled?: boolean
+}
+
+export const updateSchedule = (
+  server: ServerConnection.HttpBase,
+  id: string,
+  patch: UpdateScheduleInput,
+) => call<Schedule>(server, "PATCH", `api/calendar/schedule/${encodeURIComponent(id)}`, patch)
+
 export const removeSchedule = (server: ServerConnection.HttpBase, id: string) =>
   call<void>(server, "DELETE", `api/calendar/schedule/${encodeURIComponent(id)}`)
 

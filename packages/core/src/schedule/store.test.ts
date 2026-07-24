@@ -70,6 +70,26 @@ describe("CalendarStore", () => {
     expect(reenabled?.nextFireAt).toBe(MAR10_0900)
   })
 
+  test("update patches permissionMode and leaves untouched fields alone", async () => {
+    const { before, after } = await withDb((db) =>
+      Effect.gen(function* () {
+        const before = yield* CalendarStore.create(
+          db,
+          { recurrence: daily9, prompt: "keep me", title: "Keep", permissionMode: "bypass" },
+          MAR10_0800,
+        )
+        const after = yield* CalendarStore.update(db, before.id, { permissionMode: "plan" }, MAR10_0800)
+        return { before, after }
+      }),
+    )
+    expect(before.permissionMode).toBe("bypass")
+    expect(after?.permissionMode).toBe("plan")
+    // A one-field patch must not clobber the rest.
+    expect(after?.prompt).toBe("keep me")
+    expect(after?.title).toBe("Keep")
+    expect(after?.nextFireAt).toBe(MAR10_0900)
+  })
+
   test("update of a missing id returns undefined", async () => {
     const result = await withDb((db) => CalendarStore.update(db, "cal_nope", { title: "x" }, MAR10_0800))
     expect(result).toBeUndefined()
