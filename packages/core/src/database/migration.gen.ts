@@ -66,5 +66,6 @@ export const migrations = (
     import("./migration/20260721190000_add_instance_identity"),
     import("./migration/20260722135926_add_messenger"),
     import("./migration/20260724120000_add_calendar"),
+    import("./migration/20260725120000_add_calendar_permission"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]

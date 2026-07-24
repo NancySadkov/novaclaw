@@ -26,6 +26,7 @@ export interface Schedule {
   readonly agent: string | null
   readonly model: string | null
   readonly location: string | null
+  readonly permissionMode: string | null
   readonly enabled: boolean
   readonly nextFireAt: number | null
   readonly lastFiredAt: number | null
@@ -41,6 +42,7 @@ export interface CreateInput {
   readonly agent?: string | null
   readonly model?: string | null
   readonly location?: string | null
+  readonly permissionMode?: string | null
   readonly enabled?: boolean
 }
 
@@ -72,6 +74,7 @@ const toSchedule = (row: typeof CalendarScheduleTable.$inferSelect): Schedule =>
   agent: row.agent,
   model: row.model,
   location: row.location_json,
+  permissionMode: row.permission_mode,
   enabled: row.enabled,
   nextFireAt: row.next_fire_at,
   lastFiredAt: row.last_fired_at,
@@ -120,6 +123,7 @@ export const create = (db: Db, input: CreateInput, now: EpochMillis): Effect.Eff
         agent: input.agent ?? null,
         model: input.model ?? null,
         location_json: input.location ?? null,
+        permission_mode: input.permissionMode ?? null,
         enabled,
         next_fire_at: computeNext(input.recurrence, enabled, tz, now),
         last_fired_at: null,

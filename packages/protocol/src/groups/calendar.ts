@@ -26,6 +26,7 @@ const Schedule = Schema.Struct({
   agent: Schema.NullOr(Schema.String),
   model: Schema.NullOr(Schema.String),
   location: Schema.NullOr(Schema.String),
+  permissionMode: Schema.NullOr(Schema.String),
   enabled: Schema.Boolean,
   nextFireAt: Schema.NullOr(Schema.Number),
   lastFiredAt: Schema.NullOr(Schema.Number),
@@ -50,6 +51,7 @@ const CreateInput = Schema.Struct({
   agent: Schema.optional(Schema.String),
   model: Schema.optional(Schema.String),
   location: Schema.optional(Schema.String),
+  permissionMode: Schema.optional(Schema.String),
   enabled: Schema.optional(Schema.Boolean),
 }).annotate({ identifier: "Calendar.CreateInput" })
 

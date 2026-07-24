@@ -174,6 +174,7 @@ describe("CalendarScheduler.makeLaunch", () => {
     agent: null,
     model: null,
     location: null,
+    permissionMode: null,
     enabled: true,
     nextFireAt: 123,
     lastFiredAt: null,
@@ -221,7 +222,7 @@ describe("CalendarScheduler.makeLaunch", () => {
     const prompted: any[] = []
     await Effect.runPromise(
       CalendarScheduler.makeLaunch(fakeSessions(created, prompted), "/home/nancy")({
-        schedule: sample({ model: "dgx-spark/qwen3.6-35b", agent: "build" }),
+        schedule: sample({ model: "dgx-spark/qwen3.6-35b", agent: "build", permissionMode: "bypass" }),
         occurrenceMillis: 1,
         firedAt: 1,
       }),
@@ -229,9 +230,23 @@ describe("CalendarScheduler.makeLaunch", () => {
     expect(created[0].model.id).toBe("qwen3.6-35b")
     expect(created[0].model.providerID).toBe("dgx-spark")
     expect(created[0].agent).toBe("build")
+    expect(created[0].permissionMode).toBe("bypass")
   })
 
-  test("omits model/agent when the schedule has none (inherit instance default)", async () => {
+  test("uses the schedule's own work folder (location) when set", async () => {
+    const created: any[] = []
+    const prompted: any[] = []
+    await Effect.runPromise(
+      CalendarScheduler.makeLaunch(fakeSessions(created, prompted), "/home/nancy")({
+        schedule: sample({ location: "/srv/clients" }),
+        occurrenceMillis: 1,
+        firedAt: 1,
+      }),
+    )
+    expect(created[0].location.directory).toBe("/srv/clients")
+  })
+
+  test("omits model/agent/permission when the schedule has none (inherit instance default)", async () => {
     const created: any[] = []
     const prompted: any[] = []
     await Effect.runPromise(
@@ -243,5 +258,6 @@ describe("CalendarScheduler.makeLaunch", () => {
     )
     expect("model" in created[0]).toBe(false)
     expect("agent" in created[0]).toBe(false)
+    expect("permissionMode" in created[0]).toBe(false)
   })
 })

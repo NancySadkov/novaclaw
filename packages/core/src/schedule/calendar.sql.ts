@@ -20,6 +20,7 @@ export const CalendarScheduleTable = sqliteTable(
     next_fire_at: integer(),
     last_fired_at: integer(),
     ...Timestamps,
+    permission_mode: text(),
   },
   (table) => [index("calendar_schedule_due_idx").on(table.enabled, table.next_fire_at)],
 )

@@ -49,7 +49,8 @@ export default {
           \`next_fire_at\` integer,
           \`last_fired_at\` integer,
           \`time_created\` integer NOT NULL,
-          \`time_updated\` integer NOT NULL
+          \`time_updated\` integer NOT NULL,
+          \`permission_mode\` text
         );
       `)
       yield* tx.run(`

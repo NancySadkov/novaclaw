@@ -106,6 +106,12 @@ export const makeLaunch =
         title: schedule.title || "Scheduled run",
         ...(model ? { model } : {}),
         ...(agent ? { agent } : {}),
+        // Per-schedule permission posture; absent = inherit the default. A scheduled run is unattended, so
+        // "ask" would stall waiting for an approval nobody's there to give — the UI defaults to "bypass"
+        // (act within its work folder; external-directory writes still gate).
+        ...(schedule.permissionMode
+          ? { permissionMode: schedule.permissionMode as "plan" | "ask" | "surgical" | "bypass" | "yolo" }
+          : {}),
         metadata: { calendarScheduleID: schedule.id, occurrenceMillis: input.occurrenceMillis },
       })
       yield* sessions.prompt({

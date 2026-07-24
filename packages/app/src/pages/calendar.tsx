@@ -19,6 +19,16 @@ const WEEKDAYS = ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"]
 const MONTHS = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 const RECURRENCE_KINDS: Recurrence["kind"][] = ["once", "daily", "weekly", "monthly", "yearly"]
 
+// Plain-language permission postures for an UNATTENDED scheduled run. Default "bypass" = act on anything
+// inside the work folder (external-directory writes still gate); "ask" stalls (no human to approve).
+const PERMISSION_MODES: { value: string; label: string }[] = [
+  { value: "bypass", label: "Act within its folder (recommended)" },
+  { value: "surgical", label: "Edit files, no full rewrites" },
+  { value: "plan", label: "Read-only (no file changes)" },
+  { value: "ask", label: "Ask each time (needs you watching)" },
+  { value: "yolo", label: "Unrestricted (incl. outside the folder)" },
+]
+
 const pad = (n: number) => String(n).padStart(2, "0")
 const hm = (t: { hour: number; minute: number }) => `${pad(t.hour)}:${pad(t.minute)}`
 
@@ -120,6 +130,8 @@ export function CalendarPage() {
   const [yearMonth, setYearMonth] = createSignal(1)
   const [yearDay, setYearDay] = createSignal(1)
   const [model, setModel] = createSignal("")
+  const [folder, setFolder] = createSignal("")
+  const [permission, setPermission] = createSignal("bypass")
   const [busy, setBusy] = createSignal(false)
   const [error, setError] = createSignal<string | undefined>()
 
@@ -161,6 +173,8 @@ export function CalendarPage() {
         recurrence: rec,
         tzOffsetMin: -new Date().getTimezoneOffset(),
         model: model().trim() || undefined,
+        location: folder().trim() || undefined,
+        permissionMode: permission() || undefined,
       })
       setTitle("")
       setPrompt("")
@@ -250,6 +264,10 @@ export function CalendarPage() {
                       </div>
                       <div class="mt-0.5 text-xs text-v2-text-text-muted">{describeRecurrence(s.recurrence)}</div>
                       <div class="mt-0.5 truncate text-xs text-v2-text-text-faint">“{s.prompt}”</div>
+                      <div class="mt-0.5 truncate text-[11px] text-v2-text-text-faint">
+                        folder: {s.location || "home"} · access: {s.permissionMode || "default"}
+                        {s.model ? ` · model: ${s.model}` : ""}
+                      </div>
                       <div class="mt-1 text-xs text-v2-text-text-accent">
                         <Show when={s.nextFireAt !== null} fallback={<span class="text-v2-text-text-faint">no next run</span>}>
                           next {relative(s.nextFireAt ?? 0, now())} · {new Date(s.nextFireAt ?? 0).toLocaleString()}
@@ -349,6 +367,24 @@ export function CalendarPage() {
               value={model()}
               onInput={(e) => setModel(e.currentTarget.value)}
             />
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <label class="text-sm text-v2-text-text-muted">Folder</label>
+            <input
+              class={`${FIELD} min-w-[260px] flex-1`}
+              placeholder="Work folder — where it reads inputs + writes the report (blank = instance home)"
+              value={folder()}
+              onInput={(e) => setFolder(e.currentTarget.value)}
+            />
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <label class="text-sm text-v2-text-text-muted">Permissions</label>
+            <select class={FIELD} value={permission()} onChange={(e) => setPermission(e.currentTarget.value)}>
+              <For each={PERMISSION_MODES}>{(m) => <option value={m.value}>{m.label}</option>}</For>
+            </select>
+            <span class="text-xs text-v2-text-text-faint">Runs unattended — “Ask” stalls with no one to approve.</span>
           </div>
 
           <Show when={error()}>

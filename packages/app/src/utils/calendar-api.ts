@@ -26,6 +26,7 @@ export interface Schedule {
   readonly agent: string | null
   readonly model: string | null
   readonly location: string | null
+  readonly permissionMode: string | null
   readonly enabled: boolean
   readonly nextFireAt: number | null
   readonly lastFiredAt: number | null
@@ -50,6 +51,7 @@ export interface CreateScheduleInput {
   readonly agent?: string
   readonly model?: string
   readonly location?: string
+  readonly permissionMode?: string
   readonly enabled?: boolean
 }
 
