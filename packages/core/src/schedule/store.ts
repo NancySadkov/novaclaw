@@ -214,6 +214,25 @@ export const recordFire = (db: Db, input: FireInput): Effect.Effect<boolean> =>
     return true
   })
 
+/** Stamp a fire row's session/status after the launch resolves (the claim from recordFire ran first). */
+export const setFireOutcome = (
+  db: Db,
+  input: { readonly scheduleId: string; readonly occurrenceMillis: number; readonly sessionId?: string | null; readonly status: FireStatus },
+): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    yield* db
+      .update(CalendarFireTable)
+      .set({ session_id: input.sessionId ?? null, status: input.status })
+      .where(
+        and(
+          eq(CalendarFireTable.schedule_id, input.scheduleId),
+          eq(CalendarFireTable.occurrence_millis, input.occurrenceMillis),
+        ),
+      )
+      .run()
+      .pipe(Effect.orDie)
+  })
+
 /** After firing, stamp last_fired_at and advance next_fire_at to the next occurrence strictly after `now`. */
 export const advance = (db: Db, id: string, now: EpochMillis): Effect.Effect<Schedule | undefined> =>
   Effect.gen(function* () {
