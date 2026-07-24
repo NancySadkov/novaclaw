@@ -1,5 +1,4 @@
 import { createMemo, type JSX } from "solid-js"
-import { Icon } from "@novaclaw/ui/icon"
 import { Select } from "@novaclaw/ui/select"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import type { PermissionMode } from "@/context/local"
@@ -26,28 +25,23 @@ export function ComposerPermissionModeControl(props: { state: ComposerPermission
     ),
   )
   return (
-    <div class="relative">
-      <div class="pointer-events-none absolute left-2 top-1/2 z-10 flex size-4 -translate-y-1/2 items-center justify-center text-v2-icon-icon-muted">
-        <Icon name="checklist" size="small" />
-      </div>
-      <TooltipV2 placement="top" gutter={4} value={props.state.title}>
-        <Select
-          size="normal"
-          options={options()}
-          current={props.state.current}
-          label={(mode) => props.state.label(mode)}
-          onSelect={(value) => {
-            // Kobalte re-emits onChange with the UNCHANGED value whenever the options array is
-            // recreated (any composer-controls recompute) — only a real change may hit the server.
-            if (value && value !== props.state.current) props.state.onSelect(value)
-          }}
-          class="max-w-[190px] justify-start text-v2-text-text-faint [&_[data-component=icon]]:text-v2-icon-icon-muted"
-          valueClass="truncate pl-5 text-[13px] font-[440] leading-5 text-v2-text-text-faint"
-          triggerStyle={props.state.style}
-          triggerProps={{ "data-action": "prompt-permission-mode" }}
-          variant="ghost"
-        />
-      </TooltipV2>
-    </div>
+    <TooltipV2 placement="top" gutter={4} value={props.state.title}>
+      <Select
+        size="normal"
+        options={options()}
+        current={props.state.current}
+        label={(mode) => props.state.label(mode)}
+        onSelect={(value) => {
+          // Kobalte re-emits onChange with the UNCHANGED value whenever the options array is
+          // recreated (any composer-controls recompute) — only a real change may hit the server.
+          if (value && value !== props.state.current) props.state.onSelect(value)
+        }}
+        class="max-w-[190px] justify-start text-v2-text-text-faint [&_[data-component=icon]]:text-v2-icon-icon-muted"
+        valueClass="truncate text-[13px] font-[440] leading-5 text-v2-text-text-faint"
+        triggerStyle={props.state.style}
+        triggerProps={{ "data-action": "prompt-permission-mode" }}
+        variant="ghost"
+      />
+    </TooltipV2>
   )
 }

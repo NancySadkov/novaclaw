@@ -1,5 +1,4 @@
 import type { JSX } from "solid-js"
-import { Icon } from "@novaclaw/ui/icon"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import { useLanguage } from "@/context/language"
 
@@ -31,7 +30,6 @@ export function ComposerFolderControl(props: { state: ComposerFolderControlState
         style={props.state.style}
         onClick={() => props.state.pick()}
       >
-        <Icon name="folder" size="small" class="text-v2-icon-icon-muted" />
         <span class="max-w-[10rem] truncate">{props.state.name}</span>
       </button>
     </TooltipV2>

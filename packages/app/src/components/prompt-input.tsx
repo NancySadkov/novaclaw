@@ -1175,16 +1175,17 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
               }}
             >
               <ComposerAttachmentsTray state={attachmentsTrayState()} />
-              <div
-                class="relative min-h-[52px]"
-                onMouseDown={(e) => {
-                  const target = e.target
-                  if (!(target instanceof HTMLElement)) return
-                  if (target.closest('[data-action^="prompt-"]')) return
-                  editorRef?.focus()
-                }}
-              >
-                <ComposerEditorSurface
+              <div class="flex items-end">
+                <div
+                  class="relative min-h-[52px] min-w-0 flex-1"
+                  onMouseDown={(e) => {
+                    const target = e.target
+                    if (!(target instanceof HTMLElement)) return
+                    if (target.closest('[data-action^="prompt-"]')) return
+                    editorRef?.focus()
+                  }}
+                >
+                  <ComposerEditorSurface
                   state={{
                     mode: store.mode,
                     ariaLabel: designPlaceholder(),
@@ -1209,10 +1210,34 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                     onKeyDown: handleKeyDown,
                   }}
                 />
+                </div>
+                {/* Send/Stop sits beside the editor (Claude Code / ChatGPT style) instead of on the
+                    controls row, so the pickers below own the full width and never collide with it
+                    on narrow / phone widths. */}
+                <div class="shrink-0 self-end p-2">
+                  <TooltipV2 placement="top" inactive={!working() && blank()} value={tip()}>
+                    <IconButton
+                      data-action="prompt-submit"
+                      type="submit"
+                      disabled={!working() && blank()}
+                      tabIndex={store.mode === "normal" ? undefined : -1}
+                      icon={stopping() ? "stop" : store.mode === "shell" ? "arrow-undo-down" : "arrow-up"}
+                      variant="primary"
+                      class="size-7 rounded-md p-[6px] text-v2-icon-icon-muted shadow-[var(--v2-elevation-button-contrast)] disabled:opacity-50"
+                      style={{
+                        "background-image":
+                          "linear-gradient(180deg,var(--v2-alpha-light-20) 0%,var(--v2-alpha-light-0) 100%),linear-gradient(90deg,var(--v2-background-bg-contrast) 0%,var(--v2-background-bg-contrast) 100%)",
+                      }}
+                      aria-label={stopping() ? language.t("prompt.action.stop") : language.t("prompt.action.send")}
+                    />
+                  </TooltipV2>
+                </div>
               </div>
-              <div class="flex h-11 items-center px-2">
-                <div class="flex min-w-0 flex-1 items-center gap-0">
-                  {fileAttachmentInput()}
+              {/* The composer controls WRAP to a second line rather than overflow or get clipped when
+                  the chat pane is narrow (phone) — every chip stays visible, none is cut by the
+                  right edge. Each control keeps its own width ([&>*]:shrink-0) so it wraps whole. */}
+              <div class="flex min-h-11 flex-wrap items-center gap-y-1 px-2 py-1 [&>*]:shrink-0">
+                {fileAttachmentInput()}
                   <TooltipV2
                     placement="top"
                     value={
@@ -1266,29 +1291,11 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                   {/* The context gauge (owner 2026-07-22): a Claude Code-style pie showing how full
                       the model's context window is — colored amber/red as it fills so context
                       trouble is visible BEFORE it bites. Session-scoped (drafts have no context
-                      yet); clicking opens the session's Context tab. Grouped with the composer
-                      controls on the LEFT (owner 2026-07-24) so the submit button sits alone in the
-                      bottom-right corner, associated with the input field. */}
+                      yet); clicking opens the session's Context tab. Lives on the controls row with
+                      the other chips (the submit button moved up beside the editor, 2026-07-24). */}
                   <Show when={props.controls.session?.id}>
                     <SessionContextUsage buttonAppearance="v2" placement="top" />
                   </Show>
-                </div>
-                <TooltipV2 placement="top" inactive={!working() && blank()} value={tip()}>
-                  <IconButton
-                    data-action="prompt-submit"
-                    type="submit"
-                    disabled={!working() && blank()}
-                    tabIndex={store.mode === "normal" ? undefined : -1}
-                    icon={stopping() ? "stop" : store.mode === "shell" ? "arrow-undo-down" : "arrow-up"}
-                    variant="primary"
-                    class="size-7 rounded-md p-[6px] text-v2-icon-icon-muted shadow-[var(--v2-elevation-button-contrast)] disabled:opacity-50"
-                    style={{
-                      "background-image":
-                        "linear-gradient(180deg,var(--v2-alpha-light-20) 0%,var(--v2-alpha-light-0) 100%),linear-gradient(90deg,var(--v2-background-bg-contrast) 0%,var(--v2-background-bg-contrast) 100%)",
-                    }}
-                    aria-label={stopping() ? language.t("prompt.action.stop") : language.t("prompt.action.send")}
-                  />
-                </TooltipV2>
               </div>
             </DockShellForm>
           </div>

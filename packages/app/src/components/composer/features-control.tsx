@@ -359,11 +359,6 @@ export function ComposerFeaturesControl(props: { state: ComposerFeaturesControlS
           }}
           style={props.state.style}
         >
-          <Icon
-            name="sliders"
-            size="small"
-            class={enabledCount() > 0 || unattended() ? "text-v2-icon-icon-base" : "text-v2-icon-icon-muted"}
-          />
           <span>
             {language.t("prompt.features.label")}
             {triggerSuffix()}

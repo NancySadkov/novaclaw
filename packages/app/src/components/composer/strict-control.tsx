@@ -1,7 +1,6 @@
 import { createSignal, Show, type JSX } from "solid-js"
 import { Popover as KobaltePopover } from "@kobalte/core/popover"
 import { Button } from "@novaclaw/ui/button"
-import { Icon } from "@novaclaw/ui/icon"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import { useLanguage } from "@/context/language"
@@ -75,7 +74,6 @@ export function ComposerStrictControl(props: { state: ComposerStrictControlState
           }}
           style={props.state.style}
         >
-          <Icon name="shield" size="small" class={enabled() ? "text-v2-icon-icon-base" : "text-v2-icon-icon-muted"} />
           <span>{language.t(enabled() ? "prompt.strict.on" : "prompt.strict.off")}</span>
         </KobaltePopover.Trigger>
       </TooltipV2>
