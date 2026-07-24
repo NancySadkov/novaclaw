@@ -760,7 +760,6 @@ export const layer = Layer.effect(
               request,
               stream: (next) => llm.stream(next),
               budget: thinkingBudget,
-              answerMaxTokens: model.route.defaults.limits?.output ?? thinkingBudget,
             })
           : llm.stream(request)
       const providerStream = budgetedSource.pipe(

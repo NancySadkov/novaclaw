@@ -16,20 +16,23 @@ const rDelta = (chars: number) => LLMEvent.reasoningDelta({ id: "reasoning-0", t
 const tDelta = (text: string) => LLMEvent.textDelta({ id: "text-0", text })
 const finish = (reason: "stop" | "length") => LLMEvent.stepFinish({ index: 0, reason })
 
+/** A per-phase script: canned events, or "ERROR" to make that phase's provider stream fail. */
+type PhaseScript = LLMEvent[] | "ERROR"
+
 /** Canned per-phase event streams; records the request (prefill) each phase received. */
-const faker = (phases: LLMEvent[][]) => {
+const faker = (phases: PhaseScript[]) => {
   const requests: LLMRequest[] = []
   let call = 0
-  const stream = (request: LLMRequest): Stream.Stream<LLMEvent, never, never> => {
+  const stream = (request: LLMRequest): Stream.Stream<LLMEvent, Error, never> => {
     requests.push(request)
-    const events = phases[call] ?? []
+    const script = phases[call] ?? []
     call += 1
-    return Stream.fromIterable(events)
+    return script === "ERROR" ? Stream.fail(new Error("provider 400")) : Stream.fromIterable(script)
   }
   return { stream, requests }
 }
 
-const run = (phases: LLMEvent[][], opts?: { budget?: number; answerMaxTokens?: number }) => {
+const run = (phases: PhaseScript[], opts?: { budget?: number }) => {
   const fake = faker(phases)
   const events: LLMEvent[] = []
   Effect.runSync(
@@ -38,7 +41,6 @@ const run = (phases: LLMEvent[][], opts?: { budget?: number; answerMaxTokens?: n
         request: base,
         stream: fake.stream,
         budget: opts?.budget ?? 1000,
-        answerMaxTokens: opts?.answerMaxTokens ?? 2048,
       }),
       (event) => Effect.sync(() => void events.push(event)),
     ),
@@ -81,7 +83,7 @@ describe("ReasoningBudget", () => {
         [rDelta(120)], // cumulative crosses 100 → checkpoint → end nudge + forced close
         [tDelta("Final: $0.05."), finish("stop")], // end phase answers
       ],
-      { budget: 100, answerMaxTokens: 2048 },
+      { budget: 100 },
     )
     expect(types(events)).toEqual([
       "reasoning-start",
@@ -103,9 +105,10 @@ describe("ReasoningBudget", () => {
     expect(prefillOf(requests[2]!)).toContain("</think>")
     // each continuation carries the accumulated reasoning forward.
     expect(prefillOf(requests[1]!)).toContain("r".repeat(300))
-    // budget rides the mid-stream checkpoint, NOT max_tokens — every phase gets the full allowance.
-    expect(requests[0]!.generation?.maxTokens).toBe(2048)
-    expect(requests[1]!.generation?.maxTokens).toBe(2048)
+    // budget rides the mid-stream checkpoint, NOT max_tokens — phases INHERIT the base request's own
+    // limit (here unset) so `prompt + max_tokens` can never overflow the context window.
+    expect(requests[0]!.generation?.maxTokens).toBeUndefined()
+    expect(requests[1]!.generation?.maxTokens).toBeUndefined()
     // continuation flags only on the prefilled phases.
     expect(requests[0]!.http?.body?.continue_final_message).toBeUndefined()
     expect(requests[1]!.http?.body?.continue_final_message).toBe(true)
@@ -129,6 +132,27 @@ describe("ReasoningBudget", () => {
     ])
     expect(requests).toHaveLength(2)
     expect(prefillOf(requests[1]!)).toContain("</think>")
+  })
+
+  test("continuation failure degrades gracefully — no crash, reasoning closed", () => {
+    // budget 100 → opening crosses at 70 tokens, fires a mid continuation whose provider stream FAILS
+    // (e.g. an unsupported backend or a context-overflow 400). The turn must not crash: it closes the
+    // reasoning it already has and finishes cleanly.
+    const { events, requests } = run(
+      [
+        [rDelta(300)], // opening reasoning crosses the checkpoint → mid continuation
+        "ERROR", // the continuation request fails
+      ],
+      { budget: 100 },
+    )
+    expect(types(events)).toEqual([
+      "reasoning-start",
+      "reasoning-delta", // opening reasoning
+      "reasoning-delta", // mid nudge (emitted before the failed continuation)
+      "reasoning-end",
+      "step-finish",
+    ])
+    expect(requests).toHaveLength(2) // opening + the (failed) mid continuation
   })
 
   test("tool call ends reasoning and is forwarded", () => {

@@ -77,8 +77,6 @@ export interface Input<E, R> {
   readonly request: LLMRequest
   readonly stream: (request: LLMRequest) => Stream.Stream<LLMEvent, E, R>
   readonly budget: number
-  /** Token allowance for the final answer phase (the model's output limit). */
-  readonly answerMaxTokens: number
   readonly nudges?: Nudges
 }
 
@@ -186,13 +184,16 @@ export const stream = <E, R>(input: Input<E, R>): Stream.Stream<LLMEvent, E, R> 
   }
 
   const phaseRequest = (phase: Phase): LLMRequest => {
-    // Generous cap so an answer that starts mid-phase always completes; the reasoning is bounded by
-    // the mid-stream checkpoint abort, not by max_tokens (a tight cap truncates answers, and
-    // truncating an unclosed `<think>` returns nothing — jh think-stage.md).
+    // Inherit the base request's own token limit (typically UNSET → the server allocates the whole
+    // remaining context window). The reasoning is bounded by the mid-stream checkpoint abort, NOT by
+    // max_tokens (a tight cap truncates answers, and truncating an unclosed `<think>` returns nothing
+    // — jh think-stage.md). ⚠️ Do NOT force an explicit max_tokens here: on a long turn whose packed
+    // prompt sits near the context limit, `prompt_tokens + max_tokens` overflows the window and the
+    // provider 400s ("maximum context length"). Leaving it unset lets the server clamp output to what
+    // actually fits — which is also the most generous cap available.
     const base = {
       ...LLM.requestInput(input.request),
       system,
-      generation: { ...(input.request.generation ?? {}), maxTokens: Math.max(16, input.answerMaxTokens) },
     }
     // Phase 1 runs the model normally (no forced `<think>`) so non-thinking models simply answer.
     if (phase === "opening") return LLM.request(base)
@@ -218,7 +219,7 @@ export const stream = <E, R>(input: Input<E, R>): Stream.Stream<LLMEvent, E, R> 
   const runPhase = (phase: Phase): Stream.Stream<LLMEvent, E, R> => {
     checkpoint = phase === "opening" ? input.budget * MID_RATIO : phase === "mid" ? input.budget : Infinity
     state.checkpointHit = false
-    return input.stream(phaseRequest(phase)).pipe(
+    const source = input.stream(phaseRequest(phase)).pipe(
       Stream.flatMap((event) => Stream.fromIterable(transform(event))),
       // Stop consuming (tearing down the request) right after the reasoning delta that crosses the
       // phase ceiling. Gating on the delta (not any event) keeps the crossing delta from being
@@ -226,6 +227,12 @@ export const stream = <E, R>(input: Input<E, R>): Stream.Stream<LLMEvent, E, R> 
       Stream.takeUntil((event) => state.checkpointHit && LLMEvent.is.reasoningDelta(event)),
       Stream.concat(Stream.unwrap(Effect.sync(() => decide(phase)))),
     )
+    // A CONTINUATION phase (mid/end) rides vLLM-specific flags (`continue_final_message`) and a
+    // prompt+prefill that some backends won't accept. If it fails — an unsupported provider, a
+    // transient error — degrade gracefully by closing out the reasoning we already have, rather than
+    // failing the whole turn with a raw provider error. The opening phase is the normal request; let
+    // ITS errors propagate to the runner's pre-stream retry path.
+    return phase === "opening" ? source : source.pipe(Stream.catchCause(() => finalize()))
   }
 
   const decide = (phase: Phase): Stream.Stream<LLMEvent, E, R> => {
