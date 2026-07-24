@@ -1,4 +1,5 @@
 import type { SessionMessage, SessionMessageAssistant } from "@novaclaw/sdk/v2/client"
+import { Token } from "@novaclaw/core/util/token"
 
 export type SessionContextBreakdownKey = "system" | "user" | "assistant" | "tool" | "other"
 
@@ -11,7 +12,9 @@ export type SessionContextBreakdownSegment = {
 
 type AssistantContent = SessionMessageAssistant["content"][number]
 
-const estimateTokens = (chars: number) => Math.ceil(chars / 4)
+// The bar is aggregated from per-category CHAR counts (not text), then scaled to the real input
+// token total below — so the shared flat char→token estimate is the right tool here.
+const estimateTokens = (chars: number) => Token.estimateFromChars(chars)
 const toPercent = (tokens: number, input: number) => (tokens / input) * 100
 const toPercentLabel = (tokens: number, input: number) => Math.round(toPercent(tokens, input) * 10) / 10
 

@@ -1,11 +1,12 @@
 import { describe, expect, test } from "bun:test"
-import { CHARS_PER_TOKEN, createState, note, snapshot } from "./live-rate"
+import { Token } from "@novaclaw/core/util/token"
+import { createState, note, snapshot } from "./live-rate"
 
 describe("live-rate (Chats ps telemetry)", () => {
   test("accumulates chars into ~tokens", () => {
     const state = createState()
     note(state, 400, 1000)
-    expect(snapshot(state, 1500).approxTokens).toBe(400 / CHARS_PER_TOKEN)
+    expect(snapshot(state, 1500).approxTokens).toBe(Token.estimateFromChars(400))
   })
 
   test("t/s reflects the recent window, not the whole run", () => {

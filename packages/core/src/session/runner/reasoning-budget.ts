@@ -3,6 +3,7 @@ export * as ReasoningBudget from "./reasoning-budget"
 import { Stream, Effect } from "effect"
 import { LLM, LLMEvent, Message, SystemPart } from "@novaclaw/llm"
 import type { FinishReason, LLMRequest, StepFinish } from "@novaclaw/llm"
+import { Token } from "../../util/token"
 
 /**
  * MindControl-style thinking-budget controller (notes/experimental.md, owner ask 2026-07-24).
@@ -57,9 +58,6 @@ export const defaultNudges: Nudges = {
 
 type Phase = "opening" | "mid" | "end"
 
-/** Rough chars-per-token for the live reasoning-budget estimate — the checkpoint is approximate. */
-const CHARS_PER_TOKEN = 4
-
 interface State {
   /** The `<think>` interior accumulated so far (streamed model reasoning + injected nudges); the
    *  prefill body of each continuation request. */
@@ -105,7 +103,9 @@ export const stream = <E, R>(input: Input<E, R>): Stream.Stream<LLMEvent, E, R> 
   // Cumulative reasoning-token ceiling for the CURRENT phase (opening ~0.7·budget, mid = full budget,
   // end = none). Set by `runPhase` before each phase streams.
   let checkpoint = Infinity
-  const reasoningTokens = () => Math.ceil(state.think.length / CHARS_PER_TOKEN)
+  // O(1) per delta (called on every reasoning chunk): the shared char-count estimate, not the
+  // CJK-aware text scan, so the checkpoint stays cheap over a long think. The budget is a SOFT cap.
+  const reasoningTokens = () => Token.estimateFromChars(state.think.length)
 
   // Append reasoning text to the prefill accumulator AND surface it as a reasoning delta (opening
   // the block on first use). Used for both streamed model reasoning and the injected nudges.

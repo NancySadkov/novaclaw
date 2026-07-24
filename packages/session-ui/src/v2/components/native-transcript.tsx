@@ -13,6 +13,7 @@ import type {
 } from "@novaclaw/sdk/v2"
 import { isSteerText, stripSteerProvenance } from "@novaclaw/core/session/steer-provenance"
 import { SessionOrigin } from "@novaclaw/core/session/origin"
+import { reasoningTokenLabel } from "./reasoning-count"
 import { Markdown } from "../../components/markdown"
 import { reasoningOpenDefault, toolOpenDefault, type ReasoningFoldMode } from "../reasoning-fold"
 import { BasicToolV2 } from "./basic-tool-v2"
@@ -204,6 +205,13 @@ function AssistantMessage(props: { message: SessionMessageAssistant }) {
       .map((c) => c.text)
       .join("\n")
       .trim()
+  // The real reasoning-token count lands on the MESSAGE at step end. Attribute it to the reasoning
+  // fold ONLY when there's exactly one reasoning part (the stitched-block norm) — with several parts
+  // the per-message total can't be split, so those fall back to the per-part estimate.
+  const reasoningParts = createMemo(
+    () => props.message.content.filter((c) => c.type === "reasoning" && c.text.trim().length > 0).length,
+  )
+  const reasoningTokens = () => (reasoningParts() === 1 ? props.message.tokens?.reasoning : undefined)
   return (
     <div data-slot="native-assistant">
       <For each={props.message.content}>
@@ -221,7 +229,7 @@ function AssistantMessage(props: { message: SessionMessageAssistant }) {
             <Match when={part.type === "reasoning" && part}>
               {(p) => (
                 <Show when={p().text.trim()}>
-                  <ReasoningPart part={p()} />
+                  <ReasoningPart part={p()} tokens={reasoningTokens()} />
                 </Show>
               )}
             </Match>
@@ -270,10 +278,6 @@ function AssistantMessage(props: { message: SessionMessageAssistant }) {
   )
 }
 
-/** Compact size label for the live reasoning counter ("845" → "1.2k"). */
-const reasoningCountLabel = (chars: number): string =>
-  chars < 1000 ? String(chars) : `${(chars / 1000).toFixed(1)}k`
-
 /**
  * A reasoning part with a level-aware default fold (uix.md §6 / UIX residue b). The fold mode
  * comes from ReasoningFoldContext (expertise-derived); `open` is FULLY controlled off it so
@@ -286,11 +290,12 @@ const reasoningCountLabel = (chars: number): string =>
  * even with the fold closed (a frozen counter = stalled), and opening it mid-stream shows the
  * text arriving — so a user can check the model isn't looping without waiting for the answer.
  */
-function ReasoningPart(props: { part: SessionMessageAssistantReasoning }) {
+function ReasoningPart(props: { part: SessionMessageAssistantReasoning; tokens?: number }) {
   const foldMode = useContext(ReasoningFoldContext)
   const [override, setOverride] = createSignal<boolean | undefined>(undefined)
   const completed = () => !!props.part.time?.completed
   const open = () => override() ?? reasoningOpenDefault(foldMode().reasoning, completed())
+  const tokenLabel = () => reasoningTokenLabel(props.tokens, props.part.text)
   return (
     <details data-slot="native-reasoning" open={open()} data-streaming={completed() ? undefined : ""}>
       <summary
@@ -299,11 +304,19 @@ function ReasoningPart(props: { part: SessionMessageAssistantReasoning }) {
           setOverride(!open())
         }}
       >
-        <Show when={!completed()} fallback={"Reasoning"}>
+        <Show
+          when={!completed()}
+          fallback={
+            <span data-slot="native-reasoning-done">
+              <span>Reasoning</span>
+              <span data-slot="native-reasoning-count">{tokenLabel()}</span>
+            </span>
+          }
+        >
           <span data-slot="native-reasoning-live">
             <span data-slot="native-reasoning-live-dot" />
             <span>Reasoning…</span>
-            <span data-slot="native-reasoning-count">{reasoningCountLabel(props.part.text.length)}</span>
+            <span data-slot="native-reasoning-count">{tokenLabel()}</span>
           </span>
         </Show>
       </summary>

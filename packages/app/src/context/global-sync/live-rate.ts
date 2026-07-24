@@ -2,10 +2,12 @@
 // approximate tokens + tokens/sec for a RUNNING agent, derived client-side from the SSE
 // text/reasoning delta stream. The server's authoritative usage lands only at step end
 // (applyUsage → session.updated), so within a step the only live signal is the delta chars;
-// ~4 chars/token is the deliberately-approximate conversion and the UI labels it "~".
+// the char→token conversion is the shared `Token.estimateFromChars` (chars/4) and the UI labels it
+// "~". We track a running char count (not the text), so the CJK-aware `Token.estimate` can't apply.
 // PURE — the server-session store owns the per-session state map and the throttled signal.
 
-export const CHARS_PER_TOKEN = 4
+import { Token } from "@novaclaw/core/util/token"
+
 /** The t/s window: long enough to smooth chunk jitter, short enough to feel live. */
 const WINDOW_MS = 10_000
 /** Coalesce bursts so the sample ring stays tiny even at token-per-chunk stream rates. */
@@ -29,7 +31,7 @@ export function note(state: LiveRateState, chars: number, now: number): void {
 }
 
 export interface LiveRateSnapshot {
-  /** ~tokens streamed this run (chars / CHARS_PER_TOKEN). */
+  /** ~tokens streamed this run (Token.estimateFromChars over the accumulated char count). */
   readonly approxTokens: number
   /** ~tokens/sec over the recent window; 0 when the stream has gone quiet. */
   readonly tps: number
@@ -40,7 +42,7 @@ export function snapshot(state: LiveRateState, now: number): LiveRateSnapshot {
   const windowChars = inWindow.reduce((total, sample) => total + sample.chars, 0)
   const spanMs = inWindow.length > 0 ? Math.max(1000, now - inWindow[0]!.at) : 1000
   return {
-    approxTokens: Math.round(state.chars / CHARS_PER_TOKEN),
-    tps: Math.round(windowChars / CHARS_PER_TOKEN / (spanMs / 1000)),
+    approxTokens: Token.estimateFromChars(state.chars),
+    tps: Math.round(Token.estimateFromChars(windowChars) / (spanMs / 1000)),
   }
 }
