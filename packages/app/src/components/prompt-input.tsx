@@ -1263,14 +1263,16 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
                       }}
                     />
                   </Show>
+                  {/* The context gauge (owner 2026-07-22): a Claude Code-style pie showing how full
+                      the model's context window is — colored amber/red as it fills so context
+                      trouble is visible BEFORE it bites. Session-scoped (drafts have no context
+                      yet); clicking opens the session's Context tab. Grouped with the composer
+                      controls on the LEFT (owner 2026-07-24) so the submit button sits alone in the
+                      bottom-right corner, associated with the input field. */}
+                  <Show when={props.controls.session?.id}>
+                    <SessionContextUsage buttonAppearance="v2" placement="top" />
+                  </Show>
                 </div>
-                {/* The context gauge (owner 2026-07-22): a Claude Code-style pie showing how full
-                    the model's context window is, right where the user types — colored amber/red
-                    as it fills so context trouble is visible BEFORE it bites. Session-scoped
-                    (drafts have no context yet); clicking opens the session's Context tab. */}
-                <Show when={props.controls.session?.id}>
-                  <SessionContextUsage buttonAppearance="v2" placement="top" />
-                </Show>
                 <TooltipV2 placement="top" inactive={!working() && blank()} value={tip()}>
                   <IconButton
                     data-action="prompt-submit"
