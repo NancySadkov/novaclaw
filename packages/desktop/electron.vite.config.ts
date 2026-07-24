@@ -22,7 +22,20 @@ export default defineConfig({
       rollupOptions: {
         input: { index: "src/main/index.ts", sidecar: "src/main/sidecar.ts" },
       },
-      externalizeDeps: { include: [nodePtyPkg] },
+      // Leave external the deps that must not be inlined into the Electron main bundle:
+      //   • node-pty — native .node addon (platform-specific)
+      //   • Baileys' optionalPeers (audio-decode / jimp / link-preview-js / sharp) — declared
+      //     `optionalPeers` and intentionally NOT installed. Baileys dynamic-imports them for its
+      //     WhatsApp voice/image paths; without externalizing, Rollup fails to resolve the bare
+      //     `import("audio-decode")` in the prebuilt sidecar (dist/node/node.js) and the whole dev
+      //     build dies. Externalized, the build passes and the optional path degrades gracefully at
+      //     runtime only if actually exercised without the dep (WhatsApp is opt-in anyway).
+      //   • @mtcute/bun — the Bun-only Telegram-user driver dep (imports bun:sqlite); kept external
+      //     in the node bundle too, so its lazy dynamic import never drags bun:sqlite into the
+      //     eager main-process graph (it's guarded off under Node anyway).
+      externalizeDeps: {
+        include: [nodePtyPkg, "audio-decode", "jimp", "link-preview-js", "sharp", "@mtcute/bun"],
+      },
     },
     plugins: [
       {

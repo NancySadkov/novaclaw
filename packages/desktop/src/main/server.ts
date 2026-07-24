@@ -72,6 +72,11 @@ export async function spawnLocalServer(
     env: createSidecarEnv(),
     serviceName: SIDECAR_SERVICE_NAME,
     stdio: "pipe",
+    // The sidecar's server bundle uses `node:sqlite` (the Node variant of the core's `#sqlite`).
+    // On Node 22.5–22.12 that requires `--experimental-sqlite`; on 22.13+/24 the flag is a no-op
+    // (accepted, just an ExperimentalWarning). Pass it unconditionally so the sidecar boots on
+    // whatever Node the installed Electron bundles.
+    execArgv: ["--experimental-sqlite"],
   })
   let exited = false
   const exit = defer<number>()
