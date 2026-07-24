@@ -3,8 +3,10 @@ import { Icon } from "@novaclaw/ui/icon"
 import { useServerSDK } from "@/context/server-sdk"
 import {
   createSchedule,
+  listFires,
   listSchedules,
   removeSchedule,
+  type Fire,
   type Recurrence,
   type Schedule,
 } from "@/utils/calendar-api"
@@ -73,14 +75,32 @@ export function CalendarPage() {
     { initialValue: [] as Schedule[] },
   )
 
+  const [fires, { refetch: refetchFires }] = createResource(
+    () => httpBase(),
+    async (base) => {
+      try {
+        return await listFires(base)
+      } catch {
+        return [] as Fire[]
+      }
+    },
+    { initialValue: [] as Fire[] },
+  )
+
   onMount(() => {
     const clock = setInterval(() => setNow(Date.now()), 1000)
-    const poll = setInterval(() => void refetch(), 10_000)
+    const poll = setInterval(() => {
+      void refetch()
+      void refetchFires()
+    }, 10_000)
     onCleanup(() => {
       clearInterval(clock)
       clearInterval(poll)
     })
   })
+
+  const titleFor = (scheduleId: string) =>
+    schedules().find((s) => s.id === scheduleId)?.title || "Untitled task"
 
   const upcoming = createMemo(() =>
     schedules()
@@ -99,6 +119,7 @@ export function CalendarPage() {
   const [monthDay, setMonthDay] = createSignal(1)
   const [yearMonth, setYearMonth] = createSignal(1)
   const [yearDay, setYearDay] = createSignal(1)
+  const [model, setModel] = createSignal("")
   const [busy, setBusy] = createSignal(false)
   const [error, setError] = createSignal<string | undefined>()
 
@@ -139,6 +160,7 @@ export function CalendarPage() {
         prompt: prompt().trim(),
         recurrence: rec,
         tzOffsetMin: -new Date().getTimezoneOffset(),
+        model: model().trim() || undefined,
       })
       setTitle("")
       setPrompt("")
@@ -247,6 +269,26 @@ export function CalendarPage() {
           </Show>
         </div>
 
+        {/* Recent runs */}
+        <Show when={fires().length}>
+          <div>
+            <div class="mb-2 text-xs font-semibold uppercase tracking-wide text-v2-text-text-faint">Recent runs</div>
+            <div class="flex flex-col gap-1.5">
+              <For each={fires()}>
+                {(f) => (
+                  <div class={`${CARD} flex items-center gap-3 py-2`}>
+                    <span class="min-w-0 flex-1 truncate text-sm">{titleFor(f.scheduleId)}</span>
+                    <span class="text-xs text-v2-text-text-faint">{new Date(f.firedAt).toLocaleString()}</span>
+                    <span class={`text-xs ${f.status === "error" ? "text-v2-state-fg-danger" : "text-v2-text-text-muted"}`}>
+                      {f.status === "spawned" ? "ran" : f.status}
+                    </span>
+                  </div>
+                )}
+              </For>
+            </div>
+          </div>
+        </Show>
+
         {/* New task form */}
         <form class={`${CARD} flex flex-col gap-3`} onSubmit={submit}>
           <div class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-faint">New task</div>
@@ -297,6 +339,16 @@ export function CalendarPage() {
               </select>
               <input class={`${FIELD} w-20`} type="number" min={1} max={31} value={yearDay()} onInput={(e) => setYearDay(Number(e.currentTarget.value))} />
             </Show>
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <label class="text-sm text-v2-text-text-muted">Model</label>
+            <input
+              class={`${FIELD} min-w-[260px] flex-1`}
+              placeholder="providerID/modelID — blank = instance default (e.g. dgx-spark/qwen3.6-35b)"
+              value={model()}
+              onInput={(e) => setModel(e.currentTarget.value)}
+            />
           </div>
 
           <Show when={error()}>

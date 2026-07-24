@@ -6,7 +6,7 @@ export * as CalendarStore from "./store"
 // caller supplies `yield* Clock.currentTimeMillis`. next_fire_at is recomputed via schedule/recurrence.ts
 // on every create/update/advance, and set to null while a schedule is disabled.
 
-import { and, eq, lte } from "drizzle-orm"
+import { and, desc, eq, lte } from "drizzle-orm"
 import { Effect } from "effect"
 import { ascending } from "@novaclaw/schema/identifier"
 import type { Database } from "../database/database"
@@ -257,3 +257,34 @@ export const fires = (db: Db, scheduleId: string): Effect.Effect<Array<typeof Ca
     .where(eq(CalendarFireTable.schedule_id, scheduleId))
     .all()
     .pipe(Effect.orDie)
+
+export interface Fire {
+  readonly id: string
+  readonly scheduleId: string
+  readonly occurrenceMillis: number
+  readonly firedAt: number
+  readonly sessionId: string | null
+  readonly status: FireStatus
+}
+
+const toFire = (row: typeof CalendarFireTable.$inferSelect): Fire => ({
+  id: row.id,
+  scheduleId: row.schedule_id,
+  occurrenceMillis: row.occurrence_millis,
+  firedAt: row.fired_at,
+  sessionId: row.session_id,
+  status: row.status,
+})
+
+/** Recent fires across all schedules, newest first — the "recent runs" history for the Calendar UI. */
+export const recentFires = (db: Db, limit = 20): Effect.Effect<Fire[]> =>
+  db
+    .select()
+    .from(CalendarFireTable)
+    .orderBy(desc(CalendarFireTable.fired_at))
+    .limit(limit)
+    .all()
+    .pipe(
+      Effect.orDie,
+      Effect.map((rows) => rows.map(toFire)),
+    )

@@ -215,4 +215,33 @@ describe("CalendarScheduler.makeLaunch", () => {
     )
     expect(created[0].location.directory).toBe("/srv/clients")
   })
+
+  test("resolves a per-schedule model string + agent into refs", async () => {
+    const created: any[] = []
+    const prompted: any[] = []
+    await Effect.runPromise(
+      CalendarScheduler.makeLaunch(fakeSessions(created, prompted), "/home/nancy")({
+        schedule: sample({ model: "dgx-spark/qwen3.6-35b", agent: "build" }),
+        occurrenceMillis: 1,
+        firedAt: 1,
+      }),
+    )
+    expect(created[0].model.id).toBe("qwen3.6-35b")
+    expect(created[0].model.providerID).toBe("dgx-spark")
+    expect(created[0].agent).toBe("build")
+  })
+
+  test("omits model/agent when the schedule has none (inherit instance default)", async () => {
+    const created: any[] = []
+    const prompted: any[] = []
+    await Effect.runPromise(
+      CalendarScheduler.makeLaunch(fakeSessions(created, prompted), "/home/nancy")({
+        schedule: sample(),
+        occurrenceMillis: 1,
+        firedAt: 1,
+      }),
+    )
+    expect("model" in created[0]).toBe(false)
+    expect("agent" in created[0]).toBe(false)
+  })
 })

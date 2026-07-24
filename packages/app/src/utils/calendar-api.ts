@@ -33,6 +33,15 @@ export interface Schedule {
   readonly timeUpdated: number
 }
 
+export interface Fire {
+  readonly id: string
+  readonly scheduleId: string
+  readonly occurrenceMillis: number
+  readonly firedAt: number
+  readonly sessionId: string | null
+  readonly status: "spawned" | "skipped" | "error"
+}
+
 export interface CreateScheduleInput {
   readonly title?: string
   readonly recurrence: Recurrence
@@ -74,3 +83,6 @@ export const createSchedule = (server: ServerConnection.HttpBase, input: CreateS
 
 export const removeSchedule = (server: ServerConnection.HttpBase, id: string) =>
   call<void>(server, "DELETE", `api/calendar/schedule/${encodeURIComponent(id)}`)
+
+export const listFires = (server: ServerConnection.HttpBase) =>
+  call<Fire[]>(server, "GET", "api/calendar/fires")

@@ -33,6 +33,15 @@ const Schedule = Schema.Struct({
   timeUpdated: Schema.Number,
 }).annotate({ identifier: "Calendar.Schedule" })
 
+const Fire = Schema.Struct({
+  id: Schema.String,
+  scheduleId: Schema.String,
+  occurrenceMillis: Schema.Number,
+  firedAt: Schema.Number,
+  sessionId: Schema.NullOr(Schema.String),
+  status: Schema.Literals(["spawned", "skipped", "error"]),
+}).annotate({ identifier: "Calendar.Fire" })
+
 const CreateInput = Schema.Struct({
   title: Schema.optional(Schema.String),
   recurrence: Recurrence,
@@ -79,6 +88,17 @@ export const CalendarGroup = HttpApiGroup.make("server.calendar")
         identifier: "v2.calendar.schedule.remove",
         summary: "Remove a calendar schedule",
         description: "Delete a scheduled agent-launch task by id.",
+      }),
+    ),
+  )
+  .add(
+    HttpApiEndpoint.get("calendar.fires.list", "/api/calendar/fires", {
+      success: Schema.Array(Fire),
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.calendar.fires.list",
+        summary: "List recent schedule fires",
+        description: "Recent scheduled-launch fires across all schedules, newest first (the run history).",
       }),
     ),
   )

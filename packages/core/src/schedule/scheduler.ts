@@ -9,8 +9,10 @@ export * as CalendarScheduler from "./scheduler"
 // and the schedule still advances.
 
 import { Cause, Clock, Duration, Effect, Layer, Schedule } from "effect"
+import { AgentV2 } from "../agent"
 import { Database } from "../database/database"
 import { Global } from "../global"
+import { ModelV2 } from "../model"
 import { AbsolutePath } from "../schema"
 import { SessionV2 } from "../session"
 import type { EpochMillis } from "./recurrence"
@@ -88,16 +90,27 @@ export const makeLaunch =
   (sessions: Pick<SessionV2.Interface, "create" | "prompt">, homeDir: string): Launch =>
   (input) =>
     Effect.gen(function* () {
-      const directory = input.schedule.location ?? homeDir
+      const { schedule } = input
+      const directory = schedule.location ?? homeDir
+      // Per-schedule overrides; absent = inherit the instance default agent/model. Model string is
+      // "providerID/modelID" (split so the modelID may itself contain "/").
+      let model: ModelV2.Ref | undefined
+      if (schedule.model) {
+        const { providerID, modelID } = ModelV2.parse(schedule.model)
+        model = ModelV2.Ref.make({ id: modelID, providerID })
+      }
+      const agent = schedule.agent ? AgentV2.ID.make(schedule.agent) : undefined
       const session = yield* sessions.create({
         location: { directory: AbsolutePath.make(directory) },
         type: "goal-oriented",
-        title: input.schedule.title || "Scheduled run",
-        metadata: { calendarScheduleID: input.schedule.id, occurrenceMillis: input.occurrenceMillis },
+        title: schedule.title || "Scheduled run",
+        ...(model ? { model } : {}),
+        ...(agent ? { agent } : {}),
+        metadata: { calendarScheduleID: schedule.id, occurrenceMillis: input.occurrenceMillis },
       })
       yield* sessions.prompt({
         sessionID: session.id,
-        prompt: { text: input.schedule.prompt },
+        prompt: { text: schedule.prompt },
         delivery: "queue",
       })
       return session.id

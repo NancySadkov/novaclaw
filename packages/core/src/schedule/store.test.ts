@@ -140,4 +140,20 @@ describe("CalendarStore", () => {
     expect(advanced?.lastFiredAt).toBe(MAR10_0900)
     expect(advanced?.nextFireAt).toBe(MAR11_0900) // strictly after the fired occurrence
   })
+
+  test("recentFires returns fires across schedules, newest first", async () => {
+    const out = await withDb((db) =>
+      Effect.gen(function* () {
+        const a = yield* CalendarStore.create(db, { recurrence: daily9, prompt: "a" }, MAR10_0800)
+        const b = yield* CalendarStore.create(db, { recurrence: daily9, prompt: "b" }, MAR10_0800)
+        yield* CalendarStore.recordFire(db, { scheduleId: a.id, occurrenceMillis: 100, firedAt: 100, status: "spawned" })
+        yield* CalendarStore.recordFire(db, { scheduleId: b.id, occurrenceMillis: 200, firedAt: 200, status: "error" })
+        return yield* CalendarStore.recentFires(db)
+      }),
+    )
+    expect(out).toHaveLength(2)
+    expect(out[0]!.firedAt).toBe(200) // newest first
+    expect(out[0]!.status).toBe("error")
+    expect(out[1]!.firedAt).toBe(100)
+  })
 })

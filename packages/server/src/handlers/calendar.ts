@@ -36,5 +36,12 @@ export const CalendarHandler = HttpApiBuilder.group(Api, "server.calendar", (han
           return HttpApiSchema.NoContent.make()
         }),
       )
+      .handle(
+        "calendar.fires.list",
+        Effect.fn(function* () {
+          const { db } = yield* Database.Service
+          return yield* CalendarStore.recentFires(db)
+        }),
+      )
   }),
 )
