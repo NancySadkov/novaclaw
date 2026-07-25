@@ -105,6 +105,16 @@ export const RecipeHandler = HttpApiBuilder.group(Api, "server.recipe", (handler
           const session = yield* sessions.create({
             location: { directory: AbsolutePath.make(directory) },
             title: recipe.name,
+            // Cooking is a "go and do it" action, not a conversation: the user picked a recipe and a folder
+            // and expects work to happen. Left interactive+ask it landed them in a chat full of pending
+            // permission prompts for a task they had already approved by pressing Run.
+            //
+            // Safe to grant only since the permission work of 2026-07-25: `bypass` is write access to THIS
+            // FOLDER — writing outside it is guarded independently of the mode, and for an unattended chain
+            // root it is hard-DENIED rather than parked as an ask nobody is there to answer. The work folder
+            // is freshly materialized for this cook, so "free inside it" is the whole intent.
+            type: "goal-oriented",
+            permissionMode: "bypass",
             ...(model ? { model } : {}),
             ...(ctx.payload.agent ? { agent: AgentV2.ID.make(ctx.payload.agent) } : {}),
             // Traceable back to what was cooked, and which copy.

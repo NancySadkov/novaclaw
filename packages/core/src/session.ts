@@ -810,7 +810,7 @@ export const layer = Layer.effect(
       }),
       // The chat's kernel thread type (the composer's Mode control). Attendance derives from the
       // chain ROOT's type, so flipping a root chat to auto-prompting/goal-oriented is the "keep
-      // working without me" switch (asks auto-allow, bash confined by the Agent Jail, affective
+      // working without me" switch (out-of-folder writes denied not asked, bash confined by the Agent Jail, affective
       // nudges engage). Consumers read the projected column fresh, so it applies immediately.
       switchType: Effect.fn("V2Session.switchType")(function* (input) {
         yield* result.get(input.sessionID)

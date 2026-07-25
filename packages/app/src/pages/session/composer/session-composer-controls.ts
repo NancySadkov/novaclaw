@@ -311,7 +311,7 @@ export function createPromptInputController(input: {
       set: (value) => {
         // Same contract as the feature toggles: the draft signal is the instant UI truth (and the
         // create-time payload); a live session ALSO flips the kernel thread type server-side —
-        // attendance (asks auto-allow, Agent Jail confinement) applies immediately.
+        // attendance (out-of-folder deny-fast, Agent Jail confinement) applies immediately.
         local.mode.set(value)
         const id = input.sessionID()
         const conn = server.current

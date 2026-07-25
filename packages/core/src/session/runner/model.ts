@@ -133,8 +133,22 @@ const withDefaults = (model: ModelV2.Info, route: AnyRoute) => {
 }
 
 /** context/4 (capped at the output limit) unless the config pins an explicit per-model value. */
-const defaultThinkingBudget = (configured: number | undefined, context: number, output: number): number => {
-  if (configured !== undefined) return Math.max(0, configured)
+/**
+ * The reasoning-token ceiling for a turn.
+ *
+ * A CONFIGURED value is honoured but still clamped to what the model can physically produce. It used to be
+ * returned raw, which made the feature fail silently in both directions: a budget above the output limit can
+ * never be reached, so no checkpoint ever fires and the controller is inert — exactly what a fat-fingered
+ * `600060006000` does (a real value found in the owner's config, left by the settings append bug). The
+ * clamp is to what is reachable, NOT to the default's `context/4`: asking for more thinking than the default
+ * is a legitimate choice, asking for more than the model can emit is not.
+ */
+export const defaultThinkingBudget = (configured: number | undefined, context: number, output: number): number => {
+  const reachable = output > 0 ? (context > 0 ? Math.min(output, context) : output) : context
+  if (configured !== undefined) {
+    const wanted = Math.max(0, Math.floor(configured))
+    return reachable > 0 ? Math.min(wanted, reachable) : wanted
+  }
   if (context <= 0) return 0
   const quarter = Math.floor(context / 4)
   return output > 0 ? Math.min(quarter, output) : quarter

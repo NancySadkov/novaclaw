@@ -14,7 +14,7 @@ export * as SessionDrive from "./drive"
 //
 // The drive keys on the session's OWN declared `type` column, never the resolved/inherited
 // config walk: a spawned child (type "sub-agent") or a fork must not silently self-drive just
-// because an unattended ancestor exists. Attendance semantics (Agent Jail, ask auto-allow)
+// because an unattended ancestor exists. Attendance semantics (Agent Jail, out-of-folder deny-fast)
 // separately key on the chain ROOT — the two questions are different on purpose.
 //
 // PURE — no Effect, no db. The runner supplies the session row, the per-drain state, and the

@@ -255,7 +255,7 @@ export function switchFeature(
 }
 
 // The chat's kernel thread type (the composer's Mode control). Attendance derives from the chain
-// root's type: an unattended chat (auto-prompting · goal-oriented) auto-allows asks and runs bash
+// root's type: an unattended chat (auto-prompting · goal-oriented) DENIES out-of-folder writes and runs bash
 // confined by the Agent Jail. "sub-agent" is spawn-only, so the switch offers these three.
 export type SessionModeName = "interactive" | "auto-prompting" | "goal-oriented"
 

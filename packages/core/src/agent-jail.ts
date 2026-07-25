@@ -10,7 +10,7 @@
  *
  * P0 ships the seam with no backend: `probe()` honestly reports `none` everywhere, and the
  * policy's deny arm only engages for UNATTENDED chains (root type auto-prompting /
- * goal-oriented — no human exists to answer an ask, so any permission success is auto-allow).
+ * goal-oriented — no human exists to answer an ask, so an out-of-folder write is denied outright).
  * P1 adds the Linux namespace backend (the Spark, the primary target); macOS/Windows follow.
  */
 export * as AgentJail from "./agent-jail"

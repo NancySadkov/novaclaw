@@ -134,7 +134,8 @@ export type FeatureSwitched = typeof FeatureSwitched.Type
 
 // The chat's kernel thread type (the composer's Mode control — architecture.md typed threads).
 // Attendance derives from the chain ROOT's type (agent-jail doctrine), so switching a root chat
-// to an unattended type is the "keep working without me" flag: asks auto-allow, bash runs
+// to an unattended type is the "keep working without me" flag: out-of-folder writes are DENIED rather
+// than asked (nobody is there to answer), bash runs
 // confined (or is denied without a jail backend), affective nudges engage, and the EEVDF
 // scheduler reweights. The projector writes the column; consumers (rootSessionType, the
 // scheduler) read session rows fresh, so the flip applies immediately.
