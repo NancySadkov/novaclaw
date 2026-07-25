@@ -3,7 +3,10 @@ import { SessionV2 } from "@novaclaw/core/session"
 import { Effect, Schema } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { Api } from "../api"
-import { InvalidCursorError, SessionNotFoundError, UnknownError } from "@novaclaw/protocol/errors"
+import { InvalidCursorError, InvalidRequestError, SessionNotFoundError, UnknownError } from "@novaclaw/protocol/errors"
+import * as nodeFs from "node:fs/promises"
+import * as nodePath from "node:path"
+import { SessionMarkdown } from "../session-markdown"
 
 const DefaultMessagesLimit = 50
 
@@ -28,7 +31,68 @@ export const MessageHandler = HttpApiBuilder.group(Api, "server.message", (handl
   Effect.gen(function* () {
     const session = yield* SessionV2.Service
 
+    // Export the whole session as Markdown. Reads with `order: "asc"` and pages through the cursor so a
+    // long session is complete and chronological — the API's default is NEWEST-first, which would emit a
+    // reversed transcript. A session mid-turn is exported as-is and flagged; we never pause it to export.
+    const collectAll = Effect.fn(function* (sessionID: string) {
+      const all: SessionMessage.Message[] = []
+      let cursorRef: { id: SessionMessage.ID; direction: "next" } | undefined
+      // Bounded so a pathological session cannot spin forever; 200 * 500 = 100k messages.
+      for (let page = 0; page < 500; page += 1) {
+        const batch = yield* session.messages({
+          sessionID: sessionID as never,
+          limit: 200,
+          ...(cursorRef ? { cursor: cursorRef } : { order: "asc" as const }),
+        })
+        all.push(...batch)
+        if (batch.length < 200) break
+        const last = batch[batch.length - 1]
+        if (!last) break
+        cursorRef = { id: last.id, direction: "next" }
+      }
+      return all
+    })
+
     return handlers.handle(
+      "session.exportMarkdown",
+      Effect.fn(function* (ctx) {
+        const info = yield* session.get(ctx.params.sessionID).pipe(
+          Effect.catchTag("Session.NotFoundError", (error) =>
+            Effect.fail(
+              new SessionNotFoundError({ sessionID: error.sessionID, message: `Session not found: ${error.sessionID}` }),
+            ),
+          ),
+        )
+        const messages = yield* collectAll(ctx.params.sessionID).pipe(
+          // Reading messages can fail on a decode; surface it as UnknownError rather than widening the
+          // endpoint's declared error channel (Effect 4 has catchCause, not catchAll).
+          Effect.catchCause((cause) => Effect.fail(new UnknownError({ message: String(cause) }))),
+        )
+        const rendered = SessionMarkdown.render(messages, {
+          sessionID: ctx.params.sessionID,
+          ...(info.title ? { title: info.title } : {}),
+          ...(info.location?.directory ? { directory: info.location.directory } : {}),
+          exportedAt: Date.now(),
+        })
+        const target = nodePath.join(
+          ctx.payload.directory,
+          SessionMarkdown.filename({ sessionID: ctx.params.sessionID, ...(info.title ? { title: info.title } : {}) }),
+        )
+        yield* Effect.tryPromise({
+          try: async () => {
+            await nodeFs.mkdir(ctx.payload.directory, { recursive: true })
+            await nodeFs.writeFile(target, rendered.markdown, "utf8")
+          },
+          catch: (error) =>
+            new InvalidRequestError({
+              message: `Could not write the export to ${ctx.payload.directory}: ${
+                error instanceof Error ? error.message : String(error)
+              }`,
+            }),
+        })
+        return { path: target, messageCount: rendered.messageCount, running: rendered.running }
+      }),
+    ).handle(
       "session.messages",
       Effect.fn(function* (ctx) {
         if (ctx.query.cursor && ctx.query.order !== undefined)

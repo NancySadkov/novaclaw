@@ -846,6 +846,11 @@ export const dict = {
   "home.sessions.group.attention": "Needs attention",
   "home.session.info": "Details",
   "home.session.stop": "Stop this chat's current run",
+  "home.session.export": "Export as Markdown",
+  "home.session.export.pick": "Choose a folder to export “{{title}}” into",
+  "home.session.export.toast.done": "Exported the chat",
+  "home.session.export.toast.running": "Exported — the chat was still running, so the file ends mid-turn",
+  "home.session.export.toast.failed": "Could not export that chat",
   "home.session.clone": "Clone chat",
   "home.session.tokens.title":
     "{{generated}} tokens generated ({{output}} text · {{reasoning}} reasoning), sub-agent threads included",

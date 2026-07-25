@@ -172,6 +172,42 @@ async function sessionPost(
   if (!res.ok) throw new Error(`session/${segment} failed: ${res.status} ${await res.text().catch(() => "")}`)
 }
 
+// Export a whole session as a Markdown file into `directory` (Chats → Export). Returns where it landed
+// plus whether the session was still running — the caller says so in its toast, and the file says so too.
+export interface SessionExportResult {
+  path: string
+  messageCount: number
+  running: boolean
+}
+
+export async function exportSessionMarkdown(
+  server: ServerConnection.HttpBase,
+  input: { directory: string; sessionID: string; into: string },
+): Promise<SessionExportResult> {
+  const url = new URL(
+    `api/session/${input.sessionID}/export-markdown`,
+    server.url.endsWith("/") ? server.url : `${server.url}/`,
+  )
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { ...headersFor(server), "x-novaclaw-directory": input.directory },
+    body: JSON.stringify({ directory: input.into }),
+  })
+  const text = await res.text().catch(() => "")
+  if (!res.ok) {
+    // The server puts a legible reason in `message` (e.g. an unwritable folder) — prefer it over the status.
+    let detail = `${res.status} ${text}`
+    try {
+      const parsed = JSON.parse(text) as { message?: string }
+      if (parsed.message) detail = parsed.message
+    } catch {
+      /* not json — keep the status line */
+    }
+    throw new Error(detail)
+  }
+  return JSON.parse(text) as SessionExportResult
+}
+
 export function switchResponder(
   server: ServerConnection.HttpBase,
   input: { directory: string; sessionID: string; responder: "nova" | "operator" },

@@ -74,6 +74,7 @@ import { useChatsAttentionSets } from "@/apps/chats-attention"
 import { DialogSessionInfo } from "@/components/dialog-session-info"
 import { sessionPermissionRequest, sessionQuestionRequest } from "@/pages/session/composer/session-request-tree"
 import { showToast } from "@/utils/toast"
+import { exportSessionMarkdown } from "@/utils/fs-api"
 
 const HOME_SESSION_LIMIT = 64
 const HOME_SESSION_HEADER_STICKY_TOP = 12
@@ -717,6 +718,46 @@ export function NewHome() {
     }
   }
 
+  // Export a chat as Markdown. The folder picker is the same one the Calendar and Recipes use, so the
+  // user chooses where it lands; the server renders and writes the file (a browser cannot write to a
+  // server path, and the server's message store is the authoritative, ordered source).
+  //
+  // A session that is STILL RUNNING exports what exists so far and says so — both in the toast and in
+  // the file's closing note. We never pause a run to export it.
+  async function exportSession(session: Session) {
+    const conn = focusedServer()
+    if (!conn) return
+    pickDirectory({
+      server: conn,
+      title: language.t("home.session.export.pick", { title: session.title || session.id }),
+      onSelect: (result) => {
+        const into = Array.isArray(result) ? result[0] : result
+        if (!into) return
+        void exportSessionMarkdown(conn.http, {
+          directory: session.location.directory,
+          sessionID: session.id,
+          into,
+        })
+          .then((res) =>
+            showToast({
+              variant: "success",
+              icon: "circle-check",
+              title: res.running
+                ? language.t("home.session.export.toast.running")
+                : language.t("home.session.export.toast.done"),
+              description: res.path,
+            }),
+          )
+          .catch((error) =>
+            showToast({
+              title: language.t("home.session.export.toast.failed"),
+              description: error instanceof Error ? error.message : String(error),
+            }),
+          )
+      },
+    })
+  }
+
   async function deleteSession(session: Session) {
     const conn = focusedServer()
     const ctx = focusedServerCtx()
@@ -925,6 +966,7 @@ export function NewHome() {
                               archiveSession={archiveSession}
                               stopSession={stopSession}
                               cloneSession={cloneSession}
+                              exportSession={exportSession}
                               deleteSession={deleteSession}
                               selecting={selecting()}
                               selected={selectedIDs().has(record.session.id)}
@@ -958,6 +1000,7 @@ export function NewHome() {
                             archiveSession={archiveSession}
                             stopSession={stopSession}
                             cloneSession={cloneSession}
+                              exportSession={exportSession}
                             deleteSession={deleteSession}
                             selecting={selecting()}
                             selected={selectedIDs().has(record.session.id)}
@@ -992,6 +1035,7 @@ export function NewHome() {
                                 archiveSession={archiveSession}
                                 stopSession={stopSession}
                                 cloneSession={cloneSession}
+                              exportSession={exportSession}
                                 deleteSession={deleteSession}
                                 selecting={selecting()}
                                 selected={selectedIDs().has(record.session.id)}
@@ -1237,6 +1281,7 @@ function HomeSessionRow(props: {
   archiveSession: (session: Session) => Promise<void>
   stopSession: (session: Session) => Promise<void>
   cloneSession: (session: Session) => Promise<void>
+  exportSession: (session: Session) => Promise<void>
   deleteSession: (session: Session) => Promise<void>
   // Selection mode (mass delete/archive): clicking toggles membership instead of opening,
   // a leading check indicator renders, and the hover action strip stands down. The pointer
@@ -1482,6 +1527,20 @@ function HomeSessionRow(props: {
               event.preventDefault()
               event.stopPropagation()
               void props.cloneSession(props.record.session)
+            }}
+          />
+        </TooltipV2>
+        <TooltipV2 class="flex shrink-0 items-center" placement="bottom" value={language.t("home.session.export")}>
+          <IconButtonV2
+            data-action="home-session-export"
+            variant="ghost-muted"
+            size="large"
+            icon={<Icon name="download" size="small" />}
+            aria-label={language.t("home.session.export")}
+            onClick={(event) => {
+              event.preventDefault()
+              event.stopPropagation()
+              void props.exportSession(props.record.session)
             }}
           />
         </TooltipV2>

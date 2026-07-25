@@ -2,7 +2,7 @@ import { Session } from "@novaclaw/schema/session"
 import { SessionMessage } from "@novaclaw/schema/session-message"
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
-import { InvalidCursorError, SessionNotFoundError, UnknownError } from "../errors"
+import { InvalidCursorError, InvalidRequestError, SessionNotFoundError, UnknownError } from "../errors"
 
 export const SessionMessagesQuery = Schema.Struct({
   limit: Schema.optional(
@@ -21,7 +21,33 @@ export const SessionMessagesQuery = Schema.Struct({
   ),
 }).annotate({ identifier: "SessionMessagesQuery" })
 
+export const SessionExportResponse = Schema.Struct({
+  path: Schema.String,
+  messageCount: Schema.Number,
+  /** True when the session was still producing output as it was exported (the file says so too). */
+  running: Schema.Boolean,
+}).annotate({ identifier: "SessionExportResponse" })
+
 export const MessageGroup = HttpApiGroup.make("server.message")
+  .add(
+    // Named `exportMarkdown`, not `export`: the generated client derives its method name from the LAST
+    // dot-segment, and `export` is a reserved word.
+    HttpApiEndpoint.post("session.exportMarkdown", "/api/session/:sessionID/export-markdown", {
+      params: { sessionID: Session.ID },
+      payload: Schema.Struct({
+        directory: Schema.String.annotate({ description: "Absolute folder to write the .md into." }),
+      }),
+      success: SessionExportResponse,
+      error: [SessionNotFoundError, InvalidRequestError, UnknownError],
+    }).annotateMerge(
+      OpenApi.annotations({
+        identifier: "v2.session.exportMarkdown",
+        summary: "Export a session as Markdown",
+        description:
+          "Render the whole session to a Markdown file in the given folder. A session that is still running exports what exists so far and is marked as captured mid-turn.",
+      }),
+    ),
+  )
   .add(
     HttpApiEndpoint.get("session.messages", "/api/session/:sessionID/message", {
       params: { sessionID: Session.ID },
