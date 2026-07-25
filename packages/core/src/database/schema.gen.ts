@@ -54,6 +54,15 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`web_host_budget\` (
+          \`host\` text PRIMARY KEY,
+          \`day\` text NOT NULL,
+          \`count\` integer DEFAULT 0 NOT NULL,
+          \`tokens\` real DEFAULT 0 NOT NULL,
+          \`updated_at\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`calendar_fire\` (
           \`id\` text PRIMARY KEY,
           \`schedule_id\` text NOT NULL,

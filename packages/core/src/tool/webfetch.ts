@@ -12,6 +12,7 @@ import { collectBoundedResponseBody } from "./http-body"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
+import { WebGovernor } from "../web/governor"
 
 export const name = "webfetch"
 export const MAX_RESPONSE_BYTES = 5 * 1024 * 1024
@@ -120,6 +121,7 @@ export const layer = Layer.effectDiscard(
     const tools = yield* Tools.Service
     const http = yield* HttpClient.HttpClient
     const permission = yield* PermissionV2.Service
+    const governor = yield* WebGovernor.Service
 
     yield* tools
       .register({
@@ -145,23 +147,31 @@ export const layer = Layer.effectDiscard(
                 source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
               })
 
-              const { body, contentType } = yield* Effect.gen(function* () {
-                const response = yield* execute(http, input.url, input.format).pipe(
-                  Effect.catchIf(isCloudflareChallenge, () => execute(http, input.url, input.format, "novaclaw")),
-                )
-                const contentType = response.headers["content-type"] || ""
-                const mime = mimeFrom(contentType)
-                if (isImageAttachment(mime))
-                  return yield* Effect.fail(new Error(`Unsupported fetched image content type: ${mime}`))
-                if (!isTextualMime(mime))
-                  return yield* Effect.fail(new Error(`Unsupported fetched file content type: ${mime}`))
-                return { body: yield* collectBody(response), contentType }
-              }).pipe(
-                Effect.timeoutOrElse({
-                  duration: Duration.seconds(input.timeout ?? DEFAULT_TIMEOUT_SECONDS),
-                  orElse: () => Effect.fail(new Error("Request timed out")),
-                }),
-              )
+              // Every outbound read goes through the traffic governor (web/governor.ts): paced per host,
+              // capped per host per day, one request in flight per host, and refused outright if this URL
+              // is being re-fetched in a loop. The wait happens BEFORE the timeout starts, so a paced
+              // delay can never be mistaken for a slow server.
+              const { body, contentType } = yield* governor.guard({
+                url: input.url,
+                sessionID: context.sessionID,
+                fetch: Effect.gen(function* () {
+                  const response = yield* execute(http, input.url, input.format).pipe(
+                    Effect.catchIf(isCloudflareChallenge, () => execute(http, input.url, input.format, "novaclaw")),
+                  )
+                  const contentType = response.headers["content-type"] || ""
+                  const mime = mimeFrom(contentType)
+                  if (isImageAttachment(mime))
+                    return yield* Effect.fail(new Error(`Unsupported fetched image content type: ${mime}`))
+                  if (!isTextualMime(mime))
+                    return yield* Effect.fail(new Error(`Unsupported fetched file content type: ${mime}`))
+                  return { body: yield* collectBody(response), contentType }
+                }).pipe(
+                  Effect.timeoutOrElse({
+                    duration: Duration.seconds(input.timeout ?? DEFAULT_TIMEOUT_SECONDS),
+                    orElse: () => Effect.fail(new Error("Request timed out")),
+                  }),
+                ),
+              })
               const content = new TextDecoder().decode(body)
               const output = yield* Effect.try({
                 try: () => convert(content, contentType, input.format),
@@ -183,7 +193,7 @@ export const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/webfetch",
   layer,
-  deps: [ToolRegistry.node, PermissionV2.node, LayerNodePlatform.httpClient],
+  deps: [ToolRegistry.node, PermissionV2.node, LayerNodePlatform.httpClient, WebGovernor.node],
 })
 
 export function extractTextFromHTML(html: string) {
