@@ -3,7 +3,7 @@ export * as DiscordDriver from "./discord"
 import { Duration, Effect, Queue, Schema, Stream } from "effect"
 import { Messenger } from "@novaclaw/schema/messenger"
 import { MessengerFormat } from "../format"
-import type { ChatSnapshot, Connection, ConnectContext, Driver, FileRef, InboundEvent, ModerationAct, OutboundFile } from "../driver"
+import type { ChatSnapshot, Connection, ConnectContext, Driver, FileRef, HistoryEntry, InboundEvent, ModerationAct, OutboundFile } from "../driver"
 import { ConnectError, FileError, ModerationError, SendError } from "../driver"
 
 // The Discord BOT driver (messenger-plan §2.1): REST over HTTPS + the Gateway WebSocket, both
@@ -514,6 +514,42 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
           return { messageID: lastID }
         })
 
+      // Read a channel's recent posts. Discord replays nothing on demand through the gateway, so this is
+      // plain REST — the same endpoint the reconnect backfill uses, just caller-driven.
+      //
+      // This is what makes the module usable as a RESEARCH SOURCE (todo.md → messenger as a research
+      // source): a studio's #announcements channel is often where a release lands first, and its web page
+      // is unreadable, so an agent needs to read it HERE. Without `history` the agent could only LIST
+      // channels and never see a post — it had the menu and no food.
+      const history = (chatID: string, limit: number) =>
+        Effect.gen(function* () {
+          // Discord caps a page at 100; ask for what the caller wants within that.
+          const want = Math.min(Math.max(1, Math.trunc(limit)), 100)
+          const response = yield* rest(`/channels/${chatID}/messages?limit=${want}`)
+          if (response.status >= 400)
+            return yield* Effect.fail(
+              new ConnectError({
+                reason:
+                  response.status === 403
+                    ? `Discord denied reading channel ${chatID} (the bot needs View Channel + Read Message History there).`
+                    : `Discord history for ${chatID} failed: HTTP ${response.status}`,
+              }),
+            )
+          const decoded = decodeMessages(response.body)
+          if (decoded._tag === "None") return [] as HistoryEntry[]
+          // Discord returns newest-first; the driver contract is oldest-first so a channel reads in order.
+          return [...decoded.value].reverse().map(
+            (message): HistoryEntry => ({
+              messageID: message.id,
+              senderID: message.author.id,
+              senderName: authorName(message.author),
+              outgoing: selfID !== undefined && message.author.id === selfID,
+              ...(message.content === undefined || message.content === "" ? {} : { text: message.content }),
+              at: message.timestamp === undefined ? 0 : Date.parse(message.timestamp),
+            }),
+          )
+        })
+
       const listChats = () =>
         Effect.gen(function* () {
           const out: ChatSnapshot[] = []
@@ -654,6 +690,7 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
         inbound: Stream.fromQueue(queue),
         send,
         listChats,
+        history,
         downloadFile,
         moderate,
       } satisfies Connection
