@@ -58,6 +58,13 @@ export function NativeTranscript(props: {
   toolFold?: ReasoningFoldMode
   /** Wire a per-user-message "revert to this prompt" action; omit to hide the button. */
   onRevert?: (messageID: string) => void
+  /**
+   * Prompts the user has SENT that the agent has not read yet (`GET /api/session/:id/pending`).
+   * They are durable and already accepted, but have no transcript row until the runner promotes them —
+   * so they are rendered here, after the real messages, as their own waiting bubbles. Without this a
+   * mid-turn prompt disappears and is answered minutes later, and people retype it.
+   */
+  pending?: readonly { id: string; text: string }[]
 }) {
   // The native store captures the session's initial agent/model as `*-switched` messages,
   // but those are setup state (V1 shows them in the header, not the transcript). Drop the
@@ -81,6 +88,7 @@ export function NativeTranscript(props: {
       <TranscriptActionsContext.Provider value={() => ({ onRevert: props.onRevert })}>
         <div data-component="native-transcript" class={props.class}>
           <For each={visible()}>{(message) => <NativeMessage message={message} />}</For>
+          <For each={props.pending ?? []}>{(item) => <QueuedMessage text={item.text} />}</For>
         </div>
       </TranscriptActionsContext.Provider>
     </ReasoningFoldContext.Provider>
@@ -113,6 +121,28 @@ function NativeMessage(props: { message: SessionMessage }) {
       {/* agent-switched / model-switched are internal state events — not shown to the user (they read
           as debug noise like "Switched to agent build"). The events stay in the durable log. */}
     </Switch>
+  )
+}
+
+/**
+ * A prompt that is sent but not yet read — the transcript's read receipt, and the same idea as the single
+ * tick in a messenger. It says what happens next on purpose: a mid-turn prompt waits for the current step
+ * rather than interrupting a running edit or command, and without saying so people assume it was swallowed.
+ * It disappears on its own when the runner promotes the input into a real user message.
+ */
+function QueuedMessage(props: { text: string }) {
+  return (
+    <div data-slot="native-user" data-queued="true">
+      <div data-slot="native-user-bubble">
+        <Show when={props.text.trim()}>
+          <Markdown text={props.text} />
+        </Show>
+        <div data-slot="native-user-queued" aria-live="polite">
+          <span data-slot="native-user-queued-dot" aria-hidden="true" />
+          <span>Queued — the agent will read this when it finishes what it's doing</span>
+        </div>
+      </div>
+    </div>
   )
 }
 

@@ -302,6 +302,35 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
         ),
     )
     .add(
+      // Prompts ADMITTED but not yet promoted into the transcript — what the composer sent while the agent
+      // was mid-turn. They are durable and already accepted; they simply have no message row yet, so
+      // without this the UI cannot show that they are waiting. `pending` collides with nothing, so the
+      // generated client name needs no endpointNames override.
+      HttpApiEndpoint.get("session.pending", "/api/session/:sessionID/pending", {
+        params: { sessionID: Session.ID },
+        success: Schema.Struct({
+          data: Schema.Array(
+            Schema.Struct({
+              id: SessionMessage.ID,
+              text: Schema.String,
+              delivery: Schema.String,
+              timeCreated: Schema.Number,
+            }),
+          ),
+        }).annotate({ identifier: "SessionPendingResponse" }),
+        error: [SessionNotFoundError, UnknownError],
+      })
+        .middleware(sessionLocationMiddleware)
+        .annotateMerge(
+          OpenApi.annotations({
+            identifier: "v2.session.pending",
+            summary: "Queued prompts not yet read by the agent",
+            description:
+              "Inputs admitted for this session that the runner has not promoted into the transcript yet, oldest first. A prompt sent mid-turn waits here until the current step finishes; it is never dropped.",
+          }),
+        ),
+    )
+    .add(
       HttpApiEndpoint.get("session.todo", "/api/session/:sessionID/todo", {
         params: { sessionID: Session.ID },
         success: Schema.Struct({ data: Schema.Array(SessionTodo.Info) }),

@@ -14,7 +14,9 @@ export interface TrashEntry {
   readonly type: "file" | "directory"
 }
 
-function headersFor(server: ServerConnection.HttpBase): Record<string, string> {
+/** Auth/content headers for a raw fetch against a server connection. Exported so sibling raw-fetch
+ *  clients reuse the SAME auth handling instead of each re-deriving it. */
+export function headersFor(server: ServerConnection.HttpBase): Record<string, string> {
   return {
     "content-type": "application/json",
     ...(server.password

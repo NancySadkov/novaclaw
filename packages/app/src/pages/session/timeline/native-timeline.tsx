@@ -3,6 +3,8 @@ import { NativeTranscript } from "@novaclaw/session-ui/v2/native-transcript"
 import type { ReasoningFoldMode } from "@novaclaw/session-ui/v2/reasoning-fold"
 import { useExpertise } from "@/context/expertise"
 import { useServerSync } from "@/context/server-sync"
+import { useServer } from "@/context/server"
+import { fetchPendingPrompts, type PendingPrompt } from "@/utils/session-pending-api"
 import { useSettings } from "@/context/settings"
 import { nextPinned } from "./native-scroll"
 
@@ -22,8 +24,15 @@ const REASONING_FOLD: Record<string, ReasoningFoldMode> = {
  * the user is at the bottom + a scroll-to-bottom button. (Hash-scroll deep-link + history
  * pagination + virtualization are deferred long-session hardening.)
  */
-export function NativeTimeline(props: { sessionID: string; onRevert?: (messageID: string) => void }) {
+export function NativeTimeline(props: {
+  sessionID: string
+  onRevert?: (messageID: string) => void
+  /** The session's working directory — needed for the directory-scoped pending-prompt fetch. */
+  directory?: string
+}) {
   const serverSync = useServerSync()
+  const server = useServer()
+  const sessionDirectory = () => props.directory
   const expertise = useExpertise()
   const settings = useSettings()
   // The user's explicit Settings pref wins over the expertise-level default ("auto") — the
@@ -36,6 +45,40 @@ export function NativeTimeline(props: { sessionID: string; onRevert?: (messageID
   const reasoningFold = createMemo<ReasoningFoldMode>(() => applyPref(settings.general.feedReasoningDisplay()))
   const toolFold = createMemo<ReasoningFoldMode>(() => applyPref(settings.general.feedToolDisplay()))
   const messages = createMemo(() => serverSync().nativeMessages.messages(props.sessionID) ?? [])
+
+  // Prompts the user sent that the agent has not read yet. They live in the durable input queue, not the
+  // transcript, so they are invisible to the message stream and have to be polled. Polling only while a
+  // turn is in flight keeps it to the window where a queue can exist at all; one trailing poll after the
+  // turn settles clears the last bubble the moment its input is promoted.
+  const [pending, setPending] = createSignal<readonly PendingPrompt[]>([])
+  const working = createMemo(() => {
+    const list = messages()
+    for (let i = list.length - 1; i >= 0; i -= 1) {
+      const message = list[i]!
+      if (message.type === "assistant") return !message.time.completed
+    }
+    return false
+  })
+  createEffect(() => {
+    const directory = server.current?.http ? sessionDirectory() : undefined
+    const conn = server.current
+    if (!conn || !directory) return
+    if (!working() && pending().length === 0) return
+    let stop = false
+    const tick = async () => {
+      if (stop) return
+      const rows = await fetchPendingPrompts(conn.http, { directory, sessionID: props.sessionID }).catch(
+        () => [] as PendingPrompt[],
+      )
+      if (!stop) setPending(rows)
+    }
+    void tick()
+    const timer = setInterval(() => void tick(), 2000)
+    onCleanup(() => {
+      stop = true
+      clearInterval(timer)
+    })
+  })
 
   let scroller: HTMLDivElement | undefined
   let content: HTMLDivElement | undefined
@@ -110,6 +153,7 @@ export function NativeTimeline(props: { sessionID: string; onRevert?: (messageID
             messages={messages()}
             reasoningFold={reasoningFold()}
             toolFold={toolFold()}
+            pending={pending()}
             onRevert={props.onRevert}
           />
         </div>

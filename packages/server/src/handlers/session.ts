@@ -1,5 +1,7 @@
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionMessage } from "@novaclaw/core/session/message"
+import { SessionInput } from "@novaclaw/core/session/input"
+import { Database } from "@novaclaw/core/database/database"
 import { SessionTags } from "@novaclaw/core/session/tags"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { ModelV2 } from "@novaclaw/core/model"
@@ -231,6 +233,22 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                 // A stored message that fails to decode is corrupt state, not a client error.
                 Effect.catchTag("Session.MessageDecodeError", (error) => Effect.die(error)),
               ),
+          }
+        }),
+      )
+      .handle(
+        "session.pending",
+        Effect.fn(function* (ctx) {
+          const { db } = yield* Database.Service
+          const rows = yield* SessionInput.listPending(db, ctx.params.sessionID)
+          return {
+            data: rows.map((row) => ({
+              id: row.id,
+              // The transcript shows text; attachments are not worth surfacing on a queued bubble.
+              text: row.prompt.text,
+              delivery: String(row.delivery),
+              timeCreated: row.timeCreated,
+            })),
           }
         }),
       )

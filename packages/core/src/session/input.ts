@@ -215,6 +215,34 @@ export const hasPending = Effect.fn("SessionInput.hasPending")(function* (
   return row !== undefined
 })
 
+/**
+ * Every input ADMITTED for this session that the runner has not PROMOTED yet, oldest first.
+ *
+ * These are real, durable, already-accepted prompts — they simply are not transcript messages yet (the user
+ * message row is written at promotion, not admission). Without a way to read them, a prompt typed while the
+ * agent is mid-turn vanishes from the UI until it is suddenly answered, so people retype it or assume it was
+ * lost. Deliberately covers EVERY delivery kind and every source: a prompt sent from another device or the
+ * messenger gateway is just as invisible, and just as much worth showing.
+ */
+export const listPending = Effect.fn("SessionInput.listPending")(function* (
+  db: DatabaseService,
+  sessionID: SessionSchema.ID,
+) {
+  const rows = yield* db
+    .select({
+      id: SessionInputTable.id,
+      prompt: SessionInputTable.prompt,
+      delivery: SessionInputTable.delivery,
+      timeCreated: SessionInputTable.time_created,
+    })
+    .from(SessionInputTable)
+    .where(and(eq(SessionInputTable.session_id, sessionID), isNull(SessionInputTable.promoted_seq)))
+    .orderBy(asc(SessionInputTable.admitted_seq))
+    .all()
+    .pipe(Effect.orDie)
+  return rows
+})
+
 export const equivalent = (
   input: Admitted,
   expected: {

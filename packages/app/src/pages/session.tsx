@@ -1725,7 +1725,7 @@ export default function Page() {
               <Switch>
                 <Match when={params.id}>
                   <Show when={messagesReady() ? params.id : undefined} keyed>
-                    {(_id) => <NativeTimeline sessionID={_id} onRevert={revertToPrompt} />}
+                    {(_id) => <NativeTimeline sessionID={_id} directory={sdk().directory} onRevert={revertToPrompt} />}
                   </Show>
                 </Match>
                 <Match when={true}>
