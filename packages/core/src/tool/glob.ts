@@ -6,6 +6,7 @@ import path from "path"
 import { makeLocationNode } from "../effect/app-node"
 import { FileSystem } from "../filesystem"
 import { Location } from "../location"
+import { LocationMutation } from "../location-mutation"
 import { Ripgrep } from "../ripgrep"
 import { RelativePath } from "../schema"
 import { PermissionV2 } from "../permission"
@@ -41,6 +42,7 @@ export const layer = Layer.effectDiscard(
     const ripgrep = yield* Ripgrep.Service
     const location = yield* Location.Service
     const permission = yield* PermissionV2.Service
+    const mutation = yield* LocationMutation.Service
 
     yield* tools
       .register({
@@ -59,6 +61,25 @@ export const layer = Layer.effectDiscard(
           ],
           execute: (input, context) =>
             Effect.gen(function* () {
+              const source = {
+                type: "tool" as const,
+                messageID: context.assistantMessageID,
+                callID: context.toolCallID,
+              }
+              // Classify the search root BEFORE searching it. `input.path` is typed RelativePath, but that
+              // brand carries no validation, so an absolute path (or a `../..` escape) used to be resolved
+              // and searched silently — the one path-taking tool pair that never classified its target,
+              // while read/write/edit/apply-patch/trash/hex/bash all did. That gap also slipped past the
+              // unattended confinement stance, which gates exactly this permission.
+              const target = yield* mutation.resolve({ path: input.path ?? ".", kind: "directory" })
+              const external = target.externalDirectory
+              if (external)
+                yield* permission.assert({
+                  ...LocationMutation.externalDirectoryPermission(external, "read"),
+                  sessionID: context.sessionID,
+                  agent: context.agent,
+                  source,
+                })
               // 1I: glob + grep share the "explore" action — listing/searching is one grant class.
               yield* permission.assert({
                 action: "explore",
@@ -71,9 +92,9 @@ export const layer = Layer.effectDiscard(
                 },
                 sessionID: context.sessionID,
                 agent: context.agent,
-                source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
+                source,
               })
-              const cwd = path.resolve(location.directory, input.path ?? ".")
+              const cwd = target.canonical
               return yield* ripgrep
                 .glob({
                   cwd,
@@ -106,5 +127,5 @@ export const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/glob",
   layer,
-  deps: [ToolRegistry.node, Ripgrep.node, Location.node, PermissionV2.node],
+  deps: [ToolRegistry.node, LocationMutation.node, Ripgrep.node, Location.node, PermissionV2.node],
 })

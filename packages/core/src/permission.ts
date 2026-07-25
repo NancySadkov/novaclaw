@@ -18,6 +18,7 @@ import {
   type PermissionMode,
 } from "./session/config-resolve"
 import { PermissionSaved } from "./permission/saved"
+import { TRUNCATION_RESOURCE } from "./tool/truncation-dir"
 
 export { Effect, Rule, Ruleset } from "@novaclaw/schema/permission"
 const missingAgentPermissions: Permission.Ruleset = [{ action: "*", resource: "*", effect: "deny" }]
@@ -334,11 +335,22 @@ export const layer = Layer.effect(
       const rootType = yield* rootSessionType(input.sessionID, (id) => sessions.get(id as SessionV2.ID)).pipe(
         EffectRuntime.catch(() => EffectRuntime.succeed(EFFECTIVE_CONFIG_DEFAULTS.type)),
       )
+      // ...with ONE exemption: the managed tool-output store. A tool whose output is too large is spilled
+      // to `<data>/tool-output/` and the model is told to go read it — but that store sits outside every
+      // Location, so inspecting it classifies as an external-directory READ and the blanket deny above
+      // would cut an unattended agent off from its OWN output (the default allow rule for this store,
+      // installed in agent.ts, cannot help: the hard arm is checked before any allow is consulted).
+      // Appended AFTER the denies deliberately — `evaluate` resolves by findLast, so the narrower allow
+      // wins for this resource only. This exemption grants nothing the attended default did not already.
       const stanceRules = unattendedStanceRules(rootType, mode)
+      const stance =
+        stanceRules.length === 0
+          ? stanceRules
+          : [...stanceRules, { action: "external_directory_read", resource: TRUNCATION_RESOURCE, effect: "allow" as const }]
       const configuredRules = yield* configured(input.sessionID, input.agent)
       const modeRules = MODE_RULES[mode]
-      const rules = [...configuredRules, ...modeRules, ...stanceRules]
-      if (denied(input, stanceRules))
+      const rules = [...configuredRules, ...modeRules, ...stance]
+      if (denied(input, stance))
         return { effect: "deny" as const, rules, reason: "unattended-confined" as DenialReason | undefined }
       if (denied(input, configuredRules) || denied(input, modeRules))
         return { effect: "deny" as const, rules, reason: undefined as DenialReason | undefined }

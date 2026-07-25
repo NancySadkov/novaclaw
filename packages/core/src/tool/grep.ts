@@ -7,6 +7,7 @@ import { makeLocationNode } from "../effect/app-node"
 import { FileSystem } from "../filesystem"
 import { FSUtil } from "../fs-util"
 import { Location } from "../location"
+import { LocationMutation } from "../location-mutation"
 import { PermissionV2 } from "../permission"
 import { Ripgrep } from "../ripgrep"
 import { RelativePath } from "../schema"
@@ -57,6 +58,7 @@ export const layer = Layer.effectDiscard(
     const ripgrep = yield* Ripgrep.Service
     const location = yield* Location.Service
     const permission = yield* PermissionV2.Service
+    const mutation = yield* LocationMutation.Service
 
     yield* tools
       .register({
@@ -78,6 +80,24 @@ export const layer = Layer.effectDiscard(
           ],
           execute: (input, context) =>
             Effect.gen(function* () {
+              const source = {
+                type: "tool" as const,
+                messageID: context.assistantMessageID,
+                callID: context.toolCallID,
+              }
+              // Classify the search root BEFORE searching it — see the same guard in glob.ts. grep matters
+              // more than glob here because it returns matching LINES, i.e. real file CONTENT from outside
+              // the Location, not just names. `input.path` is typed RelativePath but that brand does not
+              // validate, so an absolute path was previously searched silently.
+              const resolved = yield* mutation.resolve({ path: input.path ?? ".", kind: "directory" })
+              const external = resolved.externalDirectory
+              if (external)
+                yield* permission.assert({
+                  ...LocationMutation.externalDirectoryPermission(external, "read"),
+                  sessionID: context.sessionID,
+                  agent: context.agent,
+                  source,
+                })
               // 1I: glob + grep share the "explore" action — listing/searching is one grant class.
               yield* permission.assert({
                 action: "explore",
@@ -91,9 +111,9 @@ export const layer = Layer.effectDiscard(
                 },
                 sessionID: context.sessionID,
                 agent: context.agent,
-                source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
+                source,
               })
-              const target = path.resolve(location.directory, input.path ?? ".")
+              const target = resolved.canonical
               const info = yield* fs.stat(target).pipe(Effect.catch(() => Effect.succeed(undefined)))
               return yield* ripgrep
                 .grep({
@@ -140,5 +160,5 @@ export const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/grep",
   layer,
-  deps: [ToolRegistry.node, FSUtil.node, Ripgrep.node, Location.node, PermissionV2.node],
+  deps: [ToolRegistry.node, LocationMutation.node, FSUtil.node, Ripgrep.node, Location.node, PermissionV2.node],
 })

@@ -7,6 +7,7 @@ import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
 import { Location } from "@novaclaw/core/location"
 import { PermissionV2 } from "@novaclaw/core/permission"
+import { TRUNCATION_RESOURCE } from "@novaclaw/core/tool/truncation-dir"
 import { PermissionTable } from "@novaclaw/core/permission/sql"
 import { PermissionSaved } from "@novaclaw/core/permission/saved"
 import { Project } from "@novaclaw/core/project"
@@ -460,6 +461,47 @@ describe("PermissionV2 — unattended confinement stance", () => {
           outside({ sessionID: SessionV2.ID.make("ses_cron"), action: "external_directory_read" }),
         ),
       ).toMatchObject({ effect: "deny" })
+    }),
+  )
+
+  // The managed tool-output store is the ONE exemption. A tool whose output is oversized spills to
+  // `<data>/tool-output/` and the model is told to read it back; that store is outside every Location, so
+  // without the exemption the blanket external-read deny cut an unattended agent off from its OWN output.
+  it.effect("an unattended session may still read its own spilled tool output", () =>
+    Effect.gen(function* () {
+      yield* setup(buildAgentRules)
+      yield* insertSession({ id: "ses_cron", type: "goal-oriented", permissionMode: "bypass" })
+      const service = yield* PermissionV2.Service
+      expect(
+        yield* service.ask(
+          assertion({
+            sessionID: SessionV2.ID.make("ses_cron"),
+            action: "external_directory_read",
+            resources: [TRUNCATION_RESOURCE],
+            save: [TRUNCATION_RESOURCE],
+          }),
+        ),
+      ).toMatchObject({ effect: "allow" })
+    }),
+  )
+
+  it.effect("the exemption is narrow — another external read, and writing the store, stay denied", () =>
+    Effect.gen(function* () {
+      yield* setup(buildAgentRules)
+      yield* insertSession({ id: "ses_cron", type: "goal-oriented", permissionMode: "bypass" })
+      const service = yield* PermissionV2.Service
+      const deny = (action: string, resource: string) =>
+        service.ask(
+          assertion({
+            sessionID: SessionV2.ID.make("ses_cron"),
+            action,
+            resources: [resource],
+            save: [resource],
+          }),
+        )
+      expect(yield* deny("external_directory_read", "C:/elsewhere/*")).toMatchObject({ effect: "deny" })
+      // The store is readable, never writable.
+      expect(yield* deny("external_directory_write", TRUNCATION_RESOURCE)).toMatchObject({ effect: "deny" })
     }),
   )
 
