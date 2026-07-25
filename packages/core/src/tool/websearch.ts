@@ -51,6 +51,9 @@ export const description =
   "Search the web for current information — anything past your knowledge cutoff, or that you should not guess at. " +
   "Uses the user's own SearXNG instance if they configured one, otherwise NovaClaw's built-in search. " +
   "Returns titles, URLs and short snippets; follow a URL with the webfetch tool when you need the page itself. " +
+  "When a result points INTO a chat platform — a Telegram channel (t.me), a Discord announcement channel, a " +
+  "subreddit — webfetch will usually return an empty JavaScript shell. Read those through the `messenger` tool " +
+  "instead (the user's own connected account reading a public channel), which is a real source, not a dead end. " +
   `The current year is ${new Date().getFullYear()} — say so in queries about recent events. ` +
   "If search is unavailable the result says why in plain words (offline mode, every engine throttled) — pass that on rather than inventing an answer."
 

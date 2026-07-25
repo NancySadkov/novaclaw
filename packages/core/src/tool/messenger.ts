@@ -281,7 +281,18 @@ export const layer = Layer.effectDiscard(
             'To summarize a mailbox: {"op":"status"} → {"op":"chats","account":"<id or label>"} (recent ' +
             'threads) → optionally {"op":"history","chat":"<id>"} for bodies → summarize. ' +
             "The user's messages and emails are private: handle them inside this workspace and never forward " +
-            "them anywhere without being asked.",
+            "them anywhere without being asked. " +
+            "ALSO USE THIS TOOL AS A RESEARCH SOURCE — it reads platforms the open web cannot. Many sources " +
+            "publish ONLY inside a chat platform: Telegram channels, Discord announcement/news channels " +
+            "(indie studios often post releases there before anywhere else), subreddits. Their web pages are " +
+            "JavaScript-only or blocked, so webfetch returns an empty shell. When research leads to one of " +
+            'those and the account is connected, read it HERE: {"op":"chats","account":"<id>"} to find the ' +
+            'channel, then {"op":"history","chat":"<id>"} for the posts. This is the SANCTIONED route — the ' +
+            "user's own account reading a public channel — not scraping, so prefer it over trying to fetch " +
+            "the platform's website. Cite the channel and post date like any other source. " +
+            '⚠️ For RESEARCH read BROADCAST chats only: kind "channel", plus a "thread"/"topic" inside one. ' +
+            'A "dm", "group" or "mailbox" is the user\'s private correspondence — never pull it into research ' +
+            "output and never cite it as a source.",
           input: Input,
           output: Output,
           toModelOutput: ({ output }) => [{ type: "text", text: output.message }],

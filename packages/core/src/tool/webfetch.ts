@@ -21,7 +21,9 @@ export const MAX_TIMEOUT_SECONDS = 120
 
 export const description = `Fetch content from an HTTP or HTTPS URL and return it as text, markdown, or HTML. Markdown is the default.
 
-Use a more targeted tool when one is available. This tool is read-only. Large text results may be replaced with a preview while the complete output is retained in managed storage.`
+Use a more targeted tool when one is available. This tool is read-only. Large text results may be replaced with a preview while the complete output is retained in managed storage.
+
+Fetches STATIC HTML only — it does not run JavaScript. A chat platform (t.me / Telegram, Discord, VK) returns an empty shell here, with none of the posts. Do NOT report such a page as having no content: read the channel through the \`messenger\` tool instead, using the user's own connected account. If a site refuses us outright, record it as inaccessible rather than retrying.`
 
 const Timeout = Schema.Number.check(Schema.isGreaterThan(0), Schema.isLessThanOrEqualTo(MAX_TIMEOUT_SECONDS))
 
