@@ -9,6 +9,7 @@ import type { ModerationAct } from "../messenger/driver"
 import { makeLocationNode } from "../effect/app-node"
 import { FSUtil } from "../fs-util"
 import { Location } from "../location"
+import { LocationMutation } from "../location-mutation"
 import { MessengerDrivers } from "../messenger/drivers"
 import { MessengerGatewayHandle } from "../messenger/gateway-handle"
 import { MessengerPipeline } from "../messenger/pipeline"
@@ -221,6 +222,7 @@ export const layer = Layer.effectDiscard(
     const drivers = yield* MessengerDrivers.Service
     const permission = yield* PermissionV2.Service
     const location = yield* Location.Service
+    const mutation = yield* LocationMutation.Service
     const sessions = yield* SessionStore.Service
 
     const OFFLINE_GATEWAY =
@@ -259,6 +261,25 @@ export const layer = Layer.effectDiscard(
           }
         return { account: match }
       })
+
+    /**
+     * Contain a caller-supplied path to this session's workspace, CANONICALLY.
+     *
+     * The lexical check this replaces (`path.resolve` + `FSUtil.contains`) does not resolve symlinks, so a
+     * link inside the workspace pointing outside slipped through — on upload that reads a file outside and
+     * transmits it to a chat, on download it writes outside. `LocationMutation.resolve` canonicalizes via
+     * realPath and is what every other file tool already uses, so this closes the one place that differed.
+     *
+     * Messenger keeps its stricter posture deliberately: an external path is REFUSED outright rather than
+     * raised as an ask. Sending a file to the outside world is not something to negotiate mid-turn.
+     */
+    const containedPath = Effect.fn("MessengerTool.containedPath")(function* (raw: string) {
+      const target = yield* mutation
+        .resolve({ path: raw, kind: "file" })
+        .pipe(Effect.orElseSucceed(() => undefined))
+      if (target === undefined || target.externalDirectory !== undefined) return undefined
+      return target.canonical
+    })
 
     yield* tools
       .register({
@@ -433,8 +454,8 @@ export const layer = Layer.effectDiscard(
                       ok: false,
                       message: "This messenger can't carry files — paste the content as text or share a link instead.",
                     } satisfies Output
-                  const filePath = path.resolve(location.directory, input.path.trim())
-                  if (!FSUtil.contains(location.directory, filePath))
+                  const filePath = yield* containedPath(input.path.trim())
+                  if (filePath === undefined)
                     return {
                       ok: false,
                       message: "That path is outside this session's workspace — only workspace files can be uploaded.",
@@ -499,8 +520,8 @@ export const layer = Layer.effectDiscard(
                   })
                   if (!outcome.ok) return { ok: false, message: outcome.reason } satisfies Output
                   const relative = input.path?.trim().length ? input.path.trim() : path.join("downloads", outcome.name)
-                  const target = path.resolve(location.directory, relative)
-                  if (!FSUtil.contains(location.directory, target))
+                  const target = yield* containedPath(relative)
+                  if (target === undefined)
                     return {
                       ok: false,
                       message: "That save path is outside this session's workspace — pick one inside it.",
@@ -571,5 +592,13 @@ export const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/messenger",
   layer,
-  deps: [ToolRegistry.node, MessengerStore.node, MessengerDrivers.node, PermissionV2.node, Location.node, SessionStore.node],
+  deps: [
+    ToolRegistry.node,
+    MessengerStore.node,
+    MessengerDrivers.node,
+    PermissionV2.node,
+    Location.node,
+    LocationMutation.node,
+    SessionStore.node,
+  ],
 })
