@@ -10,7 +10,9 @@ import { DatabaseMigration } from "../database/migration"
 import { WebGovernor } from "./governor"
 
 const makeDb = EffectDrizzleSqlite.makeWithDefaults()
-const withDb = <A>(fn: (db: Database.Interface["db"]) => Effect.Effect<A>): Promise<A> =>
+// `guard` can fail with WebBudgetError, so the body's error channel must be allowed through — a plain
+// `Effect<A>` signature typechecks only until a test calls guard without folding the failure.
+const withDb = <A, E>(fn: (db: Database.Interface["db"]) => Effect.Effect<A, E>): Promise<A> =>
   Effect.runPromise(
     Effect.gen(function* () {
       const db = yield* makeDb

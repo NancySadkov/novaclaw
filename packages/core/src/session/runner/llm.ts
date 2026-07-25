@@ -81,6 +81,7 @@ import {
   EMPTY_TURN_DIAGNOSTIC,
   REGROUND_NUDGE,
 } from "./doom-loop"
+import { TextualCall } from "./textual-call"
 import { Introspection } from "./introspection"
 import { MAX_STEPS_PROMPT } from "./max-steps"
 import { ReasoningBudget } from "./reasoning-budget"
@@ -1469,6 +1470,8 @@ export const layer = Layer.effect(
       let runawayNudged = false
       let consecutiveEmpty = 0
       let regrounded = false
+      // Silent-no-op guard: one steer per drain when a no-tool-call turn looks like an attempted call.
+      let textualNudged = false
       const quality = Quality.initialState()
       // Self-drive state (architecture.md "run until exit()"): per-DRAIN round/wall counters —
       // a fresh drain (any new message) re-arms a cap-paused autonomous session.
@@ -1614,6 +1617,31 @@ export const layer = Layer.effect(
             // finish already admits an `unverified:` gap (the honesty exemption — re-prompting
             // an honest caveat has been seen to regress it into a confident "it works").
             const finalText = lastAssistantText(context)
+            // The SILENT-NO-OP guard (notes/osint/silent-noop-bug.md): this branch means the turn ended
+            // with text and NO tool call, which the runner otherwise settles as a finished answer. Three
+            // live runs showed the model writing its call as MARKDOWN instead (a ```bash fence, an
+            // invented adhoc-tool JSON, a repeated <thinking> block) and the run reporting SUCCESS having
+            // done nothing — fatal for an unattended scheduled agent. Steer once; never execute what it
+            // wrote (a ```bash fence is ordinary output, so running it would turn docs into execution).
+            if (!textualNudged) {
+              // Names come from a fresh materialization: the settlement branch is a different scope from
+              // the turn-attempt's own, and this runs at most once per drain (registry read, no I/O).
+              // A failure here must never break the drain — degrade to the name-free tells.
+              const offeredToolNames = yield* tools.materialize().pipe(
+                Effect.map((materialized) => materialized.definitions.map((definition) => definition.name)),
+                Effect.catchCause(() => Effect.succeed([] as string[])),
+              )
+              const attempted = TextualCall.detect(finalText, offeredToolNames)
+              if (attempted) {
+                textualNudged = true
+                yield* Effect.logInfo("textual tool-call recovery", {
+                  sessionID: input.sessionID,
+                  tell: attempted.tell,
+                  detail: attempted.detail,
+                })
+                yield* SessionInput.steer(db, events, input.sessionID, TextualCall.recoveryMessage(attempted))
+              }
+            }
             if (!regrounded && shouldReground(finalText, toolCallsSinceLastUser(context).length)) {
               regrounded = true
               yield* Effect.logInfo("finish re-grounding nudge", { sessionID: input.sessionID })
