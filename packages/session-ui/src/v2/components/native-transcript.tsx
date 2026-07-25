@@ -243,9 +243,10 @@ function AssistantMessage(props: { message: SessionMessageAssistant }) {
           <span>Working…</span>
         </div>
       </Show>
-      <Show when={props.message.snapshot?.files?.length}>
-        <ChangedFilesStrip files={props.message.snapshot!.files!} />
-      </Show>
+      {/* The per-turn "N files changed" strip is deliberately NOT rendered. It repeated what the tool
+          rows above it already say, and it re-listed build output on every rebuild (`pi.exe` after each
+          compile), which buried the actual conversation. The git-changes tab is the surface for "what
+          changed" and shows it properly. */}
       <Show when={props.message.error}>
         {(err) => (
           <Show
@@ -327,25 +328,6 @@ function ReasoningPart(props: { part: SessionMessageAssistantReasoning; tokens?:
   )
 }
 
-/** Turn-level summary of the files this assistant step touched (`snapshot.files`). */
-function ChangedFilesStrip(props: { files: readonly string[] }) {
-  return (
-    <div data-slot="native-changed-files">
-      <div data-slot="native-changed-files-head">
-        {props.files.length} file{props.files.length > 1 ? "s" : ""} changed
-      </div>
-      <div data-slot="native-changed-files-list">
-        <For each={props.files as string[]}>
-          {(file) => (
-            <span data-slot="native-changed-file" title={file}>
-              {file}
-            </span>
-          )}
-        </For>
-      </div>
-    </div>
-  )
-}
 
 function ToolPart(props: { part: SessionMessageAssistantTool }) {
   const meta = () => toolMeta(props.part)
@@ -378,7 +360,6 @@ function ToolPart(props: { part: SessionMessageAssistantTool }) {
             title: meta().title,
             subtitle: meta().subtitle,
             args: meta().args,
-            changes: meta().changes,
           }}
         >
           <ToolBody part={props.part} />
@@ -571,10 +552,9 @@ interface ToolMeta {
   title: string
   subtitle?: string
   args?: string[]
-  changes?: { additions: number; deletions: number }
 }
 
-/** Per-tool label/subtitle/args/changes, ported from the V1 `getToolInfo` switch. */
+/** Per-tool label/subtitle/args, ported from the V1 `getToolInfo` switch. */
 function toolMeta(part: SessionMessageAssistantTool): ToolMeta {
   const input = toolInput(part.state)
   switch (part.name) {
@@ -584,7 +564,7 @@ function toolMeta(part: SessionMessageAssistantTool): ToolMeta {
       const limit = num(input.limit)
       if (offset !== undefined) args.push(`offset ${offset}`)
       if (limit !== undefined) args.push(`limit ${limit}`)
-      return { title: "Read", subtitle: basename(input.filePath), args }
+      return { title: "Read", subtitle: filePathOf(input), args }
     }
     case "list":
       return { title: "List", subtitle: basename(input.path) ?? str(input.path) }
@@ -603,17 +583,17 @@ function toolMeta(part: SessionMessageAssistantTool): ToolMeta {
       }
     case "bash":
       return { title: "Shell", subtitle: str(input.command) }
+    // The file-mutating tools read as a finished action plus the file — "Edited pi.c" — and carry NO
+    // +N/-M stat inline. The stat was noise on every edit, and the exact diff is one click away in this
+    // row's own body (and properly presented in the git-changes tab). Past tense on purpose: by the time
+    // a row is on screen the action has happened.
     case "edit":
-      return { title: "Edit", subtitle: basename(input.filePath), changes: diffStat(part.state) }
+      return { title: "Edited", subtitle: filePathOf(input) }
     case "write":
-      return { title: "Write", subtitle: basename(input.filePath), changes: diffStat(part.state) }
+      return { title: "Wrote", subtitle: filePathOf(input) }
     case "apply_patch": {
       const files = Array.isArray(input.files) ? input.files.length : undefined
-      return {
-        title: "Patch",
-        subtitle: files ? `${files} file${files > 1 ? "s" : ""}` : undefined,
-        changes: diffStat(part.state),
-      }
+      return { title: "Patched", subtitle: files ? `${files} file${files > 1 ? "s" : ""}` : undefined }
     }
     case "question":
       return { title: "Question" }
@@ -668,18 +648,6 @@ function structuredTodos(state: SessionMessageAssistantTool["state"]): unknown {
   return state.status === "pending" ? undefined : (state.structured as { todos?: unknown }).todos
 }
 
-function diffStat(state: SessionMessageAssistantTool["state"]): { additions: number; deletions: number } | undefined {
-  const files = structuredFiles(state)
-  if (!files?.length) return undefined
-  let additions = 0
-  let deletions = 0
-  for (const f of files) {
-    additions += f.additions ?? 0
-    deletions += f.deletions ?? 0
-  }
-  return additions || deletions ? { additions, deletions } : undefined
-}
-
 function diffLineKind(line: string): "meta" | "hunk" | "add" | "del" | "ctx" {
   if (line.startsWith("+++") || line.startsWith("---") || line.startsWith("Index:") || line.startsWith("===="))
     return "meta"
@@ -695,6 +663,16 @@ function str(v: unknown): string | undefined {
 
 function num(v: unknown): number | undefined {
   return typeof v === "number" ? v : undefined
+}
+
+/**
+ * The file a file-tool acted on. Every built-in file tool names this argument `path` (see
+ * `core/src/tool/{read,edit,write}.ts`) — the transcript previously read only `filePath`, so the
+ * read/edit/write rows silently rendered with NO filename at all. `filePath` stays as a fallback
+ * because external/MCP tools use that spelling (and `tool/write.ts` carries a TODO about moving to it).
+ */
+function filePathOf(input: Record<string, unknown>): string | undefined {
+  return basename(input.path) ?? basename(input.filePath)
 }
 
 function basename(p: unknown): string | undefined {
