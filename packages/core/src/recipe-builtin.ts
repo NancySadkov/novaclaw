@@ -74,9 +74,15 @@ Steps, in this order:
 
 Finish by stating the compiler used, the exact build command, and the program's output.
 
-Two ways to fail this task that are worth naming, because they are the common ones:
+Your shell is **bash**, on every platform — Git Bash on Windows, not \`cmd\`. Use POSIX syntax and forward
+slashes. \`if exist\`, \`where /R\`, \`dir /b\` and \`start\` either fail or behave differently than you expect,
+and each call starts in this folder afresh, so a \`cd\` in one call does not carry to the next.
+
+Three ways to fail this task that are worth naming, because they are the common ones:
 - Reporting "no compiler found" without having tested the paths in 2b. That is a wrong answer, not a
   finding.
+- Losing the build output because you \`cd\`-ed somewhere in one command and compiled in another. Compile
+  and run in this folder, with plain relative paths.
 - Ending your turn to ask what to work on. This prompt IS the task and nobody may be at the keyboard to
   answer you — work through steps 1-4 and only then stop. If a compiler genuinely does not exist, say so
   plainly, leave \`hello.c\` on disk, and do not try to install one.`,
