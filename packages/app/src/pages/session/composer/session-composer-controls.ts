@@ -85,19 +85,27 @@ export function createPromptInputController(input: {
     return local.strict.current() ?? record ?? strictGlobal()
   }
 
-  // The Tuning toggles (introspection · quality · affective) — same local-first precedence per
+  // The Tuning toggles (introspection · quality · affective · thinkingBudget) — same local-first per
   // feature: this browser's explicit stance, then the session record, then the global config
   // block's `enabled`. The control shows the EFFECTIVE state, so a globally-on feature reads ON
   // here and flipping it writes this chat's explicit off.
   const featuresCurrent = (): Record<SessionFeatureName, boolean> => {
     const record = sessionView.record() as
-      | { introspection?: boolean; quality?: boolean; affective?: boolean }
+      | { introspection?: boolean; quality?: boolean; affective?: boolean; thinkingBudget?: boolean }
       | undefined
     const config = sync().data.config as Partial<Record<SessionFeatureName, { enabled?: boolean }>>
     const draft = local.features.current()
     const pick = (feature: SessionFeatureName) =>
-      draft?.[feature] ?? record?.[feature] ?? (config[feature]?.enabled === true)
-    return { introspection: pick("introspection"), quality: pick("quality"), affective: pick("affective") }
+      // `thinkingBudget` has no global `{ enabled }` block to fall back on — its instance default IS the
+      // model's own budget, which the browser cannot know per-model. Default it ON (enforced) so the
+      // control matches the runner's `config.thinkingBudget ?? true`; flipping it writes this chat's off.
+      draft?.[feature] ?? record?.[feature] ?? (feature === "thinkingBudget" ? true : config[feature]?.enabled === true)
+    return {
+      introspection: pick("introspection"),
+      quality: pick("quality"),
+      affective: pick("affective"),
+      thinkingBudget: pick("thinkingBudget"),
+    }
   }
 
   // The Remote-chat control (messenger-plan §6.2): which messenger chat drives THIS session.

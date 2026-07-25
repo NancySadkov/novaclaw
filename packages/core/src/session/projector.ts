@@ -308,7 +308,7 @@ export const layer = Layer.effectDiscard(
         .run()
         .pipe(Effect.orDie, Effect.andThen(run(db, event))),
     )
-    // A per-session harness-feature toggle (introspection · quality · affective) — same shape.
+    // A per-session harness-feature toggle (introspection · quality · affective · thinkingBudget).
     yield* events.project(SessionEvent.FeatureSwitched, (event) => {
       const stamp = { time_updated: DateTime.toEpochMillis(event.data.timestamp) }
       const patch =
@@ -316,7 +316,9 @@ export const layer = Layer.effectDiscard(
           ? { introspection: event.data.enabled, ...stamp }
           : event.data.feature === "quality"
             ? { quality: event.data.enabled, ...stamp }
-            : { affective: event.data.enabled, ...stamp }
+            : event.data.feature === "thinkingBudget"
+              ? { thinking_budget: event.data.enabled, ...stamp }
+              : { affective: event.data.enabled, ...stamp }
       return db
         .update(SessionTable)
         .set(patch)

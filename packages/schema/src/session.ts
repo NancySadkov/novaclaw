@@ -59,6 +59,7 @@ export const Info = Schema.Struct({
   introspection: Schema.Boolean.pipe(optional),
   quality: Schema.Boolean.pipe(optional),
   affective: Schema.Boolean.pipe(optional),
+  thinkingBudget: Schema.Boolean.pipe(optional),
   result: Schema.Unknown.pipe(optional),
   cost: Schema.Finite,
   tokens: Schema.Struct({

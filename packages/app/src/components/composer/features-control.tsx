@@ -5,7 +5,7 @@ import { Switch as SwitchToggle } from "@novaclaw/ui/v2/switch-v2"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import { useLanguage } from "@/context/language"
 
-export type ComposerFeature = "introspection" | "quality" | "affective"
+export type ComposerFeature = "introspection" | "quality" | "affective" | "thinkingBudget"
 export type ComposerMode = "interactive" | "auto-prompting" | "goal-oriented"
 
 // The Remote-chat section (messenger-plan §6.2): where does THIS chat live remotely? The trust
@@ -57,7 +57,7 @@ export type ComposerFeaturesControlState = {
   onClose: () => void
 }
 
-const COMPOSER_FEATURES: readonly ComposerFeature[] = ["introspection", "quality", "affective"]
+const COMPOSER_FEATURES: readonly ComposerFeature[] = ["introspection", "quality", "affective", "thinkingBudget"]
 const COMPOSER_MODES: readonly ComposerMode[] = ["interactive", "auto-prompting", "goal-oriented"]
 const REMOTE_TRUSTS: readonly ComposerRemoteTrust[] = ["operator", "client", "audience"]
 

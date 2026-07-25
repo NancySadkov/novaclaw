@@ -426,6 +426,10 @@ export const dict = {
   "prompt.features.affective.description":
     "Adapts the model's sampling to its appraised mood — steadier when frustrated, freer when exploring.",
 
+  "prompt.features.thinkingBudget.title": "Thinking budget",
+  "prompt.features.thinkingBudget.description":
+    "Caps how long the model reasons before it must answer, and stops it looping. Turn off to let it think as long as it wants — useful for comparing the two on the same task.",
+
   "prompt.mode.title": "Mode",
   "prompt.mode.description": "How this chat runs — with you, or working alone.",
   "prompt.mode.interactive.title": "Interactive",

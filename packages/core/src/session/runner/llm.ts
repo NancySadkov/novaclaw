@@ -755,8 +755,12 @@ export const layer = Layer.effect(
       // continues with a nudge (and a forced `</think>` close at the end). A model that answers on
       // its own streams through untouched. Skipped when thinking is explicitly disabled for the turn.
       const thinkingBudget = model.route.defaults.limits?.thinkingBudget ?? 0
+      // Per-chat override (the composer's Tuning control): `false` runs the turn with the controller OFF so
+      // the model reasons to its own stop, which is what makes a budget change A/B-able in one chat without
+      // editing the instance default. Absent = inherit the chain, then the model's own budget.
+      const budgetEnforced = config.thinkingBudget ?? true
       const budgetedSource =
-        thinkingBudget > 0 && !isLastStep && thinkingEnabled(request)
+        budgetEnforced && thinkingBudget > 0 && !isLastStep && thinkingEnabled(request)
           ? ReasoningBudget.stream({
               request,
               stream: (next) => llm.stream(next),

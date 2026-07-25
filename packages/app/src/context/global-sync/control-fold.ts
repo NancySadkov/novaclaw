@@ -33,7 +33,8 @@ export function controlPatch(event: Envelope): ControlPatch | undefined {
       return { sessionID, patch: { strict: props.strict ?? undefined } }
     case "session.next.feature.switched": {
       const feature = props.feature
-      if (feature !== "introspection" && feature !== "quality" && feature !== "affective") return undefined
+      if (feature !== "introspection" && feature !== "quality" && feature !== "affective" && feature !== "thinkingBudget")
+        return undefined
       return { sessionID, patch: { [feature]: props.enabled ?? undefined } }
     }
     case "session.next.type.switched":

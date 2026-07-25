@@ -190,6 +190,8 @@ export interface SessionConfig {
   readonly introspection?: boolean
   readonly quality?: boolean
   readonly affective?: boolean
+  /** Tri-state: enforce the model's reasoning budget in this chat. Absent = inherit, then the model's own. */
+  readonly thinkingBudget?: boolean
   readonly strict?: StrictOverride
   readonly tools?: readonly string[]
 }
@@ -223,6 +225,8 @@ export interface EffectiveConfig {
   readonly introspection?: boolean
   readonly quality?: boolean
   readonly affective?: boolean
+  /** Tri-state: enforce the model's reasoning budget in this chat. Absent = inherit, then the model's own. */
+  readonly thinkingBudget?: boolean
   /** The nearest per-session Strict override on the chain; `undefined` = none (use global config). */
   readonly strict?: StrictOverride
   readonly tools?: readonly string[]
@@ -243,6 +247,7 @@ export function resolveConfig(defaults: EffectiveConfig, chain: readonly Session
   let introspection = defaults.introspection
   let quality = defaults.quality
   let affective = defaults.affective
+  let thinkingBudget = defaults.thinkingBudget
   let strict = defaults.strict
   let tools = defaults.tools
   let permissionMode = defaults.permissionMode
@@ -259,6 +264,7 @@ export function resolveConfig(defaults: EffectiveConfig, chain: readonly Session
     if (layer.introspection !== undefined) introspection = layer.introspection
     if (layer.quality !== undefined) quality = layer.quality
     if (layer.affective !== undefined) affective = layer.affective
+    if (layer.thinkingBudget !== undefined) thinkingBudget = layer.thinkingBudget
     if (layer.strict !== undefined) strict = layer.strict
     if (layer.tools !== undefined) tools = layer.tools
     if (layer.permissionRules !== undefined) permissionRules = [...permissionRules, ...layer.permissionRules]
@@ -281,6 +287,7 @@ export function resolveConfig(defaults: EffectiveConfig, chain: readonly Session
     introspection,
     quality,
     affective,
+    thinkingBudget,
     strict,
     tools,
   }
@@ -306,6 +313,8 @@ export interface SessionLike {
   readonly introspection?: boolean
   readonly quality?: boolean
   readonly affective?: boolean
+  /** Tri-state: enforce the model's reasoning budget in this chat. Absent = inherit, then the model's own. */
+  readonly thinkingBudget?: boolean
   // permissionRules / tools get mapped here as the session schema grows to carry them
   // (see architecture.md Phase 1 step 4).
 }
@@ -323,6 +332,7 @@ export const sessionToConfig = (session: SessionLike): SessionConfig => ({
   introspection: session.introspection,
   quality: session.quality,
   affective: session.affective,
+  thinkingBudget: session.thinkingBudget,
 })
 
 /**

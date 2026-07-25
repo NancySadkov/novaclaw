@@ -82,6 +82,30 @@ describe("resolveConfig — simple fields (undefined = inherit)", () => {
     expect(resolved.introspection).toBe(false) // the child's explicit off wins
   })
 
+  // The thinking-budget override (the composer's Tuning switch). Tri-state like the other features, with
+  // one difference that matters: there is no global `{ enabled }` block for it, so ABSENT must stay absent
+  // all the way to the runner, which reads `config.thinkingBudget ?? true`. If the walk ever defaulted it
+  // to false, every chat would silently lose its reasoning cap.
+  test("thinkingBudget is tri-state: absent inherits, explicit false wins, and it never defaults to false", () => {
+    expect(resolveConfig(DEFAULTS, []).thinkingBudget).toBeUndefined()
+    expect(resolveConfig(DEFAULTS, [{}, {}]).thinkingBudget).toBeUndefined()
+    // A chat that turns the cap OFF, and a child that turns it back ON.
+    expect(resolveConfig(DEFAULTS, [{ thinkingBudget: false }]).thinkingBudget).toBe(false)
+    expect(resolveConfig(DEFAULTS, [{ thinkingBudget: false }, {}]).thinkingBudget).toBe(false)
+    expect(resolveConfig(DEFAULTS, [{ thinkingBudget: false }, { thinkingBudget: true }]).thinkingBudget).toBe(true)
+  })
+
+  test("thinkingBudget flows through the effectful walk off the session row", () => {
+    const sessions: Record<string, SessionLike> = {
+      root: { id: "root", thinkingBudget: false },
+      child: { id: "child", parentID: "root" },
+      loud: { id: "loud", parentID: "root", thinkingBudget: true },
+    }
+    const walk = (id: string) => Effect.runSync(resolveSessionConfig(DEFAULTS, id, (x) => Effect.succeed(sessions[x])))
+    expect(walk("child").thinkingBudget).toBe(false) // inherited from the root
+    expect(walk("loud").thinkingBudget).toBe(true) // the child re-enables its own cap
+  })
+
   test("B10 responder: defaults to nova, inherits down the chain, child can override", () => {
     expect(resolveConfig(DEFAULTS, []).responder).toBe("nova")
     // A parent under operator control → a child with no responder inherits "operator".

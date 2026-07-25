@@ -22,7 +22,7 @@ export type PermissionMode = "plan" | "ask" | "surgical" | "bypass" | "yolo"
 export type StrictChoice = { enabled: boolean; attempts?: number; wallMinutes?: number }
 
 /** The composer's per-chat harness-feature stances (the Tuning control); absent key = inherit. */
-export type FeatureChoices = { introspection?: boolean; quality?: boolean; affective?: boolean }
+export type FeatureChoices = { introspection?: boolean; quality?: boolean; affective?: boolean; thinkingBudget?: boolean }
 
 /** The composer's Mode choice (kernel thread type): attended, or the unattended pair. */
 export type SessionModeChoice = "interactive" | "auto-prompting" | "goal-oriented"
@@ -379,7 +379,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       },
     }
 
-    // The composer's Tuning toggles (introspection · quality · affective). Same contract as
+    // The composer's Tuning toggles (introspection · quality · affective · thinkingBudget). Same contract as
     // `strict`: this local state is the new-session draft; a live session ALSO persists each
     // stance server-side (the switchFeature route).
     const features = {

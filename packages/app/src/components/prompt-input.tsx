@@ -115,8 +115,8 @@ export type PromptInputControls = {
   // The per-chat Tuning toggles: current = the EFFECTIVE stance per feature (draft → session
   // record → global config); set writes this chat's explicit stance (and persists it live).
   features: {
-    current: Record<"introspection" | "quality" | "affective", boolean>
-    set: (feature: "introspection" | "quality" | "affective", enabled: boolean) => void
+    current: Record<"introspection" | "quality" | "affective" | "thinkingBudget", boolean>
+    set: (feature: "introspection" | "quality" | "affective" | "thinkingBudget", enabled: boolean) => void
   }
   // The per-chat Mode control (kernel thread type): interactive, or the unattended pair
   // (auto-prompting · goal-oriented — asks auto-allow, bash confined by the Agent Jail).

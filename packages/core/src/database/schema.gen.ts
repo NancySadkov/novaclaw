@@ -361,6 +361,7 @@ export default {
           \`introspection\` integer,
           \`quality\` integer,
           \`affective\` integer,
+          \`thinking_budget\` integer,
           \`result\` text,
           \`time_created\` integer NOT NULL,
           \`time_updated\` integer NOT NULL,
