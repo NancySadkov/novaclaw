@@ -340,8 +340,13 @@ export const layer = Layer.effect(
       return body?.chat_template_kwargs?.enable_thinking !== false
     }
 
+    // Sessions with an auto-title pass in flight. Two callers race for it — the 30s timer below and the
+    // drain end — and both would otherwise see `isDefault` still true and each spend a model call.
+    const titling = new Set<string>()
+
     const generateTitle = Effect.fn("SessionRunner.generateTitle")(function* (sessionID: SessionSchema.ID) {
       const session = yield* getSession(sessionID)
+      // A title the USER set is never overwritten — `isDefault` is the whole consent check here.
       if (!SessionTitle.isDefault(session.title)) return
       const text = SessionTitle.firstRealUserText(yield* getContext(sessionID))
       if (!text) return
@@ -374,6 +379,32 @@ export const layer = Layer.effect(
         SessionSchema.Info.make({ ...info, title, time: { ...info.time, updated: DateTime.makeUnsafe(Date.now()) } }),
       )
     })
+
+    /** `generateTitle`, but at most one pass per session at a time — the guard always clears. */
+    const generateTitleOnce = (sessionID: SessionSchema.ID) =>
+      Effect.suspend(() => {
+        if (titling.has(sessionID)) return Effect.void
+        titling.add(sessionID)
+        return generateTitle(sessionID).pipe(Effect.ensuring(Effect.sync(() => titling.delete(sessionID))))
+      })
+
+    /**
+     * Title the session after 30s if the turn is still going (owner 2026-07-25). The drain-end pass is the
+     * right moment for a SHORT turn — the user is reading the answer while the model is idle — but a long
+     * one (compile, test, retry) leaves the chat list showing a placeholder for minutes, which is exactly
+     * when a name is most useful for finding it again. Whichever fires first wins; the loser no-ops on
+     * `isDefault` (or the in-flight guard), and a user-set title stops both.
+     *
+     * Detached, because it must outlive neither the turn's failure nor its interruption: forked into the
+     * service scope so an interrupted drain cannot swallow it (the dying-fiber trap).
+     */
+    const scheduleEarlyTitle = (sessionID: SessionSchema.ID) =>
+      Effect.forkDetach(
+        Effect.sleep(Duration.seconds(30)).pipe(
+          Effect.andThen(generateTitleOnce(sessionID)),
+          Effect.catchCause((cause) => Effect.logWarning("early auto-title failed", { sessionID, cause })),
+        ),
+      )
 
     // Auto-extraction (kb-graph §1.3.3): after the drain settles, a model pass reads the latest
     // exchange and records durable facts into SESSION-scope memory (staged) — so memory fills WITHOUT
@@ -1027,7 +1058,7 @@ export const layer = Layer.effect(
       yield* refreshChangesSummary(sessionID).pipe(
         Effect.catchCause((cause) => Effect.logWarning("changes-summary refresh failed", { sessionID, cause })),
       )
-      yield* generateTitle(sessionID).pipe(
+      yield* generateTitleOnce(sessionID).pipe(
         Effect.catchCause((cause) => Effect.logWarning("auto-title failed", { sessionID, cause })),
       )
       yield* extractMemory(sessionID).pipe(
@@ -1399,6 +1430,10 @@ export const layer = Layer.effect(
       readonly sessionID: SessionSchema.ID
       readonly force: boolean
     }) {
+      // Arm the 30s title fallback for LONG turns. A short turn finishes first and titles at drain end as
+      // before; a compile-test-retry turn gets a name while it is still working, instead of sitting in the
+      // chat list as a placeholder for minutes.
+      yield* scheduleEarlyTitle(input.sessionID)
       // A manual compaction request is consumed FIRST: it may ride a wake with no pending input
       // (the early return below must not skip it), it must not force a model turn itself, and
       // when input IS pending the drain proceeds over the freshly compacted history.
