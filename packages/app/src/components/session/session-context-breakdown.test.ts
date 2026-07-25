@@ -31,10 +31,15 @@ describe("estimateSessionContextBreakdown", () => {
     })
 
     const map = Object.fromEntries(output.map((segment) => [segment.key, segment.tokens]))
-    expect(map.system).toBe(4)
+    // The shared token estimator ROUNDS chars/4 (it used to ceil): "system prompt" is 13 chars →
+    // round(3.25) = 3, not 4. `other` is the remainder of the reported input, so it moves with it:
+    // 20 − (3 + 3 + 5) = 9.
+    expect(map.system).toBe(3)
     expect(map.user).toBe(3)
     expect(map.assistant).toBe(5)
-    expect(map.other).toBe(8)
+    expect(map.other).toBe(9)
+    // The property that actually matters: segments + remainder account for the whole input.
+    expect(map.system + map.user + map.assistant + map.other).toBe(20)
   })
 
   test("scales segments when estimates exceed input", () => {

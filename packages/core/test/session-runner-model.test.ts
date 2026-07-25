@@ -117,7 +117,10 @@ describe("SessionRunnerModel", () => {
       })
 
       expect(headers.authorization).toBe("Bearer settings-secret")
-      expect(resolved.route.defaults.http?.body).toEqual({})
+      // The openai-compatible route carries the unattended repetition FLOOR (repetition-floor.ts):
+      // a model that sets no `repetition_penalty` gets 1.05 so small local models don't loop. The
+      // plain OpenAI/Anthropic routes reject the param and must never receive it.
+      expect(resolved.route.defaults.http?.body).toEqual({ repetition_penalty: 1.05 })
     }),
   )
 
@@ -197,6 +200,8 @@ describe("SessionRunnerModel", () => {
         custom_extension: { enabled: true },
         store: false,
         reasoning_effort: "high",
+        // openai-compatible → the unattended repetition floor applies (see above).
+        repetition_penalty: 1.05,
       })
     }),
   )
