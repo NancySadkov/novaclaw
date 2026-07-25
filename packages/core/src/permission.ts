@@ -18,6 +18,7 @@ import {
   type PermissionMode,
 } from "./session/config-resolve"
 import { PermissionSaved } from "./permission/saved"
+import { SettingsConfigStore } from "./settings-config-store"
 import { TRUNCATION_RESOURCE } from "./tool/truncation-dir"
 
 export { Effect, Rule, Ruleset } from "@novaclaw/schema/permission"
@@ -206,6 +207,7 @@ export const layer = Layer.effect(
     const agents = yield* AgentV2.Service
     const sessions = yield* SessionStore.Service
     const saved = yield* PermissionSaved.Service
+    const settings = yield* SettingsConfigStore.Service
     const pending = new Map<ID, Pending>()
 
     // Asked/Replied must carry this service's location EXPLICITLY: publishes can run on fibers
@@ -306,6 +308,13 @@ export const layer = Layer.effect(
       return rules.filter((rule) => Wildcard.match(input.action, rule.action))
     }
 
+    // Read from the LIVE store, not a boot-frozen config snapshot, so toggling Paranoid in Settings takes
+    // effect on the very next tool call instead of after a restart.
+    const paranoid = EffectRuntime.fnUntraced(function* () {
+      const all = yield* settings.all().pipe(EffectRuntime.catch(() => EffectRuntime.succeed({})))
+      return (all as { paranoid?: unknown }).paranoid === true
+    })
+
     const sessionMode = EffectRuntime.fnUntraced(function* (sessionID: SessionV2.ID) {
       const config = yield* resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, sessionID, (id) =>
         sessions.get(id as SessionV2.ID),
@@ -342,14 +351,41 @@ export const layer = Layer.effect(
       // installed in agent.ts, cannot help: the hard arm is checked before any allow is consulted).
       // Appended AFTER the denies deliberately — `evaluate` resolves by findLast, so the narrower allow
       // wins for this resource only. This exemption grants nothing the attended default did not already.
-      const stanceRules = unattendedStanceRules(rootType, mode)
+      const isParanoid = yield* paranoid()
+      const stanceRules = unattendedStanceRules(rootType, mode, isParanoid)
       const stance =
         stanceRules.length === 0
           ? stanceRules
           : [...stanceRules, { action: "external_directory_read", resource: TRUNCATION_RESOURCE, effect: "allow" as const }]
       const configuredRules = yield* configured(input.sessionID, input.agent)
       const modeRules = MODE_RULES[mode]
-      const rules = [...configuredRules, ...modeRules, ...stance]
+      // READ BASELINE. Reading outside the project folder is ordinary work — a toolchain, an SDK, a system
+      // header — so the default is ALLOW and it sits at the LOWEST precedence, where anything more specific
+      // overrides it. Writing outside is untouched here and keeps its own `ask` default: the risk this whole
+      // stack exists to answer is a destructive WRITE, not a read.
+      //
+      // Under Paranoid the same default flips to `ask`, but it cannot simply sit at the bottom: rules
+      // resolve by ORDER alone (findLast), and the agent baseline opens with a catch-all `* → allow` that
+      // would swallow it. So the Paranoid rule is appended AFTER the configured rules to beat catch-alls —
+      // yet skipped entirely when a rule SPECIFIC to this resource already governs it, because such a rule
+      // IS the explicit permission Paranoid is asking for. Saved "always allow" answers are applied later
+      // still, so answering the ask once ends it for that path.
+      const readAction = "external_directory_read"
+      const governedSpecifically = (resource: string) =>
+        configuredRules.some(
+          (rule) =>
+            rule.resource !== "*" &&
+            Wildcard.match(readAction, rule.action) &&
+            Wildcard.match(resource, rule.resource),
+        )
+      const readBaseline: Permission.Ruleset = isParanoid
+        ? []
+        : [{ action: readAction, resource: "*", effect: "allow" }]
+      const paranoidRead: Permission.Ruleset =
+        isParanoid && !input.resources.every(governedSpecifically)
+          ? [{ action: readAction, resource: "*", effect: "ask" }]
+          : []
+      const rules = [...readBaseline, ...configuredRules, ...paranoidRead, ...modeRules, ...stance]
       if (denied(input, stance))
         return { effect: "deny" as const, rules, reason: "unattended-confined" as DenialReason | undefined }
       if (denied(input, configuredRules) || denied(input, modeRules))
@@ -537,5 +573,5 @@ export const locationLayer = layer.pipe(Layer.provideMerge(AgentV2.locationLayer
 export const node = makeLocationNode({
   service: Service,
   layer,
-  deps: [EventV2.node, Location.node, AgentV2.node, SessionStore.node, PermissionSaved.node],
+  deps: [EventV2.node, Location.node, AgentV2.node, SessionStore.node, PermissionSaved.node, SettingsConfigStore.node],
 })

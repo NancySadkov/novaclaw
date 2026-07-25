@@ -103,10 +103,15 @@ export const Plugin = define({
     const location = yield* Location.Service
     const worktree = location.directory
     const whitelistedDirs = [TRUNCATION_GLOB, path.join(Global.Path.tmp, "*")]
-    // 1I: external access is CLASSED — read grants never authorize writes. Both classes default
-    // to ask; the whitelisted scratch dirs (truncation, tmp) allow both.
+    // 1I: external access is CLASSED — read grants never authorize writes. WRITING outside the folder
+    // defaults to ask here; the whitelisted scratch dirs (truncation, tmp) allow both.
+    //
+    // There is deliberately NO blanket `external_directory_read` rule in this baseline. That default is
+    // decided LIVE by the permission evaluator from the `paranoid` setting (permission.ts §READ BASELINE),
+    // because a rule baked in here freezes at plugin-build time and a Settings toggle would not take
+    // effect until restart. Anything more specific — the whitelists below, user config, saved answers —
+    // still layers on top and wins, since rules resolve last-match-first.
     const readonlyExternalDirectory: PermissionV2.Ruleset = [
-      { action: "external_directory_read", resource: "*", effect: "ask" },
       { action: "external_directory_write", resource: "*", effect: "ask" },
       ...whitelistedDirs.flatMap((resource): PermissionV2.Rule[] => [
         { action: "external_directory_read", resource, effect: "allow" },

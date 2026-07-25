@@ -15,6 +15,7 @@ import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { SessionStore } from "@novaclaw/core/session/store"
+import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { SessionRecordEvent } from "@novaclaw/schema/session-record-event"
 import { SessionStatusEvent } from "@novaclaw/schema/session-status-event"
 import { eq } from "drizzle-orm"
@@ -34,6 +35,7 @@ const it = testEffect(
       PermissionSaved.node,
       AgentV2.node,
       PermissionV2.node,
+      SettingsConfigStore.node,
     ]),
     [[Location.node, current]],
   ),
@@ -399,10 +401,12 @@ describe("PermissionV2", () => {
 // exists: the root's thread type (attendance) and the permission mode (`yolo` = the way out).
 // ─────────────────────────────────────────────────────────────────────────────
 describe("PermissionV2 — unattended confinement stance", () => {
-  // The real build agent's baseline: allow-all in-project, external classes ask.
+  // The real build agent's baseline (plugin/agent.ts): allow-all in-project, external WRITE asks. There is
+  // deliberately no blanket external_directory_read rule here — that default is decided live by the
+  // evaluator from the `paranoid` setting, precisely so a rule like the write one below can still override
+  // it per path.
   const buildAgentRules: PermissionV2.Ruleset = [
     { action: "*", resource: "*", effect: "allow" },
-    { action: "external_directory_read", resource: "*", effect: "ask" },
     { action: "external_directory_write", resource: "*", effect: "ask" },
   ]
   const outside = (input: Partial<PermissionV2.AssertInput> = {}) =>
@@ -451,16 +455,75 @@ describe("PermissionV2 — unattended confinement stance", () => {
     }),
   )
 
-  it.effect("the out-of-folder READ class is denied too — an unanswered ask yields no bytes anyway", () =>
+  // Owner call (2026-07-25): READING outside the folder is ordinary work — a toolchain, an SDK, a system
+  // header (C:\soft\w64devkit to build an app). The fear these rules answer is a destructive WRITE, so an
+  // out-of-folder read is ALLOWED by default even unattended, and confined only under Paranoid.
+  it.effect("the out-of-folder READ class is ALLOWED by default, even unattended", () =>
     Effect.gen(function* () {
       yield* setup(buildAgentRules)
       yield* insertSession({ id: "ses_cron", type: "auto-prompting", permissionMode: "bypass" })
       const service = yield* PermissionV2.Service
       expect(
-        yield* service.ask(
-          outside({ sessionID: SessionV2.ID.make("ses_cron"), action: "external_directory_read" }),
-        ),
-      ).toMatchObject({ effect: "deny" })
+        yield* service.ask(outside({ sessionID: SessionV2.ID.make("ses_cron"), action: "external_directory_read" })),
+      ).toMatchObject({ effect: "allow" })
+      // ...while the WRITE class stays denied outright in the very same session.
+      expect(yield* service.ask(outside({ sessionID: SessionV2.ID.make("ses_cron") }))).toMatchObject({
+        effect: "deny",
+      })
+    }),
+  )
+
+  it.effect("PARANOID confines the read class: denied unattended, and it takes effect LIVE", () =>
+    Effect.gen(function* () {
+      yield* setup(buildAgentRules)
+      yield* insertSession({ id: "ses_cron", type: "auto-prompting", permissionMode: "bypass" })
+      const service = yield* PermissionV2.Service
+      const read = () =>
+        service.ask(outside({ sessionID: SessionV2.ID.make("ses_cron"), action: "external_directory_read" }))
+      expect(yield* read()).toMatchObject({ effect: "allow" })
+      // Flip the setting with the service ALREADY built — the evaluator reads the live store, so no restart.
+      yield* (yield* SettingsConfigStore.Service).set("paranoid", true)
+      expect(yield* read()).toMatchObject({ effect: "deny" })
+    }),
+  )
+
+  // The subtle half of Paranoid: it must beat the agent's catch-all `* → allow`, but a rule written for a
+  // SPECIFIC path is itself the explicit permission Paranoid demands, so it must still win. Otherwise a user
+  // who whitelisted their toolchain would be re-asked forever.
+  it.effect("PARANOID yields to a rule written for a specific path", () =>
+    Effect.gen(function* () {
+      yield* setup([
+        ...buildAgentRules,
+        { action: "external_directory_read", resource: "C:/soft/w64devkit/*", effect: "allow" },
+      ])
+      yield* insertSession({ id: "ses_chat", type: "interactive", permissionMode: "bypass" })
+      yield* (yield* SettingsConfigStore.Service).set("paranoid", true)
+      const service = yield* PermissionV2.Service
+      const ask = (resource: string) =>
+        service.ask(
+          assertion({
+            sessionID: SessionV2.ID.make("ses_chat"),
+            action: "external_directory_read",
+            resources: [resource],
+            save: [resource],
+          }),
+        )
+      // The whitelisted toolchain is read without a prompt...
+      expect(yield* ask("C:/soft/w64devkit/*")).toMatchObject({ effect: "allow" })
+      // ...while anything else outside the folder still asks.
+      expect(yield* ask("C:/elsewhere/*")).toMatchObject({ effect: "ask" })
+    }),
+  )
+
+  it.effect("PARANOID attended ASKS rather than denying — a human is there to answer", () =>
+    Effect.gen(function* () {
+      yield* setup(buildAgentRules)
+      yield* insertSession({ id: "ses_chat", type: "interactive", permissionMode: "bypass" })
+      yield* (yield* SettingsConfigStore.Service).set("paranoid", true)
+      const service = yield* PermissionV2.Service
+      expect(
+        yield* service.ask(outside({ sessionID: SessionV2.ID.make("ses_chat"), action: "external_directory_read" })),
+      ).toMatchObject({ effect: "ask" })
     }),
   )
 
@@ -471,6 +534,8 @@ describe("PermissionV2 — unattended confinement stance", () => {
     Effect.gen(function* () {
       yield* setup(buildAgentRules)
       yield* insertSession({ id: "ses_cron", type: "goal-oriented", permissionMode: "bypass" })
+      // Assert under PARANOID — the only posture where this exemption is load-bearing.
+      yield* (yield* SettingsConfigStore.Service).set("paranoid", true)
       const service = yield* PermissionV2.Service
       expect(
         yield* service.ask(
@@ -499,6 +564,8 @@ describe("PermissionV2 — unattended confinement stance", () => {
             save: [resource],
           }),
         )
+      // Under Paranoid the read class is confined — the exemption must not stretch to cover anything else.
+      yield* (yield* SettingsConfigStore.Service).set("paranoid", true)
       expect(yield* deny("external_directory_read", "C:/elsewhere/*")).toMatchObject({ effect: "deny" })
       // The store is readable, never writable.
       expect(yield* deny("external_directory_write", TRUNCATION_RESOURCE)).toMatchObject({ effect: "deny" })

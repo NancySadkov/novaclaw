@@ -119,6 +119,18 @@ export const attendedRoot = (rootType: SessionType): boolean =>
  */
 export const UNATTENDED_CONFINED_RULES: readonly PermissionRule[] = [
   { action: "external_directory_write", resource: "*", effect: "deny" },
+]
+
+/**
+ * The read half of the confinement, added ONLY under the `paranoid` setting.
+ *
+ * Owner call (2026-07-25): reading outside the project folder is ordinary work — a toolchain, an SDK, a
+ * system header — and denying it by default breaks real tasks (`C:\soft\w64devkit` to build an app). The
+ * fear these rules exist to answer is a destructive WRITE (`rm -rf /`), not an exfiltrated `/etc/passwd`.
+ * So writing outside stays confined unconditionally, while reading outside is confined only for a user who
+ * has deliberately asked for that posture.
+ */
+export const PARANOID_READ_RULES: readonly PermissionRule[] = [
   { action: "external_directory_read", resource: "*", effect: "deny" },
 ]
 
@@ -127,8 +139,16 @@ export const UNATTENDED_CONFINED_RULES: readonly PermissionRule[] = [
  * type (`rootSessionType`), never the target session's — a child cannot declare itself attended
  * out of its root's stance. `mode` is the RESOLVED mode (already clamped by narrowing).
  */
-export const unattendedStanceRules = (rootType: SessionType, mode: PermissionMode): readonly PermissionRule[] =>
-  attendedRoot(rootType) || mode === "yolo" ? [] : UNATTENDED_CONFINED_RULES
+export const unattendedStanceRules = (
+  rootType: SessionType,
+  mode: PermissionMode,
+  paranoid = false,
+): readonly PermissionRule[] =>
+  attendedRoot(rootType) || mode === "yolo"
+    ? []
+    : paranoid
+      ? [...UNATTENDED_CONFINED_RULES, ...PARANOID_READ_RULES]
+      : UNATTENDED_CONFINED_RULES
 
 export interface ModelRef {
   readonly providerID: string

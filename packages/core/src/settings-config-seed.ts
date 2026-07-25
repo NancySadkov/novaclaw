@@ -44,6 +44,7 @@ export const SETTINGS_KEYS = [
   "username",
   "server",
   "snapshots",
+  "paranoid",
   "watcher",
   "formatter",
   "attachments",
