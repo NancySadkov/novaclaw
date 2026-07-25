@@ -200,6 +200,13 @@ export const DialogModelConfig: Component<{
             inputmode="decimal"
             value={form[p.field]}
             onInput={(event) => setForm(p.field, event.currentTarget.value)}
+            // Select the whole value on focus so typing REPLACES it. These fields arrive pre-filled with
+            // the current setting, and a click lands the caret wherever you happened to click — so
+            // typing a new number silently INSERTED into the old one. Measured live: a field holding
+            // `32768`, clicked and typed `8192`, became `327819268`. Nothing downstream clamps it, so
+            // the garbage was persisted; the real dev DB ended up with a thinkingBudget of 600060006000
+            // (6000 typed three times), which silently disables the budget it was meant to set.
+            onFocus={(event) => event.currentTarget.select()}
             placeholder={tk("settings.models.config.defaultPlaceholder")}
             spellcheck={false}
             autocorrect="off"
