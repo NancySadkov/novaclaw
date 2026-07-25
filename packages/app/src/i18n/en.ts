@@ -392,11 +392,11 @@ export const dict = {
   "prompt.action.stop": "Stop",
 
   "prompt.permissionMode.title": "Permission mode",
-  "prompt.permissionMode.plan": "Plan only (won't change files)",
-  "prompt.permissionMode.ask": "Ask",
-  "prompt.permissionMode.surgical": "Surgical (edits in place, never replaces a whole file)",
-  "prompt.permissionMode.bypass": "Bypass (in project)",
-  "prompt.permissionMode.yolo": "YOLO (everything)",
+  "prompt.permissionMode.plan": "Plan only — won't change any files",
+  "prompt.permissionMode.ask": "Ask before every change",
+  "prompt.permissionMode.surgical": "Edit files, never replace a whole one",
+  "prompt.permissionMode.bypass": "Work in this folder without asking",
+  "prompt.permissionMode.yolo": "No limits — can change files anywhere on this machine",
 
   "prompt.strict.tooltip":
     "Strict mode: the harness plans, verifies every step, and recovers — built for small local models",

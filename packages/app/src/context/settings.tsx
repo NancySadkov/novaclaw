@@ -131,7 +131,9 @@ const defaultSettings: Settings = {
     showStatus: false,
     showTerminal: false,
     showReasoningSummaries: true,
-    defaultPermissionMode: "ask",
+    // Write access to the PROJECT FOLDER by default (owner 2026-07-25). Outside the folder is still
+    // guarded regardless of mode, so this is "trusted here", not "trusted everywhere".
+    defaultPermissionMode: "bypass",
     feedReasoningDisplay: "auto",
     feedToolDisplay: "auto",
     showCustomAgents: false,

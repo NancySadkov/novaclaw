@@ -244,11 +244,19 @@ describe("PermissionV2", () => {
   it.effect("ask-mode consent wraps configured bash allows (a configured allow-all never runs bash silently)", () =>
     Effect.gen(function* () {
       yield* setup([{ action: "*", resource: "*", effect: "allow" }])
+      // Pin the mode EXPLICITLY rather than leaning on the instance default — that default is now
+      // `bypass` (write freely inside the folder), so a test about ask-mode has to ask for ask mode.
+      // A separate id, because `setup` already created ses_test and insertSession does nothing on conflict.
+      yield* insertSession({ id: "ses_ask_mode", permissionMode: "ask" })
       const service = yield* PermissionV2.Service
-      const bash = assertion({ action: "bash", resources: ["pwd"] })
-      // Under the (default) ask mode the MODE_RULES overlay converts the configured allow into
-      // consent — the mode labeled "Ask" must actually ask (issues.md P1). A saved allow-always
-      // later quiets this (covered in permission-modes.test.ts).
+      const bash = assertion({
+        sessionID: SessionV2.ID.make("ses_ask_mode"),
+        action: "bash",
+        resources: ["pwd"],
+      })
+      // Under ask mode the MODE_RULES overlay converts the configured allow into consent — the mode
+      // labeled "Ask" must actually ask (issues.md P1). A saved allow-always later quiets this
+      // (covered in permission-modes.test.ts).
       expect(yield* service.ask(bash)).toEqual({ id: PermissionV2.ID.create("per_test"), effect: "ask" })
       expect(yield* service.get(PermissionV2.ID.create("per_test"))).toBeDefined()
     }),

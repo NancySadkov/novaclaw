@@ -16,15 +16,22 @@ export function useExpertise() {
   }
 }
 
-// Permission modes escalate in danger; gate the sharp ones by level (uix.md §6.4). Normal sees the
-// safe pair; Advanced adds surgical; Developer adds the "run without asking" modes. A stored value
-// above the current level still renders in the picker (so it never blanks) — the honesty valve nudges
-// the user to unlock and review it rather than silently hiding an active choice.
+// Permission modes escalate in danger, but only ONE of them now leaves the project folder. Since
+// external writes are guarded independently of the mode (agent baseline asks; an unattended chain is
+// hard-denied — config-resolve.ts §UNATTENDED CONFINEMENT), plan/ask/surgical/bypass all stay INSIDE
+// the folder and are safe to offer at any level. Gating `bypass` to Developer hid the one mode most
+// users actually want ("work in my project without asking me every time") and left Normal with just
+// two options, which read as a broken picker.
+//
+// `yolo` keeps its gate: it is the mode that ALLOWS the external classes outright, i.e. the only one
+// that can touch anything outside the folder. That is the `rm -rf /` shape, so it stays behind Developer.
+// A stored value above the current level still renders in the picker (so it never blanks) — the honesty
+// valve nudges the user to unlock and review it rather than silently hiding an active choice.
 export const PERMISSION_MODE_MIN_LEVEL: Record<string, ExpertiseLevel> = {
   plan: "normal",
   ask: "normal",
-  surgical: "advanced",
-  bypass: "developer",
+  surgical: "normal",
+  bypass: "normal",
   yolo: "developer",
 }
 

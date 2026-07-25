@@ -205,7 +205,9 @@ export const EFFECTIVE_CONFIG_DEFAULTS: EffectiveConfig = {
   type: "interactive",
   priority: 0,
   responder: "nova",
-  permissionMode: "ask",
+  // Write access to the session's OWN folder by default (owner 2026-07-25). Writing outside it is
+  // guarded independently of the mode, so the trust is scoped to the folder, not global.
+  permissionMode: "bypass",
   permissionRules: [],
 }
 
