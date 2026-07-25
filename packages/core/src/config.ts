@@ -213,6 +213,33 @@ export class Info extends Schema.Class<Info>("Config.Info")({
       description: "Built-in engine ids to turn off (currently: duckduckgo, wikipedia) — for one that starts misbehaving.",
     }),
     timeoutMs: Schema.Finite.pipe(Schema.optional).annotate({ description: "Per-engine timeout in ms (default 8000)" }),
+    // The web traffic governor (core/web/fetch-pace.ts). Governs ALL outbound web reads — search AND
+    // article fetches — not just search; it lives here because this is the user-facing home for web
+    // access. ⚠️ Loosening these is how a runaway agent gets the USER'S ip banned: the defaults keep our
+    // traffic in the range of a person reading articles, which is the whole basis for treating robots.txt
+    // as informational rather than binding.
+    throttle: Schema.Struct({
+      hostIntervalMs: Schema.Finite.pipe(Schema.optional).annotate({
+        description: "Sustained delay between reads of the SAME site, in ms (default 4000). Lower = more bot-like.",
+      }),
+      burst: Schema.Finite.pipe(Schema.optional).annotate({
+        description: "Reads allowed back-to-back per site before the delay applies (default 3) — a person opening a few tabs.",
+      }),
+      perHostConcurrency: Schema.Finite.pipe(Schema.optional).annotate({
+        description: "Simultaneous requests to ONE site (default 1). Above 1 is swarming and is the fastest way to get blocked.",
+      }),
+      dailyPerHost: Schema.Finite.pipe(Schema.optional).annotate({
+        description: "Reads per site per UTC day (default 150) — a heavy human reader, far below mirroring a site.",
+      }),
+      sameUrlLimit: Schema.Finite.pipe(Schema.optional).annotate({
+        description: "Refuse re-fetching one URL more than this many times per session (default 3) — the fetch-loop guard.",
+      }),
+    })
+      .pipe(Schema.optional)
+      .annotate({
+        description:
+          "Outbound web-read pacing + per-site daily caps. Defaults imitate a person reading; loosening them risks the user's IP being blocked.",
+      }),
   })
     .pipe(Schema.optional)
     .annotate({

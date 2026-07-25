@@ -107,6 +107,30 @@ describe("decide — concurrency safety", () => {
   })
 })
 
+describe("the 0-means-unset sentinel", () => {
+  // Config writes are a MERGE patch, so an emptied settings field cannot delete its key — it is stored
+  // as 0. If 0 were taken literally, clearing "reads per site per day" would set the cap to ZERO and deny
+  // every fetch (and clearing the interval would mean a zero-delay hammer). Verified live: blanking a
+  // field left the old value in config, which is what forced this convention.
+  test("0 falls back to the default rather than denying everything", () => {
+    const d = WebFetchPace.decide(undefined, T0, { intervalMs: 0, burst: 0, dailyLimit: 0 })
+    expect(d.kind).toBe("go")
+    if (d.kind === "go") expect(d.waitMs).toBe(0)
+  })
+
+  test("a cleared daily cap behaves exactly like an unset one", () => {
+    const cleared = WebFetchPace.decide(undefined, T0, { dailyLimit: 0 })
+    const unset = WebFetchPace.decide(undefined, T0, {})
+    expect(cleared).toEqual(unset)
+  })
+
+  test("a real positive override is still honoured", () => {
+    const r = walk(3, T0, { ...limits, dailyLimit: 2 })
+    expect(r.denied).toContain("Daily read limit reached")
+    expect(r.out).toHaveLength(2)
+  })
+})
+
 describe("jitter", () => {
   test("stays within the fraction and never goes negative", () => {
     for (const r of [0, 0.5, 1]) {

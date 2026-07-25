@@ -1757,6 +1757,21 @@ export const dict = {
   "settings.webSearch.builtin.overridden": "Your SearXNG instance is handling search, so the built-in engines are off.",
   "settings.webSearch.builtin.engineHint": "Included in built-in search",
   "settings.webSearch.toast.failed": "Couldn't save web search settings",
+  "settings.webSearch.throttle.title": "Traffic limits",
+  "settings.webSearch.throttle.description":
+    "How fast NovaClaw reads from the web. These apply to every web read — searches and articles alike. The defaults imitate a person reading, which is what keeps sites treating you as one.",
+  "settings.webSearch.throttle.warning":
+    "⚠️ Changing these can get you blocked. Sites judge you by your traffic, and reads come from your own connection — so a faster, heavier setting risks your IP being rate-limited or banned, for you and for anything else on your network. Leave a field empty to use its default.",
+  "settings.webSearch.throttle.interval": "Delay between reads of one site",
+  "settings.webSearch.throttle.interval.hint": "Milliseconds to wait before reading the same site again. Lower looks more like a bot.",
+  "settings.webSearch.throttle.burst": "Reads allowed back-to-back",
+  "settings.webSearch.throttle.burst.hint": "How many quick reads of one site before the delay kicks in — like opening a few tabs at once.",
+  "settings.webSearch.throttle.concurrency": "Simultaneous reads per site",
+  "settings.webSearch.throttle.concurrency.hint": "Keep at 1. Reading one site on several connections at once is the fastest way to get blocked.",
+  "settings.webSearch.throttle.daily": "Reads per site per day",
+  "settings.webSearch.throttle.daily.hint": "A daily ceiling per site, so a stuck agent can't spend all day hammering one server.",
+  "settings.webSearch.throttle.sameUrl": "Same-page retry limit",
+  "settings.webSearch.throttle.sameUrl.hint": "Refuse to fetch one page more times than this in a session — catches an agent stuck in a loop.",
   "settings.tools.title": "Tools",
   "settings.tools.description":
     "Ad-hoc tool recipes: a name, a one-line description the model sees in its prompt, and a manual it pulls on demand (the API shape plus a curl example). The model runs them from the shell — no MCP server to set up.",

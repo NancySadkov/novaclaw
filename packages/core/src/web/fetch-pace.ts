@@ -55,6 +55,18 @@ export interface Limits {
   readonly dailyLimit?: number
 }
 
+/**
+ * A configured limit, or `undefined` to mean "use the default".
+ *
+ * ⚠️ **`0` means unset, not zero.** The settings surface persists through a MERGE patch, which cannot
+ * delete a key — so an emptied field is stored as `0` rather than disappearing (the same convention the
+ * rest of the config uses: write `""`/`0` for "use default"). Treating any non-positive value as unset is
+ * what makes "clear the field → back to the default" actually work. It also means an interval of 0 is
+ * unreachable by accident, which is a feature: no one sets a zero-delay hammer by fat-fingering a box.
+ */
+const positive = (value: number | undefined): number | undefined =>
+  value !== undefined && Number.isFinite(value) && value > 0 ? value : undefined
+
 /** UTC day key. Takes `now` so it stays pure. */
 export const dayOf = (now: number): string => new Date(now).toISOString().slice(0, 10)
 
@@ -67,7 +79,9 @@ export const hostOf = (url: string): string => {
 export const initialState = (now: number, limits?: Limits): HostState => ({
   day: dayOf(now),
   count: 0,
-  tokens: limits?.burst ?? HOST_BURST,
+  // Must resolve the sentinel the SAME way `decide` does — a cleared (0) burst here meant a fresh host
+  // started with zero tokens and waited a full interval for its very first read.
+  tokens: positive(limits?.burst) ?? HOST_BURST,
   updatedAt: now,
 })
 
@@ -78,9 +92,9 @@ export const initialState = (now: number, limits?: Limits): HostState => ({
  * wait needed for a token to exist. `deny` is only for the daily cap — pacing never denies, it waits.
  */
 export const decide = (state: HostState | undefined, now: number, limits?: Limits): Decision => {
-  const intervalMs = limits?.intervalMs ?? HOST_INTERVAL_MS
-  const burst = limits?.burst ?? HOST_BURST
-  const dailyLimit = limits?.dailyLimit ?? HOST_DAILY_LIMIT
+  const intervalMs = positive(limits?.intervalMs) ?? HOST_INTERVAL_MS
+  const burst = positive(limits?.burst) ?? HOST_BURST
+  const dailyLimit = positive(limits?.dailyLimit) ?? HOST_DAILY_LIMIT
   const today = dayOf(now)
   const current = state ?? initialState(now, limits)
   // A new UTC day resets the count AND hands back a full burst.
