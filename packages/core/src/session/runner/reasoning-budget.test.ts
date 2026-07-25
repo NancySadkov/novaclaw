@@ -105,8 +105,11 @@ describe("ReasoningBudget", () => {
     expect(prefillOf(requests[1]!)).not.toContain("</think>")
     expect(prefillOf(requests[2]!)).toStartWith("<think>\n")
     expect(prefillOf(requests[2]!)).not.toContain("</think>")
-    // each continuation carries the accumulated reasoning forward.
-    expect(prefillOf(requests[1]!)).toContain("r".repeat(300))
+    // Each continuation carries the accumulated reasoning forward — but the crossing delta is CUT at
+    // the ceiling (70 tokens = 280 chars), so the cap holds even if a provider batches its stream into
+    // one huge chunk. Without the cut, 300 chars would ride through and the overshoot would compound.
+    expect(prefillOf(requests[1]!)).toContain("r".repeat(280))
+    expect(prefillOf(requests[1]!)).not.toContain("r".repeat(281))
     // budget rides the mid-stream checkpoint, NOT max_tokens — phases INHERIT the base request's own
     // limit (here unset) so `prompt + max_tokens` can never overflow the context window.
     expect(requests[0]!.generation?.maxTokens).toBeUndefined()
@@ -115,6 +118,57 @@ describe("ReasoningBudget", () => {
     expect(requests[0]!.http?.body?.continue_final_message).toBeUndefined()
     expect(requests[1]!.http?.body?.continue_final_message).toBe(true)
     expect(requests[1]!.http?.body?.add_generation_prompt).toBe(false)
+  })
+
+  test("RUNAWAY: a model that ignores both nudges is still cut off — no unbounded final phase", () => {
+    // The pathology this feature exists for (owner report 2026-07-25): a degenerate digit loop that
+    // reasons straight through both nudges. Every phase must have a FINITE ceiling, so the whole turn
+    // terminates on a bounded multiple of the budget instead of streaming forever.
+    const runaway = Array.from({ length: 40 }, () => rDelta(4000)) // 160k chars ≈ 40k tokens
+    const { events } = run(
+      [
+        [rDelta(300)], // opening: >70 → mid nudge
+        [rDelta(200)], // mid: crosses 100 → end nudge
+        runaway, // end: ignores the nudge and keeps looping
+        runaway, // any further phase must ALSO be bounded
+        runaway,
+      ],
+      { budget: 100 },
+    )
+    const reasoned = events
+      .filter((e): e is LLMEvent & { text: string } => e.type === "reasoning-delta")
+      .reduce((sum, e) => sum + e.text.length, 0)
+    // Hard bound: a 100-token budget must never emit tens of thousands of reasoning tokens.
+    expect(reasoned / 4).toBeLessThan(100 * 4)
+    // And the turn must still be well-formed + terminated.
+    expect(types(events).at(-1)).toBe("step-finish")
+    expect(types(events)).toContain("reasoning-end")
+  })
+
+  test("HARD STOP: after both nudges are ignored, thinking is DISABLED for the final phase", () => {
+    // The escalation from informational to mechanical. A nudge is text the model may ignore; the flag
+    // removes the capability — qwen's template cannot open a <think> block, so it must answer.
+    const { requests } = run(
+      [
+        [rDelta(300)], // opening → mid nudge
+        [rDelta(200)], // mid → end nudge
+        [rDelta(400)], // end → ignored the nudge → HARD STOP
+        [tDelta("391."), finish("stop")], // answers with thinking off
+      ],
+      { budget: 100 },
+    )
+    expect(requests).toHaveLength(4)
+    const hard = requests[3]!
+    expect((hard.http?.body as Record<string, unknown>)?.["chat_template_kwargs"]).toEqual({
+      enable_thinking: false,
+    })
+    // A clean request — no assistant prefill: a closed-`</think>` continuation returns an EMPTY
+    // completion on qwen (probed live 2026-07-25), so the runaway reasoning is NOT fed back.
+    expect(prefillOf(hard)).toBe("")
+    expect(hard.http?.body?.["continue_final_message"]).toBeUndefined()
+    expect(JSON.stringify(hard.system)).toContain("Do NOT reason further")
+    // The earlier phases must NOT carry the flag — thinking stays enabled while budget remains.
+    expect((requests[0]!.http?.body as Record<string, unknown>)?.["chat_template_kwargs"]).toBeUndefined()
   })
 
   test("closes think but does not answer — forces one answer phase", () => {

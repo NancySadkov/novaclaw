@@ -42,3 +42,10 @@ export const estimate = (input: string): number => {
  * across the app agrees. Prefer `estimate` whenever the actual string is available.
  */
 export const estimateFromChars = (chars: number): number => Math.max(0, Math.round(chars / CHARS_PER_TOKEN))
+
+/**
+ * The inverse of `estimateFromChars`: how many characters a token allowance is worth. Lets a streaming
+ * meter turn a token ceiling into a CHARACTER cut-point, so a cap stays hard even when a provider
+ * delivers one enormous delta (the reasoning-budget hard stop). Same ratio, one place.
+ */
+export const charsFromTokens = (tokens: number): number => Math.max(0, Math.round(tokens * CHARS_PER_TOKEN))

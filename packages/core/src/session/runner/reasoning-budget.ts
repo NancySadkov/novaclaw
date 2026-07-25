@@ -24,6 +24,15 @@ import { Token } from "../../util/token"
  *      stronger end nudge into the still-OPEN `<think>` and continues, prompting the model to wrap up
  *      and answer on its own. (We deliberately do NOT prefill a *closed* `</think>`: qwen's chat
  *      template strips complete think blocks, which empties the message and 400s the continuation.)
+ *   4. **Hard stop** — the mechanical backstop. A model in a degenerate loop reasons straight THROUGH
+ *      both nudges (owner report 2026-07-25: a repeating-digit loop ran ~400x over budget), because a
+ *      nudge is only INFORMATIONAL. So the end phase is itself bounded, and crossing it re-issues the
+ *      turn with thinking structurally DISABLED (`chat_template_kwargs.enable_thinking=false`) — the
+ *      template cannot open a `<think>` block at all, so the model must answer. Probed live against
+ *      qwen3.6-35b: streaming with the flag returns a real answer, while a closed-`</think>` prefill
+ *      returns an empty completion (and thinking-on with a tight max_tokens returns NOTHING at all —
+ *      the empty-reply trap). **Invariant: every phase has a FINITE ceiling and the chain is finite,
+ *      so a turn always terminates.**
  *
  * Each phase inherits the base request's own `max_tokens` (typically UNSET → the server uses the
  * remaining context window): the budget is enforced by the mid-stream checkpoint, never by
@@ -39,6 +48,11 @@ import { Token } from "../../util/token"
 const REASON_ID = "reasoning-0"
 const TEXT_ID = "text-0"
 const MID_RATIO = 0.7
+/** The end phase's own ceiling — the grace a model gets to wrap up AFTER the end nudge. */
+const END_RATIO = 1.5
+/** The hard-stop phase's ceiling. Thinking is disabled there, so this only catches a backend that
+ *  ignores the flag; crossing it finalizes rather than continuing. */
+const HARD_RATIO = 2
 
 export interface Nudges {
   /** System-prompt priming line (checkpoint 1). */
@@ -47,6 +61,8 @@ export interface Nudges {
   readonly mid: string
   /** Injected into the still-open `<think>` at budget end (checkpoint 3) to force a conclusion. */
   readonly end: string
+  /** System line for the mechanical hard stop (checkpoint 4), where thinking is disabled outright. */
+  readonly exhausted: string
 }
 
 export const defaultNudges: Nudges = {
@@ -54,9 +70,11 @@ export const defaultNudges: Nudges = {
     `You have a reasoning budget of about ${budget} tokens for your <think> block this turn. Keep your reasoning concise and focused, don't go in circles, and stop thinking once you can answer.`,
   mid: "I've used most of my reasoning budget — let me stop exploring and work towards a conclusion now.",
   end: "I've reached the end of my thinking budget. I'll stop reasoning and give the user my answer now.",
+  exhausted:
+    "You already spent your entire reasoning budget on this turn and did not reach an answer — your reasoning had begun repeating itself. Do NOT reason further. Answer the user directly now with your best current answer, or call a tool. If you are unsure, say briefly what you established and what is still unresolved.",
 }
 
-type Phase = "opening" | "mid" | "end"
+type Phase = "opening" | "mid" | "end" | "hard"
 
 interface State {
   /** The `<think>` interior accumulated so far (streamed model reasoning + injected nudges); the
@@ -134,6 +152,22 @@ export const stream = <E, R>(input: Input<E, R>): Stream.Stream<LLMEvent, E, R> 
   // per-phase lifecycle (start/end/step-finish) — the controller emits its own overarching one.
   const transform = (event: LLMEvent): LLMEvent[] => {
     if (LLMEvent.is.reasoningDelta(event)) {
+      // Cut the crossing delta at the ceiling rather than swallowing it whole: a provider that batches
+      // its stream (or a loop emitting one enormous chunk) would otherwise blow straight past the cap,
+      // and the overshoot also rides into the next phase's prefill. Truncating keeps the cap HARD and
+      // the prefill bounded — we're abandoning this reasoning anyway.
+      if (!state.inAnswer && Number.isFinite(checkpoint)) {
+        const room = Token.charsFromTokens(checkpoint) - state.think.length
+        if (room <= 0) {
+          state.checkpointHit = true
+          return []
+        }
+        if (event.text.length > room) {
+          const out = emitReasoning(event.text.slice(0, room))
+          state.checkpointHit = true
+          return out
+        }
+      }
       const out = emitReasoning(event.text)
       // Reached the phase's reasoning ceiling while still thinking → flag the checkpoint abort.
       if (!state.inAnswer && reasoningTokens() >= checkpoint) state.checkpointHit = true
@@ -200,6 +234,27 @@ export const stream = <E, R>(input: Input<E, R>): Stream.Stream<LLMEvent, E, R> 
     }
     // Phase 1 runs the model normally (no forced `<think>`) so non-thinking models simply answer.
     if (phase === "opening") return LLM.request(base)
+    // Checkpoint 4 — the MECHANICAL hard stop. Both nudges were ignored (a degenerate loop reasons
+    // right through informational text), so stop asking and remove the capability: re-issue the turn
+    // with the thinking template switched OFF. No prefill — a closed-`</think>` continuation returns an
+    // EMPTY completion on qwen (probed live), whereas a clean request with the flag answers normally.
+    // The reasoning already streamed to the user is kept in OUR block; we simply don't feed the runaway
+    // back to the model. A backend that ignores the flag is still caught by this phase's own ceiling.
+    if (phase === "hard")
+      return LLM.request({
+        ...base,
+        system: [...system, SystemPart.make(nudges.exhausted)],
+        http: {
+          ...(input.request.http ?? {}),
+          body: {
+            ...(input.request.http?.body ?? {}),
+            chat_template_kwargs: {
+              ...((input.request.http?.body?.["chat_template_kwargs"] as Record<string, unknown>) ?? {}),
+              enable_thinking: false,
+            },
+          },
+        },
+      })
     // Both continuations keep the `<think>` block OPEN and rely on the injected nudge to make the model
     // wrap up and answer on its own. ⚠️ Do NOT prefill a CLOSED `<think>…</think>`: qwen's chat template
     // STRIPS complete think blocks from the assistant message, so a closed prefill leaves an EMPTY final
@@ -225,7 +280,16 @@ export const stream = <E, R>(input: Input<E, R>): Stream.Stream<LLMEvent, E, R> 
   }
 
   const runPhase = (phase: Phase): Stream.Stream<LLMEvent, E, R> => {
-    checkpoint = phase === "opening" ? input.budget * MID_RATIO : phase === "mid" ? input.budget : Infinity
+    // EVERY phase is bounded — an unbounded final phase was the runaway bug (owner report 2026-07-25):
+    // the model blew its budget, got nudged, and then reasoned forever because nothing capped it.
+    checkpoint =
+      phase === "opening"
+        ? input.budget * MID_RATIO
+        : phase === "mid"
+          ? input.budget
+          : phase === "end"
+            ? input.budget * END_RATIO
+            : input.budget * HARD_RATIO
     state.checkpointHit = false
     const source = input.stream(phaseRequest(phase)).pipe(
       Stream.flatMap((event) => Stream.fromIterable(transform(event))),
@@ -247,14 +311,20 @@ export const stream = <E, R>(input: Input<E, R>): Stream.Stream<LLMEvent, E, R> 
     if (state.stop || state.done) return finalize()
     // The model produced an answer (which completed under the generous cap) → done.
     if (state.inAnswer) return finalize()
-    // Aborted at the reasoning ceiling, still thinking → inject the nudge and continue.
+    // Aborted at the reasoning ceiling, still thinking → escalate.
     if (state.checkpointHit) {
       if (phase === "opening") return prepend(emitReasoning("\n" + nudges.mid + "\n"), runPhase("mid"))
       if (phase === "mid") return prepend(emitReasoning("\n" + nudges.end + "\n"), runPhase("end"))
+      // Both nudges ignored → stop nudging and take the capability away (thinking disabled).
+      if (phase === "end") return runPhase("hard")
+      // Even the hard stop kept reasoning (a backend that ignores the flag) → end the turn. This is
+      // the terminating leaf: `hard` never re-enters, so the phase chain is finite by construction.
       return finalize()
     }
     // Reasoning ended on its own without an answer (rare) → force the answer once.
-    if (phase !== "end") return prepend(emitReasoning("\n" + nudges.end + "\n"), runPhase("end"))
+    if (phase === "opening" || phase === "mid") return prepend(emitReasoning("\n" + nudges.end + "\n"), runPhase("end"))
+    // The end phase closed without answering → one mechanical attempt, then finalize.
+    if (phase === "end") return runPhase("hard")
     return finalize()
   }
 
