@@ -1,6 +1,6 @@
 export * as ConfigStoreWrite from "./config-store-write"
 
-import { Effect, Schema } from "effect"
+import { Effect, Option, Schema } from "effect"
 import { AgentConfigStore } from "./agent-config-store"
 import { CatalogStore } from "./catalog-store"
 import { CommandConfigStore } from "./command-config-store"
@@ -28,13 +28,63 @@ import { SkillConfigStore } from "./skill-config-store"
 // Merge semantics per store shape:
 // - settings keys: one whole value per key — deep-merge the patch into the stored value
 //   (objects merge, arrays replace wholesale — the documented updateConfig contract).
-// - layered stores (providers/agents/commands/references): APPEND the patch fragment as a new
-//   layer — layers apply in order, so appending reproduces patch-merge exactly.
+// - layered stores (providers/agents/commands/references): fold the stored layers AND the patch
+//   fragment into ONE layer (`collapseLayers`) — the same left fold the runtime and the served view
+//   already apply, so the value is unchanged while the list stays bounded.
 // - list stores (skills/plugins): the config value is an array (replace-wholesale contract) —
 //   the store content is replaced.
 
 /** Deep patch-merge: objects merge recursively, arrays and primitives replace (merge-patch.ts). */
 export const mergePatch = MergePatch.mergePatch
+
+/**
+ * Collapse a layered entity's stored layers PLUS the incoming patch fragment into a SINGLE layer.
+ *
+ * Writes used to APPEND one layer per save, unbounded — a dev instance reached 12 layers for one
+ * provider, several of them successive edits of the same field. Appending did reproduce patch-merge,
+ * but nothing ever compacted the history, so the stored blob grew for the lifetime of the instance.
+ *
+ * Folding is value-preserving, not merely close enough: `mergePatch` has no null-deletion, so it is a
+ * plain recursive merge and therefore associative — folding left-to-right equals applying the layers
+ * in order. It is also the IDENTICAL fold that `foldLayers` below already applies to build both the
+ * served `/config` view and the jsonc export document (and importing that document yields exactly one
+ * layer). So this makes the stored layers agree with what Settings shows the user, rather than letting
+ * the two drift apart.
+ *
+ * Falls back to appending when the folded value does not decode: a merge edge case must never fail a
+ * user's save, and one extra layer is the previous, harmless behaviour.
+ */
+function collapseLayers<A>(
+  existing: readonly A[],
+  fragment: A,
+  encode: (layer: A) => unknown,
+  decode: (value: unknown) => Option.Option<A>,
+): A[] {
+  if (existing.length === 0) return [fragment]
+  const folded = [...existing, fragment].reduce<unknown>(
+    (merged, layer) => mergePatch(merged, encode(layer)),
+    undefined,
+  )
+  const decoded = decode(folded)
+  return Option.isSome(decoded) ? [decoded.value] : [...existing, fragment]
+}
+
+const providerCodec = {
+  encode: Schema.encodeSync(ConfigProvider.Info),
+  decode: Schema.decodeUnknownOption(ConfigProvider.Info),
+}
+const agentCodec = {
+  encode: Schema.encodeSync(ConfigAgent.Info),
+  decode: Schema.decodeUnknownOption(ConfigAgent.Info),
+}
+const commandCodec = {
+  encode: Schema.encodeSync(ConfigCommand.Info),
+  decode: Schema.decodeUnknownOption(ConfigCommand.Info),
+}
+const referenceCodec = {
+  encode: Schema.encodeSync(ConfigReference.Entry),
+  decode: Schema.decodeUnknownOption(ConfigReference.Entry),
+}
 
 const encodeInfo = (info: Config.Info) => Schema.encodeSync(Config.Info)(info) as Record<string, unknown>
 
@@ -60,7 +110,10 @@ export const apply = (patch: Config.Info) =>
     if (patch.providers !== undefined) {
       const layers = yield* catalog.providers()
       for (const [id, fragment] of Object.entries(patch.providers)) {
-        yield* catalog.setLayers(ProviderV2.ID.make(id), [...(layers[id] ?? []), fragment])
+        yield* catalog.setLayers(
+          ProviderV2.ID.make(id),
+          collapseLayers(layers[id] ?? [], fragment, providerCodec.encode, providerCodec.decode),
+        )
       }
       consumed.add("providers")
     }
@@ -73,7 +126,10 @@ export const apply = (patch: Config.Info) =>
     if (patch.agents !== undefined) {
       const layers = yield* agents.agents()
       for (const [name, fragment] of Object.entries(patch.agents)) {
-        yield* agents.setLayers(name, [...(layers[name] ?? []), fragment])
+        yield* agents.setLayers(
+          name,
+          collapseLayers(layers[name] ?? [], fragment, agentCodec.encode, agentCodec.decode),
+        )
       }
       consumed.add("agents")
     }
@@ -86,7 +142,10 @@ export const apply = (patch: Config.Info) =>
       const commands = yield* CommandConfigStore.Service
       const layers = yield* commands.commands()
       for (const [name, fragment] of Object.entries(patch.commands)) {
-        yield* commands.setLayers(name, [...(layers[name] ?? []), fragment])
+        yield* commands.setLayers(
+          name,
+          collapseLayers(layers[name] ?? [], fragment, commandCodec.encode, commandCodec.decode),
+        )
       }
       consumed.add("commands")
     }
@@ -95,7 +154,10 @@ export const apply = (patch: Config.Info) =>
       const references = yield* ReferenceConfigStore.Service
       const layers = yield* references.references()
       for (const [name, fragment] of Object.entries(patch.references)) {
-        yield* references.setLayers(name, [...(layers[name] ?? []), fragment])
+        yield* references.setLayers(
+          name,
+          collapseLayers(layers[name] ?? [], fragment, referenceCodec.encode, referenceCodec.decode),
+        )
       }
       consumed.add("references")
     }
@@ -132,8 +194,9 @@ function foldLayers<A>(layers: Record<string, A[]>, encode: (layer: A) => unknow
  * Overlay the store-backed keys onto a file-derived config view (the /config GET responses),
  * so the Settings UI reads exactly what the router wrote — and, over an empty base, the
  * complete stores→jsonc EXPORT document (config-sqlite step 8: the Config-Export payload).
- * Layered stores fold with the same patch-merge the runtime applies layer-by-layer, which
- * also compacts accumulated write layers on every export.
+ * Layered stores fold with the same patch-merge the runtime applies layer-by-layer. Writes now
+ * collapse to one layer (`collapseLayers`), so this fold is normally over a single entry; it still
+ * compacts the multi-source SEEDED layers, and any entity last written before that fix.
  */
 export const overlay = (base: Record<string, unknown>) =>
   Effect.gen(function* () {

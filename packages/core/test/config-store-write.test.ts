@@ -64,7 +64,7 @@ describe("ConfigStoreWrite.apply", () => {
     }),
   )
 
-  it.effect("appends provider patches as layers and sets the default model", () =>
+  it.effect("folds a provider patch into the stored layer and sets the default model", () =>
     Effect.gen(function* () {
       const catalog = yield* CatalogStore.Service
       const base = decodeInfo({
@@ -79,10 +79,88 @@ describe("ConfigStoreWrite.apply", () => {
       const consumed = yield* ConfigStoreWrite.apply(patch)
       expect([...consumed].sort()).toEqual(["model", "providers"])
 
+      // The patch collapses INTO the stored layer instead of appending a second one, and the fold is
+      // patch-merge: the renamed model wins while the untouched `name` survives.
       const layers = (yield* catalog.providers())["spark"]!
-      expect(layers).toHaveLength(2)
-      expect(layers[1]?.models?.["m1"]?.name).toBe("M1 renamed")
+      expect(layers).toHaveLength(1)
+      expect(layers[0]?.models?.["m1"]?.name).toBe("M1 renamed")
+      expect(layers[0]?.name).toBe("Spark")
       expect(yield* catalog.getDefault()).toBe("spark/m1")
+    }),
+  )
+
+  // The regression that matters: layers used to grow one per save, unbounded — a dev instance reached
+  // 12 for a single provider, and repeated edits of one field piled up as dead history.
+  it.effect("repeated saves leave the layer count at one, newest value winning", () =>
+    Effect.gen(function* () {
+      const catalog = yield* CatalogStore.Service
+      const write = (budget: number) =>
+        ConfigStoreWrite.apply(
+          decodeInfo({
+            providers: {
+              spark: { name: "Spark", models: { m1: { name: "M1", request: { body: { thinkingBudget: budget } } } } },
+            },
+          }),
+        )
+
+      for (const budget of [6000, 8000, 12000]) yield* write(budget)
+
+      const layers = (yield* catalog.providers())["spark"]!
+      expect(layers).toHaveLength(1)
+      expect(layers[0]?.models?.["m1"]?.request?.body?.["thinkingBudget"]).toBe(12000)
+    }),
+  )
+
+  it.effect("agents, commands and references collapse the same way", () =>
+    Effect.gen(function* () {
+      const agents = yield* AgentConfigStore.Service
+      const commands = yield* CommandConfigStore.Service
+      const references = yield* ReferenceConfigStore.Service
+
+      for (const tag of ["first", "second"]) {
+        yield* ConfigStoreWrite.apply(
+          decodeInfo({
+            agents: { build: { description: `agent ${tag}` } },
+            commands: { deploy: { template: `run ${tag}` } },
+            references: { docs: { path: `/docs/${tag}` } },
+          }),
+        )
+      }
+
+      const agentLayers = (yield* agents.agents())["build"]!
+      const commandLayers = (yield* commands.commands())["deploy"]!
+      const referenceLayers = (yield* references.references())["docs"]!
+      expect(agentLayers).toHaveLength(1)
+      expect(commandLayers).toHaveLength(1)
+      expect(referenceLayers).toHaveLength(1)
+      expect(agentLayers[0]?.description).toBe("agent second")
+      expect(commandLayers[0]?.template).toBe("run second")
+    }),
+  )
+
+  // Folding must not silently drop the accumulated history's earlier values: an entity written before
+  // the fix carries many layers, and the first write after it collapses them all into the same value
+  // the served view was already showing.
+  it.effect("collapses a pre-existing accumulated stack on the next write", () =>
+    Effect.gen(function* () {
+      const catalog = yield* CatalogStore.Service
+      const layerOf = (fragment: Record<string, unknown>) =>
+        decodeInfo({ providers: { spark: fragment } }).providers!.spark
+      yield* catalog.setLayers(ProviderV2.ID.make("spark"), [
+        layerOf({ name: "Spark", models: { m1: { name: "M1" } } }),
+        layerOf({ models: { m1: { request: { body: { min_p: 0.05 } } } } }),
+        layerOf({ models: { m2: { name: "M2" } } }),
+      ])
+
+      yield* ConfigStoreWrite.apply(decodeInfo({ providers: { spark: { models: { m1: { name: "M1 final" } } } } }))
+
+      const layers = (yield* catalog.providers())["spark"]!
+      expect(layers).toHaveLength(1)
+      expect(layers[0]?.name).toBe("Spark")
+      expect(layers[0]?.models?.["m1"]?.name).toBe("M1 final")
+      // From the middle layer — the same free-form request.body that carries thinkingBudget in the wild.
+      expect(layers[0]?.models?.["m1"]?.request?.body?.["min_p"]).toBe(0.05)
+      expect(layers[0]?.models?.["m2"]?.name).toBe("M2") // from the third layer, not lost
     }),
   )
 
