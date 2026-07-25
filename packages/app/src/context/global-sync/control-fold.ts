@@ -33,7 +33,16 @@ export function controlPatch(event: Envelope): ControlPatch | undefined {
       return { sessionID, patch: { strict: props.strict ?? undefined } }
     case "session.next.feature.switched": {
       const feature = props.feature
-      if (feature !== "introspection" && feature !== "quality" && feature !== "affective" && feature !== "thinkingBudget")
+      // Explicit comparisons, not an array `includes` — only these narrow `feature` to a key the
+      // patch below can be indexed by.
+      if (
+        feature !== "introspection" &&
+        feature !== "quality" &&
+        feature !== "affective" &&
+        feature !== "thinkingBudget" &&
+        feature !== "surgicalEdits" &&
+        feature !== "askBeforeChanges"
+      )
         return undefined
       return { sessionID, patch: { [feature]: props.enabled ?? undefined } }
     }

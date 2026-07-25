@@ -59,6 +59,8 @@ export const SessionTable = sqliteTable(
     quality: integer({ mode: "boolean" }),
     affective: integer({ mode: "boolean" }),
     thinking_budget: integer({ mode: "boolean" }),
+    surgical_edits: integer({ mode: "boolean" }),
+    ask_before_changes: integer({ mode: "boolean" }),
     result: text({ mode: "json" }).$type<unknown>(),
     ...Timestamps,
     time_compacting: integer(),

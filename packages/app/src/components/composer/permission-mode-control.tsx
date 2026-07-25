@@ -12,7 +12,11 @@ export type ComposerPermissionModeControlState = {
   onSelect: (value: PermissionMode) => void
 }
 
-const PERMISSION_MODES: PermissionMode[] = ["plan", "ask", "surgical", "bypass", "yolo"]
+// Three postures, in escalating order: Analyze (read-only + a temp report) · Build (write this project)
+// · YOLO (write the whole machine). `ask` and `surgical` are deliberately absent — surgical moved to the
+// Tuning modal as "Edits instead of overwriting", and a stored value of either still renders via the
+// current-value valve below, so an existing session never blanks its picker.
+const PERMISSION_MODES: PermissionMode[] = ["plan", "bypass", "yolo"]
 
 /** 1K: the create-time permission-mode droplist — mirrors ComposerAgentControl's Select styling. */
 export function ComposerPermissionModeControl(props: { state: ComposerPermissionModeControlState }) {

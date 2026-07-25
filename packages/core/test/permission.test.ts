@@ -14,6 +14,7 @@ import { Project } from "@novaclaw/core/project"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionTable } from "@novaclaw/core/session/sql"
+import { Global } from "@novaclaw/core/global"
 import { SessionStore } from "@novaclaw/core/session/store"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { SessionRecordEvent } from "@novaclaw/schema/session-record-event"
@@ -408,6 +409,94 @@ describe("PermissionV2", () => {
 // refused OUTRIGHT, with an error the model can route around. The switch is the pair that already
 // exists: the root's thread type (attendance) and the permission mode (`yolo` = the way out).
 // ─────────────────────────────────────────────────────────────────────────────
+// The two former MODES, now Tuning switches. Both must NARROW whatever mode is active and never widen it,
+// and both are OFF unless the session row says otherwise — a switch that defaulted ON would silently change
+// what "Build" means for every existing chat.
+describe("PermissionV2 — the surgical / ask switches", () => {
+  const buildAgent: PermissionV2.Ruleset = [{ action: "*", resource: "*", effect: "allow" }]
+  const on = (feature: "surgicalEdits" | "askBeforeChanges", id: string) =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      yield* db
+        .update(SessionTable)
+        .set(feature === "surgicalEdits" ? { surgical_edits: true } : { ask_before_changes: true })
+        .where(eq(SessionTable.id, SessionV2.ID.make(id)))
+        .run()
+        .pipe(Effect.orDie)
+    })
+
+  it.effect("both default OFF under Build — a whole-file write and a shell command just run", () =>
+    Effect.gen(function* () {
+      yield* setup(buildAgent)
+      yield* insertSession({ id: "ses_build", permissionMode: "bypass" })
+      const service = yield* PermissionV2.Service
+      const sessionID = SessionV2.ID.make("ses_build")
+      for (const action of ["write", "edit", "create", "bash"])
+        expect(yield* service.ask(assertion({ sessionID, action, resources: ["src/a.ts"] }))).toMatchObject({
+          effect: "allow",
+        })
+    }),
+  )
+
+  it.effect("surgicalEdits ON denies a whole-file write but leaves edit/create alone", () =>
+    Effect.gen(function* () {
+      yield* setup(buildAgent)
+      yield* insertSession({ id: "ses_surgical", permissionMode: "bypass" })
+      yield* on("surgicalEdits", "ses_surgical")
+      const service = yield* PermissionV2.Service
+      const sessionID = SessionV2.ID.make("ses_surgical")
+      expect(yield* service.ask(assertion({ sessionID, action: "write", resources: ["src/a.ts"] }))).toMatchObject({
+        effect: "deny",
+      })
+      for (const action of ["edit", "create"])
+        expect(yield* service.ask(assertion({ sessionID, action, resources: ["src/a.ts"] }))).toMatchObject({
+          effect: "allow",
+        })
+    }),
+  )
+
+  it.effect("askBeforeChanges ON turns Build's silent allows into consent, including bash", () =>
+    Effect.gen(function* () {
+      yield* setup(buildAgent)
+      yield* insertSession({ id: "ses_ask_sw", permissionMode: "bypass" })
+      yield* on("askBeforeChanges", "ses_ask_sw")
+      const service = yield* PermissionV2.Service
+      const sessionID = SessionV2.ID.make("ses_ask_sw")
+      // A distinct id per action: an `ask` verdict QUEUES a pending permission, so reusing one id collides.
+      for (const action of ["edit", "write", "create", "trash", "bash"])
+        expect(
+          yield* service.ask(
+            assertion({ id: PermissionV2.ID.create(`per_${action}`), sessionID, action, resources: ["src/a.ts"] }),
+          ),
+        ).toMatchObject({ effect: "ask" })
+      // ...but a READ is not a change, so it still goes through untouched.
+      expect(yield* service.ask(assertion({ sessionID, action: "read", resources: ["src/a.ts"] }))).toMatchObject({
+        effect: "allow",
+      })
+    }),
+  )
+
+  it.effect("Analyze is read-only, EXCEPT it may still write its report into the temp dir", () =>
+    Effect.gen(function* () {
+      yield* setup(buildAgent)
+      yield* insertSession({ id: "ses_analyze", permissionMode: "plan" })
+      const service = yield* PermissionV2.Service
+      const sessionID = SessionV2.ID.make("ses_analyze")
+      // In-project writes are refused...
+      for (const action of ["edit", "write", "create", "trash"])
+        expect(yield* service.ask(assertion({ sessionID, action, resources: ["src/a.ts"] }))).toMatchObject({
+          effect: "deny",
+        })
+      // ...while the report path is allowed, so a review can save its findings.
+      const report = `${Global.Path.tmp.replaceAll("\\", "/")}/report.md`
+      for (const action of ["create", "write"])
+        expect(yield* service.ask(assertion({ sessionID, action, resources: [report] }))).toMatchObject({
+          effect: "allow",
+        })
+    }),
+  )
+})
+
 describe("PermissionV2 — unattended confinement stance", () => {
   // The real build agent's baseline (plugin/agent.ts): allow-all in-project, external WRITE asks. There is
   // deliberately no blanket external_directory_read rule here — that default is decided live by the

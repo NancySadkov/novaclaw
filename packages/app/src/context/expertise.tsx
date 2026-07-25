@@ -23,16 +23,18 @@ export function useExpertise() {
 // users actually want ("work in my project without asking me every time") and left Normal with just
 // two options, which read as a broken picker.
 //
-// `yolo` keeps its gate: it is the mode that ALLOWS the external classes outright, i.e. the only one
-// that can touch anything outside the folder. That is the `rm -rf /` shape, so it stays behind Developer.
-// A stored value above the current level still renders in the picker (so it never blanks) — the honesty
-// valve nudges the user to unlock and review it rather than silently hiding an active choice.
+// `yolo` is ungated too (owner 2026-07-25 named all three postures as the set a normal user picks from).
+// Gating it reproduced the original complaint — a picker with two entries — and hiding the escape hatch
+// does not make it safer, it just makes the honest one unreachable. What carries the weight instead is the
+// LABEL: "YOLO" reads with the hint "Write access to the ENTIRE computer, not just this project".
+// The real containment work is tracked for v0.2.0 (jail bash in every non-YOLO mode, Windows included).
+// A stored value above the current level still renders in the picker (so it never blanks).
 export const PERMISSION_MODE_MIN_LEVEL: Record<string, ExpertiseLevel> = {
   plan: "normal",
   ask: "normal",
   surgical: "normal",
   bypass: "normal",
-  yolo: "developer",
+  yolo: "normal",
 }
 
 // Declarative gate: render children only when the current level is at least `min`. Everything the

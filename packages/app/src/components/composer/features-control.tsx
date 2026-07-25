@@ -1,11 +1,12 @@
 import { createSignal, For, Show, type JSX } from "solid-js"
-import { Popover as KobaltePopover } from "@kobalte/core/popover"
+import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
+import { useDialog } from "@novaclaw/ui/context/dialog"
 import { Icon } from "@novaclaw/ui/icon"
 import { Switch as SwitchToggle } from "@novaclaw/ui/v2/switch-v2"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import { useLanguage } from "@/context/language"
 
-export type ComposerFeature = "introspection" | "quality" | "affective" | "thinkingBudget"
+export type ComposerFeature = "introspection" | "quality" | "affective" | "thinkingBudget" | "surgicalEdits" | "askBeforeChanges"
 export type ComposerMode = "interactive" | "auto-prompting" | "goal-oriented"
 
 // The Remote-chat section (messenger-plan §6.2): where does THIS chat live remotely? The trust
@@ -57,7 +58,14 @@ export type ComposerFeaturesControlState = {
   onClose: () => void
 }
 
-const COMPOSER_FEATURES: readonly ComposerFeature[] = ["introspection", "quality", "affective", "thinkingBudget"]
+const COMPOSER_FEATURES: readonly ComposerFeature[] = [
+  "askBeforeChanges",
+  "surgicalEdits",
+  "thinkingBudget",
+  "introspection",
+  "quality",
+  "affective",
+]
 const COMPOSER_MODES: readonly ComposerMode[] = ["interactive", "auto-prompting", "goal-oriented"]
 const REMOTE_TRUSTS: readonly ComposerRemoteTrust[] = ["operator", "client", "audience"]
 
@@ -330,7 +338,7 @@ function RemoteChatSection(props: { remote: ComposerRemoteChatState }) {
  */
 export function ComposerFeaturesControl(props: { state: ComposerFeaturesControlState }) {
   const language = useLanguage()
-  const [open, setOpen] = createSignal(false)
+  const dialog = useDialog()
   const enabledCount = () => COMPOSER_FEATURES.filter((feature) => props.state.current[feature]).length
   const unattended = () => props.state.mode !== "interactive"
   const triggerSuffix = () => {
@@ -340,15 +348,20 @@ export function ComposerFeaturesControl(props: { state: ComposerFeaturesControlS
     if (enabledCount() > 0) parts.push(String(enabledCount()))
     return parts.length ? ` · ${parts.join(" · ")}` : ""
   }
-  const close = () => {
-    setOpen(false)
-    props.state.onClose()
-  }
+  // `onClose` is the composer's "the user finished tuning" hook (it re-reads the session record), so it
+  // fires when the dialog goes away by ANY route — button, overlay click or Escape — via dialog.show's
+  // own onClose callback rather than a hand-rolled handler per dismissal path.
+  const openPanel = () =>
+    void dialog.show(
+      () => <TuningPanel state={props.state} onDismiss={() => props.state.onClose()} />,
+      () => props.state.onClose(),
+    )
   return (
-    <KobaltePopover open={open()} onOpenChange={setOpen} modal={false} placement="top-start" gutter={4}>
+    <>
       <TooltipV2 placement="top" gutter={4} value={language.t("prompt.features.tooltip")}>
-        <KobaltePopover.Trigger
+        <button
           type="button"
+          onClick={openPanel}
           data-action="prompt-features"
           data-enabled-count={enabledCount() || undefined}
           data-mode={unattended() ? props.state.mode : undefined}
@@ -363,19 +376,25 @@ export function ComposerFeaturesControl(props: { state: ComposerFeaturesControlS
             {language.t("prompt.features.label")}
             {triggerSuffix()}
           </span>
-        </KobaltePopover.Trigger>
+        </button>
       </TooltipV2>
-      <KobaltePopover.Portal>
-        <KobaltePopover.Content
-          data-component="prompt-features-popover"
-          class="w-80 flex flex-col gap-3 p-4 rounded-md border border-border-base bg-surface-raised-stronger-non-alpha shadow-md z-50 outline-none"
-          onEscapeKeyDown={(event) => {
-            event.preventDefault()
-            event.stopPropagation()
-            close()
-          }}
-          onPointerDownOutside={() => setOpen(false)}
-        >
+    </>
+  )
+}
+
+/**
+ * The Tuning panel itself, as a MODAL rather than a popover. It outgrew a dropdown — a mode radio group,
+ * the remote-chat section and six switches do not fit in an anchored panel, and on a phone a popover that
+ * tall is unusable. A centered dialog scrolls and can be dismissed the ordinary way.
+ */
+function TuningPanel(props: { state: ComposerFeaturesControlState; onDismiss: () => void }) {
+  const language = useLanguage()
+  return (
+    <Dialog size="content">
+      <div
+        data-component="prompt-features-panel"
+        class="flex max-h-[80vh] w-[min(30rem,calc(100vw-2rem))] flex-col gap-3 overflow-y-auto p-5"
+      >
           <div class="flex flex-col gap-1">
             <span class="text-[13px] font-[560] text-v2-text-text-base">
               {language.t("prompt.features.popover.title")}
@@ -438,8 +457,7 @@ export function ComposerFeaturesControl(props: { state: ComposerFeaturesControlS
               </SwitchToggle>
             </div>
           ))}
-        </KobaltePopover.Content>
-      </KobaltePopover.Portal>
-    </KobaltePopover>
+      </div>
+    </Dialog>
   )
 }

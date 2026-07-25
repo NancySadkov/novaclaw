@@ -318,7 +318,11 @@ export const layer = Layer.effectDiscard(
             ? { quality: event.data.enabled, ...stamp }
             : event.data.feature === "thinkingBudget"
               ? { thinking_budget: event.data.enabled, ...stamp }
-              : { affective: event.data.enabled, ...stamp }
+              : event.data.feature === "surgicalEdits"
+                ? { surgical_edits: event.data.enabled, ...stamp }
+                : event.data.feature === "askBeforeChanges"
+                  ? { ask_before_changes: event.data.enabled, ...stamp }
+                  : { affective: event.data.enabled, ...stamp }
       return db
         .update(SessionTable)
         .set(patch)

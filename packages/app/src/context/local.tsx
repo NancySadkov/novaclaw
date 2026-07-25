@@ -22,7 +22,14 @@ export type PermissionMode = "plan" | "ask" | "surgical" | "bypass" | "yolo"
 export type StrictChoice = { enabled: boolean; attempts?: number; wallMinutes?: number }
 
 /** The composer's per-chat harness-feature stances (the Tuning control); absent key = inherit. */
-export type FeatureChoices = { introspection?: boolean; quality?: boolean; affective?: boolean; thinkingBudget?: boolean }
+export type FeatureChoices = {
+  introspection?: boolean
+  quality?: boolean
+  affective?: boolean
+  thinkingBudget?: boolean
+  surgicalEdits?: boolean
+  askBeforeChanges?: boolean
+}
 
 /** The composer's Mode choice (kernel thread type): attended, or the unattended pair. */
 export type SessionModeChoice = "interactive" | "auto-prompting" | "goal-oriented"

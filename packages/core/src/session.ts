@@ -246,7 +246,7 @@ export interface Interface {
   }) => Effect.Effect<void, NotFoundError>
   readonly switchFeature: (input: {
     sessionID: SessionSchema.ID
-    feature: "introspection" | "quality" | "affective" | "thinkingBudget"
+    feature: "introspection" | "quality" | "affective" | "thinkingBudget" | "surgicalEdits" | "askBeforeChanges"
     enabled: boolean | null
   }) => Effect.Effect<void, NotFoundError>
   readonly switchType: (input: {

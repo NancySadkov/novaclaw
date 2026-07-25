@@ -392,11 +392,22 @@ export const dict = {
   "prompt.action.stop": "Stop",
 
   "prompt.permissionMode.title": "Permission mode",
-  "prompt.permissionMode.plan": "Plan only — won't change any files",
-  "prompt.permissionMode.ask": "Ask before every change",
-  "prompt.permissionMode.surgical": "Edit files, never replace a whole one",
-  "prompt.permissionMode.bypass": "Work in this folder without asking",
-  "prompt.permissionMode.yolo": "No limits — can change files anywhere on this machine",
+  // One word each — these render inside a narrow listbox (and on a phone). The explanations live in
+  // `.hint` below, shown by the control's tooltip and the Settings row, not in the option label.
+  // NOTE the display names do not match the internal values: Analyze=plan, Build=bypass. Renaming the
+  // values would touch the schema, protocol, generated clients and every stored session row, for no
+  // user-visible gain — so the mapping is here, and here only. `ask` and `surgical` are no longer
+  // offered: surgical became a Tuning switch, and "ask about everything" is what Analyze/Build bracket.
+  "prompt.permissionMode.plan": "Analyze",
+  "prompt.permissionMode.ask": "Ask",
+  "prompt.permissionMode.surgical": "Surgical",
+  "prompt.permissionMode.bypass": "Build",
+  "prompt.permissionMode.yolo": "YOLO",
+  "prompt.permissionMode.plan.hint": "Read only — but it can still write a report into a temp folder.",
+  "prompt.permissionMode.ask.hint": "Asks before every change. Superseded by Analyze and Build.",
+  "prompt.permissionMode.surgical.hint": "Now a Tuning switch — “Edits instead of overwriting”.",
+  "prompt.permissionMode.bypass.hint": "Write access to this project's folder.",
+  "prompt.permissionMode.yolo.hint": "Write access to the ENTIRE computer, not just this project.",
 
   "prompt.strict.tooltip":
     "Strict mode: the harness plans, verifies every step, and recovers — built for small local models",
@@ -426,6 +437,12 @@ export const dict = {
   "prompt.features.affective.description":
     "Adapts the model's sampling to its appraised mood — steadier when frustrated, freer when exploring.",
 
+  "prompt.features.askBeforeChanges.title": "Ask before every change",
+  "prompt.features.askBeforeChanges.description":
+    "Stop and ask you before the agent edits, creates or deletes anything, and before it runs a shell command. Off by default — the permission mode already decides where it may work.",
+  "prompt.features.surgicalEdits.title": "Edits instead of overwriting",
+  "prompt.features.surgicalEdits.description":
+    "Refuse to replace a whole file. The agent must make the smallest change that works, which keeps diffs readable and avoids losing parts of a file it did not mean to touch.",
   "prompt.features.thinkingBudget.title": "Thinking budget",
   "prompt.features.thinkingBudget.description":
     "Caps how long the model reasons before it must answer, and stops it looping. Turn off to let it think as long as it wants — useful for comparing the two on the same task.",

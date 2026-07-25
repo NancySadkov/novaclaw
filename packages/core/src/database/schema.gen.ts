@@ -362,6 +362,8 @@ export default {
           \`quality\` integer,
           \`affective\` integer,
           \`thinking_budget\` integer,
+          \`surgical_edits\` integer,
+          \`ask_before_changes\` integer,
           \`result\` text,
           \`time_created\` integer NOT NULL,
           \`time_updated\` integer NOT NULL,

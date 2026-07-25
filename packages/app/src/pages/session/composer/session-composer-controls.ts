@@ -91,7 +91,14 @@ export function createPromptInputController(input: {
   // here and flipping it writes this chat's explicit off.
   const featuresCurrent = (): Record<SessionFeatureName, boolean> => {
     const record = sessionView.record() as
-      | { introspection?: boolean; quality?: boolean; affective?: boolean; thinkingBudget?: boolean }
+      | {
+          introspection?: boolean
+          quality?: boolean
+          affective?: boolean
+          thinkingBudget?: boolean
+          surgicalEdits?: boolean
+          askBeforeChanges?: boolean
+        }
       | undefined
     const config = sync().data.config as Partial<Record<SessionFeatureName, { enabled?: boolean }>>
     const draft = local.features.current()
@@ -105,6 +112,8 @@ export function createPromptInputController(input: {
       quality: pick("quality"),
       affective: pick("affective"),
       thinkingBudget: pick("thinkingBudget"),
+      surgicalEdits: pick("surgicalEdits"),
+      askBeforeChanges: pick("askBeforeChanges"),
     }
   }
 

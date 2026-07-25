@@ -1,6 +1,8 @@
 export * as PermissionV2 from "./permission"
 
+import path from "path"
 import { makeLocationNode } from "./effect/app-node"
+import { Global } from "./global"
 import { Context, Deferred, Effect as EffectRuntime, FiberSet, Layer, Schema } from "effect"
 import { Permission } from "@novaclaw/schema/permission"
 import { EventV2 } from "./event"
@@ -20,6 +22,10 @@ import {
 import { PermissionSaved } from "./permission/saved"
 import { SettingsConfigStore } from "./settings-config-store"
 import { TRUNCATION_RESOURCE } from "./tool/truncation-dir"
+
+/** Where an Analyze-mode session may still write its report: the app's own temp dir, which the agent
+ *  baseline already whitelists for external read/write. Slashed to match `LocationMutation.resolve`. */
+const REPORT_RESOURCE = path.join(Global.Path.tmp, "*").replaceAll("\\", "/")
 
 export { Effect, Rule, Ruleset } from "@novaclaw/schema/permission"
 const missingAgentPermissions: Permission.Ruleset = [{ action: "*", resource: "*", effect: "deny" }]
@@ -315,11 +321,11 @@ export const layer = Layer.effect(
       return (all as { paranoid?: unknown }).paranoid === true
     })
 
-    const sessionMode = EffectRuntime.fnUntraced(function* (sessionID: SessionV2.ID) {
-      const config = yield* resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, sessionID, (id) =>
+    // The whole resolved config, not just the mode: the evaluator also needs the surgical-edits switch.
+    const sessionConfig = EffectRuntime.fnUntraced(function* (sessionID: SessionV2.ID) {
+      return yield* resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, sessionID, (id) =>
         sessions.get(id as SessionV2.ID),
       )
-      return config.permissionMode
     })
 
     const evaluateInput = EffectRuntime.fnUntraced(function* (input: AssertInput) {
@@ -330,9 +336,10 @@ export const layer = Layer.effect(
       // bypass's `allow`) shadow an explicit configured deny — a mode may convert silent allows
       // into consent or raise defaults, but never soften a deny; and a saved allow-always can
       // never override plan/surgical mode denies.
-      const mode: PermissionMode = yield* sessionMode(input.sessionID).pipe(
-        EffectRuntime.catch(() => EffectRuntime.succeed("ask" as const)),
+      const resolved = yield* sessionConfig(input.sessionID).pipe(
+        EffectRuntime.catch(() => EffectRuntime.succeed(EFFECTIVE_CONFIG_DEFAULTS)),
       )
+      const mode: PermissionMode = resolved.permissionMode
       // Deny-fast — the unattended confinement stance (config-resolve.ts §UNATTENDED CONFINEMENT).
       // Under an UNATTENDED chain ROOT, an out-of-folder create/modify (and its read twin) is
       // refused OUTRIGHT instead of being parked as an ask nobody can answer. Its own HARD arm,
@@ -358,7 +365,40 @@ export const layer = Layer.effect(
           ? stanceRules
           : [...stanceRules, { action: "external_directory_read", resource: TRUNCATION_RESOURCE, effect: "allow" as const }]
       const configuredRules = yield* configured(input.sessionID, input.agent)
-      const modeRules = MODE_RULES[mode]
+      // The mode overlay, plus Analyze's one carve-out. "Analyze" (mode `plan`) is read-only EXCEPT that it
+      // may still write its findings somewhere — a review that cannot save its own report is not much use.
+      // The allows land AFTER the mode denies (findLast) so they apply to the temp dir and nowhere else, and
+      // they are folded into the same array the early deny-fast arm checks, or that arm would refuse the
+      // write before ever seeing the exception.
+      const modeRules =
+        mode === "plan"
+          ? [
+              ...MODE_RULES[mode],
+              { action: "create", resource: REPORT_RESOURCE, effect: "allow" as const },
+              { action: "write", resource: REPORT_RESOURCE, effect: "allow" as const },
+              { action: "edit", resource: REPORT_RESOURCE, effect: "allow" as const },
+              { action: "external_directory_write", resource: REPORT_RESOURCE, effect: "allow" as const },
+            ]
+          : MODE_RULES[mode]
+      // The two Tuning switches that were once modes. Both NARROW whatever mode is active and never widen
+      // it, so they sit after the mode overlay and are included in the deny-fast arm below. Both default
+      // OFF (no global `{ enabled }` block to inherit from), which is why absent means "do not apply".
+      const featureRules: Permission.Ruleset = [
+        // "Edits instead of overwriting": a full-file `write` is refused; `edit`/`create` still work.
+        ...(resolved.surgicalEdits === true
+          ? [{ action: "write", resource: "*", effect: "deny" as const }]
+          : []),
+        // "Ask before every change": the old `ask` mode's overlay, now composable with Analyze or Build.
+        ...(resolved.askBeforeChanges === true
+          ? ([
+              { action: "edit", resource: "*", effect: "ask" },
+              { action: "write", resource: "*", effect: "ask" },
+              { action: "create", resource: "*", effect: "ask" },
+              { action: "trash", resource: "*", effect: "ask" },
+              { action: "bash", resource: "*", effect: "ask" },
+            ] as Permission.Ruleset)
+          : []),
+      ]
       // READ BASELINE. Reading outside the project folder is ordinary work — a toolchain, an SDK, a system
       // header — so the default is ALLOW and it sits at the LOWEST precedence, where anything more specific
       // overrides it. Writing outside is untouched here and keeps its own `ask` default: the risk this whole
@@ -385,10 +425,10 @@ export const layer = Layer.effect(
         isParanoid && !input.resources.every(governedSpecifically)
           ? [{ action: readAction, resource: "*", effect: "ask" }]
           : []
-      const rules = [...readBaseline, ...configuredRules, ...paranoidRead, ...modeRules, ...stance]
+      const rules = [...readBaseline, ...configuredRules, ...paranoidRead, ...modeRules, ...featureRules, ...stance]
       if (denied(input, stance))
         return { effect: "deny" as const, rules, reason: "unattended-confined" as DenialReason | undefined }
-      if (denied(input, configuredRules) || denied(input, modeRules))
+      if (denied(input, configuredRules) || denied(input, modeRules) || denied(input, featureRules))
         return { effect: "deny" as const, rules, reason: undefined as DenialReason | undefined }
       const all = [...rules, ...(yield* savedRules())]
       const effects = input.resources.map((resource) => evaluate(input.action, resource, all).effect)

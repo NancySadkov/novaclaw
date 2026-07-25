@@ -192,6 +192,10 @@ export interface SessionConfig {
   readonly affective?: boolean
   /** Tri-state: enforce the model's reasoning budget in this chat. Absent = inherit, then the model's own. */
   readonly thinkingBudget?: boolean
+  /** Tri-state: deny full-file overwrites (edit in place instead). Absent = inherit, then OFF. */
+  readonly surgicalEdits?: boolean
+  /** Tri-state: turn changes into consent prompts. Absent = inherit, then OFF. */
+  readonly askBeforeChanges?: boolean
   readonly strict?: StrictOverride
   readonly tools?: readonly string[]
 }
@@ -229,6 +233,10 @@ export interface EffectiveConfig {
   readonly affective?: boolean
   /** Tri-state: enforce the model's reasoning budget in this chat. Absent = inherit, then the model's own. */
   readonly thinkingBudget?: boolean
+  /** Tri-state: deny full-file overwrites (edit in place instead). Absent = inherit, then OFF. */
+  readonly surgicalEdits?: boolean
+  /** Tri-state: turn changes into consent prompts. Absent = inherit, then OFF. */
+  readonly askBeforeChanges?: boolean
   /** The nearest per-session Strict override on the chain; `undefined` = none (use global config). */
   readonly strict?: StrictOverride
   readonly tools?: readonly string[]
@@ -250,6 +258,8 @@ export function resolveConfig(defaults: EffectiveConfig, chain: readonly Session
   let quality = defaults.quality
   let affective = defaults.affective
   let thinkingBudget = defaults.thinkingBudget
+  let surgicalEdits = defaults.surgicalEdits
+  let askBeforeChanges = defaults.askBeforeChanges
   let strict = defaults.strict
   let tools = defaults.tools
   let permissionMode = defaults.permissionMode
@@ -267,6 +277,8 @@ export function resolveConfig(defaults: EffectiveConfig, chain: readonly Session
     if (layer.quality !== undefined) quality = layer.quality
     if (layer.affective !== undefined) affective = layer.affective
     if (layer.thinkingBudget !== undefined) thinkingBudget = layer.thinkingBudget
+    if (layer.surgicalEdits !== undefined) surgicalEdits = layer.surgicalEdits
+    if (layer.askBeforeChanges !== undefined) askBeforeChanges = layer.askBeforeChanges
     if (layer.strict !== undefined) strict = layer.strict
     if (layer.tools !== undefined) tools = layer.tools
     if (layer.permissionRules !== undefined) permissionRules = [...permissionRules, ...layer.permissionRules]
@@ -290,6 +302,8 @@ export function resolveConfig(defaults: EffectiveConfig, chain: readonly Session
     quality,
     affective,
     thinkingBudget,
+    surgicalEdits,
+    askBeforeChanges,
     strict,
     tools,
   }
@@ -317,6 +331,10 @@ export interface SessionLike {
   readonly affective?: boolean
   /** Tri-state: enforce the model's reasoning budget in this chat. Absent = inherit, then the model's own. */
   readonly thinkingBudget?: boolean
+  /** Tri-state: deny full-file overwrites (edit in place instead). Absent = inherit, then OFF. */
+  readonly surgicalEdits?: boolean
+  /** Tri-state: turn changes into consent prompts. Absent = inherit, then OFF. */
+  readonly askBeforeChanges?: boolean
   // permissionRules / tools get mapped here as the session schema grows to carry them
   // (see architecture.md Phase 1 step 4).
 }
@@ -335,6 +353,8 @@ export const sessionToConfig = (session: SessionLike): SessionConfig => ({
   quality: session.quality,
   affective: session.affective,
   thinkingBudget: session.thinkingBudget,
+  surgicalEdits: session.surgicalEdits,
+  askBeforeChanges: session.askBeforeChanges,
 })
 
 /**
