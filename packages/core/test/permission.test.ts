@@ -69,6 +69,34 @@ function setRules(rules: PermissionV2.Ruleset) {
   })
 }
 
+/** Insert an extra session row so a test can exercise the CHAIN (type + mode live on the row). */
+function insertSession(input: {
+  readonly id: string
+  readonly type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
+  readonly permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
+  readonly parentID?: string
+}) {
+  return Effect.gen(function* () {
+    const { db } = yield* Database.Service
+    yield* db
+      .insert(SessionTable)
+      .values({
+        id: SessionV2.ID.make(input.id),
+        slug: input.id,
+        directory: "/project",
+        title: input.id,
+        version: "test",
+        agent: "test",
+        ...(input.type ? { type: input.type } : {}),
+        ...(input.permissionMode ? { permission_mode: input.permissionMode } : {}),
+        ...(input.parentID ? { parent_id: SessionV2.ID.make(input.parentID) } : {}),
+      })
+      .onConflictDoNothing()
+      .run()
+      .pipe(Effect.orDie)
+  })
+}
+
 function assertion(input: Partial<PermissionV2.AssertInput> = {}) {
   return {
     id: PermissionV2.ID.create("per_test"),
@@ -358,6 +386,157 @@ describe("PermissionV2", () => {
       yield* service.assert(assertion({ id: PermissionV2.ID.create("per_next"), resources: ["src/next.ts"] }))
       yield* saved.remove(id)
       expect(yield* saved.list()).toEqual([])
+    }),
+  )
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The unattended confinement stance (deny-fast). An unattended run that hits an ask does not get
+// gated, it HANGS — measured live as a queued recipe cook sitting on three pending `bash` asks with
+// nobody at the keyboard. So an out-of-folder create/modify under an UNATTENDED chain root is
+// refused OUTRIGHT, with an error the model can route around. The switch is the pair that already
+// exists: the root's thread type (attendance) and the permission mode (`yolo` = the way out).
+// ─────────────────────────────────────────────────────────────────────────────
+describe("PermissionV2 — unattended confinement stance", () => {
+  // The real build agent's baseline: allow-all in-project, external classes ask.
+  const buildAgentRules: PermissionV2.Ruleset = [
+    { action: "*", resource: "*", effect: "allow" },
+    { action: "external_directory_read", resource: "*", effect: "ask" },
+    { action: "external_directory_write", resource: "*", effect: "ask" },
+  ]
+  const outside = (input: Partial<PermissionV2.AssertInput> = {}) =>
+    assertion({
+      action: "external_directory_write",
+      resources: ["C:/elsewhere/*"],
+      save: ["C:/elsewhere/*"],
+      ...input,
+    })
+
+  it.effect("an out-of-folder write is DENIED OUTRIGHT for an unattended session — no pending ask", () =>
+    Effect.gen(function* () {
+      yield* setup(buildAgentRules)
+      yield* insertSession({ id: "ses_cron", type: "goal-oriented", permissionMode: "bypass" })
+      const service = yield* PermissionV2.Service
+
+      const input = outside({ sessionID: SessionV2.ID.make("ses_cron") })
+      // `ask` reports the verdict without queueing anything...
+      expect(yield* service.ask(input)).toMatchObject({ effect: "deny" })
+      expect(yield* service.list()).toEqual([])
+
+      // ...and `assert` — the path every mutating tool takes — fails immediately instead of parking.
+      const error = yield* service.assert(input).pipe(Effect.flip)
+      expect(error).toBeInstanceOf(PermissionV2.DeniedError)
+      expect((error as PermissionV2.DeniedError).reason).toBe("unattended-confined")
+      expect(yield* service.list()).toEqual([]) // nothing waiting for a human who will never come
+
+      // This is exactly what the agent sees (every mutating tool lowers it through denialMessage
+      // into a ToolFailure the model reads as an error-state tool result — never a silent no-op).
+      const message = PermissionV2.denialMessage(error)!
+      expect(message).toContain("UNATTENDED")
+      expect(message).toContain("waiting or retrying will change nothing")
+      expect(message).not.toContain("ask the user")
+    }),
+  )
+
+  it.effect("the identical request on an INTERACTIVE session still asks (attended path untouched)", () =>
+    Effect.gen(function* () {
+      yield* setup(buildAgentRules)
+      yield* insertSession({ id: "ses_chat", type: "interactive", permissionMode: "bypass" })
+      const service = yield* PermissionV2.Service
+      expect(yield* service.ask(outside({ sessionID: SessionV2.ID.make("ses_chat") }))).toMatchObject({
+        effect: "ask",
+      })
+      expect(yield* service.get(PermissionV2.ID.create("per_test"))).toBeDefined()
+    }),
+  )
+
+  it.effect("the out-of-folder READ class is denied too — an unanswered ask yields no bytes anyway", () =>
+    Effect.gen(function* () {
+      yield* setup(buildAgentRules)
+      yield* insertSession({ id: "ses_cron", type: "auto-prompting", permissionMode: "bypass" })
+      const service = yield* PermissionV2.Service
+      expect(
+        yield* service.ask(
+          outside({ sessionID: SessionV2.ID.make("ses_cron"), action: "external_directory_read" }),
+        ),
+      ).toMatchObject({ effect: "deny" })
+    }),
+  )
+
+  it.effect("IN-folder work is untouched: the session still creates/edits/reads inside its own folder", () =>
+    Effect.gen(function* () {
+      yield* setup(buildAgentRules)
+      yield* insertSession({ id: "ses_cron", type: "goal-oriented", permissionMode: "bypass" })
+      const service = yield* PermissionV2.Service
+      const session = SessionV2.ID.make("ses_cron")
+      for (const action of ["create", "write", "edit", "read", "trash"])
+        expect(yield* service.ask(assertion({ sessionID: session, action, resources: ["out/report.md"] }))).toMatchObject(
+          { effect: "allow" },
+        )
+    }),
+  )
+
+  it.effect("a saved allow-always cannot buy its way out (the stance is a HARD deny)", () =>
+    Effect.gen(function* () {
+      yield* setup(buildAgentRules)
+      yield* insertSession({ id: "ses_cron", type: "goal-oriented", permissionMode: "bypass" })
+      const saved = yield* PermissionSaved.Service
+      // A grant the operator saved earlier, from an attended session at the same origin.
+      yield* saved.add({ origin: Project.ID.global, action: "external_directory_write", resources: ["C:/elsewhere/*"] })
+      const service = yield* PermissionV2.Service
+      expect(yield* service.ask(outside({ sessionID: SessionV2.ID.make("ses_cron") }))).toMatchObject({
+        effect: "deny",
+      })
+    }),
+  )
+
+  // The narrowing composition. Attendance is the ROOT's property and `yolo` is the only exit, so a
+  // spawned child gets clamped on BOTH axes — it can neither re-declare itself attended nor bid up
+  // to yolo past its parent.
+  it.effect("a spawned child cannot escalate out of the stance (root type wins, yolo is clamped)", () =>
+    Effect.gen(function* () {
+      yield* setup(buildAgentRules)
+      yield* insertSession({ id: "ses_root", type: "goal-oriented", permissionMode: "bypass" })
+      yield* insertSession({
+        id: "ses_kid",
+        parentID: "ses_root",
+        type: "interactive", // claims attendance…
+        permissionMode: "yolo", // …and bids for the exit
+      })
+      const service = yield* PermissionV2.Service
+      expect(yield* service.ask(outside({ sessionID: SessionV2.ID.make("ses_kid") }))).toMatchObject({
+        effect: "deny",
+      })
+      expect(yield* service.list()).toEqual([])
+    }),
+  )
+
+  it.effect("a ROOT that deliberately chooses yolo opts its whole subtree out of the stance", () =>
+    Effect.gen(function* () {
+      yield* setup(buildAgentRules)
+      yield* insertSession({ id: "ses_root", type: "goal-oriented", permissionMode: "yolo" })
+      yield* insertSession({ id: "ses_kid", parentID: "ses_root" })
+      const service = yield* PermissionV2.Service
+      // yolo's own overlay ALLOWS the external classes — the documented "outside the project too".
+      expect(yield* service.ask(outside({ sessionID: SessionV2.ID.make("ses_root") }))).toMatchObject({
+        effect: "allow",
+      })
+      expect(yield* service.ask(outside({ sessionID: SessionV2.ID.make("ses_kid") }))).toMatchObject({
+        effect: "allow",
+      })
+    }),
+  )
+
+  it.effect("an agent-level deny still wins, and keeps the generic (untagged) wording", () =>
+    Effect.gen(function* () {
+      yield* setup([{ action: "*", resource: "*", effect: "deny" }])
+      yield* insertSession({ id: "ses_cron", type: "goal-oriented", permissionMode: "bypass" })
+      const service = yield* PermissionV2.Service
+      const error = yield* service
+        .assert(assertion({ sessionID: SessionV2.ID.make("ses_cron"), action: "write", resources: ["src/x.ts"] }))
+        .pipe(Effect.flip)
+      expect(error).toBeInstanceOf(PermissionV2.DeniedError)
+      expect((error as PermissionV2.DeniedError).reason).toBeUndefined()
     }),
   )
 })

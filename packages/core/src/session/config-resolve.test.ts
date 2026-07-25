@@ -1,13 +1,18 @@
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
 import {
+  attendedRoot,
   moreRestrictive,
   resolveConfig,
   resolveSessionConfig,
   rootSessionType,
+  UNATTENDED_CONFINED_RULES,
+  unattendedStanceRules,
   type EffectiveConfig,
+  type PermissionMode,
   type SessionConfig,
   type SessionLike,
+  type SessionType,
 } from "./config-resolve"
 
 const DEFAULTS: EffectiveConfig = {
@@ -256,5 +261,98 @@ describe("resolveConfig — thread type + priority (K1)", () => {
       resolveSessionConfig(DEFAULTS, "child", (id) => Effect.succeed(sessions[id])),
     )
     expect(resolved).toMatchObject({ type: "goal-oriented", priority: 7 })
+  })
+})
+
+// The unattended confinement stance (deny-fast). "Switchable" without a new mode or a new column:
+// the switch is the pair that already exists — the chain ROOT's thread type (attendance) and the
+// resolved permission MODE (`yolo` = the deliberate way out).
+describe("unattendedStanceRules — the unattended confinement stance", () => {
+  const ATTENDED: SessionType[] = ["interactive", "sub-agent"]
+  const UNATTENDED: SessionType[] = ["auto-prompting", "goal-oriented"]
+  const BELOW_YOLO: PermissionMode[] = ["plan", "ask", "surgical", "bypass"]
+
+  test("attendedRoot: only interactive + sub-agent have someone to answer", () => {
+    for (const type of ATTENDED) expect(attendedRoot(type)).toBe(true)
+    for (const type of UNATTENDED) expect(attendedRoot(type)).toBe(false)
+  })
+
+  test("an ATTENDED root never gets the stance — asks still reach the human, in every mode", () => {
+    for (const type of ATTENDED)
+      for (const mode of [...BELOW_YOLO, "yolo" as const]) expect(unattendedStanceRules(type, mode)).toEqual([])
+  })
+
+  test("an UNATTENDED root below yolo hard-denies BOTH external classes", () => {
+    for (const type of UNATTENDED)
+      for (const mode of BELOW_YOLO) expect(unattendedStanceRules(type, mode)).toEqual(UNATTENDED_CONFINED_RULES)
+    expect(UNATTENDED_CONFINED_RULES).toEqual([
+      { action: "external_directory_write", resource: "*", effect: "deny" },
+      { action: "external_directory_read", resource: "*", effect: "deny" },
+    ])
+  })
+
+  test("the stance names NOTHING inside the folder — in-folder work is untouched", () => {
+    const actions = UNATTENDED_CONFINED_RULES.map((rule) => rule.action)
+    for (const action of ["read", "edit", "write", "create", "trash", "bash"]) expect(actions).not.toContain(action)
+  })
+
+  test("yolo is the one way out (the mode that already ALLOWS the external classes)", () => {
+    for (const type of UNATTENDED) expect(unattendedStanceRules(type, "yolo")).toEqual([])
+  })
+
+  // The composition that makes the stance non-escapable: unattendedness is the ROOT's property, so
+  // a child cannot re-declare itself attended, and `yolo` — the only exit — is unreachable for any
+  // non-root layer because permissionMode NARROWS.
+  test("a spawned child cannot escape the stance: root type wins and yolo is clamped away", () => {
+    const sessions: Record<string, SessionLike> = {
+      root: { id: "root", type: "goal-oriented", permissionMode: "bypass" },
+      child: { id: "child", parentID: "root", type: "interactive", permissionMode: "yolo" },
+    }
+    const get = (id: string) => Effect.succeed(sessions[id])
+    const rootType = Effect.runSync(rootSessionType("child", get))
+    const mode = Effect.runSync(resolveSessionConfig(DEFAULTS, "child", get)).permissionMode
+    expect(rootType).toBe("goal-oriented") // the child's "interactive" does not buy attendance
+    expect(mode).toBe("bypass") // moreRestrictive clamped the child's yolo bid
+    expect(unattendedStanceRules(rootType, mode)).toEqual(UNATTENDED_CONFINED_RULES)
+  })
+
+  test("a ROOT that explicitly chooses yolo opts its whole subtree out (and a child stays out)", () => {
+    const sessions: Record<string, SessionLike> = {
+      root: { id: "root", type: "goal-oriented", permissionMode: "yolo" },
+      child: { id: "child", parentID: "root" },
+    }
+    const get = (id: string) => Effect.succeed(sessions[id])
+    const rootType = Effect.runSync(rootSessionType("child", get))
+    const mode = Effect.runSync(resolveSessionConfig(DEFAULTS, "child", get)).permissionMode
+    expect(unattendedStanceRules(rootType, mode)).toEqual([])
+  })
+
+  test("a child under a yolo root that narrows itself falls BACK INTO the stance", () => {
+    const sessions: Record<string, SessionLike> = {
+      root: { id: "root", type: "auto-prompting", permissionMode: "yolo" },
+      child: { id: "child", parentID: "root", permissionMode: "bypass" },
+    }
+    const get = (id: string) => Effect.succeed(sessions[id])
+    const mode = Effect.runSync(resolveSessionConfig(DEFAULTS, "child", get)).permissionMode
+    expect(mode).toBe("bypass")
+    expect(unattendedStanceRules(Effect.runSync(rootSessionType("child", get)), mode)).toEqual(
+      UNATTENDED_CONFINED_RULES,
+    )
+  })
+
+  // The stance is a RULE overlay, so it obeys the deny-wins evaluator: an accumulated rule set can
+  // only add restrictions, and an agent's allow-all cannot outrank the stance (the evaluator checks
+  // it in its own HARD arm — covered end-to-end in test/permission.test.ts).
+  test("stance rules survive rule ACCUMULATION down the chain", () => {
+    const resolved = resolveConfig(DEFAULTS, [
+      { permissionRules: [...UNATTENDED_CONFINED_RULES] },
+      { permissionRules: [{ action: "external_directory_write", resource: "*", effect: "allow" }] },
+    ])
+    // Accumulation keeps both; the deny is still present for the deny-wins evaluator to find.
+    expect(resolved.permissionRules).toContainEqual({
+      action: "external_directory_write",
+      resource: "*",
+      effect: "deny",
+    })
   })
 })

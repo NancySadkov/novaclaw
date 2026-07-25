@@ -51,6 +51,31 @@ describe("denialMessage — denial as observation (1J)", () => {
     expect(message).not.toContain("'read'") // only the denying rules are named
   })
 
+  // Deny-fast: what the agent SEES when the unattended confinement stance refuses it. The generic
+  // wording ends in "ask the user to adjust permissions" — the one instruction that hangs an
+  // unattended run — so the tagged reason must swap it for a way forward inside the work folder.
+  test("an unattended-confined denial tells the agent to work in its folder, NEVER to ask/wait", () => {
+    const error = new PermissionV2.DeniedError({
+      rules: [{ action: "external_directory_write", resource: "*", effect: "deny" }],
+      reason: "unattended-confined",
+    })
+    const message = PermissionV2.denialMessage(error)!
+    expect(message).toContain("UNATTENDED")
+    expect(message).toContain("working folder")
+    expect(message).toContain("external_directory_write")
+    expect(message).toContain("waiting or retrying will change nothing")
+    expect(message).not.toContain("ask the user")
+  })
+
+  test("an untagged denial keeps the generic policy wording (attended sessions unchanged)", () => {
+    const message = PermissionV2.denialMessage(
+      new PermissionV2.DeniedError({ rules: [{ action: "write", resource: "*", effect: "deny" }] }),
+    )!
+    expect(message).toContain("denied by policy")
+    expect(message).toContain("ask the user to adjust permissions")
+    expect(message).not.toContain("UNATTENDED")
+  })
+
   test("CorrectedError carries the user's reason verbatim", () => {
     const message = PermissionV2.denialMessage(
       new PermissionV2.CorrectedError({ feedback: "w64devkit is a read-only toolchain — write under the project" }),

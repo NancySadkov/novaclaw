@@ -4,8 +4,11 @@ import path from "path"
 import { describe, expect, test } from "bun:test"
 import { Effect, Layer, Stream } from "effect"
 import { ChildProcess } from "effect/unstable/process"
+import { AgentJail } from "@novaclaw/core/agent-jail"
+import { Database } from "@novaclaw/core/database/database"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { Config } from "@novaclaw/core/config"
+import { SessionTable } from "@novaclaw/core/session/sql"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { Location } from "@novaclaw/core/location"
@@ -122,7 +125,9 @@ const withTool = <A, E, R>(
   }).pipe(
     Effect.provide(
       AppNodeBuilder.build(
-        LayerNode.group([ToolRegistry.node, ToolRegistry.toolsNode, LocationMutation.node, BashTool.node]),
+        // Database is already a transitive dep (BashTool → SessionStore → Database); listing it
+        // EXPOSES it so a test can seed the session row whose thread type drives the jail decision.
+        LayerNode.group([Database.node, ToolRegistry.node, ToolRegistry.toolsNode, LocationMutation.node, BashTool.node]),
         [
           [Location.node, activeLocation],
           [PermissionV2.node, permission],
@@ -394,6 +399,91 @@ describe("BashTool", () => {
               expect(settled.output?.structured).not.toHaveProperty("resource")
             }),
           ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  // Deny-fast (the unattended confinement stance, session/config-resolve.ts). The Agent Jail
+  // decision now runs BEFORE the permission asserts. On a host with no sandbox backend — every
+  // Windows host, since the jail's Windows backend was never built — an UNATTENDED session's bash
+  // is certain to be refused, so asking for consent first merely parked an ask nobody was present
+  // to answer: measured live as a queued recipe cook sitting on three pending `bash` asks, looking
+  // alive and doing nothing. Consent for something we are certain to refuse is a hang, not a gate.
+  it.live("an UNATTENDED session's bash decision lands BEFORE the ask (no ask nobody can answer)", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return withTool(tmp.path, (registry) =>
+          Effect.gen(function* () {
+            // A scheduled/goal-oriented chain root: nobody is at the keyboard.
+            const { db } = yield* Database.Service
+            yield* db
+              .insert(SessionTable)
+              .values({
+                id: sessionID,
+                slug: "bash-unattended",
+                directory: tmp.path,
+                title: "bash-unattended",
+                version: "test",
+                type: "goal-oriented",
+              })
+              .onConflictDoNothing()
+              .run()
+              .pipe(Effect.orDie)
+
+            const settled = yield* settleTool(registry, call({ command: "pwd" }))
+            const backend = AgentJail.probe()
+            if (backend.fs && backend.net) {
+              // A host that CAN confine (Linux namespaces): consent still applies and the command
+              // runs sandboxed — the hoist changes nothing for it.
+              expect(assertions.map((input) => input.action)).toEqual(["bash"])
+              expect(runs.length).toBe(1)
+            } else {
+              // No backend: refused up front. The ask that used to precede this is gone…
+              expect(assertions).toEqual([])
+              expect(runs).toEqual([]) // …and nothing ran
+              // …and the model gets a legible error naming the way forward, not a silent no-op.
+              const value = String((settled.result as { readonly value?: unknown }).value ?? "")
+              expect((settled.result as { readonly type?: unknown }).type).toBe("error")
+              expect(value).toContain("no sandbox backend")
+              expect(value).toContain("goal-oriented")
+              expect(value).toContain("Use the native tools instead")
+            }
+          }),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("an ATTENDED session still asks first, exactly where it always did", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        return withTool(tmp.path, (registry) =>
+          Effect.gen(function* () {
+            const { db } = yield* Database.Service
+            yield* db
+              .insert(SessionTable)
+              .values({
+                id: sessionID,
+                slug: "bash-attended",
+                directory: tmp.path,
+                title: "bash-attended",
+                version: "test",
+                type: "interactive",
+              })
+              .onConflictDoNothing()
+              .run()
+              .pipe(Effect.orDie)
+            yield* executeTool(registry, call({ command: "pwd" }))
+            expect(assertions.map((input) => input.action)).toEqual(["bash"])
+            expect(runs.length).toBe(1)
+          }),
         )
       },
       (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),

@@ -16,7 +16,7 @@
 export * as AgentJail from "./agent-jail"
 
 import { spawnSync } from "node:child_process"
-import type { SessionType } from "./session/config-resolve"
+import { attendedRoot, type SessionType } from "./session/config-resolve"
 
 /** The platform sandbox families the probe can report (notes/agent-jail-plan.md §2.2). */
 export type BackendKind = "namespaces" | "seatbelt" | "appcontainer" | "none"
@@ -75,11 +75,14 @@ export function resetProbeCache(): void {
 /**
  * Attendance is a property of the chain ROOT — the question is who answers. Children of an
  * interactive root surface asks to a human (attention pills); under an auto-prompting or
- * goal-oriented root there is no one to ask, so any permission success is auto-allow.
+ * goal-oriented root there is no one to ask.
+ *
+ * The predicate itself now lives in the pure config module (`session/config-resolve.ts`) because
+ * the PERMISSION evaluator needs the same answer for the unattended confinement stance — one
+ * definition of attendance, two consumers. Re-exported here so `AgentJail.attendedRoot` keeps
+ * working for existing call sites.
  */
-export function attendedRoot(rootType: SessionType): boolean {
-  return rootType === "interactive" || rootType === "sub-agent"
-}
+export { attendedRoot }
 
 export type BashDecision = "raw" | "confined" | "deny"
 

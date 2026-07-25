@@ -9,7 +9,14 @@ import { AgentV2 } from "./agent"
 import { SessionV2 } from "./session"
 import { SessionStore } from "./session/store"
 import { Wildcard } from "./util/wildcard"
-import { EFFECTIVE_CONFIG_DEFAULTS, MODE_RULES, resolveSessionConfig, type PermissionMode } from "./session/config-resolve"
+import {
+  EFFECTIVE_CONFIG_DEFAULTS,
+  MODE_RULES,
+  resolveSessionConfig,
+  rootSessionType,
+  unattendedStanceRules,
+  type PermissionMode,
+} from "./session/config-resolve"
 import { PermissionSaved } from "./permission/saved"
 
 export { Effect, Rule, Ruleset } from "@novaclaw/schema/permission"
@@ -64,8 +71,18 @@ export class CorrectedError extends Schema.TaggedErrorClass<CorrectedError>()("P
   feedback: Schema.String,
 }) {}
 
+/**
+ * Why a denial happened, when the plain rule list would mislead the model. `unattended-confined`
+ * = the unattended confinement stance refused an out-of-folder create/modify/read
+ * (`config-resolve.ts` → `UNATTENDED_CONFINED_RULES`); the generic wording tells the model to "ask
+ * the user to adjust permissions", which is exactly the advice that hangs an unattended run.
+ */
+export const DenialReason = Schema.Literals(["unattended-confined"])
+export type DenialReason = typeof DenialReason.Type
+
 export class DeniedError extends Schema.TaggedErrorClass<DeniedError>()("PermissionV2.DeniedError", {
   rules: Permission.Ruleset,
+  reason: DenialReason.pipe(Schema.optional),
 }) {}
 
 export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("PermissionV2.NotFoundError", {
@@ -85,6 +102,17 @@ export function denialMessage(error: unknown): string | undefined {
     const rules = denied.length ? denied : error.rules
     const actions = [...new Set(rules.map((rule) => rule.action))].join(", ") || "unknown"
     const resources = [...new Set(rules.map((rule) => rule.resource))].join(", ") || "unknown"
+    // Deny-fast: an unattended run must never be told to "ask the user" — nobody is there, and a
+    // model that waits or retries burns the whole run. Name the boundary and the way forward.
+    if (error.reason === "unattended-confined")
+      return (
+        `Permission denied: this is an UNATTENDED session, confined to its own working folder. ` +
+        `Creating, modifying or reading anything outside that folder is refused outright (action '${actions}') — ` +
+        `no user is present to approve an exception, so waiting or retrying will change nothing. ` +
+        `Do the work inside this session's folder instead: relative paths resolve there, and you may create ` +
+        `whatever files and subfolders you need. If something outside is genuinely required, finish what you ` +
+        `can and name the blocked path in your result.`
+      )
     return `Permission denied by policy: action '${actions}' on '${resources}' is not allowed in this mode. Do not retry the same call — work within permitted paths and actions, or ask the user to adjust permissions.`
   }
   if (error instanceof CorrectedError)
@@ -295,14 +323,29 @@ export const layer = Layer.effect(
       const mode: PermissionMode = yield* sessionMode(input.sessionID).pipe(
         EffectRuntime.catch(() => EffectRuntime.succeed("ask" as const)),
       )
+      // Deny-fast — the unattended confinement stance (config-resolve.ts §UNATTENDED CONFINEMENT).
+      // Under an UNATTENDED chain ROOT, an out-of-folder create/modify (and its read twin) is
+      // refused OUTRIGHT instead of being parked as an ask nobody can answer. Its own HARD arm,
+      // checked FIRST, so neither a later mode rule, an agent-level allow-all, nor a saved
+      // allow-always can soften it; and TAGGED, so the model gets the unattended wording instead
+      // of "ask the user to adjust permissions". Attendance is the ROOT's property (a child cannot
+      // declare itself attended out of it) and `yolo` — unreachable for a narrowed child — is the
+      // one deliberate way out.
+      const rootType = yield* rootSessionType(input.sessionID, (id) => sessions.get(id as SessionV2.ID)).pipe(
+        EffectRuntime.catch(() => EffectRuntime.succeed(EFFECTIVE_CONFIG_DEFAULTS.type)),
+      )
+      const stanceRules = unattendedStanceRules(rootType, mode)
       const configuredRules = yield* configured(input.sessionID, input.agent)
       const modeRules = MODE_RULES[mode]
-      const rules = [...configuredRules, ...modeRules]
-      if (denied(input, configuredRules) || denied(input, modeRules)) return { effect: "deny" as const, rules }
+      const rules = [...configuredRules, ...modeRules, ...stanceRules]
+      if (denied(input, stanceRules))
+        return { effect: "deny" as const, rules, reason: "unattended-confined" as DenialReason | undefined }
+      if (denied(input, configuredRules) || denied(input, modeRules))
+        return { effect: "deny" as const, rules, reason: undefined as DenialReason | undefined }
       const all = [...rules, ...(yield* savedRules())]
       const effects = input.resources.map((resource) => evaluate(input.action, resource, all).effect)
       const effect: Permission.Effect = effects.includes("deny") ? "deny" : effects.includes("ask") ? "ask" : "allow"
-      return { effect, rules: all }
+      return { effect, rules: all, reason: undefined as DenialReason | undefined }
     })
 
     function request(input: AssertInput): Request {
@@ -345,6 +388,7 @@ export const layer = Layer.effect(
           if (result.effect === "deny") {
             return yield* new DeniedError({
               rules: relevant(input, result.rules),
+              ...(result.reason ? { reason: result.reason } : {}),
             })
           }
           if (result.effect === "allow") return

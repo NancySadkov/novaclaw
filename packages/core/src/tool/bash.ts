@@ -210,6 +210,33 @@ export const layer = Layer.effectDiscard(
                 callID: context.toolCallID,
               }
               const target = yield* mutation.resolve({ path: input.workdir ?? ".", kind: "directory" })
+
+              // Agent Jail P0b/P1 (notes/agent-jail-plan.md §2.3): in an UNATTENDED chain (root
+              // type auto-prompting / goal-oriented) raw host execution additionally requires a
+              // sandbox. With a backend (Linux namespaces, P1) the command runs CONFINED —
+              // worktree-only FS, deny-all egress; with none it is DENIED, with routing to the
+              // path-gated native tools. Attended chains (interactive roots + their sub-agents)
+              // are untouched.
+              // ⚠️ This check runs BEFORE the permission asserts, deliberately (deny-fast). It used
+              // to sit after them, which meant an unattended session on a backend-less host (every
+              // Windows host — no jail backend exists there) first raised a `bash` ask that nobody
+              // was present to answer, and only WOULD have been denied afterwards. Measured live: a
+              // queued recipe cook sat on three pending `bash` asks looking alive and doing
+              // nothing. Asking for consent to run something we are certain to refuse is a hang,
+              // not a gate. Attended behaviour is unchanged — an attended chain never takes the
+              // deny arm, so its consent flow still happens exactly where it did.
+              const rootType = yield* rootSessionType(context.sessionID, (id) =>
+                sessions.get(id as SessionV2.ID),
+              )
+              // messenger-plan §3.4: a client/audience messenger binding ANYWHERE in this chain
+              // makes the turn unattended hostile input — an untrusted stranger drives it, and the
+              // recommended pattern (a bound session spawning a worker sub-agent) means the binding
+              // can sit on an ancestor, so the whole chain is checked, not just this session.
+              const hostileInput = yield* chainHasHostileBinding(context.sessionID)
+              const jailDecision = AgentJail.decideBash({ rootType, backend: AgentJail.probe(), hostileInput })
+              if (jailDecision === "deny")
+                return yield* Effect.fail(new ToolFailure({ message: AgentJail.denyMessage(rootType, hostileInput) }))
+
               const external = target.externalDirectory
               if (external)
                 yield* permission.assert({
@@ -230,26 +257,6 @@ export const layer = Layer.effectDiscard(
                 agent: context.agent,
                 source,
               })
-
-              // Agent Jail P0b/P1 (notes/agent-jail-plan.md §2.3): in an UNATTENDED chain (root
-              // type auto-prompting / goal-oriented) an assert success is auto-allow by
-              // definition — no human exists to answer — so raw host execution additionally
-              // requires a sandbox. With a backend (Linux namespaces, P1) the command runs
-              // CONFINED — worktree-only FS, deny-all egress; with none it is denied with
-              // routing to the path-gated native tools. Attended chains (interactive roots +
-              // their sub-agents) are untouched. Post-assert placement is deliberate: consent
-              // flows stay unchanged, and no PermissionV2 API widening is needed.
-              const rootType = yield* rootSessionType(context.sessionID, (id) =>
-                sessions.get(id as SessionV2.ID),
-              )
-              // messenger-plan §3.4: a client/audience messenger binding ANYWHERE in this chain
-              // makes the turn unattended hostile input — an untrusted stranger drives it, and the
-              // recommended pattern (a bound session spawning a worker sub-agent) means the binding
-              // can sit on an ancestor, so the whole chain is checked, not just this session.
-              const hostileInput = yield* chainHasHostileBinding(context.sessionID)
-              const jailDecision = AgentJail.decideBash({ rootType, backend: AgentJail.probe(), hostileInput })
-              if (jailDecision === "deny")
-                return yield* Effect.fail(new ToolFailure({ message: AgentJail.denyMessage(rootType, hostileInput) }))
 
               if ((yield* fs.stat(target.canonical)).type !== "Directory")
                 return yield* Effect.fail(new Error(`Working directory is not a directory: ${target.canonical}`))

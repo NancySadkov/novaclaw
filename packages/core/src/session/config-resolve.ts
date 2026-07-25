@@ -70,6 +70,66 @@ export const MODE_RULES: Record<PermissionMode, readonly PermissionRule[]> = {
   ],
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// The UNATTENDED CONFINEMENT stance (deny-fast).
+//
+// An ask is a QUESTION, and a question nobody is present to answer is a HANG, not a gate: a
+// queued recipe cook was measured sitting on three pending `bash` asks with the run looking
+// alive and doing nothing — indistinguishable from progress. So for an unattended chain the
+// honest answer to "may I touch something outside my folder?" is NO, delivered IMMEDIATELY as a
+// legible tool error the model can route around (see `PermissionV2.denialMessage`) — never a
+// pending card, and never a silent no-op.
+//
+// WHERE THE SWITCH LIVES: nowhere new. Both halves already exist and already compose.
+//   1. Attendance is a property of the chain ROOT (`attendedRoot`, the Agent Jail doctrine) —
+//      switchable per chat by the composer's Mode control, per schedule by the Calendar, and per
+//      spawn by `SessionSpawner`.
+//   2. The escape hatch is already a permission MODE: `yolo` is the ONE mode whose overlay ALLOWS
+//      the external classes outright (MODE_RULES above) — the documented "everything, incl.
+//      outside the project".
+// So the stance is exactly "unattended root AND mode below yolo". No new mode, no new session
+// column, no new client vocabulary — and it COMPOSES with the narrowing invariant instead of
+// bypassing it: a spawned child can never reach `yolo` past a lower parent (`moreRestrictive`
+// clamps it), so a sub-session can never escape the stance its root chose. The intended
+// unattended posture is therefore `bypass` — act freely INSIDE the work folder, hard-denied
+// outside it — which is exactly what the Calendar already defaults a schedule to.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * Attendance is a property of the chain ROOT — the question is who answers (Agent Jail P0b).
+ * Children of an interactive root surface asks to a human (attention pills); under an
+ * auto-prompting or goal-oriented root there is nobody to reply. Canonical home: this pure
+ * config module, so the permission evaluator and `AgentJail` share ONE predicate.
+ */
+export const attendedRoot = (rootType: SessionType): boolean =>
+  rootType === "interactive" || rootType === "sub-agent"
+
+/**
+ * The rule overlay an unattended chain contributes. BOTH external classes are named:
+ *   - `external_directory_write` is the requirement — every mutating tool (write/edit/create/
+ *     apply-patch/trash/bash-workdir) asserts it BEFORE its own action whenever the resolved path
+ *     leaves the Location (`LocationMutation.externalDirectoryPermission`), so denying it here
+ *     denies out-of-folder create/modify at the one seam they all pass through;
+ *   - `external_directory_read` is included because unattended it was never a CAPABILITY either —
+ *     an unanswered ask yields no bytes, just a hang. Denying loses nothing and returns an error
+ *     the model can act on. (It also matches what the Linux jail already enforces mechanically:
+ *     a confined command's FS view is the worktree, so it cannot read outside it regardless.)
+ * Nothing INSIDE the folder appears here — no `read`/`edit`/`write`/`create`/`trash`/`bash` rule —
+ * which is the whole point of the stance: work freely where you live.
+ */
+export const UNATTENDED_CONFINED_RULES: readonly PermissionRule[] = [
+  { action: "external_directory_write", resource: "*", effect: "deny" },
+  { action: "external_directory_read", resource: "*", effect: "deny" },
+]
+
+/**
+ * The stance's rules for a chain, or none when it does not apply. `rootType` is the CHAIN ROOT's
+ * type (`rootSessionType`), never the target session's — a child cannot declare itself attended
+ * out of its root's stance. `mode` is the RESOLVED mode (already clamped by narrowing).
+ */
+export const unattendedStanceRules = (rootType: SessionType, mode: PermissionMode): readonly PermissionRule[] =>
+  attendedRoot(rootType) || mode === "yolo" ? [] : UNATTENDED_CONFINED_RULES
+
 export interface ModelRef {
   readonly providerID: string
   readonly id: string
