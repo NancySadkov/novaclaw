@@ -219,6 +219,11 @@ export async function duplicate(slug: string, options?: Options): Promise<Recipe
 /**
  * Copy a recipe's folder into a work directory so cooking never touches the original. Returns the files
  * copied. The caller picks `into` — a scratch dir by default, or anywhere the user wants it to live.
+ *
+ * The recipe itself is copied too, not just its assets: a cooked folder must be self-describing, because
+ * "run it in a permanent folder" is how a user migrates work out of scratch. Move that folder anywhere
+ * and it still carries the thing that produced it — which is the whole point of a recipe outliving its
+ * output (AGENTS.md → recipes are source code for the AI era). The agent can also re-read it mid-run.
  */
 export async function materialize(slug: string, into: string, options?: Options): Promise<string[]> {
   const root = recipesRoot(options)
@@ -229,6 +234,16 @@ export async function materialize(slug: string, into: string, options?: Options)
   for (const asset of recipe.assets) {
     await fs.cp(path.join(root, slug, asset), path.join(into, asset), { recursive: true }).catch(() => undefined)
     copied.push(asset)
+  }
+  // Never clobber: cooking into a folder the user already works in must not overwrite their own recipe.md.
+  const manifest = path.join(into, RECIPE_FILE)
+  const exists = await fs
+    .access(manifest)
+    .then(() => true)
+    .catch(() => false)
+  if (!exists) {
+    await fs.writeFile(manifest, render(recipe), "utf8")
+    copied.push(RECIPE_FILE)
   }
   return copied
 }

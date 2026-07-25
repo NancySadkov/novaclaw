@@ -146,10 +146,33 @@ describe("duplicate / remove / materialize", () => {
     await fs.writeFile(path.join(root, "with-assets", "data.csv"), "a,b\n", "utf8")
     const into = path.join(root, "..", path.basename(root) + "-work")
     const copied = await Recipe.materialize("with-assets", into, opts())
-    expect(copied).toEqual(["data.csv"])
+    expect(copied).toEqual(["data.csv", "recipe.md"])
     expect(await fs.readFile(path.join(into, "data.csv"), "utf8")).toBe("a,b\n")
     // original still there
     expect((await Recipe.read("with-assets", opts()))!.assets).toEqual(["data.csv"])
+    await fs.rm(into, { recursive: true, force: true })
+  })
+
+  test("the work dir is self-describing — the recipe travels with the work it produced", async () => {
+    await Recipe.save({ name: "Portable", description: "goes anywhere", prompt: "do the thing" }, opts())
+    const into = path.join(root, "..", path.basename(root) + "-portable")
+    await Recipe.materialize("portable", into, opts())
+    const manifest = await fs.readFile(path.join(into, "recipe.md"), "utf8")
+    expect(manifest).toContain("Portable")
+    expect(manifest).toContain("do the thing")
+    // The copy is a real recipe: pointing the store at the work dir's parent reads it back.
+    expect(Recipe.parse(manifest).prompt.trim()).toBe("do the thing")
+    await fs.rm(into, { recursive: true, force: true })
+  })
+
+  test("materialize never clobbers a recipe.md already in the work dir", async () => {
+    await Recipe.save({ name: "Cook", prompt: "fresh" }, opts())
+    const into = path.join(root, "..", path.basename(root) + "-occupied")
+    await fs.mkdir(into, { recursive: true })
+    await fs.writeFile(path.join(into, "recipe.md"), "the user's own file", "utf8")
+    const copied = await Recipe.materialize("cook", into, opts())
+    expect(copied).not.toContain("recipe.md")
+    expect(await fs.readFile(path.join(into, "recipe.md"), "utf8")).toBe("the user's own file")
     await fs.rm(into, { recursive: true, force: true })
   })
 

@@ -18,6 +18,7 @@ import { IntegrationHandler } from "./handlers/integration"
 import { CredentialHandler } from "./handlers/credential"
 import { MessengerHandler } from "./handlers/messenger"
 import { CalendarHandler } from "./handlers/calendar"
+import { RecipeHandler } from "./handlers/recipe"
 
 export const handlers = Layer.mergeAll(
   HealthHandler,
@@ -31,6 +32,7 @@ export const handlers = Layer.mergeAll(
   CredentialHandler,
   MessengerHandler,
   CalendarHandler,
+  RecipeHandler,
   PermissionHandler,
   FileSystemHandler,
   CommandHandler,

@@ -28,6 +28,7 @@ export const groupNames = {
   "server.credential": "credentials",
   "server.messenger": "messenger",
   "server.calendar": "calendar",
+  "server.recipe": "recipes",
   "server.permission": "permissions",
   "server.fs": "files",
   "server.command": "commands",

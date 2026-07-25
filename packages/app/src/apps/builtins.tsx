@@ -62,6 +62,15 @@ export function useBuiltinApps(): () => HomeApp[] {
       open: () => navigate("/calendar"),
     },
     {
+      id: "recipes",
+      title: "Recipes",
+      icon: "checklist",
+      accent: "#f97316",
+      subtitle: "Ready-made prompts your agents can cook",
+      source: "builtin",
+      open: () => navigate("/recipes"),
+    },
+    {
       id: "files",
       title: "Files",
       icon: "folder",

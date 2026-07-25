@@ -47,6 +47,7 @@ import { Credential } from "@novaclaw/core/credential"
 import { Database } from "@novaclaw/core/database/database"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { CalendarScheduler } from "@novaclaw/core/schedule/scheduler"
+import { RecipeBuiltin } from "@novaclaw/core/recipe-builtin"
 import { Memory } from "@novaclaw/core/kb-graph/memory"
 import { MessengerDrivers } from "@novaclaw/core/messenger/drivers"
 import { NovaclawExternalDriverSource } from "../../../../messenger/external-driver-source"
@@ -307,6 +308,17 @@ const messengerServices = Layer.mergeAll(
 // effort: seedAll ignores per-seed failures; a seed failure must never block startup. The V1
 // config service runs the same pass on its first read (CLI entry points), so this is a cheap
 // no-op on every boot after the first. See core/config-seed-startup.ts.
+// Recipes: write any missing SHIPPED recipe to disk at startup (AGENTS.md → recipes are source code for
+// the AI era). Idempotent and non-destructive — a user's edit to a shipped recipe survives, and a deleted
+// one returns, so the set doubles as an always-available install health check. Best-effort: a seed failure
+// must never block startup.
+const recipeSeedStartup = Layer.effectDiscard(
+  Effect.gen(function* () {
+    const seeded = yield* Effect.promise(() => RecipeBuiltin.seed())
+    if (seeded.created.length > 0) yield* Effect.logInfo("seeded recipes", { created: seeded.created })
+  }).pipe(Effect.catchCause(() => Effect.void)),
+)
+
 const catalogSeedStartup = Layer.effectDiscard(
   Effect.gen(function* () {
     const global = yield* Global.Service
@@ -363,6 +375,7 @@ export function createRoutes(
     Layer.provide(sharedLocationServiceMap),
 
     Layer.provideMerge(catalogSeedStartup),
+    Layer.provideMerge(recipeSeedStartup),
     Layer.provide(LayerNode.compile(app)),
   )
 }
