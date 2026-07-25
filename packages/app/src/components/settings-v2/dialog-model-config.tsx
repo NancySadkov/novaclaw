@@ -165,7 +165,7 @@ export const DialogModelConfig: Component<{
 
   // A named-preset droplist + a raw input for one numeric field. The droplist teaches typical values
   // by name; the input allows any exact value and reflects back as "Custom" when it matches no preset.
-  const PresetField = (p: { field: FieldKey }) => {
+  const PresetField = (p: { field: FieldKey; disabled?: boolean }) => {
     const options = createMemo<Opt[]>(() =>
       PRESETS[p.field].map((preset) => ({ id: optId(preset), num: preset.num, label: optLabel(preset) })),
     )
@@ -181,7 +181,14 @@ export const DialogModelConfig: Component<{
     }
     const current = () => matched() ?? customOpt() ?? options()[0]
     return (
-      <div class="flex items-center gap-2 justify-end">
+      // `disabled` greys the row out and takes it out of the tab order rather than unmounting it, so the
+      // value stays visible (and returns untouched when re-enabled) — the budget fields do this when
+      // budgeting is switched off for the model.
+      <div
+        class="flex items-center gap-2 justify-end"
+        classList={{ "opacity-40 pointer-events-none": p.disabled }}
+        aria-disabled={p.disabled ? "true" : undefined}
+      >
         <SelectV2<Opt>
           appearance="inline"
           aria-label={tk(`settings.models.config.${p.field}.name`)}
@@ -213,20 +220,29 @@ export const DialogModelConfig: Component<{
             autocomplete="off"
             autocapitalize="off"
             aria-label={tk(`settings.models.config.${p.field}.name`)}
+            disabled={p.disabled}
           />
         </div>
       </div>
     )
   }
 
-  const paramRow = (field: FieldKey) => (
+  const paramRow = (field: FieldKey, disabled?: boolean) => (
     <SettingsRowV2
       title={tk(`settings.models.config.${field}.name`)}
       description={tk(`settings.models.config.${field}.desc`)}
     >
-      <PresetField field={field} />
+      <PresetField field={field} disabled={disabled} />
     </SettingsRowV2>
   )
+
+  // Budgeting off is encoded as thinkingBudget = 0, which the runtime ALREADY honours end to end:
+  // `withDefaults` keeps a literal 0 (it only checks `typeof === "number"`), `defaultThinkingBudget`
+  // returns `Math.max(0, 0)`, and the runner gates on `thinkingBudget > 0`. So this switch needs no
+  // schema, migration or protocol change — it writes the sentinel the runner already reads. Blank is
+  // NOT the same thing: blank means "derive the default" (context/4 capped at the output limit).
+  const budgetingOff = () => num(form.thinkingBudget) === 0
+  const setBudgeting = (on: boolean) => setForm("thinkingBudget", on ? "" : "0")
 
   const modalityRow = (dir: "in" | "out") => (
     <SettingsRowV2
@@ -283,7 +299,15 @@ export const DialogModelConfig: Component<{
           <SettingsListV2>
             {paramRow("context")}
             {paramRow("maxTokens")}
-            {paramRow("thinkingBudget")}
+            <SettingsRowV2
+              title={tk("settings.models.config.budgeting.name")}
+              description={tk("settings.models.config.budgeting.desc")}
+            >
+              <Switch checked={!budgetingOff()} onChange={setBudgeting} hideLabel>
+                {tk("settings.models.config.budgeting.name")}
+              </Switch>
+            </SettingsRowV2>
+            {paramRow("thinkingBudget", budgetingOff())}
           </SettingsListV2>
 
           {section("capabilities")}

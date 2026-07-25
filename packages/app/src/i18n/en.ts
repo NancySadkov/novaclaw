@@ -1434,6 +1434,9 @@ export const dict = {
     "How many tokens of the conversation the model can see at once. Match the model's real limit.",
   "settings.models.config.maxTokens.name": "Max response length",
   "settings.models.config.maxTokens.desc": "The most tokens the model may generate in a single reply.",
+  "settings.models.config.budgeting.name": "Limit thinking",
+  "settings.models.config.budgeting.desc":
+    "Cap how long this model may think before it has to answer. Turn it off to let it think without limit — clone a model and switch this off on the copy to compare the two on the same task.",
   "settings.models.config.thinkingBudget.name": "Thinking budget",
   "settings.models.config.thinkingBudget.desc":
     "Soft cap on the model's reasoning per turn. When it's reached, the harness nudges the model to wrap up and answer — curbing runaway thinking in smaller models. Blank uses the default (¼ of the context).",
@@ -1495,6 +1498,9 @@ export const dict = {
   "settings.models.new.preset": "{{family}} defaults",
   "settings.models.new.add": "Add selected",
   "settings.models.new.toast.added": "Models added",
+  "settings.models.clone.action": "Clone",
+  "settings.models.clone.toast.done": "Created {{model}}",
+  "settings.models.clone.toast.failed": "Could not clone that model",
   "settings.models.remove.confirm.title": "Remove {{model}}?",
   "settings.models.remove.confirm.description":
     "This removes the model from your list here. It doesn't delete anything on the model server, and you can add it back later.",

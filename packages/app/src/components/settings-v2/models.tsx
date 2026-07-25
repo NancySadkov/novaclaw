@@ -9,8 +9,10 @@ import { useGlobal } from "@/context/global"
 import { useLanguage } from "@/context/language"
 import { useModels } from "@/context/models"
 import { useServer } from "@/context/server"
+import { useServerSync } from "@/context/server-sync"
 import { popularProviders } from "@/hooks/use-providers"
 import { providerProbe, type ProbeResult } from "@/utils/fs-api"
+import { showToast } from "@/utils/toast"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
 import { DialogModelTier } from "./dialog-model-tier"
@@ -49,6 +51,7 @@ export const SettingsModelsV2: Component = () => {
   const models = useModels()
   const global = useGlobal()
   const server = useServer()
+  const serverSync = useServerSync()
   const dialog = useDialog()
   const confirm = useConfirm()
   // Dynamic tier i18n keys need the loose-key cast the typed translator otherwise forbids.
@@ -93,6 +96,48 @@ export const SettingsModelsV2: Component = () => {
     if (!cn || !d) return
     // push (not show) so the dialog STACKS over Settings instead of disposing it — see dialog.tsx.
     dialog.push(() => <DialogNewModel http={cn.http} directory={d} />)
+  }
+
+  // Clone a model into a second catalog entry you can tune independently — the sanctioned way to run
+  // the same upstream model under two different local configs (e.g. one with thinking budgeted and one
+  // without, to compare them on the same task).
+  //
+  // The subtlety: a model's LOCAL catalog key doubles as its wire name (`api.id` defaults to the key,
+  // and the runner sends `.model({ id: resolved.api.id })`). A clone under a new key would therefore
+  // ask the provider for a model that does not exist upstream — so the clone pins `api.id` to the
+  // ORIGINAL's wire name explicitly.
+  const cloneModel = async (key: { providerID: string; modelID: string }, name: string) => {
+    const providers = serverSync().data.config?.providers as
+      | Record<string, { models?: Record<string, Record<string, unknown>> }>
+      | undefined
+    const provider = providers?.[key.providerID] ?? {}
+    const source = provider.models?.[key.modelID] ?? {}
+    const taken = new Set(Object.keys(provider.models ?? {}))
+    let cloneID = `${key.modelID}-copy`
+    for (let n = 2; taken.has(cloneID); n += 1) cloneID = `${key.modelID}-copy-${n}`
+    const sourceApi = source.api as { id?: string } | undefined
+    const entry = {
+      ...source,
+      name: `${name} (copy)`,
+      api: { ...(sourceApi ?? {}), id: sourceApi?.id ?? key.modelID },
+    }
+    try {
+      await serverSync().updateConfig({
+        providers: {
+          [key.providerID]: { ...provider, models: { ...(provider.models ?? {}), [cloneID]: entry } },
+        },
+      } as never)
+      showToast({
+        variant: "success",
+        icon: "circle-check",
+        title: language.t("settings.models.clone.toast.done", { model: entry.name }),
+      })
+    } catch (error) {
+      showToast({
+        title: language.t("settings.models.clone.toast.failed"),
+        description: error instanceof Error ? error.message : String(error),
+      })
+    }
   }
 
   const removeModel = async (key: { providerID: string; modelID: string }, name: string) => {
@@ -215,6 +260,14 @@ export const SettingsModelsV2: Component = () => {
                                 }
                               >
                                 {language.t("settings.models.config.open")}
+                              </ButtonV2>
+                              <ButtonV2
+                                size="small"
+                                variant="ghost-muted"
+                                aria-label={language.t("settings.models.clone.action")}
+                                onClick={() => void cloneModel(key, item.name)}
+                              >
+                                {language.t("settings.models.clone.action")}
                               </ButtonV2>
                               <Show when={probeResult()}>
                                 {(result) => (
