@@ -345,6 +345,16 @@ export function applySessionNextEvent(messages: SessionMessage[], event: V2Event
 
 // ── Merging fetched history pages into the live store ──────────────────────────
 
+/** Creation time in epoch millis, tolerating both the wire number and a decoded DateTime carrier. */
+function messageCreatedAt(message: SessionMessage): number | undefined {
+  const created = (message as { time?: { created?: unknown } }).time?.created
+  if (typeof created === "number") return created
+  if (created instanceof Date) return created.getTime()
+  if (typeof created === "object" && created !== null && typeof (created as { epochMillis?: unknown }).epochMillis === "number")
+    return (created as { epochMillis: number }).epochMillis
+  return undefined
+}
+
 function isInFlightAssistant(message: SessionMessage): boolean {
   return message.type === "assistant" && !message.time.completed
 }
@@ -376,13 +386,59 @@ function compareOldestFirst(a: SessionMessage, b: SessionMessage): number {
  * a message the server deleted that `current` still holds — server-side removals arrive
  * as `revert.*` events folded separately, so this is safe for the parallel store.
  */
-export function mergeNativeMessages(current: SessionMessage[], fetched: SessionMessage[]): SessionMessage[] {
+export function mergeNativeMessages(
+  current: SessionMessage[],
+  fetched: SessionMessage[],
+  options?: {
+    /**
+     * True when `fetched` is a full reconcile of the newest page (no cursor), which makes it AUTHORITATIVE
+     * about what exists inside the range it covers. Without this the merge is a pure union, so any row the
+     * client holds that the server has DELETED is resurrected forever: miss one `revert.committed` (an SSE
+     * reconnect, a backgrounded tab, a revert performed on another device) and the reverted messages never
+     * go away — not even on a fresh load. Paged loads pass false, since a page says nothing about the rows
+     * outside it.
+     */
+    authoritative?: boolean
+    /**
+     * When the fetch was ISSUED (epoch millis). The response reflects server state at that moment, which is
+     * what separates the two reasons a local row can be missing from it: created BEFORE the fetch and absent
+     * ⇒ the server deleted it; created AFTER ⇒ it simply arrived too late to be included. Without this the
+     * two are indistinguishable, since a reverted tail and a freshly-streamed message both sit above the
+     * newest fetched id.
+     */
+    asOf?: number
+  },
+): SessionMessage[] {
   const byId = new Map<string, SessionMessage>()
   for (const message of fetched) byId.set(message.id, message)
+  // The id range this fetch actually covers. Ids ascend, so anything outside it was simply not requested.
+  let lowest: string | undefined
+  let highest: string | undefined
+  for (const message of fetched) {
+    if (lowest === undefined || message.id < lowest) lowest = message.id
+    if (highest === undefined || message.id > highest) highest = message.id
+  }
   for (const message of current) {
     const fetchedCopy = byId.get(message.id)
-    const fetchedCompleted = fetchedCopy?.type === "assistant" && !!fetchedCopy.time.completed
-    if (!fetchedCopy || (isInFlightAssistant(message) && !fetchedCompleted)) byId.set(message.id, message)
+    if (fetchedCopy) {
+      // Keep our streaming copy while the server's is still incomplete, else take the server's.
+      const fetchedCompleted = fetchedCopy.type === "assistant" && !!fetchedCopy.time.completed
+      if (isInFlightAssistant(message) && !fetchedCompleted) byId.set(message.id, message)
+      continue
+    }
+    // Absent from the fetch. An in-flight assistant simply has not been persisted yet — always keep it.
+    if (isInFlightAssistant(message) || options === undefined || options.authoritative !== true) {
+      byId.set(message.id, message)
+      continue
+    }
+    // Drop it only if this fetch actually covered it. Two bounds, and both matter:
+    //  · not OLDER than the page (a limited newest-page fetch says nothing about earlier history), and
+    //  · created no later than the fetch itself (anything newer may just have missed the response).
+    // An EMPTY authoritative fetch has no lower bound and means the session is empty — a full revert.
+    const withinPage = lowest === undefined || message.id >= lowest
+    const created = messageCreatedAt(message)
+    const predatesFetch = options.asOf === undefined || created === undefined || created <= options.asOf
+    if (!(withinPage && predatesFetch)) byId.set(message.id, message)
   }
   return [...byId.values()].sort(compareOldestFirst)
 }

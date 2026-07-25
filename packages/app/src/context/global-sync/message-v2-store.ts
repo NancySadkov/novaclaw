@@ -30,11 +30,19 @@ export function createNativeMessageStore(client: NovaclawClient) {
   }
 
   const load = async (sessionID: string, options?: { limit?: number; order?: "asc" | "desc"; cursor?: string }) => {
+    // Stamp BEFORE the request: the response describes server state as of this moment, which lets the
+    // merge tell a deleted row from one that arrived while the request was in flight.
+    const asOf = Date.now()
     const fetched = await fetchNativeMessages(client, sessionID, options)
     setData(
       "messages",
       produce((bySession) => {
-        bySession[sessionID] = mergeNativeMessages(bySession[sessionID] ?? [], fetched)
+        // No cursor ⇒ this is a full reconcile of the newest page, so it is authoritative about what
+        // still exists in that range and may DROP rows the server deleted (e.g. a revert we missed).
+        bySession[sessionID] = mergeNativeMessages(bySession[sessionID] ?? [], fetched, {
+          authoritative: options?.cursor === undefined,
+          asOf,
+        })
       }),
     )
   }

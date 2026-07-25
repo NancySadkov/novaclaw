@@ -321,6 +321,48 @@ describe("mergeNativeMessages", () => {
     expect(mergeNativeMessages(current, older).map((m) => m.id)).toEqual(["msg_1", "msg_2", "msg_9"])
   })
 
+  // A client that MISSES `revert.committed` (SSE reconnect, backgrounded tab, revert done on another
+  // device) used to keep the deleted messages forever, because the merge was a pure union: absent from the
+  // server simply meant "keep ours". A no-cursor fetch is a full reconcile and must be able to drop them.
+  test("authoritative reconcile drops rows the server deleted inside the fetched range", () => {
+    const current = [userMsg("msg_1", 1), assistantMsg("msg_2", 2, { completed: 2 }), userMsg("msg_3", 3)]
+    const fetched = [userMsg("msg_1", 1)] // msg_2/msg_3 were reverted away server-side
+    const merged = mergeNativeMessages(current, fetched, { authoritative: true, asOf: 100 })
+    expect(merged.map((m) => m.id)).toEqual(["msg_1"])
+  })
+
+  test("a fully reverted session clears on an authoritative empty fetch", () => {
+    const current = [userMsg("msg_1", 1), assistantMsg("msg_2", 2, { completed: 2 })]
+    expect(mergeNativeMessages(current, [], { authoritative: true, asOf: 100 })).toEqual([])
+  })
+
+  test("authority is bounded by the fetched range — an older page is NOT dropped", () => {
+    // The newest-page fetch says nothing about msg_1, which sits below its range.
+    const current = [userMsg("msg_1", 1), assistantMsg("msg_8", 8, { completed: 8 })]
+    const fetched = [assistantMsg("msg_8", 8, { completed: 8 }), userMsg("msg_9", 9)]
+    const merged = mergeNativeMessages(current, fetched, { authoritative: true, asOf: 100 })
+    expect(merged.map((m) => m.id)).toEqual(["msg_1", "msg_8", "msg_9"])
+  })
+
+  test("a row that arrived AFTER the fetch started survives the reconcile", () => {
+    const current = [userMsg("msg_1", 1), userMsg("msg_5", 50)] // created AFTER the fetch was issued
+    const fetched = [userMsg("msg_1", 1)]
+    const merged = mergeNativeMessages(current, fetched, { authoritative: true, asOf: 10 })
+    expect(merged.map((m) => m.id)).toEqual(["msg_1", "msg_5"])
+  })
+
+  test("an in-flight assistant is never dropped by a reconcile", () => {
+    const current = [userMsg("msg_1", 1), assistantMsg("msg_2", 2, { text: "streaming" })] // no completed
+    const merged = mergeNativeMessages(current, [userMsg("msg_1", 1)], { authoritative: true, asOf: 100 })
+    expect(merged.map((m) => m.id)).toEqual(["msg_1", "msg_2"])
+  })
+
+  test("a PAGED load stays a union — it may not drop anything", () => {
+    const current = [userMsg("msg_1", 1), userMsg("msg_2", 2)]
+    const merged = mergeNativeMessages(current, [userMsg("msg_1", 1)])
+    expect(merged.map((m) => m.id)).toEqual(["msg_1", "msg_2"])
+  })
+
   test("settled conflict: the fetched copy wins", () => {
     const current = [assistantMsg("msg_a", 1, { completed: 1, text: "stale" })]
     const fetched = [assistantMsg("msg_a", 1, { completed: 1, text: "fresh" })]
