@@ -51,16 +51,35 @@ install anything; just report.`,
     description: "Compiles and runs a C99 program — the toolchain smoke test.",
     prompt: `Write, compile and run a C99 "hello world" program in this folder.
 
-Steps:
-1. Discover the C compiler yourself — try \`cc\`, \`gcc\`, then \`clang\`. On Windows also check for a
-   w64devkit install (a common location is \`C:\\soft\\w64devkit\\bin\`) and add it to PATH for the build if
-   you find it. Report which compiler and version you are using.
-2. Write \`hello.c\` — valid C99, includes what it uses, \`return 0\` from \`main\`.
-3. Compile it with warnings on (\`-std=c99 -Wall -Wextra\`) and fix any warning your own code caused.
+Steps, in this order:
+1. **Write \`hello.c\` first**, before looking for anything. Valid C99, includes what it uses, \`return 0\`
+   from \`main\`. Do this even if you suspect no compiler is installed — the file is the deliverable.
+2. Find the compiler, in exactly this order, and STOP at the first hit:
+   a. \`cc --version\`, then \`gcc --version\`, then \`clang --version\` (on PATH).
+   b. If none are on PATH and you are on Windows, test these exact paths with one \`ls\` each:
+      \`C:/soft/w64devkit/bin/gcc.exe\`, \`C:/msys64/mingw64/bin/gcc.exe\`,
+      \`C:/mingw64/bin/gcc.exe\`, \`C:/TDM-GCC-64/bin/gcc.exe\`.
+      A compiler that is installed but not on PATH is normal on Windows.
+   You may **not** conclude "no compiler" until every path in (b) has actually been tested. Do not go
+   hunting with wildcard \`dir\`/\`find\` sweeps — they are slow and they are how this task gets lost.
+3. Compile with warnings on (\`-std=c99 -Wall -Wextra\`) and fix any warning your own code caused.
+   If you found the compiler off-PATH (case 2b), **append** its directory to PATH for the build:
+   \`PATH="$PATH:/c/soft/w64devkit/bin" gcc -std=c99 -Wall -Wextra -o hello.exe hello.c\`.
+   Two traps here, both of which look like a broken toolchain when you hit them:
+   - Calling gcc by full path *without* its directory on PATH fails with
+     \`cannot execute 'as'\` — gcc finds its own assembler and linker through PATH.
+   - **Prepending** instead of appending shadows the shell's \`ls\`/\`head\`/\`cat\` with the toolchain's
+     BusyBox versions, and your later commands start failing for unrelated-looking reasons.
 4. Run the binary and show its actual output.
 
-Finish by stating the compiler used, the exact build command, and the program's output. If no compiler
-exists on this machine, say so plainly and stop — do not attempt to install one.`,
+Finish by stating the compiler used, the exact build command, and the program's output.
+
+Two ways to fail this task that are worth naming, because they are the common ones:
+- Reporting "no compiler found" without having tested the paths in 2b. That is a wrong answer, not a
+  finding.
+- Ending your turn to ask what to work on. This prompt IS the task and nobody may be at the keyboard to
+  answer you — work through steps 1-4 and only then stop. If a compiler genuinely does not exist, say so
+  plainly, leave \`hello.c\` on disk, and do not try to install one.`,
   },
   {
     slug: "pi-100-machin",
@@ -80,10 +99,17 @@ Then verify properly: compare your output against a known value of π to 100 pla
 many leading digits are correct**. If it is fewer than 100, debug and iterate — do not report success on a
 partially-correct result.
 
-Discover the compiler yourself (\`cc\`, \`gcc\`, \`clang\`; on Windows also look for w64devkit). Finish with
+Write the program first, then find the compiler: \`cc\`/\`gcc\`/\`clang\` on PATH, and if none are there and you
+are on Windows, test \`C:/soft/w64devkit/bin/gcc.exe\`, \`C:/msys64/mingw64/bin/gcc.exe\`,
+\`C:/mingw64/bin/gcc.exe\` and \`C:/TDM-GCC-64/bin/gcc.exe\` with one \`ls\` each. Do not wildcard-sweep the
+filesystem looking for it. If the compiler is off-PATH, **append** its directory for the build
+(\`PATH="$PATH:/c/soft/w64devkit/bin" gcc …\`): a full-path call alone fails with \`cannot execute 'as'\`, and
+*prepending* shadows the shell's own \`ls\`/\`head\` with BusyBox and breaks your later commands. Finish with
 the digits, the correct-digit count, and the build command.
 
-Note: this one is deliberately hard. Getting the precision analysis right matters more than being fast.`,
+Note: this one is deliberately hard. Getting the precision analysis right matters more than being fast.
+Work through it to the end — this prompt is the whole task, and nobody may be at the keyboard to answer a
+question if you stop to ask one.`,
   },
   {
     slug: "browser-os",
