@@ -47,6 +47,17 @@ const getBase = (appId: string): Configuration => ({
     desktopName: `${appId}.desktop`,
   },
   files: ["out/**/*", "resources/**/*"],
+  // The KB graph engine (@ladybugdb/wasm-core) is loaded by the sidecar through a RUNTIME
+  // `createRequire(...)("@ladybugdb/wasm-core/nodejs/sync")`, which no bundler can see — so it is
+  // neither inlined into the main bundle nor emitted as an asset, and it has to ship as a real
+  // package that Node resolution can find (hence the dependency in package.json).
+  //
+  // Unpacked, not left in the asar, because its Emscripten loader resolves the 13.5 MB
+  // `lbug_wasm.wasm` from `__dirname` and reaches for `WebAssembly.instantiateStreaming` — neither
+  // is reliable against an asar's virtual paths. Without this, `WasmMemory.open` throws, the KB
+  // layer degrades to a disabled client by design, and Memory is silently dead in the packaged app
+  // while working fine in dev. It shipped that way in v0.0.1.
+  asarUnpack: ["node_modules/@ladybugdb/**"],
   extraResources: [
     {
       from: "native/",
