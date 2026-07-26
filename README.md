@@ -138,11 +138,3 @@ naming.
 Patches are welcome — read [`CONTRIBUTING.md`](CONTRIBUTING.md) first, and ask before building
 anything large. Contributions require a one-time signed [`CLA`](CLA.md) so that NovaClaw's
 relicensing promises above stay possible.
-
-## Attribution
-
-NovaClaw began as a fork of [opencode](https://github.com/anomalyco/opencode) (MIT). Portions of
-this codebase are based on opencode; that MIT license and copyright are retained in
-[`licenses/opencode-LICENSE-MIT.txt`](licenses/opencode-LICENSE-MIT.txt) and [`NOTICE`](NOTICE) —
-the one upstream reference kept by design. NovaClaw itself is licensed under the terms above and is
-not affiliated with or endorsed by the opencode project.
