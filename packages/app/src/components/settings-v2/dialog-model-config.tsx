@@ -170,7 +170,7 @@ export const DialogModelConfig: Component<{
 
   // A named-preset droplist + a raw input for one numeric field. The droplist teaches typical values
   // by name; the input allows any exact value and reflects back as "Custom" when it matches no preset.
-  const PresetField = (p: { field: FieldKey; disabled?: boolean }) => {
+  const PresetField = (p: { field: FieldKey }) => {
     const options = createMemo<Opt[]>(() =>
       PRESETS[p.field].map((preset) => ({ id: optId(preset), num: preset.num, label: optLabel(preset) })),
     )
@@ -186,14 +186,10 @@ export const DialogModelConfig: Component<{
     }
     const current = () => matched() ?? customOpt() ?? options()[0]
     return (
-      // `disabled` greys the row out and takes it out of the tab order rather than unmounting it, so the
-      // value stays visible (and returns untouched when re-enabled) — the budget fields do this when
-      // budgeting is switched off for the model.
-      <div
-        class="flex items-center gap-2 justify-end"
-        classList={{ "opacity-40 pointer-events-none": p.disabled }}
-        aria-disabled={p.disabled ? "true" : undefined}
-      >
+      // No disabled state here any more. It existed for ONE caller — the old budgeting switch, which greyed
+      // the budget row out via `pointer-events-none`. "Disabled" is now a value in the list itself, so a row
+      // that cannot be clicked is always a bug; keeping the mechanism around only preserved a way to cause it.
+      <div class="flex items-center gap-2 justify-end">
         <SelectV2<Opt>
           appearance="inline"
           aria-label={tk(`settings.models.config.${p.field}.name`)}
@@ -225,19 +221,18 @@ export const DialogModelConfig: Component<{
             autocomplete="off"
             autocapitalize="off"
             aria-label={tk(`settings.models.config.${p.field}.name`)}
-            disabled={p.disabled}
           />
         </div>
       </div>
     )
   }
 
-  const paramRow = (field: FieldKey, disabled?: boolean) => (
+  const paramRow = (field: FieldKey) => (
     <SettingsRowV2
       title={tk(`settings.models.config.${field}.name`)}
       description={tk(`settings.models.config.${field}.desc`)}
     >
-      <PresetField field={field} disabled={disabled} />
+      <PresetField field={field} />
     </SettingsRowV2>
   )
 
