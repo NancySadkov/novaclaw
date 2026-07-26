@@ -75,8 +75,10 @@ const makeFakeReddit = () => {
 // advertises the SAME string it told the user to register (Reddit matches it exactly).
 const loopback = (params?: { redirectUri?: string }) =>
   Effect.succeed({ redirectUri: params?.redirectUri ?? "http://127.0.0.1:9999/", waitForCode: Promise.resolve("code-1") })
+// `version` is pinned to a FIXTURE value, not left to the driver's default: what the UA assertion
+// below is about is the required FORMAT, so a product version bump must not break this test.
 const connect = (fake: ReturnType<typeof makeFakeReddit>, cursor?: unknown, onCursor?: (value: unknown) => void) =>
-  RedditDriver.make(fake.fetchImpl, loopback as never, () => Effect.void, { pollIntervalMs: 50 }).connect({
+  RedditDriver.make(fake.fetchImpl, loopback as never, () => Effect.void, { pollIntervalMs: 50, version: "9.9.9" }).connect({
     account: ACCOUNT,
     secret: JSON.stringify({ refreshToken: "rt-1" }),
     cursor: { get: () => Effect.succeed(cursor), set: (value) => Effect.sync(() => onCursor?.(value)) },
@@ -252,7 +254,7 @@ describe("RedditDriver connection", () => {
       const apiCalls = fake.state.calls.filter((call) => call.url.startsWith("https://oauth.reddit.com"))
       // raw_json=1 or every <, > and & comes back HTML-escaped — silent corruption of what the agent reads.
       expect(apiCalls.every((call) => call.url.includes("raw_json=1"))).toBe(true)
-      expect(apiCalls.every((call) => call.agent === "novaclaw:app.novaclaw.messenger:v0.0.1 (by /u/novaclaw-bot)")).toBe(true)
+      expect(apiCalls.every((call) => call.agent === "novaclaw:app.novaclaw.messenger:v9.9.9 (by /u/novaclaw-bot)")).toBe(true)
     }),
   )
 

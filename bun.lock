@@ -22,7 +22,7 @@
     },
     "packages/app": {
       "name": "@novaclaw/app",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "dependencies": {
         "@dnd-kit/abstract": "0.5.0",
         "@dnd-kit/dom": "0.5.0",
@@ -106,7 +106,7 @@
     },
     "packages/core": {
       "name": "@novaclaw/core",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "dependencies": {
         "@effect/opentelemetry": "catalog:",
         "@effect/platform-node": "catalog:",
@@ -174,7 +174,7 @@
     },
     "packages/desktop": {
       "name": "@novaclaw/desktop",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "dependencies": {
         "@zip.js/zip.js": "2.7.62",
         "effect": "catalog:",
@@ -225,7 +225,7 @@
     },
     "packages/effect-drizzle-sqlite": {
       "name": "@novaclaw/effect-drizzle-sqlite",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "dependencies": {
         "drizzle-orm": "catalog:",
         "effect": "catalog:",
@@ -239,7 +239,7 @@
     },
     "packages/effect-sqlite-node": {
       "name": "@novaclaw/effect-sqlite-node",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "dependencies": {
         "effect": "catalog:",
       },
@@ -251,7 +251,7 @@
     },
     "packages/http-recorder": {
       "name": "@novaclaw/http-recorder",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "dependencies": {
         "@effect/platform-node": "4.0.0-beta.83",
         "@effect/platform-node-shared": "4.0.0-beta.83",
@@ -282,7 +282,7 @@
     },
     "packages/llm": {
       "name": "@novaclaw/llm",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "dependencies": {
         "@novaclaw/schema": "workspace:*",
         "@smithy/eventstream-codec": "4.2.14",
@@ -301,7 +301,7 @@
     },
     "packages/novaclaw": {
       "name": "novaclaw",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "bin": {
         "nova-cli": "./bin/novaclaw",
       },
@@ -389,7 +389,7 @@
     },
     "packages/plugin": {
       "name": "@novaclaw/plugin",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "dependencies": {
         "@novaclaw/sdk": "workspace:*",
         "effect": "catalog:",
@@ -451,7 +451,7 @@
     },
     "packages/sdk/js": {
       "name": "@novaclaw/sdk",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "dependencies": {
         "cross-spawn": "catalog:",
       },
@@ -466,7 +466,7 @@
     },
     "packages/server": {
       "name": "@novaclaw/server",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "dependencies": {
         "@novaclaw/core": "workspace:*",
         "@novaclaw/protocol": "workspace:*",
@@ -482,7 +482,7 @@
     },
     "packages/session-ui": {
       "name": "@novaclaw/session-ui",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "dependencies": {
         "@kobalte/core": "catalog:",
         "@novaclaw/core": "workspace:*",
@@ -526,7 +526,7 @@
     },
     "packages/ui": {
       "name": "@novaclaw/ui",
-      "version": "0.0.1",
+      "version": "0.1.0",
       "dependencies": {
         "@kobalte/core": "catalog:",
         "@pierre/diffs": "catalog:",

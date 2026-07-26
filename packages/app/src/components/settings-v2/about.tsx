@@ -8,7 +8,7 @@ import "./settings-v2.css"
 // credits list is factual data (name · version · license), so it lives here rather than in i18n.
 // `platform.version` is the same source the settings nav footer uses.
 
-const FALLBACK_VERSION = "0.0.1"
+const FALLBACK_VERSION = "0.1.0"
 
 type Credit = { name: string; version?: string; license: string }
 

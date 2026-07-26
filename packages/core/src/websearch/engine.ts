@@ -48,7 +48,7 @@ export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>
 
 /** A browser-ish UA. Not a disguise — several free endpoints simply 403 an empty agent, and the
  *  request genuinely is a person's search, made on their own machine, at their own request. */
-export const USER_AGENT = "Mozilla/5.0 (compatible; NovaClaw/0.0.1; +https://novaclaw.app)"
+export const USER_AGENT = "Mozilla/5.0 (compatible; NovaClaw/0.1.0; +https://novaclaw.app)"
 
 // ── pure parsing + merging (unit-tested; the part most likely to rot is the part most tested) ────
 

@@ -343,7 +343,7 @@ const parseConfig = (account: Messenger.AccountInfo): Effect.Effect<RedditConfig
 
 export const make = (fetchImpl: FetchLike, loopbackFactory: LoopbackFactory, openBrowser: (url: string) => Effect.Effect<void>, options?: RedditOptions): Driver => {
   const pollIntervalMs = options?.pollIntervalMs ?? 20_000
-  const version = options?.version ?? "0.0.1"
+  const version = options?.version ?? "0.1.0"
 
   /** Installed apps have NO secret — HTTP Basic is `client_id:` with an empty password. */
   const basic = (clientId: string) => `Basic ${btoa(`${clientId}:`)}`
