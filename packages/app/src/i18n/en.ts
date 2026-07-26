@@ -523,6 +523,7 @@ export const dict = {
   "dialog.directory.action.selectFolder": "Select folder",
   "dialog.directory.root": "Root",
   "dialog.directory.parent": "Parent",
+  "dialog.directory.filename": "Save as",
   "dialog.directory.readError": "Can't open this folder — you may not have permission.",
   "dialog.directory.bookmarks": "Bookmarks",
   "dialog.directory.places": "Places",

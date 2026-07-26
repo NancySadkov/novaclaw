@@ -34,6 +34,7 @@ import { DividerV2 } from "@novaclaw/ui/v2/divider-v2"
 interface DialogSelectDirectoryV2Props {
   title?: string
   multiple?: boolean
+  filename?: { initial: string; onFilename: (name: string) => void }
   onSelect: (result: string | string[] | null) => void
   server: ServerConnection.Any
   mode?: "directory" | "file"
@@ -291,9 +292,15 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
     action()
   }
 
+  // Save-As name, when the caller asked for one. Seeded from `filename.initial` so the common case is
+  // "accept the suggested name and press Save".
+  const [saveAsName, setSaveAsName] = createSignal(props.filename?.initial ?? "")
+
   function resolve() {
     const path = policy.result(root(), selected(), rootValid())
     if (!path) return
+    // Report the chosen name BEFORE the path: the caller reads it synchronously inside onSelect.
+    if (props.filename) props.filename.onFilename(saveAsName().trim() || props.filename.initial)
     props.onSelect(props.multiple ? [path] : path)
     dialog.close()
   }
@@ -535,6 +542,23 @@ export function DialogSelectDirectoryV2(props: DialogSelectDirectoryV2Props) {
             </Show>
           </div>
         </div>
+        <Show when={props.filename}>
+          <label class="directory-picker-v2-filename">
+            <span>{language.t("dialog.directory.filename")}</span>
+            <input
+              type="text"
+              value={saveAsName()}
+              spellcheck={false}
+              onInput={(event) => setSaveAsName(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault()
+                  resolve()
+                }
+              }}
+            />
+          </label>
+        </Show>
         <div class="directory-picker-v2-selection">{policy.result(root(), selected(), rootValid())}</div>
         <Show when={contextMenu()}>
           {(menu) => (

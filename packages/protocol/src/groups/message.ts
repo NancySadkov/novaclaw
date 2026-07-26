@@ -36,6 +36,9 @@ export const MessageGroup = HttpApiGroup.make("server.message")
       params: { sessionID: Session.ID },
       payload: Schema.Struct({
         directory: Schema.String.annotate({ description: "Absolute folder to write the .md into." }),
+        filename: Schema.String.pipe(Schema.optional).annotate({
+          description: "File name to write. Omitted = derived from the session title. Basename only.",
+        }),
       }),
       success: SessionExportResponse,
       error: [SessionNotFoundError, InvalidRequestError, UnknownError],

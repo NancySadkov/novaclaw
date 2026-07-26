@@ -1,6 +1,7 @@
 import { useNavigate } from "@solidjs/router"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useChatsAttention } from "@/apps/chats-attention"
+import { activityLabel, useChatsActivity } from "@/apps/chats-activity"
 import { useSettingsDialog } from "@/components/settings-dialog"
 import { AppPlaceholder } from "@/pages/home-screen/app-placeholder"
 import { HelpTour } from "@/pages/home-screen/help-tour"
@@ -24,6 +25,7 @@ export function useBuiltinApps(): () => HomeApp[] {
   const dialog = useDialog()
   const openSettings = useSettingsDialog()
   const chatsAttention = useChatsAttention()
+  const chatsActivity = useChatsActivity()
   const comingSoon = (app: Omit<HomeApp, "open" | "source">) => () =>
     void dialog.show(() => <AppPlaceholder title={app.title} icon={app.icon} accent={app.accent} subtitle={app.subtitle} />)
 
@@ -37,8 +39,13 @@ export function useBuiltinApps(): () => HomeApp[] {
       accent: "var(--nc-accent-solid)",
       glyphTone: "dark",
       hero: true,
-      subtitle: "Ask anything — your agents do the work",
+      // Describes what the tile OPENS — a list of your conversations. The old line ("Ask anything — your
+      // agents do the work") described the composer at the bottom of the home screen, not this tile, so it
+      // promised something tapping here does not do (owner 2026-07-26).
+      subtitle: "Your conversations, and everything still running",
       source: "builtin",
+      // While agents are working the tile reports it instead: "2 agents working · ~47 t/s".
+      status: () => activityLabel(chatsActivity()),
       open: () => navigate("/chats"),
       // Chats wanting attention (pending permission/question + unseen) — uix-improvement slice 2.
       badge: () => chatsAttention().length || undefined,
@@ -152,8 +159,11 @@ export function useBuiltinApps(): () => HomeApp[] {
     {
       id: "social",
       title: "Community",
-      icon: "discord",
-      // Discord blurple — cool, so it doesn't compete with the gold hero (uix.md §3/P3).
+      // A generic people glyph, NOT the Discord mark: the tile leads to Discord, Reddit AND the website, so
+      // wearing one company's trademark both misdescribes it and borrows a mark we have no licence to use as
+      // our own iconography. The Discord ROW inside the panel keeps its logo — that one really is Discord.
+      icon: "community",
+      // Cool indigo-blue, so it doesn't compete with the gold hero (uix.md §3/P3).
       accent: "#5865f2",
       subtitle: "Discord, Reddit and the website — other people who run NovaClaw",
       source: "builtin",

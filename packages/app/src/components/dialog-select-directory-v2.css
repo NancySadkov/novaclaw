@@ -219,3 +219,30 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Save-As filename row, shown only when the caller asks the picker for a name. */
+.directory-picker-v2-filename {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.5rem 0.75rem 0;
+}
+.directory-picker-v2-filename > span {
+  color: var(--v2-text-text-muted);
+  font-size: var(--font-size-small);
+  white-space: nowrap;
+}
+.directory-picker-v2-filename > input {
+  flex: 1;
+  min-width: 0;
+  padding: 0.35rem 0.55rem;
+  border-radius: 0.4rem;
+  border: 1px solid var(--v2-border-border-base);
+  background: var(--v2-background-bg-layer-01);
+  color: var(--v2-text-text-base);
+  font-size: var(--font-size-small);
+  outline: none;
+}
+.directory-picker-v2-filename > input:focus {
+  border-color: var(--v2-border-border-focus);
+}

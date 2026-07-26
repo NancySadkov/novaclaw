@@ -70,15 +70,6 @@ const SortableTile: Component<{ app: HomeApp; shouldSuppressOpen: () => boolean 
   )
 }
 
-// A friendly time-of-day greeting — the home is a product, not a terminal.
-function greeting(): string {
-  const h = new Date().getHours()
-  if (h < 5) return "Good night"
-  if (h < 12) return "Good morning"
-  if (h < 18) return "Good afternoon"
-  return "Good evening"
-}
-
 // The NovaClaw home screen — an iOS-style launcher: app tiles laid across swipeable pages. Pages use
 // native CSS scroll-snap (touch-friendly, no gesture library); page dots + arrow keys navigate on
 // desktop. Apps are the built-ins merged with the extensible registry (plugin / agent apps), so the
@@ -191,18 +182,10 @@ export const HomeScreen: Component = () => {
 
   return (
     <div class="flex flex-col items-center w-full h-full min-h-0" tabindex={0} onKeyDown={onKey}>
-      {/* The logo anchors the home screen (it doubles as the titlebar Home button). */}
-      <div class="flex flex-col items-center gap-2.5 pt-9 pb-3 px-6 text-center select-none">
-        <img
-          src="/logo.png"
-          alt="NovaClaw"
-          draggable={false}
-          class="size-16 select-none [filter:drop-shadow(0_1px_4px_rgba(0,0,0,0.45))]"
-        />
-        <h1 class="text-[26px] font-semibold tracking-tight text-v2-text-text-base [text-shadow:0_1px_3px_rgba(0,0,0,0.4)]">
-          {greeting()}
-        </h1>
-      </div>
+      {/* No logo, no greeting (owner 2026-07-26). They cost ~7rem above the fold to say nothing the user
+          does not know — on a phone that pushed the tiles themselves off screen. The brand still lives in
+          the titlebar; the home screen is for launching things. */}
+      <div class="pt-4" />
       <DragDropProvider onDragEnd={onDragEnd} collisionDetector={closestCenter}>
         <DragDropSensors />
         <div

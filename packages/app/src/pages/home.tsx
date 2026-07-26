@@ -727,9 +727,18 @@ export function NewHome() {
   async function exportSession(session: Session) {
     const conn = focusedServer()
     if (!conn) return
+    // A Save-As, not a bare folder pick: the picker showed nowhere to type a name, so the export read as
+    // broken (owner 2026-07-26). Seeded with a slug of the chat title; the server still guards the name.
+    const suggested = `${(session.title || session.id)
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, "-")
+      .replace(/^-+|-+$/g, "")
+      .slice(0, 48) || session.id}.md`
+    let filename = suggested
     pickDirectory({
       server: conn,
       title: language.t("home.session.export.pick", { title: session.title || session.id }),
+      filename: { initial: suggested, onFilename: (name) => (filename = name) },
       onSelect: (result) => {
         const into = Array.isArray(result) ? result[0] : result
         if (!into) return
@@ -737,6 +746,7 @@ export function NewHome() {
           directory: session.location.directory,
           sessionID: session.id,
           into,
+          filename,
         })
           .then((res) =>
             showToast({

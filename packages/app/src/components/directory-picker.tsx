@@ -12,6 +12,14 @@ type DirectoryPickerInput = {
   server: ServerConnection.Any
   title?: string
   multiple?: boolean
+  /**
+   * Turns the folder picker into a SAVE-AS: shows a filename field seeded with `initial`, and reports the
+   * final name through `onFilename`. Without it the dialog is folder-only, exactly as before.
+   *
+   * Added because "Export as Markdown" opened a folder picker with nowhere to type a name, so it read as
+   * broken even though the server was naming the file sensibly (owner 2026-07-26).
+   */
+  filename?: { initial: string; onFilename: (name: string) => void }
   onSelect: (result: string | string[] | null) => void
 }
 

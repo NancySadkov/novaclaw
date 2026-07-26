@@ -184,7 +184,7 @@ export interface SessionExportResult {
 
 export async function exportSessionMarkdown(
   server: ServerConnection.HttpBase,
-  input: { directory: string; sessionID: string; into: string },
+  input: { directory: string; sessionID: string; into: string; filename?: string },
 ): Promise<SessionExportResult> {
   const url = new URL(
     `api/session/${input.sessionID}/export-markdown`,
@@ -193,7 +193,7 @@ export async function exportSessionMarkdown(
   const res = await fetch(url, {
     method: "POST",
     headers: { ...headersFor(server), "x-novaclaw-directory": input.directory },
-    body: JSON.stringify({ directory: input.into }),
+    body: JSON.stringify({ directory: input.into, ...(input.filename ? { filename: input.filename } : {}) }),
   })
   const text = await res.text().catch(() => "")
   if (!res.ok) {

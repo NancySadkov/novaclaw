@@ -74,10 +74,15 @@ export const MessageHandler = HttpApiBuilder.group(Api, "server.message", (handl
           ...(info.location?.directory ? { directory: info.location.directory } : {}),
           exportedAt: Date.now(),
         })
-        const target = nodePath.join(
-          ctx.payload.directory,
-          SessionMarkdown.filename({ sessionID: ctx.params.sessionID, ...(info.title ? { title: info.title } : {}) }),
-        )
+        // A caller-supplied name is reduced to its BASENAME before use: the picker offers a text field, and
+        // "../../etc/passwd" typed into it must land in the chosen folder as a file, not escape it.
+        const suggested = SessionMarkdown.filename({
+          sessionID: ctx.params.sessionID,
+          ...(info.title ? { title: info.title } : {}),
+        })
+        const requested = ctx.payload.filename?.trim()
+        const chosen = requested ? nodePath.basename(requested) || suggested : suggested
+        const target = nodePath.join(ctx.payload.directory, chosen.endsWith(".md") ? chosen : `${chosen}.md`)
         yield* Effect.tryPromise({
           try: async () => {
             await nodeFs.mkdir(ctx.payload.directory, { recursive: true })

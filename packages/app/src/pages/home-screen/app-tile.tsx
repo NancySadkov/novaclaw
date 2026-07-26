@@ -91,8 +91,10 @@ const HeroTile: Component<{ app: HomeApp; shouldSuppressOpen?: () => boolean }> 
         style={{ color: props.app.glyphTone === "dark" ? "color-mix(in srgb, var(--nc-ink, #1a1135) 94%, transparent)" : "#ffffff" }}
       >
         <span class="text-[19px] font-semibold leading-tight [text-shadow:0_1px_2px_rgba(255,255,255,0.12)]">{props.app.title}</span>
-        <Show when={props.app.subtitle}>
-          <span class="text-[13px] font-medium leading-snug opacity-85">{props.app.subtitle}</span>
+        {/* Live status wins over the tagline: while agents are running, what they are DOING is the most
+            useful thing this tile can say. Falls back to the subtitle when there is nothing to report. */}
+        <Show when={props.app.status?.() ?? props.app.subtitle}>
+          {(line) => <span class="text-[13px] font-medium leading-snug opacity-85">{line()}</span>}
         </Show>
       </div>
     </div>

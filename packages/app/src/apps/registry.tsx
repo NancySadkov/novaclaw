@@ -28,6 +28,12 @@ export interface HomeApp {
    * wants you". Built-in example: Chats = chats with a pending permission/question or unseen output.
    */
   readonly badge?: () => number | undefined
+  /**
+   * A live one-liner for the HERO tile, replacing the subtitle while it returns something. Lets the tile
+   * report what is actually happening ("2 agents working · ~47 t/s") instead of a fixed tagline. Returns
+   * undefined when there is nothing to say, so the tile falls back to its subtitle.
+   */
+  readonly status?: () => string | undefined
 }
 
 // A plain module-level signal is the whole registry — global reactive state, no provider to wire.
