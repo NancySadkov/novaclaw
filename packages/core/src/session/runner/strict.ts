@@ -24,6 +24,8 @@ import { JhBudget } from "../../jh/budget"
 import { JhEngine } from "../../jh/engine"
 import { JhLog } from "../../jh/log"
 import { JhProcessRunner } from "../../jh/process-runner"
+import { Shell } from "../../shell"
+import { ShellBundle } from "../../shell-bundle"
 import type { ConfigStrict } from "../../config/strict"
 import { SessionInput } from "../input"
 import type { SessionMessage } from "../message"
@@ -212,11 +214,19 @@ export function lastUserText(context: readonly SessionMessage.Message[]): string
   return undefined
 }
 
-/** Generic execution-environment knowledge (jh.md §13.3) — shell mechanics only, never task content. */
-export function environmentFor(platform: NodeJS.Platform): string {
-  const shell =
-    platform === "win32"
-      ? "Each `run` command executes in a FRESH Windows cmd.exe shell in the working directory. NO state (current directory, environment variables, PATH) persists between separate `run` calls. Use FORWARD SLASHES `/` in ALL paths. If a command needs a tool's directory on PATH, set it INSIDE that same command: `set PATH=C:/some/dir/bin;%PATH% && your-command`. A program built in the working directory must be run as `.\\name.exe` — a bare name fails. Reference files by relative path."
+/** Generic execution-environment knowledge (jh.md §13.3) — shell mechanics only, never task content.
+ *
+ *  ⚠️ Takes the SHELL, not just the platform. It used to hardcode "Windows cmd.exe" from the
+ *  platform alone, which was a lie on every Windows install that has bash (the provisioned bundle or
+ *  a system git-bash) — the engine then coached the model in `set PATH=…;%PATH% &&` while the
+ *  recipes it was cooking spoke POSIX. Strict now runs the SAME shell the `bash` tool runs
+ *  (`Shell.agentDefault()`), and this text follows it. */
+export function environmentFor(platform: NodeJS.Platform, shellPath: string = Shell.agentDefault()): string {
+  const isBash = Shell.name(shellPath) === "bash"
+  const shell = isBash
+    ? `Each \`run\` command executes in a FRESH bash shell (\`${shellPath}\`) in the working directory; no PATH/cwd state persists between calls. Use POSIX syntax and FORWARD SLASHES \`/\` in ALL paths${platform === "win32" ? " (a Windows drive is `/c/...` to this bash)" : ""}. APPEND any needed directory inside the same command: \`PATH="$PATH:/dir/bin" your-command\` — PREPENDING a toolchain shadows the shell's own \`ls\`/\`head\`/\`cat\` and breaks later commands. Run a locally built program as \`./name\`. Reference files by relative path.`
+    : platform === "win32"
+      ? "Each `run` command executes in a FRESH Windows cmd.exe shell in the working directory. NO state (current directory, environment variables, PATH) persists between separate `run` calls. Use FORWARD SLASHES `/` in ALL paths. If a command needs a tool's directory on PATH, set it INSIDE that same command: `set PATH=C:/some/dir/bin;%PATH% && your-command`. A program built in the working directory must be run as `.\\name.exe` — a bare name fails. POSIX syntax (pipes into `head`, `2>/dev/null`, `VAR=x cmd`) does NOT work here. Reference files by relative path."
       : "Each `run` command executes in a FRESH /bin/sh shell in the working directory; no PATH/cwd state persists between calls. Prepend any needed PATH inside the command: `PATH=/dir/bin:$PATH your-command`. Run a locally built program as `./name`. Reference files by relative path."
   const guidance =
     "Work in SMALL VERIFIED STEPS: plan the TOP-LEVEL phases only (2-3 one-sentence phases, no nested sub-steps); each phase decomposes itself when you reach it. A step that can be verified by COMPILING or RUNNING something must be.\n" +
@@ -298,9 +308,43 @@ export function manifestFor(root: string): Map<string, string> {
   return m
 }
 
+/** How long a kept-for-inspection attempt workspace survives before the next race sweeps it. */
+export const FORK_RETENTION_MS = 3 * 24 * 60 * 60 * 1000
+
+/**
+ * Delete `jh-attempt*` workspaces in the temp dir older than the retention window.
+ *
+ * A race that nobody wins keeps its forks DELIBERATELY (the terminal notice names them so a user can
+ * look at what the racers built), but nothing ever removed them: measured 2026-07-26, this laptop
+ * had **325** stale `jh-attempt*` directories left by failed races and unit tests. "Kept for
+ * inspection" only means anything for a few days; after that it is litter in the user's temp dir.
+ * Best-effort and never throws — a sweep failure must not affect the run.
+ */
+export function sweepStaleForks(now: number = Date.now(), retentionMs: number = FORK_RETENTION_MS): number {
+  let removed = 0
+  let entries: string[]
+  try {
+    entries = fs.readdirSync(os.tmpdir())
+  } catch {
+    return 0
+  }
+  for (const name of entries) {
+    if (!name.startsWith("jh-attempt")) continue
+    const full = path.join(os.tmpdir(), name)
+    try {
+      const st = fs.statSync(full)
+      if (!st.isDirectory() || now - st.mtimeMs < retentionMs) continue
+      fs.rmSync(full, { recursive: true, force: true })
+      removed++
+    } catch {}
+  }
+  return removed
+}
+
 /** Fork the workspace into an isolated temp copy (bounded — L2: racers never touch the live folder).
  *  Returns the fork path, or the reason racing cannot fork (the caller degrades to one attempt). */
 export function forkWorkspace(src: string, attempt: number): { readonly dir: string } | { readonly refused: string } {
+  if (attempt === 1) sweepStaleForks()
   const files = walkFiles(src)
   const bytes = files.reduce((a, f) => a + f.size, 0)
   if (files.length > MAX_FORK_FILES) return { refused: `the folder has ${files.length} files (racing forks are capped at ${MAX_FORK_FILES})` }
@@ -423,7 +467,18 @@ export interface RunArgs {
  *  sync) and flush before each model call and at the end — bounded staleness, one notice per batch. */
 export function runTask(args: RunArgs): Effect.Effect<JhEngine.Report> {
   const nowFn = args.now ?? (() => Date.now())
-  const runner = JhProcessRunner.shellRunner()
+  // ONE shell for the whole product: the engine's `run` atom uses the same shell the `bash` tool
+  // uses (bundled PortableGit / system git-bash / COMSPEC), not a hardcoded COMSPEC. A Strict run
+  // and a normal turn on the same host must not speak different shells.
+  const agentShell = Shell.agentDefault()
+  // `bash -c` is not a login shell, so an MSYS bash needs its own userland prepended or `ls`/`head`
+  // don't resolve — the same env the `bash` tool builds (no-op for non-MSYS shells).
+  const shellEnv =
+    Shell.name(agentShell) === "bash" ? ShellBundle.envForBash(agentShell) : undefined
+  const runner = JhProcessRunner.shellRunner({
+    shell: agentShell,
+    ...(shellEnv ? { env: { ...process.env, ...shellEnv } } : {}),
+  })
   const wallMin = args.strict.wallMinutes !== undefined && args.strict.wallMinutes > 0 ? args.strict.wallMinutes : WALL_DEFAULT_MIN
   const queue: string[] = []
   const flush: Effect.Effect<void> = Effect.suspend(() => {
@@ -453,7 +508,7 @@ export function runTask(args: RunArgs): Effect.Effect<JhEngine.Report> {
     artifacts: JhArtifact.memory(),
     fileExists: (rel, base) => fs.existsSync(path.isAbsolute(rel) ? rel : path.join(base, rel)),
     cwd: args.cwd,
-    environment: environmentFor(process.platform),
+    environment: environmentFor(process.platform, agentShell),
     forceRootDecompose: true,
     verifyGoal: true,
     listFiles: () => listFilesFor(args.cwd),

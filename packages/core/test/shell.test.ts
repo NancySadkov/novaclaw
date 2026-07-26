@@ -109,5 +109,28 @@ describe("shell", () => {
         expect(Shell.preferred()).toBe(shell)
       })
     })
+
+    // ⚠️ The regression this guards (measured 2026-07-26): git resolved through
+    // `<root>\mingw64\bin\git.exe`, the old fixed `<git>/../../bin/bash.exe` guess missed, and the
+    // AGENT shell silently became cmd.exe while every prompt and recipe promised bash. The detector
+    // now walks up from the resolved git binary, so any of git-for-windows' PATH entries works.
+    test("git-bash detection survives EVERY git-for-windows PATH layout", () => {
+      const git = which("git")
+      if (!git) return
+      const bash = Shell.gitbash()
+      // On a machine with git, SOME bash must be found — bundled, or the system install's.
+      expect(bash).toBeDefined()
+      expect(Shell.name(bash!)).toBe("bash")
+    })
+
+    test("an agent shell that is not bash is reported, never silent", () => {
+      const isBash = Shell.agentShellIsBash()
+      expect(isBash).toBe(Shell.name(Shell.agentDefault()) === "bash")
+      // The note exists exactly when the fallback fired — that is what the system prompt appends so
+      // the model stops writing POSIX at a shell that cannot run it.
+      const note = Shell.bashFallbackNote()
+      if (isBash) expect(note).toBeUndefined()
+      else expect(note).toContain(Shell.agentDefault())
+    })
   }
 })

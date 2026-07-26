@@ -106,15 +106,24 @@ export const RecipeHandler = HttpApiBuilder.group(Api, "server.recipe", (handler
             location: { directory: AbsolutePath.make(directory) },
             title: recipe.name,
             // Cooking is a "go and do it" action, not a conversation: the user picked a recipe and a folder
-            // and expects work to happen. Left interactive+ask it landed them in a chat full of pending
-            // permission prompts for a task they had already approved by pressing Run.
+            // and expects work to happen. Left interactive+ASK it landed them in a chat full of pending
+            // permission prompts for a task they had already approved by pressing Run — `bypass` is what
+            // fixed that, and it is write access to THIS FOLDER only (writing outside stays guarded
+            // independently of the mode). The work folder is freshly materialized for this cook, so "free
+            // inside it" is the whole intent.
             //
-            // Safe to grant only since the permission work of 2026-07-25: `bypass` is write access to THIS
-            // FOLDER — writing outside it is guarded independently of the mode, and for an unattended chain
-            // root it is hard-DENIED rather than parked as an ask nobody is there to answer. The work folder
-            // is freshly materialized for this cook, so "free inside it" is the whole intent.
-            type: "goal-oriented",
+            // ⚠️ The TYPE is `interactive` deliberately, and reverting it to `goal-oriented` breaks
+            // cooking on Windows. Attendance is what the Agent Jail keys on: an UNATTENDED chain root
+            // requires sandbox confinement for raw shell execution, and no sandbox backend exists on
+            // Windows/macOS yet — so `bash` is DENIED outright there. Measured 2026-07-26: every one of
+            // the seven shipped recipes lost its shell on Windows; `hello-c` and `pi-100-machin` — the
+            // pair AGENTS.md calls the install health check — wrote correct C they could never compile,
+            // and `install-health-check` duly reported the install as broken. And the attendance claim is
+            // simply TRUE: the user pressed Run and is looking at the chat, so an ask (only reachable for
+            // out-of-folder work) reaches a human who can answer it.
+            type: "interactive",
             permissionMode: "bypass",
+            ...(ctx.payload.strict ? { strict: ctx.payload.strict } : {}),
             ...(model ? { model } : {}),
             ...(ctx.payload.agent ? { agent: AgentV2.ID.make(ctx.payload.agent) } : {}),
             // Traceable back to what was cooked, and which copy.

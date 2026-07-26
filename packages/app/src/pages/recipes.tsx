@@ -57,6 +57,8 @@ export function RecipesPage() {
   const [draftPrompt, setDraftPrompt] = createSignal("")
   const [dirty, setDirty] = createSignal(false)
   const [busy, setBusy] = createSignal(false)
+  /** Per-cook Strict opt-in (off = inherit Settings → Strict mode). */
+  const [strictCook, setStrictCook] = createSignal(false)
   const [creating, setCreating] = createSignal(false)
 
   const current = createMemo(() => recipes().find((recipe) => recipe.slug === selected()))
@@ -149,7 +151,14 @@ export function RecipesPage() {
     if (!base) return
     setBusy(true)
     try {
-      const result = await runRecipe(base, recipe.slug, directory ? { directory } : {})
+      const result = await runRecipe(base, recipe.slug, {
+        ...(directory ? { directory } : {}),
+        // Per-cook Strict, the same switch the composer offers a chat. It has to ride the run call:
+        // the cook's prompt is queued by that same request, so flipping a per-session override
+        // afterwards would race the drain — before this, the ONLY way to cook a recipe under Strict
+        // was to turn the instance-global setting on first.
+        ...(strictCook() ? { strict: { enabled: true } } : {}),
+      })
       showToast({ title: `Cooking “${recipe.name}”`, description: result.directory })
       navigate(sessionHref(server.key, result.sessionID))
     } catch (error) {
@@ -256,6 +265,17 @@ export function RecipesPage() {
                       </button>
                       <button class={BTN} disabled={busy() || !conn()} onClick={() => cookElsewhere(recipe())}>
                         Run in…
+                      </button>
+                      {/* Anti-obscurantist: a VISIBLE switch next to the button it changes, not a
+                          hidden menu — the same Strict lever the composer gives a chat. */}
+                      <button
+                        class={BTN}
+                        aria-pressed={strictCook()}
+                        data-action="recipe-strict-toggle"
+                        title="Cook under the Strict harness: the run is decomposed into small steps, each verified before the next. Slower, and it can race several attempts."
+                        onClick={() => setStrictCook((on) => !on)}
+                      >
+                        {strictCook() ? "🛡️ Strict on" : "Strict off"}
                       </button>
                       <button class={BTN} disabled={busy()} onClick={() => void copy(recipe())}>
                         Copy

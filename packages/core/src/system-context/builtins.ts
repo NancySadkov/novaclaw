@@ -9,6 +9,7 @@ import { SystemContextRegistry } from "./registry"
 import { FSUtil } from "../fs-util"
 import { Global } from "../global"
 import { SettingsConfigStore } from "../settings-config-store"
+import { Shell } from "../shell"
 
 const builtIns = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -29,6 +30,13 @@ const builtIns = Layer.effectDiscard(
       `  Workspace root folder: ${location.root}`,
       `  Is directory a git repo: ${location.vcs?.type === "git" ? "yes" : "no"}`,
       `  Platform: ${process.platform}`,
+      `  Shell: ${Shell.agentDefault()}`,
+      // The agent shell is bash almost everywhere, and the tool descriptions + the shipped recipes
+      // all assume it. When the fallback fires (Windows without the provisioned bundle or a system
+      // git-bash) the model MUST be told, or it writes POSIX at cmd.exe and the task dies of
+      // unrelated-looking errors — measured 2026-07-26: the same π prompt scored 1/100 digits under
+      // a silent cmd.exe and 100/100 under bash.
+      ...(Shell.bashFallbackNote() ? [`  ${Shell.bashFallbackNote()}`] : []),
       ...peerLines,
       "</env>",
     ].join("\n")

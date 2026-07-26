@@ -128,10 +128,30 @@ export function gitbash() {
   // system git-bash (the env flag above stays the explicit escape hatch).
   const bundled = ShellBundle.resolve()?.bash
   if (bundled) return bundled
+  // A SYSTEM git-for-windows install. `which("git")` lands on whichever of git's several PATH
+  // entries comes first — `<root>/cmd/git.exe`, `<root>/bin/git.exe` OR `<root>/mingw64/bin/git.exe`
+  // — so WALK UP from the resolved binary and test both bash homes at each ancestor instead of
+  // assuming one fixed depth. ⚠️ Measured 2026-07-26: with `mingw64\bin` first on PATH the old
+  // fixed `../../bin/bash.exe` missed, this returned undefined, and every agent silently got
+  // cmd.exe while the tool description and every recipe promised bash — the same prompt scored
+  // 1/100 π digits under cmd.exe and 100/100 under bash.
+  const candidates: string[] = []
   const git = which("git")
-  if (!git) return
-  const file = path.join(git, "..", "..", "bin", "bash.exe")
-  if (stat(file)?.size) return file
+  if (git) {
+    let dir = path.dirname(git)
+    for (let i = 0; i < 4; i++) {
+      candidates.push(path.join(dir, "bin", "bash.exe"), path.join(dir, "usr", "bin", "bash.exe"))
+      const parent = path.dirname(dir)
+      if (parent === dir) break
+      dir = parent
+    }
+  }
+  // A bash already on PATH counts only when it sits in an MSYS layout (`<root>/bin` or
+  // `<root>/usr/bin`). That test is what rejects `…\WindowsApps\bash.exe` — the WSL launcher stub,
+  // which would run the agent's commands inside a Linux VM against a different filesystem.
+  const onPath = which("bash")
+  if (onPath && ShellBundle.msysRoot(onPath)) candidates.push(onPath)
+  for (const file of candidates) if (stat(file)?.size) return file
 }
 
 function fallback() {
@@ -223,6 +243,37 @@ export function agentDefault(): string {
 }
 agentDefault.reset = () => {
   defaultAgent = undefined
+  warnedFallback = false
+}
+
+let warnedFallback = false
+/**
+ * TRUE when the agent shell is NOT bash — i.e. the fallback fired and every prompt that tells the
+ * model "your shell is bash" is now lying to it. A silent fallback is the expensive failure: the
+ * model writes POSIX, cmd.exe answers, and the task dies of unrelated-looking errors. Callers that
+ * hand the shell to a model surface this instead of guessing (`bashFallbackNote`), and the first
+ * call also logs it once for the server operator.
+ */
+export function agentShellIsBash(): boolean {
+  return name(agentDefault()) === "bash"
+}
+
+/** One line for the agent's system prompt when its shell is not bash, else undefined. */
+export function bashFallbackNote(): string | undefined {
+  if (agentShellIsBash()) return undefined
+  const shell = agentDefault()
+  if (!warnedFallback) {
+    warnedFallback = true
+    console.warn(
+      `[shell] no bash found — agent commands will run in ${shell}. Provision the bundled shell ` +
+        `(Settings → General → Shell) or set NOVACLAW_GIT_BASH_PATH; POSIX syntax will fail until then.`,
+    )
+  }
+  return (
+    `⚠️ Shell: this host has NO bash — your \`bash\` tool runs \`${shell}\`. POSIX syntax (\`ls\`, ` +
+    `pipes, \`2>/dev/null\`, \`VAR=x cmd\`, forward slashes) will FAIL here; use that shell's own ` +
+    `syntax, and prefer the native read/edit/write/glob/grep tools over shell commands.`
+  )
 }
 
 export function preferred(configShell?: string) {

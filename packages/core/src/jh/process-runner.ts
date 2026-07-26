@@ -39,7 +39,12 @@ function killTree(child: ChildProcess): void {
   }
 }
 
-function runOnce(input: { command: string; cwd: string; timeoutMs: number }, shellPath: string, maxBytes: number): Promise<RunResult> {
+function runOnce(
+  input: { command: string; cwd: string; timeoutMs: number },
+  shellPath: string,
+  maxBytes: number,
+  env?: NodeJS.ProcessEnv,
+): Promise<RunResult> {
   return new Promise<RunResult>((resolve) => {
     let output = ""
     let capped = false
@@ -63,6 +68,7 @@ function runOnce(input: { command: string; cwd: string; timeoutMs: number }, she
         shell: shellPath,
         stdio: ["ignore", "pipe", "pipe"],
         detached: process.platform !== "win32",
+        ...(env ? { env } : {}),
       })
     } catch (e) {
       finish({ exitCode: undefined, output: messageOf(e), timedOut: false })
@@ -94,10 +100,10 @@ function runOnce(input: { command: string; cwd: string; timeoutMs: number }, she
   })
 }
 
-export function shellRunner(options?: { shell?: string; maxOutputBytes?: number }): Runner {
+export function shellRunner(options?: { shell?: string; maxOutputBytes?: number; env?: NodeJS.ProcessEnv }): Runner {
   const shellPath = options?.shell ?? (process.platform === "win32" ? (process.env.COMSPEC ?? "cmd.exe") : "/bin/sh")
   const maxBytes = options?.maxOutputBytes ?? 65_536
   return {
-    run: (input) => Effect.promise(() => runOnce(input, shellPath, maxBytes)),
+    run: (input) => Effect.promise(() => runOnce(input, shellPath, maxBytes, options?.env)),
   }
 }

@@ -85,6 +85,7 @@ describe("SessionStrict racing helpers (improve11 P5)", () => {
     expect(fs.readFileSync(path.join(src, "a.c"), "utf8")).toBe("WINNER A")
     expect(fs.readFileSync(path.join(src, "c.c"), "utf8")).toBe("NEW C")
     expect(fs.readFileSync(path.join(src, "sub", "b.txt"), "utf8")).toBe("original B")
+    fs.rmSync(fork.dir, { recursive: true, force: true })
   })
   test("deletions are NOT propagated (v1 safety)", () => {
     const src = mk()
@@ -95,12 +96,45 @@ describe("SessionStrict racing helpers (improve11 P5)", () => {
     const applied = SessionStrict.applyBack(fork.dir, src, baseline)
     expect(applied).toEqual([])
     expect(fs.existsSync(path.join(src, "sub", "b.txt"))).toBe(true)
+    fs.rmSync(fork.dir, { recursive: true, force: true })
+  })
+  test("sweepStaleForks removes attempt workspaces past the retention window, keeps fresh ones", () => {
+    const src = mk()
+    const fork = SessionStrict.forkWorkspace(src, 2)
+    if ("refused" in fork) throw new Error(fork.refused)
+    // An aged workspace: back-date its mtime past the window (what a race nobody won leaves behind).
+    const old = fs.mkdtempSync(path.join(os.tmpdir(), "jh-attempt9-stale-"))
+    const aged = Date.now() - SessionStrict.FORK_RETENTION_MS - 60_000
+    fs.utimesSync(old, aged / 1000, aged / 1000)
+    expect(SessionStrict.sweepStaleForks()).toBeGreaterThan(0)
+    expect(fs.existsSync(old)).toBe(false)
+    expect(fs.existsSync(fork.dir)).toBe(true) // today's race is never swept
+    fs.rmSync(fork.dir, { recursive: true, force: true })
   })
   test("the fork bound REFUSES with a named reason (no silent cap)", () => {
     const src = fs.mkdtempSync(path.join(os.tmpdir(), "jh-fork-big-"))
     for (let i = 0; i <= SessionStrict.MAX_FORK_FILES; i++) fs.writeFileSync(path.join(src, `f${i}`), "")
     const refused = SessionStrict.forkWorkspace(src, 1)
     expect("refused" in refused && refused.refused).toContain("files")
+  })
+})
+
+describe("SessionStrict.environmentFor (the shell it TELLS the model about)", () => {
+  // The engine used to derive this from the platform alone and hardcode cmd.exe for Windows, while
+  // the `bash` tool on the same host ran bash. One product, one shell — the text follows the shell.
+  test("a bash shell is described in POSIX terms, on Windows too", () => {
+    const text = SessionStrict.environmentFor("win32", "C:\\soft\\Git\\bin\\bash.exe")
+    expect(text).toContain("bash")
+    expect(text).toContain('PATH="$PATH:/dir/bin"')
+    expect(text).not.toContain("cmd.exe")
+  })
+  test("APPEND, never prepend — the BusyBox-shadowing trap is named where the model reads it", () => {
+    expect(SessionStrict.environmentFor("win32", "/usr/bin/bash")).toContain("PREPENDING")
+  })
+  test("cmd.exe is still described correctly when that IS the shell", () => {
+    const text = SessionStrict.environmentFor("win32", "C:\\WINDOWS\\system32\\cmd.exe")
+    expect(text).toContain("cmd.exe")
+    expect(text).toContain("set PATH=")
   })
 })
 

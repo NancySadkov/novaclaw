@@ -1,5 +1,6 @@
 import { Schema } from "effect"
 import { HttpApiEndpoint, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
+import { SessionStrict } from "@novaclaw/schema/session-strict"
 import { InvalidRequestError } from "../errors"
 
 // Recipes — "source code for the AI era" (AGENTS.md). A recipe is a FOLDER on disk (recipe.md + assets);
@@ -93,6 +94,11 @@ export const RecipeGroup = HttpApiGroup.make("server.recipe")
         directory: Schema.optional(Schema.String),
         model: Schema.optional(Schema.String),
         agent: Schema.optional(Schema.String),
+        /** Cook under the Strict harness (the composer's Strict switch, per cook). Omit to inherit the
+         *  global Settings → Strict mode. Without this the ONLY way to cook in Strict was to flip the
+         *  instance-global setting first: the cook's prompt is queued by this call, so a per-session
+         *  override applied afterwards would race the drain. */
+        strict: Schema.optional(SessionStrict.Override),
       }),
       success: RunResult,
       error: InvalidRequestError,

@@ -8,6 +8,7 @@ import { FSUtil } from "@novaclaw/core/fs-util"
 import { Global } from "@novaclaw/core/global"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SystemContext } from "@novaclaw/core/system-context"
+import { Shell } from "@novaclaw/core/shell"
 import { SystemContextBuiltIns } from "@novaclaw/core/system-context/builtins"
 import { SystemContextRegistry } from "@novaclaw/core/system-context/registry"
 import { location } from "../fixture/location"
@@ -69,6 +70,8 @@ describe("SystemContextBuiltIns", () => {
           `  Workspace root folder: ${projectDirectory}`,
           "  Is directory a git repo: yes",
           `  Platform: ${process.platform}`,
+          `  Shell: ${Shell.agentDefault()}`,
+          ...(Shell.bashFallbackNote() ? [`  ${Shell.bashFallbackNote()}`] : []),
           "</env>",
           "",
           `Today's date: ${localDate(timestamp)}`,
@@ -117,6 +120,8 @@ describe("SystemContextBuiltIns", () => {
           `  Workspace root folder: ${projectDirectory}`,
           "  Is directory a git repo: yes",
           `  Platform: ${process.platform}`,
+          `  Shell: ${Shell.agentDefault()}`,
+          ...(Shell.bashFallbackNote() ? [`  ${Shell.bashFallbackNote()}`] : []),
           "</env>",
           "",
           `Today's date: ${localDate(timestamp)}`,

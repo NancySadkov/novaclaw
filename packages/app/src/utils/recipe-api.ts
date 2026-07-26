@@ -66,5 +66,5 @@ export const removeRecipe = (server: ServerConnection.HttpBase, slug: string) =>
 export const runRecipe = (
   server: ServerConnection.HttpBase,
   slug: string,
-  input: { directory?: string } = {},
+  input: { directory?: string; strict?: { enabled?: boolean; attempts?: number; wallMinutes?: number } } = {},
 ) => call<RunResult>(server, "POST", `api/recipe/${encodeURIComponent(slug)}/run`, input)
