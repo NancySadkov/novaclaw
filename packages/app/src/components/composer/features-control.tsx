@@ -58,10 +58,13 @@ export type ComposerFeaturesControlState = {
   onClose: () => void
 }
 
+// `thinkingBudget` is deliberately ABSENT (owner 2026-07-26): a reasoning budget belongs to the MODEL, not
+// to one chat, and it now lives in Settings → Models → configure, where "Disabled" is simply one of the
+// budget values. The per-session plumbing (event, column, config walk) is left in place and inert — it costs
+// nothing, and ripping a column out of shipped sessions buys nothing at this point.
 const COMPOSER_FEATURES: readonly ComposerFeature[] = [
   "askBeforeChanges",
   "surgicalEdits",
-  "thinkingBudget",
   "introspection",
   "quality",
   "affective",
@@ -341,12 +344,12 @@ export function ComposerFeaturesControl(props: { state: ComposerFeaturesControlS
   const dialog = useDialog()
   const enabledCount = () => COMPOSER_FEATURES.filter((feature) => props.state.current[feature]).length
   const unattended = () => props.state.mode !== "interactive"
+  // The enabled-COUNT is deliberately not shown (owner 2026-07-26): "Tune · 2" spends width on a number
+  // that tells you nothing actionable — you still have to open it to see WHICH two. The unattended-mode
+  // marker stays, because that one changes what the agent may do without you.
   const triggerSuffix = () => {
-    const parts: string[] = []
-    if (unattended())
-      parts.push(language.t(`prompt.mode.short.${props.state.mode}` as Parameters<typeof language.t>[0]))
-    if (enabledCount() > 0) parts.push(String(enabledCount()))
-    return parts.length ? ` · ${parts.join(" · ")}` : ""
+    if (!unattended()) return ""
+    return ` · ${language.t(`prompt.mode.short.${props.state.mode}` as Parameters<typeof language.t>[0])}`
   }
   // `onClose` is the composer's "the user finished tuning" hook (it re-reads the session record), so it
   // fires when the dialog goes away by ANY route — button, overlay click or Escape — via dialog.show's

@@ -49,7 +49,11 @@ const PRESETS: Record<FieldKey, RawPreset[]> = {
   frequency_penalty: [{}, { word: "off", num: 0 }, { word: "light", num: 0.3 }, { word: "moderate", num: 0.6 }, { word: "strong", num: 1 }],
   context: [{}, { size: "4K", num: 4096 }, { size: "8K", num: 8192 }, { size: "16K", num: 16384 }, { size: "32K", num: 32768 }, { size: "64K", num: 65536 }, { size: "128K", num: 131072 }, { size: "256K", num: 262144 }],
   maxTokens: [{}, { size: "512", num: 512 }, { size: "1K", num: 1024 }, { size: "2K", num: 2048 }, { size: "4K", num: 4096 }, { size: "8K", num: 8192 }, { size: "16K", num: 16384 }, { size: "32K", num: 32768 }],
-  thinkingBudget: [{}, { size: "2K", num: 2048 }, { size: "4K", num: 4096 }, { size: "6K", num: 6144 }, { size: "8K", num: 8192 }, { size: "16K", num: 16384 }, { size: "32K", num: 32768 }],
+  // -1 is the DISABLED value (owner 2026-07-26): one entry in the same list rather than a separate switch,
+  // because "no budget" is a budget setting. The runtime already collapses any non-positive configured
+  // value to 0 (`defaultThinkingBudget` clamps with Math.max(0, …)) and the runner gates on `> 0`, so the
+  // sentinel needs no schema, migration or protocol change. Blank still means "derive the default".
+  thinkingBudget: [{}, { word: "disabled", num: -1 }, { size: "2K", num: 2048 }, { size: "4K", num: 4096 }, { size: "6K", num: 6144 }, { size: "8K", num: 8192 }, { size: "16K", num: 16384 }, { size: "32K", num: 32768 }],
 }
 
 type Opt = { id: string; num: number | undefined; label: string }
@@ -108,7 +112,8 @@ export const DialogModelConfig: Component<{
 
   const optLabel = (p: RawPreset): string => {
     if (p.num === undefined) return tk("settings.models.config.preset.default")
-    if (p.word) return `${tk(`settings.models.config.preset.${p.word}`)} (${p.num})`
+    // A sentinel is not a quantity: "Disabled (-1)" would invite the reader to reason about -1 tokens.
+    if (p.word) return p.num < 0 ? tk(`settings.models.config.preset.${p.word}`) : `${tk(`settings.models.config.preset.${p.word}`)} (${p.num})`
     if (p.size) return p.size
     return String(p.num)
   }
@@ -236,14 +241,6 @@ export const DialogModelConfig: Component<{
     </SettingsRowV2>
   )
 
-  // Budgeting off is encoded as thinkingBudget = 0, which the runtime ALREADY honours end to end:
-  // `withDefaults` keeps a literal 0 (it only checks `typeof === "number"`), `defaultThinkingBudget`
-  // returns `Math.max(0, 0)`, and the runner gates on `thinkingBudget > 0`. So this switch needs no
-  // schema, migration or protocol change — it writes the sentinel the runner already reads. Blank is
-  // NOT the same thing: blank means "derive the default" (context/4 capped at the output limit).
-  const budgetingOff = () => num(form.thinkingBudget) === 0
-  const setBudgeting = (on: boolean) => setForm("thinkingBudget", on ? "" : "0")
-
   const modalityRow = (dir: "in" | "out") => (
     <SettingsRowV2
       title={tk(`settings.models.config.modalities.${dir}.name`)}
@@ -299,15 +296,7 @@ export const DialogModelConfig: Component<{
           <SettingsListV2>
             {paramRow("context")}
             {paramRow("maxTokens")}
-            <SettingsRowV2
-              title={tk("settings.models.config.budgeting.name")}
-              description={tk("settings.models.config.budgeting.desc")}
-            >
-              <Switch checked={!budgetingOff()} onChange={setBudgeting} hideLabel>
-                {tk("settings.models.config.budgeting.name")}
-              </Switch>
-            </SettingsRowV2>
-            {paramRow("thinkingBudget", budgetingOff())}
+            {paramRow("thinkingBudget")}
           </SettingsListV2>
 
           {section("capabilities")}

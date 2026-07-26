@@ -35,4 +35,12 @@ describe("defaultThinkingBudget", () => {
     expect(defaultThinkingBudget(0, CONTEXT, OUTPUT)).toBe(0) // 0 = the documented "off" sentinel
     expect(defaultThinkingBudget(1234.7, CONTEXT, OUTPUT)).toBe(1234)
   })
+
+  // The model dialog writes -1 for its "Disabled" budget option (owner 2026-07-26). It must collapse to 0,
+  // because the runner gates the whole controller on `thinkingBudget > 0` — if -1 ever survived as a
+  // ceiling the controller would engage and cut reasoning immediately.
+  test("-1 is the DISABLED sentinel the model dialog writes, and it means off", () => {
+    expect(defaultThinkingBudget(-1, CONTEXT, OUTPUT)).toBe(0)
+    expect(defaultThinkingBudget(-1, 0, 0)).toBe(0)
+  })
 })

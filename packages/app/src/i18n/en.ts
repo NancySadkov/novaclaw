@@ -422,8 +422,8 @@ export const dict = {
     "Strict mode works autonomously, so this chat's permission mode switches to Bypass (changes stay inside the project).",
   "prompt.strict.popover.enable": "Enable Strict",
 
-  "prompt.features.tooltip": "Tuning: per-chat helper switches — the stuck detector, quality gates, and mood sampling",
-  "prompt.features.label": "Tuning",
+  "prompt.features.tooltip": "Tune this chat — how it works, how careful it is, and when it asks",
+  "prompt.features.label": "Tune",
   "prompt.features.popover.title": "Tune this chat",
   "prompt.features.popover.description":
     "These switches apply to this chat only (chats spawned from it inherit them). Everything else about each helper is configured in Settings.",
@@ -1464,9 +1464,6 @@ export const dict = {
     "How many tokens of the conversation the model can see at once. Match the model's real limit.",
   "settings.models.config.maxTokens.name": "Max response length",
   "settings.models.config.maxTokens.desc": "The most tokens the model may generate in a single reply.",
-  "settings.models.config.budgeting.name": "Limit thinking",
-  "settings.models.config.budgeting.desc":
-    "Cap how long this model may think before it has to answer. Turn it off to let it think without limit — clone a model and switch this off on the copy to compare the two on the same task.",
   "settings.models.config.thinkingBudget.name": "Thinking budget",
   "settings.models.config.thinkingBudget.desc":
     "Soft cap on the model's reasoning per turn. When it's reached, the harness nudges the model to wrap up and answer — curbing runaway thinking in smaller models. Blank uses the default (¼ of the context).",
@@ -1486,6 +1483,7 @@ export const dict = {
   "settings.models.config.preset.default": "Default",
   "settings.models.config.preset.custom": "Custom",
   "settings.models.config.preset.off": "Off",
+  "settings.models.config.preset.disabled": "Disabled — no budget",
   "settings.models.config.preset.precise": "Precise",
   "settings.models.config.preset.focused": "Focused",
   "settings.models.config.preset.balanced": "Balanced",
