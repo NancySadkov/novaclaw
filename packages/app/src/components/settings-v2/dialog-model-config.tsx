@@ -117,7 +117,11 @@ export const DialogModelConfig: Component<{
     if (p.size) return p.size
     return String(p.num)
   }
-  const optId = (p: RawPreset) => (p.num === undefined ? "default" : String(p.num))
+  // The option id is an internal key, and it must not start with "-": a NEGATIVE value (the -1 "Disabled"
+  // budget) produced the id "-1", and the listbox then refused to open at all — measured, with the
+  // temperature select opening from the identical events while this one stayed shut. Prefixing keeps every
+  // id a safe identifier regardless of sign.
+  const optId = (p: RawPreset) => (p.num === undefined ? "default" : `v${p.num}`)
 
   const save = async () => {
     const options: Record<string, number> = {}
