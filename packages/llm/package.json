@@ -1,6 +1,5 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "version": "0.1.0",
   "name": "@novaclaw/llm",
   "type": "module",
   "license": "SEE LICENSE IN LICENSE",

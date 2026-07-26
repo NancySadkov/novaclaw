@@ -4,6 +4,8 @@ import { $ } from "bun"
 import path from "node:path"
 import { parseArgs } from "node:util"
 
+import { canonicalVersion } from "./utils"
+
 const { values } = parseArgs({
   args: Bun.argv.slice(2),
   options: {
@@ -19,8 +21,10 @@ if (!repo) throw new Error("GH_REPO is required")
 const releaseId = process.env.NOVACLAW_RELEASE
 if (!releaseId) throw new Error("NOVACLAW_RELEASE is required")
 
-const version = process.env.NOVACLAW_VERSION
-if (!version) throw new Error("NOVACLAW_VERSION is required")
+// Defaults to the canonical version (root package.json) rather than requiring the env var, so this
+// cannot publish an update feed for a version the tree does not claim. The env stays an override for
+// tagging a release differently from the checked-out tree.
+const version = process.env.NOVACLAW_VERSION ?? (await canonicalVersion())
 
 const dir = process.env.LATEST_YML_DIR
 if (!dir) throw new Error("LATEST_YML_DIR is required")

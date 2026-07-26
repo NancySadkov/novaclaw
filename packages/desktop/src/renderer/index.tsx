@@ -19,6 +19,9 @@ import type { AsyncStorage } from "@solid-primitives/storage"
 import { MemoryRouter } from "@solidjs/router"
 import { createEffect, createMemo, createResource, createSignal, onCleanup, onMount, Show } from "solid-js"
 import { render } from "solid-js/web"
+// `pkg.version` is NOT an independent version source: packages/desktop/package.json is written by
+// `bun run version:sync` from the root package.json (electron-builder requires a literal there), and
+// version-single-source.test.ts fails if it drifts. Reading it here needs no @novaclaw/core edge.
 import pkg from "../../package.json"
 import { initI18n, t } from "./i18n"
 import { initializationData, initializationReady } from "./initialization"

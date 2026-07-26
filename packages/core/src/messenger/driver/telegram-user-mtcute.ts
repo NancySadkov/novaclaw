@@ -131,9 +131,9 @@ export const factory: UserClientFactory = async (config: UserClientConfig): Prom
     apiHash: config.apiHash,
     storage: new mtcute.MemoryStorage(),
     // What Telegram shows in the account's "Devices" list. Without this mtcute reports ITS OWN
-    // version as the app version (e.g. "0.31.0" — mistakable for an app version); pin it to the
-    // ONE runtime source of truth (InstallationVersion ← the build-time NOVACLAW_VERSION, "local"
-    // from source) so the device reads "NovaClaw <our version>", never a dependency's.
+    // version as the app version (e.g. "0.31.0" — mistakable for an app version); pin it to the ONE
+    // runtime source of truth (InstallationVersion ← the root package.json, via the generated
+    // version.gen.ts) so the device reads "NovaClaw <our version>", never a dependency's.
     initConnectionOptions: {
       deviceModel: "NovaClaw",
       appVersion: InstallationVersion,

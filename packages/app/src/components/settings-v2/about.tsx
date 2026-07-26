@@ -1,4 +1,5 @@
 import { type Component, For } from "solid-js"
+import { InstallationVersion } from "@novaclaw/core/installation/version"
 import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import "./settings-v2.css"
@@ -6,9 +7,8 @@ import "./settings-v2.css"
 // The About tab — a small piece of pride and the license attribution the third-party MIT/Apache
 // components require. The product name is set in a fancy branded wordmark (gold gradient serif); the
 // credits list is factual data (name · version · license), so it lives here rather than in i18n.
-// `platform.version` is the same source the settings nav footer uses.
-
-const FALLBACK_VERSION = "0.1.0"
+// `platform.version` is the same source the settings nav footer uses; it and the fallback are now the
+// SAME number (both trace to the root package.json), so the two can no longer disagree.
 
 type Credit = { name: string; version?: string; license: string }
 
@@ -36,7 +36,7 @@ const CREDITS: Credit[] = [
 export const SettingsAboutV2: Component = () => {
   const language = useLanguage()
   const platform = usePlatform()
-  const version = () => platform.version ?? FALLBACK_VERSION
+  const version = () => platform.version ?? InstallationVersion
 
   return (
     <>

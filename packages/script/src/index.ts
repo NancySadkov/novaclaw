@@ -19,33 +19,26 @@ if (!semver.satisfies(process.versions.bun, expectedBunVersionRange)) {
 
 const env = {
   NOVACLAW_CHANNEL: process.env["NOVACLAW_CHANNEL"],
-  NOVACLAW_BUMP: process.env["NOVACLAW_BUMP"],
   NOVACLAW_VERSION: process.env["NOVACLAW_VERSION"],
   NOVACLAW_RELEASE: process.env["NOVACLAW_RELEASE"],
 }
 const CHANNEL = await (async () => {
   if (env.NOVACLAW_CHANNEL) return env.NOVACLAW_CHANNEL
-  if (env.NOVACLAW_BUMP) return "latest"
-  if (env.NOVACLAW_VERSION && !env.NOVACLAW_VERSION.startsWith("0.0.0-")) return "latest"
   return await $`git branch --show-current`.text().then((x) => x.trim())
 })()
 const IS_PREVIEW = CHANNEL !== "latest"
 
-const VERSION = await (async () => {
-  if (env.NOVACLAW_VERSION) return env.NOVACLAW_VERSION
-  if (IS_PREVIEW) return `0.0.0-${CHANNEL}-${new Date().toISOString().slice(0, 16).replace(/[-:T]/g, "")}`
-  const version = await fetch("https://registry.npmjs.org/novaclaw-ai/latest")
-    .then((res) => {
-      if (!res.ok) throw new Error(res.statusText)
-      return res.json()
-    })
-    .then((data: any) => data.version)
-  const [major, minor, patch] = version.split(".").map((x: string) => Number(x) || 0)
-  const t = env.NOVACLAW_BUMP?.toLowerCase()
-  if (t === "major") return `${major + 1}.0.0`
-  if (t === "minor") return `${major}.${minor + 1}.0`
-  return `${major}.${minor}.${patch + 1}`
-})()
+// The version is REPO STATE, not something to discover at build time. This used to ask the npm
+// registry for `novaclaw-ai/latest` and increment it — inherited from the opencode fork and dead on
+// arrival here, because we deliberately never publish to npm (todo.md → "No npm, ever"), so the
+// fetch could only 404 or, worse, resolve some unrelated package. It also meant a preview build
+// stamped `0.0.0-<channel>-<timestamp>` instead of the version the tree actually says it is.
+// Now there is ONE source: the root package.json. The env var stays as a CI override for tagging a
+// build differently from the checked-out tree; nothing else may invent a version.
+const VERSION = env.NOVACLAW_VERSION ?? rootPkg.version
+
+if (typeof VERSION !== "string" || VERSION.length === 0)
+  throw new Error(`the root package.json has no "version" — it is the single source of truth`)
 
 const bot = ["actions-user", "novaclaw", "novaclaw-agent[bot]"]
 const teamPath = path.resolve(import.meta.dir, "../../../.github/TEAM_MEMBERS")

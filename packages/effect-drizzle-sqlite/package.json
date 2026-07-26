@@ -1,6 +1,5 @@
 {
   "$schema": "https://json.schemastore.org/package.json",
-  "version": "0.1.0",
   "name": "@novaclaw/effect-drizzle-sqlite",
   "type": "module",
   "license": "SEE LICENSE IN LICENSE",

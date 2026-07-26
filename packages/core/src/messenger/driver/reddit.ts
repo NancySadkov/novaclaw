@@ -16,6 +16,7 @@ import type {
 } from "../driver"
 import { ChallengeError, ConnectError, LoginCodeError, ModerationError, SendError } from "../driver"
 import type { LoopbackFactory } from "../oauth-loopback"
+import { InstallationVersion } from "../../installation/version"
 
 // The Reddit driver (messenger-plan §2.1) — a SUBREDDIT is the chat you bind, and every post inside
 // it is a thread whose parent is the subreddit. That shape is the whole reason one binding can
@@ -322,7 +323,8 @@ export const readCursor = (value: unknown): { posts: ListingCursor; comments: Li
 
 export interface RedditOptions {
   readonly pollIntervalMs?: number
-  /** Stamped into the required User-Agent; bump per release so Reddit can block old broken builds. */
+  /** Stamped into the required User-Agent so Reddit can block old broken builds. Defaults to the
+   *  installation's version — override only in tests, which must not track the product version. */
   readonly version?: string
 }
 
@@ -343,7 +345,7 @@ const parseConfig = (account: Messenger.AccountInfo): Effect.Effect<RedditConfig
 
 export const make = (fetchImpl: FetchLike, loopbackFactory: LoopbackFactory, openBrowser: (url: string) => Effect.Effect<void>, options?: RedditOptions): Driver => {
   const pollIntervalMs = options?.pollIntervalMs ?? 20_000
-  const version = options?.version ?? "0.1.0"
+  const version = options?.version ?? InstallationVersion
 
   /** Installed apps have NO secret — HTTP Basic is `client_id:` with an empty password. */
   const basic = (clientId: string) => `Basic ${btoa(`${clientId}:`)}`

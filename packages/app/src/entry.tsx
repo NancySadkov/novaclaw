@@ -7,7 +7,7 @@ import { dict as en } from "@/i18n/en"
 import { dict as zh } from "@/i18n/zh"
 import { handleNotificationClick } from "@/utils/notification-click"
 import { authFromToken } from "@/utils/server"
-import pkg from "../package.json"
+import { InstallationVersion } from "@novaclaw/core/installation/version"
 import { ServerConnection } from "./context/server"
 
 const DEFAULT_SERVER_URL_KEY = "novaclaw.settings.dat:defaultServerUrl"
@@ -131,7 +131,7 @@ const clearAuthToken = () => {
 
 const platform: Platform = {
   platform: "web",
-  version: pkg.version,
+  version: InstallationVersion,
   openLink,
   back,
   forward,

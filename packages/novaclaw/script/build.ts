@@ -174,7 +174,9 @@ for (const item of targets) {
     entrypoints: ["./src/index.ts", ...(embeddedFileMap ? ["novaclaw-web-ui.gen.ts"] : [])],
     define: {
       FFF_LIBC: JSON.stringify(item.abi === "musl" ? "musl" : "gnu"),
-      NOVACLAW_VERSION: `'${Script.version}'`,
+      // No NOVACLAW_VERSION define: the version is no longer a build-time global. It comes from
+      // `installation/version.gen.ts`, generated from the root package.json — so it is right in every
+      // bundle, including ones (like the Electron sidecar's build-node.ts) that never set a define.
       NOVACLAW_MODELS_DEV: generated.modelsData,
       NOVACLAW_CHANNEL: `'${Script.channel}'`,
       NOVACLAW_LIBC: item.os === "linux" ? `'${item.abi ?? "glibc"}'` : "",

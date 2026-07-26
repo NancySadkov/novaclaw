@@ -1,6 +1,17 @@
 import { $ } from "bun"
+import path from "node:path"
 
 export type Channel = "dev" | "beta" | "prod"
+
+/** The canonical version — the root package.json, the single source of truth. Read from disk rather
+ *  than imported from @novaclaw/core so these build scripts need no dependency on the kernel. */
+export async function canonicalVersion(): Promise<string> {
+  const rootPkg = path.resolve(import.meta.dir, "../../../package.json")
+  const version = (await Bun.file(rootPkg).json()).version
+  if (typeof version !== "string" || version.length === 0)
+    throw new Error(`the root package.json has no "version" — it is the single source of truth`)
+  return version
+}
 
 export function resolveChannel(): Channel {
   const raw = Bun.env.NOVACLAW_CHANNEL

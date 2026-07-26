@@ -3,14 +3,18 @@
 import { $ } from "bun"
 import path from "path"
 
+import { canonicalVersion } from "./utils"
+
 const dir = process.env.LATEST_YML_DIR!
 if (!dir) throw new Error("LATEST_YML_DIR is required")
 
 const repo = process.env.GH_REPO
 if (!repo) throw new Error("GH_REPO is required")
 
-const version = process.env.NOVACLAW_VERSION
-if (!version) throw new Error("NOVACLAW_VERSION is required")
+// Defaults to the canonical version (root package.json) rather than requiring the env var, so this
+// cannot publish an update feed for a version the tree does not claim. The env stays an override for
+// tagging a release differently from the checked-out tree.
+const version = process.env.NOVACLAW_VERSION ?? (await canonicalVersion())
 
 type FileEntry = {
   url: string

@@ -2,6 +2,8 @@ export * as WebSearchEngine from "./engine"
 
 import { Effect, Schema } from "effect"
 
+import { InstallationVersion } from "../installation/version"
+
 // Web search, built in (todo.md → "Web search — a built-in fallback so it just works for lay
 // users"). A normal person cannot stand up a SearXNG, so an instance with nothing configured must
 // still be able to search; a power user's own SearXNG must still win when they have one.
@@ -48,7 +50,7 @@ export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>
 
 /** A browser-ish UA. Not a disguise — several free endpoints simply 403 an empty agent, and the
  *  request genuinely is a person's search, made on their own machine, at their own request. */
-export const USER_AGENT = "Mozilla/5.0 (compatible; NovaClaw/0.1.0; +https://novaclaw.app)"
+export const USER_AGENT = `Mozilla/5.0 (compatible; NovaClaw/${InstallationVersion}; +https://novaclaw.app)`
 
 // ── pure parsing + merging (unit-tested; the part most likely to rot is the part most tested) ────
 
