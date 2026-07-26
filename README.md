@@ -12,6 +12,24 @@ sub-sessions, exit with results a parent can join, inherit configuration down th
 show up in a task manager like any other process. Home is an app launcher — Chats, Processes,
 Settings, Notes, Files, Search — not a terminal.
 
+## Download
+
+**You do not need to build anything.** This repository is the source; if you just want to *run*
+NovaClaw, download a prebuilt release:
+
+| Where | What you get |
+|---|---|
+| **[nancygold.itch.io/novaclaw](https://nancygold.itch.io/novaclaw)** | The prebuilt releases — pay-what-you-want, free to download |
+| **[novaclaw.app](https://novaclaw.app)** | The same builds, with a published SHA-256 for each file |
+
+Windows builds are **portable**: unpack the zip wherever you like and run `NovaClaw.exe`. There is
+no installer, no admin rights, and no setup step — the server it needs is bundled inside. Point it
+at your model in **Settings** and you're running.
+
+Both pages always list the current release, so this file never goes stale about it. macOS and Linux
+packaging targets exist in the build config but are not released yet; on those platforms, build from
+source as described below.
+
 ## Highlights
 
 - **Private / local-LLM first.** The data plane (chats, code, knowledge) never egresses; fully
@@ -89,7 +107,8 @@ NovaClaw is designed and developed by **Nancy Sadkov**.
 
 ## Status
 
-Version 0.0.1, in active development.
+In active development. The current release version is shown on the [download pages](#download) and in
+the app under **Settings → About** — deliberately not repeated here, so it cannot go stale.
 
 ## License
 

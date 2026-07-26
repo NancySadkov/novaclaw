@@ -131,7 +131,16 @@ const targets = singleFlag
     })
   : allTargets
 
-await $`rm -rf dist`
+// Best-effort clean, NOT fatal. On Windows a virus scanner or the search indexer routinely keeps a
+// handle on the directory of a binary that was just deleted, so `rm` fails with "Device or resource
+// busy" on a directory that is EMPTY and still perfectly writable — and the whole build died over
+// it. Every artifact below is written to a fixed path and overwritten, so continuing after a partial
+// clean cannot produce a wrong binary; it can only leave an unrelated stale file from an earlier
+// target, which is why this warns loudly instead of failing silently.
+await $`rm -rf dist`.catch((error) => {
+  console.warn(`WARNING: could not fully clean dist/ — ${error?.stderr?.toString().trim() || error}`)
+  console.warn(`Continuing: build outputs are overwritten by name, but stale files may remain.`)
+})
 
 const binaries: Record<string, string> = {}
 if (!skipInstall) {
@@ -168,7 +177,22 @@ for (const item of targets) {
       target: name.replace(pkg.name, "bun") as any,
       outfile: `dist/${name}/bin/novaclaw`,
       execArgv: [`--user-agent=novaclaw/${Script.version}`, "--use-system-ca", "--"],
-      windows: {},
+      // Left empty, a compiled binary ships with BUN's icon and Bun's version metadata — so the
+      // CLI showed up in Explorer and Task Manager as something the user never installed. Point it
+      // at the canonical generated icon (scripts/generate-brand.ts owns it; referenced rather than
+      // copied so a rebrand cannot leave a second stale copy behind) and stamp our own identity.
+      // Only meaningful for win32 targets; Bun ignores it elsewhere, but keep it explicit.
+      windows:
+        item.os === "win32"
+          ? {
+              icon: path.resolve(dir, "../desktop/resources/icons/icon.ico"),
+              title: "NovaClaw",
+              publisher: "Nancy Sadkov",
+              version: Script.version,
+              description: "NovaClaw — a local-first AI agent OS",
+              copyright: `© 2025-2026 Nancy Sadkov`,
+            }
+          : {},
     },
     files: embeddedFileMap ? { "novaclaw-web-ui.gen.ts": embeddedFileMap } : {},
     entrypoints: ["./src/index.ts", ...(embeddedFileMap ? ["novaclaw-web-ui.gen.ts"] : [])],
