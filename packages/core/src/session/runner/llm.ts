@@ -148,6 +148,25 @@ import { llmClient } from "../../effect/app-node-platform"
  * explicit loop starts the next provider turn after local settlement. Configured agent step limits bound the loop.
  */
 
+/** How often the generation loop may ask the DB whether a steer has landed. Hot path — keep it coarse. */
+const STEER_POLL_MS = 400
+
+/**
+ * May the generation loop check for (and cut on) a steer right now?
+ *
+ * Extracted and exported ONLY so the safety invariant is testable: once a tool call has been emitted this
+ * step, the answer must be `false` forever after — a tool settles inside the stream loop, and cutting there
+ * risks a half-written file or a half-sent message. Reasoning and answer text carry no such risk, which is
+ * the whole reason a steer may interrupt them.
+ */
+export const shouldCheckForSteer = (input: {
+  readonly sawToolCall: boolean
+  readonly alreadyCut: boolean
+  readonly now: number
+  readonly lastCheck: number
+}): boolean =>
+  !input.sawToolCall && !input.alreadyCut && input.now - input.lastCheck >= STEER_POLL_MS
+
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
@@ -798,10 +817,37 @@ export const layer = Layer.effect(
               budget: thinkingBudget,
             })
           : llm.stream(request)
+      // STEER INTERRUPT (owner 2026-07-26). Reasoning and the answer can be cut safely — the only thing that
+      // must not be interrupted is a TOOL, because a half-written file or a half-sent message is real damage.
+      // So a durable steer arriving mid-generation stops the stream at the next event and the following step
+      // promotes it, instead of the user waiting out a three-minute think.
+      //
+      // `sawToolCall` is the guard: tool calls settle INSIDE the loop below (and fork into `toolFibers`), so
+      // once one has been emitted this step we let the step finish normally — the next step boundary picks
+      // the steer up anyway, and that is a short wait. The DB check is throttled because it sits on the
+      // per-event hot path.
+      let steerInterrupt = false
+      let sawToolCall = false
+      let lastSteerCheck = Date.now()
       const providerStream = budgetedSource.pipe(
+        Stream.takeUntil(() => steerInterrupt),
         Stream.runForEach((event) =>
           Effect.gen(function* () {
             sawProviderEvent = true
+            if (event.type === "tool-call") sawToolCall = true
+            if (shouldCheckForSteer({ sawToolCall, alreadyCut: steerInterrupt, now: Date.now(), lastCheck: lastSteerCheck })) {
+              lastSteerCheck = Date.now()
+              steerInterrupt = yield* SessionInput.hasPending(db, session.id, "steer").pipe(
+                Effect.orElseSucceed(() => false),
+              )
+              if (steerInterrupt) {
+                // Another step must run, or the steer would sit unread until the next drain.
+                needsContinuation = true
+                yield* Effect.logInfo("steer arrived mid-generation — cutting the stream", {
+                  sessionID: session.id,
+                })
+              }
+            }
             if (overflowFailure || publisher.hasProviderError()) return
             if (LLMEvent.is.providerError(event)) {
               if (isContextOverflowFailure(event) && !publisher.hasAssistantStarted()) {
