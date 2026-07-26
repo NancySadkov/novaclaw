@@ -89,13 +89,41 @@ NovaClaw is designed and developed by **Nancy Sadkov**.
 
 ## Status
 
-Version 0.0.1, in active development. Proprietary software, © Nancy Sadkov; the source code is
-published for transparency and evaluation. See [`LICENSE`](LICENSE).
+Version 0.0.1, in active development.
+
+## License
+
+NovaClaw is © Nancy Sadkov and licensed under the **Functional Source License 1.1 with an Apache 2.0
+Future License** ([FSL-1.1-ALv2](LICENSE)).
+
+- **Free for you to use, read, modify, and redistribute** — including commercially, inside a
+  business, for research, or for teaching.
+- **The one restriction is competing use:** you may not offer NovaClaw, or a substantially similar
+  product, to others as a commercial product or service that competes with ours.
+- **Every release becomes Apache 2.0 two years after it ships.** That grant is irrevocable and is
+  made in advance, in the license itself.
+
+Three things the license makes explicit, because they matter for an agent OS: **third-party apps and
+plugins are separate works** you may license and sell however you like; **your recipes, prompts,
+skills, and configuration are your own**; and **anything NovaClaw produces when you run it is
+yours**.
+
+Need something the license doesn't cover? A commercial license is available — just ask.
+
+**The name is not licensed with the code.** You may fork NovaClaw; you may not call your fork
+NovaClaw. See [`TRADEMARK.md`](TRADEMARK.md), which is short and permissive about everything except
+naming.
+
+## Contributing
+
+Patches are welcome — read [`CONTRIBUTING.md`](CONTRIBUTING.md) first, and ask before building
+anything large. Contributions require a one-time signed [`CLA`](CLA.md) so that NovaClaw's
+relicensing promises above stay possible.
 
 ## Attribution
 
 NovaClaw began as a fork of [opencode](https://github.com/anomalyco/opencode) (MIT). Portions of
 this codebase are based on opencode; that MIT license and copyright are retained in
 [`licenses/opencode-LICENSE-MIT.txt`](licenses/opencode-LICENSE-MIT.txt) and [`NOTICE`](NOTICE) —
-the one upstream reference kept by design. NovaClaw itself is proprietary and is not affiliated
-with or endorsed by the opencode project.
+the one upstream reference kept by design. NovaClaw itself is licensed under the terms above and is
+not affiliated with or endorsed by the opencode project.

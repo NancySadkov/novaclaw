@@ -86,7 +86,7 @@
     "typescript": "catalog:"
   },
   "author": "Nancy Sadkov",
-  "license": "UNLICENSED",
+  "license": "SEE LICENSE IN LICENSE",
   "prettier": {
     "semi": false,
     "printWidth": 120

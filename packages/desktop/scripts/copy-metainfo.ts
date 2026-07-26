@@ -12,7 +12,7 @@ const xml = `<?xml version="1.0" encoding="UTF-8"?>
   <id>${appId}</id>
 
   <metadata_license>CC0-1.0</metadata_license>
-  <project_license>LicenseRef-proprietary</project_license>
+  <project_license>LicenseRef-FSL-1.1-ALv2</project_license>
 
   <name>${productName}</name>
   <summary>${summary}</summary>

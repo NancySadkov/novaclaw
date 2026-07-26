@@ -28,7 +28,7 @@
     "test:bench": "bun test ./e2e/performance/unit && playwright test --config e2e/performance/playwright.config.ts",
     "dev:full": "bun run scripts/dev-with-backend.ts"
   },
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "devDependencies": {
     "@happy-dom/global-registrator": "20.0.11",
     "@playwright/test": "catalog:",

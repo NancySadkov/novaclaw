@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "name": "@novaclaw/llm",
   "type": "module",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "scripts": {
     "setup:recording-env": "bun run script/setup-recording-env.ts",

@@ -1,7 +1,14 @@
 NovaClaw
-Copyright (c) 2025 Nancy Sadkov. All rights reserved.
+Copyright (c) 2025-2026 Nancy Sadkov. All rights reserved.
 
-NovaClaw is proprietary software; see the LICENSE file for terms.
+NovaClaw is licensed under the Functional Source License, Version 1.1, with an
+Apache 2.0 Future License (FSL-1.1-ALv2). Free for any purpose that is not a
+Competing Use; each release additionally becomes available under the Apache
+License 2.0 two years after that release. See the LICENSE file for the full
+terms and for the additional permissions that apply to third-party apps,
+recipes, and output.
+
+The NovaClaw name and logo are not licensed with the code; see TRADEMARK.md.
 
 ================================================================================
 Third-party components

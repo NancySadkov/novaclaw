@@ -3,7 +3,7 @@
   "name": "@novaclaw/protocol",
   "private": true,
   "type": "module",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "exports": {
     "./*": "./src/*.ts"
   },

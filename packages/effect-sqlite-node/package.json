@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "name": "@novaclaw/effect-sqlite-node",
   "type": "module",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "scripts": {
     "typecheck": "tsgo --noEmit"

@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "private": true,
   "type": "module",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "exports": {
     "./*": "./src/components/*.tsx",
     "./session-diff": "./src/components/session-diff.ts",

@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "name": "@novaclaw/core",
   "type": "module",
-  "license": "MIT",
+  "license": "SEE LICENSE IN LICENSE",
   "private": true,
   "scripts": {
     "db": "bun drizzle-kit",
