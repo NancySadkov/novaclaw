@@ -4,15 +4,17 @@ import { applySessionNextEvent, mergeNativeMessages } from "@novaclaw/session-ui
 import { fetchNativeMessages } from "./message-v2-fetch"
 
 /**
- * Parallel native-V2 transcript store (F1e strategy B). Holds `SessionMessage[]` per
- * session, folded from the live `session.next.*` stream (`applySessionNextEvent`) and
- * bootstrapped/reconciled from the native history fetch (`fetchNativeMessages` +
- * `mergeNativeMessages`). Runs ALONGSIDE the V1 `server-session.ts` store — nothing
- * renders from it yet (S4 flips the render); V1 stays authoritative until then.
+ * The native transcript store — THE render path (`NativeTimeline` → `NativeTranscript`).
+ * Holds `SessionMessage[]` per session, folded from the live `session.next.*` stream
+ * (`applySessionNextEvent`) and bootstrapped/reconciled from the native history fetch
+ * (`fetchNativeMessages` + `mergeNativeMessages`). `server-session.ts` is a different
+ * store (session rows, permissions, todos) — it carries no messages.
+ *
+ * Because it renders, a stale row here is a user-visible bug, which is why `load`
+ * passes the reconcile bounds below rather than merging as a pure union.
  *
  * `apply` consumes the SDK `V2Event` `{ type, data }` shape and routes by
- * `data.sessionID`; the SSE layer's dropped durable `sync` envelope is adapted to that
- * shape and fed here in the next slice. Non-`session.next.*` events are ignored.
+ * `data.sessionID`. Non-`session.next.*` events are ignored.
  */
 export function createNativeMessageStore(client: NovaclawClient) {
   const [data, setData] = createStore({ messages: {} as Record<string, SessionMessage[]> })

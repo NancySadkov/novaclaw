@@ -330,8 +330,8 @@ export function applySessionNextEvent(messages: SessionMessage[], event: V2Event
     case "session.next.revert.committed": {
       // A committed revert truncates the transcript: the core deletes every message AFTER the
       // boundary (seq > boundary), keeping the boundary message itself. Message ids are ascending,
-      // so `id > boundary` is exactly that set. Prune in place — the store MERGES on load and never
-      // drops server-deleted rows, so without this the reverted tail would linger on screen.
+      // so `id > boundary` is exactly that set. Prune in place: this is the INSTANT path, and the
+      // authoritative-reconcile branch of `mergeNativeMessages` is the backstop for a missed event.
       // The "before everything" sentinel `msg_` (reverting the first prompt) sorts before every real
       // id, so `id > "msg_"` matches ALL messages and the whole transcript clears — no special case.
       const boundary = event.data.messageID
@@ -382,9 +382,9 @@ function compareOldestFirst(a: SessionMessage, b: SessionMessage): number {
  * `step.ended` would otherwise pin a forever-"streaming" message that no later reconcile
  * can heal, e.g. a reasoning fold stuck open/pulsing after an SSE flap).
  *
- * Known limitation (deferred to the render-cutover slice): a full refresh does not drop
- * a message the server deleted that `current` still holds — server-side removals arrive
- * as `revert.*` events folded separately, so this is safe for the parallel store.
+ * Server-side DELETIONS: an authoritative (no-cursor) fetch may drop a `current` row the
+ * server no longer has, bounded by the page range and `asOf` — see those options. This is
+ * the backstop for a missed `revert.committed`; the live fold below is the instant path.
  */
 export function mergeNativeMessages(
   current: SessionMessage[],
