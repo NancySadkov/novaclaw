@@ -79,6 +79,18 @@ const CAPTURE_MAX_BYTES = 64 * 1024 * 1024
  */
 const PROMOTED_NOVACLAW_SUBDIRS = ["server", "v2", "config", "tool"] as const
 
+/**
+ * Hang backstops for the promoted subdirs whose HONEST runtime is near the default.
+ *
+ * `server` is the big one: measured 95 s and 114 s on a quiet box, then WALL-CLOCK KILLED at the 150 s
+ * default on a loaded one (the same run took core from 129 s to 190 s). A kill is indistinguishable
+ * from a hang in the summary and produces no parseable failure list, so an under-set backstop turns a
+ * slow machine into a fake red — the exact false failure heavy-guard.ts exists to prevent.
+ */
+const PROMOTED_WALLCLOCK_MS: Partial<Record<(typeof PROMOTED_NOVACLAW_SUBDIRS)[number], number>> = {
+  server: 300_000,
+}
+
 type Pkg = {
   name: string
   dir: string
@@ -125,6 +137,7 @@ const PACKAGES: Pkg[] = [
     name: `novaclaw:${sub}`,
     dir: "packages/novaclaw",
     args: [`test/${sub}/`],
+    ...(PROMOTED_WALLCLOCK_MS[sub] === undefined ? {} : { wallclockMs: PROMOTED_WALLCLOCK_MS[sub] }),
   })),
   { name: "novaclaw", dir: "packages/novaclaw", args: [], fullOnly: true, perSubdir: true },
 ]
