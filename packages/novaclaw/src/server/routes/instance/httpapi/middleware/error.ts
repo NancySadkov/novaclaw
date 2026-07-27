@@ -27,11 +27,18 @@ export const errorLayer = HttpRouter.middleware<{ handles: unknown }>()((effect)
 
       const ref = `err_${crypto.randomUUID().slice(0, 8)}`
 
+      // `console.error` as well as the Effect log: this boundary is the last thing that sees a defect,
+      // and in the packaged desktop app the Effect log did NOT reach the sidecar's captured output —
+      // so a 500 whose message said "check server logs" left literally nothing behind in any log,
+      // anywhere. The sidecar's stdout/stderr IS piped to the app's server.log, so writing there
+      // directly guarantees the reference can always be traced back to a cause.
+      console.error(`[novaclaw] internal error ${ref}:`, error, Cause.pretty(cause))
+
       return Effect.logError("failed", { ref, error, cause: Cause.pretty(cause) }).pipe(
         Effect.as(
           HttpServerResponse.jsonUnsafe(
             new NamedError.Unknown({
-              message: "Unexpected server error. Check server logs for details.",
+              message: NamedError.internalMessage(ref),
               ref,
             }).toObject(),
             { status: 500 },

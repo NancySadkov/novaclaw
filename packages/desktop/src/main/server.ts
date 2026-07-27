@@ -48,16 +48,33 @@ export function preferAppEnv(userDataPath: string) {
   // When NOVACLAW_DEV_ISOLATED is set, all XDG paths redirect to userDataPath
   // so the dev app never touches %APPDATA%/novaclaw/ (shared with CLI).
   const defaultData = process.env.NOVACLAW_DEV_ISOLATED ? userDataPath : undefined
-  Object.assign(process.env, {
+
+  // ⚠️ THIS IS WHERE v0.1.0's FIRST-RUN FAILURE CAME FROM. `Object.assign(process.env, {K: undefined})`
+  // does NOT skip the key — Node coerces env values to strings, so it writes the literal text
+  // "undefined". Outside dev-isolated mode `defaultData` IS undefined, so XDG_DATA_HOME,
+  // XDG_CONFIG_HOME and XDG_CACHE_HOME each became the string "undefined". The server then read them
+  // as real values (they are non-empty, so every `??`/`||` fallback was skipped) and resolved its data
+  // directory to "undefined\novaclaw" and its scratch dir to "undefined\novaclaw\scratch". Clicking the
+  // home prompt bar created a session at that path and answered 500.
+  //
+  // XDG_STATE_HOME was the one that worked, and only by luck: it has a third fallback that is always a
+  // real string. So assign ONLY the keys that have a value — an unset variable must stay unset, which is
+  // what lets the server fall back to the documented `$HOME/.local/share` layout.
+  const env: Record<string, string> = {
     ...(shell ? loadShellEnv(shell, getLogger()) : null),
     NOVACLAW_EXPERIMENTAL_ICON_DISCOVERY: "true",
     NOVACLAW_EXPERIMENTAL_FILEWATCHER: "true",
     NOVACLAW_CLIENT: "desktop",
-    XDG_DATA_HOME: process.env.XDG_DATA_HOME ?? defaultData,
-    XDG_CONFIG_HOME: process.env.XDG_CONFIG_HOME ?? defaultData,
-    XDG_CACHE_HOME: process.env.XDG_CACHE_HOME ?? defaultData,
     XDG_STATE_HOME: process.env.XDG_STATE_HOME ?? defaultData ?? userDataPath,
-  })
+  }
+  for (const [key, value] of [
+    ["XDG_DATA_HOME", process.env.XDG_DATA_HOME ?? defaultData],
+    ["XDG_CONFIG_HOME", process.env.XDG_CONFIG_HOME ?? defaultData],
+    ["XDG_CACHE_HOME", process.env.XDG_CACHE_HOME ?? defaultData],
+  ] as const)
+    if (value !== undefined) env[key] = value
+
+  Object.assign(process.env, env)
 }
 
 export async function spawnLocalServer(

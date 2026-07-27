@@ -24,6 +24,13 @@
 import { spawnSync } from "node:child_process"
 import { readdirSync } from "node:fs"
 
+import { enforce } from "./lib/heavy-guard"
+
+// Refuse to run alongside a build or another suite, or on a machine already short of memory. Both
+// mistakes produce the same thing: a wall-clock kill that looks exactly like a real test failure, plus
+// pagefile thrashing that wears the SSD. `--force` overrides; CI is exempt. See lib/heavy-guard.ts.
+enforce("the test suite")
+
 const FULL = process.argv.includes("--full")
 const ONLY = process.argv.find((a) => a.startsWith("--only="))?.slice("--only=".length)
 

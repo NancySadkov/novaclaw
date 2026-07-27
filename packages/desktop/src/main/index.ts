@@ -3,7 +3,7 @@ import { mkdirSync, rmSync } from "node:fs"
 import * as http from "node:http"
 import { createServer } from "node:net"
 import { homedir, tmpdir } from "node:os"
-import { join } from "node:path"
+import { join, resolve } from "node:path"
 import { getCACertificates, setDefaultCACertificates } from "node:tls"
 import type { Event } from "electron"
 import { app, BrowserWindow } from "electron"
@@ -128,11 +128,42 @@ const main = Effect.gen(function* () {
     process.env.XDG_STATE_HOME = join(root, "state")
     return root
   })()
+  // `--home <dir>` / `NOVACLAW_HOME`: run this window as its own instance out of one folder, so several
+  // NovaClaws can share a machine. Two things have to happen here, both BEFORE the single-instance lock
+  // is requested further down:
+  //   · NOVACLAW_HOME goes into the environment, which createSidecarEnv() copies, so the server sidecar
+  //     resolves its config/data/state/cache under the same folder (core `util/xdg.ts` reads it);
+  //   · userData moves inside that folder — Electron keys its single-instance lock on userData, so
+  //     without this the second window would call app.quit() immediately, and both instances would
+  //     share window state and settings besides.
+  // The argv shape is parsed the same way core's Xdg.homeOverride does it; kept local rather than
+  // adding a @novaclaw/core dependency to the main process for six lines.
+  const instanceHome = ((): string | undefined => {
+    const argv = process.argv
+    for (let i = 0; i < argv.length; i++) {
+      const arg = argv[i]
+      if (arg === "--home" || arg === "--home-dir") {
+        const next = argv[i + 1]
+        if (next !== undefined && !next.startsWith("-") && next.trim() !== "") return resolve(next)
+        continue
+      }
+      const eq = /^--home(?:-dir)?=(.*)$/.exec(arg ?? "")
+      if (eq?.[1] !== undefined && eq[1].trim() !== "") return resolve(eq[1])
+    }
+    const fromEnv = process.env.NOVACLAW_HOME
+    return fromEnv && fromEnv.trim() !== "" ? resolve(fromEnv) : undefined
+  })()
+  if (instanceHome) process.env.NOVACLAW_HOME = instanceHome
+
   app.setName(app.isPackaged ? APP_NAMES[CHANNEL] : "NovaClaw Dev")
   app.setAppUserModelId(appId)
   app.setPath(
     "userData",
-    onboardingTestRoot ? join(onboardingTestRoot, "desktop") : join(app.getPath("appData"), appId),
+    onboardingTestRoot
+      ? join(onboardingTestRoot, "desktop")
+      : instanceHome
+        ? join(instanceHome, "desktop")
+        : join(app.getPath("appData"), appId),
   )
   if (onboardingTestRoot) app.setPath("sessionData", join(onboardingTestRoot, "session"))
   logger = initLogging()

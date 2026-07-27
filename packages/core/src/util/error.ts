@@ -67,4 +67,22 @@ export abstract class NamedError extends Error {
     message: Schema.String,
     ref: Schema.optional(Schema.String),
   })
+
+  /**
+   * The one wording for "we broke, not you" — the text a user actually reads when an internal failure
+   * reaches the UI (the app surfaces `data.message` verbatim in a toast).
+   *
+   * It replaces "Unexpected server error. Check server logs for details.", which failed the user twice
+   * over: a normal person has no server logs, and in the packaged desktop app there was nothing in them
+   * to find — the message named a remedy that did not exist. This says what happened, whose fault it is,
+   * that their work survived, what to do next, and carries the reference that identifies it. Keep it
+   * free of jargon and never point a non-developer at a developer-only surface.
+   */
+  public static internalMessage(ref?: string) {
+    const reference = ref ? ` (reference ${ref})` : ""
+    return (
+      `NovaClaw hit an internal error${reference}. This is a bug on our side, not something you did — ` +
+      `nothing has been lost. Please try again, and if it keeps happening report that reference.`
+    )
+  }
 }

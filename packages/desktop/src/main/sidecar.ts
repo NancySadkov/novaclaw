@@ -65,6 +65,12 @@ async function start(command: StartCommand) {
     })
     parentPort.postMessage({ type: "ready" })
   } catch (error) {
+    // Write it to stderr as well as posting it to the parent. The parent turns this message into a
+    // rejected promise that the supervisor retries, and nothing along that path ever logged the
+    // REASON — so a sidecar that could not boot showed up only as `sidecar exited { code: 1 }` plus
+    // a UI stuck on "awaiting server ready" forever, with an empty server.log. stderr IS piped into
+    // the app's own server.log, so this guarantees the cause is always recoverable.
+    console.error("[novaclaw] sidecar failed to start:", error)
     parentPort.postMessage({ type: "error", error: serializeError(error) })
     setImmediate(() => process.exit(1))
   }

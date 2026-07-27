@@ -11,11 +11,16 @@ import { testEffect } from "../lib/effect"
 const it = testEffect(Layer.mergeAll(NodeHttpServer.layerTest, NodeServices.layer))
 
 function expectUnknownErrorBody(body: unknown) {
-  expect(body).toMatchObject({
-    name: "UnknownError",
-    data: { message: "Unexpected server error. Check server logs for details." },
-  })
-  expect((body as { data?: { ref?: unknown } }).data?.ref).toMatch(/^err_[0-9a-f-]{8}$/)
+  expect(body).toMatchObject({ name: "UnknownError" })
+  const data = (body as { data?: { ref?: unknown; message?: unknown } }).data
+  expect(data?.ref).toMatch(/^err_[0-9a-f-]{8}$/)
+  // The body is asserted against the SHARED builder rather than a copied literal, so the wording can
+  // be improved in one place without this test pinning it back.
+  expect(data?.message).toBe(NamedError.internalMessage(data?.ref as string))
+  // What the user reads must not send them somewhere they cannot go. The old text said "check server
+  // logs", which a normal person does not have — and which was empty anyway in the packaged app.
+  expect(String(data?.message)).not.toContain("server logs")
+  expect(String(data?.message)).toContain(String(data?.ref))
 }
 
 describe("HttpApi error middleware", () => {

@@ -1,5 +1,6 @@
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionMessage } from "@novaclaw/core/session/message"
+import { NamedError } from "@novaclaw/core/util/error"
 import { SessionInput } from "@novaclaw/core/session/input"
 import { Database } from "@novaclaw/core/database/database"
 import { SessionTags } from "@novaclaw/core/session/tags"
@@ -588,7 +589,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                   Effect.andThen(
                     Effect.fail(
                       new UnknownError({
-                        message: "Unexpected server error. Check server logs for details.",
+                        message: NamedError.internalMessage(ref),
                         ref,
                       }),
                     ),
@@ -617,7 +618,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                 Effect.andThen(
                   Effect.fail(
                     new UnknownError({
-                      message: "Unexpected server error. Check server logs for details.",
+                      message: NamedError.internalMessage(ref),
                       ref,
                     }),
                   ),
@@ -663,7 +664,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
                   Effect.annotateLogs({ ref, sessionID: error.sessionID, messageID: error.messageID }),
                   Effect.andThen(
                     Effect.fail(
-                      new UnknownError({ message: "Unexpected server error. Check server logs for details.", ref }),
+                      new UnknownError({ message: NamedError.internalMessage(ref), ref }),
                     ),
                   ),
                 )

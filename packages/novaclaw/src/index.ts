@@ -58,9 +58,19 @@ const cli = yargs(args)
     describe: "run without external plugins",
     type: "boolean",
   })
+  // Declared so `--strict()` accepts it and `--help` documents it. The VALUE is read straight from
+  // argv by the path resolver (core `util/xdg.ts`), not from here: directories can be resolved before
+  // yargs has parsed anything, so routing this through the parser would reintroduce an ordering bug.
+  .option("home", {
+    describe: "instance home directory — config, data, state and cache all live here (NOVACLAW_HOME)",
+    type: "string",
+  })
   .middleware(async (opts) => {
     if (opts.printLogs) process.env.NOVACLAW_PRINT_LOGS = "1"
     if (opts.logLevel) process.env.NOVACLAW_LOG_LEVEL = opts.logLevel
+    // Mirror it into the environment so anything spawned from this process (plugins, MCP servers, a
+    // child CLI) inherits the same instance home instead of silently falling back to the shared one.
+    if (typeof opts.home === "string" && opts.home.trim() !== "") process.env.NOVACLAW_HOME = opts.home
     if (opts.pure) {
       process.env.NOVACLAW_PURE = "1"
     }
