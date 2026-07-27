@@ -237,6 +237,27 @@ export const DialogNewModel: Component<{
 
         <Show when={step() === "pick"}>
           <div class="grid grid-cols-2 gap-2">
+            {/* Custom endpoint FIRST (owner, 2026-07-27). It used to trail every branded preset, which
+                had the priority backwards: NovaClaw's own story is "point it at your own model" — a local
+                vLLM / llama.cpp / LM Studio / Ollama endpoint — and that is also the path a user with no
+                models at all is most likely arriving on, since the picker now sends them straight here.
+                The branded presets are the convenience; they follow. */}
+            <button
+              type="button"
+              data-action="new-model-custom"
+              class="flex flex-col items-start gap-1.5 rounded-xl px-3.5 py-3 text-left ring-1 ring-v2-border-border-base hover:bg-v2-background-bg-layer-01 transition-colors"
+              onClick={chooseCustom}
+            >
+              <span class="flex items-center gap-2">
+                <Icon name="sliders" size="small" class="shrink-0 text-v2-icon-icon-accent" />
+                <span class="text-[13px] font-semibold text-v2-text-text-base">
+                  {t("settings.models.new.custom.name")}
+                </span>
+              </span>
+              <span class="text-[11px] leading-snug text-v2-text-text-faint">
+                {t("settings.models.new.custom.description")}
+              </span>
+            </button>
             <For each={visiblePresets()}>
               {([id, entry]) => (
                 <button
@@ -254,21 +275,6 @@ export const DialogNewModel: Component<{
                 </button>
               )}
             </For>
-            <button
-              type="button"
-              class="flex flex-col items-start gap-1.5 rounded-xl px-3.5 py-3 text-left ring-1 ring-v2-border-border-base hover:bg-v2-background-bg-layer-01 transition-colors"
-              onClick={chooseCustom}
-            >
-              <span class="flex items-center gap-2">
-                <Icon name="sliders" size="small" class="shrink-0 text-v2-icon-icon-accent" />
-                <span class="text-[13px] font-semibold text-v2-text-text-base">
-                  {t("settings.models.new.custom.name")}
-                </span>
-              </span>
-              <span class="text-[11px] leading-snug text-v2-text-text-faint">
-                {t("settings.models.new.custom.description")}
-              </span>
-            </button>
           </div>
         </Show>
 

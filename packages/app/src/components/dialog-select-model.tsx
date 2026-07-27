@@ -186,10 +186,14 @@ export function ModelSelectorPopover(props: {
     setStore("open", false)
   }
 
+  // "Manage models" is Settings → Models now (owner, 2026-07-27). The old DialogManageModels was a
+  // per-provider visibility switchboard from the cloud-catalog era — it grouped by provider, which the
+  // models-primary model rejects, and it could do strictly less than the Models tab (which adds, edits,
+  // clones, tiers and configures). Two surfaces for one job, one of them worse; this is the good one.
   const handleManage = () => {
     close("manage")
-    void import("./dialog-manage-models").then((x) => {
-      dialog.show(() => <x.DialogManageModels />)
+    void import("./settings-v2").then((x) => {
+      dialog.show(() => <x.DialogSettings defaultTab="models" />)
     })
   }
 
@@ -197,12 +201,22 @@ export function ModelSelectorPopover(props: {
     close("provider")
     openAddModel(dialog, server.current?.http, directory)
   }
+  /** True when this instance has no models configured at all — see the onOpenChange note below. */
+  const noModels = () => (props.model ?? local.model).list().length === 0
   const language = useLanguage()
 
   return (
     <Kobalte
       open={store.open}
       onOpenChange={(next) => {
+        // With nothing configured, the picker can only show an empty list — a dead end one click deep.
+        // Go straight to "add a model" instead (owner, 2026-07-27). Deliberately keyed on models
+        // CONFIGURED, not models VISIBLE: if models exist but are all hidden, the empty list plus its
+        // Manage-models button IS the fix, and hijacking the click would hide it.
+        if (next && noModels()) {
+          handleConnectProvider()
+          return
+        }
         if (next) setStore("dismiss", null)
         setStore("open", next)
       }}
@@ -281,9 +295,19 @@ export const DialogSelectModel: Component<{ provider?: string; model?: ModelStat
     openAddModel(dialog, server.current?.http, directory)
   }
 
+  // The dialog twin of the popover's empty-state redirect: the composer's /model command opens THIS,
+  // so it has to behave the same way rather than presenting an empty list. Done on mount (the dialog
+  // is already showing by the time it renders) — replace it with the add-model flow instead.
+  onMount(() => {
+    if ((props.model ?? local.model).list().length > 0) return
+    dialog.close()
+    openAddModel(dialog, server.current?.http, directory)
+  })
+
+  // Same destination as the popover's sliders button — see handleManage above.
   const manage = () => {
-    void import("./dialog-manage-models").then((x) => {
-      dialog.show(() => <x.DialogManageModels />)
+    void import("./settings-v2").then((x) => {
+      dialog.show(() => <x.DialogSettings defaultTab="models" />)
     })
   }
 
