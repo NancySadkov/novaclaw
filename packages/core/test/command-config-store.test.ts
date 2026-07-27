@@ -42,28 +42,26 @@ describe("CommandConfigStore", () => {
       const dir = yield* Effect.promise(() => tmpdir())
       yield* Effect.addFinalizer(() => Effect.promise(() => dir[Symbol.asyncDispose]()))
       const globalDir = path.join(dir.path, "global")
-      const projectDir = path.join(dir.path, "project")
       yield* Effect.promise(async () => {
         await fs.mkdir(globalDir, { recursive: true })
-        await fs.mkdir(projectDir, { recursive: true })
         await fs.writeFile(
-          path.join(globalDir, "novaclaw.jsonc"),
+          path.join(globalDir, "config.json"),
           JSON.stringify({ commands: { review: { template: "global review" } } }),
         )
         await fs.writeFile(
-          path.join(projectDir, "novaclaw.jsonc"),
+          path.join(globalDir, "novaclaw.jsonc"),
           JSON.stringify({ commands: { review: { template: "project review" }, docs: { template: "write docs" } } }),
         )
       })
 
-      yield* CommandConfigSeed.seedFromDirectory(globalDir, projectDir)
+      yield* CommandConfigSeed.seedFromDirectory(globalDir)
       const first = yield* store.commands()
       expect(first.review).toEqual([decodeCommand({ template: "global review" }), decodeCommand({ template: "project review" })])
       expect(first.docs).toEqual([decodeCommand({ template: "write docs" })])
 
       // A user edit after seeding must survive a re-seed (the isEmpty idempotence gate).
       yield* store.setLayers("review", [decodeCommand({ template: "user edited" })])
-      yield* CommandConfigSeed.seedFromDirectory(globalDir, projectDir)
+      yield* CommandConfigSeed.seedFromDirectory(globalDir)
       expect((yield* store.commands()).review).toEqual([decodeCommand({ template: "user edited" })])
     }),
   )

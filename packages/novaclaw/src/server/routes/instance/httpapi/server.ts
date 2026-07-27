@@ -322,7 +322,7 @@ const recipeSeedStartup = Layer.effectDiscard(
 const catalogSeedStartup = Layer.effectDiscard(
   Effect.gen(function* () {
     const global = yield* Global.Service
-    yield* ConfigSeedStartup.seedAll(global.config, process.cwd(), global.home)
+    yield* ConfigSeedStartup.seedAll(global.config, global.home)
   }),
 )
 

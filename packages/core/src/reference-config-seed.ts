@@ -44,10 +44,10 @@ export function normalizeReferenceEntry(
 
 // Config→SQLite step 4: the transitional jsonc IMPORT for reference aliases (the
 // catalog/agent/command-seed template). Reads `references` records from the global config dir +
-// the launch directory's novaclaw.jsonc (+ NOVACLAW_CONFIG_CONTENT) into the instance-wide
+// (+ NOVACLAW_CONFIG_CONTENT) into the instance-wide
 // `ReferenceConfigStore` at server startup, BEFORE any location boots. Idempotent: a no-op once
 // the store holds any alias.
-export const seedFromDirectory = (globalConfigDir: string, directory: string, home: string) =>
+export const seedFromDirectory = (globalConfigDir: string, home: string) =>
   Effect.gen(function* () {
     const store = yield* ReferenceConfigStore.Service
     if (!(yield* store.isEmpty())) return
@@ -61,16 +61,17 @@ export const seedFromDirectory = (globalConfigDir: string, directory: string, ho
       return Option.getOrUndefined(decodeInfo(input))
     }
 
-    // Global config first (general), then the launch directory (specific — wins on conflicts),
-    // then NOVACLAW_CONFIG_CONTENT (resolved against the launch directory).
+    // The config dir's documents in NAMES order (general first, specific last), then
+    // NOVACLAW_CONFIG_CONTENT (relative paths resolved against the config dir). The launch
+    // directory is deliberately NOT a source — see config-seed-startup.ts.
     const sources: { declaringDir: string; info: Config.Info }[] = []
-    for (const dir of [globalConfigDir, directory])
+    for (const dir of [globalConfigDir])
       for (const name of NAMES) {
         const info = decodeText(yield* fs.readFileStringSafe(path.join(dir, name)))
         if (info) sources.push({ declaringDir: dir, info })
       }
     const inline = decodeText(Flag.NOVACLAW_CONFIG_CONTENT)
-    if (inline) sources.push({ declaringDir: directory, info: inline })
+    if (inline) sources.push({ declaringDir: globalConfigDir, info: inline })
 
     const layers: Record<string, ConfigReference.Entry[]> = {}
     for (const { declaringDir, info } of sources)

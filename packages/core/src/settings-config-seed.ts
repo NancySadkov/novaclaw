@@ -192,12 +192,12 @@ function formatSkippedNotice(skipped: readonly SkippedConfigKey[]): string {
   return [head, ...skipped.map((entry) => `  - ${entry.key} (${entry.source}): ${entry.reason}`)].join("\n")
 }
 
-// The server-startup variant (the sibling-seed template): imports from the global config dir +
-// the LAUNCH directory BEFORE any location boots — without it, a scratch location booting first
-// would seed from global-only entries and the launch jsonc's settings would never import
-// (the store is non-empty by then). Idempotent: a no-op once any setting is stored. Returns the
+// The server-startup variant (the sibling-seed template): imports from the global config dir BEFORE
+// any location boots, so every location — including the shared scratch dir — sees the same settings
+// rather than whichever one happened to boot first.
+// Idempotent: a no-op once any setting is stored. Returns the
 // keys it had to skip (also logged as a non-blocking startup notice) so a caller/test can react.
-export const seedFromDirectory = (globalConfigDir: string, directory: string) =>
+export const seedFromDirectory = (globalConfigDir: string) =>
   Effect.gen(function* () {
     const store = yield* SettingsConfigStore.Service
     if (!(yield* store.isEmpty())) return [] as SkippedConfigKey[]
@@ -205,7 +205,7 @@ export const seedFromDirectory = (globalConfigDir: string, directory: string) =>
 
     const infos: Config.Info[] = []
     const skipped: SkippedConfigKey[] = []
-    for (const dir of [globalConfigDir, directory])
+    for (const dir of [globalConfigDir])
       for (const name of NAMES) {
         const source = path.join(dir, name)
         const result = decodeText(yield* fs.readFileStringSafe(source), source)

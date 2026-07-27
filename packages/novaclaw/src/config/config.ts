@@ -324,7 +324,7 @@ export const layer = Layer.effect(
     const loadStores = Effect.fnUntraced(function* () {
       // Global.Path statics read at CALL time (the historical loadGlobal contract) — the
       // server's startup seed separately honors NOVACLAW_CONFIG_DIR via Global.Service.
-      yield* provideStores(ConfigSeedStartup.seedAll(Global.Path.config, process.cwd(), Global.Path.home))
+      yield* provideStores(ConfigSeedStartup.seedAll(Global.Path.config, Global.Path.home))
       const doc = yield* provideStores(ConfigStoreWrite.overlay({}))
       return loadAsV2(doc, "sqlite-stores")
     })

@@ -57,16 +57,14 @@ describe("AgentConfigStore", () => {
       const dir = yield* Effect.promise(() => tmpdir())
       yield* Effect.addFinalizer(() => Effect.promise(() => dir[Symbol.asyncDispose]()))
       const globalDir = path.join(dir.path, "global")
-      const projectDir = path.join(dir.path, "project")
       yield* Effect.promise(async () => {
         await fs.mkdir(globalDir, { recursive: true })
-        await fs.mkdir(projectDir, { recursive: true })
         await fs.writeFile(
-          path.join(globalDir, "novaclaw.jsonc"),
+          path.join(globalDir, "config.json"),
           JSON.stringify({ agents: { reviewer: { description: "global reviewer" } } }),
         )
         await fs.writeFile(
-          path.join(projectDir, "novaclaw.jsonc"),
+          path.join(globalDir, "novaclaw.jsonc"),
           JSON.stringify({
             default_agent: "reviewer",
             agents: { reviewer: { hidden: true }, scribe: { description: "project scribe" } },
@@ -74,9 +72,9 @@ describe("AgentConfigStore", () => {
         )
       })
 
-      yield* AgentConfigSeed.seedFromDirectory(globalDir, projectDir)
+      yield* AgentConfigSeed.seedFromDirectory(globalDir)
       const first = yield* store.agents()
-      // Global layer first, project layer second (specific wins on merge).
+      // First document then second (specific wins on merge) — both from the config dir.
       expect(first.reviewer).toEqual([decodeAgent({ description: "global reviewer" }), decodeAgent({ hidden: true })])
       expect(first.scribe).toEqual([decodeAgent({ description: "project scribe" })])
       expect(yield* store.getDefault()).toBe("reviewer")
@@ -84,7 +82,7 @@ describe("AgentConfigStore", () => {
       // A user edit after seeding must survive a re-seed (the isEmpty idempotence gate).
       yield* store.setLayers("reviewer", [decodeAgent({ description: "user edited" })])
       yield* store.setDefault("scribe")
-      yield* AgentConfigSeed.seedFromDirectory(globalDir, projectDir)
+      yield* AgentConfigSeed.seedFromDirectory(globalDir)
       expect((yield* store.agents()).reviewer).toEqual([decodeAgent({ description: "user edited" })])
       expect(yield* store.getDefault()).toBe("scribe")
     }),

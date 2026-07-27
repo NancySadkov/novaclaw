@@ -67,32 +67,30 @@ describe("ReferenceConfigStore", () => {
       const dir = yield* Effect.promise(() => tmpdir())
       yield* Effect.addFinalizer(() => Effect.promise(() => dir[Symbol.asyncDispose]()))
       const globalDir = path.join(dir.path, "global")
-      const projectDir = path.join(dir.path, "project")
       const home = path.join(dir.path, "home")
       yield* Effect.promise(async () => {
         await fs.mkdir(globalDir, { recursive: true })
-        await fs.mkdir(projectDir, { recursive: true })
         await fs.writeFile(
-          path.join(globalDir, "novaclaw.jsonc"),
+          path.join(globalDir, "config.json"),
           JSON.stringify({ references: { docs: "https://github.com/example/docs.git", "bad name": "./x" } }),
         )
         await fs.writeFile(
-          path.join(projectDir, "novaclaw.jsonc"),
+          path.join(globalDir, "novaclaw.jsonc"),
           JSON.stringify({ references: { docs: "./local-docs" } }),
         )
       })
 
-      yield* ReferenceConfigSeed.seedFromDirectory(globalDir, projectDir, home)
+      yield* ReferenceConfigSeed.seedFromDirectory(globalDir, home)
       const first = yield* store.references()
       expect(first.docs).toEqual([
         "https://github.com/example/docs.git",
-        ConfigReference.Local.make({ path: path.resolve(projectDir, "local-docs") }),
+        ConfigReference.Local.make({ path: path.resolve(globalDir, "local-docs") }),
       ])
       expect(first["bad name"]).toBeUndefined() // invalid aliases never seed
 
       // A user edit after seeding must survive a re-seed (the isEmpty idempotence gate).
       yield* store.setLayers("docs", ["https://github.com/example/edited.git"])
-      yield* ReferenceConfigSeed.seedFromDirectory(globalDir, projectDir, home)
+      yield* ReferenceConfigSeed.seedFromDirectory(globalDir, home)
       expect((yield* store.references()).docs).toEqual(["https://github.com/example/edited.git"])
     }),
   )

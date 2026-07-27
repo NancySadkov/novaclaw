@@ -61,30 +61,28 @@ describe("PluginConfigStore", () => {
       const dir = yield* Effect.promise(() => tmpdir())
       yield* Effect.addFinalizer(() => Effect.promise(() => dir[Symbol.asyncDispose]()))
       const globalDir = path.join(dir.path, "global")
-      const projectDir = path.join(dir.path, "project")
       yield* Effect.promise(async () => {
         await fs.mkdir(globalDir, { recursive: true })
-        await fs.mkdir(projectDir, { recursive: true })
         await fs.writeFile(
-          path.join(globalDir, "novaclaw.jsonc"),
+          path.join(globalDir, "config.json"),
           JSON.stringify({ plugins: ["team-plugin@2.0.0"] }),
         )
         await fs.writeFile(
-          path.join(projectDir, "novaclaw.jsonc"),
+          path.join(globalDir, "novaclaw.jsonc"),
           JSON.stringify({ plugins: [{ package: "./tools/local.js", options: { enabled: true } }] }),
         )
       })
 
-      yield* PluginConfigSeed.seedFromDirectory(globalDir, projectDir)
+      yield* PluginConfigSeed.seedFromDirectory(globalDir)
       expect(yield* store.plugins()).toEqual([
         { package: "team-plugin@2.0.0" },
         // relative → the DECLARING file's dir, stored absolute
-        { package: path.resolve(projectDir, "tools/local.js"), options: { enabled: true } },
+        { package: path.resolve(globalDir, "tools/local.js"), options: { enabled: true } },
       ])
 
       // A user edit after seeding must survive a re-seed (the isEmpty idempotence gate).
       yield* store.removePlugin("team-plugin@2.0.0")
-      yield* PluginConfigSeed.seedFromDirectory(globalDir, projectDir)
+      yield* PluginConfigSeed.seedFromDirectory(globalDir)
       expect(((yield* store.plugins()).map((entry) => entry.package)).includes("team-plugin@2.0.0")).toBe(false)
     }),
   )

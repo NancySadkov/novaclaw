@@ -18,7 +18,7 @@ const decodeInfo = Schema.decodeUnknownOption(Config.Info, DECODE_OPTIONS)
 // directory's novaclaw.jsonc (+ NOVACLAW_CONFIG_CONTENT) into the instance-wide
 // `CommandConfigStore` at server startup, BEFORE any location boots. Idempotent: a no-op once the
 // store holds any command. Markdown commands are NOT imported (locked decision D2).
-export const seedFromDirectory = (globalConfigDir: string, directory: string) =>
+export const seedFromDirectory = (globalConfigDir: string) =>
   Effect.gen(function* () {
     const store = yield* CommandConfigStore.Service
     if (!(yield* store.isEmpty())) return
@@ -37,10 +37,11 @@ export const seedFromDirectory = (globalConfigDir: string, directory: string) =>
         return decodeText(yield* fs.readFileStringSafe(filepath))
       })
 
-    // Global config first (general), then the target directory (specific — wins on conflicts),
+    // The config dir's documents in NAMES order (general first, specific last). The launch
+    // directory is deliberately NOT a source — see config-seed-startup.ts.
     // then NOVACLAW_CONFIG_CONTENT (most specific) — the same order as the catalog/agent seeds.
     const infos: Config.Info[] = []
-    for (const dir of [globalConfigDir, directory])
+    for (const dir of [globalConfigDir])
       for (const name of NAMES) {
         const info = yield* loadInfo(path.join(dir, name))
         if (info) infos.push(info)

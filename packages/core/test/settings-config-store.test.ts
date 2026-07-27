@@ -48,32 +48,36 @@ describe("SettingsConfigStore", () => {
     }),
   )
 
-  it.effect("jsonc seed stores each key's latest() value (project wins) and is idempotent", () =>
+  it.effect("jsonc seed reads the CONFIG DIR only — a cwd config is ignored — and is idempotent", () =>
     Effect.gen(function* () {
       const store = yield* SettingsConfigStore.Service
       const dir = yield* Effect.promise(() => tmpdir())
       yield* Effect.addFinalizer(() => Effect.promise(() => dir[Symbol.asyncDispose]()))
       const globalDir = path.join(dir.path, "global")
-      const projectDir = path.join(dir.path, "project")
+      // NEGATIVE CONTROL. Seeding used to read the launch directory too, so whichever process
+      // booted first silently defined instance-wide settings forever (opencode legacy, removed
+      // 2026-07-27). This file must never be read: if someone re-adds the leg, `username` flips
+      // to "cwd-user" and this test fails.
+      const cwdDir = path.join(dir.path, "some-random-cwd")
       yield* Effect.promise(async () => {
         await fs.mkdir(globalDir, { recursive: true })
-        await fs.mkdir(projectDir, { recursive: true })
+        await fs.mkdir(cwdDir, { recursive: true })
         await fs.writeFile(
           path.join(globalDir, "novaclaw.jsonc"),
           JSON.stringify({ username: "global-user", snapshots: false, agents: { build: { description: "x" } } }),
         )
-        await fs.writeFile(path.join(projectDir, "novaclaw.jsonc"), JSON.stringify({ username: "project-user" }))
+        await fs.writeFile(path.join(cwdDir, "novaclaw.jsonc"), JSON.stringify({ username: "cwd-user" }))
       })
 
-      yield* SettingsConfigSeed.seedFromDirectory(globalDir, projectDir)
+      yield* SettingsConfigSeed.seedFromDirectory(globalDir)
       const all = yield* store.all()
-      expect(all.username).toBe("project-user") // latest() semantics — the more specific doc wins
+      expect(all.username).toBe("global-user") // the config dir is the ONLY source
       expect(all.snapshots).toBe(false)
       expect(all.agents).toBeUndefined() // migrated subsystems never enter the settings store
 
       // A user edit after seeding must survive a re-seed (the isEmpty idempotence gate).
       yield* store.set("username", "user-edited")
-      yield* SettingsConfigSeed.seedFromDirectory(globalDir, projectDir)
+      yield* SettingsConfigSeed.seedFromDirectory(globalDir)
       expect((yield* store.all()).username).toBe("user-edited")
     }),
   )
@@ -84,10 +88,8 @@ describe("SettingsConfigStore", () => {
       const dir = yield* Effect.promise(() => tmpdir())
       yield* Effect.addFinalizer(() => Effect.promise(() => dir[Symbol.asyncDispose]()))
       const globalDir = path.join(dir.path, "global")
-      const projectDir = path.join(dir.path, "project")
       yield* Effect.promise(async () => {
         await fs.mkdir(globalDir, { recursive: true })
-        await fs.mkdir(projectDir, { recursive: true })
         // One bad key (`mcp` is a string, not an MCP config) among several valid ones — the
         // OpenCode footgun that used to discard the ENTIRE document.
         await fs.writeFile(
@@ -96,7 +98,7 @@ describe("SettingsConfigStore", () => {
         )
       })
 
-      const skipped = yield* SettingsConfigSeed.seedFromDirectory(globalDir, projectDir)
+      const skipped = yield* SettingsConfigSeed.seedFromDirectory(globalDir)
 
       // The valid keys were applied despite the malformed sibling (per-key, not all-or-nothing).
       const all = yield* store.all()
@@ -222,19 +224,19 @@ describe("Config layer settings overlay (8c: jsonc is not a runtime source)", ()
       const dir = yield* Effect.promise(() => tmpdir())
       yield* Effect.addFinalizer(() => Effect.promise(() => dir[Symbol.asyncDispose]()))
       const globalDir = path.join(dir.path, "global")
-      const projectDir = path.join(dir.path, "project")
+      // Two DOCUMENTS from one directory: the seed reads NAMES in order (config.json, novaclaw.json,
+      // novaclaw.jsonc), so the general→specific fold is exercised without a second directory.
       yield* Effect.promise(async () => {
         await fs.mkdir(globalDir, { recursive: true })
-        await fs.mkdir(projectDir, { recursive: true })
         await fs.writeFile(
-          path.join(globalDir, "novaclaw.jsonc"),
+          path.join(globalDir, "config.json"),
           JSON.stringify({
             permissions: [{ action: "bash", resource: "*", effect: "ask" }],
             experimental: { policies: [{ effect: "deny", action: "provider.use", resource: "openai" }] },
           }),
         )
         await fs.writeFile(
-          path.join(projectDir, "novaclaw.jsonc"),
+          path.join(globalDir, "novaclaw.jsonc"),
           JSON.stringify({
             permissions: [{ action: "edit", resource: "*", effect: "allow" }],
             experimental: { policies: [{ effect: "allow", action: "provider.use", resource: "anthropic" }] },
@@ -242,7 +244,7 @@ describe("Config layer settings overlay (8c: jsonc is not a runtime source)", ()
         )
       })
 
-      yield* SettingsConfigSeed.seedFromDirectory(globalDir, projectDir)
+      yield* SettingsConfigSeed.seedFromDirectory(globalDir)
       const all = yield* store.all()
       // permissions: document order (general first, specific last) — the agent plugin's flatMap.
       expect(all.permissions).toEqual([
@@ -263,25 +265,24 @@ describe("Config layer settings overlay (8c: jsonc is not a runtime source)", ()
       const dir = yield* Effect.promise(() => tmpdir())
       yield* Effect.addFinalizer(() => Effect.promise(() => dir[Symbol.asyncDispose]()))
       const globalDir = path.join(dir.path, "global")
-      const projectDir = path.join(dir.path, "project")
+      // Two DOCUMENTS from one directory (NAMES order: config.json then novaclaw.jsonc).
       yield* Effect.promise(async () => {
         await fs.mkdir(globalDir, { recursive: true })
-        await fs.mkdir(projectDir, { recursive: true })
         await fs.writeFile(
-          path.join(globalDir, "novaclaw.jsonc"),
-          JSON.stringify({ instructions: ["dup.md", "global-only.md"], disabled_providers: ["openai"] }),
+          path.join(globalDir, "config.json"),
+          JSON.stringify({ instructions: ["dup.md", "first-only.md"], disabled_providers: ["openai"] }),
         )
         await fs.writeFile(
-          path.join(projectDir, "novaclaw.jsonc"),
-          JSON.stringify({ instructions: ["dup.md", "project-only.md"], disabled_providers: ["google"] }),
+          path.join(globalDir, "novaclaw.jsonc"),
+          JSON.stringify({ instructions: ["dup.md", "second-only.md"], disabled_providers: ["google"] }),
         )
       })
 
-      yield* SettingsConfigSeed.seedFromDirectory(globalDir, projectDir)
+      yield* SettingsConfigSeed.seedFromDirectory(globalDir)
       const all = yield* store.all()
       // instructions: the V1 config service's historical Set union — concat in document
       // order, first occurrence wins the position.
-      expect(all.instructions).toEqual(["dup.md", "global-only.md", "project-only.md"])
+      expect(all.instructions).toEqual(["dup.md", "first-only.md", "second-only.md"])
       // disabled/enabled_providers: whole-value latest() — the more specific doc wins.
       expect(all.disabled_providers).toEqual(["google"])
     }),

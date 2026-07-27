@@ -28,10 +28,10 @@ export function resolveSkillSource(declaringDir: string, home: string, item: str
 
 // Config→SQLite step 4: the transitional jsonc IMPORT for skill discovery sources (the
 // catalog/agent/command-seed template). Reads `skills` entries from the global config dir + the
-// launch directory's novaclaw.jsonc (+ NOVACLAW_CONFIG_CONTENT) into the instance-wide
+// (+ NOVACLAW_CONFIG_CONTENT) into the instance-wide
 // `SkillConfigStore` at server startup, BEFORE any location boots. Idempotent: a no-op once the
 // store holds any source. The `skill(s)/` directory walk is NOT imported (locked decision D2).
-export const seedFromDirectory = (globalConfigDir: string, directory: string, home: string) =>
+export const seedFromDirectory = (globalConfigDir: string, home: string) =>
   Effect.gen(function* () {
     const store = yield* SkillConfigStore.Service
     if (!(yield* store.isEmpty())) return
@@ -45,16 +45,17 @@ export const seedFromDirectory = (globalConfigDir: string, directory: string, ho
       return Option.getOrUndefined(decodeInfo(input))
     }
 
-    // Global config first, then the launch directory, then NOVACLAW_CONFIG_CONTENT (resolved
-    // against the launch directory) — the same order as the sibling seeds.
+    // The config dir's documents in NAMES order, then NOVACLAW_CONFIG_CONTENT (relative paths
+    // resolved against the config dir) — the same order as the sibling seeds. The launch
+    // directory is deliberately NOT a source — see config-seed-startup.ts.
     const sources: { declaringDir: string; info: Config.Info }[] = []
-    for (const dir of [globalConfigDir, directory])
+    for (const dir of [globalConfigDir])
       for (const name of NAMES) {
         const info = decodeText(yield* fs.readFileStringSafe(path.join(dir, name)))
         if (info) sources.push({ declaringDir: dir, info })
       }
     const inline = decodeText(Flag.NOVACLAW_CONFIG_CONTENT)
-    if (inline) sources.push({ declaringDir: directory, info: inline })
+    if (inline) sources.push({ declaringDir: globalConfigDir, info: inline })
 
     for (const { declaringDir, info } of sources)
       for (const item of info.skills ?? []) yield* store.addSource(resolveSkillSource(declaringDir, home, item))

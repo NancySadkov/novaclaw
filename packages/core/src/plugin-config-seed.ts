@@ -32,10 +32,10 @@ export function normalizePluginEntry(declaringDir: string, item: ConfigPlugin.Pl
 
 // Config→SQLite step 5: the transitional jsonc IMPORT for external plugin specs (the
 // catalog/agent/command/skill-seed template). Reads `plugins` entries from the global config dir
-// + the launch directory's novaclaw.jsonc (+ NOVACLAW_CONFIG_CONTENT) into the instance-wide
+// (+ NOVACLAW_CONFIG_CONTENT) into the instance-wide
 // `PluginConfigStore` at server startup, BEFORE any location boots. Idempotent: a no-op once the
 // store holds any spec. Plugin FILES under `{plugin,plugins}/` are NOT imported (the D2 analog).
-export const seedFromDirectory = (globalConfigDir: string, directory: string) =>
+export const seedFromDirectory = (globalConfigDir: string) =>
   Effect.gen(function* () {
     const store = yield* PluginConfigStore.Service
     if (!(yield* store.isEmpty())) return
@@ -49,16 +49,17 @@ export const seedFromDirectory = (globalConfigDir: string, directory: string) =>
       return Option.getOrUndefined(decodeInfo(input))
     }
 
-    // Global config first (general), then the launch directory (specific — wins on conflicts),
-    // then NOVACLAW_CONFIG_CONTENT (resolved against the launch directory).
+    // The config dir's documents in NAMES order (general first, specific last), then
+    // NOVACLAW_CONFIG_CONTENT (relative paths resolved against the config dir). The launch
+    // directory is deliberately NOT a source — see config-seed-startup.ts.
     const sources: { declaringDir: string; info: Config.Info }[] = []
-    for (const dir of [globalConfigDir, directory])
+    for (const dir of [globalConfigDir])
       for (const name of NAMES) {
         const info = decodeText(yield* fs.readFileStringSafe(path.join(dir, name)))
         if (info) sources.push({ declaringDir: dir, info })
       }
     const inline = decodeText(Flag.NOVACLAW_CONFIG_CONTENT)
-    if (inline) sources.push({ declaringDir: directory, info: inline })
+    if (inline) sources.push({ declaringDir: globalConfigDir, info: inline })
 
     for (const { declaringDir, info } of sources)
       for (const item of info.plugins ?? []) yield* store.setPlugin(normalizePluginEntry(declaringDir, item))

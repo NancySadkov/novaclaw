@@ -39,19 +39,17 @@ describe("SkillConfigStore", () => {
       const dir = yield* Effect.promise(() => tmpdir())
       yield* Effect.addFinalizer(() => Effect.promise(() => dir[Symbol.asyncDispose]()))
       const globalDir = path.join(dir.path, "global")
-      const projectDir = path.join(dir.path, "project")
       const home = path.join(dir.path, "home")
       yield* Effect.promise(async () => {
         await fs.mkdir(globalDir, { recursive: true })
-        await fs.mkdir(projectDir, { recursive: true })
         await fs.writeFile(
-          path.join(globalDir, "novaclaw.jsonc"),
+          path.join(globalDir, "config.json"),
           JSON.stringify({ skills: ["./team-skills", "https://example.test/skills/"] }),
         )
-        await fs.writeFile(path.join(projectDir, "novaclaw.jsonc"), JSON.stringify({ skills: ["~/my-skills"] }))
+        await fs.writeFile(path.join(globalDir, "novaclaw.jsonc"), JSON.stringify({ skills: ["~/my-skills"] }))
       })
 
-      yield* SkillConfigSeed.seedFromDirectory(globalDir, projectDir, home)
+      yield* SkillConfigSeed.seedFromDirectory(globalDir, home)
       expect(yield* store.sources()).toEqual([
         path.join(globalDir, "team-skills"), // relative → the DECLARING file's dir, not the launch dir
         "https://example.test/skills/",
@@ -60,7 +58,7 @@ describe("SkillConfigStore", () => {
 
       // A user edit after seeding must survive a re-seed (the isEmpty idempotence gate).
       yield* store.removeSource("https://example.test/skills/")
-      yield* SkillConfigSeed.seedFromDirectory(globalDir, projectDir, home)
+      yield* SkillConfigSeed.seedFromDirectory(globalDir, home)
       expect((yield* store.sources()).includes("https://example.test/skills/")).toBe(false)
     }),
   )

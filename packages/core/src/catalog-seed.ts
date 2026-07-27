@@ -66,12 +66,12 @@ export const expandFlatModels = (raw: unknown): unknown => {
 }
 
 // Settings → SQLite migration: the transitional jsonc IMPORT. Reads providers/models/default from the
-// global config dir + a target directory's `novaclaw.jsonc` and writes them into the instance-wide
+// global config dir's `novaclaw.jsonc` and writes them into the instance-wide
 // `CatalogStore`, so the catalog no longer depends on reading jsonc per-location at runtime. Runs once at
-// server startup against the launch directory (see the server's catalog-seed startup layer) — BEFORE any
-// location boots, which is what lets the shared scratch dir (and every other dir) see the same providers.
+// server startup (see the server's catalog-seed startup layer) — BEFORE any location boots, which is what
+// lets the shared scratch dir (and every other dir) see the same providers.
 // Idempotent: a no-op once the store holds any provider. Requires FSUtil + CatalogStore in context.
-export const seedFromDirectory = (globalConfigDir: string, directory: string) =>
+export const seedFromDirectory = (globalConfigDir: string) =>
   Effect.gen(function* () {
     const store = yield* CatalogStore.Service
     const providersSeeded = !(yield* store.isEmpty())
@@ -91,10 +91,10 @@ export const seedFromDirectory = (globalConfigDir: string, directory: string) =>
         return decodeText(yield* fs.readFileStringSafe(filepath))
       })
 
-    // Global config first (general), then the target directory (specific — wins on conflicts), matching
+    // The config dir's documents in NAMES order (general first, specific last), matching
     // the per-location resolution order in config.ts.
     const infos: Config.Info[] = []
-    for (const dir of [globalConfigDir, directory])
+    for (const dir of [globalConfigDir])
       for (const name of NAMES) {
         const info = yield* loadInfo(path.join(dir, name))
         if (info) infos.push(info)
