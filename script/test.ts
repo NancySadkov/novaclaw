@@ -192,6 +192,71 @@ function failureExcerpt(output: string): string {
   return pick.length > 140 ? `${pick.slice(0, 137)}...` : pick
 }
 
+/**
+ * Reap what a wall-clock kill leaves behind.
+ *
+ * ⚠️ THIS IS NOT HOUSEKEEPING — without it the suite poisons its own later runs. `spawnSync`'s
+ * `timeout` kills the process it spawned, but `bun test` is a PARENT+CHILD pair sharing one command
+ * line (AGENTS.md → Known pitfalls #8), so the SIGKILL lands on the parent and the child survives.
+ * Observed 2026-07-27: one killed `novaclaw:server` left a bun child holding **4.89 GB**; reaping it by
+ * hand dropped commit charge from 42.1 GB to 30.2 GB on a 44.7 GB limit.
+ *
+ * That is a death spiral, and the measurements show it running: each leaked child made the box slower,
+ * which pushed the next unit past ITS wall clock, which leaked another child. `novaclaw:server` went
+ * 95s → 114s → 242s → killed at 300s, and `core` crashed outright on the run after that.
+ *
+ * Matching is by PARENT PID, not by command line: the survivor keeps `proc.pid` as its recorded parent
+ * even after that parent dies, which identifies it exactly. A command-line match would risk killing an
+ * intentional long-lived `bun` (a dev server, a `novaclaw serve`) that merely looked similar.
+ */
+function reapOrphans(pid: number | undefined, label: string) {
+  if (pid === undefined) return
+  const survivors: number[] = []
+  if (process.platform === "win32") {
+    const probe = spawnSync(
+      "powershell",
+      [
+        "-NoProfile",
+        "-NonInteractive",
+        "-Command",
+        `Get-CimInstance Win32_Process -Filter "ParentProcessId=${pid}" | ForEach-Object { $_.ProcessId }`,
+      ],
+      { encoding: "utf8", timeout: 20_000 },
+    )
+    for (const line of (probe.stdout ?? "").split(/\r?\n/)) {
+      const child = Number(line.trim())
+      if (Number.isFinite(child) && child > 0) survivors.push(child)
+    }
+  } else {
+    const probe = spawnSync("pgrep", ["-P", String(pid)], { encoding: "utf8", timeout: 20_000 })
+    for (const line of (probe.stdout ?? "").split("\n")) {
+      const child = Number(line.trim())
+      if (Number.isFinite(child) && child > 0) survivors.push(child)
+    }
+  }
+  if (!survivors.length) return
+  for (const child of survivors) {
+    // By TREE, never a bare pid: the survivor may itself have spawned MCP node servers.
+    if (process.platform === "win32")
+      spawnSync("taskkill", ["/T", "/F", "/PID", String(child)], { stdio: "ignore", timeout: 20_000 })
+    else {
+      try {
+        process.kill(-child, "SIGKILL")
+      } catch {
+        try {
+          process.kill(child, "SIGKILL")
+        } catch {
+          /* already gone */
+        }
+      }
+    }
+  }
+  process.stderr.write(
+    `  \x1b[33mreaped ${survivors.length} orphaned child process(es) left by the ${label} kill: ` +
+      `${survivors.join(", ")}\x1b[0m\n`,
+  )
+}
+
 function run(name: string, dir: string, args: string[], wallclockMs: number) {
   process.stdout.write(`\n\x1b[1m▶ ${name}\x1b[0m\n`)
   const start = Date.now()
@@ -210,6 +275,10 @@ function run(name: string, dir: string, args: string[], wallclockMs: number) {
   const errno = (proc.error as NodeJS.ErrnoException | undefined)?.code
   const timedOut = proc.signal === "SIGKILL" || errno === "ETIMEDOUT"
   const ok = !timedOut && errno === undefined && proc.status === 0
+
+  // A killed or crashed child can leave its own child alive holding gigabytes. Reap before the next
+  // unit starts, or the leak makes THAT unit slower and the failure cascades. See reapOrphans above.
+  if (!ok) reapOrphans(proc.pid, timedOut ? "wall-clock" : `exit ${proc.status}`)
 
   if (!ok) process.stderr.write(`\n\x1b[31m── captured stderr · ${name} ──\x1b[0m\n`)
   if (captured) process.stderr.write(captured.endsWith("\n") ? captured : `${captured}\n`)
