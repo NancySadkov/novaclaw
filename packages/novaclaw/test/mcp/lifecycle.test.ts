@@ -100,7 +100,14 @@ function getOrCreateClientState(name?: string): MockClientState {
 // Mock transport that succeeds or fails based on connectShouldFail / connectShouldHang
 class MockStdioTransport {
   stderr: null = null
-  pid = 12345
+  /**
+   * ⚠️ MUST stay null. This mock spawns nothing, and the real `StdioClientTransport.pid` is exactly
+   * `null` when it has no child — so a real-looking number here is a lie with teeth: MCP teardown now
+   * routes through `Shell.killTree(pid)`, which would `taskkill /f /t` whatever unrelated process on
+   * the developer's machine happened to hold that pid. It read `12345` until 2026-07-28, harmless only
+   * because the old teardown never killed the ROOT pid it read.
+   */
+  pid: number | null = null
   constructor(opts: any) {
     if (lastCreatedClientName) stdioOptsByName.set(lastCreatedClientName, opts)
   }

@@ -23,16 +23,15 @@ import { withTimeout } from "@/util/timeout"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { Global } from "@novaclaw/core/global"
 import { Offline } from "@novaclaw/core/offline"
+import { Shell } from "@novaclaw/core/shell"
 import { McpOAuthPendingProvider, McpOAuthProvider, OAUTH_CALLBACK_PATH } from "./oauth-provider"
 import { McpOAuthCallback } from "./oauth-callback"
 import { McpAuth } from "./auth"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import open from "open"
-import { Cause, Effect, Exit, Layer, Context, Schema, Stream } from "effect"
+import { Cause, Effect, Exit, Layer, Context, Schema } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { InstanceState } from "@/effect/instance-state"
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
-import { CrossSpawnSpawner } from "@novaclaw/core/cross-spawn-spawner"
 import { McpCatalog } from "./catalog"
 import { McpEvent } from "@novaclaw/schema/mcp-event"
 
@@ -80,6 +79,66 @@ function createClient(directory: string) {
   )
   return client
 }
+
+/**
+ * The pid of a local (stdio) server's child process. Accepts a client or a bare transport; anything
+ * else — a remote transport, an already-closed one — yields undefined.
+ *
+ * ⚠️ **Must be read BEFORE `close()`.** `StdioClientTransport.close()` clears its `_process` handle on
+ * its first line, after which `transport.pid` is permanently `null` — read it afterwards and you get
+ * nothing to kill, silently. That is why the shutdown helpers below read it first, every time.
+ */
+export function stdioPid(source: unknown): number | undefined {
+  const transport = source instanceof Client ? source.transport : source
+  if (!(transport instanceof StdioClientTransport)) return undefined
+  const pid = transport.pid
+  return typeof pid === "number" && pid > 0 ? pid : undefined
+}
+
+/**
+ * Kill the child process tree behind a stdio transport. No-op for a remote one.
+ *
+ * ⚠️ The SDK's own `close()` is not enough. It ends stdin and then signals the ROOT process only, so an
+ * `npx`/`node` server that forked its own workers orphans them on **every** platform — and this runs on
+ * **every settings save**, because a config write disposes the instance. Orphans at multiple GB each
+ * are what hard-crashed this box on 2026-07-20 (AGENTS.md → Known pitfalls #8). `Shell.killTree` is the
+ * one tree-kill in the codebase; nothing here hand-rolls a `taskkill` or a `process.kill`.
+ */
+const killTransportTree = (source: unknown) => {
+  const pid = stdioPid(source)
+  if (pid === undefined) return Effect.void
+  return Effect.tryPromise(() => Shell.killTree(pid)).pipe(Effect.ignore)
+}
+
+/**
+ * Shut a client down and leave NOTHING running. **Every** MCP client teardown goes through here:
+ * instance disposal, `disconnect`, `remove`, the reconnect/replace path, and the OAuth bail-outs.
+ *
+ * Order is load-bearing:
+ *  1. read the pid while the transport still has it (see {@link stdioPid});
+ *  2. kill the TREE — decisive, and it closes the pid-reuse window that closing first would open
+ *     (the child could exit, its pid be recycled, and our kill land on an unrelated process);
+ *  3. `close()` last, to release the transport's streams and handlers. It returns quickly because the
+ *     child is already gone, instead of burning its 2 s + 2 s escalation waits.
+ *
+ * Never fails: teardown must not be able to abort a finalizer.
+ */
+const shutdownClient = (client: MCPClient) =>
+  Effect.gen(function* () {
+    yield* killTransportTree(client)
+    yield* Effect.tryPromise(() => client.close()).pipe(Effect.ignore)
+  })
+
+/**
+ * The same, for a transport we hold without a client — the connect-failure release. A server that hung
+ * during `initialize` (or blew the connect timeout) has a live child, and `transport.close()` alone
+ * would orphan its descendants.
+ */
+const shutdownTransport = (transport: { close: () => Promise<void> }) =>
+  Effect.gen(function* () {
+    yield* killTransportTree(transport)
+    yield* Effect.tryPromise(() => transport.close()).pipe(Effect.ignore)
+  })
 
 const StatusConnected = Schema.Struct({ status: Schema.Literal("connected") }).annotate({
   identifier: "MCPStatusConnected",
@@ -202,7 +261,6 @@ export const use = serviceUse(Service)
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
-    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
     const auth = yield* McpAuth.Service
     const events = yield* EventV2Bridge.Service
 
@@ -224,7 +282,9 @@ export const layer = Layer.effect(
             },
             catch: (e) => (e instanceof Error ? e : new Error(String(e))),
           }),
-        (t, exit) => (Exit.isFailure(exit) ? Effect.tryPromise(() => t.close()).pipe(Effect.ignore) : Effect.void),
+        // A stdio server that hung during `initialize` already HAS a child; closing the transport
+        // signals only its root, so release through shutdownTransport (kills the tree first).
+        (t, exit) => (Exit.isFailure(exit) ? shutdownTransport(t) : Effect.void),
       )
     })
 
@@ -404,9 +464,9 @@ export const layer = Layer.effect(
             instructions: mcpClient.getInstructions()?.trim(),
           } satisfies CreateResult
         }).pipe(
-          Effect.catchCause((cause) =>
-            Effect.tryPromise(() => mcpClient.close()).pipe(Effect.ignore, Effect.andThen(Effect.failCause(cause))),
-          ),
+          // Tool listing failed on a client we already connected: its stdio child is RUNNING. Closing
+          // alone would orphan the tree, and this path retries on every boot with a broken server.
+          Effect.catchCause((cause) => shutdownClient(mcpClient).pipe(Effect.andThen(Effect.failCause(cause)))),
         )
       },
       Effect.map((result): CreateResult => result),
@@ -419,30 +479,6 @@ export const layer = Layer.effect(
       }),
     )
     const cfgSvc = yield* Config.Service
-
-    const descendants = Effect.fnUntraced(
-      function* (pid: number) {
-        if (process.platform === "win32") return [] as number[]
-        const pids: number[] = []
-        const queue = [pid]
-        for (let index = 0; index < queue.length; index++) {
-          const current = queue[index]
-          const handle = yield* spawner.spawn(ChildProcess.make("pgrep", ["-P", String(current)], { stdin: "ignore" }))
-          const text = yield* Stream.mkString(Stream.decodeText(handle.stdout))
-          yield* handle.exitCode
-          for (const tok of text.split("\n")) {
-            const cpid = parseInt(tok, 10)
-            if (!isNaN(cpid) && !pids.includes(cpid)) {
-              pids.push(cpid)
-              queue.push(cpid)
-            }
-          }
-        }
-        return pids
-      },
-      Effect.scoped,
-      Effect.catch(() => Effect.succeed([] as number[])),
-    )
 
     function watch(s: State, name: string, client: MCPClient, bridge: EffectBridge.Shape, timeout?: number) {
       client.onclose = () => {
@@ -539,23 +575,7 @@ export const layer = Layer.effect(
             s.clients = {}
             s.defs = {}
             s.instructions = {}
-            yield* Effect.forEach(
-              clients,
-              (client) =>
-                Effect.gen(function* () {
-                  const pid = client.transport instanceof StdioClientTransport ? client.transport.pid : null
-                  if (typeof pid === "number") {
-                    const pids = yield* descendants(pid)
-                    for (const dpid of pids) {
-                      try {
-                        process.kill(dpid, "SIGTERM")
-                      } catch {}
-                    }
-                  }
-                  yield* Effect.tryPromise(() => client.close()).pipe(Effect.ignore)
-                }),
-              { concurrency: "unbounded" },
-            )
+            yield* Effect.forEach(clients, shutdownClient, { concurrency: "unbounded" })
             pendingOAuthTransports.clear()
           }),
         )
@@ -570,7 +590,9 @@ export const layer = Layer.effect(
       delete s.defs[name]
       delete s.instructions[name]
       if (!client) return Effect.void
-      return Effect.tryPromise(() => client.close()).pipe(Effect.ignore)
+      // NOT a bare `client.close()`: reconfiguring or removing a server used to orphan its stdio
+      // child (and everything that child spawned) on every platform. See shutdownClient.
+      return shutdownClient(client)
     }
 
     const storeClient = Effect.fnUntraced(function* (
@@ -589,7 +611,8 @@ export const layer = Layer.effect(
       if (instructions) s.instructions[name] = instructions
       else delete s.instructions[name]
       watch(s, name, client, bridge, timeout)
-      if (previous) yield* Effect.tryPromise(() => previous.close()).pipe(Effect.ignore)
+      // The REPLACE path (reconnect / re-add): the superseded client's child tree must die with it.
+      if (previous) yield* shutdownClient(previous)
       return s.status[name]
     })
 
@@ -883,7 +906,7 @@ export const layer = Layer.effect(
       if (!result.authorizationUrl) {
         const client = "client" in result ? result.client : undefined
         const mcpConfig = yield* requireMcpConfig(mcpName).pipe(
-          Effect.tapError(() => Effect.tryPromise(() => client?.close() ?? Promise.resolve()).pipe(Effect.ignore)),
+          Effect.tapError(() => (client ? shutdownClient(client) : Effect.void)),
         )
 
         const listed = client
@@ -892,7 +915,7 @@ export const layer = Layer.effect(
             : []
           : undefined
         if (!client || !listed) {
-          yield* Effect.tryPromise(() => client?.close() ?? Promise.resolve()).pipe(Effect.ignore)
+          if (client) yield* shutdownClient(client)
           return { status: "failed", error: "Failed to get tools" } satisfies Status
         }
 
@@ -1022,14 +1045,15 @@ export const defaultLayer = layer.pipe(
   Layer.provide(McpAuth.defaultLayer),
   Layer.provide(EventV2Bridge.defaultLayer),
   Layer.provide(Config.defaultLayer),
-  Layer.provide(CrossSpawnSpawner.defaultLayer),
   Layer.provide(FSUtil.defaultLayer),
 )
 
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [CrossSpawnSpawner.node, McpAuth.node, EventV2Bridge.node, Config.node],
+  // CrossSpawnSpawner was dropped with the hand-rolled `pgrep -P` descendant BFS: teardown is
+  // pid-based through Shell.killTree now, so nothing here spawns a probe process.
+  deps: [McpAuth.node, EventV2Bridge.node, Config.node],
 })
 
 export * as MCP from "."
