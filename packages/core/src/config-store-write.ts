@@ -2,6 +2,7 @@ export * as ConfigStoreWrite from "./config-store-write"
 
 import { Effect, Option, Schema } from "effect"
 import { AgentConfigStore } from "./agent-config-store"
+import { CatalogSeed } from "./catalog-seed"
 import { CatalogStore } from "./catalog-store"
 import { CommandConfigStore } from "./command-config-store"
 import { Config } from "./config"
@@ -9,6 +10,7 @@ import { ConfigAgent } from "./config/agent"
 import { ConfigCommand } from "./config/command"
 import { ConfigProvider } from "./config/provider"
 import { ConfigReference } from "./config/reference"
+import { Database } from "./database/database"
 import { MergePatch } from "./merge-patch"
 import { PluginConfigSeed } from "./plugin-config-seed"
 import { PluginConfigStore } from "./plugin-config-store"
@@ -24,6 +26,15 @@ import { SkillConfigStore } from "./skill-config-store"
 // over the served view so the UI reads what it wrote. Since step 9 EVERY Config.Info key
 // routes (`instructions` + `disabled/enabled_providers` joined SETTINGS_KEYS); there is no
 // jsonc fallback anymore — an unrouted key (only `$schema`) is ignored.
+//
+// ⚠️ That claim was FALSE for `models` until v0.2.0-prep B7: the models-primary flat map
+// (`Config.Info.models`, notes/models-primary-plan.md P1) decoded cleanly, routed nowhere and
+// still answered 200 — a write that vanished while reporting success. It now expands through
+// `CatalogSeed.expandFlatModels`, the SAME flat→nested transform the jsonc seed applies, so a
+// PATCH and an import of one document land identically. **A new `Config.Info` key must be
+// routed here (or joined SETTINGS_KEYS) in its own commit — an unrouted key is a silent
+// data-loss bug, not a no-op.** The read side answers in the STORED nested `providers` shape;
+// that is a normalization of a durable write, not a dropped one.
 //
 // Merge semantics per store shape:
 // - settings keys: one whole value per key — deep-merge the patch into the stored value
@@ -89,13 +100,29 @@ const referenceCodec = {
 const encodeInfo = (info: Config.Info) => Schema.encodeSync(Config.Info)(info) as Record<string, unknown>
 
 /**
- * Route one `updateConfig` patch into the SQLite stores. Returns the set of top-level keys
- * consumed; the caller handles the rest via the legacy jsonc path (until step 8).
+ * The routing itself. Kept separate from `apply` only so the transaction boundary is one
+ * readable line; it must NEVER be called directly — un-transacted, a failure part-way through
+ * leaves the stores in a half-written state (see `apply`).
  */
-export const apply = (patch: Config.Info) =>
+const applyToStores = (patch: Config.Info) =>
   Effect.gen(function* () {
     const consumed = new Set<string>()
     const plain = encodeInfo(patch)
+
+    // Models-primary (notes/models-primary-plan.md P1/P2): `models` is the FLAT authoring shape —
+    // one entry per model carrying its OWN endpoint `url`, whose host becomes the internal provider
+    // group. The catalog stores the nested shape, so the write router expands exactly the way the
+    // jsonc seed does; running the transform over `{models, model}` alone keeps the already-decoded
+    // `patch.providers` on its own typed path below. `expandFlatModels` also rewrites a bare
+    // default-model id that names a flat model into `providerID/modelID` — without that the stored
+    // default would address a provider that does not exist.
+    const expanded =
+      patch.models === undefined
+        ? undefined
+        : (CatalogSeed.expandFlatModels({ models: plain.models, model: plain.model }) as {
+            providers?: Record<string, unknown>
+            model?: string
+          })
 
     const settings = yield* SettingsConfigStore.Service
     const current = yield* settings.all()
@@ -117,8 +144,26 @@ export const apply = (patch: Config.Info) =>
       }
       consumed.add("providers")
     }
+    if (expanded !== undefined) {
+      // Read AFTER the `providers` block above so a patch carrying both shapes folds in order
+      // (hand-authored provider first, the flat model on top) instead of clobbering.
+      const layers = yield* catalog.providers()
+      for (const [id, fragment] of Object.entries(expanded.providers ?? {})) {
+        const decoded = providerCodec.decode(fragment)
+        // Unreachable by construction — `ModelEntry` is `Model` plus `url`, and `url` is what the
+        // expansion consumes. Die rather than skip: dropping one model silently is the exact defect
+        // this key had, and a rolled-back 500 is an honest fault where a partial 200 is not.
+        if (Option.isNone(decoded))
+          return yield* Effect.die(new Error(`config: models entry for provider "${id}" failed to decode`))
+        yield* catalog.setLayers(
+          ProviderV2.ID.make(id),
+          collapseLayers(layers[id] ?? [], decoded.value, providerCodec.encode, providerCodec.decode),
+        )
+      }
+      consumed.add("models")
+    }
     if (patch.model !== undefined) {
-      yield* catalog.setDefault(patch.model)
+      yield* catalog.setDefault(expanded?.model ?? patch.model)
       consumed.add("model")
     }
 
@@ -179,6 +224,39 @@ export const apply = (patch: Config.Info) =>
     }
 
     return consumed
+  })
+
+/**
+ * Route one `updateConfig` patch into the SQLite stores, ALL-OR-NOTHING. Returns the set of
+ * top-level keys consumed.
+ *
+ * v0.2.0 ruling 2 — *a failed mutation never reports success*. This used to issue seven
+ * independent writes (settings · catalog · agents · commands · references · skills · plugins),
+ * so a failure at step 5 left steps 1-4 committed and the HTTP handler still answered 200. The
+ * two list stores were worse: they are wipe-then-reinsert, so a failure landing between the
+ * delete loop and the insert loop left the skills or plugins store EMPTY.
+ *
+ * The whole route now runs inside ONE `db.transaction`, and every store participates WITHOUT
+ * threading a `tx` handle. That works because of two facts worth stating, since neither is
+ * visible at this call site:
+ *  - all seven stores close over the same `Database.Service` drizzle handle, and the driver
+ *    behind it is a SINGLE native connection guarded by `Semaphore.make(1)`
+ *    (`database/sqlite.bun.ts`), so there is no second connection to escape the transaction on;
+ *  - `SqlClient` resolves each statement's connection from `transactionService` in the FIBER
+ *    CONTEXT, which `db.transaction` installs for the duration of its body — so a plain
+ *    `db.insert(...)` issued from inside a store lands on the transaction's connection.
+ *
+ * ⚠️ Two constraints follow. (1) Every store call must stay on the CALLING fiber: a forked fiber
+ * does not inherit `transactionService`, so its statements would fall back to the semaphore the
+ * transaction is holding and block. (2) Individual `.run()`s stay un-`orDie`'d inside the body;
+ * `orDie` sits on the transaction as a whole (the `credential.ts` / `database/migration.ts`
+ * convention). A defect from a store's own `Effect.orDie` still rolls back — the transaction
+ * finalizer keys on `Exit.isSuccess`, which a die fails.
+ */
+export const apply = (patch: Config.Info) =>
+  Effect.gen(function* () {
+    const { db } = yield* Database.Service
+    return yield* db.transaction(() => applyToStores(patch)).pipe(Effect.orDie)
   })
 
 /** Fold a layered-store record into one merged config fragment per name (layers in order). */

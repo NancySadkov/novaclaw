@@ -37,7 +37,13 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
       const consumed = yield* ConfigStoreWrite.apply(ctx.payload)
       if (consumed.size > 0) yield* configSvc.invalidate()
       yield* markInstanceForDisposal(yield* InstanceState.context)
-      return ctx.payload
+      // Answer with what the STORES hold, never an echo of the request (ruling 2: a failed mutation
+      // never reports success). An echo claims success for a key that did not route — `models` was
+      // swallowed entirely until Wave 1 — and misreports a write whose stored shape differs from
+      // what was sent, since `models` normalizes into `providers`. The sibling global route already
+      // answers this way (handlers/global.ts:123-124); the two disagreed.
+      const base = (yield* configSvc.get()) as Record<string, unknown>
+      return Schema.decodeUnknownSync(ConfigV2.Info)(yield* ConfigStoreWrite.overlay(base))
     })
 
     // Connected providers come from the V2 `Catalog` (available = has

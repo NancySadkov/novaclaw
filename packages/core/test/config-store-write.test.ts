@@ -1,5 +1,5 @@
 import { describe, expect } from "bun:test"
-import { Effect, Schema } from "effect"
+import { Effect, Exit, Schema } from "effect"
 import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
 import { CatalogStore } from "@novaclaw/core/catalog-store"
 import { CommandConfigStore } from "@novaclaw/core/command-config-store"
@@ -190,6 +190,101 @@ describe("ConfigStoreWrite.apply", () => {
       expect(all.disabled_providers).toEqual(["x"])
     }),
   )
+
+  // Models-primary (notes/models-primary-plan.md P1/P2). `models` is a DECLARED `Config.Info` key
+  // (config.ts) that routed NOWHERE: `updateConfig({models})` decoded cleanly, consumed nothing and
+  // answered 200 for a write that vanished — the exact shape v0.2.0 ruling 2 outlaws ("a failed
+  // mutation never reports success"). It routes through the SAME flat→nested expansion the jsonc
+  // seed applies (`CatalogSeed.expandFlatModels`), so a PATCH and an import of the same document
+  // land identically.
+  it.effect("routes the models-primary `models` map into the catalog store", () =>
+    Effect.gen(function* () {
+      const catalog = yield* CatalogStore.Service
+      const consumed = yield* ConfigStoreWrite.apply(
+        decodeInfo({
+          model: "qwen3.6-35b",
+          models: { "qwen3.6-35b": { url: "http://10.0.0.5:8000/v1", name: "Qwen", tier: "large" } },
+        }),
+      )
+      expect([...consumed].sort()).toEqual(["model", "models"])
+
+      // The endpoint HOST is the internal provider group (the seed's rule), and the flat entry's
+      // non-`url` fields become the nested model.
+      const layers = (yield* catalog.providers())["10.0.0.5:8000"]
+      expect(layers).toHaveLength(1)
+      expect(layers?.[0]?.api?.url).toBe("http://10.0.0.5:8000/v1")
+      expect(layers?.[0]?.models?.["qwen3.6-35b"]?.name).toBe("Qwen")
+      // A bare default-model id naming a flat model expands to `providerID/modelID`, or the stored
+      // default would address a provider that does not exist.
+      expect(yield* catalog.getDefault()).toBe("10.0.0.5:8000/qwen3.6-35b")
+    }),
+  )
+
+  // Ruling 2, the ATOMICITY half. `apply` writes to seven stores; before the transaction those were
+  // seven independent writes, so a failure at step 5 left steps 1-4 committed. Worse, skills and
+  // plugins are wipe-then-reinsert, so a failure between the two loops left the store EMPTY.
+  it.effect("a mid-apply failure rolls back every earlier store write", () =>
+    Effect.gen(function* () {
+      const skills = yield* SkillConfigStore.Service
+      const settings = yield* SettingsConfigStore.Service
+      yield* skills.addSource("/survives/skills")
+      yield* settings.set("shell", "before-the-failed-write")
+      const skillsBefore = yield* skills.sources()
+
+      // Plugins routes LAST, so failing it lands after every other store has written — including
+      // after the skills delete loop and its insert loop.
+      const failingPlugins = PluginConfigStore.Service.of({
+        plugins: () => Effect.succeed([]),
+        setPlugin: () => Effect.die(new Error("plugin store write failed")),
+        removePlugin: () => Effect.void,
+        isEmpty: () => Effect.succeed(true),
+      })
+
+      const exit = yield* ConfigStoreWrite.apply(
+        decodeInfo({
+          shell: "after-the-failed-write",
+          skills: ["/replacement/skills"],
+          plugins: ["some-plugin"],
+        }),
+      ).pipe(Effect.provideService(PluginConfigStore.Service, failingPlugins), Effect.exit)
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      // Nothing the failed patch touched survives — not the settings write, and (the sharp edge)
+      // not the skills DELETE that ran before the failure.
+      expect(yield* skills.sources()).toEqual(skillsBefore)
+      expect((yield* settings.all()).shell).toBe("before-the-failed-write")
+    }),
+  )
+
+  // The same invariant with the REAL table underneath: the failure lands INSIDE the reinsert loop,
+  // after the delete loop has already emptied the plugin table.
+  it.effect("the plugins wipe-then-reinsert is atomic — a failure mid-loop restores the stored list", () =>
+    Effect.gen(function* () {
+      const plugins = yield* PluginConfigStore.Service
+      yield* ConfigStoreWrite.apply(decodeInfo({ plugins: ["keeper-a", "keeper-b"] }))
+      const before = yield* plugins.plugins()
+      expect(before).toEqual([{ package: "keeper-a" }, { package: "keeper-b" }])
+
+      // Real store for the reads and the DELETE loop; only the SECOND insert dies. Un-transacted,
+      // both deletes and the first insert are committed by the time it does.
+      let inserts = 0
+      const flaky = PluginConfigStore.Service.of({
+        plugins: () => plugins.plugins(),
+        removePlugin: (pkg) => plugins.removePlugin(pkg),
+        isEmpty: () => plugins.isEmpty(),
+        setPlugin: (entry) =>
+          ++inserts === 2 ? Effect.die(new Error("plugin insert failed")) : plugins.setPlugin(entry),
+      })
+
+      const exit = yield* ConfigStoreWrite.apply(decodeInfo({ plugins: ["new-a", "new-b"] })).pipe(
+        Effect.provideService(PluginConfigStore.Service, flaky),
+        Effect.exit,
+      )
+
+      expect(Exit.isFailure(exit)).toBe(true)
+      expect(yield* plugins.plugins()).toEqual(before)
+    }),
+  )
 })
 
 describe("ConfigStoreWrite export→import round-trip (step 8)", () => {
@@ -214,7 +309,9 @@ describe("ConfigStoreWrite export→import round-trip (step 8)", () => {
       yield* ConfigStoreWrite.apply(decodeInfo({ providers: { spark: { models: { m1: { name: "M1 v2" } } } } }))
 
       const exported = yield* ConfigStoreWrite.overlay({})
-      expect((exported.providers as Record<string, { models: Record<string, { name: string }> }>).spark.models.m1.name).toBe("M1 v2")
+      expect(
+        (exported.providers as Record<string, { models: Record<string, { name: string }> }>).spark.models.m1.name,
+      ).toBe("M1 v2")
 
       // Wipe every store (a fresh instance), then import the exported document via the router.
       const catalog = yield* CatalogStore.Service
