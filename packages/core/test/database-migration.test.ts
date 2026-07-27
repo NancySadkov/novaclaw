@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { $ } from "bun"
+import { existsSync } from "fs"
 import { fileURLToPath } from "url"
 import path from "path"
 import { SqliteClient } from "@effect/sql-sqlite-bun"
@@ -37,6 +38,34 @@ const run = <A, E>(effect: Effect.Effect<A, E, SqlClientService>) =>
 
 const makeDb = EffectDrizzleSqlite.makeWithDefaults()
 
+const coreDir = path.resolve(fileURLToPath(new URL(".", import.meta.url)), "..")
+
+/**
+ * Why the drift check is gated on a CAPABILITY and not on the platform.
+ *
+ * This test used to sit inside `if (process.platform === "linux")` (inherited from opencode). This
+ * project has no CI and develops on a Windows-only box, so the guard meant the check had effectively
+ * never run once — which is exactly how `packages/core/schema.json` drifted six deltas behind the
+ * declared schema (v0.2.0 Wave 0, B5). A platform gate that names no leg which runs it unskipped is
+ * not a check; it is a comment. Gate on the one thing that can genuinely make the check impossible —
+ * `drizzle-kit` not being installed — and report the reason in the test name when it does skip.
+ *
+ * Determined WITHOUT running drizzle-kit: `script/migration.ts` shells out to `bun drizzle-kit`, which
+ * resolves the binary out of `node_modules`, so the presence of the package (plus the config the
+ * script feeds it) is the honest precondition. The ancestor walk covers both bun's per-package link
+ * (`packages/core/node_modules/drizzle-kit`) and a hoisted workspace-root install.
+ */
+const migrationCheckUnavailable = (() => {
+  if (!existsSync(path.join(coreDir, "drizzle.config.ts"))) return "packages/core/drizzle.config.ts is missing"
+  let dir = coreDir
+  while (true) {
+    if (existsSync(path.join(dir, "node_modules", "drizzle-kit", "package.json"))) return undefined
+    const parent = path.dirname(dir)
+    if (parent === dir) return "drizzle-kit is not installed — run `bun install`"
+    dir = parent
+  }
+})()
+
 describe("DatabaseMigration", () => {
   test("serializes concurrent embedded initialization for one database path", async () => {
     await using tmp = await tmpdir()
@@ -50,15 +79,32 @@ describe("DatabaseMigration", () => {
       ),
     )
   })
-  if (process.platform === "linux") {
-    test("declared schema has no ungenerated migrations", async () => {
+  test.skipIf(migrationCheckUnavailable !== undefined)(
+    migrationCheckUnavailable === undefined
+      ? "declared schema has no ungenerated migrations"
+      : `declared schema has no ungenerated migrations [SKIPPED: ${migrationCheckUnavailable}]`,
+    async () => {
       const result = await $`bun ${fileURLToPath(new URL("../script/migration.ts", import.meta.url))} --check`
         .quiet()
         .nothrow()
-      expect(result.exitCode, result.stderr.toString()).toBe(0)
-      expect(result.stdout.toString()).toContain("No schema changes, nothing to migrate")
-    }, 30_000)
-  }
+      // The exit code IS the contract: `check()` prints nothing of its own on success and throws on
+      // each of its three staleness comparisons (ungenerated migration / stale schema.gen.ts / stale
+      // migration.gen.ts), and a drizzle-kit failure propagates out through Bun Shell. So exit 0 means
+      // all three ran and agreed.
+      //
+      // The former `toContain("No schema changes, nothing to migrate")` assertion did NOT match
+      // anything our script emits — that line comes from the drizzle-kit CHILD process
+      // (`bin.cjs` -> `writeResult`, and it is actually suffixed with an emoji), reaching us only
+      // because Bun Shell forwards a non-`.quiet()` child's stdout. Pinning the gate to a vendored,
+      // version-dependent string is not a contract this repo owns, so it is gone.
+      expect(result.exitCode, `${result.stdout.toString()}\n${result.stderr.toString()}`).toBe(0)
+    },
+    // drizzle-kit is invoked twice (incremental + full schema) and is markedly slower on Windows than
+    // on the Linux leg this check used to be pinned to. The explicit timeout is also the backstop for
+    // the generator's known TTY-prompt trap (memory `drizzle-migration-generator`): under `bun test`
+    // stdin is not a TTY, so a prompt would hang rather than fail — this bounds it at one minute.
+    60_000,
+  )
 
   test("applies tracked migrations to an empty database", async () => {
     await run(
