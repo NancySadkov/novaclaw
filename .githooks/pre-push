@@ -1,0 +1,83 @@
+#!/bin/sh
+#
+# NovaClaw pre-push — ONE check, on the STATE of every tree being pushed.
+#
+# WHY ONLY ONE. pre-commit already gates both Wave-0 checks at the moment a change is introduced, and
+# a pre-push hook that ran the suite would be worse than useless here: `bun run test` takes 1-2 min
+# and `script/lib/heavy-guard.ts` mechanically REFUSES to start it while a build is running or commit
+# charge is above 75% — so on this 15.7 GB box it would refuse pushes for reasons that have nothing to
+# do with the code being pushed, and the hook would be uninstalled within a day.
+#
+# The mode-120000 check is repeated here anyway because pre-commit structurally cannot see every way
+# a bad entry arrives: `git rebase` replays commits WITHOUT running pre-commit, `git merge` does not
+# run it either, `--no-verify` skips it, and history can be imported. So this one is asked as a
+# question about STATE ("does the tree you are about to publish contain one?"), not about the delta —
+# which is both stronger and cheaper (one `git ls-tree`, milliseconds).
+#
+# The schema check deliberately does NOT run here. `bun script/migration.ts --check` reads the WORKING
+# TREE, not the commits being pushed, so at push time it would be a check whose subject is not what
+# you are pushing. Wave 0 exists to remove exactly that kind of lie; pre-commit is the honest place
+# for it, because there the working tree IS what is being recorded.
+#
+# stdin: <local ref> <local sha> <remote ref> <remote sha>, one line per ref being pushed.
+# Escape hatch:  git push --no-verify
+#
+# shellcheck shell=sh
+set -u
+
+repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
+cd "$repo_root" || exit 0
+
+fail=0
+seen=""
+
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [ -n "${local_sha:-}" ] || continue
+  # An all-zero local sha means "delete this remote ref" — there is no tree to inspect. Matching on
+  # "contains a non-zero character" keeps this correct for sha256 repos too.
+  case "$local_sha" in
+    *[!0]*) : ;;
+    *) continue ;;
+  esac
+
+  # Several refs can point at the same commit; inspect each tree once.
+  case " $seen " in
+    *" $local_sha "*) continue ;;
+  esac
+  seen="$seen $local_sha"
+
+  # `git ls-tree -r` prints "<mode> <type> <sha>\t<path>"; strip through the first tab to get a path
+  # that survives spaces.
+  bad=$(
+    git ls-tree -r --full-tree "$local_sha" 2>/dev/null | awk '
+      $1 == "120000" {
+        path = $0
+        sub(/^[^\t]*\t/, "", path)
+        if (path ~ /^"?packages\/app\/public\//) next
+        print $3 "\t" path
+      }
+    '
+  )
+
+  [ -n "$bad" ] || continue
+
+  fail=1
+  echo "" >&2
+  echo "pre-push: REFUSING to push ${local_ref:-$local_sha} — its tree holds file(s) with mode 120000" >&2
+  echo "  (symlink) outside packages/app/public/:" >&2
+  echo "" >&2
+  printf '%s\n' "$bad" | while IFS="$(printf '\t')" read -r blob path; do
+    printf '    git update-index --add --cacheinfo "100644,%s,%s"\n' "$blob" "$path" >&2
+  done
+  echo "" >&2
+  echo "  core.symlinks is off on Windows, so these check out as correct regular files here and break" >&2
+  echo "  every Linux/macOS clone (AGENTS.md -> Known pitfalls #4). pre-commit catches this when a" >&2
+  echo "  commit is MADE; a rebase, a merge or a --no-verify commit can carry one in without ever" >&2
+  echo "  running it, which is why the pushed tree is re-checked here." >&2
+  echo "" >&2
+  echo "  Run the command(s) above, commit the fix, then push again." >&2
+  echo "  Bypass:  git push --no-verify" >&2
+  echo "" >&2
+done
+
+exit $fail

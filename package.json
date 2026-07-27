@@ -13,6 +13,7 @@
     "lint": "oxlint",
     "typecheck": "bun turbo typecheck",
     "postinstall": "bun run --cwd packages/core fix-node-pty",
+    "hooks:install": "bun run script/install-hooks.ts",
     "version:sync": "bun run script/sync-version.ts",
     "test": "bun run script/test.ts",
     "test:full": "bun run script/test.ts --full"

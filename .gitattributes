@@ -1,5 +1,10 @@
 packages/core/src/database/migration.gen.ts linguist-generated
 
+# Git hooks are run through `sh`. A CRLF shebang line makes sh report "bad interpreter" and the hook
+# then silently never runs — which is the exact failure mode `.githooks/` exists to remove, so pin the
+# line endings rather than relying on every clone having core.autocrlf=false.
+.githooks/** text eol=lf
+
 # Binary assets must never be line-ending normalized (a corrupted PNG test fixture cost us).
 *.png binary
 *.jpg binary
