@@ -69,16 +69,117 @@ export const SETTINGS_KEYS = [
 
 export type SettingsKey = (typeof SETTINGS_KEYS)[number]
 
+/** The synthetic settings document, plus every key the snapshot could not apply verbatim. */
+export type SettingsFromStore = {
+  /** The synthetic document, or undefined when the store held nothing usable. */
+  info?: Config.Info
+  /**
+   * Keys that failed validation. Non-empty means the running instance does NOT match what the
+   * user configured, so a caller MUST surface it (`formatSkippedNotice` + a log/notice) rather
+   * than discard it — a silent salvage is only marginally better than a silent total loss.
+   */
+  skipped: SkippedConfigKey[]
+}
+
+/** `SkippedConfigKey.source` for rows read back out of the settings store (vs. an import file). */
+const STORE_SOURCE = "settings store"
+
+/**
+ * The fail-closed stand-in prepended to a `permissions` ruleset that did not fully decode.
+ * `ask`, not `deny`: see the PERMISSIONS note on `settingsInfoFromStore`.
+ */
+const PERMISSIONS_BACKSTOP = { action: "*", resource: "*", effect: "ask" } as const
+
 /**
  * Decode a store snapshot into the synthetic `Config.Info` the Config layer appends to
- * `entries()`. Unknown/extra keys are dropped by the decode; a snapshot that fails to decode
- * yields undefined (defensive — a hand-corrupted row must not take the location down).
+ * `entries()`. Unknown/extra keys are dropped by the decode (`onExcessProperty: "ignore"`).
+ *
+ * PER-KEY, like `decodeText` below — and for the same reason, only worse on this path. A whole-
+ * document decode meant ONE bad row silently discarded all of `SETTINGS_KEYS` at once, reverting
+ * `permissions`, `offline`, `shell`, `persona`, `mcp` and the telemetry choice to compiled defaults
+ * together, with nothing logged. So: whole-document fast path (the overwhelmingly common all-valid
+ * snapshot, byte-for-byte the old behaviour), then a salvage that keeps every key which decodes on
+ * its own and NAMES the rest in `skipped`.
+ *
+ * ⚠️ PERMISSIONS IS FAIL-CLOSED, and is the one key that does not simply get dropped. It is the
+ * only settings key whose ABSENCE is more permissive than its presence: every agent's ruleset opens
+ * with a catch-all `* -> allow` and the store's rules are appended AFTER it (config/plugin/agent.ts),
+ * and rules resolve by findLast — so dropping the key promotes the user's denies to allows. That is a
+ * loosening caused by a corrupt row, which is exactly the failure this function must not have. Since
+ * rules resolve by findLast we can be restrictive without discarding what IS readable:
+ *   1. keep each individual rule that still decodes, in order — that is the user's literal, readable
+ *      intent, and honouring it is strictly closer to what they asked for than dropping the lot; and
+ *   2. PREPEND a catch-all `ask`, which outranks the agent's baseline `allow` but is outranked by
+ *      every salvaged rule. Whatever the unreadable rule governed therefore lands on the human
+ *      instead of on `allow`.
+ * NOT `deny` (which `permission.ts` uses for a missing AGENT): a blanket deny leaves the instance
+ * unable to do anything — including repair itself — and AGENTS.md's self-healing law requires the
+ * repair path to survive; `ask` is the most restrictive reading that still leaves a person able to
+ * say yes. An explicit `permissionMode` of `bypass` still outranks it, as it outranks any config
+ * rule — that is a deliberate user choice, not a corrupt row.
  */
-export function settingsInfoFromStore(values: Record<string, unknown>): Config.Info | undefined {
+export function settingsInfoFromStore(values: Record<string, unknown>): SettingsFromStore {
   const filtered: Record<string, unknown> = {}
   for (const key of SETTINGS_KEYS) if (values[key] !== undefined) filtered[key] = values[key]
-  if (Object.keys(filtered).length === 0) return undefined
-  return Option.getOrUndefined(Schema.decodeUnknownOption(Config.Info, DECODE_OPTIONS)(filtered))
+  if (Object.keys(filtered).length === 0) return { skipped: [] }
+
+  const whole = Schema.decodeUnknownExit(Config.Info)(filtered, DECODE_OPTIONS)
+  if (Exit.isSuccess(whole)) return { info: whole.value, skipped: [] }
+
+  const kept: Record<string, unknown> = {}
+  const skipped: SkippedConfigKey[] = []
+  for (const [key, value] of Object.entries(filtered)) {
+    const one = Schema.decodeUnknownExit(Config.Info)({ [key]: value }, DECODE_OPTIONS)
+    if (Exit.isSuccess(one)) {
+      kept[key] = value
+      continue
+    }
+    if (key === "permissions") {
+      kept[key] = salvagePermissions(value, skipped)
+      continue
+    }
+    skipped.push({ key, source: STORE_SOURCE, reason: decodeFailureReason(one.cause) })
+  }
+
+  const info =
+    Object.keys(kept).length === 0
+      ? undefined
+      : Option.getOrUndefined(Schema.decodeUnknownOption(Config.Info, DECODE_OPTIONS)(kept))
+  // Should be unreachable — every kept key decoded alone and `Config.Info`'s fields are independent
+  // — but if the salvaged subset still fails, say so instead of returning a silent undefined.
+  if (info === undefined && Object.keys(kept).length > 0)
+    skipped.push({
+      key: "*",
+      source: STORE_SOURCE,
+      reason:
+        "the snapshot failed to decode even after per-key salvage — " +
+        "every stored setting fell back to its built-in default",
+    })
+  return { info, skipped }
+}
+
+/**
+ * The `permissions` arm of the salvage: keep the rules that still validate and prepend the
+ * fail-closed backstop. Always returns a non-empty ruleset, so the key can never go missing (the
+ * missing case is the loosening). Records ONE skipped entry describing what was lost.
+ */
+function salvagePermissions(value: unknown, skipped: SkippedConfigKey[]): readonly unknown[] {
+  const rules: unknown[] = Array.isArray(value) ? value : []
+  const usable = rules.filter((rule) =>
+    Exit.isSuccess(Schema.decodeUnknownExit(Config.Info)({ permissions: [rule] }, DECODE_OPTIONS)),
+  )
+  const lost = rules.length - usable.length
+  const what = Array.isArray(value)
+    ? `${lost} of ${rules.length} permission rule${rules.length === 1 ? "" : "s"} failed validation`
+    : "the stored value is not a list of permission rules"
+  skipped.push({
+    key: "permissions",
+    source: STORE_SOURCE,
+    reason:
+      `${what} — the readable rules were KEPT and a fail-closed catch-all "ask" rule was prepended, ` +
+      `so anything the unreadable rules may have denied now asks you instead of running unchecked`,
+  })
+  return [PERMISSIONS_BACKSTOP, ...usable]
 }
 
 const seedFromInfos = (infos: readonly Config.Info[]) =>
@@ -128,11 +229,18 @@ const seedFromInfos = (infos: readonly Config.Info[]) =>
 
 const NAMES = ["config.json", "novaclaw.json", "novaclaw.jsonc"]
 
-/** A top-level config key dropped at import time because it failed schema validation. */
+/**
+ * A top-level config key that failed schema validation, so it could not be applied verbatim —
+ * either dropped (the import path, and every store key except one) or partially salvaged
+ * (`permissions`, which is fail-closed rather than dropped; see `settingsInfoFromStore`).
+ */
 export type SkippedConfigKey = {
   /** The offending top-level key, or "*" when the whole file could not be parsed. */
   key: string
-  /** The file the key came from (or `NOVACLAW_CONFIG_CONTENT` for the inline env source). */
+  /**
+   * Where the key came from: the config file's path, `NOVACLAW_CONFIG_CONTENT` for the inline env
+   * source, or `"settings store"` for a row read back out of SQLite.
+   */
   source: string
   /** A short, human-readable reason the key was dropped. */
   reason: string
@@ -183,12 +291,15 @@ function decodeText(text: string | undefined, source: string): { info?: Config.I
   return { info, skipped }
 }
 
-function formatSkippedNotice(skipped: readonly SkippedConfigKey[]): string {
+/**
+ * The one notice format for a partially-applied config, shared by the import seed and the
+ * store read (`settingsInfoFromStore`) so both read the same way to a user.
+ */
+export function formatSkippedNotice(skipped: readonly SkippedConfigKey[]): string {
   const plural = skipped.length === 1 ? "" : "s"
   const head =
-    `Config partially applied: ${skipped.length} key${plural} skipped because ` +
-    `${skipped.length === 1 ? "it" : "they"} failed validation. The rest of your config was applied — ` +
-    `fix the below and restart to apply:`
+    `Config partially applied: ${skipped.length} key${plural} failed validation. Everything that ` +
+    `could be read was applied — fix the below and restart to apply:`
   return [head, ...skipped.map((entry) => `  - ${entry.key} (${entry.source}): ${entry.reason}`)].join("\n")
 }
 

@@ -116,11 +116,12 @@ describe("SettingsConfigStore", () => {
 
   it.effect("settingsInfoFromStore builds the synthetic document latest() resolves FIRST", () =>
     Effect.sync(() => {
-      const info = SettingsConfigSeed.settingsInfoFromStore({
+      const { info, skipped } = SettingsConfigSeed.settingsInfoFromStore({
         username: "store-user",
         snapshots: false,
         ignored_unknown_key: 1,
       })
+      expect(skipped).toEqual([]) // an all-valid snapshot takes the whole-document fast path
       expect(info?.username).toBe("store-user")
       const entries = [
         new Config.Document({ type: "document", info: new Config.Info({ username: "doc-user", shell: "bash" }) }),

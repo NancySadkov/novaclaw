@@ -356,7 +356,12 @@ export const layer = Layer.effect(
     ]
 
     const settingsStore = yield* SettingsConfigStore.Service
-    const settingsInfo = SettingsConfigSeed.settingsInfoFromStore(yield* settingsStore.all())
+    const settings = SettingsConfigSeed.settingsInfoFromStore(yield* settingsStore.all())
+    // One bad row must never silently revert every setting to its compiled default: the decode is
+    // per-key, and whatever it could not apply is named here in the same format the import seed
+    // uses. Non-blocking by contract — a corrupt row degrades the config, it never fails the boot.
+    if (settings.skipped.length > 0) yield* Effect.logWarning(SettingsConfigSeed.formatSkippedNotice(settings.skipped))
+    const settingsInfo = settings.info
     const allConfigs = settingsInfo
       ? [...directories, new Document({ type: "document", info: settingsInfo })]
       : directories
