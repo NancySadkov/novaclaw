@@ -23,16 +23,13 @@ export default {
         );
       `)
       yield* tx.run(`
-        CREATE TABLE \`bash_job\` (
+        CREATE TABLE \`calendar_fire\` (
           \`id\` text PRIMARY KEY,
-          \`owner\` text NOT NULL,
-          \`command\` text NOT NULL,
-          \`status\` text NOT NULL,
-          \`exit\` integer,
-          \`output\` text DEFAULT '' NOT NULL,
-          \`truncated\` integer DEFAULT false NOT NULL,
-          \`time_started\` integer NOT NULL,
-          \`time_done\` integer
+          \`schedule_id\` text NOT NULL,
+          \`occurrence_millis\` integer NOT NULL,
+          \`fired_at\` integer NOT NULL,
+          \`session_id\` text,
+          \`status\` text NOT NULL
         );
       `)
       yield* tx.run(`
@@ -54,22 +51,25 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`bash_job\` (
+          \`id\` text PRIMARY KEY,
+          \`owner\` text NOT NULL,
+          \`command\` text NOT NULL,
+          \`status\` text NOT NULL,
+          \`exit\` integer,
+          \`output\` text DEFAULT '' NOT NULL,
+          \`truncated\` integer DEFAULT false NOT NULL,
+          \`time_started\` integer NOT NULL,
+          \`time_done\` integer
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`web_host_budget\` (
           \`host\` text PRIMARY KEY,
           \`day\` text NOT NULL,
           \`count\` integer DEFAULT 0 NOT NULL,
           \`tokens\` real DEFAULT 0 NOT NULL,
           \`updated_at\` integer NOT NULL
-        );
-      `)
-      yield* tx.run(`
-        CREATE TABLE \`calendar_fire\` (
-          \`id\` text PRIMARY KEY,
-          \`schedule_id\` text NOT NULL,
-          \`occurrence_millis\` integer NOT NULL,
-          \`fired_at\` integer NOT NULL,
-          \`session_id\` text,
-          \`status\` text NOT NULL
         );
       `)
       yield* tx.run(`
@@ -409,13 +409,13 @@ export default {
           \`time_updated\` integer NOT NULL
         );
       `)
-      yield* tx.run(`CREATE INDEX \`bash_job_owner_idx\` ON \`bash_job\` (\`owner\`);`)
-      yield* tx.run(
-        `CREATE INDEX \`calendar_schedule_due_idx\` ON \`calendar_schedule\` (\`enabled\`,\`next_fire_at\`);`,
-      )
       yield* tx.run(
         `CREATE UNIQUE INDEX \`calendar_fire_occurrence_idx\` ON \`calendar_fire\` (\`schedule_id\`,\`occurrence_millis\`);`,
       )
+      yield* tx.run(
+        `CREATE INDEX \`calendar_schedule_due_idx\` ON \`calendar_schedule\` (\`enabled\`,\`next_fire_at\`);`,
+      )
+      yield* tx.run(`CREATE INDEX \`bash_job_owner_idx\` ON \`bash_job\` (\`owner\`);`)
       yield* tx.run(`CREATE UNIQUE INDEX \`event_aggregate_seq_idx\` ON \`event\` (\`aggregate_id\`,\`seq\`);`)
       yield* tx.run(`CREATE INDEX \`event_aggregate_type_seq_idx\` ON \`event\` (\`aggregate_id\`,\`type\`,\`seq\`);`)
       yield* tx.run(

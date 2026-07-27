@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "d7eba870-b250-47a8-81b4-ff9de0432741",
+  "id": "2c81bedd-5269-4d6e-9f5e-ede043ff0d2c",
   "prevIds": [
-    "8e917ac2-ef2f-4621-8c41-28ec39d7d6aa"
+    "d7eba870-b250-47a8-81b4-ff9de0432741"
   ],
   "ddl": [
     {
@@ -15,7 +15,19 @@
       "entityType": "tables"
     },
     {
+      "name": "calendar_fire",
+      "entityType": "tables"
+    },
+    {
+      "name": "calendar_schedule",
+      "entityType": "tables"
+    },
+    {
       "name": "bash_job",
+      "entityType": "tables"
+    },
+    {
+      "name": "web_host_budget",
       "entityType": "tables"
     },
     {
@@ -250,6 +262,206 @@
       "generated": null,
       "name": "id",
       "entityType": "columns",
+      "table": "calendar_fire"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "schedule_id",
+      "entityType": "columns",
+      "table": "calendar_fire"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "occurrence_millis",
+      "entityType": "columns",
+      "table": "calendar_fire"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "fired_at",
+      "entityType": "columns",
+      "table": "calendar_fire"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "session_id",
+      "entityType": "columns",
+      "table": "calendar_fire"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "status",
+      "entityType": "columns",
+      "table": "calendar_fire"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
+      "table": "calendar_schedule"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "''",
+      "generated": null,
+      "name": "title",
+      "entityType": "columns",
+      "table": "calendar_schedule"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "recurrence_json",
+      "entityType": "columns",
+      "table": "calendar_schedule"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "tz_offset_min",
+      "entityType": "columns",
+      "table": "calendar_schedule"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "prompt",
+      "entityType": "columns",
+      "table": "calendar_schedule"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "agent",
+      "entityType": "columns",
+      "table": "calendar_schedule"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "model",
+      "entityType": "columns",
+      "table": "calendar_schedule"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "location_json",
+      "entityType": "columns",
+      "table": "calendar_schedule"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "true",
+      "generated": null,
+      "name": "enabled",
+      "entityType": "columns",
+      "table": "calendar_schedule"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "next_fire_at",
+      "entityType": "columns",
+      "table": "calendar_schedule"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "last_fired_at",
+      "entityType": "columns",
+      "table": "calendar_schedule"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_created",
+      "entityType": "columns",
+      "table": "calendar_schedule"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_updated",
+      "entityType": "columns",
+      "table": "calendar_schedule"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "permission_mode",
+      "entityType": "columns",
+      "table": "calendar_schedule"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "id",
+      "entityType": "columns",
       "table": "bash_job"
     },
     {
@@ -331,6 +543,56 @@
       "name": "time_done",
       "entityType": "columns",
       "table": "bash_job"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "host",
+      "entityType": "columns",
+      "table": "web_host_budget"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "day",
+      "entityType": "columns",
+      "table": "web_host_budget"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "count",
+      "entityType": "columns",
+      "table": "web_host_budget"
+    },
+    {
+      "type": "real",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "0",
+      "generated": null,
+      "name": "tokens",
+      "entityType": "columns",
+      "table": "web_host_budget"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "updated_at",
+      "entityType": "columns",
+      "table": "web_host_budget"
     },
     {
       "type": "integer",
@@ -2063,6 +2325,36 @@
       "table": "session"
     },
     {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "thinking_budget",
+      "entityType": "columns",
+      "table": "session"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "surgical_edits",
+      "entityType": "columns",
+      "table": "session"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "ask_before_changes",
+      "entityType": "columns",
+      "table": "session"
+    },
+    {
       "type": "text",
       "notNull": false,
       "autoincrement": false,
@@ -2490,8 +2782,35 @@
         "id"
       ],
       "nameExplicit": false,
+      "name": "calendar_fire_pk",
+      "table": "calendar_fire",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
+      "name": "calendar_schedule_pk",
+      "table": "calendar_schedule",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "id"
+      ],
+      "nameExplicit": false,
       "name": "bash_job_pk",
       "table": "bash_job",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "host"
+      ],
+      "nameExplicit": false,
+      "name": "web_host_budget_pk",
+      "table": "web_host_budget",
       "entityType": "pks"
     },
     {
@@ -2709,6 +3028,42 @@
       "name": "skill_config_pk",
       "table": "skill_config",
       "entityType": "pks"
+    },
+    {
+      "columns": [
+        {
+          "value": "schedule_id",
+          "isExpression": false
+        },
+        {
+          "value": "occurrence_millis",
+          "isExpression": false
+        }
+      ],
+      "isUnique": true,
+      "where": null,
+      "origin": "manual",
+      "name": "calendar_fire_occurrence_idx",
+      "entityType": "indexes",
+      "table": "calendar_fire"
+    },
+    {
+      "columns": [
+        {
+          "value": "enabled",
+          "isExpression": false
+        },
+        {
+          "value": "next_fire_at",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "calendar_schedule_due_idx",
+      "entityType": "indexes",
+      "table": "calendar_schedule"
     },
     {
       "columns": [
