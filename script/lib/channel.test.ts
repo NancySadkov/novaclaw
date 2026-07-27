@@ -26,25 +26,32 @@ const REPO = path.resolve(import.meta.dir, "../..")
 const read = (rel: string) => readFileSync(path.join(REPO, rel), "utf8")
 
 /**
- * Every TypeScript source file git knows about — tracked OR newly added but not ignored. `git
- * ls-files` rather than a glob on purpose: a glob walks `node_modules` (tens of thousands of files,
- * and this unit has to stay fast), while git already excludes exactly the trees we do not own.
- * `--others --exclude-standard` is what makes a brand-new, not-yet-committed offender visible.
+ * The TypeScript files that mention NOVACLAW_CHANNEL at all, via ONE `git grep`.
+ *
+ * ⚠️ This was originally `git ls-files` + reading every file in Node. That passed in 0.3 s against a
+ * warm page cache and took **64 s** — blowing the 15 s per-test timeout — inside a full suite run,
+ * where the cache is cold and thousands of reads are competing. `git grep` does the search in one
+ * process and returns only the handful of matches, so the cost is O(matches), not O(repo). A glob is
+ * worse still: it walks `node_modules`. git also excludes the trees we do not own for free, and
+ * `--untracked` is what makes a brand-new, not-yet-committed offender visible.
  */
-let cachedSources: string[] | undefined
-function sourceFiles(): string[] {
-  if (cachedSources) return cachedSources
-  const proc = spawnSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "*.ts", "*.tsx"], {
-    cwd: REPO,
-    encoding: "utf8",
-    maxBuffer: 32 * 1024 * 1024,
-  })
-  if (proc.status !== 0) throw new Error(`git ls-files failed: ${proc.stderr || proc.error?.message}`)
-  cachedSources = proc.stdout
+let cachedMentions: string[] | undefined
+function filesMentioningChannel(): string[] {
+  if (cachedMentions) return cachedMentions
+  const proc = spawnSync(
+    "git",
+    ["grep", "--untracked", "-l", "-F", "NOVACLAW_CHANNEL", "--", "*.ts", "*.tsx"],
+    { cwd: REPO, encoding: "utf8", maxBuffer: 32 * 1024 * 1024 },
+  )
+  // git grep exits 1 when there are no matches, which for this repo would itself be suspicious — the
+  // vacuity test below is what turns that into a failure rather than a silent pass.
+  if (proc.status !== 0 && proc.status !== 1)
+    throw new Error(`git grep failed (${proc.status}): ${proc.stderr || proc.error?.message}`)
+  cachedMentions = proc.stdout
     .split("\n")
     .map((line) => line.trim())
     .filter((line) => line.length > 0 && !line.includes("/dist/") && !line.includes("/gen/"))
-  return cachedSources
+  return cachedMentions
 }
 
 describe("resolveChannel — semantics", () => {
@@ -133,18 +140,20 @@ describe("one resolver — the ratchet", () => {
 
   test("nothing outside the allowlist reads process.env.NOVACLAW_CHANNEL", () => {
     const allowed = new Set([...DEFINE_SIDE, ...RESOLVER_CONSUMERS, "script/lib/channel.ts", "script/lib/channel.test.ts"])
-    const offenders = sourceFiles().filter(
+    const offenders = filesMentioningChannel().filter(
       (rel) => !allowed.has(rel) && /(process|Bun)\.env\[?["'.]?NOVACLAW_CHANNEL/.test(read(rel)),
     )
     expect(offenders).toEqual([])
   })
 
   test("the sweep is not vacuous", () => {
-    // Three ways this suite could pass while checking nothing: the file list comes back empty, the
-    // allowlist covers everything, or the resolver stopped reading the variable it is supposed to own.
-    const files = sourceFiles()
-    expect(files.length).toBeGreaterThan(500)
-    expect(files).toContain("packages/core/src/installation/version.ts")
+    // Three ways this suite could pass while checking nothing: the grep finds nothing (a broken
+    // pattern, or being run outside the repo), the allowlist covers everything, or the resolver
+    // stopped reading the variable it is supposed to own.
+    const mentions = filesMentioningChannel()
+    expect(mentions.length).toBeGreaterThan(5)
+    expect(mentions).toContain("packages/core/src/installation/version.ts")
+    expect(mentions).toContain("script/lib/channel.ts")
     expect(/process\.env\["NOVACLAW_CHANNEL"\]/.test(read("script/lib/channel.ts"))).toBe(true)
     expect(RESOLVER_CONSUMERS.length).toBeGreaterThan(3)
   })

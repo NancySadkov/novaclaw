@@ -99,6 +99,15 @@ type Pkg = {
   perSubdir?: boolean
   /** Override the hang backstop for a package whose HONEST runtime is close to the default. */
   wallclockMs?: number
+  /**
+   * Override the PER-TEST timeout for a package with a legitimately slow single test.
+   *
+   * Distinct from `wallclockMs`, which bounds the whole unit. Needed where one test does real work
+   * whose cost swings with machine load: sdk-next's bundling test measures 1.2 s on a quiet box and
+   * blew the 15 s default during a full run. Raising the global default instead would weaken the
+   * stuck-test guard for every other package.
+   */
+  timeoutMs?: number
 }
 
 const PACKAGES: Pkg[] = [
@@ -111,7 +120,7 @@ const PACKAGES: Pkg[] = [
   { name: "schema", dir: "packages/schema", args: [] },
   { name: "protocol", dir: "packages/protocol", args: [] },
   { name: "client", dir: "packages/client", args: [] },
-  { name: "sdk-next", dir: "packages/sdk-next", args: ["test/import-boundaries.test.ts"] },
+  { name: "sdk-next", dir: "packages/sdk-next", args: ["test/import-boundaries.test.ts"], timeoutMs: 60_000 },
   { name: "httpapi-codegen", dir: "packages/httpapi-codegen", args: [] },
   { name: "effect-drizzle-sqlite", dir: "packages/effect-drizzle-sqlite", args: [] },
   { name: "http-recorder", dir: "packages/http-recorder", args: [] },
@@ -257,12 +266,12 @@ function reapOrphans(pid: number | undefined, label: string) {
   )
 }
 
-function run(name: string, dir: string, args: string[], wallclockMs: number) {
+function run(name: string, dir: string, args: string[], wallclockMs: number, timeoutMs: number) {
   process.stdout.write(`\n\x1b[1m▶ ${name}\x1b[0m\n`)
   const start = Date.now()
   // stdout stays inherited so a test's own console output streams; stderr is piped because that is
   // where bun's reporter writes — and a failure we cannot read is a failure we cannot fix.
-  const proc = spawnSync("bun", ["test", ...args, `--timeout=${PER_TEST_TIMEOUT_MS}`], {
+  const proc = spawnSync("bun", ["test", ...args, `--timeout=${timeoutMs}`], {
     cwd: dir,
     stdio: ["ignore", "inherit", "pipe"],
     encoding: "utf8",
@@ -328,10 +337,12 @@ for (const pkg of PACKAGES) {
   if (pkg.fullOnly && !FULL) continue
   if (ONLY && !pkg.name.includes(ONLY)) continue
   const wallclock = pkg.wallclockMs ?? PACKAGE_WALLCLOCK_MS
+  const perTest = pkg.timeoutMs ?? PER_TEST_TIMEOUT_MS
   if (pkg.perSubdir) {
-    for (const unit of subUnits(pkg.dir, promotedSubdirs)) run(`${pkg.name} ${unit}`, pkg.dir, [unit], wallclock)
+    for (const unit of subUnits(pkg.dir, promotedSubdirs))
+      run(`${pkg.name} ${unit}`, pkg.dir, [unit], wallclock, perTest)
   } else {
-    run(pkg.name, pkg.dir, pkg.args, wallclock)
+    run(pkg.name, pkg.dir, pkg.args, wallclock, perTest)
   }
 }
 
