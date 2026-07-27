@@ -2,14 +2,14 @@ import { defineConfig } from "electron-vite"
 import appPlugin from "@novaclaw/app/vite"
 import * as fs from "node:fs/promises"
 
+import { resolveChannel } from "../../script/lib/channel"
+
 const NOVACLAW_SERVER_DIST = "../novaclaw/dist/node"
 
-const channel = (() => {
-  const raw = process.env.NOVACLAW_CHANNEL
-  if (raw === "dev" || raw === "beta" || raw === "prod") return raw
-  if (process.env.NOVACLAW_CHANNEL === "latest") return "prod"
-  return "dev"
-})()
+// ONE resolver — see script/lib/channel.ts. The value below becomes the `NOVACLAW_CHANNEL` build
+// define, i.e. `InstallationChannel`, i.e. the instance data dir and DB filename. It must agree with
+// electron-builder.config.ts's app id, and until this was shared it did not (the "latest" alias).
+const channel = resolveChannel()
 
 const nodePtyPkg = `@lydell/node-pty-${process.platform}-${process.arch}`
 

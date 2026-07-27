@@ -1,0 +1,9 @@
+# The repo-root bunfig sets `[test] root = "./do-not-run-tests-from-root"` so a stray `bun test` at the
+# top of the monorepo cannot try to scan every package at once. That guard also made `script/` — the
+# repo's own build tooling — untestable, so `script/lib/heavy-guard.ts` and `script/lib/channel.ts`
+# had no run unit and a test placed beside them would silently never have executed.
+#
+# This file re-opens the root for THIS directory only. `bun test` picks up the bunfig in its cwd, so
+# `script/test.ts`'s `script` run unit runs from here and scans `lib/` alone.
+[test]
+root = "./lib"

@@ -1,6 +1,7 @@
-import { $ } from "bun"
 import semver from "semver"
 import path from "path"
+
+import { resolveChannel } from "../../../script/lib/channel"
 
 const rootPkgPath = path.resolve(import.meta.dir, "../../../package.json")
 const rootPkg = await Bun.file(rootPkgPath).json()
@@ -18,15 +19,21 @@ if (!semver.satisfies(process.versions.bun, expectedBunVersionRange)) {
 }
 
 const env = {
-  NOVACLAW_CHANNEL: process.env["NOVACLAW_CHANNEL"],
   NOVACLAW_VERSION: process.env["NOVACLAW_VERSION"],
   NOVACLAW_RELEASE: process.env["NOVACLAW_RELEASE"],
 }
-const CHANNEL = await (async () => {
-  if (env.NOVACLAW_CHANNEL) return env.NOVACLAW_CHANNEL
-  return await $`git branch --show-current`.text().then((x) => x.trim())
-})()
-const IS_PREVIEW = CHANNEL !== "latest"
+
+// The channel is NOT discovered here. This used to be `env.NOVACLAW_CHANNEL ?? git branch
+// --show-current`, which threw in the published source zip (no .git) and otherwise baked a BRANCH
+// NAME into shipped binaries — and the channel becomes `InstallationChannel`, i.e. the instance data
+// dir and the DB filename, so two branches silently meant two databases. `script/lib/channel.ts` is
+// now the ONE resolver, shared with the desktop build scripts, electron-builder and electron-vite;
+// its doc comment carries the semantics (unset -> dev, "latest" -> prod, anything else throws).
+const CHANNEL = resolveChannel()
+// Preview = "not the production channel". This was `CHANNEL !== "latest"`, which the shared
+// resolver's "latest" -> "prod" normalisation would make ALWAYS TRUE — the normalisation is what
+// makes deriving it from "prod" mandatory rather than cosmetic.
+const IS_PREVIEW = CHANNEL !== "prod"
 
 // The version is REPO STATE, not something to discover at build time. This used to ask the npm
 // registry for `novaclaw-ai/latest` and increment it — inherited from the opencode fork and dead on
