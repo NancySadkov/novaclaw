@@ -34,6 +34,18 @@ const PathInfo = Schema.Struct({
   // directory-picker's "Places" rail. Existence-checked server-side; suppressed in virtual
   // mode. Optional so old clients ignore it.
   places: Schema.optional(Schema.Array(Schema.Struct({ name: Schema.String, path: Schema.String }))),
+  // The remaining storage locations, surfaced so Settings can SHOW a user where their instance keeps
+  // things (Advanced+). Not needed to operate the app, which is why they are optional — but a user who
+  // wants to back up, inspect or delete an instance should never have to guess, and "where is the
+  // database?" was unanswerable from the UI. `db` in particular is channel-dependent
+  // (`novaclaw.db` on prod, `novaclaw-<channel>.db` otherwise), so it cannot be derived client-side.
+  cache: Schema.optional(Schema.String),
+  tmp: Schema.optional(Schema.String),
+  log: Schema.optional(Schema.String),
+  db: Schema.optional(Schema.String),
+  // Set only when this instance was pinned with `--home`/NOVACLAW_HOME, so the UI can say plainly
+  // that it is running out of one folder rather than the shared per-user locations.
+  instanceHome: Schema.optional(Schema.String),
 }).annotate({ identifier: "Path" })
 
 // The persisted home-app registry (B14). Manifests are LAUNCHERS (route/URL/prompt), not code;

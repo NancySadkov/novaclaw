@@ -13,6 +13,7 @@ import { SettingsGeneralV2 } from "./general"
 import { SettingsProfileV2 } from "./profile"
 import { SettingsMemoryV2 } from "./memory"
 import { SettingsAboutV2 } from "./about"
+import { SettingsStorageV2 } from "./storage"
 import { SettingsAppearanceV2 } from "./appearance"
 import { SettingsKeybinds } from "../settings-keybinds"
 import { SettingsModelsV2 } from "./models"
@@ -37,6 +38,9 @@ const TAB_LEVELS: Record<string, ExpertiseLevel> = {
   // Web search "just works" for a normal user via the built-in; the override (own SearXNG) +
   // per-engine toggles are a power-user surface → Advanced (and therefore Developer too).
   "web-search": "advanced",
+  // Where the instance keeps its files. A power-user/diagnostic surface, not something a normal
+  // user needs — Advanced, which Developer also satisfies.
+  storage: "advanced",
   introspection: "developer",
   affective: "developer",
   quality: "developer",
@@ -175,6 +179,12 @@ export const DialogSettings: Component<{
                 <div class="flex flex-col gap-1.5">
                   <TabsV2.SectionTitle>{language.t("settings.section.safety")}</TabsV2.SectionTitle>
                   <div class="flex flex-col gap-1.5 w-full">
+                    <Show when={tabVisible("storage")}>
+                      <TabsV2.Trigger value="storage">
+                        <Icon name="folder" />
+                        {language.t("settings.tab.storage")}
+                      </TabsV2.Trigger>
+                    </Show>
                     <TabsV2.Trigger value="recovery">
                       <Icon name="reset" />
                       {language.t("settings.tab.recovery")}
@@ -246,6 +256,11 @@ export const DialogSettings: Component<{
         <Show when={tabVisible("quality")}>
           <TabsV2.Content value="quality" class="settings-v2-panel">
             <SettingsQualityV2 />
+          </TabsV2.Content>
+        </Show>
+        <Show when={tabVisible("storage")}>
+          <TabsV2.Content value="storage" class="settings-v2-panel">
+            <SettingsStorageV2 />
           </TabsV2.Content>
         </Show>
         <TabsV2.Content value="recovery" class="settings-v2-panel">

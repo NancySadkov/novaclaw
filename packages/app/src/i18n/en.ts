@@ -1137,6 +1137,40 @@ export const dict = {
   "settings.tab.shortcuts": "Shortcuts",
   "settings.tab.recovery": "Recovery",
   "settings.tab.about": "About",
+  "settings.tab.storage": "Storage",
+
+  // The Storage tab (Advanced+): where this instance keeps its files. Read-only — these are chosen at
+  // startup by --home/NOVACLAW_HOME and the XDG environment, so an editable field would be a lie.
+  "settings.storage.title": "Storage locations",
+  "settings.storage.description":
+    "Where this instance keeps its files on disk. Useful for backing it up, inspecting it, or moving it to another machine. These are set when NovaClaw starts, so they are shown here rather than edited.",
+  "settings.storage.copy": "Copy path",
+  "settings.storage.open": "Open folder",
+  "settings.storage.copied": "Path copied",
+  "settings.storage.copyFailed": "Could not copy the path",
+  "settings.storage.openFailed": "Could not open that folder",
+  "settings.storage.instanceHome": "Instance home",
+  "settings.storage.instanceHome.description":
+    "This instance was started with --home, so everything below lives inside this one folder. Copy or delete it and you copy or delete the whole instance. Run another NovaClaw with a different --home to keep two independent instances on one machine.",
+  "settings.storage.config": "Settings",
+  "settings.storage.config.description":
+    "Your settings. They are stored in the database below; this folder is only used to import or export a settings file.",
+  "settings.storage.data": "Data",
+  "settings.storage.data.description": "Chats, knowledge, recipes, notes and downloaded files.",
+  "settings.storage.db": "Database",
+  "settings.storage.db.description":
+    "The single SQLite file holding your settings, chats and sessions. This is the one file to copy if you want to back up or move an instance — close NovaClaw first.",
+  "settings.storage.scratch": "Scratch folder",
+  "settings.storage.scratch.description":
+    "Where an agent works when you start a chat without picking a folder. Safe to empty when nothing is running.",
+  "settings.storage.log": "Logs",
+  "settings.storage.log.description": "Diagnostic logs. Handy when reporting a problem.",
+  "settings.storage.state": "State",
+  "settings.storage.state.description": "Window layout and other small bits of local state.",
+  "settings.storage.cache": "Cache",
+  "settings.storage.cache.description": "Regenerated automatically; safe to delete.",
+  "settings.storage.tmp": "Temporary files",
+  "settings.storage.tmp.description": "Short-lived working files. Cleared by the operating system.",
 
   "settings.recovery.row.resetUi.title": "Reset appearance and layout",
   "settings.recovery.row.resetUi.description":

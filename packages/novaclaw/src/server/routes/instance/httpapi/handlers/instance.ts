@@ -10,6 +10,7 @@ import * as InstanceState from "@/effect/instance-state"
 import { Format } from "@/format"
 import { AppRegistry } from "@novaclaw/core/app-registry"
 import { Global } from "@novaclaw/core/global"
+import { DatabasePath } from "@novaclaw/core/database/db-path"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { VirtualFs } from "@novaclaw/core/virtual-fs"
 import { Scratch } from "@novaclaw/core/scratch"
@@ -83,6 +84,13 @@ export const instanceHandlers = HttpApiBuilder.group(InstanceHttpApi, "instance"
         directory: ctx.directory,
         roots,
         scratchDir,
+        cache: Global.Path.cache,
+        tmp: Global.Path.tmp,
+        log: Global.Path.log,
+        // The instance database file. Resolved by the server because the filename depends on the
+        // release channel, so a client cannot compute it from `data`.
+        db: DatabasePath.path(),
+        ...(Global.Path.explicitHome ? { instanceHome: Global.Path.explicitHome } : {}),
         ...(places.length > 0 ? { places } : {}),
         ...(virtual ? { virtual: true, virtualRoot } : {}),
       }
