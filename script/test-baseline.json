@@ -1,0 +1,73 @@
+{
+  "note": "Baseline for `bun run test`. `units` = tests bun reported SKIPPED per run unit; `failing` = failures PINNED as known, by name. Both are ratchets: any change fails the run and prints what moved. Pin only failures that are understood and filed — never to make a red go away. Seeded 2026-07-27 (v0.2.0 PREP Wave 0).",
+  "reasons": {
+    "novaclaw:server": "Windows-from-source platform failures, pre-existing and never before run (these suites were --full-only until Wave 0 promoted them). 182 pass / 34 fail. Filed in todo/v0.2.0-prep.md.",
+    "novaclaw:config": "REGRESSION from 5212c03ae 'config: stop seeding from the launch directory'. The test fixture (test/fixture/fixture.ts:147-155) writes novaclaw.json into the LAUNCH directory, which is exactly the seeding leg that commit removed, so the config is never read. The fixture needs to provision through the config store, not a file. Filed in todo/v0.2.0-prep.md."
+  },
+  "units": {
+    "llm": 30,
+    "core": 88,
+    "novaclaw:server": 23,
+    "novaclaw:v2": 3,
+    "schema": 0,
+    "protocol": 0,
+    "client": 0,
+    "sdk-next": 0,
+    "httpapi-codegen": 0,
+    "effect-drizzle-sqlite": 0,
+    "http-recorder": 0,
+    "sdk-js": 0,
+    "session-ui": 0,
+    "ui": 0,
+    "app:unit": 0,
+    "app:browser": 0,
+    "desktop": 0,
+    "server": 0,
+    "novaclaw:config": 0,
+    "novaclaw:tool": 0
+  },
+  "failing": {
+    "novaclaw:server": [
+      "HttpApi SDK > matches generated SDK missing session errors",
+      "HttpApi SDK > uses the generated SDK for safe instance routes",
+      "HttpApi Server.listen > plugin client requests reuse the listening server instance",
+      "HttpApi UI fallback > accepts auth token for the web UI",
+      "HttpApi UI fallback > accepts basic auth for the web UI",
+      "HttpApi UI fallback > accepts basic auth passwords containing colons for the web UI",
+      "HttpApi UI fallback > returns 404 from the UI catch-all when no embedded UI is present",
+      "HttpApi compression > encodes responses > gzips JSON when Accept-Encoding includes gzip and body exceeds threshold",
+      "HttpApi compression > encodes responses > prefers gzip when both gzip and deflate are acceptable",
+      "HttpApi compression > encodes responses > uses deflate when only deflate is acceptable",
+      "HttpApi instance context middleware > falls back to the raw directory when URI decoding fails",
+      "HttpApi workspace routing middleware > uses directory query/header fallback when no workspace is selected",
+      "PublicApi OpenAPI v2 errors > documents nested legacy global sync events",
+      "PublicApi OpenAPI v2 errors > documents project not-found errors",
+      "PublicApi OpenAPI v2 errors > documents session busy errors",
+      "config HttpApi > serves config update through the default server app",
+      "config HttpApi > serves config with active provider model status",
+      "event HttpApi > delivers instance events after the initial event",
+      "instance HttpApi > emits a sync fence header for fixed-workspace mutations",
+      "instance HttpApi > returns typed not found bodies for missing projects",
+      "mcp HttpApi > returns unsupported OAuth error responses",
+      "mcp HttpApi > serves add, connect, and disconnect endpoints",
+      "mcp HttpApi > serves deterministic OAuth endpoints",
+      "mcp HttpApi > serves status endpoint",
+      "project directories and copies endpoints > lists directories and manages git worktree copies",
+      "project.initGit endpoint > does not reload when the project is already git",
+      "project.initGit endpoint > initializes git and reloads immediately",
+      "promptAsync routes to the V2 native engine (F1b: one engine) > fresh session + model routes promptAsync to V2 (prompted on stream, busy→idle bracket, zero legacy rows)",
+      "provider HttpApi > keeps provider.models hook input mutations out of provider state",
+      "provider HttpApi > serves provider lists when auth loaders add runtime fetch options",
+      "reference HttpApi > lists usable references resolved in the server workspace",
+      "v2 SDK error shape > 400 schema rejection: SDK extracts the field-level reason from the NamedError body",
+      "v2 location HttpApi > returns command and skill snapshots with resolved locations",
+      "workspace HttpApi > proxies remote workspace requests selected from session ownership"
+    ],
+    "novaclaw:config": [
+      "Agent.get includes color from config",
+      "agent color parsed from project config",
+      "import concats + dedups instructions across the global dir and NOVACLAW_CONFIG_CONTENT",
+      "imports the global-dir jsonc into the stores on first read — and never reads it again"
+    ]
+  }
+}

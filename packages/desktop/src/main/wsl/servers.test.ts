@@ -11,13 +11,28 @@ import { createWslServersController, type WslServerConfig } from "./servers"
 let persistedServers: WslServerConfig[] = []
 let releaseNovaclawResolve: (() => void) | undefined
 
+/**
+ * Release the pending NovaClaw check.
+ *
+ * Called through a function rather than `releaseNovaclawResolve?.()` inline: the variable is only ever
+ * assigned from inside a closure (the `new Promise` executor below), which TypeScript's control-flow
+ * analysis cannot see, so after the `= undefined` at the top of each test it narrows the variable to
+ * `undefined` and `?.()` becomes a call on `never`. Inside a function body the DECLARED type applies,
+ * which is both correct and true to what happens at runtime.
+ */
+function releaseNovaclaw() {
+  releaseNovaclawResolve?.()
+}
+
 test("starts every configured WSL server on initialization", () => {
-  expect(
-    wslServerIdsToStartOnInitialize([
-      { id: "wsl:Debian", distro: "Debian" },
-      { id: "wsl:Ubuntu-24.04", distro: "Ubuntu-24.04" },
-    ]),
-  ).toEqual(["wsl:Debian", "wsl:Ubuntu-24.04"])
+  // Typed as WslServerConfig[] rather than passed as a bare literal: the helper declares the narrower
+  // `{ id: string }[]` it actually reads, and a fresh literal carrying `distro` would trip the
+  // excess-property check. Naming the real type is also what the caller in servers.ts:283 passes.
+  const servers: WslServerConfig[] = [
+    { id: "wsl:Debian", distro: "Debian" },
+    { id: "wsl:Ubuntu-24.04", distro: "Ubuntu-24.04" },
+  ]
+  expect(wslServerIdsToStartOnInitialize(servers)).toEqual(["wsl:Debian", "wsl:Ubuntu-24.04"])
 })
 
 test("rejects an update that did not install the desktop version", () => {
@@ -116,7 +131,7 @@ test("ignores stale background NovaClaw checks after removing a WSL server", asy
   await controller.addServer("Debian")
   await waitFor(() => !!releaseNovaclawResolve)
   await controller.removeServer("wsl:Debian")
-  releaseNovaclawResolve?.()
+  releaseNovaclaw()
   await new Promise((resolve) => setTimeout(resolve, 0))
 
   expect(controller.getState().servers).toEqual([])
@@ -135,7 +150,7 @@ test("ignores stale startup NovaClaw checks after removing a WSL server", async 
   await controller.initialize()
   await waitFor(() => !!releaseNovaclawResolve)
   await controller.removeServer("wsl:Debian")
-  releaseNovaclawResolve?.()
+  releaseNovaclaw()
   await new Promise((resolve) => setTimeout(resolve, 0))
 
   expect(controller.getState().servers).toEqual([])

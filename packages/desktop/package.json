@@ -9,7 +9,8 @@
     "name": "Nancy Sadkov"
   },
   "scripts": {
-    "typecheck": "tsgo -b",
+    "typecheck": "tsgo -b && tsgo --noEmit -p tsconfig.test.json",
+    "test": "bun test src electron-builder.config.test.ts --only-failures",
     "predev": "bun ./scripts/predev.ts",
     "dev": "electron-vite dev",
     "prebuild": "bun ./scripts/prebuild.ts",

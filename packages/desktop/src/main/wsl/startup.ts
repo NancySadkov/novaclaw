@@ -9,7 +9,15 @@ export function expectNovaclawVersion(installed: string | null, expected: string
   )
 }
 
-export const pendingRestartAfterWslInstall = (runtime: { available: boolean }) => !runtime.available
+// Takes the whole probe result rather than just the field it reads: `servers.ts:310` passes
+// `probeWslRuntime()`'s output straight in, and declaring the narrower shape made a caller written
+// with a real probe result fail the excess-property check. The extra fields are documented as
+// deliberately ignored.
+export const pendingRestartAfterWslInstall = (runtime: {
+  available: boolean
+  version?: string | null
+  error?: string | null
+}) => !runtime.available
 
 export async function pollWslHealth(check: () => Promise<boolean>, signal: AbortSignal, interval = 100) {
   while (!signal.aborted) {
