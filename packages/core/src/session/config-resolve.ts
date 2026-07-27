@@ -42,6 +42,19 @@ export const MODE_RULES: Record<PermissionMode, readonly PermissionRule[]> = {
     { action: "create", resource: "*", effect: "deny" },
     { action: "trash", resource: "*", effect: "deny" },
     { action: "external_directory_write", resource: "*", effect: "deny" },
+    // "Read only" has to MEAN read only. `bash` and `js` are arbitrary EXECUTION, not reads — a
+    // shell command is `rm -rf` away from destroying the project the user asked us only to look
+    // at, and `js` evaluates code the same way. Without these two rules the agent baseline's
+    // catch-all `* → allow` (plugin/agent.ts) wins for both, so Analyze advertised "Read only"
+    // while permitting the single most destructive thing in the tool set.
+    //
+    // Why a BLANKET deny and not a read-only command allowlist: for `bash` the `resource` is the
+    // raw command STRING, and matching it is prompt-reduction, never containment (the boundary
+    // note above `evaluate` in permission.ts, and `util/wildcard.ts`). An allowlist would restore
+    // exactly the false promise this rule exists to end. A user who needs to run something
+    // switches to Build — that is what the mode picker is for.
+    { action: "bash", resource: "*", effect: "deny" },
+    { action: "js", resource: "*", effect: "deny" },
   ],
   ask: [
     { action: "edit", resource: "*", effect: "ask" },
@@ -51,6 +64,13 @@ export const MODE_RULES: Record<PermissionMode, readonly PermissionRule[]> = {
     { action: "bash", resource: "*", effect: "ask" },
   ],
   // Surgical: precise edits + new files stay possible; regenerating a whole existing file is not.
+  // ⚠️ It deliberately does NOT deny `bash`/`js`, unlike `plan` above. Surgical is a rule about the
+  // SHAPE of a write, not a posture — it never promised read-only, and it is no longer offered in
+  // the mode picker at all: it became the Tuning switch "Edits instead of overwriting", whose
+  // feature rule (permission.ts, `resolved.surgicalEdits`) is this exact single deny. Adding an
+  // execution deny here would fork the two surfaces — picking the legacy mode would kill bash while
+  // ticking the switch would not — which is a fresh false promise, not a fix for one. Pinned by
+  // `permission-modes.test.ts`.
   surgical: [{ action: "write", resource: "*", effect: "deny" }],
   bypass: [
     { action: "edit", resource: "*", effect: "allow" },

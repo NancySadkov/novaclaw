@@ -14,17 +14,62 @@ const agentDefaults = [
 const effect = (mode: keyof typeof MODE_RULES, action: string, resource = "src/x.ts") =>
   PermissionV2.evaluate(action, resource, [...agentDefaults, ...MODE_RULES[mode]]).effect
 
+// The HARD-ARM predicate, replicated exactly from permission.ts's `denied()` (a closure, so it
+// cannot be imported). The evaluator checks the mode overlay IN ISOLATION — before the configured
+// rules, before the read baseline, and before any saved answer — and returns deny outright if it
+// bites (`if (denied(input, configuredRules) || denied(input, modeRules) || …)`). That early arm is
+// what makes a mode deny un-softenable, so this is the predicate a mode-deny test must assert.
+const modeDenies = (mode: keyof typeof MODE_RULES, action: string, resource: string) =>
+  PermissionV2.evaluate(action, resource, MODE_RULES[mode]).effect === "deny"
+
 describe("MODE_RULES overlays (1K)", () => {
-  test("plan denies the whole mutation cluster", () => {
+  test("plan (Analyze) denies the whole mutation cluster AND arbitrary execution", () => {
     for (const action of ["edit", "write", "create", "trash", "external_directory_write"])
       expect(effect("plan", action)).toBe("deny")
+    // The mode's own UI copy is "Read only", so execution has to go too: `bash` runs anything the
+    // host can run and `js` evaluates code. Both were permitted outright before this rule existed.
+    expect(effect("plan", "bash", "rm -rf /")).toBe("deny")
+    expect(effect("plan", "bash", "ls")).toBe("deny")
+    expect(effect("plan", "js", "process.exit(0)")).toBe("deny")
+    // ...while actually reading — the whole point of the mode — is untouched.
     expect(effect("plan", "read")).toBe("allow")
+    expect(effect("plan", "explore")).toBe("allow")
   })
 
-  test("surgical denies only wholesale overwrite", () => {
+  test("NEGATIVE CONTROL: strip the execution rules and Analyze permits `rm -rf` again", () => {
+    // Proves the assertions above bite because of MODE_RULES.plan and nothing else. If someone
+    // deletes the bash/js denies, the test above goes red — and this one stays green, naming why.
+    const preFix = MODE_RULES.plan.filter((rule) => rule.action !== "bash" && rule.action !== "js")
+    expect(PermissionV2.evaluate("bash", "rm -rf /", [...agentDefaults, ...preFix]).effect).toBe("allow")
+    expect(PermissionV2.evaluate("js", "1+1", [...agentDefaults, ...preFix]).effect).toBe("allow")
+    // ...and the hard arm never trips either, so there was nothing to soften in the first place.
+    expect(PermissionV2.evaluate("bash", "rm -rf /", preFix).effect).not.toBe("deny")
+  })
+
+  test("a saved allow-always CANNOT soften Analyze's execution deny (mode denies are HARD)", () => {
+    // What "always allow bash" persists. Saved rules land LAST, so by last-match-wins alone they
+    // would hand the command straight back — which is exactly why the mode overlay is also checked
+    // on its own, up front, before saved answers are ever consulted.
+    const savedAllowAlways = { action: "bash", resource: "*", effect: "allow" as const }
+    const all = [...agentDefaults, ...MODE_RULES.plan, savedAllowAlways]
+    expect(PermissionV2.evaluate("bash", "rm -rf /", all).effect).toBe("allow") // ordering alone: NOT enough
+    expect(modeDenies("plan", "bash", "rm -rf /")).toBe(true) // the hard arm: denies regardless
+    expect(modeDenies("plan", "js", "process.exit(0)")).toBe(true)
+    // Contrast, so this asserts something: under `ask` the same saved answer is SUPPOSED to win,
+    // and no hard arm trips (the existing quiets-consent test below is the other half of that).
+    expect(modeDenies("ask", "bash", "ls")).toBe(false)
+  })
+
+  test("surgical denies only wholesale overwrite — and deliberately still permits execution", () => {
     expect(effect("surgical", "write")).toBe("deny")
     expect(effect("surgical", "edit")).toBe("allow")
     expect(effect("surgical", "create")).toBe("allow")
+    // Pinned on purpose (see the note on MODE_RULES.surgical): surgical constrains the SHAPE of a
+    // write, never the posture, and it is now the Tuning switch "Edits instead of overwriting" —
+    // whose feature rule is this same lone `write` deny. An execution deny here would make the mode
+    // and the switch disagree. Changing this line means changing the switch in permission.ts too.
+    expect(effect("surgical", "bash", "ls")).toBe("allow")
+    expect(effect("surgical", "js", "1+1")).toBe("allow")
   })
 
   test("ask sends the mutation/exec cluster through consent (never silent with an allow-all baseline)", () => {

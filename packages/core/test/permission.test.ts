@@ -495,6 +495,32 @@ describe("PermissionV2 — the surgical / ask switches", () => {
         })
     }),
   )
+
+  it.effect("Analyze denies execution, and a saved allow-always cannot soften it", () =>
+    Effect.gen(function* () {
+      // The companion assertions in src/permission-modes.test.ts prove MODE_RULES.plan CONTAINS the
+      // bash/js denies. They cannot prove the evaluator still CONSULTS them: deleting
+      // `denied(input, modeRules)` from permission.ts's hard early-deny arm leaves that pure test
+      // green while Analyze silently permits `rm -rf` again. This is the end-to-end half.
+      yield* setup(buildAgent)
+      yield* insertSession({ id: "ses_analyze_exec", permissionMode: "plan" })
+      const service = yield* PermissionV2.Service
+      const sessionID = SessionV2.ID.make("ses_analyze_exec")
+
+      for (const action of ["bash", "js"]) {
+        const input = assertion({ sessionID, action, resources: ["rm -rf /"], save: ["*"] })
+        // `ask` reports the verdict...
+        expect(yield* service.ask(input)).toMatchObject({ effect: "deny" })
+        // ...and `assert` — the path every tool takes — fails immediately rather than parking a
+        // question. That absence is the guarantee: a mode deny sits in the HARD arm above the
+        // ruleset, so the user is never offered an "allow always" that could soften it. Asserting
+        // the empty queue is how the sibling unattended-confinement test proves the same shape.
+        const error = yield* service.assert(input).pipe(Effect.flip)
+        expect(error).toBeInstanceOf(PermissionV2.DeniedError)
+        expect(yield* service.list()).toEqual([])
+      }
+    }),
+  )
 })
 
 describe("PermissionV2 — unattended confinement stance", () => {
