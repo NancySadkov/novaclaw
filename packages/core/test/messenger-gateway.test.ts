@@ -1,9 +1,10 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
 import nodeFs from "node:fs"
 import os from "node:os"
 import nodePath from "node:path"
 import type { Cause } from "effect"
-import { DateTime, Duration, Effect, Layer, Queue, Stream } from "effect"
+import { Clock, DateTime, Duration, Effect, Layer, Queue, Stream } from "effect"
+import * as TestClock from "effect/testing/TestClock"
 import { Messenger } from "@novaclaw/schema/messenger"
 import { SessionEvent } from "@novaclaw/schema/session-event"
 import { SessionMessage } from "@novaclaw/schema/session-message"
@@ -206,6 +207,26 @@ const session = makeSessionMock()
 
 const graph = LayerNode.group([Database.node, EventV2.node, FSUtil.node, MessengerStore.node, MessengerGateway.node])
 
+/**
+ * ⏱ **Which clock a test runs on, and why it matters here.** (2026-07-28, the test-speed program.)
+ *
+ * `it.effect` gives the body Effect's TestClock — virtual time that only moves when the test moves
+ * it. `it.live` gives it the real wall clock. This file used to be the single most expensive suite
+ * in `core`: **17.9 s across 23 tests**, and profiling said the cost was NOT the test's own sleeps
+ * (those totalled 1.4 s). It was three PRODUCTION timers the tests waited out on the wall clock —
+ * `DISPATCH_ACK_DELAY_MS` (6 s), `NARRATION_SETTLE_MS` (2.5 s, twice over) and `BACKOFF_BASE_MS`
+ * (1 s, four times over). Five tests carried 19.4 s of the 21.9 s. They are now on the TestClock and
+ * the file runs in **3.0 s**; each is marked with a `⏱ VIRTUAL TIME` note saying which timer it owns.
+ *
+ * **The other 23 stay live, deliberately, for one shared reason.** None of them waits on a
+ * production timer — the most expensive is 0.37 s — and several assert that something did NOT
+ * happen ("give the gateway a beat; nothing should be injected"). A negative assertion's whole
+ * strength is the margin of real elapsed time it gives the pipeline to misbehave in; replacing that
+ * with a handful of virtual yields would quietly weaken exactly the default-deny and audience-lurk
+ * guarantees those tests exist for. Slow-and-only beats fast-and-hollow.
+ *
+ * The ratchet that keeps both halves honest is at the bottom of this file.
+ */
 const it = testEffect(
   AppNodeBuilder.build(graph, [
     [MessengerDrivers.node, Layer.succeed(MessengerDrivers.Service, MessengerDrivers.Service.of(MessengerDrivers.make([fake.driver])))],
@@ -252,12 +273,51 @@ const message = (
   at: Date.now(),
 })
 
+/**
+ * Let `millis` pass on whichever clock this test is running on, and yield to the gateway's fibers.
+ *
+ * ⚠️ This one function is why a single set of helpers can serve both `it.live` and `it.effect`
+ * bodies. Under the live clock it is an ordinary sleep. Under Effect's TestClock (`it.effect`)
+ * `Effect.sleep` would block FOREVER — virtual time never moves on its own — so the same call must
+ * `adjust` instead, which releases every production sleep whose deadline has passed and yields
+ * between each one (`TestClock.run` forks a `yieldNow` up front and yields again after each
+ * released sleep).
+ *
+ * Duck-typed on `adjust` rather than threaded through as a flag: the TestClock is the only Clock in
+ * the tree that has one, and a wrong guess degrades to a real 25 ms sleep — never to a hang.
+ */
+const advance = (millis: number) =>
+  Clock.clockWith((clock) => {
+    const testClock = clock as Clock.Clock & Partial<TestClock.TestClock>
+    return testClock.adjust === undefined
+      ? Effect.sleep(Duration.millis(millis))
+      : testClock.adjust(Duration.millis(millis))
+  })
+
+/**
+ * `Effect.sleep`'s replacement inside an `it.effect` body — and it must be a LOOP of small steps,
+ * never one `TestClock.adjust(4000)`.
+ *
+ * ⚠️ The gateway arms its narration-settle and dispatch-ack timers on FORKED fibers (gateway.ts
+ * `fork(...)`, a FiberSet runtime), so the `Effect.sleep` we are waiting out is not registered at
+ * the instant we publish the event that arms it. A single big jump can therefore sail past the
+ * deadline before the sleep exists; the fork then registers at `now + settle` and never fires, and
+ * the test PASSES because nothing happened. That is the one way this refactor could silently delete
+ * its own coverage, so time moves in 25 ms steps and every step yields.
+ */
+const settle = (millis: number, step = 25) =>
+  Effect.gen(function* () {
+    for (let elapsed = 0; elapsed < millis; elapsed += step) yield* advance(step)
+  })
+
 const eventually = <A>(effect: Effect.Effect<A>, predicate: (value: A) => boolean, label: string, rounds = 200) =>
   Effect.gen(function* () {
     for (let round = 0; round < rounds; round++) {
       const value = yield* effect
       if (predicate(value)) return value
-      yield* Effect.sleep(Duration.millis(25))
+      // 25 ms per round: real under `it.live`, virtual under `it.effect`. Bounded either way — a
+      // poll that can hang is strictly worse than a test that takes four seconds.
+      yield* advance(25)
     }
     return yield* Effect.die(`timeout waiting for ${label}`)
   })
@@ -292,7 +352,9 @@ describe("MessengerGateway", () => {
     }),
   )
 
-  it.live("a failing connect goes to backoff with the reason, then reconnects", () =>
+  // ⏱ VIRTUAL TIME (`it.effect`). The reconnect it waits for is BACKOFF_BASE_MS behind an
+  // `Effect.sleep` in the connection loop — a full second of the 1.04 s this cost.
+  it.effect("a failing connect goes to backoff with the reason, then reconnects", () =>
     Effect.gen(function* () {
       const store = yield* MessengerStore.Service
       const gateway = yield* MessengerGateway.Service
@@ -531,7 +593,10 @@ describe("MessengerGateway pipeline", () => {
     }),
   )
 
-  it.live("the self-chat console DISPATCHES addressed prompts as child tasks — never inline (§0.1.5)", () =>
+  // ⏱ VIRTUAL TIME (`it.effect`). The subject includes DISPATCH_ACK_DELAY_MS — the gateway holds
+  // the "on it" ack for six seconds and only sends it if the task is STILL running — so on the live
+  // clock this test spent 6.1 s doing nothing but waiting for that timer (measured 2026-07-28).
+  it.effect("the self-chat console DISPATCHES addressed prompts as child tasks — never inline (§0.1.5)", () =>
     Effect.gen(function* () {
       const { store, gateway, account, queue } = yield* online("console")
       yield* store.createBinding({ accountID: account.id, chatID: "self1", sessionID: "ses_alpha", trust: "operator" })
@@ -615,7 +680,11 @@ describe("MessengerGateway pipeline", () => {
     }),
   )
 
-  it.live("a question costs ONE message: the sign-off narration and the redundant ✅ are both dropped", () =>
+  // ⏱ VIRTUAL TIME (`it.effect`). This test's whole subject is a production timer — the gateway
+  // holds each narration for NARRATION_SETTLE_MS and drops it if the task ended meanwhile — so on
+  // the live clock it cost 6.6 s, the most expensive test in `core` (measured 2026-07-28). Nothing
+  // here touches a socket, a file or a child process, so the wait is the only reason it was slow.
+  it.effect("a question costs ONE message: the sign-off narration and the redundant ✅ are both dropped", () =>
     Effect.gen(function* () {
       // The live complaint (2026-07-23): "Nova, what time is it?" came back as four messages — an
       // ack, the answer, a "no further action needed" sign-off, and a ✅ restating the answer.
@@ -664,7 +733,7 @@ describe("MessengerGateway pipeline", () => {
       })
 
       // Well past both the narration settle and any pacing: exactly one message, the answer.
-      yield* Effect.sleep(Duration.millis(MessengerPipeline.NARRATION_SETTLE_MS + 1500))
+      yield* settle(MessengerPipeline.NARRATION_SETTLE_MS + 1500)
       const sent = fake.state.sent.slice(sentBefore).filter((s) => s.chatID === "self3")
       expect(sent.some((s) => s.text?.includes("no further action needed"))).toBe(false)
       expect(sent.some((s) => s.text?.includes("✅"))).toBe(false)
@@ -673,7 +742,9 @@ describe("MessengerGateway pipeline", () => {
     }),
   )
 
-  it.live("a dispatched task reports progress, notices, and its exit result back to the console (§0.1.5)", () =>
+  // ⏱ VIRTUAL TIME (`it.effect`). "Progress relayed" is gated on the same NARRATION_SETTLE_MS hold
+  // as the test above — 2.5 s of the 2.8 s this used to cost was that one production timer.
+  it.effect("a dispatched task reports progress, notices, and its exit result back to the console (§0.1.5)", () =>
     Effect.gen(function* () {
       const { store, gateway, account, queue } = yield* online("dispatch-report")
       const events = yield* EventV2.Service
@@ -701,6 +772,9 @@ describe("MessengerGateway pipeline", () => {
         Effect.sync(() => fake.state.sent.slice(sentBefore)),
         (sent) => sent.some((s) => s.chatID === "self2" && s.text?.includes("leaks a timer")),
         "progress relayed",
+        // NARRATION_SETTLE_MS / 25 ms per round, plus room for the fork to arm — the default 200
+        // rounds would only just cover the 2.5 s hold, and "only just" is how a loaded box flakes.
+        Math.ceil(MessengerPipeline.NARRATION_SETTLE_MS / 25) + 200,
       )
 
       // A synthetic notice (self-drive cap, runner error) relays too — never silent.
@@ -738,7 +812,7 @@ describe("MessengerGateway pipeline", () => {
         result: "should not be posted",
         timestamp: DateTime.makeUnsafe(4),
       })
-      yield* Effect.sleep(Duration.millis(150))
+      yield* settle(150)
       expect(fake.state.sent.slice(quietBefore).some((s) => s.text?.includes("should not be posted"))).toBe(false)
 
       yield* store.removeAccount(account.id)
@@ -1213,7 +1287,19 @@ const itFlap = testEffect(
 )
 
 describe("MessengerGateway backoff", () => {
-  itFlap.live("a connection that STAYED UP resets the ladder — a routine reconnect never pins the account at the cap", () =>
+  // ⏱ HYBRID CLOCK (`it.effect` + one deliberate `TestClock.withLive`). Read this before "fixing"
+  // the odd-looking live sleep below.
+  //
+  // The gateway measures uptime with `Date.now()` (gateway.ts:917 stamps it, :974 subtracts it) but
+  // waits out the backoff with `Effect.sleep` (:979). Those are two different clocks, so exactly one
+  // of the two waits in this test can be virtualised:
+  //   · the healthy-connection window MUST be real, or `uptime` reads ~0, the ladder never resets,
+  //     and the delays come back 1 s / 3 s / 9 s — the very bug this test pins;
+  //   · the three BACKOFF_BASE_MS waits are pure `Effect.sleep` and cost nothing under TestClock.
+  // Result: 2.87 s → ~0.9 s, and the assertion still rides the real clock it is written against.
+  // ⚠️ If gateway.ts ever measures uptime through `Clock.currentTimeMillis`, delete the `withLive`
+  // and this whole test becomes free.
+  itFlap.effect("a connection that STAYED UP resets the ladder — a routine reconnect never pins the account at the cap", () =>
     Effect.gen(function* () {
       const store = yield* MessengerStore.Service
       const gateway = yield* MessengerGateway.Service
@@ -1224,7 +1310,8 @@ describe("MessengerGateway backoff", () => {
       // "please reconnect"): stay up past the healthy window, then end the inbound stream.
       const cycle = Effect.gen(function* () {
         yield* eventually(gateway.status(), (map) => map.get(account.id)?.state === "connected", "connected")
-        yield* Effect.sleep(Duration.millis(STABLE_MS + 100))
+        // REAL time, on purpose — `uptime` is a `Date.now()` subtraction (see the note above).
+        yield* TestClock.withLive(Effect.sleep(Duration.millis(STABLE_MS + 100)))
         const queue = flapFake.state.queue
         if (queue === undefined) throw new Error("driver queue missing")
         yield* Queue.end(queue)
@@ -1262,4 +1349,208 @@ describe("MessengerGateway (airgapped)", () => {
       expect(airgapFake.state.connects).toBe(0)
     }),
   )
+})
+
+// ───────────────────────────────────────────────────────────────────────────────────────────────
+// The ratchet. Everything below reads THIS FILE'S SOURCE and pins the clock discipline described
+// in the ⏱ note near the top.
+//
+// ⚠️ Why a test and not a comment (todo.md ruling 1: an invariant whose violation compiles green
+// ships with a mechanical check, or it does not exist). Re-adding a wall-clock wait here is
+// invisible: the suite stays GREEN, every assertion still holds, and the only symptom is that
+// `bun run test` grows by several seconds — which nobody attributes to the commit that caused it.
+// That is exactly how this file reached 17.9 s. The two directions that cost real money:
+//   · a converted test reverting to `it.live` — it silently re-buys its production timer;
+//   · a new four-second `Effect.sleep` — one line, four seconds, on every run, forever.
+// Both are caught below, and the ledger can only SHRINK: converting a live test forces its name out
+// of LIVE_LEDGER, and lowering a sleep forces WALL_CLOCK_BUDGET_MS down with it.
+// ───────────────────────────────────────────────────────────────────────────────────────────────
+
+const SELF_SOURCE = nodeFs.readFileSync(nodePath.join(import.meta.dir, "messenger-gateway.test.ts"), "utf8")
+
+/** Every test registration in a file, with the clock it asked for. House style puts the name in a
+ *  double-quoted literal on the same line as the call, which is what makes this parseable at all. */
+const registrations = (source: string): { clock: "live" | "effect"; name: string }[] =>
+  [...source.matchAll(/\b(?:it|itFlap|itAirgap)\.(live|effect)\(\s*"((?:[^"\\]|\\.)*)"/g)].map((match) => ({
+    clock: match[1] as "live" | "effect",
+    name: match[2]!,
+  }))
+
+/** Literal wall-clock sleeps — `Effect.sleep(Duration.millis(<number>))`. A sleep whose argument is
+ *  a variable (the `advance` fallback) or an expression (`STABLE_MS + 100`) is deliberately NOT
+ *  counted: those are the two reviewed sites, and both are explained where they stand. */
+const wallClockSleeps = (source: string): number[] =>
+  [...source.matchAll(/Effect\.sleep\(Duration\.millis\((\d[\d_]*)\)\)/g)].map((match) =>
+    Number(match[1]!.replaceAll("_", "")),
+  )
+
+/**
+ * The five tests whose subject IS a production timer. Each must stay on the TestClock — reverting
+ * one to `it.live` buys back the seconds named in its reason.
+ */
+const VIRTUAL_LEDGER = new Map<string, string>([
+  [
+    "a question costs ONE message: the sign-off narration and the redundant ✅ are both dropped",
+    "6.6 s — the most expensive test in `core`. Waits out NARRATION_SETTLE_MS (2.5 s, forked at " +
+      "gateway.ts:837) plus a 4 s belt-and-braces margin, to prove the sign-off is DROPPED.",
+  ],
+  [
+    "the self-chat console DISPATCHES addressed prompts as child tasks — never inline (§0.1.5)",
+    "6.1 s — DISPATCH_ACK_DELAY_MS is 6 s (gateway.ts:460), and the assertion is precisely that the " +
+      "ack is silent before it and speaks after it. There is no way to test that without a clock.",
+  ],
+  [
+    "a dispatched task reports progress, notices, and its exit result back to the console (§0.1.5)",
+    "2.8 s — its first relay is gated on the same NARRATION_SETTLE_MS hold.",
+  ],
+  [
+    "a connection that STAYED UP resets the ladder — a routine reconnect never pins the account at the cap",
+    "2.9 s — three BACKOFF_BASE_MS waits (gateway.ts:979). HYBRID: the healthy-connection window " +
+      "stays real via TestClock.withLive because gateway.ts measures uptime with Date.now().",
+  ],
+  ["a failing connect goes to backoff with the reason, then reconnects", "1.0 s — one BACKOFF_BASE_MS wait."],
+])
+
+/**
+ * Every test still on the wall clock. No per-entry reason, because they all share ONE: the test
+ * waits on no production timer, and its cost is already under 0.4 s (the ⏱ note near the top has
+ * the argument in full, including why the "nothing happened" waits must stay real).
+ *
+ * ⚠️ Adding a name here is the decision this list exists to slow down. Before you do, check that
+ * the new test is not waiting out a gateway timer on the wall clock — if it is, it belongs in
+ * VIRTUAL_LEDGER instead, and the difference is seconds off every `bun run test` forever.
+ */
+const LIVE_LEDGER: readonly string[] = [
+  "a CAPTCHA notice that FAILS to send is not swallowed — the parked status says so (#9(c))",
+  "a FAILED initiation still spends its daily slot — the cap counts attempts, not deliveries",
+  "a THREAD routes to its parent's binding, and the reply goes back to the thread",
+  "a chat flooding past the per-minute cap is dropped with ONE slow-down reply (§7.6)",
+  "a driver that refuses the send answers {ok:false} with the reason — never a false 'Sent'",
+  "a hostile CLIENT message is delivered wrapped in untrusted framing (injection guard §7.5)",
+  "a moderating batch tells the agent its reply text goes nowhere, and names the ops",
+  "a provider challenge parks the account (no retry-loop) — traffic rules §2.3",
+  "an account whose driver is not installed parks in a legible error",
+  "an audience binding COALESCES inbound — a batch flushes as one turn (§0.1)",
+  "an audience binding does NOT auto-relay (the agent lurks)",
+  "an unpaired stranger's plain text never injects a turn (default-deny)",
+  "connects an enabled account, tracks seen chats, drops self-echo, and parks on disable",
+  "console dispatch is rate-capped per minute with a legible refusal",
+  "finished assistant text relays out to the bound chat",
+  "gateway.chats serves the live driver list and seeds the seen-cache; history fetches",
+  "gateway.send is cold-start-guarded then paced (traffic rules §2.3)",
+  "gateway.sendFile is cold-start-guarded and paced; gateway.attachment serves the ring (P5)",
+  "inbound attachments materialize as prompt files — small inline, big on disk (P5)",
+  "pairs an operator, lists sessions, /use binds the chat, and plain text injects a turn",
+  "parks enabled accounts as airgapped and never dials out",
+  "the account owner is a born-paired operator — /sessions works with zero pairing (§0.1.5)",
+  "the operator's self-chat binds ITSELF a console session on first use (no /sessions + /use)",
+]
+
+/** No single live wait may exceed this. Anything longer is a production timer being waited out, and
+ *  a production timer belongs on the TestClock. The largest survivor is the 300 ms at the
+ *  stranger-auto-bind check. */
+const MAX_WALL_SLEEP_MS = 300
+
+/** The file's whole wall-clock sleep allowance, and its site count. Both are exact so that lowering
+ *  one forces the number down with it — a budget that is only an upper bound rots into a ceiling
+ *  nobody notices they are living under. Before: 5 400 ms over 9 sites (one of them 4 000 ms). */
+const WALL_CLOCK_BUDGET_MS = 1_000
+const WALL_CLOCK_SLEEP_SITES = 5
+
+describe("messenger-gateway wall-clock ledger", () => {
+  const parsed = registrations(SELF_SOURCE)
+
+  test("the scan can see this file's own tests", () => {
+    // A moved file, a renamed helper or a house-style drift (a name in backticks, say) would empty
+    // the scan and turn every assertion below into a tautology that passes forever.
+    expect(parsed.length).toBe(LIVE_LEDGER.length + VIRTUAL_LEDGER.size)
+    expect(parsed.filter((entry) => entry.clock === "effect").length).toBe(VIRTUAL_LEDGER.size)
+  })
+
+  test("no unledgered test runs on the wall clock", () => {
+    const unledgered = parsed
+      .filter((entry) => entry.clock === "live" && !LIVE_LEDGER.includes(entry.name))
+      .map((entry) => entry.name)
+      .sort()
+    expect(unledgered).toEqual([])
+  })
+
+  test("the live ledger can only SHRINK — a converted or deleted test must leave it", () => {
+    const live = new Set(parsed.filter((entry) => entry.clock === "live").map((entry) => entry.name))
+    const stale = LIVE_LEDGER.filter((name) => !live.has(name)).map(
+      (name) => `${name} (no longer an it.live test — drop the ledger entry)`,
+    )
+    expect(stale).toEqual([])
+  })
+
+  test("every test whose subject is a production timer is still on the TestClock", () => {
+    // The expensive direction. Each of these was seconds of wall time; the reason is in the ledger.
+    const virtual = new Set(parsed.filter((entry) => entry.clock === "effect").map((entry) => entry.name))
+    const regressed = [...VIRTUAL_LEDGER.keys()]
+      .filter((name) => !virtual.has(name))
+      .map((name) => `${name} → ${VIRTUAL_LEDGER.get(name)}`)
+    expect(regressed).toEqual([])
+  })
+
+  test("no single wall-clock sleep waits longer than a beat", () => {
+    const oversized = wallClockSleeps(SELF_SOURCE).filter((millis) => millis > MAX_WALL_SLEEP_MS)
+    // Drive it with TestClock instead: switch the test to `it.effect` and use `settle(...)`.
+    expect(oversized).toEqual([])
+  })
+
+  test("the file's total wall-clock sleep is exactly its budget", () => {
+    const sleeps = wallClockSleeps(SELF_SOURCE)
+    expect(sleeps.length).toBe(WALL_CLOCK_SLEEP_SITES)
+    // Exact, both ways: over budget is a regression, under budget means the constant above is stale
+    // and the next author would inherit headroom they did not earn.
+    expect(sleeps.reduce((total, millis) => total + millis, 0)).toBe(WALL_CLOCK_BUDGET_MS)
+  })
+})
+
+describe("the wall-clock ledger actually bites (negative control)", () => {
+  // ⚠️ The synthetic sources below are assembled from fragments on purpose. Written whole, they
+  // would be found by the scan of THIS file and reported as real offenders — the guard would flag
+  // its own negative control.
+  const IT = "it"
+  const SLEEP = "Effect.sleep(Duration." + "millis("
+
+  test("the registration scan reads both clocks, and the name with them", () => {
+    const synthetic = `${IT}.live("a rogue wall-clock test", () => x)\n  ${IT}.effect("a virtual one", () => y)`
+    expect(registrations(synthetic)).toEqual([
+      { clock: "live", name: "a rogue wall-clock test" },
+      { clock: "effect", name: "a virtual one" },
+    ])
+    // Prefixed spellings must be seen too, or the backoff/airgap graphs would be invisible to it.
+    expect(registrations(`${IT}Flap.effect("flap", () => z)`)).toEqual([{ clock: "effect", name: "flap" }])
+    expect(registrations(`${IT}Airgap.live("airgap", () => z)`)).toEqual([{ clock: "live", name: "airgap" }])
+    // …and `test(...)` / `describe(...)` are not registrations of ours; counting them would make the
+    // tautology check above pass while the ledger silently stopped covering anything.
+    expect(registrations(`test("plain bun test", () => {})`)).toEqual([])
+  })
+
+  test("an unledgered live test is what the sweep reports", () => {
+    const synthetic = `${IT}.live("a rogue wall-clock test", () => x)`
+    const unledgered = registrations(synthetic)
+      .filter((entry) => entry.clock === "live" && !LIVE_LEDGER.includes(entry.name))
+      .map((entry) => entry.name)
+    expect(unledgered).toEqual(["a rogue wall-clock test"])
+  })
+
+  test("a converted test is forced OUT of the live ledger", () => {
+    // The shrink direction, exercised on a synthetic file where a ledgered name now runs virtual.
+    const name = LIVE_LEDGER[0]!
+    const live = new Set(registrations(`${IT}.effect(${JSON.stringify(name)}, () => x)`).map((entry) => entry.name))
+    expect(LIVE_LEDGER.filter((entry) => !live.has(entry)).length).toBe(LIVE_LEDGER.length - 1)
+  })
+
+  test("a re-added four-second sleep is caught, and a beat is not", () => {
+    expect(wallClockSleeps(`yield* ${SLEEP}4_000))`)).toEqual([4000])
+    expect(wallClockSleeps(`yield* ${SLEEP}4000))`).filter((millis) => millis > MAX_WALL_SLEEP_MS)).toEqual([4000])
+    expect(wallClockSleeps(`yield* ${SLEEP}150))`).filter((millis) => millis > MAX_WALL_SLEEP_MS)).toEqual([])
+    // A virtual wait must NOT be counted — `settle(4000)` costs nothing on the TestClock, and
+    // counting it would push authors back towards the live clock to satisfy the budget.
+    expect(wallClockSleeps(`yield* settle(4_000)`)).toEqual([])
+    // Nor may a non-literal argument be guessed at.
+    expect(wallClockSleeps(`${SLEEP}STABLE_MS + 100))`)).toEqual([])
+  })
 })
