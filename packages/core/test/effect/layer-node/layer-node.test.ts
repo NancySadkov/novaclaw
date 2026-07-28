@@ -258,4 +258,76 @@ describe("layer node", () => {
       dependencies: [],
     })
   })
+
+  // ⚠️ CHARACTERISATION, not an endorsement (measured 2026-07-28 while pinning the one-`Database`-
+  // per-process property). `hoist` stores a hoisted node BY REFERENCE without visiting its
+  // dependencies (`layer-node.ts`: `hoisted.set(node.name, node); return group([])`), so a
+  // replacement is honoured for the hoisted node ITSELF and for the location half, but NOT inside
+  // another hoisted node's dependency subtree. `location-services.ts` calls
+  // `LayerNode.compile(location.hoisted)` with no replacements, so on the real graph 16 of the 34
+  // hoisted globals — every config store, Event, Credential, SessionStore, bash-jobs-recovery — still
+  // point at the original `Database.node` when a caller replaces it. The second half of this test
+  // shows the fix is one argument wide: pass the replacements to `compile` as well. It is NOT applied
+  // in `location-services.ts` yet because it changes which layer ~17 replacement-using suites get,
+  // and that needs a full-gate run to land safely.
+  test("does not rewrite replacements inside hoisted dependency subtrees unless compile is told", async () => {
+    const tags = LayerNode.tags({ location: ["global"], global: [] })
+    const global = tags.make("global")
+    const location = tags.make("location")
+    let realBuilds = 0
+    const database = global({
+      service: Database,
+      layer: Layer.effect(
+        Database,
+        Effect.sync(() => {
+          realBuilds++
+          return Database.of({ name: "real" })
+        }),
+      ),
+      deps: [],
+    })
+    const users = global({
+      service: Users,
+      layer: Layer.effect(
+        Users,
+        Effect.map(Database, (item) => Users.of({ list: Effect.succeed([item.name]) })),
+      ),
+      deps: [database],
+    })
+    const app = location({
+      service: App,
+      layer: Layer.effect(
+        App,
+        Effect.map(Users, (item) => App.of({ run: item.list })),
+      ),
+      // Depends on both, mirroring the real graph where `Database` is reachable from a location node
+      // directly as well as through the other globals — that is what puts it in the hoisted set.
+      deps: [users, database],
+    })
+    const replacements = [[database, Layer.succeed(Database, Database.of({ name: "stub" }))]] as const
+    const { hoisted } = LayerNode.hoist(LayerNode.group([app]), tags.values.global, replacements)
+    const read = (layer: Layer.Layer<Database | Users, never, never>) =>
+      Effect.runPromise(
+        Effect.gen(function* () {
+          const seenByUsers = yield* Effect.flatMap(Users, (item) => item.list)
+          return { top: (yield* Database).name, seenByUsers }
+        }).pipe(Effect.scoped, Effect.provide(layer)),
+      )
+
+    // What `location-services.ts` does today: the replaced node is swapped at the top level, while
+    // `users` keeps the original — so the "replaced" service exists twice in one process.
+    expect(await read(LayerNode.compile(hoisted) as Layer.Layer<Database | Users>)).toEqual({
+      top: "stub",
+      seenByUsers: ["real"],
+    })
+    expect(realBuilds).toBe(1)
+
+    // The fix, for whoever lands it: one extra argument and the leak closes.
+    realBuilds = 0
+    expect(await read(LayerNode.compile(hoisted, replacements) as Layer.Layer<Database | Users>)).toEqual({
+      top: "stub",
+      seenByUsers: ["stub"],
+    })
+    expect(realBuilds).toBe(0)
+  })
 })

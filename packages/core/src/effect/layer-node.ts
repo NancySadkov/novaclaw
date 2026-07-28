@@ -208,6 +208,17 @@ function walk<Result>(
   return recur(root)
 }
 
+// Splits `root` into the part that stays per-caller (`node`) and the `tag`-marked part that is meant
+// to be shared (`hoisted`).
+//
+// ⚠️ A hoisted node is stored BY REFERENCE, with its dependency array untouched — `replacements` are
+// applied to the hoisted node itself (via `resolve`) but NOT inside another hoisted node's subtree.
+// So `compile(result.hoisted)` must be given the same `replacements` if the caller expects them to
+// hold throughout the shared half; otherwise a replaced service exists twice in one process. Measured
+// 2026-07-28 on the real location graph: 16 of 34 hoisted globals kept the original `Database.node`.
+// Rewriting the dependencies here instead would be wrong — it would collapse a hoisted node's own
+// hoisted deps to `group([])` and leave `compile`'s non-topological `provideMerge` fold to supply
+// them. Characterised in `test/effect/layer-node/layer-node.test.ts`.
 export function hoist<A, E, T extends Tag, const Items extends Replacements = readonly []>(
   root: Node<A, E, any>,
   tag: T,
@@ -252,6 +263,12 @@ export function compile<A, E, const Items extends Replacements = readonly []>(
   replacements?: ValidReplacements<Items>,
 ): Layer.Layer<A, E> {
   const replacementMap = replacementMapFrom(replacements)
+  // Per-invocation, so two `compile` calls over the same nodes produce different WRAPPER objects.
+  // That is not the same as two instances: a node with `deps: []` is returned as its module-level
+  // layer object unchanged (below), and Effect memoizes by the inner reference, not by the
+  // `Layer.provide` wrapper (AGENTS.md → Known pitfalls, item −1). Sharing across `compile` calls is
+  // therefore a property of the MEMO MAP the results are built with, never of this cache — see the
+  // measurement in `location-services.ts`.
   const cache = new Map<AnyNode, RuntimeLayer>()
   const compileNode = (node: AnyNode) =>
     walk<RuntimeLayer>(
