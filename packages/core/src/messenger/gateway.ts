@@ -36,6 +36,13 @@ import { MessengerStore } from "./store"
 const BACKOFF_BASE_MS = 1_000
 const BACKOFF_FACTOR = 3
 const BACKOFF_CAP_MS = 300_000
+// How long a connection must STAY UP before the reconnect ladder starts over (see connectionLoop).
+// The healthy signal is UPTIME, never "connect() succeeded": a provider that accepts the socket and
+// hangs up immediately would otherwise reset the ladder on every cycle, and we'd hammer it at the
+// 1s base delay forever — the exact behaviour the traffic rules exist to prevent. A minute is well
+// past any hot-fail loop and well short of a real session, and it bounds the worst case at roughly
+// one reconnect per minute even for a connection that flaps right at the threshold.
+const STABLE_CONNECTION_MS = 60_000
 const PAIRING_TTL_MS = 10 * 60_000
 // Traffic rules (§2.3): how many brand-new conversations NovaClaw may START in one day. Replies to
 // inbound don't count — only cold-starts. Providers flag accounts that spray new chats; this caps it.
@@ -170,9 +177,15 @@ const newPairingCode = (): string => {
   return `${digits.slice(0, 3)}-${digits.slice(3, 6)}`
 }
 
-export const layer = Layer.effect(
-  Service,
+export interface Options {
+  /** Override the healthy-connection window (STABLE_CONNECTION_MS). Tests inject a small one so the
+   *  backoff-reset gate can be proven in milliseconds instead of keeping a socket up for a minute. */
+  readonly stableConnectionMs?: number
+}
+
+const build = (options: Options) =>
   Effect.gen(function* () {
+    const stableConnectionMs = options.stableConnectionMs ?? STABLE_CONNECTION_MS
     const store = yield* MessengerStore.Service
     const drivers = yield* MessengerDrivers.Service
     const events = yield* EventV2.Service
@@ -433,16 +446,46 @@ export const layer = Layer.effect(
 
     // Best-effort: DM the operator on any OTHER still-connected account (e.g. to flag a CAPTCHA on
     // the account that's parked). The Settings banner is the always-available fallback.
-    const notifyOperator = (text: string) =>
+    //
+    // ⚠️ AGENTS.md design principle #9(c) says a challenge NOTIFIES the operator, so a notice that
+    // FAILS to send is a fault — not a no-op — and must not vanish (it used to: Effect.ignore here
+    // AND again at the call site, so a dead notify path was invisible from both ends). Two rules
+    // shape the handling. (1) It must never be able to kill the connection loop that raised it, so
+    // every send failure is caught per binding and the walk continues — a second operator chat may
+    // still be reachable. (2) It must never be silent, so failures are logged AND reported back,
+    // and the caller folds them into the account status the Settings banner reads. Reaching NOBODY
+    // (no other connected account, no operator chat) is not a failure — there was no channel to
+    // fail, and the banner is the whole notice in that case; it is logged, not escalated.
+    type NoticeReport = { readonly delivered: number; readonly failed: number; readonly reason?: string }
+    const notifyOperator = (text: string): Effect.Effect<NoticeReport> =>
       Effect.gen(function* () {
+        let delivered = 0
+        let failed = 0
+        let reason: string | undefined
         for (const [accountID, entry] of entries) {
-          if (entry.connection === undefined) continue
+          const connection = entry.connection
+          if (connection === undefined) continue
           const bindings = yield* store.bindingsForAccount(accountID).pipe(Effect.orElseSucceed(() => []))
           for (const binding of bindings) {
             if (binding.trust !== "operator") continue
-            yield* paceSend(entry.connection, binding.chatID, text).pipe(Effect.ignore)
+            const failure = yield* paceSend(connection, binding.chatID, text).pipe(
+              Effect.as(undefined),
+              Effect.catch((error) => Effect.succeed(error.reason)),
+            )
+            if (failure === undefined) {
+              delivered += 1
+              continue
+            }
+            failed += 1
+            reason ??= failure
+            yield* Effect.logWarning(
+              `messenger: could not deliver an operator notice to chat ${binding.chatID} on ${accountID}: ${failure}`,
+            )
           }
         }
+        if (delivered === 0 && failed === 0)
+          yield* Effect.logInfo("messenger: no connected operator chat to notify — the Settings banner carries the notice alone")
+        return { delivered, failed, ...(reason === undefined ? {} : { reason }) }
       })
 
     const handleCommand = (
@@ -830,7 +873,9 @@ export const layer = Layer.effect(
 
     // ── connection lifecycle ─────────────────────────────────────────────────────────────────────
 
-    const attempt = (account: Messenger.AccountInfo, driver: Driver, entry: Entry) =>
+    // `live.connectedAt` is stamped the moment the connection is actually up, so the caller can
+    // tell a connection that WORKED from one that merely opened (see connectionLoop's reset rule).
+    const attempt = (account: Messenger.AccountInfo, driver: Driver, entry: Entry, live: { connectedAt?: number }) =>
       Effect.scoped(
         Effect.gen(function* () {
           const secret = yield* resolveSecret(account)
@@ -848,6 +893,7 @@ export const layer = Layer.effect(
           if (pace !== undefined) connectionPace.set(connection, pace)
           yield* Effect.addFinalizer(() => Effect.sync(() => (entry.connection = undefined)))
           yield* setStatus(account.id, entry, { state: "connected" })
+          live.connectedAt = Date.now()
           yield* consume(account, connection)
         }),
       )
@@ -859,10 +905,14 @@ export const layer = Layer.effect(
 
     const connectionLoop = (account: Messenger.AccountInfo, driver: Driver, entry: Entry) =>
       Effect.gen(function* () {
+        // The reconnect ladder. `failures` counts the CURRENT failure streak, not the account's
+        // lifetime — a streak a healthy connection ends (see below). Counting for the lifetime is
+        // what pinned an account at the 5-minute cap after ~7 perfectly routine reconnects.
         let failures = 0
         while (true) {
           yield* setStatus(account.id, entry, { state: "connecting" })
-          const outcome: Outcome = yield* attempt(account, driver, entry).pipe(
+          const live: { connectedAt?: number } = {}
+          const outcome: Outcome = yield* attempt(account, driver, entry, live).pipe(
             Effect.as({ kind: "ended" } as Outcome),
             Effect.catch((error) =>
               Effect.succeed(
@@ -875,14 +925,33 @@ export const layer = Layer.effect(
           // Traffic rules §2.3: a CAPTCHA/verification parks the account for the operator; we do
           // NOT retry-loop against a challenge (that's what looks like an attack + never resolves).
           if (outcome.kind === "challenge") {
+            // Park first (the banner should appear the instant we know), then try the DM — it is
+            // paced, so it can take seconds. notifyOperator cannot fail, so nothing here can kill
+            // the loop; what it CAN do is come back saying it never reached the operator.
             yield* setStatus(account.id, entry, { state: "challenge", message: outcome.message })
-            yield* notifyOperator(
+            const notice = yield* notifyOperator(
               `⚠️ ${account.label}: the provider is asking for verification (${outcome.message}). ` +
                 `Resolve it in the app, then re-enable this account.`,
-            ).pipe(Effect.ignore)
+            )
+            // A notice we could not deliver is itself news the operator needs — say so on the one
+            // surface that is always there, rather than swallowing it (#9(c) must not silently
+            // not-happen). Only a real delivery FAILURE says this; having nobody to DM does not.
+            if (notice.failed > 0)
+              yield* setStatus(account.id, entry, {
+                state: "challenge",
+                message:
+                  `${outcome.message} — and I couldn't message you about it` +
+                  `${notice.reason === undefined ? "" : ` (${notice.reason})`}.`,
+              })
             return
           }
-          failures += 1
+          // A connection that STAYED UP is proof the account, the credential and the transport are
+          // all fine, so the drop that follows starts a fresh streak (1 = the base delay). UPTIME —
+          // not a successful connect — is the healthy signal, because a provider that accepts the
+          // socket and drops it at once would otherwise reset the ladder every cycle and let us
+          // hammer it forever. Below the window the streak keeps climbing, exactly as before.
+          const uptime = live.connectedAt === undefined ? 0 : Date.now() - live.connectedAt
+          failures = uptime >= stableConnectionMs ? 1 : failures + 1
           const delay = backoffDelay(failures)
           const reason = outcome.kind === "error" ? outcome.reason : "connection ended"
           yield* setStatus(account.id, entry, { state: "backoff", until: Date.now() + delay, message: reason })
@@ -1038,8 +1107,14 @@ export const layer = Layer.effect(
               } satisfies SendOutcome
             initiations.count += 1
           }
-          yield* paceSend(entry.connection, input.chatID, input.text, input.replyTo).pipe(Effect.ignore)
-          return { ok: true } satisfies SendOutcome
+          // The driver's verdict IS the answer — same shape as sendFile below. A refused or failed
+          // send comes back as {ok:false, reason}, which the `messenger` tool hands straight to the
+          // model. Swallowing it here reported "Sent (paced at human typing speed)" for a message
+          // that never left the machine — the model then acts as if the person has been answered.
+          return yield* paceSend(entry.connection, input.chatID, input.text, input.replyTo).pipe(
+            Effect.map(() => ({ ok: true }) satisfies SendOutcome),
+            Effect.catch((error) => Effect.succeed({ ok: false, reason: error.reason } satisfies SendOutcome)),
+          )
         }),
       sendFile: (input) =>
         Effect.gen(function* () {
@@ -1118,19 +1193,25 @@ export const layer = Layer.effect(
     MessengerGatewayHandle.set(service)
     yield* Effect.addFinalizer(() => Effect.sync(() => MessengerGatewayHandle.clear(service)))
     return service
-  }),
-)
+  })
 
-export const node = makeGlobalNode({
-  service: Service,
-  layer,
-  deps: [
-    MessengerStore.node,
-    MessengerDrivers.node,
-    MessengerPace.node,
-    EventV2.node,
-    Offline.node,
-    Credential.node,
-    SessionV2.node,
-  ],
-})
+export const layerWith = (options: Options = {}) => Layer.effect(Service, build(options))
+
+export const layer = layerWith()
+
+export const nodeWith = (options: Options = {}) =>
+  makeGlobalNode({
+    service: Service,
+    layer: layerWith(options),
+    deps: [
+      MessengerStore.node,
+      MessengerDrivers.node,
+      MessengerPace.node,
+      EventV2.node,
+      Offline.node,
+      Credential.node,
+      SessionV2.node,
+    ],
+  })
+
+export const node = nodeWith()

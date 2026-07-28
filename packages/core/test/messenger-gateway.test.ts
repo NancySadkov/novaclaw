@@ -2,6 +2,7 @@ import { describe, expect } from "bun:test"
 import nodeFs from "node:fs"
 import os from "node:os"
 import nodePath from "node:path"
+import type { Cause } from "effect"
 import { DateTime, Duration, Effect, Layer, Queue, Stream } from "effect"
 import { Messenger } from "@novaclaw/schema/messenger"
 import { SessionEvent } from "@novaclaw/schema/session-event"
@@ -119,14 +120,23 @@ const CAPS: Messenger.Capabilities = {
   maxChars: 1000,
 }
 
+/** What a driver says when it refuses an outbound message (rate limit, oversized payload, dead
+ *  socket). The gateway must carry this WORD FOR WORD back to the caller — see the send-honesty
+ *  tests below; a swallowed send error is a message the model believes it delivered. */
+const SEND_REFUSAL = "the platform refused it: message too long"
+
 const makeFakeDriver = () => {
   const state = {
     connects: 0,
     secrets: [] as (string | undefined)[],
-    queue: undefined as Queue.Queue<MessengerDriver.InboundEvent> | undefined,
+    // Typed with `Cause.Done` so a test can END the stream (Queue.end) — that is how a routine
+    // provider-side reconnect looks to the gateway: the inbound stream simply finishes.
+    queue: undefined as Queue.Queue<MessengerDriver.InboundEvent, Cause.Done> | undefined,
     sent: [] as { chatID: string; text: string | undefined; fileName?: string; replyTo?: string }[],
     failNext: false,
     challengeNext: false,
+    /** While true every outbound send fails — the driver-refuses-the-message case. */
+    sendFails: false,
     open: 0,
     liveChats: undefined as readonly MessengerDriver.ChatSnapshot[] | undefined,
     history: {} as Record<string, readonly MessengerDriver.HistoryEntry[]>,
@@ -150,14 +160,15 @@ const makeFakeDriver = () => {
           state.failNext = false
           return yield* Effect.fail(new MessengerDriver.ConnectError({ reason: "boom" }))
         }
-        const queue = yield* Queue.unbounded<MessengerDriver.InboundEvent>()
+        const queue = yield* Queue.unbounded<MessengerDriver.InboundEvent, Cause.Done>()
         state.queue = queue
         state.open += 1
         yield* Effect.addFinalizer(() => Effect.sync(() => (state.open -= 1)))
         return {
           inbound: Stream.fromQueue(queue),
           send: (chatID, message) =>
-            Effect.sync(() => {
+            Effect.gen(function* () {
+              if (state.sendFails) return yield* Effect.fail(new MessengerDriver.SendError({ reason: SEND_REFUSAL, retryable: false }))
               state.sent.push({
                 chatID,
                 text: message.text,
@@ -428,6 +439,44 @@ describe("MessengerGateway pipeline", () => {
       yield* store.removeAccount(account.id)
       yield* gateway.reload()
     }),
+  )
+
+  it.live("a CAPTCHA notice that FAILS to send is not swallowed — the parked status says so (#9(c))", () =>
+    Effect.gen(function* () {
+      // Design principle #9(c): a challenge parks the account AND NOTIFIES THE OPERATOR. The notice
+      // is best-effort by design, but a notice that fails to send is a FAULT, and both layers used
+      // to drop it on the floor (Effect.ignore inside notifyOperator and again at the call site) —
+      // so #9(c) could silently not happen and nothing anywhere said a word.
+      const { store, gateway, account: notifier } = yield* online("notifier")
+      // A still-connected account with an operator DM: the channel the notice would go out on.
+      yield* store.createBinding({ accountID: notifier.id, chatID: "op-dm", sessionID: "ses_alpha", trust: "operator" })
+
+      // Now the provider on ANOTHER account demands verification, while every send is refused.
+      fake.state.sendFails = true
+      fake.state.challengeNext = true
+      const parked = yield* store.createAccount({ driverID: "fake", label: "captcha-notify", enabled: true, settings: {} })
+      yield* gateway.reload()
+
+      const status = yield* eventually(
+        gateway.status(),
+        (map) => {
+          const state = map.get(parked.id)
+          return state?.state === "challenge" && state.message.includes("couldn't message you")
+        },
+        "the undelivered operator notice surfaced on the parked account",
+      )
+      const state = status.get(parked.id)
+      // The challenge is still described honestly, and the failed notice rides along with it — the
+      // Settings banner is the one surface that is always there.
+      expect(state?.state === "challenge" && state.message).toContain("CAPTCHA")
+      expect(state?.state === "challenge" && state.message).toContain(SEND_REFUSAL)
+
+      yield* store.removeAccount(parked.id)
+      yield* store.removeAccount(notifier.id)
+      yield* gateway.reload()
+      // ⚠️ `sendFails` is module-global: an ensuring, not a trailing statement, or a failing
+      // assertion here leaves every later test in this file sending into a refusing driver.
+    }).pipe(Effect.ensuring(Effect.sync(() => (fake.state.sendFails = false)))),
   )
 
   it.live("the account owner is a born-paired operator — /sessions works with zero pairing (§0.1.5)", () =>
@@ -899,6 +948,35 @@ describe("MessengerGateway pipeline", () => {
     }),
   )
 
+  it.live("a driver that refuses the send answers {ok:false} with the reason — never a false 'Sent'", () =>
+    Effect.gen(function* () {
+      const { store, gateway, account, queue } = yield* online("send-fails")
+      // A chat that HAS messaged us, so the cold-start guard is out of the picture — the only thing
+      // left that can go wrong is the driver itself.
+      yield* Queue.offer(queue, message("321", { text: "hello", sender: "friend" }))
+      yield* eventually(store.hasChat(account.id, "321"), (seen) => seen === true, "seen 321")
+
+      fake.state.sendFails = true
+      const refused = yield* gateway.send({ accountID: account.id, chatID: "321", text: "on it" })
+      fake.state.sendFails = false // (also unset by the ensuring below, if an assertion throws first)
+
+      // Before the fix this leg was `paceSend(...).pipe(Effect.ignore)` followed by an unconditional
+      // `{ok:true}`, so the tool told the model "Sent (paced at human typing speed)." about a
+      // message that never left the machine — and the model went on as if the person was answered.
+      expect(refused.ok).toBe(false)
+      if (!refused.ok) expect(refused.reason).toBe(SEND_REFUSAL)
+      expect(fake.state.sent.some((s) => s.chatID === "321" && s.text === "on it")).toBe(false)
+
+      // And {ok:true} still means SENT — the honest branch didn't cost the happy path.
+      const good = yield* gateway.send({ accountID: account.id, chatID: "321", text: "on it" })
+      expect(good.ok).toBe(true)
+      expect(fake.state.sent.some((s) => s.chatID === "321" && s.text === "on it")).toBe(true)
+
+      yield* store.removeAccount(account.id)
+      yield* gateway.reload()
+    }).pipe(Effect.ensuring(Effect.sync(() => (fake.state.sendFails = false)))),
+  )
+
   it.live("an audience binding COALESCES inbound — a batch flushes as one turn (§0.1)", () =>
     Effect.gen(function* () {
       const { store, gateway, account, queue } = yield* online("coalesce")
@@ -1075,6 +1153,70 @@ const itAirgap = testEffect(
     [MessengerPace.node, MessengerPace.layerWith({ sleep: () => Effect.void })],
   ]),
 )
+
+// The reconnect ladder (§2.3). Its own graph, whose healthy-connection window is milliseconds
+// instead of the production minute, so the reset can be exercised without holding a socket open for
+// 60 s. Everything else is the real connection loop.
+const STABLE_MS = 150
+const flapFake = makeFakeDriver()
+const itFlap = testEffect(
+  AppNodeBuilder.build(
+    LayerNode.group([
+      Database.node,
+      EventV2.node,
+      FSUtil.node,
+      MessengerStore.node,
+      MessengerGateway.nodeWith({ stableConnectionMs: STABLE_MS }),
+    ]),
+    [
+      [
+        MessengerDrivers.node,
+        Layer.succeed(MessengerDrivers.Service, MessengerDrivers.Service.of(MessengerDrivers.make([flapFake.driver]))),
+      ],
+      [Offline.node, offlineMock(false)],
+      [SessionV2.node, makeSessionMock().layer],
+      [MessengerPace.node, MessengerPace.layerWith({ sleep: () => Effect.void })],
+    ],
+  ),
+)
+
+describe("MessengerGateway backoff", () => {
+  itFlap.live("a connection that STAYED UP resets the ladder — a routine reconnect never pins the account at the cap", () =>
+    Effect.gen(function* () {
+      const store = yield* MessengerStore.Service
+      const gateway = yield* MessengerGateway.Service
+      const account = yield* store.createAccount({ driverID: "fake", label: "flap", enabled: true, settings: {} })
+      yield* gateway.reload()
+
+      // One healthy connection, then the clean drop a provider does routinely (Discord's op-7
+      // "please reconnect"): stay up past the healthy window, then end the inbound stream.
+      const cycle = Effect.gen(function* () {
+        yield* eventually(gateway.status(), (map) => map.get(account.id)?.state === "connected", "connected")
+        yield* Effect.sleep(Duration.millis(STABLE_MS + 100))
+        const queue = flapFake.state.queue
+        if (queue === undefined) throw new Error("driver queue missing")
+        yield* Queue.end(queue)
+        const status = yield* eventually(gateway.status(), (map) => map.get(account.id)?.state === "backoff", "backoff")
+        const parked = status.get(account.id)
+        if (parked?.state !== "backoff") throw new Error("expected a backoff status")
+        return parked.until - Date.now()
+      })
+
+      const delays = [yield* cycle, yield* cycle, yield* cycle]
+      // Every drop that follows a healthy connection waits the BASE delay again. Before the fix
+      // `failures` was declared outside the loop and only ever incremented, so these were 1s, 3s,
+      // 9s … climbing to the 5-minute cap and staying there for the life of the process — an
+      // account effectively offline after ~7 perfectly normal reconnects.
+      for (const delay of delays) {
+        expect(delay).toBeGreaterThan(0)
+        expect(delay).toBeLessThanOrEqual(1_000)
+      }
+
+      yield* store.removeAccount(account.id)
+      yield* gateway.reload()
+    }),
+  )
+})
 
 describe("MessengerGateway (airgapped)", () => {
   itAirgap.live("parks enabled accounts as airgapped and never dials out", () =>
