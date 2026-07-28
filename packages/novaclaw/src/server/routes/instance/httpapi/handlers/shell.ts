@@ -1,7 +1,5 @@
-import { Flag } from "@novaclaw/core/flag/flag"
 import { Git } from "@novaclaw/core/git"
-import { Global } from "@novaclaw/core/global"
-import { layerManifest, loadPolicy } from "@novaclaw/core/offline"
+import { Offline } from "@novaclaw/core/offline"
 import { Shell } from "@novaclaw/core/shell"
 import { ShellBundle } from "@novaclaw/core/shell-bundle"
 import { which } from "@novaclaw/core/util/which"
@@ -47,9 +45,15 @@ export const shellHandlers = HttpApiBuilder.group(InstanceHttpApi, "shell", (han
       .handle(
         "offline",
         Effect.fn("ShellHttpApi.offline")(function* () {
-          // GLOBAL config only (the machine-level chokepoint) — same source + flag-aware
-          // dir as the Offline service, so the status matches what the guard enforces.
-          return layerManifest(loadPolicy({ configDir: Flag.NOVACLAW_CONFIG_DIR ?? Global.Path.config }))
+          // Read the manifest off the SAME service that enforces the guard, so the status surface
+          // cannot disagree with what is actually blocking (v0.2.0 ruling 3: a fault is never
+          // described falsely). This used to call `loadPolicy({ configDir })` per request, which
+          // recomputes the policy from its sources — two `readRowsSync` calls, i.e. two synchronous
+          // sqlite open/close pairs, on every poll of a UI-polled endpoint. Since the policy became
+          // a live module-level ref that a config write refreshes, re-deriving it here bought
+          // nothing: `offline.manifest()` reads that ref.
+          const offline = yield* Offline.Service
+          return offline.manifest()
         }),
       )
       .handle(

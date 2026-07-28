@@ -187,10 +187,17 @@ export function loadPolicy(input: PolicySource): Policy {
 // The ref is MODULE-level, not layer-level, deliberately:
 //   · every input is process-global — the env, the instance SQLite file (`Flag.NOVACLAW_DB` is
 //     read once at module load), and the global config dir (`Global.make()` resolves it once);
-//   · a serve process builds this layer MORE THAN ONCE. The compiled `httpClient` node gets one
-//     instance and `server.ts` provides a bare `Offline.layer` to the messenger stack for another
-//     — distinct Layer references, so Effect memoizes them separately. A per-instance cache would
-//     leave whichever instance did not handle the write stale: the same bug, one level down.
+//   · nothing guarantees ONE instance per process. This comment used to assert that a serve
+//     process demonstrably built the layer twice (the compiled `httpClient` node plus the bare
+//     `Offline.layer` `server.ts` handed the messenger stack). ⚠️ That is not what happens on
+//     effect@4.0.0-beta.83 — MEASURED 2026-07-28 with `serviceBuilds()` over the real serve graph:
+//     both wrappings memoize to the SAME build, because what Effect keys on is this module-level
+//     layer's reference, not the `Layer.provide` wrapper around it. So the count was one, by
+//     coincidence of construction. It stops being one the moment a second consumer builds Offline
+//     from a *different* layer object (`layerWith`, a mock, a fresh `Layer.effect`) — which tests
+//     and the location graphs do routinely — and a per-instance cache would then leave whichever
+//     instance did not handle the write stale: the same bug, one level down. Module-level is the
+//     choice that does not depend on the memoization coincidence holding.
 // One ref means every reader — the HttpClient chokepoint, `bash`/`js` egress env, websearch, the
 // messenger gateway — flips together, on their next call.
 
@@ -227,6 +234,20 @@ export function currentPolicy(): Policy {
 /** Tests only: forget the installed source so one file's temp db cannot leak into the next. */
 export function resetPolicy(): void {
   live = undefined
+}
+
+// How many times THIS LAYER has been built in this process. Not a policy fact — a GRAPH fact, and
+// the only one that is observable at runtime: a duplicate Offline in the composition root compiles
+// green, boots green, and answers every request correctly (the ref above is process-wide), so
+// nothing but a count can tell you it happened. It is exported so the invariant "a serve process
+// builds Offline exactly once" can be asserted instead of reasoned about.
+// Deliberately NOT reset by `resetPolicy` and NOT incremented by `reload` — it counts layer builds,
+// not policy installs, so a test can bracket a graph build and read the delta.
+let builds = 0
+
+/** Number of times the Offline layer has been built in this process (see `builds`). */
+export function serviceBuilds(): number {
+  return builds
 }
 
 // ── OFF-C (layer 9): process-level egress guard ─────────────────────────────────────────
@@ -324,6 +345,7 @@ export class Service extends Context.Service<Service, Interface>()("@novaclaw/Of
 
 const makeService = (source: PolicySource) =>
   Effect.gen(function* () {
+    builds++
     const policy = installPolicy(source)
     if (policy.enabled)
       yield* Effect.logInfo("offline mode ACTIVE — HTTP restricted to loopback + provider hosts", {
