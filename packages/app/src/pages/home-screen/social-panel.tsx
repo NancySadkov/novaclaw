@@ -2,6 +2,7 @@ import { For, type Component, type ComponentProps } from "solid-js"
 import { Dialog } from "@novaclaw/ui/v2/dialog-v2"
 import { Icon } from "@novaclaw/ui/icon"
 import { usePlatform } from "@/context/platform"
+import { DISCORD_INVITE_URL } from "@/constants/links"
 
 // The Social app: where the other humans are. A normal person who gets stuck at 11pm should be one
 // click from someone who can help — that is the whole tile. It teaches rather than dumps links:
@@ -17,7 +18,8 @@ const PLACES = [
     icon: "discord",
     accent: "#5865f2",
     blurb: "Chat with other users and the people building NovaClaw. Best for questions, bug reports and ideas.",
-    url: "https://discord.gg/QShqKW56JM",
+    // Shared with the crash screen and the sidebar Help button — see @/constants/links.
+    url: DISCORD_INVITE_URL,
   },
   {
     id: "reddit",

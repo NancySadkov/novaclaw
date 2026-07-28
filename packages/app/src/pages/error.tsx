@@ -7,6 +7,7 @@ import { usePlatform } from "@/context/platform"
 import { useLanguage } from "@/context/language"
 import { Icon } from "@novaclaw/ui/icon"
 import { errorDescriptionKey } from "./error-description"
+import { DISCORD_INVITE_URL } from "@/constants/links"
 
 export type InitError = {
   name: string
@@ -356,7 +357,7 @@ export const ErrorPage: Component<ErrorPageProps> = (props) => {
             <button
               type="button"
               class="flex items-center text-v2-text-text-accent gap-1"
-              onClick={() => platform.openLink("https://novaclaw.app/desktop-feedback")}
+              onClick={() => platform.openLink(DISCORD_INVITE_URL)}
             >
               <div>{language.t("error.page.report.discord")}</div>
               <Icon name="discord" class="text-v2-text-text-accent" />
