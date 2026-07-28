@@ -176,13 +176,79 @@ export const MODE_RULES: Record<PermissionMode, readonly PermissionRule[]> = {
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
+ * The chain ROOT's attendance answer — THREE-valued, for exactly the reason `HostExec.Hostility`
+ * is (`host-exec.ts`, 2026-07-28):
+ *
+ *  · a `SessionType` — the walk reached a session that declares no parent, and THAT root's type
+ *                      is this (a root row carrying no `type` still counts as read: `undefined`
+ *                      means inherit, and at the root that is the global default);
+ *  · `"unknown"`     — a chain that EXISTS could not be followed to its root: a `parentID` points
+ *                      at a row that is gone, or the parent links form a cycle. We asked and the
+ *                      answer faulted.
+ *
+ * ⚠️ Why the type had to grow, measured before the change (2026-07-28, this file's own walk):
+ * every chain fault answered `"interactive"` or the deepest KNOWN layer's type, and **those are the
+ * permissive answers** — `attendedRoot` is true for `interactive`/`sub-agent`, so
+ * `unattendedStanceRules` returns `[]` and `AgentJail.decideBash` returns `"raw"`. Observed:
+ * a `sub-agent` row whose parent had vanished → `"sub-agent"`, stance `[]`; a CYCLE of two
+ * `auto-prompting` rows → `"interactive"`, stance `[]` — a chain every row of which says "nobody
+ * is watching" bought the operator's full host authority. That is a containment decision made on
+ * missing data, which is what ruling 2 forbids ("a fault is never described falsely"). A
+ * four-member enum has nowhere to put *we could not find out*, so no amount of care at the call
+ * sites could have fixed it; the file's own tests asserted the hole as intended behaviour ("both
+ * fail OPEN to interactive").
+ *
+ * ⚠️ What is deliberately NOT `"unknown"`: a `sessionID` that names no row AT ALL. That is the
+ * `undefined`-shaped fact, not the `"unknown"`-shaped one, and `HostExec.decide` already rules on
+ * exactly this distinction in this codebase — *"a caller that never asked the trust question passes
+ * `undefined`, while one that asked and could not be answered passes `\"unknown\"`. The first has
+ * declared nothing; the second has declared a fault. Only the second is a containment question left
+ * open."* There is no chain to be wrong about when there is no session, and the seam that can
+ * observe the discrepancy already refuses on it: `PermissionV2` fails `Session.NotFoundError` for a
+ * missing target row before any allow is reached (measured, and pinned in `test/permission.test.ts`).
+ * See the walk below for the residual this leaves at `tool/bash.ts` and how it closes.
+ *
+ * ⚠️ Why `SessionType | "unknown"` rather than a wrapper object. The one property that must be
+ * MECHANICAL is that this answer cannot be assigned into a `SessionType` slot — which this union
+ * enforces — while every existing value keeps meaning exactly what it meant at ~20 call sites and
+ * on the wire (`session.type` is a stored column). Renaming a correct vocabulary buys nothing.
+ */
+export type RootType = SessionType | "unknown"
+
+/**
+ * What an unreadable chain is TREATED as by a consumer that can only speak `SessionType`.
+ * `goal-oriented` is the unattended end of the enum, so such a consumer contains rather than
+ * permits. It is a constant so the negative control in `config-resolve.test.ts` can flip it and
+ * watch the decision invert.
+ */
+const UNREADABLE_CHAIN_ROOT_TYPE: SessionType = "goal-oriented"
+
+/**
+ * THE ONE collapse point — the single place `"unknown"` turns into anything else, so *"an
+ * attendance question we could not answer is not a licence to run raw"* is one decision rather
+ * than a habit repeated at each call site. Same role `HostExec.takesUnattendedArm` plays for the
+ * hostility tri-state, and deliberately the same shape (ruling 6).
+ *
+ * `attendedRoot` below is defined THROUGH it rather than beside it, so there is no second place to
+ * keep in sync.
+ */
+export const narrowRootType = (rootType: RootType): SessionType =>
+  rootType === "unknown" ? UNREADABLE_CHAIN_ROOT_TYPE : rootType
+
+/**
  * Attendance is a property of the chain ROOT — the question is who answers (Agent Jail P0b).
  * Children of an interactive root surface asks to a human (attention pills); under an
  * auto-prompting or goal-oriented root there is nobody to reply. Canonical home: this pure
  * config module, so the permission evaluator and `AgentJail` share ONE predicate.
+ *
+ * Takes `RootType`, not `SessionType`: an unreadable chain is NOT attended, because "somebody is
+ * present to answer" is a claim, and we just failed to establish it. Widening the parameter is
+ * source-compatible for every existing caller (a `SessionType` is a `RootType`).
  */
-export const attendedRoot = (rootType: SessionType): boolean =>
-  rootType === "interactive" || rootType === "sub-agent"
+export const attendedRoot = (rootType: RootType): boolean => {
+  const known = narrowRootType(rootType)
+  return known === "interactive" || known === "sub-agent"
+}
 
 /**
  * The rule overlay an unattended chain contributes. BOTH external classes are named:
@@ -216,11 +282,14 @@ export const PARANOID_READ_RULES: readonly PermissionRule[] = [
 
 /**
  * The stance's rules for a chain, or none when it does not apply. `rootType` is the CHAIN ROOT's
- * type (`rootSessionType`), never the target session's — a child cannot declare itself attended
- * out of its root's stance. `mode` is the RESOLVED mode (already clamped by narrowing).
+ * answer (`rootAttendance`), never the target session's own type — a child cannot declare itself
+ * attended out of its root's stance. `mode` is the RESOLVED mode (already clamped by narrowing).
+ *
+ * `RootType`, so `"unknown"` reaches the stance intact and gets the confined arm via `attendedRoot`
+ * — the ONE collapse point above.
  */
 export const unattendedStanceRules = (
-  rootType: SessionType,
+  rootType: RootType,
   mode: PermissionMode,
   paranoid = false,
 ): readonly PermissionRule[] =>
@@ -462,18 +531,36 @@ export const resolveSessionConfig = <E, R>(
   })
 
 /**
- * The chain ROOT's thread type — attendance is a property of who answers at the root
+ * The chain ROOT's attendance answer — attendance is a property of who answers at the root
  * (Agent Jail P0b, notes/agent-jail-plan.md §2.1). Same root-ward walk + cycle guard as
- * `resolveSessionConfig`, but returns the ROOT layer's type, not the target's resolution.
- * A missing/broken/cyclic chain resolves to the default "interactive": fail-OPEN for
- * attendance is deliberate at P0 — the permission mode still gates every command, and a
- * store anomaly must not brick attended interactive turns; P3's entry ritual makes
- * unattendance an explicit per-session fact instead of an inference.
+ * `resolveSessionConfig`, but it reports the ROOT layer, not the target's resolution.
+ *
+ * ⚠️ A BROKEN chain is `"unknown"`, not a type (see `RootType`). The paragraph that used to stand
+ * here — *"A missing/broken/cyclic chain resolves to the default 'interactive': fail-OPEN for
+ * attendance is deliberate at P0"* — WAS the defect, written down as intent, and each of its two
+ * justifications fails on inspection:
+ *
+ *  · *"the permission mode still gates every command"* — the default mode is `bypass`
+ *    (`EFFECTIVE_CONFIG_DEFAULTS`), whose overlay ALLOWS edit/write/create/trash/bash on `*`. In
+ *    an unattended chain the stance is the only thing left standing, and fail-open deletes it.
+ *  · *"a store anomaly must not brick attended interactive turns"* — the fault that reaches here
+ *    is not a store anomaly. A DB failure DIES (`SessionStore.get` is `orDie`, store.ts:36), so it
+ *    never takes this path at all; what does is a session tree that genuinely has no root — a
+ *    `parent_id` left dangling (the column carries NO foreign key, session/sql.ts:22, so the DB
+ *    permits it), or a cycle. Answering "a human is watching" for those is a guess in the one
+ *    direction that cannot be recovered from.
+ *
+ * The opposite over-correction is refused twice, because ruling 2 forbids a false fault in BOTH
+ * directions:
+ *  · a chain read END TO END still reports what it found, including a root row with no `type` of
+ *    its own — that is inherit, not a fault;
+ *  · a `sessionID` naming NO row is not a chain fault at all, and still answers the default. See
+ *    `RootType` for the principle (nothing declared vs. a declared fault) and the residual below.
  */
-export const rootSessionType = <E, R>(
+export const rootAttendance = <E, R>(
   sessionID: string,
   getSession: (id: string) => Effect.Effect<SessionLike | undefined, E, R>,
-): Effect.Effect<SessionType, E, R> =>
+): Effect.Effect<RootType, E, R> =>
   Effect.gen(function* () {
     const seen = new Set<string>()
     let id: string | undefined = sessionID
@@ -481,12 +568,59 @@ export const rootSessionType = <E, R>(
     while (id !== undefined && !seen.has(id)) {
       seen.add(id)
       const session: SessionLike | undefined = yield* getSession(id)
-      if (!session) break
+      if (!session) {
+        // ⚠️ ONE missing row, TWO different faults — and they are not the same question.
+        //
+        // `root === undefined` means the very FIRST lookup missed: the caller named a session that
+        // does not exist, so there is no chain here to be wrong about. That is the `undefined`-
+        // shaped fact `HostExec.decide` already rules on ("the first has declared nothing"), and it
+        // keeps the previous answer. RESIDUAL, stated rather than hidden: `tool/bash.ts` does not
+        // check that its session exists, so a bash call for a vanished session still runs raw
+        // there. It is near-unreachable in production (the tool runs inside that session's drain,
+        // and `removeSessionRecord` INTERRUPTS before deleting, session.ts:436) and it is closed by
+        // `bash.ts` refusing an unknown session the way `PermissionV2` already does — not by this
+        // walk inventing an attendance. Measured 2026-07-28: answering `"unknown"` here instead
+        // fails 9 of 12 `test/tool-bash.test.ts` tests, every one of which calls the bash tool with
+        // no session row at all, i.e. the shape only a fixture produces.
+        //
+        // Deeper in, a `parentID` DANGLES: we read a session, it named a parent, and the parent is
+        // gone. The root — the only layer that decides attendance — is precisely what we failed to
+        // read, so the highest KNOWN layer's type is evidence about a child, not about the root. A
+        // `sub-agent` child of a vanished `goal-oriented` root used to answer "attended" here.
+        if (root === undefined) return EFFECTIVE_CONFIG_DEFAULTS.type
+        return "unknown" as const
+      }
       root = session
-      if (session.parentID !== undefined && seen.has(session.parentID)) return EFFECTIVE_CONFIG_DEFAULTS.type
+      // A cycle: this tree has no root to report. Reporting the default here was the worst of the
+      // three — a ring of `auto-prompting` rows answered `"interactive"`.
+      if (session.parentID !== undefined && seen.has(session.parentID)) return "unknown" as const
       id = session.parentID
     }
-    // `root` holds the last reachable ancestor; a chain broken mid-walk (missing parent row)
-    // still reports the highest KNOWN layer's type rather than guessing.
+    // Only reachable via a session that declared no parent at all: a real, fully-read root.
     return root?.type ?? EFFECTIVE_CONFIG_DEFAULTS.type
   })
+
+/**
+ * The narrow adapter over the SAME walk, for the consumers that can only speak `SessionType`:
+ * `HostExec`'s `rootType` field and `AgentJail.decideBash` (`tool/bash.ts`, and the Strict runner
+ * via `session/runner/llm.ts`). It routes through `narrowRootType`, so an unreadable chain reaches
+ * them as the UNATTENDED answer instead of the attended one — every one of those call sites goes
+ * fail-closed with no edit to it.
+ *
+ * ⚠️ TWO residuals, named so this is not mistaken for finished:
+ *  1. Those consumers refuse an unreadable chain with `AgentJail.denyMessage`'s wording, which says
+ *     the chain is unattended rather than that we could not read it — ruling 2's other half, the
+ *     same gap `HostExec.denyMessage` already closed for the hostility tri-state by carrying a
+ *     THIRD reason. Finishing it is three annotations wide (`HostExec.EnvRequest.rootType`,
+ *     `HostExec.SessionHost.rootType`, `HostExec.denyMessage`/`decide` → `RootType`) plus the deny
+ *     text, after which this adapter is deleted.
+ *  2. A `sessionID` naming no row at all still yields the attended default here (see the walk), so
+ *     `tool/bash.ts` — which, unlike `PermissionV2`, never checks that its session exists — would
+ *     run raw for one. The cure belongs in that tool, not in this walk.
+ * The permission evaluator, which does own its seam, consumes `rootAttendance` directly and names
+ * the real fault (`PermissionV2.DenialReason` → `chain-unreadable`).
+ */
+export const rootSessionType = <E, R>(
+  sessionID: string,
+  getSession: (id: string) => Effect.Effect<SessionLike | undefined, E, R>,
+): Effect.Effect<SessionType, E, R> => rootAttendance(sessionID, getSession).pipe(Effect.map(narrowRootType))

@@ -17,7 +17,7 @@ import {
   EFFECTIVE_CONFIG_DEFAULTS,
   MODE_RULES,
   resolveSessionConfig,
-  rootSessionType,
+  rootAttendance,
   unattendedStanceRules,
   type PermissionMode,
 } from "./session/config-resolve"
@@ -100,8 +100,19 @@ export class CorrectedError extends Schema.TaggedErrorClass<CorrectedError>()("P
  * = the unattended confinement stance refused an out-of-folder create/modify/read
  * (`config-resolve.ts` → `UNATTENDED_CONFINED_RULES`); the generic wording tells the model to "ask
  * the user to adjust permissions", which is exactly the advice that hangs an unattended run.
+ *
+ * ⚠️ `chain-unreadable` is the SAME refusal for a DIFFERENT reason, and it exists because ruling 2
+ * forbids describing a fault falsely in either direction. The stance also engages when the chain
+ * root could not be established at all (`RootType` = `"unknown"` — a dangling `parent_id`, or a
+ * cyclic tree): refusing is right, but telling the model "this is an
+ * UNATTENDED session" would be a claim about something we just failed to read, and it points the
+ * user at the wrong thing. Same third-reason shape `HostExec.denyMessage` carries for the
+ * hostility tri-state. This literal set is core-internal — `DeniedError` here is
+ * `PermissionV2.DeniedError`, distinct from `@novaclaw/schema`'s `PermissionDeniedError`, and
+ * neither the reason nor this class is projected into the HttpApi contract, so adding a member
+ * drifts no generated artifact (checked 2026-07-28).
  */
-export const DenialReason = Schema.Literals(["unattended-confined", "attachment-protected"])
+export const DenialReason = Schema.Literals(["unattended-confined", "attachment-protected", "chain-unreadable"])
 export type DenialReason = typeof DenialReason.Type
 
 export class DeniedError extends Schema.TaggedErrorClass<DeniedError>()("PermissionV2.DeniedError", {
@@ -136,6 +147,20 @@ export function denialMessage(error: unknown): string | undefined {
         `Do the work inside this session's folder instead: relative paths resolve there, and you may create ` +
         `whatever files and subfolders you need. If something outside is genuinely required, finish what you ` +
         `can and name the blocked path in your result.`
+      )
+    // The same refusal, honestly attributed. The model is told what actually broke (the session
+    // records) instead of being told something about itself that we could not check, and it is
+    // given the same way forward — because the way forward is identical and a denial that only
+    // says "no" is the hang this whole arm exists to avoid.
+    if (error.reason === "chain-unreadable")
+      return (
+        `Permission denied: this session's parent chain could not be read, so there is no way to tell whether ` +
+        `anyone is present to approve an exception (action '${actions}'). An attendance question this instance ` +
+        `cannot answer is not a licence to act outside the working folder, so the request is refused rather ` +
+        `than granted on a guess — what is broken is the session records, not your request, and no user reply ` +
+        `can unblock it. Do the work inside this session's folder instead: relative paths resolve there, and ` +
+        `you may create whatever files and subfolders you need. If something outside is genuinely required, ` +
+        `finish what you can and name the blocked path in your result.`
       )
     // Same deny-fast reasoning, different boundary: the file is one the USER attached, and this is
     // an unattended run, so there is nobody to grant the exception. Name the file, and name the way
@@ -390,6 +415,14 @@ export const layer = Layer.effect(
       // bypass's `allow`) shadow an explicit configured deny — a mode may convert silent allows
       // into consent or raise defaults, but never soften a deny; and a saved allow-always can
       // never override plan/surgical mode denies.
+      // ⚠️ This catch is the same permissive shape the rootType one below used to have, and it is
+      // deliberately LEFT for now rather than half-fixed: `EFFECTIVE_CONFIG_DEFAULTS.permissionMode`
+      // is `bypass`, so a failed config walk would fall back to the most capable practical mode.
+      // It is unreachable for the same measured reason (`SessionStore.get` orDies, so `E` is
+      // `never`), and unlike the attendance question there is no honest safe answer available here
+      // — every `PermissionMode` is a positive claim about what the user chose, and picking `plan`
+      // on a fault would refuse an ordinary interactive turn's edits. The right cure is a
+      // tri-state on the mode, which is a wider change than this unit owns; filed in the report.
       const resolved = yield* sessionConfig(input.sessionID).pipe(
         EffectRuntime.catch(() => EffectRuntime.succeed(EFFECTIVE_CONFIG_DEFAULTS)),
       )
@@ -402,8 +435,17 @@ export const layer = Layer.effect(
       // of "ask the user to adjust permissions". Attendance is the ROOT's property (a child cannot
       // declare itself attended out of it) and `yolo` — unreachable for a narrowed child — is the
       // one deliberate way out.
-      const rootType = yield* rootSessionType(input.sessionID, (id) => sessions.get(id as SessionV2.ID)).pipe(
-        EffectRuntime.catch(() => EffectRuntime.succeed(EFFECTIVE_CONFIG_DEFAULTS.type)),
+      // ⚠️ `rootAttendance`, not `rootSessionType`: this seam can NAME an unreadable chain, so it
+      // takes the tri-state undiluted rather than the adapter's collapsed `SessionType`.
+      // ⚠️ And the catch answers `"unknown"`, not the attended default it used to. Two things
+      // measured 2026-07-28 about that catch: (1) it is UNREACHABLE in production — `sessions.get`
+      // is `SessionStore.get`, whose DB failure is `orDie` (store.ts:36), so `E` is `never` here
+      // and a real store fault takes the whole turn down as a defect rather than landing on a
+      // permissive default (the filing that opened this item assumed the opposite); (2) it is kept
+      // anyway, because `rootAttendance` is generic in `E` and the day a caller hands in a store
+      // that fails TYPED, "we could not read the chain" is the honest answer and the safe one.
+      const rootType = yield* rootAttendance(input.sessionID, (id) => sessions.get(id as SessionV2.ID)).pipe(
+        EffectRuntime.catch(() => EffectRuntime.succeed("unknown" as const)),
       )
       // ...with ONE exemption: the managed tool-output store. A tool whose output is too large is spilled
       // to `<data>/tool-output/` and the model is told to go read it — but that store sits outside every
@@ -474,7 +516,13 @@ export const layer = Layer.effect(
           : []
       const rules = [...readBaseline, ...configuredRules, ...paranoidRead, ...modeRules, ...featureRules, ...stance]
       if (denied(input, stance))
-        return { effect: "deny" as const, rules, reason: "unattended-confined" as DenialReason | undefined }
+        return {
+          effect: "deny" as const,
+          rules,
+          // The stance fired either because the root IS unattended or because we could not find
+          // out. Same refusal, different fault — and ruling 2 says the model gets the true one.
+          reason: (rootType === "unknown" ? "chain-unreadable" : "unattended-confined") as DenialReason | undefined,
+        }
       if (denied(input, configuredRules) || denied(input, modeRules) || denied(input, featureRules))
         return { effect: "deny" as const, rules, reason: undefined as DenialReason | undefined }
       const saved = yield* savedRules()

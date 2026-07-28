@@ -791,6 +791,83 @@ describe("PermissionV2 — unattended confinement stance", () => {
     }),
   )
 
+  // ── the chain we could not read (2026-07-28) ───────────────────────────────────────────────
+  // `session.parent_id` carries NO foreign key (session/sql.ts:22), so a row pointing at a parent
+  // that is gone is representable in the schema — a session deleted mid-turn, a partial recursive
+  // delete, a corrupt tree. Before this change the walk answered with the deepest KNOWN layer's
+  // type, so this exact row ("sub-agent") reported ATTENDED, `unattendedStanceRules` returned []
+  // and the out-of-folder write below was an ASK. The chain root — the thing that decides
+  // attendance — is precisely the row that vanished, so that was a containment answer invented
+  // from missing data.
+  it.effect("a chain that dangles at a MISSING parent is confined, and the denial names the real fault", () =>
+    Effect.gen(function* () {
+      yield* setup(buildAgentRules)
+      yield* insertSession({ id: "ses_orphan", type: "sub-agent", permissionMode: "bypass", parentID: "ses_ghost" })
+      const service = yield* PermissionV2.Service
+      const input = outside({ sessionID: SessionV2.ID.make("ses_orphan") })
+
+      expect(yield* service.ask(input)).toMatchObject({ effect: "deny" })
+      expect(yield* service.list()).toEqual([]) // deny-fast: nothing parked for a human
+
+      const error = yield* service.assert(input).pipe(Effect.flip)
+      expect(error).toBeInstanceOf(PermissionV2.DeniedError)
+      expect((error as PermissionV2.DeniedError).reason).toBe("chain-unreadable")
+
+      // Ruling 2's other half: refusing for a real reason while describing the fault falsely is
+      // still describing it falsely. The model is told the session RECORDS are broken — the thing
+      // it can actually act on — not that it is an unattended run, which we never established.
+      const message = PermissionV2.denialMessage(error)!
+      expect(message).toContain("parent chain could not be read")
+      expect(message).toContain("no user reply can unblock it")
+      expect(message).not.toContain("ask the user")
+      expect(message).not.toContain("this is an UNATTENDED session")
+    }),
+  )
+
+  // NEGATIVE CONTROL for the test above: same row, same request, same mode — the ONLY difference is
+  // that the parent row exists. Without this, the deny above could come from a guard that refuses
+  // anything with a `parentID`, or from the stance having been switched on for everyone.
+  it.effect("NEGATIVE CONTROL: give the orphan its parent back and the identical request ASKS again", () =>
+    Effect.gen(function* () {
+      yield* setup(buildAgentRules)
+      yield* insertSession({ id: "ses_ghost", type: "interactive", permissionMode: "bypass" })
+      yield* insertSession({ id: "ses_orphan", type: "sub-agent", permissionMode: "bypass", parentID: "ses_ghost" })
+      const service = yield* PermissionV2.Service
+      expect(yield* service.ask(outside({ sessionID: SessionV2.ID.make("ses_orphan") }))).toMatchObject({
+        effect: "ask",
+      })
+    }),
+  )
+
+  // The worst of the three shapes, because every row in it already SAYS nobody is watching: a
+  // cyclic tree used to discard everything it had read and answer "interactive".
+  it.effect("a CYCLIC chain is confined too — it used to answer 'interactive' and run raw", () =>
+    Effect.gen(function* () {
+      yield* setup(buildAgentRules)
+      yield* insertSession({ id: "ses_a", type: "auto-prompting", permissionMode: "bypass", parentID: "ses_b" })
+      yield* insertSession({ id: "ses_b", type: "auto-prompting", permissionMode: "bypass", parentID: "ses_a" })
+      const service = yield* PermissionV2.Service
+      const error = yield* service.assert(outside({ sessionID: SessionV2.ID.make("ses_a") })).pipe(Effect.flip)
+      expect((error as PermissionV2.DeniedError).reason).toBe("chain-unreadable")
+    }),
+  )
+
+  // Measured, not assumed — and it is why the fix bites on the ANCESTOR case rather than this one.
+  // `evaluateInput` computes the stance and then calls `configured()`, which fails
+  // `Session.NotFoundError` when the TARGET row is absent, so a permission decision for a session
+  // that does not exist never reaches an allow either way. The item that opened this work assumed
+  // the missing-target row was the live hole; the dangling ANCESTOR is.
+  it.effect("a permission asserted for a session that does not exist fails NotFound, not allow", () =>
+    Effect.gen(function* () {
+      yield* setup(buildAgentRules)
+      const service = yield* PermissionV2.Service
+      const error = yield* service
+        .assert(outside({ sessionID: SessionV2.ID.make("ses_nonexistent") }))
+        .pipe(Effect.flip)
+      expect(error).toBeInstanceOf(SessionV2.NotFoundError)
+    }),
+  )
+
   // Owner call (2026-07-25): READING outside the folder is ordinary work — a toolchain, an SDK, a system
   // header (C:\soft\w64devkit to build an app). The fear these rules answer is a destructive WRITE, so an
   // out-of-folder read is ALLOWED by default even unattended, and confined only under Paranoid.

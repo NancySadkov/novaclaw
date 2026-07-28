@@ -1,16 +1,21 @@
 import { describe, expect, test } from "bun:test"
+import fs from "node:fs"
+import path from "node:path"
 import { Effect } from "effect"
 import {
   attendedRoot,
   moreRestrictive,
+  narrowRootType,
   PARANOID_READ_RULES,
   resolveConfig,
   resolveSessionConfig,
+  rootAttendance,
   rootSessionType,
   UNATTENDED_CONFINED_RULES,
   unattendedStanceRules,
   type EffectiveConfig,
   type PermissionMode,
+  type RootType,
   type SessionConfig,
   type SessionLike,
   type SessionType,
@@ -211,12 +216,15 @@ describe("resolveSessionConfig — the effectful parentID walk", () => {
     ).toBe("child prompt"))
 })
 
-describe("rootSessionType — the chain ROOT's thread type (Agent Jail P0b)", () => {
+describe("rootAttendance — the chain ROOT's thread type (Agent Jail P0b)", () => {
   const rootOf = (sid: string, sessions: Record<string, SessionLike>) =>
-    Effect.runSync(rootSessionType(sid, (id) => Effect.succeed(sessions[id])))
+    Effect.runSync(rootAttendance(sid, (id) => Effect.succeed(sessions[id])))
 
   test("a bare root reports its own type; untyped root defaults to interactive", () => {
     expect(rootOf("r", { r: { id: "r", type: "goal-oriented" } })).toBe("goal-oriented")
+    // A root row with no `type` is a READ we performed, not a fault: `undefined` means inherit, and
+    // at the root that is the global default. It must NOT become "unknown", or the fix would
+    // confine every ordinary chat — the false-fault-in-the-other-direction ruling 2 also forbids.
     expect(rootOf("r", { r: { id: "r" } })).toBe("interactive")
   })
 
@@ -236,14 +244,254 @@ describe("rootSessionType — the chain ROOT's thread type (Agent Jail P0b)", ()
       }),
     ).toBe("interactive"))
 
-  test("a chain broken mid-walk reports the highest KNOWN layer's type", () =>
-    expect(rootOf("child", { child: { id: "child", parentID: "ghost", type: "auto-prompting" } })).toBe(
-      "auto-prompting",
-    ))
-
-  test("a missing session and a cyclic chain both fail OPEN to interactive", () => {
+  // ── the unreadable chains (2026-07-28) ─────────────────────────────────────────────────────
+  // Each of these used to answer with an ATTENDED type, which removes the confinement stance
+  // entirely and, at `AgentJail.decideBash`, returns "raw". Measured before the change, verbatim:
+  //   dangling parent, sub-agent row   → "sub-agent"    (attended, stance [])
+  //   dangling parent, untyped row     → "interactive"  (attended, stance [])
+  //   cycle of two auto-prompting rows → "interactive"  (attended, stance [])
+  //   missing row (NOT a chain fault)  → "interactive"  (attended, stance []) — see below
+  test("a session id that names NO row keeps the default — nothing was declared, so nothing faulted", () => {
+    // The deliberate non-change, and the boundary of this fix. There is no chain to be wrong about
+    // when there is no session: this is `HostExec.decide`'s `undefined` slot ("declared nothing"),
+    // not its `"unknown"` slot ("declared a fault"). The seam that CAN observe the discrepancy
+    // already refuses on it — `PermissionV2` fails `Session.NotFoundError` before reaching an allow
+    // (pinned in `test/permission.test.ts`). Measured 2026-07-28: making this `"unknown"` fails 9 of
+    // 12 `test/tool-bash.test.ts` tests, all of which drive the bash tool with no session row at
+    // all — a shape only a fixture produces, and the cure is for `tool/bash.ts` to refuse an unknown
+    // session, not for this walk to invent an attendance.
     expect(rootOf("nope", {})).toBe("interactive")
-    expect(rootOf("a", { a: { id: "a", parentID: "b" }, b: { id: "b", parentID: "a" } })).toBe("interactive")
+  })
+
+  test("a chain that dangles at a missing parent is UNKNOWN — the deepest KNOWN layer is not evidence about the root", () => {
+    // The worst shape, and the one the old code was written to produce: the surviving row says
+    // "sub-agent", which `attendedRoot` reads as ATTENDED, while the root that actually decided
+    // attendance is exactly the row that vanished.
+    expect(rootOf("child", { child: { id: "child", parentID: "ghost", type: "sub-agent" } })).toBe("unknown")
+    expect(rootOf("child", { child: { id: "child", parentID: "ghost", type: "auto-prompting" } })).toBe("unknown")
+    expect(rootOf("child", { child: { id: "child", parentID: "ghost" } })).toBe("unknown")
+  })
+
+  test("a cyclic chain is UNKNOWN — a ring of unattended rows used to answer 'interactive'", () => {
+    expect(rootOf("a", { a: { id: "a", parentID: "b" }, b: { id: "b", parentID: "a" } })).toBe("unknown")
+    expect(
+      rootOf("a", {
+        a: { id: "a", parentID: "b", type: "auto-prompting" },
+        b: { id: "b", parentID: "a", type: "auto-prompting" },
+      }),
+    ).toBe("unknown")
+  })
+
+  test("a typed store failure still PROPAGATES — it is a different fault and is not swallowed here", () => {
+    // `Effect.flip`, not `Effect.either` — the latter does not exist on effect@4.0.0-beta.83 and
+    // fails at RUNTIME with "args[0] is not a function", which bun's type-stripping hides until the
+    // test runs. Caught here 2026-07-28 while negative-controlling this file.
+    expect(Effect.runSync(rootAttendance("x", () => Effect.fail("db unreadable" as const)).pipe(Effect.flip))).toBe(
+      "db unreadable",
+    )
+  })
+})
+
+// The whole point of the tri-state: it changes the DECISION, not just the reported value.
+describe("the unreadable chain reaches the confinement DECISION, not just the report", () => {
+  const decide = (sid: string, sessions: Record<string, SessionLike>, mode: PermissionMode = "bypass") => {
+    const root = Effect.runSync(rootAttendance(sid, (id) => Effect.succeed(sessions[id])))
+    return { root, attended: attendedRoot(root), stance: unattendedStanceRules(root, mode) }
+  }
+
+  test("each unreadable chain is not attended and DOES get the stance", () => {
+    for (const [label, sid, sessions] of [
+      ["dangling parent", "child", { child: { id: "child", parentID: "ghost", type: "sub-agent" } }],
+      ["dangling parent, untyped", "child", { child: { id: "child", parentID: "ghost" } }],
+      ["cycle", "a", { a: { id: "a", parentID: "b" }, b: { id: "b", parentID: "a" } }],
+      [
+        "cycle of unattended rows",
+        "a",
+        {
+          a: { id: "a", parentID: "b", type: "auto-prompting" },
+          b: { id: "b", parentID: "a", type: "auto-prompting" },
+        },
+      ],
+    ] as const) {
+      const { root, attended, stance } = decide(sid, sessions as Record<string, SessionLike>)
+      expect(root, label).toBe("unknown")
+      expect(attended, label).toBe(false)
+      expect(stance, label).toEqual(UNATTENDED_CONFINED_RULES)
+    }
+  })
+
+  // NEGATIVE CONTROL — without this the block above could be produced by a change that confines
+  // EVERYTHING. A chain read end to end to an interactive root is untouched: still attended, still
+  // no stance. (This is also the exact answer the three cases above used to give.)
+  test("NEGATIVE CONTROL: a healthy attended chain is untouched — still attended, still no stance", () => {
+    const healthy = decide("child", {
+      root: { id: "root", type: "interactive" },
+      child: { id: "child", parentID: "root", type: "sub-agent" },
+    })
+    expect(healthy).toEqual({ root: "interactive", attended: true, stance: [] })
+    // …and the value the walk used to return for a broken chain would still buy exactly that.
+    expect(attendedRoot("interactive")).toBe(true)
+    expect(attendedRoot("sub-agent")).toBe(true)
+    expect(unattendedStanceRules("interactive", "bypass")).toEqual([])
+  })
+
+  // `yolo` stays the ONE deliberate way out, and it is not reachable for a spawned child
+  // (`moreRestrictive` clamps it), so this does not open a bypass.
+  test("an unreadable chain under yolo still opts out — the escape hatch is unchanged", () =>
+    expect(unattendedStanceRules("unknown", "yolo")).toEqual([]))
+})
+
+describe("narrowRootType — the ONE collapse point for the root tri-state", () => {
+  const KNOWN: SessionType[] = ["interactive", "sub-agent", "auto-prompting", "goal-oriented"]
+
+  test("it is the identity on every readable answer — nothing else is reinterpreted", () => {
+    for (const type of KNOWN) expect(narrowRootType(type)).toBe(type)
+  })
+
+  test("an unreadable chain narrows to an UNATTENDED type, so a SessionType-only consumer contains it", () => {
+    const narrowed = narrowRootType("unknown")
+    // Stated as the DECISION, not as the constant: flipping `UNREADABLE_CHAIN_ROOT_TYPE` back to
+    // "interactive" (what the walk used to return) fails all three of these at once. That is what
+    // keeps `tool/bash.ts` and the Strict runner — which still speak plain `SessionType` through
+    // `HostExec` — fail-closed without a single edit to either file.
+    expect(KNOWN).toContain(narrowed)
+    expect(attendedRoot(narrowed)).toBe(false)
+    expect(unattendedStanceRules(narrowed, "bypass")).toEqual(UNATTENDED_CONFINED_RULES)
+  })
+
+  test("attendedRoot and the narrowing can never disagree — there is no second collapse", () => {
+    // `attendedRoot` is DEFINED through `narrowRootType`; this is the mechanical version of that
+    // claim, so a future edit that gives the predicate its own opinion about "unknown" fails here.
+    for (const value of [...KNOWN, "unknown"] as RootType[])
+      expect(attendedRoot(value), value).toBe(attendedRoot(narrowRootType(value)))
+  })
+
+  test("the narrow adapter `rootSessionType` routes through it — every legacy call site fail-closes", () => {
+    const via = (sid: string, sessions: Record<string, SessionLike>) =>
+      Effect.runSync(rootSessionType(sid, (id) => Effect.succeed(sessions[id])))
+    // The chain faults, as `tool/bash.ts` and the Strict runner now see them: a dangling parent and
+    // a cycle no longer buy "raw" from `AgentJail.decideBash`, with no edit to either file.
+    expect(attendedRoot(via("child", { child: { id: "child", parentID: "ghost", type: "sub-agent" } }))).toBe(false)
+    expect(attendedRoot(via("a", { a: { id: "a", parentID: "b" }, b: { id: "b", parentID: "a" } }))).toBe(false)
+    // NEGATIVE CONTROL — a healthy chain still passes through untouched, so the adapter is not
+    // simply hardcoding "unattended" for everything…
+    expect(via("r", { r: { id: "r", type: "interactive" } })).toBe("interactive")
+    expect(attendedRoot(via("r", { r: { id: "r", type: "interactive" } }))).toBe(true)
+    // …and neither is the no-such-session case, which is the documented boundary of this fix.
+    expect(attendedRoot(via("nope", {}))).toBe(true)
+  })
+})
+
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+// SHRINK-ONLY LEDGER — who is allowed to hold the three-valued root answer.
+//
+// The TYPE already stops a caller folding `RootType` into a `SessionType` slot silently (that is
+// ruling 1's mechanical edge). What a type cannot stop is a second collapse point appearing in a
+// new file, or `permission.ts` quietly reverting to the collapsed adapter and losing the honest
+// denial reason. This ledger is that ratchet: it fails on a file that reaches for the tri-state
+// without an entry, AND on an entry whose file has stopped doing so. Same shape as
+// `host-exec.test.ts`'s `Hostility` ledger — deliberately, because it is the same defect class.
+// ─────────────────────────────────────────────────────────────────────────────────────────────
+describe("the root tri-state has ONE collapse point (shrink-only ledger)", () => {
+  const SRC = path.resolve(import.meta.dir, "..")
+  const SELF = path.resolve(import.meta.dir, "config-resolve.test.ts")
+
+  /** Comments discuss the old boolean-ish world freely; only CODE is swept. */
+  const stripComments = (text: string) =>
+    text.replaceAll(/\/\*[\s\S]*?\*\//g, "").replaceAll(/(^|[^:])\/\/[^\n]*/g, "$1")
+
+  const SHAPES: ReadonlyArray<{ readonly pattern: RegExp; readonly what: string }> = [
+    { pattern: /\brootAttendance\s*\(/, what: "reads the three-valued root answer" },
+    { pattern: /\bRootType\b/, what: "names the three-valued root type" },
+    { pattern: /\bnarrowRootType\s*\(/, what: "collapses the three-valued root answer" },
+  ]
+
+  const shapesIn = (text: string) => SHAPES.filter((shape) => shape.pattern.test(text)).map((shape) => shape.what)
+
+  const collect = (dir: string, out: Array<{ name: string; text: string }> = []) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const full = path.join(dir, entry.name)
+      if (entry.isDirectory()) {
+        if (entry.name === "node_modules" || entry.name === "gen") continue
+        collect(full, out)
+      } else if (entry.isFile() && entry.name.endsWith(".ts") && !entry.name.endsWith(".d.ts")) {
+        // Production code only. A test file naming the type is not a shipped decision — and
+        // sweeping them would put this very file, and every future test of the tri-state, in the
+        // ledger, which turns the ratchet into noise.
+        if (full === SELF || entry.name.endsWith(".test.ts")) continue
+        out.push({
+          name: path.relative(SRC, full).replaceAll("\\", "/"),
+          text: stripComments(fs.readFileSync(full, "utf8")),
+        })
+      }
+    }
+    return out
+  }
+  const sources = collect(SRC)
+
+  /** Every file allowed to hold the tri-state, and why. */
+  const LEDGER = new Map<string, string>([
+    [
+      "session/config-resolve.ts",
+      "The walk that produces it, and the ONE collapse point: `narrowRootType` is the single place " +
+        '`"unknown"` becomes anything else, `attendedRoot` is defined through it, and ' +
+        "`rootSessionType` is the adapter that carries the contained answer to the `SessionType`-only " +
+        "consumers (HostExec / AgentJail).",
+    ],
+    [
+      "permission.ts",
+      "The one consumer entitled to NAME the fault: it reads the tri-state so a stance denial can " +
+        "report `chain-unreadable` instead of claiming the session is unattended (ruling 2). It " +
+        "decides containment through `unattendedStanceRules`/`attendedRoot` and never folds the " +
+        "value itself.",
+    ],
+  ])
+
+  test("the sweep actually has the package to look at", () => {
+    expect(sources.length).toBeGreaterThan(200)
+    const names = new Set(sources.map((file) => file.name))
+    for (const name of ["session/config-resolve.ts", "permission.ts", "tool/bash.ts", "session/runner/llm.ts"])
+      expect(names, `${name} is not in the sweep`).toContain(name)
+  })
+
+  test("no unledgered file holds the three-valued root answer", () => {
+    const offenders = sources
+      .filter((file) => !LEDGER.has(file.name))
+      .flatMap((file) => {
+        const found = shapesIn(file.text)
+        return found.length === 0 ? [] : [`${file.name} → ${found.join(", ")}`]
+      })
+      .sort()
+    // A new consumer takes `rootSessionType` (already contained) or earns a ledger entry saying
+    // what it does with "unknown". It does not get to invent a second answer to the question.
+    expect(offenders).toEqual([])
+  })
+
+  test("the ledger can only SHRINK — an entry that no longer applies must be dropped", () => {
+    const stale: string[] = []
+    for (const name of LEDGER.keys()) {
+      const file = sources.find((item) => item.name === name)
+      if (file === undefined) stale.push(`${name} (no longer exists — drop the ledger entry)`)
+      else if (shapesIn(file.text).length === 0) stale.push(`${name} (no longer holds it — drop the ledger entry)`)
+    }
+    // ⚠️ This is also what catches `permission.ts` sliding back to the collapsed adapter: lose the
+    // tri-state there and the entry goes stale, which fails rather than silently losing the reason.
+    expect(stale).toEqual([])
+  })
+
+  test("the guard bites, and stays silent on the correct shapes (negative control)", () => {
+    expect(shapesIn(`const root = yield* rootAttendance(id, get)`)).toContain("reads the three-valued root answer")
+    expect(shapesIn(`readonly rootType?: RootType`)).toContain("names the three-valued root type")
+    expect(shapesIn(`HostExec.decide({ rootType: narrowRootType(root) })`)).toContain(
+      "collapses the three-valued root answer",
+    )
+    // …and the shapes a normal consumer uses must NOT fire, or every existing call site lands in
+    // the ledger and the ratchet becomes noise.
+    expect(shapesIn(`const rootType = yield* rootSessionType(sessionID, get)`)).toEqual([])
+    expect(shapesIn(`if (!AgentJail.attendedRoot(rootType)) steer(nudge)`)).toEqual([])
+    expect(shapesIn(`readonly rootType?: SessionType`)).toEqual([])
+    // A file that only TALKS about it in a comment is code-clean, because comments are stripped.
+    expect(shapesIn(stripComments(`// rootAttendance() returns RootType\nconst x = 1`))).toEqual([])
   })
 })
 
