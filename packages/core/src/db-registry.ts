@@ -47,6 +47,45 @@ const assertTable = (table: string) =>
     return table
   })
 
+/**
+ * Tables the Registry may BROWSE but must never WRITE.
+ *
+ * `migration` is the schema-migration journal (`database/migration.ts`) — one row per applied
+ * migration id, and the only thing that tells the next boot what has already run. Every write to
+ * it corrupts that answer, in both directions:
+ *  - DELETE a row (or edit an `id`) → the migration REPLAYS on the next boot. Most migrations open
+ *    with a `CREATE TABLE`/`ALTER TABLE`, which then throws on an object that already exists,
+ *    inside `applyOnly`, which the Database layer `Effect.orDie`s — the instance does not start.
+ *  - INSERT a fabricated id → a real migration looks already-applied and is SKIPPED, leaving the
+ *    schema silently behind the code.
+ *  - UPDATE `time_completed` → the least harmful, but it is the same row and the same class of
+ *    foot-gun, and there is no legitimate reason to hand-edit it.
+ * None of that is repairable from inside the product: it is precisely the edit that removes the
+ * instance's ability to boot and therefore to repair itself (the instance is the trust boundary —
+ * a Developer-mode surface may expose every dangerous edit EXCEPT that one). Reads stay open; this
+ * gate is on writes only, so an operator can still inspect the journal to diagnose a bad upgrade.
+ *
+ * ⚠️ EXACT names, never a prefix or a substring match. `data_migration` (`data-migration.sql.ts`)
+ * is an UNRELATED application table tracking data backfills and stays fully editable — the
+ * "…still permits data_migration" negative control in `test/db-registry.test.ts` is what keeps
+ * this honest.
+ */
+const READ_ONLY_TABLES: ReadonlySet<string> = new Set(["migration"])
+
+/** `assertTable` plus the write gate: the table must exist AND not be one the boot depends on. */
+const assertWritable = (table: string) =>
+  Effect.gen(function* () {
+    const name = yield* assertTable(table)
+    if (READ_ONLY_TABLES.has(name))
+      return yield* new RegistryError({
+        message:
+          `"${name}" is read-only: it is the schema-migration journal, and writing to it replays or ` +
+          `skips a migration on the next boot, which can leave this instance unable to start. ` +
+          `Browsing it is fine.`,
+      })
+    return name
+  })
+
 const tableColumns = (table: string) =>
   Effect.gen(function* () {
     const { db } = yield* Database.Service
@@ -108,7 +147,7 @@ export const updateRow = Effect.fn("DbRegistry.updateRow")(function* (input: {
   values: Record<string, unknown>
 }) {
   const { db } = yield* Database.Service
-  const table = yield* assertTable(input.table)
+  const table = yield* assertWritable(input.table)
   const columns = yield* tableColumns(table)
   const entries = Object.entries(input.values).filter(([column]) => columns.includes(column))
   if (entries.length === 0) return yield* new RegistryError({ message: "No editable columns in the payload" })
@@ -127,7 +166,7 @@ export const insertRow = Effect.fn("DbRegistry.insertRow")(function* (input: {
   values: Record<string, unknown>
 }) {
   const { db } = yield* Database.Service
-  const table = yield* assertTable(input.table)
+  const table = yield* assertWritable(input.table)
   const columns = yield* tableColumns(table)
   // Same whitelist discipline as updateRow: unknown columns are dropped, never interpolated.
   const entries = Object.entries(input.values).filter(([column]) => columns.includes(column))
@@ -141,6 +180,6 @@ export const insertRow = Effect.fn("DbRegistry.insertRow")(function* (input: {
 
 export const deleteRow = Effect.fn("DbRegistry.deleteRow")(function* (input: { table: string; rowid: number }) {
   const { db } = yield* Database.Service
-  const table = yield* assertTable(input.table)
+  const table = yield* assertWritable(input.table)
   yield* db.run(sql`DELETE FROM ${sql.identifier(table)} WHERE rowid = ${input.rowid}`).pipe(Effect.orDie)
 })

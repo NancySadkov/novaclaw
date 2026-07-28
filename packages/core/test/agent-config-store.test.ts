@@ -1,7 +1,8 @@
 import { describe, expect } from "bun:test"
 import fs from "fs/promises"
 import path from "path"
-import { Effect, Schema } from "effect"
+import { sql } from "drizzle-orm"
+import { Effect, Logger, Schema } from "effect"
 import { AgentConfigSeed } from "@novaclaw/core/agent-config-seed"
 import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
 import { ConfigAgent } from "@novaclaw/core/config/agent"
@@ -17,6 +18,20 @@ import { testEffect } from "./lib/effect"
 
 const it = testEffect(AppNodeBuilder.build(LayerNode.group([Database.node, AgentConfigStore.node, FSUtil.node])))
 const decodeAgent = Schema.decodeUnknownSync(ConfigAgent.Info)
+
+/** Run `effect` with the loggers replaced by a collector, and hand back every WARN it emitted. */
+const withWarnings = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+  Effect.suspend(() => {
+    const warnings: string[] = []
+    const collector = Logger.make((options: Logger.Options<unknown>) => {
+      if (options.logLevel !== "Warn") return
+      warnings.push(Array.isArray(options.message) ? options.message.join(" ") : String(options.message))
+    })
+    return effect.pipe(
+      Effect.provide(Logger.layer([collector])),
+      Effect.map((value) => ({ value, warnings })),
+    )
+  })
 
 describe("AgentConfigStore", () => {
   it.effect("round-trips ordered layers, replaces on set, removes, and reports emptiness", () =>
@@ -35,6 +50,55 @@ describe("AgentConfigStore", () => {
 
       yield* store.removeAgent("reviewer")
       expect(yield* store.isEmpty()).toBe(true)
+    }),
+  )
+
+  // Standing decision 3, applied to a config read: one unreadable `layers` blob used to be a
+  // DEFECT (decodeUnknownSync THROWS inside the Effect.fn) that killed `agents()` — and this is a
+  // global service on the location-boot path, so one bad row killed BOOT. It must now cost exactly
+  // that one agent, and it must say so out loud.
+  it.effect("one malformed layers row is skipped BY NAME; every other agent still loads", () =>
+    Effect.gen(function* () {
+      const store = yield* AgentConfigStore.Service
+      const { db } = yield* Database.Service
+      yield* store.setLayers("healthy", [decodeAgent({ description: "still here" })])
+      yield* store.setLayers("also-healthy", [decodeAgent({ hidden: true })])
+
+      // Two ways a row goes bad that the typed API cannot produce: a hand edit through the
+      // Registry, or an older/newer schema. Both are valid JSON, so the failure is a SCHEMA
+      // failure, not a parse failure.
+      yield* db
+        .run(
+          sql`INSERT INTO agent_config (name, layers, time_created, time_updated)
+              VALUES ('not-a-list', '"nope"', 0, 0), ('bad-field', '[{"hidden":"yes"}]', 0, 0)`,
+        )
+        .pipe(Effect.orDie)
+
+      const { value: agents, warnings } = yield* withWarnings(store.agents())
+      // Degrades, never vanishes: the readable agents are all still there...
+      expect(agents.healthy).toEqual([decodeAgent({ description: "still here" })])
+      expect(agents["also-healthy"]).toEqual([decodeAgent({ hidden: true })])
+      // ...and the unreadable ones are absent rather than half-decoded.
+      expect(agents["not-a-list"]).toBeUndefined()
+      expect(agents["bad-field"]).toBeUndefined()
+      expect(Object.keys(agents).sort()).toEqual(["also-healthy", "healthy"])
+
+      // Never silently: the skipped rows are NAMED in a warning an operator can find.
+      expect(warnings).toHaveLength(1)
+      expect(warnings[0]).toContain("not-a-list")
+      expect(warnings[0]).toContain("bad-field")
+      expect(warnings[0]).toContain("agent_config")
+      expect(warnings[0]).not.toContain("healthy:")
+
+      // Deduped: a second read is not a second log line (config reads are hot).
+      expect((yield* withWarnings(store.agents())).warnings).toEqual([])
+
+      // And the store is otherwise untouched — a read never destroys.
+      expect(yield* store.isEmpty()).toBe(false)
+      const remaining = (yield* db
+        .get(sql`SELECT count(*) AS count FROM agent_config`)
+        .pipe(Effect.orDie)) as { count: number }
+      expect(remaining.count).toBe(4)
     }),
   )
 
