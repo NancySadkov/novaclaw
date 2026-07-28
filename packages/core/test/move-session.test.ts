@@ -1,5 +1,4 @@
 import { describe, expect } from "bun:test"
-import { $ } from "bun"
 import fs from "fs/promises"
 import path from "path"
 import { eq } from "drizzle-orm"
@@ -15,6 +14,7 @@ import { SessionV2 } from "@novaclaw/core/session"
 import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { SessionStore } from "@novaclaw/core/session/store"
+import { git, gitText, repo } from "./fixture/git"
 import { tmpdir } from "./fixture/tmpdir"
 import { testEffect } from "./lib/effect"
 
@@ -35,18 +35,11 @@ function abs(input: string) {
   return AbsolutePath.make(input)
 }
 
-async function initRepo(directory: string) {
-  await $`git init`.cwd(directory).quiet()
-  await $`git config core.autocrlf false`.cwd(directory).quiet()
-  await $`git config core.fsmonitor false`.cwd(directory).quiet()
-  await $`git config commit.gpgsign false`.cwd(directory).quiet()
-  await $`git config user.email test@novaclaw.test`.cwd(directory).quiet()
-  await $`git config user.name Test`.cwd(directory).quiet()
-  await fs.writeFile(path.join(directory, "tracked.txt"), "initial\n")
-  await $`git add tracked.txt`.cwd(directory).quiet()
-  await $`git commit -m root`.cwd(directory).quiet()
-}
-
+// Git is SCENERY for this suite: the subject is MoveSession's own logic — which files travel, which
+// stay, and what the session row ends up pointing at. The checkout underneath only has to be a git
+// checkout, so it comes from a template built once per process and copied (test/fixture/git.ts). The
+// `git worktree add` that creates each destination stays live: it is part of the scenario being moved
+// between, and it mutates the repository it is run in.
 describe("MoveSession", () => {
   it.live("moves session changes to another project directory", () =>
     Effect.gen(function* () {
@@ -54,13 +47,13 @@ describe("MoveSession", () => {
         Effect.promise(() => tmpdir()),
         (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
       )
-      yield* Effect.promise(() => initRepo(root.path))
+      yield* Effect.promise(() => repo(root.path, { "tracked.txt": "initial\n" }))
       const source = abs(yield* Effect.promise(() => fs.realpath(root.path)))
       const destination = abs(`${root.path}-move-destination`)
       yield* Effect.addFinalizer(() =>
         Effect.promise(() => fs.rm(destination, { recursive: true, force: true })).pipe(Effect.ignore),
       )
-      yield* Effect.promise(() => $`git worktree add --detach ${destination} HEAD`.cwd(root.path).quiet())
+      yield* Effect.promise(() => git(root.path, "worktree", "add", "--detach", destination, "HEAD"))
       const moved = abs(yield* Effect.promise(() => fs.realpath(destination)))
       yield* Effect.promise(() => fs.writeFile(path.join(source, "tracked.txt"), "changed\n"))
       yield* Effect.promise(() => fs.writeFile(path.join(source, "untracked.txt"), "new\n"))
@@ -106,7 +99,7 @@ describe("MoveSession", () => {
         Effect.promise(() => tmpdir()),
         (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
       )
-      yield* Effect.promise(() => initRepo(root.path))
+      yield* Effect.promise(() => repo(root.path, { "tracked.txt": "initial\n" }))
       const source = abs(yield* Effect.promise(() => fs.realpath(root.path)))
       const destination = abs(path.join(source, "packages"))
       yield* Effect.promise(() => fs.mkdir(destination))
@@ -152,23 +145,26 @@ describe("MoveSession", () => {
         Effect.promise(() => tmpdir()),
         (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
       )
-      yield* Effect.promise(() => initRepo(root.path))
+      // One root commit instead of two: nothing here asserts on ancestry, only on working-tree state
+      // against HEAD, and HEAD's tree is identical either way.
+      yield* Effect.promise(() =>
+        repo(root.path, {
+          "tracked.txt": "initial\n",
+          "packages/tracked.txt": "initial\n",
+          "packages/staged.txt": "initial\n",
+        }),
+      )
       const source = abs(yield* Effect.promise(() => fs.realpath(root.path)))
       const sourceDirectory = abs(path.join(source, "packages"))
-      yield* Effect.promise(() => fs.mkdir(sourceDirectory))
-      yield* Effect.promise(() => fs.writeFile(path.join(sourceDirectory, "tracked.txt"), "initial\n"))
-      yield* Effect.promise(() => fs.writeFile(path.join(sourceDirectory, "staged.txt"), "initial\n"))
-      yield* Effect.promise(() => $`git add packages/tracked.txt packages/staged.txt`.cwd(source).quiet())
-      yield* Effect.promise(() => $`git commit -m packages`.cwd(source).quiet())
       const destination = abs(`${root.path}-move-nested-destination`)
       yield* Effect.addFinalizer(() =>
         Effect.promise(() => fs.rm(destination, { recursive: true, force: true })).pipe(Effect.ignore),
       )
-      yield* Effect.promise(() => $`git worktree add --detach ${destination} HEAD`.cwd(source).quiet())
+      yield* Effect.promise(() => git(source, "worktree", "add", "--detach", destination, "HEAD"))
       const moved = abs(path.join(yield* Effect.promise(() => fs.realpath(destination)), "packages"))
       yield* Effect.promise(() => fs.writeFile(path.join(sourceDirectory, "tracked.txt"), "changed\n"))
       yield* Effect.promise(() => fs.writeFile(path.join(sourceDirectory, "staged.txt"), "staged\n"))
-      yield* Effect.promise(() => $`git add packages/staged.txt`.cwd(source).quiet())
+      yield* Effect.promise(() => git(source, "add", "packages/staged.txt"))
       yield* Effect.promise(() => fs.writeFile(path.join(sourceDirectory, "untracked.txt"), "new\n"))
       yield* Effect.promise(() => fs.writeFile(path.join(source, "tracked.txt"), "unrelated\n"))
       yield* Effect.promise(() => fs.writeFile(path.join(source, "untracked.txt"), "unrelated\n"))
@@ -204,7 +200,7 @@ describe("MoveSession", () => {
       expect(yield* Effect.promise(() => fs.readFile(path.join(sourceDirectory, "staged.txt"), "utf8"))).toBe(
         "staged\n",
       )
-      expect(yield* Effect.promise(() => $`git status --porcelain -- packages/staged.txt`.cwd(source).text())).toBe(
+      expect(yield* Effect.promise(() => gitText(source, "status", "--porcelain", "--", "packages/staged.txt"))).toBe(
         "M  packages/staged.txt\n",
       )
       expect(yield* Effect.promise(() => fs.readFile(path.join(source, "tracked.txt"), "utf8"))).toBe("unrelated\n")

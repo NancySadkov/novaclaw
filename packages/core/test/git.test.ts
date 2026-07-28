@@ -1,17 +1,20 @@
 import { describe, expect } from "bun:test"
-import { $ } from "bun"
 import fs from "fs/promises"
 import path from "path"
 import { Effect } from "effect"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { Git } from "@novaclaw/core/git"
 import { AbsolutePath, RelativePath } from "@novaclaw/core/schema"
-import { branch, commit, gitRemote } from "./fixture/git"
+import { branch, commit, repo, withRemote } from "./fixture/git"
 import { tmpdir } from "./fixture/tmpdir"
 import { testEffect } from "./lib/effect"
 
 const it = testEffect(LayerNode.compile(Git.node))
 
+// Here the git process IS the subject — `Git.Service` is a wrapper over git, and clone / fetch /
+// checkout / reset / worktree / write-tree are exactly what is being asserted. None of that is
+// collapsed. What IS scenery is the repository being cloned from or operated on, so those come from
+// a template built once per process and copied (test/fixture/git.ts).
 describe("Git", () => {
   it.live("clones a remote and reads checkout metadata", () =>
     withRemote((fixture) =>
@@ -55,28 +58,8 @@ describe("Git", () => {
   )
 })
 
-function withRemote<A, E, R>(body: (fixture: Awaited<ReturnType<typeof gitRemote>>) => Effect.Effect<A, E, R>) {
-  return Effect.acquireUseRelease(
-    Effect.promise(async () => {
-      const root = await tmpdir()
-      return { root, fixture: await gitRemote(root.path) }
-    }),
-    (input) => body(input.fixture),
-    (input) => Effect.promise(() => input.root[Symbol.asyncDispose]()),
-  )
-}
-
 function read(file: string) {
   return Effect.promise(() => fs.readFile(file, "utf8")).pipe(Effect.map((content) => content.replace(/\r\n/g, "\n")))
-}
-
-async function initRepo(directory: string) {
-  await $`git init`.cwd(directory).quiet()
-  await $`git config core.fsmonitor false`.cwd(directory).quiet()
-  await $`git config commit.gpgsign false`.cwd(directory).quiet()
-  await $`git config user.email test@novaclaw.test`.cwd(directory).quiet()
-  await $`git config user.name Test`.cwd(directory).quiet()
-  await $`git commit --allow-empty -m root`.cwd(directory).quiet()
 }
 
 describe("Git worktrees", () => {
@@ -86,26 +69,30 @@ describe("Git worktrees", () => {
         Effect.promise(() => tmpdir()),
         (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
       )
-      yield* Effect.promise(() => initRepo(root.path))
+      // An empty root commit is all this test needs to exist; the worktree calls below are the subject.
+      yield* Effect.promise(() => repo(root.path))
       const directory = AbsolutePath.make(yield* Effect.promise(() => fs.realpath(root.path)))
       const worktree = AbsolutePath.make(`${root.path}-git-worktree`)
       yield* Effect.addFinalizer(() =>
         Effect.promise(() => fs.rm(worktree, { recursive: true, force: true })).pipe(Effect.ignore),
       )
       const git = yield* Git.Service
-      const repo = yield* git.repo.discover(directory)
-      if (!repo) throw new Error("Repository not found")
+      // Named `main` rather than `repo`: a local `const repo` shadows the imported fixture `repo()`
+      // for the WHOLE function body, so line 73 above hit its temporal dead zone. Caught by running
+      // the suite (2026-07-28) — the shadow compiles green.
+      const main = yield* git.repo.discover(directory)
+      if (!main) throw new Error("Repository not found")
 
-      yield* git.worktree.create({ repository: repo, directory: worktree })
+      yield* git.worktree.create({ repository: main, directory: worktree })
 
-      expect((yield* git.worktree.list(repo)).some((entry) => entry.directory.endsWith("-git-worktree"))).toBe(true)
+      expect((yield* git.worktree.list(main)).some((entry) => entry.directory.endsWith("-git-worktree"))).toBe(true)
       const linked = yield* git.repo.discover(worktree)
       expect(linked?.worktree).toBe(AbsolutePath.make(yield* Effect.promise(() => fs.realpath(worktree))))
-      expect(linked?.commonDirectory).toBe(repo.commonDirectory)
-      expect(linked?.gitDirectory).not.toBe(repo.gitDirectory)
+      expect(linked?.commonDirectory).toBe(main.commonDirectory)
+      expect(linked?.gitDirectory).not.toBe(main.gitDirectory)
       if (!linked) throw new Error("Linked worktree not found")
       yield* git.worktree.remove({ repository: linked, directory: worktree, force: false })
-      expect((yield* git.worktree.list(repo)).some((entry) => entry.directory.endsWith("-git-worktree"))).toBe(false)
+      expect((yield* git.worktree.list(main)).some((entry) => entry.directory.endsWith("-git-worktree"))).toBe(false)
     }),
   )
 })
@@ -117,14 +104,8 @@ describe("Git trees", () => {
         Effect.promise(() => tmpdir()),
         (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
       )
-      yield* Effect.promise(async () => {
-        await initRepo(root.path)
-        await fs.mkdir(path.join(root.path, "scope"))
-        await fs.writeFile(path.join(root.path, "scope", "tracked.txt"), "one\n")
-        await fs.writeFile(path.join(root.path, "outside.txt"), "outside\n")
-        await $`git add .`.cwd(root.path).quiet()
-        await $`git commit -m initial`.cwd(root.path).quiet()
-      })
+      // Same committed shape as Snapshot's scoped fixture, so both suites share ONE built template.
+      yield* Effect.promise(() => repo(root.path, { "scope/tracked.txt": "one\n", "outside.txt": "outside\n" }))
       const git = yield* Git.Service
       const source = yield* git.repo.discover(AbsolutePath.make(root.path))
       if (!source) throw new Error("Repository not found")

@@ -1,4 +1,3 @@
-import { $ } from "bun"
 import { describe, expect } from "bun:test"
 import fs from "fs/promises"
 import path from "path"
@@ -9,9 +8,15 @@ import { Location } from "@novaclaw/core/location"
 import { AbsolutePath, RelativePath } from "@novaclaw/core/schema"
 import { Snapshot } from "@novaclaw/core/snapshot"
 import { Hash } from "@novaclaw/core/util/hash"
+import { git, repo } from "./fixture/git"
 import { tmpdir } from "./fixture/tmpdir"
 import { testEffect } from "./lib/effect"
 
+// Git is SCENERY for this suite: the subject is `Snapshot` — capture / files / preview / restore /
+// checkout over a Location scope — and the checkout underneath only has to exist. So the project
+// repository comes from a template built once per process and copied (test/fixture/git.ts), while
+// everything Snapshot itself shells out to git for stays real. The one exception is the linked
+// worktree in "isolates snapshot indexes …", where the worktree IS the thing being isolated on.
 describe("Snapshot", () => {
   testEffect(Layer.empty).live("captures and restores Location-scoped changes", () =>
     Effect.acquireUseRelease(
@@ -20,18 +25,7 @@ describe("Snapshot", () => {
         Effect.gen(function* () {
           const project = path.join(tmp.path, "project")
           const location = path.join(project, "scope")
-          yield* Effect.promise(async () => {
-            await fs.mkdir(location, { recursive: true })
-            await fs.writeFile(path.join(location, "tracked.txt"), "one\n")
-            await fs.writeFile(path.join(project, "outside.txt"), "outside\n")
-            await $`git init`.cwd(project).quiet()
-            await $`git config core.fsmonitor false`.cwd(project).quiet()
-            await $`git config commit.gpgsign false`.cwd(project).quiet()
-            await $`git config user.email test@novaclaw.test`.cwd(project).quiet()
-            await $`git config user.name Test`.cwd(project).quiet()
-            await $`git add .`.cwd(project).quiet()
-            await $`git commit -m initial`.cwd(project).quiet()
-          })
+          yield* Effect.promise(() => repo(project, { "scope/tracked.txt": "one\n", "outside.txt": "outside\n" }))
 
           const layer = snapshotLayer(tmp.path, location)
           yield* Effect.gen(function* () {
@@ -94,16 +88,9 @@ describe("Snapshot", () => {
           const project = path.join(tmp.path, "project")
           const linked = path.join(tmp.path, "linked")
           yield* Effect.promise(async () => {
-            await fs.mkdir(project)
-            await fs.writeFile(path.join(project, "tracked.txt"), "main\n")
-            await $`git init`.cwd(project).quiet()
-            await $`git config core.fsmonitor false`.cwd(project).quiet()
-            await $`git config commit.gpgsign false`.cwd(project).quiet()
-            await $`git config user.email test@novaclaw.test`.cwd(project).quiet()
-            await $`git config user.name Test`.cwd(project).quiet()
-            await $`git add .`.cwd(project).quiet()
-            await $`git commit -m initial`.cwd(project).quiet()
-            await $`git worktree add --detach ${linked} HEAD`.cwd(project).quiet()
+            await repo(project, { "tracked.txt": "main\n" })
+            // Stays a live `git worktree add`: the linked worktree is what this test is about.
+            await git(project, "worktree", "add", "--detach", linked, "HEAD")
           })
 
           const capture = (directory: string) =>
@@ -138,17 +125,7 @@ describe("Snapshot", () => {
       (tmp) =>
         Effect.gen(function* () {
           const project = path.join(tmp.path, "project")
-          yield* Effect.promise(async () => {
-            await fs.mkdir(project)
-            await fs.writeFile(path.join(project, "tracked.txt"), "one\n")
-            await $`git init`.cwd(project).quiet()
-            await $`git config core.fsmonitor false`.cwd(project).quiet()
-            await $`git config commit.gpgsign false`.cwd(project).quiet()
-            await $`git config user.email test@novaclaw.test`.cwd(project).quiet()
-            await $`git config user.name Test`.cwd(project).quiet()
-            await $`git add .`.cwd(project).quiet()
-            await $`git commit -m initial`.cwd(project).quiet()
-          })
+          yield* Effect.promise(() => repo(project, { "tracked.txt": "one\n" }))
 
           yield* Effect.gen(function* () {
             const snapshot = yield* Snapshot.Service

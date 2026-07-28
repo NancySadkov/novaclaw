@@ -4,16 +4,18 @@ import path from "path"
 import { pathToFileURL } from "url"
 import { Effect, Layer } from "effect"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
-import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { Global } from "@novaclaw/core/global"
 import { Repository } from "@novaclaw/core/repository"
 import { RepositoryCache } from "@novaclaw/core/repository-cache"
-import { git, gitRemote } from "./fixture/git"
-import { tmpdir } from "./fixture/tmpdir"
+import { git, withRemote } from "./fixture/git"
 import { testEffect } from "./lib/effect"
 
 const it = testEffect(Layer.empty)
 
+// Git is SCENERY here: the subject is the cache's own decisions — replace a stale directory, serialize
+// two concurrent materializations, replace a checkout whose origin drifted, and surface typed failures.
+// The clone each `ensure()` performs is real and stays real; only the remote it clones FROM comes from
+// a template built once per process and copied (test/fixture/git.ts).
 describe("RepositoryCache", () => {
   it.live("replaces a stale cache directory before cloning", () =>
     withRemote((fixture) =>
@@ -91,17 +93,6 @@ function cacheLayer(root: string) {
   return AppNodeBuilder.build(RepositoryCache.node, [
     [Global.node, Global.layerWith({ state: path.join(root, "state"), repos: path.join(root, "repos") })],
   ])
-}
-
-function withRemote<A, E, R>(body: (fixture: Awaited<ReturnType<typeof gitRemote>>) => Effect.Effect<A, E, R>) {
-  return Effect.acquireUseRelease(
-    Effect.promise(async () => {
-      const root = await tmpdir()
-      return { root, fixture: await gitRemote(root.path) }
-    }),
-    (input) => body(input.fixture),
-    (input) => Effect.promise(() => input.root[Symbol.asyncDispose]()),
-  )
 }
 
 function read(file: string) {
