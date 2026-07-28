@@ -3,6 +3,7 @@ import * as fs from "fs/promises"
 import os from "os"
 import path from "path"
 import { Effect, Context, Layer, Schema, Scope } from "effect"
+import { sql } from "drizzle-orm"
 import type * as PlatformError from "effect/PlatformError"
 import { CrossSpawnSpawner } from "@novaclaw/core/cross-spawn-spawner"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
@@ -179,8 +180,10 @@ function onServer<A, E>(effect: Effect.Effect<A, E, ServerServices>) {
 }
 
 /**
- * The stores are PROCESS-WIDE — they outlive every test, and `resetDatabase()` cannot clear them
- * (it removes `Database.path()`, which under `:memory:` is not a file). `ConfigStoreWrite.apply`
+ * The stores are PROCESS-WIDE — they outlive every test, and `resetDatabase()` deliberately does not
+ * clear the config ones (see `sweepDataPlane`: the settings seed runs from a startup node, so a
+ * truncate would leave nothing to re-seed them, and this bookkeeping already owns the concern).
+ * `ConfigStoreWrite.apply`
  * patch-MERGES (`settings.set(key, mergePatch(current[key], value))`), so a provision has to be
  * UNDO-then-apply or each test inherits its predecessor's document: the compression suite's bare
  * `{ formatter: false }` test would still be served the previous test's `username` and 50
@@ -215,6 +218,90 @@ function routeConfig(config: Partial<Config.Info>) {
   }
   return { settings, references }
 }
+
+/**
+ * Tables the sweep must NEVER delete from, each for a different reason.
+ *
+ * ⚠️ `migration` is the migration journal: deleting a row REPLAYS that migration on the next boot,
+ * which for most means `CREATE TABLE` on an object that already exists → throw inside `applyOnly` →
+ * `Effect.orDie` → boot death. (`DbRegistry` refuses writes to it for exactly this reason.)
+ *
+ * The config stores are excluded on a different ground: `SettingsConfigSeed` runs from
+ * `config-seed-startup.ts`, a STARTUP node, not from the store layer — so a truncate here would wipe
+ * seeded settings with nothing in the request path to re-seed them. Config isolation is already
+ * owned, correctly, by `provisioned` + `clearProvisioned` below (undo-then-apply + `invalidate()`),
+ * and two mechanisms racing for one concern is how the original defect survived. So the split is
+ * deliberate and total: **this sweep owns the session/runtime data plane, `clearProvisioned` owns the
+ * config plane.**
+ */
+const PRESERVED_TABLES: ReadonlySet<string> = new Set([
+  "migration",
+  "data_migration",
+  // the config plane — see above
+  "runtime_setting",
+  "catalog_provider",
+  "catalog_setting",
+  "agent_config",
+  "agent_setting",
+  "command_config",
+  "reference_config",
+  "plugin_config",
+  "skill_config",
+  "instance_identity",
+])
+
+/** `sqlite_*` is SQLite's own bookkeeping; `kb_chunk_vec*` are a vec0 virtual table's shadow tables,
+ *  which must be mutated through the virtual table or not at all. */
+const PRESERVED_PREFIXES = ["sqlite_", "kb_chunk_vec"]
+
+const isPreserved = (table: string) =>
+  PRESERVED_TABLES.has(table) || PRESERVED_PREFIXES.some((prefix) => table.startsWith(prefix))
+
+/**
+ * Clear the session/runtime data plane in the database the server under test actually uses.
+ *
+ * The table list is read from `sqlite_master` AT RUNTIME rather than hardcoded. That is not
+ * incidental: a hand-maintained list of 40-odd tables is precisely the mirror-that-drifts defect this
+ * fixture already carries scars from — a table added later would silently stop being reset, and
+ * nothing would fail. The denylist above is small, and `db.test.ts` asserts every name in it still
+ * exists, so a rename fails loudly instead of quietly preserving nothing.
+ *
+ * Runs through `onServer()`, so it reaches the memoized `Database.Service` behind the shared memo map
+ * — under `:memory:` every distinct layer build is a private database, so any other route would clear
+ * a database no one is reading.
+ */
+export const sweepDataPlane = () =>
+  onServer(
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      const rows = (yield* db
+        .all(sql`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`)
+        .pipe(Effect.orDie)) as { name: string }[]
+
+      const cleared: string[] = []
+      const skipped: string[] = []
+      for (const { name } of rows) {
+        if (isPreserved(name)) continue
+        // ⚠️ One undeletable table must NOT take the whole reset down — the same lesson
+        // `DbRegistry.tables` learned the hard way: a dev DB can still carry `kb_chunk_vec`, a
+        // sqlite-vec VIRTUAL table created lazily by the retired KB-V store and present in no
+        // migration, and once the extension stops loading every statement against it throws
+        // `no such module: vec0`. A reset that dies there would leave the database half-cleared and
+        // the failure attributed to whichever test ran next.
+        const ok = yield* db.run(sql`DELETE FROM ${sql.identifier(name)}`).pipe(
+          Effect.as(true),
+          Effect.catchCause(() => Effect.succeed(false)),
+        )
+        ;(ok ? cleared : skipped).push(name)
+      }
+
+      // The config plane is untouched above, so `provisioned` stays accurate by construction — but a
+      // reset still means "no test's config is in force", which is what `clearProvisioned` expresses.
+      yield* clearProvisioned
+      yield* Config.use.invalidate()
+      return { cleared, skipped }
+    }),
+  )
 
 const clearProvisioned = Effect.gen(function* () {
   if (provisioned.settings.size > 0) {
