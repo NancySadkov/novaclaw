@@ -260,6 +260,23 @@ export interface Report {
   readonly status: "done" | "blocked"
   readonly reason?: string
   readonly state: State
+  /**
+   * Did the run actually HOLD a best-verified snapshot when it finished — i.e. is "the best verified
+   * state was kept" a true sentence about this workspace?
+   *
+   * ⚠️ Not a synonym for `keepBest`. The snapshot is only ever written by `sampleScore`, which
+   * returns BEFORE writing it when the oracle is ungraded (`s === undefined`) — and every real
+   * Strict session is ungraded, because `session/runner/strict.ts` supplies no `taskComplete` and
+   * structurally cannot (`flagsFor` is typed to the lever flags). So the session route printed "the
+   * best verified state was kept" on every stopped run while `bestSnapshot` was undefined and
+   * `restoreBest` had short-circuited: a fault described falsely (v0.2.0 ruling — *a fault is never
+   * described falsely*).
+   *
+   * The `restored_best` log entry cannot answer this instead: `restoreBest` no-ops when the current
+   * state is not a regression, so a run that legitimately held its best emits nothing. Hence a
+   * field, and a REQUIRED one — a caller that renders the claim has to read the answer.
+   */
+  readonly keptBest: boolean
 }
 
 const stripSubsteps = (d: JhStep.StepDraft): Omit<JhStep.StepDraft, "substeps"> => {
@@ -569,7 +586,16 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
     telemetry.set(id, fn(telemetryOf(id)))
   }
   const snapshot = (): State => ({ tree, artifacts: deps.artifacts.snapshot(), log: [...logArr], telemetry: new Map(telemetry) })
-  const report = (status: "done" | "blocked", reason?: string): Report => ({ status, reason, state: snapshot() })
+  // The ONE Report construction site (every terminal path goes through `finalizeReport` → here), so
+  // `keptBest` cannot be answered differently anywhere. It is read at CALL time: `bestSnapshot` is
+  // written by `sampleScore` only on a graded improvement, so an ungraded run reports `false` and the
+  // caller's "the best verified state was kept" line must not appear.
+  const report = (status: "done" | "blocked", reason?: string): Report => ({
+    status,
+    reason,
+    state: snapshot(),
+    keptBest: deps.keepBest !== false && bestSnapshot !== undefined,
+  })
   const checkpoint = (): Effect.Effect<void> =>
     Effect.gen(function* () {
       if (deps.checkpoint) yield* deps.checkpoint(snapshot())

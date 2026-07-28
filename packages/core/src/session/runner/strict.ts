@@ -24,8 +24,8 @@ import { JhBudget } from "../../jh/budget"
 import { JhEngine } from "../../jh/engine"
 import { JhLog } from "../../jh/log"
 import { JhProcessRunner } from "../../jh/process-runner"
+import { HostExec } from "../../host-exec"
 import { Shell } from "../../shell"
-import { ShellBundle } from "../../shell-bundle"
 import type { ConfigStrict } from "../../config/strict"
 import { SessionInput } from "../input"
 import type { SessionMessage } from "../message"
@@ -103,6 +103,41 @@ export const SUMMARY_TOKENS = 4096
 const SUMMARY_LINE_MAX = 240
 const SUMMARY_LINES_MAX = 40
 
+/**
+ * The two ways a stopped run can leave the folder, said honestly.
+ *
+ * ⚠️ The kept-best clause used to be UNCONDITIONAL — both here and in the runner's terminal chat
+ * notice. It is false in every real Strict session: the engine only writes `bestSnapshot` on a
+ * GRADED improvement, and this module supplies no `taskComplete` oracle (and `flagsFor` structurally
+ * cannot), so `restoreBest` short-circuits and nothing was ever kept. `JhEngine.Report.keptBest` is
+ * the engine's own answer; both surfaces read it (v0.2.0 ruling — *a fault is never described
+ * falsely*).
+ */
+const KEPT_BEST = "the best verified state was kept"
+const NO_BEST_HELD = "no separate best-verified state was held"
+
+/** The end-of-run chat notice. Extracted from the runner so the honest wording has ONE home and a
+ *  test can drive both directions of `keptBest`. */
+export function terminalNotice(input: {
+  readonly status: string
+  readonly reason?: string
+  readonly steps: number
+  /** false = best-of-N racing: the run worked in isolated attempt workspaces, not the folder. */
+  readonly single: boolean
+  /** `JhEngine.Report.keptBest` — REQUIRED, so a caller cannot render the claim without asking. */
+  readonly keptBest: boolean
+}): string {
+  if (input.status === "done") return `✅ Strict task complete — ${input.steps} steps, every one verified.`
+  // Racing never touched the folder — the run happened in the attempt workspaces — so both halves
+  // name the right place rather than saying "the folder" and being wrong half the time.
+  const state = input.keptBest
+    ? `${KEPT_BEST} in ${input.single ? "the working directory" : "the attempt workspaces"}`
+    : `${NO_BEST_HELD}, so ${input.single ? "the working directory holds" : "the attempt workspaces hold"} the run's last state`
+  return input.reason === "aborted"
+    ? `⏹️ Strict run stopped at your request after ${input.steps} steps — ${state}. Say "resume" to pick it up again.`
+    : `⚠️ Strict run stopped (${input.reason ?? "blocked"}) after ${input.steps} steps — ${state}. Say "resume" to continue it.`
+}
+
 /** The prompt pair for the end-of-run assistant summary — the user's readable answer to "what did
  *  you actually do?". Input is harness ground truth only (goal, outcome, the phase-level journal,
  *  applied files) so the summary can't claim more than the run verified. */
@@ -112,6 +147,9 @@ export function summaryPrompt(input: {
   readonly reason?: string
   readonly milestones: ReadonlyArray<string>
   readonly appliedFiles?: ReadonlyArray<string>
+  /** `JhEngine.Report.keptBest` — REQUIRED for the same reason as in `terminalNotice`: the model is
+   *  told to base every claim on this block, so a false outcome line becomes a false report. */
+  readonly keptBest: boolean
 }): { readonly system: string; readonly user: string } {
   const system = [
     "You report the outcome of an autonomous step-by-step work run to the user who requested it.",
@@ -123,7 +161,7 @@ export function summaryPrompt(input: {
   const outcome =
     input.status === "done"
       ? "completed — every step verified"
-      : `stopped early (${input.reason ?? input.status}) — the best verified state was kept`
+      : `stopped early (${input.reason ?? input.status}) — ${input.keptBest ? KEPT_BEST : `${NO_BEST_HELD}; what is on disk is the run's last state`}`
   const journal = input.milestones
     .slice(-SUMMARY_LINES_MAX)
     .map((line) => (line.length > SUMMARY_LINE_MAX ? line.slice(0, SUMMARY_LINE_MAX) + "…" : line))
@@ -460,24 +498,86 @@ export interface RunArgs {
    *  publishes it as a chat tool part (single attempts), or buffers it to replay the WINNER's after
    *  the race (racing). Post-hoc + best-effort; unset = no materialization. */
   readonly onAction?: (action: MaterializedAction) => Effect.Effect<void>
+  /**
+   * The host-execution context for every command this run executes (ruling 6, `src/host-exec.ts`).
+   * Only the session runner can know these — the chain-ROOT session type, whether an untrusted
+   * messenger chat drives the turn, the operator's configured shell, and the live offline policy —
+   * so they are injected here rather than re-derived.
+   *
+   * ⚠️ When it is omitted the run still executes, and still gets the CREDENTIAL half of the gate:
+   * every command starts from the curated, secret-free environment, because a harness command is
+   * never approved by a human (`consent: "none"`). The CONFINEMENT half cannot engage without a
+   * declared root type — the gate will not invent an attendance nobody told it — so commands run
+   * raw. `session/runner/llm.ts` must pass this for an unattended Strict chain (a Calendar fire, a
+   * messenger dispatch) to be confined or denied the way the `bash` tool already is.
+   */
+  readonly host?: HostExec.SessionHost
   readonly now?: () => number
+}
+
+/**
+ * The host-execution plan for ONE harness command — every command a Strict run executes goes
+ * through here, and it is EXPORTED so the wiring is checkable without standing up an engine run.
+ *
+ * Two halves, both owned by the gate (`src/host-exec.ts`, ruling 6):
+ *  · CREDENTIALS — `consent: "none"`, unconditionally. The engine writes these commands and runs
+ *    them; no human approved any of them, so the child never inherits the serve process's
+ *    environment (it used to get `{ ...process.env }`: provider API keys and peer instance tokens).
+ *  · CONFINEMENT — only as strong as what the caller DECLARED. With no `host` the gate is not told
+ *    an attendance and runs raw; with one, an unattended chain is bwrap-confined where a backend
+ *    exists and DENIED where none does, exactly like `tool/bash.ts`.
+ */
+export function commandPlan(input: {
+  readonly command: string
+  readonly cwd: string
+  readonly shell: string
+  /** The MSYS-bash userland PATH prefix, resolved once per run by the caller. */
+  readonly overlay?: Record<string, string> | undefined
+  readonly host?: HostExec.SessionHost
+}): HostExec.SpawnPlan {
+  return HostExec.spawnPlan({
+    shape: { kind: "shell-command", shell: input.shell, command: input.command },
+    cwd: input.cwd,
+    // The blast radius of a Strict run is the folder it works in: the session's location, or —
+    // when racing — this racer's isolated fork, which lives OUTSIDE the location (in tmp), so
+    // the location would be the wrong bind.
+    worktree: input.cwd,
+    // No human approves a harness command: the engine writes them and runs them.
+    consent: "none",
+    rootType: input.host?.rootType,
+    hostileInput: input.host?.hostileInput,
+    backend: input.host?.backend,
+    overlay: input.overlay,
+    egress: input.host?.egress,
+  })
 }
 
 /** Run one Strict task over the session's working directory. Milestones buffer synchronously (onLog is
  *  sync) and flush before each model call and at the end — bounded staleness, one notice per batch. */
 export function runTask(args: RunArgs): Effect.Effect<JhEngine.Report> {
   const nowFn = args.now ?? (() => Date.now())
-  // ONE shell for the whole product: the engine's `run` atom uses the same shell the `bash` tool
-  // uses (bundled PortableGit / system git-bash / COMSPEC), not a hardcoded COMSPEC. A Strict run
-  // and a normal turn on the same host must not speak different shells.
-  const agentShell = Shell.agentDefault()
+  // ONE shell for the whole product, resolved by the ONE host-execution gate: `config.shell` when
+  // the operator set one, else the agent default (bundled PortableGit / system git-bash / COMSPEC).
+  // A Strict run and a normal turn on the same host must not speak different shells — half of the
+  // COMSPEC divergence was exactly that Strict ignored `config.shell` while `tool/bash.ts` honoured
+  // it. `environmentFor` below follows this value, so what the model is TOLD tracks what runs.
+  const agentShell = HostExec.resolveShell(args.host?.shell)
   // `bash -c` is not a login shell, so an MSYS bash needs its own userland prepended or `ls`/`head`
-  // don't resolve — the same env the `bash` tool builds (no-op for non-MSYS shells).
-  const shellEnv =
-    Shell.name(agentShell) === "bash" ? ShellBundle.envForBash(agentShell) : undefined
-  const runner = JhProcessRunner.shellRunner({
-    shell: agentShell,
-    ...(shellEnv ? { env: { ...process.env, ...shellEnv } } : {}),
+  // don't resolve (no-op for non-MSYS shells).
+  const shellEnv = HostExec.bundleOverlay(agentShell)
+  // Every command the engine runs goes through the gate: the jail decision (raw / bwrap-confined /
+  // denied), and an environment that NEVER contains the serve process's secrets. It used to be
+  // `{ ...process.env }` — provider API keys and `NOVACLAW_INSTANCE_*_TOKEN` handed to arbitrary
+  // model-authored commands, with no human approving any of them.
+  const runner = JhProcessRunner.plannedRunner({
+    plan: (input) =>
+      commandPlan({
+        command: input.command,
+        cwd: input.cwd,
+        shell: agentShell,
+        overlay: shellEnv,
+        ...(args.host === undefined ? {} : { host: args.host }),
+      }),
   })
   const wallMin = args.strict.wallMinutes !== undefined && args.strict.wallMinutes > 0 ? args.strict.wallMinutes : WALL_DEFAULT_MIN
   const queue: string[] = []

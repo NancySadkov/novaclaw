@@ -4,6 +4,7 @@ import fs from "node:fs"
 import os from "node:os"
 import path from "node:path"
 import { SessionStrict } from "./strict"
+import { AgentJail } from "../../agent-jail"
 import { SessionInput } from "../input"
 import type { SessionMessage } from "../message"
 import type { JhEngine } from "../../jh/engine"
@@ -216,25 +217,88 @@ describe("SessionStrict.summaryPrompt (P14.1 final answer)", () => {
       status: "done",
       milestones: ["committed root.1 — wrote widget.c"],
       appliedFiles: [],
+      keptBest: false,
     })
     expect(p.user).toContain("build the widget")
     expect(p.user).toContain("completed — every step verified")
     expect(p.user).toContain("committed root.1")
     expect(p.system).toContain("ONLY on the journal")
   })
-  test("stopped runs carry the reason and the kept-best framing", () => {
-    const p = SessionStrict.summaryPrompt({ goal: "g", status: "blocked", reason: "aborted", milestones: [] })
-    expect(p.user).toContain("stopped early (aborted)")
-    expect(p.user).toContain("best verified state was kept")
-    expect(p.user).toContain("(no phase milestones recorded)")
+  test("stopped runs carry the reason, and the kept-best framing ONLY when a best was held", () => {
+    const held = SessionStrict.summaryPrompt({
+      goal: "g",
+      status: "blocked",
+      reason: "aborted",
+      milestones: [],
+      keptBest: true,
+    })
+    expect(held.user).toContain("stopped early (aborted)")
+    expect(held.user).toContain("best verified state was kept")
+    expect(held.user).toContain("(no phase milestones recorded)")
+    // The negative control, and the bug this pins: an UNGRADED run (every real Strict session —
+    // `flagsFor` cannot supply a `taskComplete` oracle, so the engine never writes a best snapshot)
+    // must not be told a best was kept, or the model reports a fallback that does not exist.
+    const notHeld = SessionStrict.summaryPrompt({
+      goal: "g",
+      status: "blocked",
+      reason: "aborted",
+      milestones: [],
+      keptBest: false,
+    })
+    expect(notHeld.user).toContain("stopped early (aborted)")
+    expect(notHeld.user).not.toContain("best verified state was kept")
+    expect(notHeld.user).toContain("the run's last state")
   })
   test("the journal is capped in lines and line length; applied files are named", () => {
     const many = Array.from({ length: 100 }, (_, i) => `line-${i} ` + "x".repeat(300))
-    const p = SessionStrict.summaryPrompt({ goal: "g", status: "done", milestones: many, appliedFiles: ["a.c", "b.c"] })
+    const p = SessionStrict.summaryPrompt({
+      goal: "g",
+      status: "done",
+      milestones: many,
+      appliedFiles: ["a.c", "b.c"],
+      keptBest: true,
+    })
     expect(p.user).not.toContain("line-59 ") // only the last 40 lines survive
     expect(p.user).toContain("line-99")
     expect(p.user).toContain("…") // long lines truncated
     expect(p.user).toContain("Files applied to the folder: a.c, b.c")
+  })
+})
+
+// The chat notice the user actually reads at the end of a run. It claimed "the best verified state
+// was kept" unconditionally, while `JhEngine` had kept nothing on every ungraded run — the fourth
+// clause of the v0.2.0 ruling (*a fault is never described falsely*) applied to our own UI text.
+describe("SessionStrict.terminalNotice (the honest terminal claim)", () => {
+  test("a completed run says so and never mentions a fallback state", () => {
+    for (const keptBest of [true, false]) {
+      const text = SessionStrict.terminalNotice({ status: "done", steps: 7, single: true, keptBest })
+      expect(text).toContain("7 steps, every one verified")
+      expect(text).not.toContain("best verified state")
+    }
+  })
+  test("a stopped run claims the kept best ONLY when the engine held one", () => {
+    const held = SessionStrict.terminalNotice({ status: "blocked", reason: "aborted", steps: 3, single: true, keptBest: true })
+    expect(held).toContain("stopped at your request")
+    expect(held).toContain("the best verified state was kept in the working directory")
+    const notHeld = SessionStrict.terminalNotice({ status: "blocked", reason: "aborted", steps: 3, single: true, keptBest: false })
+    expect(notHeld).toContain("stopped at your request")
+    expect(notHeld).not.toContain("best verified state was kept")
+    expect(notHeld).toContain("the run's last state")
+    // both still teach the way forward
+    for (const text of [held, notHeld]) expect(text).toContain('Say "resume"')
+  })
+  test("a blocked run names its reason, and racing names the attempt workspaces", () => {
+    const raced = SessionStrict.terminalNotice({
+      status: "blocked",
+      reason: "wall_exhausted",
+      steps: 12,
+      single: false,
+      keptBest: true,
+    })
+    expect(raced).toContain("wall_exhausted")
+    expect(raced).toContain("in the attempt workspaces")
+    const noReason = SessionStrict.terminalNotice({ status: "blocked", steps: 1, single: true, keptBest: false })
+    expect(noReason).toContain("(blocked)")
   })
 })
 
@@ -360,6 +424,80 @@ describe("SessionStrict.materializingExecutor (P14.1 materialization)", () => {
       ).run({ tool: "run", args: {}, produces: [], cwd: "." }),
     )
     expect(result.ok).toBe(true)
+  })
+})
+
+// v0.2.0 B1 / ruling 6 — Strict's confinement, ENGAGED. `runTask` plans EVERY harness command
+// through `commandPlan`, so these pin what an unattended Strict chain actually gets. The half that
+// needs no declaration (credentials) applies even when the runner passes no host at all.
+describe("SessionStrict.commandPlan (the host-execution gate, as Strict consumes it)", () => {
+  const FULL: AgentJail.BackendInfo = { kind: "namespaces", fs: true, net: true }
+  const NONE = AgentJail.NO_BACKEND
+  const plan = (host?: SessionStrict.RunArgs["host"]) =>
+    SessionStrict.commandPlan({
+      command: "make all",
+      cwd: "/home/nancy/proj",
+      shell: "/bin/bash",
+      ...(host === undefined ? {} : { host }),
+    })
+
+  test("an UNATTENDED chain with a sandbox backend is CONFINED — bwrap, not a bare shell", () => {
+    const p = plan({ rootType: "goal-oriented", backend: FULL })
+    expect(p.file).toBe("bwrap")
+    expect(p.shell).toBeUndefined()
+    expect(p.denied).toBeUndefined()
+    const args = p.args ?? []
+    expect(args.slice(args.indexOf("--") + 1)).toEqual(["/bin/bash", "-c", "make all"])
+    expect(p.inherit).toBe(false)
+  })
+
+  test("an UNATTENDED chain on a backend-less host is DENIED — no process is described", () => {
+    for (const rootType of ["goal-oriented", "auto-prompting"] as const) {
+      const p = plan({ rootType, backend: NONE })
+      expect(p.denied).toContain(rootType)
+      expect(p.file).toBeUndefined()
+      expect(p.shell).toBeUndefined()
+    }
+  })
+
+  test("a messenger-driven turn takes the unattended arm even under an INTERACTIVE root", () => {
+    expect(plan({ rootType: "interactive", hostileInput: true, backend: NONE }).denied).toContain("messenger")
+    expect(plan({ rootType: "interactive", hostileInput: true, backend: FULL }).file).toBe("bwrap")
+  })
+
+  test("an ATTENDED chain is unchanged — it runs raw through the shell", () => {
+    const p = plan({ rootType: "interactive", backend: NONE })
+    expect(p.shell).toBe("/bin/bash")
+    expect(p.file).toBeUndefined()
+    expect(p.denied).toBeUndefined()
+  })
+
+  test("NO host declared still runs raw (A1's tradeoff: refusing would delete Strict on Windows)…", () => {
+    const p = plan()
+    expect(p.denied).toBeUndefined()
+    expect(p.shell).toBe("/bin/bash")
+  })
+
+  test("…but the CREDENTIAL half never needs a declaration: no inheritance, ever", () => {
+    // A harness command is authored by the model and approved by nobody, so on EVERY path it starts
+    // from the curated base. This is the leak that shipped: `{ ...process.env }`, provider keys and
+    // NOVACLAW_INSTANCE_*_TOKEN handed to arbitrary model-authored commands.
+    for (const host of [
+      undefined,
+      { rootType: "interactive" as const, backend: NONE },
+      { rootType: "goal-oriented" as const, backend: FULL },
+    ]) {
+      const p = plan(host)
+      if (p.denied !== undefined) continue
+      expect(p.inherit).toBe(false)
+      expect(p.env?.OPENAI_API_KEY).toBeUndefined()
+      expect(p.env?.NOVACLAW_INSTANCE_SPARK_TOKEN).toBeUndefined()
+    }
+  })
+
+  test("the egress overlay the runner passes reaches the child (OFF-C)", () => {
+    const p = plan({ rootType: "interactive", backend: NONE, egress: { HTTPS_PROXY: "http://127.0.0.1:9" } })
+    expect(p.env?.HTTPS_PROXY).toBe("http://127.0.0.1:9")
   })
 })
 

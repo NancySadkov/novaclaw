@@ -309,6 +309,59 @@ describe("jh-improve7 P1 — K5 terminal restore + wall-stop", () => {
   })
 })
 
+// v0.2.0 B1 — the Report has to be able to say whether a best was actually held, because the SESSION
+// route printed "the best verified state was kept" on every stopped Strict run. `keepBest` alone
+// cannot answer it: the snapshot is written only on a GRADED improvement, and a real Strict session
+// has no graded oracle at all (`session/runner/strict.ts` supplies no `taskComplete`), so keep-best
+// was on, nothing was ever kept, and the claim was false. `restored_best` cannot answer it either —
+// a run that legitimately holds its best emits nothing when the current state is not a regression.
+describe("jh-improve7 P1 — Report.keptBest tells the truth about the fallback", () => {
+  test("a GRADED run that held a best reports keptBest (and the terminal restore fires)", async () => {
+    const world = scoreWorld()
+    const deps = harness({
+      world,
+      replies: [compound(["run", "worsen", "run"]), RUN_STEP, WORSEN, RUN_STEP],
+      taskComplete: scoreOracle,
+      restoreOnDrop: false,
+      limits: { maxDepth: 3, maxTotalSteps: 12 },
+    })
+    const r = await run(deps)
+    expect(r.keptBest).toBe(true)
+    expect(restores(r, "final").length).toBe(1)
+  })
+
+  test("an UNGRADED run (the real Strict shape) reports keptBest FALSE and restores nothing", async () => {
+    const world = scoreWorld()
+    const deps = harness({
+      // the harness default oracle answers done:false with NO score — exactly what `sampleScore`
+      // sees when the caller supplies no `taskComplete` at all, which is every Strict session.
+      world,
+      replies: [compound(["run", "worsen", "run"]), RUN_STEP, WORSEN, RUN_STEP],
+      restoreOnDrop: false,
+      limits: { maxDepth: 3, maxTotalSteps: 12 },
+    })
+    const r = await run(deps)
+    expect(r.keptBest).toBe(false)
+    expect(log(r, "restored_best").length).toBe(0)
+  })
+
+  test("keepBest: false reports keptBest FALSE even with a graded oracle", async () => {
+    const world = scoreWorld()
+    const deps: JhEngine.Deps = {
+      ...harness({
+        world,
+        replies: [compound(["run", "worsen", "run"]), RUN_STEP, WORSEN, RUN_STEP],
+        taskComplete: scoreOracle,
+        limits: { maxDepth: 3, maxTotalSteps: 12 },
+      }),
+      keepBest: false,
+    }
+    const r = await run(deps)
+    expect(r.keptBest).toBe(false)
+    expect(log(r, "restored_best").length).toBe(0)
+  })
+})
+
 // ---- the run111 world: the model keeps mis-quoting lib.c. ----
 const MISS = atom({ goal: "fix lib", tool: "edit_file", args: { path: "lib.c", old_string: "NO-SUCH-TEXT", new_string: "y" }, check: { type: "artifact_present" } })
 
