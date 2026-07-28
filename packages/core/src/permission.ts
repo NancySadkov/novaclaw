@@ -13,6 +13,7 @@ import { SessionStore } from "./session/store"
 import { Wildcard } from "./util/wildcard"
 import {
   ASK_BEFORE_CHANGES_RULES,
+  attendedRoot,
   EFFECTIVE_CONFIG_DEFAULTS,
   MODE_RULES,
   resolveSessionConfig,
@@ -56,6 +57,20 @@ export const AssertInput = Schema.Struct({
   id: ID.pipe(Schema.optional),
   ...RequestFields,
   agent: AgentV2.ID.pipe(Schema.optional),
+  /** Canonical identities of the files the user attached, resolved once for this provider turn. */
+  attachmentPaths: Schema.Array(Schema.String).pipe(Schema.optional),
+  /**
+   * What this mutation is about to touch, as {permission resource, canonical path} PAIRS.
+   *
+   * ⚠️ Pairs, not two parallel arrays. The upstream PR carried `targetPaths` alongside `resources`
+   * and recovered the resource by index — but `apply-patch.ts` builds the two with SEPARATE `new
+   * Set()` dedupes over DIFFERENT key spaces (`resource` is Location-relative for internal paths and
+   * canonical for external ones, `location-mutation.ts:52`), so the arrays can differ in length and
+   * the indices silently diverge. `resources[-1]` is `undefined` in JavaScript rather than an error,
+   * so the protection would then vanish without a sound — a safety check that fails OPEN. A pair
+   * cannot be misaligned.
+   */
+  targets: Schema.Array(Schema.Struct({ resource: Schema.String, canonical: Schema.String })).pipe(Schema.optional),
 }).annotate({ identifier: "PermissionV2.AssertInput" })
 export type AssertInput = typeof AssertInput.Type
 
@@ -86,7 +101,7 @@ export class CorrectedError extends Schema.TaggedErrorClass<CorrectedError>()("P
  * (`config-resolve.ts` → `UNATTENDED_CONFINED_RULES`); the generic wording tells the model to "ask
  * the user to adjust permissions", which is exactly the advice that hangs an unattended run.
  */
-export const DenialReason = Schema.Literals(["unattended-confined"])
+export const DenialReason = Schema.Literals(["unattended-confined", "attachment-protected"])
 export type DenialReason = typeof DenialReason.Type
 
 export class DeniedError extends Schema.TaggedErrorClass<DeniedError>()("PermissionV2.DeniedError", {
@@ -122,6 +137,16 @@ export function denialMessage(error: unknown): string | undefined {
         `whatever files and subfolders you need. If something outside is genuinely required, finish what you ` +
         `can and name the blocked path in your result.`
       )
+    // Same deny-fast reasoning, different boundary: the file is one the USER attached, and this is
+    // an unattended run, so there is nobody to grant the exception. Name the file, and name the way
+    // forward — writing the result somewhere else is almost always what was wanted anyway.
+    if (error.reason === "attachment-protected")
+      return (
+        `Permission denied: '${resources}' was ATTACHED to this conversation by the user, so it is one of ` +
+        `their own source files rather than working material. This is an UNATTENDED session, so no one is ` +
+        `present to approve modifying it and waiting or retrying will change nothing. Write your output to a ` +
+        `NEW file instead and name the attached file in your result if it genuinely needs to change.`
+      )
     return `Permission denied by policy: action '${actions}' on '${resources}' is not allowed in this mode. Do not retry the same call — work within permitted paths and actions, or ask the user to adjust permissions.`
   }
   if (error instanceof CorrectedError)
@@ -129,6 +154,36 @@ export function denialMessage(error: unknown): string | undefined {
   if (error instanceof RejectedError)
     return `The user declined permission for this action. Do not retry the identical call. If the task can proceed another way (a different tool, a permitted path, or answering from what you already know), CONTINUE with that approach now; only stop to ask the user when no alternative exists.`
   return undefined
+}
+
+/** The actions that can destroy an attached file. `create` is absent on purpose — a create whose
+ *  path already resolves to an attachment arrives here as `edit`/`write` (see `write.ts`), and
+ *  denying genuine creates would refuse the very "write your output elsewhere" the denial advises. */
+const MUTATING_ACTIONS = new Set(["edit", "write", "trash"])
+
+export type MutationTarget = { readonly resource: string; readonly canonical: string }
+
+/**
+ * The attachment this mutation is about to overwrite, if any.
+ *
+ * Comparison is by canonical path on both sides — `LocationMutation` realpaths the target
+ * (`location-mutation.ts:100-107`) and `AttachmentPaths` realpaths the attachment — so symlink
+ * aliases, `..` segments, URI escaping and duplicate basenames in different directories all resolve
+ * correctly, and none of them can be used to slip past the check.
+ *
+ * ⚠️ Case: comparison is exact, which is right on Linux and relies on both sides having been
+ * realpath'd on Windows (Node returns the on-disk casing there, so they agree). A path that never
+ * existed cannot be an attachment, so the one branch of `LocationMutation` that does not realpath —
+ * a not-yet-created file — is unreachable here.
+ */
+export function protectedAttachment(
+  action: string,
+  targets: readonly MutationTarget[],
+  attachmentPaths: readonly string[],
+): MutationTarget | undefined {
+  if (!MUTATING_ACTIONS.has(action)) return undefined
+  const attachments = new Set(attachmentPaths)
+  return targets.find((target) => attachments.has(target.canonical))
 }
 
 export type ReplyVerdict = "allow" | "deny"
@@ -324,9 +379,7 @@ export const layer = Layer.effect(
 
     // The whole resolved config, not just the mode: the evaluator also needs the surgical-edits switch.
     const sessionConfig = EffectRuntime.fnUntraced(function* (sessionID: SessionV2.ID) {
-      return yield* resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, sessionID, (id) =>
-        sessions.get(id as SessionV2.ID),
-      )
+      return yield* resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, sessionID, (id) => sessions.get(id as SessionV2.ID))
     })
 
     const evaluateInput = EffectRuntime.fnUntraced(function* (input: AssertInput) {
@@ -364,7 +417,10 @@ export const layer = Layer.effect(
       const stance =
         stanceRules.length === 0
           ? stanceRules
-          : [...stanceRules, { action: "external_directory_read", resource: TRUNCATION_RESOURCE, effect: "allow" as const }]
+          : [
+              ...stanceRules,
+              { action: "external_directory_read", resource: TRUNCATION_RESOURCE, effect: "allow" as const },
+            ]
       const configuredRules = yield* configured(input.sessionID, input.agent)
       // The mode overlay, plus Analyze's one carve-out. "Analyze" (mode `plan`) is read-only EXCEPT that it
       // may still write its findings somewhere — a review that cannot save its own report is not much use.
@@ -386,9 +442,7 @@ export const layer = Layer.effect(
       // OFF (no global `{ enabled }` block to inherit from), which is why absent means "do not apply".
       const featureRules: Permission.Ruleset = [
         // "Edits instead of overwriting": a full-file `write` is refused; `edit`/`create` still work.
-        ...(resolved.surgicalEdits === true
-          ? [{ action: "write", resource: "*", effect: "deny" as const }]
-          : []),
+        ...(resolved.surgicalEdits === true ? [{ action: "write", resource: "*", effect: "deny" as const }] : []),
         // "Ask before every change": the old `ask` mode's overlay, now composable with Analyze or Build.
         // Literally THE SAME list `MODE_RULES.ask` is (config-resolve.ts, ASK_BEFORE_CHANGES_RULES) —
         // it used to be a second copy of it, with nothing but a comment claiming they agreed.
@@ -409,9 +463,7 @@ export const layer = Layer.effect(
       const governedSpecifically = (resource: string) =>
         configuredRules.some(
           (rule) =>
-            rule.resource !== "*" &&
-            Wildcard.match(readAction, rule.action) &&
-            Wildcard.match(resource, rule.resource),
+            rule.resource !== "*" && Wildcard.match(readAction, rule.action) && Wildcard.match(resource, rule.resource),
         )
       const readBaseline: Permission.Ruleset = isParanoid
         ? []
@@ -425,20 +477,72 @@ export const layer = Layer.effect(
         return { effect: "deny" as const, rules, reason: "unattended-confined" as DenialReason | undefined }
       if (denied(input, configuredRules) || denied(input, modeRules) || denied(input, featureRules))
         return { effect: "deny" as const, rules, reason: undefined as DenialReason | undefined }
-      const all = [...rules, ...(yield* savedRules())]
+      const saved = yield* savedRules()
+      // ATTACHED-SOURCE PROTECTION. A file the user handed to the conversation is their own source of
+      // truth, not the agent's working material, and nothing below this line would otherwise tell the
+      // two apart. Ported from PR #9 by @DassaultFalconKing; the placement decisions are ours.
+      //
+      // ⚠️ It sits AFTER the mode overlay and after saved rules deliberately, and that is the whole
+      // design. `EFFECTIVE_CONFIG_DEFAULTS.permissionMode` is **bypass**, whose overlay allows
+      // edit/write/trash on `*`; `evaluate` resolves by findLast. Placed anywhere earlier this rule
+      // would be shadowed on a DEFAULT install and the protection would not exist at all. The upstream
+      // PR reached the same placement without saying so — recorded here so nobody "tidies" it.
+      const attachment = protectedAttachment(input.action, input.targets ?? [], input.attachmentPaths ?? [])
+      // A saved answer releases the protection only when it NAMES the file. Every one of these
+      // asserts offers `save: ["*"]`, so honouring a wildcard saved rule would mean the first
+      // ordinary "always allow edits" silently switched attachment protection off forever — the
+      // protection would survive exactly until the most common reply. Answering "always" to THIS
+      // file's own ask still ends it for that file, which is the user actually deciding. Mirrors
+      // `governedSpecifically` above.
+      const releasedByName =
+        attachment !== undefined &&
+        saved.some(
+          (rule) =>
+            rule.resource !== "*" &&
+            Wildcard.match(input.action, rule.action) &&
+            Wildcard.match(attachment.resource, rule.resource),
+        )
+      const protecting = attachment !== undefined && !releasedByName && mode !== "yolo"
+      // Deny-fast rather than park, exactly as the unattended stance above does. An ask nobody can
+      // answer is not protection — it is a hang, and pending asks are in-memory and location-scoped,
+      // so it would not even survive the restart the maintenance plane is designed to cause. `yolo`
+      // stays the one deliberate way out, matching `unattendedStanceRules`.
+      if (protecting && !attendedRoot(rootType))
+        return {
+          effect: "deny" as const,
+          rules: [...rules, ...saved],
+          reason: "attachment-protected" as DenialReason | undefined,
+          attachment,
+        }
+      const attachmentRules: Permission.Ruleset = protecting
+        ? [{ action: input.action, resource: attachment.resource, effect: "ask" }]
+        : []
+      const all = [...rules, ...saved, ...attachmentRules]
       const effects = input.resources.map((resource) => evaluate(input.action, resource, all).effect)
       const effect: Permission.Effect = effects.includes("deny") ? "deny" : effects.includes("ask") ? "ask" : "allow"
-      return { effect, rules: all, reason: undefined as DenialReason | undefined }
+      return {
+        effect,
+        rules: all,
+        reason: undefined as DenialReason | undefined,
+        attachment: protecting ? attachment : undefined,
+      }
     })
 
-    function request(input: AssertInput): Request {
+    function request(input: AssertInput, attachment?: MutationTarget): Request {
       return {
         id: input.id ?? ID.create(),
         sessionID: input.sessionID,
         action: input.action,
         resources: input.resources,
         save: input.save,
-        metadata: input.metadata,
+        // The ask has to say WHY it is asking. Without this the user sees an ordinary edit prompt for
+        // a file the rest of the session was allowed to touch freely, which reads as a glitch rather
+        // than as the product noticing something — and a prompt whose reason is invisible is the
+        // obscurantism the vision forbids. `metadata` is the existing channel; no new wire shape.
+        metadata:
+          attachment === undefined
+            ? input.metadata
+            : { ...input.metadata, attachmentProtection: true, attachmentPath: attachment.canonical },
         source: input.source,
       }
     }
@@ -459,7 +563,7 @@ export const layer = Layer.effect(
 
     const ask = EffectRuntime.fn("PermissionV2.ask")(function* (input: AssertInput) {
       const result = yield* evaluateInput(input)
-      const value = request(input)
+      const value = request(input, result.attachment)
       if (result.effect === "ask") yield* create(value, input.agent)
       return { id: value.id, effect: result.effect }
     })
@@ -475,7 +579,7 @@ export const layer = Layer.effect(
             })
           }
           if (result.effect === "allow") return
-          const item = yield* create(request(input), input.agent)
+          const item = yield* create(request(input, result.attachment), input.agent)
           return yield* restore(Deferred.await(item.deferred)).pipe(
             EffectRuntime.ensuring(
               EffectRuntime.sync(() => {

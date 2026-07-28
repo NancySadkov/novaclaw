@@ -246,7 +246,10 @@ describe("ToolRegistry", () => {
         ...identity,
         call: { type: "tool-call", id: "call-context", name: "context", input: {} },
       })
-      expect(contexts).toEqual([{ sessionID, ...identity, toolCallID: "call-context" }])
+      // `attachmentPaths` defaults to an EMPTY set rather than being absent, so a tool never has to
+      // distinguish "no attachments" from "the runner forgot to pass them" — the `?? new Set()` in
+      // `registry.ts` is what makes `context.attachmentPaths` safe to read unconditionally.
+      expect(contexts).toEqual([{ sessionID, ...identity, toolCallID: "call-context", attachmentPaths: new Set() }])
     }),
   )
 

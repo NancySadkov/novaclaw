@@ -98,6 +98,7 @@ import { AppProcess } from "../../process"
 import { ChildProcess } from "effect/unstable/process"
 import { makeLocationNode } from "../../effect/app-node"
 import { llmClient } from "../../effect/app-node-platform"
+import { AttachmentPaths } from "./attachment-paths"
 
 // Ordering can only choose among retrieved candidates — fetch wider than the recall budget.
 
@@ -677,6 +678,11 @@ export const layer = Layer.effect(
       const tierHint = TierScaffold.tierScaffold(tier)
       const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)
       const context = entries.map((entry) => entry.message)
+      // The files the USER attached, by canonical identity — resolved ONCE here rather than per tool
+      // call, so a mutation cannot be judged against a set that shifted mid-turn. Every mutation tool
+      // forwards this to `permission.assert`, which is what makes overwriting the user's own source
+      // ask first instead of proceeding silently under the default `bypass` mode.
+      const attachmentPaths = yield* AttachmentPaths.resolve(context)
       // Auto-recall (kb-graph §1.3.1): surface relevant memories (this session ∪ global) into the
       // system prompt so the model "just remembers" — no kb-tool call needed. Best-effort: memory
       // off/unavailable → no block, the turn proceeds. Budgeted DOWN for weak models (the JH floor).
@@ -879,6 +885,7 @@ export const layer = Layer.effect(
                   sessionID: session.id,
                   agent: agent.id,
                   assistantMessageID,
+                  attachmentPaths,
                   call: event,
                 }),
               ).pipe(
@@ -1333,6 +1340,10 @@ export const layer = Layer.effect(
         // messenger-plan §3.4: the binding can sit on an ANCESTOR (a bound session spawning a worker
         // is the recommended pattern), so the whole chain is asked — through the same walk the
         // `bash` tool uses, never a second copy.
+        // ⚠️ `HostExec.Hostility`, not a boolean: a fault in either lookup yields `"unknown"`, which
+        // the gate treats as hostile. A Strict run executes model-authored commands that NO human
+        // approved, so it is the last place that should be resolving an unanswerable trust question
+        // in favour of running raw. Both lookups are passed through un-recovered deliberately.
         const hostileInput = yield* HostExec.chainHasHostileBinding(sessionID, {
           bindingsForSession: (id) => messengerStore.bindingsForSession(id),
           parentOf: (id) => store.get(id as SessionSchema.ID).pipe(Effect.map((info) => info?.parentID)),

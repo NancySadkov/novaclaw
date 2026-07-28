@@ -169,6 +169,8 @@ export const layer = Layer.effectDiscard(
                   permission.assert({
                     action: "edit",
                     resources: [target.resource],
+                    targets: [{ resource: target.resource, canonical: target.canonical }],
+                    attachmentPaths: [...(context.attachmentPaths ?? [])],
                     save: ["*"],
                     sessionID: context.sessionID,
                     agent: context.agent,

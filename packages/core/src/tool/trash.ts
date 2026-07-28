@@ -33,8 +33,7 @@ export const Output = Schema.Struct({
 })
 export type Output = typeof Output.Type
 
-export const toModelOutput = (output: Output) =>
-  `Moved ${output.type} to trash (restorable ~2 days): ${output.id}`
+export const toModelOutput = (output: Output) => `Moved ${output.type} to trash (restorable ~2 days): ${output.id}`
 
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -70,6 +69,8 @@ export const layer = Layer.effectDiscard(
                 yield* permission.assert({
                   action: name,
                   resources: [target.resource],
+                  targets: [{ resource: target.resource, canonical: target.canonical }],
+                  attachmentPaths: [...(context.attachmentPaths ?? [])],
                   save: ["*"],
                   sessionID: context.sessionID,
                   agent: context.agent,

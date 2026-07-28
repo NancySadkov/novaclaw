@@ -62,7 +62,9 @@ describe("ApplicationTools", () => {
           { type: "file", uri: "data:image/png;base64,aGVsbG8=", mime: "image/png", name: "result.png" },
         ],
       })
-      expect(contexts).toEqual([{ sessionID, agent, assistantMessageID, toolCallID: "call-opaque" }])
+      expect(contexts).toEqual([
+        { sessionID, agent, assistantMessageID, toolCallID: "call-opaque", attachmentPaths: new Set() },
+      ])
     }),
   )
 
@@ -101,7 +103,9 @@ describe("ApplicationTools", () => {
           call: { type: "tool-call", id: "call-denied", name: "application_context", input: { query: "hello" } },
         }),
       ).toMatchObject({ result: { type: "content" } })
-      expect(contexts).toEqual([{ sessionID, agent, assistantMessageID, toolCallID: "call-denied" }])
+      expect(contexts).toEqual([
+        { sessionID, agent, assistantMessageID, toolCallID: "call-denied", attachmentPaths: new Set() },
+      ])
     }),
   )
 
@@ -139,7 +143,9 @@ describe("ApplicationTools", () => {
           ],
         },
       })
-      expect(contexts).toEqual([{ sessionID, agent, assistantMessageID, toolCallID: "call-context" }])
+      expect(contexts).toEqual([
+        { sessionID, agent, assistantMessageID, toolCallID: "call-context", attachmentPaths: new Set() },
+      ])
     }),
   )
 
@@ -254,8 +260,12 @@ describe("ApplicationTools", () => {
         call: { type: "tool-call", id: "call-first", name: "contextual", input: { query: "first" } },
       })
 
-      expect(secondContexts).toEqual([{ sessionID, agent, assistantMessageID, toolCallID: "call-second" }])
-      expect(firstContexts).toEqual([{ sessionID, agent, assistantMessageID, toolCallID: "call-first" }])
+      expect(secondContexts).toEqual([
+        { sessionID, agent, assistantMessageID, toolCallID: "call-second", attachmentPaths: new Set() },
+      ])
+      expect(firstContexts).toEqual([
+        { sessionID, agent, assistantMessageID, toolCallID: "call-first", attachmentPaths: new Set() },
+      ])
     }),
   )
 
@@ -282,7 +292,9 @@ describe("ApplicationTools", () => {
           call: { type: "tool-call", id: "call-shared", name: "shared", input: { query: "location" } },
         }),
       ).toMatchObject({ result: { type: "content" } })
-      expect(locationContexts).toEqual([{ sessionID, agent, assistantMessageID, toolCallID: "call-shared" }])
+      expect(locationContexts).toEqual([
+        { sessionID, agent, assistantMessageID, toolCallID: "call-shared", attachmentPaths: new Set() },
+      ])
       expect(applicationContexts).toEqual([])
     }),
   )

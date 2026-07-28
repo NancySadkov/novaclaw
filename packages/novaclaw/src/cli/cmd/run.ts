@@ -70,6 +70,11 @@ async function readPipedInput(hasMessage: boolean): Promise<string | undefined> 
 type FilePart = {
   type: "file"
   url: string
+  /** Where the bytes CAME FROM. `url` inlines small files as a `data:` URI, which erases the fact
+   *  that they are a file on the user's disk — and that fact is what stops the agent overwriting
+   *  their own source without asking. Always set; `url` is the provider-facing payload, this is
+   *  the local identity. */
+  sourceUrl: string
   filename: string
   mime: string
 }
@@ -340,6 +345,7 @@ export const RunCommand = effectCmd({
           files.push({
             type: "file",
             url: content ? `data:${mime};base64,${content.toString("base64")}` : pathToFileURL(resolvedPath).href,
+            sourceUrl: pathToFileURL(resolvedPath).href,
             filename: path.basename(resolvedPath),
             mime,
           })
@@ -840,7 +846,7 @@ export const RunCommand = effectCmd({
           prompt: {
             text: message,
             ...(files.length > 0
-              ? { files: files.map((file) => ({ uri: file.url, name: file.filename })) }
+              ? { files: files.map((file) => ({ uri: file.url, sourceUri: file.sourceUrl, name: file.filename })) }
               : {}),
           },
         })

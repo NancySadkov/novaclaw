@@ -1,6 +1,13 @@
 export * as Tool from "./tool"
 
-import { ToolDefinition, ToolFailure, ToolOutput, truncatedArgsMessage, truncatedArgsResult, type ToolCall } from "@novaclaw/llm"
+import {
+  ToolDefinition,
+  ToolFailure,
+  ToolOutput,
+  truncatedArgsMessage,
+  truncatedArgsResult,
+  type ToolCall,
+} from "@novaclaw/llm"
 import { Effect, JsonSchema, Schema } from "effect"
 import type { AgentV2 } from "../agent"
 import type { SessionMessage } from "../session/message"
@@ -11,6 +18,10 @@ export interface Context {
   readonly agent: AgentV2.ID
   readonly assistantMessageID: SessionMessage.ID
   readonly toolCallID: string
+  /** Canonical paths of the files the user attached, resolved once for this provider turn.
+   *  A mutation tool passes these to `permission.assert` so overwriting the user's own source
+   *  asks first. See `session/runner/attachment-paths.ts`. */
+  readonly attachmentPaths?: ReadonlySet<string>
 }
 
 export type SchemaType<A> = Schema.Codec<A, any, never, never>
@@ -207,7 +218,8 @@ export const settle = (tool: AnyTool, call: ToolCall, context: Context) => {
   // prescriptive "build the file in chunks" recovery instead of a generic "Invalid tool input". The
   // ToolFailure is lowered into an error-state tool result the model sees (feeds the 1N/A2 streak).
   const truncated = truncatedArgsMessage(call.input)
-  if (truncated !== undefined) return Effect.fail(new ToolFailure({ message: truncatedArgsResult(call.name, truncated) }))
+  if (truncated !== undefined)
+    return Effect.fail(new ToolFailure({ message: truncatedArgsResult(call.name, truncated) }))
   return runtimeOf(tool).settle(call, context)
 }
 

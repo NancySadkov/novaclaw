@@ -20,7 +20,8 @@ export const name = "write-hex"
 
 export const Input = Schema.Struct({
   filename: Schema.String.annotate({
-    description: "File to patch (created when missing, but only at offset 0). Relative paths resolve within the active Location.",
+    description:
+      "File to patch (created when missing, but only at offset 0). Relative paths resolve within the active Location.",
   }),
   offset: Schema.Number.annotate({
     description: "Byte offset to write at (default 0). At most the current file size — writing AT the size appends.",
@@ -71,7 +72,8 @@ export const layer = Layer.effectDiscard(
                 try: () => parseHexInput(input.data),
                 catch: (error) => new ToolFailure({ message: error instanceof Error ? error.message : String(error) }),
               })
-              if (bytes.length === 0) return yield* new ToolFailure({ message: "No bytes to write — `data` parsed empty" })
+              if (bytes.length === 0)
+                return yield* new ToolFailure({ message: "No bytes to write — `data` parsed empty" })
               const target = yield* mutation.resolve({ path: input.filename })
               const external = target.externalDirectory
               if (external)
@@ -94,6 +96,8 @@ export const layer = Layer.effectDiscard(
               yield* permission.assert({
                 action: exists ? "edit" : "create",
                 resources: [target.resource],
+                targets: [{ resource: target.resource, canonical: target.canonical }],
+                attachmentPaths: [...(context.attachmentPaths ?? [])],
                 save: ["*"],
                 sessionID: context.sessionID,
                 agent: context.agent,

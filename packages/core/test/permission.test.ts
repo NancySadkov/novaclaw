@@ -114,7 +114,7 @@ function assertion(input: Partial<PermissionV2.AssertInput> = {}) {
   } satisfies PermissionV2.AssertInput
 }
 
-function waitForRequest() {
+function waitForRequest(input: PermissionV2.AssertInput = assertion()) {
   return Effect.gen(function* () {
     const service = yield* PermissionV2.Service
     const events = yield* EventV2.Service
@@ -125,11 +125,21 @@ function waitForRequest() {
         : Effect.void,
     )
     yield* Effect.addFinalizer(() => unsubscribe)
-    const fiber = yield* service.assert(assertion()).pipe(Effect.forkScoped)
+    const fiber = yield* service.assert(input).pipe(Effect.forkScoped)
     const request = yield* Deferred.await(asked)
     return { service, fiber, request }
   })
 }
+
+/** An edit of `/project/task.md`, where that file is also one of the user's attachments. */
+const editingAnAttachment = (input: Partial<PermissionV2.AssertInput> = {}) =>
+  assertion({
+    action: "edit",
+    resources: ["task.md"],
+    targets: [{ resource: "task.md", canonical: "/project/task.md" }],
+    attachmentPaths: ["/project/task.md"],
+    ...input,
+  })
 
 describe("PermissionV2", () => {
   it.effect("returns the evaluated effect and only queues prompts", () =>
@@ -179,6 +189,111 @@ describe("PermissionV2", () => {
       const denied = yield* service.assert(assertion()).pipe(Effect.flip)
       expect(denied).toBeInstanceOf(PermissionV2.DeniedError)
       expect(yield* service.list()).toEqual([])
+    }),
+  )
+
+  // ── Attached-source protection ────────────────────────────────────────────────────────────────
+  // Ported from https://github.com/NancySadkov/novaclaw/pull/9 by @DassaultFalconKing. These drive
+  // the LIVE evaluator because the pure predicate is the easy half — what decides whether the
+  // feature exists at all is where the rule sits relative to the mode overlay and to saved answers.
+  it.effect("asks before overwriting an attached file, THROUGH an allow-all agent and bypass mode", () =>
+    Effect.gen(function* () {
+      // This is the DEFAULT shape of a NovaClaw install, which is the only reason the feature is
+      // worth having: the agent baseline is allow-all (`{*,*,allow}`) and
+      // `EFFECTIVE_CONFIG_DEFAULTS.permissionMode` is `bypass`, whose overlay allows edit/write/trash
+      // on `*`. Both would silently permit the write. If this test ever passes with the attachment
+      // rule moved earlier in the chain, the rule is being shadowed and the protection is a no-op.
+      yield* setup([{ action: "*", resource: "*", effect: "allow" }])
+      const sessionID = SessionV2.ID.make("ses_attached")
+      yield* insertSession({ id: sessionID, type: "interactive", permissionMode: "bypass" })
+      // ⚠️ Assert the EFFECT first, with the non-blocking `ask`. `waitForRequest` below parks on a
+      // Deferred that a broken protection would never complete, and under `it.effect`'s TestClock
+      // bun's per-test timeout cannot cancel that — the suite would HANG instead of failing.
+      // Measured 2026-07-28 while negative-controlling this very test: >300 s, killed by hand.
+      // A guard whose failure mode is a wedge is worse than no guard, so the fast check goes first.
+      // ⚠️ Its own id, because `ask` REGISTERS the pending request — reusing the fixture's fixed
+      // `per_test` id makes the `create` below die on a duplicate, which wedges the same way.
+      expect(
+        yield* (yield* PermissionV2.Service).ask(
+          editingAnAttachment({ sessionID, id: PermissionV2.ID.create("per_effect_probe") }),
+        ),
+      ).toMatchObject({ effect: "ask" })
+      const { service, fiber, request } = yield* waitForRequest(editingAnAttachment({ sessionID }))
+      // The ask must SAY why it is asking, or it reads as a glitch on a file everything else could touch.
+      expect(request).toMatchObject({
+        action: "edit",
+        resources: ["task.md"],
+        metadata: { attachmentProtection: true, attachmentPath: "/project/task.md" },
+      })
+      yield* service.reply({ requestID: request.id, reply: "allow-once" })
+      yield* Fiber.join(fiber)
+    }),
+  )
+
+  it.effect("NEGATIVE CONTROL: the same edit, one path away from the attachment, is not asked about", () =>
+    Effect.gen(function* () {
+      yield* setup([{ action: "*", resource: "*", effect: "allow" }])
+      const sessionID = SessionV2.ID.make("ses_attached_miss")
+      yield* insertSession({ id: sessionID, type: "interactive", permissionMode: "bypass" })
+      const service = yield* PermissionV2.Service
+      // Same basename, different directory — the case a basename comparison would get wrong.
+      expect(
+        yield* service.ask(
+          editingAnAttachment({ sessionID, targets: [{ resource: "out/task.md", canonical: "/project/out/task.md" }] }),
+        ),
+      ).toMatchObject({ effect: "allow" })
+      // And a turn with no attachments at all is completely untouched.
+      expect(yield* service.ask(editingAnAttachment({ sessionID, attachmentPaths: [] }))).toMatchObject({
+        effect: "allow",
+      })
+    }),
+  )
+
+  it.effect("a saved answer releases the protection only when it NAMES the file", () =>
+    Effect.gen(function* () {
+      // The rule this pins: every one of these asserts offers `save: ["*"]`, so if a wildcard saved
+      // answer could release the protection, the first ordinary "always allow edits" would switch it
+      // off forever and the whole feature would be theatre.
+      yield* setup([{ action: "*", resource: "*", effect: "allow" }])
+      const saved = yield* PermissionSaved.Service
+      const sessionID = SessionV2.ID.make("ses_attached_saved")
+      yield* insertSession({ id: sessionID, type: "interactive", permissionMode: "bypass" })
+      const service = yield* PermissionV2.Service
+
+      // The rule an ordinary "always allow edits" leaves behind — these asserts all offer `save: ["*"]`.
+      yield* saved.add({ origin: Project.ID.global, action: "edit", resources: ["*"] })
+      expect(yield* service.ask(editingAnAttachment({ sessionID }))).toMatchObject({ effect: "ask" })
+
+      // Answering "always" to THIS file's own ask names it, and that does end the asking.
+      yield* saved.add({ origin: Project.ID.global, action: "edit", resources: ["task.md"] })
+      expect(yield* service.ask(editingAnAttachment({ sessionID }))).toMatchObject({ effect: "allow" })
+    }),
+  )
+
+  it.effect("an UNATTENDED root is DENIED with a named reason rather than parked on an ask nobody can answer", () =>
+    Effect.gen(function* () {
+      // Same stance as `unattendedStanceRules`: a pending ask is an in-memory, location-scoped Map,
+      // so parking one in an unattended run is a hang that does not even survive a restart.
+      yield* setup([{ action: "*", resource: "*", effect: "allow" }])
+      const sessionID = SessionV2.ID.make("ses_attached_unattended")
+      yield* insertSession({ id: sessionID, type: "goal-oriented", permissionMode: "bypass" })
+      const service = yield* PermissionV2.Service
+      const exit = yield* service.assert(editingAnAttachment({ sessionID })).pipe(Effect.exit)
+      expect(exit._tag).toBe("Failure")
+      const error = yield* service.assert(editingAnAttachment({ sessionID })).pipe(Effect.flip)
+      expect(error).toBeInstanceOf(PermissionV2.DeniedError)
+      expect((error as PermissionV2.DeniedError).reason).toBe("attachment-protected")
+      expect(PermissionV2.denialMessage(error)).toContain("NEW file")
+    }),
+  )
+
+  it.effect("yolo stays the one deliberate way out, exactly as it is for the unattended stance", () =>
+    Effect.gen(function* () {
+      yield* setup([{ action: "*", resource: "*", effect: "allow" }])
+      const sessionID = SessionV2.ID.make("ses_attached_yolo")
+      yield* insertSession({ id: sessionID, type: "interactive", permissionMode: "yolo" })
+      const service = yield* PermissionV2.Service
+      expect(yield* service.ask(editingAnAttachment({ sessionID }))).toMatchObject({ effect: "allow" })
     }),
   )
 
@@ -800,9 +915,9 @@ describe("PermissionV2 — unattended confinement stance", () => {
       const service = yield* PermissionV2.Service
       const session = SessionV2.ID.make("ses_cron")
       for (const action of ["create", "write", "edit", "read", "trash"])
-        expect(yield* service.ask(assertion({ sessionID: session, action, resources: ["out/report.md"] }))).toMatchObject(
-          { effect: "allow" },
-        )
+        expect(
+          yield* service.ask(assertion({ sessionID: session, action, resources: ["out/report.md"] })),
+        ).toMatchObject({ effect: "allow" })
     }),
   )
 

@@ -81,8 +81,7 @@ export const layer = Layer.effectDiscard(
       .register({
         [name]: Tool.withPermission(
           Tool.make({
-            description:
-              `Apply one patch containing add, update, and delete file operations. ${PATCH_FORMAT_HELP} All targets are resolved and approved before target contents are read. Operations apply sequentially; if a later operation fails, earlier operations remain applied and the failure reports them explicitly. Moves and atomic rollback are not supported yet.`,
+            description: `Apply one patch containing add, update, and delete file operations. ${PATCH_FORMAT_HELP} All targets are resolved and approved before target contents are read. Operations apply sequentially; if a later operation fails, earlier operations remain applied and the failure reports them explicitly. Moves and atomic rollback are not supported yet.`,
             input: Input,
             output: Output,
             toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
@@ -132,6 +131,20 @@ export const layer = Layer.effectDiscard(
                 yield* permission.assert({
                   action: "edit",
                   resources: [...new Set(targets.map(({ target }) => target.resource))],
+                  // Deduped as PAIRS, on the canonical path. Deduping `resource` and `canonical`
+                  // into two separate arrays — as the upstream PR did — lets the two disagree in
+                  // length whenever a patch names one file twice under different spellings, and the
+                  // index that recovered the resource then silently pointed at the wrong entry or
+                  // at nothing. Every target is supplied BEFORE any file is read or written.
+                  targets: [
+                    ...new Map(
+                      targets.map(({ target }) => [
+                        target.canonical,
+                        { resource: target.resource, canonical: target.canonical },
+                      ]),
+                    ).values(),
+                  ],
+                  attachmentPaths: [...(context.attachmentPaths ?? [])],
                   save: ["*"],
                   sessionID: context.sessionID,
                   agent: context.agent,
