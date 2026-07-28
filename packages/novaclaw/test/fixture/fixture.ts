@@ -1,12 +1,16 @@
 import { $ } from "bun"
+import { execFile } from "child_process"
 import * as fs from "fs/promises"
+import fsSync from "fs"
 import os from "os"
 import path from "path"
+import { promisify } from "util"
+
 import { Effect, Context, Layer, Schema, Scope } from "effect"
 import { sql } from "drizzle-orm"
 import type * as PlatformError from "effect/PlatformError"
 import { CrossSpawnSpawner } from "@novaclaw/core/cross-spawn-spawner"
-import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
+import type { ChildProcessSpawner } from "effect/unstable/process"
 import { Config as ConfigV2 } from "@novaclaw/core/config"
 import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
 import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
@@ -78,7 +82,190 @@ function clean(dir: string) {
   })
 }
 
+// ─── the git fixture: ONE implementation, built once per process and COPIED per call ────────────
+//
+// ⚠️ **`git: true` used to spawn eight git processes per CALL**, written out twice — once with
+// `bun $` in `tmpdir()` and once through `ChildProcessSpawner` in `tmpdirScoped()`, under a comment
+// asking the next person to keep them in sync.
+//
+// Measured 2026-07-28 on this box (loaded, four agents) over
+// `httpapi-workspace` + `httpapi-workspace-routing` + `httpapi-instance-context` — 23 `git: true`
+// call sites. `GIT_TRACE` (which counts EVERY git process, including the ones git starts itself)
+// says the whole run went **405 → 235** git processes; the fixture's own share went **184 → 31**:
+//
+//     init 23 → 1 · config 92 → 6 · commit 23 → 23 · maintenance 23 → 0 · fsmonitor--daemon 23 → 0
+//
+// In wall clock, phase timers put the old ritual at **10.4 s of setup + 1.7 s of teardown inside a
+// 38.2 s run** (~32% of those three files), and an INTERLEAVED A/B — old, new, old, new, five
+// rounds, because this box swings ±30% between identical runs — measured a median **32.0 s → 25.8 s**
+// for the same 26 tests and the same 3 (pinned) failures. Component costs: `fs.cp` of the finished
+// 20-file template **56 ms**, against **360–386 ms** for the six-process ritual.
+//
+// So the ritual is paid ONCE per process into a template directory, and every call gets an
+// `fs.cp` copy of it. The two entry points now share this one function, which is what makes
+// "keep these in sync" stop being a claim about code somewhere else (todo.md ruling 1).
+//
+// ⚠️ What this does NOT fix, so nobody re-derives it: the 235 that remain are almost entirely the
+// APP — `rev-parse` 111, `remote` 43, `rev-list` 37 — i.e. `Project.resolve` re-discovering a
+// repository per request. `InstanceStore` memoizes by resolved directory, but every test uses a
+// fresh random tmpdir, so that cache never hits. That is a src-side lever, not a fixture one.
+//
+// ⚠️ **The template deliberately stops SHORT of the root commit, and that is the one place this
+// fixture must not copy `packages/core/test/fixture/git.ts`.** `Project.resolve`
+// (`core/src/project.ts:96`) identifies a repository with no remote by its **root-commit SHA**
+// (`Git.history.rootCommits` → `rev-list --max-parents=0 HEAD`). Hoisting the commit into the
+// template would give every fixture directory in the process ONE project id — reuse of an
+// identity, not reuse of scenery. So each copy makes its own root commit, whose message carries
+// the directory path, which is exactly what the old ritual did for a reason nothing in the tree
+// stated. (`test/effect/instance-state.test.ts:22` re-amends that commit with the same message,
+// which reads like someone hitting this once already.)
+//
+// ⚠️ Be honest about the evidence: hoisting the commit into the template was TRIED on 2026-07-28
+// over six suites (`httpapi-workspace`, `httpapi-workspace-routing`, `httpapi-instance-context`,
+// `httpapi-instance`, `project-copy`, `worktree-endpoint-repro`) and **no test changed state** —
+// so no suite today is known to depend on it. The uniqueness is kept on the source-code reading
+// above rather than on a red test, and `fixture.test.ts` pins it directly so the property is
+// mechanically checked instead of merely intended. It costs ONE git process per call.
+//
+// A hand-rolled `git init` anywhere under `packages/novaclaw/test/` is caught by
+// `git-fixture-ledger.test.ts`, a shrink-only ratchet.
+
+const execFileAsync = promisify(execFile)
+
+/** One git process. `execFile` rather than `bun $`: no shell to parse, and measurably cheaper. */
+const gitExec = async (cwd: string, ...args: string[]) => {
+  await execFileAsync("git", args, { cwd })
+}
+
+/** Where the template lives for the lifetime of this test process. Named by PID — see `templateRoot()`. */
+const TEMPLATE_PREFIX = "novaclaw-test-git-template-"
+let templateHome: string | undefined
+let gitTemplate: Promise<string> | undefined
+
+function templateRoot(): string {
+  if (templateHome !== undefined) return templateHome
+  // ⚠️ **`bun test` does NOT run `process.on("exit")` handlers** (bun 1.3.14, measured 2026-07-28
+  // in `packages/core/test/fixture/git.ts`: 15 template roots had piled up in %TEMP% before it was
+  // caught). So teardown cannot be an exit hook. The root is named by PID and every run reaps the
+  // roots whose owner is gone — which bounds %TEMP% at one directory per LIVE test process and
+  // heals whatever an earlier crash left behind (AGENTS.md pitfall #8).
+  reapAbandonedTemplateRoots()
+  const root = path.join(os.tmpdir(), `${TEMPLATE_PREFIX}${process.pid}`)
+  fsSync.rmSync(root, { recursive: true, force: true })
+  fsSync.mkdirSync(root, { recursive: true })
+  templateHome = root
+  // Best-effort fast path: a no-op under `bun test`, correct everywhere else.
+  process.on("exit", () => {
+    try {
+      fsSync.rmSync(root, { recursive: true, force: true })
+    } catch {
+      // A teardown failure must never turn a green suite red — the reap above is the real mechanism.
+    }
+  })
+  return root
+}
+
+/**
+ * Delete template roots whose owning process is gone.
+ *
+ * Keyed on PID, never on age: `script/test.ts` runs units in their own processes, and an age-based
+ * sweep would eventually delete a CONCURRENT run's template out from under it — trading a leaked
+ * directory for a flaky suite. `process.kill(pid, 0)` is the liveness probe (no throw for a live
+ * pid, `ESRCH` for a dead one). A recycled PID just means one stale root survives a run longer.
+ */
+function reapAbandonedTemplateRoots() {
+  let entries: string[]
+  try {
+    entries = fsSync.readdirSync(os.tmpdir())
+  } catch {
+    return
+  }
+  for (const entry of entries) {
+    if (!entry.startsWith(TEMPLATE_PREFIX)) continue
+    const pid = Number(entry.slice(TEMPLATE_PREFIX.length))
+    if (!Number.isInteger(pid) || pid <= 0 || pid === process.pid) continue
+    try {
+      process.kill(pid, 0)
+      continue // still running — not ours to delete
+    } catch (error) {
+      // ESRCH means gone. EPERM means alive under another account: leave it alone.
+      if ((error as { code?: string } | undefined)?.code === "EPERM") continue
+    }
+    try {
+      fsSync.rmSync(path.join(os.tmpdir(), entry), { recursive: true, force: true })
+    } catch {
+      // Another process may be reaping the same root; losing the race is fine.
+    }
+  }
+}
+
+/**
+ * `git init` + the identity/determinism config — seven git processes, paid ONCE per process.
+ *
+ * Deliberately stops SHORT of the root commit: see the identity note above. The promise itself is
+ * memoized, so concurrent first callers share one build rather than racing to write the same tree.
+ *
+ * Exported for `fixture.test.ts` only — the memo and the missing root commit are the two properties
+ * that make this fixture both fast and safe, and neither is observable from the outside otherwise.
+ */
+export function gitTemplateDir() {
+  gitTemplate ??= (async () => {
+    const directory = path.join(templateRoot(), "repo")
+    await fs.mkdir(directory, { recursive: true })
+    await gitExec(directory, "init")
+    await gitExec(directory, "config", "core.fsmonitor", "false")
+    await gitExec(directory, "config", "commit.gpgsign", "false")
+    // ⚠️ Measured with `GIT_TRACE` on 2026-07-28: every `git commit` in a fresh repo spawned a
+    // SECOND process, `git maintenance run --auto` — 23 of them across the three suites profiled
+    // above, i.e. the per-copy identity commit cost two processes rather than one. Housekeeping a
+    // repository that lives for one test and is then deleted is pure waste. (`gc.auto` is set too:
+    // it is the pre-2.30 spelling, and a fixture should not depend on the reader's git version.)
+    await gitExec(directory, "config", "maintenance.auto", "false")
+    await gitExec(directory, "config", "gc.auto", "0")
+    await gitExec(directory, "config", "user.email", "test@novaclaw.test")
+    await gitExec(directory, "config", "user.name", "Test")
+    return directory
+  })()
+  return gitTemplate
+}
+
+/**
+ * **THE git provisioning path.** Both `tmpdir()` and `tmpdirScoped()` call this and nothing else.
+ *
+ * ⚠️ `preserveTimestamps` is not cosmetic — `.git/index` caches each file's mtime and size, so a
+ * plain copy makes git treat the whole worktree as stat-dirty and re-hash it.
+ */
+async function provisionGit(dir: string) {
+  await fs.cp(await gitTemplateDir(), dir, { recursive: true, preserveTimestamps: true })
+  // The ONE per-call git process, and the one that gives this repository its own identity.
+  await gitExec(dir, "commit", "--allow-empty", "-m", `root commit ${dir}`)
+}
+
+/**
+ * The teardown counterpart — and it is now a no-op by construction, which is the point.
+ *
+ * ⚠️ It used to be an unconditional `git fsmonitor--daemon stop` per disposal: 23 processes and
+ * **1.7 s** across the three files measured above. It could never have found a daemon. Git starts
+ * one only where `core.fsmonitor` is truthy, the template sets it to `false` and every copy
+ * inherits that (`fixture.test.ts` asserts it), and a `stop` run at the tmpdir ROOT resolves to the
+ * fixture's own repository — never to some nested repo a test created. So the call was addressing
+ * exactly the repository that provably cannot have a daemon.
+ *
+ * Kept as a guarded call rather than deleted, because the premise is about THIS machine's git
+ * config: if a developer's global/system config turns fsmonitor on, a repo created by the code
+ * under test (not by this fixture) could still start one. The probe is one git process per test
+ * PROCESS instead of one per disposal.
+ */
+let fsmonitorEnabledGlobally: Promise<boolean> | undefined
+function fsmonitorCouldRun() {
+  fsmonitorEnabledGlobally ??= execFileAsync("git", ["config", "--get", "core.fsmonitor"], { cwd: os.tmpdir() })
+    .then(({ stdout }) => stdout.trim() !== "" && stdout.trim() !== "false")
+    .catch(() => false) // exit 1 = unset, which is git's default and means "no daemon"
+  return fsmonitorEnabledGlobally
+}
+
 async function stop(dir: string) {
+  if (!(await fsmonitorCouldRun())) return
   if (!(await exists(dir))) return
   await $`git fsmonitor--daemon stop`.cwd(dir).quiet().nothrow()
 }
@@ -353,12 +540,7 @@ export async function tmpdir<T>(options?: TmpDirOptions<T>) {
   const dirpath = sanitizePath(path.join(os.tmpdir(), "novaclaw-test-" + Math.random().toString(36).slice(2)))
   await fs.mkdir(dirpath, { recursive: true })
   if (options?.git) {
-    await $`git init`.cwd(dirpath).quiet()
-    await $`git config core.fsmonitor false`.cwd(dirpath).quiet()
-    await $`git config commit.gpgsign false`.cwd(dirpath).quiet()
-    await $`git config user.email "test@novaclaw.test"`.cwd(dirpath).quiet()
-    await $`git config user.name "Test"`.cwd(dirpath).quiet()
-    await $`git commit --allow-empty -m "root commit ${dirpath}"`.cwd(dirpath).quiet()
+    await provisionGit(dirpath)
   }
   if (options?.config) await provisionConfig(options.config)
   const realpath = sanitizePath(await fs.realpath(dirpath))
@@ -381,14 +563,20 @@ export async function tmpdir<T>(options?: TmpDirOptions<T>) {
   return result
 }
 
-/** Effectful scoped tmpdir. Cleaned up when the scope closes. Make sure these stay in sync */
+/**
+ * Effectful scoped tmpdir. Cleaned up when the scope closes.
+ *
+ * The git leg is `provisionGit` — the SAME function `tmpdir()` calls, rather than a second copy of
+ * the ritual kept honest by a comment. (It used to be a second copy, through `ChildProcessSpawner`
+ * instead of `bun $`, under the instruction "Make sure these stay in sync". That is the defect class
+ * ruling 1 names: a normative claim about code in another file.)
+ */
 export function tmpdirScoped<E = never, R = never>(options?: {
   git?: boolean
   config?: Partial<Config.Info> | (() => Partial<Config.Info>)
   init?: (directory: string) => Effect.Effect<void, E, R>
 }) {
   return Effect.gen(function* () {
-    const spawner = yield* ChildProcessSpawner.ChildProcessSpawner
     const dirpath = sanitizePath(path.join(os.tmpdir(), "novaclaw-test-" + Math.random().toString(36).slice(2)))
     yield* Effect.promise(() => fs.mkdir(dirpath, { recursive: true }))
     const dir = sanitizePath(yield* Effect.promise(() => fs.realpath(dirpath)))
@@ -400,16 +588,8 @@ export function tmpdirScoped<E = never, R = never>(options?: {
       }),
     )
 
-    const git = (...args: string[]) =>
-      spawner.spawn(ChildProcess.make("git", args, { cwd: dir })).pipe(Effect.flatMap((handle) => handle.exitCode))
-
     if (options?.git) {
-      yield* git("init")
-      yield* git("config", "core.fsmonitor", "false")
-      yield* git("config", "commit.gpgsign", "false")
-      yield* git("config", "user.email", "test@novaclaw.test")
-      yield* git("config", "user.name", "Test")
-      yield* git("commit", "--allow-empty", "-m", `root commit ${dir}`)
+      yield* Effect.promise(() => provisionGit(dir))
     }
 
     if (options?.config) {
