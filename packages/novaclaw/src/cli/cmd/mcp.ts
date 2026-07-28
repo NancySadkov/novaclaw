@@ -12,12 +12,7 @@ import { MCP } from "../../mcp"
 import { McpAuth } from "../../mcp/auth"
 import { McpOAuthProvider } from "../../mcp/oauth-provider"
 import { Config } from "@/config/config"
-import { InstanceRef } from "@/effect/instance-ref"
 import { InstallationVersion } from "@novaclaw/core/installation/version"
-import path from "path"
-import { Global } from "@novaclaw/core/global"
-import { modify, applyEdits } from "jsonc-parser"
-import { Filesystem } from "@/util/filesystem"
 import { Effect } from "effect"
 
 function getAuthStatusIcon(status: MCP.AuthStatus): string {
@@ -182,14 +177,11 @@ export const McpAuthCommand = effectCmd({
 
     if (servers.length === 0) {
       prompts.log.warn("No OAuth-capable MCP servers configured")
-      prompts.log.info("Remote MCP servers support OAuth by default. Add a remote server in novaclaw.json:")
-      prompts.log.info(`
-  "mcp": {
-    "my-server": {
-      "type": "remote",
-      "url": "https://example.com/mcp"
-    }
-  }`)
+      // Was: "add a remote server in novaclaw.json", with a V1-shaped flat `mcp` snippet. Both
+      // halves were wrong — servers nest under `mcp.servers`, and a hand-edited jsonc is not read
+      // at runtime at all (config is SQLite). Point at the command that actually writes.
+      prompts.log.info("Remote MCP servers support OAuth by default. Add one with:")
+      prompts.log.info(`  nova-cli mcp add my-server --url https://example.com/mcp`)
       prompts.outro("Done")
       return
     }
@@ -265,18 +257,14 @@ export const McpAuthCommand = effectCmd({
           } else if (status.status === "needs_client_registration") {
             spinner.stop("Authentication failed", 1)
             prompts.log.error(status.error)
-            prompts.log.info("Add clientId to your MCP server config:")
-            prompts.log.info(`
-  "mcp": {
-    "${serverName}": {
-      "type": "remote",
-      "url": "${serverConfig.url}",
-      "oauth": {
-        "clientId": "your-client-id",
-        "clientSecret": "your-client-secret"
-      }
-    }
-  }`)
+            // Was a jsonc snippet under a V1-flat `mcp` key with camelCase `clientId`/`clientSecret`
+            // — three ways wrong at once (dead file, wrong nesting, wrong field names; the schema is
+            // `mcp.servers.<name>.oauth.client_id`). Re-adding through the command is the one route
+            // that writes where the runtime reads.
+            prompts.log.info(
+              `Re-add "${serverName}" with \`nova-cli mcp add\` (interactive) and answer yes to ` +
+                `"pre-registered client ID", or set mcp.servers.${serverName}.oauth.client_id in Settings.`,
+            )
           } else if (status.status === "failed") {
             spinner.stop("Authentication failed", 1)
             prompts.log.error(status.error)
@@ -386,26 +374,9 @@ export const McpLogoutCommand = effectCmd({
   }),
 })
 
-async function resolveConfigPath(baseDir: string, global = false) {
-  // Check for existing config files (prefer .jsonc over .json, check .novaclaw/ subdirectory too)
-  const candidates = [path.join(baseDir, "novaclaw.json"), path.join(baseDir, "novaclaw.jsonc")]
-
-  if (!global) {
-    candidates.push(path.join(baseDir, ".novaclaw", "novaclaw.json"), path.join(baseDir, ".novaclaw", "novaclaw.jsonc"))
-  }
-
-  for (const candidate of candidates) {
-    if (await Filesystem.exists(candidate)) {
-      return candidate
-    }
-  }
-
-  // Default to novaclaw.json if none exist
-  return candidates[0]
-}
-
-// The V2 config authoring shape for one MCP server entry (`mcp.servers.<name>`). Only serialized to
-// jsonc here, so a plain structural literal is enough (no decode). Mirrors `ConfigMCP.Local`/`Remote`.
+// The V2 config authoring shape for one MCP server entry (`mcp.servers.<name>`), assembled from
+// flags/prompts and handed to `MCP.persist`, which decodes it against `ConfigMCP.Server` before it
+// reaches the store. Mirrors `ConfigMCP.Local`/`Remote`.
 type McpServerWrite =
   | {
       type: "local"
@@ -430,22 +401,41 @@ type McpServerWrite =
       disabled?: boolean
     }
 
-async function addMcpToConfig(name: string, mcpConfig: McpServerWrite, configPath: string) {
-  let text = "{}"
-  if (await Filesystem.exists(configPath)) {
-    text = await Filesystem.readText(configPath)
-  }
-
-  // Use jsonc-parser to modify while preserving comments. V2 nests servers under `mcp.servers`.
-  const edits = modify(text, ["mcp", "servers", name], mcpConfig, {
-    formattingOptions: { tabSize: 2, insertSpaces: true },
-  })
-  const result = applyEdits(text, edits)
-
-  await Filesystem.write(configPath, result)
-
-  return configPath
+/**
+ * Write one server into the instance's config store — the same `ConfigStoreWrite.apply` route
+ * `PATCH /config` and the Settings UI take.
+ *
+ * ⚠️ This command used to write a jsonc document instead, and on any instance that had booted once
+ * that was a TOTAL no-op: `mcp` is served from SQLite, and the jsonc seed that could have imported
+ * it is `isEmpty`-gated and one-time (`settings-config-seed.ts:311-337`). The file was written, the
+ * command printed "added", and nothing — not even a restart — ever read it back. Persisting instead
+ * of connecting is deliberate: `MCP.add` would spawn the child/open the socket for EVERY configured
+ * server, which is not what a one-shot `add` should cost.
+ */
+function persistServer(name: string, mcpConfig: McpServerWrite) {
+  // `disabled` is written EXPLICITLY, exactly as `MCP.add` does it and for the same reason: the
+  // store write is a patch-MERGE, so re-adding a server the user had switched off would otherwise
+  // inherit the stale `disabled: true` and the server would silently stay dark.
+  const entry = { ...mcpConfig, disabled: mcpConfig.disabled ?? false }
+  // `McpEntry` is the DECODED shape (`ConfigMCP.Server` class instances); what we hold is the plain
+  // authoring literal. `MCP.persist` re-decodes it against the schema before it reaches the store,
+  // so the cast crosses exactly one hop and the validation still happens.
+  return MCP.Service.use((mcp) => mcp.persist(name, entry as unknown as McpEntry))
 }
+
+/**
+ * What a user needs to know after the write lands, and nothing more.
+ *
+ * There is no instance to "reach" — the write goes straight to the instance's own SQLite store, so
+ * it works headless and airgapped with no `novaclaw serve` running and no port to discover. What it
+ * does NOT do is reconfigure a serve that is ALREADY running: that process snapshots its config at
+ * boot (v0.2.0-prep B7 is the fix), so say so rather than let the user believe a live instance just
+ * picked the server up.
+ */
+const ADDED_HINT = "It is connected the next time the instance starts (restart a running one to pick it up)."
+
+/** What the prompts/flags produced: the server to write, or nothing (the user cancelled). */
+type Collected = { name: string; config: McpServerWrite }
 
 export const McpAddCommand = effectCmd({
   command: "add [name]",
@@ -471,10 +461,10 @@ export const McpAddCommand = effectCmd({
         array: true,
       }),
   handler: Effect.fn("Cli.mcp.add")(function* (args) {
-    const maybeCtx = yield* InstanceRef
-    if (!maybeCtx) return yield* Effect.die("InstanceRef not provided")
-    const ctx = maybeCtx
-    yield* Effect.promise(async () => {
+    // Everything that prompts or validates stays inside ONE promise (so a validation `throw` keeps
+    // its existing exit behaviour); it returns the entry to write, or undefined when the user
+    // cancelled. The store write then happens as an Effect, outside it.
+    const collected = yield* Effect.promise(async (): Promise<Collected | undefined> => {
       const command = args["--"] ?? []
       if (!args.name && (args.url || args.env?.length || args.header?.length || command.length)) {
         throw new Error("A server name is required for non-interactive MCP configuration")
@@ -515,44 +505,16 @@ export const McpAddCommand = effectCmd({
               ...(Object.keys(environment).length ? { environment } : {}),
             }
 
-        const configPath = await resolveConfigPath(Global.Path.config, true)
-        await addMcpToConfig(args.name, mcpConfig, configPath)
-        prompts.log.success(`MCP server "${args.name}" added to ${configPath}`)
-        return
+        return { name: args.name, config: mcpConfig }
       }
 
       UI.empty()
       prompts.intro("Add MCP server")
 
-
-      // Resolve config paths eagerly for hints
-      const [projectConfigPath, globalConfigPath] = await Promise.all([
-        resolveConfigPath(ctx.worktree),
-        resolveConfigPath(Global.Path.config, true),
-      ])
-
-      // Determine scope
-      let configPath = globalConfigPath
-      if (ctx.vcs === "git") {
-        const scopeResult = await prompts.select({
-          message: "Location",
-          options: [
-            {
-              label: "Current project",
-              value: projectConfigPath,
-              hint: projectConfigPath,
-            },
-            {
-              label: "Global",
-              value: globalConfigPath,
-              hint: globalConfigPath,
-            },
-          ],
-        })
-        if (prompts.isCancel(scopeResult)) throw new UI.CancelledError()
-        configPath = scopeResult
-      }
-
+      // The "Current project / Global" scope prompt is GONE (2026-07-28). It offered to write a
+      // project-root `novaclaw.json`, which is the opencode-legacy shape `config-seed-startup.ts`
+      // deleted: config is instance-level and lives in the instance's SQLite stores, so a
+      // per-project MCP file had no reader and the choice was between one dead file and another.
       const name = await prompts.text({
         message: "Enter MCP server name",
         validate: (x) => (x && x.length > 0 ? undefined : "Required"),
@@ -584,15 +546,7 @@ export const McpAddCommand = effectCmd({
         })
         if (prompts.isCancel(command)) throw new UI.CancelledError()
 
-        const mcpConfig: McpServerWrite = {
-          type: "local",
-          command: command.split(" "),
-        }
-
-        await addMcpToConfig(name, mcpConfig, configPath)
-        prompts.log.success(`MCP server "${name}" added to ${configPath}`)
-        prompts.outro("MCP server added successfully")
-        return
+        return { name, config: { type: "local", command: command.split(" ") } satisfies McpServerWrite }
       }
 
       if (type === "remote") {
@@ -667,12 +621,21 @@ export const McpAddCommand = effectCmd({
           }
         }
 
-        await addMcpToConfig(name, mcpConfig, configPath)
-        prompts.log.success(`MCP server "${name}" added to ${configPath}`)
+        return { name, config: mcpConfig }
       }
 
-      prompts.outro("MCP server added successfully")
+      // `type` is a two-option select, so this is unreachable — but returning undefined here would
+      // print "added successfully" for a server that was never written, which is the exact lie this
+      // command was fixed to stop telling.
+      throw new Error(`Unsupported MCP server type: ${String(type)}`)
     })
+
+    if (!collected) return
+
+    yield* persistServer(collected.name, collected.config)
+    prompts.log.success(`MCP server "${collected.name}" added to this instance's config.`)
+    prompts.log.info(ADDED_HINT)
+    if (!args.name) prompts.outro("MCP server added successfully")
   }),
 })
 

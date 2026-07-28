@@ -116,20 +116,13 @@ beforeEach(() => {
 // Import modules after mocking
 const { MCP } = await import("../../src/mcp/index")
 const { EventV2Bridge } = await import("../../src/event-v2-bridge")
-const { Config } = await import("../../src/config/config")
-const { McpAuth } = await import("../../src/mcp/auth")
 const { McpOAuthCallback } = await import("../../src/mcp/oauth-callback")
-const { FSUtil } = await import("@novaclaw/core/fs-util")
-const { CrossSpawnSpawner } = await import("@novaclaw/core/cross-spawn-spawner")
-const mcpTest = testEffect(
-  MCP.layer.pipe(
-    Layer.provide(McpAuth.defaultLayer),
-    Layer.provideMerge(EventV2Bridge.defaultLayer),
-    Layer.provide(Config.defaultLayer),
-    Layer.provide(CrossSpawnSpawner.defaultLayer),
-    Layer.provide(FSUtil.defaultLayer),
-  ),
-)
+// ⚠️ `MCP.defaultLayer`, not a hand-rolled provide list. This used to restate MCP's dependencies
+// here, and the restatement drifted the instant MCP gained one (v0.2.0-prep B3a, the config stores):
+// every test in this file died with `Service not found: @novaclaw/v2/AgentConfigStore`. A test
+// assembly that mirrors a layer's deps is a second definition of them — the `Workspace.layer`
+// mirrors lesson, in a directory that had two more copies of it.
+const mcpTest = testEffect(Layer.mergeAll(MCP.defaultLayer, EventV2Bridge.defaultLayer))
 const service = MCP.Service as unknown as Effect.Effect<MCPNS.Interface, never, never>
 
 const config = (name: string, headers?: Record<string, string>) => ({

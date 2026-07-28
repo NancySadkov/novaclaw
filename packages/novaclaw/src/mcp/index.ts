@@ -17,6 +17,15 @@ import {
 } from "@modelcontextprotocol/sdk/types.js"
 import { Config } from "@/config/config"
 import { Config as ConfigV2 } from "@novaclaw/core/config"
+import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
+import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
+import { CatalogStore } from "@novaclaw/core/catalog-store"
+import { CommandConfigStore } from "@novaclaw/core/command-config-store"
+import { Database } from "@novaclaw/core/database/database"
+import { PluginConfigStore } from "@novaclaw/core/plugin-config-store"
+import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
+import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
+import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
 import { NamedError } from "@novaclaw/core/util/error"
 import { InstallationVersion } from "@novaclaw/core/installation/version"
 import { withTimeout } from "@/util/timeout"
@@ -228,6 +237,15 @@ export interface Interface {
   readonly resourceTemplates: (
     clientName?: string,
   ) => Effect.Effect<Record<string, ResourceTemplateInfo & { client: string }>>
+  /**
+   * Write `mcp.servers.<name>` to the instance's config store and DO NOT connect.
+   *
+   * The durable half of {@link add}, exposed on its own for callers that must not spawn a child
+   * process or open a socket — `nova-cli mcp add` above all, which used to write a jsonc document
+   * nothing reads. Needs no instance: it touches the instance-wide settings store directly, so it
+   * works headless, airgapped and with no `novaclaw serve` running.
+   */
+  readonly persist: (name: string, mcp: McpEntry) => Effect.Effect<void>
   readonly add: (name: string, mcp: McpEntry) => Effect.Effect<{ status: Record<string, Status> | Status }>
   readonly connect: (name: string) => Effect.Effect<void, NotFoundError>
   readonly disconnect: (name: string) => Effect.Effect<void, NotFoundError>
@@ -263,6 +281,45 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const auth = yield* McpAuth.Service
     const events = yield* EventV2Bridge.Service
+
+    // ── the durable half (v0.2.0-prep B3a) ───────────────────────────────────────────────────
+    //
+    // `mcp` is already a SETTINGS KEY (`settings-config-seed.ts` → SETTINGS_KEYS), so
+    // `mcp.servers.<name>` has a durable home in SQLite: no new table, and — more importantly — no
+    // second owner for a key `ConfigStoreWrite` already routes. Every write below therefore goes
+    // through `ConfigStoreWrite.apply`, the ONE config write path (`PATCH /config` and the test
+    // fixture take the same one), which buys the transaction, the documented patch-MERGE semantics
+    // and the post-commit hooks without restating any of them here.
+    //
+    // Until 2026-07-28 `add` was `s.config[name] = mcp` and nothing else: the server lived in
+    // process memory, `status()` reported it, `POST /api/mcp` answered 200 — and it was gone at the
+    // next boot. That is ruling 2's "a failed mutation never reports success" with the mutation
+    // failing silently, and it is why the app's MCP switch did not survive a restart either.
+    //
+    // These services are captured at layer scope on purpose: they are instance-global singletons
+    // (one `Database` per process, guarded by a single-connection semaphore), so holding them is
+    // holding the same handles `PATCH /config` writes through — not a second connection.
+    const configStores = {
+      agents: yield* AgentConfigStore.Service,
+      catalog: yield* CatalogStore.Service,
+      commands: yield* CommandConfigStore.Service,
+      database: yield* Database.Service,
+      plugins: yield* PluginConfigStore.Service,
+      references: yield* ReferenceConfigStore.Service,
+      settings: yield* SettingsConfigStore.Service,
+      skills: yield* SkillConfigStore.Service,
+    }
+    const provideConfigStores = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+      effect.pipe(
+        Effect.provideService(AgentConfigStore.Service, configStores.agents),
+        Effect.provideService(CatalogStore.Service, configStores.catalog),
+        Effect.provideService(CommandConfigStore.Service, configStores.commands),
+        Effect.provideService(Database.Service, configStores.database),
+        Effect.provideService(PluginConfigStore.Service, configStores.plugins),
+        Effect.provideService(ReferenceConfigStore.Service, configStores.references),
+        Effect.provideService(SettingsConfigStore.Service, configStores.settings),
+        Effect.provideService(SkillConfigStore.Service, configStores.skills),
+      )
 
     type Transport = StdioClientTransport | StreamableHTTPClientTransport | SSEClientTransport
 
@@ -480,6 +537,43 @@ export const layer = Layer.effect(
     )
     const cfgSvc = yield* Config.Service
 
+    /**
+     * Route one server entry into the config store. The ONE durable write in this module.
+     *
+     * ⚠️ It is a patch-MERGE, not a replace — `mergePatch` has no null-deletion, so a field the new
+     * entry omits survives from the old one. That is the documented `updateConfig` contract and it
+     * is what makes `add` preserve sibling servers, but it has one edge that would be a real lie:
+     * re-adding a server the user had switched OFF would inherit the stale `disabled: true` and the
+     * server would stay dark. Callers therefore pass `disabled` EXPLICITLY (see `add`) rather than
+     * leaving it to the merge.
+     *
+     * The JSON round-trip is the `dirAgents` trick from `config/config.ts`: callers hand us either a
+     * decoded `ConfigMCP.Server` class instance (the HTTP path) or a plain object literal (the CLI
+     * and the tests), and every field of an MCP entry is JSON-native — so one round-trip normalizes
+     * both into the shape `Config.Info`'s decode accepts, without depending on `instanceof`.
+     *
+     * Dies rather than skipping on an undecodable entry: a config write that silently drops its
+     * payload while answering 200 is precisely the defect this function exists to remove.
+     */
+    const persistServer = Effect.fn("MCP.persistServer")(function* (name: string, mcp: McpEntry) {
+      const patch = yield* Effect.try({
+        try: () =>
+          Schema.decodeUnknownSync(ConfigV2.Info)({
+            mcp: { servers: { [name]: JSON.parse(JSON.stringify(mcp)) as unknown } },
+          }),
+        catch: (error) => {
+          const reason = error instanceof Error ? error.message : String(error)
+          return new Error(`mcp: server "${name}" is not a valid config entry: ${reason}`)
+        },
+      }).pipe(Effect.orDie)
+      yield* provideConfigStores(ConfigStoreWrite.apply(patch))
+      // The instance's config is a boot-time snapshot (S1), so the running process still serves the
+      // old document from a cache with no TTL. Invalidating is not the read-through fix B7 owes —
+      // it just stops the NEXT location/instance boot in this process from resurrecting a stale view
+      // of a key we have already committed.
+      yield* cfgSvc.invalidate()
+    })
+
     function watch(s: State, name: string, client: MCPClient, bridge: EffectBridge.Shape, timeout?: number) {
       client.onclose = () => {
         if (s.clients[name] !== client) return
@@ -666,21 +760,55 @@ export const layer = Layer.effect(
       return yield* storeClient(s, name, result.mcpClient, result.defs!, result.instructions, mcp.timeout?.request)
     })
 
+    /**
+     * Add a server: persist it, then connect it.
+     *
+     * The order is load-bearing. Persisting FIRST means a server whose process will not start, or
+     * whose URL is unreachable, is still *configured* — the user gets a `failed` status they can act
+     * on instead of a server that silently vanishes at the next boot. Connecting first and
+     * persisting after would make a connect failure lose the user's write, which is the same class
+     * of lie in the other direction.
+     *
+     * `disabled` is written explicitly (see `persistServer`) so re-adding a server the user had
+     * switched off actually turns it back on.
+     */
     const add = Effect.fn("MCP.add")(function* (name: string, mcp: McpEntry) {
+      const entry = { ...mcp, disabled: mcp.disabled ?? false } as McpEntry
+      // Boot the state BEFORE the write, not after. The boot connects everything the config lists,
+      // and the config is what we are about to change — write first and the boot would connect this
+      // server, then `createAndStore` below would connect it a second time and tear the first down.
       const s = yield* InstanceState.get(state)
-      s.config[name] = mcp
-      yield* createAndStore(name, mcp)
+      yield* persistServer(name, entry)
+      // The in-memory overlay stays: this process's `Config` is a boot-time snapshot, so `status()`,
+      // `getMcpConfig` and the tool surface would not see the server we just committed without it.
+      s.config[name] = entry
+      yield* createAndStore(name, entry)
       return { status: s.status }
     })
 
+    /**
+     * Connect/disconnect are the app's per-server SWITCH (`dialog-select-mcp.tsx`), so what they
+     * change is a durable PREFERENCE — `mcp.servers.<name>.disabled` — and that is what gets
+     * written. The connection itself is a runtime fact and is deliberately NOT persisted: a stored
+     * `status: "connected"` would be a claim about a process that does not exist after a crash or a
+     * restart, i.e. ruling 2's "a fault is never described falsely". So the switch position
+     * survives a restart and the status is re-derived by actually trying.
+     */
     const connect = Effect.fn("MCP.connect")(function* (name: string) {
       const mcp = yield* requireMcpConfig(name)
-      yield* createAndStore(name, { ...mcp, disabled: false })
+      const entry = { ...mcp, disabled: false } as McpEntry
+      yield* persistServer(name, entry)
+      const s = yield* InstanceState.get(state)
+      s.config[name] = entry
+      yield* createAndStore(name, entry)
     })
 
     const disconnect = Effect.fn("MCP.disconnect")(function* (name: string) {
-      yield* requireMcpConfig(name)
+      const mcp = yield* requireMcpConfig(name)
+      const entry = { ...mcp, disabled: true } as McpEntry
+      yield* persistServer(name, entry)
       const s = yield* InstanceState.get(state)
+      s.config[name] = entry
       yield* closeClient(s, name)
       delete s.clients[name]
       s.status[name] = { status: "disabled" }
@@ -1021,6 +1149,7 @@ export const layer = Layer.effect(
       prompts,
       resources,
       resourceTemplates,
+      persist: persistServer,
       add,
       connect,
       disconnect,
@@ -1046,6 +1175,17 @@ export const defaultLayer = layer.pipe(
   Layer.provide(EventV2Bridge.defaultLayer),
   Layer.provide(Config.defaultLayer),
   Layer.provide(FSUtil.defaultLayer),
+  // B3a: the config stores this module now WRITES through. They were already built inside
+  // `Config.defaultLayer` — `Layer.provide` just hid them, so listing them here exposes the same
+  // instances rather than constructing a second set.
+  Layer.provide(AgentConfigStore.defaultLayer),
+  Layer.provide(CatalogStore.defaultLayer),
+  Layer.provide(CommandConfigStore.defaultLayer),
+  Layer.provide(PluginConfigStore.defaultLayer),
+  Layer.provide(ReferenceConfigStore.defaultLayer),
+  Layer.provide(SettingsConfigStore.defaultLayer),
+  Layer.provide(SkillConfigStore.defaultLayer),
+  Layer.provide(Database.defaultLayer),
 )
 
 export const node = LayerNode.make({
@@ -1053,7 +1193,25 @@ export const node = LayerNode.make({
   layer: layer,
   // CrossSpawnSpawner was dropped with the hand-rolled `pgrep -P` descendant BFS: teardown is
   // pid-based through Shell.killTree now, so nothing here spawns a probe process.
-  deps: [McpAuth.node, EventV2Bridge.node, Config.node],
+  //
+  // B3a added the config stores. They cost no extra build: `Config.node` already depends on all
+  // seven (and every one of them on `Database.node`), and `LayerNode.compile` walks a root through
+  // ONE cache — so these resolve to the very layers `Config` got. What listing them buys is that
+  // the compiled graph EXPORTS them, which is what lets `MCP.add` reach `ConfigStoreWrite.apply`
+  // instead of mutating a record that dies with the process.
+  deps: [
+    McpAuth.node,
+    EventV2Bridge.node,
+    Config.node,
+    AgentConfigStore.node,
+    CatalogStore.node,
+    CommandConfigStore.node,
+    PluginConfigStore.node,
+    ReferenceConfigStore.node,
+    SettingsConfigStore.node,
+    SkillConfigStore.node,
+    Database.node,
+  ],
 })
 
 export * as MCP from "."
