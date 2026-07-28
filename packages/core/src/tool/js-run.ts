@@ -55,11 +55,24 @@ const MAX_LOG_LINES = 1_000
  *  we call it broken. Deliberately far BELOW the parent's grace below: if init is what is slow, the
  *  child must say so itself rather than be killed and reported as the snippet timing out. Ruling 2 —
  *  a fault is never described falsely. */
-const BOOT_TIMEOUT_MS = 3_000
+export const BOOT_TIMEOUT_MS = 3_000
 /** Headroom over `timeoutMs` before the PARENT kills the child: covers spawn + bootstrap + the
  *  child's own honest failure messages, and is the backstop for anything `vm`'s timeout cannot
  *  preempt (a runaway microtask chain, a getter that never returns while the result is rendered). */
-const HARD_KILL_GRACE_MS = 8_000
+export const HARD_KILL_GRACE_MS = 8_000
+/** The floor any `hardKillGraceMs` override is clamped to. It must exceed `BOOT_TIMEOUT_MS`, because
+ *  below it the ORDERING of the two deadlines inverts: the parent would kill a slow-to-init child
+ *  before the child could report its own boot failure, and `runJs` would then answer "Execution timed
+ *  out after <timeoutMs>s" for a snippet that never ran. Ruling 2 — a fault is never described
+ *  falsely. Pinned with a negative control in `js-run.test.ts`; do not lower it to buy test seconds. */
+export const HARD_KILL_GRACE_FLOOR_MS = BOOT_TIMEOUT_MS + 500
+
+/** Resolve the parent's hard-kill grace, honouring an override but never below the honest-fault
+ *  floor. Pure and exported so the clamp is testable rather than asserted in a comment. */
+export function resolveHardKillGraceMs(requested?: number): number {
+  if (requested === undefined) return HARD_KILL_GRACE_MS
+  return Math.max(requested, HARD_KILL_GRACE_FLOOR_MS)
+}
 /** Refuse to buffer a rogue child forever. The guest already caps itself far below this. */
 const MAX_CHILD_OUTPUT_BYTES = 32 * 1024 * 1024
 
@@ -80,6 +93,14 @@ export interface JsRunOptions {
   readonly env?: Record<string, string>
   /** Abort the run and kill the child (wire this to fiber interruption). */
   readonly signal?: AbortSignal
+  /**
+   * Override the parent's hard-kill headroom over `timeoutMs`. Exists because the default 8 s is the
+   * dominant cost of any test that deliberately provokes the backstop — one such test measured 8.2 s
+   * of an 11.8 s file (2026-07-28), invariant across runs because it is a `setTimeout`, not work.
+   * Clamped to `HARD_KILL_GRACE_FLOOR_MS`: a grace below the child's own `BOOT_TIMEOUT_MS` would make
+   * a slow init report as the snippet timing out. Production callers pass nothing.
+   */
+  readonly hardKillGraceMs?: number
 }
 
 /** Render any runtime value for display — BigInt (`10n`), Decimal, objects, undefined all included.
@@ -438,10 +459,13 @@ export async function runJs(code: string, opts?: JsRunOptions): Promise<JsRun> {
     // The backstop `vm`'s own timeout cannot be: it preempts a synchronous loop, but a runaway
     // microtask chain (a self-rescheduling Promise) outlives the call and would otherwise pin the
     // child forever. The grace covers spawn + sandbox bootstrap.
-    const hardTimer = setTimeout(() => {
-      killedForTimeout = true
-      kill()
-    }, timeoutMs + HARD_KILL_GRACE_MS)
+    const hardTimer = setTimeout(
+      () => {
+        killedForTimeout = true
+        kill()
+      },
+      timeoutMs + resolveHardKillGraceMs(opts?.hardKillGraceMs),
+    )
 
     opts?.signal?.addEventListener("abort", onAbort, { once: true })
 
