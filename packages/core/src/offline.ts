@@ -5,7 +5,8 @@
 // is not (a) loopback or (b) a configured model-provider host. Fail-closed with a
 // legible error naming the blocked host and how to allow it.
 //
-// Policy sources (snapshot at layer init — a machine-level invariant, not per-request):
+// Policy sources (a machine-level invariant, not per-request — read at layer init and re-read
+// whenever a config write commits, never per request; see "The LIVE policy" below):
 //   - `NOVACLAW_OFFLINE` env ("true"/"1") OR `offline: true` in the SETTINGS STORE (config-sqlite:
 //     the runtime_setting SQLite row is the runtime truth; the jsonc file is only consulted
 //     before the FIRST boot has seeded the stores — at that moment it IS the declared config).
@@ -152,12 +153,15 @@ export function readStorePolicy(dbFile: string): { readonly offline: boolean; re
   return { offline: offlineRow !== undefined && parseJson(offlineRow.value) === true, providerHosts: hosts }
 }
 
-export function loadPolicy(input: {
-  configDir: string
-  env?: Record<string, string | undefined>
+/** Everything `loadPolicy` reads. */
+export interface PolicySource {
+  readonly configDir: string
+  readonly env?: Record<string, string | undefined>
   /** The instance database file; tests inject a temp db. Default: the real instance db. */
-  dbFile?: string
-}): Policy {
+  readonly dbFile?: string
+}
+
+export function loadPolicy(input: PolicySource): Policy {
   const env = input.env ?? process.env
   // Source order: env (machine escape hatch) → the SQLite stores (the runtime truth since
   // config-sqlite) → the jsonc ONLY while the stores are unseeded (pre-first-boot, when the file
@@ -170,6 +174,59 @@ export function loadPolicy(input: {
   const hosts = store !== undefined ? store.providerHosts : providerHostsFromConfig(config)
   const allowedHosts = new Set([...hosts, ...parseAllowList(env["NOVACLAW_OFFLINE_ALLOW"])])
   return { enabled, allowedHosts }
+}
+
+// ── The LIVE policy (v0.2.0-prep A3 — "a settings change is not a reboot") ───────────────
+//
+// The policy used to be computed ONCE inside `layer` and captured by `check`/`egressEnv`/
+// `manifest`. Flipping airgap ON in Settings therefore blocked NOTHING until the process was
+// restarted — while `/shell/offline`, which re-reads the same sources on every request, honestly
+// reported 9/9 layers active. A guard that is off while the status surface says it is on is not a
+// latency wart; it is v0.2.0 ruling 3's *a fault is never described falsely*.
+//
+// The ref is MODULE-level, not layer-level, deliberately:
+//   · every input is process-global — the env, the instance SQLite file (`Flag.NOVACLAW_DB` is
+//     read once at module load), and the global config dir (`Global.make()` resolves it once);
+//   · a serve process builds this layer MORE THAN ONCE. The compiled `httpClient` node gets one
+//     instance and `server.ts` provides a bare `Offline.layer` to the messenger stack for another
+//     — distinct Layer references, so Effect memoizes them separately. A per-instance cache would
+//     leave whichever instance did not handle the write stale: the same bug, one level down.
+// One ref means every reader — the HttpClient chokepoint, `bash`/`js` egress env, websearch, the
+// messenger gateway — flips together, on their next call.
+
+let live: { readonly source: PolicySource; readonly policy: Policy } | undefined
+
+/** Load the policy from `source` and publish it process-wide. Called when the layer is built. */
+function installPolicy(source: PolicySource): Policy {
+  const policy = loadPolicy(source)
+  live = { source, policy }
+  return policy
+}
+
+/**
+ * Re-read the policy from the sources it was installed with, and publish the result.
+ *
+ * Called from `ConfigStoreWrite.apply` — the ONE place a config write commits — so a Settings
+ * toggle takes effect on the next call instead of the next boot. A plain function rather than a
+ * service member because the callers that need it have no `Offline.Service` in context: the
+ * compiled `app` graph provides Offline *into* `httpClient`, which does not re-export it, so the
+ * HTTP config handlers could not resolve it at all.
+ *
+ * A no-op before any layer has installed a source — nothing is guarding yet, so there is nothing
+ * to refresh, and no I/O is done to discover that.
+ */
+export function reload(): Policy {
+  return live === undefined ? disabledPolicy : installPolicy(live.source)
+}
+
+/** The live policy — `disabledPolicy` until a layer installs one (nothing is guarding). */
+export function currentPolicy(): Policy {
+  return live?.policy ?? disabledPolicy
+}
+
+/** Tests only: forget the installed source so one file's temp db cannot leak into the next. */
+export function resetPolicy(): void {
+  live = undefined
 }
 
 // ── OFF-C (layer 9): process-level egress guard ─────────────────────────────────────────
@@ -246,31 +303,54 @@ export function layerManifest(policy: Policy): { readonly enabled: boolean; read
 }
 
 export interface Interface {
+  /** The LIVE policy: a getter over the process-wide ref, so a consumer that resolved this service
+   *  once at boot (the messenger gateway, websearch, the bash/js tools) follows a reload without
+   *  re-resolving anything. Stays a VALUE member — turning it into a function would be a breaking
+   *  change across four modules for no gain. */
   readonly policy: Policy
   readonly check: (url: string) => Verdict
   /** OFF-C: the child-process env overlay (undefined when offline mode is off). */
   readonly egressEnv: () => Record<string, string> | undefined
   /** The N/9 layer manifest for the status surface. */
   readonly manifest: () => ReturnType<typeof layerManifest>
+  // No `reload` member, deliberately. Refreshing is a MODULE function (`Offline.reload`), because
+  // the one caller that needs it — the config write path — has no `Offline.Service` in context,
+  // and because a service holder never needs it: every member above reads the live ref already.
+  // (A non-effectful member would also be REQUIRED, not optional, in `Layer.mock`'s
+  // `PartialEffectful`, so adding one would break every existing Offline mock for nothing.)
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/Offline") {}
 
-export const layer = Layer.effect(
-  Service,
+const makeService = (source: PolicySource) =>
   Effect.gen(function* () {
-    const global = yield* Global.Service
-    const policy = loadPolicy({ configDir: global.config })
+    const policy = installPolicy(source)
     if (policy.enabled)
       yield* Effect.logInfo("offline mode ACTIVE — HTTP restricted to loopback + provider hosts", {
         allowedHosts: [...policy.allowedHosts],
       })
     return Service.of({
-      policy,
-      check: (url) => checkUrl(url, policy),
-      egressEnv: () => egressEnv(policy),
-      manifest: () => layerManifest(policy),
+      // A getter over the live ref, NOT the policy captured above: every method below reads the
+      // same ref, so a `ConfigStoreWrite.apply` that flips `offline` engages this service's guard
+      // on its next call rather than at the next restart.
+      get policy() {
+        return currentPolicy()
+      },
+      check: (url) => checkUrl(url, currentPolicy()),
+      egressEnv: () => egressEnv(currentPolicy()),
+      manifest: () => layerManifest(currentPolicy()),
     })
+  })
+
+/** Build over an explicit policy source. Tests inject a temp config dir + db file: `NOVACLAW_DB`
+ *  is read once at module load, so a test cannot move the real one out from under `layer`. */
+export const layerWith = (source: PolicySource) => Layer.effect(Service, makeService(source))
+
+export const layer = Layer.effect(
+  Service,
+  Effect.gen(function* () {
+    const global = yield* Global.Service
+    return yield* makeService({ configDir: global.config })
   }),
 )
 

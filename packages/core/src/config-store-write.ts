@@ -12,6 +12,7 @@ import { ConfigProvider } from "./config/provider"
 import { ConfigReference } from "./config/reference"
 import { Database } from "./database/database"
 import { MergePatch } from "./merge-patch"
+import { Offline } from "./offline"
 import { PluginConfigSeed } from "./plugin-config-seed"
 import { PluginConfigStore } from "./plugin-config-store"
 import { ProviderV2 } from "./provider"
@@ -252,12 +253,41 @@ const applyToStores = (patch: Config.Info) =>
  * `orDie` sits on the transaction as a whole (the `credential.ts` / `database/migration.ts`
  * convention). A defect from a store's own `Effect.orDie` still rolls back — the transaction
  * finalizer keys on `Exit.isSuccess`, which a die fails.
+ *
+ * v0.2.0-prep A3 — the airgap must APPLY, not wait for a restart. The offline policy is a
+ * process-wide snapshot of exactly two things this function writes (`runtime_setting.offline` and
+ * every `catalog_provider` host), and it used to be taken once, when `Offline.layer` was built:
+ * flipping airgap ON in Settings blocked nothing until the next boot, while `/shell/offline`
+ * re-read the same stores per request and reported 9/9 layers active — a guard that was off while
+ * the status surface said it was on (ruling 3). So the re-read lives HERE, for two reasons:
+ *   · AFTER the transaction commits — `Offline.reload` reads through a separate read-only
+ *     connection, which must not see a half-written or uncommitted store;
+ *   · at the ONE place every config write lands, rather than at each HTTP call site. The two
+ *     handlers are not the only writers (the v0.2.0 `configure` tool is coming, and the handlers'
+ *     layer context does not even carry `Offline.Service`), and an invariant duplicated across
+ *     call sites is one a new caller can forget — ruling 2 wants it mechanical, not remembered.
+ * `Offline.reload` is a no-op with no I/O in a process that never built the layer (the CLI, most
+ * tests), so this costs nothing where no guard exists.
  */
 export const apply = (patch: Config.Info) =>
   Effect.gen(function* () {
     const { db } = yield* Database.Service
-    return yield* db.transaction(() => applyToStores(patch)).pipe(Effect.orDie)
+    const consumed = yield* db.transaction(() => applyToStores(patch)).pipe(Effect.orDie)
+    if (consumed.has("offline") || consumed.has("providers") || consumed.has("models")) {
+      const before = Offline.currentPolicy()
+      const policy = yield* Effect.sync(() => Offline.reload())
+      // Log the CHANGE, not the re-read: engaging or releasing an airgap is an operator-visible
+      // event, while "saved a provider, airgap still off" is chatter that would bury it.
+      if (policyKey(before) !== policyKey(policy))
+        yield* Effect.logInfo("offline policy changed by a config write", {
+          enabled: policy.enabled,
+          allowedHosts: [...policy.allowedHosts],
+        })
+    }
+    return consumed
   })
+
+const policyKey = (policy: Offline.Policy) => `${policy.enabled}:${[...policy.allowedHosts].sort().join(",")}`
 
 /** Fold a layered-store record into one merged config fragment per name (layers in order). */
 function foldLayers<A>(layers: Record<string, A[]>, encode: (layer: A) => unknown) {

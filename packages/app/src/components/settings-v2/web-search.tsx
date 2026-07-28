@@ -62,7 +62,10 @@ export const SettingsWebSearchV2: Component = () => {
   const usingSearxng = () => (current().searxngUrl ?? "").trim().length > 0
   // Airgap force-disables search (the WebSearch service refuses before any socket opens); the app
   // already holds the offline flag, so the tab tells the truth without a round-trip.
-  const airgapped = () => (serverSync().data.config as { offline?: { enabled?: boolean } }).offline?.enabled === true
+  // `Config.offline` is a plain boolean (config.ts), not `{ enabled }` — the nested read was
+  // always undefined, so this tab could never show the airgapped status line. Same form as
+  // general.tsx's OFF-C indicator.
+  const airgapped = () => (serverSync().data.config as { offline?: boolean }).offline === true
 
   // One honest line: what search actually does right now, in the order the service decides it.
   const statusLine = () =>

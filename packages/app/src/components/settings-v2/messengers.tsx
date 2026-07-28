@@ -62,8 +62,10 @@ export const SettingsMessengersV2: Component = () => {
   const confirm = useConfirm()
 
   const server = () => sdk().server.http
-  const airgapped = () =>
-    (serverSync().data.config as { offline?: { enabled?: boolean } }).offline?.enabled === true
+  // `Config.offline` is a plain boolean (config.ts), not `{ enabled }` — the nested read was
+  // always undefined, so no account could ever render as airgapped here even while the gateway
+  // parked it. Same form as general.tsx's OFF-C indicator.
+  const airgapped = () => (serverSync().data.config as { offline?: boolean }).offline === true
 
   const [drivers] = createResource(() => server(), messengerDrivers, { initialValue: [] })
   const [accounts, { refetch }] = createResource(() => server(), messengerAccounts, { initialValue: [] })
