@@ -14,6 +14,7 @@ import { useExpertise } from "@/context/expertise"
 import { registeredApps, type HomeApp } from "@/apps/registry"
 import { AppTile } from "./app-tile"
 import { HelpTour, HELP_SEEN_KEY } from "./help-tour"
+import { createHomeTileClickGuard } from "./home-tile-click-guard"
 import { NewAgentBar } from "./new-agent-bar"
 
 const PER_PAGE = 24
@@ -59,6 +60,7 @@ const SortableTile: Component<{ app: HomeApp; shouldSuppressOpen: () => boolean 
     // touch reorder yields to scrolling, which is the right trade for a launcher (uix.md §3.1 L1).
     <div
       use:sortable
+      data-home-app-id={props.app.id}
       class="touch-auto"
       classList={{
         "col-span-2 md:col-span-3 row-span-2": !!props.app.hero,
@@ -102,41 +104,53 @@ export const HomeScreen: Component = () => {
   // pointer is released over it — which would OPEN the app the user was only reordering. We detect a
   // real drag by the pointer's TRAVEL and swallow that one trailing click. We deliberately do NOT arm on
   // solid-dnd's onDragStart: its pointer sensor also starts a drag after a stationary 250ms hold (zero
-  // movement), and a slow/held tap must still open. `draggedClick` is cleared on the macrotask AFTER
-  // release — the compatibility click fires synchronously first (so it's suppressed), while a later
-  // keyboard (Enter/Space) activation, which has no preceding pointer move, is never swallowed.
-  const DRAG_TRAVEL_PX = 10 // matches solid-dnd's pointer activation distance
-  let pointerOrigin: { x: number; y: number } | null = null
-  let draggedClick = false
-  const shouldSuppressOpen = () => draggedClick
+  // movement), and a slow/held tap must still open. The guard clears on the macrotask AFTER release —
+  // the compatibility click fires synchronously first (so it's suppressed), while a later keyboard
+  // (Enter/Space) activation, which has no preceding pointer move, is never swallowed.
+  //
+  // ⚠️ The listeners are on WINDOW in the capture phase (so the whole gesture is visible regardless of
+  // the pointer capture the sensor sets), which means they see gestures that have nothing to do with
+  // the launcher. Arming on all of them left the launcher INERT after any drag elsewhere in the shell
+  // that never received a pointerup. So arming is scoped to a pointerdown on a tile inside the
+  // scroller, movement is attributed by pointerID, and the flag is cleared on pointercancel and on
+  // window blur — the two ways a gesture ends without a pointerup.
+  const clickGuard = createHomeTileClickGuard()
+  const shouldSuppressOpen = () => clickGuard.shouldSuppress()
 
   onMount(() => {
     if (typeof window === "undefined") return
     const onDown = (e: PointerEvent) => {
-      pointerOrigin = { x: e.clientX, y: e.clientY }
-      draggedClick = false
+      const tile = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-home-app-id]") : undefined
+      if (!tile || !scroller?.contains(tile) || !tile.dataset.homeAppId) {
+        clickGuard.clear()
+        return
+      }
+      clickGuard.begin({ pointerID: e.pointerId, x: e.clientX, y: e.clientY })
     }
     const onMove = (e: PointerEvent) => {
-      if (pointerOrigin && Math.hypot(e.clientX - pointerOrigin.x, e.clientY - pointerOrigin.y) > DRAG_TRAVEL_PX)
-        draggedClick = true
+      clickGuard.move({ pointerID: e.pointerId, x: e.clientX, y: e.clientY })
     }
-    const onUp = () => {
-      pointerOrigin = null
+    const onUp = (e: PointerEvent) => {
+      if (!clickGuard.end(e.pointerId)) return
       // Cleared next macrotask: the trailing click (if any) has already fired and been suppressed by now.
-      setTimeout(() => {
-        draggedClick = false
-      }, 0)
+      setTimeout(() => clickGuard.clear(), 0)
     }
+    const onCancel = (e: PointerEvent) => {
+      if (clickGuard.end(e.pointerId)) clickGuard.clear()
+    }
+    const onBlur = () => clickGuard.clear()
     // Capture phase + window so we see the whole gesture regardless of pointer capture the sensor sets.
     window.addEventListener("pointerdown", onDown, true)
     window.addEventListener("pointermove", onMove, true)
     window.addEventListener("pointerup", onUp, true)
-    window.addEventListener("pointercancel", onUp, true)
+    window.addEventListener("pointercancel", onCancel, true)
+    window.addEventListener("blur", onBlur)
     onCleanup(() => {
+      window.removeEventListener("blur", onBlur)
+      window.removeEventListener("pointercancel", onCancel, true)
       window.removeEventListener("pointerdown", onDown, true)
       window.removeEventListener("pointermove", onMove, true)
       window.removeEventListener("pointerup", onUp, true)
-      window.removeEventListener("pointercancel", onUp, true)
     })
   })
 
