@@ -18,7 +18,7 @@ export * as TextualCall from "./textual-call"
 //
 // Pure + unit-tested; the runner supplies the text and the allowed tool names.
 
-export type Tell = "fenced-tool" | "fenced-json-call" | "tool-tag" | "repeated-block"
+export type Tell = "fenced-tool" | "fenced-json-call" | "tool-tag" | "repeated-block" | "promised-tool"
 
 export interface TextualCall {
   readonly tell: Tell
@@ -48,6 +48,34 @@ const repeatedBlock = (text: string): string | undefined => {
     seen.add(para)
   }
   return undefined
+}
+
+/**
+ * A turn that NARRATES the call it is about to make and then ends — "I'll start by calling write…"
+ * — with no structured call and no fenced pseudo-call. There is no syntax to parse here, only an
+ * explicit first-person commitment, which is why the other tells miss it.
+ *
+ * ⚠️ Deliberately narrow, and it is the LAST tell checked: this is the only detector here that reads
+ * ordinary prose rather than a syntactic artefact, so it is the one most able to misfire on a genuine
+ * answer. It runs only on a turn that settled with NO tool call, and the consequence is one bounded
+ * steer (the runner nudges once per drain), so a false positive costs a nudge — not a denial.
+ *
+ * ⚠️ Known limitation, stated rather than implied: the patterns are English and Russian. A model
+ * narrating in any other language is simply not caught. That is honest under-coverage, not a bug to
+ * paper over with a longer list — the general answer is the structured no-op guard, not more prose.
+ *
+ * Ported from NancySadkov/novaclaw#7 by @DassaultFalconKing, whose live run ended on exactly
+ * "I'll start by calling write...".
+ */
+const promisedTool = (text: string): string | undefined => {
+  const english =
+    /\b(?:I(?:'|’)?ll|I\s+will|I(?:'|’)?m\s+going\s+to|let\s+me)\s+(?:now\s+)?(?:start\s+by\s+|begin\s+by\s+|proceed\s+to\s+)?(?:call(?:ing)?|invok(?:e|ing)|us(?:e|ing)|run(?:ning)?|execut(?:e|ing)|apply(?:ing)?|writ(?:e|ing)|read(?:ing)?|creat(?:e|ing)|edit(?:ing)?|defin(?:e|ing))\b/i.exec(
+      text,
+    )
+  if (english) return english[0]
+  return /(?:^|\s)(?:сейчас\s+)?(?:я\s+)?(?:вызову|использую|запущу|выполню|начну\s+с)(?:[\s,.!?]|$)/i
+    .exec(text)?.[0]
+    ?.trim()
 }
 
 /**
@@ -85,14 +113,20 @@ export const detect = (text: string, toolNames: ReadonlyArray<string>): TextualC
   const repeat = repeatedBlock(text)
   if (repeat) return { tell: "repeated-block", detail: `repeated ${repeat.length}-char block` }
 
+  // Last: prose, not syntax. See `promisedTool`.
+  const promise = promisedTool(text)
+  if (promise) return { tell: "promised-tool", detail: `unfulfilled action promise "${promise}"` }
+
   return undefined
 }
 
 /** The corrective steer. Names the mistake, demands a real call, and leaves an honest way out. */
 export const recoveryMessage = (found: TextualCall): string =>
-  `Your last turn ended without calling any tool, but it contained what looks like a tool call written as ` +
-  `text (${found.detail}). Writing a call as markdown or as a tag does NOT run it — nothing happened, and ` +
-  `the task is still untouched.\n\n` +
+  `Your last turn ended without calling any tool, but it ${
+    found.tell === "promised-tool"
+      ? `announced one you were about to make (${found.detail}). Saying you will call a tool does not call it`
+      : `contained what looks like a tool call written as text (${found.detail}). Writing a call as markdown or as a tag does NOT run it`
+  } — nothing happened, and the task is still untouched.\n\n` +
   `Issue the call properly now, using the real tool-call mechanism, one step at a time. Use only the tools ` +
   `you actually have; do not invent a tool or wrap a call in a code fence.\n\n` +
   `If that block was only an illustration and the work really is finished, say so explicitly and give your ` +
