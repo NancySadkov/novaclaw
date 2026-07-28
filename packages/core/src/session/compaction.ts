@@ -7,11 +7,24 @@ import type { EventV2 } from "../event"
 import { SessionEvent } from "./event"
 import { SessionMessage } from "./message"
 import { SessionSchema } from "./schema"
+import { isSteerText, stripSteerProvenance } from "./steer-provenance"
 import { Token } from "../util/token"
 
 const DEFAULT_BUFFER = 20_000
 const DEFAULT_KEEP_TOKENS = 8_000
 const TOOL_OUTPUT_MAX_CHARS = 2_000
+/**
+ * B2 — the speaker label for a harness steer inside the summarization prompt. A steer rides the
+ * `user` role into the transcript, so `[User]: …` would tell the summarizer that the harness's own
+ * instruction text is something the USER said — and this summary is DURABLE, so the misattribution
+ * outlives the turn (the template's "Constraints & Preferences — user constraints" section is
+ * exactly where a nudge would land). We RELABEL rather than drop, for the same reason the renderer
+ * keeps steers as a folded "Automated nudge" notice: a doom-loop redirect is the reason the
+ * assistant changed course, and a summary that omits it invites the summarizer to invent one (or to
+ * credit the user for it). The label is spelled out rather than terse because its only reader is a
+ * model — and it carries the provenance, so the body is stripped instead of repeating the prefix.
+ */
+const STEER_LABEL = "[Automated harness check — not the user]: "
 const SUMMARY_OUTPUT_TOKENS = 4_096
 const SUMMARY_TEMPLATE = `Output exactly the Markdown structure shown inside <template> and keep the section order unchanged. Do not include the <template> tags in your response.
 <template>
@@ -50,7 +63,7 @@ Rules:
 - Preserve exact file paths, commands, error strings, and identifiers when known.
 - Do not mention the summary process or that context was compacted.`
 
-type Entry = {
+export type Entry = {
   readonly seq: number
   readonly message: SessionMessage.Message
 }
@@ -88,8 +101,15 @@ export const serializeToolContent = (content: SessionMessage.ToolStateCompleted[
     )
     .join("\n")
 
-const serialize = (message: SessionMessage.Message) => {
+/**
+ * One transcript message → the line(s) that represent it inside the summarization prompt. Exported
+ * as a seam so the speaker label of every arm can be asserted directly (see
+ * `test/session-compaction.test.ts`); `serializeToolContent` above is exported for the same reason.
+ */
+export const serializeMessage = (message: SessionMessage.Message) => {
   if (message.type === "user") {
+    // Ask the provenance question BEFORE claiming the user said this (session/steer-provenance.ts).
+    if (isSteerText(message.text)) return `${STEER_LABEL}${stripSteerProvenance(message.text)}`
     const files = message.files?.map((file) => `[Attached ${file.mime}: ${file.name ?? file.uri}]`) ?? []
     return [`[User]: ${message.text}`, ...files].join("\n")
   }
@@ -130,13 +150,18 @@ const settings = (documents: readonly Config.Entry[]) => {
   )
 }
 
-const select = (
+/**
+ * Split the serialized transcript into the `head` that gets summarized away and the `recent` tail
+ * kept verbatim. Both are durable — `head` feeds the summary prompt, `recent` is stored on the
+ * compaction message — so both are asserted directly in the tests.
+ */
+export const selectContext = (
   entries: readonly Entry[],
   tokens: number,
 ): { readonly head: string; readonly recent: string } | undefined => {
   const conversation = entries
     .filter((entry) => entry.message.type !== "compaction")
-    .map((entry) => serialize(entry.message))
+    .map((entry) => serializeMessage(entry.message))
     .filter(Boolean)
   if (conversation.length === 0) return
   let total = 0
@@ -184,7 +209,7 @@ export const make = (dependencies: Dependencies) => {
     const context = input.model.route.defaults.limits?.context
     if (context === undefined || context <= 0) return false
     const output = input.request.generation?.maxTokens ?? input.model.route.defaults.limits?.output ?? 0
-    const selected = select(input.entries, config.tokens)
+    const selected = selectContext(input.entries, config.tokens)
     const previousSummary = input.entries.find((entry) => entry.message.type === "compaction")?.message
     if (!selected || (selected.head.length === 0 && previousSummary?.type !== "compaction")) return false
     const summaryPrompt = buildPrompt({

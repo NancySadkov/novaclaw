@@ -35,8 +35,12 @@ import type { SessionMessage } from "@novaclaw/core/session/message"
 // This file is the mechanical half of the fix (standing decision 2 — an invariant whose violation
 // compiles green ships with a check or it does not exist). It has two layers:
 //   1. BEHAVIOUR — every transcript consumer, driven with a steer-laden transcript.
-//   2. A SOURCE LEDGER — a scan of `src/session/**` that fails on a SEVENTH unfiltered user-role
-//      read, and equally on a ledger row that has become stale.
+//   2. A SOURCE LEDGER — a scan of `src/session/**` that fails on a NEW unfiltered user-role read,
+//      and equally on a ledger row that has become stale.
+//
+// The SEVENTH site was `compaction.ts`, ledgered as PENDING here and converted afterwards: it
+// rendered a steer as `[User]: …` inside the durable summary. Its behaviour lives in
+// `test/session-compaction.test.ts`; the stale-row test at the bottom is what forced the row out.
 
 // ── fixtures ────────────────────────────────────────────────────────────────────────────────────
 // Minimal projected-history shapes; these helpers only read the fields modeled here.
@@ -246,11 +250,10 @@ const PREFIX_SPEAKERS = new Map<string, string>([
  * the list can only shrink: a new unfiltered read fails, and so does a row that no longer applies.
  */
 const UNFILTERED_USER_ROLE_READS = new Map<string, string>([
-  [
-    "compaction.ts",
-    "PENDING (B2 follow-up, not owned by this unit): `serialize()` renders a steer as `[User]: …`, so " +
-      "harness instruction text is attributed to the user inside the durable compaction summary",
-  ],
+  // `compaction.ts` was here (the seventh site): `serialize()` rendered a steer as `[User]: …`, so
+  // harness instruction text was attributed to the user inside the DURABLE compaction summary. It
+  // now relabels steers via `isSteerText`/`stripSteerProvenance` — covered by
+  // `test/session-compaction.test.ts`, and the stale-row test below is what deleted this entry.
   [
     "runner/to-llm-message.ts",
     "DELIBERATE: lowering to the wire, not a read of what the user said — the model MUST see the steer",
@@ -305,6 +308,15 @@ describe("the steer predicate is the only form", () => {
     // A raw NUL byte makes ripgrep classify a file as BINARY and skip it — `runner/extract.ts` and
     // `runner/doom-loop.ts` both carried one (an intended `\x00` escape written as the character),
     // which is exactly how a provenance audit would have missed the two defective files.
+    //
+    // ⚠️ THE GENERAL CHECK NOW LIVES IN `test/invisible-characters.test.ts` — use that one. This
+    // check is kept because the ledger scan below is the thing it protects, but it did NOT stop the
+    // defect recurring: it sees only `src/session/**`, and `walk` above skips `*.test.ts`. Three
+    // more files picked up the same idiom where it cannot look (`src/tool/kb.ts`,
+    // `llm/src/protocols/utils/tool-recovery.ts`, and `app/src/constants/links.test.ts`, whose five
+    // NULs this project added while this test was green). The repo-wide guard crosses package
+    // boundaries, includes tests, and covers the wider class — homoglyphs and zero-width characters
+    // as well as NUL. A narrow invariant is not a small version of a general one; it is a hole.
     const binary = sessionFiles.filter((entry) => fs.readFileSync(entry.file).includes(0)).map((entry) => entry.id)
     expect(binary).toEqual([])
   })
