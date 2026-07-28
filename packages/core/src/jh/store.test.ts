@@ -3,10 +3,12 @@ import fs from "fs"
 import path from "path"
 import { SqliteClient } from "@effect/sql-sqlite-bun"
 import { EffectDrizzleSqlite } from "@novaclaw/effect-drizzle-sqlite"
-import { eq } from "drizzle-orm"
+import { eq, sql } from "drizzle-orm"
 import { Effect } from "effect"
 import type { Database } from "../database/database"
 import { DatabaseMigration } from "../database/migration"
+import { migrations } from "../database/migration.gen"
+import { Hash } from "../util/hash"
 import { JhArtifactTable, JhLogTable } from "./sql"
 import { JhArtifact } from "./artifact"
 import { JhBudget } from "./budget"
@@ -21,6 +23,25 @@ const withDb = <A>(fn: (db: Database.Interface["db"]) => Effect.Effect<A>): Prom
     Effect.gen(function* () {
       const db = yield* makeDb
       yield* DatabaseMigration.apply(db)
+      return yield* fn(db)
+    }).pipe(Effect.provide(SqliteClient.layer({ filename: ":memory:", disableWAL: true })), Effect.scoped),
+  )
+
+/**
+ * The UPGRADE path — an EXISTING user database, built by the tracked migration chain.
+ *
+ * `withDb` above uses `apply`, which on an empty database takes the FRESH arm and runs
+ * `schema.gen.ts`; a table's index could therefore be present for every new install and missing for
+ * every install that already has data. `applyOnly(db, migrations)` is the other half.
+ */
+const withChainDb = <A>(
+  fn: (db: Database.Interface["db"]) => Effect.Effect<A>,
+  chain: typeof migrations = migrations,
+): Promise<A> =>
+  Effect.runPromise(
+    Effect.gen(function* () {
+      const db = yield* makeDb
+      yield* DatabaseMigration.applyOnly(db, chain)
       return yield* fn(db)
     }).pipe(Effect.provide(SqliteClient.layer({ filename: ":memory:", disableWAL: true })), Effect.scoped),
   )
@@ -283,6 +304,114 @@ describe("JhStore", () => {
     expect(from).toBeGreaterThan(0)
     expect(to).toBeGreaterThan(from)
     expect(store.slice(from, to)).not.toContain("delete")
+  })
+
+  // ── the retention index (v0.2.0 batch 4) ──────────────────────────────────────────────────
+  // `purgeExpired` runs once per Strict drain, i.e. on the way into every Strict turn, and its
+  // `time_updated < cutoff` predicate had no index to use — the sweep read the whole table every
+  // time, and the cost grew with the very table it exists to bound.
+  //
+  // Asserting that the index EXISTS would not be a check: an index the planner declines to use is
+  // the same table scan plus a write cost on every save. So pin the PLAN, and prove the assertion
+  // discriminates by dropping the index and watching the plan change.
+  const RETENTION_INDEX_MIGRATION = "20260728181001_add_jh_plan_time_updated_index"
+  const planFor = (db: Database.Interface["db"]) =>
+    db
+      // The literal `purgeExpired` builds: one column projected, one range predicate.
+      .all<{ detail: string }>(sql`EXPLAIN QUERY PLAN SELECT id FROM jh_plan WHERE time_updated < 5`)
+      .pipe(
+        Effect.orDie,
+        Effect.map((rows) => rows.map((r) => r.detail).join(" | ")),
+      )
+
+  test("purgeExpired's predicate reads the covering index, on a database built by the MIGRATION CHAIN", async () => {
+    const result = await withChainDb((db) =>
+      Effect.gen(function* () {
+        const indexes = yield* db
+          .all<{ name: string }>(sql`SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'jh_plan'`)
+          .pipe(Effect.orDie)
+        return { indexes: indexes.map((i) => i.name), plan: yield* planFor(db) }
+      }),
+    )
+    expect(result.indexes).toContain("jh_plan_time_updated_id_idx")
+    expect(result.plan).toContain("COVERING INDEX jh_plan_time_updated_id_idx")
+
+    // NEGATIVE CONTROL — the same chain MINUS this one migration, i.e. the exact state every
+    // existing user database was in before it. The identical query plans as a full table scan, so
+    // the assertion above genuinely discriminates and names the migration that changes the answer.
+    // (Dropping the index inside the first database instead does not work: bun:sqlite keeps the
+    // prepared statements alive, so `DROP INDEX` returns SQLITE_LOCKED — measured 2026-07-28.)
+    const without = await withChainDb(
+      planFor,
+      migrations.filter((m) => m.id !== RETENTION_INDEX_MIGRATION),
+    )
+    expect(without).toContain("SCAN")
+    expect(without).not.toContain("jh_plan_time_updated_id_idx")
+  })
+
+  test("…and on a FRESH database built by schema.gen.ts", async () => {
+    // The two schema paths are pinned equal wholesale by test/schema-equivalence.test.ts; this names
+    // the one object this change adds, on the arm every NEW install takes.
+    const plan = await withDb(planFor)
+    expect(plan).toContain("COVERING INDEX jh_plan_time_updated_id_idx")
+  })
+
+  // ── the artifact size cap (v0.2.0 batch 4) ────────────────────────────────────────────────
+  // `jh_artifact.content` holds whole file BODIES and the TTL bounds these tables in time, not in
+  // size. `MAX_ARTIFACT_BYTES` is the size bound; the interesting part is what happens AT it —
+  // refused whole and said out loud, never silently shortened (ruling 2: a fault is never described
+  // falsely, and jh verifies steps against artifacts it believes it holds).
+  const artifactOf = (id: string, content: string): JhArtifact.Stored =>
+    JhArtifact.memory().put({ id, type: "file" }, content)
+
+  const savedArtifacts = (id: string, artifacts: ReadonlyArray<JhArtifact.Stored>) =>
+    withDb((db) =>
+      Effect.gen(function* () {
+        yield* JhStore.save(db, { id, goal: "g", status: "running", state: { ...sampleState(), artifacts }, now: 1 })
+        const loaded = yield* JhStore.load(db, id)
+        return { artifacts: loaded!.state.artifacts, log: loaded!.state.log }
+      }),
+    )
+
+  test("an over-cap artifact body is REFUSED WHOLE and the row says so where the body would be", async () => {
+    const huge = artifactOf("huge.c", "x".repeat(JhStore.MAX_ARTIFACT_BYTES + 1))
+    const small = artifactOf("small.c", "int main(){}")
+    const result = await savedArtifacts("cap", [huge, small])
+
+    const stored = result.artifacts.find((a) => a.id === "huge.c")!
+    expect(stored.content).toBe(
+      JhStore.refusedArtifact({ id: "huge.c", bytes: JhStore.MAX_ARTIFACT_BYTES + 1, hash: huge.hash }),
+    )
+    // NOT a truncation: no prefix of the refused body survived anywhere in the stored text.
+    expect(stored.content).not.toContain("xxxxxxxxxx")
+    expect(Buffer.byteLength(stored.content, "utf8")).toBeLessThan(1_000)
+    // The marker's hash is the MARKER's, so a hash-keyed memoization can never mistake it for the
+    // real artifact — while the refused body's own sha256 is still stated, in the text.
+    expect(stored.hash).toBe(Hash.sha256(stored.content))
+    expect(stored.hash).not.toBe(huge.hash)
+    expect(stored.content).toContain(huge.hash)
+    expect(stored.type).toBe("file") // the ref is intact; only the body was refused
+    // Granularity is the ROW: one oversize file costs neither its neighbours nor the event log.
+    expect(result.artifacts.find((a) => a.id === "small.c")).toEqual(small)
+    expect(result.log).toEqual(sampleState().log)
+  })
+
+  test("NEGATIVE CONTROL: a body of exactly MAX_ARTIFACT_BYTES round-trips byte-identical", async () => {
+    const atCap = artifactOf("at-cap.c", "x".repeat(JhStore.MAX_ARTIFACT_BYTES))
+    const result = await savedArtifacts("at-cap", [atCap])
+    expect(result.artifacts).toEqual([atCap])
+    expect(Buffer.byteLength(result.artifacts[0]!.content, "utf8")).toBe(JhStore.MAX_ARTIFACT_BYTES)
+  })
+
+  test("the cap counts UTF-8 BYTES, not JS characters", async () => {
+    // SQLite stores TEXT as UTF-8, so bytes is what the file on disk actually costs. "é" is one JS
+    // char and two UTF-8 bytes: this body is UNDER the cap by `.length` and over it by byte count,
+    // so a `content.length` check would have stored it.
+    const twoByte = artifactOf("accents.txt", "é".repeat(JhStore.MAX_ARTIFACT_BYTES / 2 + 1))
+    expect(twoByte.content.length).toBeLessThanOrEqual(JhStore.MAX_ARTIFACT_BYTES)
+    expect(Buffer.byteLength(twoByte.content, "utf8")).toBeGreaterThan(JhStore.MAX_ARTIFACT_BYTES)
+    const result = await savedArtifacts("utf8", [twoByte])
+    expect(result.artifacts[0]!.content).toContain("NOT STORED")
   })
 
   test("resume through the DB completes with the same combined log (jh.md §6b)", async () => {

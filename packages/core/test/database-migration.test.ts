@@ -17,6 +17,7 @@ import contextEpochAgentMigration from "@novaclaw/core/database/migration/202606
 import simplifyIntegrationCredentialsMigration from "@novaclaw/core/database/migration/20260611192811_lush_chimera"
 import simplifySessionInputMigration from "@novaclaw/core/database/migration/20260622202450_simplify_session_input"
 import dropLegacyMessagePartMigration from "@novaclaw/core/database/migration/20260708000000_drop_legacy_message_part"
+import jhPlanTimeUpdatedIndexMigration from "@novaclaw/core/database/migration/20260728181001_add_jh_plan_time_updated_index"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
@@ -129,11 +130,12 @@ describe("DatabaseMigration", () => {
         expect(yield* db.get(sql`SELECT count(*) as count FROM migration`)).toEqual({ count: migrations.length })
         expect(
           yield* db.all(
-            sql`SELECT name FROM sqlite_master WHERE type = 'index' AND name IN ('event_aggregate_seq_idx', 'event_aggregate_type_seq_idx', 'session_input_session_pending_seq_idx', 'session_input_session_pending_delivery_seq_idx', 'session_input_session_admitted_seq_idx', 'session_input_session_promoted_seq_idx', 'session_message_session_idx', 'session_message_session_type_idx', 'session_message_session_seq_idx', 'session_message_session_type_seq_idx', 'session_message_session_time_created_id_idx') ORDER BY name`,
+            sql`SELECT name FROM sqlite_master WHERE type = 'index' AND name IN ('event_aggregate_seq_idx', 'event_aggregate_type_seq_idx', 'jh_plan_time_updated_id_idx', 'session_input_session_pending_seq_idx', 'session_input_session_pending_delivery_seq_idx', 'session_input_session_admitted_seq_idx', 'session_input_session_promoted_seq_idx', 'session_message_session_idx', 'session_message_session_type_idx', 'session_message_session_seq_idx', 'session_message_session_type_seq_idx', 'session_message_session_time_created_id_idx') ORDER BY name`,
           ),
         ).toEqual([
           { name: "event_aggregate_seq_idx" },
           { name: "event_aggregate_type_seq_idx" },
+          { name: "jh_plan_time_updated_id_idx" },
           { name: "session_input_session_admitted_seq_idx" },
           { name: "session_input_session_pending_delivery_seq_idx" },
           { name: "session_input_session_promoted_seq_idx" },
@@ -396,6 +398,40 @@ describe("DatabaseMigration", () => {
         expect(yield* db.all(sql`SELECT id, title FROM session`)).toEqual([{ id: "session", title: "Kept" }])
         // Re-running is a no-op (DROP ... IF EXISTS).
         yield* DatabaseMigration.applyOnly(db, [dropLegacyMessagePartMigration])
+      }),
+    )
+  })
+
+  // The end-to-end proof a migration actually needs: an EXISTING database survives it. `jh_plan`
+  // predates this index by three weeks, so the upgrade path runs `CREATE INDEX` against a populated
+  // table — and a plan row that vanished (or a `CREATE TABLE` where an index was meant) is the
+  // boot-death shape v0.2.0 Wave 0 / B5 was written about.
+  test("adds the jh_plan retention index to an existing populated database", async () => {
+    await run(
+      Effect.gen(function* () {
+        const db = yield* makeDb
+        // The pre-migration shape, exactly as 20260709120000_add_jh_plan left it.
+        yield* db.run(
+          sql`CREATE TABLE jh_plan (id text PRIMARY KEY, goal text NOT NULL, status text NOT NULL, state text NOT NULL, time_created integer NOT NULL, time_updated integer NOT NULL)`,
+        )
+        yield* db.run(
+          sql`INSERT INTO jh_plan (id, goal, status, state, time_created, time_updated) VALUES ('jh_ses_1_msg_a', 'the goal', 'running', '{"tree":{}}', 1, 2)`,
+        )
+
+        yield* DatabaseMigration.applyOnly(db, [jhPlanTimeUpdatedIndexMigration])
+
+        const indexes = (yield* db.all<{ name: string }>(sql`PRAGMA index_list(jh_plan)`)).map((i) => i.name)
+        expect(indexes).toContain("jh_plan_time_updated_id_idx")
+        expect(yield* db.all(sql`SELECT id, goal, status, state, time_created, time_updated FROM jh_plan`)).toEqual([
+          {
+            id: "jh_ses_1_msg_a",
+            goal: "the goal",
+            status: "running",
+            state: '{"tree":{}}',
+            time_created: 1,
+            time_updated: 2,
+          },
+        ])
       }),
     )
   })

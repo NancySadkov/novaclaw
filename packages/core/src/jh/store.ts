@@ -15,11 +15,17 @@ export * as JhStore from "./store"
 //     growth happens inside a Strict drain and every Strict drain begins there, so every growth
 //     episode is preceded by a purge.
 //   · `purgeSession` — the missing cascade, called from `removeSessionRecord`.
+//
+// SIZE (v0.2.0 batch 4): the TTL bounds these tables in TIME, not in SIZE — one Strict run over large
+// files could put arbitrary megabytes into `jh_artifact.content`, because that column holds whole file
+// BODIES (`write_file`/`append_file`/`edit` hand the engine the full updated text). `MAX_ARTIFACT_BYTES`
+// is the missing size bound; see it for what happens at the cap and why it is not a truncation.
 
 import { Effect } from "effect"
 import { and, asc, desc, eq, gte, inArray, lt, or } from "drizzle-orm"
 import type { Database } from "../database/database"
 import { JhArtifactTable, JhLogTable, JhPlanTable } from "./sql"
+import { Hash } from "../util/hash"
 import type { JhArtifact } from "./artifact"
 import type { JhBudget } from "./budget"
 import type { JhEngine } from "./engine"
@@ -36,6 +42,49 @@ type Db = Database.Interface["db"]
  * attempts, and it bounds the tables by RECENT ACTIVITY instead of by install age.
  */
 export const DEFAULT_TTL_MS = 7 * 24 * 3600 * 1000
+
+/**
+ * The largest artifact BODY this store will keep, in UTF-8 bytes (SQLite stores TEXT as UTF-8, so
+ * bytes — not JS chars — is what the file on disk actually costs).
+ *
+ * Why 1 MiB. Two measurements bracket it, and neither is a preference:
+ *  · FLOOR — 64 KiB is the size discipline this module family already runs on: `tools-basic.ts`
+ *    truncates `read_file` at 65,536. A cap at that level would REJECT bodies the engine legitimately
+ *    grows today (`append_file` exists precisely so long documents accumulate across verified steps —
+ *    the improve17 beat-run pipeline), so a storage bound set there would be a workflow bound in
+ *    disguise. 1 MiB leaves 16× headroom over the largest body any read path can even produce.
+ *  · CEILING — the ONE consumer that reads these bodies back is the model prompt (`engine.ts`'s
+ *    `contentFor` → `JhContext.assemble`). At ~4 bytes/token, 1 MiB is ~260k tokens: already past the
+ *    context window of the model this harness is built for. So a body over the cap cannot be used by
+ *    the thing that would read it — refusing it costs no capability that exists.
+ *
+ * WHAT HAPPENS AT THE CAP — the body is refused WHOLE and a marker naming the fault is stored in its
+ * place (`refusedArtifact`). Explicitly NOT truncation: jh verifies each step against artifacts it
+ * believes it holds, so a body silently cut to fit is a lie a later step would act on, and ruling 2
+ * (*a fault is never described falsely*) forbids exactly that. Explicitly not a dropped row either —
+ * the row's absence would read to a resumed run as "never produced", which is a different, also false
+ * statement. And explicitly not a failed `save`: granularity is the ROW, the same call the layered
+ * config stores already made — one oversize file must not cost the plan, the tree and the whole event
+ * log their checkpoint.
+ */
+export const MAX_ARTIFACT_BYTES = 1024 * 1024
+
+/**
+ * What is stored where a refused body would have been.
+ *
+ * It is self-describing on purpose: `load` seeds it straight back into `JhArtifact.memory`, so this
+ * text is what a resumed run's step sees in its context. It says what happened, states that nothing
+ * partial was kept, and carries the refused body's real sha256 so its identity is not lost.
+ *
+ * ⚠️ The row's `hash` is the hash of THIS MARKER, not of the refused body. `artifact.ts` documents
+ * `hash` as sha256(content) — "identical content is identical by hash", the memoization key — so
+ * keeping the original hash would make a future memoization treat this marker as the real artifact.
+ * The original hash lives in the text instead, where nothing can mistake it for the content's own.
+ */
+export const refusedArtifact = (input: { id: string; bytes: number; hash: string }): string =>
+  `<artifact "${input.id}" NOT STORED: its body is ${input.bytes} bytes, over jh_artifact's ${MAX_ARTIFACT_BYTES}-byte cap. ` +
+  `It was refused WHOLE — this text is a marker, not a shortened copy, and no part of the body was kept. ` +
+  `sha256 of the refused body: ${input.hash}. Re-produce it if a later step needs its contents.>`
 
 /**
  * The id prefix the runner keys a session's per-task plans with (`jh_<sessionID>_<taskKey>`).
@@ -96,14 +145,27 @@ export function save(db: Db, input: { id: string; goal: string; status: string; 
       .onConflictDoUpdate({ target: JhPlanTable.id, set: { goal: input.goal, status: input.status, state, timeUpdated: input.now } })
       .run()
       .pipe(Effect.orDie)
-    // artifacts: REPLACE (latest snapshot wins)
+    // artifacts: REPLACE (latest snapshot wins), each body bounded by MAX_ARTIFACT_BYTES
     yield* db.delete(JhArtifactTable).where(eq(JhArtifactTable.planID, input.id)).run().pipe(Effect.orDie)
     if (input.state.artifacts.length > 0) {
-      yield* db
-        .insert(JhArtifactTable)
-        .values(input.state.artifacts.map((a) => ({ planID: input.id, artifactID: a.id, type: a.type, hash: a.hash, content: a.content })))
-        .run()
-        .pipe(Effect.orDie)
+      const refused: Array<{ id: string; bytes: number }> = []
+      const rows = input.state.artifacts.map((a) => {
+        const bytes = Buffer.byteLength(a.content, "utf8")
+        if (bytes <= MAX_ARTIFACT_BYTES)
+          return { planID: input.id, artifactID: a.id, type: a.type, hash: a.hash, content: a.content }
+        refused.push({ id: a.id, bytes })
+        const content = refusedArtifact({ id: a.id, bytes, hash: a.hash })
+        return { planID: input.id, artifactID: a.id, type: a.type, hash: Hash.sha256(content), content }
+      })
+      yield* db.insert(JhArtifactTable).values(rows).run().pipe(Effect.orDie)
+      // The write path names the fault out loud as well as in the row: the marker reaches a resumed
+      // run, this reaches the operator's error log at the moment it happens.
+      if (refused.length > 0)
+        yield* Effect.logWarning("jh artifact body over the size cap — refused, not truncated", {
+          plan: input.id,
+          cap: MAX_ARTIFACT_BYTES,
+          refused,
+        })
     }
     // log: append-only (existing seqs are left untouched)
     if (input.state.log.length > 0) {

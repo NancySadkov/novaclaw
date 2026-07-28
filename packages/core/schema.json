@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "2c81bedd-5269-4d6e-9f5e-ede043ff0d2c",
+  "id": "1251cfc3-ec6f-42fa-8494-d8f83cc1f425",
   "prevIds": [
-    "d7eba870-b250-47a8-81b4-ff9de0432741"
+    "2c81bedd-5269-4d6e-9f5e-ede043ff0d2c"
   ],
   "ddl": [
     {
@@ -3118,6 +3118,24 @@
       "name": "event_aggregate_type_seq_idx",
       "entityType": "indexes",
       "table": "event"
+    },
+    {
+      "columns": [
+        {
+          "value": "time_updated",
+          "isExpression": false
+        },
+        {
+          "value": "id",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "jh_plan_time_updated_id_idx",
+      "entityType": "indexes",
+      "table": "jh_plan"
     },
     {
       "columns": [
