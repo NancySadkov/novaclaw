@@ -2,16 +2,23 @@ import { $ } from "bun"
 import path from "path"
 
 // Regenerate EVERY NovaClaw brand raster from one master logo. Run after editing the logo:
-//   bun packages/desktop/scripts/generate-brand.ts [path/to/master-logo.png] [path/to/glyph.png]
+//   bun packages/desktop/scripts/generate-brand.ts [master.png] [glyph.png] [--crop[=0.795]]
 // Default master: the repo-root logo.png (one level above the app repo). Requires ImageMagick 7.
 //
-// The master is the full LOCKUP (glyph + wordmark). It is used verbatim for the in-app logo and,
-// centered, for the social-share banners. A GLYPH (no wordmark) drives the desktop app icons and
-// the browser/PWA favicons, where a wordmark would be illegible at small sizes. The glyph source is,
-// in order: the second argument, a logo-icon.png sitting next to the lockup master, or an auto-crop
-// of the top of the lockup (the wordmark band is dropped, then trimmed + squared) — a separate
-// glyph export wins because wordmarks that overlap the mark make every crop fraction wrong. This is
-// a manual/dev step, not wired into the build, so CI without ImageMagick is unaffected.
+// The master is the full LOCKUP. It is used verbatim for the in-app logo and, centered, for the
+// social-share banners. A GLYPH drives the desktop app icons and the browser/PWA favicons.
+//
+// ⚠️ THE GLYPH SOURCE IS AN EXPLICIT DECISION, NEVER A GUESS — one of:
+//   1. the second argument (pass the master twice when the master is ALREADY icon-shaped, i.e. a
+//      square tile you would ship as an app icon as-is);
+//   2. a logo-icon.png sitting next to the master (the dedicated glyph export);
+//   3. --crop, which keeps the top GLYPH_CROP of the lockup to drop a wordmark BAND below the mark.
+// It used to fall back to (3) silently, and that is a trap: the 2026-07-29 master is a rounded
+// square tile with the wordmark INSIDE it, so cropping sheared off the bottom corners and produced
+// a mangled icon that still looked plausible in a file listing. Measured, not argued — both
+// candidates were rendered at 64px and compared. A wrong icon that ships silently is worse than a
+// script that stops, so with no glyph decision this now THROWS. This is a manual/dev step, not
+// wired into the build, so CI without ImageMagick is unaffected.
 
 const desktop = path.resolve(import.meta.dir, "..") // packages/desktop
 const repo = path.resolve(desktop, "../..") // novaclaw/
@@ -22,20 +29,36 @@ const imagesDir = path.resolve(repo, "packages/ui/src/assets/images")
 
 const INK = "#1a1135" // brand ink — favicon background so the light-on-transparent mark stays legible
 const BANNER_BG = "#0b0b12" // social-share banner background
-const GLYPH_CROP = 0.795 // keep this top fraction of the lockup as the glyph (drops the wordmark band)
+const GLYPH_CROP = 0.795 // --crop default: keep this top fraction of the lockup (drops a wordmark band)
 const GLYPH_FILL = 928 // glyph fits within this box inside the 1024 icon canvas (leaves a small margin)
 const channels = ["dev", "prod", "beta"]
 
-const master = path.resolve(process.argv[2] ?? path.join(repo, "..", "logo.png"))
+const argv = process.argv.slice(2)
+const cropArg = argv.find((a) => a === "--crop" || a.startsWith("--crop="))
+const positional = argv.filter((a) => !a.startsWith("--"))
+const cropFraction = cropArg?.includes("=") ? Number(cropArg.split("=")[1]) : GLYPH_CROP
+if (cropArg && !(cropFraction > 0 && cropFraction <= 1)) throw new Error(`--crop must be in (0,1]: ${cropArg}`)
+
+const master = path.resolve(positional[0] ?? path.join(repo, "..", "logo.png"))
 if (!(await Bun.file(master).exists())) throw new Error(`master logo not found: ${master}`)
 console.log("master lockup:", master)
 
-const glyphCandidate = process.argv[3]
-  ? path.resolve(process.argv[3])
+const glyphCandidate = positional[1]
+  ? path.resolve(positional[1])
   : path.join(path.dirname(master), "logo-icon.png")
 const glyphMaster = (await Bun.file(glyphCandidate).exists()) ? glyphCandidate : undefined
-if (process.argv[3] && !glyphMaster) throw new Error(`glyph master not found: ${glyphCandidate}`)
-console.log(glyphMaster ? `glyph master: ${glyphMaster}` : "glyph: auto-crop from lockup")
+if (positional[1] && !glyphMaster) throw new Error(`glyph master not found: ${glyphCandidate}`)
+// No glyph and no --crop: stop rather than guess. See the ⚠️ at the top of this file.
+if (!glyphMaster && !cropArg)
+  throw new Error(
+    `no glyph source. The icons/favicons need one, and guessing ships a mangled icon.\n` +
+      `  • master is already icon-shaped (a square tile you'd ship as-is): pass it twice —\n` +
+      `      bun packages/desktop/scripts/generate-brand.ts ${path.relative(process.cwd(), master) || master} ${path.relative(process.cwd(), master) || master}\n` +
+      `  • you have a dedicated glyph export: put it at ${glyphCandidate}\n` +
+      `  • the lockup has a wordmark BAND below the mark to drop: add --crop (top ${GLYPH_CROP})\n` +
+      `  Then LOOK at packages/desktop/icons/dev/64x64.png before committing.`,
+  )
+console.log(glyphMaster ? `glyph master: ${glyphMaster}` : `glyph: top ${cropFraction} crop of the lockup`)
 
 const resizePng = (src: string, size: number, out: string) =>
   $`magick ${src} -resize ${size}x${size} -filter Lanczos -strip PNG32:${out}`
@@ -53,7 +76,7 @@ if (glyphMaster) {
   await $`magick ${glyphMaster} -trim +repage -resize ${GLYPH_FILL}x${GLYPH_FILL} -background none -gravity center -extent 1024x1024 -strip PNG32:${glyph}`
 } else {
   const [masterW, masterH] = (await $`magick identify -format "%w %h" ${master}`.text()).trim().split(" ").map(Number)
-  const cropH = Math.round(masterH * GLYPH_CROP)
+  const cropH = Math.round(masterH * cropFraction)
   await $`magick ${lockup} -crop ${masterW}x${cropH}+0+0 +repage -trim +repage -resize ${GLYPH_FILL}x${GLYPH_FILL} -background none -gravity center -extent 1024x1024 -strip PNG32:${glyph}`
 }
 
