@@ -2,12 +2,24 @@ import { $ } from "bun"
 import * as fs from "fs/promises"
 import os from "os"
 import path from "path"
-import { Effect, Context, Layer } from "effect"
+import { Effect, Context, Layer, Schema, Scope } from "effect"
 import type * as PlatformError from "effect/PlatformError"
-import type * as Scope from "effect/Scope"
 import { CrossSpawnSpawner } from "@novaclaw/core/cross-spawn-spawner"
 import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
-import type { Config } from "@/config/config"
+import { Config as ConfigV2 } from "@novaclaw/core/config"
+import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
+import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
+import { CatalogStore } from "@novaclaw/core/catalog-store"
+import { CommandConfigStore } from "@novaclaw/core/command-config-store"
+import { PluginConfigStore } from "@novaclaw/core/plugin-config-store"
+import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
+import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
+import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
+import { SettingsConfigSeed } from "@novaclaw/core/settings-config-seed"
+import { Database } from "@novaclaw/core/database/database"
+import { LayerNode } from "@novaclaw/core/effect/layer-node"
+import { memoMap } from "@novaclaw/core/effect/memo-map"
+import { Config } from "@/config/config"
 import { InstanceRef } from "../../src/effect/instance-ref"
 import { InstanceBootstrap } from "../../src/project/bootstrap-service"
 import type { InstanceContext } from "../../src/project/instance-context"
@@ -70,6 +82,180 @@ async function stop(dir: string) {
   await $`git fsmonitor--daemon stop`.cwd(dir).quiet().nothrow()
 }
 
+// ─── the `config` fixture option ────────────────────────────────────────────────────────────────
+//
+// `config` used to be written as a `novaclaw.json` file into the tmpdir the test runs in, and the
+// first-boot seed read the LAUNCH DIRECTORY, so it was picked up. `5212c03ae` deleted that leg —
+// deliberately: seeding is `isEmpty`-gated and one-time, so whichever process booted first silently
+// defined instance-wide settings forever, and "a config file at a project root" is an opencode-legacy
+// pattern (config is instance-level; see AGENTS.md §Config). The file write survived the commit and
+// became a no-op — the option looked like it worked while every value it carried was discarded.
+//
+// So BOTH flavours now write the document THROUGH THE CONFIG STORES, the same route the HTTP
+// `PATCH /config` handler takes (`ConfigStoreWrite.apply`, which fans each top-level `Config.Info`
+// key out to its owning SQLite store inside one transaction). `tmpdirScoped` (and therefore
+// `it.instance`) provisions against the AMBIENT memo map; the async `tmpdir()` provisions against
+// the SHARED one and has a second obligation on top — see the block above `TmpDirOptions`.
+// Two consequences worth knowing:
+//   · it is instance-WIDE, not per-directory — which is what config now means;
+//   · an invalid config literal THROWS at decode instead of being silently dropped, which is the
+//     point: a fixture that eats its own input is how this defect survived a commit.
+//
+// ⚠️ Writing it to the XDG config dir as a jsonc instead is NOT an option: `test/preload.ts` gives
+// one XDG home per PID, shared by every test in the process, and the seed that would read it is
+// `isEmpty`-gated and one-time — the first test to seed would win for the whole file.
+const configStores = LayerNode.compile(
+  LayerNode.group([
+    Database.node,
+    AgentConfigStore.node,
+    CatalogStore.node,
+    CommandConfigStore.node,
+    PluginConfigStore.node,
+    ReferenceConfigStore.node,
+    SettingsConfigStore.node,
+    SkillConfigStore.node,
+  ]),
+)
+
+/** Decode the literal a test wrote and route it into the stores. Throws on an invalid literal. */
+const applyConfig = (config: Partial<Config.Info>) =>
+  ConfigStoreWrite.apply(Schema.decodeUnknownSync(ConfigV2.Info)(config))
+
+/**
+ * Effect flavour: build the store layers in the AMBIENT memo map.
+ *
+ * The layer objects here are the app's own `*.node` implementations, and a nested `Effect.provide`
+ * resolves them through the memo map the surrounding `Effect.provide(testLayer)` already installed —
+ * so this writes into the very `Database.Service` the Config service under test reads. That identity
+ * is load-bearing rather than incidental: `test/preload.ts` sets `NOVACLAW_DB=":memory:"`, and every
+ * *distinct* layer build of `:memory:` is a separate, private database (verified directly — a second
+ * top-level build reports `isEmpty === true` after the first has written).
+ */
+const applyConfigScoped = (config: Partial<Config.Info>) =>
+  applyConfig(config).pipe(Effect.provide(configStores))
+
+/**
+ * Async flavour: build the store layers AND the Config service in the SHARED memo map.
+ *
+ * `tmpdir()`'s `config` callers are the in-process HTTP-server suites (`test/server/**`: `formatter`
+ * 23×, plus `username`/`instructions` in the compression suite and one `references`). Their handler
+ * context is built by `HttpApiApp.webHandler` through the SHARED memo map
+ * (`@novaclaw/core/effect/memo-map`), so provisioning has to reach THAT graph. Three properties of
+ * the code below are load-bearing rather than incidental:
+ *
+ *  · IDENTITY — these are the app's own `*.node` implementations and Effect's memo map keys on layer
+ *    identity, so building them through `memoMap` resolves the very `Database.Service` and
+ *    `Config.Service` the server under test uses. (`test/preload.ts` sets `NOVACLAW_DB=":memory:"`,
+ *    where every *distinct* layer build is a separate, private database.)
+ *  · the scope is NEVER CLOSED — the first `tmpdir()` call precedes `Server.Default()`, so releasing
+ *    it would finalize the very database the server is about to memoize.
+ *  · the store write ALONE CHANGES NOTHING the server serves. `Config`'s global view is
+ *    `Effect.cachedInvalidateWithTTL(…, Duration.infinity)` (`src/config/config.ts`) and nothing on
+ *    the request path refreshes it, so without the `invalidate()` below the server keeps answering
+ *    with whatever the FIRST config-carrying test in the process provisioned, however clean the
+ *    store is. That is measured, not theorised: the test it breaks passes when run alone.
+ */
+const serverStores = LayerNode.compile(
+  LayerNode.group([
+    Database.node,
+    AgentConfigStore.node,
+    CatalogStore.node,
+    CommandConfigStore.node,
+    PluginConfigStore.node,
+    ReferenceConfigStore.node,
+    SettingsConfigStore.node,
+    SkillConfigStore.node,
+    Config.node,
+  ]),
+)
+
+type ServerServices = Layer.Success<typeof serverStores>
+let serverServices: Promise<Context.Context<ServerServices>> | undefined
+
+/** Run one effect against the SERVER's memoized stores + Config service. */
+function onServer<A, E>(effect: Effect.Effect<A, E, ServerServices>) {
+  serverServices ??= Effect.runPromise(Layer.buildWithMemoMap(serverStores, memoMap, Scope.makeUnsafe()))
+  return serverServices.then((context) => Effect.runPromise(effect.pipe(Effect.provide(context))))
+}
+
+/**
+ * The stores are PROCESS-WIDE — they outlive every test, and `resetDatabase()` cannot clear them
+ * (it removes `Database.path()`, which under `:memory:` is not a file). `ConfigStoreWrite.apply`
+ * patch-MERGES (`settings.set(key, mergePatch(current[key], value))`), so a provision has to be
+ * UNDO-then-apply or each test inherits its predecessor's document: the compression suite's bare
+ * `{ formatter: false }` test would still be served the previous test's `username` and 50
+ * `instructions`, putting the response over the 1024-byte threshold it asserts it is under.
+ *
+ * The undo runs on DISPOSE as well, so a test passing no `config` at all also starts clean. Like
+ * `tmpdirScoped` this is instance-WIDE rather than per-directory — which is what config now means,
+ * so two live `tmpdir({ config })` handles share one document (last write wins).
+ */
+const provisioned = { settings: new Set<string>(), references: new Set<string>() }
+
+const SETTINGS_KEYS: ReadonlySet<string> = new Set(SettingsConfigSeed.SETTINGS_KEYS)
+
+/**
+ * Where each top-level key lands, so the undo can reach it again. A key with no route here THROWS
+ * instead of being written: a write this fixture cannot take back does not fail the test that made
+ * it, it fails an unrelated test in a later file — which is exactly how the defect above survived a
+ * commit. Extend `clearProvisioned` first, then this.
+ */
+function routeConfig(config: Partial<Config.Info>) {
+  const settings: string[] = []
+  const references: string[] = []
+  for (const key of Object.keys(config)) {
+    if (key === "$schema") continue
+    if (SETTINGS_KEYS.has(key)) settings.push(key)
+    else if (key === "references") references.push(...Object.keys(config.references ?? {}))
+    else
+      throw new Error(
+        `tmpdir({ config }): "${key}" routes to a store this fixture cannot undo between tests — ` +
+          `teach clearProvisioned() to remove it before using it here.`,
+      )
+  }
+  return { settings, references }
+}
+
+const clearProvisioned = Effect.gen(function* () {
+  if (provisioned.settings.size > 0) {
+    const settings = yield* SettingsConfigStore.Service
+    for (const key of provisioned.settings) yield* settings.remove(key)
+    provisioned.settings.clear()
+  }
+  if (provisioned.references.size > 0) {
+    const references = yield* ReferenceConfigStore.Service
+    for (const name of provisioned.references) yield* references.removeReference(name)
+    provisioned.references.clear()
+  }
+})
+
+/** Undo the previous provision, write this one, and make the server's Config service see it. */
+async function provisionConfig(config: Partial<Config.Info>) {
+  const routed = routeConfig(config)
+  // Decode BEFORE anything is cleared, so an invalid literal throws without disturbing the stores.
+  const write = applyConfig(config)
+  await onServer(
+    Effect.gen(function* () {
+      yield* clearProvisioned
+      yield* write
+      yield* Config.use.invalidate()
+    }),
+  )
+  for (const key of routed.settings) provisioned.settings.add(key)
+  for (const name of routed.references) provisioned.references.add(name)
+}
+
+/** Take the document back out when the directory goes away. */
+function releaseConfig() {
+  if (provisioned.settings.size === 0 && provisioned.references.size === 0) return Promise.resolve()
+  return onServer(
+    Effect.gen(function* () {
+      yield* clearProvisioned
+      yield* Config.use.invalidate()
+    }),
+  )
+}
+
 type TmpDirOptions<T> = {
   git?: boolean
   config?: Partial<Config.Info>
@@ -87,15 +273,7 @@ export async function tmpdir<T>(options?: TmpDirOptions<T>) {
     await $`git config user.name "Test"`.cwd(dirpath).quiet()
     await $`git commit --allow-empty -m "root commit ${dirpath}"`.cwd(dirpath).quiet()
   }
-  if (options?.config) {
-    await Bun.write(
-      path.join(dirpath, "novaclaw.json"),
-      JSON.stringify({
-        $schema: "https://novaclaw.app/config.json",
-        ...options.config,
-      }),
-    )
-  }
+  if (options?.config) await provisionConfig(options.config)
   const realpath = sanitizePath(await fs.realpath(dirpath))
   const extra = await options?.init?.(realpath)
   const result = {
@@ -103,6 +281,9 @@ export async function tmpdir<T>(options?: TmpDirOptions<T>) {
       try {
         await options?.dispose?.(realpath)
       } finally {
+        // Swallowed like its neighbours so a teardown fault never masks the test's own failure —
+        // the undo at the head of the next `provisionConfig` is the backstop if this one loses.
+        if (options?.config) await releaseConfig().catch(() => undefined)
         if (options?.git) await stop(realpath).catch(() => undefined)
         await clean(realpath).catch(() => undefined)
       }
@@ -146,12 +327,7 @@ export function tmpdirScoped<E = never, R = never>(options?: {
 
     if (options?.config) {
       const resolved = typeof options.config === "function" ? options.config() : options.config
-      yield* Effect.promise(() =>
-        fs.writeFile(
-          path.join(dir, "novaclaw.json"),
-          JSON.stringify({ $schema: "https://novaclaw.app/config.json", ...resolved }),
-        ),
-      )
+      yield* applyConfigScoped(resolved)
     }
 
     if (options?.init) yield* options.init(dir)

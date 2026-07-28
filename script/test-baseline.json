@@ -1,8 +1,7 @@
 {
   "note": "Baseline for `bun run test`. `units` = tests bun reported SKIPPED per run unit; `failing` = failures PINNED as known, by name. Both are ratchets: any change fails the run and prints what moved. Pin only failures that are understood and filed — never to make a red go away. Seeded 2026-07-27 (v0.2.0 PREP Wave 0).",
   "reasons": {
-    "novaclaw:server": "Windows-from-source platform failures, pre-existing and never before run (these suites were --full-only until Wave 0 promoted them). 182 pass / 34 fail. Filed in todo/v0.2.0-prep.md.",
-    "novaclaw:config": "REGRESSION from 5212c03ae 'config: stop seeding from the launch directory'. The test fixture (test/fixture/fixture.ts:147-155) writes novaclaw.json into the LAUNCH directory, which is exactly the seeding leg that commit removed, so the config is never read. The fixture needs to provision through the config store, not a file. Filed in todo/v0.2.0-prep.md."
+    "novaclaw:server": "Windows-from-source platform failures, pre-existing and never before run (these suites were --full-only until Wave 0 promoted them). 182 pass / 34 fail. Filed in todo/v0.2.0-prep.md."
   },
   "units": {
     "llm": 30,
@@ -62,12 +61,6 @@
       "v2 SDK error shape > 400 schema rejection: SDK extracts the field-level reason from the NamedError body",
       "v2 location HttpApi > returns command and skill snapshots with resolved locations",
       "workspace HttpApi > proxies remote workspace requests selected from session ownership"
-    ],
-    "novaclaw:config": [
-      "Agent.get includes color from config",
-      "agent color parsed from project config",
-      "import concats + dedups instructions across the global dir and NOVACLAW_CONFIG_CONTENT",
-      "imports the global-dir jsonc into the stores on first read — and never reads it again"
     ]
   }
 }

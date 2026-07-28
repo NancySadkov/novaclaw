@@ -227,18 +227,29 @@ const writeManagedSettingsEffect = (settings: object, filename?: string) =>
 const writeConfigEffect = (dir: string, config: object, name = "novaclaw.json") =>
   FSUtil.use.writeWithDirs(path.join(dir, name), JSON.stringify(config))
 
+// Point the GLOBAL CONFIG DIR at `dir` for the duration of `effect`.
+//
+// `Global.Path.config` is a getter over a process-memoized XDG resolution (`global.ts` resolves the
+// base directories once, lazily, then caches them). Plain assignment therefore throws "Attempted to
+// assign to readonly property" under strict mode — which is what the two import tests below were
+// actually dying on — and re-pointing `XDG_CONFIG_HOME` would not work either, because by this point
+// the resolution is already cached for the process. Redefining the property is the seam that remains,
+// and it is enough: the Config service's first read passes `Global.Path.config` to
+// `ConfigSeedStartup.seedAll` at CALL time, so the seed follows wherever it points. The original
+// descriptor is restored on release, and the stores are wiped on both edges so every isEmpty-gated
+// seed re-arms rather than leaking into (or out of) the next test.
 const withGlobalConfigDir = <A, E, R>(dir: string, effect: Effect.Effect<A, E, R>) =>
   Effect.acquireUseRelease(
     Effect.gen(function* () {
-      const previous = Global.Path.config
-      ;(Global.Path as { config: string }).config = dir
+      const previous = Object.getOwnPropertyDescriptor(Global.Path, "config")!
+      Object.defineProperty(Global.Path, "config", { value: dir, configurable: true })
       yield* clearEffect(true)
       return previous
     }),
     () => effect,
     (previous) =>
       Effect.gen(function* () {
-        ;(Global.Path as { config: string }).config = previous
+        Object.defineProperty(Global.Path, "config", previous)
         yield* clearEffect(true)
       }),
   )
