@@ -6,7 +6,9 @@
   "scripts": {
     "test": "bun test",
     "typecheck": "tsgo --noEmit",
-    "build": "bun ./script/build.ts"
+    "build": "bun ./script/build.ts",
+    "regen": "bun ./script/build.ts && cd ../../novaclaw && bun dev generate > ../sdk/openapi.json",
+    "check:generated": "bun run regen && git diff --exit-code -- ../openapi.json src/v2/gen"
   },
   "exports": {
     "./v2": "./src/v2/index.ts",

@@ -9782,6 +9782,91 @@
         ]
       }
     },
+    "/api/session/{sessionID}/pending": {
+      "get": {
+        "tags": ["sessions"],
+        "operationId": "v2.session.pending",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^ses"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "SessionPendingResponse",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionPendingResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SessionNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SessionNotFoundError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SessionNotFoundError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "UnknownError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnknownError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Inputs admitted for this session that the runner has not promoted into the transcript yet, oldest first. A prompt sent mid-turn waits here until the current step finishes; it is never dropped.",
+        "summary": "Queued prompts not yet read by the agent",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.session.pending({\n  ...\n})"
+          }
+        ]
+      }
+    },
     "/api/session/{sessionID}/todo": {
       "get": {
         "tags": ["sessions"],
@@ -10353,7 +10438,7 @@
           }
         },
         "description": "Enable/disable one harness feature for this session; null clears the override back to inherit (parent chain, then global config). Applies from the next turn.",
-        "summary": "Set a per-session harness-feature override (introspection · quality · affective)",
+        "summary": "Set a per-session harness-feature override (introspection · quality · affective · thinkingBudget)",
         "requestBody": {
           "content": {
             "application/json": {
@@ -10362,7 +10447,14 @@
                 "properties": {
                   "feature": {
                     "type": "string",
-                    "enum": ["introspection", "quality", "affective"]
+                    "enum": [
+                      "introspection",
+                      "quality",
+                      "affective",
+                      "thinkingBudget",
+                      "surgicalEdits",
+                      "askBeforeChanges"
+                    ]
                   },
                   "enabled": {
                     "type": "boolean"
@@ -10441,7 +10533,7 @@
             }
           }
         },
-        "description": "Switch this chat between interactive and the unattended types (auto-prompting · goal-oriented). Attendance derives from the chain root's type: an unattended chat auto-allows permission asks and runs shell commands confined by the Agent Jail. Applies immediately.",
+        "description": "Switch this chat between interactive and the unattended types (auto-prompting · goal-oriented). Attendance derives from the chain root's type: an unattended chat is CONFINED rather than permissive: out-of-folder writes are DENIED outright instead of parked as an ask nobody can answer, and bash is confined by the Agent Jail (denied outright where no jail backend exists). Applies immediately.",
         "summary": "Set the session's kernel thread type (Mode)",
         "requestBody": {
           "content": {
@@ -11783,6 +11875,119 @@
           {
             "lang": "js",
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.session.message({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/session/{sessionID}/export-markdown": {
+      "post": {
+        "tags": ["messages"],
+        "operationId": "v2.session.exportMarkdown",
+        "parameters": [
+          {
+            "name": "sessionID",
+            "in": "path",
+            "schema": {
+              "type": "string",
+              "pattern": "^ses"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "SessionExportResponse",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SessionExportResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "SessionNotFoundError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/SessionNotFoundError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/SessionNotFoundError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "UnknownError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnknownError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Render the whole session to a Markdown file in the given folder. A session that is still running exports what exists so far and is marked as captured mid-turn.",
+        "summary": "Export a session as Markdown",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "directory": {
+                    "type": "string",
+                    "description": "Absolute folder to write the .md into."
+                  },
+                  "filename": {
+                    "type": "string"
+                  }
+                },
+                "required": ["directory"],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.session.exportMarkdown({\n  ...\n})"
           }
         ]
       }
@@ -14024,6 +14229,681 @@
           {
             "lang": "js",
             "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.messenger.login.complete({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/calendar/schedule": {
+      "get": {
+        "tags": ["calendar"],
+        "operationId": "v2.calendar.schedule.list",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CalendarSchedule"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Retrieve every scheduled agent-launch task with its next-fire time.",
+        "summary": "List calendar schedules",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.calendar.schedule.list({\n  ...\n})"
+          }
+        ]
+      },
+      "post": {
+        "tags": ["calendar"],
+        "operationId": "v2.calendar.schedule.create",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Calendar.Schedule",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarSchedule"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Schedule a repeatable or one-shot agent launch. The recurrence is structured (once/daily/weekly/monthly/yearly); the fired session runs the given prompt.",
+        "summary": "Create a calendar schedule",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CalendarCreateInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.calendar.schedule.create({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/calendar/schedule/{id}": {
+      "patch": {
+        "tags": ["calendar"],
+        "operationId": "v2.calendar.schedule.update",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Calendar.Schedule",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CalendarSchedule"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Patch a scheduled agent-launch task — pause/resume it (enabled), or change its title, prompt, recurrence, model, folder, or permission mode. The next-fire time is recomputed; a disabled schedule has none.",
+        "summary": "Update a calendar schedule",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CalendarUpdateInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.calendar.schedule.update({\n  ...\n})"
+          }
+        ]
+      },
+      "delete": {
+        "tags": ["calendar"],
+        "operationId": "v2.calendar.schedule.remove",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Delete a scheduled agent-launch task by id.",
+        "summary": "Remove a calendar schedule",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.calendar.schedule.remove({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/calendar/fires": {
+      "get": {
+        "tags": ["calendar"],
+        "operationId": "v2.calendar.fires.list",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CalendarFire"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Recent scheduled-launch fires across all schedules, newest first (the run history).",
+        "summary": "List recent schedule fires",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.calendar.fires.list({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/recipe": {
+      "get": {
+        "tags": ["recipe"],
+        "operationId": "v2.recipe.list",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/RecipeInfo"
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Every recipe on this install, name-sorted. `builtin` marks the ones NovaClaw shipped.",
+        "summary": "List recipes",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.recipe.list({\n  ...\n})"
+          }
+        ]
+      },
+      "post": {
+        "tags": ["recipe"],
+        "operationId": "v2.recipe.save",
+        "parameters": [],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Recipe.Info",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipeInfo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Writes recipe.md. Omit `slug` to derive it from the name; pass it to update in place.",
+        "summary": "Create or update a recipe",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RecipeSaveInput"
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.recipe.save({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/recipe/{slug}": {
+      "get": {
+        "tags": ["recipe"],
+        "operationId": "v2.recipe.get",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Recipe.Info",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipeInfo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Read one recipe",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.recipe.get({\n  ...\n})"
+          }
+        ]
+      },
+      "delete": {
+        "tags": ["recipe"],
+        "operationId": "v2.recipe.remove",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "204": {
+            "description": "<No Content>"
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InvalidRequestError"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "summary": "Delete a recipe and its assets",
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.recipe.remove({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/recipe/{slug}/duplicate": {
+      "post": {
+        "tags": ["recipe"],
+        "operationId": "v2.recipe.duplicate",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Recipe.Info",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipeInfo"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Copies the folder and its assets under a free slug — the 'make it mine' move for a shipped recipe.",
+        "summary": "Copy a recipe",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {}
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.recipe.duplicate({\n  ...\n})"
+          }
+        ]
+      }
+    },
+    "/api/recipe/{slug}/run": {
+      "post": {
+        "tags": ["recipe"],
+        "operationId": "v2.recipe.run",
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "schema": {
+              "type": "string"
+            },
+            "required": true
+          }
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Recipe.RunResult",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecipeRunResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "InvalidRequestError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    },
+                    {
+                      "$ref": "#/components/schemas/InvalidRequestError"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "UnauthorizedError",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/UnauthorizedError"
+                }
+              }
+            }
+          }
+        },
+        "description": "Copies the recipe's assets into a work directory and starts a session there with the recipe as its prompt. The recipe itself is never modified, so it stays re-runnable.",
+        "summary": "Cook a recipe",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "directory": {
+                    "type": "string"
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "agent": {
+                    "type": "string"
+                  },
+                  "strict": {
+                    "$ref": "#/components/schemas/SessionStrictOverride"
+                  }
+                },
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": true
+        },
+        "x-codeSamples": [
+          {
+            "lang": "js",
+            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.v2.recipe.run({\n  ...\n})"
           }
         ]
       }
@@ -17430,7 +18310,14 @@
                       },
                       "feature": {
                         "type": "string",
-                        "enum": ["introspection", "quality", "affective"]
+                        "enum": [
+                          "introspection",
+                          "quality",
+                          "affective",
+                          "thinkingBudget",
+                          "surgicalEdits",
+                          "askBeforeChanges"
+                        ]
                       },
                       "enabled": {
                         "type": "boolean"
@@ -20534,6 +21421,21 @@
               "required": ["name", "path"],
               "additionalProperties": false
             }
+          },
+          "cache": {
+            "type": "string"
+          },
+          "tmp": {
+            "type": "string"
+          },
+          "log": {
+            "type": "string"
+          },
+          "db": {
+            "type": "string"
+          },
+          "instanceHome": {
+            "type": "string"
           }
         },
         "required": ["home", "state", "config", "data", "worktree", "directory", "roots"],
@@ -21456,6 +22358,73 @@
         "required": ["_tag", "sessionID", "messageID", "message"],
         "additionalProperties": false
       },
+      "SessionPendingResponse": {
+        "type": "object",
+        "properties": {
+          "data": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "pattern": "^msg_"
+                },
+                "text": {
+                  "type": "string"
+                },
+                "delivery": {
+                  "type": "string"
+                },
+                "timeCreated": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "string",
+                      "enum": ["NaN"]
+                    },
+                    {
+                      "type": "string",
+                      "enum": ["Infinity"]
+                    },
+                    {
+                      "type": "string",
+                      "enum": ["-Infinity"]
+                    },
+                    {
+                      "type": "string",
+                      "enum": ["Infinity", "-Infinity", "NaN"]
+                    }
+                  ]
+                }
+              },
+              "required": ["id", "text", "delivery", "timeCreated"],
+              "additionalProperties": false
+            }
+          }
+        },
+        "required": ["data"],
+        "additionalProperties": false
+      },
+      "UnknownError": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": ["UnknownError"]
+          },
+          "message": {
+            "type": "string"
+          },
+          "ref": {
+            "type": "string"
+          }
+        },
+        "required": ["_tag", "message"],
+        "additionalProperties": false
+      },
       "PromptInput": {
         "type": "object",
         "properties": {
@@ -21509,23 +22478,6 @@
             "type": "string"
           },
           "service": {
-            "type": "string"
-          }
-        },
-        "required": ["_tag", "message"],
-        "additionalProperties": false
-      },
-      "UnknownError": {
-        "type": "object",
-        "properties": {
-          "_tag": {
-            "type": "string",
-            "enum": ["UnknownError"]
-          },
-          "message": {
-            "type": "string"
-          },
-          "ref": {
             "type": "string"
           }
         },
@@ -21666,6 +22618,42 @@
           "$ref": "#/components/schemas/SessionDurableEvent"
         },
         "contentMediaType": "application/json"
+      },
+      "SessionExportResponse": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string"
+          },
+          "messageCount": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "running": {
+            "type": "boolean"
+          }
+        },
+        "required": ["path", "messageCount", "running"],
+        "additionalProperties": false
       },
       "SessionMessagesResponse": {
         "type": "object",
@@ -22483,6 +23471,15 @@
           "affective": {
             "type": "boolean"
           },
+          "thinkingBudget": {
+            "type": "boolean"
+          },
+          "surgicalEdits": {
+            "type": "boolean"
+          },
+          "askBeforeChanges": {
+            "type": "boolean"
+          },
           "result": {},
           "cost": {
             "type": "number"
@@ -22571,6 +23568,9 @@
         "type": "object",
         "properties": {
           "uri": {
+            "type": "string"
+          },
+          "sourceUri": {
             "type": "string"
           },
           "mime": {
@@ -24132,7 +25132,14 @@
                   },
                   "feature": {
                     "type": "string",
-                    "enum": ["introspection", "quality", "affective"]
+                    "enum": [
+                      "introspection",
+                      "quality",
+                      "affective",
+                      "thinkingBudget",
+                      "surgicalEdits",
+                      "askBeforeChanges"
+                    ]
                   },
                   "enabled": {
                     "type": "boolean"
@@ -26917,6 +27924,9 @@
           "snapshots": {
             "type": "boolean"
           },
+          "paranoid": {
+            "type": "boolean"
+          },
           "watcher": {
             "$ref": "#/components/schemas/ConfigV2Watcher"
           },
@@ -27294,6 +28304,45 @@
                   },
                   "lint": {
                     "type": "string"
+                  }
+                },
+                "additionalProperties": false
+              }
+            },
+            "additionalProperties": false
+          },
+          "web_search": {
+            "type": "object",
+            "properties": {
+              "searxngUrl": {
+                "type": "string"
+              },
+              "disabledEngines": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "timeoutMs": {
+                "type": "number"
+              },
+              "throttle": {
+                "type": "object",
+                "properties": {
+                  "hostIntervalMs": {
+                    "type": "number"
+                  },
+                  "burst": {
+                    "type": "number"
+                  },
+                  "perHostConcurrency": {
+                    "type": "number"
+                  },
+                  "dailyPerHost": {
+                    "type": "number"
+                  },
+                  "sameUrlLimit": {
+                    "type": "number"
                   }
                 },
                 "additionalProperties": false
@@ -27851,6 +28900,9 @@
           "uri": {
             "type": "string"
           },
+          "sourceUri": {
+            "type": "string"
+          },
           "name": {
             "type": "string"
           },
@@ -28290,7 +29342,7 @@
               },
               "feature": {
                 "type": "string",
-                "enum": ["introspection", "quality", "affective"]
+                "enum": ["introspection", "quality", "affective", "thinkingBudget", "surgicalEdits", "askBeforeChanges"]
               },
               "enabled": {
                 "type": "boolean"
@@ -30738,6 +31790,12 @@
               },
               "pin": {
                 "type": "boolean"
+              },
+              "approve": {
+                "type": "boolean"
+              },
+              "lock": {
+                "type": "boolean"
               }
             },
             "required": ["delete", "ban", "kick", "mute", "pin"],
@@ -30841,6 +31899,25 @@
           "loginStyle": {
             "type": "string",
             "enum": ["code", "browser"]
+          },
+          "setup": {
+            "type": "object",
+            "properties": {
+              "url": {
+                "type": "string"
+              },
+              "urlLabel": {
+                "type": "string"
+              },
+              "steps": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              }
+            },
+            "required": ["steps"],
+            "additionalProperties": false
           },
           "capabilities": {
             "$ref": "#/components/schemas/MessengerCapabilities"
@@ -31115,6 +32192,821 @@
           }
         },
         "required": ["status", "time"],
+        "additionalProperties": false
+      },
+      "CalendarRecurrence": {
+        "anyOf": [
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["once"]
+              },
+              "at": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              }
+            },
+            "required": ["kind", "at"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["daily"]
+              },
+              "time": {
+                "type": "object",
+                "properties": {
+                  "hour": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["NaN"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["-Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity", "-Infinity", "NaN"]
+                      }
+                    ]
+                  },
+                  "minute": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["NaN"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["-Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity", "-Infinity", "NaN"]
+                      }
+                    ]
+                  }
+                },
+                "required": ["hour", "minute"],
+                "additionalProperties": false
+              }
+            },
+            "required": ["kind", "time"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["weekly"]
+              },
+              "time": {
+                "type": "object",
+                "properties": {
+                  "hour": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["NaN"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["-Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity", "-Infinity", "NaN"]
+                      }
+                    ]
+                  },
+                  "minute": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["NaN"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["-Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity", "-Infinity", "NaN"]
+                      }
+                    ]
+                  }
+                },
+                "required": ["hour", "minute"],
+                "additionalProperties": false
+              },
+              "weekdays": {
+                "type": "array",
+                "items": {
+                  "anyOf": [
+                    {
+                      "type": "number"
+                    },
+                    {
+                      "type": "string",
+                      "enum": ["NaN"]
+                    },
+                    {
+                      "type": "string",
+                      "enum": ["Infinity"]
+                    },
+                    {
+                      "type": "string",
+                      "enum": ["-Infinity"]
+                    },
+                    {
+                      "type": "string",
+                      "enum": ["Infinity", "-Infinity", "NaN"]
+                    }
+                  ]
+                }
+              }
+            },
+            "required": ["kind", "time", "weekdays"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["monthly"]
+              },
+              "time": {
+                "type": "object",
+                "properties": {
+                  "hour": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["NaN"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["-Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity", "-Infinity", "NaN"]
+                      }
+                    ]
+                  },
+                  "minute": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["NaN"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["-Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity", "-Infinity", "NaN"]
+                      }
+                    ]
+                  }
+                },
+                "required": ["hour", "minute"],
+                "additionalProperties": false
+              },
+              "day": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              }
+            },
+            "required": ["kind", "time", "day"],
+            "additionalProperties": false
+          },
+          {
+            "type": "object",
+            "properties": {
+              "kind": {
+                "type": "string",
+                "enum": ["yearly"]
+              },
+              "time": {
+                "type": "object",
+                "properties": {
+                  "hour": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["NaN"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["-Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity", "-Infinity", "NaN"]
+                      }
+                    ]
+                  },
+                  "minute": {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["NaN"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["-Infinity"]
+                      },
+                      {
+                        "type": "string",
+                        "enum": ["Infinity", "-Infinity", "NaN"]
+                      }
+                    ]
+                  }
+                },
+                "required": ["hour", "minute"],
+                "additionalProperties": false
+              },
+              "month": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              },
+              "day": {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["NaN"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["-Infinity"]
+                  },
+                  {
+                    "type": "string",
+                    "enum": ["Infinity", "-Infinity", "NaN"]
+                  }
+                ]
+              }
+            },
+            "required": ["kind", "time", "month", "day"],
+            "additionalProperties": false
+          }
+        ]
+      },
+      "CalendarSchedule": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "title": {
+            "type": "string"
+          },
+          "recurrence": {
+            "$ref": "#/components/schemas/CalendarRecurrence"
+          },
+          "tzOffsetMin": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "agent": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "permissionMode": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "nextFireAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "lastFiredAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "timeCreated": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "timeUpdated": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          }
+        },
+        "required": [
+          "id",
+          "title",
+          "recurrence",
+          "tzOffsetMin",
+          "prompt",
+          "agent",
+          "model",
+          "location",
+          "permissionMode",
+          "enabled",
+          "nextFireAt",
+          "lastFiredAt",
+          "timeCreated",
+          "timeUpdated"
+        ],
+        "additionalProperties": false
+      },
+      "CalendarCreateInput": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "recurrence": {
+            "$ref": "#/components/schemas/CalendarRecurrence"
+          },
+          "tzOffsetMin": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "agent": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "permissionMode": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": ["recurrence", "prompt"],
+        "additionalProperties": false
+      },
+      "CalendarUpdateInput": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string"
+          },
+          "recurrence": {
+            "$ref": "#/components/schemas/CalendarRecurrence"
+          },
+          "tzOffsetMin": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "agent": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "location": {
+            "type": "string"
+          },
+          "permissionMode": {
+            "type": "string"
+          },
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": false
+      },
+      "CalendarFire": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "scheduleId": {
+            "type": "string"
+          },
+          "occurrenceMillis": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "firedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          },
+          "sessionId": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["spawned", "skipped", "error"]
+          }
+        },
+        "required": ["id", "scheduleId", "occurrenceMillis", "firedAt", "sessionId", "status"],
+        "additionalProperties": false
+      },
+      "RecipeInfo": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          },
+          "assets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "builtin": {
+            "type": "boolean"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": ["NaN"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["-Infinity"]
+              },
+              {
+                "type": "string",
+                "enum": ["Infinity", "-Infinity", "NaN"]
+              }
+            ]
+          }
+        },
+        "required": ["slug", "name", "prompt", "assets", "builtin", "updatedAt"],
+        "additionalProperties": false
+      },
+      "RecipeSaveInput": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "prompt": {
+            "type": "string"
+          }
+        },
+        "required": ["name", "prompt"],
+        "additionalProperties": false
+      },
+      "RecipeRunResult": {
+        "type": "object",
+        "properties": {
+          "sessionID": {
+            "type": "string"
+          },
+          "directory": {
+            "type": "string"
+          },
+          "assets": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": ["sessionID", "directory", "assets"],
         "additionalProperties": false
       },
       "PermissionV2Request": {
@@ -34301,7 +36193,7 @@
               },
               "feature": {
                 "type": "string",
-                "enum": ["introspection", "quality", "affective"]
+                "enum": ["introspection", "quality", "affective", "thinkingBudget", "surgicalEdits", "askBeforeChanges"]
               },
               "enabled": {
                 "type": "boolean"
@@ -37068,6 +38960,14 @@
     {
       "name": "messenger",
       "description": "Messenger driver discovery and account routes."
+    },
+    {
+      "name": "calendar",
+      "description": "Scheduled + repeatable agent launches."
+    },
+    {
+      "name": "recipe",
+      "description": "Recipes — prompts + assets an agent cooks."
     },
     {
       "name": "permissions",

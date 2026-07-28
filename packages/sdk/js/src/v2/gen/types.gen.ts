@@ -373,7 +373,7 @@ export type GlobalEvent = {
           timestamp: number
           sessionID: string
           messageID: string
-          feature: "introspection" | "quality" | "affective"
+          feature: "introspection" | "quality" | "affective" | "thinkingBudget" | "surgicalEdits" | "askBeforeChanges"
           enabled: boolean
         }
       }
@@ -1286,6 +1286,11 @@ export type Path = {
     name: string
     path: string
   }>
+  cache?: string
+  tmp?: string
+  log?: string
+  db?: string
+  instanceHome?: string
 }
 
 export type VcsInfo = {
@@ -1577,6 +1582,21 @@ export type MessageNotFoundError = {
   message: string
 }
 
+export type SessionPendingResponse = {
+  data: Array<{
+    id: string
+    text: string
+    delivery: string
+    timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  }>
+}
+
+export type UnknownError = {
+  _tag: "UnknownError"
+  message: string
+  ref?: string
+}
+
 export type PromptInput = {
   text: string
   files?: Array<PromptInputFileAttachment>
@@ -1594,12 +1614,6 @@ export type ServiceUnavailableError = {
   _tag: "ServiceUnavailableError"
   message: string
   service?: string
-}
-
-export type UnknownError = {
-  _tag: "UnknownError"
-  message: string
-  ref?: string
 }
 
 export type SessionDurableEvent =
@@ -1646,6 +1660,12 @@ export type SessionHistory = {
 }
 
 export type SessionDurableEventStream = string
+
+export type SessionExportResponse = {
+  path: string
+  messageCount: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  running: boolean
+}
 
 export type SessionMessagesResponse = {
   data: Array<SessionMessage>
@@ -1921,6 +1941,9 @@ export type SessionV2Info = {
   introspection?: boolean
   quality?: boolean
   affective?: boolean
+  thinkingBudget?: boolean
+  surgicalEdits?: boolean
+  askBeforeChanges?: boolean
   result?: unknown
   cost: number
   tokens: {
@@ -1952,6 +1975,7 @@ export type PromptSource = {
 
 export type PromptFileAttachment = {
   uri: string
+  sourceUri?: string
   mime: string
   name?: string
   description?: string
@@ -2484,7 +2508,7 @@ export type SyncEventSessionNextFeatureSwitched = {
       timestamp: number
       sessionID: string
       messageID: string
-      feature: "introspection" | "quality" | "affective"
+      feature: "introspection" | "quality" | "affective" | "thinkingBudget" | "surgicalEdits" | "askBeforeChanges"
       enabled: boolean
     }
   }
@@ -3378,6 +3402,7 @@ export type ConfigInfo = {
     [key: string]: ConfigV2Agent
   }
   snapshots?: boolean
+  paranoid?: boolean
   watcher?: ConfigV2Watcher
   /**
    * Enable built-in formatters or configure formatter overrides
@@ -3493,6 +3518,18 @@ export type ConfigInfo = {
       typecheck?: string
       test?: string
       lint?: string
+    }
+  }
+  web_search?: {
+    searxngUrl?: string
+    disabledEngines?: Array<string>
+    timeoutMs?: number
+    throttle?: {
+      hostIntervalMs?: number
+      burst?: number
+      perHostConcurrency?: number
+      dailyPerHost?: number
+      sameUrlLimit?: number
     }
   }
   skills?: Array<string>
@@ -3660,6 +3697,7 @@ export type AgentV2Info = {
 
 export type PromptInputFileAttachment = {
   uri: string
+  sourceUri?: string
   name?: string
   description?: string
   source?: PromptSource
@@ -3810,7 +3848,7 @@ export type SessionNextFeatureSwitched = {
     timestamp: number
     sessionID: string
     messageID: string
-    feature: "introspection" | "quality" | "affective"
+    feature: "introspection" | "quality" | "affective" | "thinkingBudget" | "surgicalEdits" | "askBeforeChanges"
     enabled: boolean
   }
 }
@@ -4566,6 +4604,8 @@ export type MessengerCapabilities = {
     kick: boolean
     mute: boolean
     pin: boolean
+    approve?: boolean
+    lock?: boolean
   }
   format: "plain" | "markdown" | "html"
   maxChars: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
@@ -4580,6 +4620,11 @@ export type MessengerDriverMeta = {
   settings: Array<IntegrationTextPrompt | IntegrationSelectPrompt>
   loginPrompts?: Array<IntegrationTextPrompt | IntegrationSelectPrompt>
   loginStyle?: "code" | "browser"
+  setup?: {
+    url?: string
+    urlLabel?: string
+    steps: Array<string>
+  }
   capabilities: MessengerCapabilities
 }
 
@@ -4641,6 +4686,117 @@ export type MessengerLoginStatus = {
     created: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
     expires: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   }
+}
+
+export type CalendarRecurrence =
+  | {
+      kind: "once"
+      at: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    }
+  | {
+      kind: "daily"
+      time: {
+        hour: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        minute: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      }
+    }
+  | {
+      kind: "weekly"
+      time: {
+        hour: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        minute: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      }
+      weekdays: Array<number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN">
+    }
+  | {
+      kind: "monthly"
+      time: {
+        hour: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        minute: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      }
+      day: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    }
+  | {
+      kind: "yearly"
+      time: {
+        hour: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+        minute: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      }
+      month: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      day: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    }
+
+export type CalendarSchedule = {
+  id: string
+  title: string
+  recurrence: CalendarRecurrence
+  tzOffsetMin: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  prompt: string
+  agent: string
+  model: string
+  location: string
+  permissionMode: string
+  enabled: boolean
+  nextFireAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  lastFiredAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type CalendarCreateInput = {
+  title?: string
+  recurrence: CalendarRecurrence
+  tzOffsetMin?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  prompt: string
+  agent?: string
+  model?: string
+  location?: string
+  permissionMode?: string
+  enabled?: boolean
+}
+
+export type CalendarUpdateInput = {
+  title?: string
+  recurrence?: CalendarRecurrence
+  tzOffsetMin?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  prompt?: string
+  agent?: string
+  model?: string
+  location?: string
+  permissionMode?: string
+  enabled?: boolean
+}
+
+export type CalendarFire = {
+  id: string
+  scheduleId: string
+  occurrenceMillis: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  firedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  sessionId: string
+  status: "spawned" | "skipped" | "error"
+}
+
+export type RecipeInfo = {
+  slug: string
+  name: string
+  description?: string
+  prompt: string
+  assets: Array<string>
+  builtin: boolean
+  updatedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+}
+
+export type RecipeSaveInput = {
+  slug?: string
+  name: string
+  description?: string
+  prompt: string
+}
+
+export type RecipeRunResult = {
+  sessionID: string
+  directory: string
+  assets: Array<string>
 }
 
 export type PermissionV2Request = {
@@ -5762,7 +5918,7 @@ export type EventSessionNextFeatureSwitched = {
     timestamp: number
     sessionID: string
     messageID: string
-    feature: "introspection" | "quality" | "affective"
+    feature: "introspection" | "quality" | "affective" | "thinkingBudget" | "surgicalEdits" | "askBeforeChanges"
     enabled: boolean
   }
 }
@@ -10657,6 +10813,45 @@ export type V2SessionForkResponses = {
 
 export type V2SessionForkResponse = V2SessionForkResponses[keyof V2SessionForkResponses]
 
+export type V2SessionPendingData = {
+  body?: never
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/pending"
+}
+
+export type V2SessionPendingErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * UnknownError
+   */
+  500: UnknownError
+}
+
+export type V2SessionPendingError = V2SessionPendingErrors[keyof V2SessionPendingErrors]
+
+export type V2SessionPendingResponses = {
+  /**
+   * SessionPendingResponse
+   */
+  200: SessionPendingResponse
+}
+
+export type V2SessionPendingResponse = V2SessionPendingResponses[keyof V2SessionPendingResponses]
+
 export type V2SessionTodoData = {
   body?: never
   path: {
@@ -10882,7 +11077,7 @@ export type V2SessionSwitchStrictResponse = V2SessionSwitchStrictResponses[keyof
 
 export type V2SessionSwitchFeatureData = {
   body: {
-    feature: "introspection" | "quality" | "affective"
+    feature: "introspection" | "quality" | "affective" | "thinkingBudget" | "surgicalEdits" | "askBeforeChanges"
     enabled: boolean
   }
   path: {
@@ -11507,6 +11702,51 @@ export type V2SessionMessageResponses = {
 }
 
 export type V2SessionMessageResponse = V2SessionMessageResponses[keyof V2SessionMessageResponses]
+
+export type V2SessionExportMarkdownData = {
+  body: {
+    /**
+     * Absolute folder to write the .md into.
+     */
+    directory: string
+    filename?: string
+  }
+  path: {
+    sessionID: string
+  }
+  query?: never
+  url: "/api/session/{sessionID}/export-markdown"
+}
+
+export type V2SessionExportMarkdownErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+  /**
+   * SessionNotFoundError
+   */
+  404: SessionNotFoundError
+  /**
+   * UnknownError
+   */
+  500: UnknownError
+}
+
+export type V2SessionExportMarkdownError = V2SessionExportMarkdownErrors[keyof V2SessionExportMarkdownErrors]
+
+export type V2SessionExportMarkdownResponses = {
+  /**
+   * SessionExportResponse
+   */
+  200: SessionExportResponse
+}
+
+export type V2SessionExportMarkdownResponse = V2SessionExportMarkdownResponses[keyof V2SessionExportMarkdownResponses]
 
 export type V2SessionMessagesData = {
   body?: never
@@ -12543,6 +12783,347 @@ export type V2MessengerLoginCompleteResponses = {
 
 export type V2MessengerLoginCompleteResponse =
   V2MessengerLoginCompleteResponses[keyof V2MessengerLoginCompleteResponses]
+
+export type V2CalendarScheduleListData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/calendar/schedule"
+}
+
+export type V2CalendarScheduleListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2CalendarScheduleListError = V2CalendarScheduleListErrors[keyof V2CalendarScheduleListErrors]
+
+export type V2CalendarScheduleListResponses = {
+  /**
+   * Success
+   */
+  200: Array<CalendarSchedule>
+}
+
+export type V2CalendarScheduleListResponse = V2CalendarScheduleListResponses[keyof V2CalendarScheduleListResponses]
+
+export type V2CalendarScheduleCreateData = {
+  body: CalendarCreateInput
+  path?: never
+  query?: never
+  url: "/api/calendar/schedule"
+}
+
+export type V2CalendarScheduleCreateErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2CalendarScheduleCreateError = V2CalendarScheduleCreateErrors[keyof V2CalendarScheduleCreateErrors]
+
+export type V2CalendarScheduleCreateResponses = {
+  /**
+   * Calendar.Schedule
+   */
+  200: CalendarSchedule
+}
+
+export type V2CalendarScheduleCreateResponse =
+  V2CalendarScheduleCreateResponses[keyof V2CalendarScheduleCreateResponses]
+
+export type V2CalendarScheduleRemoveData = {
+  body?: never
+  path: {
+    id: string
+  }
+  query?: never
+  url: "/api/calendar/schedule/{id}"
+}
+
+export type V2CalendarScheduleRemoveErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2CalendarScheduleRemoveError = V2CalendarScheduleRemoveErrors[keyof V2CalendarScheduleRemoveErrors]
+
+export type V2CalendarScheduleRemoveResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2CalendarScheduleRemoveResponse =
+  V2CalendarScheduleRemoveResponses[keyof V2CalendarScheduleRemoveResponses]
+
+export type V2CalendarScheduleUpdateData = {
+  body: CalendarUpdateInput
+  path: {
+    id: string
+  }
+  query?: never
+  url: "/api/calendar/schedule/{id}"
+}
+
+export type V2CalendarScheduleUpdateErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2CalendarScheduleUpdateError = V2CalendarScheduleUpdateErrors[keyof V2CalendarScheduleUpdateErrors]
+
+export type V2CalendarScheduleUpdateResponses = {
+  /**
+   * Calendar.Schedule
+   */
+  200: CalendarSchedule
+}
+
+export type V2CalendarScheduleUpdateResponse =
+  V2CalendarScheduleUpdateResponses[keyof V2CalendarScheduleUpdateResponses]
+
+export type V2CalendarFiresListData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/calendar/fires"
+}
+
+export type V2CalendarFiresListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2CalendarFiresListError = V2CalendarFiresListErrors[keyof V2CalendarFiresListErrors]
+
+export type V2CalendarFiresListResponses = {
+  /**
+   * Success
+   */
+  200: Array<CalendarFire>
+}
+
+export type V2CalendarFiresListResponse = V2CalendarFiresListResponses[keyof V2CalendarFiresListResponses]
+
+export type V2RecipeListData = {
+  body?: never
+  path?: never
+  query?: never
+  url: "/api/recipe"
+}
+
+export type V2RecipeListErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2RecipeListError = V2RecipeListErrors[keyof V2RecipeListErrors]
+
+export type V2RecipeListResponses = {
+  /**
+   * Success
+   */
+  200: Array<RecipeInfo>
+}
+
+export type V2RecipeListResponse = V2RecipeListResponses[keyof V2RecipeListResponses]
+
+export type V2RecipeSaveData = {
+  body: RecipeSaveInput
+  path?: never
+  query?: never
+  url: "/api/recipe"
+}
+
+export type V2RecipeSaveErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2RecipeSaveError = V2RecipeSaveErrors[keyof V2RecipeSaveErrors]
+
+export type V2RecipeSaveResponses = {
+  /**
+   * Recipe.Info
+   */
+  200: RecipeInfo
+}
+
+export type V2RecipeSaveResponse = V2RecipeSaveResponses[keyof V2RecipeSaveResponses]
+
+export type V2RecipeRemoveData = {
+  body?: never
+  path: {
+    slug: string
+  }
+  query?: never
+  url: "/api/recipe/{slug}"
+}
+
+export type V2RecipeRemoveErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2RecipeRemoveError = V2RecipeRemoveErrors[keyof V2RecipeRemoveErrors]
+
+export type V2RecipeRemoveResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2RecipeRemoveResponse = V2RecipeRemoveResponses[keyof V2RecipeRemoveResponses]
+
+export type V2RecipeGetData = {
+  body?: never
+  path: {
+    slug: string
+  }
+  query?: never
+  url: "/api/recipe/{slug}"
+}
+
+export type V2RecipeGetErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2RecipeGetError = V2RecipeGetErrors[keyof V2RecipeGetErrors]
+
+export type V2RecipeGetResponses = {
+  /**
+   * Recipe.Info
+   */
+  200: RecipeInfo
+}
+
+export type V2RecipeGetResponse = V2RecipeGetResponses[keyof V2RecipeGetResponses]
+
+export type V2RecipeDuplicateData = {
+  body: {
+    [key: string]: unknown
+  }
+  path: {
+    slug: string
+  }
+  query?: never
+  url: "/api/recipe/{slug}/duplicate"
+}
+
+export type V2RecipeDuplicateErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2RecipeDuplicateError = V2RecipeDuplicateErrors[keyof V2RecipeDuplicateErrors]
+
+export type V2RecipeDuplicateResponses = {
+  /**
+   * Recipe.Info
+   */
+  200: RecipeInfo
+}
+
+export type V2RecipeDuplicateResponse = V2RecipeDuplicateResponses[keyof V2RecipeDuplicateResponses]
+
+export type V2RecipeRunData = {
+  body: {
+    directory?: string
+    model?: string
+    agent?: string
+    strict?: SessionStrictOverride
+  }
+  path: {
+    slug: string
+  }
+  query?: never
+  url: "/api/recipe/{slug}/run"
+}
+
+export type V2RecipeRunErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2RecipeRunError = V2RecipeRunErrors[keyof V2RecipeRunErrors]
+
+export type V2RecipeRunResponses = {
+  /**
+   * Recipe.RunResult
+   */
+  200: RecipeRunResult
+}
+
+export type V2RecipeRunResponse = V2RecipeRunResponses[keyof V2RecipeRunResponses]
 
 export type V2PermissionRequestListData = {
   body?: never

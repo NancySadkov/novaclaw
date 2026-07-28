@@ -24,6 +24,8 @@ import type {
   AuthRemoveResponses,
   AuthSetErrors,
   AuthSetResponses,
+  CalendarCreateInput,
+  CalendarUpdateInput,
   CommandListErrors,
   CommandListResponses,
   ConfigGetErrors,
@@ -191,6 +193,7 @@ import type {
   QuestionReplyErrors,
   QuestionReplyResponses,
   QuestionV2Reply,
+  RecipeSaveInput,
   RegistryDeleteRowErrors,
   RegistryDeleteRowResponses,
   RegistryInsertRowErrors,
@@ -222,6 +225,16 @@ import type {
   ToolListResponses,
   V2AgentListErrors,
   V2AgentListResponses,
+  V2CalendarFiresListErrors,
+  V2CalendarFiresListResponses,
+  V2CalendarScheduleCreateErrors,
+  V2CalendarScheduleCreateResponses,
+  V2CalendarScheduleListErrors,
+  V2CalendarScheduleListResponses,
+  V2CalendarScheduleRemoveErrors,
+  V2CalendarScheduleRemoveResponses,
+  V2CalendarScheduleUpdateErrors,
+  V2CalendarScheduleUpdateResponses,
   V2CommandListErrors,
   V2CommandListResponses,
   V2CredentialRemoveErrors,
@@ -312,6 +325,18 @@ import type {
   V2PtyUpdateResponses,
   V2QuestionRequestListErrors,
   V2QuestionRequestListResponses,
+  V2RecipeDuplicateErrors,
+  V2RecipeDuplicateResponses,
+  V2RecipeGetErrors,
+  V2RecipeGetResponses,
+  V2RecipeListErrors,
+  V2RecipeListResponses,
+  V2RecipeRemoveErrors,
+  V2RecipeRemoveResponses,
+  V2RecipeRunErrors,
+  V2RecipeRunResponses,
+  V2RecipeSaveErrors,
+  V2RecipeSaveResponses,
   V2ReferenceListErrors,
   V2ReferenceListResponses,
   V2SessionActiveErrors,
@@ -328,6 +353,8 @@ import type {
   V2SessionCreateResponses,
   V2SessionEventsErrors,
   V2SessionEventsResponses,
+  V2SessionExportMarkdownErrors,
+  V2SessionExportMarkdownResponses,
   V2SessionForkErrors,
   V2SessionForkResponses,
   V2SessionGetErrors,
@@ -342,6 +369,8 @@ import type {
   V2SessionMessageResponses,
   V2SessionMessagesErrors,
   V2SessionMessagesResponses,
+  V2SessionPendingErrors,
+  V2SessionPendingResponses,
   V2SessionPermissionCreateErrors,
   V2SessionPermissionCreateResponses,
   V2SessionPermissionGetErrors,
@@ -5068,6 +5097,25 @@ export class Session2 extends HeyApiClient {
   }
 
   /**
+   * Queued prompts not yet read by the agent
+   *
+   * Inputs admitted for this session that the runner has not promoted into the transcript yet, oldest first. A prompt sent mid-turn waits here until the current step finishes; it is never dropped.
+   */
+  public pending<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "sessionID" }] }])
+    return (options?.client ?? this.client).get<V2SessionPendingResponses, V2SessionPendingErrors, ThrowOnError>({
+      url: "/api/session/{sessionID}/pending",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
    * Get session todos
    *
    * Retrieve the todo list the session's agent maintains.
@@ -5280,14 +5328,14 @@ export class Session2 extends HeyApiClient {
   }
 
   /**
-   * Set a per-session harness-feature override (introspection · quality · affective)
+   * Set a per-session harness-feature override (introspection · quality · affective · thinkingBudget)
    *
    * Enable/disable one harness feature for this session; null clears the override back to inherit (parent chain, then global config). Applies from the next turn.
    */
   public switchFeature<ThrowOnError extends boolean = false>(
     parameters: {
       sessionID: string
-      feature?: "introspection" | "quality" | "affective"
+      feature?: "introspection" | "quality" | "affective" | "thinkingBudget" | "surgicalEdits" | "askBeforeChanges"
       enabled?: boolean
     },
     options?: Options<never, ThrowOnError>,
@@ -5323,7 +5371,7 @@ export class Session2 extends HeyApiClient {
   /**
    * Set the session's kernel thread type (Mode)
    *
-   * Switch this chat between interactive and the unattended types (auto-prompting · goal-oriented). Attendance derives from the chain root's type: an unattended chat auto-allows permission asks and runs shell commands confined by the Agent Jail. Applies immediately.
+   * Switch this chat between interactive and the unattended types (auto-prompting · goal-oriented). Attendance derives from the chain root's type: an unattended chat is CONFINED rather than permissive: out-of-folder writes are DENIED outright instead of parked as an ask nobody can answer, and bash is confined by the Agent Jail (denied outright where no jail backend exists). Applies immediately.
    */
   public switchType<ThrowOnError extends boolean = false>(
     parameters: {
@@ -5682,6 +5730,47 @@ export class Session2 extends HeyApiClient {
       url: "/api/session/{sessionID}/message/{messageID}",
       ...options,
       ...params,
+    })
+  }
+
+  /**
+   * Export a session as Markdown
+   *
+   * Render the whole session to a Markdown file in the given folder. A session that is still running exports what exists so far and is marked as captured mid-turn.
+   */
+  public exportMarkdown<ThrowOnError extends boolean = false>(
+    parameters: {
+      sessionID: string
+      directory?: string
+      filename?: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "sessionID" },
+            { in: "body", key: "directory" },
+            { in: "body", key: "filename" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<
+      V2SessionExportMarkdownResponses,
+      V2SessionExportMarkdownErrors,
+      ThrowOnError
+    >({
+      url: "/api/session/{sessionID}/export-markdown",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
     })
   }
 
@@ -6658,6 +6747,287 @@ export class Messenger extends HeyApiClient {
   }
 }
 
+export class Schedule extends HeyApiClient {
+  /**
+   * List calendar schedules
+   *
+   * Retrieve every scheduled agent-launch task with its next-fire time.
+   */
+  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<
+      V2CalendarScheduleListResponses,
+      V2CalendarScheduleListErrors,
+      ThrowOnError
+    >({ url: "/api/calendar/schedule", ...options })
+  }
+
+  /**
+   * Create a calendar schedule
+   *
+   * Schedule a repeatable or one-shot agent launch. The recurrence is structured (once/daily/weekly/monthly/yearly); the fired session runs the given prompt.
+   */
+  public create<ThrowOnError extends boolean = false>(
+    parameters: {
+      calendarCreateInput: CalendarCreateInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "calendarCreateInput", map: "body" }] }])
+    return (options?.client ?? this.client).post<
+      V2CalendarScheduleCreateResponses,
+      V2CalendarScheduleCreateErrors,
+      ThrowOnError
+    >({
+      url: "/api/calendar/schedule",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Remove a calendar schedule
+   *
+   * Delete a scheduled agent-launch task by id.
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "id" }] }])
+    return (options?.client ?? this.client).delete<
+      V2CalendarScheduleRemoveResponses,
+      V2CalendarScheduleRemoveErrors,
+      ThrowOnError
+    >({
+      url: "/api/calendar/schedule/{id}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Update a calendar schedule
+   *
+   * Patch a scheduled agent-launch task — pause/resume it (enabled), or change its title, prompt, recurrence, model, folder, or permission mode. The next-fire time is recomputed; a disabled schedule has none.
+   */
+  public update<ThrowOnError extends boolean = false>(
+    parameters: {
+      id: string
+      calendarUpdateInput: CalendarUpdateInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "id" },
+            { key: "calendarUpdateInput", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).patch<
+      V2CalendarScheduleUpdateResponses,
+      V2CalendarScheduleUpdateErrors,
+      ThrowOnError
+    >({
+      url: "/api/calendar/schedule/{id}",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
+export class Fires extends HeyApiClient {
+  /**
+   * List recent schedule fires
+   *
+   * Recent scheduled-launch fires across all schedules, newest first (the run history).
+   */
+  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<V2CalendarFiresListResponses, V2CalendarFiresListErrors, ThrowOnError>({
+      url: "/api/calendar/fires",
+      ...options,
+    })
+  }
+}
+
+export class Calendar extends HeyApiClient {
+  private _schedule?: Schedule
+  get schedule(): Schedule {
+    return (this._schedule ??= new Schedule({ client: this.client }))
+  }
+
+  private _fires?: Fires
+  get fires(): Fires {
+    return (this._fires ??= new Fires({ client: this.client }))
+  }
+}
+
+export class Recipe extends HeyApiClient {
+  /**
+   * List recipes
+   *
+   * Every recipe on this install, name-sorted. `builtin` marks the ones NovaClaw shipped.
+   */
+  public list<ThrowOnError extends boolean = false>(options?: Options<never, ThrowOnError>) {
+    return (options?.client ?? this.client).get<V2RecipeListResponses, V2RecipeListErrors, ThrowOnError>({
+      url: "/api/recipe",
+      ...options,
+    })
+  }
+
+  /**
+   * Create or update a recipe
+   *
+   * Writes recipe.md. Omit `slug` to derive it from the name; pass it to update in place.
+   */
+  public save<ThrowOnError extends boolean = false>(
+    parameters: {
+      recipeSaveInput: RecipeSaveInput
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ key: "recipeSaveInput", map: "body" }] }])
+    return (options?.client ?? this.client).post<V2RecipeSaveResponses, V2RecipeSaveErrors, ThrowOnError>({
+      url: "/api/recipe",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Delete a recipe and its assets
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      slug: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "slug" }] }])
+    return (options?.client ?? this.client).delete<V2RecipeRemoveResponses, V2RecipeRemoveErrors, ThrowOnError>({
+      url: "/api/recipe/{slug}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Read one recipe
+   */
+  public get<ThrowOnError extends boolean = false>(
+    parameters: {
+      slug: string
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "slug" }] }])
+    return (options?.client ?? this.client).get<V2RecipeGetResponses, V2RecipeGetErrors, ThrowOnError>({
+      url: "/api/recipe/{slug}",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Copy a recipe
+   *
+   * Copies the folder and its assets under a free slug — the 'make it mine' move for a shipped recipe.
+   */
+  public duplicate<ThrowOnError extends boolean = false>(
+    parameters: {
+      slug: string
+      body: {
+        [key: string]: unknown
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "slug" },
+            { key: "body", map: "body" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2RecipeDuplicateResponses, V2RecipeDuplicateErrors, ThrowOnError>({
+      url: "/api/recipe/{slug}/duplicate",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+
+  /**
+   * Cook a recipe
+   *
+   * Copies the recipe's assets into a work directory and starts a session there with the recipe as its prompt. The recipe itself is never modified, so it stays re-runnable.
+   */
+  public run<ThrowOnError extends boolean = false>(
+    parameters: {
+      slug: string
+      directory?: string
+      model?: string
+      agent?: string
+      strict?: SessionStrictOverride
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "slug" },
+            { in: "body", key: "directory" },
+            { in: "body", key: "model" },
+            { in: "body", key: "agent" },
+            { in: "body", key: "strict" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).post<V2RecipeRunResponses, V2RecipeRunErrors, ThrowOnError>({
+      url: "/api/recipe/{slug}/run",
+      ...options,
+      ...params,
+      headers: {
+        "Content-Type": "application/json",
+        ...options?.headers,
+        ...params.headers,
+      },
+    })
+  }
+}
+
 export class Request extends HeyApiClient {
   /**
    * List pending permission requests
@@ -7257,6 +7627,16 @@ export class V2 extends HeyApiClient {
   private _messenger?: Messenger
   get messenger(): Messenger {
     return (this._messenger ??= new Messenger({ client: this.client }))
+  }
+
+  private _calendar?: Calendar
+  get calendar(): Calendar {
+    return (this._calendar ??= new Calendar({ client: this.client }))
+  }
+
+  private _recipe?: Recipe
+  get recipe(): Recipe {
+    return (this._recipe ??= new Recipe({ client: this.client }))
   }
 
   private _permission?: Permission3
