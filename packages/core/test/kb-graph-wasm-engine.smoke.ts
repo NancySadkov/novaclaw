@@ -1,8 +1,8 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test"
-import { mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { WasmMemory } from "@novaclaw/core/kb-graph/wasm-engine"
+import { SCRATCH_ROOT, WasmMemory } from "@novaclaw/core/kb-graph/wasm-engine"
 
 // The in-process WASM engine — runs under the BUN suite (WASM has no native addon, unlike the retired
 // sidecar). Verifies the full feature set (graph + built-in vector + FTS + bitemporal) AND the
@@ -26,6 +26,33 @@ beforeAll(async () => {
 afterAll(async () => {
   await mem?.close()
   rmSync(dir, { recursive: true, force: true })
+})
+
+// The scratch dir is handed to the emscripten runtime AND lands on the real filesystem, so its shape
+// is load-bearing twice over. A single-segment POSIX path (`/kbmem_<pid>_<n>`) littered the DRIVE
+// ROOT — 352 directories, ~665 MB, one per open, found 2026-07-28 — and a drive-letter path
+// (`C:\…\Temp\…`) makes emscripten fail with `getcwd failed`, so the store never opens. Both were
+// measured; this pins the narrow shape that satisfies both constraints.
+describe("scratch dir does not litter, and can be opened at all", () => {
+  test("SCRATCH_ROOT is POSIX-absolute, forward-slashed, and NOT a drive root entry", () => {
+    expect(SCRATCH_ROOT.startsWith("/")).toBe(true)
+    expect(SCRATCH_ROOT).not.toContain("\\")
+    expect(SCRATCH_ROOT).not.toMatch(/^\/?[A-Za-z]:/)
+    // More than one segment: a child per open lives UNDER this, so the root itself is the only
+    // directory that ever appears at the top of the drive.
+    expect(SCRATCH_ROOT.split("/").filter(Boolean).length).toBeGreaterThanOrEqual(1)
+  })
+
+  test("close() removes the scratch dir it opened", async () => {
+    const realDir = mkdtempSync(join(tmpdir(), "kb-scratch-"))
+    const before = new Set(existsSync(SCRATCH_ROOT) ? readdirSync(SCRATCH_ROOT) : [])
+    const store = await WasmMemory.open(join(realDir, "graph"), { dim: DIM })
+    const during = readdirSync(SCRATCH_ROOT).filter((n) => !before.has(n))
+    expect(during.length).toBe(1)
+    await store.close()
+    expect(existsSync(join(SCRATCH_ROOT, during[0]!))).toBe(false)
+    rmSync(realDir, { recursive: true, force: true })
+  })
 })
 
 describe("WasmMemory (in-process, everywhere)", () => {

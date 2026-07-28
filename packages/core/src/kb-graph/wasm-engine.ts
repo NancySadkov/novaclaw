@@ -122,6 +122,84 @@ let lbugModule: any
 let initPromise: Promise<any> | undefined
 let memfsCounter = 0
 
+/**
+ * Scratch root for the engine's working copy — ONE sweepable directory, never a scatter at the root.
+ *
+ * ⚠️ **This path is handed to the emscripten runtime, so it MUST be POSIX-absolute with forward
+ * slashes and NO drive letter.** A `C:\…` path (what `join(tmpdir(), …)` produces on Windows) makes
+ * emscripten treat `C:` as a relative segment; the engine's `current_path()` then fails with
+ * `getcwd failed: No such file or directory` and the store never opens. Measured 2026-07-28 — that is
+ * the "drive-letter path hits an emscripten getcwd bug" this module's header warns about.
+ *
+ * ⚠️ And it must not be a SINGLE segment. `/kbmem_<pid>_<n>` reads like a MEMFS-only path, but the
+ * scratch is backed by the real filesystem, so on Windows it resolved to `C:\kbmem_<pid>_<n>` — 352
+ * such directories, ~1.9 MB each (~665 MB), were found littering the drive root, one per engine open,
+ * because nothing ever removed them.
+ *
+ * That real backing is also the true explanation for the note this replaces, which described "a
+ * HIDDEN PERSISTENT store that survives across processes" and worked around it by putting the pid in
+ * the path. There was no hidden store: it was the disk. The pid stopped each open from reading the
+ * previous run's leftovers — fixing the stale-read symptom while turning one stale directory into an
+ * unbounded stream of them.
+ *
+ * So: one POSIX-absolute parent (`C:\novaclaw-kbmem\` on Windows, `/novaclaw-kbmem/` elsewhere),
+ * a child per open, removed by `close()` and swept by age on the next open.
+ */
+export const SCRATCH_ROOT = "/novaclaw-kbmem"
+
+/** Age after which a scratch dir is assumed abandoned by a dead process and swept. */
+const SCRATCH_STALE_MS = 24 * 60 * 60 * 1000
+
+/**
+ * Scratch dirs this process opened, so exit can remove any whose store was never `close()`d.
+ *
+ * `close()` is the primary reaper, but plenty of callers legitimately never close — a test that lets
+ * the store fall out of scope, a short-lived CLI, a request-scoped open. Without this, each of those
+ * leaks one directory until the age sweep, which is a whole day of accumulation on a machine that
+ * runs the suite repeatedly. Measured: 8 survivors from two test files in one run.
+ */
+const openScratch = new Set<string>()
+let exitHookInstalled = false
+
+const removeScratch = (dir: string) => {
+  openScratch.delete(dir)
+  try {
+    rmSync(dir, { recursive: true, force: true })
+  } catch {
+    /* a handle is still open; the age sweep in `open` is the backstop */
+  }
+}
+
+const installExitHook = () => {
+  if (exitHookInstalled) return
+  exitHookInstalled = true
+  // Sync only — an `exit` listener cannot await, which is why `removeScratch` uses `rmSync`.
+  process.on("exit", () => {
+    for (const dir of [...openScratch]) removeScratch(dir)
+  })
+}
+
+/**
+ * Best-effort sweep of scratch dirs left by processes that died before `close()` ran (a crash, a
+ * SIGKILL, a wall-clock-killed test unit). Age-based rather than pid-based: a pid is reused, and
+ * probing liveness cross-platform costs more than it saves for a throwaway directory.
+ */
+const sweepStaleScratch = () => {
+  try {
+    const now = Date.now()
+    for (const name of readdirSync(SCRATCH_ROOT)) {
+      const dir = join(SCRATCH_ROOT, name)
+      try {
+        if (now - statSync(dir).mtimeMs > SCRATCH_STALE_MS) rmSync(dir, { recursive: true, force: true })
+      } catch {
+        /* raced with another instance, or in use — leave it */
+      }
+    }
+  } catch {
+    /* no scratch root yet */
+  }
+}
+
 const loadWasm = (): Promise<any> => {
   if (!initPromise) {
     initPromise = (async () => {
@@ -174,17 +252,22 @@ export class WasmMemory {
     const dim = opts.dim ?? DEFAULT_DIM
     const lbug = await loadWasm()
     const FS = lbug.getFS()
-    // ⚠️ Load-bearing: the emscripten working dir is backed by a HIDDEN PERSISTENT store that survives
-    // across processes (measured: reusing a fixed path like `/kbmem0` showed 6 stale nodes on a "fresh"
-    // open, because a plain counter resets to 0 each process and re-hits the prior run's leftover DB
-    // file). So the scratch path must be UNIQUE PER PROCESS — pid + a per-open counter — so a new
-    // instance never collides with a stale file. Durability is OUR real-disk snapshot, restored below;
-    // this scratch dir is throwaway.
-    const memfsDir = `/kbmem_${process.pid}_${memfsCounter++}`
-    try {
-      FS.mkdir(memfsDir)
-    } catch {
-      /* exists */
+    // Unique per open (pid + counter) so a new instance never reads a previous run's leftover DB
+    // file — the stale-node symptom that motivated the pid in the first place. Durability is OUR
+    // real-disk snapshot at `realDir`, restored below; this scratch dir is throwaway and `close()`
+    // removes it. See SCRATCH_ROOT for why it may not live at the filesystem root.
+    sweepStaleScratch()
+    installExitHook()
+    const memfsDir = `${SCRATCH_ROOT}/${process.pid}_${memfsCounter++}`
+    mkdirSync(memfsDir, { recursive: true })
+    openScratch.add(memfsDir)
+    // `FS.mkdir` is not recursive, so create the parent first. Both may already exist.
+    for (const dir of [SCRATCH_ROOT, memfsDir]) {
+      try {
+        FS.mkdir(dir)
+      } catch {
+        /* exists, or the host FS already has it */
+      }
     }
     // Self-heal a stale/incompatible artifact at realDir. Memory is a re-derivable tier (§4.9), so a
     // path we can't restore from must never brick the engine — we discard it and start fresh instead:
@@ -686,7 +769,7 @@ export class WasmMemory {
     })
   }
 
-  /** Flush a final snapshot and close the DB + connection. */
+  /** Flush a final snapshot, close the DB + connection, and remove the scratch dir. */
   async close(): Promise<void> {
     if (this.closed) return
     this.closed = true
@@ -697,5 +780,9 @@ export class WasmMemory {
     } catch {
       /* already closed */
     }
+    // The scratch dir is throwaway — `flush()` above copied everything durable out to `realDir`.
+    // Removing it AFTER the DB is closed, and only then, is what stops one directory per open
+    // accumulating forever. Best-effort: a failure here must never surface as a close() error.
+    removeScratch(this.memfsDir)
   }
 }
