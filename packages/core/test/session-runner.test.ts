@@ -2662,7 +2662,8 @@ describe("SessionRunnerLLM", () => {
             {
               type: "tool",
               id: "call-missing",
-              state: { status: "error", error: { message: "Unknown tool: missing" } },
+              // Identifying clause only: the registry also names the advertised tools now.
+              state: { status: "error", error: { message: expect.stringContaining("Unknown tool: missing.") } },
             },
           ],
         },

@@ -178,7 +178,10 @@ describe("ToolRegistry", () => {
           ...identity,
           call: { type: "tool-call", id: "missing", name: "missing", input: {} },
         }),
-      ).toEqual({ type: "error", value: "Unknown tool: missing" })
+        // The registry names the tool AND the horizon it advertised, so a small model can correct
+        // itself instead of guessing again. Assert the identifying clause, not the whole sentence —
+        // pinning the prose here churns three unrelated suites every time that message improves.
+      ).toMatchObject({ type: "error", value: expect.stringContaining("Unknown tool: missing.") })
 
       yield* service.register({
         defect: Tool.make({

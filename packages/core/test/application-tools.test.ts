@@ -173,7 +173,9 @@ describe("ApplicationTools", () => {
           assistantMessageID,
           call: { type: "tool-call", id: "call-removed", name: "contextual", input: { query: "hello" } },
         }),
-      ).toEqual({ result: { type: "error", value: "Unknown tool: contextual" } })
+        // Identifying clause only — the registry now also names the advertised tools, and pinning
+        // that prose here would churn this suite every time the recovery message improves.
+      ).toMatchObject({ result: { type: "error", value: expect.stringContaining("Unknown tool: contextual.") } })
     }),
   )
 
