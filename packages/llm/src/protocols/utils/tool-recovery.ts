@@ -240,7 +240,7 @@ function recoverCallSyntax(text: string, names: ReadonlyArray<string>): Recovere
 function dedupeCalls(calls: RecoveredCall[]): RecoveredCall[] {
   const seen = new Set<string>()
   return calls.filter((call) => {
-    const key = `${call.name} ${call.arguments}`
+    const key = `${call.name}\x00${call.arguments}`
     if (seen.has(key)) return false
     seen.add(key)
     return true

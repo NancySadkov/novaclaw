@@ -270,7 +270,7 @@ export const layer = Layer.effectDiscard(
                     raw = undefined
                   }
                   if (raw === undefined) return { ok: false, message: `Couldn't read "${input.path}".` } satisfies Output
-                  if (raw.includes(" "))
+                  if (raw.includes("\x00"))
                     return { ok: false, message: `"${input.path}" looks like a binary file — ingest text documents only.` } satisfies Output
                   const label = input.name?.trim() || basename(target.canonical)
                   const ingestScope = input.scope === "session" ? sessionScope : "global"

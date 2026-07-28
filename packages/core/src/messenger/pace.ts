@@ -59,7 +59,7 @@ export const typingDelayMs = (text: string, options?: PaceOptions): number => {
 export interface Pacer {
   /** Run one outbound send under the global pace: acquire the single "hand", wait the typing
    *  delay for `text`, perform `send`, then a small gap before releasing. Serializes ALL sends.
-   *  `perСall` overrides the typing speed / clamps for THIS message (per-account setting, §2.3) —
+   *  `perCall` overrides the typing speed / clamps for THIS message (per-account setting, §2.3) —
    *  the serialization ("one hand") stays global no matter what. */
   readonly paced: <A, E, R>(
     text: string,
