@@ -5,7 +5,14 @@
  * the timeout is the fire-once rule; "toolchain missing" drops the candidate);
  * rung 2 is the calling model re-invoking with explicit commands for the gaps;
  * rung 3 (installing missing toolchains) deliberately stays a bash action under its
- * own permission gate. Resolved commands are written into the instance settings
+ * own permission gate.
+ *
+ * TWO permission actions, because this tool does two different things: `provision`
+ * gates the durable settings write, and `bash` gates each command rung 1 actually
+ * EXECUTES — the shell does not stop being the shell because the tool has a config
+ * name, and a gate that only knows `provision` is a gate no `bash` rule can see.
+ *
+ * Resolved commands are written into the instance settings
  * store (`quality.commands` — the same record the Settings → Quality tab edits),
  * active for future location boots. ⚠️ The pre-config-sqlite version wrote a PROJECT
  * novaclaw.jsonc instead — a silent no-op since step 9 (nothing reads project jsonc
@@ -129,18 +136,49 @@ export const layer = Layer.effectDiscard(
                         "No quality-command candidates: the scan found no known manifests and no explicit commands were passed. Inspect the project and re-call with explicit commands.",
                     }),
                   )
+                const source = {
+                  type: "tool" as const,
+                  messageID: context.assistantMessageID,
+                  callID: context.toolCallID,
+                }
+                // The CONFIG half: this call is about to persist `quality.commands` into the
+                // instance settings store, a durable host mutation under its own action name.
+                // It does NOT cover the execution below — see the `bash` assert in the loop.
                 yield* permission.assert({
                   action: "provision",
                   resources: candidates.map(([key, command]) => `${key}: ${command}`),
                   save: ["*"],
                   sessionID: context.sessionID,
                   agent: context.agent,
-                  source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
+                  source,
                 })
                 const dropped: string[] = []
                 if (input.verify !== false) {
                   const shell = Shell.agentDefault()
                   for (const [key, command] of [...candidates]) {
+                    // ⚠️ THE EXECUTION HALF, and it must be spelled `bash`. Verification runs this
+                    // command string through the agent shell with the host user's authority, and the
+                    // string can come straight from the MODEL (`input.commands` wins over the scan).
+                    // Asserting only `provision` above made this a second door onto the shell that
+                    // every `bash` rule missed by name: "Ask before every change" promises the user
+                    // is asked "before it runs a shell command" (i18n `prompt.features.
+                    // askBeforeChanges.description`) and its overlay lists `bash`, so provisioning
+                    // executed without ever asking. Enumerating `provision` in each such rule list
+                    // would patch this instance and leave the class; asserting the action that
+                    // MATCHES WHAT WE ARE DOING makes every bash rule — mode denies, the switch,
+                    // saved user answers, and any rule added later — apply here for free.
+                    //
+                    // Same shape as `tool/bash.ts` deliberately (`resources: [command]`,
+                    // `save: [command]`): one vocabulary means an "always allow" answered for a
+                    // command is the same grant whichever tool runs it.
+                    yield* permission.assert({
+                      action: "bash",
+                      resources: [command],
+                      save: [command],
+                      sessionID: context.sessionID,
+                      agent: context.agent,
+                      source,
+                    })
                     const run = yield* appProcess
                       .run(
                         ChildProcess.make(command, [], {

@@ -12,6 +12,7 @@ import { SessionV2 } from "./session"
 import { SessionStore } from "./session/store"
 import { Wildcard } from "./util/wildcard"
 import {
+  ASK_BEFORE_CHANGES_RULES,
   EFFECTIVE_CONFIG_DEFAULTS,
   MODE_RULES,
   resolveSessionConfig,
@@ -389,15 +390,9 @@ export const layer = Layer.effect(
           ? [{ action: "write", resource: "*", effect: "deny" as const }]
           : []),
         // "Ask before every change": the old `ask` mode's overlay, now composable with Analyze or Build.
-        ...(resolved.askBeforeChanges === true
-          ? ([
-              { action: "edit", resource: "*", effect: "ask" },
-              { action: "write", resource: "*", effect: "ask" },
-              { action: "create", resource: "*", effect: "ask" },
-              { action: "trash", resource: "*", effect: "ask" },
-              { action: "bash", resource: "*", effect: "ask" },
-            ] as Permission.Ruleset)
-          : []),
+        // Literally THE SAME list `MODE_RULES.ask` is (config-resolve.ts, ASK_BEFORE_CHANGES_RULES) —
+        // it used to be a second copy of it, with nothing but a comment claiming they agreed.
+        ...(resolved.askBeforeChanges === true ? ASK_BEFORE_CHANGES_RULES : []),
       ]
       // READ BASELINE. Reading outside the project folder is ordinary work — a toolchain, an SDK, a system
       // header — so the default is ALLOW and it sits at the LOWEST precedence, where anything more specific

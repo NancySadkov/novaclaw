@@ -1,4 +1,6 @@
-import { describe, expect } from "bun:test"
+import { describe, expect, test } from "bun:test"
+import fs from "node:fs"
+import nodePath from "node:path"
 import { DateTime, Deferred, Effect, Fiber, Layer } from "effect"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { Database } from "@novaclaw/core/database/database"
@@ -13,6 +15,7 @@ import { PermissionSaved } from "@novaclaw/core/permission/saved"
 import { Project } from "@novaclaw/core/project"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { SessionV2 } from "@novaclaw/core/session"
+import { ASK_BEFORE_CHANGES_RULES } from "@novaclaw/core/session/config-resolve"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { Global } from "@novaclaw/core/global"
 import { SessionStore } from "@novaclaw/core/session/store"
@@ -431,10 +434,13 @@ describe("PermissionV2 — the surgical / ask switches", () => {
       yield* insertSession({ id: "ses_build", permissionMode: "bypass" })
       const service = yield* PermissionV2.Service
       const sessionID = SessionV2.ID.make("ses_build")
-      for (const action of ["write", "edit", "create", "bash"])
-        expect(yield* service.ask(assertion({ sessionID, action, resources: ["src/a.ts"] }))).toMatchObject({
-          effect: "allow",
-        })
+      // The NEGATIVE CONTROL for the consent test below, and driven from the same constant so it
+      // keeps tracking it: every action the switch turns into an ask must be a silent allow while
+      // the switch is off, or that test would be green for a reason other than the switch.
+      for (const rule of ASK_BEFORE_CHANGES_RULES)
+        expect(
+          yield* service.ask(assertion({ sessionID, action: rule.action, resources: ["src/a.ts"] })),
+        ).toMatchObject({ effect: "allow" })
     }),
   )
 
@@ -462,17 +468,71 @@ describe("PermissionV2 — the surgical / ask switches", () => {
       yield* on("askBeforeChanges", "ses_ask_sw")
       const service = yield* PermissionV2.Service
       const sessionID = SessionV2.ID.make("ses_ask_sw")
+      // Driven FROM the shared constant, never from a hand-copied list. This is what turns
+      // ASK_BEFORE_CHANGES_RULES into a mechanical link instead of a naming convention: the
+      // evaluator reads that array (permission.ts, `resolved.askBeforeChanges`) and so does this
+      // loop, so a row added there has to be honoured HERE, by the live service, or this goes red.
       // A distinct id per action: an `ask` verdict QUEUES a pending permission, so reusing one id collides.
-      for (const action of ["edit", "write", "create", "trash", "bash"])
+      expect(ASK_BEFORE_CHANGES_RULES.length).toBeGreaterThan(0)
+      for (const rule of ASK_BEFORE_CHANGES_RULES)
         expect(
           yield* service.ask(
-            assertion({ id: PermissionV2.ID.create(`per_${action}`), sessionID, action, resources: ["src/a.ts"] }),
+            assertion({
+              id: PermissionV2.ID.create(`per_${rule.action}`),
+              sessionID,
+              action: rule.action,
+              resources: ["src/a.ts"],
+            }),
           ),
         ).toMatchObject({ effect: "ask" })
+      // The row the shell half of the i18n promise rests on ("...and before it runs a shell command").
+      expect(ASK_BEFORE_CHANGES_RULES.map((rule) => rule.action)).toContain("bash")
       // ...but a READ is not a change, so it still goes through untouched.
       expect(yield* service.ask(assertion({ sessionID, action: "read", resources: ["src/a.ts"] }))).toMatchObject({
         effect: "allow",
       })
+    }),
+  )
+
+  it.effect("askBeforeChanges asks before quality_provision's verify command — why the tool asserts `bash`", () =>
+    Effect.gen(function* () {
+      // The switch's copy promises "…and before it runs a shell command". `quality_provision` rung 1
+      // runs each candidate through the agent shell (and a candidate can come straight from the
+      // model), so under this switch it has to ASK — which it does only because the tool now asserts
+      // `bash` on the command string. The source guard at the bottom of this file pins that half;
+      // this is the evaluator half.
+      yield* setup(buildAgent)
+      yield* insertSession({ id: "ses_ask_prov", permissionMode: "bypass" })
+      yield* on("askBeforeChanges", "ses_ask_prov")
+      const service = yield* PermissionV2.Service
+      const sessionID = SessionV2.ID.make("ses_ask_prov")
+      const command = "bun test"
+      expect(
+        yield* service.ask(
+          assertion({
+            id: PermissionV2.ID.create("per_prov_bash"),
+            sessionID,
+            action: "bash",
+            resources: [command],
+            save: [command],
+          }),
+        ),
+      ).toMatchObject({ effect: "ask" })
+      // NEGATIVE CONTROL — the assert as it shipped. Same tool, same command, same switch ON, and
+      // SILENT: `provision` is not a row in the overlay and cannot be reached by one (a rule list
+      // enumerates action names ahead of time; see the MODE_RULES note). That is precisely how the
+      // shell slipped past a switch that promised to stop it, and why the fix is the action name.
+      expect(
+        yield* service.ask(
+          assertion({
+            id: PermissionV2.ID.create("per_prov_only"),
+            sessionID,
+            action: "provision",
+            resources: [`test: ${command}`],
+            save: ["*"],
+          }),
+        ),
+      ).toMatchObject({ effect: "allow" })
     }),
   )
 
@@ -809,4 +869,63 @@ describe("PermissionV2 — unattended confinement stance", () => {
       expect((error as PermissionV2.DeniedError).reason).toBeUndefined()
     }),
   )
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// U1 — the other half of the askBeforeChanges shell promise, and it has to be read off the SOURCE.
+//
+// The switch's overlay delivers "…and before it runs a shell command" with ONE row: `bash → ask`.
+// That row is a promise about EXECUTION, so it is only as true as the set of tools that spell their
+// execution `bash`. `tool/quality-provision.ts` did not: it asserted `provision` on `key: command`
+// strings and then ran every candidate — including ones the MODEL supplied via `input.commands`,
+// which WIN over the manifest scan — through the agent shell with a 90 s timeout. So provisioning
+// executed shell without ever asking, while the UI said it would not.
+//
+// Reaching that assert through the service would mean building the tool's whole location graph and
+// then actually spawning the candidate commands on this host — the exact thing the assert exists to
+// gate. A source guard is the honest instrument here, and it is the one that goes red if the assert
+// is deleted.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("quality_provision asserts the action it actually performs", () => {
+  const TOOL = nodePath.join(import.meta.dir, "..", "src", "tool", "quality-provision.ts")
+  // CODE ONLY. That file now explains this rule at length, and a guard that read prose would be
+  // satisfied by the very explanation of the bug it exists to catch.
+  const stripComments = (source: string): string =>
+    source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
+  const source = stripComments(fs.readFileSync(TOOL, "utf8"))
+
+  /** It starts a host process with a candidate command… */
+  const SPAWNS = /ChildProcess\.make\(command\b/
+  /** …so it must assert `bash` on the command string it is about to run… */
+  const ASSERTS_BASH = /action:\s*"bash",\s*resources:\s*\[command\]/
+  /** …and keep asserting `provision`, which gates the durable settings write it also performs. */
+  const ASSERTS_PROVISION = /action:\s*"provision"/
+
+  test("it still runs candidate commands on the host — the guard has something to guard", () => {
+    expect(source).toMatch(SPAWNS)
+  })
+
+  test("the command it runs is gated by a `bash` assert on that same command", () => {
+    expect(source).toMatch(ASSERTS_BASH)
+    // Same resource/save shape as tool/bash.ts, so one saved "always allow" answer means the same
+    // thing whichever tool runs the command.
+    expect(source).toMatch(/save:\s*\[command\]/)
+  })
+
+  test("the `provision` assert STAYS — it gates the settings write, not the execution", () => {
+    expect(source).toMatch(ASSERTS_PROVISION)
+    expect(source).toMatch(/settings\.set\("quality"/)
+  })
+
+  test("NEGATIVE CONTROL: the file as it shipped passes the old checks and fails the new one", () => {
+    const preFix = `
+      yield* permission.assert({ action: "provision", resources: candidates.map(f), save: ["*"] })
+      const run = yield* appProcess.run(ChildProcess.make(command, [], { cwd: directory, shell }))
+    `
+    expect(preFix).toMatch(SPAWNS)
+    expect(preFix).toMatch(ASSERTS_PROVISION)
+    expect(preFix).not.toMatch(ASSERTS_BASH) // ← the hole, exactly as it shipped
+    // …and stripping comments is what makes the guard bite: talking about the assert is not one.
+    expect(stripComments(`// one day: action: "bash", resources: [command]\n`)).not.toMatch(ASSERTS_BASH)
+  })
 })

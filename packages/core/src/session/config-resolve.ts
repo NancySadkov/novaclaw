@@ -24,6 +24,34 @@ export const moreRestrictive = (a: PermissionMode, b: PermissionMode): Permissio
   MODE_RANK[a] <= MODE_RANK[b] ? a : b
 
 /**
+ * "Ask before every change" — ONE consent overlay, consumed from the two places that must never
+ * drift: `MODE_RULES.ask` below (the legacy `ask` MODE) and the Tuning switch's feature rule in
+ * `permission.ts` (`resolved.askBeforeChanges`).
+ *
+ * ⚠️ These were two byte-identical array literals with nothing linking them — exactly the defect
+ * class standing decision 2 names: a claim about code in ANOTHER file ("these two lists are the
+ * same") that compiles green the moment it stops being true. The switch is what the mode BECAME
+ * (the same story as `surgical` → "Edits instead of overwriting"), so a row added to one and not
+ * the other forks the two surfaces into a fresh false promise. One constant makes the drift
+ * unrepresentable; `permission-modes.test.ts` pins the identity, and `test/permission.test.ts`
+ * drives the live evaluator FROM this list, so a row added here must be honoured end to end.
+ *
+ * ⚠️ `bash` is a row here, and the i18n copy it implements ("…and before it runs a shell command")
+ * is a promise about EXECUTION, not about the tool that happens to be named `bash`. A tool that
+ * starts a host process under some OTHER action name is not covered by this list and never can be —
+ * the fix is for that tool to assert `bash` on the command it is about to run. `quality_provision`
+ * shipped without doing so and executed model-supplied commands straight past this overlay; it now
+ * asserts per command (`tool/quality-provision.ts`).
+ */
+export const ASK_BEFORE_CHANGES_RULES: readonly PermissionRule[] = [
+  { action: "edit", resource: "*", effect: "ask" },
+  { action: "write", resource: "*", effect: "ask" },
+  { action: "create", resource: "*", effect: "ask" },
+  { action: "trash", resource: "*", effect: "ask" },
+  { action: "bash", resource: "*", effect: "ask" },
+]
+
+/**
  * 1K: the rule overlay each permission MODE contributes at evaluation time. Appended AFTER the
  * agent's configured rules (last-match-wins), so the user's explicit mode outranks agent defaults —
  * but scoped to the mutation/exec cluster only, so agent-level gating of non-file actions
@@ -91,13 +119,10 @@ export const MODE_RULES: Record<PermissionMode, readonly PermissionRule[]> = {
     { action: "provision", resource: "*", effect: "deny" },
     { action: "revert", resource: "*", effect: "deny" },
   ],
-  ask: [
-    { action: "edit", resource: "*", effect: "ask" },
-    { action: "write", resource: "*", effect: "ask" },
-    { action: "create", resource: "*", effect: "ask" },
-    { action: "trash", resource: "*", effect: "ask" },
-    { action: "bash", resource: "*", effect: "ask" },
-  ],
+  // NOT a copy of the switch's rules — the SAME array (see ASK_BEFORE_CHANGES_RULES above). The
+  // mode and the Tuning switch are one promise wearing two surfaces; they cannot be allowed to
+  // disagree, and the only way to guarantee that is to have one list.
+  ask: ASK_BEFORE_CHANGES_RULES,
   // Surgical: precise edits + new files stay possible; regenerating a whole existing file is not.
   // ⚠️ It deliberately does NOT deny `bash`/`js`, unlike `plan` above. Surgical is a rule about the
   // SHAPE of a write, not a posture — it never promised read-only, and it is no longer offered in

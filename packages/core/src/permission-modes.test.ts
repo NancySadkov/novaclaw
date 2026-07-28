@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { PermissionV2 } from "./permission"
-import { MODE_RULES, resolveConfig, EFFECTIVE_CONFIG_DEFAULTS } from "./session/config-resolve"
+import { ASK_BEFORE_CHANGES_RULES, MODE_RULES, resolveConfig, EFFECTIVE_CONFIG_DEFAULTS } from "./session/config-resolve"
 
 // 1K pure-logic coverage: mode rule overlays, reply normalization, and reply→saved-rule mapping.
 
@@ -114,6 +114,31 @@ describe("MODE_RULES overlays (1K)", () => {
   test("ask sends the mutation/exec cluster through consent (never silent with an allow-all baseline)", () => {
     for (const action of ["edit", "write", "create", "trash", "bash"]) expect(effect("ask", action)).toBe("ask")
     expect(effect("ask", "read")).toBe("allow")
+  })
+
+  test("the `ask` MODE and the askBeforeChanges SWITCH are one list, not two copies of one", () => {
+    // They were two byte-identical literals — `MODE_RULES.ask` here and an inline array in
+    // permission.ts's `featureRules` — with nothing but adjacency claiming they agreed. The switch
+    // IS what the mode became (same story as surgical → "Edits instead of overwriting"), so a row
+    // added to one and not the other forks one promise into two behaviours, silently and green.
+    // Identity, not deep-equality: only `toBe` can tell "the same list" from "a copy that happens
+    // to match today", and the copy is the failure mode.
+    expect(MODE_RULES.ask).toBe(ASK_BEFORE_CHANGES_RULES)
+    // NEGATIVE CONTROL: a structurally identical copy — precisely what shipped — passes every
+    // equality check and fails this one. That is the whole reason the assertion above is `toBe`.
+    const copy = [...ASK_BEFORE_CHANGES_RULES]
+    expect(copy).toEqual([...MODE_RULES.ask])
+    expect(MODE_RULES.ask).not.toBe(copy)
+    // And the list still says what the i18n copy promises: consent for the mutation cluster AND
+    // for execution ("…and before it runs a shell command"). `bash` is that row.
+    expect([...ASK_BEFORE_CHANGES_RULES].map((rule) => rule.action).sort()).toEqual([
+      "bash",
+      "create",
+      "edit",
+      "trash",
+      "write",
+    ])
+    expect(ASK_BEFORE_CHANGES_RULES.every((rule) => rule.effect === "ask" && rule.resource === "*")).toBe(true)
   })
 
   test("a saved allow-always quiets ask-mode consent (saved rules land after the overlay)", () => {
