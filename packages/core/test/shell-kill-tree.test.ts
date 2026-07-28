@@ -165,6 +165,46 @@ describe("Shell.killTree", () => {
   })
 })
 
+/**
+ * The SYNC twin. It exists for contexts that cannot await — a `process.on("exit")` hook, an
+ * `Effect.sync` finalizer, a signal handler that calls `process.exit` on the next line — and it is
+ * live in four teardown paths (`pty.ts`, `cli/cmd/serve.ts`, `app/scripts/dev-with-backend.ts` and
+ * the cross-spawn spawner's interrupted-acquire path). An async kill fired from any of those is not
+ * guaranteed to outlive the process that fired it, which is the whole point: it would READ as a kill
+ * and reap nothing. So it gets the same grandchild assertion as the async one.
+ */
+describe("Shell.killTreeSync", () => {
+  test("kills the grandchild too (the process.on('exit') shape)", async () => {
+    const tree = await startTree(false)
+
+    Shell.killTreeSync(tree.parent)
+
+    expect(await until(() => !alive(tree.parent), 5_000)).toBe(true)
+    // THE assertion, same as the async leg: a root-only kill passes everything above and fails here.
+    expect(await until(() => !alive(tree.grandchild), 5_000)).toBe(true)
+  })
+
+  test("does nothing when there is no pid to kill", async () => {
+    // ⚠️ Same landmine as the async leg, and worse here because nothing awaits the result:
+    // `process.kill(-1, …)` signals EVERY process the user owns.
+    Shell.killTreeSync(undefined)
+    Shell.killTreeSync(null)
+    Shell.killTreeSync(0)
+    Shell.killTreeSync(-1)
+    expect(alive(process.pid)).toBe(true)
+  })
+
+  test("honours the exited() short-circuit so a reused pid is never signalled", async () => {
+    const tree = await startTree(false)
+
+    Shell.killTreeSync(tree.parent, { exited: () => true })
+    await sleep(300)
+
+    expect(alive(tree.parent)).toBe(true)
+    expect(alive(tree.grandchild)).toBe(true)
+  })
+})
+
 describe("Shell.descendantsOf", () => {
   // The POSIX leg snapshots `pid -> ppid` (from /proc on Linux, one `ps` call elsewhere) and walks
   // it here. The snapshot source is platform-specific and is NOT exercised on Windows; this walk is

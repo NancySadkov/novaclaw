@@ -26,6 +26,9 @@ import { PassThrough } from "node:stream"
 import launch from "cross-spawn"
 import { makeGlobalNode } from "./effect/app-node"
 import { filesystem, path } from "./effect/app-node-platform"
+// THE one tree-kill (re-exported as `Shell.killTree`). The leaf spelling is used here rather than
+// `./shell` so this spawner keeps its current, minimal reach.
+import { killTree, killTreeSync } from "./util/kill-tree"
 
 const toError = (err: unknown): Error => (err instanceof globalThis.Error ? err : new globalThis.Error(String(err)))
 
@@ -285,31 +288,41 @@ export const make = Effect.gen(function* () {
         resume(Effect.succeed([proc, signal]))
       })
       return Effect.sync(() => {
-        proc.kill("SIGTERM")
+        // Interrupted before `spawn` fired, so `acquireRelease` never acquired and this is the ONLY
+        // teardown this child will get — it must reach the whole tree, not just the root. A sync
+        // context cannot await, hence the sync twin (no SIGTERM grace on POSIX; see kill-tree.ts).
+        killTreeSync(proc)
       })
     })
 
+  /**
+   * Terminate the child AND everything it spawned, through the ONE tree-kill (`util/kill-tree.ts`).
+   *
+   * ⚠️ What this replaced, because both halves were real holes (v0.2.0-prep Wave 1, unit C2):
+   *  · win32 interpolated the pid into an `exec` SHELL STRING (`taskkill /pid ${proc.pid} /T /F`).
+   *    The pid is a number so it was not exploitable — the SHAPE was the defect, and a shell hop is
+   *    also one more process to leak.
+   *  · POSIX signalled the process GROUP and nothing else: no ppid snapshot (so a descendant that
+   *    detached into its own group survived) and no SIGTERM→grace→SIGKILL escalation.
+   *
+   * `signal` is accepted to keep the `timeout(...)` helper's shape and is deliberately IGNORED:
+   * killTree owns the escalation itself (SIGTERM, 200 ms, SIGKILL) and nothing in this repo passes a
+   * non-terminal `killSignal` (grepped 2026-07-28 — every call site is the `SIGTERM` default plus
+   * `forceKillAfter`). If a caller ever needs SIGINT/SIGHUP delivery, that is a NEW option on
+   * killTree, not a second kill here.
+   *
+   * The declared `PlatformError` channel is kept so the callers' `Effect.catch(…, killOne)` fallback
+   * still typechecks; killTree never fails, so that fallback is now belt-and-braces.
+   */
   const killGroup = (
     command: ChildProcess.StandardCommand,
     proc: NodeChildProcess.ChildProcess,
     signal: NodeJS.Signals,
-  ) => {
-    if (globalThis.process.platform === "win32") {
-      return Effect.callback<void, PlatformError.PlatformError>((resume) => {
-        NodeChildProcess.exec(`taskkill /pid ${proc.pid} /T /F`, { windowsHide: true }, (err) => {
-          if (err) return resume(Effect.fail(toPlatformError("kill", toError(err), command)))
-          resume(Effect.void)
-        })
-      })
-    }
-
-    return Effect.try({
-      try: () => {
-        globalThis.process.kill(-proc.pid!, signal)
-      },
-      catch: (err) => toPlatformError("kill", toError(err), command),
-    })
-  }
+  ): Effect.Effect<void, PlatformError.PlatformError> =>
+    // NO `exited` guard: the finalizer's `done` branch calls this precisely BECAUSE the child has
+    // already exited, to reap the children it left behind. Short-circuiting on exit would silently
+    // turn that path into a no-op.
+    Effect.promise(() => killTree(proc))
 
   const killOne = (
     command: ChildProcess.StandardCommand,

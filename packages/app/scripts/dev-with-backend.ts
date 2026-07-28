@@ -10,10 +10,14 @@
  *     attach to it rather than starting a second one that would fail to bind.
  *   · TREE KILL — the serve supervises a child process, so killing only the parent leaves an orphan holding
  *     nothing and serving nothing. That exact failure produced "listening on 3000, dead on 4096" more than
- *     once. On Windows only `taskkill /T` reliably takes the whole tree.
+ *     once. This used to be hand-rolled here (win32 `taskkill /T /F`, POSIX a group SIGTERM with no SIGKILL
+ *     escalation at all); it now routes through the ONE tree-kill, `@novaclaw/core/util/kill-tree`.
  */
 import { spawn, type ChildProcess } from "node:child_process"
 import path from "node:path"
+// The leaf spelling of `Shell.killTree` — `node:` builtins only, so a dev launcher pays nothing for it.
+// `packages/app` already declares `@novaclaw/core` as a dependency.
+import { killTreeSync } from "@novaclaw/core/util/kill-tree"
 
 const API_PORT = 4096
 const REPO = path.resolve(import.meta.dir, "..", "..", "..") // …/novaclaw
@@ -30,22 +34,18 @@ const alreadyServing = async (): Promise<boolean> => {
 
 const children: ChildProcess[] = []
 
-/** Kill a process AND its descendants. `child.kill()` alone orphans the serve's supervised child. */
-function killTree(child: ChildProcess): void {
-  if (child.pid === undefined || child.exitCode !== null) return
-  if (process.platform === "win32") {
-    spawn("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" }).unref()
-    return
-  }
-  try {
-    process.kill(-child.pid, "SIGTERM")
-  } catch {
-    child.kill("SIGTERM")
-  }
-}
+/**
+ * Kill a process AND its descendants. `child.kill()` alone orphans the serve's supervised child.
+ *
+ * The SYNC twin, because both callers below are terminal: `shutdown` calls `process.exit` on the very
+ * next line and the `exit` hook has no next line at all. An async kill spawned from either is not
+ * guaranteed to outlive this process — it would read as a kill and reap nothing.
+ */
+const stop = (child: ChildProcess) =>
+  killTreeSync(child, { exited: () => child.exitCode !== null || child.signalCode !== null })
 
 function shutdown(code: number): never {
-  for (const child of children) killTree(child)
+  for (const child of children) stop(child)
   process.exit(code)
 }
 
@@ -86,5 +86,5 @@ vite.on("exit", (code) => shutdown(code ?? 0))
 
 for (const signal of ["SIGINT", "SIGTERM", "SIGHUP"] as const) process.on(signal, () => shutdown(0))
 process.on("exit", () => {
-  for (const child of children) killTree(child)
+  for (const child of children) stop(child)
 })

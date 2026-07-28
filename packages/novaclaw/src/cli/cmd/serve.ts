@@ -3,6 +3,9 @@ import path from "node:path"
 import { effectCmd, fail } from "../effect-cmd"
 import { withNetworkOptions, resolveNetworkOptions } from "../network"
 import { Flag } from "@novaclaw/core/flag/flag"
+// THE one tree-kill, in its leaf spelling (`Shell.killTreeSync` is the same function). The leaf
+// imports `node:` builtins only, which keeps it off the CLI's startup cost.
+import { killTreeSync } from "@novaclaw/core/util/kill-tree"
 
 // Dependability P4 (uix-dependability-plan): `novaclaw serve` is SUPERVISED BY DEFAULT — the
 // managed-by-default stance. The parent process is a tiny restart loop; the actual server runs as a
@@ -11,14 +14,21 @@ import { Flag } from "@novaclaw/core/flag/flag"
 // policy itself lives in ../supervise.ts (pure, unit-tested).
 import { FAST_CRASH_GIVEUP, FAST_CRASH_MS, initialSuperviseState, superviseDecision } from "../supervise"
 
+/**
+ * Stop the supervised child AND the layers under it.
+ *
+ * ⚠️ This is the shape AGENTS.md pitfall #8 warns about most directly: the supervisor's child
+ * re-execs itself and spawns MCP node servers, so a kill that reaches only the root orphans two more
+ * layers. It used to be win32-only (an inline `Bun.spawnSync` taskkill) with a bare `proc.kill()` on
+ * POSIX, which orphaned the whole tree there. It now routes through the ONE tree-kill.
+ *
+ * The SYNC twin is required, not a shortcut: every caller is either a signal handler that calls
+ * `process.exit` on the next line or the `process.on("exit")` hook, and an async `taskkill` spawned
+ * from those is not guaranteed to outlive us — it would look like a kill and do nothing.
+ */
 const treeKill = (proc: ReturnType<typeof Bun.spawn> | undefined) => {
   if (!proc || proc.killed) return
-  try {
-    if (process.platform === "win32")
-      // Windows signal delivery is unreliable under Bun — taskkill the whole tree instead.
-      Bun.spawnSync(["taskkill", "/pid", String(proc.pid), "/f", "/t"], { stdout: "ignore", stderr: "ignore" })
-    else proc.kill()
-  } catch {}
+  killTreeSync(proc.pid)
 }
 
 /** The child respawn recipe. `process.execArgv` carries the runtime flags (measured: bun preserves

@@ -2,6 +2,7 @@ import { type ChildProcess } from "child_process"
 import type { Stream } from "node:stream"
 import launch from "cross-spawn"
 import { buffer } from "node:stream/consumers"
+import { Shell } from "@novaclaw/core/shell"
 import { errorMessage } from "./error"
 
 export type Stdio = "inherit" | "pipe" | "ignore" | number | Stream
@@ -144,22 +145,21 @@ export async function run(cmd: string[], opts: RunOptions = {}): Promise<Result>
   throw new RunFailedError(cmd, out.code, out.stdout, out.stderr)
 }
 
-// Duplicated in `packages/sdk/js/src/process.ts` because the SDK cannot import
-// `novaclaw` without creating a cycle. Keep both copies in sync.
+/**
+ * Stop a child and everything it spawned, through the ONE tree-kill (`Shell.killTree`).
+ *
+ * ⚠️ This used to be hand-rolled, and its POSIX branch was a bare `proc.kill()` — a plain SIGTERM to
+ * the ROOT, which orphans every grandchild. Orphans on this box accumulate at GBs each and once
+ * hard-crashed the machine (AGENTS.md → Known pitfalls #8).
+ *
+ * `packages/sdk/js/src/process.ts` still carries its own copy and is the ONE sanctioned duplicate:
+ * the SDK lists a single runtime dependency on purpose, and pulling `@novaclaw/core` in would drag
+ * drizzle, the sqlite driver and the whole config layer into a deliberately thin package. That
+ * exception is ledgered by name in `packages/core/test/kill-tree-ledger.test.ts` — if the SDK copy is
+ * ever changed, change it there and leave this one alone.
+ */
 export async function stop(proc: ChildProcess) {
-  if (proc.exitCode !== null || proc.signalCode !== null) return
-
-  if (process.platform !== "win32" || !proc.pid) {
-    proc.kill()
-    return
-  }
-
-  const out = await run(["taskkill", "/pid", String(proc.pid), "/T", "/F"], {
-    nothrow: true,
-  })
-
-  if (out.code === 0) return
-  proc.kill()
+  await Shell.killTree(proc, { exited: () => proc.exitCode !== null || proc.signalCode !== null })
 }
 
 export async function text(cmd: string[], opts: RunOptions = {}): Promise<TextResult> {

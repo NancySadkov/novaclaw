@@ -117,6 +117,12 @@ export const layer = Layer.effect(
       for (const listener of session.listeners) listener.dispose()
       session.listeners.length = 0
       if (session.info.status === "running") {
+        // ⚠️ `session.process.kill()` alone reaches the SHELL and nothing else, so anything the user
+        // started inside the terminal (a dev server, a `bun run …`) is orphaned — and orphans on this
+        // box accumulate at GBs each until it dies (AGENTS.md → Known pitfalls #8). Kill the TREE
+        // first, then let node-pty release the pty handle itself. This runs from an `Effect.sync`
+        // finalizer, so it takes the sync twin of the one tree-kill.
+        Shell.killTreeSync(session.process.pid)
         try {
           session.process.kill()
         } catch {}

@@ -1,17 +1,32 @@
 export * as Shell from "./shell"
 
 import path from "path"
-import { spawn, type ChildProcess } from "child_process"
-import { readFile, readdir } from "fs/promises"
-import { existsSync, statSync } from "fs"
-import { setTimeout as sleep } from "node:timers/promises"
+import { readFile } from "fs/promises"
+import { statSync } from "fs"
 import { Flag } from "./flag/flag"
 import { FSUtil } from "./fs-util"
 import { ShellBundle } from "./shell-bundle"
 import { which } from "./util/which"
 
-/** POSIX grace window between the tree's SIGTERM and its SIGKILL (see {@link killTree}). */
-export const SIGKILL_TIMEOUT_MS = 200
+/**
+ * **The one tree-kill in the codebase**, re-exported here under its established name.
+ *
+ * The implementation lives in `./util/kill-tree` — a LEAF module that imports nothing but `node:`
+ * builtins — because the jh engine is one of its callers and `src/jh/imports.test.ts` (§0.7.2)
+ * forbids jh from importing anything that reaches the config/service tree, which this file does
+ * (`Flag`, `FSUtil`, `ShellBundle`, `which` → `Global`). `Shell.killTree` and the leaf module are
+ * the SAME function; import whichever spelling is cheaper where you stand.
+ *
+ * ⚠️ Do not hand-roll another one. `test/kill-tree-ledger.test.ts` fails the build if you do.
+ */
+export {
+  SIGKILL_TIMEOUT_MS,
+  descendantsOf,
+  killTree,
+  killTreeSync,
+} from "./util/kill-tree"
+export type { KillTreeOptions, KillTreeTarget } from "./util/kill-tree"
+
 const META: Record<string, { deny?: boolean; login?: boolean; posix?: boolean; ps?: boolean }> = {
   bash: { login: true, posix: true },
   dash: { login: true, posix: true },
@@ -28,182 +43,6 @@ export type Item = {
   path: string
   name: string
   acceptable: boolean
-}
-
-/** What `killTree` can be pointed at: a live child handle, a raw pid, or nothing. */
-export type KillTreeTarget = ChildProcess | number | undefined | null
-
-export type KillTreeOptions = {
-  /** Short-circuit: return true once the process is known dead, so we never signal a reused pid. */
-  exited?: () => boolean
-}
-
-/** The pid to aim at, or undefined when there is nothing to kill. */
-function killTreePid(target: KillTreeTarget): number | undefined {
-  const pid = typeof target === "number" ? target : target?.pid
-  if (typeof pid !== "number" || !Number.isInteger(pid) || pid <= 0) return undefined
-  return pid
-}
-
-/** `taskkill /f /t` — the ONLY thing on Windows that reaches grandchildren. Resolves true if it ran. */
-function taskkill(pid: number): Promise<boolean> {
-  return new Promise<boolean>((resolve) => {
-    // Args are passed as an array, never interpolated into a shell string.
-    const killer = spawn("taskkill", ["/pid", String(pid), "/f", "/t"], {
-      stdio: "ignore",
-      windowsHide: true,
-    })
-    // Exit code 128 = "process not found" — already gone, which is success for our purposes. Only a
-    // spawn failure (no taskkill on PATH) means the kill did not happen at all.
-    killer.once("exit", () => resolve(true))
-    killer.once("error", () => resolve(false))
-  })
-}
-
-/** Signal one pid. Returns false when the target is already gone / not signallable. */
-function signalOne(pid: number, signal: NodeJS.Signals, handle?: ChildProcess): boolean {
-  try {
-    if (handle) return handle.kill(signal)
-    process.kill(pid, signal)
-    return true
-  } catch {
-    return false
-  }
-}
-
-/** Signal a POSIX process GROUP. True only when a group led by `pid` existed and was signalled. */
-function signalGroup(pid: number, signal: NodeJS.Signals): boolean {
-  try {
-    // A group's id IS its leader's pid, so `-pid` can only ever reach a group led by our target —
-    // it can never fan out to unrelated processes.
-    process.kill(-pid, signal)
-    return true
-  } catch {
-    return false
-  }
-}
-
-/**
- * `pid -> ppid` for every process on the box.
- *
- * Linux reads `/proc` directly (no spawn — this runs inside teardown finalizers); every other POSIX
- * shells out to `ps` exactly ONCE, never the per-node `pgrep -P` BFS this replaced.
- */
-async function parentMap(): Promise<Map<number, number>> {
-  const map = new Map<number, number>()
-  if (existsSync("/proc/self/stat")) {
-    const entries = await readdir("/proc").catch(() => [] as string[])
-    await Promise.all(
-      entries.map(async (entry) => {
-        const pid = Number(entry)
-        if (!Number.isInteger(pid) || pid <= 0) return
-        const stat = await readFile(`/proc/${pid}/stat`, "utf8").catch(() => "")
-        // Field 3 is the comm, wrapped in parens and free to contain spaces AND parens — so parse
-        // from the LAST ')' rather than splitting the whole line.
-        const close = stat.lastIndexOf(")")
-        if (close < 0) return
-        const ppid = Number(stat.slice(close + 1).trim().split(/\s+/)[1])
-        if (Number.isInteger(ppid)) map.set(pid, ppid)
-      }),
-    )
-    if (map.size) return map
-  }
-  const text = await new Promise<string>((resolve) => {
-    let out = ""
-    const ps = spawn("ps", ["-A", "-o", "pid=,ppid="], { stdio: ["ignore", "pipe", "ignore"] })
-    ps.stdout?.on("data", (chunk) => {
-      out += String(chunk)
-    })
-    ps.once("error", () => resolve(""))
-    ps.once("close", () => resolve(out))
-  })
-  for (const line of text.split("\n")) {
-    const [first, second] = line.trim().split(/\s+/)
-    const pid = Number(first)
-    const ppid = Number(second)
-    if (Number.isInteger(pid) && pid > 0 && Number.isInteger(ppid)) map.set(pid, ppid)
-  }
-  return map
-}
-
-/**
- * Every descendant of `pid`, DEEPEST FIRST, from a `pid -> ppid` snapshot.
- *
- * Exported for testing: the snapshot source is platform-specific, this walk is not. Cycle-guarded —
- * a corrupt or racing snapshot must not spin — and `pid` itself is never in the result.
- */
-export function descendantsOf(pid: number, parents: ReadonlyMap<number, number>): number[] {
-  const children = new Map<number, number[]>()
-  for (const [child, parent] of parents) {
-    const list = children.get(parent)
-    if (list) list.push(child)
-    else children.set(parent, [child])
-  }
-  const seen = new Set<number>([pid])
-  const out: number[] = []
-  const walk = (root: number) => {
-    for (const child of children.get(root) ?? []) {
-      if (seen.has(child)) continue
-      seen.add(child)
-      walk(child)
-      out.push(child)
-    }
-  }
-  walk(pid)
-  return out
-}
-
-/**
- * **The one tree-kill in the codebase.** Kills a process AND everything it spawned.
- *
- * ⚠️ This exists because a bare `proc.kill()` / `process.kill(pid)` orphans grandchildren, and orphaned
- * children are a machine-killer here: on 2026-07-20 accumulated orphans pinned commit charge at 99.9%
- * of a 68 GB ceiling and hard-crashed the laptop (AGENTS.md → Known pitfalls #8). Every teardown path
- * that owns a child process must route through this function rather than hand-rolling a kill.
- *
- * Accepts a **pid** as readily as a `ChildProcess`, because several owners (the MCP stdio transport, for
- * one) only ever have the pid. Given a handle we additionally use it as the POSIX fallback, which
- * tolerates an already-exited child where a raw `process.kill` would throw.
- *
- * - **win32:** `taskkill /pid <pid> /f /t`, AWAITED. `/t` is the tree; without it grandchildren survive.
- * - **POSIX:** `SIGTERM`, a {@link SIGKILL_TIMEOUT_MS} grace window, then `SIGKILL` — sent to the
- *   process GROUP *and* to an explicit ppid snapshot of the tree. Both, because neither is complete:
- *   the group is empty unless the child was spawned `detached` (the MCP SDK does NOT — its stdio
- *   children share our own group, so `kill(-pid)` cannot be used at all), while the snapshot cannot
- *   see anything spawned after it was taken.
- *
- * Never throws, never rejects — teardown callers can `await` it unguarded.
- */
-export async function killTree(target: KillTreeTarget, opts?: KillTreeOptions): Promise<void> {
-  const pid = killTreePid(target)
-  if (pid === undefined || opts?.exited?.()) return
-  const handle = typeof target === "number" ? undefined : (target ?? undefined)
-
-  if (process.platform === "win32") {
-    if (await taskkill(pid)) return
-    // No taskkill on PATH. The handle kill reaches the ROOT only — a documented degraded path, not a
-    // silent one: it can only be reached when spawning taskkill itself failed.
-    if (!opts?.exited?.()) signalOne(pid, "SIGTERM", handle)
-    return
-  }
-
-  // Snapshot the tree ONCE, up front: after the first signal round the ppid links are gone, so a
-  // second lookup would find nothing left to SIGKILL.
-  const tree = [...descendantsOf(pid, await parentMap()), pid]
-  if (opts?.exited?.()) return
-
-  // BOTH levers every round, because neither alone is complete: the group misses a descendant that
-  // detached into a group of its own, and the ppid snapshot misses anything spawned after it was
-  // taken (which the group still covers).
-  const round = (signal: NodeJS.Signals) => {
-    signalGroup(pid, signal)
-    for (const each of tree) signalOne(each, signal, each === pid ? handle : undefined)
-  }
-
-  round("SIGTERM")
-  await sleep(SIGKILL_TIMEOUT_MS)
-  if (opts?.exited?.()) return
-  round("SIGKILL")
 }
 
 function stat(file: string) {
