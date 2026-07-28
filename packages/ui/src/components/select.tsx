@@ -1,8 +1,9 @@
 import { Select as Kobalte } from "@kobalte/core/select"
 import { createMemo, onCleanup, splitProps, type ComponentProps, type JSX } from "solid-js"
-import { pipe, groupBy, entries, map } from "remeda"
 import { Button, ButtonProps } from "./button"
 import { Icon } from "./icon"
+import { selectGroups, selectIsGrouped } from "./select-groups"
+
 
 export type SelectProps<T> = Omit<ComponentProps<typeof Kobalte<T>>, "value" | "onSelect" | "children"> & {
   placeholder?: string
@@ -71,16 +72,7 @@ export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">)
 
   onCleanup(stop)
 
-  const grouped = createMemo(() => {
-    const result = pipe(
-      local.options,
-      groupBy((x) => (local.groupBy ? local.groupBy(x) : "")),
-      // mapValues((x) => x.sort((a, b) => a.title.localeCompare(b.title))),
-      entries(),
-      map(([k, v]) => ({ category: k, options: v })),
-    )
-    return result
-  })
+  const grouped = createMemo(() => selectGroups(local.options, local.groupBy))
 
   return (
     // @ts-ignore
@@ -91,10 +83,17 @@ export function Select<T>(props: SelectProps<T> & Omit<ButtonProps, "children">)
       placement={local.triggerVariant === "settings" ? "bottom-end" : "bottom-start"}
       gutter={4}
       value={local.current}
-      options={grouped()}
+      // ⚠️ Only hand Kobalte the GROUPED shape when there is something to group by. `grouped()` always
+      // wraps — with no `groupBy` every option lands under a single `""` category — and pairing that
+      // with `optionGroupChildren="options"` told Kobalte to read ordinary options as a SECTION whose
+      // children live under a key they do not have, so the control rendered EMPTY. It broke the
+      // Settings and model selectors and the thinking-level control: surfaces a normal person uses,
+      // failing silently rather than loudly. Ported from
+      // https://github.com/NancySadkov/novaclaw/pull/12 by @DassaultFalconKing.
+      options={selectIsGrouped(local.groupBy) ? grouped() : local.options}
       optionValue={(x) => (local.value ? local.value(x) : (x as string))}
       optionTextValue={(x) => (local.label ? local.label(x) : (x as string))}
-      optionGroupChildren="options"
+      optionGroupChildren={selectIsGrouped(local.groupBy) ? "options" : undefined}
       placeholder={local.placeholder}
       sectionComponent={(local) => (
         <Kobalte.Section data-slot="select-section">{local.section.rawValue.category}</Kobalte.Section>
