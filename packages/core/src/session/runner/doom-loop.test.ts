@@ -16,6 +16,7 @@ import {
   containsUnverified,
   shouldReground,
   FAILURE_STREAK_THRESHOLD,
+  patchTarget,
   RUNAWAY_THRESHOLD,
   REGROUND_TOOL_CALLS,
   REGROUND_NUDGE,
@@ -149,7 +150,9 @@ describe("detectFailureStreak", () => {
   })
 
   test("fewer than threshold does not trip", () => {
-    const calls = Array.from({ length: 4 }, () => fail("read", '{"path":"a"}'))
+    // Derived from the constant, not a literal: this test hardcoded 4 against a threshold of 5, so
+    // lowering the threshold to 3 turned a correct change into a red test that said nothing useful.
+    const calls = Array.from({ length: FAILURE_STREAK_THRESHOLD - 1 }, () => fail("read", '{"path":"a"}'))
     expect(detectFailureStreak(calls)).toBeUndefined()
   })
 

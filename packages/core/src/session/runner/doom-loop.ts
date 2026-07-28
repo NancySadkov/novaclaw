@@ -44,9 +44,14 @@ export function redirectMessage(call: ToolCallRef, threshold: number = DOOM_LOOP
 // runaway iteration count. Both are pure and unit-tested; the runner feeds them the tool calls made
 // since the last user message ("a new user message is a new goal") and steers the message on a trip.
 
-// Generous on purpose — honest trial-and-error is allowed. 5 consecutive same-target failures is a
+// Generous on purpose — honest trial-and-error is allowed. 3 consecutive same-target failures is a
 // loop, not exploration.
-export const FAILURE_STREAK_THRESHOLD = 5
+//
+// Lowered 5 -> 3 (ported from NancySadkov/novaclaw#6 by @DassaultFalconKing). Their packaged local-model
+// E2E measured a weak model burning THIRTEEN calls before the old threshold tripped, because each retry
+// reformatted the same bad patch and only every other one landed on the same key. Three is still two
+// more attempts than a model needs to notice an error it can read.
+export const FAILURE_STREAK_THRESHOLD = 3
 
 // Honest large builds ran ~60 tool calls in a turn; 75 catches plausible non-failing loops
 // (re-read/re-grep forever) the failure streak can't see, without tripping real work.
@@ -67,6 +72,32 @@ export interface FailureStreak {
 
 const TARGET_FIELDS = ["command", "pattern", "path", "filePath", "filename", "query"] as const
 
+/**
+ * The file an `apply_patch` body acts on, so a malformed patch retried with cosmetic differences
+ * keeps ONE streak key.
+ *
+ * ⚠️ Without this, `apply_patch` has no field in `TARGET_FIELDS` — its input is `patchText` — so
+ * `toolTargetKey` fell through to the trimmed raw arguments. A weak model regenerates the whole body
+ * on each retry (different whitespace, reordered context lines), so every attempt produced a NEW key
+ * and the streak reset forever. Measured by @DassaultFalconKing in NancySadkov/novaclaw#6: thirteen
+ * failed calls before any nudge fired. This is the general lesson of the failure-streak detector,
+ * restated for the one tool whose payload IS the argument: key on what the call acts on, never on how
+ * it is spelled.
+ *
+ * Reads the official envelope first (`*** Add|Update|Delete File: <path>`), then a unified-diff
+ * `+++ <path>` as a fallback for a model that reached for the format it knows. Pure and total.
+ */
+export function patchTarget(value: string): string | undefined {
+  const lines = value.split("\n").map((line) => line.trim())
+  const official = lines
+    .map((line) => /^\*\*\* (?:Add|Update|Delete) File:\s*(.+)$/.exec(line)?.[1]?.trim())
+    .find((target) => target)
+  if (official) return official
+  return lines
+    .map((line) => /^\+\+\+\s+(?!\/dev\/null$)(?:[ab]\/)?(.+)$/.exec(line)?.[1]?.trim())
+    .find((target) => target)
+}
+
 // Extract the *target* a tool acts on, so cosmetic argument rewording between retries does not reset
 // the streak. bash/shell → the first line of `command`; glob/grep → `pattern`; file tools → `path`.
 // Falls back to the trimmed raw args when nothing parses. Pure and total.
@@ -79,6 +110,12 @@ export function toolTargetKey(name: string, input: string): string {
   }
   if (parsed !== null && typeof parsed === "object") {
     const record = parsed as Record<string, unknown>
+    // Checked BEFORE TARGET_FIELDS: a patch body may also carry a `path`, and the envelope is the
+    // more specific answer to "what does this call act on".
+    if (typeof record["patchText"] === "string") {
+      const target = patchTarget(record["patchText"])
+      if (target) return `${name}\x00${target}`
+    }
     for (const field of TARGET_FIELDS) {
       const value = record[field]
       if (typeof value === "string" && value.length > 0) {

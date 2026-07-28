@@ -16,9 +16,22 @@ import { Tools } from "./tools"
 
 export const name = "apply_patch"
 
+/**
+ * The envelope, stated wherever a model can still act on it: the schema, the tool description, and
+ * the parse error. A small model that guesses this format wrong cannot recover from a bare
+ * "verification failed" — it rewords the same bad body, which is a loop the streak detector then has
+ * to catch (see `doom-loop.ts`'s `patchTarget`). Naming the format at the point of failure, plus an
+ * explicit cheaper route for the common case, is the horizon the Juvenile Harness exists to supply.
+ *
+ * Ported from NancySadkov/novaclaw#6 by @DassaultFalconKing.
+ */
+const PATCH_FORMAT_HELP =
+  'Required format: start with "*** Begin Patch", use hunks such as "*** Add File: path" followed by ' +
+  '"+" content lines, and end with "*** End Patch". For a small NEW file, use the `write` tool instead.'
+
 export const Input = Schema.Struct({
   patchText: Schema.String.annotate({
-    description: "The full patch text describing add, update, and delete operations",
+    description: `The full patch text describing add, update, and delete operations. ${PATCH_FORMAT_HELP}`,
   }),
 })
 
@@ -69,7 +82,7 @@ export const layer = Layer.effectDiscard(
         [name]: Tool.withPermission(
           Tool.make({
             description:
-              "Apply one patch containing add, update, and delete file operations. All targets are resolved and approved before target contents are read. Operations apply sequentially; if a later operation fails, earlier operations remain applied and the failure reports them explicitly. Moves and atomic rollback are not supported yet.",
+              `Apply one patch containing add, update, and delete file operations. ${PATCH_FORMAT_HELP} All targets are resolved and approved before target contents are read. Operations apply sequentially; if a later operation fails, earlier operations remain applied and the failure reports them explicitly. Moves and atomic rollback are not supported yet.`,
             input: Input,
             output: Output,
             toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
@@ -91,7 +104,10 @@ export const layer = Layer.effectDiscard(
                 if (!input.patchText.trim()) return yield* new ToolFailure({ message: "patchText is required" })
                 const hunks = yield* Effect.try({
                   try: () => Patch.parse(input.patchText),
-                  catch: (cause) => new ToolFailure({ message: `apply_patch verification failed: ${String(cause)}` }),
+                  catch: (cause) =>
+                    new ToolFailure({
+                      message: `apply_patch verification failed: ${String(cause)}. ${PATCH_FORMAT_HELP} Do not retry the same malformed patch.`,
+                    }),
                 })
                 if (hunks.length === 0) return yield* new ToolFailure({ message: "patch rejected: empty patch" })
                 const move = hunks.find((hunk) => hunk.type === "update" && hunk.movePath !== undefined)
