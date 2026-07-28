@@ -1,7 +1,7 @@
 {
-  "note": "Baseline for `bun run test`. `units` = tests bun reported SKIPPED per run unit; `failing` = failures PINNED as known, by name. Both are ratchets: any change fails the run and prints what moved. Pin only failures that are understood and filed — never to make a red go away. Seeded 2026-07-27 (v0.2.0 PREP Wave 0).",
+  "note": "Baseline for `bun run test`. `units` = tests bun reported SKIPPED per run unit; `failing` = failures PINNED as known, by name. Both are ratchets: any change fails the run and prints what moved. Pin only failures that are understood and filed \u2014 never to make a red go away. Seeded 2026-07-27 (v0.2.0 PREP Wave 0).",
   "reasons": {
-    "novaclaw:server": "Windows-from-source platform failures, pre-existing and never before run (these suites were --full-only until Wave 0 promoted them). 182 pass / 34 fail. Filed in todo/v0.2.0-prep.md."
+    "novaclaw:server": "Pre-existing Windows-from-source failures in the promoted novaclaw:server unit. DO NOT un-pin on a single green run: measured 2026-07-28, SEVENTEEN of these flip between pass and fail across consecutive full-gate runs on an otherwise unchanged tree (they reported now-passing at 565s wall, then NEW FAILURE at 318s). They are FLAKY, not fixed \u2014 the unit boots a real server per suite and its runtime already swings +/-30%. Un-pinning them makes the next run red for the opposite reason. The ledger is the authority on the count; prose here drifts."
   },
   "units": {
     "llm": 30,
@@ -51,7 +51,7 @@
       "project directories and copies endpoints > lists directories and manages git worktree copies",
       "project.initGit endpoint > does not reload when the project is already git",
       "project.initGit endpoint > initializes git and reloads immediately",
-      "promptAsync routes to the V2 native engine (F1b: one engine) > fresh session + model routes promptAsync to V2 (prompted on stream, busy→idle bracket, zero legacy rows)",
+      "promptAsync routes to the V2 native engine (F1b: one engine) > fresh session + model routes promptAsync to V2 (prompted on stream, busy\u2192idle bracket, zero legacy rows)",
       "provider HttpApi > keeps provider.models hook input mutations out of provider state",
       "provider HttpApi > serves provider lists when auth loaders add runtime fetch options",
       "v2 SDK error shape > 400 schema rejection: SDK extracts the field-level reason from the NamedError body",
