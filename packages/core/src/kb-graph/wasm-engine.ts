@@ -1,7 +1,19 @@
 import { createHash } from "node:crypto"
 import { createRequire } from "node:module"
-import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs"
-import { join } from "node:path"
+import {
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readFileSync,
+  readdirSync,
+  renameSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs"
+import path, { join } from "node:path"
+import { Global } from "../global"
 
 // The in-process Ladybug graph-memory engine (WASM) — the single engine that runs EVERYWHERE
 // (notes/kb-graph-plan.md §2.0, the 2026-07-19 pivot). The native addon can't run in a phone app and
@@ -123,29 +135,43 @@ let initPromise: Promise<any> | undefined
 let memfsCounter = 0
 
 /**
- * Scratch root for the engine's working copy — ONE sweepable directory, never a scatter at the root.
+ * The root-anchored NAME the Windows engine is given. It is a junction, not storage — see
+ * `SCRATCH_ROOT` below for the four measurements that rule out every other shape, and
+ * `scratchHome()` for where the bytes actually live.
  *
- * ⚠️ **This path is handed to the emscripten runtime, so it MUST be POSIX-absolute with forward
- * slashes and NO drive letter.** A `C:\…` path (what `join(tmpdir(), …)` produces on Windows) makes
- * emscripten treat `C:` as a relative segment; the engine's `current_path()` then fails with
- * `getcwd failed: No such file or directory` and the store never opens. Measured 2026-07-28 — that is
- * the "drive-letter path hits an emscripten getcwd bug" this module's header warns about.
- *
- * ⚠️ And it must not be a SINGLE segment. `/kbmem_<pid>_<n>` reads like a MEMFS-only path, but the
- * scratch is backed by the real filesystem, so on Windows it resolved to `C:\kbmem_<pid>_<n>` — 352
- * such directories, ~1.9 MB each (~665 MB), were found littering the drive root, one per engine open,
- * because nothing ever removed them.
- *
- * That real backing is also the true explanation for the note this replaces, which described "a
- * HIDDEN PERSISTENT store that survives across processes" and worked around it by putting the pid in
- * the path. There was no hidden store: it was the disk. The pid stopped each open from reading the
- * previous run's leftovers — fixing the stale-read symptom while turning one stale directory into an
- * unbounded stream of them.
- *
- * So: one POSIX-absolute parent (`C:\novaclaw-kbmem\` on Windows, `/novaclaw-kbmem/` elsewhere),
- * a child per open, removed by `close()` and swept by age on the next open.
+ * ⚠️ The doc this replaces claimed the scratch was MEMFS ("pure-RAM"). It never was: 129 directories
+ * holding 249 MB were found at the drive root on 2026-07-28, one per engine open. The module header
+ * above still repeats that claim in the persistence note and is wrong in the same way — the DB files
+ * are real files on a real disk, and the only thing MEMFS-shaped about them is the path syntax.
  */
-export const SCRATCH_ROOT = "/novaclaw-kbmem"
+const SCRATCH_ALIAS_WIN32 = "/novaclaw-kbmem"
+
+/**
+ * Where the scratch bytes REALLY live: under the instance home, like every other file we write.
+ *
+ * ⚠️ On POSIX this is simply used as-is — a real path under `$XDG_CACHE_HOME/novaclaw` already IS a
+ * root-anchored path with no drive letter, which is all the engine needs. **The previous code put
+ * the scratch at `/novaclaw-kbmem` on every platform, which on Linux means the FILESYSTEM ROOT and
+ * fails with EACCES for any non-root user.** That went unnoticed because this is a Windows-only
+ * development box.
+ */
+export const scratchHome = (): string => path.join(Global.Path.cache, "kbmem")
+
+/**
+ * The path handed to the ENGINE. On POSIX it is `scratchHome()` itself.
+ *
+ * ⚠️ On Windows it cannot be, and this was measured four ways on 2026-07-28 rather than assumed:
+ *   • `/novaclaw-kbmem`            → works, but resolves to the drive ROOT (the reported bug)
+ *   • `C:/Users/.../kbmem`         → `filesystem error: in current_path: call to getcwd failed`
+ *   • `FS.mount(NODEFS, {root})`   → **silently BYPASSED** — the engine wrote to `C:\<mountpoint>`
+ *   • a path relative to `cwd`     → the same `getcwd` failure
+ * The engine's `current_path()` fails for anything that is not root-anchored, and it ignores
+ * emscripten's VFS mounts, so no path string moves the bytes. What DOES move them is a **junction**:
+ * the root-anchored name stays (the engine is satisfied) while the storage lives under the home.
+ * A junction needs no elevation on Windows, and if it cannot be created we fall back to the old
+ * behaviour rather than failing to open memory at all — memory is a re-derivable tier (§4.9).
+ */
+export const SCRATCH_ROOT: string = process.platform === "win32" ? SCRATCH_ALIAS_WIN32 : scratchHome()
 
 /** Age after which a scratch dir is assumed abandoned by a dead process and swept. */
 const SCRATCH_STALE_MS = 24 * 60 * 60 * 1000
@@ -197,6 +223,63 @@ const sweepStaleScratch = () => {
     }
   } catch {
     /* no scratch root yet */
+  }
+}
+
+/**
+ * Make `SCRATCH_ROOT` exist and point at `scratchHome()`, so the bytes live under the instance home.
+ *
+ * POSIX: the two are the same path, so this is just `mkdir -p`.
+ *
+ * Windows: `SCRATCH_ROOT` is a root-anchored alias the engine can accept, created as a **junction**
+ * to the real directory. Junctions need no elevation. Three states are handled deliberately:
+ *   • already a link → nothing to do (the common path)
+ *   • a real DIRECTORY left by the old build → migrate its contents, then replace it with the link.
+ *     ⚠️ Not deleted blindly: it is the previous version's scratch and may hold a live store.
+ *   • the link cannot be created (policy, a different filesystem) → fall back to using the alias as a
+ *     real directory. Memory is a re-derivable tier; refusing to open it would be a worse failure
+ *     than storing scratch in the old place, and the fault is named rather than swallowed.
+ */
+const ensureScratchRoot = () => {
+  const real = scratchHome()
+  mkdirSync(real, { recursive: true })
+  if (process.platform !== "win32") return
+
+  let link: ReturnType<typeof lstatSync> | undefined
+  try {
+    link = lstatSync(SCRATCH_ROOT)
+  } catch {
+    /* nothing there yet */
+  }
+  if (link?.isSymbolicLink()) return
+
+  if (link?.isDirectory()) {
+    // Migrate the old drive-root scratch into the home, then swap in the link. Best-effort: a
+    // directory still open by another process stays where it is and is swept by age as before.
+    for (const name of readdirSync(SCRATCH_ROOT)) {
+      try {
+        rmSync(join(real, name), { recursive: true, force: true })
+        renameSync(join(SCRATCH_ROOT, name), join(real, name))
+      } catch {
+        /* in use — leave it for the age sweep */
+      }
+    }
+    try {
+      rmSync(SCRATCH_ROOT, { recursive: false, force: true })
+    } catch {
+      return // still populated; keep using it as a real directory this run
+    }
+  }
+
+  try {
+    symlinkSync(real, SCRATCH_ROOT, "junction")
+  } catch (error) {
+    // Name the fault; do not disable memory over it.
+    console.warn(
+      `kb-memory: could not link ${SCRATCH_ROOT} -> ${real} (${(error as Error).message}); ` +
+        `scratch will use ${SCRATCH_ROOT} directly this run.`,
+    )
+    mkdirSync(SCRATCH_ROOT, { recursive: true })
   }
 }
 
@@ -256,6 +339,7 @@ export class WasmMemory {
     // file — the stale-node symptom that motivated the pid in the first place. Durability is OUR
     // real-disk snapshot at `realDir`, restored below; this scratch dir is throwaway and `close()`
     // removes it. See SCRATCH_ROOT for why it may not live at the filesystem root.
+    ensureScratchRoot()
     sweepStaleScratch()
     installExitHook()
     const memfsDir = `${SCRATCH_ROOT}/${process.pid}_${memfsCounter++}`
