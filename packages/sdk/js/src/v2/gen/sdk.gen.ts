@@ -225,6 +225,8 @@ import type {
   ToolListResponses,
   V2AgentListErrors,
   V2AgentListResponses,
+  V2AgentRemoveErrors,
+  V2AgentRemoveResponses,
   V2CalendarFiresListErrors,
   V2CalendarFiresListResponses,
   V2CalendarScheduleCreateErrors,
@@ -237,6 +239,8 @@ import type {
   V2CalendarScheduleUpdateResponses,
   V2CommandListErrors,
   V2CommandListResponses,
+  V2CommandRemoveErrors,
+  V2CommandRemoveResponses,
   V2CredentialRemoveErrors,
   V2CredentialRemoveResponses,
   V2CredentialUpdateErrors,
@@ -339,6 +343,8 @@ import type {
   V2RecipeSaveResponses,
   V2ReferenceListErrors,
   V2ReferenceListResponses,
+  V2ReferenceRemoveErrors,
+  V2ReferenceRemoveResponses,
   V2SessionActiveErrors,
   V2SessionActiveResponses,
   V2SessionChildrenErrors,
@@ -4461,6 +4467,39 @@ export class Agent extends HeyApiClient {
       ...params,
     })
   }
+
+  /**
+   * Remove agent
+   *
+   * Delete a config-defined agent from the instance agent store, and clear `default_agent` when it pointed at that agent. Takes effect fully on the next serve boot.
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      agentID: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "agentID" },
+            { in: "query", key: "location" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<V2AgentRemoveResponses, V2AgentRemoveErrors, ThrowOnError>({
+      url: "/api/agent/{agentID}",
+      ...options,
+      ...params,
+    })
+  }
 }
 
 export class Tags extends HeyApiClient {
@@ -7232,6 +7271,39 @@ export class Command2 extends HeyApiClient {
       ...params,
     })
   }
+
+  /**
+   * Remove command
+   *
+   * Delete a config-defined command from the instance command store. Takes effect fully on the next serve boot.
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      name: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "name" },
+            { in: "query", key: "location" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<V2CommandRemoveResponses, V2CommandRemoveErrors, ThrowOnError>({
+      url: "/api/command/{name}",
+      ...options,
+      ...params,
+    })
+  }
 }
 
 export class Skill extends HeyApiClient {
@@ -7577,6 +7649,39 @@ export class Reference extends HeyApiClient {
     const params = buildClientParams([parameters], [{ args: [{ in: "query", key: "location" }] }])
     return (options?.client ?? this.client).get<V2ReferenceListResponses, V2ReferenceListErrors, ThrowOnError>({
       url: "/api/reference",
+      ...options,
+      ...params,
+    })
+  }
+
+  /**
+   * Remove reference
+   *
+   * Delete a config-defined reference alias from the instance reference store. Takes effect fully on the next serve boot.
+   */
+  public remove<ThrowOnError extends boolean = false>(
+    parameters: {
+      name: string
+      location?: {
+        directory?: string
+        workspace?: string
+      }
+    },
+    options?: Options<never, ThrowOnError>,
+  ) {
+    const params = buildClientParams(
+      [parameters],
+      [
+        {
+          args: [
+            { in: "path", key: "name" },
+            { in: "query", key: "location" },
+          ],
+        },
+      ],
+    )
+    return (options?.client ?? this.client).delete<V2ReferenceRemoveResponses, V2ReferenceRemoveErrors, ThrowOnError>({
+      url: "/api/reference/{name}",
       ...options,
       ...params,
     })

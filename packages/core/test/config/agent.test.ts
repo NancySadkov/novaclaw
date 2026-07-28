@@ -39,6 +39,10 @@ const memoryStore = () => {
       Effect.sync(() => {
         defaultAgent = name
       }),
+    clearDefault: () =>
+      Effect.sync(() => {
+        defaultAgent = undefined
+      }),
     setDefaultIfEmpty: (name) =>
       Effect.sync(() => {
         defaultAgent ??= name

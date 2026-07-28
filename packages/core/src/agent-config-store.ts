@@ -61,6 +61,17 @@ export interface Interface {
   readonly getDefault: () => Effect.Effect<string | undefined>
   /** Set the default-agent name. */
   readonly setDefault: (name: string) => Effect.Effect<void>
+  /**
+   * Remove the stored default-agent name (pruning a dangling ref after an agent delete).
+   *
+   * Added 2026-07-28 alongside `agent.remove`, mirroring `CatalogStore.clearDefault`. It exists
+   * because `default_agent` was WRITE-ONLY through the config surface: `PATCH /config` routes it
+   * via `mergePatch`, which has no null-deletion (`merge-patch.ts`), and `Config.Info.default_agent`
+   * is a plain optional string — so a ref could be set and then never unset by any agent repairing
+   * its own instance. Deletes the ROW, not the value: an empty-string default would still be a
+   * value and would block `setDefaultIfEmpty` from ever seeding again.
+   */
+  readonly clearDefault: () => Effect.Effect<void>
   /** Set the default-agent name only if none is set yet (used by the transitional jsonc seed). */
   readonly setDefaultIfEmpty: (name: string) => Effect.Effect<void>
   /** True when no agents are stored (used to gate the one-time jsonc seed). */
@@ -131,6 +142,9 @@ export const layer = Layer.effect(
       }),
       setDefault: Effect.fn("AgentConfigStore.setDefault")(function* (name) {
         yield* putSetting(DEFAULT_AGENT_KEY, name)
+      }),
+      clearDefault: Effect.fn("AgentConfigStore.clearDefault")(function* () {
+        yield* db.delete(AgentSettingTable).where(eq(AgentSettingTable.key, DEFAULT_AGENT_KEY)).run().pipe(Effect.orDie)
       }),
       setDefaultIfEmpty: Effect.fn("AgentConfigStore.setDefaultIfEmpty")(function* (name) {
         const existing = yield* getSetting(DEFAULT_AGENT_KEY)

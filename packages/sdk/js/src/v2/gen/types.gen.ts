@@ -10431,6 +10431,42 @@ export type V2AgentListResponses = {
 
 export type V2AgentListResponse = V2AgentListResponses[keyof V2AgentListResponses]
 
+export type V2AgentRemoveData = {
+  body?: never
+  path: {
+    agentID: string
+  }
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/agent/{agentID}"
+}
+
+export type V2AgentRemoveErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2AgentRemoveError = V2AgentRemoveErrors[keyof V2AgentRemoveErrors]
+
+export type V2AgentRemoveResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2AgentRemoveResponse = V2AgentRemoveResponses[keyof V2AgentRemoveResponses]
+
 export type V2SessionListData = {
   body?: never
   path?: never
@@ -13541,6 +13577,42 @@ export type V2CommandListResponses = {
 
 export type V2CommandListResponse = V2CommandListResponses[keyof V2CommandListResponses]
 
+export type V2CommandRemoveData = {
+  body?: never
+  path: {
+    name: string
+  }
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/command/{name}"
+}
+
+export type V2CommandRemoveErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2CommandRemoveError = V2CommandRemoveErrors[keyof V2CommandRemoveErrors]
+
+export type V2CommandRemoveResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2CommandRemoveResponse = V2CommandRemoveResponses[keyof V2CommandRemoveResponses]
+
 export type V2SkillListData = {
   body?: never
   path?: never
@@ -14094,6 +14166,42 @@ export type V2ReferenceListResponses = {
 }
 
 export type V2ReferenceListResponse = V2ReferenceListResponses[keyof V2ReferenceListResponses]
+
+export type V2ReferenceRemoveData = {
+  body?: never
+  path: {
+    name: string
+  }
+  query?: {
+    location?: {
+      directory?: string
+      workspace?: string
+    }
+  }
+  url: "/api/reference/{name}"
+}
+
+export type V2ReferenceRemoveErrors = {
+  /**
+   * InvalidRequestError
+   */
+  400: InvalidRequestError
+  /**
+   * UnauthorizedError
+   */
+  401: UnauthorizedError
+}
+
+export type V2ReferenceRemoveError = V2ReferenceRemoveErrors[keyof V2ReferenceRemoveErrors]
+
+export type V2ReferenceRemoveResponses = {
+  /**
+   * <No Content>
+   */
+  204: void
+}
+
+export type V2ReferenceRemoveResponse = V2ReferenceRemoveResponses[keyof V2ReferenceRemoveResponses]
 
 export type PtyConnectData = {
   body?: never
