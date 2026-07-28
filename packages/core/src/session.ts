@@ -29,6 +29,7 @@ import { SessionScheduler } from "./session/scheduler"
 import { SessionStore } from "./session/store"
 import { SessionCompactionRequest } from "./session/compaction-request"
 import { SessionExecution } from "./session/execution"
+import { SessionRunCoordinator } from "./session/run-coordinator"
 import { makeGlobalNode } from "./effect/app-node"
 import { LocationServiceMap } from "./location-service-map"
 import { MessageDecodeError } from "./session/error"
@@ -473,6 +474,15 @@ export const layer = Layer.effect(
     const store = yield* SessionStore.Service
     const locations = yield* LocationServiceMap.Service
     const compactionRequests = yield* SessionCompactionRequest.Service
+    // B1 — publish this instance's wake to the cycle-free producers of session work. `spawn` runs
+    // inside a LOCATION graph and cannot reach `SessionExecution` (unbound + it depends on
+    // `LocationServiceMap`, which builds that very graph — see run-coordinator.ts's wake-seam
+    // header), so the executor is pushed to a dependency-free global relay instead of pulled. This
+    // is the fifth caller of `execution.wake`, and the first that is not request-driven.
+    // ⚠️ The relay is shared per composition root by Layer memoization, so exactly one graph may
+    // attach; a second SessionV2 in one process would silently steal the spawner's executor — the
+    // same "never a second SessionV2" rule httpapi/server.ts already enforces by ordering.
+    yield* (yield* SessionRunCoordinator.Wake).attach(execution.wake)
     const isDurableSessionEvent = Schema.is(SessionEvent.Durable)
     const decode = SessionMessageRead.decodeRow
 
@@ -715,13 +725,15 @@ export const layer = Layer.effect(
           if (isSubtask) {
             const spawner = yield* SessionSpawner.Service
             // SpawnLimitError (quota) is caught by the block's orDie for now; surfacing it is residue.
-            const childID = yield* spawner.spawn({
+            // The spawner wakes the child itself (B1) — `started` is residue here for the same
+            // reason the quota error is: `command`'s result shape has no field to carry it yet.
+            const spawned = yield* spawner.spawn({
               parentID: input.sessionID,
               text,
               ...(cmd.agent ? { agent: AgentV2.ID.make(cmd.agent) } : {}),
               ...(cmd.model ? { model: cmd.model } : {}),
             })
-            return { kind: "subtask" as const, childID }
+            return { kind: "subtask" as const, childID: spawned.id }
           }
           return { kind: "prompt" as const, text, agent: cmd.agent, model: cmd.model }
         }).pipe(Effect.provide(locations.get(session.location)), Effect.provide(AppProcess.defaultLayer), Effect.orDie)
@@ -1070,6 +1082,11 @@ export const layer = Layer.effect(
 // `SessionScheduler.node` in the instance-global group for exactly that reason). Providing a
 // private one here would silently make `remove`'s eviction hit an empty ledger.
 export const defaultLayer = layer.pipe(
+  // The wake relay is provided (not left a requirement) because it is dependency-free and its
+  // sharing rides Layer memoization on the ONE module-level layer object: the same instance the
+  // location graph hoists (see run-coordinator.ts). Unlike SessionScheduler below, a private copy
+  // is impossible here — there is only one `wakeLayer`.
+  Layer.provide(SessionRunCoordinator.wakeLayer),
   Layer.provide(SessionStore.defaultLayer),
   Layer.provide(SessionProjector.defaultLayer),
   Layer.provide(EventV2.defaultLayer),
@@ -1102,6 +1119,7 @@ export const node = makeGlobalNode({
     EventV2.node,
     ProjectV2.node,
     SessionExecution.node,
+    SessionRunCoordinator.wakeNode,
     SessionScheduler.node,
     SessionStore.node,
     LocationServiceMap.node,

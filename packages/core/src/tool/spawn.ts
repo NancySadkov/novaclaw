@@ -11,10 +11,17 @@ import { Tools } from "./tools"
 
 // Spawn a CHILD session — the OS `fork` (architecture.md Phase 3 step 6). A thin location tool over
 // the `SessionSpawner` seam: the child carries this session as its `parentID` (so it inherits
-// agent/model/system-prompt/permissions via `resolveSessionConfig` unless overridden) and starts on
-// the enqueued prompt when the coordinator next runs it. Guarded by the seam's fork-bomb depth cap.
-// TODO: gate behind a "may spawn" permission + flat max-children/rate quotas (todo 1K / Vision);
-// TODO: add `exit(result)` + `wait(childID)` (needs step 5's SessionCompleted) to complete the lifecycle.
+// agent/model/system-prompt/permissions via `resolveSessionConfig` unless overridden), its opening
+// prompt is enqueued, and the seam hands it straight to this instance's executor. Guarded by the
+// seam's fork-bomb depth/fan-out/rate caps.
+//
+// ⚠️ The message this tool returns is a CONTRACT with the model, and it was false until B1
+// (2026-07-28): it said the child "will run its prompt on the next scheduler cycle" when no
+// scheduler cycle existed and the child never ran at all — so a supervisor that dutifully called
+// `wait(childID)` burned two minutes and got a timeout, and the fault looked like the model's.
+// Ruling 2 pointed at the model instead of the user. Say what is actually true, including the
+// `started: false` case: a spawn with no executor attached is a real, durable, NOT-running child.
+// TODO: gate behind a "may spawn" permission + flat max-children/rate quotas (todo 1K / Vision).
 
 export const name = "spawn"
 
@@ -68,9 +75,13 @@ export const layer = Layer.effectDiscard(
               })
               .pipe(
                 Effect.map(
-                  (childID): Output => ({
-                    childID,
-                    message: `Spawned child session ${childID}; it will run its prompt on the next scheduler cycle.`,
+                  ({ id, started }): Output => ({
+                    childID: id,
+                    message: started
+                      ? `Spawned child session ${id} and started it on the given prompt. It runs independently; ` +
+                        `call wait with sessionID "${id}" to block until it finishes and read its result.`
+                      : `Spawned child session ${id}, but this instance has no session executor attached, so its ` +
+                        `prompt stays queued and it will NOT run — do not wait on it. Do the sub-task here instead.`,
                   }),
                 ),
                 // Fork-bomb guard tripped: inform the model (a denial-as-observation, never a halt).

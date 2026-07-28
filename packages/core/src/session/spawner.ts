@@ -11,6 +11,7 @@ import { Location } from "../location"
 import { AgentV2 } from "../agent"
 import { ModelV2 } from "../model"
 import { createSessionRecord } from "../session"
+import { SessionRunCoordinator } from "./run-coordinator"
 import { SessionStore } from "./store"
 import { SessionTable } from "./sql"
 import { SessionInput } from "./input"
@@ -21,13 +22,20 @@ import { Prompt } from "./prompt"
 // Location-scoped seam that lets a running session (a location tool) SPAWN a child session — the OS
 // `fork` (architecture.md Phase 3 step 6). It deliberately depends ONLY on the cycle-free primitives
 // that create + enqueue need (Database / EventV2 / ProjectV2 / SessionStore / Location), NEVER
-// `SessionV2.node`: `SessionV2` depends on `LocationServiceMap`, which builds the per-location
-// services, so a location tool reaching `SessionV2` would close the runner cycle
-// `SessionV2 -> LocationServiceMap -> location services -> spawn -> SessionV2`. The child is only
-// CREATED + ENQUEUED here (delivery "queue"); the normal coordinator — which holds
-// `LocationServiceMap` at global scope — runs it. Config (agent/model/system-prompt/permissions) it
-// doesn't override is inherited from the parent via `resolveSessionConfig` (the child carries
-// `parentID`). The child inherits the parent's location (this seam's `Location`).
+// `SessionV2.node` and never `SessionExecution.node`: both reach `LocationServiceMap`, which builds
+// the per-location services, so a location tool reaching either would close the runner cycle
+// `SessionV2 -> LocationServiceMap -> location services -> spawn -> SessionV2`. Config
+// (agent/model/system-prompt/permissions) it doesn't override is inherited from the parent via
+// `resolveSessionConfig` (the child carries `parentID`). The child inherits the parent's location
+// (this seam's `Location`).
+//
+// ⚠️ The line that used to stand here — "the normal coordinator … runs it" — was FALSE, and it was
+// the whole bug (B1, fixed 2026-07-28). No coordinator polled, subscribed or timed; a spawned child
+// sat in the queue until a human prompted it, which no supervising agent ever does. The child is
+// created, enqueued AND handed to the executor here, through the dependency-free `Wake` relay in
+// `run-coordinator.ts` (its header carries why that shape and not a layer edge). When nothing is
+// attached the spawn still succeeds — the input is durable — but it reports `started: false` so the
+// caller can say so rather than promising a run that will not happen.
 
 /** Recursion-depth cap: a child deeper than this is refused (fork-bomb guard, must ship with spawn). */
 export const MAX_SPAWN_DEPTH = 8
@@ -49,7 +57,7 @@ export class SpawnLimitError extends Schema.TaggedErrorClass<SpawnLimitError>()(
 export interface SpawnInput {
   /** The spawning session — becomes the child's `parentID`, the root of config inheritance. */
   readonly parentID: SessionSchema.ID
-  /** The child's opening prompt (enqueued; the coordinator runs it on the next idle cycle). */
+  /** The child's opening prompt — admitted with delivery "queue", then woken (see `SpawnResult`). */
   readonly text: string
   readonly agent?: AgentV2.ID
   readonly model?: ModelV2.Ref
@@ -61,8 +69,19 @@ export interface SpawnInput {
   readonly permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
 }
 
+export interface SpawnResult {
+  /** The child session's id — what a later `wait(childID)` joins on. */
+  readonly id: SessionSchema.ID
+  /**
+   * Whether the child was handed to a live executor. `false` means the opening prompt is admitted
+   * and durable but nothing in this process will run it (no `SessionExecution` attached the wake
+   * relay — e.g. a location graph booted without the session kernel, as the CLI debug commands do).
+   */
+  readonly started: boolean
+}
+
 export interface Interface {
-  readonly spawn: (input: SpawnInput) => Effect.Effect<SessionSchema.ID, SpawnLimitError>
+  readonly spawn: (input: SpawnInput) => Effect.Effect<SpawnResult, SpawnLimitError>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/SessionSpawner") {}
@@ -75,6 +94,7 @@ export const layer = Layer.effect(
     const projects = yield* ProjectV2.Service
     const store = yield* SessionStore.Service
     const location = yield* Location.Service
+    const wake = yield* SessionRunCoordinator.Wake
     // Spawn-rate ledger: parentID -> recent spawn timestamps within the rolling window. In-memory
     // per process — a restart clears it, which is fine: the rate cap guards runaway LOOPS, not
     // long-term accounting (the flat children cap below is the durable bound).
@@ -138,7 +158,11 @@ export const layer = Layer.effect(
           prompt: Prompt.make({ text: input.text }),
           delivery: "queue",
         })
-        return child.id
+        // B1: RUN the child. Strictly after the admit — the executor's drain reads the queued row
+        // from the database, so waking first is a race that ends in an empty turn. `wake` coalesces
+        // and never fails, so this cannot turn a completed spawn into a reported failure.
+        const started = yield* wake.wake(child.id)
+        return { id: child.id, started }
       }),
     })
   }),
@@ -147,5 +171,5 @@ export const layer = Layer.effect(
 export const node = makeLocationNode({
   service: Service,
   layer,
-  deps: [Database.node, EventV2.node, ProjectV2.node, SessionStore.node, Location.node],
+  deps: [Database.node, EventV2.node, ProjectV2.node, SessionStore.node, Location.node, SessionRunCoordinator.wakeNode],
 })
