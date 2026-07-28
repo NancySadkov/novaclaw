@@ -89,6 +89,9 @@ NOVACLAW_CHANNEL=prod bunx electron-builder --win dir --config electron-builder.
 The app lands in `packages/desktop/dist/win-unpacked/` — copy that folder anywhere and run
 `NovaClaw.exe`.
 
+On Linux, see [`BUILD-linux.md`](BUILD-linux.md): the same source, plus the AppImage/deb targets,
+the single self-contained server binary, and the platform-specific prerequisites.
+
 Tests:
 
 ```sh
