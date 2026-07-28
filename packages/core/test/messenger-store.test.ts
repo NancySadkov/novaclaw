@@ -7,6 +7,7 @@ import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { MessengerStore } from "@novaclaw/core/messenger/store"
+import { SessionSchema } from "@novaclaw/core/session/schema"
 import { testEffect } from "./lib/effect"
 
 // P0 gates (notes/messenger-plan.md §8): store CRUD round-trips, the one-session-per-chat
@@ -209,7 +210,7 @@ describe("MessengerStore", () => {
       // below are about the FAULT and not about the read being broken outright.
       expect((yield* store.listAccounts()).map((entry) => entry.id)).toContain(account.id)
       expect(yield* store.hasChat(account.id, "9")).toBe(true)
-      expect((yield* store.bindingForChat(account.id, "9"))?.sessionID).toBe("ses_dead")
+      expect((yield* store.bindingForChat(account.id, "9"))?.sessionID).toBe(SessionSchema.ID.make("ses_dead"))
 
       yield* db.run("DROP TABLE messenger_account")
       yield* db.run("DROP TABLE messenger_chat")
