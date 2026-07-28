@@ -16,7 +16,7 @@ import * as AnthropicMessages from "../src/protocols/anthropic-messages"
 import * as OpenAIChat from "../src/protocols/openai-chat"
 import * as OpenAIResponses from "../src/protocols/openai-responses"
 import { Tool, ToolFailure, type ToolExecuteContext } from "../src/tool"
-import { ToolRuntime } from "../src/tool-runtime"
+import { ToolRuntime, type DispatchResult } from "../src/tool-runtime"
 import { it } from "./lib/effect"
 import * as TestToolRuntime from "./lib/tool-runtime"
 import { dynamicResponse, scriptedResponses } from "./lib/http"
@@ -623,11 +623,19 @@ describe("LLMClient tools", () => {
       const toolError = events.find(LLMEvent.is.toolError)
       expect(toolError).toMatchObject({ type: "tool-error", id: "call_1", name: "missing_tool" })
       expect(toolError?.message).toContain("Unknown tool")
+      // The horizon, not a bare verdict: the model is told the very set it was advertised, so the next
+      // step has something to correct toward. Asserted on the LITERAL text a model receives, because the
+      // text is the product here — an assertion that a helper was imported would prove nothing.
       expect(events.find(LLMEvent.is.toolResult)).toMatchObject({
         type: "tool-result",
         id: "call_1",
         name: "missing_tool",
-        result: { type: "error", value: "Unknown tool: missing_tool" },
+        result: {
+          type: "error",
+          value:
+            "Unknown tool: missing_tool. Nothing ran. Available tools: get_weather. " +
+            "Use one of these exact advertised names — do not invent a tool or write a call as text.",
+        },
       })
     }),
   )
@@ -813,6 +821,62 @@ describe("LLMClient tools", () => {
       const results = events.filter(LLMEvent.is.toolResult)
       expect(results).toHaveLength(2)
       expect(results.map((event) => event.id).toSorted()).toEqual(["c1", "c2"])
+    }),
+  )
+})
+
+// The unknown-tool horizon at THIS seam. `ToolRegistry.materialize().settle` in `@novaclaw/core` is the
+// other one, and until 2026-07-28 only that one named the tools that exist — this path still answered a
+// hallucinated name with a bare `Unknown tool: X`, which is the dead end the Juvenile Harness thesis says
+// a small model cannot climb out of. Both seams now spend the same function (ToolRuntime.unknownToolMessage,
+// packages/llm/src/unknown-tool.ts), and every assertion below is on the text the MODEL receives.
+describe("ToolRuntime.dispatch on an unadvertised name", () => {
+  const unknownCall = (name: string) => LLMEvent.toolCall({ id: `call_${name}`, name, input: {} })
+  const errorValue = (dispatched: DispatchResult) => {
+    expect(dispatched.result.type).toBe("error")
+    return String(dispatched.result.value)
+  }
+
+  it.effect("hands back the tools that do exist, and the near miss", () =>
+    Effect.gen(function* () {
+      const text = errorValue(
+        yield* ToolRuntime.dispatch({ get_weather, schema_only_weather }, unknownCall("get_weather_now")),
+      )
+
+      expect(text).toBe(ToolRuntime.unknownToolMessage("get_weather_now", ["get_weather", "schema_only_weather"]))
+      expect(text).toContain('Did you mean "get_weather"?')
+      expect(text).toContain("Available tools: get_weather, schema_only_weather.")
+      expect(text).toContain("Nothing ran.")
+    }),
+  )
+
+  // Negative control: the branch that must NOT invent a horizon. A dangling "Available tools: ." would be a
+  // fault described falsely (ruling 2) — worse than no list, because the model would try to satisfy it.
+  it.effect("does not invent a horizon when the caller advertised nothing", () =>
+    Effect.gen(function* () {
+      const text = errorValue(yield* ToolRuntime.dispatch({}, unknownCall("read")))
+
+      expect(text).toBe(ToolRuntime.unknownToolMessage("read", []))
+      expect(text).toContain("no tools are available in this turn")
+      expect(text).not.toContain("Available tools")
+      expect(text).not.toContain("Did you mean")
+    }),
+  )
+
+  // An MCP-heavy or plugin-heavy session can advertise unboundedly many names, and a 6 KB tool-result would
+  // evict the very context the model needs to recover. The budget is a property of the message, so it has to
+  // hold at every seam that adopts it — not only where it was first written.
+  it.effect("truncates a huge advertised set and says how much it withheld", () =>
+    Effect.gen(function* () {
+      const many = Object.fromEntries(Array.from({ length: 400 }, (_, index) => [`tool_${index}`, get_weather]))
+
+      const text = errorValue(yield* ToolRuntime.dispatch(many, unknownCall("nope")))
+
+      const shown = /\(([0-9]+) of 400\)/.exec(text)?.[1]
+      expect(shown).toBeDefined()
+      expect(Number(shown)).toBeLessThan(400)
+      expect(text).toContain(`and ${400 - Number(shown)} more.`)
+      expect(text.length).toBeLessThan(ToolRuntime.UNKNOWN_TOOL_LIST_BUDGET + 300)
     }),
   )
 })

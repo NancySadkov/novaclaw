@@ -9,6 +9,7 @@ import {
   type ToolResultValue as ToolResultValueType,
 } from "./schema"
 import { type AnyTool, type Tools } from "./tool"
+import { UNKNOWN_TOOL_LIST_BUDGET, closestToolName, unknownToolMessage } from "./unknown-tool"
 
 export interface ToolSettlement {
   readonly result: ToolResultValueType
@@ -22,7 +23,12 @@ export interface DispatchResult extends ToolSettlement {
 /** Execute one canonical tool call without owning provider IO or continuation. */
 export const dispatch = (tools: Tools, call: ToolCallPart): Effect.Effect<DispatchResult> => {
   const tool = tools[call.name]
-  if (!tool) return Effect.succeed(result(call, { type: "error", value: `Unknown tool: ${call.name}` }))
+  // `tools` IS the advertised set at this seam — the same record the caller lowered into `request.tools`
+  // via `toDefinitions(tools)` — so the model is handed back exactly the horizon it was given, in the same
+  // order. Anything less specific (a bare `Unknown tool: X`) leaves it nothing to correct toward; see
+  // unknown-tool.ts for why that is the defect and not a cosmetic difference.
+  if (!tool)
+    return Effect.succeed(result(call, { type: "error", value: unknownToolMessage(call.name, Object.keys(tools)) }))
   if (!tool.execute)
     return Effect.succeed(result(call, { type: "error", value: `Tool has no execute handler: ${call.name}` }))
 
@@ -75,4 +81,10 @@ const result = (call: ToolCallPart, value: ToolResultValueType | ToolSettlement,
   }
 }
 
-export const ToolRuntime = { dispatch } as const
+/**
+ * `unknownToolMessage` and friends ride the `ToolRuntime` namespace deliberately: `@novaclaw/core` runs its
+ * OWN dispatch (`ToolRegistry.materialize().settle`) and must answer an unadvertised name with the same
+ * words this one does, so the crossing names its source of truth at the call site —
+ * `ToolRuntime.unknownToolMessage(name, advertised)`. One implementation, two seams (ruling 6).
+ */
+export const ToolRuntime = { dispatch, unknownToolMessage, closestToolName, UNKNOWN_TOOL_LIST_BUDGET } as const
