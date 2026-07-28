@@ -2,7 +2,7 @@ export * as JsTool from "./js"
 
 import { ToolFailure } from "@novaclaw/llm"
 import { Effect, Layer, Schema } from "effect"
-import { AgentJail } from "../agent-jail"
+import { HostExec } from "../host-exec"
 import { makeLocationNode } from "../effect/app-node"
 import { Offline } from "../offline"
 import { PermissionV2 } from "../permission"
@@ -70,30 +70,31 @@ export const layer = Layer.effectDiscard(
                 source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
               })
               // The snippet runs OUT OF PROCESS in a bare vm realm (see `js-run.ts` for why the old
-              // in-process sandbox was an escape). The child's environment is composed from the same
-              // two helpers `tool/bash.ts` uses for a confined command, and it REPLACES the process
-              // environment rather than extending it:
-              //  • AgentJail.unattendedChildEnv — the curated, secret-free key set. Applied to EVERY
-              //    js child, attended or not: unlike a shell command, a calculator has no legitimate
+              // in-process sandbox was an escape). Its environment is composed by the ONE
+              // host-execution gate (ruling 6, `src/host-exec.ts`) — the same module `tool/bash.ts`
+              // and the jh/Strict runner consume — and it REPLACES the process environment rather
+              // than extending it (`Env.inherit === false`):
+              //  • `consent: "none"` — no human approved this snippet, so the gate composes the
+              //    curated, secret-free base. Unlike a shell command, a calculator has no legitimate
               //    use for a provider key or a peer instance token, so there is nothing to trade off.
-              //  • Offline.egressEnv — the OFF-C proxy-sink overlay (a no-op when offline mode is
-              //    off), so an escaped child fails closed on WAN egress like any other child.
+              //  • the OFF-C proxy-sink overlay from the shared Offline service (a no-op when
+              //    offline mode is off), so an escaped child fails closed on WAN egress.
               //
-              // ⚠️ It deliberately does NOT go through `AgentJail.decideBash`, and that is the one
-              // place this tool diverges from `tool/bash.ts`. `decideBash`'s deny arm exists because
-              // an unattended chain must not get RAW HOST AUTHORITY without a sandbox to contain it;
-              // it routes the agent to the path-gated native tools instead (`denyMessage`). After
-              // this rewrite the js snippet has no host authority to withhold — it runs in a bare V8
-              // realm with no `process`, no `require`, no network and no filesystem — so applying the
-              // deny arm would buy nothing and would delete the calculator for every auto-prompting
-              // and goal-oriented session on every host with no jail backend (i.e. all of Windows and
-              // macOS today), which is where recipes and jh runs live. The credential half of the
-              // jail's stance is what actually applies here, and it is applied unconditionally above.
-              // The remaining gap is OS-level confinement of the child itself: `AgentJail.wrapArgs`
-              // hardcodes `<shell> -c <command>` and so cannot express `<runtime> -e <program>`.
-              // Generalising it belongs to the Wave-4 `host-exec.ts` extraction (ruling 6), which is
-              // also where this call site should be re-pointed.
-              const env = { ...AgentJail.unattendedChildEnv(process.env), ...(offline.egressEnv() ?? {}) }
+              // ⚠️ HONEST LIMIT — the js child is NOT OS-confined, on any platform. Two reasons, and
+              // neither is "the gate can't express it": `HostExec.plan` takes a `runtime-eval` shape
+              // and returns a bwrap argv for it (`AgentJail.wrapArgv`). But (a) the runtime is
+              // resolved by a PROBE inside `js-run.ts` (execPath vs bun vs node — the packaged
+              // sidecar and the compiled CLI each need a different one), so the file to exec is not
+              // known here; and (b) the sandbox argv masks `/home` and `/root` with tmpfs, which on
+              // Linux hides a runtime installed under $HOME (`~/.bun/bin/bun`, a user-local node) and
+              // would break the tool outright on the Spark. Confining it needs `js-run.ts` to hand
+              // its resolved runtime back to the gate plus a ro-bind for that binary; until then this
+              // call site gets the CREDENTIAL half only, and says so rather than implying a box that
+              // isn't there. Note `decideBash`'s deny arm would also be wrong here: the snippet has
+              // no host authority to withhold (bare V8 realm, no `process`/`require`/net/fs), so
+              // denying would delete the calculator for every unattended session on every
+              // backend-less host — i.e. all of Windows and macOS.
+              const env = HostExec.childEnv({ consent: "none", egress: offline.egressEnv() }).vars
               // `Effect.promise` aborts the signal on interruption, and `runJs` kills the child on
               // abort — a stopped session leaves no sandbox process behind.
               return yield* Effect.promise((signal) => runJs(input.code, { timeoutMs: JS_TIMEOUT_MS, env, signal }))

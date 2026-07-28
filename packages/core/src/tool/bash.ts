@@ -4,7 +4,7 @@ import path from "path"
 import { ToolFailure } from "@novaclaw/llm"
 import { Duration, Effect, Layer, Schema } from "effect"
 import { ChildProcess } from "effect/unstable/process"
-import { AgentJail } from "../agent-jail"
+import { HostExec } from "../host-exec"
 import { Config } from "../config"
 import { SettingsConfigStore } from "../settings-config-store"
 import { makeLocationNode } from "../effect/app-node"
@@ -13,8 +13,6 @@ import { Location } from "../location"
 import { LocationMutation } from "../location-mutation"
 import { Offline } from "../offline"
 import { AppProcess } from "../process"
-import { Shell } from "../shell"
-import { ShellBundle } from "../shell-bundle"
 import { BashJobs } from "./bash-jobs"
 import { MessengerStore } from "../messenger/store"
 import { PermissionV2 } from "../permission"
@@ -68,10 +66,6 @@ const Output = Schema.Struct({
 })
 
 type Output = typeof Output.Type
-
-// B11: agents default to bash (bundled PortableGit or system git-bash on Windows;
-// system bash on POSIX) — Shell.agentDefault() owns the resolution + fallbacks.
-const defaultShell = () => Shell.agentDefault()
 
 const modelOutput = (output: Output) => {
   const warnings = output.warnings?.length
@@ -147,23 +141,15 @@ export const layer = Layer.effectDiscard(
     // consume the shared service so the guard sees the SAME policy as the HttpClient.
     const offline = yield* Offline.Service
 
-    // messenger-plan §3.4 — is any session in this chain bound to a client/audience chat? Walk
-    // parents (cycle-guarded) and check each for an active untrusted binding. Short chains; most
-    // sessions have no binding so each check is a fast empty indexed lookup.
+    // messenger-plan §3.4 — is any session in this chain bound to a client/audience chat? The walk
+    // itself now lives beside the gate (`HostExec.chainHasHostileBinding`), because the Strict
+    // runner has to ask the SAME question and a second copy is the drift ruling 6 exists to
+    // prevent. This layer supplies only the two lookups.
     const chainHasHostileBinding = (sessionID: string): Effect.Effect<boolean> =>
-      Effect.gen(function* () {
-        const seen = new Set<string>()
-        let id: string | undefined = sessionID
-        while (id !== undefined && !seen.has(id)) {
-          seen.add(id)
-          const bindings = yield* messengerStore.bindingsForSession(id).pipe(Effect.orElseSucceed(() => []))
-          if (bindings.some((b) => b.status === "active" && (b.trust === "client" || b.trust === "audience"))) return true
-          const session: SessionV2.Info | undefined = yield* sessions
-            .get(id as SessionV2.ID)
-            .pipe(Effect.orElseSucceed(() => undefined))
-          id = session?.parentID
-        }
-        return false
+      HostExec.chainHasHostileBinding(sessionID, {
+        bindingsForSession: (id) => messengerStore.bindingsForSession(id),
+        parentOf: (id) =>
+          sessions.get(id as SessionV2.ID).pipe(Effect.map((session: SessionV2.Info | undefined) => session?.parentID)),
       })
 
     yield* tools
@@ -233,9 +219,13 @@ export const layer = Layer.effectDiscard(
               // recommended pattern (a bound session spawning a worker sub-agent) means the binding
               // can sit on an ancestor, so the whole chain is checked, not just this session.
               const hostileInput = yield* chainHasHostileBinding(context.sessionID)
-              const jailDecision = AgentJail.decideBash({ rootType, backend: AgentJail.probe(), hostileInput })
+              // ONE host-execution gate (ruling 6, `src/host-exec.ts`): the jail decision, shell
+              // resolution, env composition and the peer-token rule all live there, so the jh/Strict
+              // runner and the js sandbox cannot drift from this call site.
+              const backend = HostExec.probe()
+              const jailDecision = HostExec.decide({ rootType, hostileInput, backend })
               if (jailDecision === "deny")
-                return yield* Effect.fail(new ToolFailure({ message: AgentJail.denyMessage(rootType, hostileInput) }))
+                return yield* Effect.fail(new ToolFailure({ message: HostExec.denyMessage(rootType, hostileInput) }))
 
               const external = target.externalDirectory
               if (external)
@@ -266,12 +256,13 @@ export const layer = Layer.effectDiscard(
                 {},
                 ...entries.flatMap((entry) => (entry.type === "document" ? [entry.info] : [])),
               ) as { shell?: string }
-              const shell = mergedConfig.shell ?? defaultShell()
+              // B11: agents default to bash (bundled PortableGit or system git-bash on Windows;
+              // system bash on POSIX); `config.shell` wins when the operator set one.
+              const shell = HostExec.resolveShell(mergedConfig.shell)
               // `bash -c` is not a login shell: prepend the bash's own userland to PATH
               // so git + coreutils resolve even on a machine with neither installed
-              // (no-op for non-MSYS shells — envForBash returns undefined for them).
-              const bundleEnv =
-                typeof shell === "string" && Shell.name(shell) === "bash" ? ShellBundle.envForBash(shell) : undefined
+              // (no-op for non-MSYS shells — bundleOverlay returns undefined for them).
+              const bundleEnv = HostExec.bundleOverlay(shell)
               // OFF-C (layer 9): in offline mode, point the child's HTTP clients (curl/pip/
               // npm/git) at a dead proxy sink with the allowlist in NO_PROXY, so the model's
               // own shell fails closed on WAN egress (no-op when offline mode is off).
@@ -308,31 +299,33 @@ export const layer = Layer.effectDiscard(
               // P1: a confined command execs bwrap directly (the sandbox runs `<shell> -c` itself;
               // no outer shell wrapping). The worktree = the session's location directory — the one
               // writable bind, i.e. the blast radius. P3: it starts from a CURATED, secret-free env
-              // (extendEnv:false) — never the serve process's full environment (provider keys,
-              // operator exports) — plus only the tool's own functional overlays.
+              // with NO inheritance — never the serve process's full environment (provider keys,
+              // operator exports) — plus only the tool's own functional overlays. `consent` says a
+              // human approved THIS command (the assert above), which is what admits the peer
+              // tokens on the raw path; the gate drops them for a confined one.
+              const spawnPlan = HostExec.plan({
+                shape: { kind: "shell-command", shell, command: commandText },
+                cwd: target.canonical,
+                worktree: location.directory,
+                consent: "per-command",
+                rootType,
+                hostileInput,
+                backend,
+                overlay: bundleEnv,
+                egress,
+                credentials: peerEnv,
+              })
+              if (spawnPlan.via === "none")
+                return yield* Effect.fail(new ToolFailure({ message: spawnPlan.message }))
+              const envOptions = spawnPlan.env.inherit
+                ? Object.keys(spawnPlan.env.vars).length > 0
+                  ? { env: spawnPlan.env.vars, extendEnv: true as const }
+                  : {}
+                : { env: spawnPlan.env.vars, extendEnv: false as const }
               const command =
-                jailDecision === "confined"
-                  ? ChildProcess.make(
-                      "bwrap",
-                      AgentJail.wrapArgs({
-                        worktree: location.directory,
-                        cwd: target.canonical,
-                        shell: String(shell),
-                        command: commandText,
-                      }),
-                      {
-                        ...baseSpawn,
-                        env: { ...AgentJail.unattendedChildEnv(process.env), ...bundleEnv, ...egress },
-                        extendEnv: false,
-                      },
-                    )
-                  : ChildProcess.make(commandText, [], {
-                      ...baseSpawn,
-                      shell,
-                      ...(bundleEnv || egress || Object.keys(peerEnv).length
-                        ? { env: { ...bundleEnv, ...egress, ...peerEnv }, extendEnv: true }
-                        : {}),
-                    })
+                spawnPlan.via === "exec"
+                  ? ChildProcess.make(spawnPlan.file, [...spawnPlan.args], { ...baseSpawn, ...envOptions })
+                  : ChildProcess.make(commandText, [], { ...baseSpawn, shell: spawnPlan.shell, ...envOptions })
               // 1H: run as a JOB and wait up to the soft deadline. A command that
               // outlives it is NOT killed — the model gets the job id + partial
               // output and decides: keep working, wait, or stop.

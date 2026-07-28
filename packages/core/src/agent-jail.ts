@@ -108,6 +108,19 @@ export function decideBash(input: {
   return "deny"
 }
 
+export interface WrapArgvInput {
+  /** The session's location directory — the ONE writable bind (the blast radius). */
+  readonly worktree: string
+  /** The resolved working directory for the command (inside the worktree). */
+  readonly cwd: string
+  /**
+   * The EXACT argv exec'd inside the sandbox. Not a shell + command string: `tool/js.ts` runs
+   * `<runtime> -e <program>`, so a wrapper that hardcodes `-c` cannot express every confined
+   * caller. The `<shell> -c <command>` form is `wrapArgs` below, sugar over this.
+   */
+  readonly argv: readonly string[]
+}
+
 export interface WrapInput {
   /** The session's location directory — the ONE writable bind (the blast radius). */
   readonly worktree: string
@@ -137,7 +150,7 @@ export interface WrapInput {
  * Denying loopback/LAN too is correct, not a gap: the bash child never needs the provider (the
  * KERNEL makes model calls) nor LAN search (the web/kb tools ride the kernel HttpClient).
  */
-export function wrapArgs(input: WrapInput): string[] {
+export function wrapArgv(input: WrapArgvInput): string[] {
   return [
     "--die-with-parent",
     "--unshare-all",
@@ -150,8 +163,13 @@ export function wrapArgs(input: WrapInput): string[] {
     "--bind", input.worktree, input.worktree,
     "--chdir", input.cwd,
     "--",
-    input.shell, "-c", input.command,
+    ...input.argv,
   ]
+}
+
+/** The `<shell> -c <command>` form of `wrapArgv`. */
+export function wrapArgs(input: WrapInput): string[] {
+  return wrapArgv({ worktree: input.worktree, cwd: input.cwd, argv: [input.shell, "-c", input.command] })
 }
 
 // P3 — privilege self-revocation: the functional, NON-SECRET env keys an unattended confined

@@ -22,6 +22,12 @@ function violationFor(filename: string, spec: string): string | undefined {
   // ../util/hash: a leaf module, no session/tool/config/v1/llm/schema reach (which is what §0.7.2
   // actually guards).
   if (spec === "../affective") return undefined
+  // C2 (v0.2.0-prep Wave 1): THE one process-tree kill. Whitelisted on exactly the same grounds as
+  // ../util/hash — `src/util/kill-tree.ts` imports `node:` builtins and NOTHING else, so it carries
+  // no session/tool/config/v1/llm/schema reach (which is what §0.7.2 actually guards). It is a leaf
+  // precisely BECAUSE of this rule: `../shell` re-exports the same function but drags Flag/FSUtil/
+  // ShellBundle/Global behind it, and jh must not reach those. Do NOT relax this to "../shell".
+  if (spec === "../util/kill-tree") return undefined
   if (spec.startsWith("node:")) {
     return NODE_ALLOWED.has(filename) ? undefined : `node: import "${spec}" not allowed in ${filename}`
   }
