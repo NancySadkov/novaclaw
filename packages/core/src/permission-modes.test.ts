@@ -46,6 +46,45 @@ describe("MODE_RULES overlays (1K)", () => {
     expect(PermissionV2.evaluate("bash", "rm -rf /", preFix).effect).not.toBe("deny")
   })
 
+  test("plan (Analyze) denies the two mutations that hid behind a non-file action name", () => {
+    // Neither is spelled `write` or `bash`, so both reached the baseline's `* → allow`.
+    // `provision` (quality_provision) runs MODEL-SUPPLIED command strings through the agent shell
+    // and then persists them to the instance settings store; `revert` overwrites working-tree files
+    // from a git snapshot. Assert the HARD arm too, not just the full stack — a deny a saved
+    // allow-always could soften is not a deny (see the `modeDenies` note above).
+    expect(effect("plan", "provision", "test: bun test")).toBe("deny")
+    expect(effect("plan", "revert", "src/x.ts")).toBe("deny")
+    expect(modeDenies("plan", "provision", "test: rm -rf /")).toBe(true)
+    expect(modeDenies("plan", "revert", "src/x.ts")).toBe(true)
+    // ...and this is a POSTURE rule, not a retirement: Build still does both freely.
+    expect(effect("bypass", "provision", "test: bun test")).toBe("allow")
+    expect(effect("bypass", "revert", "src/x.ts")).toBe("allow")
+  })
+
+  test("NEGATIVE CONTROL: strip those two rules and Analyze permits provision/revert again", () => {
+    const preFix = MODE_RULES.plan.filter((rule) => rule.action !== "provision" && rule.action !== "revert")
+    expect(PermissionV2.evaluate("provision", "test: rm -rf /", [...agentDefaults, ...preFix]).effect).toBe("allow")
+    expect(PermissionV2.evaluate("revert", "src/x.ts", [...agentDefaults, ...preFix]).effect).toBe("allow")
+    // ...and the hard arm never trips either, so there was nothing to soften in the first place.
+    expect(PermissionV2.evaluate("provision", "test: rm -rf /", preFix).effect).not.toBe("deny")
+    expect(PermissionV2.evaluate("revert", "src/x.ts", preFix).effect).not.toBe("deny")
+  })
+
+  test("the ad-hoc-tool hole: a mode overlay cannot reach an action it never named", () => {
+    // This test asserts a LIMIT, not a guarantee — it is green because the hole is open. MODE_RULES
+    // enumerates action names ahead of time, but an agent-defined ad-hoc tool (`tool/define-tool.ts`)
+    // asserts under its OWN name, chosen by the model at runtime, so the baseline's catch-all
+    // `* → allow` answers for it in EVERY mode, Analyze included. No row added above can ever cover
+    // it; only inverting the baseline to an explicit allowlist can (v0.2.0 B4c). It lives here so a
+    // reader MEETS the hole instead of inferring from the denies that a mode is sealed.
+    // ⚠️ When B4c lands this test should go RED. That is the signal it worked — retire it then.
+    const adHoc = "my_deploy_tool" // whatever the model decided to call it
+    for (const mode of ["plan", "ask", "surgical", "bypass", "yolo"] as const) {
+      expect(effect(mode, adHoc)).toBe("allow")
+      expect(modeDenies(mode, adHoc, "anything")).toBe(false)
+    }
+  })
+
   test("a saved allow-always CANNOT soften Analyze's execution deny (mode denies are HARD)", () => {
     // What "always allow bash" persists. Saved rules land LAST, so by last-match-wins alone they
     // would hand the command straight back — which is exactly why the mode overlay is also checked

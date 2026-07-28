@@ -521,6 +521,44 @@ describe("PermissionV2 — the surgical / ask switches", () => {
       }
     }),
   )
+
+  it.effect("Analyze denies `provision` and `revert` — and the report carve-out does not exempt them", () =>
+    Effect.gen(function* () {
+      // Same promise as the bash/js test above, from the two directions that hid behind a non-file
+      // action name, and it needs an end-to-end leg for the same reason: the pure test proves
+      // MODE_RULES.plan CONTAINS the rules, never that the hard arm still consults them.
+      // `quality_provision` asserts under `provision` and then runs MODEL-SUPPLIED command strings
+      // through the agent shell (a second door onto the shell that `bash` had just been denied);
+      // `revert` asserts under `revert` and overwrites working-tree files from a git snapshot.
+      yield* setup(buildAgent)
+      yield* insertSession({ id: "ses_analyze_mutate", permissionMode: "plan" })
+      const service = yield* PermissionV2.Service
+      const sessionID = SessionV2.ID.make("ses_analyze_mutate")
+      const report = `${Global.Path.tmp.replaceAll("\\", "/")}/report.md`
+
+      for (const [action, resource] of [
+        ["provision", "test: rm -rf /"],
+        ["revert", "src/a.ts"],
+        // Analyze's report carve-out (permission.ts, REPORT_RESOURCE) re-allows create/write/edit/
+        // external_directory_write for the temp dir, and it is folded into the SAME array the hard
+        // arm reads — so pin that it does not leak to these two actions. It cannot: it is
+        // action-scoped, and neither action can reach that path anyway (revert restores
+        // project-relative snapshot files; provision's resources are `key: command` strings, not
+        // paths). Asserting it means a future carve-out widened to `*` fails here instead of
+        // quietly reopening the mode.
+        ["provision", report],
+        ["revert", report],
+      ] as const) {
+        const input = assertion({ sessionID, action, resources: [resource], save: ["*"] })
+        expect(yield* service.ask(input)).toMatchObject({ effect: "deny" })
+        // A deny queues nothing, so reusing the default id across the loop is safe — and the empty
+        // queue IS the guarantee: the user is never offered an "allow always" that could soften it.
+        const error = yield* service.assert(input).pipe(Effect.flip)
+        expect(error).toBeInstanceOf(PermissionV2.DeniedError)
+        expect(yield* service.list()).toEqual([])
+      }
+    }),
+  )
 })
 
 describe("PermissionV2 — unattended confinement stance", () => {

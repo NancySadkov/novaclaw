@@ -34,6 +34,18 @@ export const moreRestrictive = (a: PermissionMode, b: PermissionMode): Permissio
  * External-directory classes (1I) stay ask in every mode except yolo — bypass is "anything
  * INSIDE the project". Mode denies are HARD: they participate in the early deny check, so a
  * saved allow-always can never override plan/surgical.
+ *
+ * ⚠️ WHAT A MODE OVERLAY CANNOT DO — read this before trusting a deny below. Every rule here
+ * names its action LITERALLY, while the agent baseline opens with a catch-all
+ * `{ action: "*", resource: "*", effect: "allow" }` (`plugin/agent.ts`). So an action ABSENT
+ * from a mode's list is allowed, in that mode, by default — the list is an enumeration, not a
+ * boundary. And the gap cannot be closed by growing the list: an agent-defined ad-hoc tool
+ * (`tool/define-tool.ts`) asserts under its OWN tool name, chosen at runtime by the model, so no
+ * overlay written ahead of time can possibly mention it. Read the denies below as "these named
+ * actions are refused", never as "the mode is sealed". Sealing it means inverting the BASELINE
+ * from allow-all to an explicit allowlist of ambient-safe actions (filed as v0.2.0 B4c); until
+ * that lands, the hole is real and is pinned — deliberately green — by the "ad-hoc-tool hole"
+ * test in `permission-modes.test.ts`, so a reader meets it instead of inferring its absence.
  */
 export const MODE_RULES: Record<PermissionMode, readonly PermissionRule[]> = {
   plan: [
@@ -55,6 +67,29 @@ export const MODE_RULES: Record<PermissionMode, readonly PermissionRule[]> = {
     // switches to Build — that is what the mode picker is for.
     { action: "bash", resource: "*", effect: "deny" },
     { action: "js", resource: "*", effect: "deny" },
+    // The same false promise from two more directions. Neither action is spelled `write` or
+    // `bash`, so both fell through to the agent baseline's catch-all `* → allow` exactly as
+    // execution did — a mode advertised as "Read only" that mutated the host under a different
+    // noun.
+    //
+    //   `provision` (the `quality_provision` tool) is an EXECUTION channel wearing a config
+    //   name: it runs every candidate quality command — including ones the MODEL supplies via
+    //   its `commands` input — through the agent shell with a 90 s timeout, and it asserts under
+    //   `provision`, never under `bash`. Denying `bash` above while leaving this open hands the
+    //   shell straight back through a second door. It then PERSISTS the resolved commands into
+    //   the instance settings store, which is a durable host mutation in its own right.
+    //
+    //   `revert` restores working-tree files from a git snapshot. It never calls itself a write,
+    //   but replacing a file with an older copy of itself is a destructive write by any other
+    //   name — and with the mutation cluster already denied it was the ONE working-tree change
+    //   an Analyze session could still reach.
+    //
+    // Neither can legitimately touch Analyze's report carve-out (permission.ts, REPORT_RESOURCE),
+    // so neither needs an exemption there: `revert`'s resources are project-relative paths from a
+    // snapshot diff, and `provision`'s are `key: command` strings that are not paths at all. The
+    // carve-out is action-scoped to create/write/edit/external_directory_write regardless.
+    { action: "provision", resource: "*", effect: "deny" },
+    { action: "revert", resource: "*", effect: "deny" },
   ],
   ask: [
     { action: "edit", resource: "*", effect: "ask" },
