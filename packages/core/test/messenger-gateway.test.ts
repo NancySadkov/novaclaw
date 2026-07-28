@@ -310,7 +310,7 @@ const settle = (millis: number, step = 25) =>
     for (let elapsed = 0; elapsed < millis; elapsed += step) yield* advance(step)
   })
 
-const eventually = <A>(effect: Effect.Effect<A>, predicate: (value: A) => boolean, label: string, rounds = 200) =>
+const eventually = <A, E>(effect: Effect.Effect<A, E>, predicate: (value: A) => boolean, label: string, rounds = 200) =>
   Effect.gen(function* () {
     for (let round = 0; round < rounds; round++) {
       const value = yield* effect
@@ -879,8 +879,8 @@ describe("MessengerGateway pipeline", () => {
         chatID: "cold-chat",
         file: { name: "logo.svg", mime: "image/svg+xml", data: new TextEncoder().encode("<svg/>") },
       })
-      expect(cold.ok).toBe(false)
-      if (!cold.ok) expect(cold.reason).toContain("never messaged us")
+      expect(cold.kind).toBe("refused")
+      if (cold.kind === "refused") expect(cold.reason).toContain("never messaged us")
 
       // A known chat takes the file (with caption), through the paced send.
       yield* Queue.offer(queue, message("77", { text: "send me the logo", sender: "client7", attachments: [{ id: "ref-9", name: "brief.pdf", mime: "application/pdf" }] }))
@@ -892,7 +892,7 @@ describe("MessengerGateway pipeline", () => {
         file: { name: "logo-v2.svg", mime: "image/svg+xml", data: new TextEncoder().encode("<svg>2</svg>") },
         caption: "second draft",
       })
-      expect(sent.ok).toBe(true)
+      expect(sent.kind).toBe("sent")
       yield* eventually(
         Effect.sync(() => fake.state.sent.slice(sentBefore)),
         (entries) => entries.some((s) => s.chatID === "77" && s.fileName === "logo-v2.svg" && s.text === "second draft"),
@@ -982,7 +982,7 @@ describe("MessengerGateway pipeline", () => {
       // The live list seeded the seen-cache — replying to an EXISTING conversation is never a cold start.
       expect(yield* store.hasChat(account.id, "-1001")).toBe(true)
       const reply = yield* gateway.send({ accountID: account.id, chatID: "-1001", text: "bump" })
-      expect(reply.ok).toBe(true)
+      expect(reply.kind).toBe("sent")
 
       const history = yield* gateway.history({ accountID: account.id, chatID: "-1001", limit: 10 })
       expect(history.ok).toBe(true)
@@ -999,19 +999,19 @@ describe("MessengerGateway pipeline", () => {
       const { store, gateway, account, queue } = yield* online("send")
       // A chat we've never heard from: initiating is refused by default.
       const cold = yield* gateway.send({ accountID: account.id, chatID: "999", text: "hi there" })
-      expect(cold.ok).toBe(false)
-      if (!cold.ok) expect(cold.reason).toContain("never messaged us")
+      expect(cold.kind).toBe("refused")
+      if (cold.kind === "refused") expect(cold.reason).toContain("never messaged us")
 
       // With explicit initiate it goes (and counts against the daily bucket).
       const sentBefore = fake.state.sent.length
       const initiated = yield* gateway.send({ accountID: account.id, chatID: "999", text: "hi there", initiate: true })
-      expect(initiated.ok).toBe(true)
+      expect(initiated.kind).toBe("sent")
 
       // A chat that HAS messaged us is a reply, never a cold start — allowed without initiate.
       yield* Queue.offer(queue, message("888", { text: "hello", sender: "friend" }))
       yield* eventually(store.hasChat(account.id, "888"), (seen) => seen === true, "seen 888")
       const reply = yield* gateway.send({ accountID: account.id, chatID: "888", text: "welcome back" })
-      expect(reply.ok).toBe(true)
+      expect(reply.kind).toBe("sent")
       yield* eventually(
         Effect.sync(() => fake.state.sent.slice(sentBefore)),
         (sent) => sent.some((s) => s.chatID === "888" && s.text === "welcome back"),
@@ -1035,26 +1035,26 @@ describe("MessengerGateway pipeline", () => {
       fake.state.sendFails = true
       for (let i = 0; i < MessengerGateway.DAILY_NEW_CONVERSATION_CAP; i++) {
         const attempt = yield* gateway.send({ accountID: account.id, chatID: `cold-${i}`, text: "hi", initiate: true })
-        expect(attempt.ok).toBe(false)
+        expect(attempt.kind).toBe("refused")
       }
       fake.state.sendFails = false
       // Not one of those messages left the machine, and the day's budget is spent all the same.
       expect(fake.state.sent.some((s) => s.chatID.startsWith("cold-"))).toBe(false)
       const overCap = yield* gateway.send({ accountID: account.id, chatID: "cold-last", text: "hi", initiate: true })
-      expect(overCap.ok).toBe(false)
-      if (!overCap.ok) expect(overCap.reason).toContain("Daily new-conversation limit")
+      expect(overCap.kind).toBe("refused")
+      if (overCap.kind === "refused") expect(overCap.reason).toContain("Daily new-conversation limit")
 
       // …and the cap is a COLD-START cap only: answering a chat that wrote to us is never rationed.
       yield* Queue.offer(queue, message("654", { text: "hello", sender: "friend" }))
       yield* eventually(store.hasChat(account.id, "654"), (seen) => seen === true, "seen 654")
-      expect((yield* gateway.send({ accountID: account.id, chatID: "654", text: "hi back" })).ok).toBe(true)
+      expect((yield* gateway.send({ accountID: account.id, chatID: "654", text: "hi back" })).kind).toBe("sent")
 
       yield* store.removeAccount(account.id)
       yield* gateway.reload()
     }).pipe(Effect.ensuring(Effect.sync(() => (fake.state.sendFails = false)))),
   )
 
-  it.live("a driver that refuses the send answers {ok:false} with the reason — never a false 'Sent'", () =>
+  it.live("a driver that refuses the send comes back REFUSED with the reason — never a false 'Sent'", () =>
     Effect.gen(function* () {
       const { store, gateway, account, queue } = yield* online("send-fails")
       // A chat that HAS messaged us, so the cold-start guard is out of the picture — the only thing
@@ -1069,18 +1069,75 @@ describe("MessengerGateway pipeline", () => {
       // Before the fix this leg was `paceSend(...).pipe(Effect.ignore)` followed by an unconditional
       // `{ok:true}`, so the tool told the model "Sent (paced at human typing speed)." about a
       // message that never left the machine — and the model went on as if the person was answered.
-      expect(refused.ok).toBe(false)
-      if (!refused.ok) expect(refused.reason).toBe(SEND_REFUSAL)
+      expect(refused.kind).toBe("refused")
+      if (refused.kind === "refused") expect(refused.reason).toBe(SEND_REFUSAL)
       expect(fake.state.sent.some((s) => s.chatID === "321" && s.text === "on it")).toBe(false)
 
-      // And {ok:true} still means SENT — the honest branch didn't cost the happy path.
+      // And kind:"sent" still means SENT — the honest branch didn't cost the happy path.
       const good = yield* gateway.send({ accountID: account.id, chatID: "321", text: "on it" })
-      expect(good.ok).toBe(true)
+      expect(good.kind).toBe("sent")
       expect(fake.state.sent.some((s) => s.chatID === "321" && s.text === "on it")).toBe(true)
 
       yield* store.removeAccount(account.id)
       yield* gateway.reload()
     }).pipe(Effect.ensuring(Effect.sync(() => (fake.state.sendFails = false)))),
+  )
+
+  // ⚠️ The dead-letter class at the seam where it lied loudest. `hasChat` and `bindingForChat` both
+  // answered "no" for a read that never happened, and the two "no"s combined into the cold-start
+  // refusal — so an unreadable database told the model "This chat has never messaged us" about
+  // somebody who had been writing all week, and the model apologised to the user on its behalf.
+  //
+  // All three arms live in ONE test on purpose: the failure this guards against is not "the new
+  // string is missing", it is "the third arm got folded back into a neighbour". Asserting the
+  // arms side by side means a collapse in either direction turns exactly one leg red, and every
+  // assertion is on the OUTCOME (what the caller is told, and whether the driver was asked to
+  // send) rather than on the type — a type is what the compiler already checks.
+  it.live("an unreadable database answers `unavailable`, never `this chat has never messaged us`", () =>
+    Effect.gen(function* () {
+      const { store, gateway, account, queue } = yield* online("unreadable")
+      const { db } = yield* Database.Service
+
+      // ① A chat that HAS written to us — sent, and the driver really received it.
+      yield* Queue.offer(queue, message("770", { text: "hello", sender: "friend" }))
+      yield* eventually(store.hasChat(account.id, "770"), (seen) => seen === true, "seen 770")
+      expect((yield* gateway.send({ accountID: account.id, chatID: "770", text: "hi back" })).kind).toBe("sent")
+      expect(fake.state.sent.some((s) => s.chatID === "770" && s.text === "hi back")).toBe(true)
+
+      // ② A chat that genuinely has not — refused, naming the traffic rule. This sentence is TRUE
+      //    here, which is exactly why it must not be reused for ③.
+      const cold = yield* gateway.send({ accountID: account.id, chatID: "cold-770", text: "hi" })
+      expect(cold.kind).toBe("refused")
+      if (cold.kind === "refused") expect(cold.reason).toContain("never messaged us")
+
+      // ③ A fault no caller can prevent: both tables the cold-start test reads are gone. Before
+      //    this change the two reads died (killing the connection fiber outright) and, once they
+      //    had been made recoverable, answered false/undefined — i.e. ② for a chat that is ①.
+      const sentBefore = fake.state.sent.length
+      yield* db.run("DROP TABLE messenger_chat")
+      yield* db.run("DROP TABLE messenger_binding")
+      const blind = yield* gateway.send({ accountID: account.id, chatID: "770", text: "are you there?" })
+      expect(blind.kind).toBe("unavailable")
+      if (blind.kind === "unavailable") {
+        expect(blind.reason).toContain("messenger database")
+        // The lie has to be GONE, not merely joined by a truer sentence beside it.
+        expect(blind.reason).not.toContain("never messaged us")
+      }
+      // …and nothing went out. Refusing is the point: we could not tell whether writing would be
+      // uninvited outreach, and guessing wrong risks a real person's account (AGENTS.md #9(b)).
+      expect(fake.state.sent.slice(sentBefore)).toEqual([])
+
+      // A file rides the SAME collapse point — `invitationOf` — and has no `initiate` escape at all.
+      const file = yield* gateway.sendFile({
+        accountID: account.id,
+        chatID: "770",
+        file: { name: "x.txt", mime: "text/plain", data: new TextEncoder().encode("x") },
+      })
+      expect(file.kind).toBe("unavailable")
+      // No cleanup: `removeAccount` deletes from the tables this test just dropped, and the layer
+      // scope tears the connection down anyway (`NOVACLAW_DB=:memory:` is per-connection, so the
+      // dropped tables cannot leak into another test).
+    }),
   )
 
   it.live("an audience binding COALESCES inbound — a batch flushes as one turn (§0.1)", () =>
@@ -1425,7 +1482,7 @@ const LIVE_LEDGER: readonly string[] = [
   "a FAILED initiation still spends its daily slot — the cap counts attempts, not deliveries",
   "a THREAD routes to its parent's binding, and the reply goes back to the thread",
   "a chat flooding past the per-minute cap is dropped with ONE slow-down reply (§7.6)",
-  "a driver that refuses the send answers {ok:false} with the reason — never a false 'Sent'",
+  "a driver that refuses the send comes back REFUSED with the reason — never a false 'Sent'",
   "a hostile CLIENT message is delivered wrapped in untrusted framing (injection guard §7.5)",
   "a moderating batch tells the agent its reply text goes nowhere, and names the ops",
   "a provider challenge parks the account (no retry-loop) — traffic rules §2.3",
@@ -1433,6 +1490,7 @@ const LIVE_LEDGER: readonly string[] = [
   "an audience binding COALESCES inbound — a batch flushes as one turn (§0.1)",
   "an audience binding does NOT auto-relay (the agent lurks)",
   "an unpaired stranger's plain text never injects a turn (default-deny)",
+  "an unreadable database answers `unavailable`, never `this chat has never messaged us`",
   "connects an enabled account, tracks seen chats, drops self-echo, and parks on disable",
   "console dispatch is rate-capped per minute with a legible refusal",
   "finished assistant text relays out to the bound chat",
@@ -1552,5 +1610,74 @@ describe("the wall-clock ledger actually bites (negative control)", () => {
     expect(wallClockSleeps(`yield* settle(4_000)`)).toEqual([])
     // Nor may a non-literal argument be guessed at.
     expect(wallClockSleeps(`${SLEEP}STABLE_MS + 100))`)).toEqual([])
+  })
+})
+
+// ───────────────────────────────────────────────────────────────────────────────────────────────
+// THE COLD-START TRI-STATE'S COLLAPSE POINT (v0.2.0-prep, batch 3 — the dead-letter class)
+//
+// `hasChat` and `bindingForChat` are both fallible reads, so "may we write into this chat without
+// cold-starting?" is a THREE-valued question. `Hostility`'s lesson, which this mirrors: the value
+// is safe only while exactly ONE piece of code turns the inputs into a decision. Two call sites
+// each deciding "unknown means…" for themselves is how `bash` and Strict came to speak different
+// shells (ruling 6) — and here the two sites are `send` (which has an `initiate` escape) and
+// `sendFile` (which has none), so they are exactly similar enough to drift apart unnoticed.
+// ───────────────────────────────────────────────────────────────────────────────────────────────
+
+const GATEWAY_SOURCE = nodeFs.readFileSync(nodePath.join(import.meta.dir, "../src/messenger/gateway.ts"), "utf8")
+
+/** Producers of the `unavailable` arm today: `send` and `sendFile`. Shrink-only in spirit — a third
+ *  is not forbidden, but it must justify itself on its own line, from the one collapse. */
+const UNAVAILABLE_PRODUCERS = 2
+
+describe("MessengerGateway.invitationOf", () => {
+  // The complete 3×3 table, because the interesting rows are the mixed ones and a partial table is
+  // how "a definite yes beats an unread second input" gets quietly lost.
+  test("a definite invitation wins outright; otherwise any unread input makes the answer unknown", () => {
+    expect(MessengerGateway.invitationOf(true, true)).toBe("invited")
+    expect(MessengerGateway.invitationOf(true, false)).toBe("invited")
+    expect(MessengerGateway.invitationOf(false, true)).toBe("invited")
+    // The rows that matter: one side ANSWERED yes, so the other side's health cannot unmake it.
+    // Degrading these to "unavailable" would take the agent's voice away in a chat we can prove
+    // we were invited into — the mirror of `host-exec.ts`'s "hostile beats unknown".
+    expect(MessengerGateway.invitationOf(true, "unknown")).toBe("invited")
+    expect(MessengerGateway.invitationOf("unknown", true)).toBe("invited")
+    // Only a chat read end to end with nothing on it is a genuine cold start.
+    expect(MessengerGateway.invitationOf(false, false)).toBe("cold")
+    // …and one unread input is enough to make "cold" a claim nothing supports.
+    expect(MessengerGateway.invitationOf("unknown", false)).toBe("unknown")
+    expect(MessengerGateway.invitationOf(false, "unknown")).toBe("unknown")
+    expect(MessengerGateway.invitationOf("unknown", "unknown")).toBe("unknown")
+  })
+})
+
+describe("the cold-start tri-state collapses in exactly one place", () => {
+  test("the scan can see the gateway source at all", () => {
+    // Without this a moved file or a renamed helper empties every scan below and turns the whole
+    // ledger into a tautology that passes forever.
+    expect(GATEWAY_SOURCE).toContain("export const invitationOf")
+    expect(GATEWAY_SOURCE.match(/store\.hasChat\(/g) ?? []).toHaveLength(1)
+  })
+
+  test("every `unavailable` send outcome is produced from the one tri-state answer", () => {
+    const producers = GATEWAY_SOURCE.split("\n").filter((line) => line.includes('return { kind: "unavailable"'))
+    expect(producers).toHaveLength(UNAVAILABLE_PRODUCERS)
+    // Each must sit on the same line as the check that earned it. A producer reached from a
+    // hand-rolled `!known && bound === undefined` is the defect this whole change removed.
+    for (const line of producers) expect(line).toContain('invited === "unknown"')
+  })
+})
+
+describe("the collapse-point ledger actually bites (negative control)", () => {
+  test("a hand-rolled unavailable producer is what the sweep reports", () => {
+    const rogue = '  if (bound === undefined) return { kind: "unavailable", reason: "the db is down" }'
+    const producers = rogue.split("\n").filter((line) => line.includes('return { kind: "unavailable"'))
+    expect(producers).toHaveLength(1)
+    expect(producers.every((line) => line.includes('invited === "unknown"'))).toBe(false)
+  })
+
+  test("a second raw `hasChat` read outside the collapse is what the count reports", () => {
+    const rogue = "const known = yield* store.hasChat(a, b)\nconst again = yield* store.hasChat(a, c)"
+    expect(rogue.match(/store\.hasChat\(/g) ?? []).toHaveLength(2)
   })
 })

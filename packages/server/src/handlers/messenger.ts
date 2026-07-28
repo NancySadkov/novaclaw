@@ -42,7 +42,12 @@ export const MessengerHandler = HttpApiBuilder.group(Api, "server.messenger", (h
         Effect.fn(function* () {
           const store = yield* MessengerStore.Service
           const gateway = yield* MessengerGateway.Service
-          const accounts = yield* store.listAccounts()
+          // `orDie` here is byte-for-byte the behaviour this call already had — the store used to
+          // swallow the fault internally, which is precisely the defect that was fixed at the store.
+          // It stays a defect at THIS seam because `messenger.account.list` declares no error
+          // (`packages/protocol/src/groups/messenger.ts:33`), so naming the fault honestly on the
+          // wire means a protocol error plus an OpenAPI/SDK regen. Filed; not smuggled in here.
+          const accounts = yield* store.listAccounts().pipe(Effect.orDie)
           const status = yield* gateway.status()
           return accounts.map((account) => ({
             account,
@@ -187,7 +192,13 @@ export const MessengerHandler = HttpApiBuilder.group(Api, "server.messenger", (h
               // naming the holding session so the user can decide.
               ctx.payload.steal === true
                 ? Effect.gen(function* () {
-                    const holding = yield* store.bindingForChat(ctx.payload.accountID, ctx.payload.chatID)
+                    // Same seam, same reasoning as the account list above. This endpoint DOES declare
+                    // `InvalidRequestError`, so mapping the fault to a 4xx is available — but a
+                    // "steal" that cannot read the holding binding is an instance fault, not a bad
+                    // request, and saying otherwise would be ruling 2's false fault description.
+                    const holding = yield* store
+                      .bindingForChat(ctx.payload.accountID, ctx.payload.chatID)
+                      .pipe(Effect.orDie)
                     if (holding !== undefined) yield* store.removeBinding(holding.id)
                     return yield* create
                   }).pipe(

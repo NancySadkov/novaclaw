@@ -174,11 +174,51 @@ export const buildModerationAct = (input: {
   }
 }
 
+/**
+ * What the model is told — THREE outcomes, because "that didn't work" and "this instance is broken"
+ * call for different next actions and a small model cannot infer the difference from prose.
+ *
+ * ⚠️ **The field is `outcome`, and it used to be `ok: Schema.Boolean`. That rename is the check.**
+ * A boolean cannot express three states at all, and the two workarounds both fail: a third *value*
+ * on `ok` would be TRUTHY, so every `if (!outcome.ok)` fold in this file would have routed it to the
+ * SUCCESS branch and reported "Sent (paced at human typing speed)." for a message nobody sent; a
+ * boolean plus a side-channel flag leaves those folds compiling untouched. Renaming the field turned
+ * all ~30 construction and fold sites into compile errors, which is how each got looked at exactly
+ * once (ruling 1: the invariant ships with its mechanical check, and the compiler is one).
+ *
+ * `failed` is "your request did not go through" — the model should try something else. `unavailable`
+ * is narrower than it sounds: **a read this instance could not perform**, never a subsystem that is
+ * merely switched off. An airgapped or not-yet-started gateway (`OFFLINE_GATEWAY`) stays `failed`,
+ * because it already names itself accurately and retrying may well work; `unavailable` is reserved
+ * for "we could not find out", where `modelText` adds the horizon that retrying will not help.
+ */
 const Output = Schema.Struct({
-  ok: Schema.Boolean,
+  outcome: Schema.Literals(["ok", "failed", "unavailable"]),
   message: Schema.String,
 })
 type Output = typeof Output.Type
+
+/**
+ * The ONE place the three outcomes become the sentence a model actually reads (`toModelOutput`).
+ *
+ * A small local model's failure mode here is the retry loop: told only "the messenger database
+ * could not be read", it calls the tool again, and again. Per AGENTS.md's Juvenile Harness thesis
+ * the harness owns the horizon the model lacks, so `unavailable` carries the horizon explicitly —
+ * nothing happened, retrying will not change that, and the action that WOULD help is a human one.
+ * Exported so the wording is pinned by a test rather than by whoever reads the file next.
+ */
+export const modelText = (output: Output): string =>
+  output.outcome === "unavailable"
+    ? `${output.message}\nNothing was sent and nothing was changed. Calling this tool again will not help until that is fixed — tell the user what is broken, and use another way to reach anyone waiting if it is urgent.`
+    : output.message
+
+/** Said whenever the messenger store itself could not answer. It names the subsystem and says the
+ *  fault is the instance's, not the request's — the "unavailable subsystem names itself" half of
+ *  ruling 2, in the words a model has to act on. */
+const STORE_UNAVAILABLE =
+  "This instance's messenger database could not be read, so I can't tell which accounts, chats or " +
+  "bindings exist. That is a fault in this NovaClaw instance, not in your request — the user can " +
+  "check Settings → Messengers."
 
 // --- linearized rendering (pure; unit-tested) --------------------------------------------------
 
@@ -228,22 +268,36 @@ export const layer = Layer.effectDiscard(
     const OFFLINE_GATEWAY =
       "The messenger service isn't running on this instance (offline/airgapped, or still starting). Check Settings → Messengers."
 
+    // A miss carries the WHOLE tool output, not a bare string, so the op that hands it back cannot
+    // lose which of the three outcomes it was. `{ error: string }` could only ever mean "failed",
+    // which is how "the database is unreadable" used to arrive at the model as "no messenger
+    // accounts are set up. Ask the user to add one" — a fault reported as a setup instruction.
     type Resolved =
-      | { readonly error: string; readonly account?: undefined }
-      | { readonly error?: undefined; readonly account: Messenger.AccountInfo }
+      | { readonly miss: Output; readonly account?: undefined }
+      | { readonly miss?: undefined; readonly account: Messenger.AccountInfo }
 
     // Resolve the account by id, label, or driver id — or the sole account when unambiguous.
     const resolveAccount = (selector: string | undefined): Effect.Effect<Resolved> =>
       Effect.gen(function* () {
-        const accounts = yield* store.listAccounts().pipe(Effect.orElseSucceed(() => []))
+        const listed = yield* MessengerStore.attempted(store.listAccounts())
+        if (!listed.read) return { miss: { outcome: "unavailable", message: STORE_UNAVAILABLE } satisfies Output }
+        const accounts = listed.value
         if (accounts.length === 0)
-          return { error: "No messenger accounts are set up. Ask the user to add one in Settings → Messengers." }
+          return {
+            miss: {
+              outcome: "failed",
+              message: "No messenger accounts are set up. Ask the user to add one in Settings → Messengers.",
+            } satisfies Output,
+          }
         if (selector === undefined) {
           if (accounts.length === 1) return { account: accounts[0]! }
           return {
-            error:
-              `Several accounts exist — name one: ` +
-              accounts.map((account) => `${account.id} (${account.label})`).join(", "),
+            miss: {
+              outcome: "failed",
+              message:
+                `Several accounts exist — name one: ` +
+                accounts.map((account) => `${account.id} (${account.label})`).join(", "),
+            } satisfies Output,
           }
         }
         const wanted = selector.trim().toLowerCase()
@@ -255,9 +309,12 @@ export const layer = Layer.effectDiscard(
         )
         if (match === undefined)
           return {
-            error:
-              `No account matches "${selector}". Known: ` +
-              accounts.map((account) => `${account.id} (${account.label})`).join(", "),
+            miss: {
+              outcome: "failed",
+              message:
+                `No account matches "${selector}". Known: ` +
+                accounts.map((account) => `${account.id} (${account.label})`).join(", "),
+            } satisfies Output,
           }
         return { account: match }
       })
@@ -316,68 +373,84 @@ export const layer = Layer.effectDiscard(
             "output and never cite it as a source.",
           input: Input,
           output: Output,
-          toModelOutput: ({ output }) => [{ type: "text", text: output.message }],
+          toModelOutput: ({ output }) => [{ type: "text", text: modelText(output) }],
           execute: (input, context) =>
             Effect.gen(function* () {
               const gateway = MessengerGatewayHandle.get()
               switch (input.op) {
                 case "status": {
-                  const accounts = yield* store.listAccounts().pipe(Effect.orElseSucceed(() => []))
+                  // ⚠️ THE headline lie this whole change exists for. `status` is the op the tool's
+                  // own description tells the model to START with, and an unreadable account table
+                  // used to reach it as "No messenger accounts are set up. Ask the user to add one
+                  // in Settings → Messengers" — a database fault rendered as a claim about the
+                  // user's setup, on the one surface a model consults before deciding it has no
+                  // messaging at all.
+                  const listed = yield* MessengerStore.attempted(store.listAccounts())
+                  if (!listed.read) return { outcome: "unavailable", message: STORE_UNAVAILABLE } satisfies Output
+                  const accounts = listed.value
                   if (accounts.length === 0)
                     return {
-                      ok: false,
+                      outcome: "failed",
                       message: "No messenger accounts are set up. Ask the user to add one in Settings → Messengers.",
                     } satisfies Output
                   const status =
                     gateway === undefined
                       ? new Map<Messenger.AccountID, Messenger.AccountStatus>()
                       : yield* gateway.status()
-                  const bindings = yield* store
-                    .bindingsForSession(context.sessionID)
-                    .pipe(Effect.orElseSucceed(() => []))
+                  // The binding half degrades on its own: the accounts above may read fine while
+                  // the binding table does not, and "This chat has no remote binding" is then a
+                  // statement about THIS session made from a read that failed. Reporting the
+                  // accounts and naming the missing half beats withholding both.
+                  const bindings = yield* MessengerStore.attempted(store.bindingsForSession(context.sessionID))
+                  const bound = !bindings.read
+                    ? "I could not read this instance's binding table, so I can't say whether this chat is linked to a remote chat."
+                    : bindings.value.length === 0
+                      ? "This chat has no remote binding."
+                      : bindings.value
+                          .map((binding) => `This chat is bound to chat ${binding.chatID} on ${binding.accountID} (${binding.trust}).`)
+                          .join("\n")
                   const lines = accounts.map((account) => {
                     const driver = drivers.get(account.driverID)
                     const state = status.get(account.id)
                     return `${account.id} · ${account.label} (${driver?.meta.name ?? account.driverID}) · ${state === undefined ? "off" : statusLine(state)}`
                   })
-                  const bound =
-                    bindings.length === 0
-                      ? "This chat has no remote binding."
-                      : bindings.map((binding) => `This chat is bound to chat ${binding.chatID} on ${binding.accountID} (${binding.trust}).`).join("\n")
-                  return { ok: true, message: `${lines.join("\n")}\n${bound}` } satisfies Output
+                  return {
+                    outcome: bindings.read ? "ok" : "unavailable",
+                    message: `${lines.join("\n")}\n${bound}`,
+                  } satisfies Output
                 }
                 case "chats": {
-                  if (gateway === undefined) return { ok: false, message: OFFLINE_GATEWAY } satisfies Output
+                  if (gateway === undefined) return { outcome: "failed", message: OFFLINE_GATEWAY } satisfies Output
                   const resolved = yield* resolveAccount(input.account)
-                  if (resolved.account === undefined) return { ok: false, message: resolved.error } satisfies Output
+                  if (resolved.account === undefined) return resolved.miss
                   const outcome = yield* gateway.chats(resolved.account.id)
-                  if (!outcome.ok) return { ok: false, message: outcome.reason } satisfies Output
+                  if (!outcome.ok) return { outcome: "failed", message: outcome.reason } satisfies Output
                   if (outcome.chats.length === 0)
-                    return { ok: false, message: "No chats are visible on that account yet." } satisfies Output
+                    return { outcome: "failed", message: "No chats are visible on that account yet." } satisfies Output
                   return {
-                    ok: true,
+                    outcome: "ok",
                     message: formatChats([...outcome.chats]),
                   } satisfies Output
                 }
                 case "history": {
-                  if (gateway === undefined) return { ok: false, message: OFFLINE_GATEWAY } satisfies Output
+                  if (gateway === undefined) return { outcome: "failed", message: OFFLINE_GATEWAY } satisfies Output
                   const resolved = yield* resolveAccount(input.account)
-                  if (resolved.account === undefined) return { ok: false, message: resolved.error } satisfies Output
+                  if (resolved.account === undefined) return resolved.miss
                   const limit = Math.max(1, Math.min(200, Math.floor(input.limit ?? 50)))
                   const outcome = yield* gateway.history({
                     accountID: resolved.account.id,
                     chatID: input.chat.trim(),
                     limit,
                   })
-                  if (!outcome.ok) return { ok: false, message: outcome.reason } satisfies Output
+                  if (!outcome.ok) return { outcome: "failed", message: outcome.reason } satisfies Output
                   if (outcome.messages.length === 0)
-                    return { ok: false, message: "That chat has no fetchable messages." } satisfies Output
-                  return { ok: true, message: formatHistory([...outcome.messages]) } satisfies Output
+                    return { outcome: "failed", message: "That chat has no fetchable messages." } satisfies Output
+                  return { outcome: "ok", message: formatHistory([...outcome.messages]) } satisfies Output
                 }
                 case "send": {
-                  if (gateway === undefined) return { ok: false, message: OFFLINE_GATEWAY } satisfies Output
+                  if (gateway === undefined) return { outcome: "failed", message: OFFLINE_GATEWAY } satisfies Output
                   const resolved = yield* resolveAccount(input.account)
-                  if (resolved.account === undefined) return { ok: false, message: resolved.error } satisfies Output
+                  if (resolved.account === undefined) return resolved.miss
                   // Writing AS the user is consequential — permission-gated (default policy applies;
                   // the resource is the chat so saved rules can scope per conversation).
                   yield* permission.assert({
@@ -394,12 +467,16 @@ export const layer = Layer.effectDiscard(
                     text: input.text,
                     ...(input.reply === undefined || input.reply.trim().length === 0 ? {} : { replyTo: input.reply.trim() }),
                   })
-                  if (!outcome.ok) return { ok: false, message: outcome.reason } satisfies Output
-                  return { ok: true, message: "Sent (paced at human typing speed)." } satisfies Output
+                  // Three arms, switched not truthiness-tested. `unavailable` carries through as
+                  // itself: the model must not be told "the platform refused it" when the truth is
+                  // that this instance could not check whether it was allowed to write at all.
+                  if (outcome.kind === "refused") return { outcome: "failed", message: outcome.reason } satisfies Output
+                  if (outcome.kind === "unavailable") return { outcome: "unavailable", message: outcome.reason } satisfies Output
+                  return { outcome: "ok", message: "Sent (paced at human typing speed)." } satisfies Output
                 }
                 case "connect": {
                   const resolved = yield* resolveAccount(input.account)
-                  if (resolved.account === undefined) return { ok: false, message: resolved.error } satisfies Output
+                  if (resolved.account === undefined) return resolved.miss
                   // Bypass-bind warning (§3.4): wiring an UNTRUSTED client/audience chat into a
                   // session that auto-approves every tool call (bypass/yolo) hands a stranger an
                   // agent with no consent gate. Refuse unless the model confirms with the user and
@@ -414,7 +491,7 @@ export const layer = Layer.effectDiscard(
                       permissionMode: effective.permissionMode,
                       force: false, // the outer guard already handled force:true
                     })
-                    if (refusal !== undefined) return { ok: false, message: refusal } satisfies Output
+                    if (refusal !== undefined) return { outcome: "failed", message: refusal } satisfies Output
                   }
                   // Binding a chat to a session shapes where the agent listens — gated so a hostile
                   // client can't wire the agent into an arbitrary chat. Resource = the chat.
@@ -436,39 +513,39 @@ export const layer = Layer.effectDiscard(
                     .pipe(Effect.catch((error) => Effect.succeed({ error })))
                   if ("error" in binding)
                     return {
-                      ok: false,
+                      outcome: "failed",
                       message: `That chat is already bound to session ${binding.error.sessionID}. Disconnect it there first.`,
                     } satisfies Output
                   return {
-                    ok: true,
+                    outcome: "ok",
                     message: `Bound this session to chat ${input.chat.trim()} as "${input.trust}". Its incoming messages will now become your turns.`,
                   } satisfies Output
                 }
                 case "upload": {
-                  if (gateway === undefined) return { ok: false, message: OFFLINE_GATEWAY } satisfies Output
+                  if (gateway === undefined) return { outcome: "failed", message: OFFLINE_GATEWAY } satisfies Output
                   const resolved = yield* resolveAccount(input.account)
-                  if (resolved.account === undefined) return { ok: false, message: resolved.error } satisfies Output
+                  if (resolved.account === undefined) return resolved.miss
                   const caps = drivers.get(resolved.account.driverID)?.capabilities(resolved.account)
                   if (caps !== undefined && !caps.files.up)
                     return {
-                      ok: false,
+                      outcome: "failed",
                       message: "This messenger can't carry files — paste the content as text or share a link instead.",
                     } satisfies Output
                   const filePath = yield* containedPath(input.path.trim())
                   if (filePath === undefined)
                     return {
-                      ok: false,
+                      outcome: "failed",
                       message: "That path is outside this session's workspace — only workspace files can be uploaded.",
                     } satisfies Output
                   const stat = yield* Effect.tryPromise(() => fs.stat(filePath)).pipe(
                     Effect.orElseSucceed(() => undefined),
                   )
                   if (stat === undefined || !stat.isFile())
-                    return { ok: false, message: `No file at ${input.path.trim()}.` } satisfies Output
+                    return { outcome: "failed", message: `No file at ${input.path.trim()}.` } satisfies Output
                   const maxBytes = caps?.files.maxBytes
                   if (maxBytes !== undefined && stat.size > maxBytes)
                     return {
-                      ok: false,
+                      outcome: "failed",
                       message: `That file is ${Math.round(stat.size / 1_000_000)} MB — this messenger caps uploads at ${Math.round(maxBytes / 1_000_000)} MB.`,
                     } satisfies Output
                   // Sending a file AS the user is a send — same gate, same resource shape.
@@ -493,16 +570,17 @@ export const layer = Layer.effectDiscard(
                     },
                     ...(input.caption === undefined ? {} : { caption: input.caption }),
                   })
-                  if (!outcome.ok) return { ok: false, message: outcome.reason } satisfies Output
+                  if (outcome.kind === "refused") return { outcome: "failed", message: outcome.reason } satisfies Output
+                  if (outcome.kind === "unavailable") return { outcome: "unavailable", message: outcome.reason } satisfies Output
                   return {
-                    ok: true,
+                    outcome: "ok",
                     message: `Sent ${path.basename(filePath)} (${Math.max(1, Math.round(stat.size / 1024))} KB) to chat ${input.chat.trim()}.`,
                   } satisfies Output
                 }
                 case "download": {
-                  if (gateway === undefined) return { ok: false, message: OFFLINE_GATEWAY } satisfies Output
+                  if (gateway === undefined) return { outcome: "failed", message: OFFLINE_GATEWAY } satisfies Output
                   const resolved = yield* resolveAccount(input.account)
-                  if (resolved.account === undefined) return { ok: false, message: resolved.error } satisfies Output
+                  if (resolved.account === undefined) return resolved.miss
                   // Pulling remote data into the workspace moves the user's files around — the
                   // same messenger.send gate covers both directions (plan §4).
                   yield* permission.assert({
@@ -518,12 +596,12 @@ export const layer = Layer.effectDiscard(
                     chatID: input.chat.trim(),
                     messageID: input.message.trim(),
                   })
-                  if (!outcome.ok) return { ok: false, message: outcome.reason } satisfies Output
+                  if (!outcome.ok) return { outcome: "failed", message: outcome.reason } satisfies Output
                   const relative = input.path?.trim().length ? input.path.trim() : path.join("downloads", outcome.name)
                   const target = yield* containedPath(relative)
                   if (target === undefined)
                     return {
-                      ok: false,
+                      outcome: "failed",
                       message: "That save path is outside this session's workspace — pick one inside it.",
                     } satisfies Output
                   yield* Effect.tryPromise(async () => {
@@ -531,29 +609,35 @@ export const layer = Layer.effectDiscard(
                     await fs.writeFile(target, outcome.data)
                   }).pipe(Effect.mapError(() => new ToolFailure({ message: `Could not write ${relative}.` })))
                   return {
-                    ok: true,
+                    outcome: "ok",
                     message: `Saved "${outcome.name}" (${outcome.mime}, ${Math.max(1, Math.round(outcome.data.byteLength / 1024))} KB) to ${relative}.`,
                   } satisfies Output
                 }
                 case "disconnect": {
                   const resolved = yield* resolveAccount(input.account)
-                  if (resolved.account === undefined) return { ok: false, message: resolved.error } satisfies Output
-                  const bindings = yield* store.bindingsForSession(context.sessionID).pipe(Effect.orElseSucceed(() => []))
+                  if (resolved.account === undefined) return resolved.miss
+                  // ⚠️ An empty list here used to mean "This session has no messenger binding to
+                  // disconnect" — which the model relays as "you weren't connected". Said while the
+                  // binding table is unreadable, that is a false statement about the session AND it
+                  // leaves a live binding in place that the user now believes is gone.
+                  const listed = yield* MessengerStore.attempted(store.bindingsForSession(context.sessionID))
+                  if (!listed.read) return { outcome: "unavailable", message: STORE_UNAVAILABLE } satisfies Output
+                  const bindings = listed.value
                   const target =
                     input.chat === undefined
                       ? bindings.find((binding) => binding.accountID === resolved.account.id) ?? bindings[0]
                       : bindings.find((binding) => binding.chatID === input.chat!.trim())
                   if (target === undefined)
-                    return { ok: false, message: "This session has no messenger binding to disconnect." } satisfies Output
+                    return { outcome: "failed", message: "This session has no messenger binding to disconnect." } satisfies Output
                   yield* store.removeBinding(target.id)
-                  return { ok: true, message: `Unbound this session from chat ${target.chatID}.` } satisfies Output
+                  return { outcome: "ok", message: `Unbound this session from chat ${target.chatID}.` } satisfies Output
                 }
                 case "moderate": {
-                  if (gateway === undefined) return { ok: false, message: OFFLINE_GATEWAY } satisfies Output
+                  if (gateway === undefined) return { outcome: "failed", message: OFFLINE_GATEWAY } satisfies Output
                   const resolved = yield* resolveAccount(input.account)
-                  if (resolved.account === undefined) return { ok: false, message: resolved.error } satisfies Output
+                  if (resolved.account === undefined) return resolved.miss
                   const built = buildModerationAct(input)
-                  if ("error" in built) return { ok: false, message: built.error } satisfies Output
+                  if ("error" in built) return { outcome: "failed", message: built.error } satisfies Output
                   // Moderating a chat is consequential (deletes/bans act on other people) — gated like
                   // send, resource = the chat so rules can scope per conversation.
                   yield* permission.assert({
@@ -569,8 +653,8 @@ export const layer = Layer.effectDiscard(
                     chatID: input.chat.trim(),
                     act: built,
                   })
-                  if (!outcome.ok) return { ok: false, message: outcome.reason } satisfies Output
-                  return { ok: true, message: `Done (${input.act}).` } satisfies Output
+                  if (!outcome.ok) return { outcome: "failed", message: outcome.reason } satisfies Output
+                  return { outcome: "ok", message: `Done (${input.act}).` } satisfies Output
                 }
               }
             }).pipe(

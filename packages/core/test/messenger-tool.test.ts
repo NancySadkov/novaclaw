@@ -86,25 +86,44 @@ const storeLayer = Layer.mock(MessengerStore.Service)({
   listAccounts: () => Effect.succeed([account]),
   bindingsForSession: () => Effect.succeed([]),
 })
+/** A store that ANSWERS, with nothing in it — the positive control for the unreadable one below.
+ *  These two differ in exactly one way, and the tool must say two different things about them. */
+const emptyStoreLayer = Layer.mock(MessengerStore.Service)({
+  listAccounts: () => Effect.succeed([]),
+  bindingsForSession: () => Effect.succeed([]),
+})
+/** A store that cannot answer. The `UnavailableError` is real, not a bare `Effect.fail(…)`, so the
+ *  tool is exercised against the exact failure `messenger-store.test.ts` proves sqlite produces. */
+const unreadable = () =>
+  Effect.fail(new MessengerStore.UnavailableError({ read: "listAccounts()", detail: "no such table: messenger_account" }))
+const unreadableStoreLayer = Layer.mock(MessengerStore.Service)({
+  listAccounts: unreadable,
+  bindingsForSession: unreadable,
+})
 const locationLayer = Layer.succeed(
   Location.Service,
   Location.Service.of(location({ directory: AbsolutePath.make(process.cwd()) })),
 )
 
-const it = testEffect(
-  AppNodeBuilder.build(LayerNode.group([ToolRegistry.node, ToolRegistry.toolsNode, MessengerTool.node]), [
-    [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig],
-    [PermissionV2.node, permissionLayer],
-    [Location.node, locationLayer],
-    [LocationMutation.node, Layer.mock(LocationMutation.Service)({})],
-    [SessionStore.node, Layer.mock(SessionStore.Service)({})],
-    [MessengerStore.node, storeLayer],
-    [
-      MessengerDrivers.node,
-      Layer.succeed(MessengerDrivers.Service, MessengerDrivers.Service.of(MessengerDrivers.make([]))),
-    ],
-  ]),
-)
+const runtime = (store: typeof storeLayer) =>
+  testEffect(
+    AppNodeBuilder.build(LayerNode.group([ToolRegistry.node, ToolRegistry.toolsNode, MessengerTool.node]), [
+      [ToolOutputStore.node, ToolOutputStore.nodeWithoutConfig],
+      [PermissionV2.node, permissionLayer],
+      [Location.node, locationLayer],
+      [LocationMutation.node, Layer.mock(LocationMutation.Service)({})],
+      [SessionStore.node, Layer.mock(SessionStore.Service)({})],
+      [MessengerStore.node, store],
+      [
+        MessengerDrivers.node,
+        Layer.succeed(MessengerDrivers.Service, MessengerDrivers.Service.of(MessengerDrivers.make([]))),
+      ],
+    ]),
+  )
+
+const it = runtime(storeLayer)
+const itEmptyStore = runtime(emptyStoreLayer)
+const itBrokenStore = runtime(unreadableStoreLayer)
 
 const sendCall = (id: string) => ({
   sessionID,
@@ -112,9 +131,15 @@ const sendCall = (id: string) => ({
   call: { type: "tool-call" as const, id, name: MessengerTool.name, input: { op: "send", chat: "77", text: "on my way" } },
 })
 
+/** The gateway's `SendOutcome`, restated structurally rather than imported: this module
+ *  must never pull `messenger/gateway.ts` into its graph (the tool itself may not, and a
+ *  test that did would stop proving the tool works without it). Three arms, `kind`-tagged —
+ *  a stub still shaped `{ ok: boolean }` would silently take the "Sent" branch. */
+type StubOutcome = { kind: "sent" } | { kind: "refused"; reason: string } | { kind: "unavailable"; reason: string }
+
 /** Stub the ONE gateway handle the tool reads at call time, for the length of `body`. */
 const withGateway = <A, E, R>(
-  send: (input: Record<string, unknown>) => Effect.Effect<{ ok: boolean; reason?: string }>,
+  send: (input: Record<string, unknown>) => Effect.Effect<StubOutcome>,
   body: Effect.Effect<A, E, R>,
 ): Effect.Effect<A, E, R> =>
   Effect.suspend(() => {
@@ -128,7 +153,7 @@ describe("MessengerTool send", () => {
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service
       const refused = yield* withGateway(
-        () => Effect.succeed({ ok: false, reason: "the platform refused it: message too long" }),
+        () => Effect.succeed({ kind: "refused", reason: "the platform refused it: message too long" } as StubOutcome),
         executeTool(registry, sendCall("call-send-refused")),
       )
       expect(refused.type).toBe("text")
@@ -136,7 +161,7 @@ describe("MessengerTool send", () => {
       expect(String(refused.value)).not.toContain("Sent (paced")
 
       const sent = yield* withGateway(
-        () => Effect.succeed({ ok: true }),
+        () => Effect.succeed({ kind: "sent" } as StubOutcome),
         executeTool(registry, sendCall("call-send-ok")),
       )
       expect(String(sent.value)).toContain("Sent (paced at human typing speed).")
@@ -160,7 +185,7 @@ describe("MessengerTool send", () => {
       yield* withGateway(
         (input) => {
           asked.push(input)
-          return Effect.succeed({ ok: true })
+          return Effect.succeed({ kind: "sent" } as StubOutcome)
         },
         executeTool(registry, call),
       )
@@ -175,11 +200,73 @@ describe("MessengerTool send", () => {
       yield* withGateway(
         (input) => {
           asked.push(input)
-          return Effect.succeed({ ok: true })
+          return Effect.succeed({ kind: "sent" } as StubOutcome)
         },
         executeTool(registry, smuggled),
       ).pipe(Effect.ignore)
       expect(asked.every((input) => !("initiate" in input))).toBe(true)
     }),
   )
+})
+
+// ── the dead-letter class, as the MODEL experiences it ─────────────────────────────────────────
+// `status` is the op this tool's own description tells a model to call FIRST ("do NOT assume you
+// have no access — START by calling {"op":"status"}"). An unreadable messenger database used to
+// reach it as "No messenger accounts are set up. Ask the user to add one in Settings → Messengers"
+// — a sqlite fault rendered as a claim about the user's setup, on the one surface a model consults
+// before concluding it has no messaging at all. It would then tell the user to go set up an
+// account they already have.
+//
+// The two store doubles below differ in exactly ONE way — one answers with an empty list, the
+// other cannot answer — and the pair is the negative control: a change that collapses them back
+// together fails whichever leg it collapsed into.
+
+const statusCall = (id: string) => ({
+  sessionID,
+  ...toolIdentity,
+  call: { type: "tool-call" as const, id, name: MessengerTool.name, input: { op: "status" } },
+})
+
+describe("MessengerTool status", () => {
+  itEmptyStore.effect("a store that answers with nothing still says the accounts are not set up", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const result = yield* executeTool(registry, statusCall("call-status-empty"))
+      // The positive control. This sentence is TRUE for an empty store, which is exactly why it
+      // must not also be what a broken one says.
+      expect(String(result.value)).toContain("No messenger accounts are set up")
+      expect(String(result.value)).not.toContain("could not be read")
+    }),
+  )
+
+  itBrokenStore.effect("a store that CANNOT answer names itself instead of blaming the user's setup", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const result = yield* executeTool(registry, statusCall("call-status-unreadable"))
+      const text = String(result.value)
+      expect(text).toContain("messenger database could not be read")
+      // The lie has to be GONE, not merely joined by a truer sentence beside it: a model that reads
+      // "no accounts are set up" acts on it regardless of what follows.
+      expect(text).not.toContain("No messenger accounts are set up")
+      // …and the horizon a small model cannot supply for itself (AGENTS.md, the Juvenile Harness
+      // thesis): retrying is not the move, telling the user is.
+      expect(text).toContain("will not help")
+    }),
+  )
+})
+
+describe("MessengerTool.modelText", () => {
+  // The ONE place the three outcomes become the sentence a model reads. Pinned here rather than
+  // left to whoever edits the tool next, because the failure is silent: a model told only "the
+  // database could not be read" retries the same call until its budget is gone.
+  test("only the unavailable arm carries the do-not-retry horizon", () => {
+    expect(MessengerTool.modelText({ outcome: "ok", message: "Sent." })).toBe("Sent.")
+    expect(MessengerTool.modelText({ outcome: "failed", message: "That chat is already bound." })).toBe(
+      "That chat is already bound.",
+    )
+    const unavailable = MessengerTool.modelText({ outcome: "unavailable", message: "The database could not be read." })
+    expect(unavailable).toContain("The database could not be read.")
+    expect(unavailable).toContain("Nothing was sent and nothing was changed.")
+    expect(unavailable).toContain("will not help")
+  })
 })

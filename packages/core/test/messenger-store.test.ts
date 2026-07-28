@@ -184,6 +184,81 @@ describe("MessengerStore", () => {
     }),
   )
 
+  // The same dead-letter class, three more places (v0.2.0-prep, batch 3). Each of these was
+  // `Effect.orDie` under an `orElseSucceed` whose fallback is a STATEMENT, not an absence:
+  // `listAccounts` → "No messenger accounts are set up. Ask the user to add one" (a claim about
+  // the user's setup) and, in the gateway's reconcile, the cue to disconnect every live account;
+  // `hasChat` → "This chat has never messaged us" (a claim about the correspondent);
+  // `bindingForChat` → "This chat isn't driving any session" (a claim about the session — and the
+  // read a self-chat MINTS a new console session on the strength of).
+  //
+  // Driven against a REAL sqlite fault, not a stubbed `Effect.fail`, because the distinction is
+  // the whole point: while these ended in `orDie`, a fault was a DEFECT, so every `orElseSucceed`
+  // written for them was unreachable and the fiber died instead. `Effect.flip` below only succeeds
+  // for a typed failure — a die propagates through it and fails the test, which is exactly how
+  // this test bites if the `nameTheFault` calls are reverted.
+  it.effect("listAccounts, hasChat and bindingForChat fail typed — none of them invents an answer", () =>
+    Effect.gen(function* () {
+      const store = yield* MessengerStore.Service
+      const { db } = yield* Database.Service
+      const account = yield* store.createAccount({ driverID: "telegram", label: "t", enabled: true, settings: {} })
+      yield* store.seenChat({ accountID: account.id, chatID: "9", kind: "dm", title: "Nancy", at: 1 })
+      yield* store.createBinding({ accountID: account.id, chatID: "9", sessionID: "ses_dead", trust: "client" })
+
+      // The positive control, first: with the tables intact each read answers, so the assertions
+      // below are about the FAULT and not about the read being broken outright.
+      expect((yield* store.listAccounts()).map((entry) => entry.id)).toContain(account.id)
+      expect(yield* store.hasChat(account.id, "9")).toBe(true)
+      expect((yield* store.bindingForChat(account.id, "9"))?.sessionID).toBe("ses_dead")
+
+      yield* db.run("DROP TABLE messenger_account")
+      yield* db.run("DROP TABLE messenger_chat")
+      yield* db.run("DROP TABLE messenger_binding")
+
+      const accounts = yield* store.listAccounts().pipe(Effect.flip)
+      expect(accounts._tag).toBe("MessengerStore.Unavailable")
+      expect(accounts.read).toBe("listAccounts()")
+      expect(accounts.detail).toContain("messenger_account")
+
+      const chat = yield* store.hasChat(account.id, "9").pipe(Effect.flip)
+      expect(chat._tag).toBe("MessengerStore.Unavailable")
+      expect(chat.read).toBe(`hasChat(${account.id}, 9)`)
+      expect(chat.detail).toContain("messenger_chat")
+
+      const binding = yield* store.bindingForChat(account.id, "9").pipe(Effect.flip)
+      expect(binding._tag).toBe("MessengerStore.Unavailable")
+      expect(binding.read).toBe(`bindingForChat(${account.id}, 9)`)
+      expect(binding.detail).toContain("messenger_binding")
+
+      // …and none of the three is silent about it (ruling 2: the subsystem NAMES itself).
+      const logged = (yield* TestConsole.logLines).map((line) => JSON.stringify(line)).join("\n")
+      expect(logged).toContain("MessengerStore.listAccounts()")
+      expect(logged).toContain("MessengerStore.hasChat(")
+      expect(logged).toContain("MessengerStore.bindingForChat(")
+    }),
+  )
+
+  // The consumer-facing half of `attempted`: it must be impossible to use the result WITHOUT having
+  // branched on whether the read happened. A test cannot assert "this does not compile", so it
+  // asserts the runtime shape the type rests on — a faulted read carries `read: false` and NO
+  // value, so there is nothing to mistake for an answer.
+  it.effect("attempted() reports whether the read happened, and carries no answer when it did not", () =>
+    Effect.gen(function* () {
+      const store = yield* MessengerStore.Service
+      const { db } = yield* Database.Service
+      yield* store.createAccount({ driverID: "telegram", label: "t", enabled: true, settings: {} })
+
+      const before = yield* MessengerStore.attempted(store.listAccounts())
+      expect(before.read).toBe(true)
+      expect(before.value).toHaveLength(1)
+
+      yield* db.run("DROP TABLE messenger_account")
+      const after = yield* MessengerStore.attempted(store.listAccounts())
+      expect(after.read).toBe(false)
+      expect(after.value).toBeUndefined()
+    }),
+  )
+
   it.effect("removing an account cascades chats, contacts, bindings, and cursor", () =>
     Effect.gen(function* () {
       const store = yield* MessengerStore.Service

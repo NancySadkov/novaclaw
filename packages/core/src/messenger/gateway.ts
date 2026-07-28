@@ -81,7 +81,88 @@ const MODERATION_ACTIONS =
 const MAX_INBOUND_PER_MINUTE = 30
 const INBOUND_WINDOW_MS = 60_000
 
-export type SendOutcome = { readonly ok: true } | { readonly ok: false; readonly reason: string }
+/**
+ * What became of an outbound message — THREE arms, because "we didn't send it" and "we couldn't
+ * even find out whether we were allowed to" are different facts and the model acts differently on
+ * each (`refused` → try something else; `unavailable` → tell the user, retrying won't help).
+ *
+ * ⚠️ **The discriminant is `kind`, and it used to be `ok: boolean`. Renaming it IS the mechanism.**
+ * `Hostility` could safely grow a third value in place because its consumers already went through
+ * one collapse function; here every consumer wrote `if (!outcome.ok)` for itself, and adding a
+ * third *value* to `ok` would have been strictly worse than the two-state lie it replaced —
+ * `ok: "unknown"` is TRUTHY, so
+ * `!outcome.ok` is false for it and the tool would have gone on to report "Sent (paced at human
+ * typing speed)." for a message that was never sent. No `boolean`-shaped discriminant can carry a
+ * third state safely, and no comment can stop a truthiness test being written. Renaming the field
+ * makes every existing fold a COMPILE error, so each of them had to be looked at once — which is
+ * what a mechanical check is (ruling 1). `Effect.catch` on a driver `SendError` still produces the
+ * `refused` arm; only the shape of the answer changed.
+ *
+ * ⚠️ `refused` has several producers per method (no connection · cold start · daily cap · the
+ * driver's own verdict) and that is fine — each states a fact we established. `unavailable` has
+ * exactly ONE per method, always from `invitationOf` below, because "we could not find out" is a
+ * conclusion and not an observation. A ledger in messenger-gateway.test.ts holds that line.
+ */
+export type SendOutcome =
+  | { readonly kind: "sent" }
+  | { readonly kind: "refused"; readonly reason: string }
+  | { readonly kind: "unavailable"; readonly reason: string }
+
+/**
+ * May we write into this chat without it counting as COLD OUTREACH? (AGENTS.md #9(b): the agent
+ * must be invited to write first.) Three-valued for the same reason `Hostility` is: the two inputs
+ * are database reads, and a read can fail.
+ *
+ *  · `invited` — we have heard from this chat, or a session is bound to it;
+ *  · `cold`    — both facts were read and neither holds: a genuine new conversation;
+ *  · `unknown` — at least one of them was never read, so `cold` is a claim nothing supports.
+ *
+ * ⚠️ A DEFINITE `invited` beats an unread second input, exactly as a found hostile binding beats an
+ * unread chain link in `host-exec.ts`. If the seen-cache says we have heard from this chat, the
+ * binding table's health cannot change that — and degrading a perfectly answerable question to
+ * "unavailable" because an unrelated table faulted would take the agent's voice away for no gain.
+ */
+export type Invitation = "invited" | "cold" | "unknown"
+
+/** The ONE place the two tri-state reads collapse into an invitation, deliberately in one function
+ *  rather than repeated at `send` and `sendFile` — two copies is how two call sites come to answer
+ *  the same question differently (ruling 6). Pinned by a ledger in messenger-gateway.test.ts. */
+export const invitationOf = (seen: boolean | "unknown", bound: boolean | "unknown"): Invitation =>
+  seen === true || bound === true ? "invited" : seen === "unknown" || bound === "unknown" ? "unknown" : "cold"
+
+/**
+ * The reason an outbound message did not go out when the instance's own database could not answer
+ * the cold-start question.
+ *
+ * ⚠️ It must not read like the cold-start refusal. "This chat has never messaged us" is a CLAIM
+ * ABOUT THE CORRESPONDENT; reusing it here is exactly the false description ruling 2 forbids, and
+ * the model would act on it (apologise to the user for a person who has in fact been writing all
+ * week). It names the fault, says nothing was sent, and says why we would rather refuse than guess.
+ */
+const COLD_START_UNKNOWABLE =
+  "I couldn't send that: this instance's messenger database can't be read, so I can't tell whether " +
+  "this conversation was started by the other person. Writing to someone uninvited can get the " +
+  "account flagged, so nothing was sent and nothing was lost. Ask the user to check " +
+  "Settings → Messengers before trying again."
+
+/** What an operator's chat is told when a `/status`-style question cannot be answered at all. */
+const STATE_UNREADABLE =
+  "I can't reach this instance's messenger database right now, so I can't tell what this chat is " +
+  "linked to. Nothing has been lost — check Settings → Messengers in the app and try again."
+
+/** What an operator's chat is told when `/use` cannot safely bind, because the read that would say
+ *  what this chat is ALREADY bound to never happened. Binding anyway would silently steal a chat. */
+const BIND_UNREADABLE =
+  "I couldn't link this chat: this instance's messenger database can't be read, so I can't see what " +
+  "it is already linked to and I won't overwrite something I can't see. Nothing was changed — check " +
+  "Settings → Messengers and try again."
+
+/** What a trusted correspondent is told when their message cannot be routed, because the read that
+ *  says which session this chat drives never happened. Said ONCE per chat per outage (see below). */
+const ROUTE_UNREADABLE =
+  "I couldn't read this instance's messenger database, so I can't tell which session this chat " +
+  "drives. Your message hasn't reached anyone — please send it again once the app says the " +
+  "messenger is healthy."
 
 export interface PairingCode {
   readonly code: string
@@ -273,6 +354,24 @@ const build = (options: Options) =>
     // and the timer's own flush — no yields between snapshot and reset keep it race-free.
     type AudienceBuffer = { lines: string[]; files: FileAttachment[]; timer?: Fiber.Fiber<void, never> }
     const audienceBuffers = new Map<string, AudienceBuffer>()
+    // chatKeys already told, once, that we cannot read the database. An unreadable store must NOT
+    // turn every inbound message into an outbound one: that is a burst across a whole account, and
+    // a burst is precisely what gets a real person's account flagged (AGENTS.md #9(a), "one hand").
+    // Cleared the moment a routing read for that chat succeeds, so the NEXT outage speaks again.
+    const toldUnreadable = new Set<string>()
+
+    /** Ask both cold-start questions and collapse them once (see `invitationOf`). Never fails — an
+     *  unreadable table becomes `"unknown"`, which is an ANSWER the callers must handle, not an
+     *  absence they can mistake for "no". */
+    const invitation = (accountID: Messenger.AccountID, chatID: string): Effect.Effect<Invitation> =>
+      Effect.gen(function* () {
+        const seen = yield* MessengerStore.attempted(store.hasChat(accountID, chatID))
+        const bound = yield* MessengerStore.attempted(store.bindingForChat(accountID, chatID))
+        return invitationOf(
+          seen.read ? seen.value : "unknown",
+          bound.read ? bound.value !== undefined : "unknown",
+        )
+      })
 
     // Per-account typing speed (§2.3, user-tunable in Settings → Messengers): recorded per live
     // connection so paceSend applies the right speed without threading the account through every
@@ -547,7 +646,15 @@ const build = (options: Options) =>
             yield* reply(connection, event.chat.chatID, MessengerPipeline.HELP_TEXT)
             return
           case "status": {
-            const binding = yield* store.bindingForChat(account.id, event.chat.chatID)
+            // `/status` is a pure question, so the only wrong answer is a confident one. An
+            // unreadable binding table used to render as "This chat isn't driving any session",
+            // which is the operator's cue to go and bind it — on top of a binding that may exist.
+            const lookup = yield* MessengerStore.attempted(store.bindingForChat(account.id, event.chat.chatID))
+            if (!lookup.read) {
+              yield* reply(connection, event.chat.chatID, STATE_UNREADABLE)
+              return
+            }
+            const binding = lookup.value
             const address = account.settings["address"] ?? MessengerPipeline.DEFAULT_ADDRESS
             yield* reply(
               connection,
@@ -580,7 +687,18 @@ const build = (options: Options) =>
               yield* reply(connection, event.chat.chatID, "Run /sessions first, then /use a number from that list.")
               return
             }
-            const existing = yield* store.bindingForChat(account.id, event.chat.chatID)
+            // ⚠️ REFUSE rather than bind on an unread row. `/use` is a rebind: it deletes whatever
+            // this chat already drives and links the chosen session instead. An `undefined` from an
+            // unreadable table would skip the delete and hand the chat to `createBinding`, whose
+            // unique index then either rejects the whole command or — if the fault clears in
+            // between — leaves TWO rows racing for one chat. Nothing was changed is the honest
+            // outcome of a rebind we could not check, and the operator can simply retry.
+            const previous = yield* MessengerStore.attempted(store.bindingForChat(account.id, event.chat.chatID))
+            if (!previous.read) {
+              yield* reply(connection, event.chat.chatID, BIND_UNREADABLE)
+              return
+            }
+            const existing = previous.value
             if (existing !== undefined) yield* store.removeBinding(existing.id)
             const binding = yield* store
               .createBinding({ accountID: account.id, chatID: event.chat.chatID, sessionID, trust: "operator" })
@@ -665,6 +783,38 @@ const build = (options: Options) =>
         yield* injectTurn(connection, chatID, sessionID, header + buffer.lines.join("\n\n---\n\n"), undefined, buffer.files)
       })
 
+    /**
+     * Which binding drives this inbound message — own chat, else its parent chat (a Discord thread
+     * falls back to the channel), else the self-chat's lazily-minted console — **or the honest
+     * answer that we could not look.**
+     *
+     * ⚠️ `read: false` short-circuits: it is returned the moment ANY of the lookups faults, and in
+     * particular the console mint is never reached from an unread row. That ordering is the whole
+     * point — the fallback chain is a sequence of "not that one, then" steps, and a step that never
+     * happened must not read as "not that one".
+     */
+    const bindingForRoute = (
+      account: Messenger.AccountInfo,
+      event: Extract<InboundEvent, { kind: "message" }>,
+      trust: Messenger.ContactTrust | undefined,
+    ): Effect.Effect<{ readonly read: false } | { readonly read: true; readonly binding: Messenger.BindingInfo | undefined }> =>
+      Effect.gen(function* () {
+        // `as const` is load-bearing, not decoration: without it each literal's `read` widens to
+        // `boolean`, the union stops discriminating, and `if (!route.read)` at the call site would
+        // no longer narrow — the guard would compile and mean nothing.
+        const own = yield* MessengerStore.attempted(store.bindingForChat(account.id, event.chat.chatID))
+        if (!own.read) return { read: false as const }
+        if (own.value !== undefined) return { read: true as const, binding: own.value }
+        if (event.chat.parentID !== undefined) {
+          const parent = yield* MessengerStore.attempted(store.bindingForChat(account.id, event.chat.parentID))
+          if (!parent.read) return { read: false as const }
+          if (parent.value !== undefined) return { read: true as const, binding: parent.value }
+        }
+        if (event.chat.self === true && trust !== undefined)
+          return { read: true as const, binding: yield* ensureConsoleBinding(account, event.chat.chatID) }
+        return { read: true as const, binding: undefined }
+      })
+
     const routeInbound = (account: Messenger.AccountInfo, connection: Connection, event: InboundEvent) =>
       Effect.gen(function* () {
         if (event.kind !== "message") return
@@ -715,10 +865,31 @@ const build = (options: Options) =>
         // binding: posts appear continuously, so binding each one is impossible, and without this
         // an agent moderating #support is simply deaf to every thread in it. Replies still go to
         // the child chat id (it rides the per-message origin), so answers land in the right post.
-        const binding =
-          (yield* store.bindingForChat(account.id, event.chat.chatID)) ??
-          (event.chat.parentID === undefined ? undefined : yield* store.bindingForChat(account.id, event.chat.parentID)) ??
-          (event.chat.self === true && trust !== undefined ? yield* ensureConsoleBinding(account, event.chat.chatID) : undefined)
+        //
+        // ⚠️ And it is the seam where an unreadable database was WORST, which is why it stops the
+        // walk instead of falling through. `bindingForChat` answering `undefined` on a fault means
+        // (a) a bound chat is told "No session is linked here yet" — the operator then re-binds a
+        // chat that was already bound — and (b) in a self-chat, `ensureConsoleBinding` fires: a
+        // fresh session and a fresh binding MINTED on the strength of a read that failed, once per
+        // message. A write decided by a read that did not happen is the failure ruling 2 names.
+        const route = yield* bindingForRoute(account, event, trust)
+        const chatKey = MessengerPipeline.chatKey(account.id, event.chat.chatID)
+        if (!route.read) {
+          yield* Effect.logWarning(
+            `messenger: cannot route inbound on ${chatKey} — the messenger database could not be read; the message was not delivered`,
+          )
+          // Told once per chat per outage, and only to somebody we already trust: replying to an
+          // unpaired stranger would both break default-deny (§7.5 — a stranger gets silence, not a
+          // signal that anyone is home) and hand a flooding stranger an outbound message per
+          // inbound one, which is the traffic-rules havoc #9(a) exists to prevent.
+          if (trust !== undefined && !toldUnreadable.has(chatKey)) {
+            toldUnreadable.add(chatKey)
+            yield* reply(connection, event.chat.chatID, ROUTE_UNREADABLE)
+          }
+          return
+        }
+        toldUnreadable.delete(chatKey)
+        const binding = route.binding
         if (binding !== undefined) {
           if (binding.chatID === event.chat.chatID) lastInboundChat.delete(binding.id)
           else lastInboundChat.set(binding.id, event.chat.chatID)
@@ -995,7 +1166,26 @@ const build = (options: Options) =>
       })
 
     const reconcile = Effect.gen(function* () {
-      const accounts = yield* store.listAccounts()
+      // ⚠️ An unreadable account table must NEVER be read as "this instance has no messenger
+      // accounts". That empty is the DESTRUCTIVE answer here by the shortest possible route: the
+      // line below stops every connection whose account is missing from the list, so one faulted
+      // read would disconnect every live messenger on the instance — ruling 2's "a read never
+      // destroys". Doing nothing is strictly better than acting on a list we do not have: live
+      // connections keep working, `status()` keeps reporting them truthfully (it reads `entries`,
+      // which is untouched), and the next successful reload applies whatever actually changed.
+      //
+      // Handled HERE rather than failing outward on purpose. `reload()` is `Effect<void>` and is
+      // awaited by every account-CRUD HTTP handler; widening it would push a database fault into
+      // five route handlers that can do nothing useful with it, and the honest answer for all five
+      // is the same one. The operator's signal is the log line plus the store's own warning.
+      const listed = yield* MessengerStore.attempted(store.listAccounts())
+      if (!listed.read) {
+        yield* Effect.logWarning(
+          "messenger: skipping reconcile — the account table could not be read; live connections are left exactly as they are",
+        )
+        return
+      }
+      const accounts = listed.value
       const known = new Set(accounts.map((account) => account.id))
       for (const accountID of [...entries.keys()]) if (!known.has(accountID)) yield* stop(accountID)
 
@@ -1102,17 +1292,20 @@ const build = (options: Options) =>
         Effect.gen(function* () {
           const entry = entries.get(input.accountID)
           if (entry?.connection === undefined)
-            return { ok: false, reason: "That messenger account isn't connected right now." } satisfies SendOutcome
-          const known = yield* store.hasChat(input.accountID, input.chatID).pipe(Effect.orElseSucceed(() => false))
-          const bound = yield* store.bindingForChat(input.accountID, input.chatID).pipe(Effect.orElseSucceed(() => undefined))
-          const coldStart = !known && bound === undefined
-          if (coldStart) {
+            return { kind: "refused", reason: "That messenger account isn't connected right now." } satisfies SendOutcome
+          const invited = yield* invitation(input.accountID, input.chatID)
+          // ⚠️ Not a cold start, and not a send either. Both inputs to the cold-start test are
+          // database reads; when neither could answer, "this chat has never messaged us" is a
+          // sentence about a person, invented from a fault. We refuse — writing uninvited risks the
+          // user's real account (AGENTS.md #9(b)) — but we refuse under our own name.
+          if (invited === "unknown") return { kind: "unavailable", reason: COLD_START_UNKNOWABLE } satisfies SendOutcome
+          if (invited === "cold") {
             // Traffic rules §2.3 / AGENTS.md #9(b): the agent must be INVITED to write first. No
             // product surface passes `initiate` today (see the interface note above), so THIS is
             // what every real cold start currently gets — the branch below is test-only.
             if (!input.initiate)
               return {
-                ok: false,
+                kind: "refused",
                 reason:
                   "This chat has never messaged us — starting a new conversation isn't allowed by default. " +
                   "Ask the person to message first, or (if you have permission) retry as an explicit initiation.",
@@ -1124,7 +1317,7 @@ const build = (options: Options) =>
             }
             if (initiations.count >= DAILY_NEW_CONVERSATION_CAP)
               return {
-                ok: false,
+                kind: "refused",
                 reason: `Daily new-conversation limit (${DAILY_NEW_CONVERSATION_CAP}) reached — pacing to avoid a provider flag. Try again tomorrow.`,
               } satisfies SendOutcome
             // The bucket is charged on the ATTEMPT, and never refunded. Both halves are deliberate,
@@ -1152,22 +1345,22 @@ const build = (options: Options) =>
           // model. Swallowing it here reported "Sent (paced at human typing speed)" for a message
           // that never left the machine — the model then acts as if the person has been answered.
           return yield* paceSend(entry.connection, input.chatID, input.text, input.replyTo).pipe(
-            Effect.map(() => ({ ok: true }) satisfies SendOutcome),
-            Effect.catch((error) => Effect.succeed({ ok: false, reason: error.reason } satisfies SendOutcome)),
+            Effect.map(() => ({ kind: "sent" }) satisfies SendOutcome),
+            Effect.catch((error) => Effect.succeed({ kind: "refused", reason: error.reason } satisfies SendOutcome)),
           )
         }),
       sendFile: (input) =>
         Effect.gen(function* () {
           const entry = entries.get(input.accountID)
           if (entry?.connection === undefined)
-            return { ok: false, reason: "That messenger account isn't connected right now." } satisfies SendOutcome
-          const known = yield* store.hasChat(input.accountID, input.chatID).pipe(Effect.orElseSucceed(() => false))
-          const boundChat = yield* store
-            .bindingForChat(input.accountID, input.chatID)
-            .pipe(Effect.orElseSucceed(() => undefined))
-          if (!known && boundChat === undefined)
+            return { kind: "refused", reason: "That messenger account isn't connected right now." } satisfies SendOutcome
+          // The same question, through the same collapse point — a file has no `initiate` escape at
+          // all, so `cold` and `unknown` both stop here and only the SENTENCE differs.
+          const invited = yield* invitation(input.accountID, input.chatID)
+          if (invited === "unknown") return { kind: "unavailable", reason: COLD_START_UNKNOWABLE } satisfies SendOutcome
+          if (invited === "cold")
             return {
-              ok: false,
+              kind: "refused",
               reason:
                 "This chat has never messaged us — a file can't open a new conversation (traffic rules). Ask the person to message first.",
             } satisfies SendOutcome
@@ -1182,8 +1375,8 @@ const build = (options: Options) =>
               }),
             )
             .pipe(
-              Effect.map(() => ({ ok: true }) satisfies SendOutcome),
-              Effect.catch((error) => Effect.succeed({ ok: false, reason: error.reason } satisfies SendOutcome)),
+              Effect.map(() => ({ kind: "sent" }) satisfies SendOutcome),
+              Effect.catch((error) => Effect.succeed({ kind: "refused", reason: error.reason } satisfies SendOutcome)),
             )
         }),
       attachment: (input) =>
