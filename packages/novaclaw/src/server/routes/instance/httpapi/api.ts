@@ -30,7 +30,7 @@ import { LocationMiddleware } from "@novaclaw/server/location"
 import { SessionLocationMiddleware } from "@novaclaw/server/middleware/session-location"
 import { GlobalApi } from "./groups/global"
 import { Authorization } from "./middleware/authorization"
-import { SchemaErrorMiddleware } from "./middleware/schema-error"
+import { ExperimentalSchemaErrorMiddleware } from "./middleware/schema-error"
 
 const EventSchema = Schema.Union([
   ...EventManifest.Latest.values()
@@ -55,7 +55,7 @@ export const RootHttpApi = HttpApi.make("novaclaw-root")
   .addHttpApi(ControlApi)
   .addHttpApi(ControlPlaneApi)
   .addHttpApi(GlobalApi)
-  .middleware(SchemaErrorMiddleware)
+  .middleware(ExperimentalSchemaErrorMiddleware)
   .middleware(Authorization)
 
 export const InstanceHttpApi = HttpApi.make("novaclaw-instance")
@@ -74,7 +74,7 @@ export const InstanceHttpApi = HttpApi.make("novaclaw-instance")
   .addHttpApi(ShellApi)
   .addHttpApi(SyncApi)
   .addHttpApi(WorkspaceApi)
-  .middleware(SchemaErrorMiddleware)
+  .middleware(ExperimentalSchemaErrorMiddleware)
 
 export const NovaClawHttpApi = HttpApi.make("novaclaw")
   .addHttpApi(RootHttpApi)
