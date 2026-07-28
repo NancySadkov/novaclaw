@@ -1,13 +1,23 @@
 export * as JhStore from "./store"
 
-// jh — save/load/list the engine state over a plain `db` handle (the deps-taking seam pattern —
+// jh — save/load the engine state over a plain `db` handle (the deps-taking seam pattern —
 // SessionMessageRead.list(db, …); NO service/layer, rule §0.7.1). The State's Maps (tree.nodes,
 // telemetry) can't live in a JSON column, so the jh_plan.state blob stores them as entry arrays;
 // artifacts and the log get their own rows so they append/replace cleanly. Timestamps come in as `now`
-// (never Date.now() — determinism).
+// (never Date.now() — determinism), and that includes the retention cutoff.
+//
+// RETENTION (U7): every Strict task writes one jh_plan row plus N jh_log and M jh_artifact rows, and
+// for a while nothing ever deleted any of them — the tables grew for the life of the install, and
+// because these three carry NO foreign key to the session table (engine-internal, D10), deleting a
+// chat orphaned its rows rather than cascading. Two purges close that, both LAZY and both on the
+// WRITE path — the `trash.ts` stance, "called lazily — no daemon", never a read that destroys:
+//   · `purgeExpired` — TTL over `timeUpdated`, called once per Strict drain from the runner. All
+//     growth happens inside a Strict drain and every Strict drain begins there, so every growth
+//     episode is preceded by a purge.
+//   · `purgeSession` — the missing cascade, called from `removeSessionRecord`.
 
 import { Effect } from "effect"
-import { asc, desc, eq, like } from "drizzle-orm"
+import { and, asc, desc, eq, gte, inArray, lt, or } from "drizzle-orm"
 import type { Database } from "../database/database"
 import { JhArtifactTable, JhLogTable, JhPlanTable } from "./sql"
 import type { JhArtifact } from "./artifact"
@@ -18,6 +28,54 @@ import type { JhStep } from "./step"
 import type { JhTree } from "./tree"
 
 type Db = Database.Interface["db"]
+
+/**
+ * How long a plan survives its last update. A plan is only ever READ to resume an interrupted
+ * run ("say resume to continue it"), and the run's real outputs — the files it wrote, the chat
+ * summary — live elsewhere and are untouched by this. A week is far past any resume anyone
+ * attempts, and it bounds the tables by RECENT ACTIVITY instead of by install age.
+ */
+export const DEFAULT_TTL_MS = 7 * 24 * 3600 * 1000
+
+/**
+ * The id prefix the runner keys a session's per-task plans with (`jh_<sessionID>_<taskKey>`).
+ * ⚠️ The runner builds that literal itself (pinned by a source assertion in store.test.ts) — this
+ * is the same fact stated where the CASCADE needs it, and the two are tested against each other.
+ */
+export const sessionPrefix = (sessionID: string) => `jh_${sessionID}_`
+
+/**
+ * `id LIKE '<prefix>%'` as an indexable, case-EXACT range.
+ *
+ * SQLite's LIKE is case-insensitive for ASCII (so it matched more than asked and needed a JS
+ * re-check) and the planner cannot use the `id` primary-key index for it — every prefix lookup
+ * scanned the whole table, and `latest` runs on every Strict turn. A `>=`/`<` pair on the same
+ * column is an index range scan and means exactly what it says. Assumes an ASCII final character
+ * (ids are `jh_<sessionID>_`), because the bound increments that one byte.
+ */
+const prefixRange = (column: typeof JhPlanTable.id, prefix: string) =>
+  and(
+    gte(column, prefix),
+    lt(column, prefix.slice(0, -1) + String.fromCharCode(prefix.charCodeAt(prefix.length - 1) + 1)),
+  )
+
+/** Batch size for the manual cascade — keeps the `IN (…)` list well inside SQLite's variable limit. */
+const PURGE_CHUNK = 200
+
+/**
+ * Delete plans and their children. Children FIRST: with no FK there is no cascade, and a crash
+ * between the statements must not leave log/artifact rows whose plan row is gone — those would be
+ * invisible to every future purge (nothing joins back to them).
+ */
+const deletePlans = (db: Db, ids: readonly string[]): Effect.Effect<void> =>
+  Effect.gen(function* () {
+    for (let i = 0; i < ids.length; i += PURGE_CHUNK) {
+      const batch = ids.slice(i, i + PURGE_CHUNK)
+      yield* db.delete(JhLogTable).where(inArray(JhLogTable.planID, batch)).run().pipe(Effect.orDie)
+      yield* db.delete(JhArtifactTable).where(inArray(JhArtifactTable.planID, batch)).run().pipe(Effect.orDie)
+      yield* db.delete(JhPlanTable).where(inArray(JhPlanTable.id, batch)).run().pipe(Effect.orDie)
+    }
+  })
 
 interface SerializedState {
   readonly tree: { readonly root: string; readonly nodes: ReadonlyArray<readonly [string, JhTree.Node]> }
@@ -81,34 +139,70 @@ export function load(db: Db, id: string): Effect.Effect<{ goal: string; status: 
  *
  * The runner keys a plan PER TASK (`jh_<sessionID>_<taskKey>`) because a session can run many
  * Strict tasks and each owns its own log rows and artifacts, so "the plan this chat might resume"
- * is a prefix scan, not a point lookup. `LIKE` only NARROWS: its `_` is a single-char wildcard and
- * it is case-insensitive for ASCII, so the exact prefix is re-checked in JS. `timeUpdated` has
+ * is a prefix RANGE, not a point lookup (see `prefixRange` for why not `LIKE`). `timeUpdated` has
  * millisecond granularity, so the id breaks a tie — ids embed an ascending message id within a
- * session. A legacy session-scoped `jh_<sessionID>` row carries no trailing separator and is
- * therefore never matched.
+ * session. A legacy session-scoped `jh_<sessionID>` row carries no trailing separator and sorts
+ * BELOW the prefix, so it is never matched.
  */
 export function latest(
   db: Db,
   prefix: string,
 ): Effect.Effect<{ id: string; goal: string; status: string; state: JhEngine.State } | undefined> {
   return Effect.gen(function* () {
-    const rows = yield* db
+    const row = yield* db
       .select({ id: JhPlanTable.id })
       .from(JhPlanTable)
-      .where(like(JhPlanTable.id, `${prefix}%`))
+      .where(prefixRange(JhPlanTable.id, prefix))
       .orderBy(desc(JhPlanTable.timeUpdated), desc(JhPlanTable.id))
-      .all()
+      .limit(1)
+      .get()
       .pipe(Effect.orDie)
-    const row = rows.find((r) => r.id.startsWith(prefix))
     if (!row) return undefined
     const plan = yield* load(db, row.id)
     return plan === undefined ? undefined : { id: row.id, ...plan }
   })
 }
 
-export function list(db: Db): Effect.Effect<ReadonlyArray<{ id: string; goal: string; status: string; timeUpdated: number }>> {
+/**
+ * TTL retention: drop every plan (and its log + artifacts) untouched for longer than `ttlMs`.
+ * Returns how many plans went, so a caller can log it. `now` is injected like every other
+ * timestamp in this module — no `Date.now()` here.
+ */
+export function purgeExpired(db: Db, input: { now: number; ttlMs?: number }): Effect.Effect<number> {
   return Effect.gen(function* () {
-    const rows = yield* db.select().from(JhPlanTable).all().pipe(Effect.orDie)
-    return rows.map((r) => ({ id: r.id, goal: r.goal, status: r.status, timeUpdated: r.timeUpdated }))
+    const cutoff = input.now - (input.ttlMs ?? DEFAULT_TTL_MS)
+    const rows = yield* db
+      .select({ id: JhPlanTable.id })
+      .from(JhPlanTable)
+      .where(lt(JhPlanTable.timeUpdated, cutoff))
+      .all()
+      .pipe(Effect.orDie)
+    if (rows.length === 0) return 0
+    yield* deletePlans(db, rows.map((r) => r.id))
+    return rows.length
+  })
+}
+
+/**
+ * The cascade the schema cannot express: these tables carry no FK to the session table, so the
+ * `session.deleted` projector's row-delete cascade (messages/parts/todos/tags) never reached them
+ * and a deleted chat left its plans, its whole event log and its artifact CONTENT behind forever.
+ * Called from `removeSessionRecord`, which covers every remover (the V2 service and the workspace
+ * control-plane's session sweep both go through it).
+ *
+ * Takes the legacy session-scoped `jh_<sessionID>` row too — it belongs to this session just as
+ * much, and nothing else will ever match it again.
+ */
+export function purgeSession(db: Db, sessionID: string): Effect.Effect<number> {
+  return Effect.gen(function* () {
+    const rows = yield* db
+      .select({ id: JhPlanTable.id })
+      .from(JhPlanTable)
+      .where(or(prefixRange(JhPlanTable.id, sessionPrefix(sessionID)), eq(JhPlanTable.id, `jh_${sessionID}`)))
+      .all()
+      .pipe(Effect.orDie)
+    if (rows.length === 0) return 0
+    yield* deletePlans(db, rows.map((r) => r.id))
+    return rows.length
   })
 }

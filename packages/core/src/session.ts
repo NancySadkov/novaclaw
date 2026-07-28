@@ -23,6 +23,7 @@ import { InstallationVersion } from "./installation/version"
 import { Slug } from "./util/slug"
 import path from "path"
 import { fromRow } from "./session/info"
+import { JhStore } from "./jh/store"
 import { SessionRunner } from "./session/runner/index"
 import { SessionScheduler } from "./session/scheduler"
 import { SessionStore } from "./session/store"
@@ -408,8 +409,15 @@ export const createSessionRecord = (
  *
  * `evict` follows `interrupt` exactly: an OPTIONAL injected primitive, because the seam must
  * stay usable by the service-less callers (the CLI's `session delete` holds no scheduler at
- * all — its ledger dies with the process). Where a scheduler DOES exist, a removed session
- * that never leaves the EEVDF ledger stays there for the life of the instance.
+ * all — its ledger dies with the process). Where a scheduler DOES exist it drops the removed
+ * session's entry AT ONCE, along with any slot a hard kill left it holding — the gate's own
+ * forgiveness-TTL retention would eventually reclaim the entry, but not the slot, and not now.
+ *
+ * The jh purge is NOT optional and takes no injection: `jh_plan`/`jh_log`/`jh_artifact` carry no
+ * FK to the session table (engine-internal, D10), so the `session.deleted` projector's row-delete
+ * cascade never reached them and a deleted chat left its Strict plans, logs and artifact CONTENT
+ * on disk forever. It runs BEFORE the delete publish so a store fault aborts the removal instead
+ * of reporting success over a half-deleted session.
  */
 export const removeSessionRecord = (
   deps: {
@@ -429,6 +437,7 @@ export const removeSessionRecord = (
     // evicting first would only leave the dead session's ledger entry to be re-created. Each
     // child evicts itself in the recursion below.
     if (deps.evict) yield* deps.evict(sessionID)
+    yield* JhStore.purgeSession(db, sessionID)
     const children = yield* db
       .select({ id: SessionTable.id })
       .from(SessionTable)

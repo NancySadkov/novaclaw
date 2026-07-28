@@ -68,6 +68,7 @@ import { toLLMMessages } from "./to-llm-message"
 import { AdhocGuidance } from "../../adhoc-tools/guidance"
 import { Affective } from "./affective"
 import { SessionDrive } from "./drive"
+import { FinishRecovery } from "./finish-recovery"
 import { ContextPack } from "./context-pack"
 import {
   detectDoomLoop,
@@ -910,11 +911,28 @@ export const layer = Layer.effect(
       // not help when `release` is never CALLED at all. A leaked INTERACTIVE entry
       // permanently zeroes `batchCapacity` for that device (scheduler.ts: capacity requires
       // `inFlightInteractive.size === 0`), so every batch session on it blocks forever; a
-      // leaked batch entry burns one of MAX_BATCH slots. Hence the `Effect.ensuring` net,
-      // composed so the finalizer is installed BEFORE `admit` runs — that also covers the
-      // window between admission and the mask. `admit` itself stays INTERRUPTIBLE on
-      // purpose: a queued batch turn must remain stoppable, and its own `onInterrupt` drops
-      // the waiter (releasing a slot that was never held is a no-op).
+      // leaked batch entry burns one of MAX_BATCH slots.
+      //
+      // The `Effect.ensuring` net below is the CHOSEN and COMPLETE remedy — this is not a
+      // known gap awaiting a follow-up. The obvious alternative, wrapping the retry sleep in
+      // `Effect.exit` like its two neighbours, is strictly WORSE, and measurably so: an
+      // `Effect.exit` turns the interrupt into a VALUE, so the Stop no longer leaves at the
+      // sleep — it falls through this entire post-generation tail (measured 2026-07-28 on a
+      // model of this exact composition: unwrapped stops at the sleep; wrapped runs
+      // second-attempt → release → tool-await → every publish → end). It does not HANG: the
+      // tail's own `restore(...)`+`Effect.exit` boundaries re-raise the pending interrupt at
+      // once rather than waiting on tool settlement. What it costs is a redundant provider
+      // attempt, `failUnsettledTools`/`failAssistant` publishes and a `patchSessionRecord`
+      // write on the one path that must stay prompt and quiet — plus it drives an
+      // already-interrupted fiber through the `recoverOverflow` restore below, which is NOT
+      // exit-wrapped and is safe here only by short-circuit. All of that to reach the same
+      // final interrupt exit, for a leak `ensuring` already closes with ZERO change to
+      // interrupt timing. So: do not wrap the sleep.
+      //
+      // The net is composed so the finalizer is installed BEFORE `admit` runs — that also
+      // covers the window between admission and the mask. `admit` itself stays INTERRUPTIBLE
+      // on purpose: a queued batch turn must remain stoppable, and its own `onInterrupt`
+      // drops the waiter (releasing a slot that was never held is a no-op).
       const deviceKey = `${model.provider}/${model.id}`
       const dispatchSlot = {
         sessionID: session.id as string,
@@ -1040,7 +1058,17 @@ export const layer = Layer.effect(
           if (stream._tag === "Failure") return yield* Effect.failCause(stream.cause)
           if (settled._tag === "Failure" && Cause.hasInterrupts(settled.cause))
             return yield* Effect.failCause(settled.cause)
-          return { needsContinuation: !publisher.hasProviderError() && needsContinuation, step: currentStep }
+          // F2: the settled provider finish reason travels out with the turn. It is the only
+          // GROUND TRUTH about why the turn ended — every other tell the drain reads downstream
+          // (empty turn, confident-sounding final text) is a heuristic over the text. `undefined`
+          // means the step never settled at all (provider failure / interrupt), which is not a
+          // truncation. `finish` is a widened `string` here because that is how the publisher
+          // stashes `step-finish`'s reason; `finish-recovery.ts` pins the literal to the schema.
+          return {
+            needsContinuation: !publisher.hasProviderError() && needsContinuation,
+            step: currentStep,
+            finish: stepSettlement?.finish,
+          }
         }),
       )
       return yield* scheduler.admit(dispatchSlot).pipe(
@@ -1052,7 +1080,10 @@ export const layer = Layer.effect(
       sessionID: SessionSchema.ID,
       promotion: SessionInput.Delivery | undefined,
       step: number,
-    ) => Effect.Effect<{ readonly needsContinuation: boolean; readonly step: number }, RunError>
+    ) => Effect.Effect<
+      { readonly needsContinuation: boolean; readonly step: number; readonly finish: string | undefined },
+      RunError
+    >
 
     const runAfterOverflowCompaction: RunTurn = Effect.fnUntraced(function* (sessionID, promotion, step) {
       return yield* runTurnAttempt(sessionID, promotion, step).pipe(
@@ -1245,6 +1276,15 @@ export const layer = Layer.effect(
         // read that destroys, and a fault described falsely. The session's plans are found by
         // prefix, newest first, and a RESUME adopts the found plan's id instead of minting a new
         // one, so one task keeps one id from first checkpoint to terminal save.
+        // Retention, on the way IN (jh/store.ts): a Strict run is the only thing that ever writes
+        // jh_plan/jh_log/jh_artifact, and every Strict run passes here, so one lazy purge per drain
+        // bounds all three tables by the TTL instead of by install age — no daemon, and no purge
+        // hidden inside `latest`, because a read never destroys (todo.md ruling 3).
+        yield* JhStore.purgeExpired(db, { now: Date.now() }).pipe(
+          Effect.catchDefect((defect) =>
+            Effect.logWarning("strict retention purge failed", { sessionID, defect }).pipe(Effect.as(0)),
+          ),
+        )
         const saved = yield* JhStore.latest(db, `jh_${sessionID}_`).pipe(
           Effect.catchDefect((defect) =>
             Effect.logWarning("strict resume state unreadable", { sessionID, defect }).pipe(Effect.as(undefined)),
@@ -1688,6 +1728,11 @@ export const layer = Layer.effect(
       let regrounded = false
       // Silent-no-op guard: one steer per drain when a no-tool-call turn looks like an attempted call.
       let textualNudged = false
+      // F2 output-token truncation ledger — PER-DRAIN, like every latch above it (see
+      // `finish-recovery.ts` `initialState` for why per-turn never trips and per-session never
+      // clears). One steer back to the cutoff, then the drain stops honestly.
+      const finishRecovery = FinishRecovery.initialState()
+      let truncationHalted = false
       const quality = Quality.initialState()
       // Self-drive state (architecture.md "run until exit()"): per-DRAIN round/wall counters —
       // a fresh drain (any new message) re-arms a cap-paused autonomous session.
@@ -1739,6 +1784,46 @@ export const layer = Layer.effect(
               })
               break
             }
+          }
+          // F2 — the provider stopped this turn at its OUTPUT-TOKEN LIMIT (finish=length) and the
+          // drain is not already continuing: the answer is truncated, not finished. This runs
+          // BEFORE the heuristic nudge chain below and short-circuits it on purpose — those
+          // branches (empty-turn recovery, textual-call, finish re-grounding) are guesses about
+          // *why* a turn ended, and here the provider has told us; re-grounding a guillotined
+          // sentence or diagnosing a reasoning-only truncation as a lost tool call would both be
+          // the wrong advice. The steer rides `SessionInput.steer`, so it carries the 1N provenance
+          // prefix and is never read back as the user speaking. `consecutiveEmpty` is deliberately
+          // left as it stands: a truncated turn is neither progress nor an empty-turn strike.
+          const truncation = FinishRecovery.decide(result.finish, result.needsContinuation, finishRecovery)
+          if (truncation.kind === "continue") {
+            yield* Effect.logInfo("finish recovery: provider truncated at its output-token limit", {
+              sessionID: input.sessionID,
+              step,
+              recoveries: finishRecovery.recoveries,
+            })
+            yield* SessionInput.steer(db, events, input.sessionID, truncation.message)
+            needsContinuation = true
+            continue
+          }
+          if (truncation.kind === "stop") {
+            // The MECHANICAL half of the bound. Steering again would just buy another truncated
+            // turn, so end the drain with a visible notice naming the actual fix. Any new input
+            // re-wakes a FRESH drain through the coordinator's pendingWake (same guarantee the
+            // exit-transition break above relies on), where the ledger starts at zero again.
+            yield* Effect.logWarning("finish recovery: truncated twice — pausing the drain", {
+              sessionID: input.sessionID,
+              step,
+            })
+            yield* Effect.gen(function* () {
+              yield* events.publish(SessionEvent.Synthetic, {
+                sessionID: input.sessionID,
+                messageID: SessionMessage.ID.create(),
+                timestamp: yield* DateTime.now,
+                text: truncation.notice,
+              })
+            }).pipe(Effect.ignore)
+            truncationHalted = true
+            break
           }
           const context = yield* getContext(input.sessionID)
           // 1E doom-loop break: only while the model is still acting (made a tool call).
@@ -1874,7 +1959,11 @@ export const layer = Layer.effect(
           }
           if (!needsContinuation) needsContinuation = yield* SessionInput.hasPending(db, input.sessionID, "steer")
         }
-        if (exitedMidDrain) break
+        // F2: the truncation halt ends the RUN, not just the inner step loop — otherwise the
+        // queue promotion or the self-drive continuation below would immediately steer the same
+        // starved model straight back into the same wall, and the two-strike bound would be
+        // decorative. Pending input is safe for the same reason it is safe on the exit path.
+        if (exitedMidDrain || truncationHalted) break
         shouldRun = yield* SessionInput.hasPending(db, input.sessionID, "queue")
         promotion = shouldRun ? "queue" : undefined
         if (!shouldRun) {

@@ -3,9 +3,11 @@ import fs from "fs"
 import path from "path"
 import { SqliteClient } from "@effect/sql-sqlite-bun"
 import { EffectDrizzleSqlite } from "@novaclaw/effect-drizzle-sqlite"
+import { eq } from "drizzle-orm"
 import { Effect } from "effect"
 import type { Database } from "../database/database"
 import { DatabaseMigration } from "../database/migration"
+import { JhArtifactTable, JhLogTable } from "./sql"
 import { JhArtifact } from "./artifact"
 import { JhBudget } from "./budget"
 import { JhBasicTools } from "./tools-basic"
@@ -75,19 +77,21 @@ describe("JhStore", () => {
     expect(loaded!.status).toBe("done")
   })
 
-  test("load unknown id → undefined; list reflects status", async () => {
+  test("load unknown id → undefined; each saved plan keeps its own status", async () => {
+    // (`JhStore.list` used to be exercised here. It had ZERO production callers and full-scanned
+    // jh_plan decoding every `state` blob — deleted with the U7 retention work rather than kept
+    // as a fast-growing convenience nobody called.)
     const result = await withDb((db) =>
       Effect.gen(function* () {
         const missing = yield* JhStore.load(db, "nope")
         yield* JhStore.save(db, { id: "a", goal: "ga", status: "running", state: sampleState(), now: 1 })
         yield* JhStore.save(db, { id: "b", goal: "gb", status: "blocked", state: sampleState(), now: 2 })
-        const listed = yield* JhStore.list(db)
-        return { missing, listed }
+        return { missing, a: yield* JhStore.load(db, "a"), b: yield* JhStore.load(db, "b") }
       }),
     )
     expect(result.missing).toBeUndefined()
-    expect(result.listed.length).toBe(2)
-    expect(new Set(result.listed.map((r) => r.status))).toEqual(new Set(["running", "blocked"]))
+    expect(result.a!.status).toBe("running")
+    expect(result.b!.status).toBe("blocked")
   })
 
   // ── the per-TASK plan id (runner/llm.ts) ───────────────────────────────────────────────────
@@ -166,6 +170,119 @@ describe("JhStore", () => {
     const source = fs.readFileSync(path.join(import.meta.dir, "..", "session", "runner", "llm.ts"), "utf8")
     expect(source).toContain("`jh_${sessionID}_${taskKey}`")
     expect(source).not.toContain("`jh_${sessionID}`")
+    // …and the cascade in `removeSessionRecord` rebuilds that same key from `sessionPrefix`, so the
+    // two statements of the format are pinned to each other rather than drifting apart.
+    expect(JhStore.sessionPrefix("ses_1")).toBe("jh_ses_1_")
+  })
+
+  // ── retention (U7 Part B) ─────────────────────────────────────────────────────────────────
+  // One jh_plan + N jh_log + M jh_artifact per Strict TASK, and for a while nothing deleted any
+  // of it — the tables were bounded by install age. Both purges are lazy and live on the WRITE
+  // path (trash.ts's stance), so a read never destroys.
+  const planRowCounts = (db: Database.Interface["db"], planID: string) =>
+    Effect.gen(function* () {
+      const logs = yield* db.select().from(JhLogTable).where(eq(JhLogTable.planID, planID)).all().pipe(Effect.orDie)
+      const artifacts = yield* db
+        .select()
+        .from(JhArtifactTable)
+        .where(eq(JhArtifactTable.planID, planID))
+        .all()
+        .pipe(Effect.orDie)
+      return { logs: logs.length, artifacts: artifacts.length }
+    })
+
+  test("purgeExpired drops stale plans WITH their log and artifact rows, and keeps fresh ones", async () => {
+    const result = await withDb((db) =>
+      Effect.gen(function* () {
+        yield* JhStore.save(db, { id: "old", goal: "g", status: "done", state: taskState("o"), now: 1_000 })
+        yield* JhStore.save(db, { id: "fresh", goal: "g", status: "running", state: taskState("f"), now: 9_000 })
+        const before = yield* planRowCounts(db, "old")
+        // now = 10_000, ttl = 5_000 → cutoff 5_000: "old" (1_000) goes, "fresh" (9_000) stays.
+        const purged = yield* JhStore.purgeExpired(db, { now: 10_000, ttlMs: 5_000 })
+        return {
+          purged,
+          before,
+          after: yield* planRowCounts(db, "old"),
+          old: yield* JhStore.load(db, "old"),
+          fresh: yield* JhStore.load(db, "fresh"),
+        }
+      }),
+    )
+    expect(result.before).toEqual({ logs: 2, artifacts: 1 })
+    expect(result.purged).toBe(1)
+    expect(result.old).toBeUndefined()
+    expect(result.after).toEqual({ logs: 0, artifacts: 0 }) // the manual cascade actually fired
+    expect(result.fresh!.state.artifacts).toEqual(taskState("f").artifacts) // untouched
+  })
+
+  test("NEGATIVE CONTROL: inside the TTL purgeExpired deletes nothing", async () => {
+    const result = await withDb((db) =>
+      Effect.gen(function* () {
+        yield* JhStore.save(db, { id: "p", goal: "g", status: "running", state: taskState("p"), now: 9_000 })
+        const purged = yield* JhStore.purgeExpired(db, { now: 10_000, ttlMs: 5_000 })
+        return { purged, plan: yield* JhStore.load(db, "p"), rows: yield* planRowCounts(db, "p") }
+      }),
+    )
+    expect(result.purged).toBe(0)
+    expect(result.plan).toBeDefined()
+    expect(result.rows).toEqual({ logs: 2, artifacts: 1 })
+  })
+
+  test("purgeSession is the missing session.deleted cascade: this chat's plans only", async () => {
+    const result = await withDb((db) =>
+      Effect.gen(function* () {
+        yield* JhStore.save(db, { id: "jh_ses_1_msg_a", goal: "a", status: "done", state: taskState("a"), now: 1 })
+        yield* JhStore.save(db, { id: "jh_ses_1_msg_b", goal: "b", status: "running", state: taskState("b"), now: 2 })
+        yield* JhStore.save(db, { id: "jh_ses_1", goal: "legacy", status: "running", state: taskState("l"), now: 3 })
+        yield* JhStore.save(db, { id: "jh_ses_2_msg_c", goal: "c", status: "running", state: taskState("c"), now: 4 })
+        const purged = yield* JhStore.purgeSession(db, "ses_1")
+        return {
+          purged,
+          a: yield* JhStore.load(db, "jh_ses_1_msg_a"),
+          legacy: yield* JhStore.load(db, "jh_ses_1"),
+          other: yield* JhStore.load(db, "jh_ses_2_msg_c"),
+          aRows: yield* planRowCounts(db, "jh_ses_1_msg_a"),
+          otherRows: yield* planRowCounts(db, "jh_ses_2_msg_c"),
+        }
+      }),
+    )
+    expect(result.purged).toBe(3) // both per-task plans AND the legacy session-scoped row
+    expect(result.a).toBeUndefined()
+    expect(result.legacy).toBeUndefined()
+    expect(result.aRows).toEqual({ logs: 0, artifacts: 0 })
+    expect(result.other).toBeDefined() // …and the neighbouring chat is untouched
+    expect(result.otherRows).toEqual({ logs: 2, artifacts: 1 })
+  })
+
+  test("purgeSession does NOT take a session whose id is a prefix of another", async () => {
+    // `jh_ses_1_` vs `jh_ses_10_msg_a`: a naive `LIKE 'jh_ses_1%'` would eat the second chat's
+    // plans. The range is bounded on both sides, so it cannot.
+    const result = await withDb((db) =>
+      Effect.gen(function* () {
+        yield* JhStore.save(db, { id: "jh_ses_1_msg_a", goal: "a", status: "done", state: taskState("a"), now: 1 })
+        yield* JhStore.save(db, { id: "jh_ses_10_msg_a", goal: "b", status: "done", state: taskState("b"), now: 2 })
+        const purged = yield* JhStore.purgeSession(db, "ses_1")
+        return { purged, neighbour: yield* JhStore.load(db, "jh_ses_10_msg_a") }
+      }),
+    )
+    expect(result.purged).toBe(1)
+    expect(result.neighbour).toBeDefined()
+  })
+
+  test("runner/llm.ts purges on the way into a Strict drain", () => {
+    // The mechanical check for the retention decision: deleting the call compiles green and the
+    // behavioural tests above keep passing, while the tables silently grow forever again. Nothing
+    // in the fast suite executes `llm.ts`, so this is the only place that can bite.
+    const source = fs.readFileSync(path.join(import.meta.dir, "..", "session", "runner", "llm.ts"), "utf8")
+    expect(source).toContain("JhStore.purgeExpired(db,")
+    // …and it must NOT be hidden inside the read: `latest` runs on every Strict turn, and a read
+    // never destroys (todo.md ruling 3).
+    const store = fs.readFileSync(path.join(import.meta.dir, "store.ts"), "utf8")
+    const from = store.indexOf("export function latest(")
+    const to = store.indexOf("export function purgeExpired(")
+    expect(from).toBeGreaterThan(0)
+    expect(to).toBeGreaterThan(from)
+    expect(store.slice(from, to)).not.toContain("delete")
   })
 
   test("resume through the DB completes with the same combined log (jh.md §6b)", async () => {

@@ -15,7 +15,11 @@
  *     affinity-first scheduling provably starves cold sessions (k-LPM finding);
  *   - blocked sessions keep their debt (no laundering over-consumption through brief
  *     sleeps); blocked longer than the forgiveness TTL wake with lag reset to 0
- *     (no windfall credit — and stale warmth is zeroed the same way).
+ *     (no windfall credit — and stale warmth is zeroed the same way);
+ *   - and a block that has ALREADY outlived the TTL is DROPPED outright (sweepForgiven):
+ *     forgiveness zeroes its lag anyway, so nothing is laundered, while keeping it would
+ *     dilute totalWeight for every live session and grow the map for the life of the
+ *     instance. Debt retention and bounded growth are the same TTL, deliberately.
  *
  * Pure data structure (cost unit: TOKENS — measured per turn). Wiring charges it from
  * usage at turn end and consults pick() at dispatch. No Effect, fully unit-testable.
@@ -97,6 +101,34 @@ export class Ledger {
 
   remove(id: string): void {
     this.entries.delete(id)
+  }
+
+  /**
+   * Drop every entry whose block has outlived the forgiveness TTL; returns what was dropped.
+   *
+   * LOSSLESS with respect to debt, which is the whole reason it is safe: `onWake` already
+   * resets such an entry's vruntime to the current virtual time, and a re-`ensure` starts a
+   * new entry at exactly that same place — so a session cannot launder over-consumption by
+   * disappearing for a while, it can only collect the forgiveness the policy above already
+   * grants it. Evicting on idle *without* the TTL would be laundering; this is not.
+   *
+   * What it buys: `totalWeight()` sums EVERY entry, so a session that ran one turn and went
+   * quiet otherwise slows virtual-time advance for every live session on the device forever
+   * (and the map never shrinks). A blocked entity does not belong in the runnable weight.
+   *
+   * `retain` pins ids the caller is still tracking — an entry the scheduler still has queued
+   * or in flight must never vanish underneath it (`pick` skips unknown ids, so a dropped
+   * waiter would hang forever).
+   */
+  sweepForgiven(now: number, retain?: (id: string) => boolean): readonly string[] {
+    const dropped: string[] = []
+    for (const [id, entry] of this.entries) {
+      if (entry.blockedAt === undefined || now - entry.blockedAt <= this.forgivenessMs) continue
+      if (retain?.(id)) continue
+      dropped.push(id)
+    }
+    for (const id of dropped) this.entries.delete(id)
+    return dropped
   }
 
   has(id: string): boolean {

@@ -4,6 +4,9 @@ import { Database } from "@novaclaw/core/database/database"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { EventV2 } from "@novaclaw/core/event"
+import type { JhEngine } from "@novaclaw/core/jh/engine"
+import { JhStore } from "@novaclaw/core/jh/store"
+import { JhTree } from "@novaclaw/core/jh/tree"
 import { Location } from "@novaclaw/core/location"
 import { ProjectV2 } from "@novaclaw/core/project"
 import { AbsolutePath } from "@novaclaw/core/schema"
@@ -99,6 +102,37 @@ describe("removeSessionRecord — scheduler eviction", () => {
       const devices = yield* scheduler.snapshot()
       for (const id of [parent.id, child.id, grandchild.id]) expect(ledgerHas(devices, id)).toBe(false)
       expect(devices[0]!.inFlightInteractive).toEqual([])
+    }),
+  )
+
+  it.effect("removal cascades to the session's jh plans, logs and artifacts", () =>
+    Effect.gen(function* () {
+      // jh_plan/jh_log/jh_artifact carry no FK to the session table, so the `session.deleted`
+      // projector's row-delete cascade never reached them: a deleted chat left its Strict plans,
+      // its whole event log and its artifact CONTENT behind forever. `removeSessionRecord` writes
+      // that cascade by hand.
+      const session = yield* SessionV2.Service
+      const { db } = yield* Database.Service
+      const created = yield* session.create({ location })
+      const other = yield* session.create({ location })
+      const state: JhEngine.State = {
+        tree: JhTree.create({ goal: "g", size: "atomic", success: "ok" }),
+        artifacts: [{ id: "a.c", type: "file", hash: "h", content: "int main(){}" }],
+        log: [{ type: "task_started", goal: "g", seq: 0 }],
+        telemetry: new Map(),
+      }
+      const key = `${JhStore.sessionPrefix(created.id)}msg_1`
+      yield* JhStore.save(db, { id: key, goal: "g", status: "running", state, now: 1 })
+      const survivor = `${JhStore.sessionPrefix(other.id)}msg_1`
+      yield* JhStore.save(db, { id: survivor, goal: "g", status: "running", state, now: 1 })
+      expect(yield* JhStore.load(db, key)).toBeDefined()
+
+      yield* session.remove(created.id)
+
+      expect(yield* JhStore.load(db, key)).toBeUndefined()
+      expect(yield* JhStore.latest(db, JhStore.sessionPrefix(created.id))).toBeUndefined()
+      // …and only this session's rows: the neighbouring chat still resumes.
+      expect(yield* JhStore.load(db, survivor)).toBeDefined()
     }),
   )
 

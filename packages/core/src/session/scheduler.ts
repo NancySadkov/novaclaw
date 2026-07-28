@@ -13,7 +13,14 @@
  *     for the most-recently-dispatched session (hysteresis, never override);
  *   - the slot covers GENERATION only: it is released before tool settlement, so a
  *     parent blocking on the `wait` tool never holds the device against its own child
- *     (the deadlock the bracket placement exists to prevent).
+ *     (the deadlock the bracket placement exists to prevent);
+ *   - the ledger is BOUNDED by retention, not by session removal: `admit` is the only
+ *     insertion point and it fires every turn, so before `evict` had a caller a ledger
+ *     entry outlived its session, and even with one an idle-but-alive session kept its
+ *     entry for the life of the instance. `release` now stamps the ledger's block clock
+ *     and both growth paths sweep entries whose block outlived the forgiveness TTL —
+ *     lazily, no daemon (the `trash.ts` stance). Debt is kept for exactly the window the
+ *     ledger says it is kept for; after that forgiveness makes the entry a no-op anyway.
  *
  * The session's `priority` field (shipped with K1, previously unread) becomes the
  * EEVDF weight override: priority > 0 replaces the class weight.
@@ -106,8 +113,17 @@ const disabled = () => {
   return value === "1" || value === "true"
 }
 
-export const make = (): Interface => {
+/** Injectable seams (tests): a fake clock and a shortened forgiveness/retention TTL. */
+export interface Options {
+  /** Wall-clock ms — the ledger's block/forgiveness window is wall time, not virtual time. */
+  readonly now?: () => number
+  readonly forgivenessMs?: number
+}
+
+export const make = (options?: Options): Interface => {
   const devices = new Map<string, DeviceState>()
+  const now = options?.now ?? (() => Date.now())
+  const forgivenessMs = options?.forgivenessMs
 
   const deviceFor = (key: string): DeviceState => {
     let device = devices.get(key)
@@ -115,7 +131,7 @@ export const make = (): Interface => {
       devices.set(
         key,
         (device = {
-          ledger: new KernelEevdf.Ledger(),
+          ledger: new KernelEevdf.Ledger(forgivenessMs === undefined ? undefined : { forgivenessMs }),
           inFlightInteractive: new Set(),
           inFlightBatch: new Set(),
           waiters: new Map(),
@@ -123,6 +139,20 @@ export const make = (): Interface => {
       )
     return device
   }
+
+  /**
+   * Lazy retention, called from the two paths that can GROW a device: `admit` (the only
+   * insertion point) and `release` (the only place a session stops holding the device). No
+   * daemon and no wall-clock timer — a quiet instance simply has nothing to dilute. Anything
+   * this gate still tracks is pinned, so a queued waiter can never lose the ledger entry
+   * `drain` needs to pick it.
+   */
+  const sweep = (device: DeviceState) =>
+    device.ledger.sweepForgiven(
+      now(),
+      (id) =>
+        device.inFlightInteractive.has(id) || device.inFlightBatch.has(id) || device.waiters.has(id),
+    )
 
   const batchCapacity = (device: DeviceState) =>
     device.inFlightInteractive.size === 0 && device.inFlightBatch.size < MAX_BATCH
@@ -147,11 +177,16 @@ export const make = (): Interface => {
     Effect.suspend(() => {
       if (disabled()) return Effect.void
       const device = deviceFor(input.deviceKey)
+      sweep(device)
       device.ledger.ensure(
         input.sessionID,
         input.sessionClass,
         input.priority && input.priority > 0 ? { weight: input.priority } : undefined,
       )
+      // Running again: a brief block keeps its debt, a block past the forgiveness TTL is
+      // forgiven here. The sweep above usually got there first — but on an instance where
+      // this session is the ONLY traffic, no sweep ever runs, and the policy must still hold.
+      device.ledger.onWake(input.sessionID, now())
       const alreadyInFlight =
         device.inFlightInteractive.has(input.sessionID) || device.inFlightBatch.has(input.sessionID)
       if (alreadyInFlight) return Effect.void
@@ -168,7 +203,14 @@ export const make = (): Interface => {
       const deferred = Deferred.makeUnsafe<void>()
       device.waiters.set(input.sessionID, { deferred })
       return Deferred.await(deferred).pipe(
-        Effect.onInterrupt(() => Effect.sync(() => device.waiters.delete(input.sessionID))),
+        Effect.onInterrupt(() =>
+          Effect.sync(() => {
+            device.waiters.delete(input.sessionID)
+            // A cancelled queued turn never reaches `release`, so stamp the block here too —
+            // otherwise its entry sits unblocked forever and no sweep can ever see it.
+            device.ledger.onBlock(input.sessionID, now())
+          }),
+        ),
       )
     })
 
@@ -178,7 +220,14 @@ export const make = (): Interface => {
       if (!device) return
       const held =
         device.inFlightInteractive.delete(input.sessionID) || device.inFlightBatch.delete(input.sessionID)
-      if (held) drain(device)
+      if (!held) return
+      // The session has stopped holding the device: start its block clock, so its debt is kept
+      // for the forgiveness window and its entry is swept once that window closes. Gated on
+      // `held` because `release` runs twice per turn (in-band, then the `ensuring` net) and the
+      // second call must not restart the clock.
+      device.ledger.onBlock(input.sessionID, now())
+      sweep(device)
+      drain(device)
     })
 
   const report = (input: ReportInput): Effect.Effect<void> =>
@@ -201,6 +250,8 @@ export const make = (): Interface => {
       }
     })
 
+  // Deliberately does NOT sweep: this is the Debug app's and the tests' read surface, and a
+  // read never destroys (todo.md ruling 3). Retention rides the write paths only.
   const snapshot = (): Effect.Effect<readonly DeviceSnapshot[]> =>
     Effect.sync(() =>
       [...devices.entries()].map(([deviceKey, device]) => ({
