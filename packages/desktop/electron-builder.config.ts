@@ -66,6 +66,16 @@ const getBase = (appId: string): Configuration => ({
   asarUnpack: ["node_modules/@ladybugdb/**"],
   extraResources: [
     {
+      // ⚠️ `windows.ts`'s `iconsDir()` resolves to `join(process.resourcesPath, "icons")` when
+      // packaged, but nothing copied `resources/icons/` there — so the BrowserWindow icon and the
+      // macOS dock icon pointed at a directory that does not exist in a packaged build and silently
+      // fell back to the Electron default. These are NATIVE resources; Electron cannot read them
+      // from inside `app.asar` through `process.resourcesPath`, so they need a real copy beside it.
+      // Ported from NancySadkov/novaclaw#4 by @DassaultFalconKing.
+      from: "resources/icons/",
+      to: "icons/",
+    },
+    {
       from: "native/",
       to: "native/",
       filter: ["index.js", "index.d.ts", "build/Release/mac_window.node", "swift-build/**"],
