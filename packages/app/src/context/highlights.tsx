@@ -1,4 +1,4 @@
-import { createEffect, onCleanup } from "solid-js"
+import { createEffect, createSignal, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createSimpleContext } from "@novaclaw/ui/context"
 import { useDialog } from "@novaclaw/ui/context/dialog"
@@ -8,6 +8,65 @@ import { persisted } from "@/utils/persist"
 import { DialogReleaseNotes, type Highlight } from "@/components/dialog-release-notes"
 
 const CHANGELOG_URL = "https://novaclaw.app/changelog.json"
+
+// ── The What's-new subsystem's failure model ──────────────────────────────────────────────────────
+//
+// Until 2026-07-28 this fetch had exactly two visible states: the dialog, or nothing at all. A 404, an
+// offline laptop, and an HTML error page served in place of JSON all went through a
+// "response.ok ? parse it : undefined" ternary and then a catch that discarded its argument, and came
+// out the far side as the same `undefined` a SUCCESSFUL, empty changelog produces. Two different facts,
+// one silent outcome — and `novaclaw.app/changelog.json` has 404'd for the life of the product, so the
+// dialog was unreachable and nothing in the tree said so. (todo.md standing decision 3: an unavailable
+// subsystem names itself instead of rendering empty, and a fault is never described falsely.)
+//
+// ⚠️ The rules in `highlights.test.ts` scan this file's raw text, comments included — so do not paste
+// the discarding-catch shape back into a comment here; describe it in prose, as above.
+//
+// The outcomes are now distinct and each has a declared consequence:
+//
+//   outcome                        dialog   marks the version seen        named in the error log
+//   highlights                     yes      yes (with the dialog)         no
+//   empty      read fine, nothing  no       yes                           no
+//   aborted    window closed       no       no                            no  — not a fault
+//   unavailable, http 404/410      no       YES — the answer is final     yes
+//   unavailable, http other        no       no — retry on next launch     yes
+//   unavailable, network           no       no — retry on next launch     yes
+//   unavailable, malformed body    no       no — retry on next launch     yes
+//
+// Why a 404 marks the version seen while a network error does not: a 404 is an ANSWER. The host is up
+// and it says the file does not exist, and asking again next launch cannot change that — so the version
+// advances, the effect stops re-arming, and we stop re-requesting a URL the server has told us is not
+// there. Everything else is genuinely UNKNOWN (offline, a 5xx, a truncated body), so the version stays
+// unseen and the next launch tries again — which is what a user who was offline during an update wants.
+// Before this, EVERY failure left the version unseen, so `store.version` could never advance past the
+// user's first install and the fetch re-ran on every single launch, forever, with nothing to show for it.
+
+/** Why the changelog could not be read. Three different faults that used to be indistinguishable. */
+export type ChangelogFailure =
+  /** The host answered with a non-2xx. `httpStatus` says which. */
+  | "http"
+  /** No answer at all — offline, DNS, TLS, CORS, host down. */
+  | "network"
+  /** Answered 2xx, but the body is not the JSON we asked for. */
+  | "malformed"
+
+export type ChangelogOutcome =
+  | { kind: "highlights"; highlights: Highlight[] }
+  | { kind: "empty" }
+  | { kind: "aborted" }
+  | { kind: "unavailable"; failure: ChangelogFailure; httpStatus?: number; detail: string }
+
+/**
+ * What any surface can ask about the What's-new subsystem without re-fetching anything. Exposed so a
+ * Settings/About row can render "What's new — unavailable" honestly; the fault is NOT invented by the
+ * renderer, it is reported by the one place that knows.
+ */
+export type HighlightsStatus =
+  | { state: "idle" }
+  | { state: "checking" }
+  | { state: "new"; count: number }
+  | { state: "none" }
+  | { state: "unavailable"; failure: ChangelogFailure; httpStatus?: number; detail: string; retrying: boolean }
 
 type Store = {
   version?: string
@@ -137,6 +196,123 @@ function loadReleaseHighlights(value: unknown, current?: string, previous?: stri
   return sliceHighlights({ releases, current, previous })
 }
 
+function describeError(error: unknown): string {
+  if (error instanceof Error) return `${error.name}: ${error.message}`
+  return String(error)
+}
+
+/**
+ * Turn whatever the network did into exactly ONE of the outcomes in the table above. Never throws and
+ * never returns a bare `undefined` — every path back out of here is a named fact.
+ */
+export async function readChangelog(input: {
+  fetcher: typeof fetch
+  signal: AbortSignal
+  current?: string
+  previous?: string
+}): Promise<ChangelogOutcome> {
+  let response: Response
+  try {
+    response = await input.fetcher(CHANGELOG_URL, {
+      signal: input.signal,
+      headers: { Accept: "application/json" },
+    })
+  } catch (error) {
+    // An abort is the app tearing down, not a fault — do not report it as one.
+    if (input.signal.aborted) return { kind: "aborted" }
+    return { kind: "unavailable", failure: "network", detail: describeError(error) }
+  }
+
+  if (!response.ok) {
+    return {
+      kind: "unavailable",
+      failure: "http",
+      httpStatus: response.status,
+      detail: `${response.status} ${response.statusText || "(no status text)"}`,
+    }
+  }
+
+  let json: unknown
+  try {
+    json = await response.json()
+  } catch (error) {
+    if (input.signal.aborted) return { kind: "aborted" }
+    return { kind: "unavailable", failure: "malformed", detail: describeError(error) }
+  }
+
+  if (input.signal.aborted) return { kind: "aborted" }
+  const highlights = loadReleaseHighlights(json, input.current, input.previous)
+  return highlights.length > 0 ? { kind: "highlights", highlights } : { kind: "empty" }
+}
+
+/** A failure we will ask about again on the next launch, rather than treating as settled. */
+export function willRetry(outcome: ChangelogOutcome): boolean {
+  if (outcome.kind !== "unavailable") return false
+  if (outcome.failure !== "http") return true
+  return outcome.httpStatus !== 404 && outcome.httpStatus !== 410
+}
+
+/**
+ * Does this outcome settle the question for the version we are running? `true` means the stored
+ * "already seen" version advances to the running one — the effect stops re-arming on every launch.
+ * (For `highlights` the advance happens alongside the dialog, so the user is never marked as having
+ * seen notes that were never put in front of them.)
+ */
+export function advancesSeenVersion(outcome: ChangelogOutcome): boolean {
+  switch (outcome.kind) {
+    case "highlights":
+    case "empty":
+      return true
+    case "aborted":
+      return false
+    case "unavailable":
+      return !willRetry(outcome)
+  }
+}
+
+/**
+ * The line the Debug app's Error-log panel shows, or `undefined` when there is genuinely nothing to
+ * report. It names the subsystem, the URL, the actual fault and what happens next — no euphemism, and
+ * no claim that the changelog was empty when it was in fact unreachable.
+ */
+export function describeUnavailable(outcome: ChangelogOutcome): string | undefined {
+  if (outcome.kind !== "unavailable") return
+  const cause = (() => {
+    switch (outcome.failure) {
+      case "http":
+        return `${CHANGELOG_URL} returned ${outcome.detail}`
+      case "network":
+        return `could not reach ${CHANGELOG_URL} (${outcome.detail})`
+      case "malformed":
+        return `${CHANGELOG_URL} did not return valid JSON (${outcome.detail})`
+    }
+  })()
+  const next = willRetry(outcome)
+    ? "NovaClaw will try again on the next launch."
+    : "No changelog is published there, so this version is marked seen and NovaClaw will stop asking."
+  return `Release notes unavailable: ${cause}. ${next}`
+}
+
+/** Project an outcome onto the state a Settings/About row can render. */
+export function statusOf(outcome: ChangelogOutcome): HighlightsStatus {
+  switch (outcome.kind) {
+    case "highlights":
+      return { state: "new", count: outcome.highlights.length }
+    case "empty":
+      return { state: "none" }
+    case "aborted":
+      return { state: "idle" }
+    case "unavailable":
+      return {
+        state: "unavailable",
+        failure: outcome.failure,
+        httpStatus: outcome.httpStatus,
+        detail: outcome.detail,
+        retrying: willRetry(outcome),
+      }
+  }
+}
+
 export const { use: useHighlights, provider: HighlightsProvider } = createSimpleContext({
   name: "Highlights",
   gate: false,
@@ -151,6 +327,7 @@ export const { use: useHighlights, provider: HighlightsProvider } = createSimple
       to: undefined as string | undefined,
     })
     const state = { started: false }
+    const [status, setStatus] = createSignal<HighlightsStatus>({ state: "idle" })
     let timer: ReturnType<typeof setTimeout> | undefined
 
     const clearTimer = () => {
@@ -177,28 +354,38 @@ export const { use: useHighlights, provider: HighlightsProvider } = createSimple
         clearTimer()
       })
 
-      fetcher(CHANGELOG_URL, {
+      setStatus({ state: "checking" })
+
+      void readChangelog({
+        fetcher,
         signal: controller.signal,
-        headers: { Accept: "application/json" },
-      })
-        .then((response) => (response.ok ? (response.json() as Promise<unknown>) : undefined))
-        .then((json) => {
-          if (!json) return
-          const highlights = loadReleaseHighlights(json, platform.version, previous)
-          if (controller.signal.aborted) return
+        current: platform.version,
+        previous,
+      }).then((outcome) => {
+        if (controller.signal.aborted) return
+        setStatus(statusOf(outcome))
 
-          if (highlights.length === 0) {
-            markSeen()
-            return
-          }
+        // The register is deliberate. A modal on every launch because OUR CDN is missing a file would
+        // page a normal person about our infrastructure, and the vision is that a common user is
+        // HELPED, not handed a pager (AGENTS.md, Identity & mission). So the fault is named where
+        // faults belong: `console.warn` is tapped by utils/error-log.ts, which feeds the Debug app's
+        // Error-log panel and the dev stdout — and `status` above lets a Settings/About row say
+        // "unavailable" instead of showing a blank where release notes should be.
+        const line = describeUnavailable(outcome)
+        if (line) console.warn(line)
 
+        if (outcome.kind === "highlights") {
+          const highlights = outcome.highlights
           timer = setTimeout(() => {
             timer = undefined
             markSeen()
             dialog.show(() => <DialogReleaseNotes highlights={highlights} />)
           }, 500)
-        })
-        .catch(() => undefined)
+          return
+        }
+
+        if (advancesSeenVersion(outcome)) markSeen()
+      })
     }
 
     createEffect(() => {
@@ -222,6 +409,7 @@ export const { use: useHighlights, provider: HighlightsProvider } = createSimple
 
     return {
       ready,
+      status,
       from: () => range.from,
       to: () => range.to,
       get last() {
