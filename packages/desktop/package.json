@@ -4,9 +4,11 @@
   "version": "0.1.0",
   "type": "module",
   "license": "SEE LICENSE IN LICENSE",
+  "description": "NovaClaw — a local-first AI agent OS",
   "homepage": "https://novaclaw.app",
   "author": {
-    "name": "Nancy Sadkov"
+    "name": "Nancy Sadkov",
+    "email": "112661214+NancySadkov@users.noreply.github.com"
   },
   "scripts": {
     "typecheck": "tsgo -b && tsgo --noEmit -p tsconfig.test.json",

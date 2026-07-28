@@ -1,8 +1,12 @@
 #!/usr/bin/env bun
 
 import { $ } from "bun"
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
 import path from "path"
 import { fileURLToPath } from "url"
+
+import { Shell } from "@novaclaw/core/shell"
 
 const __filename = fileURLToPath(import.meta.url)
 const __dirname = path.dirname(__filename)
@@ -131,6 +135,52 @@ const targets = singleFlag
     })
   : allTargets
 
+/**
+ * Boot the JUST-BUILT binary and prove it actually serves.
+ *
+ * `--version` is not enough: the chunk-ordering bug that `splitting: false` fixes left a dependency
+ * undefined only AFTER the first HTTP request, so the binary passed its version check and then failed
+ * in a user's hands. Same lesson as the desktop artifact smoke — a green suite says nothing about the
+ * packaged thing.
+ *
+ * Hermetic on purpose: a throwaway NOVACLAW_HOME and NOVACLAW_OFFLINE=1, so it cannot touch the real
+ * instance or reach the network. Every request is loopback.
+ */
+const fetchSmoke = (url: string) => fetch(url, { signal: AbortSignal.timeout(10_000) })
+
+const waitForServer = async (url: string, attempts = 100): Promise<void> => {
+  const response = await fetchSmoke(`${url}/api/health`).catch(() => undefined)
+  if (response?.ok && (await response.text()) === '{"healthy":true}') return
+  if (attempts === 1) throw new Error(`Compiled server did not become healthy at ${url}`)
+  await Bun.sleep(100)
+  return waitForServer(url, attempts - 1)
+}
+
+async function smokeServer(binaryPath: string) {
+  const probe = Bun.serve({ port: 0, fetch: () => new Response() })
+  const port = probe.port
+  probe.stop(true)
+  const home = mkdtempSync(path.join(tmpdir(), "novaclaw-build-smoke-"))
+  const server = Bun.spawn([binaryPath, "serve", "--no-supervise", "--port", String(port)], {
+    env: { ...process.env, NOVACLAW_HOME: home, NOVACLAW_OFFLINE: "1" },
+    stdout: "ignore",
+    stderr: "ignore",
+  })
+  server.unref()
+  const url = `http://127.0.0.1:${port}`
+  try {
+    await waitForServer(url)
+    const html = await fetchSmoke(url).then((response) => response.text())
+    if (!html.includes("<title>NovaClaw</title>")) throw new Error("Compiled server did not serve the embedded UI")
+    const memory = await fetchSmoke(`${url}/memory/stats`).then((response) => response.json())
+    if (memory.total !== 0 || memory.valid !== 0) throw new Error("Compiled server memory smoke returned unexpected data")
+  } finally {
+    // By TREE (pitfall #8): `serve` can spawn MCP children, and a bare kill leaves them holding GBs.
+    await Shell.killTree(server.pid).catch(() => undefined)
+    rmSync(home, { recursive: true, force: true })
+  }
+}
+
 // Best-effort clean, NOT fatal. On Windows a virus scanner or the search indexer routinely keeps a
 // handle on the directory of a binary that was just deleted, so `rm` fails with "Device or resource
 // busy" on a directory that is EMPTY and still perfectly writable — and the whole build died over
@@ -168,7 +218,11 @@ for (const item of targets) {
     format: "esm",
     minify: true,
     sourcemap: sourcemapsFlag ? "linked" : "none",
-    splitting: true,
+    // A compiled executable must keep the runtime graph in ONE module. Bun's split chunks can
+    // evaluate circular LayerNode imports in a different order than the source graph, leaving a
+    // dependency undefined — and only AFTER the first HTTP request, so `--version` still passes and
+    // the binary looks fine. Reported against the standalone Linux build by an outside contributor.
+    splitting: false,
     compile: {
       autoloadBunfig: false,
       autoloadDotenv: false,
@@ -195,7 +249,9 @@ for (const item of targets) {
           : {},
     },
     files: embeddedFileMap ? { "novaclaw-web-ui.gen.ts": embeddedFileMap } : {},
-    entrypoints: ["./src/index.ts", ...(embeddedFileMap ? ["novaclaw-web-ui.gen.ts"] : [])],
+    // The embedded UI map is reachable from `src/index.ts`; listing it as a SECOND entrypoint was
+    // what forced a shared chunk even with splitting off, reintroducing the ordering hazard above.
+    entrypoints: ["./src/index.ts"],
     define: {
       FFF_LIBC: JSON.stringify(item.abi === "musl" ? "musl" : "gnu"),
       // No NOVACLAW_VERSION define: the version is no longer a build-time global. It comes from
@@ -214,6 +270,9 @@ for (const item of targets) {
     try {
       const versionOutput = await $`${binaryPath} --version`.text()
       console.log(`Smoke test passed: ${versionOutput.trim()}`)
+      console.log(`Running server smoke test: ${binaryPath} serve`)
+      await smokeServer(binaryPath)
+      console.log(`Server smoke test passed`)
     } catch (e) {
       console.error(`Smoke test failed for ${name}:`, e)
       process.exit(1)

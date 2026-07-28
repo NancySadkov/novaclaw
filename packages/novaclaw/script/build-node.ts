@@ -12,7 +12,7 @@ process.chdir(dir)
 
 const generated = await import("./generate.ts")
 
-await Bun.build({
+const result = await Bun.build({
   target: "node",
   // Resolve the core's conditional `#sqlite`/`#pty`/`#fff` imports (package.json `imports`) to
   // their NODE variants. Without this, Bun.build applies its own `bun` condition even under
@@ -36,5 +36,20 @@ await Bun.build({
     "novaclaw-web-ui.gen.ts": "",
   },
 })
+
+// The build result was previously DISCARDED, so a failed sidecar build printed "Build complete" and
+// left the previous (or no) bundle in place. Found by an outside contributor reconstructing this file
+// from scratch, because the published source was missing it entirely — see .gitignore.
+if (!result.success) throw new AggregateError(result.logs, "Node sidecar build failed")
+
+// The two comments above say WHY `conditions` and `external` are set the way they are. This turns
+// that knowledge into a CHECK: if either regresses, a `bun:` import reaches the bundle and the
+// Electron sidecar dies at load with ERR_UNSUPPORTED_ESM_URL_SCHEME — a packaged-only failure a
+// green suite cannot see, which is the exact class that shipped v0.0.1 and v0.1.0 broken.
+const bundled = await Bun.file("./dist/node/node.js").text()
+if (/\b(?:from|import\(|require\()\s*["']bun:/.test(bundled))
+  throw new Error(
+    "Node sidecar bundle contains a `bun:` runtime import — check `conditions: ['node']` and the `external` list",
+  )
 
 console.log("Build complete")

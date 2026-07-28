@@ -29,7 +29,11 @@ function getNetworkIPs() {
 }
 
 export const WebCommand = effectCmd({
-  command: "web",
+  // `$0` makes this the DEFAULT command: a bare `novaclaw` opens the web UI. Deliberate — the HTML UI
+  // is the product and the CLI is vestigial (AGENTS.md → Identity & mission), so the friendliest
+  // no-argument behaviour is to show a person the thing they came for, not a help page. `db.ts`'s
+  // `$0 [query]` is nested inside its own subcommand builder, so there is no top-level collision.
+  command: ["web", "$0"],
   builder: (yargs) => withNetworkOptions(yargs),
   describe: "start novaclaw server and open web interface",
   // Server loads instances per-request via x-novaclaw-directory header — no

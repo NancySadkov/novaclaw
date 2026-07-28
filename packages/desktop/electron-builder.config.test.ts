@@ -3,9 +3,9 @@ import type { Configuration } from "electron-builder"
 
 
 const channels = [
-  { channel: "dev", appId: "app.novaclaw.desktop.dev" },
-  { channel: "beta", appId: "app.novaclaw.desktop.beta" },
-  { channel: "prod", appId: "app.novaclaw.desktop" },
+  { channel: "dev", appId: "app.novaclaw.desktop.dev", packageName: "novaclaw-dev" },
+  { channel: "beta", appId: "app.novaclaw.desktop.beta", packageName: "novaclaw-beta" },
+  { channel: "prod", appId: "app.novaclaw.desktop", packageName: "novaclaw" },
 ] as const
 
 for (const channel of channels) {
@@ -23,6 +23,21 @@ for (const channel of channels) {
     expect(config.extraMetadata?.desktopName).toBe(`${channel.appId}.desktop`)
     expect(config.linux?.executableName).toBe(channel.appId)
     expect(config.linux?.desktop?.entry?.StartupWMClass).toBe(channel.appId)
+    // Linux distribution packages. `pacman` is the Arch/CachyOS target; its depends list is Electron's
+    // own runtime requirements, so a missing entry means the app installs and then fails to launch.
+    expect(config.linux?.target).toEqual(["AppImage", "deb", "rpm", "pacman"])
+    expect(config.pacman?.packageName).toBe(channel.packageName)
+    expect(config.pacman?.compression).toBe("zstd")
+    expect(config.pacman?.depends).toEqual([
+      "gtk3",
+      "libnotify",
+      "nss",
+      "libxss",
+      "libxtst",
+      "xdg-utils",
+      "at-spi2-core",
+      "libsecret",
+    ])
   })
 }
 
