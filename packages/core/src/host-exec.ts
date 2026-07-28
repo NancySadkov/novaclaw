@@ -24,7 +24,9 @@ export * as HostExec from "./host-exec"
  *  1. **Confinement** is `AgentJail.decideBash`: an attended chain runs raw; an unattended chain
  *     (or a hostile-input turn) runs confined under a full sandbox backend, and is DENIED when the
  *     host has none. Confined means the child execs `bwrap` with the sandbox argv — the shell is an
- *     argv element, never a spawn option.
+ *     argv element, never a spawn option. ⚠️ The hostile-input half is **tri-state** (`Hostility`):
+ *     an unanswerable trust question is `"unknown"`, and unknown contains rather than permits — the
+ *     gate never decides containment on missing data (ruling 2).
  *  2. **Credentials** — the operator's environment reaches a child only when a HUMAN approved THAT
  *     command. `tool/bash.ts` asserts a per-command permission before it runs, so its raw path
  *     inherits the process environment and may carry peer instance tokens. The jh runner and the js
@@ -138,8 +140,10 @@ export interface EnvRequest {
    * pass it; see `SessionHost`.
    */
   readonly rootType?: SessionType
-  /** messenger-plan §3.4 — an untrusted stranger drives this turn; treated as unattended. */
-  readonly hostileInput?: boolean
+  /** messenger-plan §3.4 — an untrusted stranger drives this turn; treated as unattended. THREE-
+   *  valued (`Hostility`): `"unknown"` means the question could not be answered, and it takes the
+   *  same arm as `true` — see `Hostility` and `decide`. */
+  readonly hostileInput?: Hostility
   /** Defaults to `AgentJail.probe()` (the real host). Injected in tests and by callers that already
    *  probed, so one command never probes twice. */
   readonly backend?: AgentJail.BackendInfo
@@ -170,7 +174,9 @@ export interface Request extends EnvRequest {
  *  field. Handed to `SessionStrict.runTask` as `host`. */
 export interface SessionHost {
   readonly rootType: SessionType
-  readonly hostileInput?: boolean
+  /** `Hostility`, not `boolean` — a runner that could not read the messenger database hands over
+   *  `"unknown"`, and the gate refuses rather than guessing. */
+  readonly hostileInput?: Hostility
   /** `config.shell` when the operator set one — the divergence this gate closes. */
   readonly shell?: string
   /** `Offline.egressEnv()` from the shared service. */
@@ -195,9 +201,36 @@ export function bundleOverlay(shell: string): Record<string, string> | undefined
   return Shell.name(shell) === "bash" ? ShellBundle.envForBash(shell) : undefined
 }
 
-/** The routing text for a denied command (teach the way forward — 1P house style). */
-export function denyMessage(rootType: SessionType, hostileInput?: boolean): string {
-  return AgentJail.denyMessage(rootType, hostileInput)
+/**
+ * The sentence every deny text ends with — the model-facing way forward (1P house style: teach the
+ * route, never just refuse). A literal here because `agent-jail.ts` exports no constant for it and
+ * this module may not edit that file's vocabulary; `host-exec.test.ts` asserts it is byte-identical
+ * to the tail `AgentJail.denyMessage` produces, so a reword there fails a test instead of quietly
+ * giving the third reason below different guidance from the other two.
+ */
+const DENY_ROUTING =
+  "Use the native tools instead — read/edit/write/create/glob/grep cover file work and are " +
+  "permission-gated per path. Do not retry the same command."
+
+/**
+ * The routing text for a denied command (teach the way forward — 1P house style).
+ *
+ * ⚠️ THREE reasons, not two. `AgentJail.denyMessage` knows the two answerable ones ("this chain is
+ * unattended" / "an untrusted messenger chat drives this turn"); the third — *we could not find
+ * out* — is this module's, because only the gate holds the tri-state. Handing an `"unknown"` turn
+ * the hostile text would be ruling 2's other half: refusing for a real reason while **describing
+ * the fault falsely**. The user is told what actually broke, which is also the only version they
+ * can act on (the messenger database, not their chat partner).
+ */
+export function denyMessage(rootType: SessionType, hostileInput?: Hostility): string {
+  if (hostileInput !== "unknown") return AgentJail.denyMessage(rootType, hostileInput)
+  return (
+    `I could not tell whether an untrusted messenger chat drives this turn — the messenger database ` +
+    `could not be read — and a containment question this host cannot answer is not a licence to run ` +
+    `raw, so the command is refused instead of run unconfined on a guess. This host also has no ` +
+    `sandbox backend to run it under. ` +
+    DENY_ROUTING
+  )
 }
 
 /** What confinement this host can enforce right now (cached per process). Re-exported so a call
@@ -214,9 +247,45 @@ export interface ChainBinding {
   readonly trust: string
 }
 
-/** The two lookups the chain walk needs, injected so this module keeps no service (and so the
- *  `bash` tool and the Strict runner ask the SAME question of the SAME code). Both may fail; a
- *  failure is treated as "no binding here" exactly as the original call site did. */
+/**
+ * The answer to "is an untrusted messenger chat driving this turn?" — THREE-valued, because the
+ * question can fail to be answered at all:
+ *
+ *  · `true`      — a client/audience binding was FOUND somewhere on this chain;
+ *  · `false`     — every link of the chain was read and none carries one;
+ *  · `"unknown"` — at least one link was never read (the messenger database faulted, or a session
+ *                  row could not be fetched), so `false` is a claim nothing supports.
+ *
+ * ⚠️ Why the type had to grow. Until 2026-07-28 the walk collapsed every fault to `[]`, `.some(…)`
+ * answered `false`, and **`false` is the permissive answer**: an unreadable database read as "no
+ * untrusted chat drives this turn", so `bash` ran RAW instead of confined. That is a containment
+ * decision made on missing data — precisely ruling 2 ("a fault is never described falsely", "an
+ * unavailable subsystem names itself instead of rendering empty"). A boolean has nowhere to put
+ * "we could not find out", so no amount of care at the call sites could have fixed it.
+ *
+ * ⚠️ Why `boolean | "unknown"` rather than three names. The one property that must be MECHANICAL is
+ * that this answer cannot be assigned into a `boolean` slot — which this union enforces exactly as
+ * a string triple would — while `true`/`false` already mean the right thing at every existing call
+ * site and in three suites. Renaming a correct vocabulary buys nothing and would have rippled into
+ * files this change does not own. Nothing outside this module and `agent-jail.ts` (whose policy is
+ * legitimately two-valued, downstream of the resolution here) may collapse it back to a boolean:
+ * `host-exec.test.ts` holds that ledger, and it fails in both directions.
+ */
+export type Hostility = boolean | "unknown"
+
+/**
+ * The two lookups the chain walk needs, injected so this module keeps no service (and so the
+ * `bash` tool and the Strict runner ask the SAME question of the SAME code).
+ *
+ * ⚠️ Both may fail, and a failure is **not** "no binding here" — it is `"unknown"`. The sentence
+ * that used to stand here ("a failure is treated as 'no binding here' exactly as the original call
+ * site did") WAS the defect, written down as intent: it turned an unanswered containment question
+ * into the most permissive available answer.
+ *
+ * A DIE still propagates, deliberately. `Effect.orElseSucceed` catches a failure and not a defect,
+ * so a defect takes the turn down loudly rather than letting containment be decided on a fault
+ * nobody saw — which is why `MessengerStore.bindingsForSession` fails TYPED (it used to `orDie`).
+ */
 export interface ChainLookup {
   readonly bindingsForSession: (id: string) => Effect.Effect<ReadonlyArray<ChainBinding>, unknown>
   readonly parentOf: (id: string) => Effect.Effect<string | undefined, unknown>
@@ -234,47 +303,115 @@ export interface ChainLookup {
  * (it is how `bash` and Strict came to speak different shells and different environments), so the
  * walk lives beside the gate that consumes its answer. Short chains, cycle-guarded; most sessions
  * have no binding, so each step is a fast empty indexed lookup.
+ *
+ * ⚠️ Returns `Hostility`, not a boolean. Three outcomes, in strength order: a binding FOUND anywhere
+ * on the chain wins outright (`true`); otherwise any link that could not be read makes the answer
+ * `"unknown"`; only a chain read end to end with nothing on it answers `false`. Hostile beats
+ * unknown deliberately — it is the more actionable fault, and reporting the database instead would
+ * be describing a different one than the one that happened.
  */
-export function chainHasHostileBinding(sessionID: string, lookup: ChainLookup): Effect.Effect<boolean> {
+/** One step of the parent walk, kept as a named type so the loop below can annotate its binding. */
+type ParentLookup = { readonly read: boolean; readonly parent: string | undefined }
+
+export function chainHasHostileBinding(sessionID: string, lookup: ChainLookup): Effect.Effect<Hostility> {
   return Effect.gen(function* () {
     const seen = new Set<string>()
     let id: string | undefined = sessionID
+    // Set the moment any link of the chain could not be read, and never cleared: ONE unread session
+    // is enough to make "no untrusted chat drives this turn" a claim nothing supports.
+    let unread = false
     while (id !== undefined && !seen.has(id)) {
       seen.add(id)
-      const bindings: ReadonlyArray<ChainBinding> = yield* lookup
-        .bindingsForSession(id)
-        .pipe(Effect.orElseSucceed((): ReadonlyArray<ChainBinding> => []))
-      if (bindings.some((b) => b.status === "active" && (b.trust === "client" || b.trust === "audience"))) return true
-      const parent: string | undefined = yield* lookup
-        .parentOf(id)
-        .pipe(Effect.orElseSucceed((): string | undefined => undefined))
-      id = parent
+      const bindings = yield* lookup.bindingsForSession(id).pipe(
+        Effect.map((list): { readonly read: boolean; readonly list: ReadonlyArray<ChainBinding> } => ({
+          read: true,
+          list,
+        })),
+        Effect.orElseSucceed((): { readonly read: boolean; readonly list: ReadonlyArray<ChainBinding> } => ({
+          read: false,
+          list: [],
+        })),
+      )
+      // A binding we FOUND is the strongest and most actionable answer, so it wins over an earlier
+      // unreadable link: hostile beats unknown, and the deny text then names the real reason rather
+      // than blaming the database for something we actually established.
+      if (bindings.list.some((b) => b.status === "active" && (b.trust === "client" || b.trust === "audience")))
+        return true
+      if (!bindings.read) unread = true
+      // ⚠️ The annotation is load-bearing, not decoration. `id` is assigned from `parent.parent`
+      // below, so without it TypeScript infers `parent` from a chain that flows back into `id` and
+      // reports TS7022 ("referenced directly or indirectly in its own initializer"). Bun
+      // type-strips, so every assertion in this file still passed while the tree did not compile —
+      // caught 2026-07-28 by the typecheck phase added to `bun run test` the same day.
+      const parent: ParentLookup = yield* lookup.parentOf(id).pipe(
+        Effect.map((value): ParentLookup => ({ read: true, parent: value })),
+        Effect.orElseSucceed((): ParentLookup => ({ read: false, parent: undefined })),
+      )
+      // ⚠️ The same defect's second half, which the filing did not name: a failing `parentOf` used
+      // to yield `undefined`, which is indistinguishable from "this session IS the root". The walk
+      // then stopped, left every ANCESTOR unchecked, and still answered "no hostile binding" — and
+      // the recommended messenger pattern (a bound session spawning a worker) puts the binding on
+      // exactly those ancestors.
+      if (!parent.read) {
+        unread = true
+        break
+      }
+      id = parent.parent
     }
-    return false
+    return unread ? "unknown" : false
   })
 }
+
+/**
+ * Does this hostility answer take the UNATTENDED arm? `"unknown"` does — and this one-line function
+ * is the WHOLE containment meaning of the tri-state, deliberately in one place so it is one
+ * decision rather than a habit repeated at two call sites (ruling 6).
+ *
+ * **Why unknown ⇒ contain.** The question is "may this command run with the host user's full
+ * authority?", and the honest answer to a question we could not answer is not "yes". The old
+ * behaviour granted the maximum on missing data; ruling 2 forbids exactly that, and AGENTS.md
+ * (*You own correctness*) says to prefer *provably correct* over *probably fine*.
+ *
+ * **What it actually changes, measured against `AgentJail.decideBash`.** Nothing at all for an
+ * UNATTENDED root: `attendedRoot` is already false there, so such a chain is confined-or-denied
+ * whatever the hostility answer says. The entire blast radius is ATTENDED chains (interactive and
+ * sub-agent roots) and the undeclared caller — which is the right place for it to bite, because
+ * those are the only chains the old `false` was silently rescuing to `raw`. Concretely, when the
+ * messenger database cannot be read: on a host with a sandbox backend an interactive turn's `bash`
+ * becomes CONFINED; on a backend-less host (every Windows host today) it becomes DENY, with a
+ * message that names the unreadable database and routes to the path-gated native tools, which still
+ * work. Loud and recoverable, versus silent and unbounded — and it only fires when the instance's
+ * own database is already faulting.
+ *
+ * So the answer is the SAME rule on the attended and unattended paths; only its effect differs. Two
+ * rules would have been a per-call-site preference, which is what ruling 6 exists to stop.
+ */
+const takesUnattendedArm = (hostility: Hostility | undefined): boolean =>
+  hostility === true || hostility === "unknown"
 
 /**
  * raw · confined · deny. An UNDECLARED root type (`rootType: undefined`) runs raw unless the turn is
  * flagged hostile — the gate cannot invent an attendance it was never told, and refusing every
  * command from a caller that has not been wired yet would delete the feature rather than contain it.
  * The credential half still applies to such a caller, unconditionally.
+ *
+ * ⚠️ `"unknown"` takes the unattended arm here too, and that is not the same permissiveness in a new
+ * hat: a caller that never asked the trust question passes `undefined`, while one that asked and
+ * could not be answered passes `"unknown"`. The first has declared nothing; the second has declared
+ * a fault. Only the second is a containment question left open, so only the second is refused.
  */
 export function decide(input: {
   readonly rootType?: SessionType
-  readonly hostileInput?: boolean
+  readonly hostileInput?: Hostility
   readonly backend?: AgentJail.BackendInfo
 }): Decision {
   const backend = input.backend ?? AgentJail.probe()
+  // Resolved to a boolean HERE and nowhere else: `AgentJail.decideBash` is the pure two-valued
+  // policy and stays that way, so the tri-state has exactly one collapse point in the product.
+  const unattended = takesUnattendedArm(input.hostileInput)
   if (input.rootType === undefined)
-    return input.hostileInput === true
-      ? AgentJail.decideBash({ rootType: "goal-oriented", backend, hostileInput: true })
-      : "raw"
-  return AgentJail.decideBash({
-    rootType: input.rootType,
-    backend,
-    ...(input.hostileInput === undefined ? {} : { hostileInput: input.hostileInput }),
-  })
+    return unattended ? AgentJail.decideBash({ rootType: "goal-oriented", backend, hostileInput: true }) : "raw"
+  return AgentJail.decideBash({ rootType: input.rootType, backend, hostileInput: unattended })
 }
 
 /**

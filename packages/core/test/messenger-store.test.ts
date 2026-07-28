@@ -127,11 +127,17 @@ describe("MessengerStore", () => {
 
   // The guard read's fault behaviour, exercised against a REAL sqlite fault (the table is dropped
   // out from under it) rather than a stubbed `Effect.fail`. That distinction is the whole point:
-  // this read ends every consumer's `orElseSucceed(() => [])`, and `orElseSucceed` catches a
-  // failure but NOT a die — so while the implementation ended in `Effect.orDie`, a database fault
-  // unwound the caller's fiber (the turn, or the gateway's instance-global relay) and the four
-  // recoveries written for it were unreachable. See `host-exec.test.ts` for the other half.
-  it.effect("bindingsForSession fails CLOSED and names the fault when the database is unreadable", () =>
+  // `orElseSucceed` catches a failure but NOT a die — so while the implementation ended in
+  // `Effect.orDie`, a database fault unwound the caller's fiber (the turn, or the gateway's
+  // instance-global relay) and the four recoveries written for it were unreachable.
+  //
+  // ⚠️ The name of this test used to say "fails CLOSED", and that had become FALSE. Wave 1 made the
+  // read succeed with `[]`, which is fail-closed for three consumers (no relay, no binding shown,
+  // nothing to disconnect) and PERMISSIVE for the fourth: `host-exec.ts`'s containment walk read
+  // `[]` as "no untrusted chat drives this turn" and ran `bash` raw instead of confined. So the
+  // read now NAMES the fault and FAILS TYPED — the only shape that lets four consumers who need
+  // different things all get the right one. See `host-exec.test.ts` for what the guard does with it.
+  it.effect("bindingsForSession reports the fault typed — it never answers `[]` for a read it could not do", () =>
     Effect.gen(function* () {
       const store = yield* MessengerStore.Service
       const { db } = yield* Database.Service
@@ -143,15 +149,38 @@ describe("MessengerStore", () => {
       // preload gives every test its own connection, so this cannot leak into another test.)
       yield* db.run("DROP TABLE messenger_binding")
 
-      // …the read RETURNS rather than dying, so the consumers' fail-closed path is reachable.
-      expect(yield* store.bindingsForSession("ses_guard")).toEqual([])
+      // …the read FAILS (it does not die, so the consumers' recoveries stay reachable) and the
+      // failure is typed and self-describing rather than an empty answer nobody can distinguish
+      // from a session that genuinely holds no bindings.
+      const failure = yield* store.bindingsForSession("ses_guard").pipe(Effect.flip)
+      expect(failure._tag).toBe("MessengerStore.Unavailable")
+      expect(failure.read).toBe("bindingsForSession(ses_guard)")
+      expect(failure.detail).toContain("messenger_binding")
 
-      // …and it is not a SILENT empty (standing decision 3): the subsystem names itself and the
-      // cause. The default Effect logger writes through the Console service, which the test env
+      // …and it is not a SILENT fault either (standing decision 3): the subsystem names itself and
+      // the cause. The default Effect logger writes through the Console service, which the test env
       // replaces with TestConsole, so this is the real log line the operator would get.
       const logged = (yield* TestConsole.logLines).map((line) => JSON.stringify(line)).join("\n")
       expect(logged).toContain("MessengerStore.bindingsForSession(ses_guard)")
       expect(logged).toContain("messenger_binding")
+    }),
+  )
+
+  // The three consumers that genuinely want an empty answer keep it, with ONE line each and no
+  // signature change — `Effect.orElseSucceed(() => [])` was already written at every one of them
+  // (gateway.ts's relay, the `messenger` tool's status and disconnect ops) back when this read was
+  // fallible. This asserts that recovery still works against the real fault, so "no ripple" is a
+  // measurement rather than a claim.
+  it.effect("…and the fail-closed-to-empty consumers still get their empty, unchanged", () =>
+    Effect.gen(function* () {
+      const store = yield* MessengerStore.Service
+      const { db } = yield* Database.Service
+      const account = yield* store.createAccount({ driverID: "telegram", label: "t", enabled: true, settings: {} })
+      yield* store.createBinding({ accountID: account.id, chatID: "1", sessionID: "ses_relay", trust: "client" })
+      yield* db.run("DROP TABLE messenger_binding")
+
+      const bound = yield* store.bindingsForSession("ses_relay").pipe(Effect.orElseSucceed(() => []))
+      expect(bound).toEqual([])
     }),
   )
 

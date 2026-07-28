@@ -145,7 +145,12 @@ export const layer = Layer.effectDiscard(
     // itself now lives beside the gate (`HostExec.chainHasHostileBinding`), because the Strict
     // runner has to ask the SAME question and a second copy is the drift ruling 6 exists to
     // prevent. This layer supplies only the two lookups.
-    const chainHasHostileBinding = (sessionID: string): Effect.Effect<boolean> =>
+    // ⚠️ The answer is `HostExec.Hostility`, NOT a boolean: either lookup can fault (an unreadable
+    // messenger database, a session row that cannot be fetched), and the walk reports `"unknown"`
+    // rather than the old permissive `false`. Both lookups are handed over WITHOUT a local recovery
+    // on purpose — an `orElseSucceed(() => [])` here would swallow exactly the fault the gate now
+    // needs to see, which is how this defect existed at all.
+    const chainHasHostileBinding = (sessionID: string): Effect.Effect<HostExec.Hostility> =>
       HostExec.chainHasHostileBinding(sessionID, {
         bindingsForSession: (id) => messengerStore.bindingsForSession(id),
         parentOf: (id) =>
@@ -218,6 +223,10 @@ export const layer = Layer.effectDiscard(
               // makes the turn unattended hostile input — an untrusted stranger drives it, and the
               // recommended pattern (a bound session spawning a worker sub-agent) means the binding
               // can sit on an ancestor, so the whole chain is checked, not just this session.
+              // ⚠️ Three answers, not two. `"unknown"` (the messenger database could not be read)
+              // takes the same arm as `true` at the gate below: an unanswerable containment question
+              // is not a licence to run with the host user's full authority. Until 2026-07-28 the
+              // walk answered `false` there and this tool ran RAW on a fault nobody had seen.
               const hostileInput = yield* chainHasHostileBinding(context.sessionID)
               // ONE host-execution gate (ruling 6, `src/host-exec.ts`): the jail decision, shell
               // resolution, env composition and the peer-token rule all live there, so the jh/Strict

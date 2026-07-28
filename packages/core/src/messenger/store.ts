@@ -23,6 +23,29 @@ export class ChatAlreadyBoundError extends Schema.TaggedErrorClass<ChatAlreadyBo
   { sessionID: Schema.String },
 ) {}
 
+/**
+ * The messenger database could not be read, so this store has NO ANSWER to give — not an empty one.
+ *
+ * ⚠️ A TYPED failure on purpose, and the third shape this read has had. It was `Effect.orDie` (a
+ * defect: it unwound the caller's fiber, and the four `orElseSucceed(() => [])` recoveries written
+ * for it were unreachable code). Wave 1 made it succeed with `[]` and log — which fixed the fiber
+ * kill but handed `host-exec.ts`'s containment walk the most PERMISSIVE possible answer to a
+ * question the database had just refused to answer. A typed failure is the only one of the three
+ * that lets each consumer decide: `orElseSucceed(() => [])` still catches it (a die never was), so
+ * the relay and the `messenger` tool keep their documented fail-closed empty, while the guard can
+ * finally tell "no untrusted chat" from "we could not look".
+ *
+ * It is also the mechanical half: a NEW consumer cannot silently inherit a fail-closed empty it
+ * never thought about, because the error channel makes the compiler ask.
+ */
+export class UnavailableError extends Schema.TaggedErrorClass<UnavailableError>()("MessengerStore.Unavailable", {
+  /** Which read faulted, e.g. `bindingsForSession(ses_abc)` — the same text the log line names. */
+  read: Schema.String,
+  /** The pretty-printed sqlite cause. NOT named `cause`: that is an own property of `Error`, and a
+   *  schema field would shadow it and confuse `Cause.pretty` on anything wrapping this. */
+  detail: Schema.String,
+}) {}
+
 export interface ContactInfo {
   readonly accountID: Messenger.AccountID
   readonly senderID: string
@@ -83,31 +106,33 @@ export interface Interface {
     chatID: string,
   ) => Effect.Effect<Messenger.BindingInfo | undefined>
   /**
-   * Every binding held by ONE session. **Fails CLOSED to `[]` and names the fault in a log** — it
-   * never dies, and `E = never` here is now a fact rather than a claim.
+   * Every binding held by ONE session. **Names the fault in a log and then FAILS TYPED** — it never
+   * dies, and it never answers `[]` for a read it could not perform.
    *
    * Why this one read is special: it is the only store read consumed by a GUARD. Four call sites
-   * take it, and all four already wrap it in `Effect.orElseSucceed(() => [])` because
-   * "lookup failed" is documented as "no binding here":
-   *   · `host-exec.ts` `chainHasHostileBinding` — the messenger-trust half of the bash/Strict
-   *     confinement decision (its `ChainLookup` types the lookup as `Effect<…, unknown>`, i.e. it
-   *     EXPECTS failure);
-   *   · `messenger/gateway.ts`'s outbound relay — an instance-global fiber;
-   *   · the `messenger` tool's `status` and `disconnect` ops.
-   * `orElseSucceed` does not catch a DIE. So while this ended in `Effect.orDie`, every one of those
-   * four recoveries was unreachable code: a sqlite fault unwound the fiber instead of failing
-   * closed — killing the turn, and in the relay's case killing the ONE fiber that delivers replies
-   * to every bound chat instance-wide. The test that "proved" the recovery used `Effect.fail`,
-   * which is caught, so it stayed green over a path production could not take.
+   * take it, and three of them recover with `Effect.orElseSucceed(() => [])`, for which an empty
+   * result is genuinely fail-closed:
+   *   · `messenger/gateway.ts`'s outbound relay — an instance-global fiber; no bindings, no relay;
+   *   · the `messenger` tool's `status` and `disconnect` ops — nothing shown, nothing to disconnect.
+   * The fourth is different in kind: `host-exec.ts` `chainHasHostileBinding`, the messenger-trust
+   * half of the bash/Strict confinement decision. There, `[]` is the **permissive** answer — "no
+   * untrusted chat drives this turn" — so an unreadable database used to buy raw host execution.
    *
-   * ⚠️ `[]` is the DOCUMENTED "no binding here", and it is fail-closed for three of the four
-   * consumers (no relay, no binding shown, nothing to disconnect) — but for the hostile-chain walk
-   * it is the PERMISSIVE answer: an unreadable database reads as "no untrusted chat drives this
-   * turn", so bash runs raw rather than confined. Fixing that honestly means the walk distinguishing
-   * "unknown" from "no binding", which is a change to `host-exec.ts` + `session/runner/llm.ts`, not
-   * to this signature. Filed, not silently absorbed: the log line below is what makes it visible.
+   * ⚠️ Three shapes, and the reasoning for the third. `Effect.orDie` made all four recoveries
+   * unreachable (a defect unwinds the fiber; `orElseSucceed` catches a failure, not a die), so a
+   * sqlite fault killed the turn — and in the relay's case the ONE fiber delivering replies to every
+   * bound chat instance-wide. Wave 1 replaced it with succeed-`[]`-and-log, which fixed that and
+   * left the guard deciding containment on data it did not have. This — log, then fail typed with
+   * `UnavailableError` — is the shape that serves all four: the three keep their `orElseSucceed`
+   * (unchanged, still compiling, still fail-closed), and the guard finally distinguishes *unknown*
+   * from *no binding*. `host-exec.ts` maps any failure here to `Hostility "unknown"`, which takes
+   * the unattended arm: confined where a sandbox backend exists, denied where none does.
+   *
+   * ⚠️ Do NOT "simplify" this back to `Effect<…[]>`. The empty array and the unreadable database are
+   * different facts, and a signature that cannot tell them apart is how a containment decision came
+   * to be made on missing data in the first place.
    */
-  readonly bindingsForSession: (sessionID: string) => Effect.Effect<Messenger.BindingInfo[]>
+  readonly bindingsForSession: (sessionID: string) => Effect.Effect<Messenger.BindingInfo[], UnavailableError>
   readonly bindingsForAccount: (accountID: Messenger.AccountID) => Effect.Effect<Messenger.BindingInfo[]>
   readonly listBindings: () => Effect.Effect<Messenger.BindingInfo[]>
   readonly removeBinding: (id: Messenger.BindingID) => Effect.Effect<void>
@@ -154,23 +179,27 @@ const bindingFromRow = (row: BindingRow): Messenger.BindingInfo =>
   })
 
 /**
- * The salvage idiom for a read whose caller is a GUARD (`settings-config-seed.ts` is the house
- * template: keep what is readable, NAME what was lost, never fault the caller). Returns `fallback`
- * on any database fault and logs the cause — a subsystem that cannot answer says so instead of
- * either lying silently or taking the fiber down with it (standing decision 3).
+ * The idiom for a read whose caller is a GUARD: NAME what was lost, never take the caller's fiber
+ * down with it, and never invent an answer on its behalf. Any database fault is logged (a subsystem
+ * that cannot answer says so — ruling 2) and then converted to a typed `UnavailableError`, so the
+ * *consumer* chooses what an unreadable database means for it. Three consumers say "an empty
+ * result"; the containment guard says "unknown", and those are not the same decision.
+ *
+ * ⚠️ It deliberately does NOT take a fallback any more. A fallback parameter here is the shape that
+ * let one call site's fail-closed empty become another's permissive default, invisibly, because the
+ * signature could not tell the two apart.
  *
  * Interrupts are re-raised untouched: interruption is not a fault, and swallowing it would make a
- * cancelled turn or a gateway teardown look like an empty result.
+ * cancelled turn or a gateway teardown look like a broken database.
  */
-const failClosed = <A, E>(query: Effect.Effect<A, E>, fallback: A, what: string): Effect.Effect<A> =>
+const nameTheFault = <A, E>(query: Effect.Effect<A, E>, what: string): Effect.Effect<A, UnavailableError> =>
   query.pipe(
     Effect.catchCause((cause) =>
       Cause.hasInterrupts(cause)
         ? Effect.failCause(cause as Cause.Cause<never>)
-        : Effect.logWarning(
-            `MessengerStore.${what}: the messenger database could not be read — failing closed`,
-            { cause: Cause.pretty(cause) },
-          ).pipe(Effect.as(fallback)),
+        : Effect.logWarning(`MessengerStore.${what}: the messenger database could not be read`, {
+            cause: Cause.pretty(cause),
+          }).pipe(Effect.flatMap(() => Effect.fail(new UnavailableError({ read: what, detail: Cause.pretty(cause) })))),
     ),
   )
 
@@ -366,13 +395,12 @@ export const layer = Layer.effect(
           .pipe(Effect.orDie)
         return row === undefined ? undefined : bindingFromRow(row)
       }),
-      // ⚠️ NOT `Effect.orDie` — see the interface note. Every consumer of this read is a guard that
-      // already recovers with `orElseSucceed(() => [])`, and `orElseSucceed` cannot catch a die, so
-      // dying here made all four recoveries dead code. The recovery lives at the source instead.
+      // ⚠️ NOT `Effect.orDie` (a die is uncatchable by the consumers' `orElseSucceed`, so it killed
+      // the turn) and NOT a silent `[]` (that is the PERMISSIVE answer for the containment guard —
+      // see the interface note). Logged and failed typed: each consumer decides for itself.
       bindingsForSession: Effect.fn("MessengerStore.bindingsForSession")(function* (sessionID) {
-        const rows = yield* failClosed(
+        const rows = yield* nameTheFault(
           db.select().from(MessengerBindingTable).where(eq(MessengerBindingTable.session_id, sessionID)).all(),
-          [] as BindingRow[],
           `bindingsForSession(${sessionID})`,
         )
         return rows.map(bindingFromRow)
