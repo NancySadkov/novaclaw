@@ -1,5 +1,6 @@
 export * as SessionRecall from "./recall"
 
+import { lastRealUserText } from "../steer-provenance"
 import type { ModelV2 } from "../../model"
 import type { MemoryClient } from "../../kb-graph/memory-client"
 import type { SessionMessage } from "../message"
@@ -9,17 +10,15 @@ import type { SessionMessage } from "../message"
 // having to call the `kb` tool. Pure helpers here (the runner does the search + injection). Budgeted
 // DOWN for weak models (the JH floor) so recalled memory never crowds out the task.
 
-/** The recall query = the latest user message's text (what this turn is about); undefined if none. */
-export const recallQuery = (context: ReadonlyArray<SessionMessage.Message>): string | undefined => {
-  for (let i = context.length - 1; i >= 0; i--) {
-    const message = context[i]
-    if (message.type === "user") {
-      const text = message.text?.trim()
-      return text && text.length > 0 ? text : undefined
-    }
-  }
-  return undefined
-}
+/** The recall query = the latest REAL user message's text (what this turn is about); undefined if none.
+ *
+ *  ⚠️ B2 — harness steers are stored as `user`-type messages, so taking the newest one verbatim made
+ *  the retrieval query the harness's own instruction text after every doom-loop redirect or quality
+ *  nudge: the turn's memories were then selected by scaffolding rather than by what the user said.
+ *  `lastRealUserText` is the one shared predicate; it also skips blank turns (a files-only prompt
+ *  carries no query), matching `strict.ts`'s task walk. */
+export const recallQuery = (context: ReadonlyArray<SessionMessage.Message>): string | undefined =>
+  lastRealUserText(context)
 
 /** How many memories to inject — scaled down for weak models (the JH floor: don't crowd the window). */
 export const recallBudget = (tier: ModelV2.Tier | undefined): number => {

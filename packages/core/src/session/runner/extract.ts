@@ -1,6 +1,7 @@
 export * as SessionExtract from "./extract"
 
 import { createHash } from "node:crypto"
+import { lastRealUserTurn } from "../steer-provenance"
 import type { SessionMessage } from "../message"
 
 // Auto-extraction (notes/kb-graph-plan.md §1.3.3): at each drain end a model pass reads the latest
@@ -56,24 +57,27 @@ export interface Extracted {
   readonly text: string
 }
 
-/** Serialize the latest exchange (the last user message + the assistant text that followed it) as the
- *  extraction input. Undefined if there's no user message to anchor on. */
+/** Serialize the latest exchange (the last REAL user message + the assistant text that followed it)
+ *  as the extraction input. Undefined if there's no user message to anchor on.
+ *
+ *  ⚠️ B2 — the anchor MUST be the real user, never a harness steer. Steers (doom-loop redirects,
+ *  quality nudges, introspection prompts) are stored as `user`-type messages, so anchoring on the
+ *  newest one verbatim handed the extractor the harness's own instruction text; every fact it then
+ *  produced was written to session memory as a fact about the user, and `consolidate()` promoted it
+ *  to a durable GLOBAL twin. `lastRealUserTurn` skips steers rather than treating one as the
+ *  boundary, so the assistant text that followed a steer still belongs to this exchange. */
 export const buildExchange = (context: ReadonlyArray<SessionMessage.Message>): string | undefined => {
-  let userText: string | undefined
+  const anchor = lastRealUserTurn(context)
+  if (anchor === undefined) return undefined
   const assistantMessages: string[] = []
-  for (let i = context.length - 1; i >= 0; i--) {
-    const message = context[i]
-    if (message.type === "assistant") {
-      const parts: string[] = []
-      for (const part of message.content) if (part.type === "text" && part.text) parts.push(part.text)
-      if (parts.length) assistantMessages.unshift(parts.join(" ")) // whole message, kept in forward order
-    } else if (message.type === "user") {
-      userText = message.text?.trim()
-      break
-    }
+  for (let i = anchor.index + 1; i < context.length; i++) {
+    const message = context[i]!
+    if (message.type !== "assistant") continue
+    const parts: string[] = []
+    for (const part of message.content) if (part.type === "text" && part.text) parts.push(part.text)
+    if (parts.length) assistantMessages.push(parts.join(" ")) // whole message, in forward order
   }
-  if (!userText) return undefined
-  const lines = [`User: ${userText}`]
+  const lines = [`User: ${anchor.text}`]
   const assistant = assistantMessages.join(" ").replace(/\s+/g, " ").trim()
   if (assistant) lines.push(`Assistant: ${assistant}`)
   return lines.join("\n")
@@ -161,7 +165,7 @@ export const parseLinks = (raw: string, names: ReadonlyArray<string>, max = 20):
     const from = resolveName((item as { from?: unknown }).from, names)
     const to = resolveName((item as { to?: unknown }).to, names)
     if (from === undefined || to === undefined || from === to) continue
-    const key = `${from} ${to}`.toLowerCase()
+    const key = `${from}\x00${to}`.toLowerCase()
     if (seen.has(key)) continue
     seen.add(key)
     out.push({ from, to, type: linkType((item as { type?: unknown }).type) })

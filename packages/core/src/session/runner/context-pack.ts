@@ -18,7 +18,7 @@
 import { Message } from "@novaclaw/llm"
 import type { LLMRequest, SystemPart, ToolDefinition } from "@novaclaw/llm"
 import { Token } from "../../util/token"
-import { STEER_PROVENANCE_PREFIX } from "../input"
+import { applySteerProvenance, isSteerText } from "../steer-provenance"
 
 export * as ContextPack from "./context-pack"
 
@@ -83,9 +83,14 @@ const firstTextPart = (message: Message): string | undefined => {
 /**
  * A REAL user message — not a harness steer (A1 provenance prefix) riding the user role. The
  * anchor pass and the "since last user message" semantics both key off this.
+ *
+ * This is the WIRE-shaped twin of `session/steer-provenance.ts`'s `isRealUserTurn`: the same
+ * question asked of an `@novaclaw/llm` message, whose text lives in parts rather than a flat field.
+ * It delegates to the shared `isSteerText` (B2) so only one place knows what a steer looks like.
+ * Deliberately does NOT require non-empty text — an image-only user message still anchors.
  */
 export const isRealUserMessage = (message: Message): boolean =>
-  message.role === "user" && !(firstTextPart(message) ?? "").startsWith(STEER_PROVENANCE_PREFIX)
+  message.role === "user" && !isSteerText(firstTextPart(message) ?? "")
 
 const localToolCallIds = (message: Message): string[] =>
   message.role === "assistant"
@@ -139,7 +144,7 @@ export const demoteSystemMessages = (messages: ReadonlyArray<Message>): Message[
   messages.map((message) => {
     if (message.role !== "system") return message
     const text = message.content.map((part) => ("text" in part ? part.text : "")).join("\n")
-    return Message.make({ ...message, role: "user", content: [Message.text(STEER_PROVENANCE_PREFIX + text)] })
+    return Message.make({ ...message, role: "user", content: [Message.text(applySteerProvenance(text))] })
   })
 
 export interface PackResult {

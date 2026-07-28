@@ -5,8 +5,13 @@ export * as SessionTitle from "./title"
 // because the title grounds BOTH the user (the chat list) and the model across compactions (the
 // title survives them). Pure helpers here; the runner owns the model call and the row patch.
 
-import { STEER_PROVENANCE_PREFIX } from "./input"
-import type { SessionMessage } from "./message"
+/**
+ * The text of the first REAL user message: harness steers are stored as `user` messages too but
+ * always carry the 1N provenance prefix, so they never seed a title. B2 — the walk itself lives in
+ * the shared `steer-provenance` module (one predicate, six consumers); re-exported here so
+ * `SessionTitle.firstRealUserText` stays the auto-titler's vocabulary.
+ */
+export { firstRealUserText } from "./steer-provenance"
 
 /** The title-generator system prompt (ported from the V1 `title` agent's `title.txt`). */
 export const SYSTEM = `You are a title generator. You output ONLY a thread title. Nothing else.
@@ -64,20 +69,6 @@ const DEFAULT_TITLE_REGEX =
 /** True while the title is still a creation default — the only state auto-title may replace. */
 export function isDefault(title: string): boolean {
   return DEFAULT_TITLE_REGEX.test(title)
-}
-
-/**
- * The text of the first REAL user message: harness steers are stored as `user` messages too
- * but always carry the 1N provenance prefix, so they never seed a title.
- */
-export function firstRealUserText(context: readonly SessionMessage.Message[]): string | undefined {
-  for (const message of context) {
-    if (message.type !== "user") continue
-    if (message.text.startsWith(STEER_PROVENANCE_PREFIX)) continue
-    const text = message.text.trim()
-    if (text) return text
-  }
-  return undefined
 }
 
 /** V1-parity forked-session title: "X (fork #N)" increments N; anything else gains "(fork #1)". */
