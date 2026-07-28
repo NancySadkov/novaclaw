@@ -24,6 +24,7 @@ import { Slug } from "./util/slug"
 import path from "path"
 import { fromRow } from "./session/info"
 import { SessionRunner } from "./session/runner/index"
+import { SessionScheduler } from "./session/scheduler"
 import { SessionStore } from "./session/store"
 import { SessionCompactionRequest } from "./session/compaction-request"
 import { SessionExecution } from "./session/execution"
@@ -401,15 +402,21 @@ export const createSessionRecord = (
  * Remove a session RECORD tree from CYCLE-FREE primitives (the `createSessionRecord` seam
  * pattern): run the injected `interrupt` first (the SessionV2 layer passes the execution
  * coordinator; the workspace control-plane's session sweep has none — matching the V1 remove
- * it replaces there), depth-first over children, publish the full-info legacy
- * `session.deleted` (its projector row-delete cascades messages/parts/todos/tags via FK),
- * then purge the aggregate's event log.
+ * it replaces there), then the injected `evict`, depth-first over children, publish the
+ * full-info legacy `session.deleted` (its projector row-delete cascades
+ * messages/parts/todos/tags via FK), then purge the aggregate's event log.
+ *
+ * `evict` follows `interrupt` exactly: an OPTIONAL injected primitive, because the seam must
+ * stay usable by the service-less callers (the CLI's `session delete` holds no scheduler at
+ * all — its ledger dies with the process). Where a scheduler DOES exist, a removed session
+ * that never leaves the EEVDF ledger stays there for the life of the instance.
  */
 export const removeSessionRecord = (
   deps: {
     readonly db: Database.Interface["db"]
     readonly events: EventV2.Interface
     readonly interrupt?: (sessionID: SessionSchema.ID) => Effect.Effect<void>
+    readonly evict?: (sessionID: SessionSchema.ID) => Effect.Effect<void>
   },
   sessionID: SessionSchema.ID,
 ): Effect.Effect<void, NotFoundError> =>
@@ -418,6 +425,10 @@ export const removeSessionRecord = (
     const row = yield* db.select().from(SessionTable).where(eq(SessionTable.id, sessionID)).get().pipe(Effect.orDie)
     if (!row) return yield* new NotFoundError({ sessionID })
     if (deps.interrupt) yield* deps.interrupt(sessionID)
+    // AFTER the interrupt: the interrupted turn unwinds through its own scheduler release, and
+    // evicting first would only leave the dead session's ledger entry to be re-created. Each
+    // child evicts itself in the recursion below.
+    if (deps.evict) yield* deps.evict(sessionID)
     const children = yield* db
       .select({ id: SessionTable.id })
       .from(SessionTable)
@@ -449,6 +460,7 @@ export const layer = Layer.effect(
     const events = yield* EventV2.Service
     const projects = yield* ProjectV2.Service
     const execution = yield* SessionExecution.Service
+    const scheduler = yield* SessionScheduler.Service
     const store = yield* SessionStore.Service
     const locations = yield* LocationServiceMap.Service
     const compactionRequests = yield* SessionCompactionRequest.Service
@@ -476,7 +488,15 @@ export const layer = Layer.effect(
     // (1H residue).
     const removeRecord = (sessionID: SessionSchema.ID): Effect.Effect<void, NotFoundError> =>
       removeSessionRecord(
-        { db, events, interrupt: (id) => Effect.uninterruptible(execution.interrupt(id)) },
+        {
+          db,
+          events,
+          interrupt: (id) => Effect.uninterruptible(execution.interrupt(id)),
+          // The scheduler ledger is keyed by session id and nothing else ever dropped an entry:
+          // `evict` existed but had no production caller, so the EEVDF ledger (and any in-flight
+          // or waiting entry a hard kill left behind) grew for the life of the instance.
+          evict: (id) => scheduler.evict(id),
+        },
         sessionID,
       )
 
@@ -1035,6 +1055,11 @@ export const layer = Layer.effect(
   }),
 )
 
+// ⚠️ SessionScheduler is deliberately NOT provided here (like SessionExecution and
+// LocationServiceMap): it stays a REQUIREMENT so the composition root hands this layer the SAME
+// per-instance ledger the location-scoped runner admits against (httpapi/server.ts lists
+// `SessionScheduler.node` in the instance-global group for exactly that reason). Providing a
+// private one here would silently make `remove`'s eviction hit an empty ledger.
 export const defaultLayer = layer.pipe(
   Layer.provide(SessionStore.defaultLayer),
   Layer.provide(SessionProjector.defaultLayer),
@@ -1068,6 +1093,7 @@ export const node = makeGlobalNode({
     EventV2.node,
     ProjectV2.node,
     SessionExecution.node,
+    SessionScheduler.node,
     SessionStore.node,
     LocationServiceMap.node,
     SessionProjector.node,

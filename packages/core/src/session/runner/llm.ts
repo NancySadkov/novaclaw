@@ -45,6 +45,9 @@ import { SessionTitle } from "../title"
 
 import { resolveSessionConfig, rootSessionType, EFFECTIVE_CONFIG_DEFAULTS, type EffectiveConfig } from "../config-resolve"
 import { AgentJail } from "../../agent-jail"
+import { HostExec } from "../../host-exec"
+import { MessengerStore } from "../../messenger/store"
+import { Offline } from "../../offline"
 import { SessionScheduler } from "../scheduler"
 import { type RunError, Service } from "./index"
 import { SessionRunnerModel } from "./model"
@@ -89,6 +92,7 @@ import { ProviderRetry } from "./provider-retry"
 import { Quality } from "./quality"
 import { QualityProvision } from "./quality-provision"
 import { Snapshot } from "../../snapshot"
+import type { RelativePath } from "../../schema"
 import { AppProcess } from "../../process"
 import { ChildProcess } from "effect/unstable/process"
 import { makeLocationNode } from "../../effect/app-node"
@@ -183,6 +187,11 @@ export const layer = Layer.effect(
     const adhocGuidance = yield* AdhocGuidance.Service
     const config = yield* Config.Service
     const snapshots = yield* Snapshot.Service
+    // Strict's half of the ONE host-execution gate (ruling 6): the chain-root type comes from
+    // `store`, the messenger trust of the turn from here, and the OFF-C egress overlay from the
+    // SHARED offline service (never a second policy load — it would drift from the HttpClient's).
+    const messengerStore = yield* MessengerStore.Service
+    const offline = yield* Offline.Service
     const scheduler = yield* SessionScheduler.Service
     const compactionRequests = yield* SessionCompactionRequest.Service
     const memory = yield* MemoryClient.Service
@@ -894,7 +903,18 @@ export const layer = Layer.effect(
       // batch-class sessions wait for idle device cycles. The slot covers GENERATION
       // only — released right after the provider stream settles, BEFORE tool
       // settlement, so a parent blocking on `wait` never holds the device against
-      // its own child. Idempotent release also guards the interrupt/defect exits.
+      // its own child.
+      // ⚠️ The in-band release below is NOT reached on an interrupt. The retry sleep is the
+      // one await in this block that is not wrapped in `Effect.exit`, so a Stop landing in
+      // the backoff window propagates straight out of the generator — and idempotency does
+      // not help when `release` is never CALLED at all. A leaked INTERACTIVE entry
+      // permanently zeroes `batchCapacity` for that device (scheduler.ts: capacity requires
+      // `inFlightInteractive.size === 0`), so every batch session on it blocks forever; a
+      // leaked batch entry burns one of MAX_BATCH slots. Hence the `Effect.ensuring` net,
+      // composed so the finalizer is installed BEFORE `admit` runs — that also covers the
+      // window between admission and the mask. `admit` itself stays INTERRUPTIBLE on
+      // purpose: a queued batch turn must remain stoppable, and its own `onInterrupt` drops
+      // the waiter (releasing a slot that was never held is a no-op).
       const deviceKey = `${model.provider}/${model.id}`
       const dispatchSlot = {
         sessionID: session.id as string,
@@ -902,8 +922,7 @@ export const layer = Layer.effect(
         sessionClass: SessionScheduler.classForSessionType(config.type),
         ...(config.priority > 0 ? { priority: config.priority } : {}),
       }
-      yield* scheduler.admit(dispatchSlot)
-      return yield* Effect.uninterruptibleMask((restore) =>
+      const generation = Effect.uninterruptibleMask((restore) =>
         Effect.gen(function* () {
           // 1D — the forgiving loop: a TRANSIENT provider failure (local server down or
           // restarting, 5xx, 429) that produced no events is retried with backoff, bounded
@@ -1023,6 +1042,10 @@ export const layer = Layer.effect(
             return yield* Effect.failCause(settled.cause)
           return { needsContinuation: !publisher.hasProviderError() && needsContinuation, step: currentStep }
         }),
+      )
+      return yield* scheduler.admit(dispatchSlot).pipe(
+        Effect.andThen(generation),
+        Effect.ensuring(scheduler.release(dispatchSlot)),
       )
     }, Effect.scoped)
     type RunTurn = (
@@ -1187,8 +1210,16 @@ export const layer = Layer.effect(
           promoted += yield* SessionInput.promoteSteers(db, events, sessionID, cutoff)
         }
         if (promoted === 0) return "handled" as const
-        const task = SessionStrict.lastUserText(yield* getContext(sessionID))
+        const context = yield* getContext(sessionID)
+        const task = SessionStrict.lastUserText(context)
         if (task === undefined) return "handled" as const
+        // A Strict TASK *is* the prompt that asked for it, so that prompt's message id names the
+        // plan (see `savedKey` below). `lastUserText` already picked the newest non-steer user
+        // message; find that same message again for its id. The event sequence is the fallback —
+        // monotonic per session, so still distinct per task — but it is unreachable in practice:
+        // `task` came out of this very array.
+        const taskKey =
+          context.findLast((message) => message.type === "user" && message.text.trim() === task)?.id ?? `seq${cutoff}`
         // A stopped run finalizes on a detached fiber at its next step boundary — two engines must
         // never work the same folder, so wait for any straggler before starting (or routing) anything.
         {
@@ -1205,8 +1236,16 @@ export const layer = Layer.effect(
         // a HARD death (crash/kill — a clean stop saves its terminal status), so the user is told once
         // and taught the resume word. A bare "resume"/"continue" picks the saved tree back up —
         // completed steps are never redone.
-        const savedKey = `jh_${sessionID}`
-        const saved = yield* JhStore.load(db, savedKey).pipe(
+        // ⚠️ The plan id is PER TASK (`jh_<sessionID>_<taskKey>`), never per session. It used to be
+        // `jh_<sessionID>`, so a SECOND Strict task in one chat wrote onto the FIRST task's rows:
+        // `jh_plan` was OVERWRITTEN (onConflictDoUpdate) while A's log rows survived and B's were
+        // silently dropped (the log insert is onConflictDoNothing on `(planID, seq)`), and task A's
+        // artifacts were HARD-DELETED by B's first checkpoint (the artifact write replaces by plan
+        // id). Resume then rebuilt A's journal against B's tree and described work nobody did — a
+        // read that destroys, and a fault described falsely. The session's plans are found by
+        // prefix, newest first, and a RESUME adopts the found plan's id instead of minting a new
+        // one, so one task keeps one id from first checkpoint to terminal save.
+        const saved = yield* JhStore.latest(db, `jh_${sessionID}_`).pipe(
           Effect.catchDefect((defect) =>
             Effect.logWarning("strict resume state unreadable", { sessionID, defect }).pipe(Effect.as(undefined)),
           ),
@@ -1216,6 +1255,7 @@ export const layer = Layer.effect(
         const resuming = wantsResume && resumable
         const goal = resuming ? saved!.goal : task
         const resumeState = resuming ? saved!.state : undefined
+        const savedKey = resuming ? saved!.id : `jh_${sessionID}_${taskKey}`
         if (!resuming) {
           // P14.1 routing: "resume" with nothing to resume is a conversation ("continue what?");
           // everything else asks the router. Only an explicit CHAT verdict leaves the engine path —
@@ -1233,9 +1273,50 @@ export const layer = Layer.effect(
             yield* notice(
               `⏸️ A previous Strict run was interrupted before finishing — “${shortGoal}”. Your files kept every verified step; say "resume" to continue it.`,
             )
-            yield* JhStore.save(db, { id: savedKey, goal: saved.goal, status: "interrupted", state: saved.state, now: Date.now() })
+            // ⚠️ `saved.id`, NOT `savedKey`: this arm is the NOT-resuming path, where `savedKey` is
+            // the id the NEW task is about to claim. Downgrading "running" → "interrupted" must
+            // write back to the plan it describes.
+            yield* JhStore.save(db, { id: saved.id, goal: saved.goal, status: "interrupted", state: saved.state, now: Date.now() })
           }
           if (verdict === "chat") return "chat" as const
+        }
+        // ── the ONE host-execution gate (ruling 6, `src/host-exec.ts`), now ENGAGED for Strict ──
+        // Every command a Strict run executes is model-authored and approved by nobody, so the
+        // CREDENTIAL half of the gate already applied (`consent: "none"` in strict.ts). The
+        // CONFINEMENT half could not: it needs facts only the runner holds — the chain-ROOT session
+        // type, whether an untrusted messenger chat drives the turn, the operator's configured
+        // shell, and the live offline policy — and without them the gate refuses to invent an
+        // attendance nobody declared and runs raw. Handing them over is what makes an UNATTENDED
+        // Strict chain (a Calendar fire, a messenger dispatch with strict.enabled) bwrap-confined on
+        // a host with a sandbox backend, exactly like the `bash` tool.
+        const rootType = yield* rootSessionType(sessionID, (id) => store.get(id as SessionSchema.ID))
+        // messenger-plan §3.4: the binding can sit on an ANCESTOR (a bound session spawning a worker
+        // is the recommended pattern), so the whole chain is asked — through the same walk the
+        // `bash` tool uses, never a second copy.
+        const hostileInput = yield* HostExec.chainHasHostileBinding(sessionID, {
+          bindingsForSession: (id) => messengerStore.bindingsForSession(id),
+          parentOf: (id) => store.get(id as SessionSchema.ID).pipe(Effect.map((info) => info?.parentID)),
+        })
+        // Probe once; the same answer decides the run below and plans every command inside it.
+        const backend = HostExec.probe()
+        const configuredShell = Config.latest(configEntries, "shell")
+        const strictHost: HostExec.SessionHost = {
+          rootType,
+          hostileInput,
+          ...(configuredShell === undefined ? {} : { shell: configuredShell }),
+          egress: offline.egressEnv(),
+          backend,
+        }
+        // Deny-fast — the same reordering `tool/bash.ts` already needed. On a host with no sandbox
+        // backend an unattended chain has EVERY command refused, so starting the engine would spend
+        // the whole wall producing nothing but deny messages and then report on them. Name the
+        // refusal once and fall through to the normal turn, whose path-gated native tools still
+        // work. (An attended chain never reaches this arm.)
+        if (HostExec.decide({ rootType, hostileInput, backend }) === "deny") {
+          yield* notice(
+            `🛡️ Strict mode can't run this here. ${HostExec.denyMessage(rootType, hostileInput)} Answering normally instead.`,
+          )
+          return "chat" as const
         }
         // improve11 P5 (jh.md §14.2): best-of-N racing — explicit opt-in via strict.attempts. Each
         // racer works on a bounded FORK of the folder; the first oracle-... (in sessions: the first
@@ -1294,6 +1375,15 @@ export const layer = Layer.effect(
         // interleaved live racers would be noise, but the winner's clean action sequence is exactly
         // what the user wants to read. The publisher is lazy (no message until the first publish), so
         // creating it up-front for racing shows nothing until the post-race replay.
+        //
+        // ⚠️ The START snapshot is not optional decoration — it is what Revert and Changes restore
+        // FROM. The normal drain has always captured one here; the Strict route omitted the field,
+        // so `SessionRevert` skipped every Strict message (`!message.snapshot?.start`) and the
+        // Changes badge saw no boundary: a run could rewrite the whole folder and "Revert" would
+        // silently restore ZERO files. Captured BEFORE the engine touches anything, which is also
+        // correct while racing — the racers work on forks and the winner is applied back into this
+        // same folder afterwards.
+        const startSnapshot = yield* snapshots.capture()
         const runPublisher = createLLMEventPublisher(events, {
           sessionID,
           agent: String(resolved.agent ?? session.agent ?? "nova"),
@@ -1302,6 +1392,7 @@ export const layer = Layer.effect(
             providerID: ProviderV2.ID.make(model.provider),
             ...(session.model?.variant === undefined ? {} : { variant: session.model.variant }),
           },
+          ...(startSnapshot === undefined ? {} : { snapshot: startSnapshot }),
         })
         // Per-racer action buffers (racing only): bounded, so the winner's can be replayed post-race.
         const racerActions: SessionStrict.MaterializedAction[][] = single ? [] : forks.map(() => [])
@@ -1331,6 +1422,7 @@ export const layer = Layer.effect(
             task: goal,
             cwd,
             strict,
+            host: strictHost,
             completeOnce: completeAbortable,
             ...(resumeState === undefined ? {} : { resume: resumeState }),
             onMilestone: (text) => notice(single ? text : `[attempt ${i + 1}/${attempts}] ${text}`),
@@ -1352,6 +1444,27 @@ export const layer = Layer.effect(
               Effect.logError("strict attempt failed", { sessionID, attempt: i + 1, cause }).pipe(Effect.as(undefined)),
             ),
           )
+        // The END boundary of the run, captured ONCE and shared by both settlement paths below.
+        // ⚠️ The Strict route published Step.Ended with NEITHER `snapshot` nor `files`, so
+        // `session/changes.ts` found no `snapshot.end` and `session/revert.ts` no `snapshot.files`:
+        // a whole Strict run was invisible to the Changes badge and restored nothing on Revert.
+        // Captured after the engine has settled (and after a race applies its winner back), so it
+        // describes the folder the user is actually looking at.
+        let endBoundary:
+          | { readonly snapshot: Snapshot.ID | undefined; readonly files: readonly RelativePath[] | undefined }
+          | undefined
+        const captureEndBoundary = Effect.fnUntraced(function* () {
+          if (endBoundary !== undefined) return endBoundary
+          const endSnapshot = yield* snapshots.capture()
+          const files =
+            startSnapshot && endSnapshot
+              ? yield* snapshots
+                  .files({ from: startSnapshot, to: endSnapshot })
+                  .pipe(Effect.catch(() => Effect.succeed(undefined)))
+              : undefined
+          endBoundary = { snapshot: endSnapshot, files }
+          return endBoundary
+        })
         // P14.1 final answer: the end-of-run summary — a REAL streamed assistant message built from
         // harness ground truth (goal, outcome, the phase journal, applied files), so the user reads a
         // normal reply instead of decoding notices. Best-effort: the terminal notice already stated
@@ -1367,6 +1480,10 @@ export const layer = Layer.effect(
               ...(report.reason === undefined ? {} : { reason: report.reason }),
               milestones,
               appliedFiles,
+              // The engine's own answer to "was a best verified state actually held?" — the model is
+              // told to base every claim on this block, so the outcome line must not assert a
+              // fallback that does not exist (it never does on an ungraded run, which is all of them).
+              keptBest: report.keptBest,
             })
             // The summary streams onto the SAME run message that carries the tool parts (single =
             // live actions; racing = the replayed winner's actions) — one message = the whole run.
@@ -1383,7 +1500,8 @@ export const layer = Layer.effect(
               )
               .pipe(Stream.runForEach((event) => publisher.publish(event)))
             const settlement = publisher.stepSettlement()
-            if (settlement !== undefined && !publisher.hasProviderError())
+            if (settlement !== undefined && !publisher.hasProviderError()) {
+              const boundary = yield* captureEndBoundary()
               yield* events.publish(SessionEvent.Step.Ended, {
                 sessionID,
                 timestamp: yield* DateTime.now,
@@ -1391,7 +1509,10 @@ export const layer = Layer.effect(
                 finish: settlement.finish,
                 cost: 0,
                 tokens: settlement.tokens,
+                snapshot: boundary.snapshot,
+                files: boundary.files,
               })
+            }
           }).pipe(
             Effect.catchCause((cause) => Effect.logWarning("strict summary failed", { sessionID, cause })),
             // The run message may already exist (tool parts) — a failed/empty summary must not
@@ -1400,6 +1521,9 @@ export const layer = Layer.effect(
               Effect.gen(function* () {
                 if (actionSeq === 0) return
                 if (runPublisher.stepSettlement() !== undefined) return
+                // Same boundary as the settled path: a run whose summary failed still changed the
+                // folder, so Revert/Changes must still see what it touched.
+                const boundary = yield* captureEndBoundary()
                 yield* events.publish(SessionEvent.Step.Ended, {
                   sessionID,
                   timestamp: yield* DateTime.now,
@@ -1407,6 +1531,8 @@ export const layer = Layer.effect(
                   finish: "stop",
                   cost: 0,
                   tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+                  snapshot: boundary.snapshot,
+                  files: boundary.files,
                 })
               }).pipe(Effect.ignore),
             ),
@@ -1438,14 +1564,19 @@ export const layer = Layer.effect(
             }
           }
           yield* JhStore.save(db, { id: savedKey, goal, status: report.status, state: report.state, now: Date.now() }).pipe(Effect.ignore)
-          const steps = report.state.tree.nodes.size
-          const stopped = report.reason === "aborted"
+          // The terminal claim, conditioned on what the engine ACTUALLY held. This text used to
+          // assert "the best verified state was kept" on every stopped run — false in every real
+          // Strict session, because the engine only snapshots a best on a GRADED improvement and
+          // this route supplies no oracle to grade with. The wording lives in `SessionStrict` so it
+          // has one home and both directions are unit-tested.
           yield* notice(
-            report.status === "done"
-              ? `✅ Strict task complete — ${steps} steps, every one verified.`
-              : stopped
-                ? `⏹️ Strict run stopped at your request after ${steps} steps — the best verified state was kept${single ? " in the working directory" : ""}. Say "resume" to pick it up again.`
-                : `⚠️ Strict run stopped (${report.reason ?? "blocked"}) after ${steps} steps — the best verified state was kept${single ? " in the working directory" : " in the attempt workspaces"}. Say "resume" to continue it.`,
+            SessionStrict.terminalNotice({
+              status: report.status,
+              ...(report.reason === undefined ? {} : { reason: report.reason }),
+              steps: report.state.tree.nodes.size,
+              single,
+              keptBest: report.keptBest,
+            }),
           )
           // Racing legibility: replay the WINNER's buffered actions as real tool parts on the run
           // message (single attempts already materialized them live) — so a raced run reads like a
@@ -1818,5 +1949,9 @@ export const node = makeLocationNode({
     Database.node,
     AppProcess.node,
     Memory.node,
+    // Strict's host-execution context (ruling 6): the messenger trust of the chain + the shared
+    // OFF-C policy. Both are global nodes, so this adds no per-location state.
+    MessengerStore.node,
+    Offline.node,
   ],
 })

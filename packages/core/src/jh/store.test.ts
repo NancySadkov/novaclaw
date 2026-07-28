@@ -1,4 +1,6 @@
 import { describe, expect, test } from "bun:test"
+import fs from "fs"
+import path from "path"
 import { SqliteClient } from "@effect/sql-sqlite-bun"
 import { EffectDrizzleSqlite } from "@novaclaw/effect-drizzle-sqlite"
 import { Effect } from "effect"
@@ -86,6 +88,84 @@ describe("JhStore", () => {
     expect(result.missing).toBeUndefined()
     expect(result.listed.length).toBe(2)
     expect(new Set(result.listed.map((r) => r.status))).toEqual(new Set(["running", "blocked"]))
+  })
+
+  // ── the per-TASK plan id (runner/llm.ts) ───────────────────────────────────────────────────
+  // The runner used to key a Strict plan `jh_<sessionID>`, so a session's SECOND task landed on
+  // the FIRST task's row. Every destructive edge of this store then fired at once: the plan blob
+  // is onConflictDoUpdate (B overwrites A's tree), the log is onConflictDoNothing on (planID, seq)
+  // (B's rows are DROPPED, A's kept), and artifacts are replaced by plan id (A's are hard-DELETED
+  // by B's first checkpoint). Resume then rebuilt A's journal against B's tree.
+  const taskState = (tag: string): JhEngine.State => ({
+    ...sampleState(),
+    artifacts: [{ id: `${tag}.c`, type: "file", hash: `hash-${tag}`, content: `/* ${tag} */` }],
+    log: [
+      { type: "task_started", goal: `goal ${tag}`, seq: 0 },
+      { type: "committed", step: "root", seq: 1 },
+    ],
+  })
+
+  test("two tasks in ONE session keep separate log rows and separate artifacts", async () => {
+    const loaded = await withDb((db) =>
+      Effect.gen(function* () {
+        yield* JhStore.save(db, { id: "jh_ses_1_msg_a", goal: "goal a", status: "running", state: taskState("a"), now: 1 })
+        yield* JhStore.save(db, { id: "jh_ses_1_msg_b", goal: "goal b", status: "running", state: taskState("b"), now: 2 })
+        return {
+          a: yield* JhStore.load(db, "jh_ses_1_msg_a"),
+          b: yield* JhStore.load(db, "jh_ses_1_msg_b"),
+        }
+      }),
+    )
+    expect(loaded.a!.goal).toBe("goal a")
+    expect(loaded.b!.goal).toBe("goal b")
+    expect(loaded.a!.state.log).toEqual(taskState("a").log)
+    expect(loaded.b!.state.log).toEqual(taskState("b").log)
+    expect(loaded.a!.state.artifacts).toEqual(taskState("a").artifacts)
+    expect(loaded.b!.state.artifacts).toEqual(taskState("b").artifacts)
+  })
+
+  test("NEGATIVE CONTROL: the old session-scoped key destroys the first task", async () => {
+    const loaded = await withDb((db) =>
+      Effect.gen(function* () {
+        // exactly what `jh_${sessionID}` did: both tasks write the SAME plan id
+        yield* JhStore.save(db, { id: "jh_ses_1", goal: "goal a", status: "running", state: taskState("a"), now: 1 })
+        yield* JhStore.save(db, { id: "jh_ses_1", goal: "goal b", status: "running", state: taskState("b"), now: 2 })
+        return yield* JhStore.load(db, "jh_ses_1")
+      }),
+    )
+    expect(loaded!.goal).toBe("goal b") // B's plan blob overwrote A's
+    expect(loaded!.state.log).toEqual(taskState("a").log) // …while B's log rows were silently dropped
+    expect(loaded!.state.artifacts).toEqual(taskState("b").artifacts) // …and A's artifacts are GONE
+  })
+
+  test("latest() finds the session's newest plan, ignoring other sessions and legacy rows", async () => {
+    const found = await withDb((db) =>
+      Effect.gen(function* () {
+        yield* JhStore.save(db, { id: "jh_ses_1_msg_a", goal: "goal a", status: "done", state: taskState("a"), now: 10 })
+        yield* JhStore.save(db, { id: "jh_ses_1_msg_b", goal: "goal b", status: "running", state: taskState("b"), now: 20 })
+        yield* JhStore.save(db, { id: "jh_ses_2_msg_c", goal: "other chat", status: "running", state: taskState("c"), now: 30 })
+        // a pre-change session-scoped row: no trailing separator, so the prefix never matches it
+        yield* JhStore.save(db, { id: "jh_ses_1", goal: "orphan", status: "running", state: taskState("d"), now: 40 })
+        return {
+          one: yield* JhStore.latest(db, "jh_ses_1_"),
+          two: yield* JhStore.latest(db, "jh_ses_2_"),
+          none: yield* JhStore.latest(db, "jh_ses_3_"),
+        }
+      }),
+    )
+    expect(found.one!.id).toBe("jh_ses_1_msg_b")
+    expect(found.one!.goal).toBe("goal b")
+    expect(found.one!.state.artifacts).toEqual(taskState("b").artifacts)
+    expect(found.two!.id).toBe("jh_ses_2_msg_c")
+    expect(found.none).toBeUndefined()
+  })
+
+  test("runner/llm.ts keys the Strict plan per TASK, not per session", () => {
+    // A source assertion: nothing in the fast suite executes `llm.ts`, and reverting the key format
+    // compiles green while silently restoring the destruction the tests above characterize.
+    const source = fs.readFileSync(path.join(import.meta.dir, "..", "session", "runner", "llm.ts"), "utf8")
+    expect(source).toContain("`jh_${sessionID}_${taskKey}`")
+    expect(source).not.toContain("`jh_${sessionID}`")
   })
 
   test("resume through the DB completes with the same combined log (jh.md §6b)", async () => {

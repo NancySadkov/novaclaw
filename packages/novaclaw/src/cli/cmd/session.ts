@@ -65,7 +65,8 @@ export const SessionDeleteCommand = effectCmd({
   handler: Effect.fn("Cli.session.delete")(function* (args) {
     // F1c-0 — the core record removal seam (the same body `SessionV2.remove` runs). No
     // execution interrupt to inject here: the CLI process holds no runner for the session
-    // (V1's remove never interrupted either).
+    // (V1's remove never interrupted either) — and for the same reason no scheduler `evict`:
+    // the EEVDF ledger lives in the instance that runs turns, not in this short-lived process.
     const { db } = yield* Database.Service
     const events = yield* EventV2Bridge.Service
     const sessionID = SessionID.make(args.sessionID)

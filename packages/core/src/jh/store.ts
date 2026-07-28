@@ -7,7 +7,7 @@ export * as JhStore from "./store"
 // (never Date.now() — determinism).
 
 import { Effect } from "effect"
-import { asc, eq } from "drizzle-orm"
+import { asc, desc, eq, like } from "drizzle-orm"
 import type { Database } from "../database/database"
 import { JhArtifactTable, JhLogTable, JhPlanTable } from "./sql"
 import type { JhArtifact } from "./artifact"
@@ -73,6 +73,36 @@ export function load(db: Db, id: string): Effect.Effect<{ goal: string; status: 
       telemetry: new Map(s.telemetry.map((t) => [t[0], t[1]])),
     }
     return { goal: plan.goal, status: plan.status, state }
+  })
+}
+
+/**
+ * The most recently updated plan whose id starts with `prefix`, fully loaded.
+ *
+ * The runner keys a plan PER TASK (`jh_<sessionID>_<taskKey>`) because a session can run many
+ * Strict tasks and each owns its own log rows and artifacts, so "the plan this chat might resume"
+ * is a prefix scan, not a point lookup. `LIKE` only NARROWS: its `_` is a single-char wildcard and
+ * it is case-insensitive for ASCII, so the exact prefix is re-checked in JS. `timeUpdated` has
+ * millisecond granularity, so the id breaks a tie — ids embed an ascending message id within a
+ * session. A legacy session-scoped `jh_<sessionID>` row carries no trailing separator and is
+ * therefore never matched.
+ */
+export function latest(
+  db: Db,
+  prefix: string,
+): Effect.Effect<{ id: string; goal: string; status: string; state: JhEngine.State } | undefined> {
+  return Effect.gen(function* () {
+    const rows = yield* db
+      .select({ id: JhPlanTable.id })
+      .from(JhPlanTable)
+      .where(like(JhPlanTable.id, `${prefix}%`))
+      .orderBy(desc(JhPlanTable.timeUpdated), desc(JhPlanTable.id))
+      .all()
+      .pipe(Effect.orDie)
+    const row = rows.find((r) => r.id.startsWith(prefix))
+    if (!row) return undefined
+    const plan = yield* load(db, row.id)
+    return plan === undefined ? undefined : { id: row.id, ...plan }
   })
 }
 

@@ -23,6 +23,7 @@ import { WorkspaceV2 } from "@novaclaw/core/workspace"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionPatch } from "@novaclaw/core/session/patch"
 import { SessionSchema } from "@novaclaw/core/session/schema"
+import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { Location } from "@novaclaw/core/location"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { SessionID } from "@/session/schema"
@@ -159,6 +160,7 @@ export const layer = Layer.effect(
     const vcs = yield* Vcs.Service
     const flags = yield* RuntimeFlags.Service
     const fs = yield* FSUtil.Service
+    const scheduler = yield* SessionScheduler.Service
     const { db } = yield* Database.Service
     // F1c: session-warp writes the workspace pointer through the core patch seam (full-info
     // legacy `session.updated`; V1 parity — no time bump), not the V1 Session.Service.
@@ -801,11 +803,13 @@ export const layer = Layer.effect(
       const sessionIDs = new Set(sessions.map((sessionInfo) => sessionInfo.id))
       // F1c: the session sweep runs on the core engine's record removal (same Deleted event +
       // log purge; no interrupt hook here, matching the V1 remove this replaces — the dying
-      // workspace's instance is being torn down with it).
+      // workspace's instance is being torn down with it). `evict` IS injected: the EEVDF ledger
+      // is a per-INSTANCE singleton that outlives the workspace, so a swept session that never
+      // leaves it stays there for the life of the server process.
       yield* Effect.forEach(
         sessions.filter((sessionInfo) => !sessionInfo.parentID || !sessionIDs.has(sessionInfo.parentID)),
         (sessionInfo) =>
-          SessionV2.removeSessionRecord({ db, events }, sessionInfo.id).pipe(
+          SessionV2.removeSessionRecord({ db, events, evict: (id) => scheduler.evict(id) }, sessionInfo.id).pipe(
             Effect.catchTag("Session.NotFoundError", () => Effect.void),
           ),
         { discard: true },
@@ -907,6 +911,10 @@ export const defaultLayer = layer.pipe(
   Layer.provide(EventV2Bridge.defaultLayer),
   Layer.provide(FetchHttpClient.layer),
   Layer.provide(RuntimeFlags.defaultLayer),
+  // This assembly is the CLI's (app-runtime.ts), which holds no runner and therefore no shared
+  // ledger — a private scheduler here is inert. The SERVER reaches this service through the node
+  // below, which resolves the instance-global singleton the runner admits against.
+  Layer.provide(SessionScheduler.layer),
 )
 
 const TIMEOUT = 5000
@@ -980,6 +988,7 @@ export const node = LayerNode.make({
     RuntimeFlags.node,
     FSUtil.node,
     Database.node,
+    SessionScheduler.node,
   ],
 })
 

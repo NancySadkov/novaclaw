@@ -13,6 +13,7 @@ import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
 import { Ripgrep } from "@novaclaw/core/ripgrep"
+import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { EffectFlock } from "@novaclaw/core/util/effect-flock"
 import path from "path"
 import { Auth } from "../../src/auth"
@@ -58,6 +59,10 @@ const noopBootstrapLayer = Layer.succeed(InstanceBootstrap.Service, InstanceBoot
 const workspaceLayer = Workspace.layer.pipe(
   Layer.provide(Auth.defaultLayer),
   Layer.provide(Vcs.defaultLayer),
+  // Private ledger — this suite exercises plugin adapter installation, not session eviction.
+  // See the note in test/fixture/workspace.ts: `Workspace.layer`'s requirements are mirrored by
+  // hand in each test assembly, so a new one has to be added here too.
+  Layer.provide(SessionScheduler.layer),
   Layer.provide(FetchHttpClient.layer),
   Layer.provide(Database.defaultLayer),
   Layer.provide(EventV2Bridge.defaultLayer),
