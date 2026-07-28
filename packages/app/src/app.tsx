@@ -74,6 +74,7 @@ import { RegistryPage } from "@/pages/registry"
 import { MemoryGraphPage } from "@/pages/memory-graph"
 import { TrashPage } from "@/pages/trash"
 import { installErrorLog } from "@/utils/error-log"
+import { publicAssetUrl } from "@/utils/public-asset"
 
 const NewSession = lazy(() => import("@/pages/new-session"))
 
@@ -534,7 +535,7 @@ function ConnectionGate(props: ParentProps<{ disableHealthCheck?: boolean }>) {
       fallback={
         <div class="h-dvh w-screen flex flex-col items-center justify-center bg-background-base">
           <img
-            src="/logo.png"
+            src={publicAssetUrl("/logo.png")}
             alt="NovaClaw"
             draggable={false}
             class="w-20 h-20 opacity-60 animate-pulse select-none"
@@ -580,7 +581,7 @@ function ConnectionError(props: { onRetry?: () => void; onServerSelected?: (key:
   return (
     <div class="h-dvh w-screen flex flex-col items-center justify-center bg-background-base gap-6 p-6">
       <div class="flex flex-col items-center max-w-md text-center">
-        <img src="/logo.png" alt="NovaClaw" draggable={false} class="w-14 h-14 mb-4 opacity-80 select-none" />
+        <img src={publicAssetUrl("/logo.png")} alt="NovaClaw" draggable={false} class="w-14 h-14 mb-4 opacity-80 select-none" />
         <Show
           when={server.current}
           fallback={

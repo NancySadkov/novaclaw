@@ -5,6 +5,7 @@ import {
   AppBaseProviders,
   AppInterface,
   handleNotificationClick,
+  publicAssetUrl,
   loadLocaleDict,
   normalizeLocale,
   type Locale,
@@ -294,7 +295,7 @@ render(() => {
     const wslServers = useWslServers()
     const splash = (
       <div class="h-dvh w-screen flex flex-col items-center justify-center bg-background-base">
-        <img src="/logo.png" alt="NovaClaw" draggable={false} class="w-20 h-20 opacity-80 animate-pulse select-none" />
+        <img src={publicAssetUrl("/logo.png")} alt="NovaClaw" draggable={false} class="w-20 h-20 opacity-80 animate-pulse select-none" />
       </div>
     )
 

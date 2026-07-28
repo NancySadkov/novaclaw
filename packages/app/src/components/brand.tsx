@@ -1,6 +1,7 @@
 import { Show } from "solid-js"
 import { usePlatform } from "@/context/platform"
 import "./brand.css"
+import { publicAssetUrl } from "@/utils/public-asset"
 
 /**
  * The NovaClaw brand mark — the product logo image, optionally suffixed with the app
@@ -13,7 +14,7 @@ export function NovaClawWordmark(props: { class?: string; showVersion?: boolean;
   const version = () => props.version ?? platform.version
   return (
     <span data-component="novaclaw-wordmark" classList={{ [props.class ?? ""]: !!props.class }}>
-      <img data-slot="novaclaw-wordmark-logo" src="/logo.png" alt="NovaClaw" draggable={false} />
+      <img data-slot="novaclaw-wordmark-logo" src={publicAssetUrl("/logo.png")} alt="NovaClaw" draggable={false} />
       <Show when={props.showVersion && version()}>
         <span data-slot="novaclaw-wordmark-version">v{version()}</span>
       </Show>

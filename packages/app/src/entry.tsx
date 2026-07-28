@@ -9,6 +9,7 @@ import { handleNotificationClick } from "@/utils/notification-click"
 import { authFromToken } from "@/utils/server"
 import { InstallationVersion } from "@novaclaw/core/installation/version"
 import { ServerConnection } from "./context/server"
+import { publicAssetUrl } from "./utils/public-asset"
 
 const DEFAULT_SERVER_URL_KEY = "novaclaw.settings.dat:defaultServerUrl"
 
@@ -71,7 +72,7 @@ const notify: Platform["notify"] = async (title, description, href) => {
     // Local-first (AGENTS.md: no data egress): load the bundled favicon from our own origin
     // (packages/app/public/) rather than fetching novaclaw.app every time a notification fires —
     // no network round-trip, and it still renders offline.
-    icon: "/favicon-96x96-v3.png",
+    icon: publicAssetUrl("/favicon-96x96-v3.png"),
   })
 
   notification.onclick = () => {

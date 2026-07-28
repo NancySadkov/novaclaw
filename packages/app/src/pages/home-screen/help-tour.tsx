@@ -4,6 +4,7 @@ import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { Icon } from "@novaclaw/ui/icon"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useLanguage } from "@/context/language"
+import { publicAssetUrl } from "@/utils/public-asset"
 
 // First-run tour of NovaClaw — a friendly, plain-language intro for new users. Auto-opened once by the
 // home screen (guarded by HELP_SEEN_KEY) and reopenable anytime from the Help app tile. Deliberately
@@ -23,7 +24,7 @@ type Step = {
 const STEPS: readonly Step[] = [
   { icon: "speech-bubble", accent: "#e7b62f", glyphTone: "dark", key: "welcome" },
   { icon: "dot-grid", accent: "#8b5cf6", key: "apps" },
-  { icon: "grid-plus", accent: "#a78bfa", image: "/logo.png", key: "home" },
+  { icon: "grid-plus", accent: "#a78bfa", image: publicAssetUrl("/logo.png"), key: "home" },
   { icon: "brain", accent: "#22d3ee", key: "chat" },
   { icon: "plus", accent: "#34d399", key: "build" },
   { icon: "settings-gear", accent: "#8d8fa6", key: "settings" },

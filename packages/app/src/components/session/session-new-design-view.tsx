@@ -1,5 +1,6 @@
 import type { JSX } from "solid-js"
 import { NEW_SESSION_CONTENT_WIDTH } from "@/pages/session/new-session-layout"
+import { publicAssetUrl } from "@/utils/public-asset"
 
 export function NewSessionDesignView(props: { children: JSX.Element }) {
   return (
@@ -9,7 +10,7 @@ export function NewSessionDesignView(props: { children: JSX.Element }) {
           {/* NovaClaw brand lockup (icon + wordmark). The badge's ground is black; on the app's
               near-black deep background it blends so the mark appears to float. */}
           <img
-            src="/novaclaw-logo.png"
+            src={publicAssetUrl("/novaclaw-logo.png")}
             alt="NovaClaw"
             width="160"
             height="160"
