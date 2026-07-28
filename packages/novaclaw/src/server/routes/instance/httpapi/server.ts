@@ -73,6 +73,7 @@ import { lazy } from "@/util/lazy"
 import { CorsConfig, isAllowedCorsOrigin, type CorsOptions } from "@novaclaw/server/cors"
 import { serveUIEffect } from "@/server/shared/ui"
 import { ServerAuth } from "@/server/auth"
+import { ServerAuth as V2ServerAuth } from "@novaclaw/server/auth"
 import { InstanceHttpApi, RootHttpApi } from "./api"
 import { Api } from "@novaclaw/server/api"
 import { PublicApi } from "./public"
@@ -148,7 +149,12 @@ const cors = (corsOptions?: CorsOptions) =>
 const authOnlyRouterLayer = authorizationRouterMiddleware.layer.pipe(Layer.provide(ServerAuth.Config.defaultLayer))
 const httpApiAuthLayer = authorizationLayer.pipe(Layer.provide(ServerAuth.Config.defaultLayer))
 const ptyConnectHttpApiAuthLayer = ptyConnectAuthorizationLayer.pipe(Layer.provide(ServerAuth.Config.defaultLayer))
-const serverHttpApiAuthLayer = serverAuthorizationLayer.pipe(Layer.provide(ServerAuth.Config.defaultLayer))
+// ⚠️ `@novaclaw/server`'s layer, NOT the instance one three lines up. `serverAuthorizationLayer` is
+// re-exported from `@novaclaw/server/middleware/authorization`, whose `yield* ServerAuth.Config` reads
+// THAT package's tag. Until 2026-07-28 both tags carried the id `@novaclaw/ServerAuthConfig`, so the
+// instance config satisfied it by accident. Both read NOVACLAW_SERVER_PASSWORD/_USERNAME through the
+// same Effect `Config.all`, so the value is identical; only the tag differs.
+const serverHttpApiAuthLayer = serverAuthorizationLayer.pipe(Layer.provide(V2ServerAuth.Config.defaultLayer))
 const workspaceRoutingLive = workspaceRoutingLayer.pipe(Layer.provide(Socket.layerWebSocketConstructorGlobal))
 const rootApiRoutes = HttpApiBuilder.layer(RootHttpApi).pipe(
   Layer.provide([controlHandlers, controlPlaneHandlers, globalHandlers]),
@@ -271,6 +277,16 @@ const app = LayerNode.group([
   Worktree.node,
   Installation.node,
   InstanceStore.node,
+  // The airgap policy holder. `httpClient` already depends on it, so listing it here does NOT add
+  // a build: `LayerNode.compile` walks every root member through ONE cache, so this node resolves
+  // to the same compiled layer `httpClient` gets (measured — see the build count in
+  // test/server/httpapi-shell-offline.test.ts). What listing it buys is that the compiled graph
+  // EXPORTS `Offline.Service`, so (a) `/shell/offline` can read its manifest off the service that
+  // actually enforces the guard instead of recomputing the policy from sqlite per request, and
+  // (b) the messenger stack below can leave Offline as a requirement — one declared source for the
+  // service instead of two constructions that only agree because Effect happens to memoize the
+  // shared module-level layer by reference.
+  Offline.node,
   httpClient,
   EventV2.node,
   SessionTags.node,
@@ -298,7 +314,15 @@ const messengerBase = Layer.mergeAll(
 )
 const messengerServices = Layer.mergeAll(
   messengerBase,
-  MessengerGateway.layer.pipe(Layer.provide([messengerBase, MessengerPace.layer, Offline.layer])),
+  // ⚠️ Offline is deliberately NOT provided here. It is left as a requirement — like Database,
+  // EventV2, SessionV2 and Global above — so the LATER `Layer.provide(LayerNode.compile(app))`
+  // satisfies it with the SAME instance every other consumer of the guard uses, and so this is the
+  // one place in the server that says where Offline comes from. It used to be handed a bare
+  // `Offline.layer` here; measured on effect@4.0.0-beta.83 that still produced a single build
+  // (Effect memoizes the shared module-level layer by reference through both wrappings), but the
+  // agreement was a coincidence of construction, not a wiring guarantee — `MessengerGateway`'s own
+  // `nodeWith` already lists `Offline.node`, so this was the last raw-Layer outlier.
+  MessengerGateway.layer.pipe(Layer.provide([messengerBase, MessengerPace.layer])),
   MessengerLogin.layer.pipe(Layer.provide(messengerBase)),
 )
 

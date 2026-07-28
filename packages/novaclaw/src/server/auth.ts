@@ -15,7 +15,14 @@ export type DecodedCredentials = {
   readonly password: Redacted.Redacted
 }
 
-export class Config extends ConfigService.Service<Config>()("@novaclaw/ServerAuthConfig", {
+// ⚠️ NOT `@novaclaw/ServerAuthConfig` — that key belongs to `packages/server/src/auth.ts`, and this is a
+// SECOND, independent declaration that happens to carry the same two env vars. Both registered the same
+// id until 2026-07-28 (v0.2.0 PREP, Wave 1 / U3): an Effect `Context` is keyed by that string, so the two
+// classes were ONE entry, and `httpapi/server.ts` fed THIS class into `@novaclaw/server`'s authorization
+// middleware — which type-checked and ran only because the shapes happened to match field for field.
+// Adding a field to either side would have broken it with nothing failing to compile. Keep the ids
+// distinct; `packages/protocol/test/context-key-uniqueness.test.ts` fails if they ever converge again.
+export class Config extends ConfigService.Service<Config>()("@novaclaw/InstanceServerAuthConfig", {
   password: EffectConfig.string("NOVACLAW_SERVER_PASSWORD").pipe(EffectConfig.option),
   username: EffectConfig.string("NOVACLAW_SERVER_USERNAME").pipe(EffectConfig.withDefault("novaclaw")),
 }) {}

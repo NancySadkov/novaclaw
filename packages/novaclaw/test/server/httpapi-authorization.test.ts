@@ -4,6 +4,7 @@ import { Effect, Layer, Option, Schema } from "effect"
 import { HttpClient, HttpClientRequest, HttpRouter } from "effect/unstable/http"
 import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiError, HttpApiGroup } from "effect/unstable/httpapi"
 import { ServerAuth } from "../../src/server/auth"
+import { ServerAuth as V2ServerAuth } from "@novaclaw/server/auth"
 import {
   Authorization,
   authorizationLayer,
@@ -59,11 +60,14 @@ const v2ApiLayer = HttpRouter.serve(
 const noAuthLayer = ServerAuth.Config.layer({ password: Option.none(), username: "novaclaw" })
 const secretLayer = ServerAuth.Config.layer({ password: Option.some("secret"), username: "novaclaw" })
 const kitSecretLayer = ServerAuth.Config.layer({ password: Option.some("secret"), username: "kit" })
+// `serverAuthorizationLayer` comes from `@novaclaw/server`, so it needs THAT package's tag — a separate
+// key since 2026-07-28 (U3). Providing the instance layer here used to satisfy it by id collision.
+const v2SecretLayer = V2ServerAuth.Config.layer({ password: Option.some("secret"), username: "novaclaw" })
 
 const it = testEffect(apiLayer.pipe(Layer.provide(noAuthLayer)))
 const itSecret = testEffect(apiLayer.pipe(Layer.provide(secretLayer)))
 const itKitSecret = testEffect(apiLayer.pipe(Layer.provide(kitSecretLayer)))
-const itV2Secret = testEffect(v2ApiLayer.pipe(Layer.provide(secretLayer)))
+const itV2Secret = testEffect(v2ApiLayer.pipe(Layer.provide(v2SecretLayer)))
 
 const basic = (username: string, password: string) => ServerAuth.header({ username, password }) ?? ""
 

@@ -4,6 +4,10 @@ import { HttpEffect, HttpRouter, HttpServerRequest, HttpServerResponse } from "e
 import { HttpApiError, HttpApiMiddleware } from "effect/unstable/httpapi"
 import { hasPtyConnectTicketURL } from "@/server/shared/pty-ticket"
 import { isPublicUIPath } from "@/server/shared/public-ui"
+// ⚠️ Re-exported, not reimplemented: `serverAuthorizationLayer` reads `@novaclaw/server`'s OWN
+// `ServerAuth.Config` tag (`@novaclaw/ServerAuthConfig`), NOT the instance one imported above
+// (`@novaclaw/InstanceServerAuthConfig`). Provide it `@novaclaw/server/auth`'s layer. The two ids were
+// identical until 2026-07-28 (U3), which made the wrong layer satisfy it silently.
 export {
   Authorization as ServerAuthorization,
   authorizationLayer as serverAuthorizationLayer,

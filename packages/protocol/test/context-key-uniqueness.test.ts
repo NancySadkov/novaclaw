@@ -61,13 +61,12 @@ const DYNAMIC_ID_FORWARDERS = ["packages/novaclaw/src/effect/config-service.ts"]
  * Collisions that exist TODAY and were not this change's to fix. A RATCHET, not an excuse: an entry
  * that stops colliding fails the test until it is deleted, so the list can only shrink.
  *
- * · `@novaclaw/ServerAuthConfig` — `packages/server/src/auth.ts` and
- *   `packages/novaclaw/src/server/auth.ts` both register it, with structurally identical shapes, and
- *   `httpapi/server.ts` feeds novaclaw's copy into `@novaclaw/server`'s authorization middleware. It
- *   resolves to a working service only because those two shapes happen to match. Found 2026-07-28
- *   alongside B4; the fix is a rename in files that unit did not own.
+ * EMPTY as of 2026-07-28 (v0.2.0 PREP, Wave 1 / U3) — the last entry, `@novaclaw/ServerAuthConfig`,
+ * was fixed by renaming the instance-side declaration to `@novaclaw/InstanceServerAuthConfig` (see
+ * `the two server-auth configs hold distinct keys` below). Adding an entry here is admitting a live
+ * shadowing bug: only do it when the fix genuinely belongs to another unit, and say which.
  */
-const KNOWN_COLLISIONS = ["@novaclaw/ServerAuthConfig"]
+const KNOWN_COLLISIONS: readonly string[] = []
 
 type Registration = { readonly id: string; readonly file: string; readonly line: number; readonly ctor: string }
 
@@ -260,7 +259,8 @@ describe("Context key uniqueness", () => {
     // A fixed collision must be DELETED from KNOWN_COLLISIONS, never left to rot into a lie about the
     // tree. If this fails saying an entry is missing, that entry is already fixed — remove it.
     const stillColliding = KNOWN_COLLISIONS.filter((id) => (byId.get(id)?.length ?? 0) > 1)
-    expect(stillColliding).toEqual(KNOWN_COLLISIONS)
+    // Spread to a mutable copy: `toEqual` takes `string[]`, and the ledger is `readonly` on purpose.
+    expect(stillColliding).toEqual([...KNOWN_COLLISIONS])
   })
 
   test("the two schema-error middlewares hold distinct keys", () => {
@@ -272,5 +272,16 @@ describe("Context key uniqueness", () => {
     expect(instanceSites.map((entry) => entry.file)).toEqual([
       "packages/novaclaw/src/server/routes/instance/httpapi/middleware/schema-error.ts",
     ])
+  })
+
+  test("the two server-auth configs hold distinct keys", () => {
+    // The second collision this file caught (v0.2.0 PREP Wave 1 / U3). `packages/server`'s middleware
+    // yields ITS tag; `httpapi/server.ts` used to satisfy that requirement with the instance package's
+    // class, which worked only because both shapes are `{ password: Option<string>, username: string }`.
+    // Named explicitly so a re-collision reads as itself rather than as an anonymous duplicate.
+    const serverSites = byId.get("@novaclaw/ServerAuthConfig") ?? []
+    const instanceSites = byId.get("@novaclaw/InstanceServerAuthConfig") ?? []
+    expect(serverSites.map((entry) => entry.file)).toEqual(["packages/server/src/auth.ts"])
+    expect(instanceSites.map((entry) => entry.file)).toEqual(["packages/novaclaw/src/server/auth.ts"])
   })
 })
