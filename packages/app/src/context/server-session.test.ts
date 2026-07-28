@@ -79,6 +79,27 @@ describe("server session", () => {
     expect(ctx.get).toEqual([])
   })
 
+  // Ported from https://github.com/NancySadkov/novaclaw/pull/10 by @DassaultFalconKing. The
+  // predicate itself is pinned in `session-working.test.ts`; this proves the STORE reaches it, so
+  // reverting one of the two call sites cannot stay green.
+  test("treats exited sessions as settled", () => {
+    const ctx = setup({})
+
+    expect(ctx.store.data.session_working("root")).toBe(false)
+    ctx.store.apply({ type: "session.status", properties: { sessionID: "root", status: { type: "busy" } } })
+    expect(ctx.store.data.session_working("root")).toBe(true)
+    ctx.store.apply({
+      type: "session.status",
+      properties: {
+        sessionID: "root",
+        status: { type: "retry", attempt: 1, message: "retrying", next: Date.now() },
+      },
+    })
+    expect(ctx.store.data.session_working("root")).toBe(true)
+    ctx.store.apply({ type: "session.status", properties: { sessionID: "root", status: { type: "exited" } } })
+    expect(ctx.store.data.session_working("root")).toBe(false)
+  })
+
   test("preserves pinned session info under server-wide cache pressure", () => {
     const ctx = setup({})
     ctx.store.pin("active")

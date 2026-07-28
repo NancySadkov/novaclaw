@@ -215,7 +215,17 @@ export function createPromptSubmit(input: PromptSubmitInput) {
       .client.v2.session.interrupt({
         sessionID,
       })
-      .catch(() => {})
+      .catch((err) => {
+        // Stop is the control a user reaches for when something is already going wrong, so a silent
+        // failure here is the worst-placed one in the composer: the agent keeps streaming and the
+        // UI gives no reason. Ruling 2 — a failed mutation never reports success. This was the last
+        // `.catch(() => {})` in the file; every other failure path already toasts this exact shape.
+        // Ported from https://github.com/NancySadkov/novaclaw/pull/10 by @DassaultFalconKing.
+        showToast({
+          title: language.t("common.requestFailed"),
+          description: errorMessage(err),
+        })
+      })
   }
 
   const restoreCommentItems = (

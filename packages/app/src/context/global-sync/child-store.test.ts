@@ -17,7 +17,12 @@ const persist: typeof import("@/utils/persist").persisted = (_target, store) => 
 ]
 
 const child = () => createStore({} as State)
-const provider = { all: new Map(), models: new Map(), connected: [], default: {} } satisfies NormalizedProviderListResponse
+const provider = {
+  all: new Map(),
+  models: new Map(),
+  connected: [],
+  default: {},
+} satisfies NormalizedProviderListResponse
 
 const queryOptionsApi = {
   globalConfig: () => ({ queryKey: ["globalConfig"], queryFn: async () => ({}) }),
@@ -165,6 +170,41 @@ describe("createChildStoreManager", () => {
 
       expect(store.path.directory).toBe("/project")
       expect(store.path.worktree).toBe("")
+    } finally {
+      dispose()
+    }
+  })
+
+  // Ported from https://github.com/NancySadkov/novaclaw/pull/10 by @DassaultFalconKing — the second
+  // of the two stores that had the bug.
+  test("treats exited sessions as settled", () => {
+    let manager: ReturnType<typeof createChildStoreManager> | undefined
+
+    const dispose = createOwner((owner) => {
+      manager = createChildStoreManager({
+        owner,
+        scope: ServerScope.local,
+        persist,
+        isBooting: () => false,
+        isLoadingSessions: () => false,
+        onBootstrap() {},
+        onMcp() {},
+        onDispose() {},
+        translate: (key) => key,
+        queryOptions: queryOptionsApi,
+        global: { provider },
+      })
+    })
+
+    try {
+      if (!manager) throw new Error("manager required")
+      const [store, setStore] = manager.child("/project", { bootstrap: false })
+
+      expect(store.session_working("root")).toBe(false)
+      setStore("session_status", "root", { type: "busy" })
+      expect(store.session_working("root")).toBe(true)
+      setStore("session_status", "root", { type: "exited" })
+      expect(store.session_working("root")).toBe(false)
     } finally {
       dispose()
     }

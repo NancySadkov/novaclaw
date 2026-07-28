@@ -22,11 +22,13 @@ const sentShell: string[] = []
 const syncedDirectories: string[] = []
 const promotedDrafts: Array<{ draftID: string; server: string; sessionId: string }> = []
 const promptedVariants: Array<string | undefined> = []
+const toasts: Array<{ title?: string; description?: string }> = []
 
 let params: { id?: string } = {}
 let search: { draftId?: string } = {}
 let selected = "/repo/worktree-a"
 let variant: string | undefined
+let interruptError: Error | undefined
 
 const promptValue: Prompt = [{ type: "text", content: "ls", start: 0, end: 2 }]
 const prompt = {
@@ -65,7 +67,10 @@ const clientFor = (directory: string) => {
         },
         prompt: async () => ({ data: undefined }),
         command: async () => ({ data: undefined }),
-        interrupt: async () => ({ data: undefined }),
+        interrupt: async () => {
+          if (interruptError) throw interruptError
+          return { data: undefined }
+        },
         switchModel: async (input: { model?: { variant?: string } }) => {
           promptedVariants.push(input?.model?.variant)
           return { data: undefined }
@@ -102,7 +107,10 @@ beforeAll(async () => {
 
   mock.module("@novaclaw/ui/toast", () => ({
     Toast: { Region: () => null },
-    showToast: () => 0,
+    showToast: (options: { title?: string; description?: string }) => {
+      toasts.push(options)
+      return 0
+    },
   }))
 
   mock.module("@novaclaw/core/util/encode", () => ({
@@ -273,10 +281,40 @@ beforeEach(() => {
   syncedDirectories.length = 0
   selected = "/repo/worktree-a"
   variant = undefined
+  interruptError = undefined
+  toasts.length = 0
   for (const key of Object.keys(storedSessions)) delete storedSessions[key]
 })
 
 describe("prompt submit worktree selection", () => {
+  // Ported from https://github.com/NancySadkov/novaclaw/pull/10 by @DassaultFalconKing. Stop is the
+  // control a user reaches for when something is already wrong; `.catch(() => {})` meant the agent
+  // kept streaming with no reason given.
+  test("reports interrupt failures", async () => {
+    params = { id: "session-1" }
+    interruptError = new Error("interrupt unavailable")
+    const submit = createPromptSubmit({
+      prompt,
+      info: () => ({ id: "session-1" }),
+      imageAttachments: () => [],
+      commentCount: () => 0,
+      autoAccept: () => false,
+      mode: () => "normal",
+      working: () => true,
+      editor: () => undefined,
+      queueScroll: () => undefined,
+      promptLength: (value) => value.reduce((sum, part) => sum + ("content" in part ? part.content.length : 0), 0),
+      addToHistory: () => undefined,
+      resetHistoryNavigation: () => undefined,
+      setMode: () => undefined,
+      setPopover: () => undefined,
+    })
+
+    await submit.abort()
+
+    expect(toasts).toEqual([{ title: "common.requestFailed", description: "interrupt unavailable" }])
+  })
+
   test("reads the latest worktree accessor value per submit", async () => {
     const submit = createPromptSubmit({
       prompt,

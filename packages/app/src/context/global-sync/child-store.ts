@@ -1,6 +1,7 @@
 import { createRoot, createSignal, getOwner, onCleanup, runWithOwner, type Owner } from "solid-js"
 import { createStore, type SetStoreFunction, type Store } from "solid-js/store"
 import { Persist, persisted } from "@/utils/persist"
+import { isSessionWorking } from "@/context/session-working"
 import type { VcsInfo } from "@novaclaw/sdk/v2/client"
 import {
   DIR_IDLE_TTL_MS,
@@ -212,8 +213,7 @@ export function createChildStoreManager(input: {
             sessionTotal: 0,
             session_status: {},
             session_working(id: string) {
-              const type = this.session_status[id]?.type
-              return (type ?? "idle") !== "idle"
+              return isSessionWorking(this.session_status[id])
             },
             session_diff: {},
             todo: {},
