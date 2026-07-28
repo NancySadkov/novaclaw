@@ -1467,6 +1467,78 @@ export default function Page() {
       .map((item) => ({ id: item.id, text: line(item.id) }))
   })
 
+  /**
+   * Make a revert PERMANENT at `boundaryID`, and converge the client. The one place in the app where
+   * a staged revert stops being reversible — `revertToPrompt` and the dock's Discard both go through
+   * here rather than each assembling the sequence, because the middle step is a workaround that is
+   * easy to omit and invisible when omitted.
+   *
+   * ⚠️ `commit` deletes everything strictly AFTER its boundary, so the caller must pass the message
+   * BEFORE the first one it wants gone (or the `msg_` sentinel for "everything").
+   *
+   * ⚠️ The `nativeMessages.apply` is not belt-and-braces: the commit deletes server-side, but the
+   * native store MERGES on load and never drops server-deleted rows, so without driving the prune
+   * directly the transcript keeps showing what the server no longer has. Idempotent with the SSE
+   * `revert.committed` event that follows.
+   */
+  const commitRevertTo = async (sessionID: string, boundaryID: string) => {
+    const client = sdk().client
+    await client.v2.session.revert.stage({ sessionID, messageID: boundaryID })
+    await client.v2.session.revert.commit({ sessionID })
+    serverSync().nativeMessages.apply({
+      type: "session.next.revert.committed",
+      data: { sessionID, messageID: boundaryID },
+    } as unknown as V2Event)
+    const rec = await client.v2.session.get({ sessionID })
+    if (rec.data?.data) merge(rec.data.data)
+  }
+
+  /**
+   * Discard the rolled-back messages for good — the second exit from a staged revert.
+   *
+   * A staged revert has exactly two resolutions: put it back (`restore`) or make it permanent. The
+   * dock offered only the first, and the per-message DELETE endpoint that V1 had was retired in the
+   * native-transcript migration with no successor, so there was no route to the second at all —
+   * messages sat visible-but-unactionable in the dock forever
+   * ([issue #13](https://github.com/NancySadkov/novaclaw/issues/13)).
+   *
+   * ⚠️ The boundary is the message BEFORE the staged one, not the staged one. `rolled()` includes the
+   * boundary message itself (`id >= revertMessageID`) while the timeline hides on `id <`, so
+   * committing the staged boundary directly would delete everything after it and then RESURRECT the
+   * first message the user asked to discard. `revertToPrompt` anchors one earlier for the same
+   * reason; `msg_` is the before-everything sentinel.
+   *
+   * Confirm-gated because it converts a deliberately reversible command into a terminal one. Without
+   * that, `/undo` would stop being safe to explore with — which is most of why it exists.
+   */
+  const discardRolled = async () => {
+    const sessionID = params.id
+    const staged = revertMessageID()
+    if (!sessionID || !staged || reverting()) return
+    const all = userMessages()
+    const index = all.findIndex((item) => item.id === staged)
+    if (index < 0) return
+    const boundaryID = all[index - 1]?.id ?? "msg_"
+    const proceed = await confirm({
+      title: language.t("session.revertDock.discard.confirm.title"),
+      description: language.t("session.revertDock.discard.confirm.description", { count: rolled().length }),
+      confirmLabel: language.t("session.revertDock.discard.confirm.action"),
+      destructive: true,
+    })
+    if (!proceed) return
+    try {
+      await halt(sessionID)
+      await commitRevertTo(sessionID, boundaryID)
+    } catch (error) {
+      console.error("discard rolled-back messages failed", { sessionID, boundaryID, error })
+      showToast({
+        variant: "error",
+        title: language.t("common.requestFailed"),
+        description: error instanceof Error ? error.message : String(error),
+      })
+    }
+  }
+
   // Per-user-prompt "revert to this prompt" button (native transcript). A confirmed, decisive
   // rewind to the state *before* this prompt: restore the working files to that point (stage) and
   // permanently delete this prompt and everything after it (commit), then drop the prompt's text
@@ -1502,18 +1574,8 @@ export default function Page() {
     const promptSession = prompt.capture()
     try {
       await halt(sessionID)
-      await client.v2.session.revert.stage({ sessionID, messageID: boundaryID })
-      await client.v2.session.revert.commit({ sessionID })
-      // The commit deletes the truncated messages server-side, but the native store MERGES on load
-      // and never drops server-deleted rows — drive the prune directly (idempotent with the SSE
-      // `revert.committed` event) so the transcript converges immediately.
-      serverSync().nativeMessages.apply({
-        type: "session.next.revert.committed",
-        data: { sessionID, messageID: boundaryID },
-      } as unknown as V2Event)
-      // Refetch the record so any client-side revert state clears and time_updated is fresh.
-      const rec = await client.v2.session.get({ sessionID })
-      if (rec.data?.data) merge(rec.data.data)
+      // The stage → commit → prune → refetch sequence lives in ONE place; see `commitRevertTo`.
+      await commitRevertTo(sessionID, boundaryID)
       // Load the reverted prompt into the composer so it can be edited and resent.
       promptSession.set(draftValue)
     } catch (error) {
@@ -1614,7 +1676,6 @@ export default function Page() {
     if (fillFrame !== undefined) cancelAnimationFrame(fillFrame)
   })
 
-
   const composerRegion = () => {
     const controller = createSessionComposerRegionController({
       state: composer,
@@ -1643,6 +1704,7 @@ export default function Page() {
               restoring: restoring(),
               disabled: reverting(),
               onRestore: restore,
+              onDiscard: () => void discardRolled(),
             }
           : undefined,
       onResponseSubmit: resumeScroll,

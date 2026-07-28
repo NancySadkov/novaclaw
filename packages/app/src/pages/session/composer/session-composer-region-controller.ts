@@ -19,6 +19,7 @@ export type SessionComposerRevertDock = {
   restoring?: string
   disabled?: boolean
   onRestore: (id: string) => void
+  onDiscard: () => void
 }
 
 export function createSessionComposerRegionController(input: {

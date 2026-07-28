@@ -100,6 +100,7 @@ export function SessionComposerRegion(props: {
                         restoring={revert.restoring}
                         disabled={revert.disabled}
                         onRestore={revert.onRestore}
+                        onDiscard={revert.onDiscard}
                       />
                     </div>
                   )}
@@ -125,6 +126,7 @@ export function SessionComposerRegion(props: {
                     restoring={revert.restoring}
                     disabled={revert.disabled}
                     onRestore={revert.onRestore}
+                    onDiscard={revert.onDiscard}
                   />
                 </div>
               )}

@@ -10,6 +10,7 @@ export function SessionRevertDock(props: {
   restoring?: string
   disabled?: boolean
   onRestore: (id: string) => void
+  onDiscard: () => void
 }) {
   const language = useLanguage()
   const [store, setStore] = createStore({
@@ -92,6 +93,21 @@ export function SessionRevertDock(props: {
               </div>
             )}
           </For>
+          {/* ⚠️ Dock-level, NOT per row, because the underlying `revert.commit` deletes everything
+              after the boundary — there is no per-message delete in V2 (V1's was retired with the
+              native transcript). Offering it per item would promise a granularity the engine does
+              not have. The count is in the label so the scope is legible before the confirm. */}
+          <div class="flex items-center justify-end border-t border-border-weak pt-2">
+            <Button
+              size="small"
+              variant="ghost"
+              class="shrink-0 text-state-fg-danger"
+              disabled={props.disabled || !!props.restoring}
+              onClick={() => props.onDiscard()}
+            >
+              {language.t("session.revertDock.discard", { count: total() })}
+            </Button>
+          </div>
         </div>
       </Show>
     </DockTray>

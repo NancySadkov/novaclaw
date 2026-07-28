@@ -467,8 +467,7 @@ export const dict = {
   "prompt.remote.pickAccount": "Which messenger?",
   "prompt.remote.pickChat": "Which conversation?",
   "prompt.remote.loading": "Loading conversations…",
-  "prompt.remote.chatsEmpty":
-    "No conversations known yet. Send the account a message once and it appears here.",
+  "prompt.remote.chatsEmpty": "No conversations known yet. Send the account a message once and it appears here.",
   "prompt.remote.manual": "Or type a chat id / handle",
   "prompt.remote.manualUse": "Use",
   "prompt.remote.trust.title": "Who is on the other side?",
@@ -970,6 +969,11 @@ export const dict = {
   "session.revertDock.collapse": "Collapse rolled back messages",
   "session.revertDock.expand": "Expand rolled back messages",
   "session.revertDock.restore": "Restore message",
+  "session.revertDock.discard": "Delete {{count}} rolled back",
+  "session.revertDock.discard.confirm.title": "Delete the rolled back messages?",
+  "session.revertDock.discard.confirm.description":
+    "{{count}} rolled back messages will be permanently deleted, along with everything that followed them. This cannot be undone — Restore puts them back instead.",
+  "session.revertDock.discard.confirm.action": "Delete permanently",
 
   "session.revert.confirm.title": "Revert to this prompt?",
   "session.revert.confirm.description":
@@ -1593,7 +1597,8 @@ export const dict = {
   "settings.messengers.add": "Add account",
   "settings.messengers.addThenLogin": "Add & log in",
   "settings.messengers.empty": "No messenger accounts yet. Add one to let NovaClaw talk where you talk.",
-  "settings.messengers.airgapped": "Messengers are off while NovaClaw is offline or airgapped — nothing connects until you go back online.",
+  "settings.messengers.airgapped":
+    "Messengers are off while NovaClaw is offline or airgapped — nothing connects until you go back online.",
   "settings.messengers.enabled": "Enabled",
   "settings.messengers.login": "Log in",
   "settings.messengers.pair": "Pair",
@@ -1602,7 +1607,8 @@ export const dict = {
   "settings.messengers.pickDriver": "Which messenger?",
   "settings.messengers.setup.title": "How to get this",
   "settings.messengers.setup.open": "Open the setup page",
-  "settings.messengers.auth.login": "NovaClaw signs into your own account and answers as you while you're away. You stay in control — flip the responder any time.",
+  "settings.messengers.auth.login":
+    "NovaClaw signs into your own account and answers as you while you're away. You stay in control — flip the responder any time.",
   "settings.messengers.auth.key": "Uses a bot or app token you paste — a separate identity from your own account.",
   "settings.messengers.auth.none": "Connects with just the settings below — no credentials needed.",
   "settings.messengers.toast.failed": "Messenger action failed",
@@ -1633,7 +1639,8 @@ export const dict = {
   "settings.messengers.speed.description":
     "NovaClaw types replies at a human pace, across all chats at once, so this account is never flagged as a bot. This sets how fast it types, in characters per second.",
   "settings.messengers.speed.unit": "characters / second",
-  "settings.messengers.speed.human": "A person types around {{default}}/s. Lower is safer; higher is faster but riskier.",
+  "settings.messengers.speed.human":
+    "A person types around {{default}}/s. Lower is safer; higher is faster but riskier.",
   "settings.messengers.speed.warning":
     "⚠️ This is faster than a human types. Messaging providers watch for bot-like speed and may flag or BAN your account for posting too fast. Only go this high if you accept that risk.",
   "settings.quality.title": "Quality",
@@ -1832,9 +1839,11 @@ export const dict = {
   "settings.webSearch.status.searxng": "Using your SearXNG instance.",
   "settings.webSearch.status.airgapped": "Off — NovaClaw is in offline / airgap mode, so nothing leaves this machine.",
   "settings.webSearch.row.searxng.title": "Your SearXNG instance",
-  "settings.webSearch.row.searxng.description": "A SearXNG URL to use instead of the built-in engines. Leave empty to use the built-in search.",
+  "settings.webSearch.row.searxng.description":
+    "A SearXNG URL to use instead of the built-in engines. Leave empty to use the built-in search.",
   "settings.webSearch.builtin.title": "Built-in engines",
-  "settings.webSearch.builtin.description": "NovaClaw asks these free engines directly and merges the results. Turn one off if it starts failing.",
+  "settings.webSearch.builtin.description":
+    "NovaClaw asks these free engines directly and merges the results. Turn one off if it starts failing.",
   "settings.webSearch.builtin.overridden": "Your SearXNG instance is handling search, so the built-in engines are off.",
   "settings.webSearch.builtin.engineHint": "Included in built-in search",
   "settings.webSearch.toast.failed": "Couldn't save web search settings",
@@ -1844,15 +1853,20 @@ export const dict = {
   "settings.webSearch.throttle.warning":
     "⚠️ Changing these can get you blocked. Sites judge you by your traffic, and reads come from your own connection — so a faster, heavier setting risks your IP being rate-limited or banned, for you and for anything else on your network. Leave a field empty to use its default.",
   "settings.webSearch.throttle.interval": "Delay between reads of one site",
-  "settings.webSearch.throttle.interval.hint": "Milliseconds to wait before reading the same site again. Lower looks more like a bot.",
+  "settings.webSearch.throttle.interval.hint":
+    "Milliseconds to wait before reading the same site again. Lower looks more like a bot.",
   "settings.webSearch.throttle.burst": "Reads allowed back-to-back",
-  "settings.webSearch.throttle.burst.hint": "How many quick reads of one site before the delay kicks in — like opening a few tabs at once.",
+  "settings.webSearch.throttle.burst.hint":
+    "How many quick reads of one site before the delay kicks in — like opening a few tabs at once.",
   "settings.webSearch.throttle.concurrency": "Simultaneous reads per site",
-  "settings.webSearch.throttle.concurrency.hint": "Keep at 1. Reading one site on several connections at once is the fastest way to get blocked.",
+  "settings.webSearch.throttle.concurrency.hint":
+    "Keep at 1. Reading one site on several connections at once is the fastest way to get blocked.",
   "settings.webSearch.throttle.daily": "Reads per site per day",
-  "settings.webSearch.throttle.daily.hint": "A daily ceiling per site, so a stuck agent can't spend all day hammering one server.",
+  "settings.webSearch.throttle.daily.hint":
+    "A daily ceiling per site, so a stuck agent can't spend all day hammering one server.",
   "settings.webSearch.throttle.sameUrl": "Same-page retry limit",
-  "settings.webSearch.throttle.sameUrl.hint": "Refuse to fetch one page more times than this in a session — catches an agent stuck in a loop.",
+  "settings.webSearch.throttle.sameUrl.hint":
+    "Refuse to fetch one page more times than this in a session — catches an agent stuck in a loop.",
   "settings.tools.title": "Tools",
   "settings.tools.description":
     "Ad-hoc tool recipes: a name, a one-line description the model sees in its prompt, and a manual it pulls on demand (the API shape plus a curl example). The model runs them from the shell — no MCP server to set up.",
