@@ -603,14 +603,21 @@ export const SettingsGeneralV2: Component<{
           </div>
         </SettingsRowV2>
 
-        <SettingsRowV2
-          title={language.t("settings.updates.row.check.title")}
-          description={language.t("settings.updates.row.check.description")}
-        >
-          <ButtonV2 size="normal" variant="neutral" disabled={!updater.action().run} onClick={updater.run}>
-            {language.t(updater.action().label)}
-          </ButtonV2>
-        </SettingsRowV2>
+        {/* Desktop-only, and ONLY this row (2026-07-28). `platform.updater` is supplied by the Electron
+            renderer, so on web `updaterAction(undefined)` leaves this button permanently disabled with
+            nothing on screen to say why — a dead control, which is the obscurantism the vision forbids.
+            A web instance updates when the instance serving it does; there is nothing here to press.
+            The release-notes row above is deliberately NOT gated — see the note at the render site. */}
+        <Show when={desktop()}>
+          <SettingsRowV2
+            title={language.t("settings.updates.row.check.title")}
+            description={language.t("settings.updates.row.check.description")}
+          >
+            <ButtonV2 size="normal" variant="neutral" disabled={!updater.action().run} onClick={updater.run}>
+              {language.t(updater.action().label)}
+            </ButtonV2>
+          </SettingsRowV2>
+        </Show>
       </SettingsListV2>
     </div>
   )
@@ -627,7 +634,7 @@ export const SettingsGeneralV2: Component<{
         <NotificationsSection />
 
         {/* Whole-instance config Export/Import (moved from the Models tab, owner 2026-07-22 —
-            it is general configuration, not a models tool). Desktop-gated with Updates: the
+            it is general configuration, not a models tool). Desktop-gated on its own account: the
             component drives the native file pickers (window.api), absent on web. */}
         <Show when={desktop()}>
           <div class="settings-v2-section">
@@ -643,9 +650,21 @@ export const SettingsGeneralV2: Component<{
               </SettingsRowV2>
             </SettingsListV2>
           </div>
-
-          <UpdatesSection />
         </Show>
+
+        {/* Updates is NOT desktop-gated as a whole (2026-07-28). It was until today, and that hid the
+            release-notes toggle and its status row on web in THIS panel while the v1 panel showed them
+            — the exact drift the shared status component was supposed to make impossible, and it did
+            not, because a shared component stops two panels SAYING different things and does nothing
+            to stop one of them from not saying it at all.
+            Release notes are not an update mechanism; they are the product telling you what changed,
+            and the subsystem behind that toggle runs on web — HighlightsProvider is mounted for every
+            entry point and fetches novaclaw.app/changelog.json on a version change, on by default. So
+            gating the section left a web user with a live outbound request they could not switch off
+            and no answer to "did the release notes work?". Only the update-CHECK row inside is
+            desktop-only. Both panels must agree on this: components/settings-release-notes-row.test.ts
+            resolves the gate path through the section component and fails if they diverge. */}
+        <UpdatesSection />
       </div>
     </>
   )

@@ -625,14 +625,21 @@ export const SettingsGeneral: Component = () => {
           </div>
         </SettingsRow>
 
-        <SettingsRow
-          title={language.t("settings.updates.row.check.title")}
-          description={language.t("settings.updates.row.check.description")}
-        >
-          <Button size="small" variant="secondary" disabled={!updater.action().run} onClick={updater.run}>
-            {language.t(updater.action().label)}
-          </Button>
-        </SettingsRow>
+        {/* Desktop-only, and ONLY this row (2026-07-28). `platform.updater` is supplied by the Electron
+            renderer, so on web `updaterAction(undefined)` leaves this button permanently disabled with
+            nothing on screen to say why — a dead control, which is the obscurantism the vision forbids.
+            A web instance updates when the instance serving it does; there is nothing here to press.
+            The release-notes row above is deliberately NOT gated — see the note at the render site. */}
+        <Show when={desktop()}>
+          <SettingsRow
+            title={language.t("settings.updates.row.check.title")}
+            description={language.t("settings.updates.row.check.description")}
+          >
+            <Button size="small" variant="secondary" disabled={!updater.action().run} onClick={updater.run}>
+              {language.t(updater.action().label)}
+            </Button>
+          </SettingsRow>
+        </Show>
       </SettingsList>
     </div>
   )
@@ -693,6 +700,12 @@ export const SettingsGeneral: Component = () => {
 
         <SoundsSection />
 
+        {/* Ungated on purpose (2026-07-28) — release notes are not an update mechanism, they are the
+            product telling you what changed, and HighlightsProvider actually runs on web. The v2 panel
+            gated the whole section and so hid the toggle and its status row there while this panel kept
+            showing them; both panels now carry the gate on the update-CHECK row only. Kept identical by
+            components/settings-release-notes-row.test.ts, which resolves the gate path through the
+            section component rather than looking for a `<Show>` next to the row — there is none. */}
         <UpdatesSection />
 
         <DisplaySection />
