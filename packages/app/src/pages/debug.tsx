@@ -145,7 +145,9 @@ export function DebugPage() {
             <Show
               when={scheduler()}
               fallback={
-                <div class={hint}>{scheduler.loading ? "loading…" : "unavailable (older server, or no instance connected)"}</div>
+                <div class={hint}>
+                  {scheduler.loading ? "loading…" : "unavailable (older server, or no instance connected)"}
+                </div>
               }
             >
               {(devices) => (
@@ -192,7 +194,8 @@ export function DebugPage() {
           <div class={heading}>
             <span class={title}>Error log</span>
             <span class={hint}>
-              uncaught errors, rejections, console error/warn — newest first, last {200} kept
+              uncaught errors, rejections, console error/warn, and notices from NovaClaw's own subsystems — newest
+              first, last {200} kept
             </span>
             <span class="flex-1" />
             <button type="button" class={btn} onClick={copyLog} disabled={errorLogEntries().length === 0}>
@@ -217,6 +220,11 @@ export function DebugPage() {
                         "text-v2-state-fg-danger": entry.level === "error" || entry.level === "uncaught",
                         "text-v2-state-fg-warning": entry.level === "warn",
                         "text-v2-text-text-muted": entry.level === "rejection",
+                        // A notice is NOT a fault in the user's install — it is one of our own
+                        // subsystems reporting something worth recording (a missing changelog file
+                        // on our CDN, say). Without an entry here it renders in the inherited body
+                        // colour, which reads as a styling bug rather than as the quietest level.
+                        "text-v2-text-text-faint": entry.level === "notice",
                       }}
                     >
                       {entry.level}
@@ -236,8 +244,8 @@ export function DebugPage() {
           <div class={heading}>
             <span class={title}>Sessions</span>
             <span class={hint}>
-              ps-lite over the {sessions().length} cached session{sessions().length === 1 ? "" : "s"} (client cache,
-              not the full database)
+              ps-lite over the {sessions().length} cached session{sessions().length === 1 ? "" : "s"} (client cache, not
+              the full database)
             </span>
           </div>
           <div class="max-h-72 overflow-y-auto px-4 pb-3">

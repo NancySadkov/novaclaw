@@ -6,6 +6,7 @@ import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useGlobal } from "@/context/global"
+import { ReleaseNotesStatusLine } from "@/context/highlights"
 import { useLanguage } from "@/context/language"
 import { useExpertise, PERMISSION_MODE_MIN_LEVEL } from "@/context/expertise"
 import { usePermission } from "@/context/permission"
@@ -584,7 +585,15 @@ export const SettingsGeneralV2: Component<{
       <SettingsListV2>
         <SettingsRowV2
           title={language.t("settings.general.row.releaseNotes.title")}
-          description={language.t("settings.general.row.releaseNotes.description")}
+          description={
+            // ⚠️ The status sentence is NOT written here. Both Settings panels render the same
+            // `ReleaseNotesStatusLine`, so the v1 and v2 rows cannot come to say different things
+            // about one subsystem — pinned by components/settings-release-notes-row.test.ts.
+            <>
+              {language.t("settings.general.row.releaseNotes.description")}
+              <ReleaseNotesStatusLine />
+            </>
+          }
         >
           <div data-action="settings-release-notes">
             <Switch

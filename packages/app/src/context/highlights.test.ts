@@ -1,6 +1,8 @@
 import { beforeAll, describe, expect, mock, test } from "bun:test"
 import fs from "node:fs"
 import path from "node:path"
+import { dict as en } from "@/i18n/en"
+import type { HighlightsStatus } from "./highlights"
 
 // The release-notes fetch used to have exactly two outcomes a caller could see: a dialog, or silence.
 // `novaclaw.app/changelog.json` has 404'd for the life of the product, and the 404 was collapsed —
@@ -26,6 +28,7 @@ beforeAll(async () => {
     createSimpleContext: () => ({ use: () => undefined, provider: () => undefined }),
   }))
   mock.module("@novaclaw/ui/context/dialog", () => ({ useDialog: () => undefined }))
+  mock.module("@/context/language", () => ({ useLanguage: () => undefined }))
   mock.module("@/context/platform", () => ({ usePlatform: () => undefined }))
   mock.module("@/context/settings", () => ({ useSettings: () => undefined }))
   mock.module("@/utils/persist", () => ({ persisted: () => [] }))
@@ -193,6 +196,103 @@ describe("the seen-version advances exactly when the question is settled", () =>
   })
 })
 
+// ── The Settings row ──────────────────────────────────────────────────────────────────────────────
+//
+// The status above was computed and discarded until 2026-07-28: nothing in the product read it, so for
+// anyone who does not open the Debug app the subsystem still rendered empty. These pin what the row is
+// now allowed to say. The wording lives in en.ts, so the assertions resolve real English, not keys.
+
+const STATUSES: Record<string, HighlightsStatus> = {
+  idle: { state: "idle" },
+  checking: { state: "checking" },
+  new: { state: "new", count: 3 },
+  none: { state: "none" },
+  missing: { state: "unavailable", failure: "http", httpStatus: 404, detail: "404 Not Found", retrying: false },
+  offline: { state: "unavailable", failure: "network", detail: "TypeError: Failed to fetch", retrying: true },
+}
+
+/** Resolve a row the way the component does: look its key up in the shipped English dictionary. */
+function english(status: HighlightsStatus): string {
+  const row = mod.releaseNotesRow(status)
+  const template = (en as Record<string, string>)[row.key]
+  if (template === undefined) return ""
+  return template.replace(/\{\{(\w+)\}\}/g, (_, name: string) => String(row.params[name] ?? `{{${name}}}`))
+}
+
+describe("the Settings row says which fact it found", () => {
+  test("every state resolves to a real sentence — the row never renders blank", () => {
+    for (const [name, status] of Object.entries(STATUSES)) {
+      const text = english(status)
+      expect(text, `${name} must resolve to shipped English`).not.toBe("")
+      expect(text.length, `${name} is too short to be a sentence`).toBeGreaterThan(20)
+      expect(text, `${name} left a placeholder unfilled`).not.toContain("{{")
+    }
+  })
+
+  test("every declared key exists in en.ts", () => {
+    for (const key of Object.values(mod.RELEASE_NOTES_STATUS_KEY)) {
+      expect((en as Record<string, string>)[key], `${key} is missing from i18n/en.ts`).toBeTruthy()
+    }
+  })
+
+  test("negative control — a key that is not in en.ts is caught", () => {
+    expect((en as Record<string, string>)["settings.general.row.releaseNotes.status.doesNotExist"]).toBeUndefined()
+  })
+
+  test("an unreachable list is never described as up to date", () => {
+    for (const name of ["missing", "offline"] as const) {
+      const text = english(STATUSES[name]!).toLowerCase()
+      expect(text, name).not.toContain("up to date")
+      expect(text, name).not.toContain("nothing new")
+      expect(mod.releaseNotesRow(STATUSES[name]!).tone, name).toBe("attention")
+    }
+    // …and the state that IS up to date says so, so the two can never be confused.
+    expect(english(STATUSES.none!).toLowerCase()).toContain("up to date")
+    expect(mod.releaseNotesRow(STATUSES.none!).tone).toBe("neutral")
+  })
+
+  test("a final answer and a retry are different sentences", () => {
+    // A 404 means the file is not published — asking again cannot change it, so the row must not
+    // promise a retry it will never make.
+    expect(mod.releaseNotesRow(STATUSES.missing!).key).not.toBe(mod.releaseNotesRow(STATUSES.offline!).key)
+    expect(english(STATUSES.missing!).toLowerCase()).not.toContain("try again")
+    expect(english(STATUSES.offline!).toLowerCase()).toContain("try again")
+  })
+
+  test("the visible sentence carries no status codes, URLs or jargon", () => {
+    for (const [name, status] of Object.entries(STATUSES)) {
+      const text = english(status)
+      for (const jargon of ["404", "410", "http", "json", "cdn", "://", "fetch"]) {
+        expect(text.toLowerCase(), `${name} leaks "${jargon}" into a lay surface`).not.toContain(jargon)
+      }
+    }
+  })
+
+  test("the technical detail is still one hover away, worded once", async () => {
+    // The row's `title` and the Debug app's log line are the SAME string by construction — two
+    // renderings of one fault must never be able to disagree about it.
+    for (const result of [NOT_FOUND, SERVER_ERROR, OFFLINE, NOT_JSON]) {
+      const outcome = await read(result)
+      expect(mod.describeStatus(mod.statusOf(outcome))).toBe(mod.describeUnavailable(outcome)!)
+    }
+    expect(mod.describeStatus({ state: "none" })).toBeUndefined()
+    expect(mod.describeStatus({ state: "checking" })).toBeUndefined()
+  })
+})
+
+describe("the highlights context exposes only what something reads", () => {
+  // Six members were returned and NONE were read. Five are gone; `status` is the Settings row's source.
+  // A member re-added without a consumer is dead code by definition — this is the ratchet.
+  test("useHighlights returns exactly one member", () => {
+    const source = fs.readFileSync(HIGHLIGHTS, "utf8")
+    const returned = source.slice(source.lastIndexOf("    return {"))
+    expect(returned).toContain("status,")
+    for (const gone of ["      ready,", "      markSeen,", "from: () =>", "to: () =>", "get last()"]) {
+      expect(returned, `${gone} came back with no consumer`).not.toContain(gone)
+    }
+  })
+})
+
 // ── The static half ───────────────────────────────────────────────────────────────────────────────
 //
 // The behaviour above can be correct while the wiring quietly re-swallows it: one `.catch(() => undefined)`
@@ -209,9 +309,19 @@ const RULES: Rule[] = [
     control: `fetcher(CHANGELOG_URL).then((r) => (r.ok ? r.json() : undefined)).catch(() => undefined)`,
   },
   {
+    // Was `console.warn(` until 2026-07-28. The hand-off still has to REACH the error log — that is the
+    // invariant — but it now goes through the `notice` level, because a warn is a claim about the user's
+    // machine and a changelog missing from our own CDN is not that (utils/error-log.ts).
     name: "the failure path reaches the error log",
-    violated: (source) => !source.includes("console.warn("),
+    violated: (source) => !source.includes("noticeErrorLog("),
     control: `const line = describeUnavailable(outcome)\nif (line) return`,
+  },
+  {
+    // The whole point of the `notice` level: a fault only we can fix must not present as a warning
+    // about the user's install. A `console.warn` back in this file silently undoes that.
+    name: "the changelog fault is not logged as a warning about the user's machine",
+    violated: (source) => /console\.warn\(/.test(source),
+    control: `const line = describeUnavailable(outcome)\nif (line) console.warn(line)`,
   },
   {
     name: "a non-2xx is classified by status, not thrown away",

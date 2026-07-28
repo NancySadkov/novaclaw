@@ -1314,6 +1314,19 @@ export const dict = {
   "settings.general.row.releaseNotes.title": "Release notes",
   "settings.general.row.releaseNotes.description": 'Show a "What\'s New" summary after NovaClaw updates.',
 
+  // The status line under the toggle, one per state of context/highlights.tsx. Plain English on
+  // purpose: the Debug app's error log carries the URL and the status code, this says what happened.
+  // Never leave one of these blank — an unavailable subsystem has to name itself (todo.md ruling 2).
+  "settings.general.row.releaseNotes.status.idle":
+    "NovaClaw looks for release notes the first time it starts a new version.",
+  "settings.general.row.releaseNotes.status.checking": "Checking for release notes…",
+  "settings.general.row.releaseNotes.status.new": "Release notes for this version are ready — {{count}} to show.",
+  "settings.general.row.releaseNotes.status.none": "Up to date — this version had no release notes to show.",
+  "settings.general.row.releaseNotes.status.unavailableRetry":
+    "Couldn't reach the release-notes list. NovaClaw will try again the next time it starts.",
+  "settings.general.row.releaseNotes.status.unavailableFinal":
+    "No release notes are published for this version, so NovaClaw has stopped checking.",
+
   "settings.updates.row.startup.title": "Check for updates on startup",
   "settings.updates.row.startup.description": "Automatically check for updates when NovaClaw launches",
   "settings.updates.row.check.title": "Check for updates",

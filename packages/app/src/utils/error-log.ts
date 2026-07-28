@@ -6,9 +6,17 @@ import { createSignal } from "solid-js"
 // retain huge objects; the console taps guard re-entrancy so a tap that itself throws or logs
 // cannot recurse.
 
+// ⚠️ `notice` was added 2026-07-28 for a fault that is NOT a fault in the user's install. The
+// release-notes fetch (context/highlights.tsx) hands its unavailable-line here, and OUR changelog file
+// 404s — so every launch wrote a `warn` accusing the user's machine of something our CDN was doing.
+// A warning the user can neither cause nor fix trains them to ignore warnings, which is how the one
+// that matters gets missed. `notice` is the honest level: recorded, named, not alarming.
+// ⚠️ A new level MUST also be given a colour in the Debug app's Error-log panel (pages/debug.tsx) —
+// its `classList` matches levels by name, so an undeclared level renders in the inherited colour and
+// reads as a rendering bug rather than a level.
 export interface ErrorLogEntry {
   readonly at: number
-  readonly level: "error" | "warn" | "uncaught" | "rejection"
+  readonly level: "error" | "warn" | "notice" | "uncaught" | "rejection"
   readonly text: string
 }
 
@@ -38,6 +46,20 @@ export function pushErrorLog(level: ErrorLogEntry["level"], parts: readonly unkn
   const text = parts.map(toText).join(" ").slice(0, MAX_TEXT)
   const entry: ErrorLogEntry = { at: Date.now(), level, text }
   setEntries((prev) => (prev.length >= MAX_ENTRIES ? [...prev.slice(prev.length - MAX_ENTRIES + 1), entry] : [...prev, entry]))
+}
+
+/**
+ * Record something worth knowing that is not a defect in the user's install — a subsystem of OURS that
+ * is unavailable, an answer from our own infrastructure. Goes to the Debug app's Error-log panel
+ * at `notice`, and to the console at `info` so it still reaches the dev stdout.
+ *
+ * ⚠️ Deliberately NOT `console.warn`: that is tapped above and would land at level `warn`, which is the
+ * claim "something is wrong with your machine". Use `console.warn` when that claim is true.
+ */
+export function noticeErrorLog(text: string) {
+  pushErrorLog("notice", [text])
+  // eslint-disable-next-line no-console
+  console.info(text)
 }
 
 let installed = false

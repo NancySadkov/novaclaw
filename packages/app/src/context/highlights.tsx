@@ -2,8 +2,10 @@ import { createEffect, createSignal, onCleanup } from "solid-js"
 import { createStore } from "solid-js/store"
 import { createSimpleContext } from "@novaclaw/ui/context"
 import { useDialog } from "@novaclaw/ui/context/dialog"
+import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { useSettings } from "@/context/settings"
+import { noticeErrorLog } from "@/utils/error-log"
 import { persisted } from "@/utils/persist"
 import { DialogReleaseNotes, type Highlight } from "@/components/dialog-release-notes"
 
@@ -270,6 +272,31 @@ export function advancesSeenVersion(outcome: ChangelogOutcome): boolean {
   }
 }
 
+/** Everything the wording below needs, in the shape BOTH an outcome and a status can supply. */
+type Fault = { failure: ChangelogFailure; httpStatus?: number; detail: string; retrying: boolean }
+
+/**
+ * The one place the technical line is worded. Two callers reach it — the error-log hand-off (from an
+ * outcome) and the Settings row's hover detail (from a status) — and they must never be able to say
+ * two different things about one fault, so neither writes its own copy.
+ */
+function describeFault(fault: Fault): string {
+  const cause = (() => {
+    switch (fault.failure) {
+      case "http":
+        return `${CHANGELOG_URL} returned ${fault.detail}`
+      case "network":
+        return `could not reach ${CHANGELOG_URL} (${fault.detail})`
+      case "malformed":
+        return `${CHANGELOG_URL} did not return valid JSON (${fault.detail})`
+    }
+  })()
+  const next = fault.retrying
+    ? "NovaClaw will try again on the next launch."
+    : "No changelog is published there, so this version is marked seen and NovaClaw will stop asking."
+  return `Release notes unavailable: ${cause}. ${next}`
+}
+
 /**
  * The line the Debug app's Error-log panel shows, or `undefined` when there is genuinely nothing to
  * report. It names the subsystem, the URL, the actual fault and what happens next — no euphemism, and
@@ -277,20 +304,17 @@ export function advancesSeenVersion(outcome: ChangelogOutcome): boolean {
  */
 export function describeUnavailable(outcome: ChangelogOutcome): string | undefined {
   if (outcome.kind !== "unavailable") return
-  const cause = (() => {
-    switch (outcome.failure) {
-      case "http":
-        return `${CHANGELOG_URL} returned ${outcome.detail}`
-      case "network":
-        return `could not reach ${CHANGELOG_URL} (${outcome.detail})`
-      case "malformed":
-        return `${CHANGELOG_URL} did not return valid JSON (${outcome.detail})`
-    }
-  })()
-  const next = willRetry(outcome)
-    ? "NovaClaw will try again on the next launch."
-    : "No changelog is published there, so this version is marked seen and NovaClaw will stop asking."
-  return `Release notes unavailable: ${cause}. ${next}`
+  return describeFault({ ...outcome, retrying: willRetry(outcome) })
+}
+
+/**
+ * The same line, reached from the projected status instead of the raw outcome — this is what the
+ * Settings row hangs off its `title`, so a developer can hover and read the real fault while the
+ * visible text stays in plain English. `undefined` whenever nothing is wrong.
+ */
+export function describeStatus(status: HighlightsStatus): string | undefined {
+  if (status.state !== "unavailable") return
+  return describeFault(status)
 }
 
 /** Project an outcome onto the state a Settings/About row can render. */
@@ -313,6 +337,100 @@ export function statusOf(outcome: ChangelogOutcome): HighlightsStatus {
   }
 }
 
+// ── The Settings row ──────────────────────────────────────────────────────────────────────────────
+//
+// Until 2026-07-28 the status above was computed and then thrown away: the provider was mounted, the
+// effect ran, nothing read the result. So the product's own answer to "did the release notes work?" was
+// visible only in the Debug app, which a normal person never opens — i.e. for that person the subsystem
+// still rendered empty, which is exactly what todo.md ruling 2 forbids.
+//
+// ⚠️ The row lives in TWO Settings panels (the v1 `settings-general.tsx` and the v2
+// `settings-v2/general.tsx`), because the release-notes toggle it sits under does. Two panels
+// hand-copying one sentence is a drift generator, so neither writes the sentence: both render
+// `ReleaseNotesStatusLine` below, and the wording is one i18n key chosen by one pure function.
+// `components/settings-release-notes-row.test.ts` fails if either panel stops doing that.
+//
+// The register is LAY, deliberately. The Debug line says "https://…/changelog.json returned 404 Not
+// Found"; this row says "No release notes are published for this version." Same fact, two audiences —
+// and the technical line is still one hover away via `describeStatus`, so nothing is hidden.
+
+/** The complete set of things this row can say. Data, so a test can prove each one exists in en.ts. */
+export const RELEASE_NOTES_STATUS_KEY = {
+  idle: "settings.general.row.releaseNotes.status.idle",
+  checking: "settings.general.row.releaseNotes.status.checking",
+  new: "settings.general.row.releaseNotes.status.new",
+  none: "settings.general.row.releaseNotes.status.none",
+  unavailableRetry: "settings.general.row.releaseNotes.status.unavailableRetry",
+  unavailableFinal: "settings.general.row.releaseNotes.status.unavailableFinal",
+} as const
+
+export type ReleaseNotesStatusKey = (typeof RELEASE_NOTES_STATUS_KEY)[keyof typeof RELEASE_NOTES_STATUS_KEY]
+
+export type ReleaseNotesRow = {
+  /** The i18n key of the sentence shown to the user. Never absent — the row never renders blank. */
+  key: ReleaseNotesStatusKey
+  /** Values for the `{{…}}` placeholders. Harmless for the keys that have none. */
+  params: Record<string, string | number>
+  /** `attention` only when the subsystem is unavailable — that is the state ruling 2 says must show. */
+  tone: "neutral" | "attention"
+  /** Mirrored onto `data-state` so a DOM probe can assert WHICH fact is on screen, not just that text is. */
+  state: HighlightsStatus["state"]
+}
+
+/** Project the status onto the one sentence the Settings row shows. Pure — the tests drive it directly. */
+export function releaseNotesRow(status: HighlightsStatus): ReleaseNotesRow {
+  switch (status.state) {
+    case "idle":
+      return { key: RELEASE_NOTES_STATUS_KEY.idle, params: {}, tone: "neutral", state: status.state }
+    case "checking":
+      return { key: RELEASE_NOTES_STATUS_KEY.checking, params: {}, tone: "neutral", state: status.state }
+    case "new":
+      return {
+        key: RELEASE_NOTES_STATUS_KEY.new,
+        params: { count: status.count },
+        tone: "neutral",
+        state: status.state,
+      }
+    case "none":
+      return { key: RELEASE_NOTES_STATUS_KEY.none, params: {}, tone: "neutral", state: status.state }
+    case "unavailable":
+      return {
+        // A 404/410 is an ANSWER — the file is not published — so it is stated as a settled fact, not as
+        // a transient failure the user might wait out. Anything else is genuinely unknown and retries.
+        key: status.retrying ? RELEASE_NOTES_STATUS_KEY.unavailableRetry : RELEASE_NOTES_STATUS_KEY.unavailableFinal,
+        params: {},
+        tone: "attention",
+        state: status.state,
+      }
+  }
+}
+
+/**
+ * The release-notes status, as both Settings panels render it. One component, one sentence, one source
+ * of truth — a panel cannot say something the other panel does not.
+ */
+export function ReleaseNotesStatusLine() {
+  const highlights = useHighlights()
+  const language = useLanguage()
+  const row = () => releaseNotesRow(highlights.status())
+  // The raw fault hangs off `title`, for whoever is debugging. The visible sentence never carries a
+  // status code — the two registers are the whole point, and `describeStatus` is the only wording source.
+  const detail = () => describeStatus(highlights.status())
+
+  return (
+    <span
+      data-status="release-notes"
+      data-state={row().state}
+      data-tone={row().tone}
+      title={detail()}
+      class="block pt-0.5"
+      classList={{ "text-v2-state-fg-warning": row().tone === "attention" }}
+    >
+      {language.t(row().key, row().params)}
+    </span>
+  )
+}
+
 export const { use: useHighlights, provider: HighlightsProvider } = createSimpleContext({
   name: "Highlights",
   gate: false,
@@ -322,10 +440,6 @@ export const { use: useHighlights, provider: HighlightsProvider } = createSimple
     const settings = useSettings()
     const [store, setStore, _, ready] = persisted("highlights.v1", createStore<Store>({ version: undefined }))
 
-    const [range, setRange] = createStore({
-      from: undefined as string | undefined,
-      to: undefined as string | undefined,
-    })
     const state = { started: false }
     const [status, setStatus] = createSignal<HighlightsStatus>({ state: "idle" })
     let timer: ReturnType<typeof setTimeout> | undefined
@@ -368,11 +482,15 @@ export const { use: useHighlights, provider: HighlightsProvider } = createSimple
         // The register is deliberate. A modal on every launch because OUR CDN is missing a file would
         // page a normal person about our infrastructure, and the vision is that a common user is
         // HELPED, not handed a pager (AGENTS.md, Identity & mission). So the fault is named where
-        // faults belong: `console.warn` is tapped by utils/error-log.ts, which feeds the Debug app's
-        // Error-log panel and the dev stdout — and `status` above lets a Settings/About row say
-        // "unavailable" instead of showing a blank where release notes should be.
+        // faults belong: `noticeErrorLog` feeds the Debug app's Error-log panel and the dev stdout —
+        // and `status` above is what the Settings row renders instead of showing a blank where
+        // release notes should be.
+        //
+        // ⚠️ It used to be `console.warn`, which lands at level `warn` — an accusation about the
+        // user's machine for something only WE can fix. Level `notice` exists for exactly this
+        // (utils/error-log.ts, 2026-07-28); do not put the warn back.
         const line = describeUnavailable(outcome)
-        if (line) console.warn(line)
+        if (line) noticeErrorLog(line)
 
         if (outcome.kind === "highlights") {
           const highlights = outcome.highlights
@@ -403,19 +521,26 @@ export const { use: useHighlights, provider: HighlightsProvider } = createSimple
 
       if (previous === platform.version) return
 
-      setRange({ from: previous, to: platform.version })
       start(previous)
     })
 
+    // ⚠️ ONE member, on purpose (2026-07-28). This object used to carry six — `ready`, `status`, `from`,
+    // `to`, `last` and `markSeen` — and NOTHING in the tree called `useHighlights` at all, so all six
+    // were dead. Five were deleted rather than left as an open invitation, each for a reason:
+    //
+    //   ready     — the provider is declared `gate: false`, so createSimpleContext never consults it and
+    //               no consumer could act on it; the effect below closes over the local binding.
+    //   from/to   — a `range` store populated solely to feed a UI nobody built. `to` is always
+    //               `platform.version`; `from` is the same value `previous` already carries here.
+    //   last      — the persisted seen-version. It advances on a 404, i.e. for a version whose notes the
+    //               user was never shown, so rendering it as "last seen" would be a false description
+    //               (todo.md ruling 2). It stays internal bookkeeping, not a product fact.
+    //   markSeen  — letting an outside caller declare a version seen without ever putting the notes in
+    //               front of the user is the same false report, one step earlier.
+    //
+    // Add a member back when a surface reads it in the same commit, not before.
     return {
-      ready,
       status,
-      from: () => range.from,
-      to: () => range.to,
-      get last() {
-        return store.version
-      },
-      markSeen,
     }
   },
 })

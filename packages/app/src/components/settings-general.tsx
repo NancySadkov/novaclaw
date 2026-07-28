@@ -7,6 +7,7 @@ import { TextField } from "@novaclaw/ui/text-field"
 import { Tooltip } from "@novaclaw/ui/tooltip"
 import { useTheme, type ColorScheme } from "@novaclaw/ui/theme/context"
 import { useParams } from "@solidjs/router"
+import { ReleaseNotesStatusLine } from "@/context/highlights"
 import { useLanguage } from "@/context/language"
 import { usePermission } from "@/context/permission"
 import { usePlatform, type DisplayBackend } from "@/context/platform"
@@ -606,7 +607,15 @@ export const SettingsGeneral: Component = () => {
       <SettingsList>
         <SettingsRow
           title={language.t("settings.general.row.releaseNotes.title")}
-          description={language.t("settings.general.row.releaseNotes.description")}
+          description={
+            // ⚠️ The status sentence is NOT written here. Both Settings panels render the same
+            // `ReleaseNotesStatusLine`, so the v1 and v2 rows cannot come to say different things
+            // about one subsystem — pinned by components/settings-release-notes-row.test.ts.
+            <>
+              {language.t("settings.general.row.releaseNotes.description")}
+              <ReleaseNotesStatusLine />
+            </>
+          }
         >
           <div data-action="settings-release-notes">
             <Switch
