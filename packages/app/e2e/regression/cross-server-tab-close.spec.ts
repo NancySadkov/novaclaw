@@ -117,6 +117,12 @@ async function mockServers(page: Page, requests: string[]) {
         home: current.directory,
       })
     if (url.pathname === "/vcs") return json(route, { branch: "main", default_branch: "main" })
+    // ⚠️ LIST endpoints must answer a list. The catch-all below returns `{}`, and the composer feeds
+    // these three straight into `.filter`/`.find` — which threw inside a render and put the whole app
+    // behind its error boundary ("Something went wrong"), so every assertion in this file failed for a
+    // reason that had nothing to do with tabs. The client is now defensive too
+    // (`utils/messenger-api.ts` → `callList`), so this is belt-and-braces rather than the only guard.
+    if (url.pathname.startsWith("/api/messenger/")) return json(route, [])
     return json(route, {})
   })
 }
@@ -131,5 +137,13 @@ function json(route: Route, body: unknown, status = 200) {
 }
 
 function sse(route: Route) {
-  return route.fulfill({ status: 200, contentType: "text/event-stream", body: ": ok\n\n" })
+  // ⚠️ The CORS header is required, and `json()` above sets it while this did not. The event stream
+  // is opened cross-origin (app on :3000 → server on :4096/:4097), so without it the EventSource
+  // never connects and the shell sits on "Connection lost — reconnecting…" with an empty main area.
+  return route.fulfill({
+    status: 200,
+    contentType: "text/event-stream",
+    headers: { "access-control-allow-origin": "*" },
+    body: ": ok\n\n",
+  })
 }

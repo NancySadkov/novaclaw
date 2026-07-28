@@ -134,12 +134,45 @@ async function call<T>(
   return (await res.json()) as T
 }
 
+/**
+ * A list endpoint that cannot take the whole app down when the answer is not a list.
+ *
+ * ⚠️ Every consumer of these three reads `resource.latest` and immediately calls `.filter`/`.find`
+ * on it (`session/composer/session-composer-controls.ts`, 5 sites). `createResource`'s
+ * `initialValue: []` only covers the *pending* state — once a fetch RESOLVES with a non-array, that
+ * value becomes `.latest` and the next `.filter` throws inside a render, which the app error
+ * boundary catches by replacing the entire UI with "Something went wrong". A messenger panel we
+ * could not parse must not cost the user their session; that is the dead-end AGENTS.md's *never
+ * breaks in your hands* clause forbids outright.
+ *
+ * ⚠️ This matters beyond a malformed reply: instances are PEERS and may run different versions
+ * (AGENTS.md → *P2P instances*), so "an endpoint answered a shape this build did not expect" is a
+ * normal, permanent condition of the product — not a bug to be fixed once upstream.
+ *
+ * It coerces rather than throws, but it does NOT pretend the list was empty: the fault is named on
+ * the console, which `utils/error-log.ts` taps into the Debug app. Rendering empty *silently* would
+ * be ruling 2's "an unavailable subsystem names itself instead of rendering empty" — the same defect
+ * the messenger STORE was fixed for on 2026-07-28, one layer down.
+ *
+ * Found by an e2e spec whose mock returns `{}` from its catch-all, which is exactly the shape a peer
+ * on an older protocol would send.
+ */
+async function callList<T>(server: ServerConnection.HttpBase, route: string, what: string): Promise<T[]> {
+  const value = await call<unknown>(server, "GET", route)
+  if (Array.isArray(value)) return value as T[]
+  console.warn(
+    `messenger: ${route} answered ${value === null ? "null" : typeof value}, not a list of ${what} — ` +
+      `showing none. The instance may be running a different version.`,
+  )
+  return []
+}
+
 export function messengerDrivers(server: ServerConnection.HttpBase) {
-  return call<DriverMeta[]>(server, "GET", "api/messenger/driver")
+  return callList<DriverMeta>(server, "api/messenger/driver", "drivers")
 }
 
 export function messengerAccounts(server: ServerConnection.HttpBase) {
-  return call<AccountWithStatus[]>(server, "GET", "api/messenger/account")
+  return callList<AccountWithStatus>(server, "api/messenger/account", "accounts")
 }
 
 export function messengerCreateAccount(
@@ -210,7 +243,7 @@ export interface BindingRow {
 }
 
 export function messengerBindings(server: ServerConnection.HttpBase) {
-  return call<BindingRow[]>(server, "GET", "api/messenger/binding")
+  return callList<BindingRow>(server, "api/messenger/binding", "bindings")
 }
 
 export function messengerCreateBinding(

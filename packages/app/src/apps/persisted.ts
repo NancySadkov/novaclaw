@@ -30,7 +30,20 @@ export async function loadPersistedApps(server: ServerConnection.HttpBase): Prom
       ? { Authorization: `Basic ${authTokenFromCredentials({ username: server.username, password: server.password })}` }
       : {},
   })
-    .then((res) => (res.ok ? (res.json() as Promise<AppManifest[]>) : undefined))
+    .then((res) => (res.ok ? (res.json() as Promise<unknown>) : undefined))
     .catch(() => undefined)
-  if (rows) setManifests(rows)
+  // ⚠️ `rows` was cast to AppManifest[] and published on truthiness alone. `{}` is truthy, so a peer
+  // answering an object put a non-array into the signal and the home screen's
+  // `persistedManifests().map(...)` threw inside a render — which the app error boundary turns into
+  // "Something went wrong" for the WHOLE UI. A launcher tile we cannot parse must not cost the user
+  // their session (AGENTS.md → *it never breaks in your hands*). Instances are PEERS on possibly
+  // different versions, so an unexpected shape here is a normal condition, not a one-off bug.
+  // Same defect and same fix as `utils/messenger-api.ts` → `callList`, found together 2026-07-28.
+  if (rows === undefined) return
+  if (!Array.isArray(rows)) {
+    const shape = rows === null ? "null" : typeof rows
+    console.warn(`apps: GET /app answered ${shape}, not a list of manifests — showing none.`)
+    return
+  }
+  setManifests(rows as readonly AppManifest[])
 }
