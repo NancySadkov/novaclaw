@@ -948,6 +948,38 @@ describe("MessengerGateway pipeline", () => {
     }),
   )
 
+  // The counting RULE for the daily cold-start bucket (traffic rules §2.3, AGENTS.md #9(b)), pinned
+  // because it is the kind of decision a later "tidy-up" reverses on instinct. The bucket is charged
+  // when the initiation is ATTEMPTED, and never refunded — a cold DM bounced by the recipient's
+  // privacy settings is as visible to the provider's anti-spam heuristics as one that landed, and a
+  // driver error is irreducibly ambiguous about delivery (a timeout can arrive after the write).
+  // Moving the `+= 1` to the success path, or refunding on failure, under-counts real deliveries and
+  // lets a day exceed the cap — the one direction that risks a real person's account.
+  it.live("a FAILED initiation still spends its daily slot — the cap counts attempts, not deliveries", () =>
+    Effect.gen(function* () {
+      const { store, gateway, account, queue } = yield* online("initiate-cap")
+      fake.state.sendFails = true
+      for (let i = 0; i < MessengerGateway.DAILY_NEW_CONVERSATION_CAP; i++) {
+        const attempt = yield* gateway.send({ accountID: account.id, chatID: `cold-${i}`, text: "hi", initiate: true })
+        expect(attempt.ok).toBe(false)
+      }
+      fake.state.sendFails = false
+      // Not one of those messages left the machine, and the day's budget is spent all the same.
+      expect(fake.state.sent.some((s) => s.chatID.startsWith("cold-"))).toBe(false)
+      const overCap = yield* gateway.send({ accountID: account.id, chatID: "cold-last", text: "hi", initiate: true })
+      expect(overCap.ok).toBe(false)
+      if (!overCap.ok) expect(overCap.reason).toContain("Daily new-conversation limit")
+
+      // …and the cap is a COLD-START cap only: answering a chat that wrote to us is never rationed.
+      yield* Queue.offer(queue, message("654", { text: "hello", sender: "friend" }))
+      yield* eventually(store.hasChat(account.id, "654"), (seen) => seen === true, "seen 654")
+      expect((yield* gateway.send({ accountID: account.id, chatID: "654", text: "hi back" })).ok).toBe(true)
+
+      yield* store.removeAccount(account.id)
+      yield* gateway.reload()
+    }).pipe(Effect.ensuring(Effect.sync(() => (fake.state.sendFails = false)))),
+  )
+
   it.live("a driver that refuses the send answers {ok:false} with the reason — never a false 'Sent'", () =>
     Effect.gen(function* () {
       const { store, gateway, account, queue } = yield* online("send-fails")

@@ -114,7 +114,7 @@ const sendCall = (id: string) => ({
 
 /** Stub the ONE gateway handle the tool reads at call time, for the length of `body`. */
 const withGateway = <A, E, R>(
-  send: () => Effect.Effect<{ ok: boolean; reason?: string }>,
+  send: (input: Record<string, unknown>) => Effect.Effect<{ ok: boolean; reason?: string }>,
   body: Effect.Effect<A, E, R>,
 ): Effect.Effect<A, E, R> =>
   Effect.suspend(() => {
@@ -140,6 +140,46 @@ describe("MessengerTool send", () => {
         executeTool(registry, sendCall("call-send-ok")),
       )
       expect(String(sent.value)).toContain("Sent (paced at human typing speed).")
+    }),
+  )
+
+  // ⚠️ THE PRODUCT CANNOT START A CONVERSATION, and this is the mechanical statement of it.
+  // `gateway.send` takes an `initiate` flag that lifts the cold-start refusal and spends a slot from
+  // the daily bucket — but nothing reaches it: `SendOp` has no `initiate` field, and the
+  // `messenger.initiate` permission the gateway's comment used to cite exists nowhere in the tree.
+  // That is AGENTS.md #9(b)'s *default* (never cold-start) but only half of its rule; the other
+  // half — start one with explicit permission and a stricter limit — is UNIMPLEMENTED. Wiring
+  // `initiate` through turns this test red, so whoever does must also ship the permission (one that
+  // genuinely ASKS — the agent baseline's catch-all `* → allow` would otherwise make the assert a
+  // no-op) and correct the comments that describe it.
+  it.effect("the tool never asks the gateway to cold-start — `initiate` is not wired", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const asked: Record<string, unknown>[] = []
+      const call = sendCall("call-send-no-initiate")
+      yield* withGateway(
+        (input) => {
+          asked.push(input)
+          return Effect.succeed({ ok: true })
+        },
+        executeTool(registry, call),
+      )
+      expect(asked).toHaveLength(1)
+      expect(asked[0]).not.toHaveProperty("initiate")
+
+      // …and the model cannot smuggle one past the schema either.
+      const smuggled = {
+        ...call,
+        call: { ...call.call, id: "call-send-smuggle", input: { ...call.call.input, initiate: true } },
+      }
+      yield* withGateway(
+        (input) => {
+          asked.push(input)
+          return Effect.succeed({ ok: true })
+        },
+        executeTool(registry, smuggled),
+      ).pipe(Effect.ignore)
+      expect(asked.every((input) => !("initiate" in input))).toBe(true)
     }),
   )
 })

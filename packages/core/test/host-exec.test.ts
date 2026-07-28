@@ -317,6 +317,25 @@ describe("HostExec.chainHasHostileBinding — one walk, two callers", () => {
     expect(run("child", childFails)).toBe(true)
   })
 
+  // ⚠️ The companion to the test above, and the reason the real store no longer uses `Effect.orDie`.
+  // The walk recovers with `Effect.orElseSucceed`, which catches a FAILURE and NOT a DIE — so the
+  // `Effect.fail` case above proved a path production could never take: `MessengerStore`
+  // `bindingsForSession` used to end in `orDie`, so a sqlite fault unwound the fiber straight
+  // through this walk and killed the turn instead of failing closed. This pins the asymmetry, so a
+  // reader meets it rather than inferring the fail case covers both.
+  test("a DYING lookup is NOT caught here — which is why the store must fail closed itself", () => {
+    const dying: HostExec.ChainLookup = {
+      bindingsForSession: () => Effect.die(new Error("SqliteError: database disk image is malformed")),
+      parentOf: () => Effect.succeed(undefined),
+    }
+    expect(() => run("s", dying)).toThrow()
+
+    // What the fixed store hands this walk instead: the fault is absorbed and NAMED at the source,
+    // so the guard answers (permissively — see the store's note) rather than taking the turn down.
+    const failedClosed = chain({ s: undefined }, { s: [] })
+    expect(run("s", failedClosed)).toBe(false)
+  })
+
   test("the answer feeds `decide` — a hostile turn on a backend-less host is DENIED", () => {
     const hostile = run("s", chain({ s: undefined }, { s: [{ status: "active", trust: "client" }] }))
     expect(HostExec.decide({ rootType: "interactive", backend: NONE, hostileInput: hostile })).toBe("deny")

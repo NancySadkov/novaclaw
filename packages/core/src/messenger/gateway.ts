@@ -46,7 +46,8 @@ const STABLE_CONNECTION_MS = 60_000
 const PAIRING_TTL_MS = 10 * 60_000
 // Traffic rules (§2.3): how many brand-new conversations NovaClaw may START in one day. Replies to
 // inbound don't count — only cold-starts. Providers flag accounts that spray new chats; this caps it.
-const DAILY_NEW_CONVERSATION_CAP = 20
+// Exported so the test that pins the counting RULE tracks the number instead of re-typing it.
+export const DAILY_NEW_CONVERSATION_CAP = 20
 // §0.1.5 dispatcher: max console task-spawns per chat per rolling minute — the fork-bomb-guard
 // parity rule (a spawn seam must ship with a rate cap; SessionSpawner carries the same number).
 // Human-typed `Nova, …` prompts land far under it; a paste-flood gets a legible refusal.
@@ -118,14 +119,34 @@ export interface Interface {
     readonly chatID: string
     readonly limit: number
   }) => Effect.Effect<HistoryOutcome>
-  /** A proactive/tool-driven send, governed by the traffic rules (§2.3): paced at human speed and
-   *  cold-start-guarded. Replying to a chat we've heard from is always allowed; STARTING a new
-   *  conversation (`initiate`) is capped by the daily new-conversation bucket. The `messenger`
-   *  tool calls this (after its own `messenger.initiate` permission check for cold starts). */
+  /**
+   * A proactive/tool-driven send, governed by the traffic rules (§2.3): paced at human speed and
+   * cold-start-guarded. Replying to a chat we've heard from is always allowed; STARTING a new
+   * conversation is refused unless the caller passes `initiate`, and then capped by the daily
+   * new-conversation bucket.
+   *
+   * ⚠️ **NOTHING IN THE PRODUCT PASSES `initiate`** (audited 2026-07-28). This method's only
+   * non-test caller is the `messenger` tool (`tool/messenger.ts`), whose `SendOp` schema has no
+   * `initiate` field — and the `messenger.initiate` permission that this comment used to say the
+   * tool checks **does not exist anywhere in the tree**. So NovaClaw currently cannot start a
+   * conversation at all: every product-path cold start takes the refusal below, and the daily
+   * bucket is exercised only by tests. Stating it plainly because the previous wording described a
+   * gate that was never built, which is worse than the missing feature.
+   *
+   * That default is the safe half of AGENTS.md #9(b) (*never cold-start*), but it is only half:
+   * 9(b) also says starting one is allowed with **explicit permission and its own stricter rate
+   * limit**. The rate limit exists (`DAILY_NEW_CONVERSATION_CAP`); the permission does not. Wiring
+   * it needs BOTH halves, and the second is the one that bites: an `initiate` field on `SendOp`,
+   * AND a `messenger.initiate` permission that actually **asks by default** — which the agent
+   * baseline's catch-all `{ action: "*", resource: "*", effect: "allow" }` (`plugin/agent.ts`, the
+   * v0.2.0 B4c hole) would otherwise nullify, shipping a gate that grants itself. Until both land,
+   * `initiate` is the enforcement point and nothing more; `messenger-tool.test.ts` keeps it honest.
+   */
   readonly send: (input: {
     readonly accountID: Messenger.AccountID
     readonly chatID: string
     readonly text: string
+    /** Lift the cold-start refusal for THIS send. No product surface sets it — see the note above. */
     readonly initiate?: boolean
     /** Attach the answer to the message that asked (a busy channel is unreadable otherwise).
      *  Ignored by platforms without replies — never an error, the message still goes out. */
@@ -1086,8 +1107,9 @@ const build = (options: Options) =>
           const bound = yield* store.bindingForChat(input.accountID, input.chatID).pipe(Effect.orElseSucceed(() => undefined))
           const coldStart = !known && bound === undefined
           if (coldStart) {
-            // Traffic rules §2.3: the agent must be invited to write first. Starting a brand-new
-            // conversation is gated (the tool checks `messenger.initiate` permission) AND capped.
+            // Traffic rules §2.3 / AGENTS.md #9(b): the agent must be INVITED to write first. No
+            // product surface passes `initiate` today (see the interface note above), so THIS is
+            // what every real cold start currently gets — the branch below is test-only.
             if (!input.initiate)
               return {
                 ok: false,
@@ -1105,6 +1127,24 @@ const build = (options: Options) =>
                 ok: false,
                 reason: `Daily new-conversation limit (${DAILY_NEW_CONVERSATION_CAP}) reached — pacing to avoid a provider flag. Try again tomorrow.`,
               } satisfies SendOutcome
+            // The bucket is charged on the ATTEMPT, and never refunded. Both halves are deliberate,
+            // and both are the ban-safe reading of 9(b) rather than the tidy one:
+            //
+            // · CHARGED ON ATTEMPT, not on delivery. What a provider's anti-spam heuristics count
+            //   is cold-outreach ATTEMPTS. A DM bounced by the recipient's privacy settings is
+            //   visible to the platform exactly like one that landed, and a burst of bounced ones
+            //   is the classic spammer signature — so a failed initiation is not free, and must
+            //   still cost a slot. Everything refused by OUR OWN code before any wire traffic
+            //   (no live connection, `initiate` absent, bucket empty) is decided ABOVE this line,
+            //   so nothing provably pre-delivery is ever charged.
+            // · NEVER REFUNDED, and the increment does NOT move to the success path. Past this line
+            //   the only remaining failure is the driver's `SendError`, which is irreducibly
+            //   ambiguous: a timeout can arrive after the write landed. Refunding it would
+            //   UNDER-count real deliveries and let one day exceed the cap — the single direction
+            //   that risks a real person's account. Over-counting costs us at most a slot.
+            //   `retryable: false` is not a licence to refund either: it means "do not retry", not
+            //   "the platform never saw it".
+            // Pinned by "a FAILED initiation still spends its daily slot" in messenger-gateway.test.ts.
             initiations.count += 1
           }
           // The driver's verdict IS the answer — same shape as sendFile below. A refused or failed

@@ -1,5 +1,6 @@
 import { describe, expect } from "bun:test"
 import { Effect } from "effect"
+import * as TestConsole from "effect/testing/TestConsole"
 import { Messenger } from "@novaclaw/schema/messenger"
 import { Database } from "@novaclaw/core/database/database"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
@@ -121,6 +122,36 @@ describe("MessengerStore", () => {
       yield* store.setCursor(account.id, { offset: 12 })
       yield* store.setCursor(account.id, { offset: 99 })
       expect(yield* store.getCursor(account.id)).toEqual({ offset: 99 })
+    }),
+  )
+
+  // The guard read's fault behaviour, exercised against a REAL sqlite fault (the table is dropped
+  // out from under it) rather than a stubbed `Effect.fail`. That distinction is the whole point:
+  // this read ends every consumer's `orElseSucceed(() => [])`, and `orElseSucceed` catches a
+  // failure but NOT a die — so while the implementation ended in `Effect.orDie`, a database fault
+  // unwound the caller's fiber (the turn, or the gateway's instance-global relay) and the four
+  // recoveries written for it were unreachable. See `host-exec.test.ts` for the other half.
+  it.effect("bindingsForSession fails CLOSED and names the fault when the database is unreadable", () =>
+    Effect.gen(function* () {
+      const store = yield* MessengerStore.Service
+      const { db } = yield* Database.Service
+      const account = yield* store.createAccount({ driverID: "telegram", label: "t", enabled: true, settings: {} })
+      yield* store.createBinding({ accountID: account.id, chatID: "1", sessionID: "ses_guard", trust: "client" })
+      expect((yield* store.bindingsForSession("ses_guard")).map((entry) => entry.chatID)).toEqual(["1"])
+
+      // A fault no caller can prevent: the table is gone. (`NOVACLAW_DB=:memory:` in the test
+      // preload gives every test its own connection, so this cannot leak into another test.)
+      yield* db.run("DROP TABLE messenger_binding")
+
+      // …the read RETURNS rather than dying, so the consumers' fail-closed path is reachable.
+      expect(yield* store.bindingsForSession("ses_guard")).toEqual([])
+
+      // …and it is not a SILENT empty (standing decision 3): the subsystem names itself and the
+      // cause. The default Effect logger writes through the Console service, which the test env
+      // replaces with TestConsole, so this is the real log line the operator would get.
+      const logged = (yield* TestConsole.logLines).map((line) => JSON.stringify(line)).join("\n")
+      expect(logged).toContain("MessengerStore.bindingsForSession(ses_guard)")
+      expect(logged).toContain("messenger_binding")
     }),
   )
 
