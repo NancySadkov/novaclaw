@@ -26,17 +26,22 @@ export type ServiceClass<Self, Id extends string, Service> = Context.ServiceClas
  * validation while generating a typed service plus convenient production/test
  * layers.
  *
+ * The id below is deliberately FAKE. It used to read `@novaclaw/ServerAuthConfig`, which is a real,
+ * live Context key owned by `packages/server/src/auth.ts` — a doc example naming another package's key
+ * is how a copy-paste reintroduces the collision that `packages/protocol/test/context-key-uniqueness.
+ * test.ts` exists to catch (that scan blanks comments, so it cannot see this one). (2026-07-28.)
+ *
  * ```ts
- * class ServerAuthConfig extends ConfigService.Service<ServerAuthConfig>()(
- *   "@novaclaw/ServerAuthConfig",
+ * class ExampleConfig extends ConfigService.Service<ExampleConfig>()(
+ *   "@example/NotARealKey",
  *   {
- *     password: Config.string("NOVACLAW_SERVER_PASSWORD").pipe(Config.option),
- *     username: Config.string("NOVACLAW_SERVER_USERNAME").pipe(Config.withDefault("novaclaw")),
+ *     password: Config.string("EXAMPLE_PASSWORD").pipe(Config.option),
+ *     username: Config.string("EXAMPLE_USERNAME").pipe(Config.withDefault("novaclaw")),
  *   },
  * ) {}
  *
- * const live = ServerAuthConfig.defaultLayer
- * const test = ServerAuthConfig.layer({ password: Option.some("secret"), username: "kit" })
+ * const live = ExampleConfig.defaultLayer
+ * const test = ExampleConfig.layer({ password: Option.some("secret"), username: "kit" })
  * ```
  */
 export const Service =

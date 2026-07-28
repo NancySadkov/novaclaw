@@ -4,14 +4,9 @@ import { HttpEffect, HttpRouter, HttpServerRequest, HttpServerResponse } from "e
 import { HttpApiError, HttpApiMiddleware } from "effect/unstable/httpapi"
 import { hasPtyConnectTicketURL } from "@/server/shared/pty-ticket"
 import { isPublicUIPath } from "@/server/shared/public-ui"
-// ⚠️ Re-exported, not reimplemented: `serverAuthorizationLayer` reads `@novaclaw/server`'s OWN
-// `ServerAuth.Config` tag (`@novaclaw/ServerAuthConfig`), NOT the instance one imported above
-// (`@novaclaw/InstanceServerAuthConfig`). Provide it `@novaclaw/server/auth`'s layer. The two ids were
-// identical until 2026-07-28 (U3), which made the wrong layer satisfy it silently.
-export {
-  Authorization as ServerAuthorization,
-  authorizationLayer as serverAuthorizationLayer,
-} from "@novaclaw/server/middleware/authorization"
+import { ServerAuth as V2ServerAuth } from "@novaclaw/server/auth"
+import { authorizationLayer as unconfiguredServerAuthorizationLayer } from "@novaclaw/server/middleware/authorization"
+export { Authorization as ServerAuthorization } from "@novaclaw/server/middleware/authorization"
 
 const AUTH_TOKEN_QUERY = "auth_token"
 const UNAUTHORIZED = 401
@@ -136,6 +131,23 @@ export const authorizationLayer = Layer.effect(
       }),
     )
   }),
+)
+
+/**
+ * `@novaclaw/server`'s authorization middleware, ALREADY PAIRED with `@novaclaw/server`'s own config.
+ *
+ * The pairing lives here rather than at the call site because a call site had to CHOOSE, and the only
+ * thing telling it which of two identically-shaped `ServerAuth.Config` classes to feed was a comment.
+ * Both classes were registered under `@novaclaw/ServerAuthConfig` until 2026-07-28 (v0.2.0 PREP,
+ * Wave 1 / U3), so `httpapi/server.ts` fed this middleware the INSTANCE config and it type-checked and
+ * ran — the wrong layer satisfying the requirement by key collision. The rename made that a type error;
+ * providing the layer here deletes the choice altogether, which is the part a comment could not do.
+ *
+ * A test that needs to inject a config imports `authorizationLayer` from
+ * `@novaclaw/server/middleware/authorization` directly and provides `ServerAuth.Config` itself.
+ */
+export const serverAuthorizationLayer = unconfiguredServerAuthorizationLayer.pipe(
+  Layer.provide(V2ServerAuth.Config.defaultLayer),
 )
 
 export const ptyConnectAuthorizationLayer = Layer.effect(

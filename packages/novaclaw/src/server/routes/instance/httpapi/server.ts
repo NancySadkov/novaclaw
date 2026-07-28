@@ -73,7 +73,6 @@ import { lazy } from "@/util/lazy"
 import { CorsConfig, isAllowedCorsOrigin, type CorsOptions } from "@novaclaw/server/cors"
 import { serveUIEffect } from "@/server/shared/ui"
 import { ServerAuth } from "@/server/auth"
-import { ServerAuth as V2ServerAuth } from "@novaclaw/server/auth"
 import { InstanceHttpApi, RootHttpApi } from "./api"
 import { Api } from "@novaclaw/server/api"
 import { PublicApi } from "./public"
@@ -149,12 +148,6 @@ const cors = (corsOptions?: CorsOptions) =>
 const authOnlyRouterLayer = authorizationRouterMiddleware.layer.pipe(Layer.provide(ServerAuth.Config.defaultLayer))
 const httpApiAuthLayer = authorizationLayer.pipe(Layer.provide(ServerAuth.Config.defaultLayer))
 const ptyConnectHttpApiAuthLayer = ptyConnectAuthorizationLayer.pipe(Layer.provide(ServerAuth.Config.defaultLayer))
-// ⚠️ `@novaclaw/server`'s layer, NOT the instance one three lines up. `serverAuthorizationLayer` is
-// re-exported from `@novaclaw/server/middleware/authorization`, whose `yield* ServerAuth.Config` reads
-// THAT package's tag. Until 2026-07-28 both tags carried the id `@novaclaw/ServerAuthConfig`, so the
-// instance config satisfied it by accident. Both read NOVACLAW_SERVER_PASSWORD/_USERNAME through the
-// same Effect `Config.all`, so the value is identical; only the tag differs.
-const serverHttpApiAuthLayer = serverAuthorizationLayer.pipe(Layer.provide(V2ServerAuth.Config.defaultLayer))
 const workspaceRoutingLive = workspaceRoutingLayer.pipe(Layer.provide(Socket.layerWebSocketConstructorGlobal))
 const rootApiRoutes = HttpApiBuilder.layer(RootHttpApi).pipe(
   Layer.provide([controlHandlers, controlPlaneHandlers, globalHandlers]),
@@ -195,7 +188,7 @@ const instanceRoutes = instanceApiRoutes.pipe(
 const serverRoutes = HttpApiBuilder.layer(Api).pipe(
   Layer.provide(handlers),
   Layer.provide(PluginPtyEnvironment.layer),
-  Layer.provide([serverHttpApiAuthLayer, v2SchemaErrorLayer]),
+  Layer.provide([serverAuthorizationLayer, v2SchemaErrorLayer]),
 )
 
 // `OpenApi.fromApi` is non-trivial; defer until /doc is actually hit so

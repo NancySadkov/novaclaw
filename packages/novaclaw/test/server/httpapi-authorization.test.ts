@@ -5,11 +5,16 @@ import { HttpClient, HttpClientRequest, HttpRouter } from "effect/unstable/http"
 import { HttpApi, HttpApiBuilder, HttpApiEndpoint, HttpApiError, HttpApiGroup } from "effect/unstable/httpapi"
 import { ServerAuth } from "../../src/server/auth"
 import { ServerAuth as V2ServerAuth } from "@novaclaw/server/auth"
+// The UNPAIRED layer, on purpose. Production imports `serverAuthorizationLayer` from the middleware
+// module, which since 2026-07-28 arrives with `@novaclaw/server`'s own config already provided so no
+// call site can pick the wrong one of the two `ServerAuth.Config` tags. A test that wants to INJECT a
+// config therefore has to reach for the unconfigured layer at its own source — which is the one place
+// where choosing a config is the caller's job.
+import { authorizationLayer as serverAuthorizationLayer } from "@novaclaw/server/middleware/authorization"
 import {
   Authorization,
   authorizationLayer,
   ServerAuthorization,
-  serverAuthorizationLayer,
 } from "../../src/server/routes/instance/httpapi/middleware/authorization"
 import { testEffect } from "../lib/effect"
 
