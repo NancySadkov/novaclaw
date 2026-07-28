@@ -2,7 +2,6 @@ import { afterEach, describe, expect } from "bun:test"
 import { Effect, Layer } from "effect"
 import { FetchHttpClient } from "effect/unstable/http"
 import { CrossSpawnSpawner } from "@novaclaw/core/cross-spawn-spawner"
-import { Database } from "@novaclaw/core/database/database"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { Global } from "@novaclaw/core/global"
 import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
@@ -13,21 +12,17 @@ import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
 import { Ripgrep } from "@novaclaw/core/ripgrep"
-import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { EffectFlock } from "@novaclaw/core/util/effect-flock"
 import path from "path"
-import { Auth } from "../../src/auth"
 import { EventV2Bridge } from "../../src/event-v2-bridge"
 import { Config } from "../../src/config/config"
 import { Env } from "../../src/env"
 import { RuntimeFlags } from "../../src/effect/runtime-flags"
 import { Workspace } from "../../src/control-plane/workspace"
 import { Plugin } from "../../src/plugin/index"
-import { InstanceBootstrap } from "../../src/project/bootstrap-service"
-import { InstanceStore } from "../../src/project/instance-store"
-import { Vcs } from "../../src/project/vcs"
 import { InstanceState } from "../../src/effect/instance-state"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
+import { workspaceLayerWithRuntimeFlags } from "../fixture/workspace"
 import { testEffect } from "../lib/effect"
 import { AccountTest } from "../fake/account"
 import { AuthTest } from "../fake/auth"
@@ -55,21 +50,13 @@ const pluginLayer = Plugin.layer.pipe(
   Layer.provide(configLayer),
   Layer.provide(RuntimeFlags.layer({ disableDefaultPlugins: true })),
 )
-const noopBootstrapLayer = Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))
-const workspaceLayer = Workspace.layer.pipe(
-  Layer.provide(Auth.defaultLayer),
-  Layer.provide(Vcs.defaultLayer),
-  // Private ledger — this suite exercises plugin adapter installation, not session eviction.
-  // See the note in test/fixture/workspace.ts: `Workspace.layer`'s requirements are mirrored by
-  // hand in each test assembly, so a new one has to be added here too.
-  Layer.provide(SessionScheduler.layer),
-  Layer.provide(FetchHttpClient.layer),
-  Layer.provide(Database.defaultLayer),
-  Layer.provide(EventV2Bridge.defaultLayer),
-  Layer.provide(FSUtil.defaultLayer),
-  Layer.provide(InstanceStore.defaultLayer.pipe(Layer.provide(noopBootstrapLayer))),
-  Layer.provide(RuntimeFlags.layer({ experimentalWorkspaces: true })),
-)
+// This suite used to re-assemble `Workspace.layer` by hand — a second copy of the fixture's provide
+// list that differed only in its RuntimeFlags overrides, and that had to be patched separately every
+// time `Workspace.layer` grew a requirement. It now shares the ONE mirror. Its `InstanceStore` +
+// noop-bootstrap provides went with it: `Workspace.layer` never required InstanceStore (see the note
+// in test/fixture/workspace.ts), and `it.instance` provides its own store via `withTmpdirInstance`,
+// which already wires a no-op bootstrap.
+const workspaceLayer = workspaceLayerWithRuntimeFlags({ experimentalWorkspaces: true })
 const it = testEffect(
   Layer.mergeAll(pluginLayer, workspaceLayer, CrossSpawnSpawner.defaultLayer).pipe(Layer.provide(Ripgrep.defaultLayer)),
 )

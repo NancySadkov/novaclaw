@@ -154,6 +154,12 @@ export const use = serviceUse(Service)
 export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
+    // ⚠️ Adding a `yield*` here adds a REQUIREMENT to this layer, and three lists outside this
+    // function have to grow with it: `defaultLayer` below, `node`'s deps below (compile-checked by
+    // layer-node.ts), and the test fixture `test/fixture/workspace.ts` (checked only at runtime).
+    // `test/control-plane/workspace-layer-mirrors.test.ts` reads this prologue off disk and fails
+    // when any of them drifts — in either direction. Keep these acquisitions in the plain
+    // `const <name> = yield* <Tag>` form, which is the shape that guard understands.
     const auth = yield* Auth.Service
     const http = yield* HttpClient.HttpClient
     const events = yield* EventV2Bridge.Service
