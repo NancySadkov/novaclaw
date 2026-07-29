@@ -1,8 +1,6 @@
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { ServerConnection } from "@/context/server"
-import { useSettings } from "@/context/settings"
 import { lazy } from "solid-js"
-import { DialogSelectDirectory } from "./dialog-select-directory"
 
 const DialogSelectDirectoryV2 = lazy(() =>
   import("./dialog-select-directory-v2").then((module) => ({ default: module.DialogSelectDirectoryV2 })),
@@ -24,7 +22,6 @@ type DirectoryPickerInput = {
 }
 
 export function useDirectoryPicker() {
-  const settings = useSettings()
   const dialog = useDialog()
 
   // Always browse the SERVER host's filesystem via our own modal (V2 dialog) — never the client-native
@@ -41,10 +38,6 @@ export function useDirectoryPicker() {
     const cancel = () => {
       if (!selected) input.onSelect(null)
     }
-    if (settings.general.newLayoutDesigns()) {
-      dialog.show(() => <DialogSelectDirectoryV2 {...input} onSelect={onSelect} />, cancel)
-      return
-    }
-    dialog.show(() => <DialogSelectDirectory {...input} onSelect={onSelect} />, cancel)
+    dialog.show(() => <DialogSelectDirectoryV2 {...input} onSelect={onSelect} />, cancel)
   }
 }

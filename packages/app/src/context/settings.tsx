@@ -45,7 +45,6 @@ export interface Settings {
     showCustomAgents: boolean
     mobileTitlebarPosition: "top" | "bottom"
     expertiseLevel: ExpertiseLevel
-    newLayoutDesigns?: boolean
   }
   appearance: {
     fontSize: number
@@ -66,10 +65,6 @@ export interface Settings {
 export const monoDefault = "System Mono"
 export const sansDefault = "System Sans"
 export const terminalDefault = "JetBrainsMono Nerd Font Mono"
-// The new layout IS the product (launcher home, purple+gold, Chats hero — see uix.md): default ON
-// everywhere. The flip-back toggle is a dev-channel escape hatch only (gated in BOTH settings
-// dialogs), so prod can never strand itself in the legacy shell with no way back.
-export const newLayoutDesignsDefault = true
 
 const monoFallback =
   'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'
@@ -182,7 +177,6 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
       () => store.general?.showCustomAgents,
       defaultSettings.general.showCustomAgents,
     )
-    const newLayoutDesigns = withFallback(() => store.general?.newLayoutDesigns, newLayoutDesignsDefault)
     // Chrome visibility is the layout's job (uix.md): session chrome (file tree, search, status,
     // custom agents) is always REACHABLE. The per-surface prefs only had writers in the pruned
     // Advanced settings section — honoring them in the new layout would strand the chrome
@@ -286,10 +280,6 @@ export const { use: useSettings, provider: SettingsProvider } = createSimpleCont
         expertiseLevel: withFallback(() => store.general?.expertiseLevel, defaultSettings.general.expertiseLevel),
         setExpertiseLevel(value: ExpertiseLevel) {
           setStore("general", "expertiseLevel", value)
-        },
-        newLayoutDesigns,
-        setNewLayoutDesigns(value: boolean) {
-          setStore("general", "newLayoutDesigns", value)
         },
       },
       visibility: {

@@ -213,7 +213,7 @@ export function SessionSidePanel(props: {
   })
 
   return (
-    <Show when={isDesktop() && !(settings.general.newLayoutDesigns() && !params.id)}>
+    <Show when={isDesktop() && !!params.id}>
       <aside
         id="review-panel"
         aria-label={language.t("session.panel.reviewAndFiles")}
@@ -224,18 +224,13 @@ export function SessionSidePanel(props: {
           "pointer-events-none": !open(),
           "transition-[width] duration-[240ms] ease-[cubic-bezier(0.22,1,0.36,1)] will-change-[width] motion-reduce:transition-none":
             !props.size.active() && !props.reviewSnap,
-          "rounded-[10px] shadow-[var(--v2-elevation-raised)] overflow-hidden": settings.general.newLayoutDesigns(),
+          "rounded-[10px] shadow-[var(--v2-elevation-raised)] overflow-hidden": true,
           "flex-1": reviewOpen(),
         }}
         style={{ width: panelWidth() }}
       >
         <Show when={open()}>
-          <div
-            class="size-full flex"
-            classList={{
-              "border-l border-border-weaker-base": !settings.general.newLayoutDesigns(),
-            }}
-          >
+          <div class="size-full flex">
             <div
               aria-hidden={!reviewOpen()}
               inert={!reviewOpen()}

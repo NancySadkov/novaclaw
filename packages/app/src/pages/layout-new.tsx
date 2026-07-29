@@ -1,22 +1,75 @@
-import { createEffect, Show, Suspense, type ParentProps } from "solid-js"
+import { createEffect, createSignal, onMount, Show, Suspense, type ParentProps } from "solid-js"
 import { useLocation, useNavigate } from "@solidjs/router"
+import { makeEventListener } from "@solid-primitives/event-listener"
 import { DebugBar } from "@/components/debug-bar"
 import { Titlebar, type TitlebarUpdate } from "@/components/titlebar"
 import { useJumpToAttentionCommand } from "@/apps/jump-to-attention"
 import { useSettingsCommand } from "@/components/settings-dialog"
 import { useCommand } from "@/context/command"
 import { useLanguage } from "@/context/language"
+import { useLayout } from "@/context/layout"
 import { usePlatform } from "@/context/platform"
+import { useServer } from "@/context/server"
+import { useTabs } from "@/context/tabs"
 import { setNavigate } from "@/utils/notification-click"
 import { setV2Toast, ToastRegion } from "@/utils/toast"
+import {
+  collectNewSessionDeepLinks,
+  collectOpenProjectDeepLinks,
+  deepLinkEvent,
+  drainPendingDeepLinks,
+} from "./layout/deep-links"
 
 export default function NewLayout(props: ParentProps) {
   const platform = usePlatform()
   const command = useCommand()
   const language = useLanguage()
+  const layout = useLayout()
   const location = useLocation()
   const navigate = useNavigate()
+  const server = useServer()
+  const tabs = useTabs()
   setNavigate(navigate)
+
+  // `novaclaw://open-project` / `novaclaw://new-session` (desktop main → renderer → this window
+  // event). The listener used to live in the legacy shell, which the default layout stopped
+  // mounting — so deep links had been silently dead while the OS protocol handler stayed
+  // registered. Both kinds land the same way the in-app project picker does: remember the
+  // project, then open a draft in it.
+  //
+  // Queued rather than handled inline: the boot deep link arrives from an IPC promise that can
+  // resolve before the persisted tab store has hydrated, and pushing a draft into a store that is
+  // about to be overwritten by its own load loses it.
+  const [pendingDeepLinks, setPendingDeepLinks] = createSignal<string[]>([])
+
+  const openDeepLinks = (urls: string[]) => {
+    if (!server.isLocal()) return
+    const open = (directory: string, prompt?: string) => {
+      layout.projects.open(directory)
+      server.projects.touch(directory)
+      tabs.newDraft({ server: server.key, directory }, prompt)
+    }
+    for (const directory of collectOpenProjectDeepLinks(urls)) open(directory)
+    for (const link of collectNewSessionDeepLinks(urls)) open(link.directory, link.prompt)
+  }
+
+  createEffect(() => {
+    const urls = pendingDeepLinks()
+    if (urls.length === 0 || !tabs.ready()) return
+    setPendingDeepLinks([])
+    openDeepLinks(urls)
+  })
+
+  onMount(() => {
+    const queue = (urls: string[]) => {
+      if (urls.length === 0) return
+      setPendingDeepLinks((previous) => [...previous, ...urls])
+    }
+    queue(drainPendingDeepLinks(window))
+    makeEventListener(window, deepLinkEvent, ((event: Event) => {
+      queue((event as CustomEvent<{ urls: string[] }>).detail?.urls ?? [])
+    }) as EventListener)
+  })
   // Always-live from anywhere in the shell: mod+j → the chat that needs you (uix-improvement slice 3).
   useJumpToAttentionCommand()
   // Settings + log export register HERE so every route (incl. the launcher) resolves them — the

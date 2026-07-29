@@ -97,7 +97,9 @@ const RETIRED = [
  * up and pressed Help. Everything reachable from here must be declared live, and there must be something
  * to reach — deleting the link is not a fix.
  */
-const LAST_RESORT = ["pages/error.tsx", "pages/layout.tsx"]
+// `pages/layout.tsx` used to be listed here for the legacy shell's sidebar Help button. That shell
+// is deleted; the Community panel on the home screen is now the non-crash way out.
+const LAST_RESORT = ["pages/error.tsx", "pages/home-screen/social-panel.tsx"]
 
 const SRC = path.resolve(import.meta.dir, "..")
 const LINKS_MODULE = "constants/links.ts"
@@ -197,8 +199,8 @@ describe("the community invite has exactly one home", () => {
     ])
   })
 
-  test("the crash screen, the Help button and the Community panel all use it", () => {
-    for (const file of ["pages/error.tsx", "pages/layout.tsx", "pages/home-screen/social-panel.tsx"]) {
+  test("the crash screen and the Community panel both use it", () => {
+    for (const file of ["pages/error.tsx", "pages/home-screen/social-panel.tsx"]) {
       expect(read(file), `${file} should import DISCORD_INVITE_URL`).toContain("DISCORD_INVITE_URL")
     }
   })

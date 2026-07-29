@@ -9,8 +9,6 @@ import {
   createMemo,
   createSignal,
   createResource,
-  Switch,
-  Match,
   type JSX,
 } from "solid-js"
 import { createStore } from "solid-js/store"
@@ -146,7 +144,6 @@ export type PromptInputControls = {
       open: () => void
     }
   }
-  newLayoutDesigns: boolean
 }
 
 export interface PromptInputProps {
@@ -1157,316 +1154,144 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         slashActive={slashActive() ?? undefined}
         setSlashActive={setSlashActive}
         onSlashSelect={handleSlashSelect}
-        commandKeybind={command.keybind}
         commandKeybindParts={command.keybindParts}
-        newLayoutDesigns={props.controls.newLayoutDesigns}
         t={language.t}
       />
-      <Switch>
-        <Match when={props.controls.newLayoutDesigns}>
-          <div class="flex flex-col gap-3">
-            <DockShellForm
-              data-component={newSession() ? "session-new-composer" : "session-composer"}
-              onSubmit={handleSubmit}
-              classList={{
-                "group/prompt-input min-h-[96px] w-full rounded-xl bg-v2-background-bg-base shadow-[var(--v2-elevation-raised)]": true,
-                "border-icon-info-active border-dashed": store.draggingType !== null,
-                [props.class ?? ""]: !!props.class,
-              }}
-            >
-              <ComposerAttachmentsTray state={attachmentsTrayState()} />
-              <div class="flex items-end">
-                <div
-                  class="relative min-h-[52px] min-w-0 flex-1"
-                  onMouseDown={(e) => {
-                    const target = e.target
-                    if (!(target instanceof HTMLElement)) return
-                    if (target.closest('[data-action^="prompt-"]')) return
-                    editorRef?.focus()
-                  }}
-                >
-                  <ComposerEditorSurface
-                  state={{
-                    mode: store.mode,
-                    ariaLabel: designPlaceholder(),
-                    placeholder: designPlaceholder(),
-                    placeholderComponent: newSession() ? "session-new-design-text" : "session-composer-text",
-                    dirty: prompt.dirty(),
-                    scrollClass: "relative max-h-[180px] overflow-y-auto no-scrollbar",
-                    editorClass:
-                      "min-h-[52px] w-full px-4 pt-4 pb-2 focus:outline-none whitespace-pre-wrap leading-5 text-[13px] font-[440] text-v2-text-text-base",
-                    placeholderClass:
-                      "absolute top-0 inset-x-0 px-4 pt-4 pointer-events-none whitespace-nowrap truncate leading-5 text-[13px] font-[440] text-v2-text-text-faint [font-family:Inter,var(--font-family-sans)]",
-                    setScrollRef: (el) => (scrollRef = el),
-                    setEditorRef: (el) => {
-                      editorRef = el
-                      props.ref?.(el)
-                    },
-                    onInput: handleInput,
-                    onPaste: handlePaste,
-                    onCompositionStart: handleCompositionStart,
-                    onCompositionEnd: handleCompositionEnd,
-                    onBlur: handleBlur,
-                    onKeyDown: handleKeyDown,
-                  }}
-                />
-                </div>
-                {/* Send/Stop sits beside the editor (Claude Code / ChatGPT style) instead of on the
-                    controls row, so the pickers below own the full width and never collide with it
-                    on narrow / phone widths. */}
-                <div class="shrink-0 self-end p-2">
-                  <TooltipV2 placement="top" inactive={!working() && blank()} value={tip()}>
-                    <IconButton
-                      data-action="prompt-submit"
-                      type="submit"
-                      disabled={!working() && blank()}
-                      tabIndex={store.mode === "normal" ? undefined : -1}
-                      icon={stopping() ? "stop" : store.mode === "shell" ? "arrow-undo-down" : "arrow-up"}
-                      variant="primary"
-                      class="size-7 rounded-md p-[6px] text-v2-icon-icon-muted shadow-[var(--v2-elevation-button-contrast)] disabled:opacity-50"
-                      style={{
-                        "background-image":
-                          "linear-gradient(180deg,var(--v2-alpha-light-20) 0%,var(--v2-alpha-light-0) 100%),linear-gradient(90deg,var(--v2-background-bg-contrast) 0%,var(--v2-background-bg-contrast) 100%)",
-                      }}
-                      aria-label={stopping() ? language.t("prompt.action.stop") : language.t("prompt.action.send")}
-                    />
-                  </TooltipV2>
-                </div>
-              </div>
-              {/* The composer controls WRAP to a second line rather than overflow or get clipped when
-                  the chat pane is narrow (phone) — every chip stays visible, none is cut by the
-                  right edge. Each control keeps its own width ([&>*]:shrink-0) so it wraps whole. */}
-              <div class="flex min-h-11 flex-wrap items-center gap-y-1 px-2 py-1 [&>*]:shrink-0">
-                {fileAttachmentInput()}
-                  <TooltipV2
-                    placement="top"
-                    value={
-                      <>
-                        {language.t("prompt.action.attachFile")}
-                        <KeybindV2 keys={command.keybindParts("file.attach")} variant="neutral" />
-                      </>
-                    }
-                  >
-                    <IconButton
-                      data-action="prompt-attach"
-                      type="button"
-                      icon="plus"
-                      variant="ghost"
-                      class="size-7 rounded-md p-[6px] text-v2-icon-icon-muted"
-                      style={buttons()}
-                      onClick={pick}
-                      disabled={store.mode !== "normal"}
-                      tabIndex={store.mode === "normal" ? undefined : -1}
-                      aria-label={language.t("prompt.action.attachFile")}
-                    />
-                  </TooltipV2>
-                  {props.toolbar}
-                  <ComposerControlsRow
-                    state={{
-                      sessionControls: newSession() || !!props.controls.session?.id,
-                      folderVisible: props.controls.folder.visible,
-                      model: modelControlState(),
-                      permissionMode: permissionModeControlState(),
-                      strict: strictControlState(),
-                      features: featuresControlState(),
-                      folder: folderControlState(),
-                    }}
-                  />
-                  <Show when={!providersLoading() && store.mode !== "shell" && showVariantControl()}>
-                    <ComposerVariantControl
-                      state={{
-                        revealOnHoverOnly: !props.controls.model.selection.variant.current() && !store.variantOpen,
-                        shouldAnimate: providersShouldFadeIn(),
-                        variants: variants(),
-                        current: props.controls.model.selection.variant.current(),
-                        style: control(),
-                        set: (variant) => {
-                          props.controls.model.selection.variant.set(variant)
-                          restoreFocus()
-                        },
-                        onOpenChange: (open) => setStore("variantOpen", open),
-                      }}
-                    />
-                  </Show>
-                  {/* The context gauge (owner 2026-07-22): a Claude Code-style pie showing how full
-                      the model's context window is — colored amber/red as it fills so context
-                      trouble is visible BEFORE it bites. Session-scoped (drafts have no context
-                      yet); clicking opens the session's Context tab. Lives on the controls row with
-                      the other chips (the submit button moved up beside the editor, 2026-07-24). */}
-                  <Show when={props.controls.session?.id}>
-                    <SessionContextUsage buttonAppearance="v2" placement="top" />
-                  </Show>
-              </div>
-            </DockShellForm>
-          </div>
-        </Match>
-        <Match when>
-          <DockShellForm
-            onSubmit={handleSubmit}
-            classList={{
-              "group/prompt-input": true,
-              "focus-within:shadow-xs-border": true,
-              "border-icon-info-active border-dashed": store.draggingType !== null,
-              [props.class ?? ""]: !!props.class,
-            }}
-          >
-            <ComposerAttachmentsTray state={attachmentsTrayState()} />
+      <div class="flex flex-col gap-3">
+        <DockShellForm
+          data-component={newSession() ? "session-new-composer" : "session-composer"}
+          onSubmit={handleSubmit}
+          classList={{
+            "group/prompt-input min-h-[96px] w-full rounded-xl bg-v2-background-bg-base shadow-[var(--v2-elevation-raised)]": true,
+            "border-icon-info-active border-dashed": store.draggingType !== null,
+            [props.class ?? ""]: !!props.class,
+          }}
+        >
+          <ComposerAttachmentsTray state={attachmentsTrayState()} />
+          <div class="flex items-end">
             <div
-              class="relative"
+              class="relative min-h-[52px] min-w-0 flex-1"
               onMouseDown={(e) => {
                 const target = e.target
                 if (!(target instanceof HTMLElement)) return
-                if (target.closest('[data-action="prompt-attach"], [data-action="prompt-submit"]')) {
-                  return
-                }
+                if (target.closest('[data-action^="prompt-"]')) return
                 editorRef?.focus()
               }}
             >
               <ComposerEditorSurface
+              state={{
+                mode: store.mode,
+                ariaLabel: designPlaceholder(),
+                placeholder: designPlaceholder(),
+                placeholderComponent: newSession() ? "session-new-design-text" : "session-composer-text",
+                dirty: prompt.dirty(),
+                scrollClass: "relative max-h-[180px] overflow-y-auto no-scrollbar",
+                editorClass:
+                  "min-h-[52px] w-full px-4 pt-4 pb-2 focus:outline-none whitespace-pre-wrap leading-5 text-[13px] font-[440] text-v2-text-text-base",
+                placeholderClass:
+                  "absolute top-0 inset-x-0 px-4 pt-4 pointer-events-none whitespace-nowrap truncate leading-5 text-[13px] font-[440] text-v2-text-text-faint [font-family:Inter,var(--font-family-sans)]",
+                setScrollRef: (el) => (scrollRef = el),
+                setEditorRef: (el) => {
+                  editorRef = el
+                  props.ref?.(el)
+                },
+                onInput: handleInput,
+                onPaste: handlePaste,
+                onCompositionStart: handleCompositionStart,
+                onCompositionEnd: handleCompositionEnd,
+                onBlur: handleBlur,
+                onKeyDown: handleKeyDown,
+              }}
+            />
+            </div>
+            {/* Send/Stop sits beside the editor (Claude Code / ChatGPT style) instead of on the
+                controls row, so the pickers below own the full width and never collide with it
+                on narrow / phone widths. */}
+            <div class="shrink-0 self-end p-2">
+              <TooltipV2 placement="top" inactive={!working() && blank()} value={tip()}>
+                <IconButton
+                  data-action="prompt-submit"
+                  type="submit"
+                  disabled={!working() && blank()}
+                  tabIndex={store.mode === "normal" ? undefined : -1}
+                  icon={stopping() ? "stop" : store.mode === "shell" ? "arrow-undo-down" : "arrow-up"}
+                  variant="primary"
+                  class="size-7 rounded-md p-[6px] text-v2-icon-icon-muted shadow-[var(--v2-elevation-button-contrast)] disabled:opacity-50"
+                  style={{
+                    "background-image":
+                      "linear-gradient(180deg,var(--v2-alpha-light-20) 0%,var(--v2-alpha-light-0) 100%),linear-gradient(90deg,var(--v2-background-bg-contrast) 0%,var(--v2-background-bg-contrast) 100%)",
+                  }}
+                  aria-label={stopping() ? language.t("prompt.action.stop") : language.t("prompt.action.send")}
+                />
+              </TooltipV2>
+            </div>
+          </div>
+          {/* The composer controls WRAP to a second line rather than overflow or get clipped when
+              the chat pane is narrow (phone) — every chip stays visible, none is cut by the
+              right edge. Each control keeps its own width ([&>*]:shrink-0) so it wraps whole. */}
+          <div class="flex min-h-11 flex-wrap items-center gap-y-1 px-2 py-1 [&>*]:shrink-0">
+            {fileAttachmentInput()}
+              <TooltipV2
+                placement="top"
+                value={
+                  <>
+                    {language.t("prompt.action.attachFile")}
+                    <KeybindV2 keys={command.keybindParts("file.attach")} variant="neutral" />
+                  </>
+                }
+              >
+                <IconButton
+                  data-action="prompt-attach"
+                  type="button"
+                  icon="plus"
+                  variant="ghost"
+                  class="size-7 rounded-md p-[6px] text-v2-icon-icon-muted"
+                  style={buttons()}
+                  onClick={pick}
+                  disabled={store.mode !== "normal"}
+                  tabIndex={store.mode === "normal" ? undefined : -1}
+                  aria-label={language.t("prompt.action.attachFile")}
+                />
+              </TooltipV2>
+              {props.toolbar}
+              <ComposerControlsRow
                 state={{
-                  mode: store.mode,
-                  ariaLabel: placeholder(),
-                  placeholder: placeholder(),
-                  dirty: prompt.dirty(),
-                  scrollClass: "relative max-h-[240px] overflow-y-auto no-scrollbar",
-                  scrollStyle: { "scroll-padding-bottom": space },
-                  editorClass:
-                    "w-full pl-3 pr-2 pt-2 text-14-regular text-text-strong focus:outline-none whitespace-pre-wrap",
-                  editorStyle: { "padding-bottom": space },
-                  placeholderClass:
-                    "absolute top-0 inset-x-0 pl-3 pr-2 pt-2 text-14-regular text-text-weak pointer-events-none whitespace-nowrap truncate",
-                  placeholderStyle: { "padding-bottom": space },
-                  setScrollRef: (el) => (scrollRef = el),
-                  setEditorRef: (el) => {
-                    editorRef = el
-                    props.ref?.(el)
-                  },
-                  onInput: handleInput,
-                  onPaste: handlePaste,
-                  onCompositionStart: handleCompositionStart,
-                  onCompositionEnd: handleCompositionEnd,
-                  onBlur: handleBlur,
-                  onKeyDown: handleKeyDown,
+                  sessionControls: newSession() || !!props.controls.session?.id,
+                  folderVisible: props.controls.folder.visible,
+                  model: modelControlState(),
+                  permissionMode: permissionModeControlState(),
+                  strict: strictControlState(),
+                  features: featuresControlState(),
+                  folder: folderControlState(),
                 }}
               />
-
-              <div
-                aria-hidden="true"
-                class="pointer-events-none absolute inset-x-0 bottom-0"
-                style={{
-                  height: space,
-                  background:
-                    "linear-gradient(to top, var(--surface-raised-stronger-non-alpha) calc(100% - 20px), transparent)",
-                }}
-              />
-
-              <div class="pointer-events-none absolute bottom-2 right-2 flex items-center gap-2">
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  multiple
-                  accept={ACCEPTED_FILE_TYPES.join(",")}
-                  class="hidden"
-                  onChange={(e) => {
-                    const list = e.currentTarget.files
-                    if (list) void addAttachments(Array.from(list))
-                    e.currentTarget.value = ""
+              <Show when={!providersLoading() && store.mode !== "shell" && showVariantControl()}>
+                <ComposerVariantControl
+                  state={{
+                    revealOnHoverOnly: !props.controls.model.selection.variant.current() && !store.variantOpen,
+                    shouldAnimate: providersShouldFadeIn(),
+                    variants: variants(),
+                    current: props.controls.model.selection.variant.current(),
+                    style: control(),
+                    set: (variant) => {
+                      props.controls.model.selection.variant.set(variant)
+                      restoreFocus()
+                    },
+                    onOpenChange: (open) => setStore("variantOpen", open),
                   }}
                 />
-
-                <div class="flex items-center gap-1 pointer-events-auto">
-                  <Tooltip placement="top" inactive={!working() && blank()} value={tip()}>
-                    <IconButton
-                      data-action="prompt-submit"
-                      type="submit"
-                      disabled={!working() && blank()}
-                      tabIndex={store.mode === "normal" ? undefined : -1}
-                      icon={stopping() ? "stop" : store.mode === "shell" ? "arrow-undo-down" : "arrow-up"}
-                      variant="primary"
-                      class="size-8"
-                      aria-label={stopping() ? language.t("prompt.action.stop") : language.t("prompt.action.send")}
-                    />
-                  </Tooltip>
-                </div>
-              </div>
-
-              <div class="pointer-events-none absolute bottom-2 left-2">
-                <div
-                  aria-hidden={store.mode !== "normal"}
-                  class="pointer-events-auto"
-                  style={{
-                    "pointer-events": buttonsSpring() > 0.5 ? "auto" : "none",
-                  }}
-                >
-                  <TooltipKeybind
-                    placement="top"
-                    title={language.t("prompt.action.attachFile")}
-                    keybind={command.keybind("file.attach")}
-                  >
-                    <Button
-                      data-action="prompt-attach"
-                      type="button"
-                      variant="ghost"
-                      class="size-8 p-0"
-                      style={buttons()}
-                      onClick={pick}
-                      disabled={store.mode !== "normal"}
-                      tabIndex={store.mode === "normal" ? undefined : -1}
-                      aria-label={language.t("prompt.action.attachFile")}
-                    >
-                      <Icon name="plus" class="size-4.5" />
-                    </Button>
-                  </TooltipKeybind>
-                </div>
-              </div>
-            </div>
-          </DockShellForm>
-          <Show when={store.mode === "normal" || store.mode === "shell"}>
-            <DockTray attach="top">
-              <div class="px-1.75 pt-5.5 pb-2 flex items-center gap-2 min-w-0">
-                <div class="flex items-center gap-1.5 min-w-0 flex-1 relative">
-                  <div
-                    class="h-7 flex items-center gap-1.5 min-w-0 absolute inset-0"
-                    style={{
-                      padding: "0 0px 0 8px",
-                      ...shell(),
-                    }}
-                  >
-                    <Icon name="console" />
-                    <span class="truncate text-13-medium text-text-base">{language.t("prompt.mode.shell")}</span>
-                    <div class="flex-1" />
-                    <Button
-                      variant="ghost"
-                      class="text-text-base"
-                      onClick={() => {
-                        setStore("mode", "normal")
-                      }}
-                    >
-                      {language.t("common.cancel")}
-                    </Button>
-                  </div>
-                  <div class="flex items-center gap-1.5 min-w-0 flex-1 h-7">
-                    <Show when={!providersLoading()}>
-                      <Show when={store.mode !== "shell"}>
-                        <ComposerLegacyModelControls
-                          state={{
-                            model: props.controls.model.selection,
-                            shouldAnimate: providersShouldFadeIn(),
-                            showVariant: showVariantControl(),
-                            variants: variants(),
-                            style: control(),
-                            onDone: restoreFocus,
-                          }}
-                        />
-                      </Show>
-                    </Show>
-                  </div>
-                </div>
-              </div>
-            </DockTray>
-          </Show>
-        </Match>
-      </Switch>
+              </Show>
+              {/* The context gauge (owner 2026-07-22): a Claude Code-style pie showing how full
+                  the model's context window is — colored amber/red as it fills so context
+                  trouble is visible BEFORE it bites. Session-scoped (drafts have no context
+                  yet); clicking opens the session's Context tab. Lives on the controls row with
+                  the other chips (the submit button moved up beside the editor, 2026-07-24). */}
+              <Show when={props.controls.session?.id}>
+                <SessionContextUsage buttonAppearance="v2" placement="top" />
+              </Show>
+          </div>
+        </DockShellForm>
+      </div>
     </div>
   )
 }

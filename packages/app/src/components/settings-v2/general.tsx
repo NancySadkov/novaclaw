@@ -95,8 +95,8 @@ export const SettingsGeneralV2: Component<{
   const instanceOptions = createMemo(() =>
     serversCtl.sortedItems().map((item) => ({ value: ServerConnection.key(item), label: serverName(item), item })),
   )
-  // The active key comes from the server context, not controller.current() — that memo is
-  // undefined by design under newLayoutDesigns. Fall back to the first item like it does.
+  // The active key comes from the server context. (The picker controller used to expose a
+  // `current()` memo too; it was hardwired to undefined in this layout and is gone.)
   const currentInstanceKey = createMemo(() => serverCtx.key ?? instanceOptions()[0]?.value)
   // Settings-IA (iv) — temp-switch legibility. The picker's select() is non-persisting, so a
   // switch is TEMPORARY: next launch boots the default. Surface that plainly — tag the default

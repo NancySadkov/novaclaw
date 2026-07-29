@@ -41,29 +41,23 @@ import { NotificationProvider, useNotification } from "@/context/notification"
 import { PermissionProvider } from "@/context/permission"
 import { PromptProvider } from "@/context/prompt"
 import { ServerConnection, ServerProvider, serverName, useServer } from "@/context/server"
-import { SettingsProvider, useSettings } from "@/context/settings"
+import { SettingsProvider } from "@/context/settings"
 import { ExpertiseMirror } from "@/components/expertise-mirror"
 import { AppThemeEffect } from "@/context/app-theme"
 import { TerminalProvider } from "@/context/terminal"
 import { TabsProvider, useTabs, type DraftTab } from "@/context/tabs"
 import { SDKProvider, useSDK } from "@/context/sdk"
 import { WslServersProvider } from "@/wsl/context"
-import DirectoryLayout, { DirectoryDataProvider } from "@/pages/directory-layout"
-import LegacyLayout from "@/pages/layout"
+import { DirectoryDataProvider, decodeDirectory } from "@/pages/directory-layout"
 import NewLayout from "@/pages/layout-new"
 import { ErrorPage } from "./pages/error"
 import { useCheckServerHealth } from "./utils/server-health"
-import {
-  legacySessionHref,
-  legacySessionServer,
-  requireServerKey,
-  selectSessionLineage,
-  sessionHref,
-} from "./utils/session-route"
+import { legacySessionServer, requireServerKey, selectSessionLineage, sessionHref } from "./utils/session-route"
 import { isSessionNotFoundError } from "./utils/server-errors"
+import { showToast } from "@/utils/toast"
 
 import Session from "@/pages/session"
-import { NewHome, LegacyHome } from "@/pages/home"
+import { NewHome } from "@/pages/home"
 import { HomeScreen } from "@/pages/home-screen/home-screen"
 import { FilesPage } from "@/pages/files"
 import { NotesPage } from "@/pages/notes"
@@ -78,39 +72,58 @@ import { publicAssetUrl } from "@/utils/public-asset"
 
 const NewSession = lazy(() => import("@/pages/new-session"))
 
-const SessionRoute = () => {
-  const settings = useSettings()
-  const params = useParams()
-  const [search] = useSearchParams<{ draftId?: string; prompt?: string }>()
-  const sdk = useSDK()
+/**
+ * Compatibility redirects for the pre-tab URL shape — `/<base64 directory>[/session[/<id>]]`.
+ *
+ * Nothing in the shell *renders* there any more: the legacy app shell this used to hang under is
+ * deleted. But the shape is still produced by OS notifications already sitting in a user's tray, by
+ * `novaclaw://` deep links, and by a handful of in-app navigations, so it has to keep resolving. A
+ * session id resolves to the canonical `/server/<key>/session/<id>`; without one it opens a fresh
+ * draft in that directory, which is what `/:dir/session` always did.
+ */
+function LegacyDirectoryRoute() {
+  const params = useParams<{ dir: string; id?: string }>()
+  const [search] = useSearchParams<{ prompt?: string }>()
+  const language = useLanguage()
+  const navigate = useNavigate()
   const server = useServer()
   const tabs = useTabs()
 
-  if (params.id && settings.general.newLayoutDesigns()) {
-    const sessionID = params.id
-    return (
-      <Show when={tabs.ready()}>
-        {(_) => {
-          const persisted = tabs.store.filter((item) => item.type === "session")
-          return <Navigate href={sessionHref(legacySessionServer(persisted, sessionID, server.key), sessionID)} />
-        }}
-      </Show>
-    )
-  }
-
-  // When the new layout is enabled, the legacy new-session route (/:dir/session with no id)
-  // is replaced by a draft at /new-session?draftId=…
+  let opened = false
   createEffect(() => {
-    if (!settings.general.newLayoutDesigns()) return
-    if (params.id || search.draftId) return
-    if (!tabs.ready() || !sdk().directory) return
-    tabs.newDraft({ server: server.key, directory: sdk().directory }, search.prompt)
+    if (params.id || opened) return
+    if (!tabs.ready()) return
+    opened = true
+    const directory = decodeDirectory(params.dir)
+    if (!directory) {
+      showToast({
+        variant: "error",
+        title: language.t("common.requestFailed"),
+        description: language.t("directory.error.invalidUrl"),
+      })
+      navigate("/", { replace: true })
+      return
+    }
+    tabs.newDraft({ server: server.key, directory }, search.prompt)
   })
 
   return (
-    <SessionProviders>
-      <Session />
-    </SessionProviders>
+    <Show when={params.id} keyed>
+      {(sessionID) => (
+        <Show when={tabs.ready()}>
+          <Navigate
+            href={sessionHref(
+              legacySessionServer(
+                tabs.store.filter((item) => item.type === "session"),
+                sessionID,
+                server.key,
+              ),
+              sessionID,
+            )}
+          />
+        </Show>
+      )}
+    </Show>
   )
 }
 
@@ -156,7 +169,6 @@ function SessionGoneCard() {
 
 function ResolvedTargetSessionRoute() {
   const params = useParams<{ serverKey: string; id: string }>()
-  const settings = useSettings()
   const tabs = useTabs()
   const sync = useServerSync()
   const serverKey = createMemo(() => requireServerKey(params.serverKey))
@@ -203,16 +215,11 @@ function ResolvedTargetSessionRoute() {
         }
       >
         <Show when={directory()}>
-          <Show
-            when={settings.general.newLayoutDesigns()}
-            fallback={<Navigate href={legacySessionHref(directory()!, params.id)} />}
-          >
-            <SDKProvider directory={targetDirectory}>
-              <DirectoryDataProvider directory={targetDirectory} server={serverKey}>
-                <TargetSessionPage />
-              </DirectoryDataProvider>
-            </SDKProvider>
-          </Show>
+          <SDKProvider directory={targetDirectory}>
+            <DirectoryDataProvider directory={targetDirectory} server={serverKey}>
+              <TargetSessionPage />
+            </DirectoryDataProvider>
+          </SDKProvider>
         </Show>
       </Show>
     </TargetServerScopedProviders>
@@ -241,14 +248,6 @@ function SelectedServerProviders(props: ParentProps) {
         <ServerSyncProvider>{props.children}</ServerSyncProvider>
       </ServerSDKProvider>
     </ServerKey>
-  )
-}
-
-function LegacyServerLayout(props: ParentProps) {
-  return (
-    <SelectedServerProviders>
-      <LegacyServerScopedShell>{props.children}</LegacyServerScopedShell>
-    </SelectedServerProviders>
   )
 }
 
@@ -341,17 +340,14 @@ function QueryProvider(props: ParentProps) {
 }
 
 function BodyDesignClass() {
-  const settings = useSettings()
-
   createRenderEffect(() => {
     if (typeof document === "undefined") return
 
-    const enabled = settings.general.newLayoutDesigns()
-    document.body.toggleAttribute("data-new-layout", enabled)
-    document.body.classList.toggle("text-12-regular", !enabled)
-    document.body.classList.toggle("font-(family-name:--font-family-text)", enabled)
-    document.body.classList.toggle("text-[13px]", enabled)
-    document.body.classList.toggle("font-[440]", enabled)
+    document.body.toggleAttribute("data-new-layout", true)
+    // Both HTML entries (packages/app/index.html, desktop/src/renderer/index.html) still ship the
+    // legacy `text-12-regular` on <body>; strip it so the v2 type scale below wins.
+    document.body.classList.remove("text-12-regular")
+    document.body.classList.add("font-(family-name:--font-family-text)", "text-[13px]", "font-[440]")
   })
 
   return null
@@ -384,14 +380,6 @@ function ServerScopedProviders(props: ServerScopedShellProps) {
         <ModelsProvider directory={props.directory}>{props.children}</ModelsProvider>
       </LayoutProvider>
     </PermissionProvider>
-  )
-}
-
-function LegacyServerScopedShell(props: ServerScopedShellProps) {
-  return (
-    <ServerScopedProviders directory={props.directory} sessionID={props.sessionID}>
-      <LegacyLayout>{props.children}</LegacyLayout>
-    </ServerScopedProviders>
   )
 }
 
@@ -664,24 +652,20 @@ export function AppInterface(props: {
         <SettingsProvider>
           <ConnectionGate disableHealthCheck={props.disableHealthCheck}>
             <ExpertiseMirror />
-            <Show when={useSettings().general.newLayoutDesigns().toString()} keyed>
-              <Dynamic
-                component={props.router ?? Router}
-                root={(routerProps) => (
-                  <TabsProvider>
-                    <NotificationProvider>
-                      <ServerShell>
-                        <Show when={useSettings().general.newLayoutDesigns()} fallback={routerProps.children}>
-                          <NewAppLayout>{routerProps.children}</NewAppLayout>
-                        </Show>
-                      </ServerShell>
-                    </NotificationProvider>
-                  </TabsProvider>
-                )}
-              >
-                <Routes />
-              </Dynamic>
-            </Show>
+            <Dynamic
+              component={props.router ?? Router}
+              root={(routerProps) => (
+                <TabsProvider>
+                  <NotificationProvider>
+                    <ServerShell>
+                      <NewAppLayout>{routerProps.children}</NewAppLayout>
+                    </ServerShell>
+                  </NotificationProvider>
+                </TabsProvider>
+              )}
+            >
+              <Routes />
+            </Dynamic>
           </ConnectionGate>
         </SettingsProvider>
       </GlobalProvider>
@@ -690,53 +674,23 @@ export function AppInterface(props: {
 }
 
 function Routes() {
-  const settings = useSettings()
-
   return (
     <>
-      <Route component={LegacyServerLayout}>
-        <Show when={!settings.general.newLayoutDesigns()}>{<Route path="/" component={LegacyHome} />}</Show>
-        <Route path="/:dir" component={DirectoryLayout}>
-          <Route path="/" component={() => <Navigate href="session" />} />
-          <Route path="/session/:id?" component={SessionRoute} />
-        </Route>
-      </Route>
-      <Show when={settings.general.newLayoutDesigns()}>
-        <Route path="/" component={HomeScreen} />
-        <Route path="/chats" component={NewHome} />
-        <Route path="/files" component={FilesPage} />
-        <Route path="/notes" component={NotesPage} />
-        <Route path="/calendar" component={CalendarPage} />
-        <Route path="/recipes" component={RecipesPage} />
-        <Route path="/registry" component={RegistryPage} />
-        <Route path="/debug" component={DebugPage} />
-        <Route path="/memory-graph" component={MemoryGraphPage} />
-        <Route path="/trash" component={TrashPage} />
-        <Route path="/:dir/session/:id" component={LegacyTargetSessionRoute} />
-      </Show>
+      <Route path="/" component={HomeScreen} />
+      <Route path="/chats" component={NewHome} />
+      <Route path="/files" component={FilesPage} />
+      <Route path="/notes" component={NotesPage} />
+      <Route path="/calendar" component={CalendarPage} />
+      <Route path="/recipes" component={RecipesPage} />
+      <Route path="/registry" component={RegistryPage} />
+      <Route path="/debug" component={DebugPage} />
+      <Route path="/memory-graph" component={MemoryGraphPage} />
+      <Route path="/trash" component={TrashPage} />
       <Route path="/new-session" component={DraftRoute} />
       <Route path="/server/:serverKey/session/:id" component={TargetSessionRoute} />
+      {/* Keep LAST: `/:dir` outranks nothing, and the static routes above must win the match. */}
+      <Route path="/:dir" component={LegacyDirectoryRoute} />
+      <Route path="/:dir/session/:id?" component={LegacyDirectoryRoute} />
     </>
-  )
-}
-
-function LegacyTargetSessionRoute() {
-  const server = useServer()
-  const tabs = useTabs()
-  const params = useParams<{ id: string }>()
-
-  return (
-    <Show when={tabs.ready()}>
-      <Navigate
-        href={sessionHref(
-          legacySessionServer(
-            tabs.store.filter((item) => item.type === "session"),
-            params.id,
-            server.key,
-          ),
-          params.id,
-        )}
-      />
-    </Show>
   )
 }

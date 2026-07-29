@@ -17,7 +17,6 @@ import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { normalizeServerUrl, ServerConnection, useServer } from "@/context/server"
 import { type ServerHealth, useCheckServerHealth } from "@/utils/server-health"
-import { useSettings } from "@/context/settings"
 import { useTabs } from "@/context/tabs"
 
 const DEFAULT_USERNAME = "novaclaw"
@@ -340,17 +339,9 @@ export function useServerManagementController(options: { onSelect?: () => void; 
     return [current, ...list.filter((x) => x !== current)]
   })
 
-  const settings = useSettings()
-  const current = createMemo<ServerConnection.Any | undefined>(() =>
-    settings.general.newLayoutDesigns()
-      ? undefined
-      : (items().find((x) => ServerConnection.key(x) === server.key) ?? items()[0]),
-  )
-
   const sortedItems = createMemo(() => {
     const list = items()
     if (!list.length) return list
-    const active = current()
     const order = new Map(list.map((url, index) => [url, index] as const))
     const rank = (value?: ServerHealth) => {
       if (value?.healthy === true) return 0
@@ -358,8 +349,6 @@ export function useServerManagementController(options: { onSelect?: () => void; 
       return 1
     }
     return list.slice().sort((a, b) => {
-      if (a === active) return -1
-      if (b === active) return 1
       const diff =
         rank(global.servers.health[ServerConnection.key(a)]) - rank(global.servers.health[ServerConnection.key(b)])
       if (diff !== 0) return diff
@@ -532,7 +521,6 @@ export function useServerManagementController(options: { onSelect?: () => void; 
   return {
     defaultKey,
     canDefault,
-    current,
     sortedItems,
     status: () => global.servers.health,
     isFormMode,
@@ -561,7 +549,6 @@ export function useServerManagementController(options: { onSelect?: () => void; 
 
 export function ServerConnectionList(props: { controller: ReturnType<typeof useServerManagementController> }) {
   const language = useLanguage()
-  const settings = useSettings()
 
   return (
     <div class="flex flex-1 min-h-0 flex-col gap-4">
@@ -575,9 +562,6 @@ export function ServerConnectionList(props: { controller: ReturnType<typeof useS
         emptyMessage={language.t("dialog.server.empty")}
         items={props.controller.sortedItems}
         key={(x) => x.http.url}
-        onSelect={(x) => {
-          if (x && !settings.general.newLayoutDesigns()) void props.controller.select(x)
-        }}
         divider={true}
       >
         {(i) => {
@@ -602,10 +586,6 @@ export function ServerConnectionList(props: { controller: ReturnType<typeof useS
                 showCredentials
               />
               <div class="flex items-center justify-center gap-4 pl-4">
-                <Show when={props.controller.current() && ServerConnection.key(props.controller.current()!) === key}>
-                  <Icon name="check" class="h-6" />
-                </Show>
-
                 <Show when={i.type === "http"}>
                   <DropdownMenu>
                     <DropdownMenu.Trigger

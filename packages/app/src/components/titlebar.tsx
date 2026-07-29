@@ -1,10 +1,6 @@
-import { createEffect, createMemo, createResource, createSignal, Match, Show, Switch, untrack } from "solid-js"
+import { createEffect, createMemo, createResource, createSignal, Show, untrack } from "solid-js"
 import { createStore } from "solid-js/store"
-import { useLocation, useNavigate, useParams } from "@solidjs/router"
-import { IconButton } from "@novaclaw/ui/icon-button"
-import { Icon } from "@novaclaw/ui/icon"
-import { Button } from "@novaclaw/ui/button"
-import { Tooltip, TooltipKeybind } from "@novaclaw/ui/tooltip"
+import { useLocation, useNavigate } from "@solidjs/router"
 import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
 import { KeybindV2 } from "@novaclaw/ui/v2/keybind-v2"
@@ -26,7 +22,6 @@ import { ServerConnection, useServer } from "@/context/server"
 import { tabKey, useTabs } from "@/context/tabs"
 import "./titlebar.css"
 
-const legacyTitlebarHeight = 40
 const v2TitlebarHeight = 36
 const minTitlebarZoom = 0.25
 const windowsControlsBaseWidth = 138 // 3 native Windows caption buttons at 46px each.
@@ -46,22 +41,18 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
   const server = useServer()
   const navigate = useNavigate()
   const location = useLocation()
-  const params = useParams()
-  const useV2Titlebar = createMemo(() => settings.general.newLayoutDesigns())
   const mobile = createMediaQuery("(max-width: 767px)")
-  const bottom = createMemo(() => useV2Titlebar() && mobile() && settings.general.mobileTitlebarPosition() === "bottom")
+  const bottom = createMemo(() => mobile() && settings.general.mobileTitlebarPosition() === "bottom")
 
   const mac = createMemo(() => platform.platform === "desktop" && platform.os === "macos")
   // The desktop shell is Electron (electron-vite + electron-builder), so "desktop on Windows" IS
   // "Electron on Windows". A second memo used to draw that distinction back when a Tauri build was
   // also conceivable; it is gone, and nothing forks on the shell any more.
   const windows = createMemo(() => platform.platform === "desktop" && platform.os === "windows")
-  const web = createMemo(() => platform.platform === "web")
   const zoom = () => platform.webviewZoom?.() ?? 1
   const titlebarZoom = () => (windows() ? Math.max(zoom(), minTitlebarZoom) : zoom())
-  const counterZoom = () => (windows() && titlebarZoom() < 1 ? 1 / titlebarZoom() : 1)
   const minHeight = () => {
-    const height = useV2Titlebar() ? v2TitlebarHeight : legacyTitlebarHeight
+    const height = v2TitlebarHeight
     if (mac()) return `${height / zoom()}px`
     if (windows()) return `${height / Math.min(titlebarZoom(), 1)}px`
     return undefined
@@ -75,14 +66,6 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
   })
 
   const path = () => `${location.pathname}${location.search}${location.hash}`
-  const creating = createMemo(() => {
-    const route = layout.route()
-    if (route.type === "draft" || route.type === "dir-new-sesssion") return true
-    if (!params.dir) return false
-    if (params.id) return false
-    const parts = location.pathname.replace(/\/+$/, "").split("/")
-    return parts.at(-1) === "session"
-  })
 
   createEffect(() => {
     const current = path()
@@ -94,10 +77,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
     })
   })
 
-  const canBack = createMemo(() => history.index > 0)
-  const canForward = createMemo(() => history.index < history.stack.length - 1)
-  const hasProjects = createMemo(() => layout.projects.list().length > 0)
-  const nav = createMemo(() => (useV2Titlebar() ? settings.general.showNavigation() : true))
+  const nav = createMemo(() => settings.general.showNavigation())
   const updateState = createMemo<TitlebarUpdatePillState>(() => {
     const installing = props.update?.installing() ?? false
     const version = props.update?.version()
@@ -156,11 +136,10 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
 
   return (
     <header
-      data-slot={useV2Titlebar() ? "titlebar-v2" : undefined}
+      data-slot="titlebar-v2"
       classList={{
         "shrink-0 relative flex flex-row": true,
-        "h-9 bg-v2-background-bg-deep overflow-visible": useV2Titlebar(),
-        "h-10 bg-background-base overflow-hidden": !useV2Titlebar(),
+        "h-9 bg-v2-background-bg-deep overflow-visible": true,
         "order-last": bottom(),
       }}
       style={{
@@ -172,9 +151,10 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
       }}
       data-tauri-drag-region
     >
-      <Switch>
-        <Match when={useV2Titlebar()}>
-          {(_) => {
+      {/* The legacy (pre-v2) titlebar branch is gone with the legacy shell; this body is
+          unconditional now. It stays an IIFE so its local hooks/resources keep their own
+          scope instead of colliding with the outer component's bindings. */}
+      {(() => {
             const layout = useLayout()
             const global = useGlobal()
 
@@ -361,160 +341,7 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                 <TitlebarV2Right state={v2RightState()} />
               </div>
             )
-          }}
-        </Match>
-        <Match when>
-          <div
-            class="grid h-full min-h-full w-full grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center"
-            style={{ zoom: counterZoom() }}
-          >
-            <div
-              classList={{
-                "flex items-center min-w-0": true,
-                "pl-2": !mac(),
-              }}
-            >
-              <Show when={mac()}>
-                {/*<div class="h-full shrink-0" style={{ width: `${72 / zoom()}px` }} />*/}
-                <div class="xl:hidden w-10 shrink-0 flex items-center justify-center">
-                  <IconButton
-                    icon="menu"
-                    variant="ghost"
-                    class="titlebar-icon rounded-md"
-                    onClick={layout.mobileSidebar.toggle}
-                    aria-label={language.t("sidebar.menu.toggle")}
-                    aria-expanded={layout.mobileSidebar.opened()}
-                  />
-                </div>
-              </Show>
-              <Show when={!mac()}>
-                <div class="xl:hidden w-[48px] shrink-0 flex items-center justify-center">
-                  <IconButton
-                    icon="menu"
-                    variant="ghost"
-                    class="titlebar-icon rounded-md"
-                    onClick={layout.mobileSidebar.toggle}
-                    aria-label={language.t("sidebar.menu.toggle")}
-                    aria-expanded={layout.mobileSidebar.opened()}
-                  />
-                </div>
-              </Show>
-              <div class="flex items-center gap-1 shrink-0">
-                <TooltipKeybind
-                  class={web() ? "hidden xl:flex shrink-0 ml-14" : "hidden xl:flex shrink-0 ml-2"}
-                  placement="bottom"
-                  title={language.t("command.sidebar.toggle")}
-                  keybind={command.keybind("sidebar.toggle")}
-                >
-                  <Button
-                    variant="ghost"
-                    class="group/sidebar-toggle titlebar-icon w-8 h-6 p-0 box-border"
-                    onClick={layout.sidebar.toggle}
-                    aria-label={language.t("command.sidebar.toggle")}
-                    aria-expanded={layout.sidebar.opened()}
-                  >
-                    <Icon size="small" name={layout.sidebar.opened() ? "sidebar-active" : "sidebar"} />
-                  </Button>
-                </TooltipKeybind>
-                <div class="hidden xl:flex items-center shrink-0">
-                  <Show when={params.dir}>
-                    <div
-                      class="flex items-center shrink-0 w-8 mr-1"
-                      aria-hidden={layout.sidebar.opened() ? "true" : undefined}
-                    >
-                      <div
-                        class="transition-opacity"
-                        classList={{
-                          "opacity-100 duration-120 ease-out": !layout.sidebar.opened(),
-                          "opacity-0 duration-120 ease-in delay-0 pointer-events-none": layout.sidebar.opened(),
-                        }}
-                      >
-                        <TooltipKeybind
-                          placement="bottom"
-                          title={language.t("command.session.new")}
-                          keybind={command.keybind("session.new")}
-                          openDelay={2000}
-                        >
-                          <Button
-                            variant="ghost"
-                            class="titlebar-icon w-8 h-6 p-0 box-border"
-                            disabled={layout.sidebar.opened()}
-                            tabIndex={layout.sidebar.opened() ? -1 : undefined}
-                            onClick={() => {
-                              if (!params.dir) return
-                              navigate(`/${params.dir}/session`)
-                            }}
-                            aria-label={language.t("command.session.new")}
-                            aria-current={creating() ? "page" : undefined}
-                          >
-                            <IconV2 name="edit" size="small" />
-                          </Button>
-                        </TooltipKeybind>
-                      </div>
-                    </div>
-                  </Show>
-                  <div
-                    class="flex items-center shrink-0"
-                    classList={{
-                      "-translate-x-[36px]": layout.sidebar.opened() && !!params.dir,
-                      "duration-180 ease-out": !layout.sidebar.opened(),
-                      "duration-180 ease-in": layout.sidebar.opened(),
-                    }}
-                  >
-                    <Show when={hasProjects() && nav()}>
-                      <div class="flex items-center gap-0 transition-transform">
-                        <Tooltip placement="bottom" value={language.t("common.goBack")} openDelay={2000}>
-                          <Button
-                            variant="ghost"
-                            icon="chevron-left"
-                            class="titlebar-icon w-6 h-6 p-0 box-border"
-                            disabled={!canBack()}
-                            onClick={back}
-                            aria-label={language.t("common.goBack")}
-                          />
-                        </Tooltip>
-                        <Tooltip placement="bottom" value={language.t("common.goForward")} openDelay={2000}>
-                          <Button
-                            variant="ghost"
-                            icon="chevron-right"
-                            class="titlebar-icon w-6 h-6 p-0 box-border"
-                            disabled={!canForward()}
-                            onClick={forward}
-                            aria-label={language.t("common.goForward")}
-                          />
-                        </Tooltip>
-                      </div>
-                    </Show>
-                    <div id="novaclaw-titlebar-left" class="flex items-center gap-3 min-w-0 px-2" />
-                    <BrandBadge />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="min-w-0 flex items-center justify-center pointer-events-none">
-              <div
-                id="novaclaw-titlebar-center"
-                class="pointer-events-auto min-w-0 flex justify-center w-fit max-w-full"
-              />
-            </div>
-
-            <div
-              classList={{
-                "flex items-center min-w-0 justify-end": true,
-                "pr-2": !windows(),
-              }}
-              data-tauri-drag-region
-            >
-              <div id="novaclaw-titlebar-right" class="flex items-center gap-1 shrink-0 justify-end" />
-              {/* Reserve room for the native Windows caption buttons, which overlay the titlebar. */}
-              <Show when={windows()}>
-                <div class="shrink-0" style={{ width: windowsControlsWidth() }} />
-              </Show>
-            </div>
-          </div>
-        </Match>
-      </Switch>
+      })()}
     </header>
   )
 }

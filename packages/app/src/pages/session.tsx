@@ -136,7 +136,6 @@ export default function Page() {
   const navigate = useNavigate()
   const { params, sessionKey, workspaceKey, tabs, view } = useSessionLayout()
   const sessionOwnership = createSessionOwnership(sessionKey)
-  const newSessionDesign = createMemo(() => settings.general.newLayoutDesigns())
 
   createEffect(() => {
     if (!prompt.ready()) return
@@ -877,9 +876,7 @@ export default function Page() {
   const reviewPanel = () => (
     <div
       classList={{
-        "flex flex-col h-full overflow-hidden contain-strict": true,
-        "bg-v2-background-bg-base": settings.general.newLayoutDesigns(),
-        "bg-background-stronger": !settings.general.newLayoutDesigns(),
+        "flex flex-col h-full overflow-hidden contain-strict bg-v2-background-bg-base": true,
       }}
     >
       <div class="relative pt-2 flex-1 min-h-0 overflow-hidden">
@@ -1773,12 +1770,7 @@ export default function Page() {
     <div class="relative size-full overflow-hidden flex flex-col">
       {sessionSync() ?? ""}
       <SessionHeader />
-      <div
-        class="flex-1 min-h-0 flex flex-col md:flex-row"
-        classList={{
-          "gap-2 p-2": settings.general.newLayoutDesigns(),
-        }}
-      >
+      <div class="flex-1 min-h-0 flex flex-col md:flex-row gap-2 p-2">
         <div
           classList={{
             "@container relative shrink-0 flex flex-col min-h-0 h-full flex-1 md:flex-none transition-[width]": true,
@@ -1791,11 +1783,8 @@ export default function Page() {
         >
           <div
             classList={{
-              "flex-1 min-h-0 flex flex-col": true,
-              "bg-v2-background-bg-base": settings.general.newLayoutDesigns(),
-              "bg-background-stronger": !settings.general.newLayoutDesigns(),
-              "rounded-[10px] overflow-hidden": settings.general.newLayoutDesigns(),
-              "shadow-[var(--v2-elevation-raised)]": settings.general.newLayoutDesigns() && !!params.id,
+              "flex-1 min-h-0 flex flex-col bg-v2-background-bg-base rounded-[10px] overflow-hidden": true,
+              "shadow-[var(--v2-elevation-raised)]": !!params.id,
             }}
           >
             <div class="flex-1 min-h-0 overflow-hidden">
@@ -1818,15 +1807,13 @@ export default function Page() {
               </Switch>
             </div>
 
-            <Show when={params.id || !newSessionDesign()}>{(_) => composerRegion()}</Show>
+            <Show when={params.id}>{(_) => composerRegion()}</Show>
           </div>
 
           <Show when={desktopReviewOpen()}>
             <div onPointerDown={() => size.start()}>
               <ResizeHandle
-                classList={{
-                  "-right-1": settings.general.newLayoutDesigns(),
-                }}
+                classList={{ "-right-1": true }}
                 direction="horizontal"
                 size={layout.session.width()}
                 min={450}

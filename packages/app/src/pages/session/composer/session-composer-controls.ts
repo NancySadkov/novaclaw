@@ -1,6 +1,5 @@
-import { base64Encode } from "@novaclaw/core/util/encode"
 import { createQuery } from "@tanstack/solid-query"
-import { useNavigate, useParams, useSearchParams } from "@solidjs/router"
+import { useSearchParams } from "@solidjs/router"
 import { type Accessor, createMemo, createResource, onCleanup, onMount } from "solid-js"
 import type { PromptInputControls } from "@/components/prompt-input"
 import type { ComposerRemoteChatState } from "@/components/composer"
@@ -27,12 +26,10 @@ import { useServerSDK } from "@/context/server-sdk"
 import { serverName, ServerConnection, useServer } from "@/context/server"
 import { useSDK } from "@/context/sdk"
 import { switchFeature, switchMode, switchStrict, switchType, type SessionFeatureName, type SessionModeName } from "@/utils/fs-api"
-import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useSessionView } from "@/pages/session/use-session-view"
 import { useTabs } from "@/context/tabs"
 import { useProviders } from "@/hooks/use-providers"
-import { legacySessionHref } from "@/utils/session-route"
 import { pathKey } from "@/utils/path-key"
 
 export function createPromptInputController(input: {
@@ -43,13 +40,10 @@ export function createPromptInputController(input: {
   const language = useLanguage()
   const local = useLocal()
   const providers = useProviders()
-  const settings = useSettings()
   const sync = useSync()
   const sdk = useSDK()
   const server = useServer()
   const pickDirectory = useDirectoryPicker()
-  const navigate = useNavigate()
-  const params = useParams<{ dir?: string }>()
   // The per-session facade (ui-arch P5): record/working/scope/key come from ONE place —
   // no hand-picking between sync/serverSync or threading a sessionKey from the route.
   const sessionView = useSessionView(input.sessionID)
@@ -276,9 +270,8 @@ export function createPromptInputController(input: {
                 if (moved.error) throw moved.error
                 // P3 view rebind, no reload: the `session.next.moved` event folds the new
                 // directory onto the client record (P2), and the target-session route re-derives
-                // its directory-scoped contexts from that record reactively. Only the legacy
-                // route carries the directory in the URL — re-enter the session at its new home.
-                if (params.dir) navigate(legacySessionHref(directory, id))
+                // its directory-scoped contexts from that record reactively. Nothing to navigate:
+                // the canonical route is `/server/<key>/session/<id>`, which carries no directory.
               })
               .catch((error: unknown) => {
                 showToast({
@@ -327,12 +320,10 @@ export function createPromptInputController(input: {
       tabs: layout.tabs(sessionView.sessionKey),
       reviewPanel: view.reviewPanel,
     },
-    newLayoutDesigns: settings.general.newLayoutDesigns(),
   }))
 }
 
 export function createPromptProjectControls() {
-  const navigate = useNavigate()
   const layout = useLayout()
   const server = useServer()
   const serverSDK = useServerSDK()
@@ -355,30 +346,22 @@ export function createPromptProjectControls() {
         .map((project) => ({ ...project, server: item }))
     })
   })
+  // The project picker only renders on the draft page (`/new-session?draftId=…`), so `draftId` is
+  // always present and retargeting the draft is the whole job. The fallback exists because
+  // `search.draftId` is typed optional, not because a second UI reaches this: it opens a NEW draft
+  // in the picked folder, which is exactly what the retired `/:dir/session` route used to do.
   const selectProject = (worktree: string, serverKey?: string) => {
     const conn = serverKey ? server.list.find((conn) => ServerConnection.key(conn) === serverKey) : projectServer()
-    if (search.draftId) {
-      if (!conn) return
-      const target = global.ensureServerCtx(conn)
-      target.projects.open(worktree)
-      target.projects.touch(worktree)
-      tabs.updateDraft(search.draftId, { server: ServerConnection.key(conn), directory: worktree })
-      return
-    }
-
-    if (!serverKey) {
-      layout.projects.open(worktree)
-      server.projects.touch(worktree)
-      navigate(`/${base64Encode(worktree)}/session`)
-      return
-    }
-
     if (!conn) return
     const target = global.ensureServerCtx(conn)
     target.projects.open(worktree)
     target.projects.touch(worktree)
-    server.setActive(ServerConnection.key(conn))
-    navigate(`/${base64Encode(worktree)}/session`)
+    const draftID = search.draftId
+    if (draftID) {
+      tabs.updateDraft(draftID, { server: ServerConnection.key(conn), directory: worktree })
+      return
+    }
+    tabs.newDraft({ server: ServerConnection.key(conn), directory: worktree })
   }
 
   const addProject = (title: string, serverKey?: string) => {
