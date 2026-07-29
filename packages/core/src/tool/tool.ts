@@ -201,6 +201,17 @@ export const validateName = (name: string) =>
     ? Effect.void
     : Effect.fail(new RegistrationError({ name, message: `Invalid tool name: ${name}` }))
 
+/**
+ * Point a tool at a permission action OTHER than its own registered name, so one user rule governs
+ * several tools. `apply_patch` declaring `edit` is the only live case in the tree: a rule about
+ * editing files must reach every tool that edits a file, whatever it is called.
+ *
+ * ⚠️ **Passing a tool's OWN registered name is a literal no-op** — `permission` below already falls
+ * back to that name — so such a call adds nothing while reading as a guard. Nine of them
+ * (spawn · write · trash · revert · define_tool · quality_provision · register-app · reconfigure ·
+ * edit) were deleted on 2026-07-29 with no behaviour change; `test/tool-permission-identity.test.ts`
+ * pins the equivalence by exercising the registry and fails if a tenth appears.
+ */
 export const withPermission = <Input extends SchemaType<any>, Output extends SchemaType<any>>(
   tool: Definition<Input, Output>,
   permission: string,
@@ -210,6 +221,22 @@ export const withPermission = <Input extends SchemaType<any>, Output extends Sch
   return decorated
 }
 
+/**
+ * The action `ToolRegistry.materialize` resolves against the permission ruleset when it decides
+ * whether a tool is withdrawn from the model's horizon (`whollyDisabled`, registry.ts) — the only
+ * consumer in the tree.
+ *
+ * **The fallback IS the mechanism, and it is why almost nothing declares anything.** A tool that
+ * declares nothing is governed by the name it was registered under, so
+ * `{ action: "write", resource: "*", effect: "deny" }` withdraws `write` with not a word about
+ * permissions anywhere in `write.ts`. Only a tool that must answer to a DIFFERENT action declares
+ * one, and `apply_patch` → `edit` is the sole live declaration in the tree.
+ *
+ * ⚠️ `makeExternal`'s `permission` field is the other way to declare one, and as of 2026-07-29 **no
+ * production caller passes it**: `mcp-external.ts` (MCP) and `novaclaw/tool/external-tool-source.ts`
+ * (plugins) both omit it, so every dynamic tool is governed by its own advertised name too. Only
+ * `external.test.ts` exercises the field. Do not describe MCP as gated by a shared `mcp` action.
+ */
 export const permission = (tool: AnyTool, name: string) => runtimeOf(tool).permission ?? name
 export const definition = (name: string, tool: AnyTool) => runtimeOf(tool).definition(name)
 export const settle = (tool: AnyTool, call: ToolCall, context: Context) => {

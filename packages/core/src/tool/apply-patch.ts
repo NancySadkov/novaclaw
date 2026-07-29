@@ -79,6 +79,14 @@ export const layer = Layer.effectDiscard(
 
     yield* tools
       .register({
+        // ⚠️ THE ONE REAL REMAP in the tree, and the only reason `withPermission` exists: registered
+        // as `apply_patch`, it answers to the `edit` action — the same action its own
+        // `permission.assert({ action: "edit" })` below spends. Without the wrap the two seams
+        // would disagree: a `deny edit/*` rule would still refuse every patch at execution while
+        // `whollyDisabled` went on advertising the tool, i.e. a horizon the model cannot act on.
+        // Elsewhere the wrap is a no-op — `Tool.permission` falls back to the registered name —
+        // which is why nothing else in `src/tool/` carries one, and
+        // `test/tool-permission-identity.test.ts` ledgers this site and fails if a no-op reappears.
         [name]: Tool.withPermission(
           Tool.make({
             description: `Apply one patch containing add, update, and delete file operations. ${PATCH_FORMAT_HELP} All targets are resolved and approved before target contents are read. Operations apply sequentially; if a later operation fails, earlier operations remain applied and the failure reports them explicitly. Moves and atomic rollback are not supported yet.`,

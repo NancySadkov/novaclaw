@@ -161,94 +161,91 @@ export const layer = Layer.effectDiscard(
     const permission = yield* PermissionV2.Service
     yield* tools
       .register({
-        [name]: Tool.withPermission(
-          Tool.make({
-            description:
-              "Spawn a child agent session (a fork) with its own context that runs the given prompt. The child " +
-              "inherits this session's agent/model/system-prompt/permissions unless overridden, and carries this " +
-              "session as its parent. Returns the child session id. Use it to delegate an independent sub-task.",
-            input: Input,
-            output: Output,
-            structured: StructuredOutput,
-            toStructuredOutput: ({ output }) => ({
-              ...(output.childID === undefined ? {} : { childID: output.childID }),
-              ...(output.limited === undefined ? {} : { limited: output.limited }),
-            }),
-            toModelOutput: ({ output }) => [{ type: "text", text: output.message }],
-            execute: (input, context) =>
-              Effect.gen(function* () {
-                // Shape-check the model ref BEFORE the gate: a malformed argument is the caller's
-                // mistake, not a denial, and reporting it as one would be the false-fault ruling 2
-                // rules out.
-                const model = yield* modelRef(input.model)
-                // The resource is the child's AGENT — the capability-bearing half of the request and
-                // the only field a rule could usefully name ("this session may spawn `plan` helpers
-                // but not `build` ones"). "inherit" is the literal resource when the field is
-                // omitted, so that case is nameable too instead of matching only `*`.
-                yield* permission.assert({
-                  action: name,
-                  resources: [input.agent ?? "inherit"],
-                  save: ["*"],
-                  sessionID: context.sessionID,
-                  agent: context.agent,
-                  source: {
-                    type: "tool" as const,
-                    messageID: context.assistantMessageID,
-                    callID: context.toolCallID,
-                  },
-                })
-                return yield* spawner
-                  .spawn({
-                    parentID: context.sessionID,
-                    text: input.prompt,
-                    agent: input.agent ? AgentV2.ID.make(input.agent) : undefined,
-                    model,
-                    systemPromptOverride: input.systemPromptOverride,
-                    type: input.type,
-                    permissionMode: input.permissionMode,
-                  })
-                  .pipe(
-                    Effect.map(
-                      ({ id, started }): Output => ({
-                        childID: id,
-                        message: started
-                          ? `Spawned child session ${id} and started it on the given prompt. It runs independently; ` +
-                            `call wait with sessionID "${id}" to block until it finishes and read its result.`
-                          : `Spawned child session ${id}, but this instance has no session executor attached, so its ` +
-                            `prompt stays queued and it will NOT run — do not wait on it. Do the sub-task here instead.`,
-                      }),
-                    ),
-                    // Fork-bomb guard tripped: inform the model (a denial-as-observation, never a halt).
-                    // Caught HERE rather than on the outer pipe so the tagged `SpawnLimitError` never
-                    // joins the permission error channel — `catchTag` over a union that also holds a
-                    // bare `Error` is the shape that quietly stops narrowing.
-                    Effect.catchTag(
-                      "SessionSpawner.LimitError",
-                      (error): Effect.Effect<Output> =>
-                        Effect.succeed({
-                          limited: true,
-                          message: {
-                            depth: `Spawn refused: the session chain is already ${error.depth} deep (max ${error.limit}). Do the sub-task in this session instead of spawning deeper.`,
-                            children: `Spawn refused: this session already has ${error.depth} children (max ${error.limit}). Reuse or wait on existing children instead of spawning more.`,
-                            rate: `Spawn refused: ${error.depth} spawns in the last minute (max ${error.limit}). Slow down — wait on the children you already spawned.`,
-                          }[error.reason],
-                        }),
-                    ),
-                  )
-              }).pipe(
-                Effect.mapError((error) => {
-                  if (error instanceof ToolFailure) return error
-                  // A denial must reach the model as the DENIAL, not as "unable to spawn" — the
-                  // deny-fast wording tells an unattended run not to wait for an answer nobody
-                  // will give (`PermissionV2.denialMessage`).
-                  const denial = PermissionV2.denialMessage(error)
-                  if (denial) return new ToolFailure({ message: denial })
-                  return new ToolFailure({ message: "Unable to spawn child session." })
-                }),
-              ),
+        [name]: Tool.make({
+          description:
+            "Spawn a child agent session (a fork) with its own context that runs the given prompt. The child " +
+            "inherits this session's agent/model/system-prompt/permissions unless overridden, and carries this " +
+            "session as its parent. Returns the child session id. Use it to delegate an independent sub-task.",
+          input: Input,
+          output: Output,
+          structured: StructuredOutput,
+          toStructuredOutput: ({ output }) => ({
+            ...(output.childID === undefined ? {} : { childID: output.childID }),
+            ...(output.limited === undefined ? {} : { limited: output.limited }),
           }),
-          name,
-        ),
+          toModelOutput: ({ output }) => [{ type: "text", text: output.message }],
+          execute: (input, context) =>
+            Effect.gen(function* () {
+              // Shape-check the model ref BEFORE the gate: a malformed argument is the caller's
+              // mistake, not a denial, and reporting it as one would be the false-fault ruling 2
+              // rules out.
+              const model = yield* modelRef(input.model)
+              // The resource is the child's AGENT — the capability-bearing half of the request and
+              // the only field a rule could usefully name ("this session may spawn `plan` helpers
+              // but not `build` ones"). "inherit" is the literal resource when the field is
+              // omitted, so that case is nameable too instead of matching only `*`.
+              yield* permission.assert({
+                action: name,
+                resources: [input.agent ?? "inherit"],
+                save: ["*"],
+                sessionID: context.sessionID,
+                agent: context.agent,
+                source: {
+                  type: "tool" as const,
+                  messageID: context.assistantMessageID,
+                  callID: context.toolCallID,
+                },
+              })
+              return yield* spawner
+                .spawn({
+                  parentID: context.sessionID,
+                  text: input.prompt,
+                  agent: input.agent ? AgentV2.ID.make(input.agent) : undefined,
+                  model,
+                  systemPromptOverride: input.systemPromptOverride,
+                  type: input.type,
+                  permissionMode: input.permissionMode,
+                })
+                .pipe(
+                  Effect.map(
+                    ({ id, started }): Output => ({
+                      childID: id,
+                      message: started
+                        ? `Spawned child session ${id} and started it on the given prompt. It runs independently; ` +
+                          `call wait with sessionID "${id}" to block until it finishes and read its result.`
+                        : `Spawned child session ${id}, but this instance has no session executor attached, so its ` +
+                          `prompt stays queued and it will NOT run — do not wait on it. Do the sub-task here instead.`,
+                    }),
+                  ),
+                  // Fork-bomb guard tripped: inform the model (a denial-as-observation, never a halt).
+                  // Caught HERE rather than on the outer pipe so the tagged `SpawnLimitError` never
+                  // joins the permission error channel — `catchTag` over a union that also holds a
+                  // bare `Error` is the shape that quietly stops narrowing.
+                  Effect.catchTag(
+                    "SessionSpawner.LimitError",
+                    (error): Effect.Effect<Output> =>
+                      Effect.succeed({
+                        limited: true,
+                        message: {
+                          depth: `Spawn refused: the session chain is already ${error.depth} deep (max ${error.limit}). Do the sub-task in this session instead of spawning deeper.`,
+                          children: `Spawn refused: this session already has ${error.depth} children (max ${error.limit}). Reuse or wait on existing children instead of spawning more.`,
+                          rate: `Spawn refused: ${error.depth} spawns in the last minute (max ${error.limit}). Slow down — wait on the children you already spawned.`,
+                        }[error.reason],
+                      }),
+                  ),
+                )
+            }).pipe(
+              Effect.mapError((error) => {
+                if (error instanceof ToolFailure) return error
+                // A denial must reach the model as the DENIAL, not as "unable to spawn" — the
+                // deny-fast wording tells an unattended run not to wait for an answer nobody
+                // will give (`PermissionV2.denialMessage`).
+                const denial = PermissionV2.denialMessage(error)
+                if (denial) return new ToolFailure({ message: denial })
+                return new ToolFailure({ message: "Unable to spawn child session." })
+              }),
+            ),
+        }),
       })
       .pipe(Effect.orDie)
   }),

@@ -42,7 +42,7 @@ Both are scoped:
 
 ## Permissions
 
-The registry has no `PermissionV2.Service` dependency and performs no execution authorization. An internal built-in-only operation attaches a permission action solely to preserve whole-tool definition filtering; it is not part of public `Tool.make`. Most tools default to their registered name; `edit`, `write`, and `apply_patch` declare the shared `edit` action.
+The registry has no `PermissionV2.Service` dependency and performs no execution authorization. An internal built-in-only operation attaches a permission action solely to preserve whole-tool definition filtering; it is not part of public `Tool.make`. **Every tool defaults to its registered name; `apply_patch` is the only one that declares a different action, the shared `edit`.** (This sentence used to name `edit` and `write` alongside it. That was false for `write` even then — it declared `"write"`, so a `deny edit/*` rule has never withdrawn it — and the nine own-name declarations, which were no-ops, were deleted 2026-07-29.)
 
 Definition filtering is catalog visibility, not execution authorization. A call still executes the captured leaf policy if it reaches settlement.
 

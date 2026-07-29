@@ -112,127 +112,124 @@ export const layer = Layer.effectDiscard(
 
     yield* tools
       .register({
-        [name]: Tool.withPermission(
-          Tool.make({
-            description:
-              "Replace exact text in one file. Prefer this over `write` for any change short of a full rewrite — make the minimal change instead of regenerating the file. oldString must match the file's EXACT bytes, including whitespace and indentation: copy it from a fresh read, do not retype from memory. If it matches more than once, add surrounding context or set replaceAll. Relative paths resolve within the active Location. Absolute paths inside the Location are accepted. Explicit external absolute paths require external_directory approval before edit approval.",
-            input: Input,
-            output: Output,
-            toModelOutput: ({ input, output }) => [
-              { type: "text", text: toModelOutput(output, input.oldString, input.newString) },
-            ],
-            execute: (input, context) => {
-              const unableToEdit = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-                effect.pipe(
-                  Effect.mapError((error) => {
-                    const denial = PermissionV2.denialMessage(error)
-                    if (denial) return new ToolFailure({ message: denial })
-                    return error instanceof FileMutation.StaleContentError
-                      ? new ToolFailure({
-                          message: "File changed after permission approval. Read it again before editing.",
-                        })
-                      : new ToolFailure({ message: `Unable to edit ${input.path}` })
-                  }),
-                )
+        [name]: Tool.make({
+          description:
+            "Replace exact text in one file. Prefer this over `write` for any change short of a full rewrite — make the minimal change instead of regenerating the file. oldString must match the file's EXACT bytes, including whitespace and indentation: copy it from a fresh read, do not retype from memory. If it matches more than once, add surrounding context or set replaceAll. Relative paths resolve within the active Location. Absolute paths inside the Location are accepted. Explicit external absolute paths require external_directory approval before edit approval.",
+          input: Input,
+          output: Output,
+          toModelOutput: ({ input, output }) => [
+            { type: "text", text: toModelOutput(output, input.oldString, input.newString) },
+          ],
+          execute: (input, context) => {
+            const unableToEdit = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+              effect.pipe(
+                Effect.mapError((error) => {
+                  const denial = PermissionV2.denialMessage(error)
+                  if (denial) return new ToolFailure({ message: denial })
+                  return error instanceof FileMutation.StaleContentError
+                    ? new ToolFailure({
+                        message: "File changed after permission approval. Read it again before editing.",
+                      })
+                    : new ToolFailure({ message: `Unable to edit ${input.path}` })
+                }),
+              )
 
-              return Effect.gen(function* () {
-                const permissionSource = {
-                  type: "tool" as const,
-                  messageID: context.assistantMessageID,
-                  callID: context.toolCallID,
-                }
-                if (input.oldString === input.newString) {
-                  return yield* new ToolFailure({
-                    message: "No changes to apply: oldString and newString are identical.",
-                  })
-                }
-                if (input.oldString === "") {
-                  return yield* new ToolFailure({
-                    message: "oldString must not be empty. Use write to create or overwrite a file.",
-                  })
-                }
+            return Effect.gen(function* () {
+              const permissionSource = {
+                type: "tool" as const,
+                messageID: context.assistantMessageID,
+                callID: context.toolCallID,
+              }
+              if (input.oldString === input.newString) {
+                return yield* new ToolFailure({
+                  message: "No changes to apply: oldString and newString are identical.",
+                })
+              }
+              if (input.oldString === "") {
+                return yield* new ToolFailure({
+                  message: "oldString must not be empty. Use write to create or overwrite a file.",
+                })
+              }
 
-                const target = yield* unableToEdit(mutation.resolve({ path: input.path, kind: "file" }))
-                const external = target.externalDirectory
-                if (external) {
-                  yield* unableToEdit(
-                    permission.assert({
-                      ...LocationMutation.externalDirectoryPermission(external, "write"),
-                      sessionID: context.sessionID,
-                      agent: context.agent,
-                      source: permissionSource,
-                    }),
-                  )
-                }
-
+              const target = yield* unableToEdit(mutation.resolve({ path: input.path, kind: "file" }))
+              const external = target.externalDirectory
+              if (external) {
                 yield* unableToEdit(
                   permission.assert({
-                    action: "edit",
-                    resources: [target.resource],
-                    targets: [{ resource: target.resource, canonical: target.canonical }],
-                    attachmentPaths: [...(context.attachmentPaths ?? [])],
-                    save: ["*"],
+                    ...LocationMutation.externalDirectoryPermission(external, "write"),
                     sessionID: context.sessionID,
                     agent: context.agent,
                     source: permissionSource,
                   }),
                 )
-                const source = decodeUtf8(yield* unableToEdit(fs.readFile(target.canonical)))
-                const ending = detectLineEnding(source.text)
-                const oldString = convertToLineEnding(input.oldString, ending)
-                const newString = convertToLineEnding(input.newString, ending)
-                const replacements = countOccurrences(source.text, oldString)
-                if (replacements === 0) {
-                  return yield* new ToolFailure({
-                    message: whitespaceNearMiss(source.text, oldString)
-                      ? "Could not find oldString exactly, but a block there differs ONLY in whitespace " +
-                        "(indentation, tabs vs spaces, or trailing spaces). Re-read the exact lines and " +
-                        "copy the exact bytes, including indentation — do not retype from memory."
-                      : "Could not find oldString in the file. It must match exactly, including whitespace and indentation.",
-                  })
-                }
-                if (replacements > 1 && input.replaceAll !== true) {
-                  return yield* new ToolFailure({
-                    message:
-                      "Found multiple exact matches for oldString. Provide more surrounding context or set replaceAll to true.",
-                  })
-                }
+              }
 
-                const replaced =
-                  input.replaceAll === true
-                    ? source.text.replaceAll(oldString, newString)
-                    : source.text.replace(oldString, newString)
-                const counts = diffLines(source.text, replaced).reduce(
-                  (result, item) => ({
-                    additions: result.additions + (item.added ? (item.count ?? 0) : 0),
-                    deletions: result.deletions + (item.removed ? (item.count ?? 0) : 0),
-                  }),
-                  { additions: 0, deletions: 0 },
-                )
-                const next = splitBom(replaced)
-                const result = yield* unableToEdit(
-                  files.writeIfUnchanged({
-                    target,
-                    expected: source.content,
-                    content: joinBom(next.text, source.bom || next.bom),
-                  }),
-                )
-                return {
-                  files: [
-                    {
-                      file: result.resource,
-                      patch: createTwoFilesPatch(result.resource, result.resource, source.text, replaced),
-                      status: "modified" as const,
-                      ...counts,
-                    },
-                  ],
-                  replacements,
-                } satisfies Output
-              })
-            },
-          }),
-          "edit",
-        ),
+              yield* unableToEdit(
+                permission.assert({
+                  action: "edit",
+                  resources: [target.resource],
+                  targets: [{ resource: target.resource, canonical: target.canonical }],
+                  attachmentPaths: [...(context.attachmentPaths ?? [])],
+                  save: ["*"],
+                  sessionID: context.sessionID,
+                  agent: context.agent,
+                  source: permissionSource,
+                }),
+              )
+              const source = decodeUtf8(yield* unableToEdit(fs.readFile(target.canonical)))
+              const ending = detectLineEnding(source.text)
+              const oldString = convertToLineEnding(input.oldString, ending)
+              const newString = convertToLineEnding(input.newString, ending)
+              const replacements = countOccurrences(source.text, oldString)
+              if (replacements === 0) {
+                return yield* new ToolFailure({
+                  message: whitespaceNearMiss(source.text, oldString)
+                    ? "Could not find oldString exactly, but a block there differs ONLY in whitespace " +
+                      "(indentation, tabs vs spaces, or trailing spaces). Re-read the exact lines and " +
+                      "copy the exact bytes, including indentation — do not retype from memory."
+                    : "Could not find oldString in the file. It must match exactly, including whitespace and indentation.",
+                })
+              }
+              if (replacements > 1 && input.replaceAll !== true) {
+                return yield* new ToolFailure({
+                  message:
+                    "Found multiple exact matches for oldString. Provide more surrounding context or set replaceAll to true.",
+                })
+              }
+
+              const replaced =
+                input.replaceAll === true
+                  ? source.text.replaceAll(oldString, newString)
+                  : source.text.replace(oldString, newString)
+              const counts = diffLines(source.text, replaced).reduce(
+                (result, item) => ({
+                  additions: result.additions + (item.added ? (item.count ?? 0) : 0),
+                  deletions: result.deletions + (item.removed ? (item.count ?? 0) : 0),
+                }),
+                { additions: 0, deletions: 0 },
+              )
+              const next = splitBom(replaced)
+              const result = yield* unableToEdit(
+                files.writeIfUnchanged({
+                  target,
+                  expected: source.content,
+                  content: joinBom(next.text, source.bom || next.bom),
+                }),
+              )
+              return {
+                files: [
+                  {
+                    file: result.resource,
+                    patch: createTwoFilesPatch(result.resource, result.resource, source.text, replaced),
+                    status: "modified" as const,
+                    ...counts,
+                  },
+                ],
+                replacements,
+              } satisfies Output
+            })
+          },
+        }),
       })
       .pipe(Effect.orDie)
   }),

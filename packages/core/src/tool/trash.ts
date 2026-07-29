@@ -43,54 +43,51 @@ export const layer = Layer.effectDiscard(
 
     yield* tools
       .register({
-        [name]: Tool.withPermission(
-          Tool.make({
-            description:
-              "Safely delete a file or directory: moves it into a dated Trash store (restorable for ~2 days) instead of destroying it. ALWAYS prefer this over `rm`/`del` in bash — the user can restore trashed items, and so can you if a deletion turns out wrong. Returns the trash id needed to restore.",
-            input: Input,
-            output: Output,
-            toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
-            execute: (input, context) =>
-              Effect.gen(function* () {
-                const source = {
-                  type: "tool" as const,
-                  messageID: context.assistantMessageID,
-                  callID: context.toolCallID,
-                }
-                const target = yield* mutation.resolve({ path: input.path })
-                const external = target.externalDirectory
-                if (external)
-                  yield* permission.assert({
-                    ...LocationMutation.externalDirectoryPermission(external, "write"),
-                    sessionID: context.sessionID,
-                    agent: context.agent,
-                    source,
-                  })
+        [name]: Tool.make({
+          description:
+            "Safely delete a file or directory: moves it into a dated Trash store (restorable for ~2 days) instead of destroying it. ALWAYS prefer this over `rm`/`del` in bash — the user can restore trashed items, and so can you if a deletion turns out wrong. Returns the trash id needed to restore.",
+          input: Input,
+          output: Output,
+          toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
+          execute: (input, context) =>
+            Effect.gen(function* () {
+              const source = {
+                type: "tool" as const,
+                messageID: context.assistantMessageID,
+                callID: context.toolCallID,
+              }
+              const target = yield* mutation.resolve({ path: input.path })
+              const external = target.externalDirectory
+              if (external)
                 yield* permission.assert({
-                  action: name,
-                  resources: [target.resource],
-                  targets: [{ resource: target.resource, canonical: target.canonical }],
-                  attachmentPaths: [...(context.attachmentPaths ?? [])],
-                  save: ["*"],
+                  ...LocationMutation.externalDirectoryPermission(external, "write"),
                   sessionID: context.sessionID,
                   agent: context.agent,
                   source,
                 })
-                const entry = yield* Effect.tryPromise(() => trashPath(target.canonical))
-                return { id: entry.id, originalPath: entry.originalPath, type: entry.type }
-              }).pipe(
-                Effect.mapError((error) => {
-                  if (error instanceof ToolFailure) return error
-                  const denial = PermissionV2.denialMessage(error)
-                  if (denial) return new ToolFailure({ message: denial })
-                  return new ToolFailure({
-                    message: `Unable to trash ${input.path}: ${error instanceof Error ? error.message : String(error)}`,
-                  })
-                }),
-              ),
-          }),
-          name,
-        ),
+              yield* permission.assert({
+                action: name,
+                resources: [target.resource],
+                targets: [{ resource: target.resource, canonical: target.canonical }],
+                attachmentPaths: [...(context.attachmentPaths ?? [])],
+                save: ["*"],
+                sessionID: context.sessionID,
+                agent: context.agent,
+                source,
+              })
+              const entry = yield* Effect.tryPromise(() => trashPath(target.canonical))
+              return { id: entry.id, originalPath: entry.originalPath, type: entry.type }
+            }).pipe(
+              Effect.mapError((error) => {
+                if (error instanceof ToolFailure) return error
+                const denial = PermissionV2.denialMessage(error)
+                if (denial) return new ToolFailure({ message: denial })
+                return new ToolFailure({
+                  message: `Unable to trash ${input.path}: ${error instanceof Error ? error.message : String(error)}`,
+                })
+              }),
+            ),
+        }),
       })
       .pipe(Effect.orDie)
   }),

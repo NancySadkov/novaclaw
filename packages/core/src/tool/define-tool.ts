@@ -46,52 +46,48 @@ export const layer = Layer.effectDiscard(
 
     yield* tools
       .register({
-        [name]: Tool.withPermission(
-          Tool.make({
-            description:
-              "Define (or update) a named ad-hoc tool recipe for this session: {name, description, manual}. Use it when you have worked out a reusable command or API call — the manual should carry the API shape and 1-2 working examples so you (or the user) can rerun it later via tool_manual. Session-scoped; never embed secrets in the manual.",
-            input: Input,
-            output: Output,
-            toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
-            execute: (input, context) =>
-              Effect.gen(function* () {
-                yield* permission.assert({
-                  action: name,
-                  resources: [input.name.trim() || "(unnamed)"],
-                  save: ["*"],
-                  sessionID: context.sessionID,
-                  agent: context.agent,
-                  source: {
-                    type: "tool" as const,
-                    messageID: context.assistantMessageID,
-                    callID: context.toolCallID,
-                  },
+        [name]: Tool.make({
+          description:
+            "Define (or update) a named ad-hoc tool recipe for this session: {name, description, manual}. Use it when you have worked out a reusable command or API call — the manual should carry the API shape and 1-2 working examples so you (or the user) can rerun it later via tool_manual. Session-scoped; never embed secrets in the manual.",
+          input: Input,
+          output: Output,
+          toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
+          execute: (input, context) =>
+            Effect.gen(function* () {
+              yield* permission.assert({
+                action: name,
+                resources: [input.name.trim() || "(unnamed)"],
+                save: ["*"],
+                sessionID: context.sessionID,
+                agent: context.agent,
+                source: {
+                  type: "tool" as const,
+                  messageID: context.assistantMessageID,
+                  callID: context.toolCallID,
+                },
+              })
+              const recipe = yield* Effect.tryPromise({
+                try: () =>
+                  saveSessionRecipe(context.sessionID, {
+                    name: input.name,
+                    description: input.description,
+                    manual: input.manual,
+                  }),
+                // normalizeRecipe throws model-legible validation messages — keep them intact.
+                catch: (error) => new ToolFailure({ message: error instanceof Error ? error.message : String(error) }),
+              })
+              return { name: recipe.name, scope: "session" as const }
+            }).pipe(
+              Effect.mapError((error) => {
+                if (error instanceof ToolFailure) return error
+                const denial = PermissionV2.denialMessage(error)
+                if (denial) return new ToolFailure({ message: denial })
+                return new ToolFailure({
+                  message: `Unable to define tool: ${error instanceof Error ? error.message : String(error)}`,
                 })
-                const recipe = yield* Effect.tryPromise({
-                  try: () =>
-                    saveSessionRecipe(context.sessionID, {
-                      name: input.name,
-                      description: input.description,
-                      manual: input.manual,
-                    }),
-                  // normalizeRecipe throws model-legible validation messages — keep them intact.
-                  catch: (error) =>
-                    new ToolFailure({ message: error instanceof Error ? error.message : String(error) }),
-                })
-                return { name: recipe.name, scope: "session" as const }
-              }).pipe(
-                Effect.mapError((error) => {
-                  if (error instanceof ToolFailure) return error
-                  const denial = PermissionV2.denialMessage(error)
-                  if (denial) return new ToolFailure({ message: denial })
-                  return new ToolFailure({
-                    message: `Unable to define tool: ${error instanceof Error ? error.message : String(error)}`,
-                  })
-                }),
-              ),
-          }),
-          name,
-        ),
+              }),
+            ),
+        }),
       })
       .pipe(Effect.orDie)
   }),

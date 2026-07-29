@@ -53,59 +53,56 @@ export const layer = Layer.effectDiscard(
 
     yield* tools
       .register({
-        [name]: Tool.withPermission(
-          Tool.make({
-            description:
-              "Write content to one file. Prefer `edit` for any change short of a full rewrite — every rewrite is a fresh chance to introduce a typo, and wholesale overwrites can be denied by permission mode. Known failure mode: content beyond a few hundred lines can be truncated by the model server mid-stream, breaking the call — build any large NEW file in chunks from the FIRST call (write the head, then append parts with bash `cat >> path <<'EOF'`), and never retry a truncated whole-file write through any tool. Relative paths resolve within the active Location. Absolute paths inside the Location are accepted. Explicit external absolute paths require external_directory approval before edit approval.",
-            input: Input,
-            output: Output,
-            toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
-            execute: (input, context) =>
-              Effect.gen(function* () {
-                const source = {
-                  type: "tool" as const,
-                  messageID: context.assistantMessageID,
-                  callID: context.toolCallID,
-                }
-                const target = yield* mutation.resolve({ path: input.path, kind: "file" })
-                const external = target.externalDirectory
-                if (external)
-                  yield* permission.assert({
-                    ...LocationMutation.externalDirectoryPermission(external, "write"),
-                    sessionID: context.sessionID,
-                    agent: context.agent,
-                    source,
-                  })
-                // 1I: creating a NEW file and overwriting an existing one WHOLESALE are distinct
-                // actions, so a mode (1K "surgical") can permit edits + new files while denying
-                // full rewrites — the classic small-model failure of regenerating a whole file.
-                const existed = yield* Effect.promise(() =>
-                  fs.access(target.canonical).then(
-                    () => true,
-                    () => false,
-                  ),
-                )
+        [name]: Tool.make({
+          description:
+            "Write content to one file. Prefer `edit` for any change short of a full rewrite — every rewrite is a fresh chance to introduce a typo, and wholesale overwrites can be denied by permission mode. Known failure mode: content beyond a few hundred lines can be truncated by the model server mid-stream, breaking the call — build any large NEW file in chunks from the FIRST call (write the head, then append parts with bash `cat >> path <<'EOF'`), and never retry a truncated whole-file write through any tool. Relative paths resolve within the active Location. Absolute paths inside the Location are accepted. Explicit external absolute paths require external_directory approval before edit approval.",
+          input: Input,
+          output: Output,
+          toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
+          execute: (input, context) =>
+            Effect.gen(function* () {
+              const source = {
+                type: "tool" as const,
+                messageID: context.assistantMessageID,
+                callID: context.toolCallID,
+              }
+              const target = yield* mutation.resolve({ path: input.path, kind: "file" })
+              const external = target.externalDirectory
+              if (external)
                 yield* permission.assert({
-                  action: existed ? "write" : "create",
-                  resources: [target.resource],
-                  targets: [{ resource: target.resource, canonical: target.canonical }],
-                  attachmentPaths: [...(context.attachmentPaths ?? [])],
-                  save: ["*"],
+                  ...LocationMutation.externalDirectoryPermission(external, "write"),
                   sessionID: context.sessionID,
                   agent: context.agent,
                   source,
                 })
-                return yield* files.writeTextPreservingBom({ target, content: input.content })
-              }).pipe(
-                Effect.mapError((error) => {
-                  const denial = PermissionV2.denialMessage(error)
-                  if (denial) return new ToolFailure({ message: denial })
-                  return new ToolFailure({ message: `Unable to write ${input.path}` })
-                }),
-              ),
-          }),
-          "write",
-        ),
+              // 1I: creating a NEW file and overwriting an existing one WHOLESALE are distinct
+              // actions, so a mode (1K "surgical") can permit edits + new files while denying
+              // full rewrites — the classic small-model failure of regenerating a whole file.
+              const existed = yield* Effect.promise(() =>
+                fs.access(target.canonical).then(
+                  () => true,
+                  () => false,
+                ),
+              )
+              yield* permission.assert({
+                action: existed ? "write" : "create",
+                resources: [target.resource],
+                targets: [{ resource: target.resource, canonical: target.canonical }],
+                attachmentPaths: [...(context.attachmentPaths ?? [])],
+                save: ["*"],
+                sessionID: context.sessionID,
+                agent: context.agent,
+                source,
+              })
+              return yield* files.writeTextPreservingBom({ target, content: input.content })
+            }).pipe(
+              Effect.mapError((error) => {
+                const denial = PermissionV2.denialMessage(error)
+                if (denial) return new ToolFailure({ message: denial })
+                return new ToolFailure({ message: `Unable to write ${input.path}` })
+              }),
+            ),
+        }),
       })
       .pipe(Effect.orDie)
   }),
