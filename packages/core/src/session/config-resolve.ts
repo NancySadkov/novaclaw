@@ -507,15 +507,19 @@ export const sessionToConfig = (session: SessionLike): SessionConfig => ({
 })
 
 /**
- * Resolve a session's effective config by walking `parentID` root-ward and merging. `getSession`
- * fetches a session by id (or `undefined`). Guards against a cyclic `parentID` chain so a corrupt
- * tree can never loop forever.
+ * The `[root … session]` chain of config OVERRIDES for a session, walking `parentID` root-ward.
+ * `getSession` fetches a session by id (or `undefined`). Guards against a cyclic `parentID` chain
+ * so a corrupt tree can never loop forever.
+ *
+ * Extracted so `resolveSessionConfig` (what a TURN runs with) and `forkSessionConfig` (what a FORK
+ * is seeded from) share ONE walk. They must agree by construction: ruling 8's guarantee is that a
+ * fork resolves to what its source resolved to, and two walks that could drift would make that a
+ * claim about code in another file — the defect class ruling 1 names.
  */
-export const resolveSessionConfig = <E, R>(
-  defaults: EffectiveConfig,
+export const sessionConfigChain = <E, R>(
   sessionID: string,
   getSession: (id: string) => Effect.Effect<SessionLike | undefined, E, R>,
-): Effect.Effect<EffectiveConfig, E, R> =>
+): Effect.Effect<SessionConfig[], E, R> =>
   Effect.gen(function* () {
     const chain: SessionConfig[] = []
     const seen = new Set<string>()
@@ -527,8 +531,151 @@ export const resolveSessionConfig = <E, R>(
       chain.unshift(sessionToConfig(session)) // prepend so the root ends up first
       id = session.parentID
     }
-    return resolveConfig(defaults, chain)
+    return chain
   })
+
+/**
+ * Resolve a session's effective config by walking `parentID` root-ward and merging. `getSession`
+ * fetches a session by id (or `undefined`). Guards against a cyclic `parentID` chain so a corrupt
+ * tree can never loop forever.
+ */
+export const resolveSessionConfig = <E, R>(
+  defaults: EffectiveConfig,
+  sessionID: string,
+  getSession: (id: string) => Effect.Effect<SessionLike | undefined, E, R>,
+): Effect.Effect<EffectiveConfig, E, R> =>
+  sessionConfigChain(sessionID, getSession).pipe(Effect.map((chain) => resolveConfig(defaults, chain)))
+
+// ─────────────────────────────────────────────────────────────────────────────
+// FORK — ruling 8: "`fork` copies the source's chain-RESOLVED config, never its raw row", and
+// "a fork returning LESS restricted than its source is a defect, not a preference".
+//
+// ⚠️ WHY THE RAW ROW IS WRONG, and why the bug hid for so long. `spawn` gives the child a
+// `parentID`, so everything the child does not declare is inherited by the walk above — every
+// inheritance test in the tree goes through spawn, and they all pass. `fork` deliberately creates
+// a ROOT (`parentID` undefined: a fork is an independent chat, not a sub-agent), so there is no
+// parent left to inherit from and whatever the source's raw row does not itself carry is simply
+// GONE. Measured 2026-07-29 against the then-current tree: a fork dropped `systemPromptOverride`,
+// `type`, `priority`, `responder`, `thinkingBudget`, `surgicalEdits` and `askBeforeChanges`
+// outright, and dropped EVERY field a child had inherited rather than declared. `type` and
+// `askBeforeChanges` are restrictions, so forking a constrained session returned a less
+// constrained one with no user action that reads as "loosen this".
+//
+// ── THE DESIGN ANSWER (materialise vs keep inheriting), stated here because the next reader
+//    will face the same fork ────────────────────────────────────────────────────────────────
+// A fork MATERIALISES the chain-resolved value of every field the source's chain actually
+// DECLARES, and leaves every other field absent.
+//
+//  1. A fork is a root, so "keep inheriting" cannot mean "from my parent" — it can only mean
+//     "from the global defaults". Ruling 8's "never its raw row" is exactly about the difference
+//     between the row and the chain: for a forked CHILD, everything the parent contributed is
+//     lost unless it is written down.
+//  2. Materialising only the DECLARED set is what keeps the ECS lens' sparse-override discipline
+//     (AGENTS.md: "only divergent values create rows"). A field nobody on the chain ever chose
+//     stays absent on the fork's row, so the fork keeps tracking the global default exactly as
+//     its source did — a future change to `EFFECTIVE_CONFIG_DEFAULTS` still reaches it. What we
+//     refuse is the strong reading of "copy the resolved config", which would stamp every default
+//     into the row and produce a session that inherits nothing ever again.
+//  3. The narrowing keystone then holds BY CONSTRUCTION rather than by care: the fork is a root,
+//     so `resolveConfig` takes its `permissionMode` at index 0 verbatim — and that value is the
+//     source's ALREADY-NARROWED mode. So `resolve(fork) === resolve(source)`, field for field:
+//     the fork is never less restricted, and never more.
+//
+// ⚠️ THE ONE BEHAVIOUR THIS CHANGES BEYOND CONFIG, named rather than discovered later. `type` has
+// two consumers that read it differently: attendance walks to the chain ROOT (`rootAttendance`),
+// while the self-drive reads the session's OWN row (`runner/drive.ts`). Materialising `type` is
+// REQUIRED by the first — a fork is its own root, so a fork of an `auto-prompting`/`goal-oriented`
+// chain that did not carry the type would come back ATTENDED, i.e. out of the unattended
+// confinement stance, which is exactly the loosening ruling 8 forbids. The second then follows:
+// forking a CHILD that inherited `goal-oriented` yields a root that self-drives, where the child
+// itself did not. That is the right answer, not a side effect — the child did not self-drive
+// because its supervisor drove it, and the fork has no supervisor; the alternative is a
+// goal-oriented chat that stalls. (Forking a ROOT is unchanged either way.) `drive.ts`'s "forks
+// don't silently self-drive" still holds as written: it is about an ANCESTOR's type leaking
+// through the walk, and the fork's type is now its own declared value.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** How `fork` carries one `SessionConfig` field. */
+export type SessionConfigForkCarry =
+  /** The session row carries it (via `sessionToConfig`), so the fork gets the chain-resolved value. */
+  | "resolved"
+  /**
+   * A `SessionConfig` field NO session row can express yet, so there is nothing on the chain to
+   * copy: `device` and `tools` have no column at all, and `permissionRules` has a column
+   * (`session.permission`) that `sessionToConfig` does not map — architecture.md Phase 1 step 4
+   * is blocked on the V1/V2 ruleset reconciliation. The fork copies that column verbatim
+   * meanwhile (see `session.ts`), which can only preserve restrictions, never widen them.
+   */
+  | "absent-from-row"
+
+/**
+ * Ruling 8's *"declare every `SessionConfig` field once in a `SESSION_CONFIG_FIELDS` descriptor"*,
+ * in its FORK-sized first cut. The full descriptor (schema field ↔ column ↔ merge strategy, driving
+ * `fromRow`/`sessionRow`/`sessionToConfig`/the resolve fold/`CreateInput`) is Wave 3's **B2**; this
+ * declares the one axis `fork` needs and gives B2 a home to widen rather than a list to discover.
+ *
+ * ⚠️ It is a RATCHET, not documentation, and it bites from two directions:
+ *  · the type annotation makes a new `SessionConfig` field a COMPILE error until it is classified;
+ *  · `session-fork-config.test.ts` asserts `"resolved" ⇔ sessionToConfig maps it`, so classifying a
+ *    row-carried field as `absent-from-row` to dodge the work fails a test, and it then asserts the
+ *    fork actually round-trips every `"resolved"` field through a real DB.
+ * Neither check repeats the field list — both read it from here.
+ */
+export const SESSION_CONFIG_FIELDS: Readonly<Record<keyof SessionConfig, SessionConfigForkCarry>> = {
+  device: "absent-from-row",
+  model: "resolved",
+  agent: "resolved",
+  systemPromptOverride: "resolved",
+  type: "resolved",
+  priority: "resolved",
+  responder: "resolved",
+  permissionMode: "resolved",
+  permissionRules: "absent-from-row",
+  introspection: "resolved",
+  quality: "resolved",
+  affective: "resolved",
+  thinkingBudget: "resolved",
+  surgicalEdits: "resolved",
+  askBeforeChanges: "resolved",
+  strict: "resolved",
+  tools: "absent-from-row",
+}
+
+/** Every `SessionConfig` key, read off the descriptor (never re-typed). */
+export const SESSION_CONFIG_FIELD_KEYS: readonly (keyof SessionConfig)[] = Object.keys(
+  SESSION_CONFIG_FIELDS,
+) as (keyof SessionConfig)[]
+
+/** The keys a fork must carry — the descriptor's `"resolved"` half. */
+export const SESSION_CONFIG_FORK_FIELDS: readonly (keyof SessionConfig)[] = SESSION_CONFIG_FIELD_KEYS.filter(
+  (key) => SESSION_CONFIG_FIELDS[key] === "resolved",
+)
+
+/**
+ * The overrides a FORK's own row must carry, given its source's `[root … source]` chain: the
+ * chain-RESOLVED value of every field some layer declared, and nothing else (see the block above).
+ *
+ * Resolution runs through the SAME `resolveConfig` a turn uses — including `permissionMode`
+ * narrowing and `permissionRules` accumulation — so the fork cannot resolve to anything its source
+ * did not.
+ */
+export const forkOverrides = (chain: readonly SessionConfig[]): SessionConfig => {
+  const resolved = resolveConfig(EFFECTIVE_CONFIG_DEFAULTS, chain)
+  const overrides: Record<string, unknown> = {}
+  for (const key of SESSION_CONFIG_FORK_FIELDS) {
+    // Sparse-override discipline: a field NO layer declared stays absent, so the fork keeps
+    // inheriting the global default exactly as its source did.
+    if (!chain.some((layer) => layer[key] !== undefined)) continue
+    overrides[key] = resolved[key]
+  }
+  return overrides as SessionConfig
+}
+
+/** `sessionConfigChain` + `forkOverrides` — what `SessionV2.fork` seeds the new root session from. */
+export const forkSessionConfig = <E, R>(
+  sessionID: string,
+  getSession: (id: string) => Effect.Effect<SessionLike | undefined, E, R>,
+): Effect.Effect<SessionConfig, E, R> => sessionConfigChain(sessionID, getSession).pipe(Effect.map(forkOverrides))
 
 /**
  * The chain ROOT's attendance answer — attendance is a property of who answers at the root

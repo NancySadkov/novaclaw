@@ -7,6 +7,9 @@ import { and, asc, desc, eq, gt, isNull, like, lt, or, type SQL } from "drizzle-
 import { ProjectV2 } from "./project"
 import { WorkspaceV2 } from "./workspace"
 import { ModelV2 } from "./model"
+import { ProviderV2 } from "./provider"
+// Ruling 8: a fork is seeded from the source's chain-RESOLVED config, never its raw row.
+import { forkSessionConfig } from "./session/config-resolve"
 import { Location } from "./location"
 import { SessionMessage } from "./session/message"
 import { Prompt } from "./session/prompt"
@@ -143,12 +146,20 @@ type CreateInput = {
   type?: "interactive" | "sub-agent" | "auto-prompting" | "goal-oriented"
   priority?: number
   permissionMode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
+  // Who answers this session; `sessionRow` has always written the column, but until 2026-07-29 no
+  // create path could supply one, so the only writer was `SessionEvent.ResponderSwitched`.
+  responder?: SessionSchema.Info["responder"]
   // The per-session Strict-harness override (the composer switch); undefined = inherit.
   strict?: { enabled?: boolean; attempts?: number; wallMinutes?: number }
   // Per-session harness-feature overrides (the composer's Tuning control); undefined = inherit.
   introspection?: boolean
   quality?: boolean
   affective?: boolean
+  thinkingBudget?: SessionSchema.Info["thinkingBudget"]
+  // ⚠️ RESTRICTIONS. Until 2026-07-29 `sessionRow` dropped these two (and `thinkingBudget`) on the
+  // floor, so a create meaning to restrict a session silently produced an unrestricted one.
+  surgicalEdits?: boolean
+  askBeforeChanges?: boolean
   location: Location.Ref
   // F1c fork: a fork seeds its record from the source (title + cloned metadata).
   title?: string
@@ -367,10 +378,14 @@ export const createSessionRecord = (
       priority: input.priority,
       permission: input.permission ? [...input.permission] : undefined,
       permissionMode: input.permissionMode,
+      responder: input.responder,
       strict: input.strict,
       introspection: input.introspection,
       quality: input.quality,
       affective: input.affective,
+      thinkingBudget: input.thinkingBudget,
+      surgicalEdits: input.surgicalEdits,
+      askBeforeChanges: input.askBeforeChanges,
       cost: 0,
       tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
       time: { created: DateTime.makeUnsafe(now), updated: DateTime.makeUnsafe(now) },
@@ -936,6 +951,17 @@ export const layer = Layer.effect(
       // durable events — the forked aggregate replays without reaching into its source.
       // Deliberate V1 delta: the fork keeps the source's agent/model/permissionMode (V1
       // dropped them, demoting a fork to the default model mid-conversation).
+      //
+      // ⚠️ RULING 8 (2026-07-29): the config a fork carries is the source's CHAIN-RESOLVED
+      // config, never its raw row — *"a fork returning less restricted than its source is a
+      // defect, not a preference"*. The row alone was measurably not enough: it dropped
+      // `systemPromptOverride`, `type`, `priority`, `responder`, `thinkingBudget`,
+      // `surgicalEdits` and `askBeforeChanges` outright, plus EVERYTHING a child had inherited
+      // from its parent rather than declared itself. The asymmetry that hid it: `spawn` gives
+      // the child a `parentID` so the walk fills the gaps, and every inheritance test goes
+      // through spawn — a fork is a ROOT, so it has no parent to inherit from and an
+      // un-copied field is simply gone. Design + the materialise-vs-inherit answer:
+      // `session/config-resolve.ts`, the FORK block.
       fork: Effect.fn("V2Session.fork")(function* (input) {
         const row = yield* db
           .select()
@@ -966,25 +992,46 @@ export const layer = Layer.effect(
           directory: AbsolutePath.make(row.directory),
           workspaceID: row.workspace_id ?? undefined,
         })
+        const inherited = yield* forkSessionConfig(input.sessionID, (id) => store.get(SessionSchema.ID.make(id)))
         const forked = yield* createSessionRecord(
           { db, events, projects, store },
           {
             location,
             title: SessionTitle.forked(source.title),
             metadata: source.metadata ? structuredClone({ ...source.metadata }) : undefined,
-            agent: source.agent ? AgentV2.ID.make(source.agent) : undefined,
-            model: source.model
+            agent: inherited.agent ? AgentV2.ID.make(inherited.agent) : undefined,
+            model: inherited.model
               ? ModelV2.Ref.make({
-                  id: source.model.id,
-                  providerID: source.model.providerID,
-                  variant: source.model.variant ? ModelV2.VariantID.make(source.model.variant) : undefined,
+                  id: ModelV2.ID.make(inherited.model.id),
+                  providerID: ProviderV2.ID.make(inherited.model.providerID),
+                  variant: inherited.model.variant ? ModelV2.VariantID.make(inherited.model.variant) : undefined,
                 })
               : undefined,
-            permissionMode: source.permissionMode,
-            strict: source.strict,
-            introspection: source.introspection,
-            quality: source.quality,
-            affective: source.affective,
+            systemPromptOverride: inherited.systemPromptOverride,
+            type: inherited.type,
+            priority: inherited.priority,
+            permissionMode: inherited.permissionMode,
+            strict: inherited.strict,
+            introspection: inherited.introspection,
+            quality: inherited.quality,
+            affective: inherited.affective,
+            // The saved ruleset is classified `absent-from-row` in `SESSION_CONFIG_FIELDS`: it has
+            // a column but `sessionToConfig` does not map it, so the chain fold cannot see it
+            // (architecture.md Phase 1 step 4 is blocked on the V1/V2 ruleset reconciliation, and
+            // no V2 evaluator reads the column today). Copying the source's own column verbatim is
+            // the only faithful carry available and can only PRESERVE restrictions, never widen
+            // them. When step 4 lands and `permissionRules` joins `sessionToConfig`, this line goes
+            // away and the fold carries it — the descriptor entry flips to `"resolved"` and the
+            // fork test starts demanding it.
+            permission: source.permission ? [...source.permission] : undefined,
+            // Carried directly since 2026-07-29. These four used to finish through
+            // `FeatureSwitched`/`ResponderSwitched` events because `sessionRow` silently dropped
+            // `thinking_budget`/`surgical_edits`/`ask_before_changes` and `CreateInput` had no
+            // `responder` — both fixed, so the workaround collapsed to this.
+            responder: inherited.responder,
+            thinkingBudget: inherited.thinkingBudget,
+            surgicalEdits: inherited.surgicalEdits,
+            askBeforeChanges: inherited.askBeforeChanges,
           },
         )
         const sourceRows = yield* db

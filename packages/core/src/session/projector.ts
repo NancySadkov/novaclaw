@@ -37,7 +37,13 @@ type Usage = {
 // V1-nuke slice D: the record events carry the NATIVE Session.Info; this is fromRow's inverse.
 // share_url/time_compacting are no longer written (their only traffic was the V1 codec round-trip;
 // the columns stay for old rows).
-function sessionRow(info: SessionSchema.Info): typeof SessionTable.$inferInsert {
+//
+// ⚠️ That "inverse" claim was FALSE from the V1 nuke until 2026-07-29 — three columns were missing —
+// and a comment is how it stayed false. It is now a test: `session-row-inverse.test.ts` round-trips
+// a fully-populated Info through `sessionRow` → `fromRow` and fails naming any field that does not
+// survive, so a new `Info` field added without a line here breaks loudly instead of writing NULL.
+// Exported for that test only.
+export function sessionRow(info: SessionSchema.Info): typeof SessionTable.$inferInsert {
   return {
     id: info.id,
     workspace_id: info.location.workspaceID ?? null,
@@ -72,6 +78,17 @@ function sessionRow(info: SessionSchema.Info): typeof SessionTable.$inferInsert 
     tokens_cache_write: (info.tokens ?? { cache: { write: 0 } }).cache.write,
     revert: info.revert ? { ...info.revert, messageID: SessionMessage.ID.make(info.revert.messageID) } : null,
     permission: info.permission ? [...info.permission] : undefined,
+    // ⚠️ These three were MISSING until 2026-07-29, which made the "fromRow's inverse" claim above
+    // false and cost the fork fix a workaround. Measured by publishing a `Created` whose `Info`
+    // carried all three `true`: the projected row came back all-NULL. Their only writer was
+    // `SessionEvent.FeatureSwitched`, so no create path could set them — and two of the three
+    // (`surgical_edits`, `ask_before_changes`) are RESTRICTIONS, so a create that meant to restrict
+    // silently did not. Safe on the `Updated` arm because drizzle omits `undefined` keys from a SET
+    // clause: an unrelated `setTitle`/`setMetadata` round-trips the whole `Info`, so a session that
+    // has these set carries them back in, and one that never did keeps writing `undefined`.
+    thinking_budget: info.thinkingBudget,
+    surgical_edits: info.surgicalEdits,
+    ask_before_changes: info.askBeforeChanges,
     time_created: DateTime.toEpochMillis(info.time.created),
     time_updated: DateTime.toEpochMillis(info.time.updated),
     time_archived: info.time.archived ? DateTime.toEpochMillis(info.time.archived) : undefined,
