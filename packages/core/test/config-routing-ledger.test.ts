@@ -41,10 +41,11 @@ import { testEffect } from "./lib/effect"
  *
  * ⚠️ **Measured 2026-07-29, and it bounds what this file can claim:** the only key unrouted today is
  * `$schema`, which is deliberate. So this is a guard against the NEXT key, not a live bug being
- * closed — the live-bug half was `models`, and that is already fixed. The one thing that IS still
- * live is a layer up and out of this file's reach: an entirely *unknown* top-level key is dropped by
- * the payload decode (`onExcessProperty: "ignore"`) before `apply` ever sees it, so a typo'd key
- * still answers 200. See `ConfigStoreWrite.unroutedKeys`' ⚠️ note.
+ * closed — the live-bug half was `models`, and that is already fixed. The other live half, an
+ * entirely *unknown* top-level key dropped by the payload decode before `apply` ever saw it, was a
+ * layer up and out of this file's reach; it is **closed too** (`rejectUnknownConfigKeys`, 2026-07-29,
+ * covered by `packages/novaclaw/test/server/httpapi-config-unknown-key.test.ts`). See
+ * `ConfigStoreWrite.unroutedKeys`' ⚠️ note for why the two guards answer differently.
  */
 
 /** `packages/core/test` → `packages/core`. */

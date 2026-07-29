@@ -140,15 +140,18 @@ export const NOT_ROUTED_KEYS: ReadonlyMap<string, string> = new Map([
  * would have its stray key removed before the check could name it. On the wire path the two sets
  * are identical — see the ⚠️ below.
  *
- * ⚠️ What this does NOT cover, measured 2026-07-29: an entirely UNKNOWN top-level key never
- * reaches here. `HttpApiEndpoint.patch("update", …, { payload: Config.Info })` decodes with Effect
- * Schema's default `onExcessProperty: "ignore"`, so `PATCH /config {"provider_preset": …}` (a
- * singular typo) is dropped at the wire and answers 200 with the key gone — the same ruling-2
- * violation one layer up, on the same self-healing path. todo.md's *Runtime ground truth* §4 says
- * the config service "rejects unknown top-level keys"; for this route it does not. That is a
- * separate fix (it needs a decision about whether an import of a FORWARD-version document should
- * 400, since `settings-config-seed.ts`'s file path deliberately ignores unknown keys) and is filed
- * rather than smuggled in here.
+ * ⚠️ What this does NOT cover, and where that is handled now: an entirely UNKNOWN top-level key
+ * never reaches here — the payload decodes with Effect Schema's default `onExcessProperty:
+ * "ignore"`, so it is gone before `apply` runs. That was a live ruling-2 violation (a typo answered
+ * 200 with the key silently dropped) and it is **CLOSED as of 2026-07-29** by
+ * `rejectUnknownConfigKeys` in `httpapi/groups/config.ts`, which 400s at both PATCH routes and names
+ * every offending key.
+ *
+ * **The two guards are deliberately different and neither can substitute for the other.** There =
+ * a key `Config.Info` never declared, i.e. caller input, so a 400. Here = a key `Config.Info` DOES
+ * declare and no router arm consumes, i.e. a programming defect that shipped, so a die inside the
+ * transaction. A 400 for the second would blame the caller for our bug; a die for the first would
+ * turn a typo into a 500.
  */
 export const unroutedKeys = (patch: Config.Info, consumed: ReadonlySet<string>): string[] => {
   const values = patch as unknown as Record<string, unknown>

@@ -11,6 +11,7 @@ import * as InstanceState from "@/effect/instance-state"
 import { Effect, Layer, Schema } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
+import { rejectUnknownConfigKeys } from "../groups/config"
 import { markInstanceForDisposal } from "../lifecycle"
 
 export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (handlers) =>
@@ -34,6 +35,12 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
     // anymore). Invalidate refreshes the service's cached store view; disposal makes location
     // boots re-snapshot.
     const update = Effect.fn("ConfigHttpApi.update")(function* (ctx) {
+      // Ruling 2, FIRST: an unknown top-level key never survives the payload decode
+      // (`onExcessProperty: "ignore"`), so it would answer 200 for a write that never happened.
+      // Refuse on the wire, by name, before anything is attempted. Reasoning — including why the
+      // FILE import path deliberately stays lenient, and the forward-compat cost — lives with the
+      // guard in `../groups/config`.
+      yield* rejectUnknownConfigKeys(ctx.request)
       const consumed = yield* ConfigStoreWrite.apply(ctx.payload)
       if (consumed.size > 0) yield* configSvc.invalidate()
       yield* markInstanceForDisposal(yield* InstanceState.context)
@@ -43,10 +50,10 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
       // what was sent, since `models` normalizes into `providers`. The sibling global route already
       // answers this way (handlers/global.ts:123-124); the two disagreed.
       //
-      // The reply is now total as well as honest: `apply` refuses a `Config.Info` key no store
-      // routes instead of dropping it (`NOT_ROUTED_KEYS`), so a 200 here means every key in the
-      // patch either landed or is a ledgered no-op. ⚠️ An entirely UNKNOWN key is still dropped one
-      // layer up, by the payload decode (`onExcessProperty: "ignore"`) — see `unroutedKeys`.
+      // The reply is now total as well as honest, in both directions: an entirely UNKNOWN key is
+      // refused above by `rejectUnknownConfigKeys` (400, named), and a DECLARED key no store routes
+      // faults inside `apply`'s transaction (`NOT_ROUTED_KEYS`). So a 200 here means every key in
+      // the patch either landed or is a ledgered no-op — nothing was accepted and discarded.
       const base = (yield* configSvc.get()) as Record<string, unknown>
       return Schema.decodeUnknownSync(ConfigV2.Info)(yield* ConfigStoreWrite.overlay(base))
     })

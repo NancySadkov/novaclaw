@@ -15,6 +15,7 @@ import { HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import * as Sse from "effect/unstable/encoding/Sse"
 import { RootHttpApi } from "../api"
+import { rejectUnknownConfigKeys } from "../groups/config"
 import { GlobalUpgradeInput } from "../groups/global"
 
 function eventData(data: unknown): Sse.Event {
@@ -117,6 +118,13 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
     // invalidates the service's cached store view and disposes instances: locations snapshot
     // config (and rebuild the catalog + the settings synthetic document) at boot.
     const configUpdate = Effect.fn("GlobalHttpApi.configUpdate")(function* (ctx) {
+      // Ruling 2, FIRST — and this is the route the UI actually uses (`serverSync().updateConfig`
+      // and Settings → Import both call `global.config.update`). An unknown top-level key is erased
+      // by the payload decode (`onExcessProperty: "ignore"`) and would answer 200 for a write that
+      // never happened; refuse it on the wire, by name, before anything is attempted. The full
+      // reasoning — the deliberate divergence from the FILE import path, and the forward-compat
+      // cost of 400ing a newer client's key — lives with the guard in `../groups/config`.
+      yield* rejectUnknownConfigKeys(ctx.request)
       const consumed = yield* ConfigStoreWrite.apply(ctx.payload)
       if (consumed.size > 0) {
         yield* config.invalidate()

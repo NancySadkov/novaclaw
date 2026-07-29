@@ -262,6 +262,24 @@ function decodeFailureReason(cause: Cause.Cause<unknown>): string {
 // validate and report the rest. The all-valid case (overwhelmingly common) takes the whole-document
 // fast path and is byte-for-byte the old behaviour. Unknown keys stay silently ignored
 // (onExcessProperty: "ignore") — only KNOWN keys that fail validation are reported as skipped.
+//
+// ⚠️ **The WIRE deliberately disagrees with this line, since 2026-07-29 — do not "fix" the
+// inconsistency by making either side match the other.** `PATCH /config` and `PATCH /global/config`
+// now REFUSE an undeclared top-level key with a 400 that names it
+// (`rejectUnknownConfigKeys` in packages/novaclaw/src/server/routes/instance/httpapi/groups/config.ts),
+// because accepting one and answering 200 is todo.md ruling 2's *a failed mutation never reports
+// success* on the surface AGENTS.md's self-healing law depends on: an agent that PATCHes a typo'd
+// key, gets 200, re-reads and finds nothing cannot tell a typo from a broken instance, so it loops.
+// The divergence is the point, not an oversight — the two paths have different authors and different
+// moments:
+//  · a FILE is hand-authored, may have been written for any version of NovaClaw, and is applied at
+//    BOOT, where there is no caller to answer and refusing it would leave the instance unconfigured
+//    over one stale key. Ignoring is the recoverable behaviour here.
+//  · a PATCH is a deliberate mutation with a LIVE caller — a user in Settings, or an agent repairing
+//    the instance — who can act on "that key does not exist" and cannot act on silence.
+// If this line ever needs to change, the honest change is REPORTING an unknown key as a skipped key
+// (it already has a notice channel: `SkippedConfigKey` + `formatSkippedNotice`), never making the
+// wire lenient again.
 function decodeText(text: string | undefined, source: string): { info?: Config.Info; skipped: SkippedConfigKey[] } {
   if (!text) return { skipped: [] }
   const errors: ParseError[] = []
