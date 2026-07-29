@@ -8,9 +8,11 @@ import { Config } from "@novaclaw/core/config"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { Global } from "@novaclaw/core/global"
+import { PermissionV2 } from "@novaclaw/core/permission"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SystemContext } from "@novaclaw/core/system-context"
 import { ToolOutputStore } from "@novaclaw/core/tool-output-store"
+import { DefineToolTool } from "@novaclaw/core/tool/define-tool"
 import { ToolManualTool } from "@novaclaw/core/tool/tool-manual"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import { tmpdir } from "./fixture/tmpdir"
@@ -33,8 +35,10 @@ import { executeTool, toolIdentity } from "./lib/tool"
  * manual the tool then reports missing. A tool telling the model "No ad-hoc tool named weather"
  * about a name the prompt just advertised is ruling 2's *a fault is never described falsely*.
  *
- * The first test is the behavioural pin. The ledger below is the residue: four other production
- * call sites still resolve the root the module-level way, and it can only shrink.
+ * The first test is the behavioural pin. The ledger below WAS the residue — four other production
+ * call sites resolving the root the module-level way. All four were converged on 2026-07-29, so the
+ * ledger is now empty and its first assertion has hardened from "every offender is written down"
+ * into "there are no offenders". That is the ratchet doing what it was for.
  */
 
 const sessionID = SessionV2.ID.make("ses_adhoc_store_root")
@@ -49,7 +53,15 @@ const outputStore = Layer.mock(ToolOutputStore.Service, {
   bound: (input) => Effect.succeed({ output: input.output, outputPaths: [] }),
 })
 
-/** AdhocGuidance + tool_manual in ONE graph, over ONE overridden data root. That is the point. */
+/** `define_tool` is permission-gated; the gate is not what this file is about, so grant it. */
+const permission = Layer.mock(PermissionV2.Service, { assert: () => Effect.void })
+
+/**
+ * AdhocGuidance + tool_manual + define_tool in ONE graph, over ONE overridden data root. That is
+ * the point: these three are the write half and the two read halves of a single store, and the only
+ * way a root disagreement can be observed at all is to hold them together under an overridden
+ * `Global`.
+ */
 const withBoth = <A, E, R>(
   body: (input: {
     root: string
@@ -74,10 +86,12 @@ const withBoth = <A, E, R>(
               ToolRegistry.toolsNode,
               AdhocGuidance.node,
               ToolManualTool.node,
+              DefineToolTool.node,
             ]),
             [
               [Global.node, Global.layerWith({ data: tmp.path })],
               [ToolOutputStore.node, outputStore],
+              [PermissionV2.node, permission],
               [
                 Config.node,
                 Layer.succeed(Config.Service, Config.Service.of({ entries: () => Effect.succeed([]) })),
@@ -116,6 +130,57 @@ describe("the ad-hoc store root is resolved once, through Global.Service", () =>
     ),
   )
 
+  it.live("define_tool WRITES where the prompt reads — the pair that would have diverged silently", () =>
+    // The writer half. `define-tool.ts` used to call `saveSessionRecipe` with no root, so under an
+    // overridden Global it wrote to the real XDG data dir while `AdhocGuidance` (already on the
+    // service) listed the overridden one. Nothing failed loudly: the model was simply told its
+    // brand-new tool did not exist. Assert the file lands under the OVERRIDDEN root, then that both
+    // readers see it.
+    withBoth(({ root, guidance, registry }) =>
+      Effect.gen(function* () {
+        expect(
+          yield* executeTool(registry, {
+            sessionID,
+            ...toolIdentity,
+            call: {
+              type: "tool-call",
+              id: "call-define",
+              name: "define_tool",
+              input: { name: "tides", description: "Tide table", manual: "curl http://example.test/tides" },
+            },
+          }),
+        ).toEqual({ type: "text", value: DefineToolTool.toModelOutput({ name: "tides", scope: "session" }) })
+
+        // Where it actually landed — the assertion the grep ledger cannot make.
+        const file = path.join(root, `${sessionID}.json`)
+        expect(fs.existsSync(file)).toBe(true)
+        expect(JSON.parse(fs.readFileSync(file, "utf8"))).toEqual([
+          { name: "tides", description: "Tide table", manual: "curl http://example.test/tides" },
+        ])
+
+        // …and both readers in the same graph now agree it exists.
+        const baseline = yield* guidance
+          .load(sessionID)
+          .pipe(Effect.flatMap(SystemContext.initialize), Effect.map((context) => context.baseline))
+        expect(baseline).toContain("tides — Tide table")
+        expect(
+          yield* executeTool(registry, {
+            sessionID,
+            ...toolIdentity,
+            call: { type: "tool-call", id: "call-manual-tides", name: "tool_manual", input: { name: "tides" } },
+          }),
+        ).toEqual({
+          type: "text",
+          value: ToolManualTool.toModelOutput({
+            name: "tides",
+            description: "Tide table",
+            manual: "curl http://example.test/tides",
+          }),
+        })
+      }),
+    ),
+  )
+
   it.live("a name that really is absent still gets the honest answer", () =>
     // The negative control for the test above: it must be possible to FAIL to find a recipe, or the
     // assertion would pass against a tool that says yes to everything.
@@ -141,11 +206,21 @@ describe("the ad-hoc store root is resolved once, through Global.Service", () =>
  * a file that composes it has resolved the root through `Global.Service`, a file that calls the
  * store functions without it inherits `Global.Path.data` at the point of use.
  *
- * The four entries below are NOT the same severity as the one this file fixed — none of them is
- * paired with a reader inside the same graph the way `tool_manual` is paired with the prompt — but
- * they are the same shape, and `define-tool.ts` in particular WRITES the store that guidance reads.
- * They live outside this batch's file ownership; the ledger records them so the next agent inherits
- * a list rather than a rediscovery.
+ * ✅ **The ledger is EMPTY (2026-07-29).** Its four entries — `tool/define-tool.ts` (writes the
+ * store `AdhocGuidance` reads), `session/spawner.ts` and `messenger/gateway.ts` (the two 4D
+ * copy-on-spawn sites) and `novaclaw`'s HTTP handler — were converged onto `Global.Service` in one
+ * change, and this test is the proof: each one failed here BY NAME ("drop the ledger entry") until
+ * its line was removed.
+ *
+ * Be honest about what that bought. `Global.layerWith` has no production caller, so all six sites
+ * resolved to the same string in a shipped instance and no user-visible bug was fixed — this is
+ * hygiene plus testability. What it does buy is that a graph which overrides `Global` (this file,
+ * or any future per-instance data root) can no longer have two halves of the ad-hoc store looking
+ * in different directories, and the writer/reader pair — `define_tool` writes, the prompt lists —
+ * is exactly where such a divergence would have been silent rather than loud.
+ *
+ * An empty ledger means the first assertion below is no longer "everyone is written down" but
+ * "nobody is left". Re-opening it is a deliberate, reviewable edit — which is the point.
  */
 
 const ROOT = path.resolve(import.meta.dir, "..", "..", "..")
@@ -185,20 +260,31 @@ const sources = collect(path.join(ROOT, "packages"), [])
 /** The module that DEFINES the store is not a call site — it is the thing being resolved. */
 const DEFINER = "packages/core/src/adhoc-tools.ts"
 
-const callers = sources.filter((file) => file.name !== DEFINER && VERBS.test(file.text))
-const onService = callers.filter((file) => /\bstoreRootIn\s*\(/.test(file.text)).map((file) => file.name)
-const onModulePath = callers.filter((file) => !/\bstoreRootIn\s*\(/.test(file.text)).map((file) => file.name)
+const COMPOSES_ROOT = /\bstoreRootIn\s*\(/
 
-/** Every caller that still lets `Global.Path.data` decide, and what it does. Can only SHRINK. */
-const LEDGER = new Map<string, string>([
-  ["packages/core/src/tool/define-tool.ts", "saveSessionRecipe — WRITES the store AdhocGuidance reads."],
-  ["packages/core/src/session/spawner.ts", "copySessionRecipes — 4D copy-on-spawn, parent → child."],
-  ["packages/core/src/messenger/gateway.ts", "copySessionRecipes — the gateway's hand-rolled duplicate of the above."],
-  [
-    "packages/novaclaw/src/server/routes/instance/httpapi/handlers/adhoc.ts",
-    "list + removeSessionRecipe — the HTTP surface; a separate process from any test override.",
-  ],
-])
+/**
+ * Split the store's callers into the two buckets. Extracted so the negative control below can run
+ * the REAL classifier over synthetic files: with the tree fully converged there is no longer a live
+ * offender to prove the `onModulePath` bucket can be non-empty, and a bucket that could never fill
+ * would report "no offenders" forever.
+ */
+function classify(files: ReadonlyArray<{ name: string; text: string }>) {
+  const callers = files.filter((file) => file.name !== DEFINER && VERBS.test(file.text))
+  return {
+    onService: callers.filter((file) => COMPOSES_ROOT.test(file.text)).map((file) => file.name),
+    onModulePath: callers.filter((file) => !COMPOSES_ROOT.test(file.text)).map((file) => file.name),
+  }
+}
+
+const { onService, onModulePath } = classify(sources)
+const callers = [...onService, ...onModulePath]
+
+/**
+ * Every caller that still lets `Global.Path.data` decide, and what it does. Can only SHRINK — and
+ * as of 2026-07-29 it is EMPTY (see the block comment above). A new entry here is an admission that
+ * a call site cannot reach `Global.Service`; prefer converging it.
+ */
+const LEDGER = new Map<string, string>()
 
 describe("the store-root ledger", () => {
   test("the sweep reached the tree", () => {
@@ -233,13 +319,21 @@ describe("the store-root ledger", () => {
   })
 
   test("the classifier actually bites (negative control)", () => {
-    // A guard whose two buckets could never differ would report an empty offender list forever.
-    expect(onModulePath.length).toBeGreaterThan(0)
+    // ⚠️ This used to assert `onModulePath.length > 0` against the live tree. That assertion is
+    // gone because the tree converged — it would now fail for the RIGHT reason, which makes it
+    // useless as a control. Run the real classifier over synthetic files instead: both buckets must
+    // still be reachable, or the guard above is an empty list that can never fill.
+    const synthetic = classify([
+      { name: "packages/x/src/converged.ts", text: "listSessionRecipes(id, { root: storeRootIn(global.data) })" },
+      { name: "packages/x/src/offender.ts", text: "await listSessionRecipes(context.sessionID)" },
+      { name: "packages/x/src/unrelated.ts", text: "const recipes = somethingElse(context.sessionID)" },
+    ])
+    expect(synthetic.onService).toEqual(["packages/x/src/converged.ts"])
+    expect(synthetic.onModulePath).toEqual(["packages/x/src/offender.ts"])
+
+    // And on the real tree: every caller is now on the service, none is double-counted.
     expect(onService.length).toBeGreaterThan(0)
+    expect(onModulePath).toEqual([])
     expect(onService.filter((name) => onModulePath.includes(name))).toEqual([])
-    // …and the discriminator itself, on the two shapes verbatim.
-    expect(VERBS.test("await listSessionRecipes(context.sessionID)")).toBe(true)
-    expect(/\bstoreRootIn\s*\(/.test("listSessionRecipes(id, { root: storeRootIn(global.data) })")).toBe(true)
-    expect(/\bstoreRootIn\s*\(/.test("listSessionRecipes(context.sessionID)")).toBe(false)
   })
 })

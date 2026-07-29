@@ -1,6 +1,5 @@
 import { describe, expect } from "bun:test"
 import fs from "node:fs/promises"
-import os from "node:os"
 import path from "node:path"
 import { Effect, Exit, Stream } from "effect"
 import type * as PlatformError from "effect/PlatformError"
@@ -8,6 +7,7 @@ import { ChildProcess, ChildProcessSpawner } from "effect/unstable/process"
 import { CrossSpawnSpawner } from "@novaclaw/core/cross-spawn-spawner"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { testEffect } from "../lib/effect"
+import { tmpdir } from "../fixture/tmpdir"
 
 const live = LayerNode.compile(CrossSpawnSpawner.node)
 const fx = testEffect(live)
@@ -40,15 +40,13 @@ function alive(pid: number) {
   }
 }
 
-async function tmpdir() {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), "novaclaw-core-test-"))
-  return {
-    path: dir,
-    async [Symbol.asyncDispose]() {
-      await fs.rm(dir, { recursive: true, force: true })
-    },
-  }
-}
+// ⚠️ This file used to hand-roll `mkdtemp(os.tmpdir(), "novaclaw-core-test-")` with no reap — the
+// second producer of the `%TEMP%` leak `fixture/tmpdir.ts` was written to close (24 abandoned
+// directories, one per killed run). It was SAFE the day the fixture landed, but only by coincidence:
+// the fixture's reap matches `novaclaw-core-test-pid<digits>`, and `mkdtemp` appends exactly six
+// characters, so the two namespaces happened not to overlap. That is a property of two files nobody
+// was keeping in sync — edit either side and a live directory becomes deletable out from under a
+// concurrent run. So there is one producer now, and the disjointness argument stops needing to hold.
 
 async function gone(pid: number, timeout = 5_000) {
   const end = Date.now() + timeout

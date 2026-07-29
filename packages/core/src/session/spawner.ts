@@ -2,10 +2,11 @@ export * as SessionSpawner from "./spawner"
 
 import { count, eq } from "drizzle-orm"
 import { Context, Effect, Layer, Schema } from "effect"
-import { copySessionRecipes } from "../adhoc-tools"
+import { copySessionRecipes, storeRootIn } from "../adhoc-tools"
 import { makeLocationNode } from "../effect/app-node"
 import { Database } from "../database/database"
 import { EventV2 } from "../event"
+import { Global } from "../global"
 import { ProjectV2 } from "../project"
 import { Location } from "../location"
 import { AgentV2 } from "../agent"
@@ -95,6 +96,11 @@ export const layer = Layer.effect(
     const store = yield* SessionStore.Service
     const location = yield* Location.Service
     const wake = yield* SessionRunCoordinator.Wake
+    // The ad-hoc store's root through the SERVICE, composed with `storeRootIn` — the same
+    // resolution `adhoc-tools/guidance.ts`, `tool/tool-manual.ts` and `tool/define-tool.ts` use, so
+    // the 4D copy below lands in the root the child's own prompt will later read. Identical in
+    // production; the point is that one graph can only ever have one answer.
+    const sessionStoreRoot = storeRootIn((yield* Global.Service).data)
     // Spawn-rate ledger: parentID -> recent spawn timestamps within the rolling window. In-memory
     // per process — a restart clears it, which is fine: the rate cap guards runaway LOOPS, not
     // long-term accounting (the flat children cap below is the durable bound).
@@ -149,7 +155,9 @@ export const layer = Layer.effect(
         // 4D: the child inherits the parent's session-DEFINED ad-hoc recipes (copy-on-spawn —
         // the session scope is the "hand your sub-agents a tool set" channel). Best-effort:
         // a store hiccup must never fail the spawn.
-        yield* Effect.tryPromise(() => copySessionRecipes(input.parentID, child.id)).pipe(
+        yield* Effect.tryPromise(() =>
+          copySessionRecipes(input.parentID, child.id, { root: sessionStoreRoot }),
+        ).pipe(
           Effect.catch((cause) => Effect.logWarning("adhoc-tool copy-on-spawn failed", { cause }).pipe(Effect.as(0))),
         )
         yield* SessionInput.admit(db, events, {
@@ -171,5 +179,15 @@ export const layer = Layer.effect(
 export const node = makeLocationNode({
   service: Service,
   layer,
-  deps: [Database.node, EventV2.node, ProjectV2.node, SessionStore.node, Location.node, SessionRunCoordinator.wakeNode],
+  deps: [
+    Database.node,
+    EventV2.node,
+    ProjectV2.node,
+    SessionStore.node,
+    Location.node,
+    SessionRunCoordinator.wakeNode,
+    // Global only — a dependency-free hoisted global (`Global.node` declares `deps: []`), so it adds
+    // no edge to the cycle-free set the header above is protecting.
+    Global.node,
+  ],
 })

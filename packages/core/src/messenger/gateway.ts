@@ -8,10 +8,11 @@ import type { FileAttachment, Origin as PromptOrigin } from "@novaclaw/schema/pr
 import { Session } from "@novaclaw/schema/session"
 import { SessionEvent } from "@novaclaw/schema/session-event"
 import { AbsolutePath } from "../schema"
-import { copySessionRecipes } from "../adhoc-tools"
+import { copySessionRecipes, storeRootIn } from "../adhoc-tools"
 import { Credential } from "../credential"
 import { makeGlobalNode } from "../effect/app-node"
 import { EventV2 } from "../event"
+import { Global } from "../global"
 import { Offline } from "../offline"
 import { SessionV2 } from "../session"
 import { SessionOrigin } from "../session/origin"
@@ -297,6 +298,10 @@ const build = (options: Options) =>
     // The ONE pacer for the whole instance — every outbound message across every account and chat
     // serializes through it at human typing speed (§2.3). This is "one hand".
     const pacer = yield* MessengerPace.Service
+    // The ad-hoc store's root through the SERVICE, composed with `storeRootIn` — the same
+    // resolution `session/spawner.ts` uses, which is the copy this gateway's dispatcher duplicates.
+    // Two hand-rolled copies of one operation must not be able to disagree about where the store is.
+    const sessionStoreRoot = storeRootIn((yield* Global.Service).data)
     const fork = yield* FiberSet.makeRuntime<never, void, never>()
     const reloadLock = Semaphore.makeUnsafe(1)
 
@@ -535,7 +540,9 @@ const build = (options: Options) =>
             metadata: MessengerPipeline.dispatchMetadata({ accountID: account.id, chatID: event.chat.chatID }),
           })
           // Spawn parity (4D): the child inherits the console session's ad-hoc recipes. Best-effort.
-          yield* Effect.tryPromise(() => copySessionRecipes(parent.id, child.id)).pipe(Effect.ignore)
+          yield* Effect.tryPromise(() =>
+            copySessionRecipes(parent.id, child.id, { root: sessionStoreRoot }),
+          ).pipe(Effect.ignore)
           yield* sessions.prompt({
             sessionID: child.id,
             prompt: {
@@ -1457,6 +1464,9 @@ export const nodeWith = (options: Options = {}) =>
       Offline.node,
       Credential.node,
       SessionV2.node,
+      // The ad-hoc store root (see `build`). `Global.node` declares `deps: []`, so this adds a
+      // hoisted global with no subtree — no new edge in the gateway's layer graph.
+      Global.node,
     ],
   })
 

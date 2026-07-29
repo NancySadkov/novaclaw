@@ -1,4 +1,5 @@
 import { createEffect, type Component } from "solid-js"
+import type { TranslationKey } from "@/context/language"
 import { useSettings } from "@/context/settings"
 
 // Color-scheme presets (uix.md §7). Nova is the default and is defined inline in index.css with NO
@@ -6,7 +7,13 @@ import { useSettings } from "@/context/settings"
 // override blocks (themes/*.css). Adding a preset = a CSS file + one row here.
 export type AppThemeId = "nova" | "summer" | "autumn"
 
-export const APP_THEME_PRESETS: { id: AppThemeId; nameKey: string; accent: string; bg: string }[] = [
+// ⚠️ `nameKey` is `TranslationKey`, not `string`. This is a CLOSED set — three rows, all authored
+// here — so the app's key-typed translator can check it, and adding a preset whose key is not in
+// `i18n/en.ts` is now a compile error instead of a raw `settings.appearance.theme.x` rendered at a
+// user. Typing it `string` is what forced `theme-swatches.tsx` through the `dynamicKey()` escape
+// hatch; widening it back re-opens that hole (see `i18n/key-typing.test.ts`).
+// The import is type-only, so it adds no module edge at runtime.
+export const APP_THEME_PRESETS: { id: AppThemeId; nameKey: TranslationKey; accent: string; bg: string }[] = [
   { id: "nova", nameKey: "settings.appearance.theme.nova", accent: "#e7b62f", bg: "#201748" },
   { id: "summer", nameKey: "settings.appearance.theme.summer", accent: "#ff7a59", bg: "#0e2e2b" },
   { id: "autumn", nameKey: "settings.appearance.theme.autumn", accent: "#e8933a", bg: "#2a1519" },

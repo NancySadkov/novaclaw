@@ -9,8 +9,9 @@ export * as DefineToolTool from "./define-tool"
 
 import { ToolFailure } from "@novaclaw/llm"
 import { Effect, Layer, Schema } from "effect"
-import { MAX_DESCRIPTION_CHARS, MAX_MANUAL_CHARS, saveSessionRecipe } from "../adhoc-tools"
+import { MAX_DESCRIPTION_CHARS, MAX_MANUAL_CHARS, saveSessionRecipe, storeRootIn } from "../adhoc-tools"
 import { makeLocationNode } from "../effect/app-node"
+import { Global } from "../global"
 import { PermissionV2 } from "../permission"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
@@ -43,6 +44,14 @@ export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
     const permission = yield* PermissionV2.Service
+    // Through the SERVICE, composed with `storeRootIn` so the directory name is spelled once — the
+    // same resolution `adhoc-tools/guidance.ts` and `tool/tool-manual.ts` use. This module is the
+    // WRITE half of that pair: guidance renders the prompt's recipe list from the store this tool
+    // writes. Identical in production (`Global.make()` reads `Global.Path`, and `Global.layerWith`
+    // has no production caller), so nothing was broken — but a graph that overrides Global would
+    // have had `define_tool` write one root while the prompt listed another, and a writer and a
+    // reader disagreeing about where the data is is the failure that stays silent longest.
+    const sessionStoreRoot = storeRootIn((yield* Global.Service).data)
 
     yield* tools
       .register({
@@ -68,11 +77,15 @@ export const layer = Layer.effectDiscard(
               })
               const recipe = yield* Effect.tryPromise({
                 try: () =>
-                  saveSessionRecipe(context.sessionID, {
-                    name: input.name,
-                    description: input.description,
-                    manual: input.manual,
-                  }),
+                  saveSessionRecipe(
+                    context.sessionID,
+                    {
+                      name: input.name,
+                      description: input.description,
+                      manual: input.manual,
+                    },
+                    { root: sessionStoreRoot },
+                  ),
                 // normalizeRecipe throws model-legible validation messages — keep them intact.
                 catch: (error) => new ToolFailure({ message: error instanceof Error ? error.message : String(error) }),
               })
@@ -96,5 +109,5 @@ export const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/define-tool",
   layer,
-  deps: [ToolRegistry.node, PermissionV2.node],
+  deps: [ToolRegistry.node, PermissionV2.node, Global.node],
 })

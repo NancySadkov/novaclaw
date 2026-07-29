@@ -29,10 +29,16 @@ let root: string | undefined
  * ⚠️ The `pid` infix is load-bearing, not decoration. `fs.mkdtemp` appends exactly SIX characters,
  * so a directory this reap would consider — `novaclaw-core-test-pid<digits>` — can never be one
  * mkdtemp produced. Without it the prefix would also match `novaclaw-core-test-<6 random chars>`
- * (the shape this fixture used to create, and the shape `test/effect/cross-spawn-spawner.test.ts`
- * still creates through its own inline copy), and an all-numeric six-character name would parse as
- * a PID: a concurrent run's live directory deleted out from under it. Trading a leak for a flaky
+ * (the shape this fixture used to create), and an all-numeric six-character name would parse as a
+ * PID: a concurrent run's live directory deleted out from under it. Trading a leak for a flaky
  * suite is a bad trade, so the two namespaces are made disjoint instead.
+ *
+ * ⚠️ Two independent arithmetic facts hold that disjointness — mkdtemp's suffix length, and this
+ * reap parsing everything after `-pid` as an integer — and they live in different places. It used
+ * to rest on a third: `test/effect/cross-spawn-spawner.test.ts` had its own inline `mkdtemp` with
+ * the same prefix and no reap, which this paragraph cited as a live second producer. It was
+ * converted on 2026-07-29, and the single-producer property is now ENFORCED rather than described:
+ * `test/tmpdir-namespace.test.ts` fails if any file but this one names the prefix in a literal.
  */
 function testRoot(): string {
   if (root !== undefined) return root

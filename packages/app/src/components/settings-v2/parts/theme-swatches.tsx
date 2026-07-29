@@ -1,5 +1,5 @@
 import { For, type Component } from "solid-js"
-import { dynamicKey, useLanguage } from "@/context/language"
+import { useLanguage } from "@/context/language"
 import { useAppTheme, APP_THEME_PRESETS } from "@/context/app-theme"
 
 // The color-scheme picker (uix.md §7.5): a radiogroup of swatch cards painted with each preset's own
@@ -8,9 +8,8 @@ import { useAppTheme, APP_THEME_PRESETS } from "@/context/app-theme"
 export const ThemeSwatches: Component = () => {
   const language = useLanguage()
   const appTheme = useAppTheme()
-  // ⚠️ Unchecked: `APP_THEME_PRESETS[].nameKey` is typed `string` in `context/app-theme.ts`. That
-  // is narrowable to a union and should be — it is just not this slice's file to change.
-  const tk = (key: string) => language.t(dynamicKey(key))
+  // `preset.nameKey` is `TranslationKey` (narrowed at the source in `context/app-theme.tsx`), so
+  // `language.t` checks it. The `dynamicKey()` hatch that used to sit here is gone.
 
   return (
     <div class="flex flex-wrap gap-2.5" role="radiogroup" aria-label={language.t("settings.appearance.theme.title")}>
@@ -20,7 +19,7 @@ export const ThemeSwatches: Component = () => {
             type="button"
             role="radio"
             aria-checked={appTheme.current() === preset.id}
-            aria-label={tk(preset.nameKey)}
+            aria-label={language.t(preset.nameKey)}
             data-action={`settings-app-theme-${preset.id}`}
             class="group flex flex-col items-center gap-1.5 rounded-xl p-1.5 ring-1 transition-all focus:outline-none focus-visible:ring-2"
             classList={{
@@ -34,7 +33,7 @@ export const ThemeSwatches: Component = () => {
             <div class="relative h-12 w-[4.5rem] overflow-hidden rounded-lg ring-1 ring-white/10" style={{ background: preset.bg }}>
               <div class="absolute bottom-1.5 left-1.5 size-4 rounded-full shadow-sm" style={{ background: preset.accent }} />
             </div>
-            <span class="text-[11px] font-medium text-v2-text-text-muted">{tk(preset.nameKey)}</span>
+            <span class="text-[11px] font-medium text-v2-text-text-muted">{language.t(preset.nameKey)}</span>
           </button>
         )}
       </For>

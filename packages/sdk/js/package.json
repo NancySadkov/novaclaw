@@ -5,7 +5,7 @@
   "license": "SEE LICENSE IN LICENSE",
   "scripts": {
     "test": "bun test",
-    "typecheck": "tsgo --noEmit",
+    "typecheck": "tsgo --noEmit && tsgo --noEmit -p tsconfig.bun.json",
     "build": "bun ./script/build.ts",
     "regen": "bun ./script/build.ts && cd ../../novaclaw && bun dev generate > ../sdk/openapi.json",
     "check:generated": "bun run regen && git diff --exit-code -- ../openapi.json src/v2/gen"
@@ -21,7 +21,9 @@
   ],
   "devDependencies": {
     "@hey-api/openapi-ts": "0.90.10",
+    "@tsconfig/bun": "catalog:",
     "@tsconfig/node22": "catalog:",
+    "@types/bun": "catalog:",
     "@types/node": "catalog:",
     "@typescript/native-preview": "catalog:",
     "typescript": "catalog:"

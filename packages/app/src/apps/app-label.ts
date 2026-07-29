@@ -24,8 +24,13 @@ export type AppLabelField = "name" | "subtitle"
 /**
  * The slice of `useLanguage().t` this module needs. The key union is erased on purpose: a
  * contributed app's id is only known at runtime, so `home.app.<id>.*` can never be a literal type.
- * Call sites bridge with `key as Parameters<typeof language.t>[0]` (the same cast `help-tour.tsx`
- * uses for its per-step keys).
+ * The two call sites that bridge — `apps/builtins.tsx` and `apps/manifest-apps.ts` — do it with
+ * `key as Parameters<typeof language.t>[0]`, and both are pinned in `i18n/key-typing.test.ts`'s
+ * shrink-only ledger for exactly that reason.
+ *
+ * ⚠️ This used to cite `pages/home-screen/help-tour.tsx` as the example of that cast. It no longer
+ * casts: its per-step key was narrowed to an eight-member union, so the tour is checked and is the
+ * opposite of an example here.
  */
 export type Translate = (key: string, params?: Record<string, string | number | boolean>) => string
 

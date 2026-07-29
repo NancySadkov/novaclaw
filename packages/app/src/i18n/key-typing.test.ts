@@ -43,9 +43,11 @@ const LEDGER: Record<string, string> = {
   // result to the key and renders nothing when they match, so a raw key never reaches the user.
   "pages/session/composer/session-permission-dock.tsx": "runtime tool name; missing-key case handled",
 
-  // `APP_THEME_PRESETS[].nameKey` is declared `string` in `context/app-theme.ts`. That IS narrowable
-  // to a union and should be — it was simply not this slice's file to change.
-  "components/settings-v2/parts/theme-swatches.tsx": "APP_THEME_PRESETS[].nameKey is typed string in context/app-theme.ts",
+  // ✅ `components/settings-v2/parts/theme-swatches.tsx` was here until 2026-07-29, because
+  // `APP_THEME_PRESETS[].nameKey` was declared `string`. It is a closed three-row table authored in
+  // `context/app-theme.tsx`, so the fix was to narrow the SOURCE to `TranslationKey` — the same
+  // remedy that closed 17 of the original 19 casts — and the swatch component now calls
+  // `language.t(preset.nameKey)` with no hatch at all. Entry dropped, not silenced.
 
   // The app-registry bridge: an app manifest is user/agent-authored data, so its label key is open by
   // design. `apps/**` is a separate ownership island; the casts there predate this ratchet.

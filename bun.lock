@@ -446,7 +446,9 @@
       "name": "@novaclaw/sdk",
       "devDependencies": {
         "@hey-api/openapi-ts": "0.90.10",
+        "@tsconfig/bun": "catalog:",
         "@tsconfig/node22": "catalog:",
+        "@types/bun": "catalog:",
         "@types/node": "catalog:",
         "@typescript/native-preview": "catalog:",
         "typescript": "catalog:",
