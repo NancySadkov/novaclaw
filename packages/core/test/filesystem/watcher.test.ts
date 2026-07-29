@@ -1,4 +1,3 @@
-import { $ } from "bun"
 import { describe, expect } from "bun:test"
 import fs from "fs/promises"
 import path from "path"
@@ -11,6 +10,7 @@ import { FSUtil } from "@novaclaw/core/fs-util"
 import { Watcher } from "@novaclaw/core/filesystem/watcher"
 import { Location } from "@novaclaw/core/location"
 import { AbsolutePath } from "@novaclaw/core/schema"
+import { git, repo } from "../fixture/git"
 import { location } from "../fixture/location"
 import { tmpdir } from "../fixture/tmpdir"
 import { testEffect } from "../lib/effect"
@@ -48,6 +48,15 @@ function provide(directory: string, vcs?: Location.Interface["vcs"]) {
   )
 }
 
+/**
+ * ⚠️ The git root is a COPY of the shared template (`../fixture/git`), not a live `git init` —
+ * `repo(directory)` is the empty-root-commit shape verbatim, and the ledger flagged the fs-watcher
+ * as the thing to check before collapsing it. Checked: the copy is written by the ACQUIRE, and the
+ * watcher layer is only built afterwards by the `provide()` below, so those ~27 files land before
+ * anything is subscribed — the same ordering `git init` had. Nothing downstream races it either:
+ * every test starts with `ready()`, which writes its own probe file and waits for that file's event
+ * before asserting, so watcher readiness is established against a settled directory.
+ */
 function withTmp<A, E, R>(
   f: (directory: string, vcs?: Location.Interface["vcs"]) => Effect.Effect<A, E, R>,
   options?: { git?: boolean; init?: (directory: string) => Promise<void> },
@@ -56,12 +65,7 @@ function withTmp<A, E, R>(
     Effect.promise(async () => {
       const tmp = await tmpdir()
       if (!options?.git) return { tmp, vcs: undefined }
-      await $`git init`.cwd(tmp.path).quiet()
-      await $`git config core.fsmonitor false`.cwd(tmp.path).quiet()
-      await $`git config commit.gpgsign false`.cwd(tmp.path).quiet()
-      await $`git config user.email test@novaclaw.test`.cwd(tmp.path).quiet()
-      await $`git config user.name Test`.cwd(tmp.path).quiet()
-      await $`git commit --allow-empty -m root`.cwd(tmp.path).quiet()
+      await repo(tmp.path)
       await options.init?.(tmp.path)
       return { tmp, vcs: { type: "git" as const, store: AbsolutePath.make(path.join(tmp.path, ".git")) } }
     }),
@@ -209,7 +213,7 @@ describeWatcher("Watcher", () => {
             (event) => event.file === index,
             fs
               .writeFileString(path.join(directory, "tracked.txt"), "a")
-              .pipe(Effect.andThen(Effect.promise(() => $`git add .`.cwd(directory).quiet())), Effect.asVoid),
+              .pipe(Effect.andThen(Effect.promise(() => git(directory, "add", "."))), Effect.asVoid),
           )
         }),
       { git: true },
@@ -224,7 +228,7 @@ describeWatcher("Watcher", () => {
           const head = path.join(directory, ".git", "HEAD")
           const branch = `watch-${Math.random().toString(36).slice(2)}`
           yield* ready(directory)
-          yield* Effect.promise(() => $`git branch ${branch}`.cwd(directory).quiet())
+          yield* Effect.promise(() => git(directory, "branch", branch))
           expect(
             yield* nextUpdate((event) => event.file === head, fs.writeFileString(head, `ref: refs/heads/${branch}\n`)),
           ).toMatchObject({ file: head })
@@ -245,7 +249,7 @@ describeWatcher("Watcher", () => {
             yield* ready(directory)
             const head = path.join(directory, ".git", "HEAD")
             const branch = `watch-${Math.random().toString(36).slice(2)}`
-            yield* Effect.promise(() => $`git branch ${branch}`.cwd(directory).quiet())
+            yield* Effect.promise(() => git(directory, "branch", branch))
             expect(
               yield* nextUpdate(
                 (event) => event.file === path.join(actual, "HEAD"),

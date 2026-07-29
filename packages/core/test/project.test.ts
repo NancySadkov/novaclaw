@@ -1,5 +1,4 @@
 import { describe, expect } from "bun:test"
-import { $ } from "bun"
 import fs from "fs/promises"
 import path from "path"
 import { Effect, Schema } from "effect"
@@ -7,6 +6,7 @@ import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { ProjectV2 } from "@novaclaw/core/project"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { Hash } from "@novaclaw/core/util/hash"
+import { git, gitText, repo } from "./fixture/git"
 import { tmpdir } from "./fixture/tmpdir"
 import { testEffect } from "./lib/effect"
 
@@ -24,18 +24,19 @@ function real(value: string) {
   return Effect.promise(() => fs.realpath(value)).pipe(Effect.map((value) => AbsolutePath.make(value)))
 }
 
-async function initRepo(dir: string, opts?: { commit?: boolean; remote?: string }) {
-  await $`git init`.cwd(dir).quiet()
-  await $`git config core.fsmonitor false`.cwd(dir).quiet()
-  await $`git config commit.gpgsign false`.cwd(dir).quiet()
-  await $`git config user.email test@novaclaw.test`.cwd(dir).quiet()
-  await $`git config user.name Test`.cwd(dir).quiet()
-  if (opts?.commit) await $`git commit --allow-empty -m root`.cwd(dir).quiet()
-  if (opts?.remote) await $`git remote add origin ${opts.remote}`.cwd(dir).quiet()
-}
-
+/**
+ * Every repository here comes from the shared `test/fixture/git.ts` template — built once per
+ * process, handed out as an `fs.cp` copy. This file used to hand-roll its own `initRepo`, eight git
+ * processes deep, ~11 times over ten tests; see `git-fixture-ledger.test.ts` for the ratchet that
+ * keeps it that way.
+ *
+ * ⚠️ Every copy of a given template shares one root-commit hash, so two repositories built the same
+ * way now resolve to the same id where they used to differ. Nothing here asserts otherwise: the
+ * root-commit expectations all read the hash back out of the repository under test (`rootCommit`
+ * below) rather than comparing two repositories to each other.
+ */
 async function rootCommit(dir: string) {
-  return (await $`git rev-list --max-parents=0 HEAD`.cwd(dir).text()).trim()
+  return (await gitText(dir, "rev-list", "--max-parents=0", "HEAD")).trim()
 }
 
 describe("ProjectV2.resolve", () => {
@@ -61,7 +62,7 @@ describe("ProjectV2.resolve", () => {
         Effect.promise(() => tmpdir()),
         (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
       )
-      yield* Effect.promise(() => initRepo(tmp.path))
+      yield* Effect.promise(() => repo(tmp.path, {}, { commit: false }))
       const project = yield* ProjectV2.Service
 
       const result = yield* project.resolve(abs(tmp.path))
@@ -78,7 +79,7 @@ describe("ProjectV2.resolve", () => {
         Effect.promise(() => tmpdir()),
         (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
       )
-      yield* Effect.promise(() => initRepo(tmp.path, { commit: true }))
+      yield* Effect.promise(() => repo(tmp.path))
       const project = yield* ProjectV2.Service
 
       const result = yield* project.resolve(abs(tmp.path))
@@ -95,7 +96,7 @@ describe("ProjectV2.resolve", () => {
         Effect.promise(() => tmpdir()),
         (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
       )
-      yield* Effect.promise(() => initRepo(tmp.path, { commit: true, remote: "git@github.com:Acme/App.git" }))
+      yield* Effect.promise(() => repo(tmp.path, {}, { origin: "git@github.com:Acme/App.git" }))
       const project = yield* ProjectV2.Service
 
       const result = yield* project.resolve(abs(tmp.path))
@@ -117,8 +118,8 @@ describe("ProjectV2.resolve", () => {
         Effect.promise(() => tmpdir()),
         (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
       )
-      yield* Effect.promise(() => initRepo(ssh.path, { commit: true, remote: "git@github.com:owner/repo.git" }))
-      yield* Effect.promise(() => initRepo(https.path, { commit: true, remote: "https://github.com/owner/repo.git" }))
+      yield* Effect.promise(() => repo(ssh.path, {}, { origin: "git@github.com:owner/repo.git" }))
+      yield* Effect.promise(() => repo(https.path, {}, { origin: "https://github.com/owner/repo.git" }))
       const project = yield* ProjectV2.Service
 
       const a = yield* project.resolve(abs(ssh.path))
@@ -135,7 +136,7 @@ describe("ProjectV2.resolve", () => {
         Effect.promise(() => tmpdir()),
         (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
       )
-      yield* Effect.promise(() => initRepo(tmp.path, { commit: true, remote: `file://${tmp.path}` }))
+      yield* Effect.promise(() => repo(tmp.path, {}, { origin: `file://${tmp.path}` }))
       const project = yield* ProjectV2.Service
 
       const result = yield* project.resolve(abs(tmp.path))
@@ -150,7 +151,7 @@ describe("ProjectV2.resolve", () => {
         Effect.promise(() => tmpdir()),
         (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
       )
-      yield* Effect.promise(() => initRepo(tmp.path, { commit: true, remote: "git@github.com:owner/repo.git" }))
+      yield* Effect.promise(() => repo(tmp.path, {}, { origin: "git@github.com:owner/repo.git" }))
       yield* Effect.promise(() => Bun.write(path.join(tmp.path, ".git", "novaclaw"), "old-id"))
       const project = yield* ProjectV2.Service
 
@@ -166,7 +167,7 @@ describe("ProjectV2.resolve", () => {
         Effect.promise(() => tmpdir()),
         (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
       )
-      yield* Effect.promise(() => initRepo(tmp.path, { commit: true, remote: "git@github.com:owner/repo.git" }))
+      yield* Effect.promise(() => repo(tmp.path, {}, { origin: "git@github.com:owner/repo.git" }))
       const project = yield* ProjectV2.Service
 
       yield* project.resolve(abs(tmp.path))
@@ -181,7 +182,7 @@ describe("ProjectV2.resolve", () => {
         Effect.promise(() => tmpdir()),
         (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
       )
-      yield* Effect.promise(() => initRepo(tmp.path, { commit: true }))
+      yield* Effect.promise(() => repo(tmp.path))
       yield* Effect.promise(() => fs.mkdir(path.join(tmp.path, "a", "b"), { recursive: true }))
       const project = yield* ProjectV2.Service
 
@@ -199,11 +200,12 @@ describe("ProjectV2.resolve", () => {
       )
       const worktree = `${tmp.path}-worktree`
       yield* Effect.addFinalizer(() =>
-        Effect.promise(() => $`rm -rf ${worktree}`.quiet().nothrow()).pipe(Effect.ignore),
+        Effect.promise(() => fs.rm(worktree, { recursive: true, force: true })).pipe(Effect.ignore),
       )
-      yield* Effect.promise(() => initRepo(tmp.path, { commit: true, remote: "git@github.com:owner/repo.git" }))
+      yield* Effect.promise(() => repo(tmp.path, {}, { origin: "git@github.com:owner/repo.git" }))
       yield* Effect.promise(() => Bun.write(path.join(tmp.path, ".git", "novaclaw"), "old-id"))
-      yield* Effect.promise(() => $`git worktree add ${worktree} -b test-${Date.now()}`.cwd(tmp.path).quiet())
+      // Scenario git, not scenery: the linked worktree is what this test is about.
+      yield* Effect.promise(() => git(tmp.path, "worktree", "add", worktree, "-b", `test-${Date.now()}`))
       const project = yield* ProjectV2.Service
 
       const result = yield* project.resolve(abs(worktree))

@@ -120,6 +120,11 @@ const missingReuseMarkers = (text: string): string[] => REUSE_MARKERS.filter((ma
  * ⚠️ Adding an entry here is a decision with a cost — it is eight more git processes per test, on a
  * gate the owner has capped at 5 minutes. Take `repo()` / `gitRemote()` / `withRemote()` from
  * `test/fixture/git.ts` unless the setup is genuinely unlike theirs, and say so in the reason.
+ *
+ * The ratchet has shrunk once already: `project.test.ts` and `filesystem/watcher.test.ts` were FILED
+ * here on 2026-07-28 and collapsed on 2026-07-29. Measured over those two files together, on a box
+ * running three other agents: **90 → 20 git processes, 12.41 s → 8.39 s**, with the test totals
+ * unchanged (16 tests, 15 pass / 1 skip, 29 `expect()` calls before and after).
  */
 const LEDGER = new Map<string, string>([
   [
@@ -130,25 +135,11 @@ const LEDGER = new Map<string, string>([
       "pushed-source shape.",
   ],
   [
-    "packages/core/test/project.test.ts",
-    "`ProjectV2.resolve` — 10.1 s / 10 tests, and its local `initRepo(dir, {commit, remote})` is " +
-      "called ~10 times. NOT collapsed here (out of this unit's file ownership, todo/test-speed.md " +
-      "item 4 names five suites and this is not one of them). It is the single largest remaining " +
-      "win of this shape: the `remote` variant needs one extra `git remote add` on top of `repo()`. " +
-      "FILED.",
-  ],
-  [
-    "packages/core/test/filesystem/watcher.test.ts",
-    "`Watcher` — 3.4 s. Its `withTmp({git, init})` builds an empty-commit repo, which is exactly " +
-      "`repo(directory)`. NOT collapsed here (out of this unit's file ownership). ⚠️ Whoever does " +
-      "collapse it must check the fs-watcher interaction: a template COPY writes ~27 files into the " +
-      "watched directory in one burst, where `git init` wrote them through git. FILED.",
-  ],
-  [
     "packages/core/test/ripgrep.test.ts",
     "One `Bun.$\\`git init -q\\`` with no commit and no identity — it only needs a `.git` dir so " +
-      "ripgrep honours `.gitignore`. A single bare init, so the ledger costs more than the fix " +
-      "would save; NOT collapsed here (out of this unit's file ownership). FILED.",
+      "ripgrep honours `.gitignore`. ONE bare init in the whole file, and it is the cheapest form " +
+      "of it (no identity config, no commit), so collapsing it would trade a single git process for " +
+      "a template copy and buy nothing measurable. Deliberate keep, not a backlog item.",
   ],
 ])
 
@@ -163,6 +154,12 @@ const COLLAPSED: ReadonlyArray<readonly [string, RegExp]> = [
   ["packages/core/test/git.test.ts", /\bwithRemote\(/],
   ["packages/core/test/repository-cache.test.ts", /\bwithRemote\(/],
   ["packages/core/test/move-session.test.ts", /\brepo\(/],
+  // 2026-07-29 — the two suites the ledger had FILED. `project.test.ts` needed two additive
+  // `repo()` options (`commit: false` for the no-commits case, and `origin` applied per COPY so its
+  // four remote URLs — one of them a per-call `file://<tmpdir>` — still share one template);
+  // `watcher.test.ts` needed nothing but the call.
+  ["packages/core/test/project.test.ts", /\brepo\(/],
+  ["packages/core/test/filesystem/watcher.test.ts", /\brepo\(/],
 ]
 
 describe("the sweep", () => {

@@ -173,6 +173,11 @@ async function configure(directory: string) {
  * all three fixtures differ. Starting each shape from the base instead makes a *new* shape cost two
  * git processes (`add` + `commit`) rather than eight, which is a saving that does not depend on two
  * tests happening to want the same files.
+ *
+ * It is also the `repo(…, { commit: false })` shape verbatim, so that option copies this directory
+ * straight out. Still only ever READ, exactly as when it seeds another template — the invariant at
+ * the top of this file ("a template is written once and thereafter only ever the source of an
+ * `fs.cp`") is what makes handing it out safe.
  */
 function baseRepo() {
   return template("base", async (directory) => {
@@ -188,24 +193,50 @@ function baseRepo() {
  *
  * One root commit where a caller previously made two changes nothing these suites assert on: they
  * compare working-tree state against HEAD, never ancestry.
+ *
+ * `options` covers the two shapes `ProjectV2.resolve` needs that a plain checkout does not, and
+ * **neither of them belongs in the template key**:
+ *
+ * - `commit: false` — `git init` + the identity config and **nothing else**, i.e. a repository with
+ *   no commits at all. That is a state `resolve` has a named case for ("no commits and no remote" →
+ *   the global id), and it is `baseRepo()` exactly, so it costs a copy and zero git processes.
+ * - `origin` — a remote URL, added to the COPY with one `git remote add`. ⚠️ Deliberately **not**
+ *   part of the memo key. `project.test.ts` uses four distinct URLs, and one of them is
+ *   `file://<the test's own tmpdir>` — different on every single call. Keying on the URL would
+ *   therefore build a fresh template per URL and, for that one, a fresh template per CALL: a memo
+ *   that never hits plus unbounded template growth in `%TEMP%`. Same post-copy shape as
+ *   `gitRemote()`'s `remote set-url` below, and for the same reason — a per-copy fact is applied per
+ *   copy.
  */
-export async function repo(destination: string, files: Readonly<Record<string, string>> = {}) {
+export async function repo(
+  destination: string,
+  files: Readonly<Record<string, string>> = {},
+  options: Readonly<{ commit?: boolean; origin?: string }> = {},
+) {
   const entries = Object.entries(files).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))
-  const source = await template(`repo-${digestOf(entries)}`, async (directory) => {
-    await copyTree(await baseRepo(), directory)
-    for (const [file, content] of entries) {
-      const target = path.join(directory, file)
-      await fs.mkdir(path.dirname(target), { recursive: true })
-      await fs.writeFile(target, content)
-    }
-    if (entries.length === 0) await git(directory, "commit", "--allow-empty", "-m", "root")
-    else {
-      await git(directory, "add", ".")
-      await git(directory, "commit", "-m", "root")
-    }
-  })
+  if (options.commit === false && entries.length > 0)
+    // A commit-less checkout carrying files is a third shape (untracked or staged?) that nothing
+    // asks for. Failing here beats silently picking one.
+    throw new Error("repo(): `commit: false` builds a repository with no commits, so it cannot carry files")
+  const source =
+    options.commit === false
+      ? await baseRepo()
+      : await template(`repo-${digestOf(entries)}`, async (directory) => {
+          await copyTree(await baseRepo(), directory)
+          for (const [file, content] of entries) {
+            const target = path.join(directory, file)
+            await fs.mkdir(path.dirname(target), { recursive: true })
+            await fs.writeFile(target, content)
+          }
+          if (entries.length === 0) await git(directory, "commit", "--allow-empty", "-m", "root")
+          else {
+            await git(directory, "add", ".")
+            await git(directory, "commit", "-m", "root")
+          }
+        })
   await fs.mkdir(destination, { recursive: true })
   await copyTree(source, destination)
+  if (options.origin !== undefined) await git(destination, "remote", "add", "origin", options.origin)
   return destination
 }
 
