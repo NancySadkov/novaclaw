@@ -4,6 +4,7 @@ import { Icon } from "@novaclaw/ui/icon"
 import { Tag } from "@novaclaw/ui/v2/badge-v2"
 import { KeybindV2 } from "@novaclaw/ui/v2/keybind-v2"
 import { getDirectory, getFilename } from "@novaclaw/core/util/path"
+import type { Translator } from "@/context/language"
 
 export type AtOption =
   | { type: "agent"; name: string; display: string }
@@ -34,7 +35,7 @@ type PromptPopoverProps = {
   commandKeybind: (id: string) => string | undefined
   commandKeybindParts: (id: string) => string[]
   newLayoutDesigns: boolean
-  t: (key: string) => string
+  t: Translator
 }
 
 export const PromptPopover: Component<PromptPopoverProps> = (props) => {

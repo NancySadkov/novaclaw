@@ -18,7 +18,9 @@ type Step = {
   readonly accent: string
   readonly glyphTone?: "light" | "dark" // "dark" for light accents (gold), same vocabulary as HomeApp
   readonly image?: string // when set, the badge shows this image (e.g. the logo) instead of an icon
-  readonly key: string // i18n key stem: help.tour.step.<key>.title / .body
+  // ⚠️ A union, not `string`: it is interpolated into `help.tour.step.<key>.title` / `.body`, and
+  // the app's translator is key-typed — widening this would silently switch that check off.
+  readonly key: "welcome" | "apps" | "home" | "chat" | "build" | "settings" | "data" | "done"
 }
 
 const STEPS: readonly Step[] = [
@@ -38,8 +40,8 @@ export const HelpTour: Component = () => {
   const [i, setI] = createSignal(0)
   const step = () => STEPS[i()]!
   const last = () => i() === STEPS.length - 1
-  const title = () => language.t(`help.tour.step.${step().key}.title` as Parameters<typeof language.t>[0])
-  const body = () => language.t(`help.tour.step.${step().key}.body` as Parameters<typeof language.t>[0])
+  const title = () => language.t(`help.tour.step.${step().key}.title`)
+  const body = () => language.t(`help.tour.step.${step().key}.body`)
 
   return (
     <Dialog size="content">

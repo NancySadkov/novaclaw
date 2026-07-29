@@ -1,3 +1,5 @@
+import type { Translator } from "@/context/language"
+
 /** The rotating "try asking…" example keys the empty composer cycles through. */
 export const PROMPT_EXAMPLE_KEYS = [
   "prompt.example.1",
@@ -32,7 +34,7 @@ type PromptPlaceholderInput = {
   commentCount: number
   example: string
   suggest: boolean
-  t: (key: string, params?: Record<string, string>) => string
+  t: Translator
 }
 
 export function promptPlaceholder(input: PromptPlaceholderInput) {

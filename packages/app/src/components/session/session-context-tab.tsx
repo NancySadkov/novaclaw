@@ -11,7 +11,7 @@ import { File } from "@novaclaw/session-ui/file"
 import { Markdown } from "@novaclaw/session-ui/markdown"
 import { ScrollView } from "@novaclaw/ui/scroll-view"
 import type { SessionMessage } from "@novaclaw/sdk/v2/client"
-import { useLanguage } from "@/context/language"
+import { useLanguage, type TranslationKey } from "@/context/language"
 import { useProviders } from "@/hooks/use-providers"
 import { useSDK } from "@/context/sdk"
 import { useSessionLayout } from "@/pages/session/session-layout"
@@ -179,6 +179,9 @@ export function SessionContextTab() {
     return language.t("context.breakdown.other")
   }
 
+  // ⚠️ The `satisfies` constraint below says `TranslationKey`, not `string`: it is a CONTEXTUAL type,
+  // so annotating `label: string` there widens every literal and silently switches off key-checking
+  // at `language.t(stat.label)`.
   const stats = [
     { label: "context.stats.session", value: () => info()?.title ?? params.id ?? "—" },
     { label: "context.stats.messages", value: () => counts().all.toLocaleString(language.intl()) },
@@ -199,7 +202,7 @@ export function SessionContextTab() {
     { label: "context.stats.totalCost", value: cost },
     { label: "context.stats.sessionCreated", value: () => formatter().time(info()?.time.created) },
     { label: "context.stats.lastActivity", value: () => formatter().time(ctx()?.message.time.created) },
-  ] satisfies { label: string; value: () => JSX.Element }[]
+  ] satisfies { label: TranslationKey; value: () => JSX.Element }[]
 
   let scroll: HTMLDivElement | undefined
   let frame: number | undefined
@@ -261,7 +264,7 @@ export function SessionContextTab() {
       <div class="px-6 pt-4 pb-10 flex flex-col gap-10">
         <div class="grid grid-cols-1 @[32rem]:grid-cols-2 gap-4">
           <For each={stats}>
-            {(stat) => <Stat label={language.t(stat.label as Parameters<typeof language.t>[0])} value={stat.value()} />}
+            {(stat) => <Stat label={language.t(stat.label)} value={stat.value()} />}
           </For>
         </div>
 

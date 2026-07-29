@@ -174,10 +174,13 @@ export function SessionHeader() {
     return LINUX_APPS
   })
 
+  // ⚠️ `as const` on the whole object, not just `icon`. Without it `label` widens to `string` and
+  // `language.t(fileManager().label)` stops being key-checked — the OS is chosen at runtime but the
+  // three labels are a closed set, so this is a union, not a dynamic key.
   const fileManager = createMemo(() => {
-    if (os() === "macos") return { label: "session.header.open.finder", icon: "finder" as const }
-    if (os() === "windows") return { label: "session.header.open.fileExplorer", icon: "file-explorer" as const }
-    return { label: "session.header.open.fileManager", icon: "finder" as const }
+    if (os() === "macos") return { label: "session.header.open.finder", icon: "finder" } as const
+    if (os() === "windows") return { label: "session.header.open.fileExplorer", icon: "file-explorer" } as const
+    return { label: "session.header.open.fileManager", icon: "finder" } as const
   })
 
   createEffect(() => {

@@ -508,9 +508,16 @@ export const dict = {
 
   "dialog.plugins.empty": "Add-ons that extend NovaClaw. None are installed yet — ask an agent to set one up for you.",
 
+  // The five MCP connection statuses, one label each — the set is closed by `MCPStatus` in
+  // `packages/novaclaw/src/mcp/index.ts`. These render as a small label beside the server's name,
+  // so they are lowercase fragments, and `needs a client ID` is shown above the server's own error
+  // line explaining what to put in the config. ⚠️ `needs_client_registration` was MISSING until
+  // 2026-07-29 and the UI rendered the raw key `mcp.status.needs_client_registration` at the user;
+  // the app's translator is key-typed now, so a sixth status cannot ship without its label.
   "mcp.status.connected": "connected",
   "mcp.status.failed": "failed",
   "mcp.status.needs_auth": "needs auth",
+  "mcp.status.needs_client_registration": "needs a client ID",
   "mcp.status.disabled": "disabled",
   "mcp.auth.clickToAuthenticate": "Click to authenticate",
 

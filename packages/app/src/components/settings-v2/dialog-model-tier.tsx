@@ -18,8 +18,6 @@ export const DialogModelTier: Component<{
 }> = (props) => {
   const dialog = useDialog()
   const language = useLanguage()
-  // Dynamic tier i18n keys need the loose-key cast the typed translator otherwise forbids.
-  const tk = (key: string) => language.t(key as Parameters<typeof language.t>[0])
 
   const pick = (tier: ModelTier) => {
     props.onSelect(tier)
@@ -53,17 +51,17 @@ export const DialogModelTier: Component<{
               >
                 <div class="flex items-center gap-2">
                   <span class="text-sm font-semibold text-v2-text-text-base">
-                    {tk(`settings.models.tier.${tier}.name`)}
+                    {language.t(`settings.models.tier.${tier}.name`)}
                   </span>
                   <span class="text-[11px] font-medium text-v2-text-text-faint rounded-full ring-1 ring-v2-border-border-base px-2 py-0.5">
-                    {tk(`settings.models.tier.${tier}.range`)}
+                    {language.t(`settings.models.tier.${tier}.range`)}
                   </span>
                   <Show when={tier === props.current}>
                     <Icon name="check" size="small" class="ml-auto text-v2-icon-icon-accent" />
                   </Show>
                 </div>
                 <span class="text-[12px] text-v2-text-text-muted leading-snug">
-                  {tk(`settings.models.tier.${tier}.blurb`)}
+                  {language.t(`settings.models.tier.${tier}.blurb`)}
                 </span>
               </button>
             )}

@@ -39,7 +39,7 @@ export function ComposerAttachmentsTray(props: { state: ComposerAttachmentsTrayS
         active={props.state.isContextItemActive}
         openComment={props.state.openComment}
         remove={props.state.removeContextItem}
-        t={(key) => language.t(key as Parameters<typeof language.t>[0])}
+        t={language.t}
       />
       <PromptImageAttachments
         attachments={props.state.images}

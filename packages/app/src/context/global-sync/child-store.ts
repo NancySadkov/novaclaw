@@ -20,6 +20,7 @@ import { QueryOptionsApi } from "../server-sync"
 import { directoryKey, type DirectoryKey } from "./utils"
 import { NormalizedProviderListResponse } from "@novaclaw/session-ui/context"
 import type { ServerScope } from "@/utils/server-scope"
+import type { Translator } from "@/context/language"
 
 export function createChildStoreManager(input: {
   owner: Owner
@@ -30,7 +31,7 @@ export function createChildStoreManager(input: {
   onBootstrap: (directory: string) => void
   onMcp: (directory: string, setStore: SetStoreFunction<State>) => void
   onDispose: (directory: string) => void
-  translate: (key: string, vars?: Record<string, string | number>) => string
+  translate: Translator
   queryOptions: QueryOptionsApi
   global: {
     provider: NormalizedProviderListResponse

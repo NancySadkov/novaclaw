@@ -2,7 +2,7 @@ import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
 import { type Component, Show } from "solid-js"
 import { showToast } from "@/utils/toast"
-import { useLanguage } from "@/context/language"
+import { useLanguage, type TranslationKey } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
 import { SettingsListV2 } from "./parts/list"
 import { SettingsRowV2 } from "./parts/row"
@@ -33,10 +33,13 @@ interface WebSearchConfig {
 
 // The traffic-governor knobs (core/web/fetch-pace.ts). Defaults shown as placeholders, so an empty
 // field reads as "use the default" rather than "zero". Kept in step with that module's constants.
+// ⚠️ `label`/`hint` are `TranslationKey`, not `string`. Annotating them `string` widened the
+// literals away and `language.t(field.label)` silently stopped being key-checked; the field list is
+// a closed set, so it costs nothing to keep it a union.
 const THROTTLE_FIELDS: Array<{
   key: keyof ThrottleConfig
-  label: string
-  hint: string
+  label: TranslationKey
+  hint: TranslationKey
   fallback: number
   min: number
 }> = [

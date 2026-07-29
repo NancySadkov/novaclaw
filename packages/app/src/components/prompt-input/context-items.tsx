@@ -4,6 +4,7 @@ import { IconButton } from "@novaclaw/ui/icon-button"
 import { Tooltip } from "@novaclaw/ui/tooltip"
 import { getDirectory, getFilename, getFilenameTruncated } from "@novaclaw/core/util/path"
 import type { ContextItem } from "@/context/prompt"
+import type { Translator } from "@/context/language"
 
 type PromptContextItem = ContextItem & { key: string }
 
@@ -12,7 +13,7 @@ type ContextItemsProps = {
   active: (item: PromptContextItem) => boolean
   openComment: (item: PromptContextItem) => void
   remove: (item: PromptContextItem) => void
-  t: (key: string) => string
+  t: Translator
 }
 
 export const PromptContextItems: Component<ContextItemsProps> = (props) => {

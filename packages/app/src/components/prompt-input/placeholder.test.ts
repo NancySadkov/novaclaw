@@ -1,8 +1,11 @@
 import { describe, expect, test } from "bun:test"
+import type { TranslationParams } from "@/context/language"
 import { promptPlaceholder } from "./placeholder"
 
 describe("promptPlaceholder", () => {
-  const t = (key: string, params?: Record<string, string>) => `${key}${params?.example ? `:${params.example}` : ""}`
+  // `params` must be the full `TranslationParams` bag: it is contravariant, so a mock that only
+  // accepts `Record<string, string>` is not a valid `Translator`.
+  const t = (key: string, params?: TranslationParams) => `${key}${params?.example ? `:${params.example}` : ""}`
 
   test("returns shell placeholder in shell mode", () => {
     const value = promptPlaceholder({

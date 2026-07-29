@@ -1,3 +1,9 @@
+// ⚠️ This file used to declare its own `type Translator = (key: string, ...) => string`. That reads
+// like the permissive option and is in fact the UNSATISFIABLE one: the app's `t` is key-typed, and
+// parameters are contravariant, so a translator that only accepts real keys is not assignable to one
+// claiming to accept any string. Import the alias; never re-declare a looser local copy.
+import type { Translator, TranslationKey } from "@/context/language"
+
 export type ConfigInvalidError = {
   name: "ConfigInvalidError"
   data: {
@@ -16,9 +22,12 @@ export type ProviderModelNotFoundError = {
   }
 }
 
-type Translator = (key: string, vars?: Record<string, string | number>) => string
-
-function tr(translator: Translator | undefined, key: string, text: string, vars?: Record<string, string | number>) {
+function tr(
+  translator: Translator | undefined,
+  key: TranslationKey,
+  text: string,
+  vars?: Record<string, string | number>,
+) {
   if (!translator) return text
   const out = translator(key, vars)
   if (!out || out === key) return text

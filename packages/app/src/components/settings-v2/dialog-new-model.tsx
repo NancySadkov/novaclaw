@@ -40,8 +40,12 @@ export const DialogNewModel: Component<{
   const dialog = useDialog()
   const language = useLanguage()
   const serverSync = useServerSync()
-  const t = (key: string, vars?: Record<string, string | number | boolean>) =>
-    language.t(key as Parameters<typeof language.t>[0], vars as never)
+  // ⚠️ This used to be a local `(key: string, vars) => language.t(key as ..., vars as never)`
+  // wrapper — a per-file escape hatch that turned off key checking for the whole dialog, including
+  // the two template-literal keys in `Field` below. `language.t` is used directly now: `p.field` is
+  // a four-member union, so `` `settings.models.new.field.${p.field}.label` `` still resolves to a
+  // literal union and all eight keys are checked.
+  const t = language.t
 
   const [presets] = createResource(
     () => providerPresets(props.http, { directory: props.directory }).catch(() => ({}) as Record<string, ProviderPreset>),

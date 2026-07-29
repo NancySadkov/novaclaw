@@ -16,6 +16,7 @@ import type { State, VcsCache } from "./types"
 import type { ServerSession } from "../server-session"
 import { cmp, normalizeAgentList, normalizeProviderList } from "./utils"
 import { formatServerError } from "@/utils/server-errors"
+import type { Translator } from "@/context/language"
 import { CancelledError, QueryClient, queryOptions } from "@tanstack/solid-query"
 import { loadMcpQuery } from "../server-sync"
 import { NormalizedProviderListResponse } from "@novaclaw/session-ui/context"
@@ -76,7 +77,7 @@ function runAll(list: Array<() => Promise<unknown>>) {
 function showErrors(input: {
   errors: unknown[]
   title: string
-  translate: (key: string, vars?: Record<string, string | number>) => string
+  translate: Translator
   formatMoreCount: (count: number) => string
 }) {
   if (input.errors.length === 0) return
@@ -99,7 +100,7 @@ export async function bootstrapGlobal(input: {
   serverSDK: NovaclawClient
   scope: ServerScope
   requestFailedTitle: string
-  translate: (key: string, vars?: Record<string, string | number>) => string
+  translate: Translator
   formatMoreCount: (count: number) => string
   setGlobalStore: SetStoreFunction<GlobalStore>
   queryClient: QueryClient
@@ -189,7 +190,7 @@ export async function bootstrapDirectory(input: {
   setStore: SetStoreFunction<State>
   vcsCache: VcsCache
   loadSessions: (directory: string) => Promise<void> | void
-  translate: (key: string, vars?: Record<string, string | number>) => string
+  translate: Translator
   global: {
     config: Config
     path: Path

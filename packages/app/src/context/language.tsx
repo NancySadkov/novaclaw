@@ -30,6 +30,40 @@ type RawDictionary = typeof en & typeof uiEn
 type Dictionary = i18n.Flatten<RawDictionary>
 type Source = { dict: Record<string, string> }
 
+/** Every i18n key the app can translate — a real union of the ~1862 keys in `en.ts` + the ui bundle. */
+export type TranslationKey = keyof Dictionary
+
+export type TranslationParams = Record<string, string | number | boolean>
+
+/**
+ * The app's translator. Key-typed: a key that is not in `en.ts` is a compile error, so a raw key
+ * like `mcp.status.failed` can no longer reach a user. Anything that accepts a `t` must use THIS
+ * alias — declaring `(key: string) => string` is not a looser convenience, it is unsatisfiable
+ * (parameters are contravariant, so a key-typed `t` is not assignable to it).
+ */
+export type Translator = (key: TranslationKey, params?: TranslationParams) => string
+
+/**
+ * The ONE escape hatch for a key that genuinely cannot be known at compile time.
+ *
+ * Use it only where the key is assembled from runtime data that has no closed set — and say in a
+ * comment at the call site WHY. Everywhere else, narrow the source to a union instead: a literal
+ * union of suffixes still type-checks through template-literal types, and that is strictly better
+ * than this, because this function checks nothing at all.
+ *
+ * ⚠️ A key passed through here is unverified. If it is missing, `@solid-primitives/i18n` returns
+ * the key itself and the user sees `some.raw.key` in the UI — which is exactly the live bug
+ * (`mcp.status.needs_client_registration`) that key-typing the translator found. So a call site that
+ * uses this should either handle the miss (compare the result to the key) or be somewhere a raw key
+ * is genuinely impossible.
+ *
+ * Every use is pinned by `src/i18n/key-typing.test.ts`, a SHRINK-ONLY ledger: adding a site fails
+ * the suite by name. Two sites are pinned today.
+ */
+export function dynamicKey(key: string): TranslationKey {
+  return key as TranslationKey
+}
+
 function cookie(locale: Locale) {
   return `oc_locale=${encodeURIComponent(locale)}; Path=/; Max-Age=31536000; SameSite=Lax`
 }
@@ -215,24 +249,28 @@ export const { use: useLanguage, provider: LanguageProvider } = createSimpleCont
       initialValue: dicts.get(initial) ?? base,
     })
 
-    // ⚠️ `key: string`, not `keyof Dictionary` — and that is a STATED position, not an oversight.
-    // Until 2026-07-29 the two were the same thing: `packages/ui`'s `en` was typed
-    // `Record<string, string>`, so its index signature swallowed the app's literal keys in the
-    // `typeof en & typeof uiEn` intersection and `keyof Dictionary` collapsed to `string`. Removing
-    // that annotation (so the ui bundles' `satisfies Partial<Record<Keys, string>>` finally
-    // constrains something) made `keyof Dictionary` a real 1862-key union — which immediately
-    // reported **14 call sites** the app has always had, in three classes: keys that do not exist at
-    // all (`mcp.status.*` in `dialog-select-mcp.tsx` — a real bug, it renders the raw key), genuinely
-    // dynamic keys (`session-header.tsx`, `web-search.tsx`), and consumers typed
-    // `(key: string) => string` that a key-typed `t` cannot satisfy (parameters are contravariant).
-    // Fixing those is worth doing and is filed as its own slice; smuggling it in here would have made
-    // this a different change. So the app's translator stays exactly as loose as it has always been,
-    // and the ui half of the seam is now real. Do NOT "tidy" this back to `keyof Dictionary` without
-    // fixing those fourteen — it will fail `typecheck:app` and `typecheck:desktop`.
-    const t = i18n.translator(() => dict() ?? base, i18n.resolveTemplate) as (
-      key: string,
-      params?: Record<string, string | number | boolean>,
-    ) => string
+    // `Translator` is key-typed (`keyof Dictionary`, a ~1862-key union), so a key that is not in
+    // `en.ts` + the ui bundle is a COMPILE ERROR. That was not always true: until 2026-07-29
+    // `packages/ui`'s `en` was annotated `Record<string, string>`, and its index signature swallowed
+    // the app's literal keys in the `typeof en & typeof uiEn` intersection — `keyof Dictionary`
+    // collapsed to `string` and the app's `t` was never key-checked at all. Removing that annotation
+    // made the union real; this cast then reported 14 pre-existing sites, all now fixed:
+    //   · ONE key that did not exist — `mcp.status.needs_client_registration`, a live bug that
+    //     rendered the raw key at the user in `dialog-select-mcp.tsx`. (The other four `mcp.status.*`
+    //     keys were already in `en.ts`; only that one was missing, in all 19 bundles.)
+    //   · Two "dynamic" keys that were nothing of the sort — a `createMemo` returning a widened
+    //     object literal, and a field list annotated `label: string`. Both are closed sets and are
+    //     now literal unions, so they are checked rather than excused.
+    //   · Eleven consumers declaring `(key: string) => string`, which a key-typed `t` cannot satisfy
+    //     because parameters are contravariant. They import this `Translator` alias now.
+    // A separate sweep then closed 19 PRE-EXISTING `as Parameters<typeof language.t>[0]` casts that
+    // were harmless no-ops while `t` took a `string` and became live bypasses the moment it did not.
+    // 17 were fixed by narrowing the source; 2 genuinely cannot be and go through `dynamicKey()`,
+    // ledgered in `src/i18n/key-typing.test.ts`.
+    // ⚠️ The cast itself remains because `@solid-primitives/i18n`'s `translator` types params
+    // per-key from the template string; we take one uniform param bag. Do NOT widen `key` back to
+    // `string` — that is the whole check, and `en.ts` is the only place to add a key.
+    const t = i18n.translator(() => dict() ?? base, i18n.resolveTemplate) as Translator
 
     const label = (value: Locale) => t(LABEL_KEY[value])
 

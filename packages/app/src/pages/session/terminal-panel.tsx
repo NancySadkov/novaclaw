@@ -135,7 +135,7 @@ export function TerminalPanel() {
         terminalTabLabel({
           title: pty.title,
           titleNumber: pty.titleNumber,
-          t: language.t as (key: string, vars?: Record<string, string | number | boolean>) => string,
+          t: language.t,
         }),
       ),
     )
@@ -324,7 +324,7 @@ export function TerminalPanel() {
                         {terminalTabLabel({
                           title: t().title,
                           titleNumber: t().titleNumber,
-                          t: language.t as (key: string, vars?: Record<string, string | number | boolean>) => string,
+                          t: language.t,
                         })}
                       </div>
                     )}

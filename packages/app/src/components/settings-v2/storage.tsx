@@ -47,7 +47,9 @@ interface PathInfo {
  */
 export interface StorageEntry {
   key: keyof PathInfo
-  i18n: string
+  /** ⚠️ A union, not `string`: it is interpolated into `settings.storage.<i18n>` and the app's
+   *  translator is key-typed, so widening this would silently switch that check off. */
+  i18n: "config" | "data" | "db" | "scratch" | "log" | "state" | "cache" | "tmp"
   level?: "developer"
 }
 
@@ -88,8 +90,6 @@ export const SettingsStorageV2: Component = () => {
     )
   }
 
-  // Dynamic i18n keys need the loose-key cast the translator otherwise forbids (same as general.tsx).
-  const tk = (key: string) => language.t(key as Parameters<typeof language.t>[0])
 
   return (
     <>
@@ -119,8 +119,8 @@ export const SettingsStorageV2: Component = () => {
             <Show when={paths()[entry.key]}>
               {(value) => (
                 <SettingsRowV2
-                  title={tk(`settings.storage.${entry.i18n}`)}
-                  description={tk(`settings.storage.${entry.i18n}.description`)}
+                  title={language.t(`settings.storage.${entry.i18n}`)}
+                  description={language.t(`settings.storage.${entry.i18n}.description`)}
                   minLevel={entry.level}
                 >
                   <PathValue

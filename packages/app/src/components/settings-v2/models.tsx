@@ -6,7 +6,7 @@ import { Icon } from "@novaclaw/ui/icon"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { type Component, For, Show, createMemo, createResource, createSignal } from "solid-js"
 import { useGlobal } from "@/context/global"
-import { useLanguage } from "@/context/language"
+import { useLanguage, type Translator } from "@/context/language"
 import { useModels } from "@/context/models"
 import { useServer } from "@/context/server"
 import { useServerSync } from "@/context/server-sync"
@@ -26,7 +26,7 @@ type ModelItem = ReturnType<ReturnType<typeof useModels>["list"]>[number]
 
 // B15 — one-line human rendering of a probe outcome (the config-drift killer: "cannot
 // connect" mysteries become "unreachable" / "auth failed" / "not on server" at a glance).
-export function probeLabel(result: ProbeResult, t: (key: string) => string): string {
+export function probeLabel(result: ProbeResult, t: Translator): string {
   switch (result.status) {
     case "ok": {
       const latency = result.latencyMs === undefined ? "" : ` · ${result.latencyMs} ms`
@@ -54,8 +54,6 @@ export const SettingsModelsV2: Component = () => {
   const serverSync = useServerSync()
   const dialog = useDialog()
   const confirm = useConfirm()
-  // Dynamic tier i18n keys need the loose-key cast the typed translator otherwise forbids.
-  const tk = (key: string) => language.t(key as Parameters<typeof language.t>[0])
 
   // B15 — probe plumbing. Unlike the global trash store, provider config is DIRECTORY-scoped
   // (a project's novaclaw.jsonc is only visible when the request routes at that project — the
@@ -234,7 +232,7 @@ export const SettingsModelsV2: Component = () => {
                                   ))
                                 }
                               >
-                                {tk(`settings.models.tier.${models.tier.get(key)}.name`)}
+                                {language.t(`settings.models.tier.${models.tier.get(key)}.name`)}
                               </ButtonV2>
                               <ButtonV2
                                 size="small"

@@ -1,9 +1,10 @@
 import { describe, expect, test } from "bun:test"
 import type { SessionNotFoundError } from "@novaclaw/sdk/v2/client"
+import type { TranslationParams } from "@/context/language"
 import type { ConfigInvalidError, ProviderModelNotFoundError } from "./server-errors"
 import { formatServerError, isSessionNotFoundError, parseReadableConfigInvalidError } from "./server-errors"
 
-function fill(text: string, vars?: Record<string, string | number>) {
+function fill(text: string, vars?: TranslationParams) {
   if (!vars) return text
   return text.replace(/{{\s*(\w+)\s*}}/g, (_, key: string) => {
     const value = vars[key]
@@ -22,7 +23,10 @@ function useLanguageMock() {
     "error.chain.checkConfig": "Revise provider/model no config",
   }
   return {
-    t(key: string, vars?: Record<string, string | number>) {
+    // The mock must accept AT LEAST what the real `t` accepts — `params` is contravariant, so a
+    // mock declaring a narrower bag than `TranslationParams` is not a valid `Translator`.
+    // `key` stays `string` on purpose: the mock deliberately probes the missing-key fallback.
+    t(key: string, vars?: TranslationParams) {
       const text = dict[key]
       if (!text) return key
       return fill(text, vars)

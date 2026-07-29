@@ -1,9 +1,10 @@
 import { isDefaultTitle as isDefaultTerminalTitle } from "@/context/terminal-title"
+import type { Translator } from "@/context/language"
 
 export const terminalTabLabel = (input: {
   title?: string
   titleNumber?: number
-  t: (key: string, vars?: Record<string, string | number | boolean>) => string
+  t: Translator
 }) => {
   const title = input.title ?? ""
   const number = input.titleNumber ?? 0

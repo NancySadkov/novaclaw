@@ -2,7 +2,7 @@ import { createMemo, createResource, createSignal, For, Show } from "solid-js"
 import { Icon } from "@novaclaw/ui/icon"
 import { useGlobal } from "@/context/global"
 import { useServer } from "@/context/server"
-import { useLanguage } from "@/context/language"
+import { useLanguage, type Translator } from "@/context/language"
 import { showToast } from "@/utils/toast"
 import { fsTrashList, fsTrashRestore, type TrashEntry } from "@/utils/fs-api"
 
@@ -11,7 +11,7 @@ import { fsTrashList, fsTrashRestore, type TrashEntry } from "@/utils/fs-api"
 // the TTL countdown (~2 days from trashedAt, then the lazy purge removes it for real).
 const TTL_MS = 2 * 24 * 3600 * 1000
 
-function expiresLabel(trashedAt: number, t: (key: string) => string): string {
+function expiresLabel(trashedAt: number, t: Translator): string {
   const left = trashedAt + TTL_MS - Date.now()
   if (left <= 0) return t("trash.expiringNow")
   const hours = Math.round(left / 3600_000)

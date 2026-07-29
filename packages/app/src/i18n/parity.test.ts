@@ -42,8 +42,16 @@ import { dict as uiTr } from "@novaclaw/ui/i18n/tr"
 // 19 locales ship and, until this file, nothing could tell whether they agreed. The non-`en` bundles
 // are `satisfies Partial<Record<keyof typeof en, string>>`, which is the RIGHT shape — a partial
 // translation is legal and the runtime falls back to `en` key-by-key (`context/language.tsx` spreads
-// `en` under every locale). But a `satisfies` clause only bites when someone runs `tsgo`, and this box
-// cannot. So this test re-checks AT RUNTIME everything the type checks, plus two things it cannot.
+// `en` under every locale). This test re-checks AT RUNTIME everything that clause checks, plus two
+// things it cannot (rules 2 and 4 below).
+//
+// ⚠️ CORRECTION (2026-07-29): this header used to justify the duplication with "a `satisfies` clause
+// only bites when someone runs `tsgo`, and this box cannot." Both halves were wrong. `cd packages/app
+// && bun run typecheck` runs `tsgo -b` here in ~0.3 s warm, and since 2026-07-29 the day-to-day gate
+// (`bun run test`) has a typecheck phase, so the `satisfies` clauses DO bite on every run. The
+// duplication is still worth keeping — a runtime check reports every offending key at once instead of
+// stopping at the first type error, and rules 2 and 4 have no type equivalent — but it is belt and
+// braces now, not the only belt.
 //
 // THE PARITY RULE, stated so it can be argued with:
 //
@@ -211,8 +219,8 @@ describe("i18n parity", () => {
       })
 
       for (const [name, dict] of locales) {
-        // Rules 1 and 3 — the two halves `satisfies Partial<Record<Keys, string>>` would catch, checked
-        // at runtime because `tsgo` does not run on this machine.
+        // Rules 1 and 3 — the two halves `satisfies Partial<Record<Keys, string>>` also catches. Kept
+        // at runtime because this reports EVERY offending key at once; a type error stops at the first.
         test(`${name}: no key absent from en, no non-string value`, () => {
           const report = compare(base, dict)
           expect({ extra: report.extra, shape: report.shape }).toEqual({ extra: [], shape: [] })

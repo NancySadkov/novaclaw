@@ -3,7 +3,7 @@ import type { PermissionV2Request } from "@novaclaw/sdk/v2"
 import { Button } from "@novaclaw/ui/button"
 import { DockPrompt } from "@novaclaw/session-ui/dock-prompt"
 import { Icon } from "@novaclaw/ui/icon"
-import { useLanguage } from "@/context/language"
+import { dynamicKey, useLanguage } from "@/context/language"
 
 /** 1K: the six verdict-scope replies the dock can send (deny reasons ride `message`). */
 export type PermissionReply = "allow-once" | "allow-file" | "allow-always" | "deny-once" | "deny-file" | "deny-always"
@@ -19,8 +19,12 @@ export function SessionPermissionDock(props: {
   const [reason, setReason] = createSignal("")
 
   const toolDescription = () => {
+    // ⚠️ Genuinely unchecked, and correctly so: `action` is a tool name off the wire (MCP and
+    // plugin tools are registered at runtime), so there is no compile-time set to narrow to. The
+    // missing-key case is HANDLED two lines down — a key that does not resolve renders nothing
+    // rather than reaching the user as raw text.
     const key = `settings.permissions.tool.${props.request.action}.description`
-    const value = language.t(key as Parameters<typeof language.t>[0])
+    const value = language.t(dynamicKey(key))
     if (value === key) return ""
     return value
   }

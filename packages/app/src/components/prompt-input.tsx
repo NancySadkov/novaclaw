@@ -360,7 +360,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
           : language.t(PROMPT_EXAMPLE_KEYS[store.placeholder])
         : "",
       suggest: suggest(),
-      t: (key, params) => language.t(key as Parameters<typeof language.t>[0], params as never),
+      t: language.t,
     }),
   )
 
@@ -1097,7 +1097,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
   const permissionModeControlState = createMemo<ComposerPermissionModeControlState>(() => ({
     title: language.t("prompt.permissionMode.title"),
     current: props.controls.permissionMode.current,
-    label: (mode) => language.t(`prompt.permissionMode.${mode}` as Parameters<typeof language.t>[0]),
+    label: (mode) => language.t(`prompt.permissionMode.${mode}`),
     style: control(),
     onSelect: (value) => {
       props.controls.permissionMode.select(value)
@@ -1160,7 +1160,7 @@ export const PromptInput: Component<PromptInputProps> = (props) => {
         commandKeybind={command.keybind}
         commandKeybindParts={command.keybindParts}
         newLayoutDesigns={props.controls.newLayoutDesigns}
-        t={(key) => language.t(key as Parameters<typeof language.t>[0])}
+        t={language.t}
       />
       <Switch>
         <Match when={props.controls.newLayoutDesigns}>

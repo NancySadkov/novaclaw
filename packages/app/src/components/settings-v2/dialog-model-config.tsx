@@ -38,7 +38,14 @@ const bodyBudget = (m: unknown): unknown => (m as WithRequestBody | undefined)?.
 
 // Presets per field. `{}` = "use the default" (blank). `word` is a shared i18n intensity term; `size`
 // is a literal unit label (context/output are token counts, not intensities). The number is the value.
-type RawPreset = { num?: number; word?: string; size?: string }
+// ⚠️ `word` is a union, not `string`: it is interpolated into `settings.models.config.preset.<word>`
+// and the app's translator is key-typed, so widening it would silently switch that check off.
+type PresetWord =
+  | "precise" | "focused" | "balanced" | "creative" | "wild"
+  | "off" | "diverse" | "tight" | "wide"
+  | "light" | "strong" | "gentle" | "moderate"
+  | "disabled"
+type RawPreset = { num?: number; word?: PresetWord; size?: string }
 const PRESETS: Record<FieldKey, RawPreset[]> = {
   temperature: [{}, { word: "precise", num: 0 }, { word: "focused", num: 0.3 }, { word: "balanced", num: 0.7 }, { word: "creative", num: 1 }, { word: "wild", num: 1.3 }],
   top_p: [{}, { word: "off", num: 1 }, { word: "focused", num: 0.9 }, { word: "balanced", num: 0.95 }, { word: "diverse", num: 0.8 }],
@@ -67,7 +74,6 @@ export const DialogModelConfig: Component<{
   const dialog = useDialog()
   const language = useLanguage()
   const serverSync = useServerSync()
-  const tk = (key: string) => language.t(key as Parameters<typeof language.t>[0])
 
   const providerCfg = (): { models?: Record<string, ModelConfig>; [k: string]: unknown } =>
     (serverSync().data.config?.providers as Record<string, { models?: Record<string, ModelConfig> }> | undefined)?.[
@@ -111,9 +117,9 @@ export const DialogModelConfig: Component<{
   }
 
   const optLabel = (p: RawPreset): string => {
-    if (p.num === undefined) return tk("settings.models.config.preset.default")
+    if (p.num === undefined) return language.t("settings.models.config.preset.default")
     // A sentinel is not a quantity: "Disabled (-1)" would invite the reader to reason about -1 tokens.
-    if (p.word) return p.num < 0 ? tk(`settings.models.config.preset.${p.word}`) : `${tk(`settings.models.config.preset.${p.word}`)} (${p.num})`
+    if (p.word) return p.num < 0 ? language.t(`settings.models.config.preset.${p.word}`) : `${language.t(`settings.models.config.preset.${p.word}`)} (${p.num})`
     if (p.size) return p.size
     return String(p.num)
   }
@@ -182,7 +188,7 @@ export const DialogModelConfig: Component<{
     const matched = () => options().find((o) => o.num === currentNum())
     const customOpt = (): Opt | undefined =>
       currentNum() !== undefined && !matched()
-        ? { id: "custom", num: currentNum(), label: `${tk("settings.models.config.preset.custom")} (${currentNum()})` }
+        ? { id: "custom", num: currentNum(), label: `${language.t("settings.models.config.preset.custom")} (${currentNum()})` }
         : undefined
     const allOptions = () => {
       const extra = customOpt()
@@ -196,7 +202,7 @@ export const DialogModelConfig: Component<{
       <div class="flex items-center gap-2 justify-end">
         <SelectV2<Opt>
           appearance="inline"
-          aria-label={tk(`settings.models.config.${p.field}.name`)}
+          aria-label={language.t(`settings.models.config.${p.field}.name`)}
           options={allOptions()}
           current={current()}
           value={(o) => o.id}
@@ -219,12 +225,12 @@ export const DialogModelConfig: Component<{
             // the garbage was persisted; the real dev DB ended up with a thinkingBudget of 600060006000
             // (6000 typed three times), which silently disables the budget it was meant to set.
             onFocus={(event) => event.currentTarget.select()}
-            placeholder={tk("settings.models.config.defaultPlaceholder")}
+            placeholder={language.t("settings.models.config.defaultPlaceholder")}
             spellcheck={false}
             autocorrect="off"
             autocomplete="off"
             autocapitalize="off"
-            aria-label={tk(`settings.models.config.${p.field}.name`)}
+            aria-label={language.t(`settings.models.config.${p.field}.name`)}
           />
         </div>
       </div>
@@ -233,8 +239,8 @@ export const DialogModelConfig: Component<{
 
   const paramRow = (field: FieldKey) => (
     <SettingsRowV2
-      title={tk(`settings.models.config.${field}.name`)}
-      description={tk(`settings.models.config.${field}.desc`)}
+      title={language.t(`settings.models.config.${field}.name`)}
+      description={language.t(`settings.models.config.${field}.desc`)}
     >
       <PresetField field={field} />
     </SettingsRowV2>
@@ -242,8 +248,8 @@ export const DialogModelConfig: Component<{
 
   const modalityRow = (dir: "in" | "out") => (
     <SettingsRowV2
-      title={tk(`settings.models.config.modalities.${dir}.name`)}
-      description={tk(`settings.models.config.modalities.${dir}.desc`)}
+      title={language.t(`settings.models.config.modalities.${dir}.name`)}
+      description={language.t(`settings.models.config.modalities.${dir}.desc`)}
     >
       <div class="flex gap-1.5 flex-wrap justify-end">
         <For each={MODALITIES}>
@@ -260,7 +266,7 @@ export const DialogModelConfig: Component<{
                 aria-pressed={!!form[field]}
                 onClick={() => setForm(field as never, (!form[field]) as never)}
               >
-                {tk(`settings.models.config.modality.${m}`)}
+                {language.t(`settings.models.config.modality.${m}`)}
               </button>
             )
           }}
@@ -269,8 +275,8 @@ export const DialogModelConfig: Component<{
     </SettingsRowV2>
   )
 
-  const section = (key: string) => (
-    <h3 class="settings-v2-section-title mt-1">{tk(`settings.models.config.section.${key}`)}</h3>
+  const section = (key: "sampling" | "limits" | "capabilities" | "modalities") => (
+    <h3 class="settings-v2-section-title mt-1">{language.t(`settings.models.config.section.${key}`)}</h3>
   )
 
   return (
@@ -301,14 +307,14 @@ export const DialogModelConfig: Component<{
           {section("capabilities")}
           <SettingsListV2>
             <SettingsRowV2
-              title={tk("settings.models.config.reasoning.name")}
-              description={tk("settings.models.config.reasoning.desc")}
+              title={language.t("settings.models.config.reasoning.name")}
+              description={language.t("settings.models.config.reasoning.desc")}
             >
               <Switch checked={form.reasoning} onChange={(v) => setForm("reasoning", v)} />
             </SettingsRowV2>
             <SettingsRowV2
-              title={tk("settings.models.config.tool_call.name")}
-              description={tk("settings.models.config.tool_call.desc")}
+              title={language.t("settings.models.config.tool_call.name")}
+              description={language.t("settings.models.config.tool_call.desc")}
             >
               <Switch checked={form.tool_call} onChange={(v) => setForm("tool_call", v)} />
             </SettingsRowV2>

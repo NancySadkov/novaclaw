@@ -1,5 +1,5 @@
 import { For, type Component } from "solid-js"
-import { useLanguage } from "@/context/language"
+import { dynamicKey, useLanguage } from "@/context/language"
 import { useAppTheme, APP_THEME_PRESETS } from "@/context/app-theme"
 
 // The color-scheme picker (uix.md §7.5): a radiogroup of swatch cards painted with each preset's own
@@ -8,7 +8,9 @@ import { useAppTheme, APP_THEME_PRESETS } from "@/context/app-theme"
 export const ThemeSwatches: Component = () => {
   const language = useLanguage()
   const appTheme = useAppTheme()
-  const tk = (key: string) => language.t(key as Parameters<typeof language.t>[0])
+  // ⚠️ Unchecked: `APP_THEME_PRESETS[].nameKey` is typed `string` in `context/app-theme.ts`. That
+  // is narrowable to a union and should be — it is just not this slice's file to change.
+  const tk = (key: string) => language.t(dynamicKey(key))
 
   return (
     <div class="flex flex-wrap gap-2.5" role="radiogroup" aria-label={language.t("settings.appearance.theme.title")}>

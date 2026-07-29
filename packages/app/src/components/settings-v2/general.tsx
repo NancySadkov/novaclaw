@@ -230,8 +230,6 @@ export const SettingsGeneralV2: Component<{
     { value: "collapsed" as const, label: language.t("settings.general.feedDisplay.collapsed") },
   ])
 
-  // Dynamic i18n keys (level name/blurb) need the loose-key cast the translator otherwise forbids.
-  const tk = (key: string) => language.t(key as Parameters<typeof language.t>[0])
   // push (not show) so it STACKS over Settings instead of disposing it — see ui/context/dialog.tsx.
   const openExpertise = () => dialog.push(() => <DialogExpertise />)
 
@@ -242,7 +240,7 @@ export const SettingsGeneralV2: Component<{
             friendliest surface is what a new user meets. */}
         <SettingsRowV2
           title={language.t("settings.expertise.title")}
-          description={`${tk(`settings.expertise.level.${expertise.level()}.name`)} — ${tk(`settings.expertise.level.${expertise.level()}.blurb`)}`}
+          description={`${language.t(`settings.expertise.level.${expertise.level()}.name`)} — ${language.t(`settings.expertise.level.${expertise.level()}.blurb`)}`}
         >
           <ButtonV2 size="normal" variant="neutral" data-action="settings-expertise-change" onClick={openExpertise}>
             {language.t("settings.expertise.change")}

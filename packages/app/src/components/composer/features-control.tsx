@@ -273,10 +273,10 @@ function RemoteChatSection(props: { remote: ComposerRemoteChatState }) {
                       >
                         <span class="flex flex-col gap-0.5">
                           <span class="text-[13px] text-v2-text-text-base">
-                            {language.t(`prompt.remote.trust.${trust}.title` as Parameters<typeof language.t>[0])}
+                            {language.t(`prompt.remote.trust.${trust}.title`)}
                           </span>
                           <span class="text-[12px] leading-4 text-v2-text-text-faint">
-                            {language.t(`prompt.remote.trust.${trust}.description` as Parameters<typeof language.t>[0])}
+                            {language.t(`prompt.remote.trust.${trust}.description`)}
                           </span>
                         </span>
                       </button>
@@ -314,7 +314,7 @@ function RemoteChatSection(props: { remote: ComposerRemoteChatState }) {
                 {language.t("prompt.remote.connected", { driver: binding().driverName, chat: binding().chatTitle })}
               </span>
               <span class="shrink-0 rounded-sm bg-v2-background-bg-subtle px-1.5 text-[11px] text-v2-text-text-faint">
-                {language.t(`prompt.remote.trust.${binding().trust}.title` as Parameters<typeof language.t>[0])}
+                {language.t(`prompt.remote.trust.${binding().trust}.title`)}
               </span>
             </span>
             <button
@@ -348,8 +348,11 @@ export function ComposerFeaturesControl(props: { state: ComposerFeaturesControlS
   // that tells you nothing actionable — you still have to open it to see WHICH two. The unattended-mode
   // marker stays, because that one changes what the agent may do without you.
   const triggerSuffix = () => {
-    if (!unattended()) return ""
-    return ` · ${language.t(`prompt.mode.short.${props.state.mode}` as Parameters<typeof language.t>[0])}`
+    // Narrowed, not cast: the guard already excludes "interactive" (which has no `.short` key by
+    // design), but a `() => boolean` helper cannot narrow `props.state.mode` for the compiler.
+    const mode = props.state.mode
+    if (mode === "interactive") return ""
+    return ` · ${language.t(`prompt.mode.short.${mode}`)}`
   }
   // `onClose` is the composer's "the user finished tuning" hook (it re-reads the session record), so it
   // fires when the dialog goes away by ANY route — button, overlay click or Escape — via dialog.show's
@@ -427,10 +430,10 @@ function TuningPanel(props: { state: ComposerFeaturesControlState; onDismiss: ()
                 >
                   <span class="flex flex-col gap-0.5">
                     <span class="text-[13px] text-v2-text-text-base">
-                      {language.t(`prompt.mode.${mode}.title` as Parameters<typeof language.t>[0])}
+                      {language.t(`prompt.mode.${mode}.title`)}
                     </span>
                     <span class="text-[12px] leading-4 text-v2-text-text-faint">
-                      {language.t(`prompt.mode.${mode}.description` as Parameters<typeof language.t>[0])}
+                      {language.t(`prompt.mode.${mode}.description`)}
                     </span>
                   </span>
                   {props.state.mode === mode && (
@@ -445,10 +448,10 @@ function TuningPanel(props: { state: ComposerFeaturesControlState; onDismiss: ()
             <div class="flex items-start justify-between gap-3" data-feature={feature}>
               <div class="flex flex-col gap-0.5">
                 <span class="text-[13px] text-v2-text-text-base">
-                  {language.t(`prompt.features.${feature}.title` as Parameters<typeof language.t>[0])}
+                  {language.t(`prompt.features.${feature}.title`)}
                 </span>
                 <span class="text-[12px] leading-4 text-v2-text-text-faint">
-                  {language.t(`prompt.features.${feature}.description` as Parameters<typeof language.t>[0])}
+                  {language.t(`prompt.features.${feature}.description`)}
                 </span>
               </div>
               <SwitchToggle
@@ -456,7 +459,7 @@ function TuningPanel(props: { state: ComposerFeaturesControlState; onDismiss: ()
                 onChange={(checked) => props.state.set(feature, checked)}
                 hideLabel
               >
-                {language.t(`prompt.features.${feature}.title` as Parameters<typeof language.t>[0])}
+                {language.t(`prompt.features.${feature}.title`)}
               </SwitchToggle>
             </div>
           ))}
