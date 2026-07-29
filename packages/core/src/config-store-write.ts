@@ -26,16 +26,20 @@ import { SkillConfigStore } from "./skill-config-store"
 // top-level key of such a patch into its owning SQLite store — and mirrors the same keys back
 // over the served view so the UI reads what it wrote. Since step 9 EVERY Config.Info key
 // routes (`instructions` + `disabled/enabled_providers` joined SETTINGS_KEYS); there is no
-// jsonc fallback anymore — an unrouted key (only `$schema`) is ignored.
+// jsonc fallback anymore — and a key that routes nowhere is now REFUSED BY NAME rather than
+// ignored (`NOT_ROUTED_KEYS` + `unroutedKeys` below).
 //
-// ⚠️ That claim was FALSE for `models` until v0.2.0-prep B7: the models-primary flat map
+// ⚠️ "Every key routes" was FALSE for `models` until v0.2.0-prep B7: the models-primary flat map
 // (`Config.Info.models`, notes/models-primary-plan.md P1) decoded cleanly, routed nowhere and
 // still answered 200 — a write that vanished while reporting success. It now expands through
 // `CatalogSeed.expandFlatModels`, the SAME flat→nested transform the jsonc seed applies, so a
-// PATCH and an import of one document land identically. **A new `Config.Info` key must be
-// routed here (or joined SETTINGS_KEYS) in its own commit — an unrouted key is a silent
-// data-loss bug, not a no-op.** The read side answers in the STORED nested `providers` shape;
-// that is a normalization of a durable write, not a dropped one.
+// PATCH and an import of one document land identically. The read side answers in the STORED
+// nested `providers` shape; that is a normalization of a durable write, not a dropped one.
+//
+// That fix was per-key; the guard below is the class-level version of it, because "a new
+// `Config.Info` key must be routed here" is a claim about a file other than the one it is written
+// in — the defect class todo.md ruling 1 exists for. A field added to `config.ts` without a router
+// arm compiles green, typechecks green, and ships a write that vanishes.
 //
 // Merge semantics per store shape:
 // - settings keys: one whole value per key — deep-merge the patch into the stored value
@@ -99,6 +103,59 @@ const referenceCodec = {
 }
 
 const encodeInfo = (info: Config.Info) => Schema.encodeSync(Config.Info)(info) as Record<string, unknown>
+
+/**
+ * ─── the not-routed ledger ──────────────────────────────────────────────────────────────────────
+ *
+ * The `Config.Info` keys `applyToStores` deliberately does NOT write to a store, each with the
+ * reason it is exempt. Every other key must be consumed by a router arm; a patch carrying a key in
+ * neither set faults the whole write (see `unroutedKeys`).
+ *
+ * ⚠️ Adding an entry is a decision with a cost, not a formality: it declares that a value a user or
+ * an agent can PATCH is accepted and then thrown away, which is the shape ruling 2 outlaws — so the
+ * reason has to survive being read. `packages/core/test/config-routing-ledger.test.ts` ratchets it
+ * in BOTH directions: a new `Config.Info` field that routes nowhere fails until it is routed or
+ * listed, and a listed key that stops existing (or starts routing) fails with "drop the entry", so
+ * the list can only shrink.
+ */
+export const NOT_ROUTED_KEYS: ReadonlyMap<string, string> = new Map([
+  [
+    "$schema",
+    "The JSON-schema pointer an editor uses to complete a hand-authored novaclaw.jsonc. It describes " +
+      "the FILE, not the instance — no runtime reader consults it — and it is on `Config.Info` only " +
+      "so authoring a file with it does not fail the decode. Excused rather than refused because " +
+      "Settings → Export WRITES one into every exported document (config-io.tsx drops the stored " +
+      "keys and stamps its own), and Import PATCHes that document straight back: refusing it would " +
+      "break the product's own export→import round trip. There is nothing to store — the next " +
+      "export stamps it again.",
+  ],
+])
+
+/**
+ * The top-level keys of `patch` that no router arm consumed and that the ledger does not excuse —
+ * i.e. the keys this write would have silently dropped.
+ *
+ * Reads the keys off the PATCH INSTANCE rather than off `encodeInfo(patch)`: `Schema.encodeSync`
+ * erases anything `Config.Info` does not declare, so a caller that hands us a hand-built object
+ * would have its stray key removed before the check could name it. On the wire path the two sets
+ * are identical — see the ⚠️ below.
+ *
+ * ⚠️ What this does NOT cover, measured 2026-07-29: an entirely UNKNOWN top-level key never
+ * reaches here. `HttpApiEndpoint.patch("update", …, { payload: Config.Info })` decodes with Effect
+ * Schema's default `onExcessProperty: "ignore"`, so `PATCH /config {"provider_preset": …}` (a
+ * singular typo) is dropped at the wire and answers 200 with the key gone — the same ruling-2
+ * violation one layer up, on the same self-healing path. todo.md's *Runtime ground truth* §4 says
+ * the config service "rejects unknown top-level keys"; for this route it does not. That is a
+ * separate fix (it needs a decision about whether an import of a FORWARD-version document should
+ * 400, since `settings-config-seed.ts`'s file path deliberately ignores unknown keys) and is filed
+ * rather than smuggled in here.
+ */
+export const unroutedKeys = (patch: Config.Info, consumed: ReadonlySet<string>): string[] => {
+  const values = patch as unknown as Record<string, unknown>
+  return Object.keys(values).filter(
+    (key) => values[key] !== undefined && !consumed.has(key) && !NOT_ROUTED_KEYS.has(key),
+  )
+}
 
 /**
  * The routing itself. Kept separate from `apply` only so the transaction boundary is one
@@ -224,12 +281,39 @@ const applyToStores = (patch: Config.Info) =>
       consumed.add("plugins")
     }
 
+    // Ruling 2, second clause — *a failed mutation never reports success.* Everything above is a
+    // per-key `if`, so the failure mode of forgetting one is not a compile error and not a test
+    // failure: it is a 200 for a write that went nowhere. This is the ONE place that can tell the
+    // difference, because `consumed` is the router's own record of what it did rather than a second
+    // list that can drift from it.
+    //
+    // It runs INSIDE the transaction on purpose, and dies rather than failing:
+    //  · inside, so the earlier stores roll back — a partial apply that reports failure is its own
+    //    ruling-2 problem, and `apply` is documented as all-or-nothing;
+    //  · `Effect.die`, because this can only fire on a `Config.Info` field whose router arm was
+    //    never written. That is a programming defect, not user input, so it wants the same
+    //    vocabulary as the `models` decode failure above — "a rolled-back 500 is an honest fault
+    //    where a partial 200 is not" — and needs no new wire error (which would need an
+    //    OpenAPI/SDK regen for a case no user can reach).
+    const unrouted = unroutedKeys(patch, consumed)
+    if (unrouted.length > 0)
+      return yield* Effect.die(
+        new Error(
+          `config: nothing routes ${unrouted.map((key) => `"${key}"`).join(", ")} — the whole write was ` +
+            `rolled back rather than answer 200 for a key that vanished. Give the key a router arm in ` +
+            `config-store-write.ts (or join it to SettingsConfigSeed.SETTINGS_KEYS), or add it to ` +
+            `NOT_ROUTED_KEYS with the reason it is accepted and discarded.`,
+        ),
+      )
+
     return consumed
   })
 
 /**
  * Route one `updateConfig` patch into the SQLite stores, ALL-OR-NOTHING. Returns the set of
- * top-level keys consumed.
+ * top-level keys consumed — which is now TOTAL over the patch: every key it carried is either in
+ * this set or in `NOT_ROUTED_KEYS`, or the write faulted instead of returning (see `unroutedKeys`).
+ * So `consumed.size === 0` means "the patch asked for nothing storable", never "we dropped it".
  *
  * v0.2.0 ruling 2 — *a failed mutation never reports success*. This used to issue seven
  * independent writes (settings · catalog · agents · commands · references · skills · plugins),

@@ -111,7 +111,9 @@ export const globalHandlers = HttpApiBuilder.group(RootHttpApi, "global", (handl
     // SQLite stores (settings values merge in place; providers/agents/commands/references
     // append a layer; skills/plugins replace). Step 9 routed the last three keys
     // (instructions + disabled/enabled_providers), so the legacy jsonc patch path is gone —
-    // an unrouted key (only `$schema`, never a runtime value) is simply ignored. A change
+    // and a `Config.Info` key that routes nowhere is now REFUSED BY NAME (rolled back) rather
+    // than ignored; the only key excused is `$schema`, which describes the file rather than the
+    // instance (`ConfigStoreWrite.NOT_ROUTED_KEYS`). A change
     // invalidates the service's cached store view and disposes instances: locations snapshot
     // config (and rebuild the catalog + the settings synthetic document) at boot.
     const configUpdate = Effect.fn("GlobalHttpApi.configUpdate")(function* (ctx) {

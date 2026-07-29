@@ -42,6 +42,11 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
       // swallowed entirely until Wave 1 — and misreports a write whose stored shape differs from
       // what was sent, since `models` normalizes into `providers`. The sibling global route already
       // answers this way (handlers/global.ts:123-124); the two disagreed.
+      //
+      // The reply is now total as well as honest: `apply` refuses a `Config.Info` key no store
+      // routes instead of dropping it (`NOT_ROUTED_KEYS`), so a 200 here means every key in the
+      // patch either landed or is a ledgered no-op. ⚠️ An entirely UNKNOWN key is still dropped one
+      // layer up, by the payload decode (`onExcessProperty: "ignore"`) — see `unroutedKeys`.
       const base = (yield* configSvc.get()) as Record<string, unknown>
       return Schema.decodeUnknownSync(ConfigV2.Info)(yield* ConfigStoreWrite.overlay(base))
     })
