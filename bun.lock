@@ -32,6 +32,7 @@
         "@novaclaw/sdk": "workspace:*",
         "@novaclaw/session-ui": "workspace:*",
         "@novaclaw/ui": "workspace:*",
+        "@pierre/diffs": "catalog:",
         "@pierre/trees": "1.0.0-beta.4",
         "@solid-primitives/event-bus": "1.1.2",
         "@solid-primitives/event-listener": "2.4.5",
