@@ -217,8 +217,12 @@ const graph = LayerNode.group([Database.node, EventV2.node, FSUtil.node, Messeng
  * `DISPATCH_ACK_DELAY_MS` (6 s), `NARRATION_SETTLE_MS` (2.5 s, twice over) and `BACKOFF_BASE_MS`
  * (1 s, four times over). Five tests carried 19.4 s of the 21.9 s. They are now on the TestClock and
  * the file runs in **3.0 s**; each is marked with a `⏱ VIRTUAL TIME` note saying which timer it owns.
+ * (The last of the five was a `TestClock.withLive` hybrid until 2026-07-29, because `gateway.ts`
+ * measured the backoff ladder's uptime on a different clock from the one it waited on. It does not
+ * any more — see the ⏱ note on `MessengerGateway backoff`.)
  *
- * **The other 23 stay live, deliberately, for one shared reason.** None of them waits on a
+ * **Every other test here stays live, deliberately, for one shared reason** — LIVE_LEDGER at the
+ * bottom is the enumeration, so this note never carries a count that rots. None of them waits on a
  * production timer — the most expensive is 0.37 s — and several assert that something did NOT
  * happen ("give the gateway a beat; nothing should be injected"). A negative assertion's whole
  * strength is the margin of real elapsed time it gives the pipeline to misbehave in; replacing that
@@ -1344,18 +1348,20 @@ const itFlap = testEffect(
 )
 
 describe("MessengerGateway backoff", () => {
-  // ⏱ HYBRID CLOCK (`it.effect` + one deliberate `TestClock.withLive`). Read this before "fixing"
-  // the odd-looking live sleep below.
+  // ⏱ VIRTUAL TIME, both halves of it — and that is a property of `gateway.ts`, not of this test.
   //
-  // The gateway measures uptime with `Date.now()` (gateway.ts:917 stamps it, :974 subtracts it) but
-  // waits out the backoff with `Effect.sleep` (:979). Those are two different clocks, so exactly one
-  // of the two waits in this test can be virtualised:
-  //   · the healthy-connection window MUST be real, or `uptime` reads ~0, the ladder never resets,
-  //     and the delays come back 1 s / 3 s / 9 s — the very bug this test pins;
-  //   · the three BACKOFF_BASE_MS waits are pure `Effect.sleep` and cost nothing under TestClock.
-  // Result: 2.87 s → ~0.9 s, and the assertion still rides the real clock it is written against.
-  // ⚠️ If gateway.ts ever measures uptime through `Clock.currentTimeMillis`, delete the `withLive`
-  // and this whole test becomes free.
+  // `connectionLoop` reads the whole ladder off ONE clock: `connectedAt` is stamped with
+  // `Clock.currentTimeMillis`, `uptime` subtracts on it, `until` is stamped from it, and the backoff
+  // `Effect.sleep` waits on it. So advancing the TestClock past `STABLE_MS` is indistinguishable
+  // from having held the socket open that long, and the three `BACKOFF_BASE_MS` waits cost nothing.
+  //
+  // ⚠️ This was a `TestClock.withLive` hybrid until 2026-07-29, and the reason is worth keeping: the
+  // uptime used to be a `Date.now()` subtraction while the backoff waited on the Effect clock. A
+  // test can hold one of two clocks still, never both, so the healthy-connection window had to be
+  // paid in real seconds while the sleeps ran virtual — the note recorded ~0.9 s of the file's wall
+  // time for it. Measured after the one-clock fix (junit, 2026-07-29): **11.9 ms**. Putting a
+  // `Date.now()` back anywhere in that loop brings the hybrid straight back — the ladder is measured
+  // end to end on one clock, or it is not measurable at all.
   itFlap.effect("a connection that STAYED UP resets the ladder — a routine reconnect never pins the account at the cap", () =>
     Effect.gen(function* () {
       const store = yield* MessengerStore.Service
@@ -1367,15 +1373,23 @@ describe("MessengerGateway backoff", () => {
       // "please reconnect"): stay up past the healthy window, then end the inbound stream.
       const cycle = Effect.gen(function* () {
         yield* eventually(gateway.status(), (map) => map.get(account.id)?.state === "connected", "connected")
-        // REAL time, on purpose — `uptime` is a `Date.now()` subtraction (see the note above).
-        yield* TestClock.withLive(Effect.sleep(Duration.millis(STABLE_MS + 100)))
+        // Stay up past the healthy window — on the same clock the gateway measures uptime with, so
+        // this is virtual and the margin over STABLE_MS is free. Deliberately generous: the
+        // `connectedAt` stamp lands a scheduling slot or two after the status flips to `connected`,
+        // and a margin that only just clears the window would make the outcome depend on that.
+        yield* settle(STABLE_MS * 4)
         const queue = flapFake.state.queue
         if (queue === undefined) throw new Error("driver queue missing")
         yield* Queue.end(queue)
         const status = yield* eventually(gateway.status(), (map) => map.get(account.id)?.state === "backoff", "backoff")
         const parked = status.get(account.id)
         if (parked?.state !== "backoff") throw new Error("expected a backoff status")
-        return parked.until - Date.now()
+        // `until` is stamped from `Clock.currentTimeMillis`, so the wait left on it must be read off
+        // that same clock. `Date.now()` here would subtract a wall-clock epoch from a virtual one —
+        // the TestClock starts at 0 — and land ~55 years in the negative. Loud rather than silent,
+        // but it is the same mistake gateway.ts used to make, one frame further out.
+        const now = yield* Clock.currentTimeMillis
+        return parked.until - now
       })
 
       const delays = [yield* cycle, yield* cycle, yield* cycle]
@@ -1424,6 +1438,9 @@ describe("MessengerGateway (airgapped)", () => {
 // ───────────────────────────────────────────────────────────────────────────────────────────────
 
 const SELF_SOURCE = nodeFs.readFileSync(nodePath.join(import.meta.dir, "messenger-gateway.test.ts"), "utf8")
+/** The gateway's own source. Read once here and used by two ratchets: the citation check below, and
+ *  the cold-start collapse-point ledger at the very bottom of this file. */
+const GATEWAY_SOURCE = nodeFs.readFileSync(nodePath.join(import.meta.dir, "../src/messenger/gateway.ts"), "utf8")
 
 /** Every test registration in a file, with the clock it asked for. House style puts the name in a
  *  double-quoted literal on the same line as the call, which is what makes this parseable at all. */
@@ -1434,27 +1451,41 @@ const registrations = (source: string): { clock: "live" | "effect"; name: string
   }))
 
 /** Literal wall-clock sleeps — `Effect.sleep(Duration.millis(<number>))`. A sleep whose argument is
- *  a variable (the `advance` fallback) or an expression (`STABLE_MS + 100`) is deliberately NOT
- *  counted: those are the two reviewed sites, and both are explained where they stand. */
+ *  a variable is deliberately NOT counted: the one such site is `advance`'s live-clock fallback,
+ *  which is explained where it stands. (There used to be a second — the backoff test's
+ *  `STABLE_MS + 100` under `TestClock.withLive` — and it is gone: that test is fully virtual now.) */
 const wallClockSleeps = (source: string): number[] =>
   [...source.matchAll(/Effect\.sleep\(Duration\.millis\((\d[\d_]*)\)\)/g)].map((match) =>
     Number(match[1]!.replaceAll("_", "")),
   )
 
+/** Citations of a LINE NUMBER in another source file — the `<file>.ts:<line>` shape. The count must
+ *  be zero: cite a symbol instead, which is still findable after the next insertion. (The regex
+ *  cannot match its own source — the character after the colon below is a backslash, not a digit —
+ *  so this helper never reports itself.) */
+const citedLineNumbers = (source: string): string[] => [...source.matchAll(/[\w./-]+\.ts:\d+/g)].map((match) => match[0])
+
 /**
  * The five tests whose subject IS a production timer. Each must stay on the TestClock — reverting
  * one to `it.live` buys back the seconds named in its reason.
+ *
+ * ⚠️ **Reasons cite SYMBOLS, never `gateway.ts:<line>`.** These four entries carried line numbers
+ * until 2026-07-29 (`:837`, `:460`, `:979`, and `:917`/`:974` in the backoff note above); every one
+ * of them had drifted ~100–170 lines, and following them is what sent an investigation of this very
+ * defect to the wrong part of the file. A symbol survives the next insertion; a line number is a
+ * claim about the file that nothing checks — so the symbols below are checked, by the
+ * `every gateway symbol these reasons cite still exists` test in the ledger describe below.
  */
 const VIRTUAL_LEDGER = new Map<string, string>([
   [
     "a question costs ONE message: the sign-off narration and the redundant ✅ are both dropped",
-    "6.6 s — the most expensive test in `core`. Waits out NARRATION_SETTLE_MS (2.5 s, forked at " +
-      "gateway.ts:837) plus a 4 s belt-and-braces margin, to prove the sign-off is DROPPED.",
+    "6.6 s — the most expensive test in `core`. Waits out NARRATION_SETTLE_MS (2.5 s, forked by the " +
+      "gateway's narration hold) plus a 4 s belt-and-braces margin, to prove the sign-off is DROPPED.",
   ],
   [
     "the self-chat console DISPATCHES addressed prompts as child tasks — never inline (§0.1.5)",
-    "6.1 s — DISPATCH_ACK_DELAY_MS is 6 s (gateway.ts:460), and the assertion is precisely that the " +
-      "ack is silent before it and speaks after it. There is no way to test that without a clock.",
+    "6.1 s — DISPATCH_ACK_DELAY_MS is 6 s, and the assertion is precisely that the ack is silent " +
+      "before it and speaks after it. There is no way to test that without a clock.",
   ],
   [
     "a dispatched task reports progress, notices, and its exit result back to the console (§0.1.5)",
@@ -1462,11 +1493,24 @@ const VIRTUAL_LEDGER = new Map<string, string>([
   ],
   [
     "a connection that STAYED UP resets the ladder — a routine reconnect never pins the account at the cap",
-    "2.9 s — three BACKOFF_BASE_MS waits (gateway.ts:979). HYBRID: the healthy-connection window " +
-      "stays real via TestClock.withLive because gateway.ts measures uptime with Date.now().",
+    "2.9 s — three BACKOFF_BASE_MS waits in connectionLoop. Fully virtual since connectionLoop reads " +
+      "uptime, `until` and the backoff sleep off one clock (Clock.currentTimeMillis); it was a " +
+      "TestClock.withLive hybrid while uptime was a Date.now() subtraction.",
   ],
   ["a failing connect goes to backoff with the reason, then reconnects", "1.0 s — one BACKOFF_BASE_MS wait."],
 ])
+
+/** The gateway symbols those reasons name. Pinned in BOTH directions: each must still appear in a
+ *  reason (a reason that goes vague stops explaining anything) and in `gateway.ts` (a rename must
+ *  not leave the reason quietly lying). This is what a citation costs now that it is not a line
+ *  number — and it is cheaper than the half-day the line numbers cost. */
+const CITED_GATEWAY_SYMBOLS: readonly string[] = [
+  "NARRATION_SETTLE_MS",
+  "DISPATCH_ACK_DELAY_MS",
+  "BACKOFF_BASE_MS",
+  "connectionLoop",
+  "Clock.currentTimeMillis",
+]
 
 /**
  * Every test still on the wall clock. No per-entry reason, because they all share ONE: the test
@@ -1563,6 +1607,20 @@ describe("messenger-gateway wall-clock ledger", () => {
     // and the next author would inherit headroom they did not earn.
     expect(sleeps.reduce((total, millis) => total + millis, 0)).toBe(WALL_CLOCK_BUDGET_MS)
   })
+
+  test("every gateway symbol these reasons cite still exists — in the ledger AND in gateway.ts", () => {
+    const reasons = [...VIRTUAL_LEDGER.values()].join("\n")
+    expect(CITED_GATEWAY_SYMBOLS.filter((symbol) => !reasons.includes(symbol))).toEqual([])
+    expect(CITED_GATEWAY_SYMBOLS.filter((symbol) => !GATEWAY_SOURCE.includes(symbol))).toEqual([])
+  })
+
+  test("nothing in this file cites a gateway.ts LINE NUMBER — they rot in silence", () => {
+    // Every such citation this file has ever carried was wrong by the time somebody followed it:
+    // four of them, off by 100–170 lines, and one of them cost an investigation of this very defect
+    // its first pass. A line number is a claim about another file that nothing can check; a symbol
+    // is. So the numbers are banned outright rather than periodically re-audited.
+    expect(citedLineNumbers(SELF_SOURCE)).toEqual([])
+  })
 })
 
 describe("the wall-clock ledger actually bites (negative control)", () => {
@@ -1608,8 +1666,18 @@ describe("the wall-clock ledger actually bites (negative control)", () => {
     // A virtual wait must NOT be counted — `settle(4000)` costs nothing on the TestClock, and
     // counting it would push authors back towards the live clock to satisfy the budget.
     expect(wallClockSleeps(`yield* settle(4_000)`)).toEqual([])
-    // Nor may a non-literal argument be guessed at.
-    expect(wallClockSleeps(`${SLEEP}STABLE_MS + 100))`)).toEqual([])
+    // Nor may a non-literal argument be guessed at — the shape of `advance`'s live-clock fallback,
+    // which is the only such site left in the file.
+    expect(wallClockSleeps(`${SLEEP}millis))`)).toEqual([])
+  })
+
+  test("a line-number citation is what the sweep reports, and a symbol is not", () => {
+    // Fragment-assembled for the same reason as SLEEP above: written whole, the rogue citation AND
+    // its expected value would be found by the scan of THIS file and reported as real offenders.
+    const FILE = "gateway" + ".ts"
+    expect(citedLineNumbers(`// the gateway stamps it at ${FILE}:979`)).toEqual([`${FILE}:979`])
+    // The replacement must NOT trip it, or the ban would push authors back to prose that says less.
+    expect(citedLineNumbers(`// connectedAt is stamped in connectionLoop (${FILE})`)).toEqual([])
   })
 })
 
@@ -1623,8 +1691,6 @@ describe("the wall-clock ledger actually bites (negative control)", () => {
 // shells (ruling 6) — and here the two sites are `send` (which has an `initiate` escape) and
 // `sendFile` (which has none), so they are exactly similar enough to drift apart unnoticed.
 // ───────────────────────────────────────────────────────────────────────────────────────────────
-
-const GATEWAY_SOURCE = nodeFs.readFileSync(nodePath.join(import.meta.dir, "../src/messenger/gateway.ts"), "utf8")
 
 /** Producers of the `unavailable` arm today: `send` and `sendFile`. Shrink-only in spirit — a third
  *  is not forbidden, but it must justify itself on its own line, from the one collapse. */

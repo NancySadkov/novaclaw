@@ -2,7 +2,7 @@ export * as MessengerGateway from "./gateway"
 
 import fs from "node:fs/promises"
 import path from "node:path"
-import { Context, Duration, Effect, Fiber, FiberSet, Layer, Semaphore, Stream } from "effect"
+import { Clock, Context, Duration, Effect, Fiber, FiberSet, Layer, Semaphore, Stream } from "effect"
 import { Messenger } from "@novaclaw/schema/messenger"
 import type { FileAttachment, Origin as PromptOrigin } from "@novaclaw/schema/prompt"
 import { Session } from "@novaclaw/schema/session"
@@ -1067,6 +1067,8 @@ const build = (options: Options) =>
 
     // `live.connectedAt` is stamped the moment the connection is actually up, so the caller can
     // tell a connection that WORKED from one that merely opened (see connectionLoop's reset rule).
+    // ⏱ Stamped on the EFFECT clock — the same one the ladder's `Effect.sleep` waits on. See the
+    // one-clock note in connectionLoop for why the two must never diverge.
     const attempt = (account: Messenger.AccountInfo, driver: Driver, entry: Entry, live: { connectedAt?: number }) =>
       Effect.scoped(
         Effect.gen(function* () {
@@ -1085,7 +1087,7 @@ const build = (options: Options) =>
           if (pace !== undefined) connectionPace.set(connection, pace)
           yield* Effect.addFinalizer(() => Effect.sync(() => (entry.connection = undefined)))
           yield* setStatus(account.id, entry, { state: "connected" })
-          live.connectedAt = Date.now()
+          live.connectedAt = yield* Clock.currentTimeMillis
           yield* consume(account, connection)
         }),
       )
@@ -1142,11 +1144,22 @@ const build = (options: Options) =>
           // not a successful connect — is the healthy signal, because a provider that accepts the
           // socket and drops it at once would otherwise reset the ladder every cycle and let us
           // hammer it forever. Below the window the streak keeps climbing, exactly as before.
-          const uptime = live.connectedAt === undefined ? 0 : Date.now() - live.connectedAt
+          //
+          // ⏱ ONE CLOCK for the whole ladder, and it is Effect's. `connectedAt` (stamped in
+          // `attempt`), this subtraction and the `until` stamp below all read
+          // `Clock.currentTimeMillis` — the very clock the `Effect.sleep` at the bottom of this loop
+          // waits on. In production that IS `Date.now()`, so nothing about the live behaviour moves;
+          // what it buys is that the healthy-connection window can be VIRTUALISED like every other
+          // wait here. Mixing the two (a `Date.now()` uptime against an `Effect.sleep` backoff) is a
+          // defect in its own right — a test can only ever hold one of the two still — and it forced
+          // the ladder-reset test to be a `TestClock.withLive` hybrid that burned real seconds. One
+          // read serves both values on purpose: the drop and the park are the same instant.
+          const now = yield* Clock.currentTimeMillis
+          const uptime = live.connectedAt === undefined ? 0 : now - live.connectedAt
           failures = uptime >= stableConnectionMs ? 1 : failures + 1
           const delay = backoffDelay(failures)
           const reason = outcome.kind === "error" ? outcome.reason : "connection ended"
-          yield* setStatus(account.id, entry, { state: "backoff", until: Date.now() + delay, message: reason })
+          yield* setStatus(account.id, entry, { state: "backoff", until: now + delay, message: reason })
           yield* Effect.sleep(Duration.millis(delay))
         }
       })
