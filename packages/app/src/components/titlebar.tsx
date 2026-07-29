@@ -5,7 +5,6 @@ import { IconButton } from "@novaclaw/ui/icon-button"
 import { Icon } from "@novaclaw/ui/icon"
 import { Button } from "@novaclaw/ui/button"
 import { Tooltip, TooltipKeybind } from "@novaclaw/ui/tooltip"
-import { useTheme } from "@novaclaw/ui/theme/context"
 import { IconButtonV2 } from "@novaclaw/ui/v2/icon-button-v2"
 import { Icon as IconV2 } from "@novaclaw/ui/v2/icon"
 import { KeybindV2 } from "@novaclaw/ui/v2/keybind-v2"
@@ -27,27 +26,6 @@ import { ServerConnection, useServer } from "@/context/server"
 import { tabKey, useTabs } from "@/context/tabs"
 import "./titlebar.css"
 
-type TauriDesktopWindow = {
-  startDragging?: () => Promise<void>
-  toggleMaximize?: () => Promise<void>
-}
-
-type TauriThemeWindow = {
-  setTheme?: (theme?: "light" | "dark" | null) => Promise<void>
-}
-
-type TauriApi = {
-  window?: {
-    getCurrentWindow?: () => TauriDesktopWindow
-  }
-  webviewWindow?: {
-    getCurrentWebviewWindow?: () => TauriThemeWindow
-  }
-}
-
-const tauriApi = () => (window as unknown as { __TAURI__?: TauriApi }).__TAURI__
-const currentDesktopWindow = () => tauriApi()?.window?.getCurrentWindow?.()
-const currentThemeWindow = () => tauriApi()?.webviewWindow?.getCurrentWebviewWindow?.()
 const legacyTitlebarHeight = 40
 const v2TitlebarHeight = 36
 const minTitlebarZoom = 0.25
@@ -65,7 +43,6 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
   const command = useCommand()
   const language = useLanguage()
   const settings = useSettings()
-  const theme = useTheme()
   const server = useServer()
   const navigate = useNavigate()
   const location = useLocation()
@@ -75,8 +52,10 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
   const bottom = createMemo(() => useV2Titlebar() && mobile() && settings.general.mobileTitlebarPosition() === "bottom")
 
   const mac = createMemo(() => platform.platform === "desktop" && platform.os === "macos")
+  // The desktop shell is Electron (electron-vite + electron-builder), so "desktop on Windows" IS
+  // "Electron on Windows". A second memo used to draw that distinction back when a Tauri build was
+  // also conceivable; it is gone, and nothing forks on the shell any more.
   const windows = createMemo(() => platform.platform === "desktop" && platform.os === "windows")
-  const electronWindows = createMemo(() => windows() && !tauriApi())
   const web = createMemo(() => platform.platform === "web")
   const zoom = () => platform.webviewZoom?.() ?? 1
   const titlebarZoom = () => (windows() ? Math.max(zoom(), minTitlebarZoom) : zoom())
@@ -166,55 +145,14 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
     },
   ])
 
-  const getWin = () => {
-    if (platform.platform !== "desktop") return
-    return currentDesktopWindow()
-  }
-
-  createEffect(() => {
-    if (platform.platform !== "desktop") return
-
-    const scheme = theme.colorScheme()
-    const value = scheme === "system" ? null : scheme
-
-    const win = currentThemeWindow()
-    if (!win?.setTheme) return
-
-    void win.setTheme(value).catch(() => undefined)
-  })
-
-  const interactive = (target: EventTarget | null) => {
-    if (!(target instanceof Element)) return false
-
-    const selector =
-      "button, a, input, textarea, select, option, [role='button'], [role='menuitem'], [contenteditable='true'], [contenteditable='']"
-
-    return !!target.closest(selector)
-  }
-
-  const drag = (e: MouseEvent) => {
-    if (platform.platform !== "desktop") return
-    if (e.buttons !== 1) return
-    if (interactive(e.target)) return
-
-    const win = getWin()
-    if (!win?.startDragging) return
-
-    e.preventDefault()
-    void win.startDragging().catch(() => undefined)
-  }
-
-  const maximize = (e: MouseEvent) => {
-    if (platform.platform !== "desktop") return
-    if (interactive(e.target)) return
-    if (e.target instanceof Element && e.target.closest("[data-tauri-decorum-tb]")) return
-
-    const win = getWin()
-    if (!win?.toggleMaximize) return
-
-    e.preventDefault()
-    void win.toggleMaximize().catch(() => undefined)
-  }
+  // ⚠️ `data-tauri-drag-region` below KEEPS its name despite the `tauri` prefix — it is NOT Tauri
+  // residue. It is the selector `@novaclaw/ui/src/styles/base.css` (~line 85) uses to set
+  // `app-region: drag`, plus `app-region: no-drag` on interactive descendants — which is the whole
+  // mechanism that makes the frameless Electron titlebar draggable and double-click-maximizable.
+  // Chromium handles both natively off that CSS, so there is deliberately NO JS drag/maximize
+  // handler here; the ones that used to sit at this spot called a Tauri window object that no
+  // build we ship has ever injected, and were therefore unreachable no-ops. Renaming the attribute
+  // means editing that stylesheet in the same commit.
 
   return (
     <header
@@ -228,15 +166,11 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
       style={{
         "min-height": minHeight(),
         "padding-left": mac() && !mobile() ? `${84 / zoom()}px` : 0,
-        width: electronWindows() ? `env(titlebar-area-width, calc(100vw - ${windowsControlsWidth()}))` : undefined,
-        "max-width": electronWindows()
-          ? `env(titlebar-area-width, calc(100vw - ${windowsControlsWidth()}))`
-          : undefined,
-        "align-self": electronWindows() ? "flex-start" : undefined,
+        width: windows() ? `env(titlebar-area-width, calc(100vw - ${windowsControlsWidth()}))` : undefined,
+        "max-width": windows() ? `env(titlebar-area-width, calc(100vw - ${windowsControlsWidth()}))` : undefined,
+        "align-self": windows() ? "flex-start" : undefined,
       }}
       data-tauri-drag-region
-      onMouseDown={drag}
-      onDblClick={maximize}
     >
       <Switch>
         <Match when={useV2Titlebar()}>
@@ -425,9 +359,6 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                 />
                 <div class="flex-1" />
                 <TitlebarV2Right state={v2RightState()} />
-                <Show when={windows() && !electronWindows()}>
-                  <div data-tauri-decorum-tb class="flex flex-row" />
-                </Show>
               </div>
             )
           }}
@@ -574,12 +505,11 @@ export function Titlebar(props: { update?: TitlebarUpdate }) {
                 "pr-2": !windows(),
               }}
               data-tauri-drag-region
-              onMouseDown={drag}
             >
               <div id="novaclaw-titlebar-right" class="flex items-center gap-1 shrink-0 justify-end" />
+              {/* Reserve room for the native Windows caption buttons, which overlay the titlebar. */}
               <Show when={windows()}>
-                {!tauriApi() && <div class="shrink-0" style={{ width: windowsControlsWidth() }} />}
-                <div data-tauri-decorum-tb class="flex flex-row" />
+                <div class="shrink-0" style={{ width: windowsControlsWidth() }} />
               </Show>
             </div>
           </div>

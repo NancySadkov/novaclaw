@@ -1,6 +1,14 @@
 // Copyright 2019-2024 Tauri Programme within The Commons Conservancy
 // SPDX-License-Identifier: Apache-2.0
 // SPDX-License-Identifier: MIT
+//
+// ⚠️ VENDORED AND LIVE — do not delete this in a "Tauri residue" sweep. The header above is an
+// upstream attribution we must keep (Apache-2.0/MIT), not a sign that this file belongs to a dead
+// era. It is imported by `src/renderer/index.tsx` (`setPinchZoomEnabled`, `webviewZoom`), which
+// feeds the renderer's platform context; the chain continues through `src/preload/index.ts` →
+// `src/main/ipc.ts` → `src/main/windows.ts`. `packages/app`'s titlebar sizing reads the resulting
+// `platform.webviewZoom()`. Tauri-era residue was removed on 2026-07-29; this file was verified
+// live and deliberately kept.
 
 import { createSignal } from "solid-js"
 
