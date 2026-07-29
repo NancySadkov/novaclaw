@@ -80,29 +80,6 @@
         "vite-plugin-solid": "catalog:",
       },
     },
-    "packages/client": {
-      "name": "@novaclaw/client",
-      "dependencies": {
-        "@novaclaw/protocol": "workspace:*",
-        "@novaclaw/schema": "workspace:*",
-      },
-      "devDependencies": {
-        "@effect/platform-node": "catalog:",
-        "@novaclaw/core": "workspace:*",
-        "@novaclaw/httpapi-codegen": "workspace:*",
-        "@novaclaw/server": "workspace:*",
-        "@tsconfig/bun": "catalog:",
-        "@types/bun": "catalog:",
-        "@typescript/native-preview": "catalog:",
-        "effect": "catalog:",
-      },
-      "peerDependencies": {
-        "effect": "4.0.0-beta.83",
-      },
-      "optionalPeers": [
-        "effect",
-      ],
-    },
     "packages/core": {
       "name": "@novaclaw/core",
       "dependencies": {
@@ -264,18 +241,6 @@
         "effect": "4.0.0-beta.83",
       },
     },
-    "packages/httpapi-codegen": {
-      "name": "@novaclaw/httpapi-codegen",
-      "dependencies": {
-        "effect": "catalog:",
-        "prettier": "3.6.2",
-      },
-      "devDependencies": {
-        "@tsconfig/bun": "catalog:",
-        "@types/bun": "catalog:",
-        "@typescript/native-preview": "catalog:",
-      },
-    },
     "packages/llm": {
       "name": "@novaclaw/llm",
       "dependencies": {
@@ -426,20 +391,6 @@
       "devDependencies": {
         "@types/bun": "catalog:",
         "@types/semver": "^7.5.8",
-      },
-    },
-    "packages/sdk-next": {
-      "name": "@novaclaw/sdk-next",
-      "dependencies": {
-        "@novaclaw/client": "workspace:*",
-        "@novaclaw/core": "workspace:*",
-        "@novaclaw/server": "workspace:*",
-        "effect": "catalog:",
-      },
-      "devDependencies": {
-        "@tsconfig/bun": "catalog:",
-        "@types/bun": "catalog:",
-        "@typescript/native-preview": "catalog:",
       },
     },
     "packages/sdk/js": {
@@ -1002,8 +953,6 @@
 
     "@novaclaw/app": ["@novaclaw/app@workspace:packages/app"],
 
-    "@novaclaw/client": ["@novaclaw/client@workspace:packages/client"],
-
     "@novaclaw/core": ["@novaclaw/core@workspace:packages/core"],
 
     "@novaclaw/desktop": ["@novaclaw/desktop@workspace:packages/desktop"],
@@ -1013,8 +962,6 @@
     "@novaclaw/effect-sqlite-node": ["@novaclaw/effect-sqlite-node@workspace:packages/effect-sqlite-node"],
 
     "@novaclaw/http-recorder": ["@novaclaw/http-recorder@workspace:packages/http-recorder"],
-
-    "@novaclaw/httpapi-codegen": ["@novaclaw/httpapi-codegen@workspace:packages/httpapi-codegen"],
 
     "@novaclaw/llm": ["@novaclaw/llm@workspace:packages/llm"],
 
@@ -1029,8 +976,6 @@
     "@novaclaw/script": ["@novaclaw/script@workspace:packages/script"],
 
     "@novaclaw/sdk": ["@novaclaw/sdk@workspace:packages/sdk/js"],
-
-    "@novaclaw/sdk-next": ["@novaclaw/sdk-next@workspace:packages/sdk-next"],
 
     "@novaclaw/server": ["@novaclaw/server@workspace:packages/server"],
 

@@ -20,6 +20,8 @@ repo_root=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0
 cd "$repo_root" || exit 0
 
 fail=0
+tmp_raw="${TMPDIR:-/tmp}/nc-precommit-raw.$$"
+tmp_real="${TMPDIR:-/tmp}/nc-precommit-real.$$"
 tab=$(printf '\t')
 
 # --------------------------------------------------------------------------------------------------
@@ -147,6 +149,52 @@ if [ -n "$staged_sql" ]; then
     echo "    cd packages/core && bun script/migration.ts --check" >&2
     echo "" >&2
   fi
+fi
+
+# --------------------------------------------------------------------------------------------------
+# CHECK 3 — a staged file whose line endings flipped wholesale against HEAD.
+#
+# Read with universal newlines, write with newline='' — and every CRLF in the file silently becomes
+# LF. A one-line edit then lands as a whole-file diff. It is invisible in review (a big diff just
+# looks like a big change), it destroys `git blame` for that file, and it manufactures conflicts for
+# anyone editing it in parallel.
+#
+# This bit TWICE in one session on 2026-07-29 — a worker agent caught it in itself by auditing
+# --numstat against byte counts, and the coordinator then made the identical mistake on
+# packages/app/package.json (88 CRLF -> 0, turning a 1-line removal into an 88-line diff). Two
+# independent instances in one day is the definition of a class, and the project's own law says a
+# class gets a mechanical check rather than a note.
+#
+# ⚠️ This tree is deliberately MIXED CRLF/LF at HEAD, so the rule cannot be "everything is LF". The
+# only defensible rule is CONSERVATIVE: a file that had CRLF must still have CRLF. New files are not
+# judged, and a file that was already LF is not judged.
+# --------------------------------------------------------------------------------------------------
+staged_flip=$(
+  git diff --cached --numstat --diff-filter=M -- . 2>/dev/null | sort -k3 > "$tmp_raw" 2>/dev/null
+  git diff --cached --numstat --diff-filter=M --ignore-cr-at-eol -- . 2>/dev/null | sort -k3 > "$tmp_real" 2>/dev/null
+  join -j 3 "$tmp_raw" "$tmp_real" 2>/dev/null | awk '{ raw = $2 + $3; real = $4 + $5; if (raw - real >= 10) print $1 }'
+)
+rm -f "$tmp_raw" "$tmp_real"
+
+if [ -n "$staged_flip" ]; then
+  fail=1
+  echo "" >&2
+  echo "pre-commit: REFUSING — these staged files differ from HEAD mostly in LINE ENDINGS:" >&2
+  echo "" >&2
+  printf '%s
+' "$staged_flip" | sed 's/^/    /' >&2
+  echo "" >&2
+  echo "  Measured by comparing 'git diff --numstat' against the same diff with --ignore-cr-at-eol:" >&2
+  echo "  the change shrinks by 10+ lines when line endings are ignored, i.e. most of the diff IS the" >&2
+  echo "  line endings. That hides the real change, destroys blame, and collides with anyone editing" >&2
+  echo "  the file in parallel. Almost always a script that read with universal newlines and wrote" >&2
+  echo "  back with newline=''." >&2
+  echo "" >&2
+  echo "  Fix (restores CRLF, keeps your edit):" >&2
+  echo "    python -c \"import sys;p=sys.argv[1];d=open(p,'rb').read();open(p,'wb').write(d.replace(b'\n',b'\r\n'))\" <file>" >&2
+  echo "" >&2
+  echo "  Bypass (only if the flip IS the intended change):  git commit --no-verify" >&2
+  echo "" >&2
 fi
 
 exit $fail
