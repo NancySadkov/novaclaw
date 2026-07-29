@@ -72,37 +72,75 @@ export const slugify = (name: string): string =>
 export interface Parsed {
   readonly name?: string
   readonly description?: string
+  /**
+   * Every frontmatter line this module did NOT consume, VERBATIM and in original order — unknown keys,
+   * comments, blank lines, indented list continuations. Feed it straight back to `render` and the file
+   * comes out the way its author wrote it. Never contains a `name:` or `description:` line: those two are
+   * the only keys `render` owns, so they are always consumed here and always re-emitted there.
+   */
+  readonly frontmatter: readonly string[]
   readonly prompt: string
 }
+
+/** The two keys `render` writes itself. Everything else is the author's and travels through untouched. */
+const RESERVED = new Set(["name", "description"])
 
 /**
  * Split `recipe.md` into optional frontmatter and the prompt body. Deliberately forgiving: a recipe with
  * NO frontmatter is completely valid (the whole file is the prompt), because a user pasting a prompt into
- * a file must get something that works. Only `name` and `description` are read; unknown keys are ignored
- * rather than rejected, so hand-written frontmatter never blocks a run.
+ * a file must get something that works. Only `name` and `description` are *read*; every other line is
+ * **kept** in `frontmatter` so `render` can put it back — hand-written frontmatter neither blocks a run
+ * nor gets quietly deleted by one.
+ *
+ * ⚠️ `parse` and `render` are an INVERSE PAIR, and that is a load-bearing invariant, not a nicety
+ * (todo.md ruling 14 — a recipe is a portable folder of prose that may carry one machine-read field).
+ * Before this, every line except `name`/`description` was matched and thrown away, so *every* write path
+ * — save, duplicate, the cooked copy — silently rewrote the user's file down to two fields. It is pinned
+ * by a negative-controlled round-trip in `recipe.test.ts`; if you add a key here, `render` must emit it.
+ *
+ * Raw LINES rather than a parsed key→value map on purpose: a map would have to be re-serialised, which
+ * reorders keys, re-quotes values, collapses duplicates and drops comments — i.e. it would rewrite the
+ * author's prose to say the same thing, which is the loss in a different coat. (The one normalisation
+ * that remains: CRLF in the frontmatter becomes LF on any *re*-write. `materialize` copies bytes, so a
+ * cooked folder keeps even that.)
  */
 export const parse = (markdown: string): Parsed => {
   const text = markdown.replace(/^﻿/, "")
   const match = /^---[ \t]*\r?\n([\s\S]*?)\r?\n---[ \t]*\r?\n?/.exec(text)
-  if (!match) return { prompt: text.trim() }
+  if (!match) return { frontmatter: [], prompt: text.trim() }
   const body = text.slice(match[0].length).trim()
   let name: string | undefined
   let description: string | undefined
+  const frontmatter: string[] = []
   for (const line of match[1].split(/\r?\n/)) {
     const field = /^([A-Za-z_][\w-]*)\s*:\s*(.*)$/.exec(line.trim())
-    if (!field) continue
+    const key = field?.[1].toLowerCase()
+    if (!field || !key || !RESERVED.has(key)) {
+      frontmatter.push(line)
+      continue
+    }
     const value = field[2].trim().replace(/^["'](.*)["']$/, "$1")
     if (value === "") continue
-    if (field[1].toLowerCase() === "name") name = value
-    else if (field[1].toLowerCase() === "description") description = value
+    if (key === "name") name = value
+    else description = value
   }
-  return { ...(name ? { name } : {}), ...(description ? { description } : {}), prompt: body }
+  return { ...(name ? { name } : {}), ...(description ? { description } : {}), frontmatter, prompt: body }
 }
 
-/** Render a Recipe back to `recipe.md` — frontmatter only when there is something worth writing. */
-export const render = (input: { name: string; description?: string; prompt: string }): string => {
+/**
+ * Render a Recipe back to `recipe.md`. The inverse of `parse`: it writes the two keys it owns and then
+ * re-emits, unchanged and in order, every line `parse` handed back in `frontmatter`. Pass that array
+ * through on every write path or the write is lossy — which is exactly the bug this pair exists to close.
+ */
+export const render = (input: {
+  name: string
+  description?: string
+  frontmatter?: readonly string[]
+  prompt: string
+}): string => {
   const lines = ["---", `name: ${input.name}`]
   if (input.description) lines.push(`description: ${input.description}`)
+  lines.push(...(input.frontmatter ?? []))
   lines.push("---", "", input.prompt.trim(), "")
   return lines.join("\n")
 }
@@ -160,9 +198,19 @@ export async function save(input: SaveInput, options?: Options): Promise<Recipe>
   const root = recipesRoot(options)
   const dir = path.join(root, slug)
   await fs.mkdir(dir, { recursive: true })
+  const file = path.join(dir, RECIPE_FILE)
+  // `SaveInput` carries only the fields the app edits, so an update-in-place would otherwise delete every
+  // frontmatter line this module does not understand. Read them off the file being replaced and carry
+  // them through: editing a recipe's name must not silently strip the author's own keys.
+  const existing = await fs.readFile(file, "utf8").catch(() => undefined)
   await fs.writeFile(
-    path.join(dir, RECIPE_FILE),
-    render({ name: input.name.trim(), ...(input.description ? { description: input.description.trim() } : {}), prompt: input.prompt }),
+    file,
+    render({
+      name: input.name.trim(),
+      ...(input.description ? { description: input.description.trim() } : {}),
+      frontmatter: existing === undefined ? [] : parse(existing).frontmatter,
+      prompt: input.prompt,
+    }),
     "utf8",
   )
   const saved = await readOne(root, slug, input.builtin ? new Set([slug]) : new Set())
@@ -205,10 +253,19 @@ export async function duplicate(slug: string, options?: Options): Promise<Recipe
   }
   if (!target) throw new Error(`Too many copies of "${slug}"`)
   await fs.cp(path.join(root, slug), path.join(root, target), { recursive: true })
-  // Retitle the copy so the list doesn't show two identical names.
+  // `fs.cp` already made a byte copy; the ONLY thing that may differ is the title, so the rewrite re-emits
+  // the copied file's own frontmatter and changes exactly one line. Retitling is deliberate (the list
+  // must not show two identical names); losing the author's other keys on the way would not be.
+  const copyFile = path.join(root, target, RECIPE_FILE)
+  const carried = parse(await fs.readFile(copyFile, "utf8"))
   await fs.writeFile(
-    path.join(root, target, RECIPE_FILE),
-    render({ name: `${source.name} (copy)`, ...(source.description ? { description: source.description } : {}), prompt: source.prompt }),
+    copyFile,
+    render({
+      name: `${source.name} (copy)`,
+      ...(carried.description ? { description: carried.description } : {}),
+      frontmatter: carried.frontmatter,
+      prompt: carried.prompt,
+    }),
     "utf8",
   )
   const copied = await readOne(root, target, new Set())
@@ -230,11 +287,22 @@ export async function materialize(slug: string, into: string, options?: Options)
   const recipe = await readOne(root, slug, new Set())
   if (!recipe) throw new Error(`No recipe named "${slug}"`)
   await fs.mkdir(into, { recursive: true })
+  // ⚠️ Only assets that actually landed are reported. This used to swallow the error and push the name
+  // anyway, so a cook whose assets failed to copy told the user — and the model — that it had copied
+  // them: ruling 2's *a failed mutation never reports success*, on the path where the agent then goes
+  // looking for a file that is not there. A partial cook is a real outcome (a locked file, a full disk),
+  // so it is reported partially rather than thrown; the caller sees exactly what exists.
   const copied: string[] = []
+  const failed: string[] = []
   for (const asset of recipe.assets) {
-    await fs.cp(path.join(root, slug, asset), path.join(into, asset), { recursive: true }).catch(() => undefined)
-    copied.push(asset)
+    const ok = await fs
+      .cp(path.join(root, slug, asset), path.join(into, asset), { recursive: true })
+      .then(() => true)
+      .catch(() => false)
+    if (ok) copied.push(asset)
+    else failed.push(asset)
   }
+  if (failed.length > 0) console.warn(`recipe "${slug}": ${failed.length} asset(s) could not be copied: ${failed.join(", ")}`)
   // Never clobber: cooking into a folder the user already works in must not overwrite their own recipe.md.
   const manifest = path.join(into, RECIPE_FILE)
   const exists = await fs
@@ -242,7 +310,15 @@ export async function materialize(slug: string, into: string, options?: Options)
     .then(() => true)
     .catch(() => false)
   if (!exists) {
-    await fs.writeFile(manifest, render(recipe), "utf8")
+    // COPY the bytes, never re-render them. `readOne` deliberately excludes recipe.md from `assets`, so
+    // this is the only line that puts the manifest in the work dir — and re-rendering it made the cooked
+    // copy a two-field reconstruction of the user's file: every other frontmatter line was dropped, and a
+    // recipe with NO frontmatter was given a synthetic `name:` block it never had. A cooked folder that
+    // is byte-identical is lossless BY CONSTRUCTION rather than by keeping parse and render in sync
+    // (AGENTS.md → *source rots, intent doesn't*: the thing we hand forward must be the author's own
+    // text). Nothing downstream reads this file back — it is self-description for the human and the
+    // agent — so normalising it bought nothing and cost the frontmatter.
+    await fs.copyFile(path.join(root, slug, RECIPE_FILE), manifest)
     copied.push(RECIPE_FILE)
   }
   return copied
