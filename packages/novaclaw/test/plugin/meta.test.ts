@@ -27,6 +27,28 @@ afterEach(() => {
 })
 
 describe("plugin.meta", () => {
+  // Every `Flock.withLock` in meta.ts must pass an explicit `dir`.
+  //
+  // ⚠️ This is a SOURCE check on purpose, and the reason is worth recording. `storePath()` reaches
+  // `Global.Path.state` only on the right-hand side of a `??`, and resolving `Global.Path` is what
+  // calls `Flock.setGlobal` — so setting `NOVACLAW_PLUGIN_META_FILE`, a documented flag, used to
+  // short-circuit the expression that happens to arm the lock, and every read and write then died
+  // with "Flock global not set". In production that is a crash; in the suite it surfaced as 12 worker
+  // processes exiting 1.
+  //
+  // ⚠️ The behavioural version of this test CANNOT live in this process, and that was measured, not
+  // assumed: a first draft asserted `list()`/`touch()` under the env override and PASSED even with
+  // the fix reverted, because the fixture resolves `Global.Path` before the test body runs and arms
+  // the global as a side effect. A guard that cannot fail is worse than none. The real behavioural
+  // coverage is "serializes concurrent metadata updates across processes" below, which spawns clean
+  // processes and genuinely bites; this one is the fast, legible companion that names the cause.
+  test("every withLock in meta.ts passes an explicit lock dir", async () => {
+    const source = await fs.readFile(path.join(root, "src/plugin/meta.ts"), "utf8")
+    const calls = source.match(/Flock\.withLock\(/g) ?? []
+    expect(calls.length).toBeGreaterThan(0)
+    expect(source.match(/\{ dir: lockDir\(file\) \}/g) ?? []).toHaveLength(calls.length)
+  })
+
   test("tracks file plugin loads and changes", async () => {
     await using tmp = await tmpdir<{ file: string }>({
       init: async (dir) => {

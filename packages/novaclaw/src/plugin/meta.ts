@@ -45,6 +45,25 @@ function lock(file: string) {
   return `plugin-meta:${file}`
 }
 
+/**
+ * The lock directory, derived from the file being locked rather than from `Flock`'s process global.
+ *
+ * ⚠️ This is not a preference. `Flock.setGlobal` is called as a SIDE EFFECT of resolving
+ * `Global.Path` (`core/src/global.ts`), and `storePath()` above reaches `Global.Path.state` only on
+ * the right-hand side of a `??`. So setting `NOVACLAW_PLUGIN_META_FILE` — a documented flag —
+ * short-circuits the expression that happens to initialise the lock root, and every plugin-metadata
+ * write then dies with `Flock global not set`. Reproduced 2026-07-29 (12/12 worker processes exit 1).
+ *
+ * Deriving the directory from `file` removes the hidden dependency entirely: the lock for a file
+ * lives beside that file, whether or not anything else has been resolved first. It is also
+ * byte-identical to the old location in the default case — `storePath()` is
+ * `<state>/plugin-meta.json`, so this yields `<state>/locks`, exactly what `Flock`'s `root()`
+ * returns — so cross-process locking is unchanged for existing installs.
+ */
+function lockDir(file: string) {
+  return path.join(path.dirname(file), "locks")
+}
+
 function fileTarget(spec: string, target: string) {
   if (spec.startsWith("file://")) return fileURLToPath(spec)
   if (target.startsWith("file://")) return fileURLToPath(target)
@@ -135,18 +154,22 @@ export async function touchMany(items: Touch[]): Promise<Array<{ state: State; e
   const file = storePath()
   const rows = await Promise.all(items.map((item) => row(item)))
 
-  return Flock.withLock(lock(file), async () => {
-    const store = await read(file)
-    const now = Date.now()
-    const out: Array<{ state: State; entry: Entry }> = []
-    for (const item of rows) {
-      const hit = next(store[item.id], item.core, now)
-      store[item.id] = hit.entry
-      out.push(hit)
-    }
-    await Filesystem.writeJson(file, store)
-    return out
-  })
+  return Flock.withLock(
+    lock(file),
+    async () => {
+      const store = await read(file)
+      const now = Date.now()
+      const out: Array<{ state: State; entry: Entry }> = []
+      for (const item of rows) {
+        const hit = next(store[item.id], item.core, now)
+        store[item.id] = hit.entry
+        out.push(hit)
+      }
+      await Filesystem.writeJson(file, store)
+      return out
+    },
+    { dir: lockDir(file) },
+  )
 }
 
 export async function touch(spec: string, target: string, id: string): Promise<{ state: State; entry: Entry }> {
@@ -159,7 +182,7 @@ export async function touch(spec: string, target: string, id: string): Promise<{
 
 export async function list(): Promise<Store> {
   const file = storePath()
-  return Flock.withLock(lock(file), async () => read(file))
+  return Flock.withLock(lock(file), async () => read(file), { dir: lockDir(file) })
 }
 
 export * as PluginMeta from "./meta"
