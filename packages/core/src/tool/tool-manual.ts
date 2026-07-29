@@ -9,9 +9,10 @@ export * as ToolManualTool from "./tool-manual"
 
 import { ToolFailure } from "@novaclaw/llm"
 import { Effect, Layer, Schema } from "effect"
-import { listSessionRecipes, mergeRecipes } from "../adhoc-tools"
+import { listSessionRecipes, mergeRecipes, storeRootIn } from "../adhoc-tools"
 import { AdhocGuidance } from "../adhoc-tools/guidance"
 import { makeLocationNode } from "../effect/app-node"
+import { Global } from "../global"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
@@ -38,6 +39,14 @@ export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
     const guidance = yield* AdhocGuidance.Service
+    // Through the SERVICE, exactly as `adhoc-tools/guidance.ts` does, and composed with
+    // `storeRootIn` so the directory name is spelled once. These two read the SAME store and must
+    // agree by construction: guidance renders the prompt's recipe list, this tool answers for a
+    // name taken from that list. Leaving this one on the module-level `Global.Path.data` made the
+    // agreement hold only because `Global.layerWith` has no production caller — i.e. it was true by
+    // accident, and a graph that overrode Global (a test, or any future per-instance data root)
+    // would have had the prompt list a recipe whose manual this tool then reported missing.
+    const sessionStoreRoot = storeRootIn((yield* Global.Service).data)
 
     yield* tools
       .register({
@@ -50,7 +59,9 @@ export const layer = Layer.effectDiscard(
           execute: (input, context) =>
             Effect.gen(function* () {
               const configured = yield* guidance.configured()
-              const session = yield* Effect.tryPromise(() => listSessionRecipes(context.sessionID))
+              const session = yield* Effect.tryPromise(() =>
+                listSessionRecipes(context.sessionID, { root: sessionStoreRoot }),
+              )
               const recipes = mergeRecipes(configured, session)
               const recipe = recipes.find((item) => item.name === input.name.trim())
               if (!recipe) {
@@ -78,5 +89,5 @@ export const layer = Layer.effectDiscard(
 export const node = makeLocationNode({
   name: "tool/tool-manual",
   layer,
-  deps: [ToolRegistry.node, AdhocGuidance.node],
+  deps: [ToolRegistry.node, AdhocGuidance.node, Global.node],
 })

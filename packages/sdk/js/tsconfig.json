@@ -10,5 +10,26 @@
     "composite": true,
     "rootDir": "src"
   },
+  // ⚠️ `src` ONLY, and that is a known gap rather than a preference — read this before widening it.
+  //
+  // Unlike every other workspace package (which extends `@tsconfig/bun` and typechecks its whole
+  // directory), this one is deliberately NODE/browser-flavoured: `src` must stay importable from
+  // the renderer and carry zero runtime dependencies (todo.md → *Standing architecture decisions*,
+  // pinned by `test/zero-runtime-dependencies.test.ts`). Its devDependencies are therefore
+  // `@types/node`, and `@types/bun` is not installed here.
+  //
+  // The package's other directories are Bun-flavoured — `test/**` imports `bun:test`, and
+  // `script/build.ts` + `script/publish.ts` use `import { $ } from "bun"`, `Bun.file` and top-level
+  // await. They RUN under bun, which strips types without checking them, so nothing compiles them.
+  // Adding them here today would only report "Cannot find module 'bun'".
+  //
+  // `example/example.ts` was a fourth such file and is DELETED (2026-07-29): nothing referenced it,
+  // nothing shipped it (`files: ["dist"]`, and `exports` points into `src`), and it had just been
+  // rewritten against a generated signature with no compiler to check the result — a usage sample
+  // that reads as verified and is verified by nothing.
+  //
+  // Closing the gap properly means adding `@types/bun` as a devDependency plus a second project
+  // (`tsconfig.bun.json` over `test` + `script`) wired into `bun run typecheck`. That needs an
+  // install, so it is filed rather than done here.
   "include": ["src"]
 }

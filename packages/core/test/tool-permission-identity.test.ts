@@ -5,7 +5,7 @@ import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { ToolOutputStore } from "@novaclaw/core/tool-output-store"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import { Tool } from "@novaclaw/core/tool/tool"
-import { Effect, Layer, Schema } from "effect"
+import { Effect, JsonSchema, Layer, Schema } from "effect"
 import { testEffect } from "./lib/effect"
 import { toolDefinitions } from "./lib/tool"
 
@@ -40,6 +40,14 @@ const echo = () =>
     input: Schema.Struct({}),
     output: Schema.Struct({ ok: Schema.Boolean }),
     execute: () => Effect.succeed({ ok: true }),
+  })
+
+/** The shape `mcp-external.ts` and `novaclaw/tool/external-tool-source.ts` actually build. */
+const external = () =>
+  Tool.makeExternal({
+    description: "Echo",
+    inputSchema: { type: "object" } as JsonSchema.JsonSchema,
+    execute: () => Effect.succeed({ structured: null, content: [] }),
   })
 
 const deny = (action: string) => [{ action, resource: "*", effect: "deny" as const }]
@@ -90,6 +98,23 @@ describe("the name fallback IS the gate", () => {
     }),
   )
 
+  it.effect("a DYNAMIC tool (MCP / plugin) is withdrawn by its advertised name, and by no shared action", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const advertised = (rules?: Parameters<ToolRegistry.Interface["materialize"]>[0]) =>
+        toolDefinitions(registry, rules).pipe(Effect.map((definitions) => definitions.map((one) => one.name)))
+      yield* registry.register({ searxng_search: external() })
+
+      // `makeExternal` carried a `permission` option until 2026-07-29 with ZERO production callers,
+      // and the one value it ever held in this tree was a `"mcp"` test fixture. These three lines
+      // are why deleting it changed no behaviour, and the third is the claim that matters: there is
+      // no shared `mcp` action, so a rule naming one governs nothing.
+      expect(yield* advertised()).toContain("searxng_search")
+      expect(yield* advertised(deny("searxng_search"))).not.toContain("searxng_search")
+      expect(yield* advertised(deny("mcp"))).toContain("searxng_search")
+    }),
+  )
+
   test("Tool.permission answers the same for both forms", () => {
     // The equivalence stated at the unit, not just at the registry: `permission` is the ONE consumer
     // of a declaration (registry.ts `whollyDisabled`), so agreement here is agreement everywhere.
@@ -98,6 +123,9 @@ describe("the name fallback IS the gate", () => {
       expect(Tool.permission(Tool.withPermission(echo(), name), name)).toBe(name)
     }
     expect(Tool.permission(Tool.withPermission(echo(), "edit"), "apply_patch")).toBe("edit")
+    // …and the same statement for the dynamic half, which now has no override to answer with.
+    for (const name of ["searxng_search", "playwright_click", "mcp"])
+      expect(Tool.permission(external(), name)).toBe(name)
   })
 })
 
@@ -220,6 +248,27 @@ const parsed = sources.map((source) => ({ source, found: sitesIn(source) }))
 const sites = parsed.flatMap((entry) => entry.found)
 
 /**
+ * The TOP-LEVEL option names of `makeExternal`'s config object, in source order — or `undefined`
+ * when the declaration cannot be found, which is a failure rather than an empty pass.
+ *
+ * Indentation is the discriminator: prettier writes an option at exactly two spaces, while the
+ * `readonly structured` / `readonly content` members inside the `execute` return type sit deeper.
+ * A `\breadonly (\w+)` sweep would report those as options and the assertion would be nonsense.
+ */
+const MAKE_EXTERNAL_OPTION = /^ {2}readonly ([A-Za-z_$][\w$]*)\??:/
+function makeExternalOptions(text: string): string[] | undefined {
+  const lines = text.split("\n")
+  const open = lines.findIndex((line) => line.startsWith("export function makeExternal(config: {"))
+  if (open < 0) return undefined
+  const close = lines.findIndex((line, index) => index > open && line.startsWith("}): AnyTool {"))
+  if (close < 0) return undefined
+  return lines.slice(open + 1, close).flatMap((line) => {
+    const match = line.match(MAKE_EXTERNAL_OPTION)
+    return match ? [match[1]!] : []
+  })
+}
+
+/**
  * Every `withPermission(` the parser above did NOT account for, per file. `sitesIn` only understands
  * the call in property position (`[name]: Tool.withPermission(…)`), which is how the tree writes it —
  * so a call hoisted into a local (`const gated = Tool.withPermission(t, name)`) would otherwise slip
@@ -307,5 +356,65 @@ describe("no withPermission call is the identity", () => {
         permission: "edit",
       },
     ])
+  })
+})
+
+/**
+ * ─── and the OTHER declaration surface, deleted 2026-07-29 ──────────────────────────────────────
+ *
+ * `makeExternal` — the escape hatch every MCP and plugin tool is built through — used to take a
+ * `permission` option. It had ZERO production callers (`mcp-external.ts` and
+ * `novaclaw/tool/external-tool-source.ts` both omitted it) and the only value it ever held in the
+ * tree was a `"mcp"` fixture in `src/tool/external.test.ts`, so it was the same guard-shaped no-op
+ * as the nine `withPermission` wraps above: a declaration surface that reads as a permission
+ * decision and makes none.
+ *
+ * ⚠️ It was worse than dormant. Both dynamic-tool sources gate execution with
+ * `permission.assert({ action: <the registered name> })` — `mcp/external-tool-source.ts`'s `gate`
+ * and `tool/external-tool-source.ts`'s `fromDefinition`. A declaration here fed only
+ * `registry.materialize`'s `whollyDisabled`, so using it would have pointed the HORIZON filter at
+ * one action while the EXECUTION gate spent another: `deny mcp/*` would have hidden every MCP tool
+ * while leaving each individually callable, and `deny searxng_search/*` the reverse. That is the
+ * disagreement `apply_patch`'s ledger entry exists to prevent, arrived at from the other side.
+ */
+describe("makeExternal declares nothing", () => {
+  test("`makeExternal` declares no second permission surface", () => {
+    // The type IS the check for CALL SITES — the option no longer exists, so a caller passing it
+    // fails the gate's typecheck phase on the object literal. What a type cannot catch is the
+    // option being ADDED BACK here, which is what this reads. The four names below are the whole
+    // surface a dynamic tool may declare; `permission` reappearing among them is the regression.
+    const source = sources.find((one) => one.name === "packages/core/src/tool/tool.ts")
+    expect(source, "packages/core/src/tool/tool.ts was not in the sweep").toBeDefined()
+    expect(makeExternalOptions(source!.text)).toEqual(["description", "inputSchema", "outputSchema", "execute"])
+  })
+
+  test("the makeExternal reader actually bites (negative control)", () => {
+    // Verbatim the block as it shipped until 2026-07-29, `permission` included. An assertion that
+    // only ever sees a clean file cannot show it would report a dirty one.
+    const before = [
+      "export function makeExternal(config: {",
+      "  readonly description: string",
+      "  readonly inputSchema: JsonSchema.JsonSchema",
+      "  readonly outputSchema?: JsonSchema.JsonSchema",
+      "  readonly permission?: string",
+      "  readonly execute: (",
+      "    input: unknown,",
+      "    context: Context,",
+      "  ) => Effect.Effect<{ readonly structured: unknown; readonly content: ReadonlyArray<Content> }, ToolFailure>",
+      "}): AnyTool {",
+    ].join("\n")
+    expect(makeExternalOptions(before)).toEqual([
+      "description",
+      "inputSchema",
+      "outputSchema",
+      "permission",
+      "execute",
+    ])
+    // Nested `readonly` members of the `execute` signature are NOT options — the indentation rule
+    // above is what keeps `structured`/`content` out of the list, and it is load-bearing.
+    expect(makeExternalOptions(before)).not.toContain("structured")
+    // A file that no longer declares the function at all reports `undefined`, so the assertion
+    // above fails with "not defined" rather than passing on an empty read.
+    expect(makeExternalOptions("export function make(config: {\n  readonly description: string\n}) {}")).toBeUndefined()
   })
 })

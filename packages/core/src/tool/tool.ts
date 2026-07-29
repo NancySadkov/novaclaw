@@ -149,12 +149,22 @@ export function make<
  * (see the note in `builtins.ts`). `execute` receives the already-parsed call input and
  * returns the model-facing `content` plus a `structured` value, mirroring `make`'s
  * settlement shape. The same conversion (`Content` → wire parts) as `make` is applied.
+ *
+ * ⚠️ **There is deliberately no `permission` option here** (deleted 2026-07-29). It existed, had
+ * ZERO production callers — `mcp-external.ts` and `novaclaw/tool/external-tool-source.ts` both
+ * omitted it — and its only value in the tree was a `"mcp"` test fixture. It was not merely
+ * dormant, it was a trap: both dynamic-tool sources gate execution with
+ * `permission.assert({ action: <the registered name> })`, so declaring anything else here would
+ * have made the horizon filter (`registry.ts` `whollyDisabled`) and the execution gate resolve
+ * DIFFERENT actions for the same tool — a horizon the model can see but cannot act on, which is
+ * the exact failure `apply_patch`'s remap exists to prevent in the other direction. A dynamic tool
+ * is governed by the name it is registered under; `test/tool-permission-identity.test.ts` pins that
+ * and fails if this option comes back.
  */
 export function makeExternal(config: {
   readonly description: string
   readonly inputSchema: JsonSchema.JsonSchema
   readonly outputSchema?: JsonSchema.JsonSchema
-  readonly permission?: string
   readonly execute: (
     input: unknown,
     context: Context,
@@ -163,7 +173,6 @@ export function makeExternal(config: {
   const tool = Object.freeze({}) as AnyTool
   const definitions = new Map<string, ToolDefinition>()
   runtimes.set(tool, {
-    ...(config.permission === undefined ? {} : { permission: config.permission }),
     definition: (name) => {
       const cached = definitions.get(name)
       if (cached) return cached
@@ -232,10 +241,12 @@ export const withPermission = <Input extends SchemaType<any>, Output extends Sch
  * permissions anywhere in `write.ts`. Only a tool that must answer to a DIFFERENT action declares
  * one, and `apply_patch` → `edit` is the sole live declaration in the tree.
  *
- * ⚠️ `makeExternal`'s `permission` field is the other way to declare one, and as of 2026-07-29 **no
- * production caller passes it**: `mcp-external.ts` (MCP) and `novaclaw/tool/external-tool-source.ts`
- * (plugins) both omit it, so every dynamic tool is governed by its own advertised name too. Only
- * `external.test.ts` exercises the field. Do not describe MCP as gated by a shared `mcp` action.
+ * ⚠️ **`withPermission` is now the ONLY way to declare one.** `makeExternal` used to take a
+ * `permission` field — a second declaration surface with zero production callers — and it is gone
+ * (see the note on `makeExternal` above). So a dynamic MCP or plugin tool is governed by its own
+ * advertised name, which is also the action its source asserts at execution time. Do not describe
+ * MCP as gated by a shared `mcp` action, and do not reintroduce a per-tool declaration that the
+ * execution gate does not spend.
  */
 export const permission = (tool: AnyTool, name: string) => runtimeOf(tool).permission ?? name
 export const definition = (name: string, tool: AnyTool) => runtimeOf(tool).definition(name)

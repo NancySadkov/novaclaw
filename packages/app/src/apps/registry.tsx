@@ -59,12 +59,21 @@ export const registeredApps = apps
 
 // The built-in app ids are reserved — a plugin/agent app can't shadow or duplicate them. Mirrors the
 // server guard (core/app-registry.ts RESERVED_IDS) so the browser path can't sneak one past it (L2).
+//
+// ⚠️ **The mirror is the point: fix both halves or neither.** This one guards the in-process
+// `registerApp` a plugin calls directly; the core one guards the HTTP/tool path. An id reserved on
+// only one side is squattable through the other, which is how `debug` — the tile a user reaches
+// when the product is ALREADY broken — was open to a plugin until 2026-07-29. The lists live in
+// different packages and the renderer cannot import the core module (it reaches `node:fs`), so
+// they cannot be one constant; `packages/core/test/app-reserved-ids.test.ts` reads both files and
+// fails on any divergence, and on any built-in tile that is not listed.
 const RESERVED_IDS = new Set([
   "chats",
   "notes",
   "files",
   "processes",
   "registry",
+  "debug",
   "memory-graph",
   "search",
   "terminal",

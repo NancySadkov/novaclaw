@@ -41,15 +41,18 @@ describe("Tool.makeExternal", () => {
     expect(out.content).toEqual([{ type: "file", uri: "data:image/png;base64,AAA", mime: "image/png", name: "x.png" }])
   })
 
-  test("permission override is honored, else defaults to the tool name", () => {
-    const withPerm = Tool.makeExternal({
+  test("an external tool is governed by the name it is registered under — there is no override", () => {
+    // This test used to pass `permission: "mcp"` and assert the override was honored. That option
+    // is deleted (2026-07-29): it had zero production callers, and both dynamic-tool sources gate
+    // execution on `action: <the registered name>`, so any override here would have split the
+    // horizon filter from the execution gate. The registry-level proof lives in
+    // `test/tool-permission-identity.test.ts`; this is the same claim at the unit.
+    const tool = Tool.makeExternal({
       description: "d",
       inputSchema: {} as any,
-      permission: "mcp",
       execute: () => Effect.succeed({ structured: null, content: [] }),
     })
-    const noPerm = Tool.makeExternal({ description: "d", inputSchema: {} as any, execute: () => Effect.succeed({ structured: null, content: [] }) })
-    expect(Tool.permission(withPerm, "searxng_search")).toBe("mcp")
-    expect(Tool.permission(noPerm, "searxng_search")).toBe("searxng_search")
+    expect(Tool.permission(tool, "searxng_search")).toBe("searxng_search")
+    expect(Tool.permission(tool, "playwright_click")).toBe("playwright_click")
   })
 })

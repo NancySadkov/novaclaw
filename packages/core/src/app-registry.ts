@@ -45,12 +45,23 @@ const appsRoot = (options?: Options) => options?.root ?? path.join(Global.Path.d
 const ID_PATTERN = /^[a-z0-9][a-z0-9-_]{0,63}$/
 export const isValidId = (id: string) => ID_PATTERN.test(id)
 
+// ⚠️ **A DECLARED MIRROR of `packages/app/src/apps/registry.tsx`.** The two lists must stay
+// identical — this one guards the HTTP/tool path, that one guards the in-process `registerApp` a
+// plugin reaches directly, and an id reserved on only one side is squattable through the other.
+// `packages/core/test/app-reserved-ids.test.ts` reads BOTH files and fails on any divergence, and
+// on any built-in tile that is not listed here.
+//
+// `debug` was missing from both halves until 2026-07-29 — the one tile whose whole job is to be
+// reachable when the product is already broken (ruling 2 names Recovery-class surfaces
+// explicitly), so a squatted `debug` takes away the screen a user needs precisely when nothing
+// else works. `processes` is deliberately here without being a tile: it is a route.
 const RESERVED_IDS = new Set([
   "chats",
   "notes",
   "files",
   "processes",
   "registry",
+  "debug",
   "memory-graph",
   "search",
   "terminal",
