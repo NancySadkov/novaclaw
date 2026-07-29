@@ -68,6 +68,12 @@ export const Info = Schema.Struct({
   providerID: Provider.ID,
   family: Family.pipe(optional),
   tier: Tier.pipe(optional),
+  // Optional user-authored per-model PRE-PROMPT (owner 2026-07-29, todo/assorted.md): a correction
+  // for THIS model's known behaviour, prepended to the system context for every session that
+  // resolves to it. It rides here — beside `tier`, which the property mirrors — because the defect
+  // being corrected belongs to the weights, so it travels with the model, not the agent. Absent =
+  // inert (the composition rides the runner's `.filter(non-empty)`, so undefined changes nothing).
+  prePrompt: Schema.String.pipe(optional),
   name: Schema.String,
   api: Api,
   capabilities: Capabilities,

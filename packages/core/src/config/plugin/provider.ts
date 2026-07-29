@@ -67,6 +67,13 @@ export const Plugin = define({
               catalog.model.update(providerID, modelID, (model) => {
                 if (config.family !== undefined) model.family = config.family
                 if (config.tier !== undefined) model.tier = config.tier
+                // The catalog-transform draft is typed via the GENERATED SDK `ModelV2Info`, which does
+                // not yet carry `prePrompt` (the SDK is regenerated at release, exactly as it was when
+                // `tier` was added — pitfall #7: never hand-edit `gen/`). The runtime object IS core's
+                // `ModelV2.MutableInfo`, which DOES carry `prePrompt`, so bridge the SDK-type lag with
+                // a narrow cast. Reads elsewhere use core's own `ModelV2.Info`, which already has it.
+                if (config.prePrompt !== undefined)
+                  (model as typeof model & { prePrompt?: string }).prePrompt = config.prePrompt
                 if (config.name !== undefined) model.name = config.name
                 if (config.api !== undefined) model.api = { ...model.api, ...config.api }
                 if (config.capabilities !== undefined) {

@@ -1497,6 +1497,11 @@ export const dict = {
   "settings.models.config.section.limits": "Limits",
   "settings.models.config.section.capabilities": "Capabilities",
   "settings.models.config.section.modalities": "What it handles",
+  "settings.models.config.section.corrections": "Behaviour corrections",
+  "settings.models.config.prePrompt.name": "Model-specific corrections",
+  "settings.models.config.prePrompt.desc":
+    "A short note prepended to every chat with this model, to correct a quirk in how it behaves — e.g. “Never wrap replies in markdown code fences” or “Stop apologising; answer directly”. It travels with the model, not the task, so keep it to behaviour fixes — not task instructions.",
+  "settings.models.config.prePrompt.placeholder": "e.g. Don’t wrap answers in code fences.",
   "settings.models.config.temperature.name": "Temperature",
   "settings.models.config.temperature.desc":
     "Higher is more creative and varied; lower is more focused and repeatable. Around 0.7 for chat, 0 for code.",

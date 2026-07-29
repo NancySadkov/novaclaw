@@ -80,15 +80,21 @@ export interface Interface {
   /** Models item (c): the resolved catalog model's capability tier, for the system-prompt scaffold.
    *  Best-effort — an unresolvable model yields `undefined` rather than failing the turn. */
   readonly tier: (session: SessionSchema.Info) => Effect.Effect<ModelV2.Tier | undefined>
+  /** The resolved catalog model's optional user-authored pre-prompt (owner 2026-07-29). Read the
+   *  same best-effort way as `tier`: it only decorates the system prompt, so an unresolvable model
+   *  yields `undefined` rather than failing the turn. */
+  readonly prePrompt: (session: SessionSchema.Info) => Effect.Effect<string | undefined>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/SessionRunnerModel") {}
 
-/** Test or embedding seam. `tier` defaults to always-undefined so existing callers need not supply it. */
+/** Test or embedding seam. `tier`/`prePrompt` default to always-undefined so existing callers need
+ *  not supply them. */
 export const layerWith = (
   resolve: Interface["resolve"],
   tier: Interface["tier"] = () => Effect.succeed(undefined),
-) => Layer.succeed(Service, Service.of({ resolve, tier }))
+  prePrompt: Interface["prePrompt"] = () => Effect.succeed(undefined),
+) => Layer.succeed(Service, Service.of({ resolve, tier, prePrompt }))
 
 const apiKey = (model: ModelV2.Info, credential?: Credential.Value) => {
   if (credential?.type === "key") return Auth.value(credential.key)
@@ -287,6 +293,11 @@ export const locationLayer = Layer.effect(
       // (no boot-latch wait — this only decorates the prompt, never gates the turn) and never fails.
       tier: Effect.fn("SessionRunnerModel.tier")(function* (session) {
         return (yield* select(session).pipe(Effect.orElseSucceed(() => undefined)))?.tier
+      }),
+      // The optional per-model pre-prompt, read the same best-effort way as `tier` — it only
+      // decorates the system prompt (never gates the turn), so an unresolvable model → undefined.
+      prePrompt: Effect.fn("SessionRunnerModel.prePrompt")(function* (session) {
+        return (yield* select(session).pipe(Effect.orElseSucceed(() => undefined)))?.prePrompt
       }),
     })
   }),

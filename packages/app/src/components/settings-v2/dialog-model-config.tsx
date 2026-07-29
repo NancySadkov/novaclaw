@@ -5,6 +5,7 @@ import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { SelectV2 } from "@novaclaw/ui/v2/select-v2"
 import { Switch } from "@novaclaw/ui/v2/switch-v2"
 import { TextInputV2 } from "@novaclaw/ui/v2/text-input-v2"
+import { TextareaV2 } from "@novaclaw/ui/v2/textarea-v2"
 import { useDialog } from "@novaclaw/ui/context/dialog"
 import { useLanguage } from "@/context/language"
 import { useServerSync } from "@/context/server-sync"
@@ -23,6 +24,10 @@ type ModelConfig = {
   limit?: { context?: number; output?: number }
   modalities?: { input?: string[]; output?: string[] }
   options?: Record<string, unknown>
+  // Optional per-model PRE-PROMPT (owner 2026-07-29): a user-authored correction for THIS model's
+  // known behaviour, prepended to the system context. Persisted to providers.<id>.models.<id> like
+  // every other field here; the runtime treats an empty string as inert (system-compose.ts).
+  prePrompt?: string
   [k: string]: unknown
 }
 
@@ -101,6 +106,7 @@ export const DialogModelConfig: Component<{
     thinkingBudget: nstr(bodyBudget(init) ?? bodyBudget(d)),
     reasoning: init.reasoning ?? d.reasoning ?? false,
     tool_call: init.tool_call ?? d.tool_call ?? true,
+    prePrompt: init.prePrompt ?? "",
     inText: inMod.includes("text"),
     inImage: inMod.includes("image"),
     inAudio: inMod.includes("audio"),
@@ -158,6 +164,14 @@ export const DialogModelConfig: Component<{
       options,
       request: { ...(savedRequest ?? {}), body },
     }
+    // Per-model pre-prompt: persist the trimmed correction; an empty field clears it. Use an empty
+    // STRING (not delete) to clear a previously-saved value, since the patch-merge cannot drop a key
+    // over the wire — and the runtime treats "" as inert (system-compose.ts). Never write "" for a
+    // model that never had one.
+    const pre = form.prePrompt.trim()
+    if (pre) model.prePrompt = pre
+    else if (saved.prePrompt !== undefined) model.prePrompt = ""
+    else delete model.prePrompt
     const provider = providerCfg()
     // The config key is `providers` (plural) — the schema drops a stray `provider`, which silently
     // discarded every save this dialog made (pre-existing bug, fixed 2026-07-24).
@@ -275,7 +289,7 @@ export const DialogModelConfig: Component<{
     </SettingsRowV2>
   )
 
-  const section = (key: "sampling" | "limits" | "capabilities" | "modalities") => (
+  const section = (key: "corrections" | "sampling" | "limits" | "capabilities" | "modalities") => (
     <h3 class="settings-v2-section-title mt-1">{language.t(`settings.models.config.section.${key}`)}</h3>
   )
 
@@ -292,6 +306,20 @@ export const DialogModelConfig: Component<{
         </div>
 
         <div class="flex flex-col gap-4 max-h-[62vh] overflow-y-auto -mx-1 px-1">
+          {section("corrections")}
+          <div class="flex flex-col gap-1.5">
+            <span class="text-[12px] text-v2-text-text-muted leading-snug">
+              {language.t("settings.models.config.prePrompt.desc")}
+            </span>
+            <TextareaV2
+              rows={3}
+              value={form.prePrompt}
+              onInput={(event) => setForm("prePrompt", event.currentTarget.value)}
+              placeholder={language.t("settings.models.config.prePrompt.placeholder")}
+              aria-label={language.t("settings.models.config.prePrompt.name")}
+            />
+          </div>
+
           {section("sampling")}
           <SettingsListV2>
             <For each={SAMPLING}>{(k) => paramRow(k)}</For>

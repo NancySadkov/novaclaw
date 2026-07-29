@@ -51,6 +51,7 @@ import { Offline } from "../../offline"
 import { SessionScheduler } from "../scheduler"
 import { type RunError, Service } from "./index"
 import { SessionRunnerModel } from "./model"
+import { SystemCompose } from "./system-compose"
 import { TierScaffold } from "./tier-scaffold"
 import { SessionRecall } from "./recall"
 import { SessionExtract } from "./extract"
@@ -682,6 +683,12 @@ export const layer = Layer.effect(
       // the resolved model's capability tier; best-effort (never gates the turn).
       const tier = yield* models.tier({ ...session, model: config.model as typeof session.model })
       const tierHint = TierScaffold.tierScaffold(tier)
+      // Per-model pre-prompt (owner 2026-07-29): the resolved model's optional user-authored
+      // behaviour correction, wrapped as a distinct labelled section. Read best-effort off the
+      // resolved catalog model exactly like the tier above; undefined ⇒ inert (see system-compose.ts).
+      const modelPrePrompt = SystemCompose.modelPrePromptSection(
+        yield* models.prePrompt({ ...session, model: config.model as typeof session.model }),
+      )
       const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)
       const context = entries.map((entry) => entry.message)
       // The files the USER attached, by canonical identity — resolved ONCE here rather than per tool
@@ -774,9 +781,19 @@ export const layer = Layer.effect(
       const fullRequest = LLM.request({
         model,
         providerOptions: { openai: { promptCacheKey } },
-        system: [personaBaseline, expertiseHint, tierHint, memoryRecall, config.systemPromptOverride, agent.info?.system, system.baseline]
-          .filter((part): part is string => part !== undefined && part.length > 0)
-          .map(SystemPart.make),
+        // Order + placement of the per-model pre-prompt live in system-compose.ts (a pure, tested
+        // unit): the pre-prompt sits directly after the persona baseline; every other part keeps its
+        // position, so an absent pre-prompt yields a byte-identical prompt to before the feature.
+        system: SystemCompose.composeSystemParts({
+          persona: personaBaseline,
+          modelPrePrompt,
+          expertiseHint,
+          tierHint,
+          memoryRecall,
+          systemPromptOverride: config.systemPromptOverride,
+          agentSystem: agent.info?.system,
+          base: system.baseline,
+        }).map(SystemPart.make),
         messages: [...toLLMMessages(context, model), ...(isLastStep ? [Message.assistant(MAX_STEPS_PROMPT)] : [])],
         tools: toolMaterialization?.definitions ?? [],
         toolChoice: isLastStep ? "none" : undefined,
