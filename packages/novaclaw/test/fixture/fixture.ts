@@ -14,6 +14,7 @@ import type { ChildProcessSpawner } from "effect/unstable/process"
 import { Config as ConfigV2 } from "@novaclaw/core/config"
 import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
 import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
+import { CatalogSeed } from "@novaclaw/core/catalog-seed"
 import { CatalogStore } from "@novaclaw/core/catalog-store"
 import { CommandConfigStore } from "@novaclaw/core/command-config-store"
 import { PluginConfigStore } from "@novaclaw/core/plugin-config-store"
@@ -21,6 +22,7 @@ import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
 import { SettingsConfigSeed } from "@novaclaw/core/settings-config-seed"
+import { ProviderV2 } from "@novaclaw/core/provider"
 import { Database } from "@novaclaw/core/database/database"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { memoMap } from "@novaclaw/core/effect/memo-map"
@@ -367,43 +369,140 @@ function onServer<A, E>(effect: Effect.Effect<A, E, ServerServices>) {
 }
 
 /**
+ * What one provisioned document put where, so the undo can reach it again.
+ *
+ * Every field pairs with exactly one arm of `clearProvisioned`, and `provisioned` below is derived
+ * from this type — so a new destination cannot be added to the router without the ledger growing a
+ * slot for it. That linkage is the point: the failure this whole mechanism guards against is a
+ * write recorded on one side and forgotten on the other (todo.md ruling 1 — an invariant whose
+ * violation compiles green ships with a mechanical check or it does not exist).
+ */
+type Routed = {
+  /** `SettingsConfigStore` keys (`SETTINGS_KEYS`). */
+  settings: string[]
+  /** `ReferenceConfigStore` alias names. */
+  references: string[]
+  /** `CatalogStore` provider ids — from `providers`, and from what `models` expands into. */
+  providers: string[]
+  /** `AgentConfigStore` agent names. */
+  agents: string[]
+  /** `CommandConfigStore` command names. */
+  commands: string[]
+  /**
+   * The two SINGLETON default refs, each a single row its store deletes with `clearDefault()`:
+   * `model` (CatalogStore) and `default_agent` (AgentConfigStore).
+   */
+  defaults: ("model" | "default_agent")[]
+}
+
+/**
  * The stores are PROCESS-WIDE — they outlive every test, and `resetDatabase()` deliberately does not
  * clear the config ones (see `sweepDataPlane`: the settings seed runs from a startup node, so a
  * truncate would leave nothing to re-seed them, and this bookkeeping already owns the concern).
- * `ConfigStoreWrite.apply`
- * patch-MERGES (`settings.set(key, mergePatch(current[key], value))`), so a provision has to be
- * UNDO-then-apply or each test inherits its predecessor's document: the compression suite's bare
- * `{ formatter: false }` test would still be served the previous test's `username` and 50
- * `instructions`, putting the response over the 1024-byte threshold it asserts it is under.
+ * `ConfigStoreWrite.apply` never overwrites, it MERGES — settings keys patch-merge
+ * (`settings.set(key, mergePatch(current[key], value))`) and the layered stores fold the incoming
+ * fragment onto the stored layers (`collapseLayers`) — so a provision has to be UNDO-then-apply or
+ * each test inherits its predecessor's document: the compression suite's bare `{ formatter: false }`
+ * test would still be served the previous test's `username` and 50 `instructions`, putting the
+ * response over the 1024-byte threshold it asserts it is under. For a provider the same shape is
+ * worse than stale bytes — the previous test's `api.url` survives the fold, so a later test points
+ * at an endpoint it never configured.
  *
  * The undo runs on DISPOSE as well, so a test passing no `config` at all also starts clean. Like
  * `tmpdirScoped` this is instance-WIDE rather than per-directory — which is what config now means,
  * so two live `tmpdir({ config })` handles share one document (last write wins).
  */
-const provisioned = { settings: new Set<string>(), references: new Set<string>() }
+const provisioned: { [K in keyof Routed]: Set<Routed[K][number]> } = {
+  settings: new Set(),
+  references: new Set(),
+  providers: new Set(),
+  agents: new Set(),
+  commands: new Set(),
+  defaults: new Set(),
+}
+
+const anythingProvisioned = () => Object.values(provisioned).some((entries) => entries.size > 0)
 
 const SETTINGS_KEYS: ReadonlySet<string> = new Set(SettingsConfigSeed.SETTINGS_KEYS)
+
+/**
+ * The keys this fixture REFUSES to provision, each with the reason, because a generic "teach
+ * clearProvisioned() to remove it" would be false advice for both of them.
+ *
+ * Neither is missing a remove op — `SkillConfigStore.removeSource` and
+ * `PluginConfigStore.removePlugin` both exist, and `ConfigStoreWrite` calls them. They are
+ * ARRAY-shaped keys, and the documented `updateConfig` contract is that arrays replace WHOLESALE,
+ * which `config-store-write.ts` implements by emptying the store and re-inserting the patch's items.
+ * So the undo is not "remove what this test added" — that leaves the store missing whatever the
+ * write wiped, which is the same cross-test leak one step removed — it is "put the previous list
+ * back", and that needs a snapshot this fixture deliberately does not take.
+ */
+const REFUSED: Record<string, string> = {
+  skills:
+    `"skills" is an array key: a write REPLACES the whole skill-source list (config-store-write.ts ` +
+    `empties the store and re-inserts), so undoing it needs the PREVIOUS list restored rather than ` +
+    `the new entries removed — this fixture takes no such snapshot. Provision skills through the ` +
+    `store in your own test, or use test/fixture/skills/.`,
+  plugins:
+    `"plugins" is an array key: a write REPLACES the whole plugin list (config-store-write.ts ` +
+    `empties the store and re-inserts), so undoing it needs the PREVIOUS list restored rather than ` +
+    `the new entries removed — this fixture takes no such snapshot. Provision plugins through the ` +
+    `store in your own test, or use test/fixture/plugin.ts.`,
+}
+
+/**
+ * The provider ids a flat `models` map expands into.
+ *
+ * `models` is the models-primary AUTHORING shape: `ConfigStoreWrite` runs it through
+ * `CatalogSeed.expandFlatModels` and writes the DERIVED provider groups (keyed by endpoint host)
+ * into `catalog_provider`, so the undo is `removeProvider` on exactly those derived ids. This calls
+ * the same expansion rather than re-deriving an id from the url — a second copy of
+ * `providerIdForUrl` here would be the mirror-that-drifts defect this fixture already carries scars
+ * from, and it would drift silently (a wrong id removes nothing and reports nothing).
+ */
+function expandedProviderIDs(models: Partial<Config.Info>["models"]): string[] {
+  if (models === undefined) return []
+  const expanded = CatalogSeed.expandFlatModels({ models }) as { providers?: Record<string, unknown> }
+  return Object.keys(expanded.providers ?? {})
+}
 
 /**
  * Where each top-level key lands, so the undo can reach it again. A key with no route here THROWS
  * instead of being written: a write this fixture cannot take back does not fail the test that made
  * it, it fails an unrelated test in a later file — which is exactly how the defect above survived a
  * commit. Extend `clearProvisioned` first, then this.
+ *
+ * Exported for `clear-provisioned.test.ts` only. It is pure, and the ratchet that asserts every
+ * `Config.Info` key is either routed or explicitly refused has to enumerate ~44 keys — through
+ * `tmpdir()` that would be 44 temp directories, half of them leaked by the throw under test.
  */
-function routeConfig(config: Partial<Config.Info>) {
-  const settings: string[] = []
-  const references: string[] = []
+export function routeConfig(config: Partial<Config.Info>): Routed {
+  const routed: Routed = { settings: [], references: [], providers: [], agents: [], commands: [], defaults: [] }
   for (const key of Object.keys(config)) {
     if (key === "$schema") continue
-    if (SETTINGS_KEYS.has(key)) settings.push(key)
-    else if (key === "references") references.push(...Object.keys(config.references ?? {}))
+    if (SETTINGS_KEYS.has(key)) {
+      routed.settings.push(key)
+      continue
+    }
+    // Each arm mirrors one block of `ConfigStoreWrite.applyToStores`, which is what decides where a
+    // key actually lands. `models` writes providers but NOT the default — only `model` does that
+    // (the expansion merely rewrites the ref it is given), so the two stay separate arms here too.
+    if (key === "providers") routed.providers.push(...Object.keys(config.providers ?? {}))
+    else if (key === "models") routed.providers.push(...expandedProviderIDs(config.models))
+    else if (key === "agents") routed.agents.push(...Object.keys(config.agents ?? {}))
+    else if (key === "commands") routed.commands.push(...Object.keys(config.commands ?? {}))
+    else if (key === "references") routed.references.push(...Object.keys(config.references ?? {}))
+    else if (key === "model") routed.defaults.push("model")
+    else if (key === "default_agent") routed.defaults.push("default_agent")
     else
       throw new Error(
-        `tmpdir({ config }): "${key}" routes to a store this fixture cannot undo between tests — ` +
-          `teach clearProvisioned() to remove it before using it here.`,
+        `tmpdir({ config }): "${key}" cannot be undone between tests, so this fixture will not write it. ` +
+          (REFUSED[key] ??
+            `It routes to a store clearProvisioned() does not reach — teach clearProvisioned() to ` +
+              `remove it, add its arm to routeConfig(), and add it to the Routed type.`),
       )
   }
-  return { settings, references }
+  return routed
 }
 
 /**
@@ -490,6 +589,19 @@ export const sweepDataPlane = () =>
     }),
   )
 
+/**
+ * Take every provisioned key back out of the store it landed in.
+ *
+ * ⚠️ Each arm deletes the ROW, not "the value this fixture contributed" — `settings.remove(key)`,
+ * `removeProvider(id)`, `clearDefault()` and friends are all whole-row deletes, and none of the
+ * stores keeps a per-writer history to subtract from. So provisioning a key whose row was SEEDED
+ * before the test drops the seeded value too. That is pre-existing, deliberate and safe here:
+ * `test/preload.ts` gives each test process its own empty XDG config dir, so the seeds
+ * (`SettingsConfigSeed`/`CatalogSeed`, both `isEmpty`-gated and file-driven) have nothing to write,
+ * and `PRESERVED_TABLES` keeps the sweep out of the config plane precisely so this bookkeeping is
+ * the only thing that ever touches it. It is stated rather than assumed because the day a fixture
+ * seeds a real document, "undo" and "delete" stop being the same operation.
+ */
 const clearProvisioned = Effect.gen(function* () {
   if (provisioned.settings.size > 0) {
     const settings = yield* SettingsConfigStore.Service
@@ -500,6 +612,29 @@ const clearProvisioned = Effect.gen(function* () {
     const references = yield* ReferenceConfigStore.Service
     for (const name of provisioned.references) yield* references.removeReference(name)
     provisioned.references.clear()
+  }
+  if (provisioned.providers.size > 0) {
+    const catalog = yield* CatalogStore.Service
+    for (const id of provisioned.providers) yield* catalog.removeProvider(ProviderV2.ID.make(id))
+    provisioned.providers.clear()
+  }
+  if (provisioned.agents.size > 0) {
+    const agents = yield* AgentConfigStore.Service
+    for (const name of provisioned.agents) yield* agents.removeAgent(name)
+    provisioned.agents.clear()
+  }
+  if (provisioned.commands.size > 0) {
+    const commands = yield* CommandConfigStore.Service
+    for (const name of provisioned.commands) yield* commands.removeCommand(name)
+    provisioned.commands.clear()
+  }
+  if (provisioned.defaults.size > 0) {
+    // Both are single rows in their own store's settings table, and both `clearDefault()`s delete
+    // the ROW rather than writing an empty string — an empty default is still a value, and it would
+    // block the store's own `setDefaultIfEmpty` from ever seeding again (agent-config-store.ts).
+    if (provisioned.defaults.has("model")) yield* (yield* CatalogStore.Service).clearDefault()
+    if (provisioned.defaults.has("default_agent")) yield* (yield* AgentConfigStore.Service).clearDefault()
+    provisioned.defaults.clear()
   }
 })
 
@@ -515,13 +650,15 @@ async function provisionConfig(config: Partial<Config.Info>) {
       yield* Config.use.invalidate()
     }),
   )
-  for (const key of routed.settings) provisioned.settings.add(key)
-  for (const name of routed.references) provisioned.references.add(name)
+  // Keyed off `Routed` rather than written out arm by arm: a new destination then lands in the
+  // ledger for free, and cannot be routed-but-not-recorded (which is a silent leak, not a red test).
+  for (const [destination, entries] of Object.entries(routed))
+    for (const entry of entries) (provisioned[destination as keyof Routed] as Set<string>).add(entry)
 }
 
 /** Take the document back out when the directory goes away. */
 function releaseConfig() {
-  if (provisioned.settings.size === 0 && provisioned.references.size === 0) return Promise.resolve()
+  if (!anythingProvisioned()) return Promise.resolve()
   return onServer(
     Effect.gen(function* () {
       yield* clearProvisioned
@@ -529,6 +666,35 @@ function releaseConfig() {
     }),
   )
 }
+
+/**
+ * Read the config plane straight out of the stores the server under test actually uses.
+ *
+ * Exported for `clear-provisioned.test.ts` only. `provisioned`/`clearProvisioned` are process-wide
+ * bookkeeping whose whole job is to be invisible to a test, so the only honest way to check that an
+ * undo REACHED SQLite — rather than merely emptying the in-memory ledger — is to read the same
+ * memoized stores back through `onServer`. Reading any other way would build a second `:memory:`
+ * database and answer about a store nobody wrote to.
+ */
+export const readConfigStores = () =>
+  onServer(
+    Effect.gen(function* () {
+      const catalog = yield* CatalogStore.Service
+      const agents = yield* AgentConfigStore.Service
+      const commands = yield* CommandConfigStore.Service
+      const references = yield* ReferenceConfigStore.Service
+      const settings = yield* SettingsConfigStore.Service
+      return {
+        providers: Object.keys(yield* catalog.providers()),
+        model: yield* catalog.getDefault(),
+        agents: Object.keys(yield* agents.agents()),
+        default_agent: yield* agents.getDefault(),
+        commands: Object.keys(yield* commands.commands()),
+        references: Object.keys(yield* references.references()),
+        settings: Object.keys(yield* settings.all()),
+      }
+    }),
+  )
 
 type TmpDirOptions<T> = {
   git?: boolean

@@ -40,7 +40,6 @@
       "PublicApi OpenAPI v2 errors > documents project not-found errors",
       "PublicApi OpenAPI v2 errors > documents session busy errors",
       "config HttpApi > serves config update through the default server app",
-      "config HttpApi > serves config with active provider model status",
       "event HttpApi > delivers instance events after the initial event",
       "instance HttpApi > emits a sync fence header for fixed-workspace mutations",
       "instance HttpApi > returns typed not found bodies for missing projects",
