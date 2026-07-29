@@ -61,6 +61,7 @@ import {
 } from "@/pages/session/helpers"
 import { NativeTimeline } from "@/pages/session/timeline/native-timeline"
 import { createTimelineModel } from "@/pages/session/timeline/model"
+import { commitBoundaryID, nextMessageID, selectRolledMessages } from "@/pages/session/revert-view"
 import { type DiffStyle, SessionReviewTab, type SessionReviewTabProps } from "@/pages/session/review-tab"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { syncSessionModel } from "@/pages/session/session-model-helpers"
@@ -757,6 +758,14 @@ export default function Page() {
     setActiveMessage,
     focusInput,
     review: reviewTab,
+    // `/undo` and `/redo` route through the SAME two mutations as the revert dock. They used to
+    // call `client.v2.session.revert.stage` directly and skipped the record refetch, so the client
+    // never learned a revert was staged: no dock, no hidden messages, no error toast on failure.
+    // ⚠️ These thunks are declared before `revert`/`restore` are initialised further down this
+    // component body; that is fine because the binding is only READ when a command fires, long
+    // after the body has run. Do not inline `revert` itself here.
+    stageRevert: (messageID) => (params.id ? revert({ sessionID: params.id, messageID }) : undefined),
+    restoreRevert: (messageID) => restore(messageID),
   })
 
   const openReviewFile = createOpenReviewFile({
@@ -1395,8 +1404,13 @@ export default function Page() {
           roll(input.sessionID, { messageID: input.messageID }, target)
           prompt.set(value)
         },
-        // Native revert ops return the staged state, not the record — refetch it for the eager
-        // store merge (the event stream converges regardless).
+        // ⚠️ This refetch is the ONLY thing that puts the staged boundary into the client record —
+        // it is not an eager optimisation. `revert.stage` publishes `session.next.revert.staged`,
+        // which the server PROJECTOR writes straight to `SessionTable`; no `patchSessionRecord`
+        // runs, so no `session.updated` is ever published and nothing on the client converges on
+        // its own. A caller that stages without coming through here leaves the record blank, the
+        // dock unrendered and the reverted turn still drawn (owner-reported twice; the earlier
+        // comment here claimed the opposite and is why `/undo` shipped broken).
         request: () =>
           halt(input.sessionID)
             .then(() => client.v2.session.revert.stage(input))
@@ -1411,6 +1425,11 @@ export default function Page() {
     },
   }))
 
+  /**
+   * Move the boundary FORWARD one prompt, or clear it when there is nothing left to put back. This
+   * is both the dock's Restore and the `/redo` command — one implementation, because the two
+   * hand-written copies of it are what let `/undo` and the Revert button diverge.
+   */
   const restoreMutation = useMutation(() => ({
     mutationFn: async (id: string) => {
       const sessionID = params.id
@@ -1418,15 +1437,15 @@ export default function Page() {
 
       const client = sdk().client
       const target = sync()
-      const next = userMessages().find((item) => item.id > id)
+      const next = nextMessageID(userMessages(), id)
       const last = target.session.get(sessionID)?.revert
 
       await runPromptRollbackMutation({
         capturePrompt: prompt.capture,
         optimistic: (promptSession) => {
-          roll(sessionID, next ? { messageID: next.id } : undefined, target)
+          roll(sessionID, next ? { messageID: next } : undefined, target)
           if (next) {
-            promptSession.set(draft(next.id))
+            promptSession.set(draft(next))
             return
           }
           promptSession.reset()
@@ -1434,7 +1453,7 @@ export default function Page() {
         request: () =>
           (!next
             ? halt(sessionID).then(() => client.v2.session.revert.clear({ sessionID }))
-            : halt(sessionID).then(() => client.v2.session.revert.stage({ sessionID, messageID: next.id }))
+            : halt(sessionID).then(() => client.v2.session.revert.stage({ sessionID, messageID: next }))
           ).then(() => client.v2.session.get({ sessionID })),
         complete: (result) => {
           const info = result.data?.data
@@ -1459,13 +1478,11 @@ export default function Page() {
     return restoreMutation.mutateAsync(id)
   }
 
-  const rolled = createMemo(() => {
-    const id = revertMessageID()
-    if (!id) return []
-    return userMessages()
-      .filter((item) => item.id >= id)
-      .map((item) => ({ id: item.id, text: line(item.id) }))
-  })
+  // What the dock names: the exact complement of what the transcript still draws. Both sides read
+  // `session/revert-view.ts` so they cannot drift apart again.
+  const rolled = createMemo(() =>
+    selectRolledMessages(userMessages(), revertMessageID()).map((item) => ({ id: item.id, text: line(item.id) })),
+  )
 
   /**
    * Make a revert PERMANENT at `boundaryID`, and converge the client. The one place in the app where
@@ -1503,10 +1520,14 @@ export default function Page() {
    * ([issue #13](https://github.com/NancySadkov/novaclaw/issues/13)).
    *
    * ⚠️ The boundary is the message BEFORE the staged one, not the staged one. `rolled()` includes the
-   * boundary message itself (`id >= revertMessageID`) while the timeline hides on `id <`, so
-   * committing the staged boundary directly would delete everything after it and then RESURRECT the
-   * first message the user asked to discard. `revertToPrompt` anchors one earlier for the same
-   * reason; `msg_` is the before-everything sentinel.
+   * boundary message itself while the transcript hides from it onward, so committing the staged
+   * boundary directly would delete everything after it and then RESURRECT the first message the user
+   * asked to discard. `commitBoundaryID` owns that step-back for `revertToPrompt` too.
+   *
+   * ⚠️ And it steps back over the FULL message list, not the user messages. This used to read
+   * `userMessages()`, so the anchor landed on the PREVIOUS PROMPT and `commit` (which deletes every
+   * row with `seq > boundary.seq`) also destroyed the assistant reply sitting between the two — one
+   * turn more than the user asked to discard, unrecoverable, and invisible until after the confirm.
    *
    * Confirm-gated because it converts a deliberately reversible command into a terminal one. Without
    * that, `/undo` would stop being safe to explore with — which is most of why it exists.
@@ -1515,10 +1536,8 @@ export default function Page() {
     const sessionID = params.id
     const staged = revertMessageID()
     if (!sessionID || !staged || reverting()) return
-    const all = userMessages()
-    const index = all.findIndex((item) => item.id === staged)
-    if (index < 0) return
-    const boundaryID = all[index - 1]?.id ?? "msg_"
+    const boundaryID = commitBoundaryID(serverSync().nativeMessages.messages(sessionID) ?? [], staged)
+    if (!boundaryID) return
     const proceed = await confirm({
       title: language.t("session.revertDock.discard.confirm.title"),
       description: language.t("session.revertDock.discard.confirm.description", { count: rolled().length }),
@@ -1556,10 +1575,8 @@ export default function Page() {
     // this is the FIRST prompt (nothing precedes it), rewind to the empty session via the "before
     // everything" sentinel (`msg_` — sorts before every real id) so the prompt itself is dropped too;
     // otherwise it would linger on screen and in the DB (owner-hit 2026-07-24).
-    const all = serverSync().nativeMessages.messages(sessionID) ?? []
-    const index = all.findIndex((m) => m.id === messageID)
-    if (index < 0) return
-    const boundaryID = all[index - 1]?.id ?? "msg_"
+    const boundaryID = commitBoundaryID(serverSync().nativeMessages.messages(sessionID) ?? [], messageID)
+    if (!boundaryID) return
     const proceed = await confirm({
       title: language.t("session.revert.confirm.title"),
       description: language.t("session.revert.confirm.description"),
@@ -1589,8 +1606,6 @@ export default function Page() {
       revertingPrompt = false
     }
   }
-
-  const actions = { revert }
 
   createEffect(() => {
     const sessionID = params.id
@@ -1787,7 +1802,14 @@ export default function Page() {
               <Switch>
                 <Match when={params.id}>
                   <Show when={messagesReady() ? params.id : undefined} keyed>
-                    {(_id) => <NativeTimeline sessionID={_id} directory={sdk().directory} onRevert={revertToPrompt} />}
+                    {(_id) => (
+                      <NativeTimeline
+                        sessionID={_id}
+                        directory={sdk().directory}
+                        onRevert={revertToPrompt}
+                        revertMessageID={revertMessageID()}
+                      />
+                    )}
                   </Show>
                 </Match>
                 <Match when={true}>

@@ -50,6 +50,17 @@ export function controlPatch(event: Envelope): ControlPatch | undefined {
       return { sessionID, patch: { type: props.sessionType } }
     case "session.next.prompt-override.switched":
       return { sessionID, patch: { systemPromptOverride: props.override ?? undefined } }
+    // A STAGED revert is a per-session control like any other, and it was missing here — which is
+    // half of why `/undo` shipped broken (2026-07-29). `revert.stage` publishes `.staged`, the server
+    // projector writes it straight to SessionTable, and NO `session.updated` follows — so without
+    // these two arms the client record's `revert` stayed `undefined`, the dock's condition could
+    // never be satisfied, and the transcript had no boundary to filter on. The page now refetches
+    // the record after its own stage, so this fold is what covers the OTHER writers: a second tab,
+    // another device, or an agent staging a revert on a session you are watching.
+    case "session.next.revert.staged":
+      return { sessionID, patch: { revert: props.revert } }
+    case "session.next.revert.cleared":
+      return { sessionID, patch: { revert: undefined } }
     case "session.next.moved": {
       const location = props.location as { directory?: string } | undefined
       if (!location?.directory) return undefined

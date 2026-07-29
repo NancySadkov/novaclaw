@@ -1,6 +1,7 @@
 import type { SessionMessage, SessionMessageUser } from "@novaclaw/sdk/v2/client"
 import { createMemo, createResource, type Accessor } from "solid-js"
 import { useServerSync } from "@/context/server-sync"
+import { selectVisibleMessages } from "@/pages/session/revert-view"
 import { same } from "@/utils/same"
 
 const emptyUserMessages: SessionMessageUser[] = []
@@ -69,9 +70,13 @@ export function selectUserMessages(messages: readonly SessionMessage[]) {
   return messages.filter((message): message is SessionMessageUser => message.type === "user")
 }
 
+/**
+ * User-message navigation under a staged revert. Delegates to the shared rule in
+ * `session/revert-view.ts` — the transcript, the dock and the `/undo` commands all read that ONE
+ * partition, so a message can never be hidden here while still drawn there (the 2026-07-29 bug).
+ */
 export function selectVisibleUserMessages(messages: readonly SessionMessageUser[], revertMessageID?: string) {
-  if (!revertMessageID) return messages
-  return messages.filter((message) => message.id < revertMessageID)
+  return selectVisibleMessages(messages, revertMessageID)
 }
 
 export async function loadOlderTimeline(input: {

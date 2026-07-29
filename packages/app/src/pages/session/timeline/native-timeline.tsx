@@ -4,6 +4,7 @@ import type { ReasoningFoldMode } from "@novaclaw/session-ui/v2/reasoning-fold"
 import { useExpertise } from "@/context/expertise"
 import { useServerSync } from "@/context/server-sync"
 import { useServer } from "@/context/server"
+import { selectVisibleMessages } from "@/pages/session/revert-view"
 import { fetchPendingPrompts, type PendingPrompt } from "@/utils/session-pending-api"
 import { useSettings } from "@/context/settings"
 import { nextPinned } from "./native-scroll"
@@ -27,6 +28,18 @@ const REASONING_FOLD: Record<string, ReasoningFoldMode> = {
 export function NativeTimeline(props: {
   sessionID: string
   onRevert?: (messageID: string) => void
+  /**
+   * The staged-revert boundary (`session.revert.messageID`). The boundary message and everything
+   * after it leave the transcript — a staged revert is a reversible HIDE, so the rows stay in the
+   * store and the revert dock names them with Restore / Discard.
+   *
+   * ⚠️ This is the render path. Until 2026-07-29 nothing here consulted the boundary at all: the
+   * only filter in the app (`timeline/model.ts`) feeds message NAVIGATION, so a staged revert left
+   * every message on screen and the owner reported it twice. Ruling 2 — a fault is never described
+   * falsely — cuts both ways: the transcript must not keep asserting that a rolled-back turn is
+   * still part of the conversation.
+   */
+  revertMessageID?: string
   /** The session's working directory — needed for the directory-scoped pending-prompt fetch. */
   directory?: string
 }) {
@@ -44,7 +57,11 @@ export function NativeTimeline(props: {
     pref === "expanded" ? "open" : pref === "collapsed" ? "collapsed" : levelFold()
   const reasoningFold = createMemo<ReasoningFoldMode>(() => applyPref(settings.general.feedReasoningDisplay()))
   const toolFold = createMemo<ReasoningFoldMode>(() => applyPref(settings.general.feedToolDisplay()))
-  const messages = createMemo(() => serverSync().nativeMessages.messages(props.sessionID) ?? [])
+  // `stored` is everything the native store holds; `messages` is what a staged revert leaves on
+  // screen. Liveness reads `stored` (the server is still running that turn whether or not a revert
+  // hides it); rendering and auto-scroll read `messages`.
+  const stored = createMemo(() => serverSync().nativeMessages.messages(props.sessionID) ?? [])
+  const messages = createMemo(() => selectVisibleMessages(stored(), props.revertMessageID))
 
   // Prompts the user sent that the agent has not read yet. They live in the durable input queue, not the
   // transcript, so they are invisible to the message stream and have to be polled. Polling only while a
@@ -52,7 +69,7 @@ export function NativeTimeline(props: {
   // turn settles clears the last bubble the moment its input is promoted.
   const [pending, setPending] = createSignal<readonly PendingPrompt[]>([])
   const working = createMemo(() => {
-    const list = messages()
+    const list = stored()
     for (let i = list.length - 1; i >= 0; i -= 1) {
       const message = list[i]!
       if (message.type === "assistant") return !message.time.completed

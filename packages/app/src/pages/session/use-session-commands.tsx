@@ -14,9 +14,8 @@ import { useSettings } from "@/context/settings"
 import { useSync } from "@/context/sync"
 import { useTerminal } from "@/context/terminal"
 import { showToast } from "@/utils/toast"
-import { findLast } from "@novaclaw/core/util/array"
 import { createSessionTabs } from "@/pages/session/helpers"
-import { promptFromUserMessage } from "@/utils/prompt"
+import { nextMessageID, selectVisibleMessages, undoTargetID } from "@/pages/session/revert-view"
 import type { SessionMessageUser } from "@novaclaw/sdk/v2/client"
 import { useSessionLayout } from "@/pages/session/session-layout"
 import { useTabs } from "@/context/tabs"
@@ -28,6 +27,20 @@ export type SessionCommandContext = {
   setActiveMessage: (message: { id: string } | undefined) => void
   focusInput: () => void
   review?: () => boolean
+  /**
+   * Stage a revert boundary through the session page's ONE revert mutation, and
+   * move it forward / clear it through the ONE restore mutation — the same two the revert dock
+   * uses.
+   *
+   * ⚠️ Injected rather than called here on purpose. Staging is not just the HTTP call: the server
+   * writes the boundary to `SessionTable` from its own projector and never publishes a
+   * `session.updated`, so the CLIENT record only learns about it from the refetch that those
+   * mutations perform. `/undo` used to POST `revert.stage` on its own, and the result was a revert
+   * that was real on the server and invisible in the UI — no dock, reverted turn still drawn, and
+   * a failed stage reported as success (ruling 2). Any new caller must come through here.
+   */
+  stageRevert: (messageID: string) => Promise<unknown> | undefined
+  restoreRevert: (messageID: string) => Promise<unknown> | undefined
 }
 
 const withCategory = (category: string) => {
@@ -60,18 +73,6 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     const value = await load()
     owner.run(() => show(value))
   }
-  const runCommand = async <T,>(input: {
-    owner: ReturnType<ReturnType<typeof createSessionOwnership>["capture"]>
-    prompt: T
-    request: () => Promise<unknown>
-    updatePrompt: (prompt: T) => void
-    updateViewport: () => void
-  }) => {
-    await input.request()
-    input.updatePrompt(input.prompt)
-    input.owner.run(input.updateViewport)
-  }
-
   const info = () => {
     const id = params.id
     if (!id) return
@@ -99,11 +100,7 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     return serverSync().nativeMessages.messages(id) ?? []
   }
   const userMessages = () => messages().filter((m): m is SessionMessageUser => m.type === "user")
-  const visibleUserMessages = () => {
-    const revert = info()?.revert?.messageID
-    if (!revert) return userMessages()
-    return userMessages().filter((m) => m.id < revert)
-  }
+  const visibleUserMessages = () => selectVisibleMessages(userMessages(), info()?.revert?.messageID)
 
   const showAllFiles = () => {
     if (layout.fileTree.tab() !== "changes") return
@@ -232,63 +229,40 @@ export const useSessionCommands = (actions: SessionCommandContext) => {
     })
   }
 
+  /**
+   * `/undo` — move the revert boundary back one prompt. A reversible POINTER MOVE: nothing is
+   * deleted, `/redo` puts it back, and the dock's Discard is the only way to make it permanent.
+   *
+   * The whole sequence (interrupt if busy → optimistic boundary + composer draft → stage → refetch
+   * the record → merge, with rollback + an error toast on failure) belongs to `stageRevert`, which
+   * is the dock's mutation. This function only decides WHICH message and where the viewport lands.
+   */
   const undo = async () => {
     const sessionID = params.id
     if (!sessionID) return
     const owner = sessionOwnership.capture()
-    const client = sdk().client
-    const directory = sdk().directory
-    const promptSession = prompt.capture()
-    const revert = info()?.revert?.messageID
-    const messages = userMessages()
-    const message = findLast(messages, (x) => !revert || x.id < revert)
-    if (!message) return
+    const users = userMessages()
+    const target = undoTargetID(users, info()?.revert?.messageID)
+    if (!target) return
+    // The viewport follows the last message still visible AFTER the boundary moves onto `target`.
+    const previous = selectVisibleMessages(users, target).at(-1)
 
-    if (sync().data.session_working(sessionID)) {
-      await client.v2.session.interrupt({ sessionID }).catch(() => {})
-    }
-
-    await runCommand({
-      owner,
-      prompt: promptSession,
-      request: () => client.v2.session.revert.stage({ sessionID, messageID: message.id }),
-      updatePrompt: (promptSession) => {
-        promptSession.set(promptFromUserMessage(message, { directory }))
-      },
-      updateViewport: () => setActiveMessage(findLast(messages, (x) => x.id < message.id)),
-    })
+    await actions.stageRevert(target)
+    owner.run(() => setActiveMessage(previous))
   }
 
+  /** `/redo` — move the boundary forward one prompt, or clear it when nothing is left to restore. */
   const redo = async () => {
     const sessionID = params.id
     if (!sessionID) return
     const owner = sessionOwnership.capture()
-    const client = sdk().client
-    const messages = userMessages()
-    const promptSession = prompt.capture()
+    const users = userMessages()
+    const staged = info()?.revert?.messageID
+    if (!staged) return
+    const next = nextMessageID(users, staged)
 
-    const revertMessageID = info()?.revert?.messageID
-    if (!revertMessageID) return
-
-    const next = messages.find((x) => x.id > revertMessageID)
-    if (!next) {
-      await runCommand({
-        owner,
-        prompt: promptSession,
-        request: () => client.v2.session.revert.clear({ sessionID }),
-        updatePrompt: (promptSession) => promptSession.reset(),
-        updateViewport: () => setActiveMessage(findLast(messages, (x) => x.id >= revertMessageID)),
-      })
-      return
-    }
-
-    await runCommand({
-      owner,
-      prompt: promptSession,
-      request: () => client.v2.session.revert.stage({ sessionID, messageID: next.id }),
-      updatePrompt: () => undefined,
-      updateViewport: () => setActiveMessage(findLast(messages, (x) => x.id < next.id)),
-    })
+    await actions.restoreRevert(staged)
+    owner.run(() => setActiveMessage(next ? selectVisibleMessages(users, next).at(-1) : users.at(-1)))
   }
 
   const compact = async () => {
