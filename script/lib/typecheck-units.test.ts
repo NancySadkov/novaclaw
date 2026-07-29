@@ -79,9 +79,14 @@ describe("typecheck run units", () => {
     // is why it is a floor and not an equality. Measured 2026-07-29 after the client island
     // (`httpapi-codegen` → `client` → `sdk-next`, 11,046 lines, all three declaring a typecheck script)
     // was deleted under the owner's *discard all the cruft* ruling: **17**, down from 20.
+    // Re-measured 2026-07-29 after the supply-chain sweep deleted `packages/effect-sqlite-node` — a dead
+    // workspace package with zero importers tree-wide, whose only reference outside its own directory was
+    // a dependency edge in `packages/core/package.json`; `core` had long since reimplemented the same
+    // Effect SQLite client inline at `src/database/sqlite.node.ts` under its own TypeId. It declared a
+    // `typecheck` script, so the count is **16**, down from 17.
     // If this fails saying the count is too LOW, ask whether a package was deleted on purpose before
     // lowering it again — and if it fails because discovery broke, the assertion above fires first.
-    expect(expected.size).toBeGreaterThanOrEqual(17)
+    expect(expected.size).toBeGreaterThanOrEqual(16)
   })
 
   test("includes packages/script, which declared no typecheck script until 2026-07-28", () => {
