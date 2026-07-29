@@ -122,14 +122,19 @@ const canonicalRef = (ref: Location.Ref): Location.Ref =>
 // hoisted set IS ref-invariant (same node objects for two different refs), but lifting it would not
 // make the property structural — the globals would still be shared only because the memo map is.
 //
-// ⚠️ KNOWN GAP, deliberately not fixed here: `LayerNode.compile(location.hoisted)` below is called
-// WITHOUT `replacements`, and `hoist` stores a hoisted node by reference without rewriting its
-// dependencies. So a caller-supplied replacement for a global reaches that global's own node and the
-// location half, but not the 16 other hoisted globals that depend on it (every config store, Event,
-// Credential, SessionStore, bash-jobs-recovery, … all still hold the original `Database.node`). The
-// fix is to pass `replacements` to that `compile` call; it is not applied because it changes which
-// layer every replacement-using suite gets and needs a full-gate run. Characterised, with the fix
-// proven, in `test/effect/layer-node/layer-node.test.ts`.
+// ⚠️ Both `compile` calls below are deliberately given NO `replacements`: `LayerNode.hoist` has
+// already applied them to both halves it returns, so passing them again would be redundant, not
+// protective. That was NOT true until 2026-07-29 — `hoist` used to lift a hoisted node out with its
+// dependency array verbatim, so a caller replacing a global got the replacement for that global's own
+// node and for the location half, while the other hoisted globals that depend on it kept the
+// original. Measured on this graph: replacing `Database` left 16 of the 35 hoisted globals (every
+// config store, Event, Credential, SessionStore, bash-jobs-recovery, WebSearch, …) holding the real
+// `Database.node`, i.e. a mock AND a second real SQLite connection in one process. Production was
+// unaffected, and stays that way: the replacements production passes are `SessionExecution` (not in
+// this graph at all), `ExternalToolSource`/`ExternalCommandSource` from the novaclaw server, and the
+// `Location.node` binding below — all `location`-tagged, and a `location`-tagged node can never
+// appear inside a `global` one's subtree because the tag config forbids that edge. The invariant is
+// pinned by `test/location-services-hoist-replacements.test.ts`.
 export function buildLocationServiceMap(
   replacements: LayerNode.Replacements = [],
 ): Layer.Layer<LocationServiceMap.Service> {

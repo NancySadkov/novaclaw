@@ -259,18 +259,21 @@ describe("layer node", () => {
     })
   })
 
-  // ⚠️ CHARACTERISATION, not an endorsement (measured 2026-07-28 while pinning the one-`Database`-
-  // per-process property). `hoist` stores a hoisted node BY REFERENCE without visiting its
-  // dependencies (`layer-node.ts`: `hoisted.set(node.name, node); return group([])`), so a
-  // replacement is honoured for the hoisted node ITSELF and for the location half, but NOT inside
-  // another hoisted node's dependency subtree. `location-services.ts` calls
-  // `LayerNode.compile(location.hoisted)` with no replacements, so on the real graph 16 of the 34
-  // hoisted globals — every config store, Event, Credential, SessionStore, bash-jobs-recovery — still
-  // point at the original `Database.node` when a caller replaces it. The second half of this test
-  // shows the fix is one argument wide: pass the replacements to `compile` as well. It is NOT applied
-  // in `location-services.ts` yet because it changes which layer ~17 replacement-using suites get,
-  // and that needs a full-gate run to land safely.
-  test("does not rewrite replacements inside hoisted dependency subtrees unless compile is told", async () => {
+  // The bug this pins (found 2026-07-28, fixed 2026-07-29): `hoist` used to lift a hoisted node out
+  // BY REFERENCE with its dependency array untouched (`hoisted.set(node.name, node); return
+  // group([])`), so a replacement was honoured for the hoisted node ITSELF and for the location half
+  // but NOT inside another hoisted node's dependency subtree. `location-services.ts` compiles the
+  // hoisted half with no replacements, so on the real graph 16 of the 35 hoisted globals — every
+  // config store, Event, Credential, SessionStore, bash-jobs-recovery, WebSearch — still pointed at
+  // the original `Database.node` when a caller replaced it: a test's mock AND a real second SQLite
+  // connection alive in one process, with the tested code reading whichever one it happened to
+  // depend on.
+  //
+  // ⚠️ The negative control is the FIRST assertion, not an afterthought: without a replacement the
+  // same reader must observe "real" through `users`. That is what proves this test can see the leak
+  // at all — an assertion that only ever reads "stub" would pass just as happily against a graph
+  // where `users` was never wired to `Database`.
+  test("applies replacements inside hoisted dependency subtrees", async () => {
     const tags = LayerNode.tags({ location: ["global"], global: [] })
     const global = tags.make("global")
     const location = tags.make("location")
@@ -305,7 +308,6 @@ describe("layer node", () => {
       deps: [users, database],
     })
     const replacements = [[database, Layer.succeed(Database, Database.of({ name: "stub" }))]] as const
-    const { hoisted } = LayerNode.hoist(LayerNode.group([app]), tags.values.global, replacements)
     const read = (layer: Layer.Layer<Database | Users, never, never>) =>
       Effect.runPromise(
         Effect.gen(function* () {
@@ -314,20 +316,76 @@ describe("layer node", () => {
         }).pipe(Effect.scoped, Effect.provide(layer)),
       )
 
-    // What `location-services.ts` does today: the replaced node is swapped at the top level, while
-    // `users` keeps the original — so the "replaced" service exists twice in one process.
-    expect(await read(LayerNode.compile(hoisted) as Layer.Layer<Database | Users>)).toEqual({
-      top: "stub",
+    // NEGATIVE CONTROL — no replacement, so both readers must see the real service, and the reader
+    // through `users` must genuinely reach it.
+    const unreplaced = LayerNode.hoist(LayerNode.group([app]), tags.values.global)
+    expect(await read(LayerNode.compile(unreplaced.hoisted) as Layer.Layer<Database | Users>)).toEqual({
+      top: "real",
       seenByUsers: ["real"],
     })
     expect(realBuilds).toBe(1)
 
-    // The fix, for whoever lands it: one extra argument and the leak closes.
+    // The fix: `hoist` rewrites the hoisted subtrees too, so the caller compiles the half it was
+    // handed and gets the replacement everywhere. The real layer is never constructed.
     realBuilds = 0
+    const { hoisted } = LayerNode.hoist(LayerNode.group([app]), tags.values.global, replacements)
+    expect(await read(LayerNode.compile(hoisted) as Layer.Layer<Database | Users>)).toEqual({
+      top: "stub",
+      seenByUsers: ["stub"],
+    })
+    expect(realBuilds).toBe(0)
+
+    // …and re-applying the same replacements at `compile` is idempotent, not a second substitution:
+    // callers that already pass them (or that stop) get the same graph either way.
     expect(await read(LayerNode.compile(hoisted, replacements) as Layer.Layer<Database | Users>)).toEqual({
       top: "stub",
       seenByUsers: ["stub"],
     })
     expect(realBuilds).toBe(0)
+  })
+
+  test("keeps the hoisted half free of the replaced node, and shares a rewritten subtree", () => {
+    const tags = LayerNode.tags({ location: ["global"], global: [] })
+    const global = tags.make("global")
+    const location = tags.make("location")
+    const database = global({ service: Database, layer: Layer.succeed(Database, Database.of({ name: "real" })), deps: [] })
+    const users = global({
+      service: Users,
+      layer: Layer.effect(
+        Users,
+        Effect.map(Database, (item) => Users.of({ list: Effect.succeed([item.name]) })),
+      ),
+      deps: [database],
+    })
+    const second = global({
+      service: Left,
+      layer: Layer.effect(
+        Left,
+        Effect.map(Users, (item) => Left.of({ value: String(item.list) })),
+      ),
+      deps: [users],
+    })
+    const app = location({
+      service: App,
+      layer: Layer.effect(App, Effect.as(Left, App.of({ run: Effect.succeed([]) }))),
+      deps: [second, users, database],
+    })
+
+    const stub = Layer.succeed(Database, Database.of({ name: "stub" }))
+    const { hoisted } = LayerNode.hoist(LayerNode.group([app]), tags.values.global, [[database, stub]])
+
+    const reached = new Set<{ readonly dependencies: readonly any[] }>()
+    const stack: any[] = [hoisted]
+    while (stack.length > 0) {
+      const item = stack.pop()
+      if (reached.has(item)) continue
+      reached.add(item)
+      for (const dependency of item.dependencies) stack.push(dependency)
+    }
+    // The original node object must not survive anywhere in the shared half.
+    expect(reached.has(database as never)).toBe(false)
+    // `users` is reachable both as a hoisted root and through `second`; it must be ONE object, or
+    // `compile` caches it twice and the graph carries two wrappers for one service.
+    expect([...reached].filter((item) => (item as { name?: string }).name === Users.key)).toHaveLength(1)
   })
 })

@@ -211,14 +211,26 @@ function walk<Result>(
 // Splits `root` into the part that stays per-caller (`node`) and the `tag`-marked part that is meant
 // to be shared (`hoisted`).
 //
-// ⚠️ A hoisted node is stored BY REFERENCE, with its dependency array untouched — `replacements` are
-// applied to the hoisted node itself (via `resolve`) but NOT inside another hoisted node's subtree.
-// So `compile(result.hoisted)` must be given the same `replacements` if the caller expects them to
-// hold throughout the shared half; otherwise a replaced service exists twice in one process. Measured
-// 2026-07-28 on the real location graph: 16 of 34 hoisted globals kept the original `Database.node`.
-// Rewriting the dependencies here instead would be wrong — it would collapse a hoisted node's own
-// hoisted deps to `group([])` and leave `compile`'s non-topological `provideMerge` fold to supply
-// them. Characterised in `test/effect/layer-node/layer-node.test.ts`.
+// BOTH halves come back with `replacements` applied throughout, so the result is self-contained:
+// `compile(result.node)` and `compile(result.hoisted)` need no further arguments. That is the whole
+// contract, and it is load-bearing — a replacement honoured in one half and not the other means the
+// replaced service exists TWICE in one process (a test's mock `Database` plus a real second SQLite
+// connection, say), which is a graph silently disagreeing with itself.
+//
+// ⚠️ The two halves need two different mechanisms, which is what made this easy to get wrong.
+//   · The per-caller half is rewritten by `walk` above, which resolves through `replacementMap`.
+//   · A hoisted node is NOT visited by that walk — it is lifted out whole and only its own identity
+//     is resolved — so its dependency array has to be rewritten separately, by
+//     `rewriteReplacementDependencies` below. Until 2026-07-29 that step did not exist and the
+//     dependency arrays were kept verbatim: measured on the real location graph, replacing
+//     `Database` left 16 of the 35 hoisted globals (every config store, `Event`, `Credential`,
+//     `SessionStore`, `bash-jobs-recovery`, `WebSearch`, …) pointing at the original node.
+// ⚠️ What must NOT be done is rewriting the hoisted deps with `context.visit`: that collapses a
+// hoisted node's own hoisted deps to `group([])`, leaving `compile`'s non-topological `provideMerge`
+// fold to supply them — which it can only do for nodes that happen to come earlier in the fold.
+// `rewriteReplacementDependencies` substitutes replacements and changes nothing else.
+// Pinned by `test/effect/layer-node/layer-node.test.ts` and, on the real graph,
+// `test/location-services-hoist-replacements.test.ts`.
 export function hoist<A, E, T extends Tag, const Items extends Replacements = readonly []>(
   root: Node<A, E, any>,
   tag: T,
@@ -252,9 +264,16 @@ export function hoist<A, E, T extends Tag, const Items extends Replacements = re
     { resolve: (node) => replacementMap.get(node.name) ?? node },
   )
 
+  // One cache across all hoisted roots, so a subtree shared by two of them is rewritten into ONE
+  // node object rather than two structurally-equal clones (`compile` keys its own cache by object).
+  const rewriteCache = new Map<AnyNode, AnyNode>()
+  const hoistedNodes = Array.from(hoisted.values(), (item) =>
+    rewriteReplacementDependencies(item, replacementMap, rewriteCache),
+  )
+
   return {
     node: node as Node<A, E>,
-    hoisted: group(Array.from(hoisted.values())) as Node<unknown, E>,
+    hoisted: group(hoistedNodes) as Node<unknown, E>,
   }
 }
 
@@ -300,9 +319,16 @@ function replacementMapFrom(replacements?: Replacements) {
   )
 }
 
-function rewriteReplacementDependencies(root: AnyNode, replacements: ReadonlyMap<string, AnyNode>) {
+// Substitutes `replacements` throughout `root`'s dependency subtree, by NAME, leaving the root's own
+// identity alone (callers resolve that themselves) and changing nothing else about the shape. A node
+// whose subtree is unaffected is returned as the SAME object, so this is free for the common case.
+// `cache` may be shared across sibling roots to keep a shared subtree a single object.
+function rewriteReplacementDependencies(
+  root: AnyNode,
+  replacements: ReadonlyMap<string, AnyNode>,
+  cache: Map<AnyNode, AnyNode> = new Map<AnyNode, AnyNode>(),
+) {
   if (replacements.size === 0) return root
-  const cache = new Map<AnyNode, AnyNode>()
   const visiting = new Set<AnyNode>()
   const stack: AnyNode[] = []
 
