@@ -118,10 +118,15 @@ type Pkg = {
   /**
    * Override the PER-TEST timeout for a package with a legitimately slow single test.
    *
-   * Distinct from `wallclockMs`, which bounds the whole unit. Needed where one test does real work
-   * whose cost swings with machine load: sdk-next's bundling test measures 1.2 s on a quiet box and
-   * blew the 15 s default during a full run. Raising the global default instead would weaken the
-   * stuck-test guard for every other package.
+   * Distinct from `wallclockMs`, which bounds the whole unit. It exists for a test that does real
+   * work whose cost swings with machine load — the case that motivated it was a bundling test
+   * measuring 1.2 s on a quiet box and blowing the 15 s default during a full run. Raising the
+   * global default instead would weaken the stuck-test guard for every other package.
+   *
+   * ⚠️ NO PACKAGE SETS THIS TODAY (2026-07-29). Its only user was the `sdk-next` run unit, deleted
+   * with the `httpapi-codegen -> client -> sdk-next` island. Kept because the knob is two lines of
+   * live mechanism (read at `perTest` below) and the next slow test wants it, not because anything
+   * needs it now — if that stops being true, delete the field and the read together.
    */
   timeoutMs?: number
 }
@@ -140,9 +145,6 @@ const PACKAGES: Pkg[] = [
   { name: "script", dir: "script", args: [] },
   { name: "schema", dir: "packages/schema", args: [] },
   { name: "protocol", dir: "packages/protocol", args: [] },
-  { name: "client", dir: "packages/client", args: [] },
-  { name: "sdk-next", dir: "packages/sdk-next", args: ["test/import-boundaries.test.ts"], timeoutMs: 60_000 },
-  { name: "httpapi-codegen", dir: "packages/httpapi-codegen", args: [] },
   { name: "effect-drizzle-sqlite", dir: "packages/effect-drizzle-sqlite", args: [] },
   { name: "http-recorder", dir: "packages/http-recorder", args: [] },
   { name: "llm", dir: "packages/llm", args: [] },

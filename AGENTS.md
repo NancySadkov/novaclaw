@@ -38,9 +38,7 @@ dependencies.
 │   ├── schema/                # shared Effect Schema semantic values (leaf)
 │   ├── protocol/              # V2 API route/schema definitions (HTTP paths, payloads, streams)
 │   ├── server/                # V2 Effect HttpApi server assembly (hosts protocol groups over core)
-│   ├── client/                # GENERATED V2 clients (from protocol/server via httpapi-codegen)
 │   ├── sdk/                   # GENERATED legacy JS SDK (js/src/gen — never hand-edit)
-│   ├── sdk-next/              # transitional Effect-native in-process host (composes client+core+server)
 │   ├── plugin/                # public plugin API surface
 │   ├── app/                   # SolidJS web app; also the desktop renderer (apps/ = home-app registry)
 │   ├── desktop/               # Electron desktop app (electron-vite + electron-builder)
@@ -49,7 +47,6 @@ dependencies.
 │   ├── effect-drizzle-sqlite/ # Effect wrapper for drizzle-orm over SQLite
 │   ├── effect-sqlite-node/    # Effect SQLite client for the Node runtime (Electron)
 │   ├── http-recorder/         # record/replay HTTP/WS cassettes for provider tests
-│   ├── httpapi-codegen/       # build-time generator producing packages/client
 │   └── script/                # shared build/release script helpers
 ├── script/                    # repo dev scripts (generate, format, upgrade-opentui, sign-windows)
 ├── specs/                     # internal design docs (V2 architecture, session runtime, storage)
@@ -60,8 +57,9 @@ dependencies.
 ```
 
 Dependency direction: keep runtime dependencies directed from Schema to Core and Protocol,
-then from Core and Protocol to Server. Client runtime code may depend on Schema and Protocol
-but never Core or Server; `sdk-next` composes Client, Core, and Server.
+then from Core and Protocol to Server. (`client`, `sdk-next` and `httpapi-codegen` were deleted
+2026-07-29 — 11,046 lines whose only importers were each other. The shipped client path is
+`protocol` → `packages/sdk/openapi.json` → `packages/sdk/js`.)
 
 ## Build & run
 
@@ -93,8 +91,9 @@ bun run --conditions=browser src/index.ts serve --port 4096
 - **Legacy JS SDK regen:** `./packages/sdk/js/script/build.ts` (or `bun run script/generate.ts`
   from the root, which also refreshes `packages/sdk/openapi.json`).
 - **V2 client regen:** after changing the public Protocol or Server `HttpApi`, run
-  `bun run generate` from `packages/client`. Do not edit `src/generated` or
-  `src/generated-effect` directly.
+  `bun run --cwd packages/sdk/js regen`. Do not hand-edit anything under `packages/sdk/js/src/v2/gen/`.
+  ⚠️ The endpoint-namespace guard for that surface is `packages/protocol/test/endpoint-namespace.test.ts`
+  — it replaced the collision check that used to live inside the deleted `packages/client`.
 - The desktop build only produces `out/`; you also need `package:win` to get the packaged
   exe. Close running instances first or packaging can't overwrite the binary.
 

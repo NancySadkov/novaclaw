@@ -74,9 +74,14 @@ describe("typecheck run units", () => {
     // typechecking it — fix the discovery, never this expectation.
     const expected = packagesDeclaringTypecheck(ROOT)
     expect([...new Set(typecheckUnits(ROOT).map((unit) => unit.dir))].sort()).toEqual([...expected].sort())
-    // Guards the guard: an empty walk or a broken glob makes the line above vacuously true. Measured
-    // 2026-07-29: 20 declare a typecheck script (18, plus packages/script and the repo-root script/).
-    expect(expected.size).toBeGreaterThanOrEqual(20)
+    // Guards the guard: an empty walk or a broken glob makes the line above vacuously true.
+    // ⚠️ This floor moves DOWN when a package is deliberately deleted, and that is not a weakening — it
+    // is why it is a floor and not an equality. Measured 2026-07-29 after the client island
+    // (`httpapi-codegen` → `client` → `sdk-next`, 11,046 lines, all three declaring a typecheck script)
+    // was deleted under the owner's *discard all the cruft* ruling: **17**, down from 20.
+    // If this fails saying the count is too LOW, ask whether a package was deleted on purpose before
+    // lowering it again — and if it fails because discovery broke, the assertion above fires first.
+    expect(expected.size).toBeGreaterThanOrEqual(17)
   })
 
   test("includes packages/script, which declared no typecheck script until 2026-07-28", () => {
