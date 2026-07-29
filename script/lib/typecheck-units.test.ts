@@ -15,9 +15,12 @@ import { TYPECHECK_PREFIX, typecheckUnits, workspacePackageDirs } from "./typech
 // globs — bun's own `Bun.Glob`, not the hand-rolled expander in typecheck-units.ts. A test that reused
 // that expander would agree with it about a package neither of them can see.
 //
-// ⚠️ This file is itself proof of the residual hole it cannot close: `script/` is not a workspace
-// package and has no tsconfig, so nothing typechecks `script/test.ts`, `script/lib/*.ts`, or this test.
-// Filed 2026-07-28 with the phase; the fix is a `script/tsconfig.json` plus one extra unit.
+// ⚠️ This file used to be proof of the residual hole it could not close: `script/` was not a workspace
+// package and had no tsconfig, so nothing typechecked `script/test.ts`, `script/lib/*.ts`, or this test
+// — including `typecheck-units.ts`, whose whole purpose is that no package goes untypechecked. CLOSED
+// 2026-07-29 (todo/test-speed.md): `script/` is a workspace (`@novaclaw/repo-script`) with its own
+// tsconfig, so the SAME manifest-driven discovery covers it. It is pinned by name below, because a
+// silently reverted workspace glob would put the harness back outside its own gate and say nothing.
 
 const ROOT = join(import.meta.dir, "..", "..")
 
@@ -72,8 +75,8 @@ describe("typecheck run units", () => {
     const expected = packagesDeclaringTypecheck(ROOT)
     expect([...new Set(typecheckUnits(ROOT).map((unit) => unit.dir))].sort()).toEqual([...expected].sort())
     // Guards the guard: an empty walk or a broken glob makes the line above vacuously true. Measured
-    // 2026-07-28: 19 packages declare a typecheck script (18, plus packages/script added that day).
-    expect(expected.size).toBeGreaterThanOrEqual(18)
+    // 2026-07-29: 20 declare a typecheck script (18, plus packages/script and the repo-root script/).
+    expect(expected.size).toBeGreaterThanOrEqual(20)
   })
 
   test("includes packages/script, which declared no typecheck script until 2026-07-28", () => {
@@ -81,6 +84,22 @@ describe("typecheck run units", () => {
     // is a real workspace package (`src/index.ts`); it is NOT the repo-root `script/` build-tooling
     // directory that the `script` TEST unit covers. Two different things, one word.
     expect(typecheckUnits(ROOT).map((unit) => unit.dir)).toContain("packages/script")
+  })
+
+  test("includes the repo-root script/ — the harness that runs this very gate", () => {
+    // The other half of that word. Until 2026-07-29 `script/` was not a workspace and had no tsconfig,
+    // so `script/test.ts`, `script/lib/*.ts` and THIS FILE were compiled by nothing while their tests
+    // ran green — bun type-strips. todo.md ruling 1: the invariant "the tree compiles" did not exist
+    // for the directory that enforces it. It is a workspace now, so the same discovery covers it.
+    //
+    // Pinned by name rather than left to the completeness assertion above, because dropping the one
+    // workspace glob would make BOTH agree that `script/` is not a package — the completeness test
+    // compares discovery against the same manifest, so it cannot see a manifest that stopped naming it.
+    const units = typecheckUnits(ROOT)
+    expect(units.map((unit) => unit.dir)).toContain("script")
+    // The name must stay distinct from `packages/script`'s `typecheck:script` or discovery THROWS on
+    // the run-unit collision — see the ⚠️ in typecheck-units.ts.
+    expect(units.find((unit) => unit.dir === "script")?.name).toBe(`${TYPECHECK_PREFIX}repo-script`)
   })
 
   test("never runs the repo root, whose typecheck fans out through turbo", () => {

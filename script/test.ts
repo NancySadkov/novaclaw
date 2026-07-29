@@ -127,11 +127,16 @@ type Pkg = {
 }
 
 const PACKAGES: Pkg[] = [
-  // The repo-root build tooling. `script/` is not a package, so nothing here had a run unit and a test
-  // placed beside these modules would never have executed — the same "reads as coverage while being
-  // none" hole the rest of this file closes. It runs with cwd=script/ because the ROOT bunfig sets
+  // The repo-root build tooling — including THIS file. Nothing here had a run unit until 2026-07-28, so
+  // a test placed beside these modules would never have executed — the same "reads as coverage while
+  // being none" hole the rest of this file closes. It runs with cwd=script/ because the ROOT bunfig sets
   // `[test] root = "./do-not-run-tests-from-root"` (a guard against scanning the whole monorepo);
   // script/bunfig.toml re-opens the root for this directory alone.
+  //
+  // ⚠️ Running its tests was only half. Bun type-STRIPS, so until 2026-07-29 these files passed every
+  // assertion while `tsgo` had never compiled one of them — `script/` was not a workspace and had no
+  // tsconfig. It is `@novaclaw/repo-script` now, so phase 1 below covers it as `typecheck:repo-script`
+  // via the same discovery as every package. Two units, two questions, and this directory needed both.
   { name: "script", dir: "script", args: [] },
   { name: "schema", dir: "packages/schema", args: [] },
   { name: "protocol", dir: "packages/protocol", args: [] },

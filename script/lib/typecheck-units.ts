@@ -26,6 +26,21 @@
  * `bun turbo typecheck`, which fans every package out in PARALLEL. On a 15.7 GB box that is the
  * documented path to a false wall-clock kill — `packages/novaclaw` alone peaks ~3.8 GB (AGENTS.md
  * pitfall #1). The gate runs one package at a time, in-process order, on purpose.
+ *
+ * ─── the hole THIS module used to sit inside (closed 2026-07-29) ───────────────────────────────────
+ * Discovery is manifest-driven, so for a year the repo-root `script/` directory — `test.ts`, the whole
+ * harness that runs the gate, and this file, whose entire job is *"no package goes untypechecked"* —
+ * was typechecked by nothing at all. It was not a workspace, it had no tsconfig, and the root tsconfig
+ * has no `include`, so `tsgo` had never compiled a line of it. Its TESTS ran (`script/test.ts`
+ * registers a `script` unit) and bun type-STRIPS, so every assertion could pass while `tsgo` failed.
+ * The fix is the shape this file already argues for — `script/package.json` + `script/tsconfig.json`
+ * plus one workspace glob, so discovery finds it — rather than a hardcoded unit in `test.ts`.
+ *
+ * ⚠️ **Two different things, one word.** `packages/script` is the `@novaclaw/script` library
+ * (`src/index.ts`, the channel resolver's consumer); the repo-root `script/` is the build tooling. They
+ * would BOTH resolve to the run-unit name `typecheck:script` and hit the collision throw below, so the
+ * root one is named `@novaclaw/repo-script` → `typecheck:repo-script`. Renaming it back is not a
+ * cosmetic change; it makes the workspace undiscoverable-by-throw.
  */
 import { existsSync, readFileSync, readdirSync } from "node:fs"
 import { join } from "node:path"
@@ -118,6 +133,11 @@ const shortName = (packageName: string) =>
  * went unchecked. That is why the companion test asserts the discovered set against an independent walk
  * of the tree: the interesting question is not "is the list right" but "did the tree grow a package this
  * never saw".
+ *
+ * ⚠️ And "package" here means *whatever the root manifest's workspace globs name*, which is why the
+ * repo-root `script/` directory could be brought in by declaring it a workspace rather than by teaching
+ * this function about a second kind of thing. If a future directory needs typechecking, make it
+ * discoverable; do not add a branch here.
  */
 export function typecheckUnits(root: string): TypecheckUnit[] {
   const units: TypecheckUnit[] = []

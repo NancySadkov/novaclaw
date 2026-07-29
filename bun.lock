@@ -444,13 +444,9 @@
     },
     "packages/sdk/js": {
       "name": "@novaclaw/sdk",
-      "dependencies": {
-        "cross-spawn": "catalog:",
-      },
       "devDependencies": {
         "@hey-api/openapi-ts": "0.90.10",
         "@tsconfig/node22": "catalog:",
-        "@types/cross-spawn": "catalog:",
         "@types/node": "catalog:",
         "@typescript/native-preview": "catalog:",
         "typescript": "catalog:",
@@ -562,6 +558,14 @@
       "peerDependencies": {
         "@solidjs/meta": "^0.29.0",
         "solid-js": "^1.9.0",
+      },
+    },
+    "script": {
+      "name": "@novaclaw/repo-script",
+      "devDependencies": {
+        "@tsconfig/bun": "catalog:",
+        "@types/bun": "catalog:",
+        "@typescript/native-preview": "catalog:",
       },
     },
   },
@@ -1015,6 +1019,8 @@
     "@novaclaw/plugin": ["@novaclaw/plugin@workspace:packages/plugin"],
 
     "@novaclaw/protocol": ["@novaclaw/protocol@workspace:packages/protocol"],
+
+    "@novaclaw/repo-script": ["@novaclaw/repo-script@workspace:script"],
 
     "@novaclaw/schema": ["@novaclaw/schema@workspace:packages/schema"],
 
