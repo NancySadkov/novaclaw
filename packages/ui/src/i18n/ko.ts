@@ -1,3 +1,7 @@
+import { dict as en } from "./en"
+
+type Keys = keyof typeof en
+
 export const dict = {
   "ui.sessionReview.title": "세션 변경 사항",
   "ui.sessionReview.title.lastTurn": "마지막 턴 변경 사항",
@@ -165,4 +169,4 @@ export const dict = {
   "ui.toolErrorCard.copyError": "오류 복사",
   "ui.message.duration.seconds": "{{count}}초",
   "ui.message.duration.minutesSeconds": "{{minutes}}분 {{seconds}}초",
-}
+} satisfies Partial<Record<Keys, string>>

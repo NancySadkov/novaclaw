@@ -1,3 +1,7 @@
+import { dict as en } from "./en"
+
+type Keys = keyof typeof en
+
 export const dict = {
   "command.category.suggested": "Suggéré",
   "command.category.view": "Affichage",
@@ -832,4 +836,4 @@ export const dict = {
   "error.childStore.persistedProjectIconCreateFailed": "Échec de la création de l'icône de projet persistante",
   "error.childStore.storeCreateFailed": "Échec de la création du stockage",
   "terminal.connectionLost.abnormalClose": "WebSocket fermé anormalement : {{code}}",
-}
+} satisfies Partial<Record<Keys, string>>

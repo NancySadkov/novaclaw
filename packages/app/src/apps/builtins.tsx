@@ -1,11 +1,13 @@
 import { useNavigate } from "@solidjs/router"
 import { useDialog } from "@novaclaw/ui/context/dialog"
+import { useLanguage } from "@/context/language"
 import { useChatsAttention } from "@/apps/chats-attention"
 import { activityLabel, useChatsActivity } from "@/apps/chats-activity"
 import { useSettingsDialog } from "@/components/settings-dialog"
 import { AppPlaceholder } from "@/pages/home-screen/app-placeholder"
 import { HelpTour } from "@/pages/home-screen/help-tour"
 import { SocialPanel } from "@/pages/home-screen/social-panel"
+import { appName, appSubtitle, BUILTIN_APP_LABELS, type BuiltinAppId, type Translate } from "./app-label"
 import type { HomeApp } from "./registry"
 
 // The built-in NovaClaw apps. Each `open()` REUSES an existing opener (route navigation, a dialog, the
@@ -20,19 +22,34 @@ import type { HomeApp } from "./registry"
 //
 // Tile palette: gold is reserved for the hero (the single warm accent on the cool purple field —
 // that contrast is what guides the eye); every other tile gets a cool hue so none competes.
+//
+// ⚠️ Words come from `home.app.<id>.{name,subtitle}` (see `app-label.ts`), NOT from literals here.
+// They used to be hardcoded English, which made the most visible strings in the product the only ones
+// the language picker could not reach. The English text still exists once, in `BUILTIN_APP_LABELS`,
+// as the fallback for a build whose keys went missing — `app-label.test.ts` pins it against `en`.
 export function useBuiltinApps(): () => HomeApp[] {
   const navigate = useNavigate()
   const dialog = useDialog()
+  const language = useLanguage()
   const openSettings = useSettingsDialog()
   const chatsAttention = useChatsAttention()
   const chatsActivity = useChatsActivity()
-  const comingSoon = (app: Omit<HomeApp, "open" | "source">) => () =>
-    void dialog.show(() => <AppPlaceholder title={app.title} icon={app.icon} accent={app.accent} subtitle={app.subtitle} />)
+
+  // `t` is typed to the literal key union; `home.app.<id>.*` is assembled at runtime because a
+  // contributed app's id is not known at build time. Same bridge `help-tour.tsx` uses per step.
+  const t: Translate = (key, params) => language.t(key as Parameters<typeof language.t>[0], params)
+  const name = (id: BuiltinAppId) => appName(t, id, BUILTIN_APP_LABELS[id].name)
+  // Every built-in ships a subtitle, so this narrows to `string` — `appSubtitle` returns `undefined`
+  // only when there is nothing at all to say, which cannot happen for an entry in the table.
+  const sub = (id: BuiltinAppId): string => appSubtitle(t, id, BUILTIN_APP_LABELS[id].subtitle) ?? BUILTIN_APP_LABELS[id].subtitle
+
+  const comingSoon = (id: BuiltinAppId, icon: string, accent: string) => () =>
+    void dialog.show(() => <AppPlaceholder title={name(id)} icon={icon} accent={accent} subtitle={sub(id)} />)
 
   return () => [
     {
       id: "chats",
-      title: "Chats",
+      title: name("chats"),
       icon: "speech-bubble",
       // The hero's accent IS the preset's primary accent, so the one eye-anchor re-themes with the
       // color scheme (gold on Nova, amber on Autumn, coral on Summer). uix.md §7.
@@ -42,7 +59,7 @@ export function useBuiltinApps(): () => HomeApp[] {
       // Describes what the tile OPENS — a list of your conversations. The old line ("Ask anything — your
       // agents do the work") described the composer at the bottom of the home screen, not this tile, so it
       // promised something tapping here does not do (owner 2026-07-26).
-      subtitle: "Your conversations, and everything still running",
+      subtitle: sub("chats"),
       source: "builtin",
       // While agents are working the tile reports it instead: "2 agents working · ~47 t/s".
       status: () => activityLabel(chatsActivity()),
@@ -52,37 +69,37 @@ export function useBuiltinApps(): () => HomeApp[] {
     },
     {
       id: "notes",
-      title: "Notes",
+      title: name("notes"),
       icon: "edit",
       accent: "#8b5cf6",
-      subtitle: "Everyday notes, shared with your agents",
+      subtitle: sub("notes"),
       source: "builtin",
       open: () => navigate("/notes"),
     },
     {
       id: "calendar",
-      title: "Calendar",
+      title: name("calendar"),
       icon: "calendar",
       accent: "#6366f1",
-      subtitle: "Schedule agents to run on a repeating date",
+      subtitle: sub("calendar"),
       source: "builtin",
       open: () => navigate("/calendar"),
     },
     {
       id: "recipes",
-      title: "Recipes",
+      title: name("recipes"),
       icon: "checklist",
       accent: "#f97316",
-      subtitle: "Ready-made prompts your agents can cook",
+      subtitle: sub("recipes"),
       source: "builtin",
       open: () => navigate("/recipes"),
     },
     {
       id: "files",
-      title: "Files",
+      title: name("files"),
       icon: "folder",
       accent: "#3b82f6",
-      subtitle: "Browse folders and ask AI to work on them",
+      subtitle: sub("files"),
       source: "builtin",
       open: () => navigate("/files"),
     },
@@ -92,30 +109,30 @@ export function useBuiltinApps(): () => HomeApp[] {
     // perfect). The "processes" id stays RESERVED so a plugin can't squat it meanwhile.
     {
       id: "search",
-      title: "Search",
+      title: name("search"),
       icon: "magnifying-glass-menu",
       accent: "#34d399",
-      subtitle: "Find anything across chats and files",
+      subtitle: sub("search"),
       source: "builtin",
-      open: comingSoon({ id: "search", title: "Search", icon: "magnifying-glass-menu", accent: "#34d399", subtitle: "Find anything across chats and files" }),
+      open: comingSoon("search", "magnifying-glass-menu", "#34d399"),
     },
     {
       id: "terminal",
-      title: "Terminal",
+      title: name("terminal"),
       icon: "terminal",
       accent: "#64748b",
-      subtitle: "A shell, for when you want one",
+      subtitle: sub("terminal"),
       source: "builtin",
       // Chat is the shell for everyone else; the raw terminal only appears in Developer (uix.md §6.4).
       minLevel: "developer",
-      open: comingSoon({ id: "terminal", title: "Terminal", icon: "terminal", accent: "#64748b", subtitle: "A shell, for when you want one" }),
+      open: comingSoon("terminal", "terminal", "#64748b"),
     },
     {
       id: "registry",
-      title: "Registry",
+      title: name("registry"),
       icon: "cpu",
       accent: "#0ea5e9",
-      subtitle: "The instance database, editable — handle with care",
+      subtitle: sub("registry"),
       source: "builtin",
       // Raw database editing is a Developer surface (uix.md §6.4; the sanctioned re-homing of
       // the old `db` sqlite3 shell — todo.md tie-break #3).
@@ -124,10 +141,10 @@ export function useBuiltinApps(): () => HomeApp[] {
     },
     {
       id: "debug",
-      title: "Debug",
+      title: name("debug"),
       icon: "console",
       accent: "#a78bfa",
-      subtitle: "Connection, error log, sessions — under the hood",
+      subtitle: sub("debug"),
       source: "builtin",
       // Raw diagnostics are a Developer surface (uix.md §6.4; dependability P5 — the calm
       // banner/ErrorPage stay clean, the detail lives here).
@@ -136,10 +153,10 @@ export function useBuiltinApps(): () => HomeApp[] {
     },
     {
       id: "memory-graph",
-      title: "Memory graph",
+      title: name("memory-graph"),
       icon: "branch",
       accent: "#8b5cf6",
-      subtitle: "Explore what NovaClaw remembers, as a graph",
+      subtitle: sub("memory-graph"),
       source: "builtin",
       // The advanced node-link view of the graph memory (kb-graph P5; the lay controls live in
       // Settings → Memory). Path-tracing is a Developer surface (uix.md §6.4).
@@ -148,44 +165,44 @@ export function useBuiltinApps(): () => HomeApp[] {
     },
     {
       id: "trash",
-      title: "Trash",
+      title: name("trash"),
       icon: "trash",
       // Cool teal, not the old saturated red — gold is the ONLY warm accent (the hero). uix.md §3/P3.
       accent: "#14b8a6",
-      subtitle: "Restore anything deleted in the last 2 days",
+      subtitle: sub("trash"),
       source: "builtin",
       open: () => navigate("/trash"),
     },
     {
       id: "social",
-      title: "Community",
+      title: name("social"),
       // A generic people glyph, NOT the Discord mark: the tile leads to Discord, Reddit AND the website, so
       // wearing one company's trademark both misdescribes it and borrows a mark we have no licence to use as
       // our own iconography. The Discord ROW inside the panel keeps its logo — that one really is Discord.
       icon: "community",
       // Cool indigo-blue, so it doesn't compete with the gold hero (uix.md §3/P3).
       accent: "#5865f2",
-      subtitle: "Discord, Reddit and the website — other people who run NovaClaw",
+      subtitle: sub("social"),
       source: "builtin",
       // Sits next to Help on purpose: when the tour doesn't answer it, humans do.
       open: () => void dialog.show(() => <SocialPanel />),
     },
     {
       id: "help",
-      title: "Help",
+      title: name("help"),
       icon: "help",
       // Cool indigo, not the old pink — keeps the single-warm-accent discipline. uix.md §3/P3.
       accent: "#6366f1",
-      subtitle: "A short tour of what NovaClaw can do",
+      subtitle: sub("help"),
       source: "builtin",
       open: () => void dialog.show(() => <HelpTour />),
     },
     {
       id: "settings",
-      title: "Settings",
+      title: name("settings"),
       icon: "settings-gear",
       accent: "#8d8fa6",
-      subtitle: "Providers, models, servers, recovery",
+      subtitle: sub("settings"),
       source: "builtin",
       open: () => openSettings(),
     },

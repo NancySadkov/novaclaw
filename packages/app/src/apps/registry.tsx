@@ -1,14 +1,28 @@
 import { createSignal } from "solid-js"
 import type { ExpertiseLevel } from "@/context/settings"
+import { legibleAppName } from "./app-label"
 
 // The NovaClaw "app" model — the extensibility keystone of the home screen (the OS metaphor: the home
 // is an app launcher, and built-in / plugin / AI-agent apps all register the same way). A HomeApp is a
 // launchable tile: an id, a display title, a sprite icon, an accent hue for its tile, and an `open()`
 // that reuses an existing opener (navigate / dialog / command). Built-in apps come from
 // `useBuiltinApps()`; anything else (plugins, agent-contributed apps) calls `registerApp()`.
+//
+// ⚠️ WORDS: `title` and `subtitle` are ALREADY-RESOLVED display text, never i18n keys. The registry
+// deliberately does not resolve keys for you, because it has to serve apps we did not write:
+//
+//   built-in / agent-manifest   `builtins.tsx` and `manifest-apps.ts` resolve `home.app.<id>.*`
+//                               through `app-label.ts` before they get here, so they translate.
+//   plugin (`registerApp`)      supplies its own words. A plugin needs NO key in our bundles — and
+//                               if it passes one anyway, `registerApp` replaces it (below) so the
+//                               user never sees `home.app.foo.name` on a tile.
+//
+// A plugin that wants to follow the language picker re-registers on locale change; `registerApp`
+// replaces by id, so that is a supported one-liner rather than a special case.
 
 export interface HomeApp {
   readonly id: string
+  /** Display text, already translated. NOT an i18n key — see the WORDS note above. */
   readonly title: string
   readonly icon: string // sprite icon name (@novaclaw/ui/icon)
   readonly accent: string // CSS color for the tile gradient/glow
@@ -16,7 +30,7 @@ export interface HomeApp {
   readonly open: () => void
   /** Renders as the 2×2 anchor tile that guides the eye (one per home — Chats). */
   readonly hero?: boolean
-  /** One-line description; shown on the hero tile and in hover tooltips. */
+  /** One-line description, already translated; shown on the hero tile and in hover tooltips. */
   readonly subtitle?: string
   /** Glyph color on the tile. "dark" for light accents (gold) where white would wash out. */
   readonly glyphTone?: "light" | "dark"
@@ -69,7 +83,14 @@ export function registerApp(app: HomeApp): void {
     return
   }
   // `hero` (the single 2×2 gold anchor) is a built-in privilege — never let a contributed app claim it.
-  const safe = app.hero ? { ...app, hero: false } : app
+  const hero = app.hero ? { ...app, hero: false } : app
+  // A tile must always carry words a person can read. A blank title, or one that is really an i18n
+  // key its author expected us to resolve, degrades to a name derived from the id ("stock-prices" →
+  // "Stock prices"). Rendering `home.app.stock-prices.name` at a user is the failure this prevents;
+  // the server's `validateManifest` rejects a blank title, but `registerApp` is reachable in-process
+  // and has no such gate, so the guard lives here too.
+  const title = legibleAppName(hero.id, hero.title)
+  const safe = title === hero.title ? hero : { ...hero, title }
   setApps((prev) => [...prev.filter((a) => a.id !== safe.id), safe])
 }
 

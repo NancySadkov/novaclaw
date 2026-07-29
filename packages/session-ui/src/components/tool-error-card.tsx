@@ -5,7 +5,7 @@ import { Collapsible } from "@novaclaw/ui/collapsible"
 import { Icon } from "@novaclaw/ui/icon"
 import { IconButton } from "@novaclaw/ui/icon-button"
 import { Tooltip } from "@novaclaw/ui/tooltip"
-import { useI18n } from "@novaclaw/ui/context/i18n"
+import { useI18n, type UiI18nKey } from "@novaclaw/ui/context/i18n"
 
 export interface ToolErrorCardProps extends Omit<ComponentProps<typeof Card>, "children" | "variant"> {
   tool: string
@@ -42,7 +42,13 @@ export function ToolErrorCard(props: ToolErrorCardProps) {
   }
   const name = createMemo(() => {
     if (split.title) return split.title
-    const map: Record<string, string> = {
+    // ⚠️ The value type is `UiI18nKey`, NOT `string`. As `Record<string, string>` this erased the
+    // values, so `i18n.t(key)` below accepted anything — including a tool name that is not a key at
+    // all — and the mistake would have surfaced as a raw `ui.tool.whatever` rendered at the user. The
+    // `| undefined` keeps the `if (!key)` miss below honest under `noUncheckedIndexedAccess`. Caught
+    // 2026-07-29, the day `packages/ui`'s `en` stopped being typed `Record<string, string>` and
+    // `keyof typeof en` became a real union instead of `string`.
+    const map: Record<string, UiI18nKey | undefined> = {
       read: "ui.tool.read",
       list: "ui.tool.list",
       glob: "ui.tool.glob",

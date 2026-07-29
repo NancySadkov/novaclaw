@@ -2,9 +2,11 @@ import { createEffect, createMemo } from "solid-js"
 import { useNavigate } from "@solidjs/router"
 import { isIconName } from "@novaclaw/ui/icon"
 import { useGlobal } from "@/context/global"
+import { useLanguage } from "@/context/language"
 import { usePlatform } from "@/context/platform"
 import { ServerConnection, useServer } from "@/context/server"
 import { useTabs } from "@/context/tabs"
+import { appName, appSubtitle, type Translate } from "./app-label"
 import { loadPersistedApps, persistedManifests, type AppManifest } from "./persisted"
 import type { HomeApp } from "./registry"
 
@@ -22,10 +24,17 @@ const DEFAULT_ACCENT = "#38bdf8"
 export function useManifestApps(): () => HomeApp[] {
   const navigate = useNavigate()
   const global = useGlobal()
+  const language = useLanguage()
   const platform = usePlatform()
   const server = useServer()
   const tabs = useTabs()
   const conn = createMemo(() => server.current ?? global.servers.list()[0])
+
+  // Agent-contributed apps go through the SAME label path as the built-ins: if this build happens to
+  // ship `home.app.<id>.*` for one, it translates; otherwise the manifest's own words are used. An
+  // agent is never required to have a key in our bundles, and a manifest whose title is blank or is
+  // itself an i18n key degrades to a legible name derived from the id rather than rendering raw.
+  const t: Translate = (key, params) => language.t(key as Parameters<typeof language.t>[0], params)
 
   createEffect(() => {
     const c = conn()
@@ -48,16 +57,19 @@ export function useManifestApps(): () => HomeApp[] {
 
   return () =>
     persistedManifests().map(
-      (manifest): HomeApp => ({
-        id: manifest.id,
-        title: manifest.title,
-        // Validate the agent-supplied icon against the sprite — an unknown name would render a silent
-        // blank glyph, so fall back to a sensible default instead (L3).
-        icon: manifest.icon && isIconName(manifest.icon) ? manifest.icon : DEFAULT_ICON,
-        accent: manifest.accent || DEFAULT_ACCENT,
-        ...(manifest.subtitle ? { subtitle: manifest.subtitle } : {}),
-        source: "agent",
-        open: () => open(manifest),
-      }),
+      (manifest): HomeApp => {
+        const subtitle = appSubtitle(t, manifest.id, manifest.subtitle)
+        return {
+          id: manifest.id,
+          title: appName(t, manifest.id, manifest.title),
+          // Validate the agent-supplied icon against the sprite — an unknown name would render a silent
+          // blank glyph, so fall back to a sensible default instead (L3).
+          icon: manifest.icon && isIconName(manifest.icon) ? manifest.icon : DEFAULT_ICON,
+          accent: manifest.accent || DEFAULT_ACCENT,
+          ...(subtitle ? { subtitle } : {}),
+          source: "agent",
+          open: () => open(manifest),
+        }
+      },
     )
 }

@@ -1,4 +1,10 @@
-export const dict: Record<string, string> = {
+// ⚠️ NO type annotation here, deliberately. This used to read `Record<string, string>`, which made
+// `keyof typeof en` resolve to `string` — so every sibling bundle's `satisfies Partial<Record<Keys,
+// string>>` constrained nothing beyond "the values are strings", and `no.ts`'s TOTAL
+// `Record<Keys, string>` was satisfied while missing 15 keys. A guard that cannot fail is not a guard.
+// Leaving it inferred gives `Keys` the literal key union, which is what makes the constraint bite.
+// (`packages/app/src/i18n/en.ts` was already correct this way — the two halves now agree.)
+export const dict = {
   "ui.sessionReview.title": "Chat changes",
   "ui.sessionReview.title.git": "Git changes",
   "ui.sessionReview.title.branch": "Branch changes",

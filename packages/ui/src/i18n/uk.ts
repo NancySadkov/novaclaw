@@ -1,4 +1,8 @@
-export const dict: Record<string, string> = {
+import { dict as en } from "./en"
+
+type Keys = keyof typeof en
+
+export const dict = {
   "ui.sessionReview.title": "Зміни сесії",
   "ui.sessionReview.title.git": "Зміни Git",
   "ui.sessionReview.title.branch": "Зміни гілки",
@@ -164,4 +168,4 @@ export const dict: Record<string, string> = {
   "ui.question.multiHint": "Виберіть усі відповідні варіанти",
   "ui.question.singleHint": "Виберіть одну відповідь",
   "ui.question.custom.placeholder": "Введіть свою відповідь...",
-}
+} satisfies Partial<Record<Keys, string>>

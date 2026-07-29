@@ -215,8 +215,22 @@ export const { use: useLanguage, provider: LanguageProvider } = createSimpleCont
       initialValue: dicts.get(initial) ?? base,
     })
 
+    // ⚠️ `key: string`, not `keyof Dictionary` — and that is a STATED position, not an oversight.
+    // Until 2026-07-29 the two were the same thing: `packages/ui`'s `en` was typed
+    // `Record<string, string>`, so its index signature swallowed the app's literal keys in the
+    // `typeof en & typeof uiEn` intersection and `keyof Dictionary` collapsed to `string`. Removing
+    // that annotation (so the ui bundles' `satisfies Partial<Record<Keys, string>>` finally
+    // constrains something) made `keyof Dictionary` a real 1862-key union — which immediately
+    // reported **14 call sites** the app has always had, in three classes: keys that do not exist at
+    // all (`mcp.status.*` in `dialog-select-mcp.tsx` — a real bug, it renders the raw key), genuinely
+    // dynamic keys (`session-header.tsx`, `web-search.tsx`), and consumers typed
+    // `(key: string) => string` that a key-typed `t` cannot satisfy (parameters are contravariant).
+    // Fixing those is worth doing and is filed as its own slice; smuggling it in here would have made
+    // this a different change. So the app's translator stays exactly as loose as it has always been,
+    // and the ui half of the seam is now real. Do NOT "tidy" this back to `keyof Dictionary` without
+    // fixing those fourteen — it will fail `typecheck:app` and `typecheck:desktop`.
     const t = i18n.translator(() => dict() ?? base, i18n.resolveTemplate) as (
-      key: keyof Dictionary,
+      key: string,
       params?: Record<string, string | number | boolean>,
     ) => string
 
