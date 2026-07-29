@@ -263,8 +263,12 @@ for (const item of targets) {
     },
   })
 
-  // Smoke test: only run if binary is for current platform
-  if (item.os === process.platform && item.arch === process.arch && !item.abi) {
+  // Smoke test: only run if binary is for current platform — and only when the UI is actually
+  // embedded. A `--skip-embed-web-ui` (server-only) binary bundles no UI, so smokeServer's
+  // `<title>NovaClaw</title>` assertion would always throw → process.exit(1) on a perfectly good
+  // build (the standalone server serves `<title>NovaClaw API</title>`). Its HTTP serving is smoked
+  // separately by build-linux.sh (--version + /api/health). See todo/linux-build.md (server-only).
+  if (item.os === process.platform && item.arch === process.arch && !item.abi && !skipEmbedWebUi) {
     const binaryPath = `dist/${name}/bin/novaclaw`
     console.log(`Running smoke test: ${binaryPath} --version`)
     try {
