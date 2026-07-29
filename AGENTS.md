@@ -45,7 +45,6 @@ dependencies.
 │   ├── session-ui/            # session message rendering shared by the app
 │   ├── ui/                    # shared Solid component library, themes, icons, i18n styles
 │   ├── effect-drizzle-sqlite/ # Effect wrapper for drizzle-orm over SQLite
-│   ├── effect-sqlite-node/    # Effect SQLite client for the Node runtime (Electron)
 │   ├── http-recorder/         # record/replay HTTP/WS cassettes for provider tests
 │   └── script/                # shared build/release script helpers
 ├── script/                    # repo dev scripts (generate, format, upgrade-opentui, sign-windows)
@@ -96,6 +95,13 @@ bun run --conditions=browser src/index.ts serve --port 4096
   — it replaced the collision check that used to live inside the deleted `packages/client`.
 - The desktop build only produces `out/`; you also need `package:win` to get the packaged
   exe. Close running instances first or packaging can't overwrite the binary.
+- **`bun` and `node` processes are disposable — `killall` (or `taskkill //T //F`) them at any time**
+  (owner, 2026-07-29). No long-lived `bun`/`node` process is load-bearing on the dev box: dev servers,
+  test runners, packaged smoke instances and the occasional wedged/zombie child are all yours to reap,
+  and a killed bun that survives (holding commit at `WorkingSet64≈0`) is reboot-only — kill by TREE, not
+  bare PID, since `bun run <file>` is a parent+child pair. The Spark's `llm.novaclaw.app` tunnel is
+  `ssh.exe`, not bun/node, so it is unaffected. The one caveat when coordinating parallel agents: don't
+  reap while your **own** sibling agents are mid-`bun test`, or you fail their run.
 
 ## Git
 
