@@ -81,7 +81,7 @@ function getLegacyPlugins(mod: Record<string, unknown>) {
 }
 
 async function applyPlugin(load: PluginLoader.Loaded, input: PluginInput, hooks: Hooks[]) {
-  const plugin = readV1Plugin(load.mod, load.spec, "server", "detect")
+  const plugin = readV1Plugin(load.mod, load.spec, "detect")
   if (plugin) {
     await resolvePluginId(load.source, load.spec, load.target, readPluginId(plugin.id, load.spec), load.pkg)
     hooks.push(await (plugin as PluginModule).server(input, load.options))
@@ -156,7 +156,6 @@ export const layer = Layer.effect(
         const loaded = yield* Effect.promise(() =>
           PluginLoader.loadExternal({
             items: plugins,
-            kind: "server",
             report: {
               start(candidate) {},
               missing(candidate, _retry, message) {},

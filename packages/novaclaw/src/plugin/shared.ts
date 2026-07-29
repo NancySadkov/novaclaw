@@ -34,7 +34,6 @@ export function parsePluginSpecifier(spec: string) {
 }
 
 export type PluginSource = "file" | "npm"
-export type PluginKind = "server" | "tui"
 type PluginMode = "strict" | "detect"
 
 export type PluginPackage = {
@@ -86,31 +85,30 @@ function packageMain(pkg: PluginPackage) {
   return next
 }
 
-function resolvePackageFile(spec: string, raw: string, kind: string, pkg: PluginPackage) {
+function resolvePackageFile(spec: string, raw: string, pkg: PluginPackage) {
   const resolved = resolveExportPath(raw, pkg.dir)
   const root = Filesystem.resolve(pkg.dir)
   const next = Filesystem.resolve(resolved)
   if (!Filesystem.contains(root, next)) {
-    throw new Error(`Plugin ${spec} resolved ${kind} entry outside plugin directory`)
+    throw new Error(`Plugin ${spec} resolved server entry outside plugin directory`)
   }
   return next
 }
 
-function resolvePackagePath(spec: string, raw: string, kind: PluginKind, pkg: PluginPackage) {
-  return pathToFileURL(resolvePackageFile(spec, raw, kind, pkg)).href
+function resolvePackagePath(spec: string, raw: string, pkg: PluginPackage) {
+  return pathToFileURL(resolvePackageFile(spec, raw, pkg)).href
 }
 
-function resolvePackageEntrypoint(spec: string, kind: PluginKind, pkg: PluginPackage) {
+function resolvePackageEntrypoint(spec: string, pkg: PluginPackage) {
   const exports = pkg.json.exports
   if (isRecord(exports)) {
-    const raw = extractExportValue(exports[`./${kind}`])
-    if (raw) return resolvePackagePath(spec, raw, kind, pkg)
+    const raw = extractExportValue(exports["./server"])
+    if (raw) return resolvePackagePath(spec, raw, pkg)
   }
 
-  if (kind !== "server") return
   const main = packageMain(pkg)
   if (!main) return
-  return resolvePackagePath(spec, main, kind, pkg)
+  return resolvePackagePath(spec, main, pkg)
 }
 
 function targetPath(target: string) {
@@ -133,28 +131,16 @@ async function resolveTargetDirectory(target: string) {
   return file
 }
 
-async function resolvePluginEntrypoint(spec: string, target: string, kind: PluginKind, pkg?: PluginPackage) {
+async function resolvePluginEntrypoint(spec: string, target: string, pkg?: PluginPackage) {
   const source = pluginSource(spec)
   const hit =
     pkg ?? (source === "npm" ? await readPluginPackage(target) : await readPluginPackage(target).catch(() => undefined))
   if (!hit) return target
 
-  const entry = resolvePackageEntrypoint(spec, kind, hit)
+  const entry = resolvePackageEntrypoint(spec, hit)
   if (entry) return entry
 
   const dir = await resolveTargetDirectory(target)
-
-  if (kind === "tui") {
-    if (source === "file" && dir) {
-      const index = await resolveDirectoryIndex(dir)
-      if (index) return pathToFileURL(index).href
-    }
-
-    if (source === "npm") return
-    if (dir) return
-
-    return target
-  }
 
   if (dir && isRecord(hit.json.exports)) {
     if (source === "file") {
@@ -221,11 +207,11 @@ export async function readPluginPackage(target: string): Promise<PluginPackage> 
   return { dir, pkg, json }
 }
 
-export async function createPluginEntry(spec: string, target: string, kind: PluginKind): Promise<PluginEntry> {
+export async function createPluginEntry(spec: string, target: string): Promise<PluginEntry> {
   const source = pluginSource(spec)
   const pkg =
     source === "npm" ? await readPluginPackage(target) : await readPluginPackage(target).catch(() => undefined)
-  const entry = await resolvePluginEntrypoint(spec, target, kind, pkg)
+  const entry = await resolvePluginEntrypoint(spec, target, pkg)
   return {
     spec,
     source,
@@ -233,32 +219,6 @@ export async function createPluginEntry(spec: string, target: string, kind: Plug
     pkg,
     entry,
   }
-}
-
-export function readPackageThemes(spec: string, pkg: PluginPackage) {
-  const field = pkg.json["oc-themes"]
-  if (field === undefined) return []
-  if (!Array.isArray(field)) {
-    throw new TypeError(`Plugin ${spec} has invalid oc-themes field`)
-  }
-
-  const list = field.map((item) => {
-    if (typeof item !== "string") {
-      throw new TypeError(`Plugin ${spec} has invalid oc-themes entry`)
-    }
-
-    const raw = item.trim()
-    if (!raw) {
-      throw new TypeError(`Plugin ${spec} has empty oc-themes entry`)
-    }
-    if (raw.startsWith("file://") || isAbsolutePath(raw)) {
-      throw new TypeError(`Plugin ${spec} oc-themes entry must be relative: ${item}`)
-    }
-
-    return resolvePackageFile(spec, raw, "oc-themes", pkg)
-  })
-
-  return Array.from(new Set(list))
 }
 
 export function readPluginId(id: unknown, spec: string) {
@@ -269,35 +229,20 @@ export function readPluginId(id: unknown, spec: string) {
   return value
 }
 
-export function readV1Plugin(
-  mod: Record<string, unknown>,
-  spec: string,
-  kind: PluginKind,
-  mode: PluginMode = "strict",
-) {
+export function readV1Plugin(mod: Record<string, unknown>, spec: string, mode: PluginMode = "strict") {
   const value = mod.default
   if (!isRecord(value)) {
     if (mode === "detect") return
-    throw new TypeError(`Plugin ${spec} must default export an object with ${kind}()`)
+    throw new TypeError(`Plugin ${spec} must default export an object with server()`)
   }
-  if (mode === "detect" && !("id" in value) && !("server" in value) && !("tui" in value)) return
+  if (mode === "detect" && !("id" in value) && !("server" in value)) return
 
   const server = "server" in value ? value.server : undefined
-  const tui = "tui" in value ? value.tui : undefined
   if (server !== undefined && typeof server !== "function") {
     throw new TypeError(`Plugin ${spec} has invalid server export`)
   }
-  if (tui !== undefined && typeof tui !== "function") {
-    throw new TypeError(`Plugin ${spec} has invalid tui export`)
-  }
-  if (server !== undefined && tui !== undefined) {
-    throw new TypeError(`Plugin ${spec} must default export either server() or tui(), not both`)
-  }
-  if (kind === "server" && server === undefined) {
+  if (server === undefined) {
     throw new TypeError(`Plugin ${spec} must default export an object with server()`)
-  }
-  if (kind === "tui" && tui === undefined) {
-    throw new TypeError(`Plugin ${spec} must default export an object with tui()`)
   }
 
   return value

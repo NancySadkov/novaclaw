@@ -7,10 +7,16 @@
 
 ## Development server
 
-- Running `bun dev` from `packages/novaclaw` starts the live interactive TUI. Do not run it as a blocking foreground command when you need to inspect the result.
-- Start it in `tmux` instead: `tmux new-session -d -s novaclaw-dev 'bun dev'`.
-- Capture the current TUI output with: `tmux capture-pane -pt novaclaw-dev`.
-- Stop the session explicitly when done: `tmux kill-session -t novaclaw-dev`.
+- ⚠️ **There is no TUI.** This section used to say `bun dev` starts one and to capture it with
+  `tmux capture-pane`; the terminal UI was deleted in `caa938453` and the advice was false for weeks.
+  `bun dev` runs `./src/index.ts` with no arguments, which hits the **`$0` default command** — `web`
+  (`src/cli/cmd/web.ts:36`) — so it **starts the server and opens the web UI**. There is no pane to
+  capture; capturing stdout gets you server logs.
+- It is still long-running, so do not run it as a blocking foreground command when you need the result.
+  Run it detached and poll the port, or use the harness's preview tooling against the served URL.
+- ⚠️ **Stop it by TREE.** `bun run <file>` is a PARENT+CHILD pair sharing one command line, so killing
+  the child leaves an identical-looking parent holding the port (AGENTS.md → pitfall #8):
+  `taskkill //T //F //PID <pid>`, never a bare `//PID`.
 
 # Module shape
 

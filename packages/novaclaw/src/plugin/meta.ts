@@ -10,13 +10,6 @@ import { parsePluginSpecifier, pluginSource } from "./shared"
 
 type Source = "file" | "npm"
 
-export type Theme = {
-  src: string
-  dest: string
-  mtime?: number
-  size?: number
-}
-
 export type Entry = {
   id: string
   source: Source
@@ -30,7 +23,6 @@ export type Entry = {
   time_changed: number
   load_count: number
   fingerprint: string
-  themes?: Record<string, Theme>
 }
 
 export type State = "first" | "updated" | "same"
@@ -42,7 +34,7 @@ export type Touch = {
 }
 
 type Store = Record<string, Entry>
-type Core = Omit<Entry, "first_time" | "last_time" | "time_changed" | "load_count" | "fingerprint" | "themes">
+type Core = Omit<Entry, "first_time" | "last_time" | "time_changed" | "load_count" | "fingerprint">
 type Row = Touch & { core: Core }
 
 function storePath() {
@@ -129,7 +121,6 @@ function next(prev: Entry | undefined, core: Core, now: number): { state: State;
     time_changed: prev?.time_changed ?? now,
     load_count: (prev?.load_count ?? 0) + 1,
     fingerprint: fingerprint(core),
-    themes: prev?.themes,
   }
   const state: State = !prev ? "first" : prev.fingerprint === entry.fingerprint ? "same" : "updated"
   if (state === "updated") entry.time_changed = now
@@ -163,20 +154,6 @@ export async function touch(spec: string, target: string, id: string): Promise<{
     const hit = item[0]
     if (hit) return hit
     throw new Error("Failed to touch plugin metadata.")
-  })
-}
-
-export async function setTheme(id: string, name: string, theme: Theme): Promise<void> {
-  const file = storePath()
-  await Flock.withLock(lock(file), async () => {
-    const store = await read(file)
-    const entry = store[id]
-    if (!entry) return
-    entry.themes = {
-      ...entry.themes,
-      [name]: theme,
-    }
-    await Filesystem.writeJson(file, store)
   })
 }
 

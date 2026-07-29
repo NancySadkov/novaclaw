@@ -10,7 +10,6 @@ import { testEffect } from "../lib/effect"
 
 const { Plugin } = await import("../../src/plugin/index")
 const { PluginLoader } = await import("../../src/plugin/loader")
-const { readPackageThemes } = await import("../../src/plugin/shared")
 const { EventV2Bridge } = await import("../../src/event-v2-bridge")
 const { Npm } = await import("@novaclaw/core/npm")
 const { TestConfig } = await import("../fixture/config")
@@ -210,47 +209,9 @@ describe("plugin.loader.shared", () => {
     ),
   )
 
-  it.live("rejects v1 plugin that exports server and tui together", () =>
-    withTmp(
-      async (dir) => {
-        const file = path.join(dir, "plugin.ts")
-        const mark = path.join(dir, "called.txt")
-        await Bun.write(
-          file,
-          [
-            "export default {",
-            '  id: "demo.mixed",',
-            "  server: async () => {",
-            `    await Bun.write(${JSON.stringify(mark)}, "server")`,
-            "    return {}",
-            "  },",
-            "  tui: async () => {},",
-            "}",
-            "",
-          ].join("\n"),
-        )
-
-        await Bun.write(
-          path.join(dir, "novaclaw.json"),
-          JSON.stringify({ plugin: [pathToFileURL(file).href] }, null, 2),
-        )
-
-        return { mark }
-      },
-      (tmp) =>
-        Effect.gen(function* () {
-          yield* load(tmp.path)
-          const called = yield* Effect.promise(() =>
-            Bun.file(tmp.extra.mark)
-              .text()
-              .then(() => true)
-              .catch(() => false),
-          )
-
-          expect(called).toBe(false)
-        }),
-    ),
-  )
+  // "rejects v1 plugin that exports server and tui together" is deleted with the tui plugin kind:
+  // the rule it pinned (server() and tui() are mutually exclusive) has no second half left to
+  // exclude, and a stray `tui` key on a v1 module is now just an ignored property.
 
   it.live("resolves npm plugin specs with explicit and default versions", () =>
     withTmp(
@@ -312,7 +273,6 @@ describe("plugin.loader.shared", () => {
               exports: {
                 ".": "./index.js",
                 "./server": "./server.js",
-                "./tui": "./tui.js",
               },
             },
             null,
@@ -333,8 +293,6 @@ describe("plugin.loader.shared", () => {
             "",
           ].join("\n"),
         )
-        await Bun.write(path.join(mod, "tui.js"), "export default {}\n")
-
         await Bun.write(path.join(dir, "novaclaw.json"), JSON.stringify({ plugin: ["acme-plugin@1.0.0"] }, null, 2))
 
         return {
@@ -910,46 +868,13 @@ export default {
     ),
   )
 
-  it.live("reads oc-themes from package manifest", () =>
-    withTmp(
-      async (dir) => {
-        const mod = path.join(dir, "mod")
-        await fs.mkdir(path.join(mod, "themes"), { recursive: true })
-        await Bun.write(
-          path.join(mod, "package.json"),
-          JSON.stringify(
-            {
-              name: "acme-plugin",
-              version: "1.0.0",
-              "oc-themes": ["themes/one.json", "./themes/one.json", "themes/two.json"],
-            },
-            null,
-            2,
-          ),
-        )
-
-        return { mod }
-      },
-      (tmp) =>
-        Effect.gen(function* () {
-          const file = path.join(tmp.extra.mod, "package.json")
-          const fsys = yield* FSUtil.Service
-          const json = (yield* fsys.readJson(file)) as Record<string, unknown>
-          const list = readPackageThemes("acme-plugin", {
-            dir: tmp.extra.mod,
-            pkg: file,
-            json,
-          })
-
-          expect(list).toEqual([
-            FSUtil.resolve(path.join(tmp.extra.mod, "themes", "one.json")),
-            FSUtil.resolve(path.join(tmp.extra.mod, "themes", "two.json")),
-          ])
-        }),
-    ),
-  )
-
-  it.live("handles no-entrypoint tui packages via missing callback", () =>
+  // Four cases died with the TUI: "reads oc-themes from package manifest", "handles no-entrypoint
+  // tui packages via missing callback", "passes package metadata for entrypoint tui plugins" and
+  // "rejects oc-themes path traversal". They exercised `readPackageThemes` and `loadExternal`'s
+  // `missing` finisher, both of which existed only to hand theme files to the deleted TUI runtime
+  // (`src/plugin/tui/runtime.ts`, removed in caa938453). The case below pins that a package with no
+  // server entrypoint now yields nothing at all instead of a theme-bearing result.
+  it.live("skips a package that exposes no server entrypoint", () =>
     withTmp(
       async (dir) => {
         const mod = path.join(dir, "mods", "acme-plugin")
@@ -960,12 +885,14 @@ export default {
             {
               name: "acme-plugin",
               version: "1.0.0",
+              exports: { "./tui": "./tui.js" },
               "oc-themes": ["themes/night.json"],
             },
             null,
             2,
           ),
         )
+        await Bun.write(path.join(mod, "tui.js"), "export default {}\n")
         await Bun.write(path.join(mod, "themes", "night.json"), "{}\n")
         return { mod }
       },
@@ -984,17 +911,6 @@ export default {
                     source: tmp.path,
                   },
                 ],
-                kind: "tui",
-                missing: async (item) => {
-                  if (!item.pkg) return
-                  const themes = readPackageThemes(item.spec, item.pkg)
-                  if (!themes.length) return
-                  return {
-                    spec: item.spec,
-                    target: item.target,
-                    themes,
-                  }
-                },
                 report: {
                   missing(_candidate, _retry, message) {
                     missing.push(message)
@@ -1003,103 +919,11 @@ export default {
               }),
             )
 
-            expect(loaded).toEqual([
-              {
-                spec: "acme-plugin@1.0.0",
-                target: tmp.extra.mod,
-                themes: [FSUtil.resolve(path.join(tmp.extra.mod, "themes", "night.json"))],
-              },
-            ])
-            expect(missing).toHaveLength(0)
+            expect(loaded).toEqual([])
+            expect(missing).toEqual(["Plugin acme-plugin@1.0.0 does not expose a server entrypoint"])
           } finally {
             install.mockRestore()
           }
-        }),
-    ),
-  )
-
-  it.live("passes package metadata for entrypoint tui plugins", () =>
-    withTmp(
-      async (dir) => {
-        const mod = path.join(dir, "mods", "acme-plugin")
-        await fs.mkdir(path.join(mod, "themes"), { recursive: true })
-        await Bun.write(
-          path.join(mod, "package.json"),
-          JSON.stringify(
-            {
-              name: "acme-plugin",
-              version: "1.0.0",
-              exports: {
-                "./tui": "./tui.js",
-              },
-              "oc-themes": ["themes/night.json"],
-            },
-            null,
-            2,
-          ),
-        )
-        await Bun.write(path.join(mod, "tui.js"), 'export default { id: "demo", tui: async () => {} }\n')
-        await Bun.write(path.join(mod, "themes", "night.json"), "{}\n")
-        return { mod }
-      },
-      (tmp) =>
-        Effect.gen(function* () {
-          const install = spyOn(Npm, "add").mockResolvedValue({ directory: tmp.extra.mod, entrypoint: undefined })
-
-          try {
-            const loaded = yield* Effect.promise(() =>
-              PluginLoader.loadExternal({
-                items: [
-                  {
-                    spec: "acme-plugin@1.0.0",
-                    scope: "local" as const,
-                    source: tmp.path,
-                  },
-                ],
-                kind: "tui",
-                finish: async (item) => {
-                  if (!item.pkg) return
-                  return {
-                    spec: item.spec,
-                    themes: readPackageThemes(item.spec, item.pkg),
-                  }
-                },
-              }),
-            )
-
-            expect(loaded).toEqual([
-              {
-                spec: "acme-plugin@1.0.0",
-                themes: [FSUtil.resolve(path.join(tmp.extra.mod, "themes", "night.json"))],
-              },
-            ])
-          } finally {
-            install.mockRestore()
-          }
-        }),
-    ),
-  )
-
-  it.live("rejects oc-themes path traversal", () =>
-    withTmp(
-      async (dir) => {
-        const mod = path.join(dir, "mod")
-        await fs.mkdir(mod, { recursive: true })
-        const file = path.join(mod, "package.json")
-        await Bun.write(file, JSON.stringify({ name: "acme", "oc-themes": ["../escape.json"] }, null, 2))
-        return { mod, file }
-      },
-      (tmp) =>
-        Effect.gen(function* () {
-          const fsys = yield* FSUtil.Service
-          const json = (yield* fsys.readJson(tmp.extra.file)) as Record<string, unknown>
-          expect(() =>
-            readPackageThemes("acme", {
-              dir: tmp.extra.mod,
-              pkg: tmp.extra.file,
-              json,
-            }),
-          ).toThrow("outside plugin directory")
         }),
     ),
   )
@@ -1127,7 +951,6 @@ export default {
                 scope: "local" as const,
                 source: tmp.path,
               })),
-              kind: "tui",
               wait: async () => {
                 wait += 1
                 await Bun.write(path.join(tmp.extra.a, "index.ts"), "export default {}\n")
@@ -1161,7 +984,7 @@ export default {
         await fs.mkdir(mod, { recursive: true })
         await Bun.write(
           path.join(mod, "package.json"),
-          JSON.stringify({ exports: { "./tui": "../outside.js" } }, null, 2),
+          JSON.stringify({ exports: { "./server": "../outside.js" } }, null, 2),
         )
         return { spec }
       },
@@ -1179,7 +1002,6 @@ export default {
                   source: tmp.path,
                 },
               ],
-              kind: "tui",
               wait: async () => {
                 wait += 1
               },
@@ -1220,7 +1042,6 @@ export default {
                   source: tmp.path,
                 },
               ],
-              kind: "tui",
               wait: async () => {
                 wait += 1
               },
@@ -1253,7 +1074,6 @@ export default {
                 source: "test",
               },
             ],
-            kind: "tui",
             wait: async () => {
               wait += 1
             },

@@ -56,7 +56,7 @@ function deps(msg: Msg): PlugDeps {
       await Filesystem.write(file, text)
     },
     exists: (file) => Filesystem.exists(file),
-    files: (dir, name) => [path.join(dir, `${name}.jsonc`), path.join(dir, `${name}.json`)],
+    files: (dir) => [path.join(dir, "novaclaw.jsonc"), path.join(dir, "novaclaw.json")],
     global: msg.globalDir ?? path.join(msg.dir, ".global"),
   }
 }

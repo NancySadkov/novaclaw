@@ -23,13 +23,11 @@ function run(msg: Msg) {
   })
 }
 
-async function plugin(dir: string, kinds: Array<"server" | "tui">) {
+async function plugin(dir: string, kinds: Array<"server">) {
   const p = path.join(dir, "plugin")
   const server = kinds.includes("server")
-  const tui = kinds.includes("tui")
   const exports: Record<string, string> = {}
   if (server) exports["./server"] = "./server.js"
-  if (tui) exports["./tui"] = "./tui.js"
   await fs.mkdir(p, { recursive: true })
   await Bun.write(
     path.join(p, "package.json"),
@@ -86,30 +84,8 @@ describe("plugin.install.concurrent", () => {
     expectPlugins(cfg.plugin, all)
   }, 25_000)
 
-  test("serializes concurrent server+tui config updates across processes", async () => {
-    await using tmp = await tmpdir()
-    const target = await plugin(tmp.path, ["server", "tui"])
-    const all = mods("mod-both", 6)
-
-    const out = await Promise.all(
-      all.map((mod) =>
-        run({
-          dir: tmp.path,
-          target,
-          mod,
-          holdMs: 30,
-        }),
-      ),
-    )
-
-    expect(out.map((x) => x.code)).toEqual(Array.from({ length: all.length }, () => 0))
-    expect(out.map((x) => x.stderr.toString()).filter(Boolean)).toEqual([])
-
-    const server = await read(path.join(tmp.path, ".novaclaw", "novaclaw.jsonc"))
-    const tui = await read(path.join(tmp.path, ".novaclaw", "tui.jsonc"))
-    expectPlugins(server.plugin, all)
-    expectPlugins(tui.plugin, all)
-  }, 25_000)
+  // The "server+tui" variant of the case above is deleted with the tui target: a plugin now has
+  // exactly one config file, so it would have been a byte-for-byte duplicate of this one.
 
   test("preserves updates when existing config uses .json", async () => {
     await using tmp = await tmpdir()

@@ -28,7 +28,7 @@ export type PlugDeps = {
   readText: (file: string) => Promise<string>
   write: (file: string, text: string) => Promise<void>
   exists: (file: string) => Promise<boolean>
-  files: (dir: string, name: "novaclaw" | "tui") => string[]
+  files: (dir: string) => string[]
   global: string
 }
 
@@ -57,7 +57,7 @@ const defaultPlugDeps: PlugDeps = {
     await Filesystem.write(file, text)
   },
   exists: (file) => Filesystem.exists(file),
-  files: (dir, name) => ConfigPaths.fileInDirectory(dir, name),
+  files: (dir) => ConfigPaths.fileInDirectory(dir, "novaclaw"),
   global: Global.Path.config,
 }
 
@@ -112,12 +112,10 @@ export function createPlugTask(input: PlugInput, dep: PlugDeps = defaultPlugDeps
         return false
       }
 
-      if (manifest.code === "manifest_no_targets") {
-        inspect.stop("No plugin targets found", 1)
-        dep.log.error(`"${mod}" does not expose plugin entrypoints in package.json`)
-        dep.log.info(
-          'Expected one of: exports["./tui"], exports["./server"], package.json main for server, or package.json["oc-themes"] for tui themes.',
-        )
+      if (manifest.code === "manifest_no_target") {
+        inspect.stop("No plugin target found", 1)
+        dep.log.error(`"${mod}" does not expose a plugin entrypoint in package.json`)
+        dep.log.info('Expected exports["./server"], or a package.json "main".')
         return false
       }
 
@@ -125,16 +123,14 @@ export function createPlugTask(input: PlugInput, dep: PlugDeps = defaultPlugDeps
       return false
     }
 
-    inspect.stop(
-      `Detected ${manifest.targets.map((item) => item.kind).join(" + ")} target${manifest.targets.length === 1 ? "" : "s"}`,
-    )
+    inspect.stop("Detected server target")
 
     const patch = dep.spinner()
     patch.start("Updating plugin config...")
     const out = await patchPluginConfig(
       {
         spec: mod,
-        targets: manifest.targets,
+        target: manifest.target,
         force,
         global,
         vcs: ctx.vcs,
@@ -146,7 +142,7 @@ export function createPlugTask(input: PlugInput, dep: PlugDeps = defaultPlugDeps
     )
     if (!out.ok) {
       if (out.code === "invalid_json") {
-        patch.stop(`Failed updating ${out.kind} config`, 1)
+        patch.stop("Failed updating plugin config", 1)
         dep.log.error(`Invalid JSON in ${out.file} (${out.parse} at line ${out.line}, column ${out.col})`)
         dep.log.info("Fix the config file and run the command again.")
         return false
@@ -157,16 +153,12 @@ export function createPlugTask(input: PlugInput, dep: PlugDeps = defaultPlugDeps
       return false
     }
     patch.stop("Plugin config updated")
-    for (const item of out.items) {
-      if (item.mode === "noop") {
-        dep.log.info(`Already configured in ${item.file}`)
-        continue
-      }
-      if (item.mode === "replace") {
-        dep.log.info(`Replaced in ${item.file}`)
-        continue
-      }
-      dep.log.info(`Added to ${item.file}`)
+    if (out.item.mode === "noop") {
+      dep.log.info(`Already configured in ${out.item.file}`)
+    } else if (out.item.mode === "replace") {
+      dep.log.info(`Replaced in ${out.item.file}`)
+    } else {
+      dep.log.info(`Added to ${out.item.file}`)
     }
 
     dep.log.success(`Installed ${mod}`)

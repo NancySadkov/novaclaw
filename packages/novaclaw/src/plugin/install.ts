@@ -13,13 +13,14 @@ import { Filesystem } from "@/util/filesystem"
 import { Flock } from "@novaclaw/core/util/flock"
 import { isRecord } from "@/util/record"
 
-import { parsePluginSpecifier, readPackageThemes, readPluginPackage, resolvePluginTarget } from "./shared"
+import { parsePluginSpecifier, readPluginPackage, resolvePluginTarget } from "./shared"
 
 type Mode = "noop" | "add" | "replace"
-type Kind = "server" | "tui"
 
+// A plugin has exactly one target — the server entrypoint. (It used to be a `kind` union with a
+// second `tui` arm; the terminal UI it served was deleted, and nothing ever read the `tui.jsonc`
+// the arm wrote.)
 export type Target = {
-  kind: Kind
   opts?: Record<string, unknown>
 }
 
@@ -31,12 +32,12 @@ export type PatchDeps = {
   readText: (file: string) => Promise<string>
   write: (file: string, text: string) => Promise<void>
   exists: (file: string) => Promise<boolean>
-  files: (dir: string, name: "novaclaw" | "tui") => string[]
+  files: (dir: string) => string[]
 }
 
 export type PatchInput = {
   spec: string
-  targets: Target[]
+  target: Target
   force?: boolean
   global?: boolean
   vcs?: string
@@ -57,23 +58,22 @@ type Err<C extends string, T> = {
 export type InstallResult = Ok<{ target: string }> | Err<"install_failed", { error: unknown }>
 
 export type ManifestResult =
-  | Ok<{ targets: Target[] }>
+  | Ok<{ target: Target }>
   | Err<"manifest_read_failed", { file: string; error: unknown }>
-  | Err<"manifest_no_targets", { file: string }>
+  | Err<"manifest_no_target", { file: string }>
 
 export type PatchItem = {
-  kind: Kind
   mode: Mode
   file: string
 }
 
 type PatchErr =
-  | Err<"invalid_json", { kind: Kind; file: string; line: number; col: number; parse: string }>
-  | Err<"patch_failed", { kind: Kind; error: unknown }>
+  | Err<"invalid_json", { file: string; line: number; col: number; parse: string }>
+  | Err<"patch_failed", { error: unknown }>
 
 type PatchOne = Ok<{ item: PatchItem }> | PatchErr
 
-export type PatchResult = Ok<{ dir: string; items: PatchItem[] }> | (PatchErr & { dir: string })
+export type PatchResult = Ok<{ dir: string; item: PatchItem }> | (PatchErr & { dir: string })
 
 const defaultInstallDeps: InstallDeps = {
   resolve: (spec) => resolvePluginTarget(spec),
@@ -85,7 +85,7 @@ const defaultPatchDeps: PatchDeps = {
     await Filesystem.write(file, text)
   },
   exists: (file) => Filesystem.exists(file),
-  files: (dir, name) => ConfigPaths.fileInDirectory(dir, name),
+  files: (dir) => ConfigPaths.fileInDirectory(dir, "novaclaw"),
 }
 
 function pluginSpec(item: unknown) {
@@ -125,10 +125,10 @@ function exportOptions(value: unknown): Record<string, unknown> | undefined {
   return config
 }
 
-function exportTarget(pkg: Record<string, unknown>, kind: Kind) {
+function exportTarget(pkg: Record<string, unknown>) {
   const exports = pkg.exports
   if (!isRecord(exports)) return
-  const value = exports[`./${kind}`]
+  const value = exports["./server"]
   const entry = exportValue(value)
   if (!entry) return
   return {
@@ -142,27 +142,10 @@ function hasMainTarget(pkg: Record<string, unknown>) {
   return Boolean(main.trim())
 }
 
-function packageTargets(pkg: { json: Record<string, unknown>; dir: string; pkg: string }) {
-  const spec =
-    typeof pkg.json.name === "string" && pkg.json.name.trim().length > 0 ? pkg.json.name.trim() : path.basename(pkg.dir)
-  const targets: Target[] = []
-  const server = exportTarget(pkg.json, "server")
-  if (server) {
-    targets.push({ kind: "server", opts: server.opts })
-  } else if (hasMainTarget(pkg.json)) {
-    targets.push({ kind: "server" })
-  }
-
-  const tui = exportTarget(pkg.json, "tui")
-  if (tui) {
-    targets.push({ kind: "tui", opts: tui.opts })
-  }
-
-  if (!targets.some((item) => item.kind === "tui") && readPackageThemes(spec, pkg).length) {
-    targets.push({ kind: "tui" })
-  }
-
-  return targets
+function packageTarget(pkg: { json: Record<string, unknown> }): Target | undefined {
+  const server = exportTarget(pkg.json)
+  if (server) return { opts: server.opts }
+  if (hasMainTarget(pkg.json)) return {}
 }
 
 function patch(text: string, path: Array<string | number>, value: unknown, insert = false) {
@@ -300,33 +283,33 @@ export async function readPluginManifest(target: string): Promise<ManifestResult
     }
   }
 
-  const targets = await Promise.resolve()
-    .then(() => packageTargets(pkg.item))
+  const hit = await Promise.resolve()
+    .then(() => packageTarget(pkg.item))
     .then(
       (item) => ({ ok: true as const, item }),
       (error: unknown) => ({ ok: false as const, error }),
     )
 
-  if (!targets.ok) {
+  if (!hit.ok) {
     return {
       ok: false,
       code: "manifest_read_failed",
       file: pkg.item.pkg,
-      error: targets.error,
+      error: hit.error,
     }
   }
 
-  if (!targets.item.length) {
+  if (!hit.item) {
     return {
       ok: false,
-      code: "manifest_no_targets",
+      code: "manifest_no_target",
       file: pkg.item.pkg,
     }
   }
 
   return {
     ok: true,
-    targets: targets.item,
+    target: hit.item,
   }
 }
 
@@ -337,16 +320,10 @@ function patchDir(input: PatchInput) {
   return path.join(root, ".novaclaw")
 }
 
-function patchName(kind: Kind): "novaclaw" | "tui" {
-  if (kind === "server") return "novaclaw"
-  return "tui"
-}
-
 async function patchOne(dir: string, target: Target, spec: string, force: boolean, dep: PatchDeps): Promise<PatchOne> {
-  const name = patchName(target.kind)
-  await using _ = await Flock.acquire(`plug-config:${Filesystem.resolve(path.join(dir, name))}`)
+  await using _ = await Flock.acquire(`plug-config:${Filesystem.resolve(path.join(dir, "novaclaw"))}`)
 
-  const files = dep.files(dir, name)
+  const files = dep.files(dir)
   let cfg = files[0]
   for (const file of files) {
     if (!(await dep.exists(file))) continue
@@ -362,7 +339,6 @@ async function patchOne(dir: string, target: Target, spec: string, force: boolea
     return {
       ok: false,
       code: "patch_failed",
-      kind: target.kind,
       error: src,
     }
   }
@@ -376,7 +352,6 @@ async function patchOne(dir: string, target: Target, spec: string, force: boolea
     return {
       ok: false,
       code: "invalid_json",
-      kind: target.kind,
       file: cfg,
       line: lines.length,
       col: lines[lines.length - 1].length + 1,
@@ -391,7 +366,6 @@ async function patchOne(dir: string, target: Target, spec: string, force: boolea
     return {
       ok: true,
       item: {
-        kind: target.kind,
         mode: out.mode,
         file: cfg,
       },
@@ -403,7 +377,6 @@ async function patchOne(dir: string, target: Target, spec: string, force: boolea
     return {
       ok: false,
       code: "patch_failed",
-      kind: target.kind,
       error: write,
     }
   }
@@ -411,7 +384,6 @@ async function patchOne(dir: string, target: Target, spec: string, force: boolea
   return {
     ok: true,
     item: {
-      kind: target.kind,
       mode: out.mode,
       file: cfg,
     },
@@ -420,20 +392,16 @@ async function patchOne(dir: string, target: Target, spec: string, force: boolea
 
 export async function patchPluginConfig(input: PatchInput, dep: PatchDeps = defaultPatchDeps): Promise<PatchResult> {
   const dir = patchDir(input)
-  const items: PatchItem[] = []
-  for (const target of input.targets) {
-    const hit = await patchOne(dir, target, input.spec, Boolean(input.force), dep)
-    if (!hit.ok) {
-      return {
-        ...hit,
-        dir,
-      }
+  const hit = await patchOne(dir, input.target, input.spec, Boolean(input.force), dep)
+  if (!hit.ok) {
+    return {
+      ...hit,
+      dir,
     }
-    items.push(hit.item)
   }
   return {
     ok: true,
     dir,
-    items,
+    item: hit.item,
   }
 }

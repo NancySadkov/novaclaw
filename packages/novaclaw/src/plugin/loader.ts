@@ -4,7 +4,6 @@ import {
   isDeprecatedPlugin,
   pluginSource,
   resolvePluginTarget,
-  type PluginKind,
   type PluginPackage,
   type PluginSource,
 } from "./shared"
@@ -28,7 +27,7 @@ export namespace PluginLoader {
     pkg?: PluginPackage
   }
 
-  // A plugin target we could inspect, but which does not expose the requested kind of entrypoint.
+  // A plugin target we could inspect, but which does not expose a server entrypoint.
   export type Missing = Plan & {
     source: PluginSource
     target: string
@@ -85,7 +84,6 @@ export namespace PluginLoader {
   // and compatibility checks so callers can report the exact reason a plugin was skipped.
   export async function resolve(
     plan: Plan,
-    kind: PluginKind,
   ): Promise<
     | { ok: true; value: Resolved }
     | { ok: false; stage: "missing"; value: Missing }
@@ -100,10 +98,10 @@ export namespace PluginLoader {
     }
     if (!target) return { ok: false, stage: "install", error: new Error(`Plugin ${plan.spec} target is empty`) }
 
-    // Then inspect the target for the requested server/tui entrypoint.
+    // Then inspect the target for its server entrypoint.
     let base
     try {
-      base = await createPluginEntry(plan.spec, target, kind)
+      base = await createPluginEntry(plan.spec, target)
     } catch (error) {
       return { ok: false, stage: "entry", error }
     }
@@ -116,7 +114,7 @@ export namespace PluginLoader {
           source: base.source,
           target: base.target,
           pkg: base.pkg,
-          message: `Plugin ${plan.spec} does not expose a ${kind} entrypoint`,
+          message: `Plugin ${plan.spec} does not expose a server entrypoint`,
         },
       }
 
@@ -148,10 +146,8 @@ export namespace PluginLoader {
   // import the module, and finally let the caller transform the loaded plugin into any result type.
   async function attempt<R>(
     candidate: Candidate,
-    kind: PluginKind,
     retry: boolean,
     finish: ((load: Loaded, origin: ConfigPlugin.Origin, retry: boolean) => Promise<R | undefined>) | undefined,
-    missing: ((value: Missing, origin: ConfigPlugin.Origin, retry: boolean) => Promise<R | undefined>) | undefined,
     report: Report | undefined,
   ): Promise<AttemptResult<R>> {
     const plan = candidate.plan
@@ -162,15 +158,9 @@ export namespace PluginLoader {
 
     report?.start?.(candidate, retry)
 
-    const resolved = await resolve(plan, kind)
+    const resolved = await resolve(plan)
     if (!resolved.ok) {
       if (resolved.stage === "missing") {
-        // Missing entrypoints are handled separately so callers can still inspect package metadata,
-        // for example to load theme files from a tui plugin package that has no code entrypoint.
-        if (missing) {
-          const value = await missing(resolved.value, candidate.origin, retry)
-          if (value !== undefined) return { value, retry: false }
-        }
         report?.missing?.(candidate, retry, resolved.value.message, resolved.value)
         return { retry: false }
       }
@@ -193,10 +183,8 @@ export namespace PluginLoader {
 
   type Input<R> = {
     items: ConfigPlugin.Origin[]
-    kind: PluginKind
     wait?: () => Promise<void>
     finish?: (load: Loaded, origin: ConfigPlugin.Origin, retry: boolean) => Promise<R | undefined>
-    missing?: (value: Missing, origin: ConfigPlugin.Origin, retry: boolean) => Promise<R | undefined>
     report?: Report
   }
 
@@ -209,7 +197,7 @@ export namespace PluginLoader {
     const candidates = input.items.map((origin) => ({ origin, plan: plan(origin.spec) }))
     const list: Array<Promise<AttemptResult<R>>> = []
     for (const candidate of candidates) {
-      list.push(attempt(candidate, input.kind, false, input.finish, input.missing, input.report))
+      list.push(attempt(candidate, false, input.finish, input.report))
     }
     const out = await Promise.all(list)
     if (input.wait) {
@@ -225,7 +213,7 @@ export namespace PluginLoader {
         if (!candidate || pluginSource(candidate.plan.spec) !== "file") continue
         deps ??= input.wait()
         await deps
-        out[i] = await attempt(candidate, input.kind, true, input.finish, input.missing, input.report)
+        out[i] = await attempt(candidate, true, input.finish, input.report)
       }
     }
 
