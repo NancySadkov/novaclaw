@@ -152,11 +152,11 @@ export async function run(cmd: string[], opts: RunOptions = {}): Promise<Result>
  * the ROOT, which orphans every grandchild. Orphans on this box accumulate at GBs each and once
  * hard-crashed the machine (AGENTS.md → Known pitfalls #8).
  *
- * `packages/sdk/js/src/process.ts` still carries its own copy and is the ONE sanctioned duplicate:
- * the SDK lists a single runtime dependency on purpose, and pulling `@novaclaw/core` in would drag
- * drizzle, the sqlite driver and the whole config layer into a deliberately thin package. That
- * exception is ledgered by name in `packages/core/test/kill-tree-ledger.test.ts` — if the SDK copy is
- * ever changed, change it there and leave this one alone.
+ * There is no longer a sanctioned duplicate. This used to name `packages/sdk/js/src/process.ts` as
+ * one, on the grounds that the SDK carried a runtime dependency on purpose — a claim that contradicted
+ * todo.md's standing decision (*"`@novaclaw/sdk` carries ZERO runtime dependencies"*) and lost to it on
+ * 2026-07-29: the SDK's `v2/server.ts` was deleted, so the SDK spawns nothing and its copy went with
+ * it. The live ledger is `packages/core/test/kill-tree-ledger.test.ts`, and it can only shrink.
  */
 export async function stop(proc: ChildProcess) {
   await Shell.killTree(proc, { exited: () => proc.exitCode !== null || proc.signalCode !== null })

@@ -132,14 +132,13 @@ const LEDGER = new Map<string, string>([
       "can take it without violating §0.7.2 (jh/imports.test.ts). Re-exported as `Shell.killTree` / " +
       "`Shell.killTreeSync`. Behaviour is asserted against real process trees in shell-kill-tree.test.ts.",
   ],
-  [
-    "packages/sdk/js/src/process.ts",
-    "The ONE sanctioned duplicate (coordinator ruling, 2026-07-28). `packages/sdk/js` declares exactly " +
-      "one runtime dependency (`cross-spawn`) on purpose; importing `@novaclaw/core` would drag drizzle, " +
-      "the sqlite driver and the whole config layer into a deliberately thin package — a real payload " +
-      "regression against the standing 'keep the SDK thin / no npm' decision. Keep it in sync by hand " +
-      "with kill-tree.ts, and change it HERE first.",
-  ],
+  // `packages/sdk/js/src/process.ts` was ledgered here as "the ONE sanctioned duplicate (coordinator
+  // ruling, 2026-07-28)", justified by the SDK declaring `cross-spawn` "on purpose". That ruling was
+  // in direct conflict with todo.md's standing decision of the SAME day — "`@novaclaw/sdk` carries
+  // ZERO runtime dependencies" — which is the binding one. Resolved 2026-07-29 by deleting the thing
+  // both were arguing about: `src/v2/server.ts` (the only importer of `process.ts`) is gone, so the
+  // SDK spawns nothing, `process.ts` went with it, and the entry was forced out of this ledger by the
+  // fix — which is exactly what a shrink-only ledger is for.
   [
     "packages/desktop/scripts/smoke-artifact.ts",
     "`packages/desktop` deliberately declares NO `@novaclaw/core` dependency — its own scripts/utils.ts " +
@@ -154,8 +153,9 @@ const LEDGER = new Map<string, string>([
     "script/test.ts",
     "`reapOrphans` — the test harness's own orphan reaper, and the reason a wall-clock-killed unit no " +
       "longer poisons the next one (a leaked bun child holding 4.89 GB, 2026-07-27). Three reasons it " +
-      "stays: (a) `script/` is not a workspace package (no package.json — only bunfig.toml), so " +
-      "`@novaclaw/core` would be an undeclared dependency resolved only by the root hoist; (b) the " +
+      "stays: (a) `script/` declares only dev dependencies (it became the `@novaclaw/repo-script` " +
+      "workspace on 2026-07-29 purely so it gets typechecked), so `@novaclaw/core` would be a new " +
+      "runtime edge from the harness into the kernel — which is reason (b) restated; (b) the " +
       "harness must not import the code it tests — a broken `core` would then crash `bun run test` at " +
       "import instead of reporting `core FAIL`; (c) it is synchronous throughout, inside a spawnSync " +
       "loop. Breaking it would make every later verification in this program untrustworthy.",
@@ -200,7 +200,6 @@ describe("the sweep", () => {
       "packages/novaclaw/src/util/process.ts",
       "packages/app/scripts/dev-with-backend.ts",
       "packages/desktop/scripts/smoke-artifact.ts",
-      "packages/sdk/js/src/process.ts",
       "script/test.ts",
     ])
       expect(names, `${name} is not in the sweep`).toContain(name)
