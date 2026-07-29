@@ -24271,6 +24271,12 @@
           },
           "message": {
             "type": "string"
+          },
+          "_tag": {
+            "type": "string"
+          },
+          "retryable": {
+            "type": "boolean"
           }
         },
         "required": ["type", "message"],

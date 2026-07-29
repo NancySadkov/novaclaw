@@ -15,10 +15,67 @@ export const ID = Schema.String.check(Schema.isStartsWith("msg_")).pipe(
 )
 export type ID = typeof ID.Type
 
+/**
+ * The taxonomy of a session fault, as it travels the wire.
+ *
+ * Ten arms mirror `LLMErrorReason` (`packages/llm/src/schema/errors.ts`) one-for-one; the last
+ * two are faults the session runner raises itself rather than receiving from a provider. This
+ * tuple is the CLOSED vocabulary — every member needs display code and (later) an i18n key, so
+ * ruling 10's "a thing needing new code stays a closed compiled set" applies to the *set*, and
+ * `sessionErrorArms` in `session-ui` is pinned against it by test.
+ *
+ * ⚠️ The wire FIELD is deliberately `Schema.String`, not `Schema.Literals(ErrorTags)`. A closed
+ * literal there would make a row written by a newer instance — or replayed from a P2P peer one
+ * version ahead — fail decode *as a whole event*, losing the message too. That is strictly worse
+ * than an unrecognised tag, which every reader must already fall back on (see `UnknownError`).
+ */
+export const ErrorTags = [
+  "InvalidRequest",
+  "NoRoute",
+  "Authentication",
+  "RateLimit",
+  "QuotaExceeded",
+  "ContentPolicy",
+  "ProviderInternal",
+  "Transport",
+  "InvalidProviderOutput",
+  "UnknownProvider",
+  // Raised by the runner, not by a provider.
+  "Interrupted",
+  "ToolFailure",
+] as const
+export type ErrorTag = (typeof ErrorTags)[number]
+
+/**
+ * A session fault as the transcript, the CLI and any other reader see it.
+ *
+ * `message` is the ONE required field and stays the raw, honest text — it is what a model reads
+ * back on the next turn (`toLLMMessages` replays it as "[Previous turn failed …]"), so it must
+ * keep the diagnostic detail. `_tag` and `retryable` are ADDITIONAL structure, never a
+ * replacement: they let a display surface pick a translated sentence and decide whether to offer
+ * "retry" instead of pasting transport noise into a conversation.
+ *
+ * **Both are optional, and that is load-bearing.** Every session record persisted before this
+ * field existed holds `{ type:"unknown", message }`; it decodes unchanged, and a reader that
+ * treats an absent tag as "unknown fault, use the message" renders it exactly as it did before.
+ * That is why this is NOT a durable-manifest version bump: `Event.durable` keys rows by
+ * `type.version`, so bumping would fork the manifest and — if the old definition were ever
+ * dropped — retire every old row (`event.test.ts`: "skips durable rows whose type has been
+ * retired from the manifest"). An added optional field is backward *and* forward compatible
+ * under the same version.
+ *
+ * `retryable` means "retrying this same turn can plausibly succeed", which is the USER's
+ * question, not the schema-level `LLMErrorReason.retryable` getter — those two disagree on
+ * `Transport` on purpose (see `session/runner/provider-retry.ts`: a local vLLM that is down or
+ * restarting is the common case and IS worth retrying). A producer must fill this from the
+ * runner's `ProviderRetry.isTransientProviderFailure` verdict, not from `LLMError.retryable`.
+ */
 export interface UnknownError extends Schema.Schema.Type<typeof UnknownError> {}
 export const UnknownError = Schema.Struct({
   type: Schema.Literal("unknown"),
   message: Schema.String,
+  _tag: Schema.String.pipe(optional),
+  retryable: Schema.Boolean.pipe(optional),
 }).annotate({ identifier: "Session.Error.Unknown" })
 
 const Base = {

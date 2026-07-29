@@ -573,7 +573,12 @@ export const layer = Layer.effect(
             timestamp: yield* DateTime.now,
             assistantMessageID: message.id,
             callID: tool.id,
-            error: { type: "unknown", message: "Tool execution interrupted" },
+            // The tag is the STRUCTURAL answer to "was this a fault or a stop?". Without it the
+            // transcript had to sniff `/interrupted/i` out of the sentence to decide between a
+            // calm "Interrupted" divider and a red error box — which is unlocalisable, and wrong
+            // the moment a provider's own message happens to contain the word. `message` stays
+            // exactly as it was: the tag is additional structure, never a replacement.
+            error: { type: "unknown", _tag: "Interrupted", message: "Tool execution interrupted" },
             provider: {
               executed: tool.provider?.executed === true,
               ...(tool.provider?.metadata === undefined ? {} : { metadata: tool.provider.metadata }),
@@ -606,10 +611,11 @@ export const layer = Layer.effect(
     const continueAfterOverflowCompaction = (step: number) =>
       new TurnTransitionError({ _tag: "ContinueAfterOverflowCompaction", step })
 
-    const loadSystemContext = (agent: AgentV2.Selection) =>
-      Effect.all([systemContext.load(), skillGuidance.load(agent), referenceGuidance.load(), adhocGuidance.load()], {
-        concurrency: "unbounded",
-      }).pipe(Effect.map(SystemContext.combine))
+    const loadSystemContext = (agent: AgentV2.Selection, sessionID: SessionSchema.ID) =>
+      Effect.all(
+        [systemContext.load(), skillGuidance.load(agent), referenceGuidance.load(), adhocGuidance.load(sessionID)],
+        { concurrency: "unbounded" },
+      ).pipe(Effect.map(SystemContext.combine))
 
     const runTurnAttempt = Effect.fn("SessionRunner.runTurn")(function* (
       sessionID: SessionSchema.ID,
@@ -650,7 +656,7 @@ export const layer = Layer.effect(
       const agent = yield* agents
         .select(config.agent as typeof session.agent)
         .pipe(Effect.tapError(surfacePreTurnFailure))
-      const initialized = yield* SessionContextEpoch.initialize(db, loadSystemContext(agent), session.id)
+      const initialized = yield* SessionContextEpoch.initialize(db, loadSystemContext(agent, session.id), session.id)
       const toolFibers = yield* FiberSet.make<void, ToolOutputStore.Error>()
       let needsContinuation = false
       let currentStep = step
@@ -666,7 +672,7 @@ export const layer = Layer.effect(
       }
       const system =
         initialized ??
-        (yield* SessionContextEpoch.prepare(db, events, loadSystemContext(agent), session.id).pipe(
+        (yield* SessionContextEpoch.prepare(db, events, loadSystemContext(agent, session.id), session.id).pipe(
           Effect.tapError(surfacePreTurnFailure),
         ))
       const model = yield* models
@@ -874,7 +880,7 @@ export const layer = Layer.effect(
             yield* publish(event)
             if (event.type !== "tool-call" || event.providerExecuted) return
             if (!toolMaterialization) {
-              yield* withPublication(publisher.failUnsettledTools("Tools are disabled after the maximum agent steps"))
+              yield* withPublication(publisher.failUnsettledTools({ message: "Tools are disabled after the maximum agent steps", _tag: "ToolFailure" }))
               return
             }
             needsContinuation = true
@@ -988,14 +994,26 @@ export const layer = Layer.effect(
           if (overflowFailure) yield* publish(overflowFailure)
           const llmFailure = failure instanceof LLMError ? failure : undefined
           if (llmFailure && !publisher.hasProviderError()) {
-            yield* withPublication(publisher.failUnsettledTools("Provider did not return a tool result", true))
-            yield* withPublication(publisher.failAssistant(llmFailure.reason.message))
+            yield* withPublication(
+              publisher.failUnsettledTools({ message: "Provider did not return a tool result", _tag: "ToolFailure" }, true),
+            )
+            // ⚠️ `retryable` is the RUNNER's verdict, not `LLMError.retryable`. The schema getter answers
+            // "does this reason class permit a retry" and says **false** for `Transport` — while the
+            // runner's own retry loop above treats exactly that as transient and retries it. The user's
+            // question is the runner's, so it is the runner's answer that goes on the wire.
+            yield* withPublication(
+              publisher.failAssistant({
+                message: llmFailure.reason.message,
+                _tag: llmFailure.reason._tag,
+                retryable: ProviderRetry.isTransientProviderFailure(llmFailure),
+              }),
+            )
           }
           if (stream._tag === "Failure" && Cause.hasInterrupts(stream.cause)) yield* FiberSet.clear(toolFibers)
           const settled = yield* restore(awaitToolFibers(toolFibers)).pipe(Effect.exit)
           if (settled._tag === "Failure" && isQuestionRejected(settled.cause)) {
             yield* FiberSet.clear(toolFibers)
-            yield* withPublication(publisher.failUnsettledTools("Tool execution interrupted"))
+            yield* withPublication(publisher.failUnsettledTools({ message: "Tool execution interrupted", _tag: "Interrupted", retryable: false }))
             return yield* Effect.interrupt
           }
           if (
@@ -1003,14 +1021,14 @@ export const layer = Layer.effect(
             (settled._tag === "Failure" && Cause.hasInterrupts(settled.cause))
           ) {
             yield* FiberSet.clear(toolFibers)
-            yield* withPublication(publisher.failUnsettledTools("Tool execution interrupted"))
+            yield* withPublication(publisher.failUnsettledTools({ message: "Tool execution interrupted", _tag: "Interrupted", retryable: false }))
             if (publisher.hasActiveAssistant())
-              yield* withPublication(publisher.failAssistant("Provider turn interrupted"))
+              yield* withPublication(publisher.failAssistant({ message: "Provider turn interrupted", _tag: "Interrupted", retryable: false }))
           }
           if (settled._tag === "Failure" && !Cause.hasInterrupts(settled.cause)) {
             const failure = Cause.squash(settled.cause)
             const message = failure instanceof Error ? failure.message : String(failure)
-            yield* withPublication(publisher.failUnsettledTools(`Tool execution failed: ${message}`))
+            yield* withPublication(publisher.failUnsettledTools({ message: `Tool execution failed: ${message}`, _tag: "ToolFailure" }))
           }
           const stepSettlement = publisher.stepSettlement()
           if (stepSettlement && !publisher.hasProviderError()) {
@@ -1059,9 +1077,9 @@ export const layer = Layer.effect(
               })
           }
           if (publisher.hasProviderError())
-            yield* withPublication(publisher.failUnsettledTools("Tool execution interrupted"))
+            yield* withPublication(publisher.failUnsettledTools({ message: "Tool execution interrupted", _tag: "Interrupted", retryable: false }))
           if (stream._tag === "Success" && !publisher.hasProviderError())
-            yield* withPublication(publisher.failUnsettledTools("Provider did not return a tool result", true))
+            yield* withPublication(publisher.failUnsettledTools({ message: "Provider did not return a tool result", _tag: "ToolFailure" }, true))
           if (stream._tag === "Failure") return yield* Effect.failCause(stream.cause)
           if (settled._tag === "Failure" && Cause.hasInterrupts(settled.cause))
             return yield* Effect.failCause(settled.cause)
@@ -1137,8 +1155,8 @@ export const layer = Layer.effect(
       )
       const agent = yield* agents.select(config.agent as typeof session.agent)
       const system =
-        (yield* SessionContextEpoch.initialize(db, loadSystemContext(agent), session.id)) ??
-        (yield* SessionContextEpoch.prepare(db, events, loadSystemContext(agent), session.id))
+        (yield* SessionContextEpoch.initialize(db, loadSystemContext(agent, session.id), session.id)) ??
+        (yield* SessionContextEpoch.prepare(db, events, loadSystemContext(agent, session.id), session.id))
       const model = yield* models.resolve({ ...session, model: config.model as typeof session.model })
       const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)
       // The compactor reads only `generation?.maxTokens` (else the model's own output limit)

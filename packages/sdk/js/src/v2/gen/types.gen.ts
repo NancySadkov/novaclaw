@@ -2157,6 +2157,8 @@ export type SessionMessageToolStateCompleted = {
 export type SessionErrorUnknown = {
   type: "unknown"
   message: string
+  _tag?: string
+  retryable?: boolean
 }
 
 export type SessionMessageToolStateError = {

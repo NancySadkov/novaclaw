@@ -18,6 +18,7 @@ import { Markdown } from "../../components/markdown"
 import { reasoningOpenDefault, toolOpenDefault, type ReasoningFoldMode } from "../reasoning-fold"
 import { BasicToolV2 } from "./basic-tool-v2"
 import { ToolErrorCardV2 } from "./tool-error-card-v2"
+import { sessionErrorDisplay, sessionErrorText } from "./session-error"
 import "./native-transcript.css"
 
 // Level-aware fold modes (UIX residue b / C4). Reasoning and tool cards carry SEPARATE modes so
@@ -277,18 +278,23 @@ function AssistantMessage(props: { message: SessionMessageAssistant }) {
           rows above it already say, and it re-listed build output on every rebuild (`pi.exe` after each
           compile), which buried the actual conversation. The git-changes tab is the surface for "what
           changed" and shows it properly. */}
-      <Show when={props.message.error}>
-        {(err) => (
+      <Show when={props.message.error && sessionErrorDisplay(props.message.error)}>
+        {(fault) => (
           <Show
-            when={!isInterrupted(err().message)}
+            when={fault().kind !== "interrupted"}
             fallback={
               <div data-slot="native-interrupted-divider">
-                <span>Interrupted</span>
+                <span>{fault().headline}</span>
               </div>
             }
           >
+            {/* Block-level children on purpose: the box has no flex/grid rule, so a `div` per
+                line stacks without needing a CSS change. The headline is the translatable
+                sentence; `detail` is the provider's own words, already stripped of machine
+                noise, and is simply absent when there were none. */}
             <div data-slot="native-error" role="alert">
-              {err().message}
+              <div data-slot="native-error-headline">{fault().headline}</div>
+              <Show when={fault().detail}>{(detail) => <div data-slot="native-error-detail">{detail()}</div>}</Show>
             </div>
           </Show>
         )}
@@ -376,7 +382,7 @@ function ToolPart(props: { part: SessionMessageAssistantTool }) {
           <ToolErrorCardV2
             data-slot="native-tool"
             title={meta().title}
-            subtitle={state().error.message}
+            subtitle={sessionErrorText(state().error)}
             suffix={<ToolBody part={props.part} />}
           />
         )}
@@ -638,6 +644,11 @@ function toolInput(state: SessionMessageAssistantTool["state"]): Record<string, 
   return state.status === "pending" ? {} : ((state.input ?? {}) as Record<string, unknown>)
 }
 
+/**
+ * The RAW message, for semantic predicates only (today: "was this question dismissed?"). Display
+ * text comes from `sessionErrorText` — matching on a headline would break the moment that
+ * headline is translated, which is exactly the trap `isInterrupted` used to sit in.
+ */
 function toolErrorMessage(state: SessionMessageAssistantTool["state"]): string | undefined {
   return state.status === "error" ? state.error.message : undefined
 }
@@ -646,16 +657,6 @@ function questionSubtitle(count: number, answered: boolean): string | undefined 
   if (count === 0) return undefined
   if (answered) return "Answered"
   return `${count} question${count > 1 ? "s" : ""}`
-}
-
-/**
- * A turn that was aborted surfaces natively as a plain `{ type:"unknown" }` error whose
- * message the runner sets to "Provider turn interrupted" / "Tool execution interrupted"
- * (the native schema dropped V1's `MessageAbortedError` name), so match on that phrasing
- * to show an "Interrupted" divider rather than a loud error box.
- */
-function isInterrupted(message: string | undefined): boolean {
-  return typeof message === "string" && /interrupted/i.test(message)
 }
 
 /** The `{ file, patch, additions, deletions }[]` a file-mutating tool records in `structured`. */

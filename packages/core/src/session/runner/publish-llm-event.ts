@@ -13,6 +13,35 @@ type Input = {
   readonly snapshot?: string
 }
 
+/**
+ * A fault on its way to the wire, with the taxonomy still attached.
+ *
+ * ⚠️ Every site here used to write `{ type: "unknown", message }` — the ten-arm tagged union the
+ * runner computes was collapsed to a bare string one call earlier, so no reader could ever key an
+ * i18n string off it, no surface could offer "retry" for the faults that deserve it, and raw
+ * transport text ("… cause: connect ECONNREFUSED 192.168.178.40:8000") went straight into the chat.
+ * `_tag` and `retryable` are ADDITIONAL structure: `message` still carries the provider's own words,
+ * and a reader that knows no tag renders exactly what it rendered before.
+ *
+ * `_tag` is `SessionMessage.ErrorTag` at the call sites but `string` on the wire, deliberately — see
+ * the note on `SessionMessage.ErrorTags`. `retryable` answers the USER's question ("can retrying this
+ * turn plausibly work?"), which is `ProviderRetry.isTransientProviderFailure`, **not** the
+ * schema-level `LLMError.retryable` getter — those disagree, and `Transport` is exactly where.
+ */
+type Fault = {
+  readonly message: string
+  readonly _tag?: SessionMessage.ErrorTag
+  readonly retryable?: boolean
+}
+
+/** Omit the optional keys rather than writing `undefined`: an absent field re-encodes byte-identical. */
+const wireError = (fault: Fault) => ({
+  type: "unknown" as const,
+  message: fault.message,
+  ...(fault._tag === undefined ? {} : { _tag: fault._tag }),
+  ...(fault.retryable === undefined ? {} : { retryable: fault.retryable }),
+})
+
 const safe = (value: number | undefined) => Math.max(0, Number.isFinite(value) ? (value ?? 0) : 0)
 
 const tokens = (usage: Usage | undefined) => {
@@ -41,10 +70,10 @@ const message = (value: unknown) => {
 
 type SettledOutput =
   | { readonly structured: Record<string, unknown>; readonly content: ToolOutput["content"] }
-  | { readonly error: { readonly type: "unknown"; readonly message: string } }
+  | { readonly error: { readonly type: "unknown"; readonly message: string; readonly _tag?: string } }
 
 const settledOutput = (value: ToolOutput | undefined, result: ToolResultValue): SettledOutput => {
-  if (result.type === "error") return { error: { type: "unknown", message: message(result.value) } }
+  if (result.type === "error") return { error: { type: "unknown", message: message(result.value), _tag: "ToolFailure" } }
   const settled = value ?? ToolOutput.fromResultValue(result)
   if (!settled) throw new Error(`Unsupported tool result: ${message(result)}`)
   return { structured: record(settled.structured), content: settled.content }
@@ -196,7 +225,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
     yield* flushFragments()
   })
 
-  const failAssistant = Effect.fnUntraced(function* (message: string) {
+  const failAssistant = Effect.fnUntraced(function* (fault: Fault) {
     if (assistantFailed) return
     yield* flush()
     const assistantMessageID = yield* startAssistant()
@@ -206,12 +235,12 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
       sessionID: input.sessionID,
       timestamp: yield* timestamp,
       assistantMessageID,
-      error: { type: "unknown", message },
+      error: wireError(fault),
     })
   })
 
   const failUnsettledTools = Effect.fn("SessionRunner.failUnsettledTools")(function* (
-    message: string,
+    fault: Fault,
     hostedOnly = false,
   ) {
     for (const [callID, tool] of tools) {
@@ -222,7 +251,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
         timestamp: yield* timestamp,
         assistantMessageID: tool.assistantMessageID,
         callID,
-        error: { type: "unknown", message },
+        error: wireError(fault),
         provider: {
           executed: tool.providerExecuted,
           ...(tool.providerMetadata === undefined ? {} : { metadata: tool.providerMetadata }),
@@ -385,7 +414,7 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
           timestamp: yield* timestamp,
           assistantMessageID: tool.assistantMessageID,
           callID: event.id,
-          error: { type: "unknown", message: event.message },
+          error: wireError({ message: event.message, _tag: "ToolFailure" }),
           provider: {
             executed: tool.providerExecuted,
             ...(event.providerMetadata === undefined ? {} : { metadata: event.providerMetadata }),
@@ -403,7 +432,10 @@ export const createLLMEventPublisher = (events: EventV2.Interface, input: Input)
         return
       case "provider-error":
         providerFailed = true
-        yield* failAssistant(event.message)
+        // No `_tag`: a provider-error event carries no reason arm, so claiming one would be the false
+        // description ruling 2 forbids. `retryable` IS known here and was being discarded — the second
+        // place the taxonomy died, and the one the original filing did not name.
+        yield* failAssistant({ message: event.message, ...(event.retryable === undefined ? {} : { retryable: event.retryable }) })
         return
     }
   })
