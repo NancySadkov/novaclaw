@@ -2,8 +2,10 @@ export * as AdhocGuidance from "./guidance"
 
 import { makeLocationNode } from "../effect/app-node"
 import { Context, Effect, Layer, Schema } from "effect"
-import { mergeRecipes, type Recipe } from "../adhoc-tools"
+import { Session } from "@novaclaw/schema/session"
+import { listSessionRecipes, mergeRecipes, storeRootIn, type Recipe } from "../adhoc-tools"
 import { Config } from "../config"
+import { Global } from "../global"
 import { SystemContext } from "../system-context/index"
 
 const Summary = Schema.Struct({
@@ -26,7 +28,12 @@ const render = (tools: ReadonlyArray<Summary>) =>
   ].join("\n")
 
 export interface Interface {
-  readonly load: () => Effect.Effect<SystemContext.SystemContext>
+  /**
+   * The prompt-visible recipe list for ONE session. `sessionID` is required on purpose: it is the
+   * type that stops a caller reconstructing the config-only guidance the session scope was
+   * invisible in (see the `load` body).
+   */
+  readonly load: (sessionID: Session.ID) => Effect.Effect<SystemContext.SystemContext>
   /** Config-defined recipes (global ▷ project), merged by name — the non-session layers. */
   readonly configured: () => Effect.Effect<Recipe[]>
 }
@@ -37,6 +44,11 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const config = yield* Config.Service
+    // Through the SERVICE, not the module-level `Global.Path`, so the session store's root is an
+    // injectable seam (the same reason `AdhocTools.Options.root` exists). Identical in production —
+    // `Global.make()` reads `Global.Path` — and `layerWith` has no production caller.
+    const global = yield* Global.Service
+    const sessionStoreRoot = storeRootIn(global.data)
 
     // Config entries are ordered global -> project; merge per-recipe by name so a project
     // config can override or disable (enabled: false) a single global recipe.
@@ -50,11 +62,32 @@ export const layer = Layer.effect(
 
     return Service.of({
       configured,
-      load: Effect.fn("AdhocGuidance.load")(function* () {
-        // NB session-DEFINED recipes are deliberately absent from the baseline (it is
-        // per-session-epoch, initialized before any define_tool call) — define_tool's own
-        // output tells the model its recipe is live, and tool_manual resolves both scopes.
-        const available = (yield* configured()).map((recipe) => ({
+      load: Effect.fn("AdhocGuidance.load")(function* (sessionID: Session.ID) {
+        // Session-scope INCLUDED, replacing the earlier "the baseline is initialized before any
+        // define_tool call, so the session layer is always empty there" reasoning. That premise
+        // held for a session the user starts and is false for a session that is SPAWNED: 4D copies
+        // the parent's recipes into the child (session/spawner.ts, messenger/gateway.ts) before the
+        // child's first turn, so the child's very first baseline has a non-empty session layer —
+        // the capability transferred and the child was never told it had it. Same shape for a
+        // resumed session whose epoch is replaced by compaction. For define_tool the epoch's
+        // reconcile pass now also emits the "tools have changed" update, which is additive to
+        // define_tool's own output rather than a substitute for it.
+        //
+        // Merge order matches tool_manual's (config ▷ session, session wins) via the same resolver,
+        // so the prompt lists exactly the set that tool resolves.
+        const session = yield* Effect.tryPromise(() =>
+          listSessionRecipes(sessionID, { root: sessionStoreRoot }),
+        ).pipe(
+          // listSessionRecipes already answers [] for every read/parse fault by design, so the only
+          // reachable failure here is a malformed session id — a caller bug, not a fault of the
+          // store. Name it and continue: a prompt missing its session recipes must not fail a turn.
+          Effect.catch((cause) =>
+            Effect.logWarning("adhoc session recipes unreadable", { sessionID, cause }).pipe(
+              Effect.as([] as Recipe[]),
+            ),
+          ),
+        )
+        const available = mergeRecipes(yield* configured(), session).map((recipe) => ({
           name: recipe.name,
           description: recipe.description,
         }))
@@ -75,4 +108,4 @@ export const layer = Layer.effect(
   }),
 )
 
-export const node = makeLocationNode({ service: Service, layer, deps: [Config.node] })
+export const node = makeLocationNode({ service: Service, layer, deps: [Config.node, Global.node] })

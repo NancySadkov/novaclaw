@@ -59,6 +59,12 @@ export const layer = Layer.effect(
     const discovery = yield* SkillDiscovery.Service
     const fs = yield* FSUtil.Service
 
+    // Loaded skills, keyed by Source.key(source). `list` runs once per turn (SkillGuidance walks it
+    // into <available_skills>) and a directory source globs plus reads every SKILL.md, so the cache
+    // is what keeps that whole tree off the per-turn path. Only the summaries are eager — bodies
+    // load on demand (skill/guidance.ts) — so this caches metadata, not the prompt.
+    const cache = new Map<string, Info[]>()
+
     const state = State.create<Data, Draft>({
       initial: () => ({ sources: [] }),
       draft: (draft) => ({
@@ -68,6 +74,13 @@ export const layer = Layer.effect(
         },
         list: () => draft.sources as Source[],
       }),
+      // The cache is DERIVED from the source list, so it is discarded wherever the source list is
+      // rebuilt — the same shape reference.ts uses for its own materialized map. `finalize` is the
+      // hook rather than the exposed `reload` because State's internal reload is what `transform`
+      // and a transform scope's disposal call, so wrapping only the Service member would leave the
+      // add/remove paths serving stale content: a source removed and re-added at the SAME
+      // Source.key would keep the previous process's skills forever.
+      finalize: () => Effect.sync(() => cache.clear()),
     })
 
     const load = Effect.fn("SkillV2.load")(function* (source: Source) {
@@ -104,9 +117,15 @@ export const layer = Layer.effect(
       return skills
     })
 
-    // QUESTION(Dax): Should local skill sources invalidate on filesystem watch
-    // events, following the reload policy chosen for other context sources?
-    const cache = new Map<string, Info[]>()
+    // Answering the standing QUESTION(Dax) here — should local skill sources invalidate on
+    // filesystem WATCH events? No, and the reload policy the question defers to is the reason:
+    // there is no watcher anywhere in the kernel (not one fs.watch in core), and every other
+    // context source — config, references, instructions — rebuilds on an explicit reload. A
+    // watcher on user-chosen skill directories would be a new always-on FS subscription per
+    // source for a set that changes a handful of times per install. So invalidation rides
+    // `reload`/`transform` via the state's `finalize` above, which is the path an agent that just
+    // authored a SKILL.md actually takes; before that hook existed the cache had no invalidation
+    // at all and a freshly written skill stayed invisible until the process restarted.
     const list = Effect.fn("SkillV2.list")(function* () {
       const skills = new Map<string, Info>()
       for (const source of state.get().sources) {

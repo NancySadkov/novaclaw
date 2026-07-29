@@ -30,7 +30,15 @@ export interface Options {
   readonly root?: string
 }
 
-const storeRoot = (options?: Options) => options?.root ?? path.join(Global.Path.data, "adhoc-tools")
+/**
+ * Where the session recipe files live under a resolved data directory — the ONE place that
+ * layout is named. A caller that resolves the data root through `Global.Service` (rather than
+ * the module-level `Global.Path`, so a test can point it at a temp dir) composes its `root`
+ * with this instead of re-spelling the directory and silently reading an empty one if it moves.
+ */
+export const storeRootIn = (dataDirectory: string) => path.join(dataDirectory, "adhoc-tools")
+
+const storeRoot = (options?: Options) => options?.root ?? storeRootIn(Global.Path.data)
 
 // The tool name lists in the system prompt and keys lookups; the sessionID doubles as the
 // store file name. Both MUST stay traversal-proof — models feed these values.
