@@ -18,6 +18,23 @@ bun run --cwd packages/novaclaw build --single --skip-install
 That builds one executable with the whole app inside it and opens it in your browser. Everything
 below is the same thing in parts, plus the desktop app.
 
+**Or run it in one command.** [`build-linux.sh`](build-linux.sh) automates everything in this file:
+it preflights the toolchain (and prints the single line that fixes a missing piece), builds the
+target you pick, smokes the built binary over HTTP, and prints artifact paths, sizes and sha256.
+
+```bash
+bash build-linux.sh            # the self-contained binary (default), smoked
+bash build-linux.sh --all      # binary + AppImage + .deb + .rpm
+```
+
+Targets: `--binary` (default) · `--server-only` · `--appimage` · `--deb` · `--rpm` · `--all`;
+`--channel dev|beta|prod` (default `dev`); `--maintainer "Name <email>"` for `.deb`/`.rpm` (it
+otherwise derives one from the desktop `package.json` author); `--baseline` for an x86-64 CPU without
+AVX2; `--force` to pass the low-memory guard. It exits with a distinct code per failure class — **10**
+preflight · **20** build · **30** package · **40** smoke — so a caller (human or agent) can branch
+without parsing prose. The sections below are the same steps by hand, and remain the source of truth
+for what the script does.
+
 ## 1. What you need
 
 | | |
