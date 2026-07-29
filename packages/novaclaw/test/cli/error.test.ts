@@ -56,11 +56,21 @@ describe("cli.error", () => {
       modelID: "claude-sonet-4",
       suggestions: ["claude-sonnet-4"],
     }
+    // ⚠️ These two lines drifted from `src/cli/error.ts` and the TEST was the wrong half — corrected
+    // 2026-07-29. It expected "`novaclaw models`" and "check your config (novaclaw.json)", and both
+    // were stale in their own way: the CLI's `scriptName` is **nova-cli** (`src/index.ts:39`), and
+    // `novaclaw.json` stopped being a runtime config source when config moved to SQLite — pointing a
+    // stuck user at a file nothing reads is exactly the false description ruling 2 forbids. The
+    // source line sends them to Settings → Models instead, which is where model management lives
+    // (AGENTS.md → *One interface: the HTML UI*).
+    //
+    // It went unnoticed because `test/cli/` is not in `PROMOTED_NOVACLAW_SUBDIRS`, so it runs only
+    // under `bun run test --full`.
     const expected = [
       "Model not found: anthropic/claude-sonet-4",
       "Did you mean: claude-sonnet-4",
-      "Try: `novaclaw models` to list available models",
-      "Or check your config (novaclaw.json) provider/model names",
+      "Try: `nova-cli models` to list available models",
+      "Or check the model in Settings → Models (the app) — it may have been renamed or removed",
     ].join("\n")
 
     expect(FormatError({ name: "ProviderModelNotFoundError", data })).toBe(expected)
