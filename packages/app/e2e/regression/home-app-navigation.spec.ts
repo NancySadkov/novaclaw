@@ -57,7 +57,8 @@ test("does not let a lost shell pointer gesture disable launcher buttons", async
 
   await home.dispatchEvent("pointerdown", { pointerId: 17, clientX: 10, clientY: 10 })
   await page.locator("body").dispatchEvent("pointermove", { pointerId: 17, clientX: 40, clientY: 10 })
-  await page.getByRole("button", { name: "Files" }).evaluate((button) => button.click())
+  // `evaluate` hands back `HTMLElement | SVGElement`, and only the former has `.click()`.
+  await page.getByRole("button", { name: "Files" }).evaluate((button) => (button as HTMLElement).click())
 
   await expect(page).toHaveURL(/\/files$/)
 })

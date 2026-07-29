@@ -9,8 +9,10 @@ import { WorkspaceEvent } from "../src/workspace-event"
 
 describe("public event manifest", () => {
   test("owns the complete public event surface", () => {
-    expect(EventManifest.ServerDefinitions.length).toBe(66)
-    expect(EventManifest.Definitions.length).toBe(87)
+    // 2026-07-29: each count fell by one when `session.next.retried` was deleted — it was published by
+    // the runner and consumed by nothing (see the note in `src/session-event.ts`).
+    expect(EventManifest.ServerDefinitions.length).toBe(65)
+    expect(EventManifest.Definitions.length).toBe(86)
     // V1-nuke slice D: the record lifecycle events are native (Session.Info payloads, durable
     // v2); session.diff + command.executed died with the V1 wire schemas (no publishers).
     expect(SessionRecordEvent.Definitions).toEqual([
@@ -19,8 +21,11 @@ describe("public event manifest", () => {
       SessionRecordEvent.Deleted,
       SessionRecordEvent.Error,
     ])
-    expect(EventManifest.Latest.size).toBe(87)
-    expect(EventManifest.Durable.size).toBe(39)
+    expect(EventManifest.Latest.size).toBe(86)
+    expect(EventManifest.Durable.size).toBe(38)
+    // A retired durable type must stay retired: rows keyed `session.next.retried.1` still exist in
+    // shipped databases and are skipped (never decoded) because both read paths filter to this manifest.
+    expect(EventManifest.Durable.has("session.next.retried.1")).toBe(false)
   })
 
   test("uses canonical definitions for current public events", () => {

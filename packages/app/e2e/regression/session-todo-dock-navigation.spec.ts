@@ -21,7 +21,12 @@ type EventPayload = {
   payload: Record<string, unknown>
 }
 
-test.use({ viewport: { width: 1440, height: 900 }, reducedMotion: "no-preference" })
+// ⚠️ This also carried `reducedMotion: "no-preference"` until 2026-07-29. That key is NOT a
+// `PlaywrightTestOptions` member in the installed Playwright 1.59.1 (it survives only inside a doc
+// comment in `playwright/types/test.d.ts`), so `test.use` would reject it at collection and this file
+// could not even be collected. "no-preference" is Playwright's default, so dropping the key restores
+// exactly the environment the test was written for — nothing about the test is weakened.
+test.use({ viewport: { width: 1440, height: 900 } })
 
 test("animates todo lifecycle without replaying it across session tabs", async ({ page }) => {
   test.setTimeout(90_000)

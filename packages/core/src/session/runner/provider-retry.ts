@@ -50,23 +50,8 @@ export function retryDelayMs(attempt: number, retryAfterMs?: number): number {
   return BACKOFF_MS[Math.min(attempt, BACKOFF_MS.length) - 1] ?? BACKOFF_MS[BACKOFF_MS.length - 1]
 }
 
-/** The `session.next.retried` event's error payload for a failed attempt. */
-export function retryErrorPayload(error: LLMError): {
-  message: string
-  statusCode?: number
-  isRetryable: boolean
-} {
-  const status =
-    "http" in error.reason && error.reason.http?.response
-      ? error.reason.http.response.status
-      : "status" in error.reason && typeof error.reason.status === "number"
-        ? error.reason.status
-        : undefined
-  return {
-    message: error.message,
-    ...(status === undefined ? {} : { statusCode: status }),
-    isRetryable: true,
-  }
-}
+// ⚠️ `retryErrorPayload` lived here and was deleted 2026-07-29 with the `session.next.retried` event it
+// built the payload for — it had no other caller. The runner now logs the failed attempt instead
+// (`runner/llm.ts`), so the status-code extraction it did is no longer needed by anything.
 
 export * as ProviderRetry from "./provider-retry"

@@ -2,10 +2,6 @@
   content-visibility: auto;
 }
 
-[data-timeline-row] [data-component="file"] {
-  content-visibility: visible;
-}
-
 [data-component="file"][data-mode="text"] {
   overflow: hidden;
 }

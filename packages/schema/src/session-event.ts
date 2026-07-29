@@ -493,28 +493,17 @@ export namespace Tool {
   export type Failed = typeof Failed.Type
 }
 
-export const RetryError = Schema.Struct({
-  message: Schema.String,
-  statusCode: Schema.Finite.pipe(optional),
-  isRetryable: Schema.Boolean,
-  responseHeaders: Schema.Record(Schema.String, Schema.String).pipe(optional),
-  responseBody: Schema.String.pipe(optional),
-  metadata: Schema.Record(Schema.String, Schema.String).pipe(optional),
-}).annotate({
-  identifier: "session.next.retry_error",
-})
-export interface RetryError extends Schema.Schema.Type<typeof RetryError> {}
-
-export const Retried = Event.define({
-  type: "session.next.retried",
-  ...options,
-  schema: {
-    ...Base,
-    attempt: Schema.Finite,
-    error: RetryError,
-  },
-})
-export type Retried = typeof Retried.Type
+// ⚠️ `session.next.retried` (+ its `session.next.retry_error` payload) was DELETED 2026-07-29 and must
+// not come back as a wire type unless something renders it. The runner published one durable row per
+// provider retry; the projector line was commented out, `message-updater.ts` mapped it to `Effect.void`,
+// `message-fold.ts` no-oped it, and the only card that ever drew it (`session-retry.tsx`) was deleted the
+// same day — so every retry since has written a row nothing could ever read. Retiring a durable type is
+// safe here by construction: both `EventV2.readAggregate` and `readAfter` filter rows to the CURRENT
+// manifest (`inArray(EventTable.type, …)`), so pre-existing `session.next.retried.1` rows are skipped
+// rather than decoded. What a retry still produces is a `logWarning` in `runner/llm.ts`, and an
+// exhausted retry still reaches the user as the assistant failure with the runner's own `retryable`
+// verdict (`session-error.ts`). If a retry should become VISIBLE, build the surface first and add the
+// event with it — do not re-add a dark half.
 
 export namespace Compaction {
   export const Started = Event.define({
@@ -597,7 +586,6 @@ export const DurableDefinitions = Event.inventory(
   Tool.Failed,
   Reasoning.Started,
   Reasoning.Ended,
-  Retried,
   Compaction.Started,
   Compaction.Ended,
   RevertEvent.Staged,
@@ -639,7 +627,6 @@ export const Definitions = Event.inventory(
   Tool.Progress,
   Tool.Success,
   Tool.Failed,
-  Retried,
   Compaction.Started,
   Compaction.Delta,
   Compaction.Ended,

@@ -966,11 +966,18 @@ export const layer = Layer.effect(
             if (sawProviderEvent || attempt >= ProviderRetry.MAX_PROVIDER_ATTEMPTS) break
             const transient = Option.getOrUndefined(Cause.findErrorOption(stream.cause))
             if (!ProviderRetry.isTransientProviderFailure(transient)) break
-            yield* events.publish(SessionEvent.Retried, {
+            // A retry is DIAGNOSTIC, not a transcript event. It used to publish a durable
+            // `session.next.retried` row per attempt; nothing has rendered that since the retry card was
+            // deleted (2026-07-29), and the projector/updater/fold arms were all no-ops, so the event and
+            // every arm of it went with the card. The user-visible half is unchanged: a retry that
+            // SUCCEEDS is silent by design (the turn completed), and a retry that runs out of attempts
+            // still surfaces as the assistant failure below, carrying the runner's own `retryable` verdict.
+            yield* Effect.logWarning("provider attempt failed — retrying", {
               sessionID: session.id,
-              timestamp: yield* DateTime.now,
               attempt,
-              error: ProviderRetry.retryErrorPayload(transient),
+              maxAttempts: ProviderRetry.MAX_PROVIDER_ATTEMPTS,
+              reason: transient.reason._tag,
+              message: transient.message,
             })
             yield* restore(
               Effect.sleep(Duration.millis(ProviderRetry.retryDelayMs(attempt, transient.retryAfterMs))),

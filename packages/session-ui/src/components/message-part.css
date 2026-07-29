@@ -416,20 +416,6 @@
       display: none;
     }
   }
-
-  [data-slot="bash-pre"] {
-    margin: 0;
-    padding: 12px;
-  }
-
-  [data-slot="bash-pre"] code {
-    font-family: var(--font-family-mono);
-    font-feature-settings: var(--font-family-mono--font-feature-settings);
-    font-size: 13px;
-    line-height: var(--line-height-large);
-    white-space: pre-wrap;
-    overflow-wrap: anywhere;
-  }
 }
 
 [data-component="edit-trigger"],
@@ -523,26 +509,6 @@
     flex-shrink: 0;
   }
 }
-
-[data-component="edit-content"] {
-  border-radius: inherit;
-  border-top: 0.5px solid var(--v2-border-border-muted);
-  overflow-x: hidden;
-  overflow-y: visible;
-
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-
-  &::-webkit-scrollbar {
-    display: none;
-  }
-
-  [data-component="diff"] {
-    border-radius: inherit;
-    overflow: hidden;
-  }
-}
-
 [data-component="write-content"] {
   border-radius: inherit;
   border-top: 0.5px solid var(--v2-border-border-muted);
@@ -581,15 +547,6 @@
   line-height: var(--line-height-large);
   color: var(--v2-text-text-muted);
 }
-
-[data-slot="basic-tool-tool-subtitle"].exa-tool-query {
-  display: block;
-  max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 [data-slot="exa-tool-links"] {
   display: flex;
   flex-direction: column;
@@ -719,7 +676,6 @@
 [data-component="reasoning-part"],
 [data-component="tool-output"],
 [data-component="bash-output"],
-[data-component="edit-content"],
 [data-component="write-content"],
 [data-component="todos"],
 [data-component="diagnostics"],
@@ -1300,24 +1256,6 @@
     color: var(--icon-diff-modified-base);
   }
 }
-
-[data-component="apply-patch-file-diff"] {
-  border-radius: inherit;
-  overflow-x: hidden;
-  overflow-y: visible;
-  scrollbar-width: none;
-  -ms-overflow-style: none;
-
-  &::-webkit-scrollbar {
-    display: none;
-  }
-
-  [data-component="diff"] {
-    border-radius: inherit;
-    overflow: hidden;
-  }
-}
-
 [data-component="tool-loaded-file"] {
   display: flex;
   align-items: center;
@@ -1401,7 +1339,6 @@ body:not([data-new-layout]) {
     }
   }
 
-  [data-component="edit-content"],
   [data-component="write-content"] {
     border-top: 1px solid var(--border-weaker-base);
   }

@@ -8,13 +8,7 @@ import {
   RateLimitReason,
   TransportReason,
 } from "@novaclaw/llm"
-import {
-  MAX_PROVIDER_ATTEMPTS,
-  MAX_RETRY_DELAY_MS,
-  isTransientProviderFailure,
-  retryDelayMs,
-  retryErrorPayload,
-} from "./provider-retry"
+import { MAX_PROVIDER_ATTEMPTS, MAX_RETRY_DELAY_MS, isTransientProviderFailure, retryDelayMs } from "./provider-retry"
 
 const llmError = (reason: LLMError["reason"]) => new LLMError({ module: "test", method: "stream", reason })
 
@@ -65,18 +59,9 @@ describe("retryDelayMs", () => {
   })
 })
 
-describe("retryErrorPayload", () => {
-  test("carries the message + status for a 5xx", () => {
-    const payload = retryErrorPayload(llmError(new ProviderInternalReason({ message: "upstream died", status: 502 })))
-    expect(payload.message).toContain("upstream died")
-    expect(payload.statusCode).toBe(502)
-    expect(payload.isRetryable).toBe(true)
-  })
-  test("omits status when there is none (transport)", () => {
-    const payload = retryErrorPayload(llmError(new TransportReason({ message: "fetch failed" })))
-    expect(payload.statusCode).toBeUndefined()
-  })
-})
+// `retryErrorPayload` was tested here until 2026-07-29. It existed only to build the payload of the
+// `session.next.retried` event, and both went when the event's last dark consumer was removed — nothing
+// rendered a retry, so nothing needed its status code. Do not restore this block without a surface.
 
 describe("cap", () => {
   test("the per-turn attempt cap is small — a dead endpoint fails in seconds", () =>

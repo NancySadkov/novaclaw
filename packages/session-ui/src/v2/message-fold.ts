@@ -98,7 +98,7 @@ export function latestReasoning(
 
 /**
  * Fold one `session.next.*` event into `messages` (the event's session array).
- * Non-transcript events (`prompt.admitted`, `moved`, `completed`, `retried`,
+ * Non-transcript events (`prompt.admitted`, `moved`, `completed`,
  * `responder/mode.switched`, `compaction.started`/`delta`, `revert.*`) and non-`session.next`
  * events are no-ops here — they belong to the session-info / revert stores handled in later
  * F1e slices, exactly as the core updater routes them to the session row.

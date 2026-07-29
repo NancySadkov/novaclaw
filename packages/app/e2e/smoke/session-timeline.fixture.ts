@@ -21,7 +21,6 @@ const words = [
   "vector",
 ]
 
-const serverKey = "http://127.0.0.1:4096"
 const sourceID = "ses_smoke_source"
 const targetID = "ses_smoke_target"
 const directory = "C:/NovaClaw/SmokeProject"
@@ -228,20 +227,15 @@ const sourceMessages = Array.from({ length: 12 }, (_, index) => [
   assistantMessage(sourceID, index + 1000, id("msg_user", index + 1000), [textPart(index + 1000, 0, 240)]),
 ]).flat()
 
-function renderable(part: MessagePart) {
-  if (part.type === "tool" && part.tool === "todowrite") return false
-  if (part.type === "text") return !!part.text.trim()
-  if (part.type === "reasoning") return !!part.text.trim()
-  return part.type !== "step-start" && part.type !== "step-finish" && part.type !== "patch"
-}
-
-function orderedParts(message: Message) {
-  return message.parts.slice().sort((a, b) => a.id.localeCompare(b.id))
-}
+// ⚠️ This file used to also export the transcript's expected part/message ID lists, a
+// `renderable()`/`orderedParts()` pair that derived them, and `serverKey`. All four existed only for
+// `smoke/session-timeline.spec.ts`, which asserted on the V1 virtualized renderer (`data-timeline-row`,
+// `data-timeline-part-id`, `data-timeline-key`) that commit 48a48b511 deleted on 2026-07-05. The spec
+// went 2026-07-29; the pins went with it rather than staying as a contract nothing checks. What remains
+// is the mock DATASET, which the two surviving specs still serve through `pageMessages`.
 
 export const fixture = {
   directory,
-  serverKey,
   project: {
     id: projectID,
     worktree: directory,
@@ -286,16 +280,6 @@ export const fixture = {
   messages: { [sourceID]: sourceMessages, [targetID]: targetMessages },
   expected: {
     sourceTitle: "Uncommitted changes inquiry",
-    targetTitle: "Example Game: sample jump movement & sample physics analysis",
-    targetMessageIDs: targetMessages
-      .filter((message) => message.info.role === "user")
-      .map((message) => message.info.id),
-    targetPartIDs: targetMessages.flatMap((message) =>
-      orderedParts(message)
-        .filter(renderable)
-        .map((part) => part.id),
-    ),
-    expandedShellPartID: targetMessages.flatMap((message) => message.parts).find((part) => part.tool === "bash")!.id,
   },
 }
 
