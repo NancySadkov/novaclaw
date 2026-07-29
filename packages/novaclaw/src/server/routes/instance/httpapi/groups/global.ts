@@ -2,10 +2,9 @@ import { Config as ConfigV2 } from "@novaclaw/core/config"
 import { EventV2 } from "@novaclaw/core/event"
 import { EventManifest } from "@/event-manifest"
 import { InstanceDisposed } from "@/server/event"
-import "@novaclaw/core/account"
 import "@/server/event"
 import { Schema } from "effect"
-import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, HttpApiSchema, OpenApi } from "effect/unstable/httpapi"
+import { HttpApi, HttpApiEndpoint, HttpApiError, HttpApiGroup, OpenApi } from "effect/unstable/httpapi"
 import { described } from "./metadata"
 
 const GlobalHealth = Schema.Struct({
@@ -64,27 +63,11 @@ const GlobalEventSchema = Schema.Struct({
   ]),
 }).annotate({ identifier: "GlobalEvent" })
 
-export const GlobalUpgradeInput = Schema.Struct({
-  target: Schema.optional(Schema.String),
-})
-
-const GlobalUpgradeResult = Schema.Union([
-  Schema.Struct({
-    success: Schema.Literal(true),
-    version: Schema.String,
-  }),
-  Schema.Struct({
-    success: Schema.Literal(false),
-    error: Schema.String,
-  }),
-])
-
 export const GlobalPaths = {
   health: "/global/health",
   event: "/global/event",
   config: "/global/config",
   dispose: "/global/dispose",
-  upgrade: "/global/upgrade",
   discovery: "/global/discovery",
 } as const
 
@@ -136,17 +119,6 @@ export const GlobalApi = HttpApi.make("global").add(
           identifier: "global.dispose",
           summary: "Dispose instance",
           description: "Clean up and dispose all NovaClaw instances, releasing all resources.",
-        }),
-      ),
-      HttpApiEndpoint.post("upgrade", GlobalPaths.upgrade, {
-        payload: [HttpApiSchema.NoContent, GlobalUpgradeInput],
-        success: described(GlobalUpgradeResult, "Upgrade result"),
-        error: HttpApiError.BadRequest,
-      }).annotateMerge(
-        OpenApi.annotations({
-          identifier: "global.upgrade",
-          summary: "Upgrade novaclaw",
-          description: "Upgrade novaclaw to the specified version or latest if not specified.",
         }),
       ),
       HttpApiEndpoint.get("discovery", GlobalPaths.discovery, {

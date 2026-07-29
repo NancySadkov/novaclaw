@@ -10,7 +10,7 @@ import { GlobalBus, type GlobalEvent } from "../../src/bus/global"
 import { Snapshot } from "../../src/snapshot"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
-import { testEffect } from "../lib/effect"
+import { testEffectShared } from "../lib/effect"
 import { httpApiLayer, requestInDirectory } from "./httpapi-layer"
 
 afterEach(async () => {
@@ -21,7 +21,7 @@ afterEach(async () => {
 const noopBootstrap = Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))
 const testInstanceStore = InstanceStore.defaultLayer.pipe(Layer.provide(noopBootstrap))
 
-const it = testEffect(Layer.mergeAll(FSUtil.defaultLayer, Snapshot.defaultLayer, testInstanceStore, httpApiLayer))
+const it = testEffectShared(Layer.mergeAll(FSUtil.defaultLayer, Snapshot.defaultLayer, testInstanceStore, httpApiLayer))
 
 function request(directory: string, url: string, init: RequestInit = {}) {
   return requestInDirectory(url, directory, init)

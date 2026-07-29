@@ -7,12 +7,12 @@ import { resetDatabase, seedSessionRow } from "../fixture/db"
 import { Database } from "@novaclaw/core/database/database"
 import { EventV2 } from "@novaclaw/core/event"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
-import { testEffect } from "../lib/effect"
+import { testEffectShared } from "../lib/effect"
 import { httpApiLayer, requestInDirectory } from "./httpapi-layer"
 
 const originalWorkspaces = Flag.NOVACLAW_EXPERIMENTAL_WORKSPACES
 const context = Context.empty() as Context.Context<unknown>
-const it = testEffect(Layer.mergeAll(Database.defaultLayer, EventV2.defaultLayer, httpApiLayer))
+const it = testEffectShared(Layer.mergeAll(Database.defaultLayer, EventV2.defaultLayer, httpApiLayer))
 
 afterEach(async () => {
   mock.restore()

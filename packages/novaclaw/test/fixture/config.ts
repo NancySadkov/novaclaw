@@ -1,12 +1,10 @@
 import { Config } from "@/config/config"
-import { emptyConsoleState } from "@novaclaw/core/config/console-state"
 import { Effect, Layer } from "effect"
 
 export function make(overrides: Partial<Config.Interface> = {}) {
   return Config.Service.of({
     get: () => Effect.succeed({}),
     getGlobal: () => Effect.succeed({}),
-    getConsoleState: () => Effect.succeed(emptyConsoleState),
     invalidate: () => Effect.void,
     directories: () => Effect.succeed([]),
     waitForDependencies: () => Effect.void,

@@ -16,12 +16,12 @@ import { errorMessage } from "../../src/util/error"
 import path from "path"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, TestInstance, tmpdirScoped } from "../fixture/fixture"
-import { awaitWithTimeout, pollWithTimeout, testEffect } from "../lib/effect"
+import { awaitWithTimeout, pollWithTimeout, testEffectShared } from "../lib/effect"
 import { Database } from "@novaclaw/core/database/database"
 import { httpApiLayer } from "./httpapi-layer"
 
 const noopBootstrap = Layer.succeed(InstanceBootstrap.Service, InstanceBootstrap.Service.of({ run: Effect.void }))
-const it = testEffect(
+const it = testEffectShared(
   Layer.mergeAll(
     FSUtil.defaultLayer,
     CrossSpawnSpawner.defaultLayer,

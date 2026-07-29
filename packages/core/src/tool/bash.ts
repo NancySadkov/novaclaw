@@ -99,7 +99,7 @@ const jobSnapshotOutput = (job: BashJobs.Snapshot): Output => ({
  * legacy shell runtime into core.
  */
 // TODO: Port tree-sitter bash / PowerShell parser-based approval reduction.
-// TODO: Port BashArity reusable command-prefix approvals.
+// TODO: Reusable command-prefix approvals — approve `git commit` once, not each full command string.
 // TODO: Replace token-based command-argument external-directory advisories with parser-based detection.
 // TODO: Restore PowerShell and cmd-specific invocation/path handling on Windows.
 // TODO: Add plugin shell.env environment augmentation once V2 plugin hooks exist.

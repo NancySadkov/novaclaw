@@ -10,7 +10,7 @@ import {
 import { GlobalPaths } from "../../src/server/routes/instance/httpapi/groups/global"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
-import { testEffect } from "../lib/effect"
+import { testEffectShared } from "../lib/effect"
 import { httpApiLayer, request, requestInDirectory } from "./httpapi-layer"
 
 /**
@@ -37,7 +37,7 @@ import { httpApiLayer, request, requestInDirectory } from "./httpapi-layer"
  * this whole file is testing a path that no longer exists.
  */
 
-const it = testEffect(Layer.mergeAll(Database.defaultLayer, httpApiLayer))
+const it = testEffectShared(Layer.mergeAll(Database.defaultLayer, httpApiLayer))
 
 afterEach(async () => {
   await disposeAllInstances()

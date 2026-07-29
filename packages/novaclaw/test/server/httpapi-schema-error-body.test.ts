@@ -6,10 +6,10 @@ import { Database } from "@novaclaw/core/database/database"
 import { SyncPaths } from "../../src/server/routes/instance/httpapi/groups/sync"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
-import { testEffect } from "../lib/effect"
+import { testEffectShared } from "../lib/effect"
 import { httpApiLayer, requestInDirectory } from "./httpapi-layer"
 
-const it = testEffect(Layer.mergeAll(Database.defaultLayer, httpApiLayer))
+const it = testEffectShared(Layer.mergeAll(Database.defaultLayer, httpApiLayer))
 
 const text = (response: HttpClientResponse.HttpClientResponse) => response.text
 

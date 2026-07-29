@@ -21,7 +21,6 @@ import { Plugin } from "../../src/plugin/index"
 
 import { TestInstance } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
-import { AccountTest } from "../fake/account"
 import { AuthTest } from "../fake/auth"
 import { NpmTest } from "../fake/npm"
 import { ProviderV2 } from "@novaclaw/core/provider"
@@ -32,7 +31,6 @@ const configLayer = Config.layer.pipe(
   Layer.provide(FSUtil.defaultLayer),
   Layer.provide(Env.defaultLayer),
   Layer.provide(AuthTest.empty),
-  Layer.provide(AccountTest.empty),
   Layer.provide(NpmTest.noop),
   Layer.provide(FetchHttpClient.layer),
   Layer.provide(Global.layer),

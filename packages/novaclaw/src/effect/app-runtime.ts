@@ -5,7 +5,6 @@ import * as Observability from "@novaclaw/core/observability"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { Database } from "@novaclaw/core/database/database"
 import { Auth } from "@/auth"
-import { Account } from "@/account/account"
 import { Config } from "@/config/config"
 import { Git } from "@/git"
 import { Ripgrep } from "@novaclaw/core/ripgrep"
@@ -28,12 +27,10 @@ import { InstanceLayer } from "@/project/instance-layer"
 import { Vcs } from "@/project/vcs"
 import { Workspace } from "@/control-plane/workspace"
 import { Worktree } from "@/worktree"
-import { Installation } from "@/installation"
 import { Npm } from "@novaclaw/core/npm"
 import { ProjectV2 } from "@novaclaw/core/project"
 import { SessionStore } from "@novaclaw/core/session/store"
 import { memoMap } from "@novaclaw/core/effect/memo-map"
-import { BackgroundJob } from "@/background/job"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { EventV2Bridge } from "@/event-v2-bridge"
 
@@ -42,7 +39,6 @@ export const AppLayer = Layer.mergeAll(
   FSUtil.defaultLayer,
   Database.defaultLayer,
   Auth.defaultLayer,
-  Account.defaultLayer,
   Config.defaultLayer,
   Git.defaultLayer,
   Storage.defaultLayer,
@@ -56,7 +52,6 @@ export const AppLayer = Layer.mergeAll(
   Question.defaultLayer,
   Permission.defaultLayer,
   Todo.defaultLayer,
-  BackgroundJob.defaultLayer,
   RuntimeFlags.defaultLayer,
   EventV2Bridge.defaultLayer,
   MCP.defaultLayer,
@@ -72,7 +67,6 @@ export const AppLayer = Layer.mergeAll(
   Vcs.defaultLayer,
   Workspace.defaultLayer,
   Worktree.appLayer,
-  Installation.defaultLayer,
 ).pipe(
   Layer.provideMerge(Ripgrep.defaultLayer),
   Layer.provideMerge(InstanceLayer.layer),

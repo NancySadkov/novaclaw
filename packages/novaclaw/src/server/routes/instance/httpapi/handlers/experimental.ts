@@ -1,22 +1,15 @@
-import { Account } from "@/account/account"
-import { BackgroundJob } from "@/background/job"
-import { Config } from "@/config/config"
 import { InstanceState } from "@/effect/instance-state"
-import { RuntimeFlags } from "@/effect/runtime-flags"
 import { MCP } from "@/mcp"
-import type { SessionID } from "@/session/schema"
-import { Database } from "@novaclaw/core/database/database"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import { LocationServiceMap } from "@novaclaw/core/location-services"
 import { ServerLocationServiceMap } from "@/location-service-map"
 import { Location } from "@novaclaw/core/location"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { Worktree } from "@/worktree"
-import { Effect, Layer, Option } from "effect"
-import * as HttpServerResponse from "effect/unstable/http/HttpServerResponse"
-import { HttpApiBuilder, HttpApiError } from "effect/unstable/httpapi"
+import { Effect, Layer } from "effect"
+import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
-import { ConsoleSwitchPayload, SessionListQuery, ToolListQuery, WorktreeApiError } from "../groups/experimental"
+import { SessionListQuery, ToolListQuery, WorktreeApiError } from "../groups/experimental"
 
 function mapWorktreeError<A, R>(self: Effect.Effect<A, Worktree.Error, R>) {
   return self.pipe(
@@ -26,8 +19,6 @@ function mapWorktreeError<A, R>(self: Effect.Effect<A, Worktree.Error, R>) {
 
 export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "experimental", (handlers) =>
   Effect.gen(function* () {
-    const account = yield* Account.Service
-    const config = yield* Config.Service
     const mcp = yield* MCP.Service
     const locations = yield* LocationServiceMap.Service
     const worktreeSvc = yield* Worktree.Service
@@ -42,64 +33,6 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
         Effect.map((material) => material.definitions),
         Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory) }))),
       )
-    })
-    const background = yield* BackgroundJob.Service
-    const flags = yield* RuntimeFlags.Service
-    const { db } = yield* Database.Service
-
-    const capabilities = Effect.fn("ExperimentalHttpApi.capabilities")(function* () {
-      return { backgroundSubagents: flags.experimentalBackgroundSubagents }
-    })
-
-    const getConsole = Effect.fn("ExperimentalHttpApi.console")(function* () {
-      const [state, groups] = yield* Effect.all(
-        [
-          config.getConsoleState(),
-          account.orgsByAccount().pipe(Effect.catch(() => Effect.fail(new HttpApiError.InternalServerError({})))),
-        ],
-        {
-          concurrency: "unbounded",
-        },
-      )
-      return {
-        consoleManagedProviders: state.consoleManagedProviders,
-        ...(state.activeOrgName ? { activeOrgName: state.activeOrgName } : {}),
-        switchableOrgCount: groups.reduce((count, group) => count + group.orgs.length, 0),
-      }
-    })
-
-    const listConsoleOrgs = Effect.fn("ExperimentalHttpApi.consoleOrgs")(function* () {
-      const [groups, active] = yield* Effect.all(
-        [
-          account.orgsByAccount().pipe(Effect.catch(() => Effect.fail(new HttpApiError.InternalServerError({})))),
-          account.active().pipe(Effect.catch(() => Effect.fail(new HttpApiError.InternalServerError({})))),
-        ],
-        {
-          concurrency: "unbounded",
-        },
-      )
-      const info = Option.getOrUndefined(active)
-      return {
-        orgs: groups.flatMap((group) =>
-          group.orgs.map((org) => ({
-            accountID: group.account.id,
-            accountEmail: group.account.email,
-            accountUrl: group.account.url,
-            orgID: org.id,
-            orgName: org.name,
-            active: !!info && info.id === group.account.id && info.active_org_id === org.id,
-          })),
-        ),
-      }
-    })
-
-    const switchConsole = Effect.fn("ExperimentalHttpApi.consoleSwitch")(function* (ctx: {
-      payload: typeof ConsoleSwitchPayload.Type
-    }) {
-      yield* account
-        .use(ctx.payload.accountID, Option.some(ctx.payload.orgID))
-        .pipe(Effect.catch(() => Effect.fail(new HttpApiError.BadRequest({}))))
-      return true
     })
 
     const tool = Effect.fn("ExperimentalHttpApi.tool")(function* (_ctx: { query: typeof ToolListQuery.Type }) {
@@ -141,37 +74,17 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
       return true
     })
 
-    const sessionBackground = Effect.fn("ExperimentalHttpApi.sessionBackground")(function* (ctx: {
-      params: { sessionID: SessionID }
-    }) {
-      if (!flags.experimentalBackgroundSubagents) return false
-      const jobs = (yield* background.list()).filter(
-        (job) =>
-          job.type === "task" &&
-          job.status === "running" &&
-          job.metadata?.parentSessionId === ctx.params.sessionID &&
-          job.metadata.background !== true,
-      )
-      const promoted = yield* Effect.forEach(jobs, (job) => background.promote(job.id), { concurrency: "unbounded" })
-      return promoted.some((job) => job !== undefined)
-    })
-
     const resource = Effect.fn("ExperimentalHttpApi.resource")(function* () {
       return yield* mcp.resources()
     })
 
     return handlers
-      .handle("capabilities", capabilities)
-      .handle("console", getConsole)
-      .handle("consoleOrgs", listConsoleOrgs)
-      .handle("consoleSwitch", switchConsole)
       .handle("tool", tool)
       .handle("toolIDs", toolIDs)
       .handle("worktree", worktree)
       .handle("worktreeCreate", worktreeCreate)
       .handle("worktreeRemove", worktreeRemove)
       .handle("worktreeReset", worktreeReset)
-      .handle("sessionBackground", sessionBackground)
       .handle("resource", resource)
   }),
 ).pipe(Layer.provide(ServerLocationServiceMap.layer))

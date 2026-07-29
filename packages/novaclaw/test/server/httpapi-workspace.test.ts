@@ -21,7 +21,7 @@ import { disposeAllInstances, provideInstance, tmpdirScoped } from "../fixture/f
 import { InstanceBootstrap } from "../../src/project/bootstrap"
 import { InstanceStore } from "../../src/project/instance-store"
 import { InstancePaths } from "../../src/server/routes/instance/httpapi/groups/instance"
-import { testEffect } from "../lib/effect"
+import { testEffectShared } from "../lib/effect"
 import { httpApiLayer, requestInDirectory } from "./httpapi-layer"
 
 const resolveOrigin = (dir: string) =>
@@ -35,7 +35,7 @@ const workspaceLayer = Workspace.defaultLayer.pipe(
   Layer.provide(InstanceStore.defaultLayer),
   Layer.provide(InstanceBootstrap.defaultLayer),
 )
-const it = testEffect(
+const it = testEffectShared(
   Layer.mergeAll(
     ProjectV2.defaultLayer,
     EventV2.defaultLayer,

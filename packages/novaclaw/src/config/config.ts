@@ -7,7 +7,6 @@ import { mergeDeep } from "remeda"
 import { Global } from "@novaclaw/core/global"
 import { Flag } from "@novaclaw/core/flag/flag"
 import { Auth } from "../auth"
-import { Env } from "../env"
 import { InstallationLocal, InstallationVersion } from "@novaclaw/core/installation/version"
 import { existsSync } from "fs"
 import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
@@ -19,9 +18,7 @@ import { PluginConfigStore } from "@novaclaw/core/plugin-config-store"
 import { ReferenceConfigStore } from "@novaclaw/core/reference-config-store"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
-import { Account } from "@/account/account"
 import { isRecord } from "@/util/record"
-import type { ConsoleState } from "@novaclaw/core/config/console-state"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { InstanceState } from "@/effect/instance-state"
 import { Context, Duration, Effect, Exit, Fiber, Layer, Option, Schema } from "effect"
@@ -198,7 +195,6 @@ type State = {
   config: Info
   directories: string[]
   deps: Fiber.Fiber<void>[]
-  consoleState: ConsoleState
 }
 
 // Config→SQLite step 9: `update`/`updateGlobal` are gone — every write routes through
@@ -207,7 +203,6 @@ type State = {
 export interface Interface {
   readonly get: () => Effect.Effect<Info>
   readonly getGlobal: () => Effect.Effect<Info>
-  readonly getConsoleState: () => Effect.Effect<ConsoleState>
   readonly invalidate: () => Effect.Effect<void>
   readonly directories: () => Effect.Effect<string[]>
   readonly waitForDependencies: () => Effect.Effect<void>
@@ -222,8 +217,6 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const fs = yield* FSUtil.Service
     const authSvc = yield* Auth.Service
-    const accountSvc = yield* Account.Service
-    const env = yield* Env.Service
     const npmSvc = yield* Npm.Service
     const http = yield* HttpClient.HttpClient
 
@@ -367,8 +360,6 @@ export const layer = Layer.effect(
 
         let result: Info = {}
         const authEnv: Record<string, string> = {}
-        const consoleManagedProviders = new Set<string>()
-        let activeOrgName: string | undefined
 
         const pluginScopeForSource = Effect.fnUntraced(function* (source: string) {
           if (source.startsWith("http://") || source.startsWith("https://")) return "global"
@@ -523,44 +514,6 @@ export const layer = Layer.effect(
           yield* Effect.logDebug("loaded custom config from NOVACLAW_CONFIG_CONTENT")
         }
 
-        const activeAccount = Option.getOrUndefined(
-          yield* accountSvc.active().pipe(Effect.catch(() => Effect.succeed(Option.none()))),
-        )
-        if (activeAccount?.active_org_id) {
-          const accountID = activeAccount.id
-          const orgID = activeAccount.active_org_id
-          const url = activeAccount.url
-          yield* Effect.gen(function* () {
-            const [configOpt, tokenOpt] = yield* Effect.all(
-              [accountSvc.config(accountID, orgID), accountSvc.token(accountID)],
-              { concurrency: 2 },
-            )
-            if (Option.isSome(tokenOpt)) {
-              process.env["NOVACLAW_CONSOLE_TOKEN"] = tokenOpt.value
-              yield* env.set("NOVACLAW_CONSOLE_TOKEN", tokenOpt.value)
-            }
-
-            if (Option.isSome(configOpt)) {
-              const source = `${url}/api/config`
-              const next = yield* loadConfig(JSON.stringify(configOpt.value), {
-                dir: path.dirname(source),
-                source,
-              })
-              for (const providerID of Object.keys(next.providers ?? {})) {
-                consoleManagedProviders.add(providerID)
-              }
-              yield* merge(source, next, "global")
-            }
-          }).pipe(
-            Effect.withSpan("Config.loadActiveOrgConfig"),
-            Effect.catch((err) =>
-              Effect.logDebug("failed to fetch remote account config", {
-                error: err instanceof Error ? err.message : String(err),
-              }),
-            ),
-          )
-        }
-
         const managedDir = ConfigManaged.managedConfigDir()
         if (existsSync(managedDir)) {
           for (const file of ["novaclaw.json", "novaclaw.jsonc"]) {
@@ -616,11 +569,6 @@ export const layer = Layer.effect(
           config: result,
           directories,
           deps,
-          consoleState: {
-            consoleManagedProviders: Array.from(consoleManagedProviders),
-            activeOrgName,
-            switchableOrgCount: 0,
-          },
         }
       },
       Effect.provideService(FSUtil.Service, fs),
@@ -640,10 +588,6 @@ export const layer = Layer.effect(
       return yield* InstanceState.use(state, (s) => s.directories)
     })
 
-    const getConsoleState = Effect.fn("Config.getConsoleState")(function* () {
-      return yield* InstanceState.use(state, (s) => s.consoleState)
-    })
-
     const waitForDependencies = Effect.fn("Config.waitForDependencies")(function* () {
       yield* InstanceState.useEffect(state, (s) =>
         Effect.forEach(s.deps, Fiber.join, { concurrency: "unbounded" }).pipe(Effect.asVoid),
@@ -657,7 +601,6 @@ export const layer = Layer.effect(
     return Service.of({
       get,
       getGlobal,
-      getConsoleState,
       invalidate,
       directories,
       waitForDependencies,
@@ -668,9 +611,7 @@ export const layer = Layer.effect(
 export const defaultLayer = layer.pipe(
   Layer.provide(EffectFlock.defaultLayer),
   Layer.provide(FSUtil.defaultLayer),
-  Layer.provide(Env.defaultLayer),
   Layer.provide(Auth.defaultLayer),
-  Layer.provide(Account.defaultLayer),
   Layer.provide(Npm.defaultLayer),
   Layer.provide(FetchHttpClient.layer),
   Layer.provide(AgentConfigStore.defaultLayer),
@@ -688,8 +629,6 @@ export const node = LayerNode.make({
   deps: [
     FSUtil.node,
     Auth.node,
-    Account.node,
-    Env.node,
     Npm.node,
     httpClient,
     AgentConfigStore.node,

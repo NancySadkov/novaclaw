@@ -27,10 +27,10 @@ import { Effect, Exit, Layer } from "effect"
 import type { HttpClientResponse } from "effect/unstable/http"
 import { Offline } from "@novaclaw/core/offline"
 import { TestInstance } from "../fixture/fixture"
-import { testEffect } from "../lib/effect"
+import { testEffectShared } from "../lib/effect"
 import { httpApiLayer, requestInDirectory } from "./httpapi-layer"
 
-const it = testEffect(httpApiLayer)
+const it = testEffectShared(httpApiLayer)
 
 const OFFLINE_PATH = "/shell/offline"
 

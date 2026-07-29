@@ -61,7 +61,6 @@ Prefer small reusable fake boundary layers in `test/fake/*`:
 
 ```ts
 AuthTest.empty
-AccountTest.empty
 NpmTest.noop
 SkillTest.empty
 ProviderTest.fake().layer

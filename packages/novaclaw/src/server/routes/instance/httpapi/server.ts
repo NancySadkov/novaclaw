@@ -14,17 +14,14 @@ import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { SkillConfigStore } from "@novaclaw/core/skill-config-store"
 import { Global } from "@novaclaw/core/global"
 import * as Observability from "@novaclaw/core/observability"
-import { Account } from "@/account/account"
 import { Agent } from "@/agent/agent"
 import { Auth } from "@/auth"
-import { BackgroundJob } from "@/background/job"
 import { Config } from "@/config/config"
 import { Workspace } from "@/control-plane/workspace"
 import { Env } from "@/env"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { Format } from "@/format"
 import { Git } from "@/git"
-import { Installation } from "@/installation"
 import { MCP } from "@/mcp"
 import { McpAuth } from "@/mcp/auth"
 import { Permission } from "@/permission"
@@ -240,7 +237,6 @@ const app = LayerNode.group([
   // location-scoped runner share ONE ledger (two builds would report different worlds).
   SessionScheduler.node,
   Auth.node,
-  Account.node,
   Config.node,
   Env.node,
   Git.node,
@@ -258,7 +254,6 @@ const app = LayerNode.group([
   PermissionSaved.node,
   Todo.node,
   SessionProjector.node,
-  BackgroundJob.node,
   RuntimeFlags.node,
   EventV2Bridge.node,
   MCP.node,
@@ -268,7 +263,6 @@ const app = LayerNode.group([
   Vcs.node,
   Workspace.node,
   Worktree.node,
-  Installation.node,
   InstanceStore.node,
   // The airgap policy holder. `httpClient` already depends on it, so listing it here does NOT add
   // a build: `LayerNode.compile` walks every root member through ONE cache, so this node resolves

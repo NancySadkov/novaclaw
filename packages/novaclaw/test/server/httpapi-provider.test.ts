@@ -5,7 +5,7 @@ import path from "path"
 import { resetDatabase } from "../fixture/db"
 import { TestInstance } from "../fixture/fixture"
 import { markPluginDependenciesReady } from "../fixture/plugin"
-import { testEffect } from "../lib/effect"
+import { testEffectShared } from "../lib/effect"
 import { httpApiLayer, request } from "./httpapi-layer"
 
 const testStateLayer = Layer.effectDiscard(
@@ -15,7 +15,7 @@ const testStateLayer = Layer.effectDiscard(
   ),
 )
 
-const it = testEffect(Layer.mergeAll(testStateLayer, FSUtil.defaultLayer, httpApiLayer))
+const it = testEffectShared(Layer.mergeAll(testStateLayer, FSUtil.defaultLayer, httpApiLayer))
 const projectOptions = { config: { formatter: false } }
 const providerID = "test-oauth-parity"
 const oauthURL = "https://example.com/oauth"

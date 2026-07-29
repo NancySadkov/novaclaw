@@ -13,9 +13,6 @@ export function cliErrorMessage(input: unknown): string | undefined {
     if (typeof input.exitCode === "number") process.exitCode = input.exitCode
     return field(input, "message") ?? ""
   }
-  if (tagged(input, "AccountServiceError") || tagged(input, "AccountTransportError")) {
-    return field(input, "message") ?? ""
-  }
 
   const model = configData(input, "ProviderModelNotFoundError")
   if (model) {

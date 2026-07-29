@@ -1,7 +1,7 @@
 // Config→SQLite step 9: the V1 config service serves the per-subsystem SQLite stores — jsonc
 // files are import/export wire format only, never runtime sources. This suite pins the NEW
 // contract: (A) store-backed serving, (B) the idempotent first-boot import, (C) live non-file
-// sources (NOVACLAW_CONFIG_CONTENT, remote well-known, account, managed MDM), (D) the D2
+// sources (NOVACLAW_CONFIG_CONTENT, remote well-known, managed MDM), (D) the D2
 // filesystem walks (markdown agents/commands, plugin dirs), and (E) the pure helpers. The
 // retired file-loading behaviors (project/global jsonc precedence, jsonc patching via
 // update/updateGlobal, the $schema stub write) died with step 9 and their tests with them.
@@ -20,8 +20,6 @@ import { EffectFlock } from "@novaclaw/core/util/effect-flock"
 import { InstanceRef } from "../../src/effect/instance-ref"
 import type { InstanceContext } from "../../src/project/instance-context"
 import { Auth } from "../../src/auth"
-import { Account } from "../../src/account/account"
-import { AccessToken, AccountID, OrgID } from "../../src/account/schema"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { Env } from "../../src/env"
 import {
@@ -42,7 +40,6 @@ import { Global } from "@novaclaw/core/global"
 import { Filesystem } from "@/util/filesystem"
 import { ConfigPlugin } from "@/config/plugin"
 import { ConfigPluginSpec } from "@novaclaw/core/config/plugin-spec"
-import { AccountTest } from "../fake/account"
 import { AuthTest } from "../fake/auth"
 import { NpmTest } from "../fake/npm"
 import { Database } from "@novaclaw/core/database/database"
@@ -122,7 +119,6 @@ function remoteConfigClient(input: {
 const configLayer = (
   options: {
     auth?: Layer.Layer<Auth.Service>
-    account?: Layer.Layer<Account.Service>
     client?: HttpClient.HttpClient
   } = {},
 ) =>
@@ -130,7 +126,6 @@ const configLayer = (
     Layer.provide(testFlock),
     Layer.provide(Env.defaultLayer),
     Layer.provide(options.auth ?? AuthTest.empty),
-    Layer.provide(options.account ?? AccountTest.empty),
     Layer.provideMerge(infra),
     Layer.provide(NpmTest.noop),
     Layer.provide(Layer.succeed(HttpClient.HttpClient, options.client ?? unexpectedHttp)),
@@ -206,7 +201,6 @@ const clear = (wait = false) => Effect.runPromise(clearEffect(wait))
 // Get managed config directory from environment (set in preload.ts)
 const managedConfigDir = process.env.NOVACLAW_TEST_MANAGED_CONFIG_DIR!
 const originalTestToken = process.env.TEST_TOKEN
-const originalConsoleToken = process.env.NOVACLAW_CONSOLE_TOKEN
 
 beforeEach(async () => {
   await clear(true)
@@ -216,8 +210,6 @@ afterEach(async () => {
   await fs.rm(managedConfigDir, { force: true, recursive: true }).catch(() => {})
   if (originalTestToken === undefined) delete process.env.TEST_TOKEN
   else process.env.TEST_TOKEN = originalTestToken
-  if (originalConsoleToken === undefined) delete process.env.NOVACLAW_CONSOLE_TOKEN
-  else process.env.NOVACLAW_CONSOLE_TOKEN = originalConsoleToken
   await clear(true)
 })
 
@@ -541,49 +533,6 @@ describe("NOVACLAW_CONFIG_CONTENT", () => {
   )
 })
 
-const accountTokenIt = configIt({
-  account: Layer.mock(Account.Service)({
-    active: () =>
-      Effect.succeed(
-        Option.some({
-          id: AccountID.make("account-1"),
-          email: "user@example.com",
-          url: "https://control.example.com",
-          active_org_id: OrgID.make("org-1"),
-        }),
-      ),
-    activeOrg: () =>
-      Effect.succeed(
-        Option.some({
-          account: {
-            id: AccountID.make("account-1"),
-            email: "user@example.com",
-            url: "https://control.example.com",
-            active_org_id: OrgID.make("org-1"),
-          },
-          org: {
-            id: OrgID.make("org-1"),
-            name: "Example Org",
-          },
-        }),
-      ),
-    config: () =>
-      Effect.succeed(
-        Option.some({
-          providers: { novaclaw: { request: { body: { apiKey: "{env:NOVACLAW_CONSOLE_TOKEN}" } } } },
-        }),
-      ),
-    token: () => Effect.succeed(Option.some(AccessToken.make("st_test_token"))),
-  }),
-})
-
-accountTokenIt.instance("resolves env templates in account config with account token", () =>
-  Effect.gen(function* () {
-    const config = yield* Config.use.get()
-    expect(config.providers?.["novaclaw"]?.request?.body?.apiKey).toBe("st_test_token")
-  }),
-)
-
 // ————— Remote well-known config (a live non-file source) —————
 
 const storeOverridesRemote = wellKnown({
@@ -662,7 +611,6 @@ test("remote well-known config can use FetchHttpClient layer", async () => {
             Layer.provide(FSUtil.defaultLayer),
             Layer.provide(Env.defaultLayer),
             Layer.provide(wellKnownAuth(server.url.origin)),
-            Layer.provide(AccountTest.empty),
             Layer.provideMerge(infra),
             Layer.provide(NpmTest.noop),
             Layer.provide(FetchHttpClient.layer),

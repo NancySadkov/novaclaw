@@ -24,7 +24,6 @@ import { InstanceState } from "../../src/effect/instance-state"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
 import { workspaceLayerWithRuntimeFlags } from "../fixture/workspace"
 import { testEffect } from "../lib/effect"
-import { AccountTest } from "../fake/account"
 import { AuthTest } from "../fake/auth"
 import { NpmTest } from "../fake/npm"
 
@@ -33,7 +32,6 @@ const configLayer = Config.layer.pipe(
   Layer.provide(FSUtil.defaultLayer),
   Layer.provide(Env.defaultLayer),
   Layer.provide(AuthTest.empty),
-  Layer.provide(AccountTest.empty),
   Layer.provide(NpmTest.noop),
   Layer.provide(FetchHttpClient.layer),
   Layer.provide(Global.layer),

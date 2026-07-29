@@ -3,6 +3,13 @@ import { sqliteTable, text, integer, primaryKey } from "drizzle-orm/sqlite-core"
 import { AccountV2 } from "../account"
 import { Timestamps } from "../database/schema.sql"
 
+// ⚠️ DEAD TABLES, deliberately still declared. The Console/org SaaS client that read and wrote
+// them was deleted 2026-07-29 (v0.2.0 ruling 12); nothing in the tree touches these rows now.
+// They stay because they exist in every already-migrated user database and `schema.gen.ts` /
+// `schema.json` describe them — removing the declaration without a DROP migration is exactly the
+// snapshot drift that killed boot in Wave 0 (B5). Retiring them is a three-part sequenced change
+// (drop migration → regenerated snapshot → this file), not an edit to make in passing.
+
 export const AccountTable = sqliteTable("account", {
   id: text().$type<AccountV2.ID>().primaryKey(),
   email: text().notNull(),

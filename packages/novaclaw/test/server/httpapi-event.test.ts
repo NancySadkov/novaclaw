@@ -3,7 +3,7 @@ import { Effect, Layer, Queue, Schema, Stream } from "effect"
 import { EventPaths } from "../../src/server/routes/instance/httpapi/groups/event"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, TestInstance } from "../fixture/fixture"
-import { testEffect } from "../lib/effect"
+import { testEffectShared } from "../lib/effect"
 import { httpApiLayer, requestInDirectory } from "./httpapi-layer"
 
 const EventData = Schema.Struct({
@@ -39,7 +39,7 @@ afterEach(async () => {
   await resetDatabase()
 })
 
-const it = testEffect(httpApiLayer)
+const it = testEffectShared(httpApiLayer)
 
 describe("event HttpApi", () => {
   it.instance(

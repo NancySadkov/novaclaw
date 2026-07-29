@@ -517,9 +517,9 @@ export const layer = Layer.effect(
     // F1c-2 — session removal on the core engine (body: `removeSessionRecord`). The layer
     // injects the execution interrupt (idle interruption is a no-op; V1 never interrupted and
     // left a runner fiber writing into a purged aggregate). V1's background-job sweep has no
-    // core successor: post-F1b nothing tags BackgroundJobs with session metadata (only the
-    // unreachable V1 task tool did); native BashJobs are in-memory and die with the location
-    // (1H residue).
+    // core successor and never will: the `BackgroundJob` registry it swept was deleted
+    // 2026-07-29 (nothing had called `start()` since F1b). Native BashJobs are in-memory and
+    // die with the location (1H residue).
     const removeRecord = (sessionID: SessionSchema.ID): Effect.Effect<void, NotFoundError> =>
       removeSessionRecord(
         {

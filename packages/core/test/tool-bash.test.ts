@@ -520,7 +520,11 @@ test("keeps locked deferred parity TODOs visible", async () => {
   const source = await fs.readFile(new URL("../src/tool/bash.ts", import.meta.url), "utf8")
   for (const todo of [
     "Port tree-sitter bash / PowerShell parser-based approval reduction.",
-    "Port BashArity reusable command-prefix approvals.",
+    // The old wording was "Port BashArity reusable command-prefix approvals." — it named
+    // `novaclaw/src/permission/arity.ts`, an LLM-generated 137-entry command→arity table with no
+    // importer, deleted 2026-07-29 with the rest of the §5 list. The CAPABILITY survives the table:
+    // a pinned TODO must name what is still wanted, never a module that no longer exists.
+    "Reusable command-prefix approvals — approve `git commit` once, not each full command string.",
     "Replace token-based command-argument external-directory advisories with parser-based detection.",
     "Restore PowerShell and cmd-specific invocation/path handling on Windows.",
     "Add plugin shell.env environment augmentation once V2 plugin hooks exist.",
