@@ -152,48 +152,49 @@ if [ -n "$staged_sql" ]; then
 fi
 
 # --------------------------------------------------------------------------------------------------
-# CHECK 3 — a staged file whose line endings flipped wholesale against HEAD.
+# CHECK 3 — a staged text blob that contains CRLF.
 #
-# Read with universal newlines, write with newline='' — and every CRLF in the file silently becomes
-# LF. A one-line edit then lands as a whole-file diff. It is invisible in review (a big diff just
-# looks like a big change), it destroys `git blame` for that file, and it manufactures conflicts for
-# anyone editing it in parallel.
+# The tree is uniformly LF as of 2026-07-29 (`.gitattributes` `* text=auto eol=lf`, applied by a
+# `git add --renormalize` over the 185 remaining CRLF files). `text=auto` means git normalizes a text
+# file to LF in the blob on `add`, so CRLF should be unable to re-enter a commit at all — this check is
+# the BACKSTOP for the case where it slips past (a clone whose attributes were not applied, a file
+# force-added with `-c core.autocrlf=input` off, a generator that writes CRLF). It refuses the commit
+# and names the files, rather than letting a stray CR land and start the drift over again.
 #
-# This bit TWICE in one session on 2026-07-29 — a worker agent caught it in itself by auditing
-# --numstat against byte counts, and the coordinator then made the identical mistake on
-# packages/app/package.json (88 CRLF -> 0, turning a 1-line removal into an 88-line diff). Two
-# independent instances in one day is the definition of a class, and the project's own law says a
-# class gets a mechanical check rather than a note.
-#
-# ⚠️ This tree is deliberately MIXED CRLF/LF at HEAD, so the rule cannot be "everything is LF". The
-# only defensible rule is CONSERVATIVE: a file that had CRLF must still have CRLF. New files are not
-# judged, and a file that was already LF is not judged.
+# ⚠️ This INVERTS the rule this check held until 2026-07-29. It used to be "a file that had CRLF must
+# KEEP CRLF" because the tree was deliberately mixed; normalization made that premise false, so
+# preserving it would have fought Prettier (which writes LF) on every commit forever. The failure it
+# originally guarded — a whole-file CRLF→LF flip burying a one-line edit — cannot recur now that HEAD
+# is already LF: there is no CRLF left to flip. Binary files are exempt (numstat reports `-`).
 # --------------------------------------------------------------------------------------------------
-staged_flip=$(
-  git diff --cached --numstat --diff-filter=M -- . 2>/dev/null | sort -k3 > "$tmp_raw" 2>/dev/null
-  git diff --cached --numstat --diff-filter=M --ignore-cr-at-eol -- . 2>/dev/null | sort -k3 > "$tmp_real" 2>/dev/null
-  join -j 3 "$tmp_raw" "$tmp_real" 2>/dev/null | awk '{ raw = $2 + $3; real = $4 + $5; if (raw - real >= 10) print $1 }'
+cr=$(printf '\r')
+staged_crlf=$(
+  git diff --cached --numstat --diff-filter=ACM -- . 2>/dev/null |
+    while IFS="$(printf '\t')" read -r adds dels path; do
+      [ "$adds" = "-" ] && continue # binary per .gitattributes / git's NUL heuristic
+      if git show ":$path" 2>/dev/null | grep -qU "$cr" 2>/dev/null; then
+        printf '%s\n' "$path"
+      fi
+    done
 )
-rm -f "$tmp_raw" "$tmp_real"
 
-if [ -n "$staged_flip" ]; then
+if [ -n "$staged_crlf" ]; then
   fail=1
   echo "" >&2
-  echo "pre-commit: REFUSING — these staged files differ from HEAD mostly in LINE ENDINGS:" >&2
+  echo "pre-commit: REFUSING — these staged text files contain CRLF; the tree is LF-only:" >&2
   echo "" >&2
-  printf '%s
-' "$staged_flip" | sed 's/^/    /' >&2
+  printf '%s\n' "$staged_crlf" | sed 's/^/    /' >&2
   echo "" >&2
-  echo "  Measured by comparing 'git diff --numstat' against the same diff with --ignore-cr-at-eol:" >&2
-  echo "  the change shrinks by 10+ lines when line endings are ignored, i.e. most of the diff IS the" >&2
-  echo "  line endings. That hides the real change, destroys blame, and collides with anyone editing" >&2
-  echo "  the file in parallel. Almost always a script that read with universal newlines and wrote" >&2
-  echo "  back with newline=''." >&2
+  echo "  Since 2026-07-29 every tracked text file is LF ('.gitattributes' '* text=auto eol=lf'), and" >&2
+  echo "  '.editorconfig' already mandates it. A staged CRLF blob means the normalization did not apply" >&2
+  echo "  to your clone or a tool wrote CRLF. Almost always a script that read with universal newlines" >&2
+  echo "  and wrote back with newline='' — the same class, now in the other direction." >&2
   echo "" >&2
-  echo "  Fix (restores CRLF, keeps your edit):" >&2
-  echo "    python -c \"import sys;p=sys.argv[1];d=open(p,'rb').read();open(p,'wb').write(d.replace(b'\n',b'\r\n'))\" <file>" >&2
+  echo "  Fix (converts to LF and re-stages):" >&2
+  echo "    git add --renormalize <file>   # or:  dos2unix <file> && git add <file>" >&2
   echo "" >&2
-  echo "  Bypass (only if the flip IS the intended change):  git commit --no-verify" >&2
+  echo "  Bypass (only if the CRLF is genuinely required — e.g. a new .bat, which also needs a" >&2
+  echo "  '*.bat text eol=crlf' rule in .gitattributes):  git commit --no-verify" >&2
   echo "" >&2
 fi
 
