@@ -133,16 +133,31 @@ const vectorLiteral = (v: readonly number[]) => `[${v.map((n) => (Number.isFinit
 let lbugModule: any
 let initPromise: Promise<any> | undefined
 let memfsCounter = 0
+/** Resolved once by `ensureScratchRoot`: `SCRATCH_ROOT`, or the junction on a cross-drive home. */
+let effectiveRoot: string | undefined
 
 /**
- * The root-anchored NAME the Windows engine is given. It is a junction, not storage — see
- * `SCRATCH_ROOT` below for the four measurements that rule out every other shape, and
- * `scratchHome()` for where the bytes actually live.
+ * Strip a leading `C:` so a Windows path becomes ROOT-ANCHORED but keeps all its segments.
  *
- * ⚠️ The doc this replaces claimed the scratch was MEMFS ("pure-RAM"). It never was: 129 directories
- * holding 249 MB were found at the drive root on 2026-07-28, one per engine open. The module header
- * above still repeats that claim in the persistence note and is wrong in the same way — the DB files
- * are real files on a real disk, and the only thing MEMFS-shaped about them is the path syntax.
+ * ⚠️ This is the whole fix, and it exists because the previous investigation stopped one measurement
+ * short. It established that the engine rejects a drive letter, and concluded that the path therefore
+ * had to be a single root-level name (`/novaclaw-kbmem`) with a junction pointing home. It never tried
+ * the shape in between. Measured 2026-07-30 against the real engine:
+ *   • `/novaclaw-kbmem`                          → opens, and IS the drive root (the litter)
+ *   • `/Users/<u>/.cache/novaclaw/kbmem`         → **opens, and the bytes land in HOME**
+ *   • `C:/Users/<u>/.cache/novaclaw/kbmem`       → `in current_path: call to getcwd failed`
+ * So the constraint was never "one segment"; it was only "no drive letter". A root-anchored path
+ * resolves against the process's CURRENT DRIVE, so with home and cwd on the same drive — every normal
+ * install — this reaches exactly the same directory the junction pointed at, with nothing created
+ * outside the home at all.
+ */
+const stripDriveLetter = (p: string): string => p.replace(/^[A-Za-z]:/, "").replaceAll("\\", "/")
+
+/**
+ * Fallback only: the old root-anchored junction NAME. Reached solely when `scratchHome()` sits on a
+ * DIFFERENT drive than the process cwd, because a drive-letter-free path cannot cross drives — it
+ * would silently resolve onto the cwd's drive instead. `ensureScratchRoot` proves which case it is by
+ * sentinel rather than assuming, and says so out loud when it falls back.
  */
 const SCRATCH_ALIAS_WIN32 = "/novaclaw-kbmem"
 
@@ -165,13 +180,17 @@ export const scratchHome = (): string => path.join(Global.Path.cache, "kbmem")
  *   • `C:/Users/.../kbmem`         → `filesystem error: in current_path: call to getcwd failed`
  *   • `FS.mount(NODEFS, {root})`   → **silently BYPASSED** — the engine wrote to `C:\<mountpoint>`
  *   • a path relative to `cwd`     → the same `getcwd` failure
- * The engine's `current_path()` fails for anything that is not root-anchored, and it ignores
- * emscripten's VFS mounts, so no path string moves the bytes. What DOES move them is a **junction**:
- * the root-anchored name stays (the engine is satisfied) while the storage lives under the home.
- * A junction needs no elevation on Windows, and if it cannot be created we fall back to the old
- * behaviour rather than failing to open memory at all — memory is a re-derivable tier (§4.9).
+ * The engine's `current_path()` fails for anything carrying a drive letter, and it ignores
+ * emscripten's VFS mounts, so no *mount* moves the bytes.
+ *
+ * ⚠️ **But the conclusion drawn from those four — that the name must therefore be a single root-level
+ * segment plus a junction — was wrong, and the junction is gone (2026-07-30).** A fifth measurement
+ * the original set skipped: a MULTI-segment root-anchored path, `/Users/<u>/.cache/novaclaw/kbmem`,
+ * opens cleanly and puts the bytes in the home. The constraint was only ever "no drive letter", so
+ * simply stripping `C:` gives the engine a path it accepts that already IS the home directory, and
+ * nothing is created outside the home at all. See `stripDriveLetter`.
  */
-export const SCRATCH_ROOT: string = process.platform === "win32" ? SCRATCH_ALIAS_WIN32 : scratchHome()
+export const SCRATCH_ROOT: string = process.platform === "win32" ? stripDriveLetter(scratchHome()) : scratchHome()
 
 /** Age after which a scratch dir is assumed abandoned by a dead process and swept. */
 const SCRATCH_STALE_MS = 24 * 60 * 60 * 1000
@@ -210,11 +229,11 @@ const installExitHook = () => {
  * SIGKILL, a wall-clock-killed test unit). Age-based rather than pid-based: a pid is reused, and
  * probing liveness cross-platform costs more than it saves for a throwaway directory.
  */
-const sweepStaleScratch = () => {
+const sweepStaleScratch = (root: string) => {
   try {
     const now = Date.now()
-    for (const name of readdirSync(SCRATCH_ROOT)) {
-      const dir = join(SCRATCH_ROOT, name)
+    for (const name of readdirSync(root)) {
+      const dir = join(root, name)
       try {
         if (now - statSync(dir).mtimeMs > SCRATCH_STALE_MS) rmSync(dir, { recursive: true, force: true })
       } catch {
@@ -227,60 +246,93 @@ const sweepStaleScratch = () => {
 }
 
 /**
- * Make `SCRATCH_ROOT` exist and point at `scratchHome()`, so the bytes live under the instance home.
+ * Make the scratch root exist and RETURN the path the engine should be handed.
  *
- * POSIX: the two are the same path, so this is just `mkdir -p`.
+ * POSIX, and Windows whenever the home is on the current drive (the normal case): that is
+ * `SCRATCH_ROOT` — `scratchHome()` with any drive letter stripped — so this is just `mkdir -p` plus
+ * the sentinel that proves the stripped path resolves back to the same directory. **Nothing is
+ * created outside the home.**
  *
- * Windows: `SCRATCH_ROOT` is a root-anchored alias the engine can accept, created as a **junction**
- * to the real directory. Junctions need no elevation. Three states are handled deliberately:
- *   • already a link → nothing to do (the common path)
- *   • a real DIRECTORY left by the old build → migrate its contents, then replace it with the link.
+ * The junction below is now a CROSS-DRIVE FALLBACK ONLY, not the normal path. Its three states are
+ * still handled deliberately, because a machine upgrading from the old build may have one:
+ *   • already a link → nothing to do
+ *   • a real DIRECTORY left by an older build → migrate its contents, then replace it with the link.
  *     ⚠️ Not deleted blindly: it is the previous version's scratch and may hold a live store.
- *   • the link cannot be created (policy, a different filesystem) → fall back to using the alias as a
- *     real directory. Memory is a re-derivable tier; refusing to open it would be a worse failure
- *     than storing scratch in the old place, and the fault is named rather than swallowed.
+ *   • the link cannot be created → fall back to using the alias as a real directory. Memory is a
+ *     re-derivable tier; refusing to open it would be worse, and the fault is named, not swallowed.
  */
-const ensureScratchRoot = () => {
+const ensureScratchRoot = (): string => {
   const real = scratchHome()
   mkdirSync(real, { recursive: true })
-  if (process.platform !== "win32") return
+  if (process.platform !== "win32") return real
+  if (effectiveRoot) return effectiveRoot
+
+  // Does the drive-letter-free form actually REACH `real`? It does iff `real` sits on the process's
+  // current drive, since that is what a root-anchored path resolves against. Proven with a sentinel
+  // rather than by comparing drive letters, because `subst` and mapped drives let two different
+  // letters name one volume — and because this resolves the path exactly the way the engine will.
+  const sentinel = `.driveprobe_${process.pid}`
+  try {
+    writeFileSync(join(real, sentinel), "")
+    const reaches = existsSync(join(SCRATCH_ROOT, sentinel))
+    rmSync(join(real, sentinel), { force: true })
+    if (reaches) return (effectiveRoot = SCRATCH_ROOT)
+  } catch {
+    try {
+      rmSync(join(real, sentinel), { force: true })
+    } catch {
+      /* nothing to clean */
+    }
+  }
+
+  // Cross-drive: the home is on another volume, so no drive-letter-free path can reach it — it would
+  // silently resolve onto the cwd's drive instead. This is the ONE case that still creates a name
+  // outside the home, and it is named out loud rather than done quietly (ruling 2). Memory is a
+  // re-derivable tier (§4.9), so degrading storage beats refusing to open it.
+  console.warn(
+    `kb-memory: ${real} is not on the current drive, so the engine cannot be given a path to it; ` +
+      `falling back to the ${SCRATCH_ALIAS_WIN32} junction. This is the only thing NovaClaw writes ` +
+      `outside your home directory — see AGENTS.md → design principle 11.`,
+  )
+  effectiveRoot = SCRATCH_ALIAS_WIN32
 
   let link: ReturnType<typeof lstatSync> | undefined
   try {
-    link = lstatSync(SCRATCH_ROOT)
+    link = lstatSync(SCRATCH_ALIAS_WIN32)
   } catch {
     /* nothing there yet */
   }
-  if (link?.isSymbolicLink()) return
+  if (link?.isSymbolicLink()) return effectiveRoot
 
   if (link?.isDirectory()) {
-    // Migrate the old drive-root scratch into the home, then swap in the link. Best-effort: a
+    // Migrate an old drive-root scratch into the home, then swap in the link. Best-effort: a
     // directory still open by another process stays where it is and is swept by age as before.
-    for (const name of readdirSync(SCRATCH_ROOT)) {
+    for (const name of readdirSync(SCRATCH_ALIAS_WIN32)) {
       try {
         rmSync(join(real, name), { recursive: true, force: true })
-        renameSync(join(SCRATCH_ROOT, name), join(real, name))
+        renameSync(join(SCRATCH_ALIAS_WIN32, name), join(real, name))
       } catch {
         /* in use — leave it for the age sweep */
       }
     }
     try {
-      rmSync(SCRATCH_ROOT, { recursive: false, force: true })
+      rmSync(SCRATCH_ALIAS_WIN32, { recursive: false, force: true })
     } catch {
-      return // still populated; keep using it as a real directory this run
+      return effectiveRoot // still populated; keep using it as a real directory this run
     }
   }
 
   try {
-    symlinkSync(real, SCRATCH_ROOT, "junction")
+    symlinkSync(real, SCRATCH_ALIAS_WIN32, "junction")
   } catch (error) {
     // Name the fault; do not disable memory over it.
     console.warn(
-      `kb-memory: could not link ${SCRATCH_ROOT} -> ${real} (${(error as Error).message}); ` +
-        `scratch will use ${SCRATCH_ROOT} directly this run.`,
+      `kb-memory: could not link ${SCRATCH_ALIAS_WIN32} -> ${real} (${(error as Error).message}); ` +
+        `scratch will use ${SCRATCH_ALIAS_WIN32} directly this run.`,
     )
-    mkdirSync(SCRATCH_ROOT, { recursive: true })
+    mkdirSync(SCRATCH_ALIAS_WIN32, { recursive: true })
   }
+  return effectiveRoot
 }
 
 const loadWasm = (): Promise<any> => {
@@ -339,14 +391,14 @@ export class WasmMemory {
     // file — the stale-node symptom that motivated the pid in the first place. Durability is OUR
     // real-disk snapshot at `realDir`, restored below; this scratch dir is throwaway and `close()`
     // removes it. See SCRATCH_ROOT for why it may not live at the filesystem root.
-    ensureScratchRoot()
-    sweepStaleScratch()
+    const scratchRoot = ensureScratchRoot()
+    sweepStaleScratch(scratchRoot)
     installExitHook()
-    const memfsDir = `${SCRATCH_ROOT}/${process.pid}_${memfsCounter++}`
+    const memfsDir = `${scratchRoot}/${process.pid}_${memfsCounter++}`
     mkdirSync(memfsDir, { recursive: true })
     openScratch.add(memfsDir)
     // `FS.mkdir` is not recursive, so create the parent first. Both may already exist.
-    for (const dir of [SCRATCH_ROOT, memfsDir]) {
+    for (const dir of [scratchRoot, memfsDir]) {
       try {
         FS.mkdir(dir)
       } catch {
