@@ -56,6 +56,14 @@ export function fromPromise(plugin: Plugin) {
             transform: transform(host.command),
             reload: () => run(host.command.reload()),
           },
+          // The one CALLBACK bridge in this adapter — every other member is request/response.
+          // `Effect.promise` turns a rejection into a defect, which the host's per-delivery
+          // isolation catches and logs; the subscription survives it. The registration is
+          // created on the plugin scope by `register`, so unloading the plugin ends it.
+          event: {
+            subscribe: (type, handler) =>
+              register(host.event.subscribe(type, (event) => Effect.promise(() => handler(event)))),
+          },
           integration: {
             transform: transform(host.integration),
             reload: () => run(host.integration.reload()),

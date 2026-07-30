@@ -10,6 +10,7 @@ import { CommandV2 } from "./command"
 import { EventV2 } from "./event"
 import { Integration } from "./integration"
 import { KeyedMutex } from "./effect/keyed-mutex"
+import { Location } from "./location"
 import { PluginHost } from "./plugin/host"
 import { Reference } from "./reference"
 import { SkillV2 } from "./skill"
@@ -173,6 +174,9 @@ export const node = makeLocationNode({
     Catalog.node,
     CommandV2.node,
     Integration.node,
+    // The host scopes `ctx.event.subscribe` to THIS location (plus location-less globals), so
+    // it needs to know which directory it is — see `plugin/host.ts`.
+    Location.node,
     Reference.node,
     SkillV2.node,
     PluginTools.node,

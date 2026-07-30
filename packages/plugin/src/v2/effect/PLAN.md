@@ -183,21 +183,28 @@ The shared low-level machinery owns registration order, scope cleanup, disposal,
 
 ## Event API
 
-The Effect API exposes the existing event system as typed streams using generated SDK event discriminants.
+> ⚠️ **This section deviated from the plan as shipped (2026-07-30), deliberately.** The plan
+> below originally handed the plugin a raw `Stream` (`subscribe(type) => Stream<EventX>`). What
+> shipped is a **callback plus a `Registration`**, matching `tool.register`. The reason: a raw
+> stream pushes the fork, the failure isolation and the back-pressure onto every plugin author,
+> and we demonstrably get that wrong ourselves — our own `plugin/models-dev.ts` forked
+> `Stream.runForEach` with **no** `catchCause`, so a single defect would leave that plugin deaf
+> for the rest of the process, silently. Those three concerns belong to the host, once, not to
+> every plugin, every time. The `EventMap` half of the plan below shipped unchanged.
+
+The Effect API exposes the existing event system as typed callbacks using generated SDK event
+discriminants. The host forks, isolates and buffers; the plugin gets a disposable registration
+owned by its scope.
 
 ```ts
-ctx.event.subscribe("catalog.updated")
-// Stream.Stream<EventCatalogUpdated>
+ctx.event.subscribe("catalog.updated", (event) => Effect.logInfo(event.id))
+// Effect.Effect<Registration, never, Scope.Scope>
 ```
 
 Example:
 
 ```ts
-yield *
-  ctx.event.subscribe("catalog.updated").pipe(
-    Stream.runForEach(() => ctx.agent.rebuild()),
-    Effect.forkScoped,
-  )
+yield * ctx.event.subscribe("catalog.updated", () => ctx.agent.reload())
 ```
 
 The plugin package derives event payload types from the generated SDK `Event` union:
@@ -208,7 +215,10 @@ type EventMap = {
 }
 ```
 
-Core resolves the public event type string to its internal event definition and delegates to `EventV2.Service.subscribe`.
+Core resolves the public event type string against `EventManifest.Latest` (warning when a public
+type has no internal definition, which is true of `server.instance.disposed` alone), filters the
+instance-global bus down to the plugin's own location **plus location-less global events**, and
+maps the internal payload to the public wire shape `{ id, type, properties }`.
 
 ## Domain State Model
 
@@ -482,13 +492,26 @@ The Effect implementation remains the canonical runtime. Promise and embedding w
 
 ### 8. Add Event Adapter
 
-> Status: NOT STARTED. A `src/v2/effect/event.ts` holding just the `EventMap`/`Event` type stub above
-> existed for a while, exported from nothing and imported by nobody; it was deleted with the V1 plugin
-> arm so the tree does not imply this step is partly done. Start from this section, not from that file.
+> Status: **DONE (2026-07-30).** `src/v2/effect/event.ts` + `src/v2/promise/event.ts` (`EventMap`
+> + `EventHooks`), wired through both `context.ts` files, `core/src/plugin/host.ts` and the
+> callback bridge in `core/src/plugin/promise.ts`. Covered by
+> `core/test/plugin/event.test.ts` (7 cases, each negative-controlled).
+>
+> ⚠️ Shipped as a **callback + `Registration`**, not a `Stream` — see the deviation note in
+> *Event API* above for why.
 
-- Build the SDK event discriminant map.
-- Resolve public type strings to internal EventV2 definitions.
-- Return typed Effect streams.
+- ~~Build the SDK event discriminant map.~~ `EventMap` keyed by `Item["type"]` over the generated
+  SDK `Event` union. Buys type names and a checked discriminant, not deep type safety — most
+  payloads are `properties: { [key: string]: unknown }`.
+- ~~Resolve public type strings to internal EventV2 definitions.~~ Via the existing
+  `EventManifest.Latest` map; a public type with no internal definition warns instead of
+  registering a silently deaf subscription.
+- ~~Return typed Effect streams.~~ Superseded: returns a `Registration`. The host owns the fork,
+  per-delivery isolation (`catchCauseIf` + `logError`, subscription survives) and a bounded
+  `Queue.dropping` buffer that logs what it drops.
+- Scope: the plugin's own location **plus location-less global events**. The second half is the
+  V1 bug — `location?.directory !== ctx.directory` dropped every genuinely global event — and it
+  is pinned by a test.
 
 ### 9. Verification
 
