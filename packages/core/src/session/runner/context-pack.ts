@@ -107,6 +107,33 @@ const toolResultIds = (messages: ReadonlyArray<Message>): Set<string> => {
 }
 
 /**
+ * True when a stripped-down assistant remainder carries nothing the wire can render, so the
+ * message must be dropped rather than sent.
+ *
+ * ⚠️ "Nothing meaningful" is NOT "nothing at all" — an earlier `remaining.length === 0` test was
+ * the bug. `[reasoning, tool-call]` is the NORMAL assistant shape for a thinking model (our
+ * canonical `dgx-spark/qwen3.6-35b` is one): `to-llm-message.ts` emits the reasoning part whenever
+ * the turn came from the same model. Strip the unanswered call and a reasoning-ONLY message
+ * survives the length test, then lowers to `{"role":"assistant","content":null}` with no
+ * `tool_calls` (`packages/llm/src/protocols/openai-chat.ts` `lowerAssistantMessage`) — chain-of-
+ * thought narrating a call and a result that have both been deleted.
+ *
+ * The full `ContentPart` union (`packages/llm/src/schema/messages.ts`) is
+ * `text | media | tool-call | tool-result | reasoning`. Only `reasoning` is non-renderable on its
+ * own, so it is the only member of the predicate — deliberately:
+ *  - `text` / `tool-call` are the renderable assistant channels;
+ *  - `media` is renderable content the assistant lowering explicitly reasons about (openai-chat
+ *    REJECTS it loudly rather than silently emptying the message), so dropping it here would
+ *    convert a visible provider error into silent data loss;
+ *  - `tool-result` only lands on an assistant when `providerExecuted`, and those calls are never
+ *    treated as dangling (`localToolCallIds` skips them) — keeping it is the conservative side.
+ * Erring permissive (keep the message) is safer than dropping content, so nothing else is added.
+ * `[].every(...)` is `true`, so this subsumes the original empty case.
+ */
+const rendersNothing = (parts: ReadonlyArray<Message["content"][number]>): boolean =>
+  parts.every((part) => part.type === "reasoning")
+
+/**
  * Wire-legality pass 1 — an assistant whose tool calls weren't all answered (the abort-mid-tool
  * case) 400s strict backends and wedges the session until reset. Remove the unanswered
  * ToolCallParts; drop the message entirely if nothing meaningful remains.
@@ -117,7 +144,7 @@ export const dropDanglingToolCalls = (messages: ReadonlyArray<Message>): Message
     const dangling = localToolCallIds(message).filter((id) => !answered.has(id))
     if (dangling.length === 0) return [message]
     const remaining = message.content.filter((part) => !(part.type === "tool-call" && dangling.includes(part.id)))
-    if (remaining.length === 0) return []
+    if (rendersNothing(remaining)) return []
     return [Message.make({ ...message, content: remaining })]
   })
 }

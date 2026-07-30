@@ -23,6 +23,20 @@ const assistantCall = (id: string, name = "read", input: unknown = { path: "a" }
   Message.assistant([{ type: "tool-call", id, name, input }])
 const toolResult = (id: string, name = "read", result: unknown = "ok") => Message.tool({ id, name, result })
 const system = (text: string) => Message.system(text)
+const reasoning = (text: string) => ({ type: "reasoning" as const, text })
+/** The NORMAL thinking-model assistant shape: chain-of-thought followed by the call it narrates. */
+const assistantThinkCall = (id: string, thought = "let me read it") =>
+  Message.assistant([reasoning(thought), { type: "tool-call", id, name: "read", input: { path: "a" } }])
+
+/**
+ * The wire predicate the fix exists for: an assistant that lowers to
+ * `{"role":"assistant","content":null}` with no tool_calls (openai-chat `lowerAssistantMessage`
+ * emits `content: null` when there are no text parts and omits `tool_calls` when there are none).
+ */
+const lowersToNullContent = (message: Message) =>
+  message.role === "assistant" &&
+  !message.content.some((part) => part.type === "text") &&
+  !message.content.some((part) => part.type === "tool-call")
 
 const noSystem: SystemPart[] = []
 const noTools: ToolDefinition[] = []
@@ -93,6 +107,60 @@ describe("dropDanglingToolCalls", () => {
   test("answered calls untouched", () => {
     const messages = [assistantCall("c1"), toolResult("c1")]
     expect(dropDanglingToolCalls(messages)).toEqual(messages)
+  })
+
+  // The thinking-model defect: `remaining.length === 0` is not "nothing meaningful remains" —
+  // a surviving reasoning part defeats it and the message reaches the provider as
+  // {"role":"assistant","content":null} with no tool_calls.
+  test("a reasoning-ONLY remainder is dropped, not sent as content:null", () => {
+    const messages = [user("go"), assistantThinkCall("c1")]
+    const repaired = dropDanglingToolCalls(messages)
+    expect(repaired).toHaveLength(1)
+    expect(repaired[0]!.role).toBe("user")
+    expect(repaired.some(lowersToNullContent)).toBe(false)
+  })
+
+  test("multiple reasoning parts around a dangling call still count as nothing renderable", () => {
+    const message = Message.assistant([
+      reasoning("first"),
+      { type: "tool-call", id: "c1", name: "read", input: {} },
+      reasoning("second"),
+    ])
+    expect(dropDanglingToolCalls([message])).toHaveLength(0)
+  })
+
+  test("reasoning + text SURVIVES — the text is still renderable", () => {
+    const message = Message.assistant([
+      reasoning("thinking"),
+      Message.text("here is what I found"),
+      { type: "tool-call", id: "c1", name: "read", input: {} },
+    ])
+    const repaired = dropDanglingToolCalls([message])
+    expect(repaired).toHaveLength(1)
+    expect(repaired[0]!.content.map((part) => part.type)).toEqual(["reasoning", "text"])
+    expect(lowersToNullContent(repaired[0]!)).toBe(false)
+  })
+
+  test("a thinking assistant whose call IS answered is untouched", () => {
+    const messages = [user("go"), assistantThinkCall("c1"), toolResult("c1")]
+    const repaired = dropDanglingToolCalls(messages)
+    expect(repaired).toEqual(messages)
+    expect(repaired[1]!.content.map((part) => part.type)).toEqual(["reasoning", "tool-call"])
+  })
+
+  test("wire legality: every call answered and every result owned, both paths", () => {
+    // c1 dangles (thinking-only assistant -> dropped); c2 is answered and must survive intact.
+    const messages = [user("go"), assistantThinkCall("c1"), assistantThinkCall("c2"), toolResult("c2")]
+    const repaired = dropOrphanTools(dropDanglingToolCalls(messages))
+    const callIds = repaired.flatMap((m) =>
+      m.content.flatMap((p) => (p.type === "tool-call" ? [p.id] : [])),
+    )
+    const resultIds = repaired.flatMap((m) =>
+      m.content.flatMap((p) => (p.type === "tool-result" ? [p.id] : [])),
+    )
+    expect(callIds).toEqual(["c2"])
+    expect(resultIds).toEqual(["c2"])
+    expect(repaired.some(lowersToNullContent)).toBe(false)
   })
 })
 
@@ -178,6 +246,24 @@ describe("pack", () => {
           expect(owned).toBe(true)
         }
     }
+  })
+
+  test("the abort-mid-tool tail never packs a content:null assistant", () => {
+    // Newest turn: the model thought, called a tool, and was aborted before the result existed.
+    const messages = [user("original task"), assistantText("ok"), assistantThinkCall("c1")]
+    const result = pack(messages, 10_000)
+    expect(result.messages.some(lowersToNullContent)).toBe(false)
+    expect(result.changed).toBe(true)
+    expect(result.messages.some(isRealUserMessage)).toBe(true)
+  })
+
+  test("over budget with a thinking tail: still no content:null assistant survives", () => {
+    const filler = "q".repeat(8000)
+    const messages = [user("original task"), assistantText(filler), assistantThinkCall("c1")]
+    const result = pack(messages, 100)
+    expect(result.messages.some(lowersToNullContent)).toBe(false)
+    // The anchor still survives even though the tail was dropped entirely.
+    expect(result.messages.some(isRealUserMessage)).toBe(true)
   })
 
   test("recovers the newest assistant+results group whole when eviction empties the window", () => {
