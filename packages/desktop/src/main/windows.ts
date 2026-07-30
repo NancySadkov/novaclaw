@@ -6,6 +6,7 @@ import { app, BrowserWindow, dialog, net, nativeImage, nativeTheme, protocol, sh
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import type { TitlebarTheme } from "../preload/types"
+import { CSP_HEADER, RENDERER_CSP } from "./csp"
 import { exportDebugLogs, write as writeLog } from "./logging"
 import { resolveRendererDevUrl } from "./renderer-url"
 import { getStore } from "./store"
@@ -168,11 +169,13 @@ export function createMainWindow() {
     return { action: "deny" }
   })
 
-  win.webContents.session.webRequest.onBeforeSendHeaders((details, callback) => {
-    const { requestHeaders } = details
-    upsertKeyValue(requestHeaders, "Access-Control-Allow-Origin", ["*"])
-    callback({ requestHeaders })
-  })
+  // ⚠️ There used to be an `onBeforeSendHeaders` hook here adding `Access-Control-Allow-Origin: *`
+  // to every outgoing REQUEST. Deleted 2026-07-30: ACAO is a RESPONSE header and no step of the
+  // Fetch/CORS algorithm reads it on a request, so it never did anything. Proven, not argued —
+  // with it disabled and the response override kept, the one cross-origin fetch in the app
+  // (novaclaw.app/changelog.json) still read fine in the running dev app over CDP.
+  // It came in as copy-paste: `upsertKeyValue` and its `// Reassign old key` / `// Done` comments
+  // are verbatim from the usual StackOverflow "fix CORS in Electron" answer.
 
   win.webContents.session.webRequest.onHeadersReceived((details, callback) => {
     const { responseHeaders = {} } = details
@@ -223,7 +226,7 @@ export function registerRendererProtocol() {
           "error",
         )
       }
-      return addDocumentPolicy(response, file)
+      return addHtmlDocumentHeaders(response, file)
     } catch (error) {
       writeLog("protocol", "fetch error", { url: request.url, file, error }, "error")
       return new Response("Not found", { status: 404 })
@@ -356,10 +359,17 @@ function wireWindowRecovery(win: BrowserWindow, name: string) {
   })
 }
 
-function addDocumentPolicy(response: Response, file: string) {
+// Document-level headers for renderer HTML served over `nc://`. The CSP is set here AND in
+// `addRendererHeaders` on purpose: a `protocol.handle` response and a `webRequest` interception
+// are two different seams, only one of which is guaranteed to cover the packaged build, and a
+// renderer document that silently loses its policy is exactly the failure this ships to prevent.
+// Both write the same constant, and `upsertKeyValue` REPLACES rather than appends, so a request
+// that passes through both carries one policy, not two intersecting ones.
+function addHtmlDocumentHeaders(response: Response, file: string) {
   if (!file.toLowerCase().endsWith(".html")) return response
   const headers = new Headers(response.headers)
   headers.set(documentPolicyHeader, jsCallStacksDocumentPolicy)
+  headers.set(CSP_HEADER, RENDERER_CSP)
   return new Response(response.body, { status: response.status, statusText: response.statusText, headers })
 }
 
@@ -384,10 +394,49 @@ function isTrustedRendererUrl(value?: string) {
   return isRendererUrl(value)
 }
 
+/**
+ * Hosts whose responses need an ACAO injected because they do not send one, and that the renderer
+ * legitimately reads cross-origin.
+ *
+ * ⚠️ This used to be a blanket `*` on EVERY response the renderer session received, and that
+ * nullified the instance server's own CORS policy inside the desktop app. The server deliberately
+ * allowlists `nc://renderer` and refuses everything else (`packages/server/src/cors.ts`, pinned by
+ * `httpapi-cors.test.ts` asserting `https://evil.example` is refused) — and there is a whole
+ * `corsVaryFix` middleware keeping `Vary: Origin` honest for that per-origin echo. Overwriting the
+ * echo with `*` threw all of that away, including for the `Origin: null` requests an `allow-scripts`
+ * sandboxed agent canvas sends.
+ *
+ * It is narrowed rather than deleted because ONE fetch genuinely depends on it, measured rather than
+ * assumed: `https://novaclaw.app/changelog.json` (the What's-new feed, `app/src/context/highlights.tsx`)
+ * is served by a third-party static host that sends **no** `Access-Control-Allow-Origin` at all —
+ * confirmed by `curl -D -`, whose 404 carries only `Content-Type`. Measured in the running dev app
+ * over CDP: with the override the renderer reads it (`status 404, type "cors"`); with the override
+ * disabled the same fetch fails `TypeError: Failed to fetch`. So deleting it outright would break
+ * What's-new the day that file starts existing.
+ *
+ * The real fix is upstream — novaclaw.app should send its own ACAO — at which point this list, and
+ * this whole function's CORS half, can go.
+ */
+const ACAO_INJECT_ORIGINS = new Set(["https://novaclaw.app"])
+
 function addRendererHeaders(value: string, headers: Record<string, any>) {
-  upsertKeyValue(headers, "Access-Control-Allow-Origin", ["*"])
-  upsertKeyValue(headers, "Access-Control-Allow-Headers", ["*"])
-  if (isRendererUrl(value, true)) upsertKeyValue(headers, documentPolicyHeader, [jsCallStacksDocumentPolicy])
+  // Only for the hosts that need it. Every other response — above all the instance server's — keeps
+  // whatever ACAO its own policy chose.
+  let origin: string | undefined
+  try {
+    origin = new URL(value).origin
+  } catch {
+    /* not an absolute URL; no injection */
+  }
+  if (origin !== undefined && ACAO_INJECT_ORIGINS.has(origin)) {
+    upsertKeyValue(headers, "Access-Control-Allow-Origin", ["*"])
+  }
+  // Same gate the Document-Policy header already uses, and it is the right one: it is true for
+  // `nc://renderer/*.html` (packaged) and for `*.html` on the dev-server origin (dev), i.e. for
+  // exactly the documents this policy is written for — and never for a remote instance's HTML.
+  if (!isRendererUrl(value, true)) return
+  upsertKeyValue(headers, documentPolicyHeader, [jsCallStacksDocumentPolicy])
+  upsertKeyValue(headers, CSP_HEADER, [RENDERER_CSP])
 }
 
 function isRendererUrl(value?: string, html = false) {
