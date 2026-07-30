@@ -322,9 +322,14 @@ export const layer = Layer.effectDiscard(
               const egress = offline.egressEnv()
               // P2P: surface configured peer instances to the shell as env vars, so an agent can
               // drive them free-form (curl -u novaclaw:$NOVACLAW_INSTANCE_<NAME>_TOKEN <url>/...).
-              // Read the LIVE settings store, NOT config.entries() — location config is snapshotted
-              // at boot, so a peer added later (Settings → Instances) would be invisible to a
-              // long-lived location otherwise (the flakiness this fixed).
+              // Reads the LIVE settings store so a peer added later (Settings → Instances) is visible
+              // to a long-lived location — the flakiness this originally fixed.
+              // ⚠️ The reason this comment used to give — "config.entries() is snapshotted at boot" —
+              // is FALSE as of 2026-07-30 and is corrected rather than deleted, because it is the
+              // sentence that would otherwise get copied into the next workaround. `entries()` now
+              // reads through to the store per call (`3757af64a`), and the runner derives its harness
+              // config per turn. Going through the store directly is still fine and marginally more
+              // direct; it is no longer a workaround for a frozen read.
               // ⚠️ Agent Jail P3: peer TOKENS are credentials, injected ONLY on the attended/raw
               // path. A confined (unattended) command self-revokes them — an injected command must
               // not wield cross-instance credentials it can't be supervised using (and can't reach a

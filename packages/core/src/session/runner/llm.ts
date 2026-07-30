@@ -15,7 +15,6 @@ import path from "path"
 import { AgentV2 } from "../../agent"
 import { Config } from "../../config"
 import { Global } from "../../global"
-import { Persona } from "../../persona"
 import { Database } from "../../database/database"
 import { EventV2 } from "../../event"
 import { Location } from "../../location"
@@ -61,6 +60,7 @@ import { MemoryClient } from "../../kb-graph/memory-client"
 import { MemoryRanking } from "../../kb-graph/ranking"
 import { MemoryRerank } from "../../kb-graph/rerank"
 import { MemorySetting } from "../../kb-graph/memory-setting"
+import { HarnessConfig } from "./harness-config"
 import { SessionStrict } from "./strict"
 import { JhStore } from "../../jh/store"
 import type { JhEngine } from "../../jh/engine"
@@ -199,36 +199,45 @@ export const layer = Layer.effect(
     const compactionRequests = yield* SessionCompactionRequest.Service
     const memory = yield* MemoryClient.Service
     const db = (yield* Database.Service).db
-    const configEntries = yield* config.entries()
-    const compaction = SessionCompaction.make({ events, llm, config: configEntries })
-    // The B3 persona baseline: composed FIRST in the system prompt (before any per-session
-    // override or the agent's own prompt), so the assistant's approach survives model swaps.
-    const personaBaseline = Persona.resolve(Config.latest(configEntries, "persona"), {
-      notesDir: path.join(Global.Path.data, "notes"),
+    /**
+     * B7 tier-1 / ruling 3 — the harness configuration, derived ONCE PER TURN and never at layer
+     * scope. This used to be `const configEntries = yield* config.entries()` right here, plus eight
+     * derivations (compaction, persona, expertise, quality, shell, strict, affective, introspection)
+     * closed over for the life of the location. `Config.entries()` reading through to the settings
+     * store did not help them: the read happened once, so every one of those values stayed frozen at
+     * location boot and a Settings edit still needed a restart to take.
+     *
+     * ⚠️ It is an `Effect.fn`, i.e. a suspended computation, NOT a value. That is the invariant:
+     * turning it back into `const harness = yield* …` here would re-freeze all eight silently — same
+     * names, same types, same call sites, green compile. `test/runner-config-per-turn.test.ts`
+     * ratchets it.
+     *
+     * The B4 note that used to live here still holds: the user profile is not injected into the
+     * system prompt — the model reads it ON DEMAND via the `profile` tool (tool/profile.ts).
+     */
+    const harnessConfig = Effect.fn("SessionRunner.harnessConfig")(function* () {
+      const derived = HarnessConfig.derive(yield* config.entries(), {
+        notesDir: path.join(Global.Path.data, "notes"),
+        platform: process.platform,
+        ...(process.env.COMSPEC === undefined ? {} : { comspec: process.env.COMSPEC }),
+      })
+      // Built off `derived.entries`, i.e. the SAME read — a second `config.entries()` inside one
+      // turn could hand the compactor a different snapshot than the system prompt was composed from.
+      return { ...derived, compaction: SessionCompaction.make({ events, llm, config: derived.entries }) }
     })
-    // T9 (teach-don't-gatekeep): a Normal-level user gets a plain-language stance line, composed
-    // right after the persona baseline so it survives model swaps and per-session overrides.
-    const expertiseHint =
-      Config.latest(configEntries, "expertise") === "normal"
-        ? "The user is not a technical expert. Explain what you do in plain language, avoid unexplained jargon, and prefer simple summaries over technical detail."
-        : undefined
-    // B4: the user profile is no longer injected into the system prompt here. When the user enables it,
-    // the model reads it ON DEMAND via the `profile` tool (tool/profile.ts) — keeping local-model
-    // context lean. Disabled = the profile is simply not shared.
+    /** One turn's frozen view of the runtime-editable settings. Threaded, never re-derived per use. */
+    type Harness = HarnessConfig.Derived & { readonly compaction: ReturnType<typeof SessionCompaction.make> }
     // QE (QE-B): the deterministic 5-step verify loop over the PROVISIONED commands.
     // Default OFF; failures steer the agent to fix and re-run (observation, never a halt).
     const appProcess = yield* AppProcess.Service
-    const qualityConfig = Quality.resolve(Config.latest(configEntries, "quality"))
-    const qualityShell =
-      Config.latest(configEntries, "shell") ??
-      (process.platform === "win32" ? (process.env.COMSPEC ?? "cmd.exe") : "/bin/sh")
     const runQualityCheck = Effect.fn("SessionRunner.qualityCheck")(function* (
       sessionID: SessionSchema.ID,
+      shell: string,
       check: { readonly label: string; readonly command: string; readonly timeoutMs?: number },
     ) {
       const command = ChildProcess.make(check.command, [], {
         cwd: location.directory,
-        shell: qualityShell,
+        shell,
         stdin: "ignore",
         detached: process.platform !== "win32",
         forceKillAfter: Duration.seconds(3),
@@ -274,10 +283,8 @@ export const layer = Layer.effect(
       return yield* store.context(sessionID)
     })
 
-    // P14-minimal (jh-improve8 P3): the Strict-harness toggle — Settings → Strict mode.
-    const strictConfig = Config.latest(configEntries, "strict")
-    // P3: per-session mood state for the affective engine (in-memory per location; bounded).
-    const affectiveConfig = Config.latest(configEntries, "affective")
+    // P3: per-session mood state for the affective engine (in-memory per location; bounded). The
+    // mood MAP is location state, not config — only the affective SETTINGS moved to per-turn.
     const moods = new Map<string, Affective.Mood>()
     const MAX_MOODS = 500
     const rememberMood = (sessionID: string, mood: Affective.Mood) => {
@@ -290,20 +297,20 @@ export const layer = Layer.effect(
     // P2 (2A/2B): the out-of-band judge call. Best-effort by design — ANY failure (judge
     // model unreachable, resolution error, empty reply) is logged and swallowed; the judge
     // must never break the session it watches. Returns a small text completion.
-    const introspectionConfig = Introspection.resolve(Config.latest(configEntries, "introspection"))
     const judgeCompletion = Effect.fn("SessionRunner.introspectionJudge")(function* (
       sessionID: SessionSchema.ID,
+      introspection: Introspection.Resolved,
       prompt: string,
     ) {
       const session = yield* getSession(sessionID)
       const model = yield* models.resolve(
-        introspectionConfig.model === undefined
+        introspection.model === undefined
           ? session
           : {
               ...session,
               model: {
-                providerID: ProviderV2.ID.make(introspectionConfig.model.providerID),
-                id: ModelV2.ID.make(introspectionConfig.model.id),
+                providerID: ProviderV2.ID.make(introspection.model.providerID),
+                id: ModelV2.ID.make(introspection.model.id),
               },
             },
       )
@@ -326,14 +333,21 @@ export const layer = Layer.effect(
       return chunks.join("")
     })
 
-    const introspect = Effect.fn("SessionRunner.introspect")(function* (sessionID: SessionSchema.ID) {
+    const introspect = Effect.fn("SessionRunner.introspect")(function* (
+      sessionID: SessionSchema.ID,
+      introspection: Introspection.Resolved,
+    ) {
       const excerpt = Introspection.judgeExcerpt(yield* getContext(sessionID))
       if (!excerpt) return
-      const verdict = yield* judgeCompletion(sessionID, Introspection.judgePrompt(introspectionConfig.prompt, excerpt))
+      const verdict = yield* judgeCompletion(
+        sessionID,
+        introspection,
+        Introspection.judgePrompt(introspection.prompt, excerpt),
+      )
       if (!Introspection.isYesVerdict(verdict)) return
-      let interjection = introspectionConfig.interjection
-      if (introspectionConfig.generateInterjection) {
-        const generated = yield* judgeCompletion(sessionID, Introspection.generatePrompt(excerpt)).pipe(
+      let interjection = introspection.interjection
+      if (introspection.generateInterjection) {
+        const generated = yield* judgeCompletion(sessionID, introspection, Introspection.generatePrompt(excerpt)).pipe(
           Effect.orElseSucceed(() => ""),
         )
         if (generated.trim()) interjection = generated.trim()
@@ -620,9 +634,14 @@ export const layer = Layer.effect(
 
     const runTurnAttempt = Effect.fn("SessionRunner.runTurn")(function* (
       sessionID: SessionSchema.ID,
+      // ⚠️ PASSED IN, not read here (B7 tier-1). It could not be read here even if we wanted to: the
+      // session-config walk below shadows `config` for this whole block, so the Config SERVICE is
+      // unreachable from inside the turn. Threading it is also the point — one derivation per turn,
+      // so the system prompt, the compactor and the sampling overlay cannot disagree about settings.
+      harness: Harness,
       promotion: SessionInput.Delivery | undefined,
       step: number,
-      recoverOverflow?: typeof compaction.compactAfterOverflow,
+      recoverOverflow?: Harness["compaction"]["compactAfterOverflow"],
     ) {
       const session = yield* getSession(sessionID)
       if (session.location.directory !== location.directory || session.location.workspaceID !== location.workspaceID)
@@ -727,9 +746,11 @@ export const layer = Layer.effect(
         let ordered: ReadonlyArray<MemoryClient.SearchHit> = MemoryRanking.rankHits(recallCandidates, Date.now())
         if (MemorySetting.rerankEnabled() && recallCandidates.length > 1) {
           const prompt = MemoryRerank.buildRerankPrompt(recallQuery, recallCandidates, Date.now())
-          const reply = yield* judgeCompletion(session.id, `${prompt.system}\n\n${prompt.user}`).pipe(
-            Effect.orElseSucceed(() => ""),
-          )
+          const reply = yield* judgeCompletion(
+            session.id,
+            harness.introspection,
+            `${prompt.system}\n\n${prompt.user}`,
+          ).pipe(Effect.orElseSucceed(() => ""))
           const order = MemoryRerank.parseRerankOrder(reply, recallCandidates.length)
           if (order) ordered = order.map((index) => recallCandidates[index]!)
         }
@@ -744,7 +765,7 @@ export const layer = Layer.effect(
       // decay naturally re-arms it). The per-session stance (the composer's Tuning toggle,
       // resolved through the config walk) wins; no stance = the global config decides.
       let affectiveGeneration: ReturnType<typeof Affective.toSampling> | undefined
-      if (config.affective ?? affectiveConfig?.enabled === true) {
+      if (config.affective ?? harness.affective?.enabled === true) {
         const previous = moods.get(session.id) ?? Affective.calmMood
         const mood = Affective.appraise(previous, context)
         rememberMood(session.id, mood)
@@ -754,7 +775,7 @@ export const layer = Layer.effect(
           {
             // `|| undefined`: a config temperature of 0 means "cleared from the settings tab"
             // (updateGlobal can't remove keys over the wire), not a real 0 baseline.
-            temperature: defaults?.temperature ?? (affectiveConfig?.temperature || undefined),
+            temperature: defaults?.temperature ?? (harness.affective?.temperature || undefined),
             topP: defaults?.topP,
             topK: defaults?.topK,
             frequencyPenalty: defaults?.frequencyPenalty,
@@ -762,7 +783,7 @@ export const layer = Layer.effect(
           },
           {
             toolsPresent: (toolMaterialization?.definitions.length ?? 0) > 0,
-            extended: affectiveConfig?.extended === true,
+            extended: harness.affective?.extended === true,
           },
         )
         // Behavioural nudges ("act NOW", "stop repeating") are pressure for a model working
@@ -787,9 +808,9 @@ export const layer = Layer.effect(
         // `projectScope` is the guidance half of the owner's 2026-07-30 directive — present in every
         // mode but `yolo`, from the RESOLVED (already-narrowed) mode. See system-compose.ts.
         system: SystemCompose.composeSystemParts({
-          persona: personaBaseline,
+          persona: harness.persona,
           modelPrePrompt,
-          expertiseHint,
+          expertiseHint: harness.expertiseHint,
           tierHint,
           memoryRecall,
           systemPromptOverride: config.systemPromptOverride,
@@ -802,7 +823,7 @@ export const layer = Layer.effect(
         toolChoice: isLastStep ? "none" : undefined,
         ...(affectiveGeneration === undefined ? {} : { generation: affectiveGeneration }),
       })
-      if (yield* compaction.compactIfNeeded({ sessionID: session.id, entries, model, request: fullRequest }))
+      if (yield* harness.compaction.compactIfNeeded({ sessionID: session.id, entries, model, request: fullRequest }))
         return yield* Effect.die(continueAfterCompaction(currentStep))
       // 1M — the deterministic fail-safe under compaction: pack the outgoing request to the
       // server's HONORED window so an Ollama-class server never silently front-truncates the
@@ -1130,6 +1151,7 @@ export const layer = Layer.effect(
     }, Effect.scoped)
     type RunTurn = (
       sessionID: SessionSchema.ID,
+      harness: Harness,
       promotion: SessionInput.Delivery | undefined,
       step: number,
     ) => Effect.Effect<
@@ -1137,29 +1159,33 @@ export const layer = Layer.effect(
       RunError
     >
 
-    const runAfterOverflowCompaction: RunTurn = Effect.fnUntraced(function* (sessionID, promotion, step) {
-      return yield* runTurnAttempt(sessionID, promotion, step).pipe(
+    // ⚠️ The compaction re-entries below carry the SAME `harness` deliberately. A turn that overflows
+    // and is retried over compacted history is still ONE turn — re-deriving mid-retry would let the
+    // second attempt compose a different system prompt than the first, which is the within-turn
+    // incoherence B7 is trying not to introduce. The next turn re-derives (see `run`).
+    const runAfterOverflowCompaction: RunTurn = Effect.fnUntraced(function* (sessionID, harness, promotion, step) {
+      return yield* runTurnAttempt(sessionID, harness, promotion, step).pipe(
         Effect.catchDefect(
           Effect.fnUntraced(function* (defect) {
             if (!(defect instanceof TurnTransitionError)) return yield* Effect.die(defect)
             if (defect.transition._tag === "ContinueAfterOverflowCompaction")
               return yield* Effect.die("Post-compaction provider attempt cannot recover another overflow")
             yield* Effect.yieldNow
-            return yield* runAfterOverflowCompaction(sessionID, undefined, defect.transition.step)
+            return yield* runAfterOverflowCompaction(sessionID, harness, undefined, defect.transition.step)
           }),
         ),
       )
     })
 
-    const runTurn: RunTurn = Effect.fnUntraced(function* (sessionID, promotion, step) {
-      return yield* runTurnAttempt(sessionID, promotion, step, compaction.compactAfterOverflow).pipe(
+    const runTurn: RunTurn = Effect.fnUntraced(function* (sessionID, harness, promotion, step) {
+      return yield* runTurnAttempt(sessionID, harness, promotion, step, harness.compaction.compactAfterOverflow).pipe(
         Effect.catchDefect(
           Effect.fnUntraced(function* (defect) {
             if (!(defect instanceof TurnTransitionError)) return yield* Effect.die(defect)
             yield* Effect.yieldNow
             if (defect.transition._tag === "ContinueAfterOverflowCompaction")
-              return yield* runAfterOverflowCompaction(sessionID, undefined, defect.transition.step)
-            return yield* runTurn(sessionID, undefined, defect.transition.step)
+              return yield* runAfterOverflowCompaction(sessionID, harness, undefined, defect.transition.step)
+            return yield* runTurn(sessionID, harness, undefined, defect.transition.step)
           }),
         ),
       )
@@ -1173,6 +1199,10 @@ export const layer = Layer.effect(
     // "never breaks" rule: an invisible no-op compact is a broken button) and never fail the drain.
     const runManualCompaction = Effect.fn("SessionRunner.manualCompaction")(function* (
       sessionID: SessionSchema.ID,
+      // Passed in for the same two reasons `runTurnAttempt` takes its harness: the session-config
+      // walk below shadows `config`, and a manual `/compact` must honour the compaction settings as
+      // they are NOW, not as they were when the location booted.
+      compaction: Harness["compaction"],
     ) {
       const session = yield* getSession(sessionID)
       if (session.location.directory !== location.directory || session.location.workspaceID !== location.workspaceID)
@@ -1231,6 +1261,7 @@ export const layer = Layer.effect(
     const strictInflight = new Map<SessionSchema.ID, Fiber.Fiber<void>>()
     const runStrictDrain = Effect.fn("SessionRunner.strictDrain")(function* (
       sessionID: SessionSchema.ID,
+      harness: Harness,
       resolved: EffectiveConfig,
       first: SessionInput.Delivery | undefined,
     ) {
@@ -1314,7 +1345,7 @@ export const layer = Layer.effect(
         }
         // The effective strict config for THIS session: the global `config.strict` overlaid with the
         // session's own override (the composer switch — enabled/attempts/wallMinutes per chat).
-        const strict = { ...(strictConfig ?? {}), ...(resolved.strict ?? {}) }
+        const strict = { ...(harness.strict ?? {}), ...(resolved.strict ?? {}) }
         // P14.1 resume: a saved plan that never reached "done" is continuable. Status "running" means
         // a HARD death (crash/kill — a clean stop saves its terminal status), so the user is told once
         // and taught the resume word. A bare "resume"/"continue" picks the saved tree back up —
@@ -1395,7 +1426,7 @@ export const layer = Layer.effect(
         })
         // Probe once; the same answer decides the run below and plans every command inside it.
         const backend = HostExec.probe()
-        const configuredShell = Config.latest(configEntries, "shell")
+        const configuredShell = harness.configuredShell
         // SAFE MODE (owner 2026-07-30): the per-session switch that restores the unattended deny
         // arm. Passed here for the same reason the shell and the offline policy are — the gate
         // decides nothing it was not told, and an unwired caller would silently get the permissive
@@ -1716,8 +1747,11 @@ export const layer = Layer.effect(
       // A manual compaction request is consumed FIRST: it may ride a wake with no pending input
       // (the early return below must not skip it), it must not force a model turn itself, and
       // when input IS pending the drain proceeds over the freshly compacted history.
-      if (yield* compactionRequests.consume(input.sessionID))
-        yield* runManualCompaction(input.sessionID).pipe(
+      if (yield* compactionRequests.consume(input.sessionID)) {
+        // B7 tier-1: derived HERE rather than at the top of `run`, because a wake with nothing to do
+        // returns a few lines below and must not pay for a settings read it never uses.
+        const manual = yield* harnessConfig()
+        yield* runManualCompaction(input.sessionID, manual.compaction).pipe(
           Effect.catchCause((cause: Cause.Cause<unknown>) =>
             Effect.logError("manual compaction failed", { sessionID: input.sessionID, cause }).pipe(
               Effect.andThen(
@@ -1733,6 +1767,7 @@ export const layer = Layer.effect(
             ),
           ),
         )
+      }
       const hasSteer = yield* SessionInput.hasPending(db, input.sessionID, "steer")
       const hasQueue = hasSteer ? false : yield* SessionInput.hasPending(db, input.sessionID, "queue")
       if (!input.force && !hasSteer && !hasQueue) return
@@ -1750,17 +1785,25 @@ export const layer = Layer.effect(
         return
       }
       yield* failInterruptedTools(input.sessionID)
+      // B7 tier-1 / ruling 3 — the DRAIN-ENTRY derivation, placed after every early return so a wake
+      // that does nothing reads nothing. It answers only the questions asked before any turn exists:
+      // the Strict routing decision and the once-per-session quality-provision nudge. Each turn below
+      // derives its OWN (see the inner loop) — this value is deliberately NOT reused there, because a
+      // long drain is exactly the case where a settings change must land without waiting for the next
+      // message.
+      const entryHarness = yield* harnessConfig()
       // P14-minimal (jh-improve8 P3): the Strict-harness route. The effective strict config is the
       // global `config.strict` overlaid with the session's own override (the composer switch, resolved
       // through the config walk so children inherit) — it routes the drain through JhEngine.runTask
       // (jh.md — the harness owns decomposition/verification/recovery). It executes shell/write actions
       // autonomously, so it requires an autonomous permission mode; below that the toggle must not
       // silently bypass the permission model — the drain says why and answers normally instead.
-      const strictEffective = { ...(strictConfig ?? {}), ...(handoff.strict ?? {}) }
+      const strictEffective = { ...(entryHarness.strict ?? {}), ...(handoff.strict ?? {}) }
       if (strictEffective.enabled === true) {
         if (handoff.permissionMode === "bypass" || handoff.permissionMode === "yolo") {
           const outcome = yield* runStrictDrain(
             input.sessionID,
+            entryHarness,
             handoff,
             hasSteer ? "steer" : hasQueue ? "queue" : undefined,
           )
@@ -1799,16 +1842,12 @@ export const layer = Layer.effect(
       // Self-drive state (architecture.md "run until exit()"): per-DRAIN round/wall counters —
       // a fresh drain (any new message) re-arms a cap-paused autonomous session.
       const driveState = SessionDrive.initialState(DateTime.toEpochMillis(yield* DateTime.now))
-      // T1 per-session feature stances (the composer's Tuning toggles), resolved through the
-      // config walk above: an explicit true/false on the chain wins; no stance = global config.
-      // Only the ON/OFF is per-session — cadence/commands/model internals stay global.
-      const qualityOn = handoff.quality ?? qualityConfig.enabled
-      const introspectionOn = handoff.introspection ?? introspectionConfig.enabled
       // QE-A: quality mode with NO provisioned commands is inert — steer ONCE per session
       // to run the provisioner (deterministic manifest scan → verify → write project config).
+      // Once-per-session, so the drain-entry view is the right one to judge it on.
       if (
-        qualityOn &&
-        !Object.values(qualityConfig.commands).some(Boolean) &&
+        (handoff.quality ?? entryHarness.quality.enabled) &&
+        !Object.values(entryHarness.quality.commands).some(Boolean) &&
         !provisionNudged.has(input.sessionID)
       ) {
         provisionNudged.add(input.sessionID)
@@ -1827,7 +1866,16 @@ export const layer = Layer.effect(
         let needsContinuation = true
         let step = 1
         while (needsContinuation) {
-          const result = yield* runTurn(input.sessionID, promotion, step)
+          // ⚠️ THE per-turn read (B7 tier-1 / ruling 3). One `config.entries()` per turn, threaded
+          // through everything this turn does — the system prompt, the compactor, the sampling
+          // overlay, the introspection judge, the quality gate. Deriving per USE instead would let a
+          // single turn observe two different settings snapshots; deriving per DRAIN (or, as before,
+          // per location boot) is what made "restart to apply" the honest answer. The T1 per-session
+          // stances ride along: an explicit true/false on the config chain wins, no stance = global.
+          const harness = yield* harnessConfig()
+          const qualityOn = handoff.quality ?? harness.quality.enabled
+          const introspectionOn = handoff.introspection ?? harness.introspection.enabled
+          const result = yield* runTurn(input.sessionID, harness, promotion, step)
           needsContinuation = result.needsContinuation
           step = result.step + 1
           promotion = "steer"
@@ -1937,16 +1985,16 @@ export const layer = Layer.effect(
             // P2 (2A): cadence-gated introspection judge — an out-of-band model call that
             // asks "is this agent stuck?"; a YES steers the interjection (2B). Best-effort:
             // never allowed to fail the drain it watches.
-            if (introspectionOn && Introspection.shouldJudge(step, introspectionConfig.cadence))
-              yield* introspect(input.sessionID).pipe(
+            if (introspectionOn && Introspection.shouldJudge(step, harness.introspection.cadence))
+              yield* introspect(input.sessionID, harness.introspection).pipe(
                 Effect.catch((cause) => Effect.logWarning("introspection judge failed", { cause })),
               )
             // QE-B steps 1–3: per touched file after a write-class tool settles (syntax +
             // incremental check), whole-module typecheck every Nth write. Best-effort — a
             // broken check command must never break the drain it guards.
             if (qualityOn)
-              for (const check of Quality.dueMidLoop(qualityConfig, quality, Quality.writeTargets(context)))
-                yield* runQualityCheck(input.sessionID, check).pipe(
+              for (const check of Quality.dueMidLoop(harness.quality, quality, Quality.writeTargets(context)))
+                yield* runQualityCheck(input.sessionID, harness.shell, check).pipe(
                   Effect.catchCause((cause) => Effect.logWarning("quality check errored", { cause })),
                 )
           } else if (isEmptyAssistantTurn(context)) {
@@ -2014,8 +2062,8 @@ export const layer = Layer.effect(
             // only when the drain actually wrote something. A failure steers; the pending
             // steer below re-arms continuation so the model fixes it before "done".
             if (qualityOn)
-              for (const check of Quality.dueTurnEnd(qualityConfig, quality))
-                yield* runQualityCheck(input.sessionID, check).pipe(
+              for (const check of Quality.dueTurnEnd(harness.quality, quality))
+                yield* runQualityCheck(input.sessionID, harness.shell, check).pipe(
                   Effect.catchCause((cause) => Effect.logWarning("quality check errored", { cause })),
                 )
           }
