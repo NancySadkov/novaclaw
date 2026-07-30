@@ -8,6 +8,7 @@ import { Global } from "@novaclaw/core/global"
 import { Storage } from "@/storage/storage"
 import { tmpdirScoped } from "../fixture/fixture"
 import { testEffect } from "../lib/effect"
+import { settingsStub } from "./settings-stub"
 
 const dir = path.join(Global.Path.data, "storage")
 
@@ -56,8 +57,13 @@ function remappedFs(root: string) {
 // Layer.fresh forces a new Storage instance — without it, Effect's in-test layer cache
 // returns the outer testEffect's Storage (which uses the real FSUtil), not a new
 // one built on top of remappedFs.
+// The settings stub satisfies Storage's threshold dependency (`pressure()` reads `resource_pressure`
+// through the store at the point of use). These cases never call `pressure()`, so an empty store is
+// enough — what matters is that the layer is complete without dragging SQLite into a migration test.
 const remappedStorage = (root: string) =>
-  Layer.fresh(Storage.layer.pipe(Layer.provide(remappedFs(root)), Layer.provide(Git.defaultLayer)))
+  Layer.fresh(
+    Storage.layer.pipe(Layer.provide(remappedFs(root)), Layer.provide(Git.defaultLayer), Layer.provide(settingsStub())),
+  )
 
 describe("Storage", () => {
   it.live("round-trips JSON content", () =>

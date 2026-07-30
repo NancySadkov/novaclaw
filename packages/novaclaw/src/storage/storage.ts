@@ -2,9 +2,11 @@ import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import path from "path"
 import { Global } from "@novaclaw/core/global"
 import { FSUtil } from "@novaclaw/core/fs-util"
+import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { Effect, Exit, Layer, Option, RcMap, Schema, Context, TxReentrantLock } from "effect"
 import { NonNegativeInt } from "@novaclaw/core/schema"
 import { Git } from "@/git"
+import { Pressure } from "./pressure"
 
 type Migration = (dir: string, fs: FSUtil.Interface, git: Git.Interface) => Effect.Effect<void, FSUtil.Error>
 
@@ -56,6 +58,16 @@ export interface Interface {
   readonly update: <T>(key: string[], fn: (draft: T) => void) => Effect.Effect<T, Error>
   readonly write: <T>(key: string[], content: T) => Effect.Effect<void, FSUtil.Error>
   readonly list: (prefix: string[]) => Effect.Effect<string[][], FSUtil.Error>
+  /**
+   * How much memory and disk this host has left, against the `resource_pressure` thresholds.
+   *
+   * Storage owns it because Storage is what runs out (`todo/resource-pressure.md`), and because the
+   * consumers this feeds — the operator's Storage row, the `<env>` headroom line every model reads
+   * before planning a download, and the scheduler's admission point — must all be quoting ONE number
+   * (ruling 6). Never throws: a host it cannot measure returns `known: false` with a reason, never a
+   * fabricated 0.
+   */
+  readonly pressure: () => Effect.Effect<Pressure.Report>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/Storage") {}
@@ -215,6 +227,7 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const fs = yield* FSUtil.Service
     const git = yield* Git.Service
+    const settings = yield* SettingsConfigStore.Service
     const locks = yield* RcMap.make({
       lookup: () => TxReentrantLock.make(),
       idleTimeToLive: 0,
@@ -312,18 +325,48 @@ export const layer = Layer.effect(
         .toSorted((a, b) => a.join("/").localeCompare(b.join("/")))
     })
 
+    const pressure: Interface["pressure"] = Effect.fn("Storage.pressure")(function* () {
+      // ⚠️ Ruling 3 — read the value through to its STORE, at the point of use. Not `Config.entries()`:
+      // that array is computed once at the Config layer's construction and frozen for the life of the
+      // location, which is the very "restart to apply" defect ruling 3 deletes. `SettingsConfigStore`
+      // is live SQLite, so raising a floor takes effect on the next probe. A floor you must reboot to
+      // change is a floor that gets overridden by force instead — and the moment it matters is a moment
+      // when restarting the instance is the last thing anyone should be asked to do.
+      const stored = yield* settings.all()
+      const thresholds = Pressure.resolveThresholds(stored[Pressure.CONFIG_KEY])
+      const memory = yield* Effect.promise(() => Pressure.memory())
+      // Plural on purpose: data/config/cache/state can sit on DIFFERENT volumes unless `--home`
+      // collapses them, so the volume with the least room is the one that decides.
+      const disks = instancePaths().map((target) => Pressure.disk(target))
+      return Pressure.report({ memory, disks, thresholds })
+    })
+
     return Service.of({
       remove,
       read,
       update,
       write,
       list,
+      pressure,
     })
   }),
 )
 
-export const defaultLayer = layer.pipe(Layer.provide(FSUtil.defaultLayer), Layer.provide(Git.defaultLayer))
+/** The instance directories, deduplicated — resolved lazily because `Global.Path` is a lazy getter. */
+function instancePaths(): string[] {
+  return [...new Set([Global.Path.data, Global.Path.config, Global.Path.cache, Global.Path.state])]
+}
 
-export const node = LayerNode.make({ service: Service, layer: layer, deps: [FSUtil.node, Git.node] })
+export const defaultLayer = layer.pipe(
+  Layer.provide(FSUtil.defaultLayer),
+  Layer.provide(Git.defaultLayer),
+  Layer.provide(SettingsConfigStore.defaultLayer),
+)
+
+export const node = LayerNode.make({
+  service: Service,
+  layer: layer,
+  deps: [FSUtil.node, Git.node, SettingsConfigStore.node],
+})
 
 export * as Storage from "./storage"

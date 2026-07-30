@@ -2100,7 +2100,7 @@
             }
           }
         },
-        "description": "Safe-delete: move a file or directory into the dated Trash store (restorable, TTL ~2 days).",
+        "description": "Safe-delete: move a file or directory into the dated Trash store. Restorable for at least ~2 days — this write is also where the retention sweep runs, so entries past the TTL are reclaimed here.",
         "summary": "Trash file or directory",
         "requestBody": {
           "content": {
@@ -2172,7 +2172,7 @@
             }
           }
         },
-        "description": "List trashed entries, newest first (expired entries are purged lazily).",
+        "description": "List trashed entries, newest first. Read-only: listing never purges or otherwise modifies the store, so an entry past its TTL is reported while it is still on disk and still restorable.",
         "summary": "List trash",
         "x-codeSamples": [
           {
@@ -2234,7 +2234,7 @@
             }
           }
         },
-        "description": "Restore a trashed entry to its original path (collision-safe suffix if occupied).",
+        "description": "Restore a trashed entry to its original path (collision-safe suffix if occupied). Succeeds even if the entry is past its TTL; the retention sweep runs after the restore, never before it.",
         "summary": "Restore from trash",
         "requestBody": {
           "content": {
@@ -20474,6 +20474,42 @@
         "required": ["directory", "payload"],
         "additionalProperties": false
       },
+      "ResourcePressure": {
+        "type": "object",
+        "properties": {
+          "warning": {
+            "type": "object",
+            "properties": {
+              "memory_used_fraction": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 1
+              },
+              "disk_free_bytes": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false
+          },
+          "floor": {
+            "type": "object",
+            "properties": {
+              "memory_used_fraction": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 1
+              },
+              "disk_free_bytes": {
+                "type": "integer",
+                "minimum": 0
+              }
+            },
+            "additionalProperties": false
+          }
+        },
+        "additionalProperties": false
+      },
       "NotFoundError": {
         "type": "object",
         "required": ["name", "data"],
@@ -27148,6 +27184,9 @@
           },
           "tool_output": {
             "$ref": "#/components/schemas/ConfigV2ToolOutput"
+          },
+          "resource_pressure": {
+            "$ref": "#/components/schemas/ResourcePressure"
           },
           "mcp": {
             "$ref": "#/components/schemas/ConfigV2MCP"
