@@ -54,12 +54,11 @@ const KEPT_WITHOUT_IMPORTS: Record<string, Record<string, string>> = {
  * one fails immediately. Fixing one means deleting its line.
  */
 const KNOWN_UNDECLARED: Record<string, string[]> = {
-  app: [
-    // src/custom-elements.d.ts imports DIFFS_TAG_NAME from it, but packages/app/node_modules/@pierre
-    // holds only `trees`. Invisible because `skipLibCheck: true` suppresses errors inside .d.ts —
-    // a plain .ts with the same import reports TS2307 (measured 2026-07-29).
-    "@pierre/diffs",
-  ],
+  // UN-PINNED 2026-07-30: `@pierre/diffs` was the one entry here — `src/custom-elements.d.ts`
+  // imported it undeclared, invisible because `skipLibCheck: true` suppresses TS2307 inside a
+  // `.d.ts`. It is now DECLARED (app `933724da9`), so the ledger must shrink: this is a ratchet,
+  // not a suppression list, and an entry that starts passing fails the run until it is removed.
+  app: [],
   ui: [],
   "session-ui": [],
 }
