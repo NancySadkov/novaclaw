@@ -3265,6 +3265,7 @@ export type ConfigV2Model = {
   }>
   cost?: ConfigV2ModelCost | Array<ConfigV2ModelCost>
   tier?: "micro" | "tiny" | "small" | "medium" | "large" | "frontier"
+  prePrompt?: string
   disabled?: boolean
   limit?: ConfigV2ModelLimit
 }
@@ -3325,6 +3326,7 @@ export type ConfigV2ModelEntry = {
   }>
   cost?: ConfigV2ModelCost | Array<ConfigV2ModelCost>
   tier?: "micro" | "tiny" | "small" | "medium" | "large" | "frontier"
+  prePrompt?: string
   disabled?: boolean
   limit?: ConfigV2ModelLimit
 }
@@ -3554,6 +3556,7 @@ export type ModelV2Info = {
   providerID: string
   family?: string
   tier?: "micro" | "tiny" | "small" | "medium" | "large" | "frontier"
+  prePrompt?: string
   name: string
   api: ModelApi
   capabilities: ModelCapabilities

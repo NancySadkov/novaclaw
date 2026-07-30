@@ -27300,6 +27300,9 @@
             "type": "string",
             "enum": ["micro", "tiny", "small", "medium", "large", "frontier"]
           },
+          "prePrompt": {
+            "type": "string"
+          },
           "disabled": {
             "type": "boolean"
           },
@@ -27464,6 +27467,9 @@
           "tier": {
             "type": "string",
             "enum": ["micro", "tiny", "small", "medium", "large", "frontier"]
+          },
+          "prePrompt": {
+            "type": "string"
           },
           "disabled": {
             "type": "boolean"
@@ -28175,6 +28181,9 @@
           "tier": {
             "type": "string",
             "enum": ["micro", "tiny", "small", "medium", "large", "frontier"]
+          },
+          "prePrompt": {
+            "type": "string"
           },
           "name": {
             "type": "string"
