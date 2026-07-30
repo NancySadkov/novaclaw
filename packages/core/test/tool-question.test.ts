@@ -15,15 +15,26 @@ const sessionID = SessionV2.ID.make("ses_question_tool_test")
 const assertions: PermissionV2.AssertInput[] = []
 let captured: QuestionV2.AskInput | undefined
 let reject = false
-let deny = false
+/**
+ * Set to make the permission gate fail. ⚠️ `assert`'s error channel is
+ * `PermissionV2.Error | SessionV2.NotFoundError` — and `PermissionV2.Error` is the module's own
+ * union (`DeniedError | RejectedError | CorrectedError`), NOT the global `Error`. `denialMessage`
+ * answers all three of those, so `NotFoundError` is the only member it declines, which makes it the
+ * one honest negative control available here — and the one case the tool's old hardcoded
+ * "Permission denied: question" described falsely.
+ */
+let assertFailure: PermissionV2.Error | SessionV2.NotFoundError | undefined
 const capturedInput = () => captured
 const permission = Layer.succeed(
   PermissionV2.Service,
   PermissionV2.Service.of({
     assert: (input) =>
-      Effect.sync(() => assertions.push(input)).pipe(
-        Effect.andThen(deny ? Effect.fail(new PermissionV2.DeniedError({ rules: [] })) : Effect.void),
-      ),
+      Effect.gen(function* () {
+        assertions.push(input)
+        // No `return` — returning the failed effect widens the success channel to `undefined`,
+        // which is not assignable to the interface's `Effect<void, …>`.
+        if (assertFailure) yield* Effect.fail(assertFailure)
+      }),
     ask: () => Effect.die("unused"),
     reply: () => Effect.die("unused"),
     get: () => Effect.die("unused"),
@@ -55,7 +66,10 @@ describe("QuestionTool", () => {
   it.effect("omits a denied built-in question and terminally settles a stale call", () =>
     Effect.gen(function* () {
       captured = undefined
-      deny = true
+      const denial = new PermissionV2.DeniedError({
+        rules: [{ action: "question", resource: "*", effect: "deny" }],
+      })
+      assertFailure = denial
       const registry = yield* ToolRegistry.Service
 
       expect(yield* toolDefinitions(registry, [{ action: "question", resource: "*", effect: "deny" }])).toEqual([])
@@ -65,9 +79,92 @@ describe("QuestionTool", () => {
           ...toolIdentity,
           call: { type: "tool-call", id: "call-question-denied", name: "question", input: { questions: [] } },
         }),
-      ).toEqual({ result: { type: "error", value: "Permission denied: question" } })
+      ).toEqual({ result: { type: "error", value: PermissionV2.denialMessage(denial)! } })
       expect(capturedInput()).toBeUndefined()
-      deny = false
+      assertFailure = undefined
+    }),
+  )
+
+  // The blanket `mapError` used to ignore its error and hardcode "Permission denied: question", so
+  // every verdict collapsed into one sentence — a reject's user feedback erased, and with it the
+  // deny-fast wording written to stop an unattended run retrying something that can never succeed.
+  //
+  // ⚠️ Pinned over EVERY member of `PermissionV2.Error`, not one specimen: `assert` may raise any of
+  // the three and `denialMessage` answers all three, so a check over a single member would leave
+  // the others free to collapse silently — the defect class ruling 1 names. The `reason` variants
+  // are covered for the same reason (each is a DIFFERENT string from `denialMessage`); this is a
+  // statement about what the absorber must not throw away, not a claim about which verdict this
+  // action reaches in production.
+  const denialCases = [
+    {
+      kind: "a policy denial",
+      failure: new PermissionV2.DeniedError({ rules: [{ action: "question", resource: "*", effect: "deny" }] }),
+      contains: "question",
+    },
+    {
+      kind: "a deny-fast refusal with no answerer",
+      failure: new PermissionV2.DeniedError({
+        rules: [{ action: "question", resource: "*", effect: "deny" }],
+        reason: "unattended-unanswerable",
+      }),
+      contains: "UNATTENDED",
+    },
+    { kind: "a plain user rejection", failure: new PermissionV2.RejectedError(), contains: "declined" },
+    {
+      // The clause `permission.ts` names by name: "including the user's optional reject feedback".
+      kind: "a rejection carrying user feedback",
+      failure: new PermissionV2.CorrectedError({ feedback: "just pick the default and move on" }),
+      contains: "just pick the default and move on",
+    },
+  ] as const
+
+  for (const { kind, failure, contains } of denialCases)
+    it.effect(`${kind} keeps its own text instead of collapsing into the fallback`, () =>
+      Effect.gen(function* () {
+        captured = undefined
+        reject = false
+        assertFailure = failure
+        const registry = yield* ToolRegistry.Service
+
+        const expected = PermissionV2.denialMessage(failure)
+        // Guard the instrument: if `denialMessage` ever returned undefined or the fallback wording,
+        // the assertion below would pass while proving nothing.
+        expect(typeof expected).toBe("string")
+        expect(expected).not.toBe("Unable to ask the user")
+        expect(expected).toContain(contains)
+
+        expect(
+          yield* executeTool(registry, {
+            sessionID,
+            ...toolIdentity,
+            call: { type: "tool-call", id: "call-question-gated", name: "question", input: { questions: [] } },
+          }),
+        ).toEqual({ type: "error", value: expected })
+        expect(capturedInput()).toBeUndefined()
+        assertFailure = undefined
+      }),
+    )
+
+  it.effect("NEGATIVE CONTROL: a non-permission failure gets the fallback, which never says 'denied'", () =>
+    Effect.gen(function* () {
+      captured = undefined
+      reject = false
+      // A vanished session, not a denial — `denialMessage` declines it, so the else arm must answer.
+      // This is the ONE error that reaches the fallback, and it is the case the old hardcoded
+      // "Permission denied: question" got actively WRONG (ruling 2 — a fault described falsely).
+      assertFailure = new SessionV2.NotFoundError({ sessionID })
+      const registry = yield* ToolRegistry.Service
+
+      expect(PermissionV2.denialMessage(assertFailure)).toBeUndefined()
+      expect(
+        yield* executeTool(registry, {
+          sessionID,
+          ...toolIdentity,
+          call: { type: "tool-call", id: "call-question-vanished", name: "question", input: { questions: [] } },
+        }),
+      ).toEqual({ type: "error", value: "Unable to ask the user" })
+      expect(capturedInput()).toBeUndefined()
+      assertFailure = undefined
     }),
   )
 
@@ -76,7 +173,7 @@ describe("QuestionTool", () => {
       assertions.length = 0
       captured = undefined
       reject = false
-      deny = false
+      assertFailure = undefined
       const registry = yield* ToolRegistry.Service
       const questions = [
         {
@@ -127,7 +224,7 @@ describe("QuestionTool", () => {
     Effect.gen(function* () {
       captured = undefined
       reject = false
-      deny = false
+      assertFailure = undefined
       const registryService = yield* ToolRegistry.Service
 
       yield* executeTool(registryService, {
@@ -147,7 +244,7 @@ describe("QuestionTool", () => {
     Effect.gen(function* () {
       captured = undefined
       reject = true
-      deny = false
+      assertFailure = undefined
       const registryService = yield* ToolRegistry.Service
       const fiber = yield* executeTool(registryService, {
         sessionID,

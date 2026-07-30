@@ -69,7 +69,23 @@ export const layer = Layer.effectDiscard(
                 source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
               })
               .pipe(
-                Effect.mapError(() => new ToolFailure({ message: "Permission denied: question" })),
+                // 1J: consult `denialMessage` FIRST so a denial keeps its own identity — including a
+                // reject's user feedback and the deny-fast wording an UNATTENDED run needs to learn
+                // that retrying is pointless. The absorber this replaces ignored its error argument
+                // and hardcoded "Permission denied: question", which was wrong in both directions.
+                //
+                // ⚠️ It was not merely lossy, it was FALSE. `assert` is typed
+                // `Effect<void, PermissionV2.Error | SessionV2.NotFoundError>`, and `denialMessage`
+                // answers every member of `PermissionV2.Error` (Denied — including its own
+                // fallback branch — Rejected and Corrected). So the ONE error that reaches the
+                // arm below is a vanished session, and the old string reported that as a permission
+                // refusal: ruling 2, a fault described falsely. The fallback now claims nothing
+                // about permissions, because at this seam it never is one.
+                Effect.mapError((error) => {
+                  const denial = PermissionV2.denialMessage(error)
+                  if (denial) return new ToolFailure({ message: denial })
+                  return new ToolFailure({ message: "Unable to ask the user" })
+                }),
                 Effect.andThen(
                   question
                     .ask({

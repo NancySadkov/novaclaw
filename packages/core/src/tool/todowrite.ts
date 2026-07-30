@@ -48,7 +48,26 @@ export const layer = Layer.effectDiscard(
               })
               yield* todos.update({ sessionID: context.sessionID, todos: input.todos })
               return { todos: input.todos }
-            }).pipe(Effect.mapError(() => new ToolFailure({ message: "Unable to update todos" }))),
+            }).pipe(
+              // 1J: consult `denialMessage` FIRST so a denial keeps its own identity — including a
+              // reject's user feedback and the deny-fast wording an UNATTENDED run needs. The
+              // absorber this replaces ignored its error argument, so every refusal reached the
+              // model as "Unable to update todos" — indistinguishable from a transient fault, and
+              // therefore worth retrying, which is exactly the loop the deny-fast text exists to
+              // stop.
+              //
+              // `assert` is the only thing in this block that can fail: `todos.update` is typed
+              // `Effect<void>` (its DB errors are `orDie`'d in `session/todo.ts`), so the channel
+              // here is `PermissionV2.Error | SessionV2.NotFoundError`. `denialMessage` answers
+              // every member of `PermissionV2.Error`, which leaves a VANISHED SESSION as the only
+              // case the fallback below describes — and "Unable to update todos" is true of it
+              // without claiming anything about permissions.
+              Effect.mapError((error) => {
+                const denial = PermissionV2.denialMessage(error)
+                if (denial) return new ToolFailure({ message: denial })
+                return new ToolFailure({ message: "Unable to update todos" })
+              }),
+            ),
         }),
       })
       .pipe(Effect.orDie)
