@@ -814,4 +814,22 @@ export const dict = {
   "error.childStore.persistedProjectIconCreateFailed": "فشل إنشاء أيقونة المشروع الدائمة",
   "error.childStore.storeCreateFailed": "فشل إنشاء المخزن",
   "terminal.connectionLost.abnormalClose": "تم إغلاق WebSocket بشكل غير طبيعي: {{code}}",
+  "session.error.interrupted": "تم الإيقاف",
+  "session.error.transport": "تعذّر الوصول إلى خادم النموذج. قد يكون مُطفأً أو ما يزال قيد البدء أو على شبكة أخرى.",
+  "session.error.transportEndpoint":
+    "تعذّر الوصول إلى خادم النموذج على {{endpoint}}. قد يكون مُطفأً أو ما يزال قيد البدء أو على شبكة أخرى.",
+  "session.error.offlineBlocked": "حجب وضع عدم الاتصال هذا الطلب، فلم يخرج من حاسوبك أبدًا.",
+  "session.error.offlineBlockedEndpoint":
+    "حجب وضع عدم الاتصال هذا الطلب الموجّه إلى {{endpoint}}، فلم يخرج من حاسوبك أبدًا.",
+  "session.error.invalidRequest": "رفض النموذج هذا الطلب.",
+  "session.error.noRoute": "لا يوجد مسار مُهيّأ لهذا النموذج.",
+  "session.error.authentication": "رفض موفر النموذج بيانات اعتماد هذا النموذج.",
+  "session.error.rateLimit": "يفرض موفر النموذج حدًا لمعدل الطلبات على هذا الحساب — أعد المحاولة بعد لحظة.",
+  "session.error.quotaExceeded": "نفدت حصة هذا الحساب لدى موفر النموذج.",
+  "session.error.contentPolicy": "رفض موفر النموذج هذا الطلب وفقًا لسياسة المحتوى الخاصة به.",
+  "session.error.providerInternal": "واجه خادم النموذج خطأً داخليًا.",
+  "session.error.invalidProviderOutput": "تعذّرت قراءة رد النموذج.",
+  "session.error.unknownProvider": "أعاد موفر النموذج خطأً.",
+  "session.error.toolFailure": "فشلت إحدى الأدوات.",
+  "session.error.unknown": "فشلت الجولة قبل أن تكتمل.",
 } satisfies Partial<Record<Keys, string>>

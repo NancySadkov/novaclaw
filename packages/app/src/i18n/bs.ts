@@ -901,4 +901,23 @@ export const dict = {
   "error.childStore.persistedProjectIconCreateFailed": "Nije uspjelo kreiranje trajne ikone projekta",
   "error.childStore.storeCreateFailed": "Nije uspjelo kreiranje skladišta",
   "terminal.connectionLost.abnormalClose": "WebSocket zatvoren nenormalno: {{code}}",
+  "session.error.interrupted": "Prekinuto",
+  "session.error.transport":
+    "Nije moguće povezati se na server modela. Možda je isključen, još se pokreće ili je na drugoj mreži.",
+  "session.error.transportEndpoint":
+    "Nije moguće povezati se na server modela na {{endpoint}}. Možda je isključen, još se pokreće ili je na drugoj mreži.",
+  "session.error.offlineBlocked": "Offline režim je blokirao ovaj zahtjev, tako da nikada nije napustio vaš računar.",
+  "session.error.offlineBlockedEndpoint":
+    "Offline režim je blokirao ovaj zahtjev prema {{endpoint}}, tako da nikada nije napustio vaš računar.",
+  "session.error.invalidRequest": "Model je odbio ovaj zahtjev.",
+  "session.error.noRoute": "Za ovaj model nije konfigurirana nijedna ruta.",
+  "session.error.authentication": "Provajder modela je odbio vjerodajnice ovog modela.",
+  "session.error.rateLimit": "Provajder modela ograničava broj zahtjeva za ovaj račun — pokušajte ponovo za trenutak.",
+  "session.error.quotaExceeded": "Ovaj račun je potrošio kvotu kod provajdera modela.",
+  "session.error.contentPolicy": "Provajder modela je odbio ovaj zahtjev prema svojoj politici sadržaja.",
+  "session.error.providerInternal": "Na serveru modela došlo je do interne greške.",
+  "session.error.invalidProviderOutput": "Odgovor modela nije bilo moguće pročitati.",
+  "session.error.unknownProvider": "Provajder modela je vratio grešku.",
+  "session.error.toolFailure": "Alat nije uspio.",
+  "session.error.unknown": "Potez nije uspio prije nego što je dovršen.",
 } satisfies Partial<Record<Keys, string>>

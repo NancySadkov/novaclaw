@@ -896,4 +896,24 @@ export const dict = {
   "error.childStore.persistedProjectIconCreateFailed": "Kunne ikke oprette vedvarende projektikon",
   "error.childStore.storeCreateFailed": "Kunne ikke oprette lager",
   "terminal.connectionLost.abnormalClose": "WebSocket lukkede unormalt: {{code}}",
+  "session.error.interrupted": "Afbrudt",
+  "session.error.transport":
+    "Kan ikke få forbindelse til modelserveren. Den er måske slukket, stadig ved at starte, eller på et andet netværk.",
+  "session.error.transportEndpoint":
+    "Kan ikke få forbindelse til modelserveren på {{endpoint}}. Den er måske slukket, stadig ved at starte, eller på et andet netværk.",
+  "session.error.offlineBlocked": "Offlinetilstand blokerede denne anmodning, så den forlod aldrig din computer.",
+  "session.error.offlineBlockedEndpoint":
+    "Offlinetilstand blokerede denne anmodning til {{endpoint}}, så den forlod aldrig din computer.",
+  "session.error.invalidRequest": "Modellen afviste denne anmodning.",
+  "session.error.noRoute": "Der er ikke konfigureret nogen rute for denne model.",
+  "session.error.authentication": "Modeludbyderen afviste denne models legitimationsoplysninger.",
+  "session.error.rateLimit":
+    "Modeludbyderen begrænser antallet af anmodninger for denne konto — prøv igen om et øjeblik.",
+  "session.error.quotaExceeded": "Denne konto har ikke mere kvote hos modeludbyderen.",
+  "session.error.contentPolicy": "Modeludbyderen afviste denne anmodning i henhold til sin indholdspolitik.",
+  "session.error.providerInternal": "Modelserveren stødte på en intern fejl.",
+  "session.error.invalidProviderOutput": "Modellens svar kunne ikke læses.",
+  "session.error.unknownProvider": "Modeludbyderen returnerede en fejl.",
+  "session.error.toolFailure": "Et værktøj fejlede.",
+  "session.error.unknown": "Turen fejlede, før den blev færdig.",
 } satisfies Partial<Record<Keys, string>>

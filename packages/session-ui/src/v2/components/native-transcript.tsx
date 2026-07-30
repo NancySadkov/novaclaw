@@ -18,7 +18,12 @@ import { Markdown } from "../../components/markdown"
 import { reasoningOpenDefault, toolOpenDefault, type ReasoningFoldMode } from "../reasoning-fold"
 import { BasicToolV2 } from "./basic-tool-v2"
 import { ToolErrorCardV2 } from "./tool-error-card-v2"
-import { sessionErrorDisplay, sessionErrorText } from "./session-error"
+import {
+  sessionErrorDisplay,
+  sessionErrorHeadline,
+  type SessionErrorDisplay,
+} from "@novaclaw/core/session/session-error"
+import { useI18n } from "@novaclaw/ui/context/i18n"
 import "./native-transcript.css"
 
 // Level-aware fold modes (UIX residue b / C4). Reasoning and tool cards carry SEPARATE modes so
@@ -28,6 +33,21 @@ import "./native-transcript.css"
 type FoldModes = { reasoning: ReasoningFoldMode; tool: ReasoningFoldMode }
 const defaultFoldModes: Accessor<FoldModes> = () => ({ reasoning: "collapsed", tool: "collapsed" })
 const ReasoningFoldContext = createContext<Accessor<FoldModes>>(defaultFoldModes)
+
+/**
+ * The session-fault headline, TRANSLATED.
+ *
+ * ⚠️ **This surface rendered raw English until 2026-07-30.** It used the taxonomy's `headline` —
+ * the English fallback that exists for surfaces with *no* translator (the headless CLI) — so every
+ * session fault read in English regardless of locale, on the one surface a lay user is most likely
+ * to hit first (a model server that is off, a key that expired). The taxonomy answers with
+ * `key` + `params` precisely so this call site can translate it, and `sessionErrorHeadline` is the
+ * shared one-liner that does it (the app's notification surface calls the same function).
+ */
+function useFaultText() {
+  const i18n = useI18n()
+  return (fault: SessionErrorDisplay): string => sessionErrorHeadline(fault, i18n.t)
+}
 
 // Per-message actions the host app can wire into the transcript (e.g. "revert to this prompt").
 // Injected via context so `session-ui` stays decoupled from the app's SDK/dialog layer: the app
@@ -243,6 +263,7 @@ function AssistantMessage(props: { message: SessionMessageAssistant }) {
     () => props.message.content.filter((c) => c.type === "reasoning" && c.text.trim().length > 0).length,
   )
   const reasoningTokens = () => (reasoningParts() === 1 ? props.message.tokens?.reasoning : undefined)
+  const faultText = useFaultText()
   return (
     <div data-slot="native-assistant">
       <For each={props.message.content}>
@@ -284,7 +305,7 @@ function AssistantMessage(props: { message: SessionMessageAssistant }) {
             when={fault().kind !== "interrupted"}
             fallback={
               <div data-slot="native-interrupted-divider">
-                <span>{fault().headline}</span>
+                <span>{faultText(fault())}</span>
               </div>
             }
           >
@@ -293,7 +314,7 @@ function AssistantMessage(props: { message: SessionMessageAssistant }) {
                 sentence; `detail` is the provider's own words, already stripped of machine
                 noise, and is simply absent when there were none. */}
             <div data-slot="native-error" role="alert">
-              <div data-slot="native-error-headline">{fault().headline}</div>
+              <div data-slot="native-error-headline">{faultText(fault())}</div>
               <Show when={fault().detail}>{(detail) => <div data-slot="native-error-detail">{detail()}</div>}</Show>
             </div>
           </Show>
@@ -369,6 +390,7 @@ function ToolPart(props: { part: SessionMessageAssistantTool }) {
   const meta = () => toolMeta(props.part)
   // Level-aware default (UIX residue b): Developer sees tool cards expanded; others collapsed.
   const foldMode = useContext(ReasoningFoldContext)
+  const faultText = useFaultText()
   return (
     <Switch>
       <Match when={props.part.name === "todowrite"}>
@@ -382,7 +404,7 @@ function ToolPart(props: { part: SessionMessageAssistantTool }) {
           <ToolErrorCardV2
             data-slot="native-tool"
             title={meta().title}
-            subtitle={sessionErrorText(state().error)}
+            subtitle={faultText(sessionErrorDisplay(state().error))}
             suffix={<ToolBody part={props.part} />}
           />
         )}
@@ -646,8 +668,9 @@ function toolInput(state: SessionMessageAssistantTool["state"]): Record<string, 
 
 /**
  * The RAW message, for semantic predicates only (today: "was this question dismissed?"). Display
- * text comes from `sessionErrorText` — matching on a headline would break the moment that
- * headline is translated, which is exactly the trap `isInterrupted` used to sit in.
+ * text comes from `sessionErrorDisplay` + `useFaultText` — matching on a headline would break the
+ * moment that headline is translated, which is exactly the trap `isInterrupted` used to sit in,
+ * and as of 2026-07-30 the headline IS translated, so the warning is now load-bearing.
  */
 function toolErrorMessage(state: SessionMessageAssistantTool["state"]): string | undefined {
   return state.status === "error" ? state.error.message : undefined

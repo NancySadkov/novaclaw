@@ -821,4 +821,23 @@ export const dict = {
   "error.childStore.persistedProjectIconCreateFailed": "永続プロジェクトアイコンの作成に失敗しました",
   "error.childStore.storeCreateFailed": "ストアの作成に失敗しました",
   "terminal.connectionLost.abnormalClose": "WebSocket が異常終了しました: {{code}}",
+  "session.error.interrupted": "中断されました",
+  "session.error.transport":
+    "モデルサーバーに接続できません。電源が入っていないか、起動中か、別のネットワークにある可能性があります。",
+  "session.error.transportEndpoint":
+    "{{endpoint}} のモデルサーバーに接続できません。電源が入っていないか、起動中か、別のネットワークにある可能性があります。",
+  "session.error.offlineBlocked": "オフラインモードがこのリクエストをブロックしました。リクエストはこのコンピューターから外に出ていません。",
+  "session.error.offlineBlockedEndpoint": "オフラインモードが {{endpoint}} へのリクエストをブロックしました。リクエストはこのコンピューターから外に出ていません。",
+  "session.error.invalidRequest": "モデルがこのリクエストを拒否しました。",
+  "session.error.noRoute": "このモデルにはルートが設定されていません。",
+  "session.error.authentication": "モデルプロバイダーがこのモデルの認証情報を拒否しました。",
+  "session.error.rateLimit":
+    "モデルプロバイダーがこのアカウントのレートを制限しています。少し待ってからもう一度お試しください。",
+  "session.error.quotaExceeded": "このアカウントはモデルプロバイダーのクォータを使い切りました。",
+  "session.error.contentPolicy": "モデルプロバイダーがコンテンツポリシーに基づいてこのリクエストを拒否しました。",
+  "session.error.providerInternal": "モデルサーバーで内部エラーが発生しました。",
+  "session.error.invalidProviderOutput": "モデルの応答を読み取れませんでした。",
+  "session.error.unknownProvider": "モデルプロバイダーがエラーを返しました。",
+  "session.error.toolFailure": "ツールが失敗しました。",
+  "session.error.unknown": "ターンは完了する前に失敗しました。",
 } satisfies Partial<Record<Keys, string>>

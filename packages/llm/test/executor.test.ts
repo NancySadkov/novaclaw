@@ -1,8 +1,8 @@
 import { describe, expect } from "bun:test"
 import { Effect, Fiber, Layer, Random, Ref } from "effect"
 import * as TestClock from "effect/testing/TestClock"
-import { Headers, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
-import { LLM, LLMError } from "../src"
+import { Headers, HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
+import { EgressBlocked, LLM, LLMError } from "../src"
 import { LLMClient, RequestExecutor } from "../src/route"
 import * as OpenAIChat from "../src/protocols/openai-chat"
 import { dynamicResponse } from "./lib/http"
@@ -63,6 +63,40 @@ const randomMidpoint = {
   nextDoubleUnsafe: () => 0.5,
   nextIntUnsafe: () => 0,
 }
+
+/**
+ * A client that refuses the request the way a LOCAL egress policy does — byte-for-byte the shape
+ * `packages/core/src/offline.ts`'s `guard` produces: an `HttpClientError` with an `InvalidUrlError`
+ * reason, the verdict text as `description`, and an `EgressBlocked` marker as the `cause`.
+ *
+ * ⚠️ Written from the producer's shape ON PURPOSE. If `offline.ts` ever stops attaching the marker,
+ * this test still passes while production silently regresses — which is why the companion check in
+ * `packages/core/test/offline-egress-blocked.test.ts` drives the REAL `Offline.guard` through the
+ * REAL executor instead of reconstructing anything.
+ */
+const egressBlockedLayer = (verdict: string, host: string, attempts?: Ref.Ref<number>) =>
+  RequestExecutor.layer.pipe(
+    Layer.provide(
+      Layer.succeed(
+        HttpClient.HttpClient,
+        HttpClient.make((request) =>
+          (attempts ? Ref.update(attempts, (value) => value + 1) : Effect.void).pipe(
+            Effect.andThen(
+              Effect.fail(
+                new HttpClientError.HttpClientError({
+                  reason: new HttpClientError.InvalidUrlError({
+                    request,
+                    description: verdict,
+                    cause: new EgressBlocked(host, verdict),
+                  }),
+                }),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  )
 
 const expectLLMError = (error: unknown) => {
   expect(error).toBeInstanceOf(LLMError)
@@ -452,6 +486,87 @@ describe("RequestExecutor", () => {
 
       expectLLMError(error)
       expect(error.reason).toMatchObject({ _tag: "InvalidProviderOutput" })
+      expect(yield* Ref.get(attempts)).toBe(1)
+    }),
+  )
+
+  // ── The offline/airgap verdict is its own arm (v0.2.0 ruling 2) ────────────────────────────
+  //
+  // It used to be flattened into `TransportReason`, so a deliberate configuration decision and a
+  // dead endpoint were indistinguishable from here on: the runner retried the verdict until a
+  // `kind === "InvalidUrlError"` string check stopped it, the display parsed this file's own prose
+  // back apart to recover what the type had thrown away, and the user was told the model server was
+  // unreachable when it was perfectly healthy.
+  const VERDICT =
+    "Offline mode: request to host 'provider.test' blocked (fail-closed). " +
+    "Only loopback and the configured model-provider hosts are reachable (allowed: none). " +
+    "To allow it: add the provider globally (Settings → Models), extend NOVACLAW_OFFLINE_ALLOW " +
+    "(comma-separated hosts), or turn offline mode off."
+
+  it.effect("files a local egress block as OfflineBlocked, not Transport", () =>
+    Effect.gen(function* () {
+      const executor = yield* RequestExecutor.Service
+      const error = yield* executor.execute(request).pipe(Effect.flip)
+
+      expectLLMError(error)
+      expect(error.reason._tag).toBe("OfflineBlocked")
+      expect(error.reason).toMatchObject({ host: "provider.test" })
+      // The reason class answers the retry question by TYPE — no `kind` string to special-case.
+      expect(error.retryable).toBe(false)
+      // The policy's own words survive verbatim (they carry the remedy), and the target is named
+      // so a display can put the host in its headline.
+      expect(error.reason.message).toContain("turn offline mode off")
+      expect(error.reason.message).toContain("(target https://provider.test/v1/chat")
+      // …and the URL is redacted like every other reason's — the request carries `api_key=secret`.
+      expect(error.reason.message).not.toContain("secret")
+    }).pipe(Effect.provide(egressBlockedLayer(VERDICT, "provider.test"))),
+  )
+
+  it.effect("a malformed URL is NOT an egress block — same platform tag, different fault", () =>
+    Effect.gen(function* () {
+      // The platform raises `InvalidUrlError` for an unbuildable URL too, with a `cause` that is
+      // NOT an `EgressBlocked`. Discriminating on the tag alone would describe a broken endpoint
+      // URL as an airgap block, which is the same false description in the other direction.
+      const executor = yield* RequestExecutor.Service
+      const error = yield* executor.execute(request).pipe(Effect.flip)
+
+      expectLLMError(error)
+      expect(error.reason._tag).toBe("Transport")
+      expect(error.reason.message).toContain("InvalidUrlError")
+    }).pipe(
+      Effect.provide(
+        RequestExecutor.layer.pipe(
+          Layer.provide(
+            Layer.succeed(
+              HttpClient.HttpClient,
+              HttpClient.make((request) =>
+                Effect.fail(
+                  new HttpClientError.HttpClientError({
+                    reason: new HttpClientError.InvalidUrlError({
+                      request,
+                      description: "cannot parse URL",
+                      cause: new TypeError("Invalid URL"),
+                    }),
+                  }),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    ),
+  )
+
+  it.effect("an egress block is never retried — a verdict cannot change on attempt two", () =>
+    Effect.gen(function* () {
+      const attempts = yield* Ref.make(0)
+      const error = yield* Effect.gen(function* () {
+        const executor = yield* RequestExecutor.Service
+        return yield* executor.execute(request).pipe(Effect.flip)
+      }).pipe(Effect.provide(egressBlockedLayer(VERDICT, "provider.test", attempts)))
+
+      expectLLMError(error)
+      expect(error.reason._tag).toBe("OfflineBlocked")
       expect(yield* Ref.get(attempts)).toBe(1)
     }),
   )

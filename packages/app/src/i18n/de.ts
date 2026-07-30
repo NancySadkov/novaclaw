@@ -834,4 +834,24 @@ export const dict = {
   "error.childStore.persistedProjectIconCreateFailed": "Dauerhaftes Projekticon konnte nicht erstellt werden",
   "error.childStore.storeCreateFailed": "Speicher konnte nicht erstellt werden",
   "terminal.connectionLost.abnormalClose": "WebSocket abnormal geschlossen: {{code}}",
+  "session.error.interrupted": "Unterbrochen",
+  "session.error.transport":
+    "Der Modellserver ist nicht erreichbar. Er ist möglicherweise ausgeschaltet, startet noch oder befindet sich in einem anderen Netzwerk.",
+  "session.error.transportEndpoint":
+    "Der Modellserver unter {{endpoint}} ist nicht erreichbar. Er ist möglicherweise ausgeschaltet, startet noch oder befindet sich in einem anderen Netzwerk.",
+  "session.error.offlineBlocked":
+    "Der Offline-Modus hat diese Anfrage blockiert – sie hat Ihren Computer nie verlassen.",
+  "session.error.offlineBlockedEndpoint":
+    "Der Offline-Modus hat diese Anfrage an {{endpoint}} blockiert – sie hat Ihren Computer nie verlassen.",
+  "session.error.invalidRequest": "Das Modell hat diese Anfrage abgelehnt.",
+  "session.error.noRoute": "Für dieses Modell ist keine Route konfiguriert.",
+  "session.error.authentication": "Der Modellanbieter hat die Zugangsdaten dieses Modells abgelehnt.",
+  "session.error.rateLimit": "Der Modellanbieter drosselt dieses Konto — versuchen Sie es gleich noch einmal.",
+  "session.error.quotaExceeded": "Das Kontingent dieses Kontos beim Modellanbieter ist aufgebraucht.",
+  "session.error.contentPolicy": "Der Modellanbieter hat diese Anfrage aufgrund seiner Inhaltsrichtlinien abgelehnt.",
+  "session.error.providerInternal": "Im Modellserver ist ein interner Fehler aufgetreten.",
+  "session.error.invalidProviderOutput": "Die Antwort des Modells konnte nicht gelesen werden.",
+  "session.error.unknownProvider": "Der Modellanbieter hat einen Fehler zurückgegeben.",
+  "session.error.toolFailure": "Ein Werkzeug ist fehlgeschlagen.",
+  "session.error.unknown": "Der Durchgang ist fehlgeschlagen, bevor er abgeschlossen war.",
 } satisfies Partial<Record<Keys, string>>

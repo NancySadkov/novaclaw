@@ -1,5 +1,6 @@
 import type { PermissionRuleset } from "@novaclaw/schema/permission-ruleset"
 import { FSUtil } from "@novaclaw/core/fs-util"
+import { sessionErrorLike, sessionErrorLines } from "@novaclaw/core/session/session-error"
 // CLI entry point for `novaclaw run` — the headless, non-interactive runner.
 //
 // Sends a single prompt, streams the session's events to stdout, and exits when
@@ -631,13 +632,28 @@ export const RunCommand = effectCmd({
             UI.error(message)
           }
 
-          const errorMessage = (err: unknown, fallback: string) => {
-            if (err && typeof err === "object" && "message" in err) {
-              const value = String((err as { message: unknown }).message)
-              if (value) return value
-            }
-            return fallback
-          }
+          // ⚠️ This used to be a local `errorMessage(err, fallback)` closure — a SECOND formatter
+          // for the same faults the transcript renders, which is exactly the divergence the shared
+          // taxonomy exists to end (`@novaclaw/core/session/session-error`). It printed the raw
+          // wire text verbatim, so a powered-off model server read as
+          // `HTTP transport failed: fetch failed | cause: connect ECONNREFUSED 192.168.178.40:8000`
+          // here and as a calm sentence in the app — two answers to one question.
+          //
+          // **The CLI keeps the errno, deliberately, as an extra indented line.** The taxonomy's
+          // headline is the truthful description (ruling 2 satisfied) and the raw message is
+          // diagnostic detail ON TOP of it, never a contradiction of it. Four reasons this is the
+          // right call for THIS surface and not for the chat: `novaclaw run` is documented in
+          // AGENTS.md as the way to exercise a model through the real pipeline, i.e. its entire
+          // audience is diagnosing something; nobody is reading their own conversation here, so
+          // there is no lay user the suppression protects; the raw text is already on the wire and
+          // in the session record, so printing it leaks nothing new; and `--format json` emits the
+          // raw error object regardless, so hiding it from the human arm would just make the two
+          // arms of one command disagree. There is no translator in the CLI, so the taxonomy's
+          // English fallback is what renders — by design.
+          //
+          // The line policy itself lives in `sessionErrorLines` so it is unit-tested rather than
+          // buried in this closure (ruling 1) — this call site owns only the indentation.
+          const errorText = (err: unknown) => sessionErrorLines(sessionErrorLike(err)).join(EOL + "  ")
 
           for await (const event of events.stream) {
             if (process.env["NOVACLAW_RUN_DEBUG_EVENTS"]) console.error("EVT", event.type)
@@ -695,7 +711,7 @@ export const RunCommand = effectCmd({
             }
 
             if (event.type === "session.next.tool.failed") {
-              const message = errorMessage(event.properties.error, "tool failed")
+              const message = errorText(event.properties.error)
               if (
                 emit("tool_use", {
                   tool: calls.get(event.properties.callID)?.tool ?? "unknown",
@@ -740,7 +756,7 @@ export const RunCommand = effectCmd({
             // Turn-level failures: step.failed carries the mid-turn error; a pre-turn
             // setup failure (model resolution &c.) surfaces as a synthetic notice.
             if (event.type === "session.next.step.failed") {
-              fail(errorMessage(event.properties.error, "turn failed"), event.properties.error)
+              fail(errorText(event.properties.error), event.properties.error)
             }
 
             if (event.type === "session.next.synthetic") {

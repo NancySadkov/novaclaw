@@ -818,6 +818,35 @@ export const dict = {
   "notification.session.error.title": "Chat error",
   "notification.session.error.fallbackDescription": "An error occurred",
 
+  // The session-fault taxonomy's headline sentences. `sessionErrorDisplay`
+  // (packages/core/src/session/session-error.ts — it moved out of `session-ui` on 2026-07-30 so
+  // the app, the transcript and the headless CLI can all reach it) classifies a
+  // `Session.Error.Unknown` and returns ONE of these keys plus its params; the English text here is
+  // kept identical to that module's own `SESSION_ERROR_TEXT` fallback, which surfaces where no
+  // translator exists. Both halves are pinned by `session-error-keys.test.ts` — a new arm there
+  // without a key here fails the suite by name.
+  "session.error.interrupted": "Interrupted",
+  "session.error.transport":
+    "Can't reach the model server. It may be turned off, still starting, or on another network.",
+  "session.error.transportEndpoint":
+    "Can't reach the model server at {{endpoint}}. It may be turned off, still starting, or on another network.",
+  // An offline/airgap block is a DECISION, not an outage — see `OfflineBlockedReason`. Never
+  // phrase these as unreachability: the server may be perfectly healthy.
+  "session.error.offlineBlocked": "Offline mode blocked this request, so it never left your computer.",
+  "session.error.offlineBlockedEndpoint":
+    "Offline mode blocked this request to {{endpoint}}, so it never left your computer.",
+  "session.error.invalidRequest": "The model rejected this request.",
+  "session.error.noRoute": "No route is configured for this model.",
+  "session.error.authentication": "The model provider rejected this model's credentials.",
+  "session.error.rateLimit": "The model provider is rate-limiting this account — try again in a moment.",
+  "session.error.quotaExceeded": "This account is out of quota with the model provider.",
+  "session.error.contentPolicy": "The model provider refused this request under its content policy.",
+  "session.error.providerInternal": "The model server hit an internal error.",
+  "session.error.invalidProviderOutput": "The model's reply could not be read.",
+  "session.error.unknownProvider": "The model provider returned an error.",
+  "session.error.toolFailure": "A tool failed.",
+  "session.error.unknown": "The turn failed before it finished.",
+
   "home.recentProjects": "Recent projects",
   "home.empty.title": "No folders opened yet",
   "home.empty.description": "Get started by opening a folder on your computer.",

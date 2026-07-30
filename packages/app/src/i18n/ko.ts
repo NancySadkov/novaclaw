@@ -816,4 +816,22 @@ export const dict = {
   "error.childStore.persistedProjectIconCreateFailed": "영구 프로젝트 아이콘 생성 실패",
   "error.childStore.storeCreateFailed": "저장소 생성 실패",
   "terminal.connectionLost.abnormalClose": "WebSocket이 비정상적으로 닫힘: {{code}}",
+  "session.error.interrupted": "중단됨",
+  "session.error.transport":
+    "모델 서버에 연결할 수 없습니다. 꺼져 있거나, 아직 시작 중이거나, 다른 네트워크에 있을 수 있습니다.",
+  "session.error.transportEndpoint":
+    "{{endpoint}}의 모델 서버에 연결할 수 없습니다. 꺼져 있거나, 아직 시작 중이거나, 다른 네트워크에 있을 수 있습니다.",
+  "session.error.offlineBlocked": "오프라인 모드가 이 요셈을 차단했습니다. 요셈은 이 컴퓨턼를 떠나지 않았습니다.",
+  "session.error.offlineBlockedEndpoint": "오프라인 모드가 {{endpoint}}(으)로 향하는 요셈을 차단했습니다. 요셈은 이 컴퓨턼를 떠나지 않았습니다.",
+  "session.error.invalidRequest": "모델이 이 요청을 거부했습니다.",
+  "session.error.noRoute": "이 모델에 대해 구성된 경로가 없습니다.",
+  "session.error.authentication": "모델 공급자가 이 모델의 자격 증명을 거부했습니다.",
+  "session.error.rateLimit": "모델 공급자가 이 계정의 요청 속도를 제한하고 있습니다. 잠시 후 다시 시도하세요.",
+  "session.error.quotaExceeded": "이 계정은 모델 공급자의 할당량을 모두 사용했습니다.",
+  "session.error.contentPolicy": "모델 공급자가 콘텐츠 정책에 따라 이 요청을 거부했습니다.",
+  "session.error.providerInternal": "모델 서버에서 내부 오류가 발생했습니다.",
+  "session.error.invalidProviderOutput": "모델의 응답을 읽을 수 없습니다.",
+  "session.error.unknownProvider": "모델 공급자가 오류를 반환했습니다.",
+  "session.error.toolFailure": "도구가 실패했습니다.",
+  "session.error.unknown": "턴이 완료되기 전에 실패했습니다.",
 } satisfies Partial<Record<Keys, string>>

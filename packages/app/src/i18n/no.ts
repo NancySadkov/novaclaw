@@ -900,4 +900,26 @@ export const dict = {
   "error.childStore.persistedProjectIconCreateFailed": "Kunne ikke opprette vedvarende prosjektikon",
   "error.childStore.storeCreateFailed": "Kunne ikke opprette lager",
   "terminal.connectionLost.abnormalClose": "WebSocket lukket unormalt: {{code}}",
+  "session.error.interrupted": "Avbrutt",
+  "session.error.transport":
+    "Får ikke kontakt med modellserveren. Den kan være slått av, fremdeles starte opp, eller være på et annet nettverk.",
+  "session.error.transportEndpoint":
+    "Får ikke kontakt med modellserveren på {{endpoint}}. Den kan være slått av, fremdeles starte opp, eller være på et annet nettverk.",
+  "session.error.offlineBlocked":
+    "Frakoblet modus blokkerte denne forespørselen, så den forlot aldri datamaskinen din.",
+  "session.error.offlineBlockedEndpoint":
+    "Frakoblet modus blokkerte denne forespørselen til {{endpoint}}, så den forlot aldri datamaskinen din.",
+  "session.error.invalidRequest": "Modellen avviste denne forespørselen.",
+  "session.error.noRoute": "Ingen rute er konfigurert for denne modellen.",
+  "session.error.authentication": "Modelleverandøren avviste legitimasjonen for denne modellen.",
+  "session.error.rateLimit":
+    "Modelleverandøren begrenser forespørselsraten for denne kontoen — prøv igjen om et øyeblikk.",
+  "session.error.quotaExceeded": "Denne kontoen er tom for kvote hos modelleverandøren.",
+  "session.error.contentPolicy":
+    "Modelleverandøren avslo denne forespørselen i henhold til retningslinjene sine for innhold.",
+  "session.error.providerInternal": "Modellserveren fikk en intern feil.",
+  "session.error.invalidProviderOutput": "Modellens svar kunne ikke leses.",
+  "session.error.unknownProvider": "Modelleverandøren returnerte en feil.",
+  "session.error.toolFailure": "Et verktøy mislyktes.",
+  "session.error.unknown": "Turen mislyktes før den ble fullført.",
 } satisfies Partial<Record<Keys, string>>

@@ -906,4 +906,23 @@ export const dict = {
   "error.childStore.persistedProjectIconCreateFailed": "Kalıcı proje simgesi oluşturulamadı",
   "error.childStore.storeCreateFailed": "Depo oluşturulamadı",
   "terminal.connectionLost.abnormalClose": "WebSocket anormal şekilde kapandı: {{code}}",
+  "session.error.interrupted": "Kesildi",
+  "session.error.transport":
+    "Model sunucusuna ulaşılamıyor. Kapalı olabilir, hâlâ başlıyor olabilir veya başka bir ağda olabilir.",
+  "session.error.transportEndpoint":
+    "{{endpoint}} adresindeki model sunucusuna ulaşılamıyor. Kapalı olabilir, hâlâ başlıyor olabilir veya başka bir ağda olabilir.",
+  "session.error.offlineBlocked": "Çevrimdışı mod bu isteği engelledi; istek bilgisayarınızdan hiç çıkmadı.",
+  "session.error.offlineBlockedEndpoint":
+    "Çevrimdışı mod {{endpoint}} adresine giden bu isteği engelledi; istek bilgisayarınızdan hiç çıkmadı.",
+  "session.error.invalidRequest": "Model bu isteği reddetti.",
+  "session.error.noRoute": "Bu model için yapılandırılmış bir rota yok.",
+  "session.error.authentication": "Model sağlayıcısı bu modelin kimlik bilgilerini reddetti.",
+  "session.error.rateLimit": "Model sağlayıcısı bu hesabın istek hızını sınırlıyor — birazdan tekrar deneyin.",
+  "session.error.quotaExceeded": "Bu hesabın model sağlayıcısındaki kotası doldu.",
+  "session.error.contentPolicy": "Model sağlayıcısı bu isteği içerik politikası gereği reddetti.",
+  "session.error.providerInternal": "Model sunucusunda bir iç hata oluştu.",
+  "session.error.invalidProviderOutput": "Modelin yanıtı okunamadı.",
+  "session.error.unknownProvider": "Model sağlayıcısı bir hata döndürdü.",
+  "session.error.toolFailure": "Bir araç başarısız oldu.",
+  "session.error.unknown": "Tur tamamlanmadan başarısız oldu.",
 } satisfies Partial<Record<Keys, string>>

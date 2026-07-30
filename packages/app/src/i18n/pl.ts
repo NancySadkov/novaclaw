@@ -824,4 +824,23 @@ export const dict = {
   "error.childStore.persistedProjectIconCreateFailed": "Nie udało się utworzyć trwałej ikony projektu",
   "error.childStore.storeCreateFailed": "Nie udało się utworzyć magazynu",
   "terminal.connectionLost.abnormalClose": "WebSocket zamknięty nieprawidłowo: {{code}}",
+  "session.error.interrupted": "Przerwano",
+  "session.error.transport":
+    "Nie można połączyć się z serwerem modelu. Może być wyłączony, wciąż się uruchamiać lub znajdować się w innej sieci.",
+  "session.error.transportEndpoint":
+    "Nie można połączyć się z serwerem modelu pod adresem {{endpoint}}. Może być wyłączony, wciąż się uruchamiać lub znajdować się w innej sieci.",
+  "session.error.offlineBlocked": "Tryb offline zablokował to żądanie — nigdy nie opuściło Twojego komputera.",
+  "session.error.offlineBlockedEndpoint":
+    "Tryb offline zablokował to żądanie do {{endpoint}} — nigdy nie opuściło Twojego komputera.",
+  "session.error.invalidRequest": "Model odrzucił to żądanie.",
+  "session.error.noRoute": "Dla tego modelu nie skonfigurowano żadnej trasy.",
+  "session.error.authentication": "Dostawca modelu odrzucił poświadczenia tego modelu.",
+  "session.error.rateLimit": "Dostawca modelu ogranicza liczbę żądań tego konta — spróbuj ponownie za chwilę.",
+  "session.error.quotaExceeded": "To konto wyczerpało limit u dostawcy modelu.",
+  "session.error.contentPolicy": "Dostawca modelu odrzucił to żądanie zgodnie ze swoją polityką treści.",
+  "session.error.providerInternal": "Serwer modelu napotkał błąd wewnętrzny.",
+  "session.error.invalidProviderOutput": "Nie udało się odczytać odpowiedzi modelu.",
+  "session.error.unknownProvider": "Dostawca modelu zwrócił błąd.",
+  "session.error.toolFailure": "Narzędzie zakończyło się niepowodzeniem.",
+  "session.error.unknown": "Tura zakończyła się niepowodzeniem przed ukończeniem.",
 } satisfies Partial<Record<Keys, string>>

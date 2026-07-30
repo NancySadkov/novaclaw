@@ -934,4 +934,24 @@ export const dict = {
   "workspace.reset.archived.one": "1 сесію буде заархівовано.",
   "workspace.reset.archived.many": "{{count}} сесій буде заархівовано.",
   "workspace.reset.note": "Це скине робочу область, щоб вона відповідала гілці за замовчуванням.",
+  "session.error.interrupted": "Перервано",
+  "session.error.transport":
+    "Не вдається зв'язатися із сервером моделі. Можливо, він вимкнений, ще запускається або в іншій мережі.",
+  "session.error.transportEndpoint":
+    "Не вдається зв'язатися із сервером моделі за адресою {{endpoint}}. Можливо, він вимкнений, ще запускається або в іншій мережі.",
+  "session.error.offlineBlocked": "Автономний режим заблокував цей запит — він так і не покинув ваш комп'ютер.",
+  "session.error.offlineBlockedEndpoint":
+    "Автономний режим заблокував цей запит до {{endpoint}} — він так і не покинув ваш комп'ютер.",
+  "session.error.invalidRequest": "Модель відхилила цей запит.",
+  "session.error.noRoute": "Для цієї моделі не налаштовано маршрут.",
+  "session.error.authentication": "Провайдер моделі відхилив облікові дані цієї моделі.",
+  "session.error.rateLimit":
+    "Провайдер моделі обмежує частоту запитів цього облікового запису — спробуйте ще раз за мить.",
+  "session.error.quotaExceeded": "У цього облікового запису закінчилася квота у провайдера моделі.",
+  "session.error.contentPolicy": "Провайдер моделі відхилив цей запит згідно зі своєю політикою вмісту.",
+  "session.error.providerInternal": "На сервері моделі сталася внутрішня помилка.",
+  "session.error.invalidProviderOutput": "Не вдалося прочитати відповідь моделі.",
+  "session.error.unknownProvider": "Провайдер моделі повернув помилку.",
+  "session.error.toolFailure": "Інструмент завершився помилкою.",
+  "session.error.unknown": "Хід завершився помилкою, не дійшовши до кінця.",
 } satisfies Partial<Record<Keys, string>>

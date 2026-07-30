@@ -124,6 +124,7 @@ describe("Session.Error.Unknown carries the taxonomy across the wire", () => {
       "ContentPolicy",
       "ProviderInternal",
       "Transport",
+      "OfflineBlocked",
       "InvalidProviderOutput",
       "UnknownProvider",
       "Interrupted",

@@ -8,6 +8,7 @@ import { usePlatform } from "@/context/platform"
 import { useLanguage } from "@/context/language"
 import { useSettings } from "@/context/settings"
 import { base64Encode } from "@novaclaw/core/util/encode"
+import { sessionErrorDisplay, sessionErrorHeadline, sessionErrorLike } from "@novaclaw/core/session/session-error"
 import { decode64 } from "@/utils/base64"
 import { EventSessionError } from "@novaclaw/sdk/v2"
 import { Persist, persisted } from "@/utils/persist"
@@ -390,9 +391,23 @@ function createServerNotificationState(input: {
         session: sessionID ?? "global",
         error,
       })
+      // ⚠️ This used to read `session?.title ?? (typeof error === "string" ? error : fallback)` —
+      // a THIRD formatter for session faults, and one that never fired: the record-level
+      // `session.error` event declares its payload `Schema.Unknown`, and its one producer
+      // (`novaclaw/src/skill/index.ts`) publishes a `NamedError` OBJECT — `{ name, data: { message } }`,
+      // never a bare string. So the only shape ever sent fell straight through to "An error
+      // occurred", and a skill that failed to parse told the user nothing about itself. That is
+      // ruling 2's *an unavailable subsystem names itself instead of rendering empty*, and
+      // `sessionErrorLike` is where that shape is now understood, once, for every reader.
+      //
+      // The FAULT now leads and the chat title is the fallback, not the other way round: the title
+      // answers "which chat" — which the notification's own href and the launcher's per-session
+      // error badge already answer — while nothing else answers "what broke".
+      const fault = sessionErrorLike(error)
       const description =
+        (fault === undefined ? undefined : sessionErrorHeadline(sessionErrorDisplay(fault), language.t)) ??
         session?.title ??
-        (typeof error === "string" ? error : language.t("notification.session.error.fallbackDescription"))
+        language.t("notification.session.error.fallbackDescription")
       const href = sessionID ? `/${base64Encode(directory)}/session/${sessionID}` : `/${base64Encode(directory)}`
       if (settings.notifications.errors()) {
         void platform.notify(language.t("notification.session.error.title"), description, href)

@@ -904,4 +904,24 @@ export const dict = {
   "error.childStore.persistedProjectIconCreateFailed": "Не удалось создать постоянный значок проекта",
   "error.childStore.storeCreateFailed": "Не удалось создать хранилище",
   "terminal.connectionLost.abnormalClose": "WebSocket закрыт аварийно: {{code}}",
+  "session.error.interrupted": "Прервано",
+  "session.error.transport":
+    "Не удаётся связаться с сервером модели. Возможно, он выключен, ещё запускается или находится в другой сети.",
+  "session.error.transportEndpoint":
+    "Не удаётся связаться с сервером модели по адресу {{endpoint}}. Возможно, он выключен, ещё запускается или находится в другой сети.",
+  "session.error.offlineBlocked": "Автономный режим заблокировал этот запрос — он так и не покинул ваш компьютер.",
+  "session.error.offlineBlockedEndpoint":
+    "Автономный режим заблокировал этот запрос к {{endpoint}} — он так и не покинул ваш компьютер.",
+  "session.error.invalidRequest": "Модель отклонила этот запрос.",
+  "session.error.noRoute": "Для этой модели не настроен маршрут.",
+  "session.error.authentication": "Провайдер модели отклонил учётные данные этой модели.",
+  "session.error.rateLimit":
+    "Провайдер модели ограничивает частоту запросов этого аккаунта — повторите попытку через мгновение.",
+  "session.error.quotaExceeded": "У этого аккаунта закончилась квота у провайдера модели.",
+  "session.error.contentPolicy": "Провайдер модели отклонил этот запрос по своей политике контента.",
+  "session.error.providerInternal": "На сервере модели произошла внутренняя ошибка.",
+  "session.error.invalidProviderOutput": "Не удалось прочитать ответ модели.",
+  "session.error.unknownProvider": "Провайдер модели вернул ошибку.",
+  "session.error.toolFailure": "Инструмент завершился с ошибкой.",
+  "session.error.unknown": "Ход завершился ошибкой, не дойдя до конца.",
 } satisfies Partial<Record<Keys, string>>

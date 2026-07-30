@@ -20,12 +20,19 @@
 //     itself is not egress; the airgap threat model is the WAN. Layer 9 (OFF-C)
 //     handles the model's own shell processes.
 //
-// The block error is an HttpClientError with an InvalidUrlError reason — 1D's
-// provider-retry classifies that FATAL (never retried), unlike Transport.
+// The block error is an HttpClientError with an InvalidUrlError reason — the platform's reason
+// union is closed, so a policy verdict has to borrow one of its arms. ⚠️ The tag alone is
+// AMBIGUOUS: the platform raises `InvalidUrlError` for a genuinely malformed URL too, and calling
+// a deliberate airgap block "a broken endpoint URL" (or vice versa) is v0.2.0 ruling 2's *a fault
+// is never described falsely*. So the verdict declares itself in the `cause` as an `EgressBlocked`
+// marker, which `packages/llm`'s RequestExecutor lifts into its own `OfflineBlockedReason` — a
+// distinct arm all the way to the user's screen, non-retryable by construction rather than by a
+// `kind`-string special case in `provider-retry.ts`.
 import fs from "fs"
 import path from "path"
 import { Context, Effect, Layer } from "effect"
 import { HttpClient, HttpClientError } from "effect/unstable/http"
+import { EgressBlocked } from "@novaclaw/llm"
 import { parse } from "jsonc-parser"
 import { readRowsSync } from "#sqlite"
 import { DatabasePath } from "./database/db-path"
@@ -392,7 +399,13 @@ export function guard(client: HttpClient.HttpClient, offline: Interface): HttpCl
     }).pipe(Effect.andThen(
       Effect.fail(
         new HttpClientError.HttpClientError({
-          reason: new HttpClientError.InvalidUrlError({ request, description: verdict.message }),
+          reason: new HttpClientError.InvalidUrlError({
+            request,
+            description: verdict.message,
+            // The typed declaration — see the header note. `description` stays for every reader
+            // that only knows the platform shape (and for records already on disk).
+            cause: new EgressBlocked(verdict.host, verdict.message),
+          }),
         }),
       ),
     ))

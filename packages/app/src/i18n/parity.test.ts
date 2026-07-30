@@ -257,4 +257,30 @@ describe("i18n parity", () => {
       }
     }
   })
+
+  // The same shape, for the session-fault taxonomy (`session-error-keys.test.ts` pins the other half —
+  // that every key the taxonomy returns exists in `en`). Rule 2 above makes a MISSING key legal, and
+  // for almost every key that is right. Not for these: a failed turn is the single most likely first
+  // thing a lay user sees — a model server that is off, a key that expired — and AGENTS.md's *it never
+  // breaks in your hands* clause is not satisfied by falling back to a language they do not read. So
+  // these carry a real translation in every locale or the gate says which one does not.
+  //
+  // ⚠️ The cost is deliberate: a new arm in `session-error.ts` is not shippable until all 17 bundles
+  // carry it. That is the point — a half-translated fault surface is exactly what this catches — but
+  // translate it properly. An English string pasted into `de.ts` passes this check while LYING about
+  // the backlog, which is worse than leaving the key out; the honest short-term answer to "I cannot
+  // translate this" is to say so, not to make the assertion green.
+  test("non-English locales translate every session-fault headline", () => {
+    const keys = Object.keys(en).filter((key) => key.startsWith("session.error."))
+    expect(keys.length, "no session.error.* keys in en — has the taxonomy moved?").toBeGreaterThan(0)
+    const untranslated: string[] = []
+    for (const [name, dict] of APP_LOCALES) {
+      for (const key of keys) {
+        const value = dict[key]
+        if (typeof value !== "string") untranslated.push(`${name}.ts is missing ${key}`)
+        else if (value === en[key as keyof typeof en]) untranslated.push(`${name}.ts leaves ${key} in English`)
+      }
+    }
+    expect(untranslated, "add a real translation for each line below, in that locale's bundle").toEqual([])
+  })
 })

@@ -908,4 +908,24 @@ export const dict = {
   "error.childStore.persistedProjectIconCreateFailed": "Error al crear icono de proyecto persistente",
   "error.childStore.storeCreateFailed": "Error al crear almacén",
   "terminal.connectionLost.abnormalClose": "WebSocket cerrado anormalmente: {{code}}",
+  "session.error.interrupted": "Interrumpido",
+  "session.error.transport":
+    "No se puede conectar con el servidor del modelo. Puede estar apagado, iniciándose todavía o en otra red.",
+  "session.error.transportEndpoint":
+    "No se puede conectar con el servidor del modelo en {{endpoint}}. Puede estar apagado, iniciándose todavía o en otra red.",
+  "session.error.offlineBlocked": "El modo sin conexión bloqueó esta solicitud, así que nunca salió de tu equipo.",
+  "session.error.offlineBlockedEndpoint":
+    "El modo sin conexión bloqueó esta solicitud a {{endpoint}}, así que nunca salió de tu equipo.",
+  "session.error.invalidRequest": "El modelo rechazó esta solicitud.",
+  "session.error.noRoute": "No hay ninguna ruta configurada para este modelo.",
+  "session.error.authentication": "El proveedor del modelo rechazó las credenciales de este modelo.",
+  "session.error.rateLimit":
+    "El proveedor del modelo está limitando la frecuencia de esta cuenta: inténtalo de nuevo en un momento.",
+  "session.error.quotaExceeded": "Esta cuenta se ha quedado sin cuota con el proveedor del modelo.",
+  "session.error.contentPolicy": "El proveedor del modelo rechazó esta solicitud por su política de contenido.",
+  "session.error.providerInternal": "El servidor del modelo tuvo un error interno.",
+  "session.error.invalidProviderOutput": "No se pudo leer la respuesta del modelo.",
+  "session.error.unknownProvider": "El proveedor del modelo devolvió un error.",
+  "session.error.toolFailure": "Una herramienta falló.",
+  "session.error.unknown": "El turno falló antes de terminar.",
 } satisfies Partial<Record<Keys, string>>

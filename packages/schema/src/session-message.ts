@@ -18,11 +18,11 @@ export type ID = typeof ID.Type
 /**
  * The taxonomy of a session fault, as it travels the wire.
  *
- * Ten arms mirror `LLMErrorReason` (`packages/llm/src/schema/errors.ts`) one-for-one; the last
+ * Eleven arms mirror `LLMErrorReason` (`packages/llm/src/schema/errors.ts`) one-for-one; the last
  * two are faults the session runner raises itself rather than receiving from a provider. This
- * tuple is the CLOSED vocabulary — every member needs display code and (later) an i18n key, so
+ * tuple is the CLOSED vocabulary — every member needs display code and an i18n key, so
  * ruling 10's "a thing needing new code stays a closed compiled set" applies to the *set*, and
- * `sessionErrorArms` in `session-ui` is pinned against it by test.
+ * `sessionErrorArms` in `@novaclaw/core/session/session-error` is pinned against it by test.
  *
  * ⚠️ The wire FIELD is deliberately `Schema.String`, not `Schema.Literals(ErrorTags)`. A closed
  * literal there would make a row written by a newer instance — or replayed from a P2P peer one
@@ -38,6 +38,10 @@ export const ErrorTags = [
   "ContentPolicy",
   "ProviderInternal",
   "Transport",
+  // A request this instance REFUSED to make (offline/airgap mode). Deliberately not `Transport`:
+  // a policy decision and an outage are different faults, and one tag for both made a retry
+  // affordance appear on something no retry can fix. See `LLM.Error.OfflineBlocked`.
+  "OfflineBlocked",
   "InvalidProviderOutput",
   "UnknownProvider",
   // Raised by the runner, not by a provider.

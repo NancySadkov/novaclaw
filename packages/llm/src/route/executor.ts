@@ -16,11 +16,13 @@ import {
   HttpResponseDetails,
   InvalidRequestReason,
   LLMError,
+  OfflineBlockedReason,
   ProviderInternalReason,
   QuotaExceededReason,
   RateLimitReason,
   TransportReason,
   UnknownProviderReason,
+  isEgressBlocked,
 } from "../schema"
 import { isContextOverflow } from "../provider-error"
 
@@ -344,6 +346,28 @@ const toHttpError =
     return transportError({ message: `HTTP transport failed: ${detail} (target ${redactUrl(outgoing.url)})`, request: outgoing })
   }
   const request = ("request" in error ? error.request : undefined) ?? outgoing
+  // A LOCAL egress policy refused this request — it never left the machine. That is a DECISION,
+  // not an outage, so it gets its own reason instead of being flattened into Transport: filing
+  // both under one tag made a deliberate airgap block and a dead vLLM box indistinguishable
+  // downstream, forced `provider-retry.ts` to special-case a `kind` string to stop retrying a
+  // verdict, and forced the display layer to parse this function's own prose back apart. Ruling 2
+  // — a fault is never described falsely.
+  const blocked = "cause" in error.reason ? error.reason.cause : undefined
+  if (isEgressBlocked(blocked)) {
+    return new LLMError({
+      module: "RequestExecutor",
+      method: "execute",
+      reason: new OfflineBlockedReason({
+        // The policy's own words stay verbatim — they carry the remedy ("add the provider …,
+        // extend NOVACLAW_OFFLINE_ALLOW …, or turn offline mode off"), which no i18n key could —
+        // and the `(target …)` suffix is what lets a display recover the host for its headline.
+        message: `${blocked.reason} (target ${redactUrl(request.url)})`,
+        host: blocked.host,
+        url: redactUrl(request.url),
+        http: new HttpContext({ request: requestDetails(request, redactedNames) }),
+      }),
+    })
+  }
   if (error.reason._tag === "TransportError") {
     return transportError({
       message: error.reason.description ?? "HTTP transport failed",
@@ -351,9 +375,11 @@ const toHttpError =
       request,
     })
   }
-  // Keep the reason's own description when it has one — e.g. the offline-mode
-  // chokepoint attaches the full "host blocked, here is how to allow it" text to
-  // an InvalidUrlError; dropping it left only the bare tag in the session error.
+  // Keep the reason's own description when it has one. ⚠️ The offline chokepoint used to be the
+  // motivating case and is now handled above by type; what still lands here is the residual
+  // `HttpClientError` set (`EncodeError`, `DecodeError`, `EmptyBodyError`, and the platform's own
+  // malformed-URL `InvalidUrlError`), where the description is the only accurate text there is.
+  // Giving each of those a typed arm is the next step, not this one.
   const described = "description" in error.reason && error.reason.description
   return transportError({
     message: described

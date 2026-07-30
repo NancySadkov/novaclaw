@@ -836,4 +836,24 @@ export const dict = {
   "error.childStore.persistedProjectIconCreateFailed": "Échec de la création de l'icône de projet persistante",
   "error.childStore.storeCreateFailed": "Échec de la création du stockage",
   "terminal.connectionLost.abnormalClose": "WebSocket fermé anormalement : {{code}}",
+  "session.error.interrupted": "Interrompu",
+  "session.error.transport":
+    "Impossible de joindre le serveur de modèles. Il est peut-être éteint, encore en cours de démarrage, ou sur un autre réseau.",
+  "session.error.transportEndpoint":
+    "Impossible de joindre le serveur de modèles à {{endpoint}}. Il est peut-être éteint, encore en cours de démarrage, ou sur un autre réseau.",
+  "session.error.offlineBlocked":
+    "Le mode hors ligne a bloqué cette requête : elle n'a jamais quitté votre ordinateur.",
+  "session.error.offlineBlockedEndpoint":
+    "Le mode hors ligne a bloqué cette requête vers {{endpoint}} : elle n'a jamais quitté votre ordinateur.",
+  "session.error.invalidRequest": "Le modèle a rejeté cette requête.",
+  "session.error.noRoute": "Aucune route n'est configurée pour ce modèle.",
+  "session.error.authentication": "Le fournisseur du modèle a rejeté les identifiants de ce modèle.",
+  "session.error.rateLimit": "Le fournisseur du modèle limite le débit de ce compte — réessayez dans un instant.",
+  "session.error.quotaExceeded": "Ce compte n'a plus de quota chez le fournisseur du modèle.",
+  "session.error.contentPolicy": "Le fournisseur du modèle a refusé cette requête au titre de sa politique de contenu.",
+  "session.error.providerInternal": "Le serveur de modèles a rencontré une erreur interne.",
+  "session.error.invalidProviderOutput": "La réponse du modèle n'a pas pu être lue.",
+  "session.error.unknownProvider": "Le fournisseur du modèle a renvoyé une erreur.",
+  "session.error.toolFailure": "Un outil a échoué.",
+  "session.error.unknown": "Le tour a échoué avant de se terminer.",
 } satisfies Partial<Record<Keys, string>>

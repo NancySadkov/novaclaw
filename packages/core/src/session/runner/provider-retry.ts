@@ -34,9 +34,11 @@ const BACKOFF_MS = [1_000, 3_000, 9_000]
 export function isTransientProviderFailure(error: unknown): error is LLMError {
   if (!(error instanceof LLMError)) return false
   if (error.reason._tag === "Transport") {
-    // OFF-A: an offline-policy block surfaces as a Transport reason whose `kind`
-    // is InvalidUrlError (the RequestExecutor flattens HttpClientError reasons).
-    // That is a DETERMINISTIC policy verdict — retrying cannot succeed.
+    // A request that never left the machine is DETERMINISTIC — retrying cannot succeed.
+    // ⚠️ The offline-policy block no longer arrives here: it has its own `OfflineBlocked` reason
+    // (2026-07-30), whose `retryable` getter is `false`, so the answer comes from the type rather
+    // than from this string. What still reaches this line is the platform's own malformed-URL
+    // `InvalidUrlError`, which is equally deterministic — so the check stays, with a narrower job.
     if ((error.reason as { kind?: string }).kind === "InvalidUrlError") return false
     return true
   }

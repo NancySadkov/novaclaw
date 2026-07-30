@@ -826,4 +826,23 @@ export const dict = {
   "error.childStore.persistedProjectIconCreateFailed": "Falha ao criar ícone de projeto persistente",
   "error.childStore.storeCreateFailed": "Falha ao criar armazenamento",
   "terminal.connectionLost.abnormalClose": "WebSocket fechado anormalmente: {{code}}",
+  "session.error.interrupted": "Interrompido",
+  "session.error.transport":
+    "Não é possível acessar o servidor do modelo. Ele pode estar desligado, ainda iniciando ou em outra rede.",
+  "session.error.transportEndpoint":
+    "Não é possível acessar o servidor do modelo em {{endpoint}}. Ele pode estar desligado, ainda iniciando ou em outra rede.",
+  "session.error.offlineBlocked": "O modo offline bloqueou esta solicitação, então ela nunca saiu do seu computador.",
+  "session.error.offlineBlockedEndpoint":
+    "O modo offline bloqueou esta solicitação para {{endpoint}}, então ela nunca saiu do seu computador.",
+  "session.error.invalidRequest": "O modelo rejeitou esta solicitação.",
+  "session.error.noRoute": "Nenhuma rota está configurada para este modelo.",
+  "session.error.authentication": "O provedor do modelo rejeitou as credenciais deste modelo.",
+  "session.error.rateLimit": "O provedor do modelo está limitando a taxa desta conta — tente novamente em um instante.",
+  "session.error.quotaExceeded": "Esta conta está sem cota com o provedor do modelo.",
+  "session.error.contentPolicy": "O provedor do modelo recusou esta solicitação com base em sua política de conteúdo.",
+  "session.error.providerInternal": "O servidor do modelo teve um erro interno.",
+  "session.error.invalidProviderOutput": "Não foi possível ler a resposta do modelo.",
+  "session.error.unknownProvider": "O provedor do modelo retornou um erro.",
+  "session.error.toolFailure": "Uma ferramenta falhou.",
+  "session.error.unknown": "O turno falhou antes de terminar.",
 } satisfies Partial<Record<Keys, string>>
