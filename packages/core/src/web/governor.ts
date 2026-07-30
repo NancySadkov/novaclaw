@@ -13,6 +13,13 @@ export * as WebGovernor from "./governor"
 //
 // Limits come from the LIVE config (`web_search.throttle`) on every call, so a settings change takes
 // effect without a restart — and `0` there means "use the default" (see fetch-pace `positive`).
+//
+// ⚠️ **BOTH web surfaces ride this, and that is the point.** `tool/webfetch.ts` reads a page; the
+// `websearch` engines (`websearch/service.ts`) read a search endpoint. They are one machine's outbound
+// web traffic to a site, so they share one per-host budget and one queue — a search of
+// `en.wikipedia.org` and a fetch of an article there are the same server being read by the same person.
+// The only thing that differs per surface is the WORDING of a loop refusal (`loopReason` below), because
+// only the caller knows what the model actually asked for.
 
 import { Effect, Layer, Context, Duration, Semaphore } from "effect"
 import { eq } from "drizzle-orm"
@@ -35,6 +42,14 @@ export interface Interface {
   readonly guard: <A, E, R>(input: {
     readonly url: string
     readonly sessionID?: string
+    /**
+     * How the loop refusal names this read. Defaults to the URL, which is right for `webfetch` — the
+     * model chose that URL, so it recognises it. `websearch` overrides it with the QUERY, because the
+     * engine endpoint (`html.duckduckgo.com/html/?q=…`) is an internal detail the model never asked for,
+     * and telling a looping agent about it invites it to `webfetch` that URL instead of rewording. Same
+     * refusal, same guard — only the sentence differs, and only the caller can write it honestly.
+     */
+    readonly loopReason?: (seenCount: number) => string
     readonly fetch: Effect.Effect<A, E, R>
   }) => Effect.Effect<A, E | WebBudgetError, R>
 }
@@ -81,7 +96,9 @@ export const make = (deps: Deps): Interface => {
       const key = `${input.sessionID ?? "-"}::${input.url}`
       const count = seen.get(key) ?? 0
       if (WebFetchPace.isLoop(count, limits.sameUrlLimit && limits.sameUrlLimit > 0 ? limits.sameUrlLimit : undefined))
-        return yield* Effect.fail(new WebBudgetError(WebFetchPace.loopReason(input.url, count)))
+        return yield* Effect.fail(
+          new WebBudgetError(input.loopReason?.(count) ?? WebFetchPace.loopReason(input.url, count)),
+        )
       seen.set(key, count + 1)
 
       // 2. Pace + daily cap, against the durable per-host row.

@@ -1,7 +1,13 @@
 import { describe, expect, test } from "bun:test"
+import { readFileSync } from "fs"
+import path from "path"
+import { SqliteClient } from "@effect/sql-sqlite-bun"
+import { EffectDrizzleSqlite } from "@novaclaw/effect-drizzle-sqlite"
 import { Effect, Layer, Schema } from "effect"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
+import { DatabaseMigration } from "@novaclaw/core/database/migration"
+import { WebGovernor } from "@novaclaw/core/web/governor"
 import { WebSearchEngine } from "@novaclaw/core/websearch/engine"
 import { WebSearch } from "@novaclaw/core/websearch/service"
 import { PermissionV2 } from "@novaclaw/core/permission"
@@ -132,10 +138,15 @@ const offlineMock = (enabled: boolean) =>
     manifest: () => ({ enabled, active: enabled ? 9 : 0, total: 9, layers: [] }),
   })
 
+/** A pass-through governor: these tests are about ENGINE precedence, not traffic. The block at the bottom
+ *  of this file exercises the real one, over a real budget table. */
+const openGovernor = Layer.succeed(WebGovernor.Service, WebGovernor.Service.of({ guard: (input) => input.fetch }))
+
 const service = (fetchImpl: WebSearchEngine.FetchLike, options?: { offline?: boolean; settings?: Record<string, unknown> }) =>
   WebSearch.layerWith(fetchImpl).pipe(
     Layer.provide(offlineMock(options?.offline ?? false)),
     Layer.provide(settingsMock(options?.settings ?? {})),
+    Layer.provide(openGovernor),
   )
 
 describe("WebSearch service", () => {
@@ -222,6 +233,206 @@ describe("WebSearch service", () => {
   )
 })
 
+// ─────────────────────────────────────────────────────────────────────────────
+// THE WEB TRAFFIC GOVERNOR, on search's half of the web surface (2026-07-30).
+//
+// Search shipped with a raw `fetch`: concurrent, unpaced, uncapped, against DuckDuckGo's HTML scraping
+// endpoint — while `webfetch` had ridden `web/governor.ts` the whole time, and while the shipped
+// **Traffic limits** panel on the web-search settings page told the user those limits "apply to every web
+// read — searches and articles alike". They did not. These tests pin the four properties that decide
+// whether the governor is real HERE and not merely imported:
+//
+//   · a repeat search is refused, and the refusal names the QUERY (ruling 2) — never the engine endpoint;
+//   · DIFFERENT searches are never mistaken for a loop, which is the one way a per-URL loop guard could
+//     have been actively WRONG for a metasearch fan-out;
+//   · the fan-out is not one budget — each engine host has its own, so one capped engine degrades the
+//     search instead of killing it;
+//   · the loop counter is per SESSION, which only holds because the tool threads `sessionID` through.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const T0 = Date.UTC(2026, 6, 30, 12, 0, 0)
+const makeDb = EffectDrizzleSqlite.makeWithDefaults()
+
+/**
+ * The service over the REAL governor and a real (in-memory) budget table — clock frozen, sleeps recorded
+ * rather than slept, jitter pinned mid-range. Same rig `src/web/governor.test.ts` uses, so a difference
+ * here is a difference in the wiring, not in the harness.
+ */
+const governed = (
+  fetchImpl: WebSearchEngine.FetchLike,
+  limits: WebGovernor.ResolvedLimits,
+  options?: { settings?: Record<string, unknown> },
+) => {
+  const waits: number[] = []
+  const clock = { now: T0 }
+  const layer = WebSearch.layerWith(fetchImpl).pipe(
+    Layer.provide(offlineMock(false)),
+    Layer.provide(settingsMock(options?.settings ?? {})),
+    Layer.provide(
+      Layer.effect(
+        WebGovernor.Service,
+        Effect.gen(function* () {
+          const db = yield* makeDb
+          yield* DatabaseMigration.apply(db)
+          return WebGovernor.Service.of(
+            WebGovernor.make({
+              db,
+              limits: () => Effect.succeed(limits),
+              now: () => Effect.sync(() => clock.now),
+              sleep: (ms) =>
+                Effect.sync(() => {
+                  waits.push(ms)
+                  clock.now += ms // a real sleep advances time; the fake must too or pacing never settles
+                }),
+              random: () => 0.5, // mid-jitter → deterministic
+            }),
+          )
+        }),
+      ).pipe(Layer.provide(SqliteClient.layer({ filename: ":memory:", disableWAL: true }))),
+    ),
+  )
+  return { layer, waits, clock }
+}
+
+const searxngOnly = { settings: { web_search: { searxngUrl: "https://searx.example" } } }
+const ddgOnly = { settings: { web_search: { disabledEngines: ["wikipedia"] } } }
+
+describe("web search rides the web traffic governor", () => {
+  it.live("repeat reads of one engine host are PACED — the pause the Traffic-limits panel promises", () => {
+    const reached: string[] = []
+    const rig = governed(
+      async (url) => {
+        reached.push(url)
+        return json({ results: [{ title: "T", url: "https://x.test/", content: "c" }] })
+      },
+      { intervalMs: 4000, burst: 1, dailyLimit: 50, sameUrlLimit: 9 },
+      searxngOnly,
+    )
+    return Effect.gen(function* () {
+      const search = yield* WebSearch.Service
+      expect((yield* search.search("one")).ok).toBe(true)
+      expect((yield* search.search("two")).ok).toBe(true)
+      expect(reached).toHaveLength(2)
+      // The burst of 1 is free; the next read of that host waits a whole interval before the socket opens.
+      expect(rig.waits).toEqual([4000])
+    }).pipe(Effect.provide(rig.layer))
+  })
+
+  it.live("the fan-out is NOT one budget: each engine host carries its own, so both engines answer", () => {
+    const reached: string[] = []
+    const rig = governed(
+      async (url) => {
+        reached.push(url)
+        return url.includes("wikipedia")
+          ? json({ query: { search: [{ title: "Bun (software)" }] } })
+          : new Response(DDG_HTML, { status: 200 })
+      },
+      { intervalMs: 1, burst: 5, dailyLimit: 1, sameUrlLimit: 9 },
+    )
+    return Effect.gen(function* () {
+      const search = yield* WebSearch.Service
+      const first = yield* search.search("bun runtime")
+      expect(first.ok).toBe(true)
+      // Both hosts spent their own first read in ONE fan-out — a shared budget would have refused the
+      // second engine here, and `degraded` would name it.
+      expect(first.degraded).toBeUndefined()
+      expect(reached).toHaveLength(2)
+      // That was the whole day's allowance for both, so the next search is refused — and says which cap.
+      const second = yield* search.search("something else entirely")
+      expect(second.ok).toBe(false)
+      expect(second.reason).toContain("Daily read limit reached")
+      expect(reached).toHaveLength(2) // refused before the socket, not after it
+    }).pipe(Effect.provide(rig.layer))
+  })
+
+  it.live("a REPEATED query trips the loop guard, and the refusal names the query, not the endpoint", () => {
+    const reached: string[] = []
+    const rig = governed(
+      async (url) => {
+        reached.push(url)
+        return new Response(DDG_HTML, { status: 200 })
+      },
+      { intervalMs: 1, burst: 99, dailyLimit: 99, sameUrlLimit: 3 },
+      ddgOnly,
+    )
+    return Effect.gen(function* () {
+      const search = yield* WebSearch.Service
+      for (let i = 0; i < 3; i++) expect((yield* search.search("bun runtime", { sessionID: "ses_a" })).ok).toBe(true)
+      expect(reached).toHaveLength(3)
+      const looped = yield* search.search("bun runtime", { sessionID: "ses_a" })
+      expect(looped.ok).toBe(false)
+      // Ruling 2: the fault is described in the terms the model chose. It asked for a QUERY and has never
+      // heard of `html.duckduckgo.com` — naming the endpoint would invite it to webfetch the scraper.
+      expect(looped.reason).toContain('Refusing to search for "bun runtime" again')
+      expect(looped.reason).not.toContain("duckduckgo.com")
+      expect(reached).toHaveLength(3)
+    }).pipe(Effect.provide(rig.layer))
+  })
+
+  it.live("DIFFERENT searches are never a loop — the per-URL guard is a per-QUERY dedupe here", () => {
+    const reached: string[] = []
+    const rig = governed(
+      async (url) => {
+        reached.push(url)
+        return new Response(DDG_HTML, { status: 200 })
+      },
+      { intervalMs: 1, burst: 99, dailyLimit: 99, sameUrlLimit: 3 },
+      ddgOnly,
+    )
+    return Effect.gen(function* () {
+      const search = yield* WebSearch.Service
+      // Hammering ONE host with distinct queries is what a metasearch does all day; it must never be
+      // mistaken for a runaway, which is the failure mode a naive per-host loop key would have shipped.
+      for (const query of ["effect schema", "bun test runner", "sqlite wal", "drizzle migrations", "solidjs signals"])
+        expect((yield* search.search(query, { sessionID: "ses_a" })).ok).toBe(true)
+      expect(reached).toHaveLength(5)
+      expect(new Set(reached).size).toBe(5) // five distinct governor keys, one host
+    }).pipe(Effect.provide(rig.layer))
+  })
+
+  it.live("the loop counter is per SESSION: a new conversation may re-run an exhausted query", () => {
+    const rig = governed(
+      async () => new Response(DDG_HTML, { status: 200 }),
+      { intervalMs: 1, burst: 99, dailyLimit: 99, sameUrlLimit: 2 },
+      ddgOnly,
+    )
+    return Effect.gen(function* () {
+      const search = yield* WebSearch.Service
+      for (let i = 0; i < 2; i++) expect((yield* search.search("same words", { sessionID: "ses_a" })).ok).toBe(true)
+      expect((yield* search.search("same words", { sessionID: "ses_a" })).ok).toBe(false)
+      // A different session is a different conversation, not a continuing loop. This only holds because
+      // `tool/websearch.ts` passes `context.sessionID` — without it every session shares one counter that
+      // never resets for the life of the process.
+      expect((yield* search.search("same words", { sessionID: "ses_b" })).ok).toBe(true)
+    }).pipe(Effect.provide(rig.layer))
+  })
+
+  test("the service DECLARES the governor — the wiring cannot be dropped while the panel keeps promising it", () => {
+    expect(WebSearch.node.dependencies.map((dep) => dep.name)).toContain(WebGovernor.Service.key)
+  })
+
+  // The type above stops an engine being RUN without a gate. It does not stop a future engine from
+  // reaching past `fetchText` and calling `fetchImpl` (or a bare global `fetch`) in its own `search`,
+  // which would typecheck fine and go out ungoverned — the exact regression this whole change repairs.
+  // One chokepoint is the invariant, so pin the chokepoint.
+  test("engine.ts touches the network in exactly ONE place — the gated one", () => {
+    const source = readFileSync(path.resolve(import.meta.dir, "..", "src", "websearch", "engine.ts"), "utf8")
+    // `fetchImpl(` is the injected transport; the only legal call is the one inside `fetchText`.
+    expect(source.match(/fetchImpl\(/g) ?? []).toHaveLength(1)
+    // …and nobody reaches for the global instead (`fetchImpl(` can't match this — the char class bites).
+    expect(source.match(/(^|[^A-Za-z.])fetch\(/g) ?? []).toEqual([])
+  })
+
+  test("an engine CANNOT be run ungoverned — ruling 1's mechanical half is a type, not a convention", () => {
+    const engine = WebSearchEngine.duckduckgo(() => Promise.reject(new Error("unused")))
+    // @ts-expect-error `gate` is required in `SearchOptions`, so an ungoverned request cannot be written
+    // by accident — it has to be a deliberate stub. This suppression is its own negative control: make
+    // `gate` optional again and it becomes unused, which `tsgo` reports as an error right here.
+    const ungoverned = () => engine.search("q", { limit: 1, timeoutMs: 10 })
+    expect(typeof ungoverned).toBe("function")
+  })
+})
+
 describe("WebSearchTool rendering", () => {
   test("results linearize with their source, and a long snippet is trimmed", () => {
     const text = WebSearchTool.formatResults([
@@ -261,7 +472,7 @@ describe("WebSearchTool rendering", () => {
 
 const sessionID = SessionV2.ID.make("ses_websearch_test")
 const assertions: PermissionV2.AssertInput[] = []
-const queries: Array<{ readonly query: string; readonly limit?: number }> = []
+const queries: Array<{ readonly query: string; readonly limit?: number; readonly sessionID?: string }> = []
 /** Swapped per test: what the (mocked) evaluator answers. `undefined` = allow. */
 let verdict: PermissionV2.Error | SessionV2.NotFoundError | undefined
 
@@ -283,7 +494,11 @@ const searchMock = Layer.succeed(
   WebSearch.Service.of({
     search: (query, options) =>
       Effect.sync(() => {
-        queries.push({ query, ...(options?.limit === undefined ? {} : { limit: options.limit }) })
+        queries.push({
+          query,
+          ...(options?.limit === undefined ? {} : { limit: options.limit }),
+          ...(options?.sessionID === undefined ? {} : { sessionID: options.sessionID }),
+        })
         return {
           ok: true,
           results: [{ title: "Result", url: "https://example.com/a", snippet: "snip", engine: "duckduckgo" }],
@@ -336,7 +551,9 @@ describe("WebSearchTool is permission-gated", () => {
           source: { type: "tool" },
         },
       ])
-      expect(queries).toEqual([{ query: "effect schema", limit: 3 }])
+      // The SESSION travels with the query, because the traffic governor's loop guard is per session —
+      // drop it and every session's searches pool into one counter that never resets.
+      expect(queries).toEqual([{ query: "effect schema", limit: 3, sessionID }])
     }),
   )
 

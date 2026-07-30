@@ -4,7 +4,7 @@
 import { describe, expect, test } from "bun:test"
 import { SqliteClient } from "@effect/sql-sqlite-bun"
 import { EffectDrizzleSqlite } from "@novaclaw/effect-drizzle-sqlite"
-import { Effect } from "effect"
+import { Duration, Effect } from "effect"
 import type { Database } from "../database/database"
 import { DatabaseMigration } from "../database/migration"
 import { WebGovernor } from "./governor"
@@ -153,6 +153,78 @@ describe("WebGovernor.guard", () => {
       }),
     )
     expect(out).toBe("fetched")
+  })
+
+  // Both web surfaces ride this guard, and only the CALLER knows what the model actually asked for:
+  // `webfetch` was handed a URL, `websearch` was handed a query and has no idea the engine endpoint
+  // exists. So the loop refusal is overridable per surface — while everything else about the refusal
+  // (when it fires, that it costs no budget) stays one implementation.
+  test("the loop refusal can be worded by the SURFACE, and falls back to the URL when it isn't", async () => {
+    const out = await withDb((db) =>
+      Effect.gen(function* () {
+        const g = governor(db, { intervalMs: 1, burst: 10, dailyLimit: 50, sameUrlLimit: 1 })
+        const engine = "https://html.duckduckgo.com/html/?q=bun"
+        const searched = (count: number) => `searched "bun" ${count} times already`
+        yield* g.service.guard({ url: engine, sessionID: "ses_1", loopReason: searched, fetch: ok })
+        const named = yield* g.service
+          .guard({ url: engine, sessionID: "ses_1", loopReason: searched, fetch: ok })
+          .pipe(attempt)
+        yield* g.service.guard({ url: "https://example.com/page", sessionID: "ses_1", fetch: ok })
+        const defaulted = yield* g.service
+          .guard({ url: "https://example.com/page", sessionID: "ses_1", fetch: ok })
+          .pipe(attempt)
+        return { named, defaulted }
+      }),
+    )
+    expect(out.named.ok).toBe(false)
+    expect(out.named.message).toBe(`searched "bun" 1 times already`)
+    expect(out.named.message).not.toContain("duckduckgo.com") // the endpoint stays out of the model's face
+    expect(out.defaulted.ok).toBe(false)
+    expect(out.defaulted.message).toContain("https://example.com/page")
+  })
+
+  // The rule most likely to be WRONG for a metasearch fan-out — so measure it rather than assume it.
+  // A fan-out issues one request per ENGINE, i.e. one per host, so per-host semaphores must all be
+  // enterable at once; what has to serialize is two readers of the SAME site.
+  test("one-in-flight is PER HOST: different hosts overlap, the same host queues", async () => {
+    const trace: string[] = []
+    const busy = (tag: string) =>
+      Effect.gen(function* () {
+        trace.push(`${tag}:in`)
+        yield* Effect.sleep(Duration.millis(20))
+        trace.push(`${tag}:out`)
+        return tag
+      })
+    const out = await withDb((db) =>
+      Effect.gen(function* () {
+        const g = governor(db, { intervalMs: 1, burst: 10, dailyLimit: 50 })
+        yield* Effect.all(
+          [
+            g.service.guard({ url: "https://a.example/x", fetch: busy("a") }),
+            g.service.guard({ url: "https://b.example/x", fetch: busy("b") }),
+          ],
+          { concurrency: "unbounded" },
+        )
+        const crossHost = [...trace]
+        trace.length = 0
+        yield* Effect.all(
+          [
+            g.service.guard({ url: "https://c.example/1", fetch: busy("c1") }),
+            g.service.guard({ url: "https://c.example/2", fetch: busy("c2") }),
+          ],
+          { concurrency: "unbounded" },
+        )
+        return { crossHost, sameHost: [...trace] }
+      }),
+    )
+    // Phases only, so the assertion is about OVERLAP rather than which fiber happened to win a race.
+    const phases = (entries: readonly string[]) => entries.map((entry) => entry.split(":")[1])
+    // Two hosts are both in flight before either finishes — the fan-out is not serialized.
+    expect(phases(out.crossHost)).toEqual(["in", "in", "out", "out"])
+    expect(out.crossHost.slice(0, 2).sort()).toEqual(["a:in", "b:in"])
+    // One host is read by one connection at a time — no swarming a site with parallel streams.
+    expect(phases(out.sameHost)).toEqual(["in", "out", "in", "out"])
+    expect(new Set(out.sameHost).size).toBe(4)
   })
 
   test("a new UTC day restores the allowance", async () => {

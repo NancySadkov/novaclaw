@@ -119,7 +119,13 @@ export const layer = Layer.effectDiscard(
                 agent: context.agent,
                 source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
               })
-              const outcome = yield* search.search(input.query, { limit: input.numResults ?? 8 })
+              // The session rides along because the web traffic governor's loop guard is per SESSION
+              // (`websearch/service.ts` → gateFor): re-running one query past the limit is a stuck
+              // agent, while the NEXT session asking the same thing is just a new conversation.
+              const outcome = yield* search.search(input.query, {
+                limit: input.numResults ?? 8,
+                sessionID: context.sessionID,
+              })
               if (!outcome.ok) return { ok: false, message: outcome.reason ?? "Search failed." } satisfies Output
               if (outcome.results.length === 0)
                 return { ok: true, message: outcome.reason ?? "No results found for that query." } satisfies Output

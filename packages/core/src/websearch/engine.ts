@@ -20,6 +20,11 @@ import { InstallationVersion } from "../installation/version"
 // engine list is runtime-editable (the self-healing law: an agent can repair a broken engine
 // through config, no rebuild), and a search where everything failed says so plainly instead of
 // returning an empty list that reads like "no results exist".
+//
+// ⚠️ And throttling is something we AVOID, not merely report: every request here rides the shared web
+// traffic governor through the required `SearchOptions.gate` (see `Gate` below and `service.ts`). This
+// module is dumb transport — it builds a URL, hands it to the gate, and parses what comes back; it holds
+// no policy of its own and must never call `fetchImpl` outside `fetchText`.
 
 export class SearchError extends Schema.TaggedErrorClass<SearchError>()("WebSearch.SearchError", {
   reason: Schema.String,
@@ -33,10 +38,23 @@ export interface Result {
   readonly engine: string
 }
 
+/**
+ * The traffic gate every engine request rides — the SAME governor `webfetch` uses (`web/governor.ts`);
+ * `service.ts` records why search shares it rather than owning a second policy. It takes the request's
+ * real URL, so the governor keys on the engine's host AND on the query that is in it.
+ *
+ * ⚠️ It lives in `SearchOptions` and is NOT optional. That is deliberate: an engine that could be run
+ * without a gate is an engine whose fetch can silently go raw again — the exact state this replaced,
+ * where the settings page promised a traffic limit that only half the web surface obeyed. Making it
+ * required means the compiler refuses the ungoverned call rather than a reviewer having to notice it.
+ */
+export type Gate = (url: string, request: Effect.Effect<string, SearchError>) => Effect.Effect<string, SearchError>
+
 export interface SearchOptions {
   readonly limit: number
   /** Aborts a slow engine rather than making the whole search wait on it. */
   readonly timeoutMs: number
+  readonly gate: Gate
 }
 
 export interface Engine {
@@ -191,19 +209,26 @@ export const mergeResults = (lists: readonly (readonly Result[])[], limit: numbe
 
 // ── the built-in engines ────────────────────────────────────────────────────────────────────────
 
+// EVERY engine request goes through here, which is why the gate lives here and not in each engine: the
+// URL is built by the caller and handed straight to both the gate and the socket, so the URL the governor
+// paces can never drift from the URL actually read. The abort timeout is created inside the promise, i.e.
+// AFTER the gate's paced wait — a pacing delay can never be mistaken for a slow engine.
 const fetchText = (fetchImpl: FetchLike, url: string, options: SearchOptions, init?: RequestInit) =>
-  Effect.tryPromise({
-    try: async () => {
-      const response = await fetchImpl(url, {
-        ...init,
-        signal: AbortSignal.timeout(options.timeoutMs),
-        headers: { "User-Agent": USER_AGENT, "Accept-Language": "en-US,en;q=0.9", ...(init?.headers ?? {}) },
-      })
-      if (!response.ok) throw new Error(`HTTP ${response.status}`)
-      return await response.text()
-    },
-    catch: (error) => new SearchError({ reason: String(error) }),
-  })
+  options.gate(
+    url,
+    Effect.tryPromise({
+      try: async () => {
+        const response = await fetchImpl(url, {
+          ...init,
+          signal: AbortSignal.timeout(options.timeoutMs),
+          headers: { "User-Agent": USER_AGENT, "Accept-Language": "en-US,en;q=0.9", ...(init?.headers ?? {}) },
+        })
+        if (!response.ok) throw new Error(`HTTP ${response.status}`)
+        return await response.text()
+      },
+      catch: (error) => new SearchError({ reason: String(error) }),
+    }),
+  )
 
 /** DuckDuckGo's HTML endpoint — no key, no account, and it answers general queries. */
 export const duckduckgo = (fetchImpl: FetchLike): Engine => ({

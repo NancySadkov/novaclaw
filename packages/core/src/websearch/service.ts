@@ -4,6 +4,7 @@ import { Context, Effect, Layer } from "effect"
 import { makeGlobalNode } from "../effect/app-node"
 import { Offline } from "../offline"
 import { SettingsConfigStore } from "../settings-config-store"
+import { WebGovernor } from "../web/governor"
 import { WebSearchEngine } from "./engine"
 
 // The web-search service: ONE entry point the agent's tool calls, which decides at CALL TIME what
@@ -20,6 +21,41 @@ import { WebSearchEngine } from "./engine"
 // Everything is read from the LIVE settings store per call (the kb/messenger precedent), so an
 // agent can repair a broken engine or point at a new SearXNG through config with no restart —
 // the self-healing law, applied to the thing most likely to break: someone else's endpoint.
+//
+// ── WHY SEARCH RIDES `webfetch`'s GOVERNOR RATHER THAN OWNING A POLICY (2026-07-30) ──────────────
+//
+// Read this next to `tool/webfetch.ts`'s `governor.guard` call: the two halves of the web surface are
+// governed by ONE machine, on purpose. Search shipped ungoverned — concurrent, unpaced, uncapped, against
+// DuckDuckGo's HTML scraping endpoint, i.e. the single surface most likely to throttle and then block the
+// USER'S ip. It said so itself ("Free engines throttle; try again shortly"), which is ruling 2's *a fault
+// is never described falsely* pointed the other way: text describing a condition the code made no attempt
+// to prevent. Worse, `config.ts`'s `web_search.throttle` block and the shipped **Traffic limits** panel on
+// this very settings page told the user those limits "apply to every web read — searches and articles
+// alike". They did not. Wiring the governor is what makes two already-shipped promises true.
+//
+// It is the same governor and not a sibling policy because the thing being protected is one host's
+// patience with one IP: a search of `en.wikipedia.org` and a `webfetch` of an article there are the same
+// server read by the same person, so they must share one budget and one queue (design principle 9's "one
+// hand", which the messenger governor applies across every transport for the same reason).
+//
+// ⚠️ Three of the governor's rules were checked against a metasearch FAN-OUT before adopting them, because
+// a governor that is wrong for search would be worse than none — the refusal text would then describe a
+// fault that isn't real:
+//   · **Loop detection is per-URL, and for search that IS a per-QUERY dedupe** — every engine request URL
+//     embeds the query, so distinct searches are distinct keys (never a false loop) while the same query
+//     repeated past `sameUrlLimit` is refused, which is what a stuck agent actually does. Only the WORDING
+//     needed a search-shaped variant; hence `loopReason` below.
+//   · **One-request-in-flight-per-host does not serialize the fan-out** — the fan-out is ACROSS hosts (one
+//     request per engine per search), so the per-host semaphores are all entered at once. What it does
+//     serialize is two concurrent searches of the same engine, which is precisely the swarm to avoid.
+//   · **The daily cap is meaningful per engine host** — and because it is per host, DuckDuckGo hitting its
+//     cap leaves Wikipedia working, so the search DEGRADES through the existing partial-result path
+//     instead of dying.
+//
+// The one axis where search genuinely does diverge from `webfetch` is OFFLINE (rule 1 above), and that
+// divergence is FORCED: these engines call raw `fetch` rather than the shared `HttpClient` node, so the
+// offline chokepoint cannot see them. A traffic-policy divergence would have been a CHOSEN one, with
+// nothing forcing it — which is why it was a bug and not a design.
 
 export interface SearchOutcome {
   readonly ok: boolean
@@ -31,7 +67,18 @@ export interface SearchOutcome {
 }
 
 export interface Interface {
-  readonly search: (query: string, options?: { readonly limit?: number }) => Effect.Effect<SearchOutcome>
+  readonly search: (
+    query: string,
+    options?: {
+      readonly limit?: number
+      /**
+       * Whose search this is. The traffic governor's loop guard is per session, so a fresh session may
+       * legitimately re-run a query an earlier one exhausted; omitting it would pool every session's
+       * queries into one counter that never resets for the life of the process.
+       */
+      readonly sessionID?: string
+    },
+  ) => Effect.Effect<SearchOutcome>
   /** What search would do right now, for the settings surface and for honest tool descriptions. */
   readonly describe: () => Effect.Effect<{ readonly mode: "airgapped" | "searxng" | "builtin"; readonly detail: string }>
 }
@@ -40,6 +87,17 @@ export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2
 
 const DEFAULT_LIMIT = 8
 const DEFAULT_TIMEOUT_MS = 8_000
+
+/**
+ * The traffic governor's loop refusal, in SEARCH's words. The default names the URL, which is right for
+ * `webfetch` — the model picked that URL. Here the model picked a QUERY and has never heard of
+ * `html.duckduckgo.com`, so naming the endpoint would both confuse it and suggest `webfetch`ing the
+ * scraper. What a looping searcher needs told is: the answer is already above you, or use other words.
+ */
+export const loopReason = (query: string, seenCount: number): string =>
+  `Refusing to search for "${query}" again — that exact query has already run ${seenCount} times in this ` +
+  `session, which is a loop rather than research. Its results are already in the transcript: re-read those, ` +
+  `search DIFFERENT words, or open one of the pages you already found with webfetch.`
 
 /** The `web_search` settings block, all optional — an instance with no config still searches. */
 export interface Settings {
@@ -77,6 +135,32 @@ export const layerWith = (fetchImpl: WebSearchEngine.FetchLike) =>
     Effect.gen(function* () {
       const offline = yield* Offline.Service
       const settingsStore = yield* SettingsConfigStore.Service
+      const governor = yield* WebGovernor.Service
+
+      /**
+       * One search's leg of the shared governor (see the header). Built per call because it closes over
+       * the two things only this call knows: the QUERY, which is how a loop refusal must name itself, and
+       * the SESSION, which is what the loop counter is scoped to. A `WebBudgetError` is translated into
+       * the engines' own `SearchError` so a governor refusal travels the SAME best-effort path an engine
+       * failure does — one capped engine degrades the search and is named, it never fails the whole call.
+       */
+      const gateFor =
+        (query: string, sessionID?: string): WebSearchEngine.Gate =>
+        (url, request) =>
+          governor
+            .guard({
+              url,
+              ...(sessionID === undefined ? {} : { sessionID }),
+              loopReason: (seenCount) => loopReason(query, seenCount),
+              fetch: request,
+            })
+            .pipe(
+              Effect.mapError((error) =>
+                error instanceof WebGovernor.WebBudgetError
+                  ? new WebSearchEngine.SearchError({ reason: error.message })
+                  : error,
+              ),
+            )
 
       const currentSettings = Effect.gen(function* () {
         const all = yield* settingsStore.all().pipe(Effect.orElseSucceed(() => ({}) as Record<string, unknown>))
@@ -109,7 +193,11 @@ export const layerWith = (fetchImpl: WebSearchEngine.FetchLike) =>
           if (engines.length === 0)
             return { ok: false, results: [], reason: "Every search engine is disabled in settings." } satisfies SearchOutcome
           const limit = Math.max(1, Math.min(25, Math.floor(options?.limit ?? DEFAULT_LIMIT)))
-          const searchOptions = { limit, timeoutMs: settings.timeoutMs ?? DEFAULT_TIMEOUT_MS }
+          const searchOptions = {
+            limit,
+            timeoutMs: settings.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+            gate: gateFor(trimmed, options?.sessionID),
+          }
 
           // Engines run CONCURRENTLY and independently: one throttled scraper must not cost the
           // user the results the others found, and the slowest one bounds the wait, not the sum.
@@ -153,4 +241,11 @@ export const layerWith = (fetchImpl: WebSearchEngine.FetchLike) =>
 
 export const layer = layerWith((url, init) => fetch(url, init))
 
-export const node = makeGlobalNode({ service: Service, layer, deps: [Offline.node, SettingsConfigStore.node] })
+export const node = makeGlobalNode({
+  service: Service,
+  layer,
+  // ⚠️ `WebGovernor.node` is load-bearing, not decoration: drop it and every search goes out unpaced,
+  // uncapped and unlooped again while the Traffic-limits settings panel keeps claiming otherwise.
+  // `test/tool-websearch.test.ts` pins its presence here for exactly that reason.
+  deps: [Offline.node, SettingsConfigStore.node, WebGovernor.node],
+})
