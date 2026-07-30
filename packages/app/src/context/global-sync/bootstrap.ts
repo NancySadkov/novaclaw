@@ -3,7 +3,6 @@ import type {
   NovaclawClient,
   Path,
   PermissionV2Request,
-  ProviderAuthResponse,
   QuestionRequest,
   SessionV2Info as Session,
 } from "@novaclaw/sdk/v2/client"
@@ -26,7 +25,6 @@ type GlobalStore = {
   ready: boolean
   path: Path
   provider: NormalizedProviderListResponse
-  provider_auth: ProviderAuthResponse
   config: Config
   reload: undefined | "pending" | "complete"
 }

@@ -146,14 +146,8 @@ import type {
   PermissionV2Reply,
   PermissionV2Source,
   PromptInput,
-  ProviderAuthErrors,
-  ProviderAuthResponses,
   ProviderListErrors,
   ProviderListResponses,
-  ProviderOauthAuthorizeErrors,
-  ProviderOauthAuthorizeResponses,
-  ProviderOauthCallbackErrors,
-  ProviderOauthCallbackResponses,
   ProviderPresetsErrors,
   ProviderPresetsResponses,
   ProviderProbeErrors,
@@ -3676,100 +3670,6 @@ export class Permission extends HeyApiClient {
   }
 }
 
-export class Oauth extends HeyApiClient {
-  /**
-   * Start OAuth authorization
-   *
-   * Start the OAuth authorization flow for a provider.
-   */
-  public authorize<ThrowOnError extends boolean = false>(
-    parameters: {
-      providerID: string
-      directory?: string
-      workspace?: string
-      method?: number
-      inputs?: {
-        [key: string]: string
-      }
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "providerID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "body", key: "method" },
-            { in: "body", key: "inputs" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<
-      ProviderOauthAuthorizeResponses,
-      ProviderOauthAuthorizeErrors,
-      ThrowOnError
-    >({
-      url: "/provider/{providerID}/oauth/authorize",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-
-  /**
-   * Handle OAuth callback
-   *
-   * Handle the OAuth callback from a provider after user authorization.
-   */
-  public callback<ThrowOnError extends boolean = false>(
-    parameters: {
-      providerID: string
-      directory?: string
-      workspace?: string
-      method?: number
-      code?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "providerID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "body", key: "method" },
-            { in: "body", key: "code" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<
-      ProviderOauthCallbackResponses,
-      ProviderOauthCallbackErrors,
-      ThrowOnError
-    >({
-      url: "/provider/{providerID}/oauth/callback",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-}
-
 export class Provider extends HeyApiClient {
   /**
    * List providers
@@ -3796,36 +3696,6 @@ export class Provider extends HeyApiClient {
     )
     return (options?.client ?? this.client).get<ProviderListResponses, ProviderListErrors, ThrowOnError>({
       url: "/provider",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Get provider auth methods
-   *
-   * Retrieve available authentication methods for all AI providers.
-   */
-  public auth<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<ProviderAuthResponses, ProviderAuthErrors, ThrowOnError>({
-      url: "/provider/auth",
       ...options,
       ...params,
     })
@@ -3904,11 +3774,6 @@ export class Provider extends HeyApiClient {
       ...options,
       ...params,
     })
-  }
-
-  private _oauth?: Oauth
-  get oauth(): Oauth {
-    return (this._oauth ??= new Oauth({ client: this.client }))
   }
 }
 

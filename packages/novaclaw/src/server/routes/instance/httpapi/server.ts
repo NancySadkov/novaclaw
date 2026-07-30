@@ -27,7 +27,6 @@ import { McpAuth } from "@/mcp/auth"
 import { Permission } from "@/permission"
 import { InstanceStore } from "@/project/instance-store"
 import { Vcs } from "@/project/vcs"
-import { ProviderAuth } from "@/provider/auth"
 import { Question } from "@/question"
 import { Todo } from "@/session/todo"
 import { Skill } from "@/skill"
@@ -240,7 +239,6 @@ const app = LayerNode.group([
   Storage.node,
   Snapshot.node,
   ModelsDev.node,
-  ProviderAuth.node,
   Agent.node,
   Skill.node,
   Discovery.node,

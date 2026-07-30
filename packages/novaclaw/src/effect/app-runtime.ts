@@ -11,7 +11,6 @@ import { Ripgrep } from "@novaclaw/core/ripgrep"
 import { Storage } from "@/storage/storage"
 import { Snapshot } from "@/snapshot"
 import { ModelsDev } from "@novaclaw/core/models-dev"
-import { ProviderAuth } from "@/provider/auth"
 import { Agent } from "@/agent/agent"
 import { Skill } from "@/skill"
 import { Discovery } from "@/skill/discovery"
@@ -43,7 +42,6 @@ export const AppLayer = Layer.mergeAll(
   Storage.defaultLayer,
   Snapshot.defaultLayer,
   ModelsDev.defaultLayer,
-  ProviderAuth.defaultLayer,
   Agent.defaultLayer,
   Skill.defaultLayer,
   Discovery.defaultLayer,

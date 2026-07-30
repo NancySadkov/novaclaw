@@ -1,4 +1,4 @@
-import type { Config, NovaclawClient, Path, ProviderAuthResponse, V2Event } from "@novaclaw/sdk/v2/client"
+import type { Config, NovaclawClient, Path, V2Event } from "@novaclaw/sdk/v2/client"
 import { showToast } from "@/utils/toast"
 import { getFilename } from "@novaclaw/core/util/path"
 import { type Accessor, batch, createMemo, getOwner, onCleanup, onMount, untrack } from "solid-js"
@@ -48,7 +48,6 @@ type GlobalStore = {
   error?: InitError
   path: Path
   provider: NormalizedProviderListResponse
-  provider_auth: ProviderAuthResponse
   config: Config
   reload: undefined | "pending" | "complete"
 }
@@ -109,7 +108,6 @@ export function createServerSyncContextInner(serverSDK: ServerSDK) {
     get ready() {
       return !bootstrap.isPending
     },
-    provider_auth: {},
     get path() {
       const EMPTY = { state: "", config: "", data: "", roots: [], worktree: "", directory: "", home: "" }
       if (pathQuery.isLoading) return EMPTY

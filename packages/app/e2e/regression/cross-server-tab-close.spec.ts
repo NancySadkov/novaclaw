@@ -93,7 +93,7 @@ async function mockServers(page: Page, requests: string[]) {
     if (/^\/session\/[^/]+\/(children|todo|diff)$/.test(url.pathname)) return json(route, [])
     if (["/skill", "/command", "/formatter", "/permission", "/question", "/vcs/diff"].includes(url.pathname))
       return json(route, [])
-    if (["/global/config", "/config", "/provider/auth", "/mcp", "/session/status"].includes(url.pathname))
+    if (["/global/config", "/config", "/mcp", "/session/status"].includes(url.pathname))
       return json(route, {})
     if (url.pathname === "/provider")
       return json(route, { all: [], connected: [], default: { providerID: "", modelID: "" } })
