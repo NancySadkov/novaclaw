@@ -49,6 +49,7 @@ export const SETTINGS_KEYS = [
   "formatter",
   "attachments",
   "tool_output",
+  "resource_pressure",
   "mcp",
   "compaction",
   "permissions",

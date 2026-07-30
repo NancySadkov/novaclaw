@@ -4,6 +4,7 @@ import { makeLocationNode } from "./effect/app-node"
 import path from "path"
 import { Context, Effect, Layer, Schema } from "effect"
 import { Permission } from "@novaclaw/schema/permission"
+import { ResourcePressure } from "@novaclaw/schema/resource-pressure"
 import { FSUtil } from "./fs-util"
 import { Global } from "./global"
 import { Location } from "./location"
@@ -85,6 +86,13 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   }),
   tool_output: ConfigToolOutput.Info.pipe(Schema.optional).annotate({
     description: "Tool output truncation thresholds",
+  }),
+  resource_pressure: ResourcePressure.Info.pipe(Schema.optional).annotate({
+    description:
+      "Memory and disk headroom thresholds (warning + floor). Defaults live beside the probe in " +
+      "storage/pressure.ts, so a host that never sets this still gets a real line; overrides apply " +
+      "per field. ⚠️ Ruling 4: CONSEQUENTIAL, never operational — an agent that can lower its own " +
+      "floor has exempted itself from the guard.",
   }),
   mcp: ConfigMCP.Info.pipe(Schema.optional).annotate({
     description: "MCP server configuration",
@@ -356,23 +364,51 @@ export const layer = Layer.effect(
     ]
 
     const settingsStore = yield* SettingsConfigStore.Service
-    const settings = SettingsConfigSeed.settingsInfoFromStore(yield* settingsStore.all())
-    // One bad row must never silently revert every setting to its compiled default: the decode is
-    // per-key, and whatever it could not apply is named here in the same format the import seed
-    // uses. Non-blocking by contract — a corrupt row degrades the config, it never fails the boot.
-    if (settings.skipped.length > 0) yield* Effect.logWarning(SettingsConfigSeed.formatSkippedNotice(settings.skipped))
-    const settingsInfo = settings.info
-    const allConfigs = settingsInfo
-      ? [...directories, new Document({ type: "document", info: settingsInfo })]
-      : directories
 
-    // Policies come from the store-backed synthetic document; the import seed preserved the
-    // historical reversed-concat order, so loading them verbatim keeps rule precedence.
-    yield* policy.load(settingsInfo?.experimental?.policies ? [...settingsInfo.experimental.policies] : [])
+    /**
+     * Read the store and project it into the synthetic settings document.
+     *
+     * One bad row must never silently revert every setting to its compiled default: the decode is
+     * per-key, and whatever it could not apply is named in the same format the import seed uses.
+     * Non-blocking by contract — a corrupt row degrades the config, it never fails the boot.
+     *
+     * ⚠️ The skipped notice is de-duplicated by CONTENT, not suppressed after the first emit. Now
+     * that this runs per call, logging unconditionally would repeat the same warning on every turn;
+     * logging only once would hide a row that goes bad later. Announce on change.
+     */
+    let lastSkippedNotice: string | undefined
+    const readSettings = Effect.fn("Config.readSettings")(function* () {
+      const settings = SettingsConfigSeed.settingsInfoFromStore(yield* settingsStore.all())
+      const notice =
+        settings.skipped.length > 0 ? SettingsConfigSeed.formatSkippedNotice(settings.skipped) : undefined
+      if (notice !== undefined && notice !== lastSkippedNotice) yield* Effect.logWarning(notice)
+      lastSkippedNotice = notice
+      // Policies come from the store-backed synthetic document; the import seed preserved the
+      // historical reversed-concat order, so loading them verbatim keeps rule precedence.
+      yield* policy.load(settings.info?.experimental?.policies ? [...settings.info.experimental.policies] : [])
+      return settings.info
+    })
+
+    // Loaded once at construction as well, so `Policy` is populated before anything can evaluate it.
+    // `catalog.ts` is the only evaluator today (`provider.use`) and it guards on `hasStatements()`,
+    // so a boot with no `entries()` call yet would allow every provider — a deny rule that has not
+    // loaded is a deny rule that is not enforced. Cheap to keep: `Policy.load` is one assignment.
+    yield* readSettings()
 
     return Service.of({
+      // ⚠️ B7 tier-1 / ruling 3: read THROUGH to the store at the point of use — "a settings change
+      // is not a reboot". This used to project the store ONCE at layer scope and hand back the same
+      // frozen array forever, which is why AGENTS.md carried a "restart `serve` after config changes"
+      // caveat and why `tool/bash.ts` grew its own live-store read to work around it. The store is a
+      // single-table SELECT and no caller is per-token — the hottest are per-turn (`runner/llm.ts`)
+      // and per-bash-call — so the cost is a query, not a rebuild.
+      //
+      // The DIRECTORY entries stay hoisted deliberately: they are a filesystem walk-up, i.e. the
+      // shape of the tree rather than a runtime-editable value, so ruling 3 does not reach them and
+      // re-walking per call would be real I/O for a result that cannot change without a new location.
       entries: Effect.fn("Config.entries")(function* () {
-        return allConfigs
+        const settingsInfo = yield* readSettings()
+        return settingsInfo ? [...directories, new Document({ type: "document", info: settingsInfo })] : directories
       }),
     })
   }),

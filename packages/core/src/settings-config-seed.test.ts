@@ -43,6 +43,7 @@ const VALID: Record<string, unknown> = {
   formatter: {},
   attachments: {},
   tool_output: {},
+  resource_pressure: { warning: { memory_used_fraction: 0.75 }, floor: { disk_free_bytes: 512 * 1024 * 1024 } },
   mcp: {},
   compaction: {},
   permissions: [{ action: "bash", resource: "*", effect: "ask" }],
