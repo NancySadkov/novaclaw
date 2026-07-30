@@ -1,12 +1,23 @@
 import { describe, expect, test } from "bun:test"
 import { PermissionV2 } from "./permission"
-import { ASK_BEFORE_CHANGES_RULES, MODE_RULES, resolveConfig, EFFECTIVE_CONFIG_DEFAULTS } from "./session/config-resolve"
+import {
+  ASK_BEFORE_CHANGES_RULES,
+  MODE_RULES,
+  resolveConfig,
+  EFFECTIVE_CONFIG_DEFAULTS,
+} from "./session/config-resolve"
 
 // 1K pure-logic coverage: mode rule overlays, reply normalization, and reply→saved-rule mapping.
 
-// The build agent's effective baseline (agent.ts defaults): allow-all with external asks.
+// The build agent's effective baseline (agent.ts defaults): the ambient-safe ALLOWLIST with
+// external asks. Read from the shipped constant rather than copied — v0.2.0 B4c replaced the
+// catch-all `{ action: "*", resource: "*", effect: "allow" }` that used to open this list, and a
+// literal copy is exactly the thing that cannot notice when what it mirrors changes.
+// ⚠️ The consequence runs through this whole file: an action NOT named by the baseline and not
+// named by the mode overlay now resolves to `ask`, where it used to resolve to `allow`. Several
+// assertions below say `ask` for that reason and say so where they do.
 const agentDefaults = [
-  { action: "*", resource: "*", effect: "allow" as const },
+  ...PermissionV2.AMBIENT_SAFE_BASELINE,
   { action: "external_directory_read", resource: "*", effect: "ask" as const },
   { action: "external_directory_write", resource: "*", effect: "ask" as const },
 ]
@@ -36,12 +47,16 @@ describe("MODE_RULES overlays (1K)", () => {
     expect(effect("plan", "explore")).toBe("allow")
   })
 
-  test("NEGATIVE CONTROL: strip the execution rules and Analyze permits `rm -rf` again", () => {
+  test("NEGATIVE CONTROL: strip the execution rules and Analyze stops REFUSING `rm -rf`", () => {
     // Proves the assertions above bite because of MODE_RULES.plan and nothing else. If someone
     // deletes the bash/js denies, the test above goes red — and this one stays green, naming why.
     const preFix = MODE_RULES.plan.filter((rule) => rule.action !== "bash" && rule.action !== "js")
-    expect(PermissionV2.evaluate("bash", "rm -rf /", [...agentDefaults, ...preFix]).effect).toBe("allow")
-    expect(PermissionV2.evaluate("js", "1+1", [...agentDefaults, ...preFix]).effect).toBe("allow")
+    // ⚠️ Post-B4c this is `ask`, not `allow` — the baseline no longer answers for an unnamed action.
+    // The rules are still load-bearing and this control still bites: `ask` is a PROMPT, which a
+    // user can answer allow-always and which the hard arm below never trips on, so a mode whose UI
+    // copy reads "Read only" would be offering to run `rm -rf` rather than refusing it.
+    expect(PermissionV2.evaluate("bash", "rm -rf /", [...agentDefaults, ...preFix]).effect).toBe("ask")
+    expect(PermissionV2.evaluate("js", "1+1", [...agentDefaults, ...preFix]).effect).toBe("ask")
     // ...and the hard arm never trips either, so there was nothing to soften in the first place.
     expect(PermissionV2.evaluate("bash", "rm -rf /", preFix).effect).not.toBe("deny")
   })
@@ -56,33 +71,53 @@ describe("MODE_RULES overlays (1K)", () => {
     expect(effect("plan", "revert", "src/x.ts")).toBe("deny")
     expect(modeDenies("plan", "provision", "test: rm -rf /")).toBe(true)
     expect(modeDenies("plan", "revert", "src/x.ts")).toBe(true)
-    // ...and this is a POSTURE rule, not a retirement: Build still does both freely.
-    expect(effect("bypass", "provision", "test: bun test")).toBe("allow")
-    expect(effect("bypass", "revert", "src/x.ts")).toBe("allow")
+    // ...and this is a POSTURE rule, not a retirement: Build still reaches both, through consent.
+    // ⚠️ Post-B4c that is `ask` rather than `allow` — neither action is ambient-safe (`provision`
+    // executes model-supplied commands, `revert` overwrites the working tree), so neither is in
+    // the baseline and `MODE_RULES.bypass` does not name them either. The distinction the test
+    // exists for survives intact: Analyze REFUSES, Build asks once and remembers the answer.
+    expect(effect("bypass", "provision", "test: bun test")).toBe("ask")
+    expect(effect("bypass", "revert", "src/x.ts")).toBe("ask")
   })
 
-  test("NEGATIVE CONTROL: strip those two rules and Analyze permits provision/revert again", () => {
+  test("NEGATIVE CONTROL: strip those two rules and Analyze stops REFUSING provision/revert", () => {
     const preFix = MODE_RULES.plan.filter((rule) => rule.action !== "provision" && rule.action !== "revert")
-    expect(PermissionV2.evaluate("provision", "test: rm -rf /", [...agentDefaults, ...preFix]).effect).toBe("allow")
-    expect(PermissionV2.evaluate("revert", "src/x.ts", [...agentDefaults, ...preFix]).effect).toBe("allow")
+    expect(PermissionV2.evaluate("provision", "test: rm -rf /", [...agentDefaults, ...preFix]).effect).toBe("ask")
+    expect(PermissionV2.evaluate("revert", "src/x.ts", [...agentDefaults, ...preFix]).effect).toBe("ask")
     // ...and the hard arm never trips either, so there was nothing to soften in the first place.
     expect(PermissionV2.evaluate("provision", "test: rm -rf /", preFix).effect).not.toBe("deny")
     expect(PermissionV2.evaluate("revert", "src/x.ts", preFix).effect).not.toBe("deny")
   })
 
-  test("the ad-hoc-tool hole: a mode overlay cannot reach an action it never named", () => {
-    // This test asserts a LIMIT, not a guarantee — it is green because the hole is open. MODE_RULES
-    // enumerates action names ahead of time, but an agent-defined ad-hoc tool (`tool/define-tool.ts`)
-    // asserts under its OWN name, chosen by the model at runtime, so the baseline's catch-all
-    // `* → allow` answers for it in EVERY mode, Analyze included. No row added above can ever cover
-    // it; only inverting the baseline to an explicit allowlist can (v0.2.0 B4c). It lives here so a
-    // reader MEETS the hole instead of inferring from the denies that a mode is sealed.
-    // ⚠️ When B4c lands this test should go RED. That is the signal it worked — retire it then.
+  test("the ad-hoc-tool hole is CLOSED: an action no rule names now falls through to ask", () => {
+    // ⚠️ This test used to assert the OPPOSITE, deliberately green, and its own comment said it
+    // should go red the day v0.2.0 B4c landed. It did. Kept — inverted — rather than deleted,
+    // because the *shape* it documents is still true and still the thing to understand: MODE_RULES
+    // enumerates action names ahead of time, and an agent-defined ad-hoc tool
+    // (`tool/define-tool.ts`) asserts under its OWN name, chosen by the model at runtime, so no
+    // overlay written in advance can ever mention it. What changed is the FALL-THROUGH: with the
+    // baseline's catch-all `* → allow` gone, an action nobody named reaches `evaluate`'s `ask`
+    // default instead of being granted. The overlay is still an enumeration; it is now backed by a
+    // boundary, which is what makes reading the denies as "the mode is sealed" finally safe.
     const adHoc = "my_deploy_tool" // whatever the model decided to call it
     for (const mode of ["plan", "ask", "surgical", "bypass", "yolo"] as const) {
-      expect(effect(mode, adHoc)).toBe("allow")
+      expect({ mode, effect: effect(mode, adHoc) }).toEqual({ mode, effect: "ask" })
+      // Still not a mode DENY — the overlay genuinely cannot reach the name, and pretending it
+      // could would be the false claim ruling 2 forbids. `ask` is the honest verdict: nobody has
+      // ruled on this action, so a human is asked.
       expect(modeDenies(mode, adHoc, "anything")).toBe(false)
     }
+  })
+
+  test("NEGATIVE CONTROL: restore the pre-B4c catch-all and the hole reopens in every mode", () => {
+    // Proves the test above measures the BASELINE and not some property of the mode overlays. This
+    // is the one line B4c removed from `plugin/agent.ts`, put back where it stood.
+    const preB4c = [{ action: "*", resource: "*", effect: "allow" as const }, ...agentDefaults]
+    for (const mode of ["plan", "ask", "surgical", "bypass", "yolo"] as const)
+      expect({
+        mode,
+        effect: PermissionV2.evaluate("my_deploy_tool", "anything", [...preB4c, ...MODE_RULES[mode]]).effect,
+      }).toEqual({ mode, effect: "allow" })
   })
 
   test("a saved allow-always CANNOT soften Analyze's execution deny (mode denies are HARD)", () => {
@@ -99,21 +134,30 @@ describe("MODE_RULES overlays (1K)", () => {
     expect(modeDenies("ask", "bash", "ls")).toBe(false)
   })
 
-  test("surgical denies only wholesale overwrite — and deliberately still permits execution", () => {
+  test("surgical denies only wholesale overwrite — and deliberately never denies execution", () => {
     expect(effect("surgical", "write")).toBe("deny")
-    expect(effect("surgical", "edit")).toBe("allow")
-    expect(effect("surgical", "create")).toBe("allow")
+    // ⚠️ Post-B4c `edit`/`create` read `ask` here rather than `allow`, and that is the baseline
+    // talking, not this mode: `MODE_RULES.surgical` is a single `write` deny and contributes
+    // nothing for either. The claim this test makes is about the OVERLAY, so it is asserted on the
+    // overlay — the full-stack effect is a consequence of whichever posture the user is in.
+    expect(modeDenies("surgical", "edit", "src/x.ts")).toBe(false)
+    expect(modeDenies("surgical", "create", "src/x.ts")).toBe(false)
+    expect([...MODE_RULES.surgical]).toEqual([{ action: "write", resource: "*", effect: "deny" }])
     // Pinned on purpose (see the note on MODE_RULES.surgical): surgical constrains the SHAPE of a
     // write, never the posture, and it is now the Tuning switch "Edits instead of overwriting" —
     // whose feature rule is this same lone `write` deny. An execution deny here would make the mode
     // and the switch disagree. Changing this line means changing the switch in permission.ts too.
-    expect(effect("surgical", "bash", "ls")).toBe("allow")
-    expect(effect("surgical", "js", "1+1")).toBe("allow")
+    expect(modeDenies("surgical", "bash", "ls")).toBe(false)
+    expect(modeDenies("surgical", "js", "1+1")).toBe(false)
   })
 
-  test("ask sends the mutation/exec cluster through consent (never silent with an allow-all baseline)", () => {
+  test("ask sends the mutation/exec cluster through consent, and reading stays ambient", () => {
     for (const action of ["edit", "write", "create", "trash", "bash"]) expect(effect("ask", action)).toBe("ask")
+    // The one thing `ask` must NOT gate: reading. It is in the ambient-safe baseline, and the mode
+    // overlay does not name it — so the promise "'Ask' checks with you before it CHANGES anything"
+    // stays a promise about changes.
     expect(effect("ask", "read")).toBe("allow")
+    expect(effect("ask", "explore")).toBe("allow")
   })
 
   test("the `ask` MODE and the askBeforeChanges SWITCH are one list, not two copies of one", () => {
@@ -162,11 +206,7 @@ describe("MODE_RULES overlays (1K)", () => {
   })
 
   test("mode overlays never touch non-file agent gating (question stays denied)", () => {
-    const rules = [
-      ...agentDefaults,
-      { action: "question", resource: "*", effect: "deny" as const },
-      ...MODE_RULES.yolo,
-    ]
+    const rules = [...agentDefaults, { action: "question", resource: "*", effect: "deny" as const }, ...MODE_RULES.yolo]
     expect(PermissionV2.evaluate("question", "*", rules).effect).toBe("deny")
   })
 
@@ -200,11 +240,17 @@ describe("normalizeReply + savedResources (1K six replies)", () => {
   })
 
   test("a persisted DENY beats a broad allow at evaluation (saved rules last)", () => {
+    // The production order, from `permission.ts`'s `evaluateInput`: baseline → agent → mode overlay
+    // → saved answers. ⚠️ The mode overlay is now what supplies the broad `bash` allow this test
+    // needs — B4c took `bash` out of the baseline, so composing only `agentDefaults` here would
+    // measure a `bash` nobody had granted and the assertion would prove nothing.
     const all = [
       ...agentDefaults,
+      ...MODE_RULES.bypass,
       { action: "bash", resource: "rm *", effect: "deny" as const }, // saved deny-file
     ]
     expect(PermissionV2.evaluate("bash", "rm -rf /", all).effect).toBe("deny")
+    // ...and the saved deny is SCOPED: a different command still runs.
     expect(PermissionV2.evaluate("bash", "ls", all).effect).toBe("allow")
   })
 })

@@ -118,16 +118,36 @@ export const Plugin = define({
         { action: "external_directory_write", resource, effect: "allow" },
       ]),
     ]
+    /**
+     * The `.env` refinements — and they are a UNIT because they must always be the LAST word on
+     * `read` in whatever ruleset they land in. `evaluate` is findLast, so ANY later broad
+     * `{ read, *, allow }` hands the secrets straight back. That is not hypothetical: the `explore`
+     * subagent's own ruleset carried exactly such a rule after `defaults`, so the read-only search
+     * agent could read `.env` files that the default agent asks about — a shadowing bug of the same
+     * shape as the `explore`-action one below, found alongside it. Extracted so the re-append at
+     * that one site is the same three rules rather than a fourth copy.
+     */
+    const envRefinements: PermissionV2.Ruleset = [
+      { action: "read", resource: "*.env", effect: "ask" },
+      { action: "read", resource: "*.env.*", effect: "ask" },
+      { action: "read", resource: "*.env.example", effect: "allow" },
+    ]
     const defaults: PermissionV2.Ruleset = [
-      { action: "*", resource: "*", effect: "allow" },
+      // v0.2.0 B4c: the compiled floor is an explicit ALLOWLIST of ambient-safe actions — never a
+      // catch-all `{ action: "*", resource: "*", effect: "allow" }` again. Anything absent from it
+      // falls through to the evaluator's `ask` default, which is what makes a per-action gate added
+      // later an actual gate rather than a formality. The membership and the reasoning that decides
+      // it live with the constant (`permission.ts` → AMBIENT_SAFE_BASELINE), so this list is never
+      // a second place to keep in sync; `test/permission-baseline.test.ts` fails if a catch-all
+      // allow reappears in ANY built-in agent's ruleset.
+      // ⚠️ It carries `read`, so the `.env` refinements below must stay AFTER it — `evaluate` is
+      // findLast, and moving them above would hand `.env` files back.
+      ...PermissionV2.AMBIENT_SAFE_BASELINE,
       ...readonlyExternalDirectory,
       { action: "question", resource: "*", effect: "deny" },
       { action: "plan_enter", resource: "*", effect: "deny" },
       { action: "plan_exit", resource: "*", effect: "deny" },
-      { action: "read", resource: "*", effect: "allow" },
-      { action: "read", resource: "*.env", effect: "ask" },
-      { action: "read", resource: "*.env.*", effect: "ask" },
-      { action: "read", resource: "*.env.example", effect: "allow" },
+      ...envRefinements,
     ]
 
     yield* ctx.agent.transform((draft) => {
@@ -195,11 +215,39 @@ export const Plugin = define({
             defaults,
             [
               { action: "*", resource: "*", effect: "deny" },
+              // ⚠️ TWO grants per search tool, and BOTH are load-bearing — they are spent by
+              // different consumers, and dropping either one breaks the agent at its only job.
+              //
+              //   · `explore` is what `tool/glob.ts` and `tool/grep.ts` actually ASSERT
+              //     (`permission.assert({ action: "explore" })` — listing and searching are one
+              //     grant class, and both files say so). It is in `AMBIENT_SAFE_BASELINE`, i.e.
+              //     inside `defaults` — but `defaults` comes BEFORE the catch-all deny above and
+              //     `evaluate` is findLast, so the floor was shadowed and every glob/grep call this
+              //     agent made was DENIED. It was broken before B4c too (the old catch-all ALLOW sat
+              //     in the same shadowed position), so B4c did not cause it and does not fix it.
+              //   · `grep`/`glob` are what `ToolRegistry.materialize` resolves when it decides the
+              //     model's HORIZON: `Tool.permission` falls back to the name a tool is REGISTERED
+              //     under, and neither file remaps (the only `withPermission` remap in the tree is
+              //     `apply_patch` → `edit`, ledgered in `test/tool-permission-identity.test.ts`).
+              //     So without these two, `whollyDisabled` reads the catch-all deny and withdraws
+              //     both tools from this agent's tool list entirely.
+              //
+              // That split — horizon action ≠ execution action — is the disagreement the
+              // `apply_patch` ledger entry exists to prevent, arrived at from the other side. It is
+              // recorded here rather than repaired here: collapsing it means remapping both tools to
+              // `explore`, which changes what a user's existing `permission: { glob: "deny" }` means
+              // and needs its own ledger entries. `test/permission-baseline.test.ts` pins both
+              // halves so neither grant can be tidied away as redundant.
+              { action: "explore", resource: "*", effect: "allow" },
               { action: "grep", resource: "*", effect: "allow" },
               { action: "glob", resource: "*", effect: "allow" },
               { action: "webfetch", resource: "*", effect: "allow" },
               { action: "websearch", resource: "*", effect: "allow" },
               { action: "read", resource: "*", effect: "allow" },
+              // ...and the `.env` refinements come back LAST, because the broad `read` allow one
+              // line above shadowed the copy inside `defaults`. Without this the read-only search
+              // subagent could read secrets the default agent asks about.
+              ...envRefinements,
             ],
             readonlyExternalDirectory,
           ),

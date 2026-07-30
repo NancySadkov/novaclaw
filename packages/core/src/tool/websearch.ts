@@ -1,7 +1,9 @@
 export * as WebSearchTool from "./websearch"
 
+import { ToolFailure } from "@novaclaw/llm"
 import { Effect, Layer, Schema } from "effect"
 import { makeLocationNode } from "../effect/app-node"
+import { PermissionV2 } from "../permission"
 import { PositiveInt } from "../schema"
 import { WebSearch } from "../websearch/service"
 import { Tool } from "./tool"
@@ -57,10 +59,42 @@ export const description =
   `The current year is ${new Date().getFullYear()} — say so in queries about recent events. ` +
   "If search is unavailable the result says why in plain words (offline mode, every engine throttled) — pass that on rather than inventing an answer."
 
+// ── THE GATE, and how it COMPOSES with the offline policy rather than duplicating it ─────────────
+//
+// This tool shipped asserting NOTHING. It is an EGRESS channel — design-principle 4 makes the data
+// plane's non-egress load-bearing — and it was the only one in the tool set with no permission at
+// all, while `config/permission.ts` has advertised a `websearch` key the whole time: a config knob a
+// user could set that governed nothing, which is ruling 2's *a fault is never described falsely* on
+// the surface a privacy-minded user would go to first.
+//
+// ⚠️ IT IS NOT A SECOND OFFLINE CHECK, and it must not be read as one. There are two different
+// questions here and neither answers the other:
+//
+//   · `Offline` (offline.ts) answers *may this INSTANCE reach the WAN at all* — a machine-level
+//     policy, read live, not per-session, and deliberately NOT consentable. Web search already has
+//     its own check for it (`websearch/service.ts` rule 1, "AIRGAP WINS"), which it needs because
+//     its engines call raw `fetch` rather than riding the shared `HttpClient` node, so layer 1 of
+//     OFF-A never sees them. Same shape npm/MCP/OTLP use.
+//   · `PermissionV2` answers *may THIS SESSION do this, and does a human agree* — per-session,
+//     per-agent, consentable, saveable, and the only axis on which a user or an agent rule can
+//     legitimately differ from the instance default.
+//
+// So the assert ADDS the axis the offline policy has never had, and it cannot weaken the one it
+// already has: it sits ABOVE the engine choice and can only refuse. A saved "always allow websearch"
+// answer therefore never re-enables egress in airgap mode — the airgap refusal is still the answer an
+// ALLOWED search receives, and it arrives as the tool's own plain-words `{ok:false, reason}` output
+// rather than as a permission error, which is the honest distinction between "you may not" and
+// "there is nowhere to go".
+//
+// ⚠️ NOT added to `AMBIENT_SAFE_BASELINE` (permission.ts), deliberately: an egress action fails the
+// second of the three membership tests outright. So on a default install this ASKS once and the
+// answer is saveable — exactly what `webfetch`, its sibling, already does. Under an UNATTENDED root
+// it deny-fasts with `unattended-unanswerable` instead of parking a card nobody can answer.
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
     const tools = yield* Tools.Service
     const search = yield* WebSearch.Service
+    const permission = yield* PermissionV2.Service
 
     yield* tools
       .register({
@@ -69,8 +103,22 @@ export const layer = Layer.effectDiscard(
           input: Input,
           output: Output,
           toModelOutput: ({ output }) => [{ type: "text", text: output.message }],
-          execute: (input) =>
+          execute: (input, context) =>
             Effect.gen(function* () {
+              // Same shape as `tool/webfetch.ts`'s assert, so one saved answer means the same thing
+              // on both halves of the web pair. The QUERY is the resource — the thing the card shows
+              // and the thing a user would judge — with the same caveat `evaluate` records for
+              // `bash`: matching a free-text string is prompt-reduction, never containment. What the
+              // gate actually decides is whether this session may search the web at all.
+              yield* permission.assert({
+                action: name,
+                resources: [input.query],
+                save: ["*"],
+                metadata: input,
+                sessionID: context.sessionID,
+                agent: context.agent,
+                source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
+              })
               const outcome = yield* search.search(input.query, { limit: input.numResults ?? 8 })
               if (!outcome.ok) return { ok: false, message: outcome.reason ?? "Search failed." } satisfies Output
               if (outcome.results.length === 0)
@@ -81,11 +129,24 @@ export const layer = Layer.effectDiscard(
                   ? ""
                   : `\n\n(Partial: ${outcome.degraded.join(", ")} did not answer.)`
               return { ok: true, message: `${formatResults(outcome.results)}${degraded}` } satisfies Output
-            }),
+            }).pipe(
+              // A denial must reach the model as the DENIAL, not as "search failed" — the difference
+              // decides whether an unattended run routes around it or retries forever. `glob`/`grep`
+              // do this; `webfetch` still collapses its errors and loses the wording.
+              Effect.mapError((error) => {
+                const denial = PermissionV2.denialMessage(error)
+                if (denial) return new ToolFailure({ message: denial })
+                return new ToolFailure({ message: `Unable to search the web for ${input.query}` })
+              }),
+            ),
         }),
       })
       .pipe(Effect.orDie)
   }),
 )
 
-export const node = makeLocationNode({ name: "tool/websearch", layer, deps: [ToolRegistry.node, WebSearch.node] })
+export const node = makeLocationNode({
+  name: "tool/websearch",
+  layer,
+  deps: [ToolRegistry.node, WebSearch.node, PermissionV2.node],
+})

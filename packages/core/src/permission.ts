@@ -111,8 +111,23 @@ export class CorrectedError extends Schema.TaggedErrorClass<CorrectedError>()("P
  * `PermissionV2.DeniedError`, distinct from `@novaclaw/schema`'s `PermissionDeniedError`, and
  * neither the reason nor this class is projected into the HttpApi contract, so adding a member
  * drifts no generated artifact (checked 2026-07-28).
+ *
+ * ── the SECOND pair (the B4c follow-up), and why it is a pair for the same reason ───────────────
+ * `unattended-unanswerable` / `unanswerable-chain-unreadable` are the two attributions of the OTHER
+ * unanswerable ask: not "you reached outside your folder" but "nobody ruled on this action at all,
+ * so the verdict is `ask`, and there is no operator to answer it". The first three cover a
+ * CLASSIFIED boundary; these two cover the fall-through. They are separate literals rather than a
+ * reuse of the first pair because the first pair's wording prescribes *"do the work inside this
+ * session's folder instead"* — true advice for an out-of-folder write, and a false description of
+ * the fault for a `webfetch` or an MCP call that has no path at all.
  */
-export const DenialReason = Schema.Literals(["unattended-confined", "attachment-protected", "chain-unreadable"])
+export const DenialReason = Schema.Literals([
+  "unattended-confined",
+  "attachment-protected",
+  "chain-unreadable",
+  "unattended-unanswerable",
+  "unanswerable-chain-unreadable",
+])
 export type DenialReason = typeof DenialReason.Type
 
 export class DeniedError extends Schema.TaggedErrorClass<DeniedError>()("PermissionV2.DeniedError", {
@@ -171,6 +186,37 @@ export function denialMessage(error: unknown): string | undefined {
         `their own source files rather than working material. This is an UNATTENDED session, so no one is ` +
         `present to approve modifying it and waiting or retrying will change nothing. Write your output to a ` +
         `NEW file instead and name the attached file in your result if it genuinely needs to change.`
+      )
+    // The B4c follow-up. Nobody RULED on this action, so the evaluator's honest verdict is `ask` —
+    // and in an unattended chain an ask has no answerer, which makes it a hang rather than a gate.
+    // The refusal has to be ACTIONABLE, not merely legible: name the action, say the waiting is
+    // pointless, and say what a human would have to do IN ADVANCE for the next run to have it.
+    if (error.reason === "unattended-unanswerable")
+      return (
+        `Permission denied: action '${actions}' on '${resources}' needs a human's approval and no standing ` +
+        `rule grants it, but this is an UNATTENDED session — no operator is present to answer a consent ` +
+        `prompt. A prompt here would stall the whole run instead of gating it, so the request is refused ` +
+        `immediately. Waiting, retrying, or trying to get the permission widened mid-run will change nothing. ` +
+        `Continue with the tools you ARE allowed to use and finish what you can. Making '${actions}' available ` +
+        `to unattended runs takes a grant made in advance — approved once with "always" in an attended chat, ` +
+        `or allowed for this agent in the instance permission settings — so if the task genuinely cannot ` +
+        `finish without it, name '${actions}' in your result and stop trying it.`
+      )
+    // The same refusal, honestly attributed — ruling 2 in both directions. We did not establish that
+    // this run is unattended; we failed to read the chain that would have told us. Saying "this is an
+    // UNATTENDED session" here would be a claim about something we never checked, and it would point
+    // the operator at the schedule instead of at the broken session records.
+    if (error.reason === "unanswerable-chain-unreadable")
+      return (
+        `Permission denied: action '${actions}' on '${resources}' needs a human's approval and no standing ` +
+        `rule grants it, and this session's parent chain could not be read — so there is no way to tell ` +
+        `whether anyone is present to answer a consent prompt. An attendance question this instance cannot ` +
+        `answer is not a licence to ` +
+        `act, and a prompt nobody may be there to answer would stall the run rather than gate it, so the ` +
+        `request is refused rather than granted on a guess. What is broken is the session records, not your ` +
+        `request, and no user reply can unblock it. Continue with the tools you ARE allowed to use and ` +
+        `finish what you can; if the task genuinely cannot finish without '${actions}', name it in your ` +
+        `result and stop trying it.`
       )
     return `Permission denied by policy: action '${actions}' on '${resources}' is not allowed in this mode. Do not retry the same call — work within permitted paths and actions, or ask the user to adjust permissions.`
   }
@@ -247,6 +293,92 @@ export function savedResources(
   if (scope === "file") return request.resources
   return request.save ?? []
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE AMBIENT-SAFE BASELINE (v0.2.0 B4c).
+//
+// The compiled floor every built-in agent's ruleset opens with (`plugin/agent.ts`). It REPLACES
+// the catch-all `{ action: "*", resource: "*", effect: "allow" }` that used to sit on that first
+// line, and the inversion is the entire point: an action nobody listed here falls through to
+// `evaluate`'s `ask` default instead of being granted by a rule written before the action existed.
+//
+// ⚠️ WHY THE CATCH-ALL HAD TO GO. It did not merely widen a default — it silently DEFEATED every
+// per-action gate that had no later rule of its own, so each gate read as protection while granting
+// itself. Measured on the tree the day this landed, that covered `js`, `spawn`, `kb`, `skill`,
+// `webfetch`, `revert`, `provision`, `define_tool`, `register-app`, the three `messenger.*` actions,
+// every MCP tool (whose own gate comment claimed first-call-asks parity) and every ad-hoc tool a
+// model invents at runtime — a name no overlay written ahead of time can possibly mention, which is
+// why growing `MODE_RULES` could never close it (see `session/config-resolve.ts`).
+//
+// ── MEMBERSHIP: the three tests an action must pass ──────────────────────────────────────────
+// An action belongs here only if it (1) cannot mutate the host, (2) cannot egress, and (3) cannot
+// change what a LATER turn or a later session runs. Ruling 4's *unclassified ⇒ privileged* is the
+// tie-break, and it points one way: an action wrongly LEFT OUT costs one consent card that the user
+// can answer "always"; an action wrongly PUT IN is a gate that grants itself, which is the fault
+// this baseline exists to end (ruling 2 — *a fault is never described falsely*).
+//
+//  · `read`      — file reads (`tool/read.ts`, `tool/read-hex.ts`). Cannot mutate, cannot egress.
+//                  Two things still narrow it and neither is weakened by living here: a target
+//                  outside the Location passes a SEPARATE `external_directory_read` assert first
+//                  (`location-mutation.ts`), and `plugin/agent.ts`'s `.env` refinements sit AFTER
+//                  this rule in the same ruleset, so findLast keeps them winning.
+//  · `explore`   — the glob + grep grant; listing and searching are ONE class (`tool/glob.ts`,
+//                  `tool/grep.ts`, which assert exactly this action). Same shape as `read` and
+//                  gated the same way outside the Location. No compiled rule ever named it, so it
+//                  reached the catch-all: leaving it out would make every grep a consent card.
+//  · `todowrite` — the session's own task list (`SessionTodo.update`, keyed by sessionID). It is a
+//                  write, but only to the session's own scratch state: no filesystem, no network,
+//                  no config, and nothing that outlives the session it belongs to. That last clause
+//                  is ruling 4's fourth test — *no text that reaches a FUTURE session's prompt* —
+//                  and it is precisely what keeps `define_tool` (whose manual IS saved for later
+//                  turns to read) on the other side of the line.
+//
+// ⚠️ WHAT IS DELIBERATELY ABSENT, so the shortness is not read as an oversight. The mutation/exec
+// cluster (`edit`/`write`/`create`/`trash`/`bash`) is NOT here and does not need to be: the default
+// permission mode is `bypass`, whose overlay allows all five on `*` (`MODE_RULES`), so a default
+// install behaves as it did. What changed is that those five are now granted by THE POSTURE THE
+// USER PICKED rather than by a catch-all — which is what finally makes picking `ask` or `plan` mean
+// something for everything else too. `js`, `spawn`, `kb`, `skill`, `webfetch`, `revert`,
+// `provision`, `define_tool`, `register-app`, `messenger.*`, MCP tools and ad-hoc tools each fail at
+// least one of the three tests above and now ASK on first use; the answer is saveable
+// (allow-always), so the cost is one card per capability per install, not one per call.
+//
+// ⚠️ AND THIS IS A FLOOR, NOT A CEILING. User config, agent config and saved answers are all
+// appended AFTER it (`evaluateInput` below), so a repairing agent or a user can still widen it — the
+// self-healing law is untouched. Narrowing it is what needs a deliberate edit here.
+//
+// ✅ THE CONSEQUENCE THIS INVERSION OPENED IS NOW CLOSED, in `evaluateInput`'s last arm. The gap,
+// recorded here while it was open: an UNATTENDED chain has nobody to answer a card, and the deny-fast
+// stance (`config-resolve.ts` §UNATTENDED CONFINEMENT) converts exactly TWO actions into an immediate
+// refusal — `external_directory_write`, plus `external_directory_read` under Paranoid — so everything
+// else PARKED. Before B4c the catch-all hid that for the newly-gated actions; after it, an unattended
+// root whose model called `webfetch`, `spawn`, `skill`, `kb`, `js` or an MCP tool sat on a pending ask
+// — the measured pathology AGENTS.md records ("the run looking alive and doing nothing"). The fix is
+// the one the stance's own doctrine dictates (*an ask nobody is present to answer is a HANG, not a
+// gate*): an `ask` verdict under a non-attended root is now refused IMMEDIATELY, with its own
+// `DenialReason` (`unattended-unanswerable`, or `unanswerable-chain-unreadable` when the chain is what
+// we failed to read) and wording that names the grant-in-advance path out. This list was NOT widened
+// to do it, which is the part that matters here: an egress or execution action does not become
+// ambient-safe because a scheduled run wanted it.
+// ─────────────────────────────────────────────────────────────────────────────
+export const AMBIENT_SAFE_BASELINE: Permission.Ruleset = [
+  { action: "read", resource: "*", effect: "allow" },
+  { action: "explore", resource: "*", effect: "allow" },
+  { action: "todowrite", resource: "*", effect: "allow" },
+]
+
+/**
+ * The rules in a ruleset that grant EVERYTHING — the exact shape B4c removed from the compiled
+ * baseline (`{ action: "*", resource: "*", effect: "allow" }`).
+ *
+ * A function rather than a note in a comment, because "no ruleset we compile opens with a catch-all
+ * allow again" is an invariant a re-added line would satisfy silently and green — the defect class
+ * ruling 1 names. A USER may still write such a rule; that is their instance and their call. This
+ * pins only what WE ship, and `test/permission-baseline.test.ts` runs it over every built-in agent
+ * the agent plugin actually builds rather than over a hand-copied fixture.
+ */
+export const catchAllAllowRules = (ruleset: Permission.Ruleset): Permission.Ruleset =>
+  ruleset.filter((rule) => rule.action === "*" && rule.resource === "*" && rule.effect === "allow")
 
 // ⚠️ The `resource` match is only as strong as what `resource` MEANS for that action. For path-shaped
 // actions (read/write/external_directory_*) it is a resolved, canonicalized path — a real semantic
@@ -568,6 +700,60 @@ export const layer = Layer.effect(
       const all = [...rules, ...saved, ...attachmentRules]
       const effects = input.resources.map((resource) => evaluate(input.action, resource, all).effect)
       const effect: Permission.Effect = effects.includes("deny") ? "deny" : effects.includes("ask") ? "ask" : "allow"
+      // ── AN ASK NOBODY CAN ANSWER IS A HANG, NOT A GATE — the B4c follow-up ────────────────────
+      //
+      // This is the LAST arm on purpose: everything that could legitimately answer for the action
+      // has already spoken — the read baseline, the agent's configured rules, Paranoid, the mode
+      // overlay, the Tuning switches, the stance and its exemption, and saved answers. Only after
+      // all of that resolves to `ask` do we know that NOBODY ruled on this action, which is exactly
+      // the state B4c created by design: the compiled floor is an allowlist now
+      // (`AMBIENT_SAFE_BASELINE`), so `js`, `spawn`, `skill`, `kb`, `webfetch`, `websearch`,
+      // `revert`, `provision`, `define_tool`, `register-app`, `messenger.*`, every MCP tool and
+      // every ad-hoc tool a model invents at runtime fall through to `evaluate`'s `ask` default.
+      //
+      // Under an UNATTENDED chain that ask parks on a consent card nobody will ever answer — and
+      // `pending` above is an in-memory, location-scoped Map, so it does not even survive the
+      // restart the maintenance plane is designed to cause. The measured pathology is "the run
+      // looking alive and doing nothing". The stance's own doctrine already rules on it
+      // (`config-resolve.ts` §UNATTENDED CONFINEMENT: *an ask nobody is present to answer is a
+      // HANG, not a gate*), so the honest answer is an IMMEDIATE refusal the model can route
+      // around, with its own reason so the wording can be actionable.
+      //
+      // ⚠️ WHY THERE IS NO `yolo` EXEMPTION HERE, unlike `unattendedStanceRules` and the attachment
+      // arm above. Those two convert a GRANT into a refusal, so the mode that means "everything"
+      // has to be the way out of them. This arm converts nothing: reaching it means the action was
+      // never granted, in any mode — `MODE_RULES.yolo` names only the mutation cluster and the two
+      // external classes, so an unattended `yolo` root calling `webfetch` was hanging too. A mode
+      // is a statement about capability; attendance is a statement about who can answer, and `yolo`
+      // cannot conjure an operator. Exempting it would preserve a hang in the name of a grant
+      // nobody made.
+      //
+      // ⚠️ AND THIS IS NOT A NEW BOUNDARY — it converts a verdict, it never creates one. Anything
+      // resolving to `allow` above is untouched (in-folder work, reads, `explore`, `todowrite`, the
+      // whole mutation/exec cluster under the default `bypass`), and the way to give an unattended
+      // run a gated capability is unchanged and stated in the denial text: grant it in ADVANCE —
+      // one "always" answer in an attended chat, or an agent/instance permission rule. The
+      // self-healing law is untouched: both of those are runtime-editable stores.
+      //
+      // The synthetic rules appended to `rules` ARE the verdict this arm reached, in the vocabulary
+      // `denialMessage` reads — one per requested resource, because the call is refused for all of
+      // them. `evaluate` already synthesises `{action, resource: "*", effect: "ask"}` when no rule
+      // matches, so this is that rule with the verdict this arm gives it. Without them `relevant()`
+      // would hand the error an EMPTY ruleset for a fall-through action (no compiled rule names it,
+      // by definition) and the message would report the action AND the resource as "unknown" — ruling
+      // 2 broken by the very text written to satisfy it. Per-resource rather than `*` so the model is
+      // told WHICH url/command/path was refused, not just which verb.
+      if (effect === "ask" && !attendedRoot(rootType))
+        return {
+          effect: "deny" as const,
+          rules: [
+            ...all,
+            ...input.resources.map((resource) => ({ action: input.action, resource, effect: "deny" as const })),
+          ],
+          reason: (rootType === "unknown" ? "unanswerable-chain-unreadable" : "unattended-unanswerable") as
+            | DenialReason
+            | undefined,
+        }
       return {
         effect,
         rules: all,

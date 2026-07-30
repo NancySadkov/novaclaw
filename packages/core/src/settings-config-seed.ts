@@ -103,15 +103,20 @@ const PERMISSIONS_BACKSTOP = { action: "*", resource: "*", effect: "ask" } as co
  *
  * ⚠️ PERMISSIONS IS FAIL-CLOSED, and is the one key that does not simply get dropped. It is the
  * only settings key whose ABSENCE is more permissive than its presence: every agent's ruleset opens
- * with a catch-all `* -> allow` and the store's rules are appended AFTER it (config/plugin/agent.ts),
- * and rules resolve by findLast — so dropping the key promotes the user's denies to allows. That is a
- * loosening caused by a corrupt row, which is exactly the failure this function must not have. Since
- * rules resolve by findLast we can be restrictive without discarding what IS readable:
+ * with the compiled baseline and the store's rules are appended AFTER it (config/plugin/agent.ts),
+ * and rules resolve by findLast — so dropping the key promotes the user's denies to whatever the
+ * baseline says. That is a loosening caused by a corrupt row, which is exactly the failure this
+ * function must not have. ⚠️ v0.2.0 B4c made the baseline an ambient-safe ALLOWLIST rather than a
+ * catch-all `* -> allow`, which shrinks how much a dropped key gives away — it no longer hands back
+ * `bash` — but does not remove the problem: the baseline still allows `read`/`explore`/`todowrite`,
+ * and the session's permission MODE is appended after the config rules regardless, so a user deny the
+ * mode also names is still lost with the key. Since rules resolve by findLast we can be restrictive
+ * without discarding what IS readable:
  *   1. keep each individual rule that still decodes, in order — that is the user's literal, readable
  *      intent, and honouring it is strictly closer to what they asked for than dropping the lot; and
- *   2. PREPEND a catch-all `ask`, which outranks the agent's baseline `allow` but is outranked by
+ *   2. PREPEND a catch-all `ask`, which outranks the agent's baseline allows but is outranked by
  *      every salvaged rule. Whatever the unreadable rule governed therefore lands on the human
- *      instead of on `allow`.
+ *      instead of on the baseline.
  * NOT `deny` (which `permission.ts` uses for a missing AGENT): a blanket deny leaves the instance
  * unable to do anything — including repair itself — and AGENTS.md's self-healing law requires the
  * repair path to survive; `ask` is the most restrictive reading that still leaves a person able to

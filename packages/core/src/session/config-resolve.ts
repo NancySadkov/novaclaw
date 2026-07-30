@@ -63,17 +63,20 @@ export const ASK_BEFORE_CHANGES_RULES: readonly PermissionRule[] = [
  * INSIDE the project". Mode denies are HARD: they participate in the early deny check, so a
  * saved allow-always can never override plan/surgical.
  *
- * ⚠️ WHAT A MODE OVERLAY CANNOT DO — read this before trusting a deny below. Every rule here
- * names its action LITERALLY, while the agent baseline opens with a catch-all
- * `{ action: "*", resource: "*", effect: "allow" }` (`plugin/agent.ts`). So an action ABSENT
- * from a mode's list is allowed, in that mode, by default — the list is an enumeration, not a
- * boundary. And the gap cannot be closed by growing the list: an agent-defined ad-hoc tool
+ * ⚠️ WHAT A MODE OVERLAY IS, AND WHAT NOW BACKS IT — read this before trusting a deny below. Every
+ * rule here names its action LITERALLY, and that has not changed: an agent-defined ad-hoc tool
  * (`tool/define-tool.ts`) asserts under its OWN tool name, chosen at runtime by the model, so no
- * overlay written ahead of time can possibly mention it. Read the denies below as "these named
- * actions are refused", never as "the mode is sealed". Sealing it means inverting the BASELINE
- * from allow-all to an explicit allowlist of ambient-safe actions (filed as v0.2.0 B4c); until
- * that lands, the hole is real and is pinned — deliberately green — by the "ad-hoc-tool hole"
- * test in `permission-modes.test.ts`, so a reader meets it instead of inferring its absence.
+ * overlay written ahead of time can possibly mention it. The list is still an enumeration.
+ *
+ * ✅ What changed (v0.2.0 B4c, landed): the FALL-THROUGH. The agent baseline used to open with a
+ * catch-all `{ action: "*", resource: "*", effect: "allow" }`, so an action absent from a mode's
+ * list was ALLOWED in that mode — the list was an enumeration with nothing behind it. That line is
+ * gone; `plugin/agent.ts` now opens with `PermissionV2.AMBIENT_SAFE_BASELINE`, an explicit
+ * allowlist, and anything it does not name reaches `evaluate`'s `ask` default. So an action nobody
+ * ruled on is now a consent card rather than a silent grant, and reading the denies below as
+ * "these named actions are refused, and the unnamed ones are asked about" is finally accurate.
+ * The inversion is pinned by `test/permission-baseline.test.ts` (no built-in agent may carry a
+ * catch-all allow) and by the now-inverted "ad-hoc-tool hole" test in `permission-modes.test.ts`.
  */
 export const MODE_RULES: Record<PermissionMode, readonly PermissionRule[]> = {
   plan: [

@@ -218,11 +218,17 @@ export interface Interface {
    * That default is the safe half of AGENTS.md #9(b) (*never cold-start*), but it is only half:
    * 9(b) also says starting one is allowed with **explicit permission and its own stricter rate
    * limit**. The rate limit exists (`DAILY_NEW_CONVERSATION_CAP`); the permission does not. Wiring
-   * it needs BOTH halves, and the second is the one that bites: an `initiate` field on `SendOp`,
-   * AND a `messenger.initiate` permission that actually **asks by default** — which the agent
-   * baseline's catch-all `{ action: "*", resource: "*", effect: "allow" }` (`plugin/agent.ts`, the
-   * v0.2.0 B4c hole) would otherwise nullify, shipping a gate that grants itself. Until both land,
-   * `initiate` is the enforcement point and nothing more; `messenger-tool.test.ts` keeps it honest.
+   * it needs BOTH halves, and the second USED to be the one that bites: a `messenger.initiate`
+   * permission that actually **asks by default** was impossible while the agent baseline opened with
+   * a catch-all `{ action: "*", resource: "*", effect: "allow" }`, because the gate would have
+   * granted itself — a false promise, which ruling 2 forbids more strongly than a known gap.
+   * ✅ **That blocker is GONE (v0.2.0 B4c).** `plugin/agent.ts` now opens with
+   * `PermissionV2.AMBIENT_SAFE_BASELINE`, which names nothing beginning `messenger.`, so a new
+   * `messenger.initiate` action asks by default the moment it is asserted — pinned by
+   * `test/permission-baseline.test.ts`, which already holds the three existing `messenger.*` actions
+   * to `ask`. What remains is the FIRST half: an `initiate` field on `SendOp` and an assert on it.
+   * Until that lands, `initiate` is the enforcement point and nothing more; `messenger-tool.test.ts`
+   * keeps it honest.
    */
   readonly send: (input: {
     readonly accountID: Messenger.AccountID

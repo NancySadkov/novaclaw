@@ -47,19 +47,24 @@ import { Tools } from "./tools"
 // through this tool — real DB, real spawner, real resolve — by `test/spawn-tool-input.test.ts`.
 
 // ─────────────────────────────────────────────────────────────────────────────
-// THE MAY-SPAWN GATE — what it buys, and what it does NOT (decided 2026-07-28).
+// THE MAY-SPAWN GATE — what it buys (gate decided 2026-07-28; the baseline it rests on inverted by
+// v0.2.0 B4c).
 //
 // `spawn` was the one capability-CREATING tool registered with a bare `Tool.make`, and its own TODO
-// asked for a gate. It has one now. Read this before believing it protects anything today.
+// asked for a gate. It has one now.
 //
-// Under the default agent baseline (`plugin/agent.ts` opens with `{ action: "*", resource: "*",
-// effect: "allow" }`) a `permission.assert` resolves to ALLOW. That is exactly why the sibling
-// `messenger.initiate` gate was deliberately NOT wired: there the assert would have been the ENTIRE
-// claimed protection for a promise the product makes out loud (AGENTS.md design-principle 9b —
-// starting a conversation "needs explicit permission"), so a gate that grants itself would have
-// been a false promise, which ruling 2 forbids more strongly than it forbids a known gap.
+// ✅ **And as of B4c the gate is LIVE rather than inert.** The note that used to stand here said
+// that under the default agent baseline — which opened with `{ action: "*", resource: "*", effect:
+// "allow" }` — a `permission.assert` resolves to ALLOW, so this gate granted itself. That line is
+// gone: `plugin/agent.ts` now opens with `PermissionV2.AMBIENT_SAFE_BASELINE`, and **`spawn` is
+// deliberately NOT in it.** Creating a session that carries capability of its own fails the "cannot
+// change what a later turn runs" test that constant is written against, and ruling 4's
+// *unclassified ⇒ privileged* settles the rest. So spawning now ASKS on a default install, once,
+// with a saveable answer — pinned by `test/spawn-tool-input.test.ts` and
+// `test/permission-baseline.test.ts`, both negative-controlled against the removed catch-all.
 //
-// Two things make `spawn` a different case, and both are checkable rather than argued:
+// The two arguments below are why the gate was worth adding BEFORE the baseline could carry it, and
+// they are kept because they are still the reason it is shaped this way:
 //   1. **The action word is not new — it is already live.** `Tool.permission` falls back to the
 //      registered tool NAME, so `ToolRegistry.materialize` ALREADY withdraws this tool from the
 //      model's horizon for an agent whose rules end in `{ action: "spawn", resource: "*", effect:
@@ -70,12 +75,13 @@ import { Tools } from "./tools"
 //      hard caps in the seam; no permission rule can widen them. This gate is a policy hook over an
 //      already-bounded capability, not the bound itself.
 //
-// So the honest statement, and the one the tests hold to: this changes the default posture for
-// nobody — spawning is allowed on a default install, exactly as it was — while giving a user or an
-// agent config the one place to say otherwise. When B4c inverts the baseline from allow-all to an
-// explicit allowlist, THIS is where spawn gets decided. `test/spawn-tool-input.test.ts` pins the
-// default effect as `allow`, deliberately green, so the day the baseline changes somebody has to
-// come back here and mean it rather than inherit it.
+// So the honest statement, and the one the tests hold to: a default install now ASKS the first time
+// a session wants to spawn a helper, the answer is saveable, and a user or an agent config still has
+// exactly one place to say otherwise. ⚠️ Two consequences worth naming rather than discovering: an
+// UNATTENDED root below `yolo` has nobody to answer, so a scheduled chain that needs sub-agents needs
+// the grant saved (or an agent rule) beforehand — the deny-fast stance in `config-resolve.ts` is
+// about the external classes, not about this, so an unanswered spawn ask would PARK rather than fail
+// fast; and the fork-bomb quotas above remain the real bound either way.
 // ─────────────────────────────────────────────────────────────────────────────
 
 export const name = "spawn"

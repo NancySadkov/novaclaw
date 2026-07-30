@@ -1,0 +1,366 @@
+import { describe, expect, test } from "bun:test"
+import fs from "node:fs"
+import nodePath from "node:path"
+import { Effect } from "effect"
+import { AgentV2 } from "@novaclaw/core/agent"
+import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
+import { Location } from "@novaclaw/core/location"
+import { PermissionV2 } from "@novaclaw/core/permission"
+import { AgentPlugin } from "@novaclaw/core/plugin/agent"
+import { AbsolutePath } from "@novaclaw/core/schema"
+import { EFFECTIVE_CONFIG_DEFAULTS, MODE_RULES } from "@novaclaw/core/session/config-resolve"
+import { Wildcard } from "@novaclaw/core/util/wildcard"
+import { location } from "./fixture/location"
+import { testEffect } from "./lib/effect"
+import { agentHost, host } from "./plugin/host"
+
+// ─────────────────────────────────────────────────────────────────────────────
+// v0.2.0 B4c — the permission baseline is an ALLOWLIST, and this file is the ratchet that keeps it
+// one. The invariant it protects is the exact shape ruling 1 exists for: re-adding
+// `{ action: "*", resource: "*", effect: "allow" }` to `plugin/agent.ts` compiles, typechecks and
+// passes every other suite in the tree, while quietly restoring a baseline that answers ALLOW for
+// every gate nobody wrote a later rule for.
+//
+// ⚠️ It reads the REAL agents the plugin builds, never a hand-copied fixture. Four files in this
+// repo carried their own literal of the old baseline; a fixture cannot notice that the thing it
+// mirrors has changed, which is why the check that matters runs the plugin.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const it = testEffect(AppNodeBuilder.build(AgentV2.node))
+
+/** Build every built-in agent exactly as an instance does, and hand back their rulesets by id. */
+const builtinAgents = Effect.gen(function* () {
+  const agent = yield* AgentV2.Service
+  yield* AgentPlugin.Plugin.effect(host({ agent: agentHost(agent) })).pipe(
+    Effect.provideService(
+      Location.Service,
+      Location.Service.of(location({ directory: AbsolutePath.make("/project") })),
+    ),
+  )
+  return new Map((yield* agent.all()).map((item) => [String(item.id), item.permissions as PermissionV2.Ruleset]))
+})
+
+/**
+ * The evaluator's own composition for the DEFAULT posture, reproduced in the order
+ * `permission.ts`'s `evaluateInput` builds it: the live read baseline, then the agent's configured
+ * rules, then the resolved mode's overlay. Attended + non-paranoid + no Tuning switches, so the
+ * stance and feature arms are empty — the case a fresh install runs in.
+ */
+const effectFor = (agentRules: PermissionV2.Ruleset, action: string, resource = "src/x.ts") =>
+  PermissionV2.evaluate(action, resource, [
+    { action: "external_directory_read", resource: "*", effect: "allow" },
+    ...agentRules,
+    ...MODE_RULES[EFFECTIVE_CONFIG_DEFAULTS.permissionMode],
+  ]).effect
+
+describe("AMBIENT_SAFE_BASELINE — the compiled floor (B4c)", () => {
+  test("membership is an explicit ledger — changing it is an edit here, never a side effect", () => {
+    // A MEMBERSHIP ledger, not a shrink-only one: this list may legitimately need to grow (a future
+    // ambient-safe action) or shrink (one of these turns out to egress), and both directions must
+    // be a deliberate edit rather than something a refactor can do quietly. Every entry has to pass
+    // the three tests written above the constant: cannot mutate the host, cannot egress, cannot
+    // change what a later turn or session runs.
+    expect(PermissionV2.AMBIENT_SAFE_BASELINE.map((rule) => rule.action)).toEqual(["read", "explore", "todowrite"])
+    // Every rule is an unconditional allow on `*` — the floor is a floor, not a pattern game.
+    expect(PermissionV2.AMBIENT_SAFE_BASELINE.every((rule) => rule.resource === "*" && rule.effect === "allow")).toBe(
+      true,
+    )
+    // ...and the floor itself is not the thing it replaced.
+    expect(PermissionV2.catchAllAllowRules(PermissionV2.AMBIENT_SAFE_BASELINE)).toEqual([])
+  })
+
+  test("NEGATIVE CONTROL: `catchAllAllowRules` actually recognises the shape it is hunting", () => {
+    // A predicate that never matches would make every assertion below vacuously green.
+    const withCatchAll: PermissionV2.Ruleset = [
+      ...PermissionV2.AMBIENT_SAFE_BASELINE,
+      { action: "*", resource: "*", effect: "allow" },
+    ]
+    expect(PermissionV2.catchAllAllowRules(withCatchAll)).toEqual([{ action: "*", resource: "*", effect: "allow" }])
+    // ...and it is narrow: a catch-all DENY and a wildcard-action allow scoped to one resource are
+    // both legitimate and must not trip it (`missingAgentPermissions`, and the salvage backstop in
+    // `settings-config-seed.ts`, are exactly those two shapes).
+    expect(
+      PermissionV2.catchAllAllowRules([
+        { action: "*", resource: "*", effect: "deny" },
+        { action: "*", resource: "*", effect: "ask" },
+        { action: "*", resource: "src/*", effect: "allow" },
+      ]),
+    ).toEqual([])
+  })
+})
+
+describe("the built-in agents the plugin actually builds", () => {
+  it.effect("NO built-in agent's ruleset contains a catch-all allow", () =>
+    Effect.gen(function* () {
+      const agents = yield* builtinAgents
+      // The full set, asserted by name so a NEW built-in agent cannot join without being looked at.
+      expect([...agents.keys()].sort()).toEqual([
+        "build",
+        "compaction",
+        "explore",
+        "general",
+        "plan",
+        "summary",
+        "title",
+      ])
+      for (const [id, rules] of agents) {
+        expect({ id, catchAll: PermissionV2.catchAllAllowRules(rules) }).toEqual({ id, catchAll: [] })
+      }
+    }),
+  )
+
+  it.effect("the ambient-safe floor is present and effective on the default agent", () =>
+    Effect.gen(function* () {
+      const build = (yield* builtinAgents).get("build")!
+      for (const action of ["read", "explore", "todowrite"]) expect(effectFor(build, action)).toBe("allow")
+      // The `.env` refinements still sit AFTER the floor, so the floor did not hand them back.
+      expect(effectFor(build, "read", "packages/core/.env")).toBe("ask")
+      expect(effectFor(build, "read", ".env.local")).toBe("ask")
+      expect(effectFor(build, "read", ".env.example")).toBe("allow")
+    }),
+  )
+
+  it.effect("a DEFAULT install is unchanged for the mutation/exec cluster — the mode grants it now", () =>
+    Effect.gen(function* () {
+      const build = (yield* builtinAgents).get("build")!
+      // These five are absent from the floor on purpose: `MODE_RULES.bypass` (the shipped default
+      // mode) allows them, so inverting the baseline did not make a fresh install ask about edits.
+      for (const action of ["edit", "write", "create", "trash", "bash"]) expect(effectFor(build, action)).toBe("allow")
+      // ...and the posture is now load-bearing rather than decorative: under Analyze the same
+      // actions are refused, which was already true, and under Ask they are consent-gated.
+      const under = (mode: keyof typeof MODE_RULES, action: string) =>
+        PermissionV2.evaluate(action, "src/x.ts", [...build, ...MODE_RULES[mode]]).effect
+      expect(under("plan", "edit")).toBe("deny")
+      expect(under("ask", "edit")).toBe("ask")
+    }),
+  )
+
+  it.effect("every gate the catch-all used to grant itself now ASKS on the default agent", () =>
+    Effect.gen(function* () {
+      const build = (yield* builtinAgents).get("build")!
+      // The list the v0.2.0 ledger names, plus the two shapes no compiled rule can ever mention:
+      // an MCP tool (its action IS the remote tool's name) and an ad-hoc tool a model invents at
+      // runtime via `tool/define-tool.ts`. Those two are why growing `MODE_RULES` could not fix it.
+      const wasSilentlyAllowed = [
+        "js",
+        "spawn",
+        "kb",
+        "skill",
+        "webfetch",
+        "revert",
+        "provision",
+        "define_tool",
+        "register-app",
+        "messenger.send",
+        "messenger.connect",
+        "messenger.moderate",
+        "mcp_github_create_issue",
+        "my_deploy_tool",
+      ]
+      for (const action of wasSilentlyAllowed)
+        expect({ action, effect: effectFor(build, action) }).toEqual({
+          action,
+          effect: "ask",
+        })
+    }),
+  )
+
+  it.effect("NEGATIVE CONTROL: put the catch-all back and those gates silently allow again", () =>
+    Effect.gen(function* () {
+      // The assertion above measures the BASELINE and nothing else — restore the one rule B4c
+      // removed, in the position it used to hold, and every gate reverts to granting itself. This
+      // is the regression the check at the top of this describe block is there to catch.
+      const build = (yield* builtinAgents).get("build")!
+      const preB4c: PermissionV2.Ruleset = [{ action: "*", resource: "*", effect: "allow" }, ...build]
+      for (const action of ["js", "spawn", "skill", "webfetch", "define_tool", "messenger.send", "my_deploy_tool"])
+        expect({ action, effect: effectFor(preB4c, action) }).toEqual({ action, effect: "allow" })
+      expect(PermissionV2.catchAllAllowRules(preB4c)).toHaveLength(1)
+    }),
+  )
+
+  it.effect("a mode overlay is now a BOUNDARY for the ad-hoc tool it can never name", () =>
+    Effect.gen(function* () {
+      // The counterpart of the retired "ad-hoc-tool hole" test in `src/permission-modes.test.ts`.
+      // `MODE_RULES` still enumerates literal action names and still cannot mention a tool the model
+      // invented at runtime — but it no longer has to, because the thing that used to answer for
+      // that name (the catch-all) is gone and the fall-through is `ask` in every mode.
+      const build = (yield* builtinAgents).get("build")!
+      for (const mode of ["plan", "ask", "surgical", "bypass"] as const)
+        expect({
+          mode,
+          effect: PermissionV2.evaluate("my_deploy_tool", "anything", [...build, ...MODE_RULES[mode]]).effect,
+        }).toEqual({ mode, effect: "ask" })
+      // `yolo` is the ONE deliberate way out and stays one — it is the documented "everything"
+      // posture, and its overlay still names only the classes it names, so an ad-hoc tool asks
+      // there too. Recorded rather than asserted as a guarantee: if yolo ever grows a catch-all,
+      // that is a decision, and this line is where the next reader meets it.
+      expect(PermissionV2.evaluate("my_deploy_tool", "anything", [...build, ...MODE_RULES.yolo]).effect).toBe("ask")
+    }),
+  )
+
+  it.effect("the subagents' own denies still outrank the floor (order was not disturbed)", () =>
+    Effect.gen(function* () {
+      const agents = yield* builtinAgents
+      // `general` denies todowrite explicitly, AFTER the floor grants it.
+      expect(effectFor(agents.get("general")!, "todowrite")).toBe("deny")
+      // The three hidden single-purpose agents end in a catch-all DENY, so the floor reaches
+      // nothing there — the same as before B4c, and the reason `catchAllAllowRules` must not
+      // confuse a deny for an allow.
+      for (const id of ["compaction", "title", "summary"])
+        expect({ id, read: effectFor(agents.get(id)!, "read") }).toEqual({ id, read: "deny" })
+    }),
+  )
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// THE `explore` SUBAGENT COULD NOT SEARCH — a shadowing bug that predates B4c and survived it.
+//
+// `explore` is the one built-in whose ruleset opens a catch-all DENY and then grants back what it
+// needs. `evaluate` is findLast, so anything `defaults` contributes — including
+// `AMBIENT_SAFE_BASELINE`'s `explore` allow — is shadowed by that deny, and `tool/glob.ts` /
+// `tool/grep.ts` assert `explore`. So the read-only search agent was refused at its only job. The old
+// catch-all ALLOW sat in the same shadowed position, so this was live before B4c as well.
+//
+// The fix is a grant, not a reordering, and it needs BOTH names to stay: `explore` for the execution
+// assert, `grep`/`glob` for `ToolRegistry.materialize`'s horizon filter, which resolves the name a
+// tool is REGISTERED under. This block pins both halves, so neither can be deleted as redundant.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("the explore subagent can actually glob and grep", () => {
+  /**
+   * `whollyDisabled` from `registry.ts`, replicated exactly (it is a module-private function there).
+   * This is the predicate that decides whether a tool appears in the model's horizon at all, and it
+   * is NOT the same question `evaluate` answers — it asks only whether the LAST rule matching the
+   * action is a catch-all deny. Same replication-with-a-note shape `src/permission-modes.test.ts`
+   * uses for the evaluator's private `denied()`.
+   */
+  const withdrawn = (rules: PermissionV2.Ruleset, action: string) => {
+    const rule = rules.findLast((one) => Wildcard.match(action, one.action))
+    return rule?.resource === "*" && rule.effect === "deny"
+  }
+
+  /**
+   * The evaluator's HARD arm — `denied(input, configuredRules)` in `permission.ts` — which reads the
+   * agent's own rules IN ISOLATION, before any mode overlay, so a configured deny cannot be softened.
+   *
+   * ⚠️ It is the right instrument here and `effectFor` above is not, which is worth stating because
+   * the mistake is easy: `effectFor` composes `MODE_RULES[bypass]` last, and bypass ALLOWS
+   * edit/write/create/trash/bash on `*` — so asking it whether this agent denies `bash` answers
+   * "allow" while the shipped evaluator answers "deny". (Measured, not reasoned: that assertion was
+   * written with `effectFor` first and went red.) The error direction is safe — it under-reports a
+   * deny, so such a test fails rather than passing falsely — but a deny belongs where the evaluator
+   * decides it.
+   */
+  const configuredDenies = (rules: PermissionV2.Ruleset, action: string, resource = "src/x.ts") =>
+    PermissionV2.evaluate(action, resource, rules).effect === "deny"
+
+  it.effect("EXECUTION: the `explore` action the two tools assert resolves to allow", () =>
+    Effect.gen(function* () {
+      const explore = (yield* builtinAgents).get("explore")!
+      expect(effectFor(explore, "explore")).toBe("allow")
+      // ...and its other grants are unharmed by the added rule.
+      for (const action of ["read", "webfetch", "websearch"]) expect(effectFor(explore, action)).toBe("allow")
+      // ...while the catch-all deny still does its job for everything else — asserted on the HARD
+      // arm, which is where a configured deny is actually decided (see `configuredDenies`).
+      for (const action of ["bash", "js", "edit", "write", "spawn", "todowrite"])
+        expect({ action, denied: configuredDenies(explore, action) }).toEqual({ action, denied: true })
+    }),
+  )
+
+  it.effect("NEGATIVE CONTROL: drop the `explore` grant and the subagent is denied at its only job", () =>
+    Effect.gen(function* () {
+      // The file as it shipped: `grep`/`glob` granted, `explore` not — so the horizon advertised both
+      // tools and every call they made was refused. Proves the assertion above measures the added
+      // rule and not the ambient floor, which is present in both versions and shadowed in both.
+      const explore = (yield* builtinAgents).get("explore")!
+      const preFix = explore.filter((rule) => rule.action !== "explore")
+      expect(effectFor(preFix, "explore")).toBe("deny")
+      // ...and the tools were still ADVERTISED while that was true, which is why it read as a
+      // mystery failure rather than as a missing capability.
+      for (const action of ["glob", "grep"]) expect(withdrawn(preFix, action)).toBe(false)
+    }),
+  )
+
+  it.effect("HORIZON: the `grep`/`glob` grants are load-bearing too, and deleting them hides the tools", () =>
+    Effect.gen(function* () {
+      const explore = (yield* builtinAgents).get("explore")!
+      for (const action of ["glob", "grep"]) expect(withdrawn(explore, action)).toBe(false)
+      // Remove them — the "just delete the dead grants" reading of the fix — and `whollyDisabled`
+      // reads the catch-all deny instead, withdrawing both tools from the model's tool list.
+      const withoutNames = explore.filter((rule) => rule.action !== "grep" && rule.action !== "glob")
+      for (const action of ["glob", "grep"]) expect(withdrawn(withoutNames, action)).toBe(true)
+      // The replicated predicate is not vacuous: `read` is granted by name, so it is never withdrawn.
+      expect(withdrawn(explore, "read")).toBe(false)
+    }),
+  )
+
+  it.effect("the `.env` refinements survive the subagent's own broad `read` allow", () =>
+    Effect.gen(function* () {
+      // Found alongside the bug above and the same shape: `explore` adds `{ read, *, allow }` AFTER
+      // `defaults`, so the `.env` asks inside `defaults` were shadowed and the read-only search agent
+      // could read secrets the default agent asks about. They are re-appended last.
+      const explore = (yield* builtinAgents).get("explore")!
+      expect(effectFor(explore, "read", "packages/core/.env")).toBe("ask")
+      expect(effectFor(explore, "read", ".env.local")).toBe("ask")
+      expect(effectFor(explore, "read", ".env.example")).toBe("allow")
+      expect(effectFor(explore, "read", "src/x.ts")).toBe("allow")
+    }),
+  )
+
+  it.effect("NEGATIVE CONTROL: strip the re-appended refinements and `.env` is handed back", () =>
+    Effect.gen(function* () {
+      const explore = (yield* builtinAgents).get("explore")!
+      // Keep only the FIRST occurrence of each refinement — i.e. the copy inside `defaults`, which is
+      // where they sat when the bug was live — and the broad `read` allow shadows them again.
+      const seen = new Set<string>()
+      const preFix = explore.filter((rule) => {
+        if (!rule.resource.includes(".env")) return true
+        const key = `${rule.action} ${rule.resource}`
+        if (seen.has(key)) return false
+        seen.add(key)
+        return true
+      })
+      expect(effectFor(preFix, "read", "packages/core/.env")).toBe("allow")
+      expect(effectFor(preFix, "read", ".env.local")).toBe("allow")
+    }),
+  )
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// …and the OTHER half of that grant, which lives in files this one cannot see.
+//
+// "The explore agent must grant `explore`" is only true while `tool/glob.ts` and `tool/grep.ts` keep
+// asserting `explore`, and "it must ALSO grant `grep`/`glob`" is only true while neither remaps its
+// horizon action. Both are claims about other files that compile green the moment they stop holding —
+// ruling 1's defect class exactly — and a rename in either tool would silently re-break the subagent
+// while every assertion above stayed green on a grant nobody spends.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("glob and grep still assert `explore`, and still advertise their own names", () => {
+  // CODE ONLY: both files EXPLAIN the shared action at length, and a guard that read prose would be
+  // satisfied by the comment describing the very rule it is meant to pin.
+  const stripComments = (source: string): string =>
+    source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/(^|[^:])\/\/[^\n]*/g, "$1")
+  const read = (file: string) =>
+    stripComments(fs.readFileSync(nodePath.join(import.meta.dir, "..", "src", "tool", file), "utf8"))
+
+  const ASSERTS_EXPLORE = /action:\s*"explore"/
+  /** A remap would move the horizon action off the registered name — see the ledger in
+   *  `test/tool-permission-identity.test.ts`. Neither file may grow one without this going red. */
+  const REMAPS = /withPermission\(/
+
+  test.each([
+    ["glob.ts", "glob"],
+    ["grep.ts", "grep"],
+  ])("%s asserts `explore` and registers as `%s` with no remap", (file, name) => {
+    const source = read(file)
+    expect(source).toMatch(ASSERTS_EXPLORE)
+    expect(source).toMatch(new RegExp(`export const name = "${name}"`))
+    expect(source).not.toMatch(REMAPS)
+  })
+
+  test("NEGATIVE CONTROL: a tool that asserted its own name would fail the first check", () => {
+    const renamed = `export const name = "glob"\nyield* permission.assert({ action: "glob", resources: [p] })\n`
+    expect(renamed).not.toMatch(ASSERTS_EXPLORE)
+    // ...and talking about the action is not asserting it.
+    expect(stripComments(`// 1I: glob + grep share the action: "explore" grant class\n`)).not.toMatch(ASSERTS_EXPLORE)
+  })
+})

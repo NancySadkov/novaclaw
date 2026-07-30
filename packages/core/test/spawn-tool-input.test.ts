@@ -47,9 +47,16 @@ import { tmpdir } from "./fixture/tmpdir"
 
 const PROMPT = "do the delegated sub-task"
 
-/** The production agent baseline, reproduced: `plugin/agent.ts` opens its defaults with this rule.
- *  A bare test graph has no agents at all, and `configured` maps a missing agent onto deny-all — so
- *  a test that did NOT set this would be measuring "no agent", not "the shipped default". */
+/**
+ * A deliberately PERMISSIVE fixture, so the tests below measure input plumbing rather than consent.
+ * A bare test graph has no agents at all, and `configured` maps a missing agent onto deny-all — so a
+ * test that did NOT set this would be measuring "no agent" and every `settleSpawn` would fail.
+ *
+ * ⚠️ It is no longer a reproduction of the shipped baseline, and the comment that said it was is
+ * gone. v0.2.0 B4c replaced `plugin/agent.ts`'s opening catch-all with an ambient-safe allowlist
+ * (`PermissionV2.AMBIENT_SAFE_BASELINE`), which does NOT contain `spawn` — see the may-spawn gate
+ * block at the bottom of this file, which measures the real baseline instead of this fixture.
+ */
 const ALLOW_ALL: PermissionV2.Ruleset = [{ action: "*", resource: "*", effect: "allow" }]
 
 /** Stands in for `runner/llm.ts`, which a unit test can never execute. Nothing here depends on the
@@ -283,19 +290,37 @@ describe("a spawned child can never come back LESS restricted than its parent", 
 })
 
 describe("the may-spawn gate", () => {
-  it.live("is INERT on a default install — the allow-all baseline grants it (deliberate, pinned)", () =>
+  it.live("is LIVE on a default install: B4c took the baseline's catch-all away, so spawn ASKS", () =>
     Effect.gen(function* () {
+      // ⚠️ This test used to assert the opposite — "INERT on a default install", deliberately
+      // pinned green — and `tool/spawn.ts` said in so many words that whoever landed v0.2.0 B4c had
+      // to come back here and decide on purpose. The decision: **`spawn` is not ambient-safe.** It
+      // creates a session that carries capability of its own, which fails the "cannot change what a
+      // later turn runs" test above `AMBIENT_SAFE_BASELINE`, and ruling 4's *unclassified ⇒
+      // privileged* settles the remainder. So it is absent from the baseline and consent-gated.
+      //
+      // ⚠️ Asserted on the RULESET rather than by driving the tool, on purpose: an `ask` parks a
+      // card, and a test with nobody to answer it would block until the per-test timeout — the
+      // exact hang the deny-fast stance exists to describe. The full-stack half is the two tests
+      // below (a real deny reaches the model; the permissive fixture still spawns).
+      expect(
+        PermissionV2.evaluate("spawn", "general", [
+          ...PermissionV2.AMBIENT_SAFE_BASELINE,
+          ...MODE_RULES[EFFECTIVE_CONFIG_DEFAULTS.permissionMode],
+        ]).effect,
+      ).toBe("ask")
+      // NEGATIVE CONTROL: the one line B4c removed, put back — the gate grants itself again, which
+      // is what "INERT" meant and why the inversion was the prerequisite rather than the polish.
+      expect(
+        PermissionV2.evaluate("spawn", "general", [
+          { action: "*", resource: "*", effect: "allow" },
+          ...PermissionV2.AMBIENT_SAFE_BASELINE,
+        ]).effect,
+      ).toBe("allow")
+
+      // And the plumbing still works once spawning IS granted (the permissive fixture, above).
       const { location, parent } = yield* parentSession()
-
       const settlement = yield* settleSpawn(location, parent.id, { prompt: PROMPT })
-
-      // This is the `messenger.initiate` problem, and it is recorded rather than papered over: with
-      // the agent baseline opening `* -> allow`, a `permission.assert` resolves to ALLOW, so the
-      // gate grants itself. It is added anyway because (a) `spawn` was ALREADY a permission action
-      // via `Tool.permission`'s name fallback — see the horizon test below, which passes with or
-      // without the assert — and (b) spawn's real bound is the seam's fork-bomb quota, not this.
-      // When B4c inverts the baseline to an explicit allowlist this test fails, and whoever lands
-      // B4c has to come back to `tool/spawn.ts` and decide on purpose.
       expect(settlement.result.type).not.toBe("error")
       expect(yield* childOf(parent.id)).toBeDefined()
     }),

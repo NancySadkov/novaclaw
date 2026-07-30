@@ -737,10 +737,15 @@ describe("PermissionV2 — the surgical / ask switches", () => {
 })
 
 describe("PermissionV2 — unattended confinement stance", () => {
-  // The real build agent's baseline (plugin/agent.ts): allow-all in-project, external WRITE asks. There is
+  // A deliberately permissive stand-in, so these tests measure the CONFINEMENT STANCE and not the
+  // baseline: the stance is checked in its own hard arm before any allow is consulted, so an
+  // allow-everything ruleset is the strongest possible thing for it to have to override. There is
   // deliberately no blanket external_directory_read rule here — that default is decided live by the
   // evaluator from the `paranoid` setting, precisely so a rule like the write one below can still override
   // it per path.
+  // ⚠️ This is NO LONGER the real build agent's baseline. v0.2.0 B4c replaced `plugin/agent.ts`'s
+  // opening catch-all with `PermissionV2.AMBIENT_SAFE_BASELINE`; what the shipped baseline resolves to
+  // is pinned in `test/permission-baseline.test.ts` against the agents the plugin actually builds.
   const buildAgentRules: PermissionV2.Ruleset = [
     { action: "*", resource: "*", effect: "allow" },
     { action: "external_directory_write", resource: "*", effect: "ask" },
@@ -1059,6 +1064,222 @@ describe("PermissionV2 — unattended confinement stance", () => {
         .pipe(Effect.flip)
       expect(error).toBeInstanceOf(PermissionV2.DeniedError)
       expect((error as PermissionV2.DeniedError).reason).toBeUndefined()
+    }),
+  )
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AN ASK NOBODY CAN ANSWER IS A HANG, NOT A GATE — the consequence v0.2.0 B4c opened, closed.
+//
+// B4c replaced the agent baseline's catch-all `{*,*,allow}` with `AMBIENT_SAFE_BASELINE`, so every
+// action nobody named — `webfetch`, `websearch`, `js`, `spawn`, `skill`, `kb`, `revert`,
+// `provision`, `define_tool`, `register-app`, `messenger.*`, every MCP tool and every ad-hoc tool a
+// model invents at runtime — now reaches `evaluate`'s `ask` default. Attended, that is the point.
+// UNATTENDED, an ask parks on a card nobody will ever answer, and `pending` is an in-memory
+// location-scoped Map, so it does not even survive a restart: the run looks alive and does nothing.
+//
+// The stance's own doctrine rules on it, so `evaluateInput`'s LAST arm refuses immediately instead,
+// with its own reason. These tests measure it against the REAL post-B4c baseline — read from the
+// shipped constant, never copied — because the whole behaviour only exists as a consequence of that
+// list being short.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("PermissionV2 — an unattended ask denies FAST", () => {
+  // The shipped floor plus the one external ask `plugin/agent.ts` adds. Driven from the constant so
+  // that promoting an action INTO the baseline moves these tests with it instead of stranding them.
+  const b4cBaseline: PermissionV2.Ruleset = [
+    ...PermissionV2.AMBIENT_SAFE_BASELINE,
+    { action: "external_directory_write", resource: "*", effect: "ask" },
+  ]
+  /** A fall-through action: named by no compiled rule, so the honest verdict is `ask`. */
+  const gated = (input: Partial<PermissionV2.AssertInput> = {}) =>
+    assertion({ action: "webfetch", resources: ["https://example.com/x"], save: ["*"], ...input })
+
+  /**
+   * The verdict, then the reason — and the ORDER is load-bearing, not style.
+   *
+   * `assert` on an `ask` verdict parks on a Deferred nobody completes, and under `it.effect`'s
+   * TestClock bun's per-test timeout cannot cancel that: the suite WEDGES instead of failing.
+   * Measured while negative-controlling this very block — the first test failed in 23 ms and the run
+   * then hung until it was killed by tree. So `ask` (which queues nothing and returns immediately)
+   * checks the verdict first and throws on a regression, and `assert` — the path every tool takes —
+   * is only reached once the verdict is known to be `deny`. Same rule the attachment-protection test
+   * above records for the same reason.
+   */
+  const denialFor = (service: PermissionV2.Interface, input: PermissionV2.AssertInput) =>
+    Effect.gen(function* () {
+      expect(yield* service.ask(input)).toMatchObject({ effect: "deny" })
+      const error = yield* service.assert(input).pipe(Effect.flip)
+      expect(error).toBeInstanceOf(PermissionV2.DeniedError)
+      expect(yield* service.list()).toEqual([]) // deny-fast: nothing parked for a human
+      return error as PermissionV2.DeniedError
+    })
+
+  it.effect("a fall-through action is DENIED with a named reason for an unattended root — nothing parked", () =>
+    Effect.gen(function* () {
+      yield* setup(b4cBaseline)
+      yield* insertSession({ id: "ses_cron", type: "goal-oriented", permissionMode: "bypass" })
+      const service = yield* PermissionV2.Service
+      const error = yield* denialFor(service, gated({ sessionID: SessionV2.ID.make("ses_cron") }))
+      expect(error.reason).toBe("unattended-unanswerable")
+
+      // What the model actually reads. It must NAME the action (an empty ruleset would make this
+      // "unknown" — the false description ruling 2 forbids), say the waiting is pointless, and say
+      // what a grant would take. It must NOT tell an unattended run to ask a user.
+      const message = PermissionV2.denialMessage(error)!
+      expect(message).toContain("webfetch")
+      expect(message).toContain("https://example.com/x") // WHICH url, not just which verb
+      expect(message).toContain("UNATTENDED")
+      expect(message).toContain("will change nothing")
+      expect(message).toContain('approved once with "always" in an attended chat')
+      expect(message).not.toContain("ask the user")
+      // The failure mode the synthetic rules exist to prevent: with an EMPTY ruleset —
+      // and a fall-through action has no compiled rule by definition — `denialMessage`
+      // reports both the action and the resource as "unknown".
+      expect(message).not.toContain("unknown")
+    }),
+  )
+
+  it.effect("NEGATIVE CONTROL: the identical request on an INTERACTIVE root still ASKS", () =>
+    Effect.gen(function* () {
+      // Without this the deny above could be coming from the baseline, from the mode, or from a
+      // guard that refuses `webfetch` outright. The ONLY difference here is the root's type.
+      yield* setup(b4cBaseline)
+      yield* insertSession({ id: "ses_chat", type: "interactive", permissionMode: "bypass" })
+      const service = yield* PermissionV2.Service
+      expect(yield* service.ask(gated({ sessionID: SessionV2.ID.make("ses_chat") }))).toMatchObject({ effect: "ask" })
+      expect(yield* service.get(PermissionV2.ID.create("per_test"))).toBeDefined()
+    }),
+  )
+
+  it.effect("the ad-hoc tool name no overlay can mention is refused the same way", () =>
+    Effect.gen(function* () {
+      // The shape that made growing `MODE_RULES` impossible: `tool/define-tool.ts` asserts under a
+      // name the MODEL chose at runtime. It is exactly the case this arm has to cover, because no
+      // rule written in advance can ever name it.
+      yield* setup(b4cBaseline)
+      yield* insertSession({ id: "ses_cron", type: "auto-prompting", permissionMode: "bypass" })
+      const service = yield* PermissionV2.Service
+      const error = yield* denialFor(
+        service,
+        gated({ sessionID: SessionV2.ID.make("ses_cron"), action: "my_deploy_tool", resources: ["anything"] }),
+      )
+      expect(error.reason).toBe("unattended-unanswerable")
+      expect(PermissionV2.denialMessage(error)!).toContain("my_deploy_tool")
+    }),
+  )
+
+  it.effect("an UNREADABLE chain gets the honestly-attributed twin, not the unattended claim", () =>
+    Effect.gen(function* () {
+      // Ruling 2 in both directions: we did not establish that this run is unattended, we failed to
+      // read the chain that would have said. Telling the model "this is an UNATTENDED session" would
+      // be a claim about something we never checked, and it points the operator at the schedule
+      // instead of at the broken session records.
+      yield* setup(b4cBaseline)
+      yield* insertSession({ id: "ses_orphan", type: "sub-agent", permissionMode: "bypass", parentID: "ses_ghost" })
+      const service = yield* PermissionV2.Service
+      const error = yield* denialFor(service, gated({ sessionID: SessionV2.ID.make("ses_orphan") }))
+      expect(error.reason).toBe("unanswerable-chain-unreadable")
+
+      const message = PermissionV2.denialMessage(error)!
+      expect(message).toContain("webfetch")
+      expect(message).toContain("parent chain could not be read")
+      expect(message).toContain("no user reply can unblock it")
+      expect(message).not.toContain("this is an UNATTENDED session")
+      expect(message).not.toContain("ask the user")
+      // ...and it does NOT borrow the confinement pair's advice, which is about a path this action
+      // does not have. That wording is why these are separate reasons rather than a reuse.
+      expect(message).not.toContain("inside this session's folder")
+    }),
+  )
+
+  it.effect("NEGATIVE CONTROL: give the orphan its parent back and the reason becomes the unattended one", () =>
+    Effect.gen(function* () {
+      // Same row, same request — the only difference is that the root now exists and says
+      // `goal-oriented`. Without this the twin above could be any deny with a different label.
+      yield* setup(b4cBaseline)
+      yield* insertSession({ id: "ses_ghost", type: "goal-oriented", permissionMode: "bypass" })
+      yield* insertSession({ id: "ses_orphan", type: "sub-agent", permissionMode: "bypass", parentID: "ses_ghost" })
+      const service = yield* PermissionV2.Service
+      const error = yield* denialFor(service, gated({ sessionID: SessionV2.ID.make("ses_orphan") }))
+      expect(error.reason).toBe("unattended-unanswerable")
+    }),
+  )
+
+  it.effect("a saved allow-always DOES unblock it — the escape hatch the denial text promises", () =>
+    Effect.gen(function* () {
+      // The denial tells the model a grant made in advance is what would change things. That has to
+      // be TRUE, or the refusal is a dead end wearing advice. This arm sits AFTER saved answers
+      // deliberately — unlike the confinement stance, which is a hard arm a saved grant cannot buy
+      // out of, because this one converts a fall-through rather than a classified boundary.
+      yield* setup(b4cBaseline)
+      yield* insertSession({ id: "ses_cron", type: "goal-oriented", permissionMode: "bypass" })
+      const saved = yield* PermissionSaved.Service
+      yield* saved.add({ origin: Project.ID.global, action: "webfetch", resources: ["*"] })
+      const service = yield* PermissionV2.Service
+      expect(yield* service.ask(gated({ sessionID: SessionV2.ID.make("ses_cron") }))).toMatchObject({
+        effect: "allow",
+      })
+    }),
+  )
+
+  it.effect("an agent-level allow DOES unblock it — the second path the denial text names", () =>
+    Effect.gen(function* () {
+      yield* setup([...b4cBaseline, { action: "webfetch", resource: "*", effect: "allow" }])
+      yield* insertSession({ id: "ses_cron", type: "goal-oriented", permissionMode: "bypass" })
+      const service = yield* PermissionV2.Service
+      expect(yield* service.ask(gated({ sessionID: SessionV2.ID.make("ses_cron") }))).toMatchObject({
+        effect: "allow",
+      })
+    }),
+  )
+
+  it.effect("it converts a VERDICT, never a grant: an unattended run's permitted work is untouched", () =>
+    Effect.gen(function* () {
+      // The blast-radius assertion. Everything an unattended `bypass` root could already do it can
+      // still do — the ambient-safe floor, and the mutation/exec cluster the mode grants. If this
+      // goes red the arm has become a blanket deny, which is a different (and much worse) change.
+      yield* setup(b4cBaseline)
+      yield* insertSession({ id: "ses_cron", type: "goal-oriented", permissionMode: "bypass" })
+      const service = yield* PermissionV2.Service
+      const sessionID = SessionV2.ID.make("ses_cron")
+      for (const rule of PermissionV2.AMBIENT_SAFE_BASELINE)
+        expect({
+          action: rule.action,
+          ...(yield* service.ask(assertion({ sessionID, action: rule.action, resources: ["src/a.ts"] }))),
+        }).toMatchObject({ action: rule.action, effect: "allow" })
+      for (const action of ["edit", "write", "create", "trash", "bash"])
+        expect({
+          action,
+          ...(yield* service.ask(assertion({ sessionID, action, resources: ["src/a.ts"] }))),
+        }).toMatchObject({ action, effect: "allow" })
+      // Reading outside the folder stays ordinary work unattended (the owner's 2026-07-25 call), so
+      // the read baseline's allow must not be reachable by this arm either.
+      expect(
+        yield* service.ask(
+          assertion({ sessionID, action: "external_directory_read", resources: ["C:/soft/w64devkit/*"] }),
+        ),
+      ).toMatchObject({ effect: "allow" })
+    }),
+  )
+
+  it.effect("`yolo` is NOT an exit from this arm — a mode cannot conjure an operator", () =>
+    Effect.gen(function* () {
+      // Recorded as a decision, not discovered later. `unattendedStanceRules` and the attachment arm
+      // both let `yolo` out, because both convert a GRANT into a refusal. This arm converts nothing:
+      // reaching it means the action was never granted in ANY mode — `MODE_RULES.yolo` names only the
+      // mutation cluster and the two external classes — so an unattended `yolo` root calling
+      // `webfetch` was hanging exactly like a `bypass` one. Exempting yolo would preserve the hang.
+      yield* setup(b4cBaseline)
+      yield* insertSession({ id: "ses_yolo", type: "goal-oriented", permissionMode: "yolo" })
+      const service = yield* PermissionV2.Service
+      const sessionID = SessionV2.ID.make("ses_yolo")
+      const error = yield* denialFor(service, gated({ sessionID }))
+      expect(error.reason).toBe("unattended-unanswerable")
+      // ...while everything yolo DOES grant is still granted — this is not yolo being narrowed.
+      for (const action of ["external_directory_read", "external_directory_write"])
+        expect(
+          yield* service.ask(assertion({ sessionID, action, resources: ["C:/elsewhere/*"], save: ["*"] })),
+        ).toMatchObject({ effect: "allow" })
     }),
   )
 })

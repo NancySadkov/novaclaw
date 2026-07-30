@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { DateTime, Deferred, Duration, Effect, Layer } from "effect"
+import { AgentV2 } from "@novaclaw/core/agent"
 import { Database } from "@novaclaw/core/database/database"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { makeLocationNode, Node } from "@novaclaw/core/effect/app-node"
@@ -174,6 +175,20 @@ describe("SessionSpawner.spawn — the child actually runs", () => {
       const session = yield* SessionV2.Service
       const locations = yield* LocationServiceMap.Service
       const parent = yield* session.create({ location })
+
+      // v0.2.0 B4c: `spawn` is no longer granted by a compiled catch-all, so it falls through to the
+      // evaluator's `ask` default. This test drives the REAL permission service under an ATTENDED
+      // root, so an ungranted `spawn` parks on a consent Deferred nobody answers and the test times
+      // out — which is the gate working, not a wake-seam regression. Grant exactly `spawn` (never
+      // ALLOW_ALL): this file's subject is the tool's message contract, and a blanket fixture would
+      // stop it noticing if `spawn` later needed a second permission.
+      yield* AgentV2.Service.use((agents) =>
+        agents.transform((editor) =>
+          editor.update(toolIdentity.agent, (agent) => {
+            agent.permissions = [{ action: "spawn", resource: "*", effect: "allow" }]
+          }),
+        ),
+      ).pipe(Effect.provide(locations.get(location)), Effect.orDie)
 
       const settlement = yield* ToolRegistry.Service.use((registry) =>
         settleTool(registry, {
