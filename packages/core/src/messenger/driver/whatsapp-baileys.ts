@@ -326,6 +326,10 @@ export const make = (factory: WAClientFactory): Driver => {
                   title: message.chatTitle,
                   // "Message Yourself" — the shared operator console (§0.1.5 address-prefix rule).
                   ...(message.chatID === me.id ? { self: true } : {}),
+                  // Ruling 7: WhatsApp has no world-readable conversation reachable this way — a
+                  // linked device sees DMs and groups, both correspondence. So the driver proposes
+                  // `private` for everything, which restricts and can never grant.
+                  proposedAccess: "private",
                 },
                 messageID: message.messageID,
                 sender: {

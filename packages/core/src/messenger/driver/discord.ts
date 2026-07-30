@@ -29,12 +29,34 @@ const CHANNEL_MEDIA = 16
 const THREAD_TYPES = new Set([10, 11, 12])
 const LISTABLE_TYPES = new Set([CHANNEL_TEXT, CHANNEL_ANNOUNCEMENT, CHANNEL_FORUM, CHANNEL_MEDIA])
 
+/**
+ * The chat's SHAPE. ⚠️ This used to answer a second question it had no business answering: an
+ * announcement channel mapped to `channel` while an ordinary text channel mapped to `group`, purely
+ * so a downstream privacy rule that admitted `channel` and excluded `group` would come out right.
+ * One kind was doing two jobs, and the result was that a studio's public `#news` TEXT channel was
+ * excluded by our own rule while an announcement channel inside a private company server was not.
+ * Privacy now lives in `proposeAccess` below (todo.md ruling 7), so this says only what it knows:
+ * a DM is a `dm`, a thread (a forum post is one) is a `thread`, and every guild channel — text,
+ * announcement, forum, media — is a `channel`.
+ */
 const chatKindOf = (type: number | undefined, dm: boolean): Messenger.ChatKind => {
   if (dm) return "dm"
   if (type !== undefined && THREAD_TYPES.has(type)) return "thread"
-  if (type === CHANNEL_ANNOUNCEMENT) return "channel"
-  return "group"
+  return "channel"
 }
+
+/**
+ * Discord's PROPOSAL about how public a chat is — and the honest answer is *almost always "no
+ * evidence"*.
+ *
+ * A DM is correspondence, so `private`. **Everything else is `unknown`, deliberately**, and the
+ * temptations to say otherwise are exactly the ones ruling 7 names: `guild_id !== undefined` is not
+ * publicity (a company's internal server has it set), and neither is `type === ANNOUNCEMENT` (a
+ * private server announces to its private members). Discord's REST surface does not tell a bot
+ * whether the guild it is in is open to the world, so the driver does not pretend it does — the
+ * user says, once, in Settings.
+ */
+const proposeAccess = (dm: boolean): Messenger.SourceAccess => (dm ? "private" : "unknown")
 
 const CAPS: Messenger.Capabilities = {
   listChats: "full", // guilds → text channels; DMs join via the seen-cache
@@ -176,6 +198,7 @@ export const toInbound = (
     kind: chatKindOf(channel?.type, dm),
     title: channel?.title ?? (dm ? authorName(message.author) : `#${message.channel_id}`),
     ...(channel?.parentID === undefined ? {} : { parentID: channel.parentID }),
+    proposedAccess: proposeAccess(dm),
   }
   const attachments: FileRef[] | undefined =
     message.attachments === undefined || message.attachments.length === 0
@@ -570,7 +593,12 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
                   type: channel.type,
                   ...(channel.parent_id == null ? {} : { parentID: channel.parent_id }),
                 })
-                out.push({ chatID: channel.id, kind, title: `#${channel.name} (${guild.name}${what})` })
+                out.push({
+                  chatID: channel.id,
+                  kind,
+                  title: `#${channel.name} (${guild.name}${what})`,
+                  proposedAccess: proposeAccess(false),
+                })
               }
             // Live threads (every open forum post is one). They route to their parent's binding,
             // but they're listed so an operator can bind or read a single conversation.
@@ -591,6 +619,7 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
                 kind: "thread",
                 title: `${thread.name} (${parent === undefined ? guild.name : `${parent} · ${guild.name}`})`,
                 ...(parentID === undefined ? {} : { parentID }),
+                proposedAccess: proposeAccess(false),
               })
             }
           }

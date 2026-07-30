@@ -198,7 +198,15 @@ describe("DiscordDriver", () => {
       expect(cursors.some((value) => DiscordDriver.readCursor(value)?.sessionID === "sess-9")).toBe(true)
       const [guildMsg, echo, dm] = received
       if (guildMsg?.kind === "message") {
-        expect(guildMsg.chat).toEqual({ chatID: "c-support", kind: "group", title: "#support" })
+        // ⭐ Ruling 7: a guild channel is a `channel` (its SHAPE) and proposes `unknown` (its
+        // PRIVACY) — a guild id is not evidence of publicity. Before the ruling this asserted
+        // `group`, a label chosen only to make a downstream privacy rule come out right.
+        expect(guildMsg.chat).toEqual({
+          chatID: "c-support",
+          kind: "channel",
+          title: "#support",
+          proposedAccess: "unknown",
+        })
         expect(guildMsg.sender.isSelf).toBe(false)
         expect(guildMsg.attachments?.[0]?.name).toBe("crash.txt")
       }
@@ -309,12 +317,21 @@ describe("DiscordDriver", () => {
           return yield* connection.listChats!()
         }),
       )
+      // ⚠️ `proposedAccess: "unknown"` on every guild row is the ruling-7 point, not noise: Discord
+      // genuinely cannot tell a bot whether the server it is in is open to the world, so the driver
+      // proposes nothing and the user decides. An announcement channel would say the same.
       expect(chats).toEqual([
-        { chatID: "c-support", kind: "group", title: "#support (NovaClaw HQ)" },
+        { chatID: "c-support", kind: "channel", title: "#support (NovaClaw HQ)", proposedAccess: "unknown" },
         // A forum is pickable and SAYS it's a forum — binding it covers every post inside.
-        { chatID: "c-bugs", kind: "group", title: "#bug-reports (NovaClaw HQ · forum)" },
+        { chatID: "c-bugs", kind: "channel", title: "#bug-reports (NovaClaw HQ · forum)", proposedAccess: "unknown" },
         // Each live post is a thread, listed under its forum, carrying the parent that routes it.
-        { chatID: "t-crash", kind: "thread", title: "Crash on save (#bug-reports · NovaClaw HQ)", parentID: "c-bugs" },
+        {
+          chatID: "t-crash",
+          kind: "thread",
+          title: "Crash on save (#bug-reports · NovaClaw HQ)",
+          parentID: "c-bugs",
+          proposedAccess: "unknown",
+        },
       ])
       expect(DiscordDriver.driver.meta.capabilities.listChats).toBe("full")
     }),
@@ -345,7 +362,13 @@ describe("DiscordDriver", () => {
       if (post?.kind !== "message") throw new Error("expected a message")
       // Without parentID the gateway could never match this to the forum's binding — every
       // support post would be silently unheard.
-      expect(post.chat).toEqual({ chatID: "t-crash", kind: "thread", title: "Crash on save", parentID: "c-bugs" })
+      expect(post.chat).toEqual({
+        chatID: "t-crash",
+        kind: "thread",
+        title: "Crash on save",
+        parentID: "c-bugs",
+        proposedAccess: "unknown",
+      })
     }),
   )
 

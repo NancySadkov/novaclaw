@@ -81,7 +81,9 @@ describe("EmailDriver pure helpers", () => {
       )
       expect(inbound.kind).toBe("message")
       if (inbound.kind !== "message") throw new Error("expected message")
-      expect(inbound.chat).toEqual({ chatID: "m1", kind: "thread", title: "Logo brief" })
+      // Ruling 7: mail is addressed to named recipients, never broadcast, so the driver proposes
+      // `private` — a proposal may always RESTRICT, and this one is as certain as they get.
+      expect(inbound.chat).toEqual({ chatID: "m1", kind: "thread", title: "Logo brief", proposedAccess: "private" })
       expect(inbound.sender).toEqual({ id: "client@acme.com", name: "Acme", isSelf: false })
       // The owner writing from another client is a born-paired operator.
       const own = EmailDriver.toInbound(

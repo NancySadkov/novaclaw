@@ -26,6 +26,14 @@ export const MessengerChatTable = sqliteTable(
     kind: text().$type<Messenger.ChatKind>().notNull(),
     title: text().notNull(),
     last_seen: integer().notNull(),
+    // ⭐ The SOURCE LABEL (todo.md ruling 7), stored as TWO columns because who said it is part of
+    // the fact. `proposed_access` is the driver's guess and is refreshed on every sighting;
+    // `declared_access` is the USER'S word and `seenChat` must NEVER touch it — a driver that could
+    // overwrite a declaration by reconnecting would be inferring the very thing the module's own law
+    // (this file's header, and schema/messenger.ts:14-16) says is chosen, never inferred.
+    // NULL on both is the honest pre-ruling-7 state of an existing row: no proposal, nobody asked.
+    proposed_access: text().$type<Messenger.SourceAccess>(),
+    declared_access: text().$type<Messenger.SourceAccess>(),
     ...Timestamps,
   },
   (table) => [primaryKey({ columns: [table.account_id, table.chat_id] })],

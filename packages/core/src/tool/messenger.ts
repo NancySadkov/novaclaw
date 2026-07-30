@@ -53,6 +53,15 @@ const HistoryOp = Schema.Struct({
     description: "Account id (msa_…) or label — omit when only one account exists",
   }),
   limit: Schema.Finite.pipe(Schema.optional).annotate({ description: "Max messages (default 50, cap 200)" }),
+  purpose: Schema.Literals(["correspondence", "research"])
+    .pipe(Schema.optional)
+    .annotate({
+      description:
+        "What this read is FOR. 'correspondence' (the default) = handling the user's own messages, and " +
+        "stays inside this conversation. 'research' = the content may be quoted or cited in something " +
+        "that leaves this chat — allowed ONLY for chats the user has marked as a public source, and " +
+        "refused with a reason otherwise. Say 'research' whenever you intend to cite it.",
+    }),
 })
 
 const SendOp = Schema.Struct({
@@ -243,8 +252,18 @@ const statusLine = (status: Messenger.AccountStatus): string => {
   }
 }
 
+/** The ruling-7 source label, rendered on the ONE line the model reads a chat from. It is a LABEL,
+ *  not a filter: the operator's own chats stay listed (reading your own mail is the product), and
+ *  what the label decides is whether the chat may be quoted OUTSIDE this conversation. */
+const accessTag = (access: Messenger.SourceLabel): string => {
+  const decision = Messenger.Source.resolve(access)
+  if (decision.access === "public") return "public source"
+  if (decision.access === "private") return "private — never cite"
+  return access.proposed === "public" ? "unconfirmed — not citable" : "unlabelled — not citable"
+}
+
 export const formatChats = (chats: ReadonlyArray<Messenger.ChatInfo>): string =>
-  chats.map((chat) => `${chat.chatID} · [${chat.kind}] ${oneLine(chat.title)}`).join("\n")
+  chats.map((chat) => `${chat.chatID} · [${chat.kind} · ${accessTag(chat.access)}] ${oneLine(chat.title)}`).join("\n")
 
 export const formatHistory = (messages: ReadonlyArray<{ senderName: string; outgoing: boolean; text?: string; at: number }>): string =>
   messages
@@ -368,9 +387,14 @@ export const layer = Layer.effectDiscard(
             'channel, then {"op":"history","chat":"<id>"} for the posts. This is the SANCTIONED route — the ' +
             "user's own account reading a public channel — not scraping, so prefer it over trying to fetch " +
             "the platform's website. Cite the channel and post date like any other source. " +
-            '⚠️ For RESEARCH read BROADCAST chats only: kind "channel", plus a "thread"/"topic" inside one. ' +
-            'A "dm", "group" or "mailbox" is the user\'s private correspondence — never pull it into research ' +
-            "output and never cite it as a source.",
+            '⚠️ For RESEARCH, pass purpose:"research" on `history` and read ONLY chats `chats` labels ' +
+            '"public source". The label is per chat and the user owns it, so the chat KIND tells you nothing ' +
+            "about it: a server text channel can be a public news feed or a company's private staff room. " +
+            '"private — never cite" is the user\'s correspondence and "unlabelled"/"unconfirmed" means nobody ' +
+            "has said yet — in all three cases you may still read the chat as correspondence when the user " +
+            "asked you to, but nothing from it may be quoted, summarized or cited outside this conversation. " +
+            "If you need one of those as a source, ask the user to mark it public in Settings → Messengers; " +
+            "you cannot mark it yourself, and that is deliberate.",
           input: Input,
           output: Output,
           toModelOutput: ({ output }) => [{ type: "text", text: modelText(output) }],
@@ -441,6 +465,10 @@ export const layer = Layer.effectDiscard(
                     accountID: resolved.account.id,
                     chatID: input.chat.trim(),
                     limit,
+                    // Ruling 7: the gateway's read seam decides, not this tool and not a later
+                    // filter over the model's output. Absent means correspondence — the shipped
+                    // behaviour, and the one that must never regress for the operator's own mail.
+                    ...(input.purpose === undefined ? {} : { purpose: input.purpose }),
                   })
                   if (!outcome.ok) return { outcome: "failed", message: outcome.reason } satisfies Output
                   if (outcome.messages.length === 0)

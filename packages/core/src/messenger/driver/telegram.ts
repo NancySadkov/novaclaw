@@ -93,6 +93,12 @@ export type FetchLike = (url: string, init?: RequestInit) => Promise<Response>
 const chatKind = (type: string): Messenger.ChatKind =>
   type === "private" ? "dm" : type === "channel" ? "channel" : "group"
 
+/** Telegram's PROPOSAL (ruling 7). A `private` chat is a DM, i.e. correspondence — the one thing the
+ *  Bot API states outright. A broadcast `channel` or a supergroup may be world-readable or strictly
+ *  invite-only and the update payload does not say which, so the honest proposal is `unknown`; a
+ *  `public` guess here would quietly authorise quoting a closed channel into a research report. */
+const proposeAccess = (type: string): Messenger.SourceAccess => (type === "private" ? "private" : "unknown")
+
 const chatTitle = (chat: typeof TgChat.Type): string =>
   chat.title ?? chat.username ?? chat.first_name ?? String(chat.id)
 
@@ -105,6 +111,7 @@ export const toInbound = (message: TgMessageType, selfID: number | undefined): I
     chatID: String(message.chat.id),
     kind: chatKind(message.chat.type),
     title: chatTitle(message.chat),
+    proposedAccess: proposeAccess(message.chat.type),
   }
   // A photo update carries every size — the LAST entry is the biggest (Bot API contract).
   const photo = message.photo?.at(-1)

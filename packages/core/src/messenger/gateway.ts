@@ -165,6 +165,41 @@ const ROUTE_UNREADABLE =
   "drives. Your message hasn't reached anyone — please send it again once the app says the " +
   "messenger is healthy."
 
+/** The chat table could not be read, so the ruling-7 gate has no label to consult. It refuses — and
+ *  says why under its own name rather than reporting the chat as private (ruling 2). */
+const SOURCE_UNREADABLE =
+  "I couldn't read this instance's chat table, so I can't tell whether that chat is a public source. " +
+  "I won't read it for research until I can — try again once the app says the messenger is healthy."
+
+/**
+ * Why a research read was refused, in words that name the ONE step that would unblock it.
+ *
+ * ⚠️ It branches on the resolved ACCESS first and on the authority second, and that order is the
+ * point rather than a style: a user who declared `unknown` has said *"I don't know"*, and calling
+ * that "private correspondence" would describe their answer as something they did not say (ruling 2
+ * — a fault, or a state, is never described falsely). Only two accesses can reach here, since
+ * `public` is what the caller asked for and got.
+ */
+const researchRefusal = (title: string, decision: Messenger.SourceDecision, proposed: Messenger.SourceAccess): string => {
+  const keepOut =
+    "Read it as correspondence if the user asked you to, but keep it out of anything that leaves this chat."
+  if (decision.access === "private")
+    return decision.by === "user"
+      ? `"${title}" is marked as private correspondence, so it can't be read as a research source or cited. ${keepOut}`
+      : `"${title}" is private correspondence (a direct message or mailbox), so it can't be read as a ` +
+          `research source or cited. ${keepOut}`
+  if (decision.by === "user")
+    return (
+      `"${title}" is marked as unclear — the user has looked at it and did not say it was public — so it ` +
+      `can't be cited as a source. ${keepOut}`
+    )
+  return (
+    `Nobody has said whether "${title}" is public, so it can't be cited as a source yet` +
+    (proposed === "public" ? " — the driver thinks it is public, but that's a guess, not the user's word" : "") +
+    `. Ask the user to mark it public in Settings → Messengers, or read it as correspondence. ${keepOut}`
+  )
+}
+
 export interface PairingCode {
   readonly code: string
   readonly expiresAt: number
@@ -195,11 +230,29 @@ export interface Interface {
   /** The account's chats: the live driver list where the capability exists (seeding the seen-cache —
    *  a conversation that EXISTS in the user's account is never a cold start), else the seen-cache. */
   readonly chats: (accountID: Messenger.AccountID) => Effect.Effect<ChatsOutcome>
-  /** Recent messages of one chat, chronological — the tool's conversation-fetching leg. */
+  /**
+   * Recent messages of one chat, chronological — the tool's conversation-fetching leg, **and the
+   * seam ruling 7 puts the source label on**.
+   *
+   * `purpose` says what the read is FOR, and it is the only thing that can say it — the chat cannot,
+   * because the same DM is legitimate to read as the operator's own mail and illegitimate to quote
+   * in a research report. `correspondence` (the default) is the shipped behaviour: the operator's
+   * account, read on the operator's behalf, any chat. `research` is content that will leave this
+   * conversation, and it is refused unless the chat's label RESOLVES to `public` — which, by
+   * `Source.resolve`, can only happen because the user said so.
+   *
+   * ⚠️ **Be honest about what this is.** It is a gate the caller must deliberately mis-declare to
+   * get around, not a containment against a model that lies about its own purpose; containment of
+   * hostile input is the binding's trust tier and the permission evaluator. What it buys is that the
+   * rule is now MECHANICAL and refusable at the point of read — ruling 7 rules out the alternative
+   * by name ("post-hoc filtering of the report"), because filtering afterwards means the private
+   * text was already in the model's context and the report is being edited rather than prevented.
+   */
   readonly history: (input: {
     readonly accountID: Messenger.AccountID
     readonly chatID: string
     readonly limit: number
+    readonly purpose?: "correspondence" | "research"
   }) => Effect.Effect<HistoryOutcome>
   /**
    * A proactive/tool-driven send, governed by the traffic rules (§2.3): paced at human speed and
@@ -838,6 +891,9 @@ const build = (options: Options) =>
           kind: event.chat.kind,
           title: event.chat.title,
           at: event.at,
+          // The driver's ruling-7 proposal rides in on every sighting; the user's declaration is
+          // untouched by this write (see `seenChat`), which is what keeps a proposal a proposal.
+          ...(event.chat.proposedAccess === undefined ? {} : { proposedAccess: event.chat.proposedAccess }),
         })
         yield* events.publish(Messenger.Event.ChatSeen, { accountID: account.id, chatID: event.chat.chatID }).pipe(Effect.ignore)
         // Index attachments for the tool's `download` op — for EVERY seen message (an audience
@@ -1290,19 +1346,54 @@ const build = (options: Options) =>
           const now = Date.now()
           for (const chat of listed) {
             yield* store
-              .seenChat({ accountID, chatID: chat.chatID, kind: chat.kind, title: chat.title, at: now })
+              .seenChat({
+                accountID,
+                chatID: chat.chatID,
+                kind: chat.kind,
+                title: chat.title,
+                at: now,
+                ...(chat.proposedAccess === undefined ? {} : { proposedAccess: chat.proposedAccess }),
+              })
               .pipe(Effect.ignore)
           }
+          // ⭐ Ruling 7 at the read seam: the LIVE list carries the driver's proposal, the cache
+          // carries the user's declaration, and the label the caller sees must be both. Taking the
+          // live snapshot alone would silently drop every declaration the user has made — the
+          // driver's guess would win by being fresher, which is the inference the ruling forbids.
+          const declared = new Map(cached.map((chat) => [chat.chatID, chat.access.declared]))
           return {
             ok: true,
-            chats: listed.map(
-              (chat) =>
-                new Messenger.ChatInfo({ accountID, chatID: chat.chatID, kind: chat.kind, title: chat.title, lastSeen: now }),
-            ),
+            chats: listed.map((chat) => {
+              const user = declared.get(chat.chatID)
+              return new Messenger.ChatInfo({
+                accountID,
+                chatID: chat.chatID,
+                kind: chat.kind,
+                title: chat.title,
+                lastSeen: now,
+                access: {
+                  proposed: chat.proposedAccess ?? "unknown",
+                  ...(user === undefined ? {} : { declared: user }),
+                },
+              })
+            }),
           } satisfies ChatsOutcome
         }),
       history: (input) =>
         Effect.gen(function* () {
+          // ⭐ RULING 7'S READ SEAM. The label is consulted BEFORE the driver is asked for a single
+          // message — not after, and never by filtering a report the model has already written.
+          if (input.purpose === "research") {
+            const labelled = yield* MessengerStore.attempted(store.getChat(input.accountID, input.chatID))
+            if (!labelled.read) return { ok: false, reason: SOURCE_UNREADABLE } satisfies HistoryOutcome
+            const chat = labelled.value
+            const decision = Messenger.Source.resolve(chat?.access)
+            if (decision.access !== "public")
+              return {
+                ok: false,
+                reason: researchRefusal(chat?.title ?? input.chatID, decision, chat?.access.proposed ?? "unknown"),
+              } satisfies HistoryOutcome
+          }
           const entry = entries.get(input.accountID)
           if (entry?.connection === undefined)
             return { ok: false, reason: "That messenger account isn't connected right now." } satisfies HistoryOutcome

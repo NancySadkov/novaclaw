@@ -76,6 +76,12 @@ export const classify = (error: unknown): UserClientError => {
 const peerKind = (peer: MtcutePeer): Messenger.ChatKind =>
   peer.type === "user" ? "dm" : peer.chatType === "channel" ? "channel" : "group"
 
+/** The user-account driver's PROPOSAL (ruling 7). A `user` peer is a DM — correspondence, so
+ *  `private`. A broadcast channel this account has JOINED says nothing about whether the world can
+ *  read it (private channels are joined by invite link and look identical here), so `unknown`. This
+ *  is the driver research actually reads through, which is exactly why it must not flatter itself. */
+const peerAccess = (peer: MtcutePeer): Messenger.SourceAccess => (peer.type === "user" ? "private" : "unknown")
+
 /** Downloadable media → a FileRef (the `fileId` string round-trips into downloadAsBuffer).
  *  Documents and photos only in v1 — the shapes the "client sends a brief, agent reads it" use
  *  case actually needs; anything else (polls, stickers, locations) is not a file. */
@@ -111,6 +117,7 @@ const toUserMessage = (message: MtcuteMessage): UserMessage => {
   return {
     chatID: String(message.chat.id),
     chatKind: peerKind(message.chat),
+    chatAccess: peerAccess(message.chat),
     chatTitle: message.chat.displayName,
     messageID: String(message.id),
     senderID: String(message.sender.id),
@@ -213,7 +220,12 @@ export const factory: UserClientFactory = async (config: UserClientConfig): Prom
       wrap(async () => {
         const out: ChatSnapshot[] = []
         for await (const dialog of client.iterDialogs({ limit })) {
-          out.push({ chatID: String(dialog.peer.id), kind: peerKind(dialog.peer), title: dialog.peer.displayName })
+          out.push({
+            chatID: String(dialog.peer.id),
+            kind: peerKind(dialog.peer),
+            title: dialog.peer.displayName,
+            proposedAccess: peerAccess(dialog.peer),
+          })
           if (out.length >= limit) break
         }
         return out

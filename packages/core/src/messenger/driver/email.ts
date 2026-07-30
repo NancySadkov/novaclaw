@@ -197,7 +197,14 @@ export const buildReply = (state: ThreadState, text: string): OutboundEmail => {
 /** Map a normalized inbound email onto the kernel event: the chat IS the thread. */
 export const toInbound = (email: RawEmail, selfAddress: string): InboundEvent => {
   const root = threadRoot(email)
-  const chat: ChatSnapshot = { chatID: root, kind: "thread", title: normalizeSubject(email.subject) }
+  // A mail thread is correspondence by construction — addressed to named recipients, never
+  // broadcast — so the driver can propose `private` outright (ruling 7; a proposal may restrict).
+  const chat: ChatSnapshot = {
+    chatID: root,
+    kind: "thread",
+    title: normalizeSubject(email.subject),
+    proposedAccess: "private",
+  }
   const isSelf = email.fromAddress.trim().toLowerCase() === selfAddress.trim().toLowerCase()
   return {
     kind: "message",

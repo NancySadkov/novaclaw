@@ -88,11 +88,14 @@ describe("IrcDriver", () => {
     )
     expect(channel?.kind).toBe("message")
     if (channel?.kind === "message") {
-      expect(channel.chat).toEqual({ chatID: "#support", kind: "group", title: "#support" })
+      // Ruling 7: an IRC channel may be open, +s or +k and PRIVMSG never says which, so the
+      // driver proposes `unknown` rather than flattering itself that a channel is public.
+      expect(channel.chat).toEqual({ chatID: "#support", kind: "group", title: "#support", proposedAccess: "unknown" })
       expect(channel.sender.isSelf).toBe(false)
     }
     const dm = IrcDriver.toInbound({ prefix: "bob!u@h", command: "PRIVMSG", params: ["nova", "hi"] }, "nova", "irc-2")
-    if (dm?.kind === "message") expect(dm.chat).toEqual({ chatID: "bob", kind: "dm", title: "bob" })
+    if (dm?.kind === "message")
+      expect(dm.chat).toEqual({ chatID: "bob", kind: "dm", title: "bob", proposedAccess: "private" })
     const self = IrcDriver.toInbound({ prefix: "NOVA!u@h", command: "PRIVMSG", params: ["#support", "echo"] }, "nova", "irc-3")
     if (self?.kind === "message") expect(self.sender.isSelf).toBe(true)
     const ctcp = IrcDriver.toInbound(

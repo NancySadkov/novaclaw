@@ -241,6 +241,8 @@ export default {
           \`kind\` text NOT NULL,
           \`title\` text NOT NULL,
           \`last_seen\` integer NOT NULL,
+          \`proposed_access\` text,
+          \`declared_access\` text,
           \`time_created\` integer NOT NULL,
           \`time_updated\` integer NOT NULL,
           CONSTRAINT \`messenger_chat_pk\` PRIMARY KEY(\`account_id\`, \`chat_id\`)

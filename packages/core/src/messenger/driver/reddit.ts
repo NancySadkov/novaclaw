@@ -218,7 +218,7 @@ export const postInbound = (subreddit: string, data: Record<string, unknown>, se
     .join("\n\n")
   return {
     kind: "message",
-    chat: { chatID: name, kind: "thread", title, parentID: subredditChatID(subreddit) },
+    chat: { chatID: name, kind: "thread", title, parentID: subredditChatID(subreddit), proposedAccess: "public" },
     messageID: name,
     // The id IS the username: Reddit moderation acts on names, not on t2_ ids, so this is what
     // `moderate ban` needs to receive from the message header.
@@ -250,6 +250,8 @@ export const modqueueInbound = (subreddit: string, data: Record<string, unknown>
       kind: "mailbox",
       title: `r/${subreddit} moderation queue`,
       parentID: subredditChatID(subreddit),
+      // The queue is the moderators' own working surface, not the subreddit's public face.
+      proposedAccess: "private",
     },
     messageID: name,
     sender: { id: author, name: author, isSelf: selfName !== undefined && author.toLowerCase() === selfName.toLowerCase() },
@@ -276,6 +278,7 @@ export const commentInbound = (subreddit: string, data: Record<string, unknown>,
       kind: "thread",
       title: str(data["link_title"]) ?? linkID,
       parentID: subredditChatID(subreddit),
+      proposedAccess: "public",
     },
     messageID: name,
     sender: { id: author, name: author, isSelf: selfName !== undefined && author.toLowerCase() === selfName.toLowerCase() },
@@ -594,12 +597,22 @@ export const make = (fetchImpl: FetchLike, loopbackFactory: LoopbackFactory, ope
       const listChats = () =>
         Effect.gen(function* () {
           const out: ChatSnapshot[] = [
-            { chatID: subredditChatID(config.subreddit), kind: "channel", title: `r/${config.subreddit}` },
+            // Ruling 7: a subreddit's posts ARE world-readable, so this is one of the few places a
+            // driver has real evidence of publicity. It still only PROPOSES — `Source.resolve`
+            // collapses a `public` proposal to `unknown` until the user confirms it, so nothing here
+            // can unlock a citation on its own.
+            {
+              chatID: subredditChatID(config.subreddit),
+              kind: "channel",
+              title: `r/${config.subreddit}`,
+              proposedAccess: "public",
+            },
             {
               chatID: modqueueChatID(config.subreddit),
               kind: "mailbox",
               title: `r/${config.subreddit} moderation queue (reported + filtered)`,
               parentID: subredditChatID(config.subreddit),
+              proposedAccess: "private",
             },
           ]
           const response = yield* api(`/r/${config.subreddit}/new?limit=25`)
@@ -608,7 +621,13 @@ export const make = (fetchImpl: FetchLike, loopbackFactory: LoopbackFactory, ope
             const name = str(thing.data["name"])
             const title = str(thing.data["title"])
             if (name === undefined || title === undefined) continue
-            out.push({ chatID: name, kind: "thread", title, parentID: subredditChatID(config.subreddit) })
+            out.push({
+              chatID: name,
+              kind: "thread",
+              title,
+              parentID: subredditChatID(config.subreddit),
+              proposedAccess: "public",
+            })
           }
           return out
         })

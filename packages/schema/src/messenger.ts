@@ -42,10 +42,91 @@ export const ContactTrust = Schema.Literals(["operator", "client", "blocked"]).a
 })
 export type ContactTrust = typeof ContactTrust.Type
 
+/** The SHAPE of a conversation — how it is addressed and nested, nothing more. ⚠️ It is NOT a
+ *  privacy signal and must never be read as one: a `channel` can be an invite-only company server
+ *  and a `group` can be a public community. Privacy is `Source` below (todo.md ruling 7). */
 export const ChatKind = Schema.Literals(["dm", "group", "channel", "thread", "mailbox", "topic"]).annotate({
   identifier: "Messenger.ChatKind",
 })
 export type ChatKind = typeof ChatKind.Type
+
+/**
+ * How PUBLIC a chat is — the module's SOURCE LABEL (todo.md **ruling 7**: *chat privacy is a source
+ * label, not a transport enum*). It answers exactly one question: **may what is read here be quoted
+ * outside this conversation** — in a research report, a citation, anything that leaves the chat?
+ *
+ * - `public` — a broadcast source anyone can read. Citable.
+ * - `private` — somebody's correspondence. Never citable, never research input.
+ * - `unknown` — **no evidence either way, and this is the DEFAULT**, not a fallback nobody chose.
+ *
+ * ⚠️ **Why three and not a boolean.** The ruling rules out `broadcast: boolean` by name, because a
+ * boolean cannot express "no evidence" — which is the MAJORITY case — so it forces every unlabelled
+ * chat into one of two confident answers. It also rules out `guild_id !== undefined`: a company's
+ * internal Discord server has it set and is private. "No evidence" has to be a state you can be in.
+ */
+const SourceAccess = Schema.Literals(["unknown", "public", "private"]).annotate({
+  identifier: "Messenger.SourceAccess",
+})
+export type SourceAccess = typeof SourceAccess.Type
+
+/**
+ * The label as it is actually STORED — **two independent fields, because who said it is part of the
+ * fact.** Collapsing them into one value is what turns a driver's guess into the user's word.
+ *
+ * - `proposed` — what the DRIVER's platform evidence suggests. Always present; `unknown` when the
+ *   driver has nothing, which is most of the time.
+ * - `declared` — what the USER said. Absent means **nobody has chosen yet**, which is not the same
+ *   as choosing `unknown`.
+ *
+ * ⚠️ Lines 14-16 of this file already state the module's law — a trust declaration is chosen by the
+ * user in the connect dialogue, **never inferred**. `Source.resolve` is that law made mechanical.
+ */
+export interface SourceLabel extends Schema.Schema.Type<typeof SourceLabel> {}
+const SourceLabel = Schema.Struct({
+  proposed: SourceAccess,
+  declared: optional(SourceAccess),
+}).annotate({ identifier: "Messenger.SourceLabel" })
+
+/** What the label resolves to, and — the load-bearing half — **on whose authority**. */
+export interface SourceDecision {
+  readonly access: SourceAccess
+  /** `user` = a declaration. `driver` = a proposal that only RESTRICTED. `default` = nobody chose. */
+  readonly by: "user" | "driver" | "default"
+}
+
+/** A chat nobody has said anything about — the state a new chat is born in. */
+const UNLABELLED: SourceLabel = { proposed: "unknown" }
+
+/**
+ * ⭐ **The whole of ruling 7 in six lines: a driver may PROPOSE, only the user DECIDES, and a
+ * proposal can never GRANT.**
+ *
+ * The asymmetry is deliberate and it is the point. A declaration wins outright, in both directions —
+ * that is what "user-overridable" means. With no declaration, a driver's `private` proposal still
+ * takes effect, because restricting is free: the worst case is that the user has to say "actually
+ * this one is public". But a driver's `public` proposal collapses to `unknown` and grants nothing,
+ * because the opposite failure is a chat the platform *looked* public about being quoted into a
+ * report the user never agreed to publish. Evidence may lock a door; it may not open one.
+ *
+ * So `access === "public"` implies `by === "user"`, always — pinned in
+ * `core/test/messenger-source-access.test.ts` over every input, and negative-controlled.
+ */
+const resolveSource = (label: SourceLabel | undefined): SourceDecision => {
+  if (label?.declared !== undefined) return { access: label.declared, by: "user" }
+  if (label?.proposed === "private") return { access: "private", by: "driver" }
+  return { access: "unknown", by: "default" }
+}
+
+/** May what is read here be quoted as a source outside this conversation? */
+const citable = (label: SourceLabel | undefined): boolean => resolveSource(label).access === "public"
+
+export const Source = {
+  Access: SourceAccess,
+  Label: SourceLabel,
+  UNLABELLED,
+  resolve: resolveSource,
+  citable,
+} as const
 
 export const BindingStatus = Schema.Literals(["active", "paused"]).annotate({
   identifier: "Messenger.BindingStatus",
@@ -198,6 +279,10 @@ export class ChatInfo extends Schema.Class<ChatInfo>("Messenger.ChatInfo")({
   kind: ChatKind,
   title: Schema.String,
   lastSeen: Schema.Number,
+  /** EVERY chat carries the source label (ruling 7) — REQUIRED, because an absent label is exactly
+   *  the "no evidence" state and that state has its own value (`Source.UNLABELLED`). Making it
+   *  optional would hand back the ambiguity the tri-state exists to remove. */
+  access: SourceLabel,
 }) {}
 
 export class BindingInfo extends Schema.Class<BindingInfo>("Messenger.BindingInfo")({

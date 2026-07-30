@@ -92,15 +92,44 @@ export interface Interface {
   /** Removes the account AND its chats, contacts, bindings, and cursor (edge #9's substrate). */
   readonly removeAccount: (id: Messenger.AccountID) => Effect.Effect<void>
 
-  /** Upsert into the seen-chat cache (kind/title refresh, last_seen advances). */
+  /** Upsert into the seen-chat cache (kind/title/proposed-access refresh, last_seen advances).
+   *  ⚠️ It CANNOT write the user's `declared` access — see the implementation's note. */
   readonly seenChat: (input: {
     readonly accountID: Messenger.AccountID
     readonly chatID: string
     readonly kind: Messenger.ChatKind
     readonly title: string
     readonly at: number
+    /** The DRIVER's proposal (ruling 7). Absent = no evidence, stored as `unknown`. */
+    readonly proposedAccess?: Messenger.SourceAccess
   }) => Effect.Effect<void>
   readonly listChats: (accountID: Messenger.AccountID) => Effect.Effect<Messenger.ChatInfo[]>
+  /**
+   * One cached chat, label included — the read the gateway's ruling-7 gate consults before it lets
+   * anything be read AS A SOURCE. **Fails typed rather than answering `undefined`**: `undefined`
+   * means "this instance has never seen that chat", and a gate that cannot tell that from "the
+   * database did not answer" would refuse (or worse, explain) under a reason it invented.
+   */
+  readonly getChat: (
+    accountID: Messenger.AccountID,
+    chatID: string,
+  ) => Effect.Effect<Messenger.ChatInfo | undefined, UnavailableError>
+  /**
+   * Record the USER'S OWN access declaration for one chat — the only writer of `declared_access`
+   * that exists, by design (ruling 7). `undefined` clears it back to "nobody has chosen".
+   *
+   * ⚠️ **Nothing model-facing may reach this.** A declaration is the user's word; if an agent could
+   * set it, a prompt-injected message in a chat could relabel that chat public and have itself
+   * quoted into a report. The `messenger` tool therefore has no op for it, and the surface that
+   * should is the Settings chat picker (todo/messenger.md → P3).
+   *
+   * Answers `false` when the chat is not in the seen-cache — never creates the row.
+   */
+  readonly declareChatAccess: (input: {
+    readonly accountID: Messenger.AccountID
+    readonly chatID: string
+    readonly access: Messenger.SourceAccess | undefined
+  }) => Effect.Effect<boolean>
   /**
    * True if we've ever seen this chat (an inbound message put it in the cache) — the cold-start
    * test for the traffic-rules governor: a chat we've never heard from is a NEW conversation.
@@ -200,6 +229,12 @@ const chatFromRow = (row: ChatRow): Messenger.ChatInfo =>
     kind: row.kind,
     title: row.title,
     lastSeen: row.last_seen,
+    // NULL on either column is not a missing value to paper over: no proposal means the driver had
+    // no evidence, and no declaration means nobody has chosen. Both are `Source.UNLABELLED`'s state.
+    access: {
+      proposed: row.proposed_access ?? "unknown",
+      ...(row.declared_access === null ? {} : { declared: row.declared_access }),
+    },
   })
 
 const bindingFromRow = (row: BindingRow): Messenger.BindingInfo =>
@@ -338,13 +373,58 @@ export const layer = Layer.effect(
             kind: input.kind,
             title: input.title,
             last_seen: input.at,
+            proposed_access: input.proposedAccess ?? "unknown",
           })
           .onConflictDoUpdate({
             target: [MessengerChatTable.account_id, MessengerChatTable.chat_id],
-            set: { kind: input.kind, title: input.title, last_seen: input.at },
+            // ⚠️ `declared_access` is ABSENT from this set, and that absence is the mechanism, not an
+            // omission (ruling 7). Every inbound message and every `listChats` runs through here, so
+            // including it would let a driver's guess silently overwrite the user's own word on the
+            // next sighting — a proposal becoming a declaration by attrition. Pinned by
+            // "a driver sighting never overwrites the user's declaration" in
+            // core/test/messenger-source-access.test.ts, negative-controlled.
+            set: {
+              kind: input.kind,
+              title: input.title,
+              last_seen: input.at,
+              proposed_access: input.proposedAccess ?? "unknown",
+            },
           })
           .run()
           .pipe(Effect.orDie)
+      }),
+      getChat: Effect.fn("MessengerStore.getChat")(function* (accountID, chatID) {
+        // ⚠️ Typed-fallible on purpose, like `hasChat` next door: the gateway's ruling-7 gate asks
+        // this "is it safe to quote?" and `undefined` would answer "no such chat" for a read that
+        // never happened. The gate must be able to tell those apart to refuse under its own name.
+        const row = yield* nameTheFault(
+          db
+            .select()
+            .from(MessengerChatTable)
+            .where(and(eq(MessengerChatTable.account_id, accountID), eq(MessengerChatTable.chat_id, chatID)))
+            .get(),
+          `getChat(${accountID}, ${chatID})`,
+        )
+        return row === undefined ? undefined : chatFromRow(row)
+      }),
+      declareChatAccess: Effect.fn("MessengerStore.declareChatAccess")(function* (input) {
+        const row = yield* db
+          .select()
+          .from(MessengerChatTable)
+          .where(and(eq(MessengerChatTable.account_id, input.accountID), eq(MessengerChatTable.chat_id, input.chatID)))
+          .get()
+          .pipe(Effect.orDie)
+        // Never invents the row. A declaration about a chat this instance has never seen is a
+        // typo or a stale UI, and answering `false` lets the caller say so instead of creating a
+        // ghost chat with no kind, no title and a privacy verdict attached to it.
+        if (row === undefined) return false
+        yield* db
+          .update(MessengerChatTable)
+          .set({ declared_access: input.access ?? null })
+          .where(and(eq(MessengerChatTable.account_id, input.accountID), eq(MessengerChatTable.chat_id, input.chatID)))
+          .run()
+          .pipe(Effect.orDie)
+        return true
       }),
       listChats: Effect.fn("MessengerStore.listChats")(function* (accountID) {
         const rows = yield* db

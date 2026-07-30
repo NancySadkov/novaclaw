@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "1251cfc3-ec6f-42fa-8494-d8f83cc1f425",
+  "id": "01888532-ce08-480a-8ea5-edf907ca6093",
   "prevIds": [
-    "2c81bedd-5269-4d6e-9f5e-ede043ff0d2c"
+    "1251cfc3-ec6f-42fa-8494-d8f83cc1f425"
   ],
   "ddl": [
     {
@@ -1531,6 +1531,26 @@
       "default": null,
       "generated": null,
       "name": "last_seen",
+      "entityType": "columns",
+      "table": "messenger_chat"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "proposed_access",
+      "entityType": "columns",
+      "table": "messenger_chat"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "declared_access",
       "entityType": "columns",
       "table": "messenger_chat"
     },

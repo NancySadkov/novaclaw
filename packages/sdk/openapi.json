@@ -31156,6 +31156,23 @@
         "type": "string",
         "enum": ["dm", "group", "channel", "thread", "mailbox", "topic"]
       },
+      "MessengerSourceAccess": {
+        "type": "string",
+        "enum": ["unknown", "public", "private"]
+      },
+      "MessengerSourceLabel": {
+        "type": "object",
+        "properties": {
+          "proposed": {
+            "$ref": "#/components/schemas/MessengerSourceAccess"
+          },
+          "declared": {
+            "$ref": "#/components/schemas/MessengerSourceAccess"
+          }
+        },
+        "required": ["proposed"],
+        "additionalProperties": false
+      },
       "MessengerChatInfo": {
         "type": "object",
         "properties": {
@@ -31194,9 +31211,12 @@
                 "enum": ["Infinity", "-Infinity", "NaN"]
               }
             ]
+          },
+          "access": {
+            "$ref": "#/components/schemas/MessengerSourceLabel"
           }
         },
-        "required": ["accountID", "chatID", "kind", "title", "lastSeen"],
+        "required": ["accountID", "chatID", "kind", "title", "lastSeen", "access"],
         "additionalProperties": false
       },
       "MessengerTrust": {

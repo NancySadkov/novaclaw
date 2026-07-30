@@ -200,7 +200,13 @@ describe("RedditDriver pure helpers", () => {
   test("a post becomes a thread parented to the subreddit — the shape one binding needs", () => {
     const event = RedditDriver.postInbound("novaclaw", post("aaa", "dave", "Crash on save", "it dies").data, "novaclaw-bot")
     if (event?.kind !== "message") throw new Error("expected a message")
-    expect(event.chat).toEqual({ chatID: "t3_aaa", kind: "thread", title: "Crash on save", parentID: "r/novaclaw" })
+    expect(event.chat).toEqual({
+      chatID: "t3_aaa",
+      kind: "thread",
+      title: "Crash on save",
+      parentID: "r/novaclaw",
+      proposedAccess: "public",
+    })
     // Title AND body: to a reader they are the post, and a triaging agent needs both.
     expect(event.text).toBe("Crash on save\n\nit dies")
     // The sender id is the USERNAME because that is what Reddit's ban endpoint takes.
@@ -326,10 +332,18 @@ describe("RedditDriver connection", () => {
           return yield* connection.listChats!()
         }),
       )
-      expect(chats[0]).toEqual({ chatID: "r/novaclaw", kind: "channel", title: "r/novaclaw" })
+      // Ruling 7: a subreddit is one of the few places a driver has REAL evidence of publicity, so
+      // it proposes `public` — which still grants nothing until the user confirms it.
+      expect(chats[0]).toEqual({ chatID: "r/novaclaw", kind: "channel", title: "r/novaclaw", proposedAccess: "public" })
       // The queue is offered as a place you can go, not only something that pushes at you.
       expect(chats[1]).toMatchObject({ chatID: "r/novaclaw/modqueue", kind: "mailbox", parentID: "r/novaclaw" })
-      expect(chats[2]).toEqual({ chatID: "t3_aaa", kind: "thread", title: "Crash on save", parentID: "r/novaclaw" })
+      expect(chats[2]).toEqual({
+        chatID: "t3_aaa",
+        kind: "thread",
+        title: "Crash on save",
+        parentID: "r/novaclaw",
+        proposedAccess: "public",
+      })
     }),
   )
 

@@ -78,6 +78,21 @@ export interface ChatSnapshot {
    *  moderating a support forum takes ONE binding instead of one per post (and posts appear
    *  continuously, so per-post binding could never work). Replies still target the child chat id. */
   readonly parentID?: string
+  /**
+   * The driver's **PROPOSAL** about how public this chat is (`Messenger.Source.Access`, todo.md
+   * ruling 7) — never a decision, and named `proposed…` so no call site can forget which it is.
+   *
+   * ⚠️ **Absent is the normal answer, not a gap to fill.** It means *this driver has no evidence*,
+   * which is the majority case, and it resolves to `unknown` — non-citable. A driver must only set
+   * this from a fact its platform actually states. Two rules that keep it honest:
+   * - **`private` is free**, because a proposal may only ever RESTRICT: set it wherever the platform
+   *   says "this is correspondence between identified people" (any DM, a mailbox thread).
+   * - **`public` grants NOTHING on its own** (`Source.resolve` collapses it to `unknown`). It is a
+   *   suggestion the user can confirm in one click, so set it only on real evidence — and never from
+   *   a proxy like "it has a guild id" or "the channel type is announcement", both of which are true
+   *   of a private company server.
+   */
+  readonly proposedAccess?: Messenger.SourceAccess
 }
 
 /** One past message, for the tool's `history` op — same normalization as inbound. */

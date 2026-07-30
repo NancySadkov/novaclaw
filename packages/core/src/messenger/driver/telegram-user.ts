@@ -66,6 +66,9 @@ export class UserClientError extends Error {
 export interface UserMessage {
   readonly chatID: string
   readonly chatKind: Messenger.ChatKind
+  /** The adapter's PROPOSAL about how public this chat is (ruling 7) — never a decision. Absent =
+   *  no evidence, which resolves to `unknown` and is the honest answer for most Telegram chats. */
+  readonly chatAccess?: Messenger.SourceAccess
   readonly chatTitle: string
   readonly messageID: string
   readonly senderID: string
@@ -336,6 +339,7 @@ export const make = (factory: UserClientFactory): Driver => {
                   title: message.chatTitle,
                   // Saved Messages — the shared operator console (§0.1.5 address-prefix rule).
                   ...(message.chatID === me.id ? { self: true } : {}),
+                  ...(message.chatAccess === undefined ? {} : { proposedAccess: message.chatAccess }),
                 },
                 messageID: message.messageID,
                 sender: {

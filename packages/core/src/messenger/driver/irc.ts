@@ -89,9 +89,11 @@ export const toInbound = (line: IrcLine, selfNick: string, messageID: string): I
   if (text.charCodeAt(0) === 1) return undefined // CTCP ( VERSION/ACTION/… — protocol noise)
   const sender = nickOf(line.prefix)
   const channel = isChannel(target)
+  // Ruling 7: a private message is correspondence (`private`); a channel may be open, +s (secret)
+  // or +k (keyed) and PRIVMSG says nothing about which, so the honest proposal is no proposal.
   const chat: ChatSnapshot = channel
-    ? { chatID: target, kind: "group", title: target }
-    : { chatID: sender, kind: "dm", title: sender }
+    ? { chatID: target, kind: "group", title: target, proposedAccess: "unknown" }
+    : { chatID: sender, kind: "dm", title: sender, proposedAccess: "private" }
   return {
     kind: "message",
     chat,
