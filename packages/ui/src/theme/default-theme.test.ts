@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test"
 import { readdirSync, readFileSync } from "node:fs"
-import { join, relative, resolve } from "node:path"
+import { extname, join, relative, resolve } from "node:path"
 import { DEFAULT_THEME_ID, LEGACY_THEME_IDS, normalizeThemeId } from "./default-theme"
 import novaThemeJson from "./themes/nova.json"
 import { resolveThemeVariant } from "./resolve"
@@ -119,6 +119,32 @@ const SCAN_ROOTS = [
 const SKIP_DIRS = new Set(["node_modules", "dist", "out", ".vite"])
 const LEGACY_ID_PATTERN = /\boc-[12]\b/
 
+// ⚠️ Read only files a theme id can actually live in. This scan used to slurp EVERY file under the
+// roots as UTF-8 — 2,029 files / 15.4 MB, most of it fonts (.woff2/.ttf) and a 1.4 MB logo.png being
+// decoded and thrown away. On a warm cache that cost 215 ms; inside the full gate, cold, it blew the
+// 15 s per-test timeout and reported a RED that had found nothing (2026-07-30). A ratchet that fails
+// for reasons unrelated to what it guards is worse than no ratchet — it teaches the next person to
+// re-run reds instead of reading them. This is a speed fix, not a narrowing: none of the excluded
+// types can carry a theme id, the ledgered files are all in this set, and `scannedCount` below fails
+// loudly if the filter ever silently matches (almost) nothing.
+const TEXT_EXTENSIONS = new Set([
+  ".ts",
+  ".tsx",
+  ".js",
+  ".jsx",
+  ".mjs",
+  ".cjs",
+  ".json",
+  ".css",
+  ".scss",
+  ".html",
+  ".svg",
+  ".md",
+  ".txt",
+  ".yml",
+  ".yaml",
+])
+
 /** Files allowed to still name a legacy id. SHRINK-ONLY — remove the row in the same change as the fix. */
 const LEDGER: { path: string; why: string }[] = [
   {
@@ -150,15 +176,17 @@ function walk(dir: string, out: string[]) {
     if (SKIP_DIRS.has(entry.name)) continue
     const full = join(dir, entry.name)
     if (entry.isDirectory()) walk(full, out)
-    else out.push(full)
+    else if (TEXT_EXTENSIONS.has(extname(entry.name).toLowerCase())) out.push(full)
   }
 }
 
 let scanned: string[] | undefined
+let scannedCount = 0
 
 function filesNamingALegacyId() {
   if (scanned) return scanned
   const found: string[] = []
+  let count = 0
   for (const root of SCAN_ROOTS) {
     const files: string[] = []
     walk(join(REPO_ROOT, root), files)
@@ -167,11 +195,13 @@ function filesNamingALegacyId() {
       try {
         text = readFileSync(file, "utf8")
       } catch {
-        continue // binary or unreadable asset
+        continue // unreadable
       }
+      count++
       if (LEGACY_ID_PATTERN.test(text)) found.push(relative(REPO_ROOT, file).replaceAll("\\", "/"))
     }
   }
+  scannedCount = count
   scanned = found.sort()
   return scanned
 }
@@ -187,5 +217,15 @@ describe("opencode theme ids stay retired", () => {
     const found = new Set(filesNamingALegacyId())
     const stale = LEDGER.filter((e) => !found.has(e.path)).map((e) => e.path)
     expect(stale).toEqual([])
+  })
+
+  // Guard the INSTRUMENT. The two tests above both pass trivially if the scan reads nothing — an
+  // empty `found` makes "nothing unexpected" true, and only the ledger check would notice. Since the
+  // walk now filters by extension, a typo in TEXT_EXTENSIONS is the realistic way to silently gut it.
+  test("the scan actually read the source tree", () => {
+    filesNamingALegacyId()
+    // ~1,100 text files across the roots today; the floor is deliberately far below that so ordinary
+    // growth or deletion never trips it, while an empty or near-empty scan is loud.
+    expect(scannedCount).toBeGreaterThan(400)
   })
 })
