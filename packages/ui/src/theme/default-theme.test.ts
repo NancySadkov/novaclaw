@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
+import { spawnSync } from "node:child_process"
 import { readdirSync, readFileSync } from "node:fs"
-import { extname, join, relative, resolve } from "node:path"
+import { join, resolve } from "node:path"
 import { DEFAULT_THEME_ID, LEGACY_THEME_IDS, normalizeThemeId } from "./default-theme"
 import novaThemeJson from "./themes/nova.json"
 import { resolveThemeVariant } from "./resolve"
@@ -116,34 +117,8 @@ const SCAN_ROOTS = [
   "packages/desktop/src",
   "packages/session-ui/src",
 ]
-const SKIP_DIRS = new Set(["node_modules", "dist", "out", ".vite"])
-const LEGACY_ID_PATTERN = /\boc-[12]\b/
-
-// ⚠️ Read only files a theme id can actually live in. This scan used to slurp EVERY file under the
-// roots as UTF-8 — 2,029 files / 15.4 MB, most of it fonts (.woff2/.ttf) and a 1.4 MB logo.png being
-// decoded and thrown away. On a warm cache that cost 215 ms; inside the full gate, cold, it blew the
-// 15 s per-test timeout and reported a RED that had found nothing (2026-07-30). A ratchet that fails
-// for reasons unrelated to what it guards is worse than no ratchet — it teaches the next person to
-// re-run reds instead of reading them. This is a speed fix, not a narrowing: none of the excluded
-// types can carry a theme id, the ledgered files are all in this set, and `scannedCount` below fails
-// loudly if the filter ever silently matches (almost) nothing.
-const TEXT_EXTENSIONS = new Set([
-  ".ts",
-  ".tsx",
-  ".js",
-  ".jsx",
-  ".mjs",
-  ".cjs",
-  ".json",
-  ".css",
-  ".scss",
-  ".html",
-  ".svg",
-  ".md",
-  ".txt",
-  ".yml",
-  ".yaml",
-])
+/** ERE for `git grep`, not a JS RegExp — `\b` is supported by git's POSIX-ERE engine. */
+const LEGACY_ID_PATTERN = "\\boc-[12]\\b"
 
 /** Files allowed to still name a legacy id. SHRINK-ONLY — remove the row in the same change as the fix. */
 const LEDGER: { path: string; why: string }[] = [
@@ -169,40 +144,44 @@ const LEDGER: { path: string; why: string }[] = [
   },
 ]
 
-function walk(dir: string, out: string[]) {
-  // withFileTypes, not statSync: a Dirent describes the entry without following it, so a broken symlink
-  // in `public/` cannot throw the whole scan (they are real symlinks on Linux, plain files on Windows).
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (SKIP_DIRS.has(entry.name)) continue
-    const full = join(dir, entry.name)
-    if (entry.isDirectory()) walk(full, out)
-    else if (TEXT_EXTENSIONS.has(extname(entry.name).toLowerCase())) out.push(full)
-  }
-}
-
 let scanned: string[] | undefined
-let scannedCount = 0
 
+/**
+ * Ask git, rather than walking the tree by hand.
+ *
+ * ⚠️ This scan hand-rolled a recursive walk that read every file as UTF-8, and it TIMED OUT the gate
+ * twice on 2026-07-30 — 16.7 s, then 15.1 s after a first attempt at trimming it by extension. Both
+ * reds had found nothing; the failure was the walk. Warm-cache timings hid it (215 ms, then 400 ms),
+ * so it passed every time it was run on its own and only failed inside the full gate. **A ratchet that
+ * reds for reasons unrelated to what it guards is worse than no ratchet** — it teaches the next person
+ * to re-run reds instead of reading them.
+ *
+ * `git grep` does the whole thing in one process in 0.45 s, startup included, because it greps in C
+ * over tracked files instead of doing ~1,900 `readFileSync` calls through Windows Defender. Measured
+ * both ways; the extension filter it replaces was still reading 1,106 icon SVGs, none of which has
+ * ever contained a theme id.
+ *
+ * Tracked-only is a DELIBERATE narrowing and the right domain: an untracked scratch file naming
+ * `oc-2` is not a source regression, and it cannot reach another clone. If git is missing or errors,
+ * this THROWS rather than returning `[]` — an empty result would make both assertions below pass
+ * vacuously, which is the one failure mode a guard like this must never have.
+ */
 function filesNamingALegacyId() {
   if (scanned) return scanned
-  const found: string[] = []
-  let count = 0
-  for (const root of SCAN_ROOTS) {
-    const files: string[] = []
-    walk(join(REPO_ROOT, root), files)
-    for (const file of files) {
-      let text: string
-      try {
-        text = readFileSync(file, "utf8")
-      } catch {
-        continue // unreadable
-      }
-      count++
-      if (LEGACY_ID_PATTERN.test(text)) found.push(relative(REPO_ROOT, file).replaceAll("\\", "/"))
-    }
+  const res = spawnSync("git", ["grep", "-lE", LEGACY_ID_PATTERN, "--", ...SCAN_ROOTS], {
+    cwd: REPO_ROOT,
+    encoding: "utf8",
+  })
+  // git grep: 0 = matches, 1 = no matches, >1 = real error. Anything else must be loud.
+  if (res.error) throw res.error
+  if (res.status !== 0 && res.status !== 1) {
+    throw new Error(`git grep failed (status ${res.status}): ${res.stderr?.trim() || "no stderr"}`)
   }
-  scannedCount = count
-  scanned = found.sort()
+  scanned = res.stdout
+    .split("\n")
+    .map((l) => l.trim().replaceAll("\\", "/"))
+    .filter(Boolean)
+    .sort()
   return scanned
 }
 
@@ -219,13 +198,13 @@ describe("opencode theme ids stay retired", () => {
     expect(stale).toEqual([])
   })
 
-  // Guard the INSTRUMENT. The two tests above both pass trivially if the scan reads nothing — an
-  // empty `found` makes "nothing unexpected" true, and only the ledger check would notice. Since the
-  // walk now filters by extension, a typo in TEXT_EXTENSIONS is the realistic way to silently gut it.
-  test("the scan actually read the source tree", () => {
-    filesNamingALegacyId()
-    // ~1,100 text files across the roots today; the floor is deliberately far below that so ordinary
-    // growth or deletion never trips it, while an empty or near-empty scan is loud.
-    expect(scannedCount).toBeGreaterThan(400)
+  // Guard the INSTRUMENT. "No source file outside the ledger names a legacy id" passes trivially if
+  // the scan returns nothing, so the scan must be shown to work on a case we KNOW matches. A bad
+  // pathspec, a pattern typo, or a `git grep` run from the wrong cwd all produce a silent empty set.
+  test("the scan is not vacuous — it finds the file that defines the legacy ids", () => {
+    // `default-theme.ts` holds LEGACY_THEME_IDS = ["oc-1", "oc-2"], so it must always match while the
+    // migration is owed. Asserting a specific known-positive beats a count: a count floor drifts with
+    // the tree, this cannot pass unless the grep really ran and really matched.
+    expect(filesNamingALegacyId()).toContain("packages/ui/src/theme/default-theme.ts")
   })
 })
