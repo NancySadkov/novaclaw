@@ -3,6 +3,7 @@ import fs from "node:fs"
 import nodePath from "node:path"
 import { Effect } from "effect"
 import { AgentV2 } from "@novaclaw/core/agent"
+import { ConfigPermission } from "@novaclaw/core/config/permission"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { Location } from "@novaclaw/core/location"
 import { PermissionV2 } from "@novaclaw/core/permission"
@@ -52,6 +53,39 @@ const effectFor = (agentRules: PermissionV2.Ruleset, action: string, resource = 
     ...agentRules,
     ...MODE_RULES[EFFECTIVE_CONFIG_DEFAULTS.permissionMode],
   ]).effect
+
+// ─────────────────────────────────────────────────────────────────────────────
+// The authored permission dict is an OPEN namespace, and that is B4c's premise rather than laxity.
+//
+// `config/permission.ts` names its known keys for generated docs/types but keeps a rest record, so an
+// action it never heard of is still accepted. It HAS to be: an action can be an MCP tool's own name,
+// or one a model invented at runtime via `tool/define-tool.ts` — the two shapes the ad-hoc-tool tests
+// above are about. Retiring `glob`/`grep`/`list` from the named list on 2026-07-30 must therefore not
+// have closed the door, and the flip side (a retired key still parses, and now names an action
+// nothing spends) is the behaviour change recorded at that file.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("the authored permission dict stays an open namespace", () => {
+  test("an action no named key mentions is accepted and lowers to a rule, in authored order", () => {
+    // The TYPE annotation is half the check: it fails to compile if the rest record ever goes away,
+    // which no runtime assertion could notice. Legacy callers pass exactly these shapes
+    // (`packages/novaclaw/src/agent/agent.ts`'s `Permission.fromConfig({ glob: "allow", … })`).
+    const authored: ConfigPermission.Info = {
+      explore: "deny",
+      my_deploy_tool: "ask",
+      mcp_github_create_issue: { "*": "deny" },
+      // Retired, still accepted — an open namespace cannot single a name out — and still lowered.
+      // It simply names an action nothing spends now, which is why the change is owed a release note
+      // rather than a mechanical rejection. See `src/config/permission.ts`.
+      glob: "deny",
+    }
+    expect(ConfigPermission.ruleset(authored)).toEqual([
+      { action: "explore", resource: "*", effect: "deny" },
+      { action: "my_deploy_tool", resource: "*", effect: "ask" },
+      { action: "mcp_github_create_issue", resource: "*", effect: "deny" },
+      { action: "glob", resource: "*", effect: "deny" },
+    ])
+  })
+})
 
 describe("AMBIENT_SAFE_BASELINE — the compiled floor (B4c)", () => {
   test("membership is an explicit ledger — changing it is an edit here, never a side effect", () => {
@@ -221,9 +255,14 @@ describe("the built-in agents the plugin actually builds", () => {
 // `tool/grep.ts` assert `explore`. So the read-only search agent was refused at its only job. The old
 // catch-all ALLOW sat in the same shadowed position, so this was live before B4c as well.
 //
-// The fix is a grant, not a reordering, and it needs BOTH names to stay: `explore` for the execution
-// assert, `grep`/`glob` for `ToolRegistry.materialize`'s horizon filter, which resolves the name a
-// tool is REGISTERED under. This block pins both halves, so neither can be deleted as redundant.
+// The fix is a grant, not a reordering — and since 2026-07-30 it is ONE grant. Both tools are now
+// registered through `Tool.withPermission(…, "explore")`, so `ToolRegistry.materialize`'s horizon
+// filter resolves the same action the execution assert spends. It used to take THREE rules —
+// `explore` for execution plus `grep`/`glob` for the horizon, because that filter resolves the name a
+// tool is REGISTERED under — and the two seams answering to different actions was itself the defect:
+// `explore: "deny"` refused every search while both tools stayed advertised, and `glob: "deny"` hid
+// glob while grep went on working. This block pins both halves of the single grant, execution AND
+// horizon, so the collapse cannot silently come apart.
 // ─────────────────────────────────────────────────────────────────────────────
 describe("the explore subagent can actually glob and grep", () => {
   /**
@@ -266,28 +305,33 @@ describe("the explore subagent can actually glob and grep", () => {
     }),
   )
 
-  it.effect("NEGATIVE CONTROL: drop the `explore` grant and the subagent is denied at its only job", () =>
+  it.effect("NEGATIVE CONTROL: drop the `explore` grant and the subagent loses search at BOTH seams", () =>
     Effect.gen(function* () {
-      // The file as it shipped: `grep`/`glob` granted, `explore` not — so the horizon advertised both
-      // tools and every call they made was refused. Proves the assertion above measures the added
-      // rule and not the ambient floor, which is present in both versions and shadowed in both.
       const explore = (yield* builtinAgents).get("explore")!
       const preFix = explore.filter((rule) => rule.action !== "explore")
+      // Execution is refused — which proves the assertion above measures the added rule and not the
+      // ambient floor, present in both versions and shadowed in both.
       expect(effectFor(preFix, "explore")).toBe("deny")
-      // ...and the tools were still ADVERTISED while that was true, which is why it read as a
-      // mystery failure rather than as a missing capability.
-      for (const action of ["glob", "grep"]) expect(withdrawn(preFix, action)).toBe(false)
+      // And the horizon goes with it. THAT is what the remap bought: until 2026-07-30 the same
+      // deletion left both tools ADVERTISED, because this agent carried separate `grep`/`glob`
+      // grants that the horizon filter resolved instead — so the agent read as capable and failed
+      // every call, which is a mystery rather than a missing capability.
+      expect(withdrawn(preFix, "explore")).toBe(true)
     }),
   )
 
-  it.effect("HORIZON: the `grep`/`glob` grants are load-bearing too, and deleting them hides the tools", () =>
+  it.effect("HORIZON: the ONE `explore` grant carries the tool list too, and no name-shaped rules remain", () =>
     Effect.gen(function* () {
       const explore = (yield* builtinAgents).get("explore")!
-      for (const action of ["glob", "grep"]) expect(withdrawn(explore, action)).toBe(false)
-      // Remove them — the "just delete the dead grants" reading of the fix — and `whollyDisabled`
-      // reads the catch-all deny instead, withdrawing both tools from the model's tool list.
-      const withoutNames = explore.filter((rule) => rule.action !== "grep" && rule.action !== "glob")
-      for (const action of ["glob", "grep"]) expect(withdrawn(withoutNames, action)).toBe(true)
+      // `whollyDisabled` resolves whatever `Tool.permission` answers, and both search tools remap to
+      // `explore` — so this single rule is what keeps them on the model's horizon.
+      expect(withdrawn(explore, "explore")).toBe(false)
+      // The two rules that used to be needed for exactly this are GONE, and their absence is the
+      // property being pinned: a ruleset that still named the registered tool names would mean the
+      // collapse is half-done and the next reader has two mechanisms to reason about, not one.
+      // (What a rule naming `glob`/`grep` does to the REAL registry — nothing, because the filter no
+      // longer resolves those names — is asserted end-to-end in `tool-search-containment.test.ts`.)
+      expect(explore.filter((rule) => rule.action === "glob" || rule.action === "grep")).toEqual([])
       // The replicated predicate is not vacuous: `read` is granted by name, so it is never withdrawn.
       expect(withdrawn(explore, "read")).toBe(false)
     }),
@@ -328,13 +372,14 @@ describe("the explore subagent can actually glob and grep", () => {
 // ─────────────────────────────────────────────────────────────────────────────
 // …and the OTHER half of that grant, which lives in files this one cannot see.
 //
-// "The explore agent must grant `explore`" is only true while `tool/glob.ts` and `tool/grep.ts` keep
-// asserting `explore`, and "it must ALSO grant `grep`/`glob`" is only true while neither remaps its
-// horizon action. Both are claims about other files that compile green the moment they stop holding —
-// ruling 1's defect class exactly — and a rename in either tool would silently re-break the subagent
-// while every assertion above stayed green on a grant nobody spends.
+// "The explore agent needs one `explore` grant" is only true while `tool/glob.ts` and `tool/grep.ts`
+// BOTH assert `explore` and BOTH remap their horizon onto it. Those are claims about other files that
+// compile green the moment they stop holding — ruling 1's defect class exactly — and either half
+// coming off would silently re-break the subagent while every assertion above stayed green on a grant
+// nobody spends: drop the assert and the execution gate spends a different action, drop the remap and
+// the horizon filter falls back to the registered name and withdraws the tool.
 // ─────────────────────────────────────────────────────────────────────────────
-describe("glob and grep still assert `explore`, and still advertise their own names", () => {
+describe("glob and grep still assert `explore`, and still remap their horizon onto it", () => {
   // CODE ONLY: both files EXPLAIN the shared action at length, and a guard that read prose would be
   // satisfied by the comment describing the very rule it is meant to pin.
   const stripComments = (source: string): string =>
@@ -343,24 +388,31 @@ describe("glob and grep still assert `explore`, and still advertise their own na
     stripComments(fs.readFileSync(nodePath.join(import.meta.dir, "..", "src", "tool", file), "utf8"))
 
   const ASSERTS_EXPLORE = /action:\s*"explore"/
-  /** A remap would move the horizon action off the registered name — see the ledger in
-   *  `test/tool-permission-identity.test.ts`. Neither file may grow one without this going red. */
-  const REMAPS = /withPermission\(/
+  /** The remap is what points the horizon filter at `explore` instead of the registered name.
+   *  `test/tool-permission-identity.test.ts` ledgers both sites and pins the action each remaps TO;
+   *  this end pins only that it is still there, right next to the assert it has to agree with. */
+  const REMAPS = /Tool\.withPermission\(/
 
   test.each([
     ["glob.ts", "glob"],
     ["grep.ts", "grep"],
-  ])("%s asserts `explore` and registers as `%s` with no remap", (file, name) => {
+  ])("%s asserts `explore`, registers as `%s`, and remaps onto `explore`", (file, name) => {
     const source = read(file)
     expect(source).toMatch(ASSERTS_EXPLORE)
     expect(source).toMatch(new RegExp(`export const name = "${name}"`))
-    expect(source).not.toMatch(REMAPS)
+    expect(source).toMatch(REMAPS)
+    // Exactly ONE remap per file. A second would mean two horizon actions for one tool, which the
+    // last `withPermission` call silently wins — a shape worth failing on rather than resolving.
+    expect(source.match(/withPermission\(/g)).toHaveLength(1)
   })
 
-  test("NEGATIVE CONTROL: a tool that asserted its own name would fail the first check", () => {
+  test("NEGATIVE CONTROL: both readers bite on a file that stopped doing it", () => {
     const renamed = `export const name = "glob"\nyield* permission.assert({ action: "glob", resources: [p] })\n`
     expect(renamed).not.toMatch(ASSERTS_EXPLORE)
-    // ...and talking about the action is not asserting it.
+    expect(renamed).not.toMatch(REMAPS)
+    // ...and talking about either one is not doing it — the file as it shipped before 2026-07-30
+    // carried a comment naming the remap it did not have.
     expect(stripComments(`// 1I: glob + grep share the action: "explore" grant class\n`)).not.toMatch(ASSERTS_EXPLORE)
+    expect(stripComments(`// the only withPermission( remap in the tree is apply_patch\n`)).not.toMatch(REMAPS)
   })
 })

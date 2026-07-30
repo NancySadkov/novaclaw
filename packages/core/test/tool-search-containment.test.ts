@@ -15,7 +15,7 @@ import { GlobTool } from "@novaclaw/core/tool/glob"
 import { GrepTool } from "@novaclaw/core/tool/grep"
 import { location } from "./fixture/location"
 import { testEffect } from "./lib/effect"
-import { executeTool, settleTool, toolIdentity } from "./lib/tool"
+import { executeTool, settleTool, toolDefinitions, toolIdentity } from "./lib/tool"
 
 // glob and grep were the ONE path-taking pair that never classified their search root: they asserted only
 // the coarse `explore` action on the PATTERN, then `path.resolve`d the caller's path with no containment
@@ -180,6 +180,60 @@ describe.each([
       expect(externals()).toHaveLength(1)
       expect(calls()).toEqual([])
       expect(JSON.stringify(settlement.result)).toMatch(/denied|permission/i)
+    }),
+  )
+})
+
+// ─────────────────────────────────────────────────────────────────────────────
+// ONE ACTION FOR THE PAIR — the horizon half of the `explore` collapse (2026-07-30).
+//
+// Both tools are registered through `Tool.withPermission(…, "explore")`, so
+// `ToolRegistry.materialize`'s `whollyDisabled` resolves `explore` instead of the name each tool is
+// registered under. This is the only place that asserts it END-TO-END against the shipped
+// registrations: `permission-baseline.test.ts` reasons about the `explore` agent's ruleset and
+// `tool-permission-identity.test.ts` reads the source, but neither materializes the real tools.
+//
+// Before the remap the two seams answered to different actions and every ruleset had to grant both:
+// `explore: "deny"` refused every call while leaving both tools advertised (a horizon the model can
+// see but cannot act on), and `glob: "deny"` withdrew glob while grep went on working.
+// ─────────────────────────────────────────────────────────────────────────────
+describe("one permission action governs the whole search pair", () => {
+  const advertised = (rules?: PermissionV2.Ruleset) =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      return (yield* toolDefinitions(registry, rules)).map((one) => one.name)
+    })
+
+  it.effect("with nothing denied, both tools are on the horizon", () =>
+    Effect.gen(function* () {
+      // Not decoration — it is what keeps the two assertions below from being vacuously green.
+      const names = yield* advertised()
+      expect(names).toContain("glob")
+      expect(names).toContain("grep")
+    }),
+  )
+
+  it.effect("`deny explore/*` withdraws BOTH tools — one rule, one grant class", () =>
+    Effect.gen(function* () {
+      const names = yield* advertised([{ action: "explore", resource: "*", effect: "deny" }])
+      expect({ glob: names.includes("glob"), grep: names.includes("grep") }).toEqual({ glob: false, grep: false })
+    }),
+  )
+
+  it.effect("a rule naming a REGISTERED tool name now withdraws neither — the behaviour change itself", () =>
+    Effect.gen(function* () {
+      // The registered name is no longer the action this filter resolves, so a config key naming it
+      // is inert. That is why `src/config/permission.ts` retired `glob`/`grep` from its known keys,
+      // and it is the half of the change that WIDENS what an agent may do — hence the release note
+      // recorded at that site rather than an on-read translation to `explore`.
+      for (const action of ["glob", "grep"]) {
+        const names = yield* advertised([{ action, resource: "*", effect: "deny" }])
+        expect({ action, glob: names.includes("glob"), grep: names.includes("grep") }).toEqual({
+          action,
+          glob: true,
+          grep: true,
+        })
+      }
     }),
   )
 })

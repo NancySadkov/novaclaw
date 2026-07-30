@@ -62,96 +62,106 @@ export const layer = Layer.effectDiscard(
 
     yield* tools
       .register({
-        [name]: Tool.make({
-          description:
-            "Search file contents by regular expression within the active Location or an absolute managed tool-output file. Use a path to narrow the search, include to filter files by glob, and limit to bound the match count. Returns concise file resources, line numbers, and bounded line previews.",
-          input: Input,
-          output: Output,
-          toModelOutput: ({ output }) => [
-            {
-              type: "text",
-              text: toModelOutput(
-                output.map((match) => ({
-                  ...match,
-                  entry: { ...match.entry, path: path.resolve(location.directory, match.entry.path) },
-                })),
-              ),
-            },
-          ],
-          execute: (input, context) =>
-            Effect.gen(function* () {
-              const source = {
-                type: "tool" as const,
-                messageID: context.assistantMessageID,
-                callID: context.toolCallID,
-              }
-              // Classify the search root BEFORE searching it — see the same guard in glob.ts. grep matters
-              // more than glob here because it returns matching LINES, i.e. real file CONTENT from outside
-              // the Location, not just names. `input.path` is typed RelativePath but that brand does not
-              // validate, so an absolute path was previously searched silently.
-              const resolved = yield* mutation.resolve({ path: input.path ?? ".", kind: "directory" })
-              const external = resolved.externalDirectory
-              if (external)
+        // ⚠️ A REMAP — the same one `glob.ts` carries, and for the same reason: registered as `grep`,
+        // it answers to the `explore` action, which is what its own `permission.assert` below spends.
+        // Searching and listing are ONE grant class, so one user rule has to reach both tools; before
+        // the wrap, `explore: "deny"` refused every search while leaving both ADVERTISED, and
+        // `grep: "deny"` withdrew grep while glob went on working. See `glob.ts` for the full note and
+        // `test/tool-permission-identity.test.ts` for the ledger entry.
+        [name]: Tool.withPermission(
+          Tool.make({
+            description:
+              "Search file contents by regular expression within the active Location or an absolute managed tool-output file. Use a path to narrow the search, include to filter files by glob, and limit to bound the match count. Returns concise file resources, line numbers, and bounded line previews.",
+            input: Input,
+            output: Output,
+            toModelOutput: ({ output }) => [
+              {
+                type: "text",
+                text: toModelOutput(
+                  output.map((match) => ({
+                    ...match,
+                    entry: { ...match.entry, path: path.resolve(location.directory, match.entry.path) },
+                  })),
+                ),
+              },
+            ],
+            execute: (input, context) =>
+              Effect.gen(function* () {
+                const source = {
+                  type: "tool" as const,
+                  messageID: context.assistantMessageID,
+                  callID: context.toolCallID,
+                }
+                // Classify the search root BEFORE searching it — see the same guard in glob.ts. grep
+                // matters more than glob here because it returns matching LINES, i.e. real file CONTENT
+                // from outside the Location, not just names. `input.path` is typed RelativePath but that
+                // brand does not validate, so an absolute path was previously searched silently.
+                const resolved = yield* mutation.resolve({ path: input.path ?? ".", kind: "directory" })
+                const external = resolved.externalDirectory
+                if (external)
+                  yield* permission.assert({
+                    ...LocationMutation.externalDirectoryPermission(external, "read"),
+                    sessionID: context.sessionID,
+                    agent: context.agent,
+                    source,
+                  })
+                // 1I: glob + grep share the "explore" action — listing/searching is one grant class.
+                // The `withPermission` wrap above makes the HORIZON filter spend this same action.
                 yield* permission.assert({
-                  ...LocationMutation.externalDirectoryPermission(external, "read"),
+                  action: "explore",
+                  resources: [input.pattern],
+                  save: ["*"],
+                  metadata: {
+                    root: ".",
+                    path: input.path,
+                    include: input.include,
+                    limit: input.limit,
+                  },
                   sessionID: context.sessionID,
                   agent: context.agent,
                   source,
                 })
-              // 1I: glob + grep share the "explore" action — listing/searching is one grant class.
-              yield* permission.assert({
-                action: "explore",
-                resources: [input.pattern],
-                save: ["*"],
-                metadata: {
-                  root: ".",
-                  path: input.path,
-                  include: input.include,
-                  limit: input.limit,
-                },
-                sessionID: context.sessionID,
-                agent: context.agent,
-                source,
-              })
-              const target = resolved.canonical
-              const info = yield* fs.stat(target).pipe(Effect.catch(() => Effect.succeed(undefined)))
-              return yield* ripgrep
-                .grep({
-                  cwd: info?.type === "Directory" ? target : path.dirname(target),
-                  pattern: input.pattern,
-                  file: info?.type === "File" ? path.basename(target) : undefined,
-                  include: input.include,
-                  limit: input.limit ?? Number.MAX_SAFE_INTEGER,
-                })
-                .pipe(
-                  Effect.map((result) =>
-                    result.map((match) =>
-                      FileSystem.Match.make({
-                        ...match,
-                        entry: FileSystem.Entry.make({
-                          ...match.entry,
-                          path: RelativePath.make(
-                            path.relative(
-                              location.directory,
-                              path.resolve(
-                                info?.type === "Directory" ? target : path.dirname(target),
-                                match.entry.path,
+                const target = resolved.canonical
+                const info = yield* fs.stat(target).pipe(Effect.catch(() => Effect.succeed(undefined)))
+                return yield* ripgrep
+                  .grep({
+                    cwd: info?.type === "Directory" ? target : path.dirname(target),
+                    pattern: input.pattern,
+                    file: info?.type === "File" ? path.basename(target) : undefined,
+                    include: input.include,
+                    limit: input.limit ?? Number.MAX_SAFE_INTEGER,
+                  })
+                  .pipe(
+                    Effect.map((result) =>
+                      result.map((match) =>
+                        FileSystem.Match.make({
+                          ...match,
+                          entry: FileSystem.Entry.make({
+                            ...match.entry,
+                            path: RelativePath.make(
+                              path.relative(
+                                location.directory,
+                                path.resolve(
+                                  info?.type === "Directory" ? target : path.dirname(target),
+                                  match.entry.path,
+                                ),
                               ),
                             ),
-                          ),
+                          }),
                         }),
-                      }),
+                      ),
                     ),
-                  ),
-                )
-            }).pipe(
-              Effect.mapError((error) => {
-                const denial = PermissionV2.denialMessage(error)
-                if (denial) return new ToolFailure({ message: denial })
-                return new ToolFailure({ message: `Unable to grep for ${input.pattern}` })
-              }),
-            ),
-        }),
+                  )
+              }).pipe(
+                Effect.mapError((error) => {
+                  const denial = PermissionV2.denialMessage(error)
+                  if (denial) return new ToolFailure({ message: denial })
+                  return new ToolFailure({ message: `Unable to grep for ${input.pattern}` })
+                }),
+              ),
+          }),
+          "explore",
+        ),
       })
       .pipe(Effect.orDie)
   }),

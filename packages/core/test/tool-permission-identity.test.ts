@@ -296,6 +296,19 @@ const LEDGER = new Map<string, string>([
       "execution gate would disagree: a `deny edit/*` rule would refuse every patch while the tool " +
       "went on being advertised, i.e. a horizon the model cannot act on.",
   ],
+  [
+    "packages/core/src/tool/glob.ts",
+    "Registered as `glob`, it answers to `explore` — the action its own `permission.assert` spends. " +
+      "Listing and searching are ONE grant class, so one rule must reach both search tools. Added " +
+      "2026-07-30: without it `explore: \"deny\"` refused every search while both tools stayed " +
+      'advertised, and `glob: "deny"` withdrew glob while grep went on working.',
+  ],
+  [
+    "packages/core/src/tool/grep.ts",
+    "The other half of the pair above, and the sharper end — grep returns matching LINES, i.e. real " +
+      "file content. Registered as `grep`, it answers to `explore` so that the same single rule " +
+      "governs its horizon and its execution.",
+  ],
 ])
 
 describe("no withPermission call is the identity", () => {
@@ -355,6 +368,20 @@ describe("no withPermission call is the identity", () => {
         key: "apply_patch",
         permission: "edit",
       },
+    ])
+  })
+
+  test.each([
+    ["packages/core/src/tool/glob.ts", "glob"],
+    ["packages/core/src/tool/grep.ts", "grep"],
+  ])("%s's remap is still the `explore` action", (file, key) => {
+    // Same shape as apply_patch above, and it fails in both directions: the remap disappearing fails
+    // here (and fails the ledger's "drop the entry" arm), and a remap onto some OTHER action fails on
+    // the permission value. The execution half — `permission.assert({ action: "explore" })` in the
+    // same file — is pinned by `test/permission-baseline.test.ts`; the two must keep agreeing, which
+    // is the whole point of the wrap.
+    expect(sites.filter((site) => site.file === file)).toEqual([
+      { file, line: expect.any(Number), key, permission: "explore" },
     ])
   })
 })

@@ -215,32 +215,21 @@ export const Plugin = define({
             defaults,
             [
               { action: "*", resource: "*", effect: "deny" },
-              // ⚠️ TWO grants per search tool, and BOTH are load-bearing — they are spent by
-              // different consumers, and dropping either one breaks the agent at its only job.
-              //
-              //   · `explore` is what `tool/glob.ts` and `tool/grep.ts` actually ASSERT
-              //     (`permission.assert({ action: "explore" })` — listing and searching are one
-              //     grant class, and both files say so). It is in `AMBIENT_SAFE_BASELINE`, i.e.
-              //     inside `defaults` — but `defaults` comes BEFORE the catch-all deny above and
-              //     `evaluate` is findLast, so the floor was shadowed and every glob/grep call this
-              //     agent made was DENIED. It was broken before B4c too (the old catch-all ALLOW sat
-              //     in the same shadowed position), so B4c did not cause it and does not fix it.
-              //   · `grep`/`glob` are what `ToolRegistry.materialize` resolves when it decides the
-              //     model's HORIZON: `Tool.permission` falls back to the name a tool is REGISTERED
-              //     under, and neither file remaps (the only `withPermission` remap in the tree is
-              //     `apply_patch` → `edit`, ledgered in `test/tool-permission-identity.test.ts`).
-              //     So without these two, `whollyDisabled` reads the catch-all deny and withdraws
-              //     both tools from this agent's tool list entirely.
-              //
-              // That split — horizon action ≠ execution action — is the disagreement the
-              // `apply_patch` ledger entry exists to prevent, arrived at from the other side. It is
-              // recorded here rather than repaired here: collapsing it means remapping both tools to
-              // `explore`, which changes what a user's existing `permission: { glob: "deny" }` means
-              // and needs its own ledger entries. `test/permission-baseline.test.ts` pins both
-              // halves so neither grant can be tidied away as redundant.
+              // ONE grant for the search pair, because `glob` and `grep` are ONE action at BOTH
+              // seams now: each is registered through `Tool.withPermission(…, "explore")`, so
+              // `ToolRegistry.materialize`'s horizon filter resolves the same `explore` the tools'
+              // own `permission.assert` spends. This line used to be THREE rules — `explore` for
+              // execution plus `grep`/`glob` for the horizon, because `Tool.permission` falls back
+              // to the name a tool is REGISTERED under — and dropping either half broke the agent a
+              // different way: without `explore` every search was denied while both tools stayed
+              // advertised, without `grep`/`glob` the tools vanished from the horizon entirely.
+              // ⚠️ It is still load-bearing and must stay AFTER the catch-all deny above. `explore`
+              // is in `AMBIENT_SAFE_BASELINE`, i.e. inside `defaults`, which comes BEFORE that deny
+              // — and `evaluate` is findLast, so the ambient floor is shadowed here and this rule is
+              // the only thing that lets the read-only search agent do its only job. (It was broken
+              // before B4c too: the old catch-all ALLOW sat in the same shadowed position.)
+              // `test/permission-baseline.test.ts` pins both the execution and the horizon half.
               { action: "explore", resource: "*", effect: "allow" },
-              { action: "grep", resource: "*", effect: "allow" },
-              { action: "glob", resource: "*", effect: "allow" },
               { action: "webfetch", resource: "*", effect: "allow" },
               { action: "websearch", resource: "*", effect: "allow" },
               { action: "read", resource: "*", effect: "allow" },
