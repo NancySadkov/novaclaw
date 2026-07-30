@@ -1,6 +1,5 @@
 import { define } from "./internal"
-import { Effect, Stream } from "effect"
-import { EventV2 } from "../event"
+import { Effect } from "effect"
 import { ModelV2 } from "../model"
 import { ModelsDev } from "../models-dev"
 import { ProviderV2 } from "../provider"
@@ -49,7 +48,6 @@ export const ModelsDevPlugin = define({
   id: "models-dev",
   effect: Effect.fn(function* (ctx) {
     const modelsDev = yield* ModelsDev.Service
-    const events = yield* EventV2.Service
     yield* ctx.integration.transform(
       Effect.fn(function* (integrations) {
         const data = yield* modelsDev.get()
@@ -126,9 +124,20 @@ export const ModelsDevPlugin = define({
         }
       }),
     )
-    yield* events.subscribe(ModelsDev.Event.Refreshed).pipe(
-      Stream.runForEach(() => ctx.integration.reload().pipe(Effect.andThen(ctx.catalog.reload()))),
-      Effect.forkScoped({ startImmediately: true }),
+    // Subscribe through the plugin API, not the raw bus. The host owns the fork, per-delivery
+    // failure isolation and a bounded buffer, so this plugin stops hand-rolling all three — and
+    // stops getting one of them wrong. What was here was
+    // `events.subscribe(...) |> Stream.runForEach(...) |> forkScoped` with NO `catchCause`: if
+    // either reload ever died, the defect killed the forked fiber and this plugin went deaf for
+    // the rest of the process, silently. `PluginHost`'s `isolate` logs the failure and the
+    // subscription survives to the next refresh.
+    //
+    // Scoping is right for this event specifically: `models-dev.refreshed` is published by the
+    // GLOBAL ModelsDev service, so it carries no `location`, and the host deliberately delivers
+    // location-less globals to every location's plugins (V1 dropped them — its filter was
+    // `location?.directory !== ctx.directory`, which discarded everything unlocated).
+    yield* ctx.event.subscribe("models-dev.refreshed", () =>
+      ctx.integration.reload().pipe(Effect.andThen(ctx.catalog.reload())),
     )
   }),
 })

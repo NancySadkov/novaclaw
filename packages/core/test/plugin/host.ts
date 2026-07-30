@@ -25,6 +25,14 @@ export function host(overrides: Overrides = {}): PluginContext {
       transform: () => Effect.die("unused command.transform"),
       reload: () => Effect.die("unused command.reload"),
     },
+    // Unlike its siblings this does NOT die by default. Subscribing is plugin SETUP, not an
+    // assertion target: a plugin that observes events (e.g. models-dev) calls this while merely
+    // being constructed, so a dying stub would fail every test of everything else it does. The
+    // no-op returns a valid, inert Registration; a test that cares about delivery overrides it
+    // with the real host's `event` domain.
+    event: overrides.event ?? {
+      subscribe: () => Effect.succeed({ dispose: Effect.void }),
+    },
     integration: overrides.integration ?? {
       transform: () => Effect.die("unused integration.transform"),
       reload: () => Effect.die("unused integration.reload"),
