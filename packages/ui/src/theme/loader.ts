@@ -1,4 +1,5 @@
 import type { DesktopTheme, ResolvedTheme, ResolvedV2Theme } from "./types"
+import { DEFAULT_THEME_ID } from "./default-theme"
 import { resolveThemeVariant, themeToCss } from "./resolve"
 import { resolveThemeVariantV2, themeV2ToCss } from "./v2/resolve"
 
@@ -36,7 +37,7 @@ function buildThemeCss(
   darkV2: ResolvedV2Theme,
   themeId: string,
 ): string {
-  const isDefaultTheme = themeId === "oc-2"
+  const isDefaultTheme = themeId === DEFAULT_THEME_ID
   const lightCss = `${themeToCss(light)}\n  ${themeV2ToCss(lightV2)}`
   const darkCss = `${themeToCss(dark)}\n  ${themeV2ToCss(darkV2)}`
 

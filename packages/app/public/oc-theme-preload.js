@@ -1,9 +1,12 @@
 ;(function () {
   var key = "novaclaw-theme-id"
-  var themeId = localStorage.getItem(key) || "oc-2"
+  var themeId = localStorage.getItem(key) || "nova"
 
-  if (themeId === "oc-1") {
-    themeId = "oc-2"
+  // `oc-1`/`oc-2` are opencode's ids, retired in favour of the brand default. Mirrors
+  // LEGACY_THEME_IDS in @novaclaw/ui/theme/default-theme — kept as a literal here because the
+  // first-paint script runs before any module loads and must stay dependency-free.
+  if (themeId === "oc-1" || themeId === "oc-2") {
+    themeId = "nova"
     localStorage.setItem(key, themeId)
     localStorage.removeItem("novaclaw-theme-css-light")
     localStorage.removeItem("novaclaw-theme-css-dark")
@@ -21,7 +24,7 @@
   var metas = document.querySelectorAll("meta[name='theme-color']")
   if (metas.length > 0) metas[0].setAttribute("content", isDark ? "#080808" : "#fafafa")
 
-  if (themeId === "oc-2") return
+  if (themeId === "nova") return
 
   var css = localStorage.getItem("novaclaw-theme-css-" + mode)
   if (css) {

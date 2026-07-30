@@ -1,7 +1,7 @@
 {
   "$schema": "https://novaclaw.app/desktop-theme.json",
-  "name": "OC-2",
-  "id": "oc-2",
+  "name": "Nova",
+  "id": "nova",
   "light": {
     "palette": {
       "neutral": "#f7f7f7",

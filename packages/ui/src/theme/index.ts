@@ -31,6 +31,7 @@ export {
   withAlpha,
 } from "./color"
 
+export { DEFAULT_THEME_ID, LEGACY_THEME_IDS, normalizeThemeId } from "./default-theme"
 export { resolveThemeVariant, resolveTheme, themeToCss } from "./resolve"
 export { resolveThemeVariantV2, resolveThemeV2, themeV2ToCss, generateV2Primitives } from "./v2/resolve"
 export { applyTheme, loadThemeFromUrl, getActiveTheme, removeTheme, setColorScheme } from "./loader"
@@ -38,7 +39,7 @@ export { ThemeProvider, useTheme, type ColorScheme } from "./context"
 
 export {
   DEFAULT_THEMES,
-  oc2Theme,
+  novaTheme,
   amoledTheme,
   auraTheme,
   ayuTheme,
