@@ -20,23 +20,32 @@ export * as CompactionPrune from "./compaction-prune"
 // lowers for a completed tool part, so "tokens reclaimed" means tokens the MODEL stops paying for,
 // not bytes in the row.
 //
-// ⚠️ WHERE THE RECLAIM LANDS TODAY, and the one leg still missing — read this before assuming
-// prune is fully restored.
+// WHERE THE RECLAIM LANDS — one leg is shipped, and the second is deliberately NOT here.
 //
-// `compaction.ts` runs this tier at the top of the compaction cycle, so an erased result is gone
-// from BOTH durable halves of that cycle: the `head` that feeds the summary prompt, and the
-// `recent` tail stored verbatim on the compaction message and re-fed on every later turn. That is a
-// real, durable context reclaim through an event that already exists.
+// SHIPPED, in-memory inside the compaction cycle: `compaction.ts` runs this tier at the top of the
+// cycle, so an erased result is gone from BOTH durable halves of that cycle — the `head` that feeds
+// the summary prompt, and the `recent` tail stored verbatim on the compaction message and re-fed on
+// every later turn. `erase()` below is that path, and it is the whole of what ships today.
 //
-// What it is NOT yet is the ladder rung that skips the summary call outright ("free context, no
-// model call"). That needs the transcript ROWS rewritten out of band, and in V2 the projector is
-// the only writer of `session_message` — every existing tool arm in `session/message-updater.ts`
-// is guarded on a PENDING/RUNNING part, so no event in today's manifest can rewrite a settled one.
-// The missing seam is a `SessionEvent.Tool.Pruned` durable event (schema definition + inventories,
-// one `message-updater` arm that applies `erasedState` below, one `projector` line), which also
-// changes the generated OpenAPI and therefore needs the SDK regen ritual — deliberately out of
-// this slice. `plan` + `erase` are the whole decision half and need no change when it lands: the
-// arm sets exactly what `erasedState` sets, and stamps `time.pruned`.
+// ⛔ WITHHELD: rewriting the transcript ROWS via a durable `SessionEvent.Tool.Pruned`. It was built
+// and it worked (branch `tool-pruned-event`), then adversarial review found 10 defects and one of
+// them voids the premise on the DEFAULT path: `SessionHistory.messageRows` bounds the runner's query
+// with `gte(seq, compaction.seq)` (`session/history.ts:36-43`), so once this cycle writes its
+// compaction message every pruned row is ALREADY out of the model's context, permanently. Erasing
+// the rows as well therefore reclaims nothing and only destroys the human-readable transcript — and
+// destroys it badly, wiping the `structured` payload that is the only rendering of what an
+// `edit`/`write` call did, and making a pruned `question` card report answers the user really gave
+// as "No answer".
+//
+// The corrected design, if you are the one building it: the durable event is a FAILURE-PATH BACKSTOP
+// and the mechanism for a future `prune only` scheme — publish it ONLY where no compaction message
+// will be written. On the success path the compaction boundary already does the work; leave the rows
+// alone. Exempt `question`, keep a `structured.files` residue (drop only `patch`, which is the
+// bytes), and surface `time.pruned` in the UI, which folds it today and renders nothing.
+//
+// ⚠️ Whatever lands, `erasedState` below must stay the SINGLE definition of what an erased result
+// looks like — any updater arm and the `session-ui` client fold must both reproduce it, or the
+// transcript and the UI will disagree.
 
 import type { DateTime } from "effect"
 import { SessionMessage } from "./message"
