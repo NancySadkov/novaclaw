@@ -52,23 +52,83 @@ describe("AgentJail", () => {
     expect(AgentJail.probe()).toBe(first)
   })
 
-  // The full decision matrix (plan §2.1/§2.3): attended chains are untouched; unattended
-  // chains run confined only under a backend enforcing BOTH boundaries, else deny.
+  // The full DEFAULT decision matrix (plan §2.1/§2.3, as amended by the owner 2026-07-30):
+  // attended chains are untouched; unattended chains run confined under a backend enforcing BOTH
+  // boundaries, and RAW where the host has none — the deny arm is now the safe-mode matrix below.
   const cases: Array<[SessionType, AgentJail.BackendInfo, AgentJail.BashDecision]> = [
     ["interactive", AgentJail.NO_BACKEND, "raw"],
     ["interactive", FULL, "raw"],
     ["sub-agent", AgentJail.NO_BACKEND, "raw"],
-    ["auto-prompting", AgentJail.NO_BACKEND, "deny"],
-    ["goal-oriented", AgentJail.NO_BACKEND, "deny"],
+    // ⚠️ These four read "deny" until 2026-07-30. Changed deliberately: an unattended chain on a
+    // backend-less host (every Windows host) may now run its shell. See agent-jail.ts's header.
+    ["auto-prompting", AgentJail.NO_BACKEND, "raw"],
+    ["goal-oriented", AgentJail.NO_BACKEND, "raw"],
     ["auto-prompting", FULL, "confined"],
     ["goal-oriented", FULL, "confined"],
-    // A partial backend (FS view but no egress control) is NOT containment — deny.
-    ["goal-oriented", FS_ONLY, "deny"],
+    // A partial backend (FS view but no egress control) is NOT containment, so it does not reach
+    // the confined arm — with safe mode off it falls through to the default like any other
+    // backend-less host, and with safe mode on it denies (below).
+    ["goal-oriented", FS_ONLY, "raw"],
   ]
   for (const [rootType, backend, expected] of cases)
     test(`decideBash(${rootType}, ${backend.kind}/fs:${backend.fs}/net:${backend.net}) = ${expected}`, () => {
       expect(AgentJail.decideBash({ rootType, backend })).toBe(expected)
     })
+
+  // SAFE MODE — the same matrix with the switch ON. It is the exact pre-2026-07-30 behaviour, which
+  // is what makes it a *restoration* rather than a fourth posture: every row here was the shipped
+  // answer before the reversal.
+  const safeCases: Array<[SessionType, AgentJail.BackendInfo, AgentJail.BashDecision]> = [
+    // Attended is UNAFFECTED in both positions — safe mode is not a second attendance flag.
+    ["interactive", AgentJail.NO_BACKEND, "raw"],
+    ["interactive", FULL, "raw"],
+    ["sub-agent", AgentJail.NO_BACKEND, "raw"],
+    // Unattended: confined where the host can confine, refused where it cannot.
+    ["auto-prompting", FULL, "confined"],
+    ["goal-oriented", FULL, "confined"],
+    ["auto-prompting", AgentJail.NO_BACKEND, "deny"],
+    ["goal-oriented", AgentJail.NO_BACKEND, "deny"],
+    ["goal-oriented", FS_ONLY, "deny"],
+  ]
+  for (const [rootType, backend, expected] of safeCases)
+    test(`decideBash(${rootType}, ${backend.kind}/fs:${backend.fs}/net:${backend.net}, safeMode) = ${expected}`, () => {
+      expect(AgentJail.decideBash({ rootType, backend, safeMode: true })).toBe(expected)
+    })
+
+  test("safeMode:false and an omitted safeMode are the SAME (default) answer, everywhere", () => {
+    const roots: SessionType[] = ["interactive", "sub-agent", "auto-prompting", "goal-oriented"]
+    for (const rootType of roots)
+      for (const backend of [AgentJail.NO_BACKEND, FULL, FS_ONLY])
+        expect(AgentJail.decideBash({ rootType, backend, safeMode: false })).toBe(
+          AgentJail.decideBash({ rootType, backend }),
+        )
+  })
+
+  test("safeMode can only ever REFUSE — it never turns a deny into a run", () => {
+    // Exhaustive over the whole input space: for every combination, the safe-mode answer is never
+    // more permissive than the default one. This is what makes the switch composable with the
+    // narrowing keystone without a clamp of its own (config-resolve.ts §SAFE MODE).
+    const rank: Record<AgentJail.BashDecision, number> = { deny: 0, confined: 1, raw: 2 }
+    const roots: SessionType[] = ["interactive", "sub-agent", "auto-prompting", "goal-oriented"]
+    for (const rootType of roots)
+      for (const backend of [AgentJail.NO_BACKEND, FULL, FS_ONLY])
+        for (const hostileInput of [true, false, undefined])
+          expect(
+            rank[AgentJail.decideBash({ rootType, backend, hostileInput, safeMode: true })],
+            `safeMode LOOSENED ${rootType}/${backend.kind}/hostile:${hostileInput}`,
+          ).toBeLessThanOrEqual(rank[AgentJail.decideBash({ rootType, backend, hostileInput })])
+  })
+
+  test("hostileInput is NOT governed by safe mode — an untrusted turn is contained either way", () => {
+    // The owner's directive reversed the ATTENDANCE arm. The messenger-trust arm answers a
+    // different adversary (untrusted text arriving as data) and AGENTS.md principle 9(c) still
+    // binds, so turning safe mode off must not buy a stranger's turn the host.
+    for (const safeMode of [true, false, undefined]) {
+      expect(AgentJail.decideBash({ rootType: "interactive", backend: AgentJail.NO_BACKEND, hostileInput: true, safeMode })).toBe("deny")
+      expect(AgentJail.decideBash({ rootType: "goal-oriented", backend: AgentJail.NO_BACKEND, hostileInput: true, safeMode })).toBe("deny")
+      expect(AgentJail.decideBash({ rootType: "interactive", backend: FULL, hostileInput: true, safeMode })).toBe("confined")
+    }
+  })
 
   // messenger-plan §3.4: a client/audience-driven turn is unattended hostile input even on an
   // interactive root — so `hostileInput` flips an otherwise-raw interactive chain to the
@@ -90,6 +150,24 @@ describe("AgentJail", () => {
     expect(hostile).toContain("untrusted messenger chat")
     expect(hostile).not.toContain("interactive sessions")
     expect(AgentJail.denyMessage("goal-oriented")).toContain("goal-oriented sessions")
+  })
+
+  // Ruling 2 — a refusal names ITSELF, and the right one. A user who ticked Safe mode and then read
+  // "this platform has no sandbox backend yet" would conclude the product is broken.
+  test("denyMessage names SAFE MODE and where to turn it off, without blaming the platform", () => {
+    const safe = AgentJail.denyMessage("goal-oriented", false, true)
+    expect(safe).toContain("Safe mode is ON")
+    expect(safe).toContain("Tuning")
+    expect(safe).not.toContain("untrusted messenger chat")
+    // The three reasons must stay distinguishable — a shared prefix would defeat the point.
+    expect(safe).not.toBe(AgentJail.denyMessage("goal-oriented"))
+    expect(safe).not.toBe(AgentJail.denyMessage("goal-oriented", true))
+    // Hostility WINS the wording: with both true the refusal would have happened anyway, so
+    // naming safe mode would describe a cause that was not the operative one.
+    expect(AgentJail.denyMessage("interactive", true, true)).toBe(AgentJail.denyMessage("interactive", true))
+    // Every arm still teaches the same way forward (the tail `HostExec.DENY_ROUTING` mirrors).
+    for (const text of [safe, AgentJail.denyMessage("goal-oriented"), AgentJail.denyMessage("interactive", true)])
+      expect(text.endsWith("Do not retry the same command.")).toBe(true)
   })
 
   // The unit half of the GuardFall battery (P6): prove a string matcher is BLIND to exactly the

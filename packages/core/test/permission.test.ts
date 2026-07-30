@@ -1114,6 +1114,34 @@ describe("PermissionV2 — an unattended ask denies FAST", () => {
       return error as PermissionV2.DeniedError
     })
 
+  // ⚠️ THE OTHER SIDE OF THE SAME ARM, and it is the half a reader assumes rather than checks.
+  // `bash` is NOT a fall-through action: `MODE_RULES.bypass` — the SHIPPED default posture
+  // (`EFFECTIVE_CONFIG_DEFAULTS.permissionMode`) — names it with an explicit `allow`, so it resolves
+  // before the deny-fast arm above ever sees it. That is what makes the owner's 2026-07-30 directive
+  // ("unattended bash should be allowed by default") true at the PERMISSION layer, and it means the
+  // refusal a user actually hit before that directive came from the JAIL, not from here.
+  //
+  // Without this test the directive's permission half is an argument about rule ordering. With it, a
+  // future change that promotes `bash` out of `MODE_RULES.bypass`, or that widens the deny-fast arm
+  // to cover explicit allows, fails HERE instead of silently re-refusing every scheduled run.
+  it.effect("`bash` is ALLOWED for an unattended root under the DEFAULT mode (owner 2026-07-30)", () =>
+    Effect.gen(function* () {
+      yield* setup(b4cBaseline)
+      yield* insertSession({ id: "ses_cron", type: "goal-oriented", permissionMode: "bypass" })
+      const service = yield* PermissionV2.Service
+      const input = assertion({
+        sessionID: SessionV2.ID.make("ses_cron"),
+        action: "bash",
+        resources: ["pwd"],
+        save: ["pwd"],
+      })
+      expect(yield* service.ask(input)).toMatchObject({ effect: "allow" })
+      // `assert` is the path every tool takes: it must return, not park and not fail.
+      yield* service.assert(input)
+      expect(yield* service.list()).toEqual([]) // nothing parked for a human who is not there
+    }),
+  )
+
   it.effect("a fall-through action is DENIED with a named reason for an unattended root — nothing parked", () =>
     Effect.gen(function* () {
       yield* setup(b4cBaseline)

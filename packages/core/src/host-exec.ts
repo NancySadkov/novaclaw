@@ -22,11 +22,13 @@ export * as HostExec from "./host-exec"
  * Two rules the gate owns, and neither is a per-call-site preference:
  *
  *  1. **Confinement** is `AgentJail.decideBash`: an attended chain runs raw; an unattended chain
- *     (or a hostile-input turn) runs confined under a full sandbox backend, and is DENIED when the
- *     host has none. Confined means the child execs `bwrap` with the sandbox argv — the shell is an
- *     argv element, never a spawn option. ⚠️ The hostile-input half is **tri-state** (`Hostility`):
- *     an unanswerable trust question is `"unknown"`, and unknown contains rather than permits — the
- *     gate never decides containment on missing data (ruling 2).
+ *     (or a hostile-input turn) runs confined under a full sandbox backend. With NO backend a
+ *     hostile-input turn is DENIED, while an unattended one now runs raw unless the session's
+ *     **safe mode** switch is on (owner 2026-07-30 — the reversal is documented in full at
+ *     `agent-jail.ts`'s header). Confined means the child execs `bwrap` with the sandbox argv — the
+ *     shell is an argv element, never a spawn option. ⚠️ The hostile-input half is **tri-state**
+ *     (`Hostility`): an unanswerable trust question is `"unknown"`, and unknown contains rather than
+ *     permits — the gate never decides containment on missing data (ruling 2).
  *  2. **Credentials** — the operator's environment reaches a child only when a HUMAN approved THAT
  *     command. `tool/bash.ts` asserts a per-command permission before it runs, so its raw path
  *     inherits the process environment and may carry peer instance tokens. The jh runner and the js
@@ -155,6 +157,12 @@ export interface EnvRequest {
   /** Operator credentials (peer instance tokens). Handed to the child ONLY on a raw, per-command-
    *  approved exec; DROPPED whenever the command is confined or nobody approved it. */
   readonly credentials?: Record<string, string> | undefined
+  /** The session's resolved SAFE MODE (`SessionConfig.safeMode`) — the Tuning switch that restores
+   *  unattended confinement after the owner's 2026-07-30 default-allow directive. Omitted/false =
+   *  the default posture. Passed straight through to `AgentJail.decideBash`; it can only ever
+   *  produce a refusal, never a grant, so a caller that has not been wired to it is permissive-by-
+   *  omission in exactly the same way it was before the switch existed. */
+  readonly safeMode?: boolean
   /** Test seams. */
   readonly processEnv?: Record<string, string | undefined>
   readonly platform?: NodeJS.Platform
@@ -182,6 +190,8 @@ export interface SessionHost {
   /** `Offline.egressEnv()` from the shared service. */
   readonly egress?: Record<string, string> | undefined
   readonly backend?: AgentJail.BackendInfo
+  /** The session's resolved SAFE MODE (`SessionConfig.safeMode`). See `EnvRequest.safeMode`. */
+  readonly safeMode?: boolean
 }
 
 export type Decision = AgentJail.BashDecision
@@ -222,8 +232,8 @@ const DENY_ROUTING =
  * the fault falsely**. The user is told what actually broke, which is also the only version they
  * can act on (the messenger database, not their chat partner).
  */
-export function denyMessage(rootType: SessionType, hostileInput?: Hostility): string {
-  if (hostileInput !== "unknown") return AgentJail.denyMessage(rootType, hostileInput)
+export function denyMessage(rootType: SessionType, hostileInput?: Hostility, safeMode?: boolean): string {
+  if (hostileInput !== "unknown") return AgentJail.denyMessage(rootType, hostileInput, safeMode)
   return (
     `I could not tell whether an untrusted messenger chat drives this turn — the messenger database ` +
     `could not be read — and a containment question this host cannot answer is not a licence to run ` +
@@ -404,14 +414,23 @@ export function decide(input: {
   readonly rootType?: SessionType
   readonly hostileInput?: Hostility
   readonly backend?: AgentJail.BackendInfo
+  /** The session's resolved SAFE MODE. See `EnvRequest.safeMode`. */
+  readonly safeMode?: boolean
 }): Decision {
   const backend = input.backend ?? AgentJail.probe()
   // Resolved to a boolean HERE and nowhere else: `AgentJail.decideBash` is the pure two-valued
   // policy and stays that way, so the tri-state has exactly one collapse point in the product.
   const unattended = takesUnattendedArm(input.hostileInput)
+  const safeMode = input.safeMode === true
+  // ⚠️ `safeMode` rides the UNDECLARED-caller arm too, and that is not the "invent an attendance"
+  // this arm refuses to do. The undeclared caller is answered `"raw"` because we were told nothing
+  // about attendance; safe mode is a fact we WERE told, and it can only refuse. Threading it here
+  // means a caller wired for the switch is honoured even before it can name its root type.
   if (input.rootType === undefined)
-    return unattended ? AgentJail.decideBash({ rootType: "goal-oriented", backend, hostileInput: true }) : "raw"
-  return AgentJail.decideBash({ rootType: input.rootType, backend, hostileInput: unattended })
+    return unattended
+      ? AgentJail.decideBash({ rootType: "goal-oriented", backend, hostileInput: true, safeMode })
+      : "raw"
+  return AgentJail.decideBash({ rootType: input.rootType, backend, hostileInput: unattended, safeMode })
 }
 
 /**
@@ -423,6 +442,7 @@ export function childEnv(request: EnvRequest): Env {
     ...(request.rootType === undefined ? {} : { rootType: request.rootType }),
     ...(request.hostileInput === undefined ? {} : { hostileInput: request.hostileInput }),
     ...(request.backend === undefined ? {} : { backend: request.backend }),
+    ...(request.safeMode === undefined ? {} : { safeMode: request.safeMode }),
   })
   // The host-authority path: a human approved this exact command, so the child inherits the
   // operator's environment and may carry the peer tokens an agent drives other instances with.
@@ -474,6 +494,7 @@ export function plan(request: Request): Plan {
   const decision = decide({
     ...(request.rootType === undefined ? {} : { rootType: request.rootType }),
     ...(request.hostileInput === undefined ? {} : { hostileInput: request.hostileInput }),
+    ...(request.safeMode === undefined ? {} : { safeMode: request.safeMode }),
     backend,
   })
   const env = childEnv({ ...request, backend })
@@ -483,7 +504,7 @@ export function plan(request: Request): Plan {
       decision,
       // rootType is defined here by construction: `decide` only reaches the deny arm through
       // `AgentJail.decideBash`, and an undeclared root never does.
-      message: denyMessage(request.rootType ?? "goal-oriented", request.hostileInput),
+      message: denyMessage(request.rootType ?? "goal-oriented", request.hostileInput, request.safeMode),
     }
   if (decision === "confined")
     return {

@@ -265,6 +265,16 @@ export const attendedRoot = (rootType: RootType): boolean => {
  *     a confined command's FS view is the worktree, so it cannot read outside it regardless.)
  * Nothing INSIDE the folder appears here — no `read`/`edit`/`write`/`create`/`trash`/`bash` rule —
  * which is the whole point of the stance: work freely where you live.
+ *
+ * ⚠️ AND `bash` IS STILL NOT IN THIS LIST, which matters more since 2026-07-30 than it did before.
+ * These rules bound the tools whose resource is a PATH; `bash`'s resource is the command STRING, and
+ * `permission.ts` says in its own words that matching one is not containment. So an unattended
+ * command that now runs raw (the owner's reversal — see `AgentJail.decideBash`) can write outside
+ * the folder without any rule here seeing it. That gap is not new and it is not closed by adding a
+ * row here; it is what the project-scope system-prompt section
+ * (`session/runner/system-compose.ts`) and, in v0.3.0, a real Windows/macOS backend are for. Naming
+ * it is ruling 2 applied to our own documentation: the stance denies out-of-folder writes through
+ * every seam that can see a path, and no others.
  */
 export const UNATTENDED_CONFINED_RULES: readonly PermissionRule[] = [
   { action: "external_directory_write", resource: "*", effect: "deny" },
@@ -348,9 +358,49 @@ export interface SessionConfig {
   readonly surgicalEdits?: boolean
   /** Tri-state: turn changes into consent prompts. Absent = inherit, then OFF. */
   readonly askBeforeChanges?: boolean
+  /** Tri-state: SAFE MODE — see `SAFE_MODE` below. Absent = inherit, then OFF. */
+  readonly safeMode?: boolean
   readonly strict?: StrictOverride
   readonly tools?: readonly string[]
 }
+
+// ─────────────────────────────────────────────────────────────────────────────
+// SAFE MODE — the Tuning switch that restores unattended confinement (owner 2026-07-30).
+//
+// The directive, verbatim: *"unattended bash should be allowed by default, unless the user have
+// enabled safe mode in tuning."* So the switch is the opt-in half of a deliberate trade, and its
+// meaning is exactly the arm the directive loosened and no more:
+//
+//   ON  → an UNATTENDED chain's host execution must be sandbox-confined, and on a host with no
+//         sandbox backend it is REFUSED rather than run raw (`AgentJail.decideBash`).
+//   OFF → the default: it runs. Confined where a backend exists, raw where none does.
+//
+// ⚠️ THREE things it deliberately is NOT, each of which someone will be tempted to add:
+//  · it is not a second attendance flag — an ATTENDED chain is unaffected in both positions. The
+//    "confine bash in EVERY non-YOLO mode, attended included" item (todo/jail.md) needs the MODE as
+//    an input to `decideBash`, which is a reshape, not this switch;
+//  · it is not `paranoid` — that one gates out-of-folder READS and is an instance-wide setting
+//    (`Config.Info.paranoid`, read live in permission.ts). Safe mode is per-session and gates host
+//    EXECUTION. Two different fears, two different surfaces;
+//  · it can never LOOSEN anything. Every arm it reaches is a refusal, which is why it composes with
+//    the narrowing keystone without needing a clamp of its own (unlike `permissionMode`).
+//
+// It follows the `surgicalEdits`/`askBeforeChanges` shape exactly — a tri-state `SessionConfig`
+// field, `undefined` = inherit, the nearest explicit stance on the chain wins — because those two
+// ARE the precedent: both are former postures demoted to switches, and a fourth mechanism for a
+// fourth switch is how the mode picker got forked into two disagreeing surfaces before.
+//
+// ⚠️ NOT YET USER-SETTABLE, and `SESSION_CONFIG_FIELDS` below says so mechanically rather than in
+// prose: it is classified `absent-from-row`, the same class as `device`/`tools`/`permissionRules`,
+// because no session COLUMN carries it yet. What is missing is the persistence + surface chain, in
+// this order: `session/sql.ts` (a `safe_mode` column) → a migration + `database/schema.gen.ts` +
+// `schema.json` → `session/info.ts` + `session/projector.ts` (row ⇄ Info, and the `switchFeature`
+// arm) → `session.ts` (`Info`, `CreateInput`, the fork's inherited set) → `@novaclaw/schema`'s
+// `Session.Info` + `SessionFeature.Name` → the SDK regen → the composer's Tuning control + i18n.
+// Adding the column is what flips the classification here, and `session-fork-config.test.ts`
+// enforces the equivalence (`"resolved"` ⇔ `sessionToConfig` maps it), so the ratchet catches a
+// half-landed chain rather than a reviewer having to.
+// ─────────────────────────────────────────────────────────────────────────────
 
 /**
  * The base effective config before any session override. `model`/`agent`/`device` are left
@@ -389,6 +439,9 @@ export interface EffectiveConfig {
   readonly surgicalEdits?: boolean
   /** Tri-state: turn changes into consent prompts. Absent = inherit, then OFF. */
   readonly askBeforeChanges?: boolean
+  /** Tri-state: SAFE MODE — restore unattended host-execution confinement (see §SAFE MODE above).
+   *  Absent = inherit, then OFF (the default posture: unattended commands run). */
+  readonly safeMode?: boolean
   /** The nearest per-session Strict override on the chain; `undefined` = none (use global config). */
   readonly strict?: StrictOverride
   readonly tools?: readonly string[]
@@ -412,6 +465,7 @@ export function resolveConfig(defaults: EffectiveConfig, chain: readonly Session
   let thinkingBudget = defaults.thinkingBudget
   let surgicalEdits = defaults.surgicalEdits
   let askBeforeChanges = defaults.askBeforeChanges
+  let safeMode = defaults.safeMode
   let strict = defaults.strict
   let tools = defaults.tools
   let permissionMode = defaults.permissionMode
@@ -431,6 +485,7 @@ export function resolveConfig(defaults: EffectiveConfig, chain: readonly Session
     if (layer.thinkingBudget !== undefined) thinkingBudget = layer.thinkingBudget
     if (layer.surgicalEdits !== undefined) surgicalEdits = layer.surgicalEdits
     if (layer.askBeforeChanges !== undefined) askBeforeChanges = layer.askBeforeChanges
+    if (layer.safeMode !== undefined) safeMode = layer.safeMode
     if (layer.strict !== undefined) strict = layer.strict
     if (layer.tools !== undefined) tools = layer.tools
     if (layer.permissionRules !== undefined) permissionRules = [...permissionRules, ...layer.permissionRules]
@@ -456,6 +511,7 @@ export function resolveConfig(defaults: EffectiveConfig, chain: readonly Session
     thinkingBudget,
     surgicalEdits,
     askBeforeChanges,
+    safeMode,
     strict,
     tools,
   }
@@ -604,7 +660,7 @@ export type SessionConfigForkCarry =
   | "resolved"
   /**
    * A `SessionConfig` field NO session row can express yet, so there is nothing on the chain to
-   * copy: `device` and `tools` have no column at all, and `permissionRules` has a column
+   * copy: `device`, `tools` and `safeMode` have no column at all, and `permissionRules` has a column
    * (`session.permission`) that `sessionToConfig` does not map — architecture.md Phase 1 step 4
    * is blocked on the V1/V2 ruleset reconciliation. The fork copies that column verbatim
    * meanwhile (see `session.ts`), which can only preserve restrictions, never widen them.
@@ -640,6 +696,12 @@ export const SESSION_CONFIG_FIELDS: Readonly<Record<keyof SessionConfig, Session
   thinkingBudget: "resolved",
   surgicalEdits: "resolved",
   askBeforeChanges: "resolved",
+  // ⚠️ `absent-from-row` is the HONEST classification today, not a dodge, and it is the ratchet
+  // doing its job: `safeMode` has no `session` column yet (see §SAFE MODE), so there is literally
+  // nothing on a chain for a fork to copy. Whoever lands the column MUST flip this to `"resolved"`
+  // in the same change — `session-fork-config.test.ts` asserts `"resolved" ⇔ sessionToConfig maps
+  // it` in both directions, so a column with no mapping (or a mapping with no fork carry) fails.
+  safeMode: "absent-from-row",
   strict: "resolved",
   tools: "absent-from-row",
 }

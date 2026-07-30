@@ -13,7 +13,11 @@ describe("SystemCompose — per-model pre-prompt composition", () => {
   // The named parts the runner assembles, minus the pre-prompt — the "today" baseline. Order here
   // MUST match the array in llm.ts: persona, expertiseHint, tierHint, memoryRecall, override, agent,
   // base. (`persona` composed first, `base` last — see system-compose.ts and persona.ts.)
-  const baseParts: Required<Omit<SystemCompose.SystemPromptParts, "modelPrePrompt">> = {
+  // ⚠️ `projectScope` is omitted alongside `modelPrePrompt` on purpose: this file's whole claim is
+  // "byte-identical to today when the OPTIONAL sections are absent", so both optional sections have
+  // to be absent from the baseline. `projectScope`'s own composition is covered in
+  // `test/unattended-bash-safe-mode.test.ts`.
+  const baseParts: Required<Omit<SystemCompose.SystemPromptParts, "modelPrePrompt" | "projectScope">> = {
     persona: "You are Nova.",
     expertiseHint: "Explain in plain language.",
     tierHint: "You are a small local model.",

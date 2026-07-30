@@ -451,12 +451,22 @@ describe("SessionStrict.commandPlan (the host-execution gate, as Strict consumes
     expect(p.inherit).toBe(false)
   })
 
-  test("an UNATTENDED chain on a backend-less host is DENIED — no process is described", () => {
+  // ⚠️ This test read "…is DENIED" until the owner's 2026-07-30 directive. It is the exact loss
+  // AGENTS.md ruling 6 accepted out loud ("unattended Strict on Windows loses `run` until Agent
+  // Jail P4/P5"), and the owner's judgement is that the loss makes the product useless for its main
+  // job. Strict now runs there, and the refusal is what the per-session SAFE MODE switch buys back.
+  test("an UNATTENDED chain on a backend-less host RUNS by default, and is DENIED under safe mode", () => {
     for (const rootType of ["goal-oriented", "auto-prompting"] as const) {
-      const p = plan({ rootType, backend: NONE })
-      expect(p.denied).toContain(rootType)
-      expect(p.file).toBeUndefined()
-      expect(p.shell).toBeUndefined()
+      const allowed = plan({ rootType, backend: NONE })
+      expect(allowed.denied).toBeUndefined()
+      expect(allowed.shell).toBe("/bin/bash")
+      // …and the credential half still holds on that newly-raw path (see the test below).
+      expect(allowed.inherit).toBe(false)
+
+      const refused = plan({ rootType, backend: NONE, safeMode: true })
+      expect(refused.denied).toContain("Safe mode is ON")
+      expect(refused.file).toBeUndefined()
+      expect(refused.shell).toBeUndefined()
     }
   })
 

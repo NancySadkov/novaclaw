@@ -17,7 +17,12 @@ import { BashJobs } from "./bash-jobs"
 import { MessengerStore } from "../messenger/store"
 import { PermissionV2 } from "../permission"
 import { PositiveInt } from "../schema"
-import { rootSessionType } from "../session/config-resolve"
+import {
+  attendedRoot,
+  EFFECTIVE_CONFIG_DEFAULTS,
+  resolveSessionConfig,
+  rootSessionType,
+} from "../session/config-resolve"
 import type { SessionV2 } from "../session"
 import { SessionStore } from "../session/store"
 import { ToolRegistry } from "./registry"
@@ -206,17 +211,19 @@ export const layer = Layer.effectDiscard(
               // Agent Jail P0b/P1 (notes/agent-jail-plan.md §2.3): in an UNATTENDED chain (root
               // type auto-prompting / goal-oriented) raw host execution additionally requires a
               // sandbox. With a backend (Linux namespaces, P1) the command runs CONFINED —
-              // worktree-only FS, deny-all egress; with none it is DENIED, with routing to the
-              // path-gated native tools. Attended chains (interactive roots + their sub-agents)
-              // are untouched.
+              // worktree-only FS, deny-all egress.
+              // ⚠️ WITHOUT a backend it used to be DENIED; since the owner's 2026-07-30 directive it
+              // RUNS, unless this session's SAFE MODE switch is on. The reasoning is at
+              // `agent-jail.ts`'s header; the short version is that a product whose scheduled and
+              // self-driving sessions cannot run a shell on Windows cannot do its main job, and the
+              // real boundary (AppContainer/WFP) is deferred to v0.3.0 with Auth.
               // ⚠️ This check runs BEFORE the permission asserts, deliberately (deny-fast). It used
-              // to sit after them, which meant an unattended session on a backend-less host (every
-              // Windows host — no jail backend exists there) first raised a `bash` ask that nobody
-              // was present to answer, and only WOULD have been denied afterwards. Measured live: a
-              // queued recipe cook sat on three pending `bash` asks looking alive and doing
-              // nothing. Asking for consent to run something we are certain to refuse is a hang,
-              // not a gate. Attended behaviour is unchanged — an attended chain never takes the
-              // deny arm, so its consent flow still happens exactly where it did.
+              // to sit after them, which meant an unattended session on a backend-less host first
+              // raised a `bash` ask that nobody was present to answer, and only WOULD have been
+              // denied afterwards. Measured live: a queued recipe cook sat on three pending `bash`
+              // asks looking alive and doing nothing. Asking for consent to run something we are
+              // certain to refuse is a hang, not a gate. That reordering still earns its keep — it
+              // is now the safe-mode and hostile-input turns it saves from the same hang.
               const rootType = yield* rootSessionType(context.sessionID, (id) =>
                 sessions.get(id as SessionV2.ID),
               )
@@ -229,13 +236,49 @@ export const layer = Layer.effectDiscard(
               // is not a licence to run with the host user's full authority. Until 2026-07-28 the
               // walk answered `false` there and this tool ran RAW on a fault nobody had seen.
               const hostileInput = yield* chainHasHostileBinding(context.sessionID)
+              // SAFE MODE (the Tuning switch, owner 2026-07-30): the per-session opt-in that puts
+              // the unattended deny arm back. Resolved through the SAME chain walk the permission
+              // evaluator uses, so `undefined` = inherit and a child cannot declare itself out of
+              // its parent's stance. `sessions.get` orDies, so this cannot fail typed.
+              const resolvedConfig = yield* resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, context.sessionID, (id) =>
+                sessions.get(id as SessionV2.ID),
+              )
+              const safeMode = resolvedConfig.safeMode === true
               // ONE host-execution gate (ruling 6, `src/host-exec.ts`): the jail decision, shell
               // resolution, env composition and the peer-token rule all live there, so the jh/Strict
               // runner and the js sandbox cannot drift from this call site.
               const backend = HostExec.probe()
-              const jailDecision = HostExec.decide({ rootType, hostileInput, backend })
+              const jailDecision = HostExec.decide({ rootType, hostileInput, backend, safeMode })
               if (jailDecision === "deny")
-                return yield* Effect.fail(new ToolFailure({ message: HostExec.denyMessage(rootType, hostileInput) }))
+                return yield* Effect.fail(
+                  new ToolFailure({ message: HostExec.denyMessage(rootType, hostileInput, safeMode) }),
+                )
+              // ⚠️ WHO MAY CARRY THE OPERATOR'S ENVIRONMENT — re-derived, not left to drift, because
+              // the reversal moved a whole class of turn onto the raw path for the first time.
+              // `host-exec.ts`'s own credential rule is *"the operator's environment reaches a child
+              // only when a HUMAN approved THAT command"*, and until today `consent: "per-command"`
+              // was a true statement of that here: an unattended chain could not reach the raw path
+              // at all, so every raw command had passed an assert a person could answer. It can now,
+              // and under the shipped default mode (`bypass`) the `bash` assert resolves to `allow`
+              // with nobody consulted — so a blanket `"per-command"` would hand provider API keys and
+              // peer instance tokens to model-authored commands in a session no human is watching.
+              // That is Agent Jail P3's boundary (credential self-revocation), which the owner's
+              // directive did not touch, and keeping it costs no capability: `HostExec.curatedEnv`
+              // carries PATH plus the win32 functional keys, which is exactly what the jh runner
+              // already compiles and runs everything with.
+              //
+              // ⚠️ It reads the GATE'S DECISION rather than re-deriving one from `hostileInput`, and
+              // that is not style. The first draft here was `attendedRoot(rootType) && hostileInput
+              // !== true`, which `test/host-exec.test.ts`'s collapse ledger rejected on sight — and
+              // the ledger was right about a live defect, not a style rule. `"unknown"` is not
+              // `true`, so that predicate answered "a human could answer" for a turn whose trust
+              // question had FAULTED: on a host WITH a backend (Linux), an attended turn with an
+              // unreadable messenger database would have run CONFINED while being handed the
+              // operator's whole environment and every peer token — strictly worse than what
+              // shipped, and produced by exactly the boolean collapse the tri-state exists to stop.
+              // `jailDecision` has already resolved all three answers through the one function
+              // entitled to (`HostExec.decide`), and by here it can only be `"raw"` or `"confined"`.
+              const humanCouldAnswer = jailDecision === "raw" && attendedRoot(rootType)
 
               const external = target.externalDirectory
               if (external)
@@ -286,8 +329,13 @@ export const layer = Layer.effectDiscard(
               // path. A confined (unattended) command self-revokes them — an injected command must
               // not wield cross-instance credentials it can't be supervised using (and can't reach a
               // peer through the netns anyway; this is the credential-zeroing half of that boundary).
+              // ⚠️ Keyed on ATTENDANCE, not on `jailDecision !== "confined"`, since 2026-07-30. Those
+              // two were the same predicate while an unattended chain could only ever be confined or
+              // denied; the reversal made `raw` reachable unattended, and the old test would have
+              // started handing peer tokens to exactly the runs nobody is supervising. Same rule as
+              // `humanCouldAnswer` above, and it is the same question.
               const peerEnv: Record<string, string> = {}
-              if (jailDecision !== "confined") {
+              if (humanCouldAnswer) {
                 const peers = ((yield* settingsStore.all()).instances ?? []) as ReadonlyArray<{
                   name: string
                   url: string
@@ -312,15 +360,17 @@ export const layer = Layer.effectDiscard(
               // with NO inheritance — never the serve process's full environment (provider keys,
               // operator exports) — plus only the tool's own functional overlays. `consent` says a
               // human approved THIS command (the assert above), which is what admits the peer
-              // tokens on the raw path; the gate drops them for a confined one.
+              // tokens on the raw path; the gate drops them for a confined one, and for an
+              // unattended one (see `humanCouldAnswer`).
               const spawnPlan = HostExec.plan({
                 shape: { kind: "shell-command", shell, command: commandText },
                 cwd: target.canonical,
                 worktree: location.directory,
-                consent: "per-command",
+                consent: humanCouldAnswer ? "per-command" : "none",
                 rootType,
                 hostileInput,
                 backend,
+                safeMode,
                 overlay: bundleEnv,
                 egress,
                 credentials: peerEnv,

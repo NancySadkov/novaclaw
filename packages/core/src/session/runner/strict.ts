@@ -547,6 +547,11 @@ export function commandPlan(input: {
     rootType: input.host?.rootType,
     hostileInput: input.host?.hostileInput,
     backend: input.host?.backend,
+    // The per-session SAFE MODE switch (owner 2026-07-30). Forwarded for the same reason every
+    // other field here is: the gate decides nothing it was not told, and a field the runner holds
+    // but does not pass is a switch the user ticked that silently governs `bash` and not Strict —
+    // which is precisely the per-call-site divergence ruling 6 exists to prevent.
+    safeMode: input.host?.safeMode,
     overlay: input.overlay,
     egress: input.host?.egress,
   })

@@ -56,8 +56,23 @@ describe("HostExec.decide", () => {
   test("declared attendance is exactly AgentJail.decideBash", () => {
     expect(HostExec.decide({ rootType: "interactive", backend: NONE })).toBe("raw")
     expect(HostExec.decide({ rootType: "goal-oriented", backend: FULL })).toBe("confined")
-    expect(HostExec.decide({ rootType: "auto-prompting", backend: NONE })).toBe("deny")
+    // ⚠️ Read "deny" until the owner's 2026-07-30 directive; an unattended chain on a backend-less
+    // host now RUNS by default and only refuses under safe mode (next test).
+    expect(HostExec.decide({ rootType: "auto-prompting", backend: NONE })).toBe("raw")
     expect(HostExec.decide({ rootType: "interactive", backend: FULL, hostileInput: true })).toBe("confined")
+  })
+
+  test("safeMode is threaded through to the policy, on the declared AND undeclared arms", () => {
+    expect(HostExec.decide({ rootType: "auto-prompting", backend: NONE, safeMode: true })).toBe("deny")
+    expect(HostExec.decide({ rootType: "goal-oriented", backend: NONE, safeMode: true })).toBe("deny")
+    // Attended is untouched by the switch, and a backend still confines rather than refuses.
+    expect(HostExec.decide({ rootType: "interactive", backend: NONE, safeMode: true })).toBe("raw")
+    expect(HostExec.decide({ rootType: "goal-oriented", backend: FULL, safeMode: true })).toBe("confined")
+    // The undeclared caller: safe mode is a fact we WERE told, so it is honoured even though
+    // attendance is not — but only via the hostile arm, which is the only way an undeclared root
+    // reaches the policy at all.
+    expect(HostExec.decide({ backend: NONE, safeMode: true })).toBe("raw")
+    expect(HostExec.decide({ backend: NONE, hostileInput: true, safeMode: true })).toBe("deny")
   })
 
   test("an UNDECLARED root runs raw — the gate never invents an attendance it was not told", () => {
@@ -228,11 +243,25 @@ describe("HostExec.plan", () => {
   })
 
   test("deny: no process is described at all, only the routing text", () => {
-    const p = HostExec.plan({ ...base, shape: shellShape(), consent: "per-command", rootType: "auto-prompting", backend: NONE })
+    // Safe mode is what puts an unattended, backend-less chain on the deny arm since 2026-07-30;
+    // the hostile arm below is the other way in. Both must produce the same PLAN shape.
+    const p = HostExec.plan({ ...base, shape: shellShape(), consent: "per-command", rootType: "auto-prompting", backend: NONE, safeMode: true })
     expect(p.via).toBe("none")
     if (p.via !== "none") throw new Error("unreachable")
-    expect(p.message).toContain("auto-prompting")
+    expect(p.message).toContain("Safe mode is ON")
     expect(p.message).toContain("read/edit/write/create/glob/grep")
+    const hostile = HostExec.plan({ ...base, shape: shellShape(), consent: "per-command", rootType: "auto-prompting", backend: NONE, hostileInput: true })
+    expect(hostile.via).toBe("none")
+    if (hostile.via !== "none") throw new Error("unreachable")
+    expect(hostile.message).toContain("untrusted messenger chat")
+  })
+
+  test("without safe mode, that same unattended request now yields a RUNNABLE plan", () => {
+    // The negative control for the test above: if `plan` refused regardless of the switch, every
+    // assertion up there would still pass while the directive was un-shipped.
+    const p = HostExec.plan({ ...base, shape: shellShape(), consent: "per-command", rootType: "auto-prompting", backend: NONE })
+    expect(p.via).toBe("shell")
+    expect(p.decision).toBe("raw")
   })
 })
 
@@ -264,11 +293,18 @@ describe("HostExec.spawnPlan — the jh-runner wire shape", () => {
 
   test("a denied plan says so instead of describing a process", () => {
     const p = asRunnerPlan(
-      HostExec.spawnPlan({ ...base, shape: shellShape(), consent: "none", rootType: "goal-oriented", backend: NONE }),
+      HostExec.spawnPlan({ ...base, shape: shellShape(), consent: "none", rootType: "goal-oriented", backend: NONE, safeMode: true }),
     )
-    expect(p.denied).toContain("goal-oriented")
+    expect(p.denied).toContain("Safe mode is ON")
     expect(p.file).toBeUndefined()
     expect(p.shell).toBeUndefined()
+    // …and the same request WITHOUT the switch is runnable, or the assertion above would pass on a
+    // gate that refuses everything (owner 2026-07-30).
+    const allowed = asRunnerPlan(
+      HostExec.spawnPlan({ ...base, shape: shellShape(), consent: "none", rootType: "goal-oriented", backend: NONE }),
+    )
+    expect(allowed.denied).toBeUndefined()
+    expect(allowed.shell).toBe("/bin/bash")
   })
 })
 
@@ -426,13 +462,17 @@ describe("an unanswerable trust question does not run raw", () => {
     expect(HostExec.decide({ backend: NONE })).toBe("raw")
   })
 
-  test("an UNATTENDED root is unaffected — unknown changes attended chains only", () => {
+  test("an UNATTENDED root is unaffected by the tri-state — unknown changes attended chains only", () => {
     // Stated so the blast radius is measured rather than argued: `attendedRoot` is already false
-    // for these, so they were confined/denied before this change and are confined/denied after.
-    for (const hostileInput of [false, true, "unknown"] as const) {
+    // for these, so the hostility answer cannot change what they get.
+    for (const hostileInput of [false, true, "unknown"] as const)
       expect(HostExec.decide({ rootType: "goal-oriented", backend: FULL, hostileInput })).toBe("confined")
+    // ⚠️ On a BACKEND-LESS host the three answers no longer agree, and that is the owner's
+    // 2026-07-30 directive rather than a tri-state regression: `false` means "we established that
+    // the operator drives this", which is now allowed to run; `true`/`"unknown"` are still refused.
+    expect(HostExec.decide({ rootType: "auto-prompting", backend: NONE, hostileInput: false })).toBe("raw")
+    for (const hostileInput of [true, "unknown"] as const)
       expect(HostExec.decide({ rootType: "auto-prompting", backend: NONE, hostileInput })).toBe("deny")
-    }
   })
 
   test("the whole PLAN changes, not just the verdict — no process is described for an unknown turn", () => {

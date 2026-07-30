@@ -586,6 +586,24 @@ export const layer = Layer.effect(
       // installed in agent.ts, cannot help: the hard arm is checked before any allow is consulted).
       // Appended AFTER the denies deliberately — `evaluate` resolves by findLast, so the narrower allow
       // wins for this resource only. This exemption grants nothing the attended default did not already.
+      // ⚠️ WHAT THIS STANCE DOES **NOT** COVER, and why it matters more since 2026-07-30. The rules
+      // it contributes are the two `external_directory_*` classes — the seam every tool whose
+      // resource is a PATH passes through. `bash` is not one of those: its resource is the command
+      // STRING, and matching a command string is prompt-reduction, never containment (the boundary
+      // note above `evaluate`). Until today that gap was closed for unattended chains one layer
+      // down, by the JAIL: `AgentJail.decideBash` refused raw shell outright on a host with no
+      // sandbox backend. The owner has reversed that default (see `agent-jail.ts`'s header — the
+      // per-session `safeMode` switch restores it), so an unattended command can now run raw on a
+      // Windows host and write wherever the user can.
+      //
+      // Nothing here changes as a result, and that is deliberate rather than an omission: adding a
+      // `bash` deny row would refuse the capability the directive exists to grant, and adding any
+      // command-string rule would restore exactly the false promise `MODE_RULES.plan`'s comment
+      // rejects. What covers the gap meanwhile is stated where it is enforced — the project-scope
+      // system-prompt section (`session/runner/system-compose.ts`, an INFORMATIONAL lever, named as
+      // one) plus every path-gated tool below — and what closes it is a real Windows/macOS backend,
+      // deferred to v0.3.0 with Auth. If you are here because you want a mechanical bound on
+      // out-of-folder shell writes: it belongs in `agent-jail.ts`, not in this ruleset.
       const isParanoid = yield* paranoid()
       const stanceRules = unattendedStanceRules(rootType, mode, isParanoid)
       const stance =

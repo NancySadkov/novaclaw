@@ -32,6 +32,11 @@ const runs: Array<{
   readonly cwd?: string
   readonly shell?: string | boolean
   readonly options?: AppProcess.RunOptions
+  /** The composed child ENVIRONMENT stance (`HostExec.childEnv`). Captured because the credential
+   *  boundary — who inherits the serve process's environment — is now a per-turn decision rather
+   *  than a constant, and a test that cannot see it cannot pin it. */
+  readonly extendEnv?: boolean
+  readonly env?: Record<string, string | undefined>
 }> = []
 let denyAction: string | undefined
 let result: AppProcess.RunResult = {
@@ -73,7 +78,19 @@ const appProcess = Layer.succeed(
     spawn: (command: ChildProcess.Command) =>
       Effect.sync(() => {
         if (command._tag !== "StandardCommand") throw new Error("expected standard command")
-        runs.push({ command: command.command, cwd: command.options.cwd, shell: command.options.shell })
+        const options = command.options as {
+          readonly cwd?: string
+          readonly shell?: string | boolean
+          readonly extendEnv?: boolean
+          readonly env?: Record<string, string | undefined>
+        }
+        runs.push({
+          command: command.command,
+          cwd: options.cwd,
+          shell: options.shell,
+          extendEnv: options.extendEnv,
+          env: options.env,
+        })
         return {
           // result.{output,stdout,stderr} are Node Buffers (already Uint8Arrays); stream
           // them directly — `new Uint8Array(Buffer)` trips the @types/node Buffer-generic
@@ -405,13 +422,21 @@ describe("BashTool", () => {
     ),
   )
 
-  // Deny-fast (the unattended confinement stance, session/config-resolve.ts). The Agent Jail
-  // decision now runs BEFORE the permission asserts. On a host with no sandbox backend — every
-  // Windows host, since the jail's Windows backend was never built — an UNATTENDED session's bash
-  // is certain to be refused, so asking for consent first merely parked an ask nobody was present
-  // to answer: measured live as a queued recipe cook sitting on three pending `bash` asks, looking
-  // alive and doing nothing. Consent for something we are certain to refuse is a hang, not a gate.
-  it.live("an UNATTENDED session's bash decision lands BEFORE the ask (no ask nobody can answer)", () =>
+  // ⚠️ THIS TEST WAS INVERTED on 2026-07-30, and the inversion is the owner's directive rather than
+  // a regression: *"unattended bash should be allowed by default, unless the user have enabled safe
+  // mode in tuning. Otherwise the model wont be unable to do any useful work."* It used to assert
+  // that an UNATTENDED session on a backend-less host (every Windows host) was refused up front.
+  //
+  // What survives unchanged is the ORDERING it was written to pin: the Agent Jail decision still
+  // runs BEFORE the permission asserts, because the case it protects against — parking an ask
+  // nobody is present to answer, measured live as a queued recipe cook sitting on three pending
+  // `bash` asks looking alive and doing nothing — is now reached by the safe-mode and hostile-input
+  // turns instead. That half is pinned at the gate (`test/unattended-bash-safe-mode.test.ts`,
+  // `plan().via === "none"` means no process is described at all).
+  //
+  // This test's job is now the END-TO-END half of deliverable ①: through the real tool, with a real
+  // session row and the default config, an unattended `bash` reaches consent and RUNS.
+  it.live("an UNATTENDED session's bash is ALLOWED by default and runs (owner 2026-07-30)", () =>
     Effect.acquireUseRelease(
       Effect.promise(() => tmpdir()),
       (tmp) => {
@@ -436,21 +461,21 @@ describe("BashTool", () => {
 
             const settled = yield* settleTool(registry, call({ command: "pwd" }))
             const backend = AgentJail.probe()
-            if (backend.fs && backend.net) {
-              // A host that CAN confine (Linux namespaces): consent still applies and the command
-              // runs sandboxed — the hoist changes nothing for it.
-              expect(assertions.map((input) => input.action)).toEqual(["bash"])
-              expect(runs.length).toBe(1)
-            } else {
-              // No backend: refused up front. The ask that used to precede this is gone…
-              expect(assertions).toEqual([])
-              expect(runs).toEqual([]) // …and nothing ran
-              // …and the model gets a legible error naming the way forward, not a silent no-op.
-              const value = String((settled.result as { readonly value?: unknown }).value ?? "")
-              expect((settled.result as { readonly type?: unknown }).type).toBe("error")
-              expect(value).toContain("no sandbox backend")
-              expect(value).toContain("goal-oriented")
-              expect(value).toContain("Use the native tools instead")
+            // Same outcome either way now — that is the point. With a backend the command runs
+            // sandboxed (bwrap); without one it runs raw. In BOTH cases consent is asserted and a
+            // process is started, where a backend-less host used to short-circuit to an error.
+            expect(assertions.map((input) => input.action)).toEqual(["bash"])
+            expect(runs.length).toBe(1)
+            expect((settled.result as { readonly type?: unknown }).type).not.toBe("error")
+            // ⚠️ Agent Jail P3 on the newly-raw path: an unattended chain is not a chain a human
+            // approved a command in, so the child must NOT inherit the serve process's environment
+            // (provider keys, peer instance tokens) even though the jail now lets it run. Without
+            // this assertion the reversal would have quietly widened the credential boundary too.
+            const spawned = runs[0]!
+            expect(spawned.extendEnv ?? false, "an unattended command inherited the operator's env").toBe(false)
+            if (!(backend.fs && backend.net)) {
+              // …and on a backend-less host it really is the raw shell path, not a silent no-op.
+              expect(spawned.shell).toBeTruthy()
             }
           }),
         )

@@ -784,6 +784,8 @@ export const layer = Layer.effect(
         // Order + placement of the per-model pre-prompt live in system-compose.ts (a pure, tested
         // unit): the pre-prompt sits directly after the persona baseline; every other part keeps its
         // position, so an absent pre-prompt yields a byte-identical prompt to before the feature.
+        // `projectScope` is the guidance half of the owner's 2026-07-30 directive — present in every
+        // mode but `yolo`, from the RESOLVED (already-narrowed) mode. See system-compose.ts.
         system: SystemCompose.composeSystemParts({
           persona: personaBaseline,
           modelPrePrompt,
@@ -792,6 +794,7 @@ export const layer = Layer.effect(
           memoryRecall,
           systemPromptOverride: config.systemPromptOverride,
           agentSystem: agent.info?.system,
+          projectScope: SystemCompose.projectScopeSection(config.permissionMode),
           base: system.baseline,
         }).map(SystemPart.make),
         messages: [...toLLMMessages(context, model), ...(isLastStep ? [Message.assistant(MAX_STEPS_PROMPT)] : [])],
@@ -1393,10 +1396,16 @@ export const layer = Layer.effect(
         // Probe once; the same answer decides the run below and plans every command inside it.
         const backend = HostExec.probe()
         const configuredShell = Config.latest(configEntries, "shell")
+        // SAFE MODE (owner 2026-07-30): the per-session switch that restores the unattended deny
+        // arm. Passed here for the same reason the shell and the offline policy are — the gate
+        // decides nothing it was not told, and an unwired caller would silently get the permissive
+        // default. `resolved` is this session's chain-resolved config, the same value `tool/bash.ts`
+        // computes for itself.
         const strictHost: HostExec.SessionHost = {
           rootType,
           hostileInput,
           ...(configuredShell === undefined ? {} : { shell: configuredShell }),
+          ...(resolved.safeMode === undefined ? {} : { safeMode: resolved.safeMode }),
           egress: offline.egressEnv(),
           backend,
         }
@@ -1405,9 +1414,9 @@ export const layer = Layer.effect(
         // the whole wall producing nothing but deny messages and then report on them. Name the
         // refusal once and fall through to the normal turn, whose path-gated native tools still
         // work. (An attended chain never reaches this arm.)
-        if (HostExec.decide({ rootType, hostileInput, backend }) === "deny") {
+        if (HostExec.decide({ rootType, hostileInput, backend, safeMode: resolved.safeMode }) === "deny") {
           yield* notice(
-            `🛡️ Strict mode can't run this here. ${HostExec.denyMessage(rootType, hostileInput)} Answering normally instead.`,
+            `🛡️ Strict mode can't run this here. ${HostExec.denyMessage(rootType, hostileInput, resolved.safeMode)} Answering normally instead.`,
           )
           return "chat" as const
         }
