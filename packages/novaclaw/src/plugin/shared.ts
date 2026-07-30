@@ -2,14 +2,20 @@ import path from "path"
 import { fileURLToPath, pathToFileURL } from "url"
 import npa from "npm-package-arg"
 import { Filesystem } from "@/util/filesystem"
-import { Npm } from "@novaclaw/core/npm"
 
-// Plugin specifier + target resolution shared by the `novaclaw plugin` CLI (`plugin/install.ts`),
-// the plugin metadata store (`plugin/meta.ts`), and config's plugin-origin dedup
-// (`config/plugin.ts`, which feeds the V2 `plugins` key). The V1 plugin arm that also used this
-// module — entrypoint detection, id resolution, the `engines.novaclaw` compatibility gate and the
-// deprecated-package skip list — was deleted along with the loader it served; V2 plugins resolve
-// their entrypoint through `core/config/plugin/external.ts` instead.
+// Plugin specifier + path-target resolution for config's plugin-origin dedup (`config/plugin.ts`,
+// which feeds the V2 `plugins` key and the `{plugin,plugins}/*` directory walk). That is now the
+// ONLY consumer.
+//
+// Two rounds of removal shrank this module to what it is. The V1 plugin arm — entrypoint
+// detection, id resolution, the `engines.novaclaw` compatibility gate and the deprecated-package
+// skip list — went with the loader it served. The `novaclaw plugin <module>` install CLI
+// (`cli/cmd/plug.ts` + `plugin/install.ts`) and the plugin metadata store (`plugin/meta.ts`) went
+// next: the CLI had been a no-op since the v2 config rename (it patched the singular `plugin` key
+// while the runtime reads the plural `plugins`), and the meta store had no production callers at
+// all. Their exports here — `pluginSource`, `resolvePluginTarget` (the npm-install path) and
+// `readPluginPackage` — went with them. V2 plugins resolve their entrypoint through
+// `core/config/plugin/external.ts` instead.
 
 function parse(spec: string) {
   try {
@@ -31,20 +37,7 @@ export function parsePluginSpecifier(spec: string) {
   return { pkg: hit.name, version: hit.rawSpec }
 }
 
-export type PluginSource = "file" | "npm"
-
-export type PluginPackage = {
-  dir: string
-  pkg: string
-  json: Record<string, unknown>
-}
-
 const INDEX_FILES = ["index.ts", "index.tsx", "index.js", "index.mjs", "index.cjs"]
-
-export function pluginSource(spec: string): PluginSource {
-  if (isPathPluginSpec(spec)) return "file"
-  return "npm"
-}
 
 function isAbsolutePath(raw: string) {
   return path.isAbsolute(raw) || /^[A-Za-z]:[\\/]/.test(raw)
@@ -78,21 +71,4 @@ export async function resolvePathPluginTarget(spec: string) {
   if (index) return pathToFileURL(index).href
 
   throw new Error(`Plugin directory ${file} is missing package.json or index file`)
-}
-
-export async function resolvePluginTarget(spec: string) {
-  if (isPathPluginSpec(spec)) return resolvePathPluginTarget(spec)
-  const hit = parse(spec)
-  const pkg = hit?.name && hit.raw === hit.name ? `${hit.name}@latest` : spec
-  const result = await Npm.add(pkg)
-  return result.directory
-}
-
-export async function readPluginPackage(target: string): Promise<PluginPackage> {
-  const file = target.startsWith("file://") ? fileURLToPath(target) : target
-  const stat = await Filesystem.statAsync(file)
-  const dir = stat?.isDirectory() ? file : path.dirname(file)
-  const pkg = path.join(dir, "package.json")
-  const json = await Filesystem.readJson<Record<string, unknown>>(pkg)
-  return { dir, pkg, json }
 }
