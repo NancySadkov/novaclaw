@@ -13,6 +13,25 @@ import { Global } from "./global"
 //   payload      — the moved file OR directory, verbatim
 //   entry.json   — { id, originalPath, trashedAt, type }
 // id = "<yyyy-mm-dd>/<epoch-ms>-<basename>" (also the entry's relative dir under the root).
+//
+// RETENTION LIVES ON THE WRITE PATHS ONLY (todo.md ruling 2 — *a read never destroys*).
+// `listTrash` used to open with a `purgeExpired`, so merely LISTING the trash — `GET /file/trash`,
+// i.e. opening the Trash app — destroyed the user's expired entries. That is the lazy-purge-on-read
+// the ruling names, on the one store whose entire job is to not lose things. It is gone.
+//
+// The sweep now rides the two calls that MUTATE the store, which is enough on its own: `trashPath`
+// is the only thing that ever GROWS the trash and every trash passes through it, so one sweep per
+// write bounds the store by the TTL instead of by install age — no daemon, and no purge hidden
+// inside a read. (Same argument, same shape as the Strict-drain purge in `jh/store.ts`.) `restore`
+// sweeps too, AFTER its own entry is safely out, so an active user reclaims disk without ever
+// having the sweep eat the entry they asked for.
+//
+// The honest consequence, stated rather than hidden: the TTL is a retention FLOOR, not a deadline.
+// An instance that stops trashing stops sweeping, so an expired entry can outlive the TTL until the
+// next write. It is bounded (nothing new arrives either) and it errs toward keeping the user's
+// data, which is the direction this store exists to err in. Callers that want expiry at a specific
+// moment call `purgeExpired` directly — it is exported for exactly that, and must never be called
+// from a read.
 
 export const DEFAULT_TTL_MS = 2 * 24 * 3600 * 1000 // 2 days
 
@@ -23,11 +42,14 @@ export interface Entry {
   readonly type: "file" | "directory"
 }
 
-/** Injectable seams for tests (temp root, fake clock, EXDEV simulation). */
+/** Injectable seams for tests (temp root, fake clock, EXDEV simulation, a failing sweep). */
 export interface Options {
   readonly root?: string
   readonly now?: () => Date
   readonly renameFn?: (from: string, to: string) => Promise<void>
+  /** Only the retention sweep's date-dir removal. Lets a test prove the sweep is best-effort on
+   *  the write paths without depending on an un-removable directory, which no OS gives portably. */
+  readonly purgeRmFn?: (target: string) => Promise<void>
 }
 
 const trashRoot = (options?: Options) => options?.root ?? path.join(Global.Path.data, "trash")
@@ -52,9 +74,22 @@ async function move(from: string, to: string, options?: Options) {
   }
 }
 
-/** Move a file or directory into the trash. Lazy-purges expired entries first. */
+/**
+ * The retention sweep as it rides a mutation: best-effort, never throws.
+ *
+ * Housekeeping must not be able to fail the user's actual operation — an EPERM on some unrelated
+ * expired directory is not a reason to refuse to trash the file they just asked to delete, nor to
+ * report a restore that already succeeded as failed. Same stance, and same reason, as
+ * `sweepStaleForks` in the Strict runner. `purgeExpired` itself stays strict for callers that ask
+ * for expiry on purpose and want to know whether it worked.
+ */
+async function sweepRetention(options?: Options): Promise<void> {
+  await purgeExpired(DEFAULT_TTL_MS, options).catch(() => {})
+}
+
+/** Move a file or directory into the trash. Sweeps expired entries first (this is a WRITE). */
 export async function trashPath(originalAbs: string, options?: Options): Promise<Entry> {
-  await purgeExpired(DEFAULT_TTL_MS, options)
+  await sweepRetention(options)
   const stat = await fs.stat(originalAbs)
   const now = (options?.now ?? (() => new Date()))()
   const root = trashRoot(options)
@@ -82,9 +117,14 @@ export async function trashPath(originalAbs: string, options?: Options): Promise
   return entry
 }
 
-/** All entries, newest first. Lazy-purges expired entries first. */
+/**
+ * All entries, newest first. **Pure read — destroys nothing** (todo.md ruling 2).
+ *
+ * Do not reintroduce a sweep here. Expired-but-not-yet-swept entries are listed as what they are:
+ * still on disk, still restorable. Filtering them out would be the same lie in the other direction
+ * — hiding data the user could still get back.
+ */
 export async function listTrash(options?: Options): Promise<Entry[]> {
-  await purgeExpired(DEFAULT_TTL_MS, options)
   const root = trashRoot(options)
   const entries: Entry[] = []
   for (const day of await readdirSafe(root)) {
@@ -101,7 +141,13 @@ export async function listTrash(options?: Options): Promise<Entry[]> {
   return entries.sort((a, b) => b.trashedAt - a.trashedAt)
 }
 
-/** Restore an entry to its original path (collision → `<original>.restored-<epoch>`). */
+/**
+ * Restore an entry to its original path (collision → `<original>.restored-<epoch>`).
+ *
+ * Sweeps expired entries too — this is a WRITE — but strictly AFTER the payload is out and the
+ * entry dir removed. Ordering is load-bearing: an entry may itself be past the TTL and still be
+ * sitting there, and a sweep that ran first would delete the very thing the user asked to restore.
+ */
 export async function restore(
   id: string,
   input?: { overwrite?: boolean },
@@ -120,18 +166,27 @@ export async function restore(
   await fs.mkdir(path.dirname(target), { recursive: true })
   await move(path.join(dir, "payload"), target, options)
   await fs.rm(dir, { recursive: true, force: true })
+  await sweepRetention(options)
   return target
 }
 
-/** Delete date-dirs strictly older than the TTL. Called lazily — no daemon. */
+/**
+ * Delete date-dirs strictly older than the TTL. Called lazily from the WRITE paths — no daemon.
+ *
+ * Also the explicit maintenance entry point: it is exported so a caller can run expiry at a moment
+ * of its choosing and observe whether it worked (unlike the best-effort `sweepRetention` that rides
+ * mutations, this one throws). **Never call it from a read path** — that is the exact defect this
+ * module was fixed for.
+ */
 export async function purgeExpired(ttlMs: number = DEFAULT_TTL_MS, options?: Options): Promise<void> {
   const root = trashRoot(options)
   const now = (options?.now ?? (() => new Date()))()
   const cutoff = dateDir(new Date(now.getTime() - ttlMs))
+  const rm = options?.purgeRmFn ?? ((target: string) => fs.rm(target, { recursive: true, force: true }))
   for (const day of await readdirSafe(root)) {
     // Date-dir names sort lexicographically = chronologically; strictly-older days only, so
     // nothing inside the TTL window is ever touched even across timezones.
-    if (day < cutoff) await fs.rm(path.join(root, day), { recursive: true, force: true })
+    if (day < cutoff) await rm(path.join(root, day))
   }
 }
 

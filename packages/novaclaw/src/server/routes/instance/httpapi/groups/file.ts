@@ -217,7 +217,9 @@ export const FileApi = HttpApi.make("file")
           OpenApi.annotations({
             identifier: "file.trash",
             summary: "Trash file or directory",
-            description: "Safe-delete: move a file or directory into the dated Trash store (restorable, TTL ~2 days).",
+            description:
+              "Safe-delete: move a file or directory into the dated Trash store. Restorable for at least ~2 days" +
+              " — this write is also where the retention sweep runs, so entries past the TTL are reclaimed here.",
           }),
         ),
         HttpApiEndpoint.get("trashList", FilePaths.trashList, {
@@ -227,7 +229,9 @@ export const FileApi = HttpApi.make("file")
           OpenApi.annotations({
             identifier: "file.trash.list",
             summary: "List trash",
-            description: "List trashed entries, newest first (expired entries are purged lazily).",
+            description:
+              "List trashed entries, newest first. Read-only: listing never purges or otherwise modifies the" +
+              " store, so an entry past its TTL is reported while it is still on disk and still restorable.",
           }),
         ),
         HttpApiEndpoint.post("trashRestore", FilePaths.trashRestore, {
@@ -238,7 +242,9 @@ export const FileApi = HttpApi.make("file")
           OpenApi.annotations({
             identifier: "file.trash.restore",
             summary: "Restore from trash",
-            description: "Restore a trashed entry to its original path (collision-safe suffix if occupied).",
+            description:
+              "Restore a trashed entry to its original path (collision-safe suffix if occupied). Succeeds even if" +
+              " the entry is past its TTL; the retention sweep runs after the restore, never before it.",
           }),
         ),
       )

@@ -121,3 +121,125 @@ describe("trash store", () => {
     await expect(restore("../escape", undefined, { root })).rejects.toThrow("Invalid trash id")
   })
 })
+
+// ── a read never destroys (todo.md ruling 2) ─────────────────────────────────────────────────
+// `listTrash` opened with a `purgeExpired`, so LISTING the trash deleted the user's expired
+// entries — reachable from `GET /file/trash`, i.e. from opening the Trash app, and advertised in
+// that endpoint's own OpenAPI description. Retention now lives only on the two writes.
+//
+// These are the mechanical checks for that placement: moving the sweep back onto the read, or off
+// the writes entirely, compiles green and every test above still passes.
+describe("trash retention placement", () => {
+  const EXPIRED = new Date("2026-06-01T12:00:00Z") // well past a 2-day TTL by `LATER`
+  const LATER = new Date("2026-07-02T12:00:00Z")
+
+  /** One trashed entry dated `when`, plus the path its payload occupies under the root. */
+  async function seed(root: string, name: string, when: Date) {
+    const work = await tmpdir("trash-work-")
+    const file = path.join(work, name)
+    await fs.writeFile(file, name, "utf8")
+    const entry = await trashPath(file, { root, now: () => when })
+    return { entry, payload: path.join(root, entry.id, "payload") }
+  }
+
+  test("listTrash NEVER destroys: an expired entry survives being listed, repeatedly", async () => {
+    const root = await tmpdir("trash-root-")
+    const { entry, payload } = await seed(root, "expired.txt", EXPIRED)
+
+    // Read it three times at a clock long past the TTL. A purge on this path would take it out.
+    for (let i = 0; i < 3; i++) {
+      const listed = await listTrash({ root, now: () => LATER })
+      expect(listed.map((item) => item.id)).toEqual([entry.id])
+    }
+    // …and the bytes are genuinely still there, not merely still named in the listing.
+    expect(await fs.readFile(payload, "utf8")).toBe("expired.txt")
+  })
+
+  test("the WRITE path sweeps: trashing something new reclaims the expired entry", async () => {
+    const root = await tmpdir("trash-root-")
+    const { entry: expired } = await seed(root, "expired.txt", EXPIRED)
+    expect((await listTrash({ root })).map((item) => item.id)).toEqual([expired.id])
+
+    const { entry: fresh } = await seed(root, "fresh.txt", LATER)
+    expect((await listTrash({ root })).map((item) => item.id)).toEqual([fresh.id])
+    expect(await exists(path.join(root, expired.id))).toBe(false)
+  })
+
+  test("restore sweeps AFTER itself: an expired entry is still restorable, its neighbour goes", async () => {
+    const root = await tmpdir("trash-root-")
+    // Both land in the same expired date-dir, which is the unit `purgeExpired` deletes — so a sweep
+    // ordered BEFORE the restore would destroy the very entry being asked for (ENOENT on
+    // entry.json), and one ordered after must still collect the neighbour.
+    const { entry: wanted } = await seed(root, "wanted.txt", EXPIRED)
+    const { entry: neighbour } = await seed(root, "neighbour.txt", EXPIRED)
+
+    const restored = await restore(wanted.id, undefined, { root, now: () => LATER })
+    expect(await fs.readFile(restored, "utf8")).toBe("wanted.txt")
+    expect(await exists(path.join(root, neighbour.id))).toBe(false)
+    expect(await listTrash({ root })).toEqual([])
+  })
+
+  // A sweep is housekeeping. It must never be able to fail the operation the user actually asked
+  // for — that would trade a lazy purge for a new way to lose work, which is the same ruling.
+  const purgeRmFn = async (target: string) => {
+    throw Object.assign(new Error(`refusing to remove ${target}`), { code: "EPERM" })
+  }
+
+  test("an UNREMOVABLE expired entry cannot fail the user's trash", async () => {
+    const root = await tmpdir("trash-root-")
+    await seed(root, "expired.txt", EXPIRED)
+    const work = await tmpdir("trash-work-")
+    const file = path.join(work, "new.txt")
+    await fs.writeFile(file, "new", "utf8")
+
+    const entry = await trashPath(file, { root, now: () => LATER, purgeRmFn })
+    expect(await fs.readFile(path.join(root, entry.id, "payload"), "utf8")).toBe("new")
+    expect(await exists(file)).toBe(false) // the delete the user asked for actually happened
+  })
+
+  test("an UNREMOVABLE expired entry cannot fail the user's restore", async () => {
+    const root = await tmpdir("trash-root-")
+    const { entry } = await seed(root, "wanted.txt", EXPIRED)
+
+    const restored = await restore(entry.id, undefined, { root, now: () => LATER, purgeRmFn })
+    expect(await fs.readFile(restored, "utf8")).toBe("wanted.txt")
+  })
+
+  test("…but the explicit maintenance call still REPORTS a sweep failure", async () => {
+    // `purgeExpired` is the entry point a caller uses to expire on purpose, so it must not swallow.
+    // Best-effort is a property of riding a mutation, not of the sweep itself.
+    const root = await tmpdir("trash-root-")
+    await seed(root, "expired.txt", EXPIRED)
+    await expect(purgeExpired(DEFAULT_TTL_MS, { root, now: () => LATER, purgeRmFn })).rejects.toThrow(
+      "refusing to remove",
+    )
+  })
+
+  test("SOURCE RATCHET: the sweep appears in both writes and in neither read", async () => {
+    // The behavioural tests above bite when the sweep moves, but only for the reads that exist
+    // today. This pins the placement itself, so a NEW read that purges is caught as well.
+    const source = await fs.readFile(path.join(import.meta.dir, "trash.ts"), "utf8")
+    const bodyOf = (signature: string) => {
+      const from = source.indexOf(signature)
+      expect(from).toBeGreaterThan(0)
+      const to = source.indexOf("\n}\n", from)
+      expect(to).toBeGreaterThan(from)
+      return source.slice(from, to)
+    }
+    // The two mutations sweep…
+    expect(bodyOf("export async function trashPath(")).toContain("sweepRetention(")
+    expect(bodyOf("export async function restore(")).toContain("sweepRetention(")
+    // …and the read does not, by either name.
+    const list = bodyOf("export async function listTrash(")
+    expect(list).not.toContain("sweepRetention(")
+    expect(list).not.toContain("purgeExpired(")
+    expect(list).not.toContain("fs.rm(")
+  })
+})
+
+async function exists(p: string) {
+  return fs.access(p).then(
+    () => true,
+    () => false,
+  )
+}
