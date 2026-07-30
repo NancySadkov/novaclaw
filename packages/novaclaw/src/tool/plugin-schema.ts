@@ -1,11 +1,14 @@
-// Pure JSON-Schema helpers for plugin / config-dir tool definitions (from
-// `@novaclaw/plugin`). A plugin tool exposes its args either as a Zod raw shape
-// or as a raw JSON-Schema map; both branches must produce a JSON Schema for the
-// LLM and (for Zod) a validator. These functions are self-contained and pure —
-// they were originally inlined in the V1 `tool/registry.ts`; extracted here so
-// the V2 `ExternalToolSource` aggregator (`tool/external-tool-source.ts`) and the
-// legacy registry share ONE copy (and so they outlive the V1 registry's deletion
-// in F1f). No Effect, no services — safe to import from either engine.
+// Pure JSON-Schema helpers for V2-plugin tool definitions (from `@novaclaw/plugin`).
+// A plugin tool exposes its args either as a Zod raw shape or as a raw JSON-Schema
+// map; both branches must produce a JSON Schema for the LLM and (for Zod) a
+// validator. Self-contained and pure — no Effect, no services.
+//
+// The sole consumer is the V2 `ExternalToolSource` aggregator
+// (`tool/external-tool-source.ts`). The two other readers this file was written to
+// serve are both gone: the V1 `tool/registry.ts` (deleted in F1f) and the config-dir
+// `{tool,tools}/*.{js,ts}` walk (deleted 2026-07-30 under ruling 5 — outside code
+// never runs in-process; MCP is the out-of-process tool seam). `isPluginTool` went
+// with the walk, which was its only caller.
 
 import { type ToolDefinition } from "@novaclaw/plugin/tool"
 import type { JSONSchema7, JSONSchema7Definition } from "json-schema"
@@ -15,15 +18,10 @@ export function isZodType(value: unknown): value is z.ZodType {
   return typeof value === "object" && value !== null && "_zod" in value
 }
 
-export function isPluginTool(value: unknown): value is ToolDefinition {
-  return typeof value === "object" && value !== null && "args" in value && "description" in value && "execute" in value
-}
-
 /**
  * Compute the LLM-facing JSON Schema for a plugin tool's args, plus (when every
- * arg is Zod) the compiled `z.ZodObject` for input validation. The two callers
- * differ only in what they do with `zodParams`: the V1 registry wraps it in an
- * Effect-Schema `declare` for its `parameters`; the V2 source `safeParse`s with it.
+ * arg is Zod) the compiled `z.ZodObject` for input validation. The V2 source
+ * `safeParse`s with `zodParams`.
  */
 export function pluginToolSchema(def: ToolDefinition): { jsonSchema: JSONSchema7; zodParams?: z.ZodObject } {
   // Normalize missing args to `{}` once — pre-1.14.49 the code was

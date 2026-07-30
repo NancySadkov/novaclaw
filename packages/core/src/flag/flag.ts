@@ -59,7 +59,7 @@ export const Flag = {
   NOVACLAW_KB_MEMORY: truthyUnlessDisabled("NOVACLAW_KB_MEMORY"),
   NOVACLAW_KB_MEMORY_DIM: env("NOVACLAW_KB_MEMORY_DIM"),
   // Opt-IN: npm-install `@novaclaw/plugin` into each `.novaclaw` config dir so user
-  // plugin/tool files can VALUE-import it. Default OFF: the package is not published
+  // plugin files can VALUE-import it. Default OFF: the package is not published
   // to npm (post-rename), so the fetch is a guaranteed 404 at every boot — and a
   // local-first product should make no registry fetches at startup (OFF-B layer 8).
   // Type-only imports need no install (bun erases them). Re-enable by default once
@@ -106,9 +106,6 @@ export const Flag = {
   },
   get NOVACLAW_PERMISSION() {
     return env("NOVACLAW_PERMISSION")
-  },
-  get NOVACLAW_PLUGIN_META_FILE() {
-    return env("NOVACLAW_PLUGIN_META_FILE")
   },
   get NOVACLAW_CLIENT() {
     return env("NOVACLAW_CLIENT") ?? "cli"

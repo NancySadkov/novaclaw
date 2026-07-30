@@ -1,6 +1,6 @@
 export * as AggregateExternalToolSource from "./external-tool-source"
 
-import { Cause, Effect, JsonSchema, Layer } from "effect"
+import { Effect, JsonSchema, Layer } from "effect"
 import { ExternalToolSource } from "@novaclaw/core/tool/external-tool-source"
 import { PluginTools } from "@novaclaw/core/tool/plugin-tools"
 import { Tool } from "@novaclaw/core/tool/tool"
@@ -11,32 +11,33 @@ import { Glob } from "@novaclaw/core/util/glob"
 import { makeLocationNode } from "@novaclaw/core/effect/app-node"
 import { type ToolContext as PluginToolContext, type ToolDefinition } from "@novaclaw/plugin/tool"
 import path from "path"
-import { pathToFileURL } from "url"
 import { MCP } from "@/mcp"
 import { McpExternalToolSource } from "@/mcp/external-tool-source"
-import { isPluginTool, pluginToolSchema } from "./plugin-schema"
+import { pluginToolSchema } from "./plugin-schema"
 
-// F1a SLICE 1 (keystone): the V2 `ExternalToolSource` aggregator. Merges the MCP
-// source (unchanged) with CUSTOM tools discovered from config-dir
-// `{tool,tools}/*.{js,ts}` files — the tools that used to force a session onto the
-// legacy V1 engine (`ToolRegistry.hasCustom` → the `promptAsync` fallback) — and
-// (F1a plugin-tool parity) tools REGISTERED by V2 plugins via `ctx.tool.register`
-// (the core `PluginTools` store). With this providing `ExternalToolSource.Service`,
-// a custom- or plugin-tool turn materializes its tools on the V2 registry, so the
-// legacy fallbacks are retired. The V1 plugin `tool:` map (the legacy Hooks API)
-// deliberately has NO V2 bridge — plugin tools are declared through the V2 plugin
-// API; the Hooks shape dies with the V1 engine (F1f).
+// The V2 `ExternalToolSource` aggregator. Merges the MCP source with tools
+// REGISTERED by V2 plugins via `ctx.tool.register` (the core `PluginTools` store),
+// so a plugin-tool turn materializes its tools on the V2 registry. The V1 plugin
+// `tool:` map (the legacy Hooks API) deliberately has NO V2 bridge — plugin tools
+// are declared through the V2 plugin API; the Hooks shape died with the V1 engine.
 //
-// Discovery uses the V2-native `Config.Service` already in the location graph (its
-// `Directory` entries ARE the config dirs), so — unlike the design map's Option 1 —
-// no V1 `InstanceRef`/`Config` bridging is needed.
+// ⚠️ RULING 5 — outside code never runs in-process. This file used to carry a THIRD
+// source: a `{tool,tools}/*.{js,ts}` walk over the config dirs that did
+// `await import(pathToFileURL(match).href)` and turned every matching export into a
+// live tool. That is arbitrary third-party code executing inside the kernel process,
+// unsandboxed, and it was not even gated by `--pure`/`NOVACLAW_PURE`. **MCP is the
+// out-of-process tool seam** — it runs the third party in its own process and gates
+// every call through `PermissionV2` (`core/src/tool/mcp-external.ts`'s `gate`). The
+// walk is deleted; all that survives of it is `warnRetiredConfigDirTools` below,
+// which tells a user with such files that they are NOT loaded rather than ignoring
+// them silently (ruling 2 — a fault is never described falsely).
 
 // A plugin tool's `execute` receives an `AbortSignal`; the V2 tool context carries
 // no abort (Effect interruption can't reach into an in-flight Promise anyway), so a
 // never-aborting signal preserves the contract. Residue: real cancellation parity.
 const NEVER_ABORT = new AbortController().signal
 
-// Adapt one plugin-shaped `ToolDefinition` (config-dir file export or V2-plugin
+// Adapt one plugin-shaped `ToolDefinition` (a V2-plugin `ctx.tool.register`
 // registration) into a V2 core `AnyTool`. Mirrors the V1 `fromPlugin` (registry.ts)
 // minus the V1-only bits: output truncation is handled downstream by the registry's
 // `ToolOutputStore.bound`, and `ask` is best-effort (the per-call
@@ -101,42 +102,48 @@ export const makeDefinitionAdapter = Effect.gen(function* () {
   return fromDefinition
 })
 
-// Config-dir custom tool source. Discovered ONCE when the location layer boots (V1
-// parity — the V1 registry globs + imports once in `InstanceState.make`), so each
-// entry's `identity` object is stable for the location's lifetime and the registry's
-// stale-call guard never re-mints mid-turn.
-export const makeCustom = Effect.gen(function* () {
-  const config = yield* Config.Service
-  const fromDefinition = yield* makeDefinitionAdapter
+// The glob the RETIRED config-dir tool loader used to import from. Kept only so the
+// warning below can name exactly what is being skipped.
+export const RETIRED_CONFIG_DIR_TOOL_GLOB = "{tool,tools}/*.{js,ts}"
 
-  const entries = new Map<string, ExternalToolSource.Entry>()
+/**
+ * Ruling 2, the honest half of ruling 5's removal: a config dir that still holds
+ * `{tool,tools}/*.{js,ts}` files used to have them imported and run in-process. They
+ * are not loaded any more, and a silently-ignored directory is exactly the "lying
+ * surface" the ruling forbids — so name the directory, name the files, and point at
+ * the replacement seam. Runs once per location boot (where the walk itself used to
+ * run). Scan-only: it never reads, parses or imports the file contents.
+ *
+ * Never fails the boot — an unreadable config dir degrades to a debug line.
+ */
+export const warnRetiredConfigDirTools = Effect.gen(function* () {
+  const config = yield* Config.Service
   const dirs = (yield* config.entries()).flatMap((entry) => (entry.type === "directory" ? [entry.path] : []))
-  const matches = dirs.flatMap((dir) =>
-    Glob.scanSync("{tool,tools}/*.{js,ts}", { cwd: dir, absolute: true, dot: true, symlink: true }),
-  )
-  for (const match of matches) {
-    const namespace = path.basename(match, path.extname(match))
-    // Import as `file://` so Node on Windows accepts the absolute path. A bad tool
-    // file must not sink the session — log and skip it (stricter than V1, which dies).
-    const mod = yield* Effect.promise(() => import(pathToFileURL(match).href)).pipe(
-      Effect.catchCause((cause) =>
-        Effect.logWarning("skipping unloadable config-dir tool file " + match + ": " + Cause.pretty(cause)).pipe(
-          Effect.as({} as Record<string, unknown>),
+  for (const dir of dirs) {
+    const matches = yield* Effect.try({
+      try: () => Glob.scanSync(RETIRED_CONFIG_DIR_TOOL_GLOB, { cwd: dir, absolute: true, dot: true, symlink: true }),
+      catch: (error) => error,
+    }).pipe(
+      Effect.catch((error) =>
+        Effect.logDebug("could not scan config dir for retired tool files " + dir + ": " + String(error)).pipe(
+          Effect.as([] as string[]),
         ),
       ),
     )
-    for (const [id, def] of Object.entries(mod as Record<string, unknown>)) {
-      if (!isPluginTool(def)) continue
-      const toolName = id === "default" ? namespace : `${namespace}_${id}`
-      entries.set(toolName, { identity: {}, tool: fromDefinition(toolName, def) })
-    }
+    if (matches.length === 0) continue
+    const names = matches.map((match) => path.relative(dir, match).replaceAll("\\", "/")).sort()
+    yield* Effect.logWarning(
+      `NOT LOADED: ${names.length} config-dir tool file(s) in ${dir} (${names.join(", ")}). ` +
+        `NovaClaw no longer runs third-party tool code inside its own process, so these files are ignored — ` +
+        `they are NOT providing any tool to your sessions. MCP is the supported out-of-process tool seam: ` +
+        `re-expose them as an MCP server and connect it with \`novaclaw mcp add\`. ` +
+        `Delete the directory to silence this warning.`,
+    )
   }
-
-  return ExternalToolSource.Service.of({ entries: () => Effect.succeed(entries) })
 })
 
-// V2-plugin-registered tool source (F1a plugin-tool parity). Unlike the boot-time
-// config-dir snapshot, plugins register/unregister at any time, so the map is
+// V2-plugin-registered tool source (F1a plugin-tool parity). Plugins
+// register/unregister at any time, so the map is
 // rebuilt per call from the LIVE `PluginTools` store — but each adapted entry is
 // cached per registration `identity`, so the registry's stale-call guard sees a
 // stable identity + tool object for as long as that registration lives.
@@ -160,23 +167,26 @@ export const makePluginRegistered = Effect.gen(function* () {
   })
 })
 
-// The aggregate source: MCP + V2-plugin-registered + config-dir custom entries in
-// one map. Each sub-source caches its own entries (stable identities), so the merged
-// map — rebuilt per call but referencing those cached entries — keeps identities
-// stable. On a name collision the LAST set wins: a config-dir tool (the user's own
-// file) beats a plugin-registered tool, which beats an MCP tool.
+// The aggregate source: MCP + V2-plugin-registered entries in one map. Each
+// sub-source caches its own entries (stable identities), so the merged map —
+// rebuilt per call but referencing those cached entries — keeps identities stable.
+//
+// PRECEDENCE (two rungs, since ruling 5 removed the config-dir rung): MCP is seeded
+// first and a plugin-registered tool with the same name OVERWRITES it, so
+// **plugin > MCP**, deterministically, independent of iteration order within either
+// source. Pinned by `test/tool/external-tool-source.test.ts` →
+// "resolves a plugin/MCP name collision in favour of the plugin tool".
 export const layer = Layer.effect(
   ExternalToolSource.Service,
   Effect.gen(function* () {
+    yield* warnRetiredConfigDirTools
     const mcp = yield* McpExternalToolSource.make
     const plugin = yield* makePluginRegistered
-    const custom = yield* makeCustom
     return ExternalToolSource.Service.of({
       entries: () =>
         Effect.gen(function* () {
           const merged = new Map<string, ExternalToolSource.Entry>(yield* mcp.entries())
           for (const [name, entry] of yield* plugin.entries()) merged.set(name, entry)
-          for (const [name, entry] of yield* custom.entries()) merged.set(name, entry)
           return merged
         }),
     })
