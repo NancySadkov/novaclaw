@@ -100,35 +100,48 @@ const tools = yield * Tools.Service
 
 yield *
   tools.register({
-    grep: Tool.make({
-      description: "Search file contents",
-      input: Input,
-      output: Output,
-      execute: (input, context) =>
-        Effect.gen(function* () {
-          const root = yield* filesystem.resolveRoot(input)
+    // `withPermission` remaps the ACTION this tool is governed by, away from its registered name.
+    // Both are needed and they are not the same seam: the `assert` below is the EXECUTION gate, while
+    // `ToolRegistry.materialize`'s horizon filter resolves `Tool.permission(tool, name)` — which falls
+    // back to the registered name unless a remap says otherwise. Register `grep` without the remap and
+    // one rule governs execution while a different one governs whether the model can see the tool at
+    // all, which is how `explore: "deny"` used to refuse a tool it kept advertising.
+    grep: Tool.withPermission(
+      Tool.make({
+        description: "Search file contents",
+        input: Input,
+        output: Output,
+        execute: (input, context) =>
+          Effect.gen(function* () {
+            const root = yield* filesystem.resolveRoot(input)
 
-          yield* permission.assert({
-            sessionID: context.sessionID,
-            agent: context.agent,
-            source: {
-              type: "tool",
-              messageID: context.assistantMessageID,
-              callID: context.toolCallID,
-            },
-            action: "grep",
-            resources: [input.pattern],
-            save: ["*"],
-            metadata: { root: root.resource },
-          })
+            yield* permission.assert({
+              sessionID: context.sessionID,
+              agent: context.agent,
+              source: {
+                type: "tool",
+                messageID: context.assistantMessageID,
+                callID: context.toolCallID,
+              },
+              // `explore` — listing and searching are ONE grant class, so `glob` and `grep` share it.
+              // There is no `grep` permission action.
+              action: "explore",
+              resources: [input.pattern],
+              save: ["*"],
+              metadata: { root: root.resource },
+            })
 
-          return yield* filesystem.grep(input, root)
-        }).pipe(/* translate expected typed errors to ToolFailure */),
-    }),
+            return yield* filesystem.grep(input, root)
+          }).pipe(/* translate expected typed errors to ToolFailure */),
+      }),
+      "explore",
+    ),
   })
 ```
 
 Trusted tools formulate and sequence permission requests. `PermissionV2` evaluates policy and manages approval. The registry does not inject an `assertPermission` helper.
+
+A tool whose action differs from its registered name must say so with `Tool.withPermission`, and every such remap is ledgered in `packages/core/test/tool-permission-identity.test.ts` — a shrink-only list that fails in both directions, so an unledgered remap and a stale ledger entry are equally loud.
 
 Sharing a tool type does not imply equal authority. Built-ins and trusted Location plugins may capture services that are not available to application tools.
 

@@ -13,17 +13,21 @@ import { effectCmd } from "../effect-cmd"
 
 type AgentMode = "all" | "primary" | "subagent"
 
-// Permission keys (not raw tool names). Multiple tools can map to a single
-// permission — e.g. write/edit/apply_patch all gate on `edit` — so we configure
-// agents at the permission level to match how the runtime actually enforces it.
+// Permission ACTIONS (not raw tool names). Several tools map to one action — write/edit/apply_patch
+// all gate on `edit`, and glob/grep both gate on `explore` — so agents are configured at the action
+// level, which is how the runtime actually enforces it.
+//
+// ⚠️ Every entry must be an action the V2 runtime SPENDS, because an entry nobody spends produces a
+// rule that silently does nothing while this command reports that it denied it — ruling 2's *a fault
+// is never described falsely*, on a surface a user drives by hand. Retired 2026-07-30: `glob`/`grep`
+// (both remapped onto `explore`, see `core/src/config/permission.ts`) and `task` (live only on the
+// legacy `packages/novaclaw/src/agent` island, never on the V2 path these files are loaded by).
 const AVAILABLE_PERMISSIONS = [
   "bash",
   "read",
   "edit",
-  "glob",
-  "grep",
+  "explore",
   "webfetch",
-  "task",
   "todowrite",
   "websearch",
   "skill",
@@ -181,25 +185,30 @@ const AgentCreateCommand = effectCmd({
         mode = modeResult
       }
 
-      // Build permissions config — deny anything not explicitly selected.
-      const permissions: Record<string, "deny"> = {}
-      for (const permission of AVAILABLE_PERMISSIONS) {
-        if (!selected.includes(permission)) {
-          permissions[permission] = "deny"
-        }
-      }
+      // Deny anything not explicitly selected, as the ORDERED `{action,resource,effect}` ruleset the
+      // V2 markdown-agent schema declares (`core/src/config/agent.ts` → `permissions`).
+      //
+      // ⚠️ This used to write a SINGULAR `permission:` map, and that key is not in the schema. Measured
+      // 2026-07-30: the loader decodes with `Schema.decodeUnknownOption` and passes no
+      // `onExcessProperty`, so Effect's default of "ignore" applies — the agent decoded FINE and the
+      // whole permission map was silently dropped. Every agent this command has ever created was
+      // unrestricted while the CLI reported it had denied things. The evaluator is findLast, so these
+      // are emitted in a stable order and anything the user's own later rules say still wins.
+      const permissions = AVAILABLE_PERMISSIONS.filter((action) => !selected.includes(action)).map(
+        (action) => ({ action, resource: "*", effect: "deny" as const }),
+      )
 
       // Build frontmatter
       const frontmatter: {
         description: string
         mode: AgentMode
-        permission?: Record<string, "deny">
+        permissions?: { action: string; resource: string; effect: "deny" }[]
       } = {
         description: generated.whenToUse,
         mode,
       }
-      if (Object.keys(permissions).length > 0) {
-        frontmatter.permission = permissions
+      if (permissions.length > 0) {
+        frontmatter.permissions = permissions
       }
 
       // Write file

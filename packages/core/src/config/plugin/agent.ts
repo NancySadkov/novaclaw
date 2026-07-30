@@ -129,7 +129,21 @@ function decode(file: { directory: string; filepath: string; primary: boolean },
     .replace(/\.md$/, "")
   const body = markdown.content.trim()
   // Markdown agents are authored with canonical `ConfigAgent` frontmatter keys; the file body is the
-  // system prompt. Frontmatter carrying any unknown key fails to decode and the agent is skipped.
+  // system prompt.
+  //
+  // ⚠️ An unknown frontmatter key is SILENTLY DROPPED, and the agent loads anyway. This comment used
+  // to claim the opposite ("fails to decode and the agent is skipped"), which was false and expensive:
+  // `decodeAgent` is `Schema.decodeUnknownOption` and nobody passes `onExcessProperty`, so Effect's
+  // default of "ignore" applies — the same default that let a typo'd `PATCH /config` key report 200
+  // and write nothing (todo.md → *Runtime ground truth* §4). Measured 2026-07-30 by decoding
+  // `{description, mode, permission:{…}, system}`: Some(...) with kept keys `description, mode,
+  // system`.
+  //
+  // That is how `novaclaw agent create` shipped writing a singular `permission:` map — not a key this
+  // schema has — so every agent it ever created was UNRESTRICTED while the CLI reported it had denied
+  // things. Do not "fix" a mis-spelled key by widening this decode: a dropped key must stay loud at
+  // the AUTHORING site, because tightening it here would instead silently skip agents that load today.
+  // `packages/core/test/agent-frontmatter.test.ts` pins both halves.
   const agent = Option.getOrUndefined(
     decodeAgent({ ...markdown.data, system: body }, { errors: "all", propertyOrder: "original" }),
   )

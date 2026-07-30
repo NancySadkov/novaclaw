@@ -286,9 +286,14 @@ export const layer = Layer.effect(
               defaults,
               Permission.fromConfig({
                 "*": "deny",
-                grep: "allow",
-                glob: "allow",
-                list: "allow",
+                // ⚠️ `grep`/`glob`/`list` were granted here and are gone (2026-07-30). Nothing spends
+                // them: `list` never named a tool or an action anywhere in the tree, and glob/grep were
+                // remapped onto the single `explore` action, which the V2 tools assert through
+                // `PermissionV2` — not through this legacy ruleset. No `explore` grant replaces them
+                // for the same reason: the only names this island actually evaluates are `task`
+                // (`tool/truncate.ts`) and `skill` (`skill/index.ts`), so a grant here would be one
+                // more rule nobody reads. The V2 explore subagent's grants live in
+                // `core/src/plugin/agent.ts` and are pinned by `core/test/permission-baseline.test.ts`.
                 bash: "allow",
                 webfetch: "allow",
                 websearch: "allow",
