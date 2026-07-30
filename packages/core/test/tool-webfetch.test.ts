@@ -18,6 +18,14 @@ const requests: Array<{ readonly url: string; readonly headers: Record<string, s
 const assertions: PermissionV2.AssertInput[] = []
 let respond = (_request: HttpClientRequest.HttpClientRequest) =>
   Effect.succeed(new Response("hello", { headers: { "content-type": "text/plain" } }))
+/**
+ * Set to make the permission gate fail. ⚠️ `assert`'s error channel is
+ * `PermissionV2.Error | SessionV2.NotFoundError` — and `PermissionV2.Error` is the module's own
+ * union (`DeniedError | RejectedError | CorrectedError`), NOT the global `Error`. `denialMessage`
+ * answers all three of those, so `NotFoundError` is the only member it declines, which makes it the
+ * one honest negative control available here.
+ */
+let assertFailure: PermissionV2.Error | SessionV2.NotFoundError | undefined
 
 const http = Layer.succeed(
   HttpClient.HttpClient,
@@ -31,7 +39,13 @@ const http = Layer.succeed(
 const permission = Layer.succeed(
   PermissionV2.Service,
   PermissionV2.Service.of({
-    assert: (input) => Effect.sync(() => assertions.push(input)),
+    assert: (input) =>
+      Effect.gen(function* () {
+        assertions.push(input)
+        // No `return` — returning the failed effect widens the success channel to `undefined`,
+        // which is not assignable to the interface's `Effect<void, …>`.
+        if (assertFailure) yield* Effect.fail(assertFailure)
+      }),
     ask: () => Effect.die("unused"),
     reply: () => Effect.die("unused"),
     get: () => Effect.die("unused"),
@@ -51,6 +65,7 @@ const live = testEffect(toolLayer())
 const reset = () => {
   requests.length = 0
   assertions.length = 0
+  assertFailure = undefined
   respond = () => Effect.succeed(new Response("hello", { headers: { "content-type": "text/plain" } }))
 }
 
@@ -276,6 +291,51 @@ describe("WebFetchTool registration", () => {
       yield* TestClock.adjust(Duration.seconds(1))
 
       expect(yield* Fiber.join(fiber)).toEqual({ type: "error", value: "Unable to fetch https://1.1.1.1/slow" })
+    }),
+  )
+
+  // The blanket `mapError` used to ignore its error, so a permission verdict reached the model as
+  // "Unable to fetch <url>" — indistinguishable from a network fault, and therefore worth retrying.
+  // Since B4c `webfetch` falls through to `ask`, and an unattended root deny-fasts with
+  // `unattended-unanswerable`, whose text exists precisely to stop the retry loop.
+  it.effect("a permission denial keeps its own text instead of collapsing into the fetch fallback", () =>
+    Effect.gen(function* () {
+      reset()
+      const url = "https://1.1.1.1/gated"
+      const denial = new PermissionV2.DeniedError({
+        rules: [{ action: "webfetch", resource: url, effect: "deny" }],
+        reason: "unattended-unanswerable",
+      })
+      assertFailure = denial
+      const registry = yield* ToolRegistry.Service
+
+      const expected = PermissionV2.denialMessage(denial)
+      // Guard the instrument: if `denialMessage` ever returned undefined or the fallback wording,
+      // the assertion below would pass while proving nothing.
+      expect(typeof expected).toBe("string")
+      expect(expected).not.toBe(`Unable to fetch ${url}`)
+      expect(expected).toContain("webfetch")
+
+      expect(yield* executeTool(registry, call({ url, format: "text" }))).toEqual({
+        type: "error",
+        value: expected,
+      })
+    }),
+  )
+
+  it.effect("NEGATIVE CONTROL: a non-permission failure still gets the fetch fallback", () =>
+    Effect.gen(function* () {
+      reset()
+      // A vanished session, not a denial — `denialMessage` declines it, so the else arm must still
+      // answer. This is the case a blanket "Permission denied" absorber gets actively WRONG.
+      assertFailure = new SessionV2.NotFoundError({ sessionID })
+      const registry = yield* ToolRegistry.Service
+
+      expect(PermissionV2.denialMessage(assertFailure)).toBeUndefined()
+      expect(yield* executeTool(registry, call({ url: "https://1.1.1.1/ungated", format: "text" }))).toEqual({
+        type: "error",
+        value: "Unable to fetch https://1.1.1.1/ungated",
+      })
     }),
   )
 })

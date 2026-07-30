@@ -185,7 +185,20 @@ export const layer = Layer.effectDiscard(
                 format: input.format,
                 output,
               }
-            }).pipe(Effect.mapError(() => new ToolFailure({ message: `Unable to fetch ${input.url}` }))),
+            }).pipe(
+              // `denialMessage` FIRST, per its own contract — a blanket absorber that ignores its
+              // error collapses a permission verdict into "Unable to fetch", which reads as a
+              // transient network fault and invites a retry. Since B4c `webfetch` is no longer
+              // granted by a compiled catch-all, so it ASKS on first use; under an unattended root
+              // the evaluator deny-fasts with `unattended-unanswerable`, whose whole job is to tell
+              // the model that retrying is pointless and which grant would fix it. Discarding that
+              // text made an unattended run retry a refused fetch for the entire run.
+              Effect.mapError((error) => {
+                const denial = PermissionV2.denialMessage(error)
+                if (denial) return new ToolFailure({ message: denial })
+                return new ToolFailure({ message: `Unable to fetch ${input.url}` })
+              }),
+            ),
         }),
       })
       .pipe(Effect.orDie)
