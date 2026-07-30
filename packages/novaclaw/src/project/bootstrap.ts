@@ -1,5 +1,4 @@
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
-import { Plugin } from "../plugin"
 import { Format } from "../format"
 import { Snapshot } from "../snapshot"
 import * as Vcs from "./vcs"
@@ -19,7 +18,6 @@ export const layer = Layer.effect(
     // so it can depend on bootstrap without importing this implementation graph.
     const config = yield* Config.Service
     const format = yield* Format.Service
-    const plugin = yield* Plugin.Service
     const snapshot = yield* Snapshot.Service
     const vcs = yield* Vcs.Service
 
@@ -28,8 +26,6 @@ export const layer = Layer.effect(
       yield* Effect.logInfo("bootstrapping", { directory: ctx.directory })
       // everything depends on config so eager load it for nice traces
       yield* config.get()
-      // Plugin can mutate config so it has to be initialized before anything else.
-      yield* plugin.init()
       // Each service self-manages its own slow work via Effect.forkScoped against
       // its per-instance state scope. We just await materialization here.
       yield* Effect.forEach(
@@ -44,19 +40,13 @@ export const layer = Layer.effect(
 )
 
 export const defaultLayer: Layer.Layer<Service> = layer.pipe(
-  Layer.provide([
-    Config.defaultLayer,
-    Format.defaultLayer,
-    Plugin.defaultLayer,
-    Snapshot.defaultLayer,
-    Vcs.defaultLayer,
-  ]),
+  Layer.provide([Config.defaultLayer, Format.defaultLayer, Snapshot.defaultLayer, Vcs.defaultLayer]),
 )
 
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [Config.node, Format.node, Plugin.node, Snapshot.node, Vcs.node],
+  deps: [Config.node, Format.node, Snapshot.node, Vcs.node],
 })
 
 export * as InstanceBootstrap from "./bootstrap"

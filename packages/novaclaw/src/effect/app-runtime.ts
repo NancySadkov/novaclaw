@@ -10,7 +10,6 @@ import { Git } from "@/git"
 import { Ripgrep } from "@novaclaw/core/ripgrep"
 import { Storage } from "@/storage/storage"
 import { Snapshot } from "@/snapshot"
-import { Plugin } from "@/plugin"
 import { ModelsDev } from "@novaclaw/core/models-dev"
 import { ProviderAuth } from "@/provider/auth"
 import { Agent } from "@/agent/agent"
@@ -43,7 +42,6 @@ export const AppLayer = Layer.mergeAll(
   Git.defaultLayer,
   Storage.defaultLayer,
   Snapshot.defaultLayer,
-  Plugin.defaultLayer,
   ModelsDev.defaultLayer,
   ProviderAuth.defaultLayer,
   Agent.defaultLayer,

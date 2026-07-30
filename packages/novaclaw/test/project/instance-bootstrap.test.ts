@@ -1,10 +1,7 @@
 import { afterEach, expect } from "bun:test"
-import { existsSync } from "node:fs"
-import path from "node:path"
-import { pathToFileURL } from "node:url"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { CrossSpawnSpawner } from "@novaclaw/core/cross-spawn-spawner"
-import { Cause, Effect, Exit, Fiber, Layer } from "effect"
+import { Cause, Effect, Exit, Fiber } from "effect"
 import { bootstrap as cliBootstrap } from "../../src/cli/bootstrap"
 import { InstanceStore } from "../../src/project/instance-store"
 import { disposeAllInstances, tmpdirScoped } from "../fixture/fixture"
@@ -14,12 +11,15 @@ import { waitGlobalBusEvent } from "../server/global-bus"
 const it = testEffect(LayerNode.compile(LayerNode.group([InstanceStore.node, CrossSpawnSpawner.node])))
 
 // InstanceBootstrap must run before any code touches the instance —
-// originally tracked by PRs #25389 and #25449, now a permanent
-// invariant. The plugin config hook writes a marker file; the test
-// bodies deliberately avoid Plugin/config directly. The marker only
-// appears if InstanceBootstrap ran at the instance boundary.
+// originally tracked by PRs #25389 and #25449, now a permanent invariant.
 //
-// The boundaries below are transport-agnostic and stay.
+// ⚠️ COVERAGE GAP, stated plainly: the "did bootstrap run at this boundary?" probe used to be a V1
+// plugin `config` hook writing a marker file. The V1 plugin arm is deleted, and InstanceBootstrap
+// has no other externally observable side effect, so the three boundary assertions
+// (InstanceStore.provide / InstanceStore.reload / CLI bootstrap) went with it rather than be
+// replaced by a probe that cannot fail. Restoring them wants a recording stub bound to the
+// `@novaclaw/InstanceBootstrap` tag, which is a stronger test than the marker ever was — that is
+// the follow-up. What remains below is the disposal boundary, which is directly observable.
 
 afterEach(async () => {
   await disposeAllInstances()
@@ -27,32 +27,7 @@ afterEach(async () => {
 
 const bootstrapFixture = Effect.gen(function* () {
   const dir = yield* tmpdirScoped({ git: true })
-  const marker = path.join(dir, "config-hook-fired")
-  const pluginFile = path.join(dir, "plugin.ts")
-  yield* Effect.promise(() =>
-    Bun.write(
-      pluginFile,
-      [
-        `const MARKER = ${JSON.stringify(marker)}`,
-        "export default async () => ({",
-        "  config: async () => {",
-        '    await Bun.write(MARKER, "ran")',
-        "  },",
-        "})",
-        "",
-      ].join("\n"),
-    ),
-  )
-  yield* Effect.promise(() =>
-    Bun.write(
-      path.join(dir, "novaclaw.json"),
-      JSON.stringify({
-        $schema: "https://novaclaw.app/config.json",
-        plugin: [pathToFileURL(pluginFile).href],
-      }),
-    ),
-  )
-  return { directory: dir, marker }
+  return { directory: dir }
 })
 
 function waitDisposed(directory: string) {
@@ -61,27 +36,6 @@ function waitDisposed(directory: string) {
     predicate: (event) => event.payload.type === "server.instance.disposed" && event.directory === directory,
   })
 }
-
-it.live("InstanceStore.provide runs InstanceBootstrap before effect", () =>
-  Effect.gen(function* () {
-    const tmp = yield* bootstrapFixture
-    const store = yield* InstanceStore.Service
-
-    yield* store.provide({ directory: tmp.directory }, Effect.succeed("ok"))
-
-    expect(existsSync(tmp.marker)).toBe(true)
-  }),
-)
-
-it.live("CLI bootstrap runs InstanceBootstrap before callback", () =>
-  Effect.gen(function* () {
-    const tmp = yield* bootstrapFixture
-
-    yield* Effect.promise(() => cliBootstrap(tmp.directory, async () => "ok"))
-
-    expect(existsSync(tmp.marker)).toBe(true)
-  }),
-)
 
 it.live("CLI bootstrap disposes the instance when the callback rejects", () =>
   Effect.gen(function* () {
@@ -98,13 +52,3 @@ it.live("CLI bootstrap disposes the instance when the callback rejects", () =>
   }),
 )
 
-it.live("InstanceStore.reload runs InstanceBootstrap", () =>
-  Effect.gen(function* () {
-    const tmp = yield* bootstrapFixture
-    const store = yield* InstanceStore.Service
-
-    yield* store.reload({ directory: tmp.directory })
-
-    expect(existsSync(tmp.marker)).toBe(true)
-  }),
-)

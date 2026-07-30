@@ -1026,7 +1026,7 @@ it.instance("merges store plugins with auto-discovered dir-walk plugins, origins
     const names = (config.plugins ?? []).map((p) => (typeof p === "string" ? p : p.package))
     expect(names).toContain("store-plugin@1.0.0")
     expect(names.some((p) => p.startsWith("file://") && p.includes("my-plugin"))).toBe(true)
-    // plugin_origins stays in the V1 Spec shape; the persisted `plugins` are its V2-entry
+    // plugin_origins stays in the resolver Spec shape; the persisted `plugins` are its V2-entry
     // projection — aligned by identity. Store-borne plugins carry the instance-wide scope.
     const origins = config.plugin_origins ?? []
     expect(origins.map((item) => ConfigPlugin.pluginSpecifier(item.spec))).toEqual(names)

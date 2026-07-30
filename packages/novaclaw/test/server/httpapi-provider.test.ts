@@ -1,10 +1,8 @@
 import { describe, expect } from "bun:test"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { Effect, Layer } from "effect"
-import path from "path"
 import { resetDatabase } from "../fixture/db"
 import { TestInstance } from "../fixture/fixture"
-import { markPluginDependenciesReady } from "../fixture/plugin"
 import { testEffectShared } from "../lib/effect"
 import { httpApiLayer, request } from "./httpapi-layer"
 
@@ -18,8 +16,6 @@ const testStateLayer = Layer.effectDiscard(
 const it = testEffectShared(Layer.mergeAll(testStateLayer, FSUtil.defaultLayer, httpApiLayer))
 const projectOptions = { config: { formatter: false } }
 const providerID = "test-oauth-parity"
-const oauthURL = "https://example.com/oauth"
-const oauthInstructions = "Finish OAuth"
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -27,23 +23,9 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 
 // Both /provider and /config providers serve the native catalog result:
 // { providers: ProviderV2Info[], models: ModelV2Info[], connected, default }.
-function providerByID(input: unknown, id: string) {
-  if (!isRecord(input) || !Array.isArray(input.providers)) return undefined
-  return input.providers.find((provider) => isRecord(provider) && provider.id === id)
-}
-
 function providerModels(input: unknown, id: string) {
   if (!isRecord(input) || !Array.isArray(input.models)) return []
   return input.models.filter((model) => isRecord(model) && model.providerID === id)
-}
-
-// Runtime auth-loader options (fetch et al.) must never leak onto the wire; on the
-// native shape they could only surface under api.settings.
-function hasProviderWithFetch(input: unknown, id = "google") {
-  const provider = providerByID(input, id)
-  if (!isRecord(provider)) return false
-  const api = provider.api
-  return isRecord(api) && isRecord(api.settings) && "fetch" in api.settings
 }
 
 function hasNonZeroModelCost(input: unknown, id: string) {
@@ -58,14 +40,6 @@ function hasNonZeroModelCost(input: unknown, id: string) {
         ),
     )
   })
-}
-
-function hasProviderMutationMarker(input: unknown, id: string) {
-  const provider = providerByID(input, id)
-  if (!isRecord(provider)) return false
-  if (provider.name === "mutated-provider") return true
-  const api = provider.api
-  return isRecord(api) && isRecord(api.settings) && api.settings.mutatedByPlugin === true
 }
 
 function requestAuthorize(input: {
@@ -101,163 +75,6 @@ function requestCallback(input: { providerID: string; method: number; headers: H
   })
 }
 
-function writeProviderAuthPlugin(dir: string) {
-  return Effect.gen(function* () {
-    const fs = yield* FSUtil.Service
-    yield* Effect.promise(() => markPluginDependenciesReady(path.join(dir, ".novaclaw")))
-
-    yield* fs.writeWithDirs(
-      path.join(dir, ".novaclaw", "plugin", "provider-oauth-parity.ts"),
-      [
-        "export default {",
-        '  id: "test.provider-oauth-parity",',
-        "  server: async () => ({",
-        "    auth: {",
-        `      provider: "${providerID}",`,
-        "      methods: [",
-        '        { type: "api", label: "API key" },',
-        "        {",
-        '          type: "oauth",',
-        '          label: "OAuth",',
-        "          authorize: async () => ({",
-        `            url: "${oauthURL}",`,
-        '            method: "code",',
-        `            instructions: "${oauthInstructions}",`,
-        "            callback: async () => ({ type: 'success', key: 'token' }),",
-        "          }),",
-        "        },",
-        "      ],",
-        "    },",
-        "  }),",
-        "}",
-        "",
-      ].join("\n"),
-    )
-  })
-}
-
-function writeProviderAuthValidationPlugin(dir: string) {
-  return Effect.gen(function* () {
-    const fs = yield* FSUtil.Service
-    yield* Effect.promise(() => markPluginDependenciesReady(path.join(dir, ".novaclaw")))
-
-    yield* fs.writeWithDirs(
-      path.join(dir, ".novaclaw", "plugin", "provider-oauth-validation.ts"),
-      [
-        "export default {",
-        '  id: "test.provider-oauth-validation",',
-        "  server: async () => ({",
-        "    auth: {",
-        '      provider: "test-oauth-validation",',
-        "      methods: [",
-        "        {",
-        '          type: "oauth",',
-        '          label: "OAuth",',
-        "          prompts: [",
-        "            {",
-        '              type: "text",',
-        '              key: "token",',
-        '              message: "Token",',
-        "              validate: (value) => value === 'ok' ? undefined : 'Token must be ok',",
-        "            },",
-        "          ],",
-        "          authorize: async () => ({",
-        `            url: "${oauthURL}",`,
-        '            method: "code",',
-        `            instructions: "${oauthInstructions}",`,
-        "            callback: async () => ({ type: 'success', key: 'token' }),",
-        "          }),",
-        "        },",
-        "      ],",
-        "    },",
-        "  }),",
-        "}",
-        "",
-      ].join("\n"),
-    )
-  })
-}
-
-function writeFunctionOptionsPlugin(dir: string) {
-  return Effect.gen(function* () {
-    const fs = yield* FSUtil.Service
-    yield* Effect.promise(() => markPluginDependenciesReady(path.join(dir, ".novaclaw")))
-
-    yield* fs.writeWithDirs(
-      path.join(dir, ".novaclaw", "plugin", "provider-function-options.ts"),
-      [
-        "export default {",
-        '  id: "test.provider-function-options",',
-        "  server: async () => ({",
-        "    auth: {",
-        '      provider: "google",',
-        "      loader: async (_getAuth, provider) => {",
-        "        for (const model of Object.values(provider.models ?? {})) {",
-        "          model.cost = { input: 0, output: 0 }",
-        "        }",
-        "        return {",
-        '        apiKey: "",',
-        "        fetch: async (input, init) => fetch(input, init),",
-        "        }",
-        "      },",
-        "      methods: [{ type: 'api', label: 'API key' }],",
-        "    },",
-        "  }),",
-        "}",
-        "",
-      ].join("\n"),
-    )
-  })
-}
-
-function writeProviderModelsMutationPlugin(dir: string) {
-  return Effect.gen(function* () {
-    const fs = yield* FSUtil.Service
-    yield* Effect.promise(() => markPluginDependenciesReady(path.join(dir, ".novaclaw")))
-
-    yield* fs.writeWithDirs(
-      path.join(dir, ".novaclaw", "plugin", "provider-models-mutation.ts"),
-      [
-        "export default {",
-        '  id: "test.provider-models-mutation",',
-        "  server: async () => ({",
-        "    provider: {",
-        '      id: "google",',
-        "      models: async (provider) => {",
-        "        const models = Object.fromEntries(",
-        "          Object.entries(provider.models ?? {}).map(([id, model]) => [id, { ...model }]),",
-        "        )",
-        '        provider.name = "mutated-provider"',
-        "        provider.options = { ...provider.options, mutatedByPlugin: true }",
-        "        for (const model of Object.values(provider.models ?? {})) {",
-        "          model.cost = { input: 0, output: 0 }",
-        "        }",
-        "        return models",
-        "      },",
-        "    },",
-        "  }),",
-        "}",
-        "",
-      ].join("\n"),
-    )
-  })
-}
-
-function setEnvScoped(key: string, value: string) {
-  return Effect.acquireRelease(
-    Effect.sync(() => {
-      const previous = process.env[key]
-      process.env[key] = value
-      return previous
-    }),
-    (previous) =>
-      Effect.sync(() => {
-        if (previous === undefined) delete process.env[key]
-        else process.env[key] = previous
-      }),
-  )
-}
-
 describe("provider HttpApi", () => {
   it.instance.skip(
     "returns public v2 provider not found errors",
@@ -277,55 +94,23 @@ describe("provider HttpApi", () => {
     projectOptions,
   )
 
+  // ⚠️ Pins the HALF-DARK ProviderAuth surface (see `src/provider/auth.ts`). Its only feed was the
+  // V1 plugin `auth` hook; with that gone `methods()` is `{}` for every install, so authorize can
+  // only answer `null` and callback can only answer OauthMissing. These two tests exist so the
+  // routes' behaviour is stated rather than assumed, until the follow-up deletes them outright.
   it.instance(
-    "serves OAuth authorize response shapes",
-    Effect.gen(function* () {
-      const directory = (yield* TestInstance).directory
-      const headers = { "x-novaclaw-directory": directory, "content-type": "application/json" }
-      const api = yield* requestAuthorize({
-        providerID,
-        method: 0,
-        headers,
-      })
-      // method 0 (api-key style) — authorize() resolves with no further
-      // redirect; #26474 changed the wire format to JSON `null` so clients
-      // can `.json()` parse uniformly instead of getting an empty body
-      // that throws.
-      expect(api).toEqual({ status: 200, body: "null" })
-
-      const oauth = yield* requestAuthorize({
-        providerID,
-        method: 1,
-        headers,
-      })
-      expect(JSON.parse(oauth.body)).toEqual({
-        url: oauthURL,
-        method: "code",
-        instructions: oauthInstructions,
-      })
-    }),
-    { ...projectOptions, init: writeProviderAuthPlugin },
-    30000,
-  )
-
-  it.instance(
-    "returns declared provider auth validation errors",
+    "answers null from authorize because no provider declares auth methods",
     Effect.gen(function* () {
       const directory = (yield* TestInstance).directory
       const response = yield* requestAuthorize({
-        providerID: "test-oauth-validation",
+        providerID,
         method: 0,
-        inputs: { token: "nope" },
         headers: { "x-novaclaw-directory": directory, "content-type": "application/json" },
       })
 
-      expect(response.status).toBe(400)
-      expect(JSON.parse(response.body)).toEqual({
-        name: "ProviderAuthValidationFailed",
-        data: { field: "token", message: "Token must be ok" },
-      })
+      expect(response).toEqual({ status: 200, body: "null" })
     }),
-    { ...projectOptions, init: writeProviderAuthValidationPlugin },
+    projectOptions,
     30000,
   )
 
@@ -349,35 +134,14 @@ describe("provider HttpApi", () => {
     30000,
   )
 
+  // Deleted with the V1 plugin arm: "never serializes runtime auth options onto the provider wire
+  // shape". The condition it asserted against was CREATED by a plugin fixture whose auth loader
+  // returned a `fetch` — with the fixture gone the two `hasProviderWithFetch(...)===false` checks
+  // could not fail, and `/config/providers` serves no providers at all so its cost check could not
+  // pass. A test that cannot fail is worse than no test. The one live assertion it still carried
+  // (real model costs on `/provider`) survives below.
   it.instance(
-    "serves provider lists when auth loaders add runtime fetch options",
-    Effect.gen(function* () {
-      const directory = (yield* TestInstance).directory
-      yield* setEnvScoped(
-        "NOVACLAW_AUTH_CONTENT",
-        JSON.stringify({
-          google: { type: "oauth", refresh: "dummy", access: "dummy", expires: 9999999999999 },
-        }),
-      )
-      const headers = { "x-novaclaw-directory": directory }
-      const providerResponse = yield* request("/provider", { headers })
-      const configResponse = yield* request("/config/providers", { headers })
-
-      expect(providerResponse.status).toBe(200)
-      expect(configResponse.status).toBe(200)
-
-      const providerBody = yield* providerResponse.json
-      const configBody = yield* configResponse.json
-      expect(hasProviderWithFetch(providerBody)).toBe(false)
-      expect(hasProviderWithFetch(configBody)).toBe(false)
-      expect(hasNonZeroModelCost(providerBody, "google")).toBe(true)
-      expect(hasNonZeroModelCost(configBody, "google")).toBe(true)
-    }),
-    { ...projectOptions, init: writeFunctionOptionsPlugin },
-  )
-
-  it.instance(
-    "keeps provider.models hook input mutations out of provider state",
+    "serves real model costs on provider state",
     Effect.gen(function* () {
       const directory = (yield* TestInstance).directory
 
@@ -388,12 +152,11 @@ describe("provider HttpApi", () => {
       expect(providerResponse.status).toBe(200)
       expect(configResponse.status).toBe(200)
 
-      const providerBody = yield* providerResponse.json
-      const configBody = yield* configResponse.json
-      expect(hasProviderMutationMarker(providerBody, "google")).toBe(false)
-      expect(hasProviderMutationMarker(configBody, "google")).toBe(false)
-      expect(hasNonZeroModelCost(providerBody, "google")).toBe(true)
+      // Was also asserting no `provider.models` mutation marker on either body. That check read
+      // `false` because `providerByID` found NOTHING, not because the marker was absent — it was
+      // satisfied by the provider's absence, so it is dropped rather than weakened.
+      expect(hasNonZeroModelCost(yield* providerResponse.json, "google")).toBe(true)
     }),
-    { ...projectOptions, init: writeProviderModelsMutationPlugin },
+    projectOptions,
   )
 })

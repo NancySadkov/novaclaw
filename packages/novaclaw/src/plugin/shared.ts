@@ -1,17 +1,15 @@
 import path from "path"
 import { fileURLToPath, pathToFileURL } from "url"
 import npa from "npm-package-arg"
-import semver from "semver"
 import { Filesystem } from "@/util/filesystem"
-import { isRecord } from "@/util/record"
 import { Npm } from "@novaclaw/core/npm"
 
-// Old npm package names for plugins that are now built-in
-export const DEPRECATED_PLUGIN_PACKAGES: string[] = []
-
-export function isDeprecatedPlugin(spec: string) {
-  return DEPRECATED_PLUGIN_PACKAGES.some((pkg) => spec.includes(pkg))
-}
+// Plugin specifier + target resolution shared by the `novaclaw plugin` CLI (`plugin/install.ts`),
+// the plugin metadata store (`plugin/meta.ts`), and config's plugin-origin dedup
+// (`config/plugin.ts`, which feeds the V2 `plugins` key). The V1 plugin arm that also used this
+// module — entrypoint detection, id resolution, the `engines.novaclaw` compatibility gate and the
+// deprecated-package skip list — was deleted along with the loader it served; V2 plugins resolve
+// their entrypoint through `core/config/plugin/external.ts` instead.
 
 function parse(spec: string) {
   try {
@@ -34,20 +32,11 @@ export function parsePluginSpecifier(spec: string) {
 }
 
 export type PluginSource = "file" | "npm"
-type PluginMode = "strict" | "detect"
 
 export type PluginPackage = {
   dir: string
   pkg: string
   json: Record<string, unknown>
-}
-
-export type PluginEntry = {
-  spec: string
-  source: PluginSource
-  target: string
-  pkg?: PluginPackage
-  entry?: string
 }
 
 const INDEX_FILES = ["index.ts", "index.tsx", "index.js", "index.mjs", "index.cjs"]
@@ -57,63 +46,8 @@ export function pluginSource(spec: string): PluginSource {
   return "npm"
 }
 
-function resolveExportPath(raw: string, dir: string) {
-  if (raw.startsWith("file://")) return fileURLToPath(raw)
-  if (path.isAbsolute(raw)) return raw
-  return path.resolve(dir, raw)
-}
-
 function isAbsolutePath(raw: string) {
   return path.isAbsolute(raw) || /^[A-Za-z]:[\\/]/.test(raw)
-}
-
-function extractExportValue(value: unknown): string | undefined {
-  if (typeof value === "string") return value
-  if (!isRecord(value)) return undefined
-  for (const key of ["import", "default"]) {
-    const nested = value[key]
-    if (typeof nested === "string") return nested
-  }
-  return undefined
-}
-
-function packageMain(pkg: PluginPackage) {
-  const value = pkg.json.main
-  if (typeof value !== "string") return
-  const next = value.trim()
-  if (!next) return
-  return next
-}
-
-function resolvePackageFile(spec: string, raw: string, pkg: PluginPackage) {
-  const resolved = resolveExportPath(raw, pkg.dir)
-  const root = Filesystem.resolve(pkg.dir)
-  const next = Filesystem.resolve(resolved)
-  if (!Filesystem.contains(root, next)) {
-    throw new Error(`Plugin ${spec} resolved server entry outside plugin directory`)
-  }
-  return next
-}
-
-function resolvePackagePath(spec: string, raw: string, pkg: PluginPackage) {
-  return pathToFileURL(resolvePackageFile(spec, raw, pkg)).href
-}
-
-function resolvePackageEntrypoint(spec: string, pkg: PluginPackage) {
-  const exports = pkg.json.exports
-  if (isRecord(exports)) {
-    const raw = extractExportValue(exports["./server"])
-    if (raw) return resolvePackagePath(spec, raw, pkg)
-  }
-
-  const main = packageMain(pkg)
-  if (!main) return
-  return resolvePackagePath(spec, main, pkg)
-}
-
-function targetPath(target: string) {
-  if (target.startsWith("file://")) return fileURLToPath(target)
-  if (path.isAbsolute(target)) return target
 }
 
 async function resolveDirectoryIndex(dir: string) {
@@ -121,37 +55,6 @@ async function resolveDirectoryIndex(dir: string) {
     const file = path.join(dir, name)
     if (await Filesystem.exists(file)) return file
   }
-}
-
-async function resolveTargetDirectory(target: string) {
-  const file = targetPath(target)
-  if (!file) return
-  const stat = await Filesystem.statAsync(file)
-  if (!stat?.isDirectory()) return
-  return file
-}
-
-async function resolvePluginEntrypoint(spec: string, target: string, pkg?: PluginPackage) {
-  const source = pluginSource(spec)
-  const hit =
-    pkg ?? (source === "npm" ? await readPluginPackage(target) : await readPluginPackage(target).catch(() => undefined))
-  if (!hit) return target
-
-  const entry = resolvePackageEntrypoint(spec, hit)
-  if (entry) return entry
-
-  const dir = await resolveTargetDirectory(target)
-
-  if (dir && isRecord(hit.json.exports)) {
-    if (source === "file") {
-      const index = await resolveDirectoryIndex(dir)
-      if (index) return pathToFileURL(index).href
-    }
-
-    return
-  }
-
-  return target
 }
 
 export function isPathPluginSpec(spec: string) {
@@ -177,19 +80,6 @@ export async function resolvePathPluginTarget(spec: string) {
   throw new Error(`Plugin directory ${file} is missing package.json or index file`)
 }
 
-export async function checkPluginCompatibility(target: string, novaclawVersion: string, pkg?: PluginPackage) {
-  if (!semver.valid(novaclawVersion) || semver.major(novaclawVersion) === 0) return
-  const hit = pkg ?? (await readPluginPackage(target).catch(() => undefined))
-  if (!hit) return
-  const engines = hit.json.engines
-  if (!isRecord(engines)) return
-  const range = engines.novaclaw
-  if (typeof range !== "string") return
-  if (!semver.satisfies(novaclawVersion, range)) {
-    throw new Error(`Plugin requires novaclaw ${range} but running ${novaclawVersion}`)
-  }
-}
-
 export async function resolvePluginTarget(spec: string) {
   if (isPathPluginSpec(spec)) return resolvePathPluginTarget(spec)
   const hit = parse(spec)
@@ -205,64 +95,4 @@ export async function readPluginPackage(target: string): Promise<PluginPackage> 
   const pkg = path.join(dir, "package.json")
   const json = await Filesystem.readJson<Record<string, unknown>>(pkg)
   return { dir, pkg, json }
-}
-
-export async function createPluginEntry(spec: string, target: string): Promise<PluginEntry> {
-  const source = pluginSource(spec)
-  const pkg =
-    source === "npm" ? await readPluginPackage(target) : await readPluginPackage(target).catch(() => undefined)
-  const entry = await resolvePluginEntrypoint(spec, target, pkg)
-  return {
-    spec,
-    source,
-    target,
-    pkg,
-    entry,
-  }
-}
-
-export function readPluginId(id: unknown, spec: string) {
-  if (id === undefined) return
-  if (typeof id !== "string") throw new TypeError(`Plugin ${spec} has invalid id type ${typeof id}`)
-  const value = id.trim()
-  if (!value) throw new TypeError(`Plugin ${spec} has an empty id`)
-  return value
-}
-
-export function readV1Plugin(mod: Record<string, unknown>, spec: string, mode: PluginMode = "strict") {
-  const value = mod.default
-  if (!isRecord(value)) {
-    if (mode === "detect") return
-    throw new TypeError(`Plugin ${spec} must default export an object with server()`)
-  }
-  if (mode === "detect" && !("id" in value) && !("server" in value)) return
-
-  const server = "server" in value ? value.server : undefined
-  if (server !== undefined && typeof server !== "function") {
-    throw new TypeError(`Plugin ${spec} has invalid server export`)
-  }
-  if (server === undefined) {
-    throw new TypeError(`Plugin ${spec} must default export an object with server()`)
-  }
-
-  return value
-}
-
-export async function resolvePluginId(
-  source: PluginSource,
-  spec: string,
-  target: string,
-  id: string | undefined,
-  pkg?: PluginPackage,
-) {
-  if (source === "file") {
-    if (id) return id
-    throw new TypeError(`Path plugin ${spec} must export id`)
-  }
-  if (id) return id
-  const hit = pkg ?? (await readPluginPackage(target))
-  if (typeof hit.json.name !== "string" || !hit.json.name.trim()) {
-    throw new TypeError(`Plugin package ${hit.pkg} is missing name`)
-  }
-  return hit.json.name.trim()
 }

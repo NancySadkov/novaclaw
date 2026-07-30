@@ -67,8 +67,8 @@ Provider-neutral sampling and output controls, partitioned from provider semanti
 **Native Continuation Metadata**:
 Opaque protocol-shaped data attached to assistant content and required to continue that content natively with a compatible model, such as a reasoning signature or provider-hosted item identifier.
 
-**PTY Environment**:
-The host-supplied environment overlay applied by the server when creating a PTY, observed for the request Location and resolved PTY working directory.
+**PTY Environment** — _REMOVED (2026-07-30), retained as history_:
+Was the host-supplied environment overlay applied by the server when creating a PTY, observed for the request Location and resolved PTY working directory. Its only producer was the V1 plugin `shell.env` hook; when that arm was deleted the `PtyEnvironment` service could contribute nothing but `{}` for every install, so the service, its node and its call site went with it (a half-dark feature loses both halves). PTY creation now merges caller values with Core-forced terminal invariants and nothing else. Composing a spawn environment is still wanted, but as ONE host-execution gate covering bash, PTYs and every other spawn (`core/host-exec.ts`, ruling 6) — never as a per-route hook.
 
 **NovaClaw Client**:
 The generated Promise and Effect APIs derived from the public `HttpApi`; **Embedded NovaClaw** shares the Effect API through an in-memory `HttpClient` against the same router and handlers.
@@ -135,7 +135,7 @@ _Avoid_: Response envelope
 - **Native Continuation Metadata** remains in durable history. Provider-turn projection includes it only for a successful exact originating provider/model match; failed turns and incompatible models omit opaque metadata, while non-empty visible reasoning lowers to ordinary assistant text after a model switch. This conservative relation may widen only when recorded provider tests establish compatibility.
 - **Model Request Options** remain provider-semantic through Catalog resolution. The Session runner maps them into the LLM package's provider-option namespace; the selected protocol adapter alone owns provider wire encoding.
 - **Generation Controls**, protocol-semantic **Model Request Options**, and compatibility request body fields are separate Catalog domains. A shared ingestion adapter partitions legacy and models.dev AI-SDK-shaped options before routing.
-- The **PTY Environment** is a server concern rather than a Core PTY concern. PTY creation merges caller values, then the host overlay, then Core-forced terminal invariants such as `TERM` and `NOVACLAW_TERMINAL`.
+- PTY creation merges caller values, then Core-forced terminal invariants such as `TERM` and `NOVACLAW_TERMINAL`. (Historical: a server-owned **PTY Environment** overlay used to sit between those two steps. It is removed — see the glossary entry.)
 - Networked and **Embedded NovaClaw** use the same **NovaClaw Client** and preserve the full HTTP encoding, routing, middleware, and decoding boundary; only the `HttpClient` transport differs.
 - The Effect-native network constructor obtains `HttpClient.HttpClient` from its environment so callers own transport selection, recording, tracing, retries, and tests. Convenience runtimes may provide a fetch transport separately.
 - Creating **Embedded NovaClaw** is scoped. Closing its owning Scope releases the in-process server resources, database resources, registrations, and fibers.
@@ -182,7 +182,7 @@ _Avoid_: Response envelope
 - `sessions.create(...)` accepts an optional `location`. Omission resolves through the connected NovaClaw instance's default or current location; an explicit value selects a known location. Networked and embedded transports use the same handler semantics.
 - `sessions.switchAgent({ sessionID, agent })` is part of the common client alongside `sessions.switchModel(...)`. It affects subsequent Session activity and fails with `SessionNotFoundError` for an unknown Session.
 - The **Embedded NovaClaw** Layer delegates to the same scoped creation path; it does not define a second implementation.
-- A **PTY Environment** adapter observes plugins in the request Location while passing the resolved PTY working directory to the hook; standalone servers use an empty adapter.
+- _Historical, removed 2026-07-30:_ a **PTY Environment** adapter observed plugins in the request Location while passing the resolved PTY working directory to the hook, and standalone servers used an empty adapter. Deleting the V1 plugin arm left the empty adapter as the ONLY possible implementation, so the seam was removed rather than kept permanently empty.
 - A **Mid-Conversation System Message** lowers to the provider's native chronological instruction role when supported and to a wrapped chronological fallback otherwise.
 - When the effective aggregate instruction set changes, its **Mid-Conversation System Message** includes the complete current ordered set and supersedes the prior aggregate value; when no ambient instructions remain, the message states that previously loaded instructions no longer apply.
 - Ambient project instruction discovery honors `NOVACLAW_DISABLE_PROJECT_CONFIG`; global instructions remain eligible.
@@ -222,4 +222,4 @@ Before stabilizing the client API:
 
 ## Flagged ambiguities
 
-- Legacy `experimental.chat.system.transform` can mutate the assembled baseline system prompt arbitrarily, but V2 plugins do not yet expose an equivalent hook. Decide separately whether to port it, replace dynamic uses with plugin-defined **Context Sources**, or narrow its semantics.
+- _Historical, resolved 2026-07-30:_ legacy `experimental.chat.system.transform` could mutate the assembled baseline system prompt arbitrarily, and the open question was whether to port it, replace dynamic uses with plugin-defined **Context Sources**, or narrow its semantics. It was deleted with the V1 plugin arm and nothing in the tree reads it. The ambiguity is closed by that deletion: **Context Sources** are the supported way to contribute to the baseline system prompt, and an arbitrary post-hoc mutation hook is not coming back.

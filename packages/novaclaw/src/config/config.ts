@@ -164,10 +164,12 @@ async function resolveLoadedPlugins(config: Info, filepath: string) {
 // jsonc files AND markdown-agent frontmatter — is authored directly as V2 (the V1 config migrator was
 // retired in F1-config; no on-read migration remains).
 export type Info = DeepMutable<typeof ConfigV2.Info.Type> & {
-  // plugin_origins is derived state, not a persisted config field. It keeps each winning plugin spec together
-  // with the file and scope it came from so later runtime code can make location-sensitive decisions.
-  // Kept in the resolver `Spec` shape (a tuple/string) that the plugin loader (`plugin/index.ts`) consumes;
-  // the persisted `plugins` (V2 entries) is derived from it.
+  // plugin_origins is derived state, not a persisted config field, and it never reaches the wire — the
+  // `/config` handlers decode through `ConfigV2.Info`, which has no such key. It exists so the merge can
+  // dedupe by plugin identity while remembering which config file won and at which scope; `plugins` (the
+  // persisted V2 entries the loader actually reads) is its projection. Kept in the resolver `Spec` shape
+  // because that is what `ConfigPlugin.deduplicatePluginOrigins` operates on. (It used to be read directly
+  // by the V1 loader, `plugin/index.ts`; that arm is deleted — this is now purely a merge accumulator.)
   plugin_origins?: ConfigPlugin.Origin[]
 }
 
@@ -372,8 +374,8 @@ export const layer = Layer.effect(
           source: string,
           // Receives the V2 `plugins` entries from one config source (or already-normalized Specs from
           // the dir loader — plain file-URL strings, which are valid entries), before provenance for this
-          // merge step is attached. Converted into the V1 `Spec` shape the origin dedup + downstream
-          // plugin loader (`plugin/index.ts`) consume; `plugin_origins` stays Spec-shaped on purpose.
+          // merge step is attached. Converted into the resolver `Spec` shape the origin dedup consumes;
+          // `plugin_origins` stays Spec-shaped on purpose and `result.plugins` is projected back from it.
           list: PluginEntry[] | undefined,
           // Scope can be inferred from the source path, but some callers already know whether the config should
           // behave as global or local and can pass that explicitly.
@@ -464,6 +466,17 @@ export const layer = Layer.effect(
           // Opt-in only (Flag doc): `@novaclaw/plugin` is not on npm, so this
           // background install 404'd at every boot since the rename — pure noise
           // + startup egress. Type-only plugin imports never needed it.
+          //
+          // ⚠️ FIRE-AND-FORGET, deliberately — nothing joins these fibers in production, and that
+          // is the decision, not an oversight. The V1 plugin loader used to `waitForDependencies()`
+          // before importing plugin files, because a plugin could import `@novaclaw/plugin` at
+          // runtime; the loader that replaced it lives in core
+          // (`core/src/config/plugin/external.ts`) and forks its own work. What this install writes
+          // is EDITOR ergonomics for someone authoring a plugin file — no code path in the process
+          // reads it — so joining it would only trade startup latency (first-class, per todo.md)
+          // for a 404 we already log below. Re-open this ONLY if `@novaclaw/plugin` becomes a
+          // runtime import target that must resolve before external plugins load; then the join
+          // belongs at the external loader, not at boot.
           if (Flag.NOVACLAW_INSTALL_PLUGIN_TYPES) {
             const dep = yield* npmSvc
               .install(dir, {
@@ -588,6 +601,10 @@ export const layer = Layer.effect(
       return yield* InstanceState.use(state, (s) => s.directories)
     })
 
+    // The ONLY handle on the detached `NOVACLAW_INSTALL_PLUGIN_TYPES` install fibers (see the fork
+    // site above for why nothing joins them on the boot path). Kept because a detached fiber with
+    // no join point cannot be observed at all — this is what makes the flag's behaviour assertable
+    // — not because a caller is pending.
     const waitForDependencies = Effect.fn("Config.waitForDependencies")(function* () {
       yield* InstanceState.useEffect(state, (s) =>
         Effect.forEach(s.deps, Fiber.join, { concurrency: "unbounded" }).pipe(Effect.asVoid),

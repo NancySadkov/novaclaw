@@ -47,7 +47,6 @@ const InfoCommand = effectCmd({
   describe: "show debug information",
   handler: Effect.fn("Cli.debug.info")(function* () {
     const { Config } = yield* Effect.promise(() => import("@/config/config"))
-    const { ConfigPlugin } = yield* Effect.promise(() => import("@/config/plugin"))
     const config = yield* Config.Service.use((cfg) => cfg.get())
     const termProgram = process.env.TERM_PROGRAM
       ? `${process.env.TERM_PROGRAM}${process.env.TERM_PROGRAM_VERSION ? ` ${process.env.TERM_PROGRAM_VERSION}` : ""}`
@@ -62,12 +61,12 @@ const InfoCommand = effectCmd({
       console.log("external plugins disabled (--pure)")
       return
     }
-    if (!config.plugin_origins?.length) {
+    if (!config.plugins?.length) {
       console.log("none")
       return
     }
-    for (const plugin of config.plugin_origins) {
-      console.log(`- ${ConfigPlugin.pluginSpecifier(plugin.spec)}`)
+    for (const plugin of config.plugins) {
+      console.log(`- ${typeof plugin === "string" ? plugin : plugin.package}`)
     }
   }),
 })

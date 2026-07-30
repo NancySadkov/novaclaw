@@ -1,6 +1,6 @@
 export * as PluginTools from "./plugin-tools"
 
-import type { ToolDefinition } from "@novaclaw/plugin"
+import type { ToolDefinition } from "@novaclaw/plugin/tool"
 import { Context, Effect, Layer, Scope } from "effect"
 import { makeLocationNode } from "../effect/app-node"
 import type { State } from "../state"

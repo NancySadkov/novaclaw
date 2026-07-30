@@ -466,8 +466,7 @@ Options:
       --pure        run without external plugins                                           [boolean]
       --home        instance home directory — config, data, state and cache all live here
                     (NOVACLAW_HOME)                                                         [string]
-  -p, --provider    provider id or name to log in to (skips provider selection)             [string]
-  -m, --method      login method label (skips method selection)                             [string]"
+  -p, --provider    provider id or name to log in to (skips provider selection)             [string]"
 `;
 
 exports[`novaclaw CLI help-text snapshots every documented command emits stable help text: novaclaw providers logout --help 1`] = `

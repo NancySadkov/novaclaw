@@ -13,9 +13,11 @@ const enabledByExperimental = (name: string) =>
     Config.map((flags) => Option.getOrElse(flags.enabled, () => flags.experimental)),
   )
 
+// `NOVACLAW_PURE` is deliberately ABSENT here. It gates external-plugin loading, which now lives in
+// core's V2 loader (`core/config/plugin/external.ts`) and reads `Flag.NOVACLAW_PURE` directly — one
+// reader, at the seam it protects. `NOVACLAW_DISABLE_DEFAULT_PLUGINS` is gone with the V1 arm: it
+// gated an internal-plugin list that had been empty since the NovaClaw detach.
 export class Service extends ConfigService.Service<Service>()("@novaclaw/RuntimeFlags", {
-  pure: bool("NOVACLAW_PURE"),
-  disableDefaultPlugins: bool("NOVACLAW_DISABLE_DEFAULT_PLUGINS"),
   disableEmbeddedWebUi: bool("NOVACLAW_DISABLE_EMBEDDED_WEB_UI"),
   disableExternalSkills: bool("NOVACLAW_DISABLE_EXTERNAL_SKILLS"),
   disableClaudeCodePrompt: Config.all({

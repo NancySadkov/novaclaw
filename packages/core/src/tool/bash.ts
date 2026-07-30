@@ -102,7 +102,8 @@ const jobSnapshotOutput = (job: BashJobs.Snapshot): Output => ({
 // TODO: Reusable command-prefix approvals — approve `git commit` once, not each full command string.
 // TODO: Replace token-based command-argument external-directory advisories with parser-based detection.
 // TODO: Restore PowerShell and cmd-specific invocation/path handling on Windows.
-// TODO: Add plugin shell.env environment augmentation once V2 plugin hooks exist.
+// TODO: Compose spawn environment in the ONE host-execution gate (`core/host-exec.ts`, ruling 6) so
+// bash, ptys and every other spawn share one composed env — this must NOT come back as a per-tool hook.
 // TODO: Add durable/live progress metadata streaming for long-running commands once V2 tool invocation progress context is wired.
 // TODO: Persist background job status and define restart recovery before exposing remote observation.
 // TODO: Re-add model-facing background launch only with owner-bound get/wait/cancel tools and completion delivery.

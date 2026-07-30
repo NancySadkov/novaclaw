@@ -1,7 +1,7 @@
 import { describe, expect } from "bun:test"
 import { Effect, Exit, Fiber } from "effect"
 import { define } from "@novaclaw/plugin/v2/effect"
-import { tool } from "@novaclaw/plugin"
+import { tool } from "@novaclaw/plugin/tool"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { PluginV2 } from "@novaclaw/core/plugin"
 import { PluginTools } from "@novaclaw/core/tool/plugin-tools"

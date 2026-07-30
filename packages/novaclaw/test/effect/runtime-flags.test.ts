@@ -14,8 +14,6 @@ describe("RuntimeFlags", () => {
       const flags = yield* readFlags.pipe(
         Effect.provide(
           fromConfig({
-            NOVACLAW_PURE: "true",
-            NOVACLAW_DISABLE_DEFAULT_PLUGINS: "true",
             NOVACLAW_DISABLE_EMBEDDED_WEB_UI: "true",
             NOVACLAW_DISABLE_EXTERNAL_SKILLS: "true",
             NOVACLAW_EXPERIMENTAL: "true",
@@ -28,8 +26,6 @@ describe("RuntimeFlags", () => {
         ),
       )
 
-      expect(flags.pure).toBe(true)
-      expect(flags.disableDefaultPlugins).toBe(true)
       expect(flags.disableEmbeddedWebUi).toBe(true)
       expect(flags.disableExternalSkills).toBe(true)
       expect(flags.disableClaudeCodePrompt).toBe(false)
@@ -73,13 +69,11 @@ describe("RuntimeFlags", () => {
   it.effect("layer accepts partial test overrides and fills defaults from Config definitions", () =>
     Effect.gen(function* () {
       const flags = yield* readFlags.pipe(
-        Effect.provide(RuntimeFlags.layer({ disableDefaultPlugins: true, bashDefaultTimeoutMs: 1_000 })),
+        Effect.provide(RuntimeFlags.layer({ disableExternalSkills: true, bashDefaultTimeoutMs: 1_000 })),
       )
 
-      expect(flags.pure).toBe(false)
-      expect(flags.disableDefaultPlugins).toBe(true)
       expect(flags.disableEmbeddedWebUi).toBe(false)
-      expect(flags.disableExternalSkills).toBe(false)
+      expect(flags.disableExternalSkills).toBe(true)
       expect(flags.disableClaudeCodePrompt).toBe(false)
       expect(flags.disableClaudeCodeSkills).toBe(false)
       expect(flags.enableExa).toBe(false)
@@ -272,8 +266,6 @@ describe("RuntimeFlags", () => {
         Effect.provide(
           ConfigProvider.layer(
             ConfigProvider.fromUnknown({
-              NOVACLAW_PURE: "true",
-              NOVACLAW_DISABLE_DEFAULT_PLUGINS: "true",
               NOVACLAW_DISABLE_EXTERNAL_SKILLS: "true",
                 NOVACLAW_EXPERIMENTAL: "true",
               NOVACLAW_ENABLE_EXA: "true",
@@ -284,8 +276,6 @@ describe("RuntimeFlags", () => {
         ),
       )
 
-      expect(flags.pure).toBe(false)
-      expect(flags.disableDefaultPlugins).toBe(false)
       expect(flags.disableEmbeddedWebUi).toBe(false)
       expect(flags.disableExternalSkills).toBe(false)
       expect(flags.disableClaudeCodePrompt).toBe(false)

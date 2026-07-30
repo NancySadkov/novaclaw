@@ -482,6 +482,10 @@ The Effect implementation remains the canonical runtime. Promise and embedding w
 
 ### 8. Add Event Adapter
 
+> Status: NOT STARTED. A `src/v2/effect/event.ts` holding just the `EventMap`/`Event` type stub above
+> existed for a while, exported from nothing and imported by nobody; it was deleted with the V1 plugin
+> arm so the tree does not imply this step is partly done. Start from this section, not from that file.
+
 - Build the SDK event discriminant map.
 - Resolve public type strings to internal EventV2 definitions.
 - Return typed Effect streams.

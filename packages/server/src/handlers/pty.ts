@@ -15,7 +15,6 @@ import {
   PTY_CONNECT_TOKEN_HEADER_VALUE,
 } from "@novaclaw/protocol/groups/pty"
 import { response } from "../location"
-import { PtyEnvironment } from "../pty-environment"
 
 const ticketScope = Effect.gen(function* () {
   const location = yield* Location.Service
@@ -26,7 +25,6 @@ export const PtyHandler = HttpApiBuilder.group(Api, "server.pty", (handlers) =>
   Effect.gen(function* () {
     const tickets = yield* PtyTicket.Service
     const cors = yield* CorsConfig
-    const environment = yield* PtyEnvironment.Service
 
     return handlers
       .handle(
@@ -46,10 +44,12 @@ export const PtyHandler = HttpApiBuilder.group(Api, "server.pty", (handlers) =>
               ...ctx.payload,
               args: ctx.payload.args ? [...ctx.payload.args] : undefined,
               cwd,
-              env: {
-                ...ctx.payload.env,
-                ...(yield* environment.get({ directory: location.directory, cwd })),
-              },
+              // The host env OVERLAY is gone with the V1 plugin arm: `shell.env` was its only
+              // producer, so the `PtyEnvironment` service (and its empty default) could contribute
+              // nothing but `{}` for every install. Both halves went (todo.md, "a HALF-dark feature
+              // is zombie code"). Composing a spawn environment is still wanted — as ONE gate for
+              // bash/pty/every spawn (`core/host-exec.ts`, ruling 6), never a per-route hook.
+              env: { ...ctx.payload.env },
             }),
           )
         }),

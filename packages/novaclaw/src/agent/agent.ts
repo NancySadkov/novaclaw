@@ -20,7 +20,6 @@ import { Permission } from "@/permission"
 import { mergeDeep, pipe, sortBy, values } from "remeda"
 import { Global } from "@novaclaw/core/global"
 import path from "path"
-import { Plugin } from "@/plugin"
 import { Skill } from "../skill"
 import { Effect, Context, Layer, Schema } from "effect"
 import { InstanceState } from "@/effect/instance-state"
@@ -178,7 +177,6 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const config = yield* Config.Service
-    const plugin = yield* Plugin.Service
     const skill = yield* Skill.Service
     const locations = yield* LocationServiceMap.Service
 
@@ -490,9 +488,6 @@ export const layer = Layer.effect(
               requested: input.model ? `${input.model.providerID}/${input.model.modelID}` : undefined,
             })
 
-          // Let plugins customize the agent-generation system prompt.
-          yield* plugin.trigger("experimental.chat.system.transform", { model: selected }, { system })
-
           const provider = yield* catalog.provider.get(selected.providerID)
           const connection = yield* integrations.connection.active(
             provider?.integrationID ?? Integration.ID.make(selected.providerID),
@@ -543,7 +538,6 @@ export const layer = Layer.effect(
 // ⚠️ The map MUST be the ONE server-wide instance (ServerLocationServiceMap) — a private map
 // here splits per-location state (pending permission asks) from the V2 runner's locations.
 export const defaultLayer = layer.pipe(
-  Layer.provide(Plugin.defaultLayer),
   Layer.provide(Config.defaultLayer),
   Layer.provide(Skill.defaultLayer),
   Layer.provide(ServerLocationServiceMap.layer),
@@ -552,7 +546,7 @@ export const defaultLayer = layer.pipe(
 export const node = LayerNode.make({
   service: Service,
   layer: layer,
-  deps: [Config.node, Plugin.node, Skill.node, ServerLocationServiceMap.node],
+  deps: [Config.node, Skill.node, ServerLocationServiceMap.node],
 })
 
 export * as Agent from "./agent"

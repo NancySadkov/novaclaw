@@ -33,10 +33,6 @@ export function pluginSpecifier(plugin: ConfigPluginSpec.Spec): string {
   return Array.isArray(plugin) ? plugin[0] : plugin
 }
 
-export function pluginOptions(plugin: ConfigPluginSpec.Spec): ConfigPluginSpec.Options | undefined {
-  return Array.isArray(plugin) ? plugin[1] : undefined
-}
-
 // Path-like specs are resolved relative to the config file that declared them so merges later on do not
 // accidentally reinterpret `./plugin.ts` relative to some other directory.
 export async function resolvePluginSpec(

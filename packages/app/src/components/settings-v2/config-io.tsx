@@ -15,7 +15,7 @@ import { RequiresLevel } from "@/context/expertise"
 // overlays every SQLite store (settings + folded provider/agent/command/reference layers +
 // skills/plugins), so this document is the full settings wire format an Import on another
 // instance re-seeds from. Only derived/transport noise is dropped.
-const EXPORT_DROP_KEYS = new Set(["$schema", "plugin_origins"])
+const EXPORT_DROP_KEYS = new Set(["$schema"])
 
 function generateConfigTemplate(current: Record<string, unknown>): string {
   const out: Record<string, unknown> = { $schema: "https://novaclaw.app/config.json" }

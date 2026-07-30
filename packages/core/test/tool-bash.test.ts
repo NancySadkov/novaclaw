@@ -527,7 +527,15 @@ test("keeps locked deferred parity TODOs visible", async () => {
     "Reusable command-prefix approvals — approve `git commit` once, not each full command string.",
     "Replace token-based command-argument external-directory advisories with parser-based detection.",
     "Restore PowerShell and cmd-specific invocation/path handling on Windows.",
-    "Add plugin shell.env environment augmentation once V2 plugin hooks exist.",
+    // Was "Add plugin shell.env environment augmentation once V2 plugin hooks exist." — the V1
+    // `shell.env` hook is deleted (nothing outside `packages/plugin/src/example.ts` ever implemented
+    // it) and re-adding a per-tool env hook would violate ruling 6. The remaining want is env
+    // COMPOSITION, and it belongs to the one host-execution gate.
+    // ⚠️ The only pin here that spans TWO source lines, so it carries the `\n// ` continuation
+    // explicitly. A first-line-only pin ratchets half a sentence: the clause that actually forbids
+    // the per-tool hook lives on line two, and could be edited or dropped with the gate still green.
+    "Compose spawn environment in the ONE host-execution gate (`core/host-exec.ts`, ruling 6) so\n" +
+      "// bash, ptys and every other spawn share one composed env — this must NOT come back as a per-tool hook.",
     "Add durable/live progress metadata streaming for long-running commands once V2 tool invocation progress context is wired.",
     "Persist background job status and define restart recovery before exposing remote observation.",
     "Revisit process-group cleanup and platform coverage with shell-specific tests if current AppProcess semantics do not fully cover it.",

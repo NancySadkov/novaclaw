@@ -7,7 +7,7 @@
 // legacy registry share ONE copy (and so they outlive the V1 registry's deletion
 // in F1f). No Effect, no services — safe to import from either engine.
 
-import { type ToolDefinition } from "@novaclaw/plugin"
+import { type ToolDefinition } from "@novaclaw/plugin/tool"
 import type { JSONSchema7, JSONSchema7Definition } from "json-schema"
 import z from "zod"
 

@@ -18,7 +18,7 @@ import { ToolOutputStore } from "@novaclaw/core/tool-output-store"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { SessionV2 } from "@novaclaw/core/session"
 import { SessionMessage } from "@novaclaw/core/session/message"
-import { tool } from "@novaclaw/plugin"
+import { tool } from "@novaclaw/plugin/tool"
 import { makeCustom, makePluginRegistered } from "@/tool/external-tool-source"
 import { tmpdir } from "../fixture/fixture"
 

@@ -25,8 +25,6 @@ import { Git } from "@/git"
 import { MCP } from "@/mcp"
 import { McpAuth } from "@/mcp/auth"
 import { Permission } from "@/permission"
-import { Plugin } from "@/plugin"
-import { PluginPtyEnvironment } from "@/plugin/pty-environment"
 import { InstanceStore } from "@/project/instance-store"
 import { Vcs } from "@/project/vcs"
 import { ProviderAuth } from "@/provider/auth"
@@ -103,7 +101,6 @@ import { handlers } from "@novaclaw/server/handlers"
 import { ServerLocationServiceMap } from "@/location-service-map"
 import { layer as locationLayer } from "@novaclaw/server/location"
 import { sessionLocationLayer } from "@novaclaw/server/middleware/session-location"
-import { PtyEnvironment } from "@novaclaw/server/pty-environment"
 import { schemaErrorLayer as v2SchemaErrorLayer } from "@novaclaw/server/middleware/schema-error"
 import { workspaceHandlers } from "./handlers/workspace"
 import { instanceContextLayer } from "./middleware/instance-context"
@@ -184,7 +181,6 @@ const instanceRoutes = instanceApiRoutes.pipe(
 )
 const serverRoutes = HttpApiBuilder.layer(Api).pipe(
   Layer.provide(handlers),
-  Layer.provide(PluginPtyEnvironment.layer),
   Layer.provide([serverAuthorizationLayer, v2SchemaErrorLayer]),
 )
 
@@ -243,7 +239,6 @@ const app = LayerNode.group([
   Ripgrep.node,
   Storage.node,
   Snapshot.node,
-  Plugin.node,
   ModelsDev.node,
   ProviderAuth.node,
   Agent.node,
@@ -364,7 +359,6 @@ export function createRoutes(
 
     Layer.provide(sessionLocationLayer),
     Layer.provide(locationLayer),
-    Layer.provide(PtyEnvironment.layer),
     // Before the SessionV2/app provides so the messenger stack's own requirements (SessionV2,
     // EventV2, Database, Global) resolve to the SAME memoized instances the routes use.
     Layer.provide(messengerServices),

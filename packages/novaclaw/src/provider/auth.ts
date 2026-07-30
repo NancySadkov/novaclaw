@@ -1,12 +1,18 @@
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
-import type { AuthOAuthResult, Hooks } from "@novaclaw/plugin"
 import { serviceUse } from "@novaclaw/core/effect/service-use"
 import { Auth } from "@/auth"
-import { InstanceState } from "@/effect/instance-state"
 import { optional } from "@novaclaw/core/schema"
-import { Plugin } from "../plugin"
 import { ProviderV2 } from "@novaclaw/core/provider"
-import { Array as Arr, Effect, Layer, Record, Result, Context, Schema } from "effect"
+import { Effect, Layer, Context, Schema } from "effect"
+
+// ⚠️ HALF-DARK — SLATED FOR REMOVAL. This service had exactly ONE feed: the V1 plugin `auth` hook,
+// which was deleted with the rest of the V1 plugin arm. There is no V2 seam for provider auth
+// methods, and NovaClaw shipped zero V1 plugins, so nothing user-facing changes: `methods()` now
+// returns `{}` for every install, `authorize` has no method to run, and `callback` has nothing
+// pending. The service, its schemas and its three routes survive only so the wire surface does not
+// churn twice; the follow-up unit deletes them together with `/provider/{id}/auth*` from the HTTP
+// API + the generated OpenAPI/SDK. Do NOT build on this — register provider credentials through
+// `Auth` (`/auth`) instead.
 
 const When = Schema.Struct({
   key: Schema.String,
@@ -85,8 +91,6 @@ export class ValidationFailed extends Schema.TaggedErrorClass<ValidationFailed>(
 
 export type Error = Auth.AuthError | OauthMissing | OauthCodeMissing | OauthCallbackFailed | ValidationFailed
 
-type Hook = NonNullable<Hooks["auth"]>
-
 export interface Interface {
   readonly methods: () => Effect.Effect<Methods>
   readonly authorize: (
@@ -97,137 +101,24 @@ export interface Interface {
   readonly callback: (input: { providerID: ProviderV2.ID } & CallbackInput) => Effect.Effect<void, Error>
 }
 
-interface State {
-  hooks: Record<ProviderV2.ID, Hook>
-  pending: Map<ProviderV2.ID, AuthOAuthResult>
-}
-
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/ProviderAuth") {}
 
 export const use = serviceUse(Service)
 
-export const layer: Layer.Layer<Service, never, Auth.Service | Plugin.Service> = Layer.effect(
+export const layer: Layer.Layer<Service> = Layer.succeed(
   Service,
-  Effect.gen(function* () {
-    const auth = yield* Auth.Service
-    const plugin = yield* Plugin.Service
-    const state = yield* InstanceState.make<State>(
-      Effect.fn("ProviderAuth.state")(function* () {
-        const plugins = yield* plugin.list()
-        return {
-          hooks: Record.fromEntries(
-            Arr.filterMap(plugins, (x) =>
-              x.auth?.provider !== undefined
-                ? Result.succeed([ProviderV2.ID.make(x.auth.provider), x.auth] as const)
-                : Result.failVoid,
-            ),
-          ),
-          pending: new Map<ProviderV2.ID, AuthOAuthResult>(),
-        }
-      }),
-    )
-
-    const decode = Schema.decodeUnknownSync(Methods)
-    const methods = Effect.fn("ProviderAuth.methods")(function* () {
-      const hooks = (yield* InstanceState.get(state)).hooks
-      return decode(
-        Record.map(hooks, (item) =>
-          item.methods.map((method) => ({
-            type: method.type,
-            label: method.label,
-            ...(method.prompts && {
-              prompts: method.prompts.map((prompt) => {
-                if (prompt.type === "select") {
-                  return {
-                    type: "select" as const,
-                    key: prompt.key,
-                    message: prompt.message,
-                    options: prompt.options,
-                    ...(prompt.when && { when: prompt.when }),
-                  }
-                }
-                return {
-                  type: "text" as const,
-                  key: prompt.key,
-                  message: prompt.message,
-                  ...(prompt.placeholder && { placeholder: prompt.placeholder }),
-                  ...(prompt.when && { when: prompt.when }),
-                }
-              }),
-            }),
-          })),
-        ),
-      )
-    })
-
-    const authorize = Effect.fn("ProviderAuth.authorize")(function* (
-      input: { providerID: ProviderV2.ID } & AuthorizeInput,
-    ) {
-      const { hooks, pending } = yield* InstanceState.get(state)
-      const method = hooks[input.providerID].methods[input.method]
-      if (method.type !== "oauth") return
-
-      if (method.prompts && input.inputs) {
-        for (const prompt of method.prompts) {
-          if (prompt.type === "text" && prompt.validate && input.inputs[prompt.key] !== undefined) {
-            const error = prompt.validate(input.inputs[prompt.key])
-            if (error) return yield* new ValidationFailed({ field: prompt.key, message: error })
-          }
-        }
-      }
-
-      const result = yield* Effect.promise(() => method.authorize(input.inputs))
-      pending.set(input.providerID, result)
-      return {
-        url: result.url,
-        method: result.method,
-        instructions: result.instructions,
-      }
-    })
-
-    const callback = Effect.fn("ProviderAuth.callback")(function* (
-      input: { providerID: ProviderV2.ID } & CallbackInput,
-    ) {
-      const pending = (yield* InstanceState.get(state)).pending
-      const match = pending.get(input.providerID)
-      if (!match) return yield* new OauthMissing({ providerID: input.providerID })
-      if (match.method === "code" && !input.code) {
-        return yield* new OauthCodeMissing({ providerID: input.providerID })
-      }
-
-      const result = yield* Effect.promise(() =>
-        match.method === "code" ? match.callback(input.code!) : match.callback(),
-      )
-      if (!result || result.type !== "success") return yield* new OauthCallbackFailed({})
-
-      if ("key" in result) {
-        yield* auth.set(input.providerID, {
-          type: "api",
-          key: result.key,
-          ...(result.metadata ? { metadata: result.metadata } : {}),
-        })
-      }
-
-      if ("refresh" in result) {
-        const { type: _, provider: __, refresh, access, expires, ...extra } = result
-        yield* auth.set(input.providerID, {
-          type: "oauth",
-          access,
-          refresh,
-          expires,
-          ...extra,
-        })
-      }
-    })
-
-    return Service.of({ methods, authorize, callback })
+  Service.of({
+    // No feed: the V1 `auth` hook was the only producer of provider auth methods.
+    methods: () => Effect.succeed({} as Methods),
+    // Nothing to authorize against, so the honest answer is "this provider has no auth flow".
+    authorize: () => Effect.succeed(undefined),
+    // No authorize ever succeeded, so there is never a pending OAuth exchange to complete.
+    callback: (input) => Effect.fail(new OauthMissing({ providerID: input.providerID })),
   }),
 )
 
-export const defaultLayer = Layer.suspend(() =>
-  layer.pipe(Layer.provide(Auth.defaultLayer), Layer.provide(Plugin.defaultLayer)),
-)
+export const defaultLayer = layer
 
-export const node = LayerNode.make({ service: Service, layer: layer, deps: [Auth.node, Plugin.node] })
+export const node = LayerNode.make({ service: Service, layer: layer, deps: [] })
 
 export * as ProviderAuth from "./auth"

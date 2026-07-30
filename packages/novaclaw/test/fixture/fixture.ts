@@ -446,8 +446,8 @@ const REFUSED: Record<string, string> = {
   plugins:
     `"plugins" is an array key: a write REPLACES the whole plugin list (config-store-write.ts ` +
     `empties the store and re-inserts), so undoing it needs the PREVIOUS list restored rather than ` +
-    `the new entries removed — this fixture takes no such snapshot. Provision plugins through the ` +
-    `store in your own test, or use test/fixture/plugin.ts.`,
+    `the new entries removed — this fixture takes no such snapshot. Provision plugins through ` +
+    `PluginConfigStore.setPlugin in your own test (see test/config/config.test.ts).`,
 }
 
 /**

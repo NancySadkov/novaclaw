@@ -1,6 +1,6 @@
 import path from "path"
 import { describe, expect } from "bun:test"
-import { Effect, Schema } from "effect"
+import { Effect, Logger, Schema } from "effect"
 import { AgentV2 } from "@novaclaw/core/agent"
 import { Config } from "@novaclaw/core/config"
 import { ConfigExternalPlugin } from "@novaclaw/core/config/plugin/external"
@@ -35,6 +35,16 @@ const memoryStore = () => {
       }),
     isEmpty: () => Effect.sync(() => entries.size === 0),
   })
+}
+
+/** Collect every WARN emitted while `effect` runs — including from fibers it forks. */
+const collectWarnings = () => {
+  const warnings: string[] = []
+  const collector = Logger.make((options: Logger.Options<unknown>) => {
+    if (options.logLevel !== "Warn") return
+    warnings.push(Array.isArray(options.message) ? options.message.map(String).join(" ") : String(options.message))
+  })
+  return { warnings, layer: Logger.layer([collector]) }
 }
 
 describe("ConfigExternalPlugin", () => {
@@ -139,6 +149,55 @@ describe("ConfigExternalPlugin", () => {
     }),
   )
 
+  // ⚠️ Ruling 2 (a fault is never described falsely). `ignoreCause` alone made a user's broken
+  // plugin fail INVISIBLY once the V1 arm — the only thing that ever surfaced a failed load — was
+  // deleted. The two fixtures cover both fault SHAPES: `missing-plugin.ts` throws out of `import()`
+  // (a defect before `tryPromise`), `invalid-plugin.ts` fails schema decode (an ordinary error).
+  // Both must reach the log, and neither may stop the good plugin behind them.
+  it.live("warns — never silently drops — when an external plugin fails to load", () =>
+    Effect.gen(function* () {
+      const plugins = yield* PluginV2.Service
+      const agents = yield* AgentV2.Service
+      const fs = yield* FSUtil.Service
+      const location = yield* Location.Service
+      const npm = yield* Npm.Service
+      const host = yield* PluginHost.make(plugins)
+      const { warnings, layer } = collectWarnings()
+
+      yield* ConfigExternalPlugin.Plugin.effect(host).pipe(
+        Effect.provide(layer),
+        Effect.provideService(PluginV2.Service, plugins),
+        Effect.provideService(FSUtil.Service, fs),
+        Effect.provideService(Location.Service, location),
+        Effect.provideService(Npm.Service, npm),
+        Effect.provideService(
+          PluginConfigStore.Service,
+          yield* Effect.gen(function* () {
+            const store = memoryStore()
+            yield* store.setPlugin({ package: fixture("missing-plugin.ts") })
+            yield* store.setPlugin({ package: fixture("invalid-plugin.ts") })
+            yield* store.setPlugin({
+              package: fixture("config-promise-plugin.ts"),
+              options: { description: "Loaded after broken plugins" },
+            })
+            return store
+          }),
+        ),
+        Effect.provideService(Config.Service, Config.Service.of({ entries: () => Effect.succeed([]) })),
+      )
+
+      // The good plugin landing is the loader's own "all three refs were processed" signal.
+      expect(yield* waitForAgent(agents, "configured")).toMatchObject({
+        description: "Loaded after broken plugins",
+      })
+
+      const reported = warnings.filter((line) => line.includes("failed to load and is UNAVAILABLE"))
+      expect(reported.some((line) => line.includes("missing-plugin.ts"))).toBe(true)
+      expect(reported.some((line) => line.includes("invalid-plugin.ts"))).toBe(true)
+      expect(reported.some((line) => line.includes("config-promise-plugin.ts"))).toBe(false)
+    }),
+  )
+
   it.live("installs and resolves npm plugin packages", () =>
     Effect.gen(function* () {
       const plugins = yield* PluginV2.Service
@@ -216,6 +275,60 @@ describe("ConfigExternalPlugin", () => {
         description: "Loaded from plugin directory",
         mode: "subagent",
       })
+    }),
+  )
+
+  // `--pure` / `NOVACLAW_PURE` is advertised in every CLI --help as "run without external plugins".
+  // It used to gate the deleted V1 loader; it now gates THIS one, which is the only remaining door
+  // third-party code comes through. Negative-controlled by the two tests above, which load exactly
+  // these two sources (store entry + config-directory walk) when the flag is absent.
+  it.live("loads nothing at all under NOVACLAW_PURE", () =>
+    Effect.gen(function* () {
+      const plugins = yield* PluginV2.Service
+      const agents = yield* AgentV2.Service
+      const fs = yield* FSUtil.Service
+      const location = yield* Location.Service
+      const npm = yield* Npm.Service
+      const host = yield* PluginHost.make(plugins)
+
+      const previous = process.env.NOVACLAW_PURE
+      process.env.NOVACLAW_PURE = "1"
+      try {
+        yield* ConfigExternalPlugin.Plugin.effect(host).pipe(
+          Effect.provideService(PluginV2.Service, plugins),
+          Effect.provideService(FSUtil.Service, fs),
+          Effect.provideService(Location.Service, location),
+          Effect.provideService(Npm.Service, npm),
+          Effect.provideService(
+            PluginConfigStore.Service,
+            yield* Effect.gen(function* () {
+              const store = memoryStore()
+              yield* store.setPlugin({ package: fixture("config-promise-plugin.ts") })
+              return store
+            }),
+          ),
+          Effect.provideService(
+            Config.Service,
+            Config.Service.of({
+              entries: () =>
+                Effect.succeed([
+                  new Config.Directory({
+                    type: "directory",
+                    path: AbsolutePath.make(path.join(import.meta.dir, "fixtures")),
+                  }),
+                ]),
+            }),
+          ),
+        )
+        // The loader forks its work; give it the same budget waitForAgent would have spent.
+        yield* Effect.sleep("300 millis")
+      } finally {
+        if (previous === undefined) delete process.env.NOVACLAW_PURE
+        else process.env.NOVACLAW_PURE = previous
+      }
+
+      expect(yield* agents.get(AgentV2.ID.make("configured"))).toBeUndefined()
+      expect(yield* agents.get(AgentV2.ID.make("directory"))).toBeUndefined()
     }),
   )
 })

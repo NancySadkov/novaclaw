@@ -10,14 +10,12 @@ import { RuntimeFlags } from "../../src/effect/runtime-flags"
 import { Global } from "@novaclaw/core/global"
 import { Permission } from "../../src/permission"
 import { PermissionRuleset } from "@novaclaw/schema/permission-ruleset"
-import { Plugin } from "../../src/plugin"
 import { Skill } from "../../src/skill"
 import { Truncate } from "../../src/tool/truncate"
 import { LocationServiceMap, locationServiceMapLayer } from "@novaclaw/core/location-services"
 
 const agentLayer = (flags: Partial<RuntimeFlags.Info> = {}) =>
   Agent.layer.pipe(
-    Layer.provide(Plugin.defaultLayer),
     Layer.provide(Auth.defaultLayer),
     Layer.provide(Config.defaultLayer),
     Layer.provide(Skill.defaultLayer),
