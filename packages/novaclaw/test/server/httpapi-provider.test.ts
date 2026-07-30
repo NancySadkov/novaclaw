@@ -3,7 +3,7 @@ import { FSUtil } from "@novaclaw/core/fs-util"
 import { Effect, Layer } from "effect"
 import { resetDatabase } from "../fixture/db"
 import { TestInstance } from "../fixture/fixture"
-import { testEffectShared } from "../lib/effect"
+import { pollWithTimeout, testEffectShared } from "../lib/effect"
 import { httpApiLayer, request } from "./httpapi-layer"
 
 const testStateLayer = Layer.effectDiscard(
@@ -15,7 +15,6 @@ const testStateLayer = Layer.effectDiscard(
 
 const it = testEffectShared(Layer.mergeAll(testStateLayer, FSUtil.defaultLayer, httpApiLayer))
 const projectOptions = { config: { formatter: false } }
-const providerID = "test-oauth-parity"
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
@@ -42,38 +41,43 @@ function hasNonZeroModelCost(input: unknown, id: string) {
   })
 }
 
-function requestAuthorize(input: {
-  providerID: string
-  method: number
-  headers: HeadersInit
-  inputs?: Record<string, string>
-}) {
-  return Effect.gen(function* () {
-    const response = yield* request(`/provider/${input.providerID}/oauth/authorize`, {
-      method: "POST",
-      headers: input.headers,
-      body: JSON.stringify({ method: input.method, ...(input.inputs ? { inputs: input.inputs } : {}) }),
-    })
-    return {
-      status: response.status,
-      body: yield* response.text,
-    }
-  })
-}
+// ⚠️ The catalog is not ready the instant the instance is up — and the mechanism is NOT the one
+// production code suggests. In the TEST process there is no network fetch and no
+// `ModelsDev.Event.Refreshed`: `test/preload.ts:38` pins `NOVACLAW_MODELS_PATH` at
+// `test/tool/fixtures/models-api.json`, `core/src/models-dev.ts:201` short-circuits `populate` on
+// that flag, and `refresh()` returns at its `if (!source) return` — `NOVACLAW_MODELS_URL` is unset
+// here — so it never reaches the `Refreshed` publish that `plugin/models-dev.ts:129-132` subscribes
+// to. The catalog is built during PLUGIN INIT instead, from `modelsDev.get()` through
+// `ModelsDevPlugin`'s `integration.transform`. So the race is instance/plugin init (including
+// parsing the multi-MB fixture) against the first `/provider` request, not a round-trip.
+//
+// It used to pass by ACCIDENT: two ProviderAuth tests ran ahead of it with 30 s timeouts and gave
+// init a head start. They were deleted with the V1 plugin arm. Measured 2026-07-30 standalone,
+// 8 runs per arm: 4 pass / 4 fail at HEAD (7ff825752) AND 4 pass / 4 fail with an unrelated change
+// — pre-existing, not a regression. It survives the full `--only=novaclaw:server` run because
+// earlier suites already paid the init cost, which is the accident this replaces.
+//
+// Use the house `pollWithTimeout`, not a hand-rolled loop: its `Effect.timeoutOrElse` INTERRUPTS a
+// hung request mid-flight, so the budget is real rather than merely re-checked between iterations,
+// and exhaustion fails with a named message instead of an opaque runner timeout. ⚠️ The budget must
+// stay well under the runner's per-test timeout (`script/test.ts` `PER_TEST_TIMEOUT_MS`) or it can
+// never be reached — an earlier draft of this fix set 25 s against a 15 s timeout, which made the
+// "never seeded" diagnostic unreachable by construction. The property under test is unchanged: a
+// real, non-zero model cost must still reach the provider wire shape.
+const CATALOG_DEADLINE = "8 seconds"
 
-function requestCallback(input: { providerID: string; method: number; headers: HeadersInit; code?: string }) {
-  return Effect.gen(function* () {
-    const response = yield* request(`/provider/${input.providerID}/oauth/callback`, {
-      method: "POST",
-      headers: input.headers,
-      body: JSON.stringify({ method: input.method, ...(input.code ? { code: input.code } : {}) }),
-    })
-    return {
-      status: response.status,
-      body: yield* response.text,
-    }
-  })
-}
+const providerStateWhenSeeded = (headers: Record<string, string>) =>
+  pollWithTimeout(
+    Effect.gen(function* () {
+      const response = yield* request("/provider", { headers })
+      // A 500 while init is in flight is a legitimate transient here — retry rather than fail.
+      if (response.status !== 200) return undefined
+      const body = yield* response.json
+      return providerModels(body, "google").length > 0 ? { status: response.status, body } : undefined
+    }),
+    `the models.dev catalog never seeded — GET /provider served no "google" models within ${CATALOG_DEADLINE}`,
+    CATALOG_DEADLINE,
+  )
 
 describe("provider HttpApi", () => {
   it.instance.skip(
@@ -94,46 +98,6 @@ describe("provider HttpApi", () => {
     projectOptions,
   )
 
-  // ⚠️ Pins the HALF-DARK ProviderAuth surface (see `src/provider/auth.ts`). Its only feed was the
-  // V1 plugin `auth` hook; with that gone `methods()` is `{}` for every install, so authorize can
-  // only answer `null` and callback can only answer OauthMissing. These two tests exist so the
-  // routes' behaviour is stated rather than assumed, until the follow-up deletes them outright.
-  it.instance(
-    "answers null from authorize because no provider declares auth methods",
-    Effect.gen(function* () {
-      const directory = (yield* TestInstance).directory
-      const response = yield* requestAuthorize({
-        providerID,
-        method: 0,
-        headers: { "x-novaclaw-directory": directory, "content-type": "application/json" },
-      })
-
-      expect(response).toEqual({ status: 200, body: "null" })
-    }),
-    projectOptions,
-    30000,
-  )
-
-  it.instance(
-    "returns declared provider auth callback errors",
-    Effect.gen(function* () {
-      const directory = (yield* TestInstance).directory
-      const response = yield* requestCallback({
-        providerID,
-        method: 0,
-        headers: { "x-novaclaw-directory": directory, "content-type": "application/json" },
-      })
-
-      expect(response.status).toBe(400)
-      expect(JSON.parse(response.body)).toEqual({
-        name: "ProviderAuthOauthMissing",
-        data: { providerID },
-      })
-    }),
-    projectOptions,
-    30000,
-  )
-
   // Deleted with the V1 plugin arm: "never serializes runtime auth options onto the provider wire
   // shape". The condition it asserted against was CREATED by a plugin fixture whose auth loader
   // returned a `fetch` — with the fixture gone the two `hasProviderWithFetch(...)===false` checks
@@ -146,16 +110,20 @@ describe("provider HttpApi", () => {
       const directory = (yield* TestInstance).directory
 
       const headers = { "x-novaclaw-directory": directory }
-      const providerResponse = yield* request("/provider", { headers })
+      const provider = yield* providerStateWhenSeeded(headers)
       const configResponse = yield* request("/config/providers", { headers })
 
-      expect(providerResponse.status).toBe(200)
+      expect(provider.status).toBe(200)
       expect(configResponse.status).toBe(200)
 
+      // No "did the seed land?" assertion here on purpose: `providerStateWhenSeeded` only returns
+      // once `google` models are present and otherwise FAILS with its own named message, so an
+      // unseeded catalog can no longer reach this line and read as "costs are zero".
+      //
       // Was also asserting no `provider.models` mutation marker on either body. That check read
       // `false` because `providerByID` found NOTHING, not because the marker was absent — it was
       // satisfied by the provider's absence, so it is dropped rather than weakened.
-      expect(hasNonZeroModelCost(yield* providerResponse.json, "google")).toBe(true)
+      expect(hasNonZeroModelCost(provider.body, "google")).toBe(true)
     }),
     projectOptions,
   )
