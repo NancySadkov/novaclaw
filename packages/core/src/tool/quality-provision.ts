@@ -42,6 +42,39 @@ import { Tools } from "./tools"
 export const name = "quality_provision"
 const VERIFY_TIMEOUT_MS = 90_000
 
+/**
+ * The model-facing description — and under v0.2.0 ruling 4 that makes it a PRIVILEGED surface,
+ * because it is text that reaches a future session's prompt by construction. So it may not
+ * advertise an ecosystem the scan cannot detect, and it may not hide one it can: the manifest
+ * names below are pinned EQUAL to `QualityProvision.MANIFEST_TRIGGERS` by
+ * `test/quality-provision-drift.test.ts`, in both directions. Before this pin the prose named
+ * five manifests while the table understood seven — a description and a behaviour free to drift
+ * apart while compiling green, which is the defect class ruling 1 exists to close.
+ *
+ * ⚠️ Naming a manifest anywhere in this string is therefore a claim the table has to back. Add
+ * the rule first, then the name.
+ */
+export const description =
+  "Provision this project's QUALITY commands (QE): scan the project's own manifests — " +
+  "package.json, Cargo.toml, go.mod, pyproject.toml, requirements.txt, setup.py, Makefile, " +
+  "CMakeLists.txt, build.gradle, pom.xml, *.sln, *.csproj, Gemfile — for typecheck/test/lint " +
+  "commands, verify each candidate actually runs (a red check still verifies — only a missing " +
+  "toolchain drops it), and save the result to the instance quality settings (the record " +
+  "Settings → Quality edits). Pass explicit `commands` to override or fill gaps; a per-file " +
+  "`check` or `syntax` command may use `{file}` for the path of the file that was just written. " +
+  "Newly saved commands activate for future sessions."
+
+/**
+ * The top-level entries whose TEXT the scan will need, DERIVED from the manifest table rather
+ * than restated here. This used to be a hardcoded `["package.json", "pyproject.toml",
+ * "requirements.txt", "Makefile"]` in the loop below: it happened to match the table, nothing
+ * checked that it did, and adding a content-reading ecosystem to the scan would have compiled
+ * green while that ecosystem silently never saw its own manifest. (It did NOT break Rust or Go —
+ * `Cargo.toml` and `go.mod` are detected by name and need no read at all.)
+ */
+export const manifestsToRead = (entries: readonly string[]): readonly string[] =>
+  QualityProvision.MANIFEST_READS.filter((manifest) => entries.includes(manifest))
+
 const CommandOverrides = Schema.Struct({
   syntax: Schema.String.pipe(Schema.optional),
   check: Schema.String.pipe(Schema.optional),
@@ -53,7 +86,7 @@ const CommandOverrides = Schema.Struct({
 export const Input = Schema.Struct({
   commands: CommandOverrides.pipe(Schema.optional).annotate({
     description:
-      "Explicit command overrides (win over the scan). Use when the scan missed something or proposed the wrong runner.",
+      "Explicit command overrides (win over the scan). Use when the scan missed something or proposed the wrong runner. `check` and `syntax` run PER WRITTEN FILE, so give them a `{file}` placeholder (e.g. `ruff check {file}`); `typecheck`, `test` and `lint` are whole-project and take no file.",
   }),
   verify: Schema.Boolean.pipe(Schema.optional).annotate({
     description: "Run each candidate once to verify the toolchain exists (default true). Failing checks still count as verified — only 'command not found' drops a candidate.",
@@ -98,8 +131,7 @@ export const layer = Layer.effectDiscard(
     yield* tools
       .register({
         [name]: Tool.make({
-          description:
-            "Provision this project's QUALITY commands (QE): scan the manifests (package.json/Cargo.toml/go.mod/pyproject/Makefile) for check/typecheck/test/lint commands, verify each candidate actually runs (a red check still verifies — only a missing toolchain drops it), and save the result to the instance quality settings (the record Settings → Quality edits). Pass explicit `commands` to override or fill gaps. Newly saved commands activate for future sessions.",
+          description,
           input: Input,
           output: Output,
           toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
@@ -110,17 +142,21 @@ export const layer = Layer.effectDiscard(
                 Effect.catch(() => Effect.succeed([] as string[])),
               )
               const contents = new Map<string, string | undefined>()
-              for (const manifest of ["package.json", "pyproject.toml", "requirements.txt", "Makefile"])
-                if (entries.includes(manifest))
-                  contents.set(
-                    manifest,
-                    yield* Effect.tryPromise(() => fs.readFile(path.join(directory, manifest), "utf8")).pipe(
-                      Effect.catch(() => Effect.succeed(undefined)),
-                    ),
-                  )
+              for (const manifest of manifestsToRead(entries))
+                contents.set(
+                  manifest,
+                  yield* Effect.tryPromise(() => fs.readFile(path.join(directory, manifest), "utf8")).pipe(
+                    Effect.catch(() => Effect.succeed(undefined)),
+                  ),
+                )
               const proposal = QualityProvision.scan({
                 files: entries,
                 read: (file) => contents.get(file),
+                // The family of the shell these commands will actually run in — Git Bash on
+                // Windows whenever one is found, cmd.exe only as the documented fallback. It
+                // decides `./gradlew` vs `gradlew.bat`; guessing from process.platform would get
+                // the common Windows case backwards.
+                shell: Shell.agentShellIsBash() ? "posix" : "cmd",
               })
               const merged: { -readonly [K in keyof Commands]: Commands[K] } = { ...proposal.commands }
               for (const [key, value] of Object.entries(input.commands ?? {}))
@@ -154,7 +190,13 @@ export const layer = Layer.effectDiscard(
               const dropped: string[] = []
               if (input.verify !== false) {
                 const shell = Shell.agentDefault()
-                for (const [key, command] of [...candidates]) {
+                for (const [key, template] of [...candidates]) {
+                  // Rung 1 asks ONE question — does this toolchain exist — so a `{file}`
+                  // placeholder is dropped instead of executed literally. `ruff check {file}` run
+                  // as written makes ruff say `No such file or directory`, which classifyRun reads
+                  // as a missing toolchain: a good per-file check discarded and the reason
+                  // misreported (ruling 2). `template` is what gets SAVED; `command` is what runs.
+                  const command = QualityProvision.verifiableCommand(template)
                   // ⚠️ THE EXECUTION HALF, and it must be spelled `bash`. Verification runs this
                   // command string through the agent shell with the host user's authority, and the
                   // string can come straight from the MODEL (`input.commands` wins over the scan).
@@ -204,7 +246,7 @@ export const layer = Layer.effectDiscard(
                     )
                   const verdict = QualityProvision.classifyRun(run)
                   if (verdict !== "ran") {
-                    dropped.push(`${key} (${command}) — ${verdict}`)
+                    dropped.push(`${key} (${template}) — ${verdict}`)
                     delete merged[key]
                   }
                 }
