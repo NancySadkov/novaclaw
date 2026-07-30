@@ -4,6 +4,7 @@ import { LLM, LLMError, LLMEvent, Message, type LLMRequest, type Model } from "@
 import { DateTime, Effect, Stream } from "effect"
 import type { Config } from "../config"
 import type { EventV2 } from "../event"
+import { CompactionPrune } from "./compaction-prune"
 import { SessionEvent } from "./event"
 import { SessionMessage } from "./message"
 import { SessionSchema } from "./schema"
@@ -72,6 +73,12 @@ type Settings = {
   readonly auto: boolean
   readonly buffer: number
   readonly tokens: number
+  /**
+   * A2-a — the cheap (non-LLM) reclaim tier, `ConfigV2.Compaction.prune`. OFF unless configured:
+   * the flag has existed on the config schema since before this tier was restored, so an absent
+   * value must keep behaving exactly as it did (inert), and only an explicit `true` erases history.
+   */
+  readonly prune: boolean
 }
 
 type Dependencies = {
@@ -136,7 +143,14 @@ export const serializeMessage = (message: SessionMessage.Message) => {
   return ""
 }
 
-const settings = (documents: readonly Config.Entry[]) => {
+/**
+ * Fold every `compaction` block in the config chain into one settings record, later documents
+ * winning per key. Exported as a seam so each key can be asserted directly — `prune` in particular
+ * was DECLARED on `ConfigV2.Compaction` while nothing read it, and a reduce that silently drops a
+ * key compiles green (see `test/session-compaction-prune.test.ts`); `serializeToolContent` and
+ * `selectContext` are exported for the same reason.
+ */
+export const settings = (documents: readonly Config.Entry[]) => {
   const configured = documents
     .filter((entry): entry is Config.Document => entry.type === "document")
     .flatMap((entry) => (entry.info.compaction ? [entry.info.compaction] : []))
@@ -145,8 +159,9 @@ const settings = (documents: readonly Config.Entry[]) => {
       auto: current.auto ?? result.auto,
       buffer: current.buffer ?? result.buffer,
       tokens: current.keep?.tokens ?? result.tokens,
+      prune: current.prune ?? result.prune,
     }),
-    { auto: true, buffer: DEFAULT_BUFFER, tokens: DEFAULT_KEEP_TOKENS },
+    { auto: true, buffer: DEFAULT_BUFFER, tokens: DEFAULT_KEEP_TOKENS, prune: false },
   )
 }
 
@@ -165,7 +180,14 @@ export const selectContext = (
     .filter(Boolean)
   if (conversation.length === 0) return
   let total = 0
-  let split = conversation.length
+  // TWO bounds, not one. The message that STRADDLES the boundary contributes its prefix to `head`
+  // and its suffix to `recent`, so the whole message must be excluded from BOTH slices — and a
+  // single index cannot express that: `index + 1` leaves it whole in `head` beside its own prefix,
+  // while `index` leaves it whole in `recent` beside its own suffix. Either way one half pays for
+  // that message twice. It was `index + 1`, so every summarize call whose boundary fell inside a
+  // message (i.e. nearly all of them) sent the straddling message's prefix to the summarizer twice.
+  let headEnd = conversation.length
+  let recentStart = conversation.length
   let splitPrefix = ""
   let splitSuffix = ""
   for (let index = conversation.length - 1; index >= 0; index--) {
@@ -175,16 +197,20 @@ export const selectContext = (
       if (remaining > 0) {
         splitPrefix = conversation[index].slice(0, -remaining)
         splitSuffix = conversation[index].slice(-remaining)
-        split = index + 1
+        headEnd = index
+        recentStart = index + 1
       }
+      // `remaining === 0` leaves both bounds where the last fitting message put them, so the
+      // straddling message goes wholly to `head` and is still not duplicated.
       break
     }
     total = next
-    split = index
+    headEnd = index
+    recentStart = index
   }
   return {
-    head: [...conversation.slice(0, split), splitPrefix].filter(Boolean).join("\n\n"),
-    recent: [splitSuffix, ...conversation.slice(split)].filter(Boolean).join("\n\n"),
+    head: [...conversation.slice(0, headEnd), splitPrefix].filter(Boolean).join("\n\n"),
+    recent: [splitSuffix, ...conversation.slice(recentStart)].filter(Boolean).join("\n\n"),
   }
 }
 
@@ -199,6 +225,37 @@ export const buildPrompt = (input: { readonly previousSummary?: string; readonly
 
 export const make = (dependencies: Dependencies) => {
   const config = settings(dependencies.config)
+  /**
+   * A2-a — the CHEAP tier, ahead of everything the summarizer does.
+   *
+   * Erase stale tool output (`compaction-prune.ts` owns the decision; this owns the wiring) and
+   * hand the pruned transcript to the rest of the cycle, so BOTH durable halves of a compaction
+   * shrink: the `head` that feeds the summary prompt, and the `recent` tail that is stored verbatim
+   * on the compaction message and re-fed as context on every later turn. Under the 20k floor the
+   * plan does not commit and `entries` comes back by identity — history is untouched and the
+   * summarize tier proceeds exactly as before.
+   *
+   * ONE call site on purpose: `compactIfNeeded` reaches this through `compactAfterOverflow`, and
+   * the manual `/compact` cycle enters the same function. A second copy of the tier would be the
+   * duplication that produced the COMSPEC divergence (ruling 6) in miniature.
+   */
+  const pruneCheapTier = Effect.fn("SessionCompaction.prune")(function* (entries: readonly Entry[]) {
+    if (!config.prune) return entries
+    const planned = CompactionPrune.plan(entries.map((entry) => entry.message))
+    yield* Effect.logInfo("compaction prune planned", {
+      commit: planned.commit,
+      targets: planned.targets.length,
+      reclaim: planned.reclaim,
+      scanned: planned.scanned,
+    })
+    if (!planned.commit) return entries
+    const erased = CompactionPrune.erase(
+      entries.map((entry) => entry.message),
+      planned,
+      yield* DateTime.now,
+    )
+    return entries.map((entry, index) => ({ ...entry, message: erased[index]! }))
+  })
   // `reason` threads into the Compaction.Started/Ended events: "auto" for the runner's overflow /
   // threshold paths (the default keeps every existing caller unchanged), "manual" for the
   // user-requested compact cycle (SessionV2.compact → the runner's SessionCompactionRequest marker).
@@ -209,8 +266,9 @@ export const make = (dependencies: Dependencies) => {
     const context = input.model.route.defaults.limits?.context
     if (context === undefined || context <= 0) return false
     const output = input.request.generation?.maxTokens ?? input.model.route.defaults.limits?.output ?? 0
-    const selected = selectContext(input.entries, config.tokens)
-    const previousSummary = input.entries.find((entry) => entry.message.type === "compaction")?.message
+    const entries = yield* pruneCheapTier(input.entries)
+    const selected = selectContext(entries, config.tokens)
+    const previousSummary = entries.find((entry) => entry.message.type === "compaction")?.message
     if (!selected || (selected.head.length === 0 && previousSummary?.type !== "compaction")) return false
     const summaryPrompt = buildPrompt({
       previousSummary: previousSummary?.type === "compaction" ? previousSummary.summary : undefined,
@@ -268,6 +326,8 @@ export const make = (dependencies: Dependencies) => {
       context - Math.max(output, config.buffer)
     )
       return false
+    // The cheap tier runs inside `compactAfterOverflow`, ahead of the summary prompt — the
+    // threshold test above reads the ALREADY-ASSEMBLED request, which prune cannot shrink.
     return yield* compactAfterOverflow(input)
   })
   return {

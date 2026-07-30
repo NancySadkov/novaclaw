@@ -101,6 +101,28 @@ describe("a steer is never attributed to the user in the compaction summary", ()
     expect(wide!.head).toBe("")
   })
 
+  // The head/recent split used ONE index for two bounds, so the message straddling the boundary
+  // landed in `head` twice — whole (via the slice) and again as its truncated prefix. The boundary
+  // falls inside a message in almost every real compaction, so this shipped duplicated content to
+  // the summarizer on nearly every call. Negative-controlled: with `split = index + 1` restored the
+  // start marker appears TWICE and this test fails.
+  test("the message straddling the head/recent boundary is not duplicated", () => {
+    const START = "STRADDLE_START_MARKER"
+    // Long enough that the budget lands inside it, and that its tail cannot contain the start.
+    const straddler = `${START} ${"filler ".repeat(400)}`
+    const transcript = entries(user("count the digits of pi"), assistant("Earlier answer"), assistant(straddler))
+    // A budget that fits part of the newest message but not all of it → a genuine straddle.
+    const selected = SessionCompaction.selectContext(transcript, 200)
+    expect(selected).toBeDefined()
+    const both = `${selected!.head}\n${selected!.recent}`
+    expect(both.split(START).length - 1).toBe(1)
+    // And the split is a partition, not a copy: the straddler's text is not wholly in either half.
+    expect(selected!.head).not.toContain(straddler)
+    expect(selected!.recent).not.toContain(straddler)
+    // The older messages still summarize away, and nothing was dropped on the floor.
+    expect(selected!.head).toContain("count the digits of pi")
+  })
+
   test("a steer-only transcript contributes no user-attributed text at all", () => {
     const selected = SessionCompaction.selectContext(entries(steer(NUDGE)), 100_000)
     expect(selected).toBeDefined()
