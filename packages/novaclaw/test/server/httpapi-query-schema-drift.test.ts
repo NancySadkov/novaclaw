@@ -58,8 +58,23 @@ const booleanSdkQueryParams: Array<{ method: Method; path: string; name: string 
 
 const queryParamPatterns: Array<{ method: Method; path: string; name: string; pattern: string }> = []
 
+// The V1 `POST /permission/:requestID/reply` row was RE-POINTED, not dropped, when the V1
+// permission routes went (v0.2.0-prep Wave 4 §5): the native route carries the same `^per`
+// id-prefix guard on `requestID` (`@novaclaw/schema/permission`'s branded `ID`), plus `^ses` on
+// `sessionID`, so the invariant survives the deletion instead of leaving with it.
 const pathParamPatterns = [
-  { method: "post", path: "/permission/:requestID/reply", name: "requestID", pattern: "^per" },
+  {
+    method: "post",
+    path: "/api/session/:sessionID/permission/:requestID/reply",
+    name: "requestID",
+    pattern: "^per",
+  },
+  {
+    method: "post",
+    path: "/api/session/:sessionID/permission/:requestID/reply",
+    name: "sessionID",
+    pattern: "^ses",
+  },
   { method: "post", path: "/question/:requestID/reply", name: "requestID", pattern: "^que" },
   { method: "put", path: PtyPaths.update, name: "ptyID", pattern: "^pty" },
   { method: "delete", path: WorkspacePaths.remove, name: "id", pattern: "^wrk" },

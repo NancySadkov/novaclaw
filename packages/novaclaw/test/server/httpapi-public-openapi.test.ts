@@ -278,9 +278,12 @@ describe("PublicApi OpenAPI v2 errors", () => {
   test("documents permission and question not-found errors", () => {
     const spec = OpenApi.fromApi(PublicApi) as OpenApiSpec
 
+    // The V1 `/permission/{requestID}/reply` assertion that stood here was re-pointed at the native
+    // route when the V1 permission routes were deleted (v0.2.0-prep Wave 4 §5). The V2 route carries
+    // BOTH not-founds, so this is strictly more than the legacy one asserted.
     expect(
-      componentName(responseRef(spec.paths["/permission/{requestID}/reply"]?.post?.responses?.["404"]) ?? ""),
-    ).toBe("PermissionNotFoundError")
+      componentNames(spec.paths["/api/session/{sessionID}/permission/{requestID}/reply"]?.post?.responses?.["404"]),
+    ).toEqual(["PermissionNotFoundError", "SessionNotFoundError"])
     for (const route of [
       ["post", "/question/{requestID}/reply"],
       ["post", "/question/{requestID}/reject"],
@@ -298,6 +301,44 @@ describe("PublicApi OpenAPI v2 errors", () => {
         "SessionNotFoundError",
       ])
     }
+  })
+
+  /**
+   * **The V1 `/permission` routes stay deleted** (v0.2.0-prep Wave 4 §5, authorised by todo.md's
+   * *"we discard all the cruft"*; ruling 11 pins the legacy surface shrink-only).
+   *
+   * ⚠️ **Why this lives here and not only in the legacy-path ledger.**
+   * `packages/sdk/js/test/legacy-path-ledger.test.ts` is the repo's shrink-only ratchet, and it does
+   * cover this — but it reads the **committed** `packages/sdk/openapi.json`, so it only sees a
+   * re-added group after a regen. This assertion reads the **live** API, so re-adding
+   * `PermissionApi` to `api.ts` is red in the same edit that adds it, with no generated artifact in
+   * between. Two different doors; ruling 1 wants the one that shuts immediately.
+   */
+  test("the V1 /permission routes stay deleted, and the V2 surface carries the asks", () => {
+    const spec = OpenApi.fromApi(PublicApi) as OpenApiSpec
+    const isLegacyPermissionPath = (path: string) => path === "/permission" || path.startsWith("/permission/")
+
+    expect(
+      Object.keys(spec.paths).filter(isLegacyPermissionPath),
+      [
+        "The V1 permission routes are back. They served the V1 engine's asks ONLY and the V1 engine",
+        "is gone; a V2-native session's asks ride the routes asserted below. Declare permission work",
+        "under /api/* in packages/protocol/src/groups/permission.ts — that is the ONE contract.",
+      ].join("\n  "),
+    ).toEqual([])
+
+    // Negative control: the predicate above is not vacuously true — it DOES name those two paths
+    // when they exist, and it never mistakes the /api/* replacement for one of them.
+    expect(
+      ["/permission", "/permission/{requestID}/reply", "/api/permission/request"].filter(isLegacyPermissionPath),
+    ).toEqual(["/permission", "/permission/{requestID}/reply"])
+
+    // …and the replacement is really served, so this cannot pass by the API being empty.
+    expect(spec.paths["/api/permission/request"]?.get, "GET /api/permission/request").toBeDefined()
+    expect(
+      spec.paths["/api/session/{sessionID}/permission/{requestID}/reply"]?.post,
+      "POST /api/session/{sessionID}/permission/{requestID}/reply",
+    ).toBeDefined()
   })
 
   test("documents MCP server not-found errors", () => {

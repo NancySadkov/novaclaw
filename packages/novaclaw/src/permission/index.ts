@@ -6,35 +6,17 @@ import { Deferred, Effect, Layer, Context } from "effect"
 import os from "os"
 import { PermissionRuleset } from "@novaclaw/schema/permission-ruleset"
 import { normalizeReply } from "@novaclaw/core/permission"
-import type { PermissionMode } from "@novaclaw/core/session/config-resolve"
 import { EventV2Bridge } from "@/event-v2-bridge"
 
-export const Event = PermissionRuleset.Event
+// `modeRuleset(mode)` — the V1-coarse permission-MODE overlay — was DELETED here (todo.md *"we
+// discard all the cruft"*, v0.2.0-prep Wave 4 §5). It had zero production callers: V2 resolves a
+// mode through `core/src/permission.ts`'s `MODE_RULES`, whose action vocabulary is finer than V1's
+// (the comment it carried admitted `surgical` was inexpressible in it). Its only caller anywhere was
+// the test that asserted its table back to it. The V1 `/permission` HTTP routes went in the same
+// commit; what remains in this file is the ruleset algebra that IS still live —
+// `evaluate` (skill filtering), `fromConfig`/`merge` (agent defaults).
 
-/**
- * 1K on the V1 runtime: the ruleset overlay a permission MODE contributes to a session's own
- * `permission` rules (merged AFTER the agent's — findLast wins, so mode outranks agent defaults).
- * V1 permission names are coarser than V2 actions: "edit" covers edit/write/apply_patch, so
- * `surgical` (edit-yes/overwrite-no) is NOT expressible here — it stays V2-only and maps to the
- * identity on V1. `bypass` allows in-project mutations but leaves external_directory at ask;
- * `yolo` allows everything.
- */
-export function modeRuleset(mode: PermissionMode): PermissionRuleset.Rule[] {
-  switch (mode) {
-    case "plan":
-      return [{ permission: "edit", pattern: "*", action: "deny" }]
-    case "ask":
-    case "surgical":
-      return []
-    case "bypass":
-      return [
-        { permission: "edit", pattern: "*", action: "allow" },
-        { permission: "bash", pattern: "*", action: "allow" },
-      ]
-    case "yolo":
-      return [{ permission: "*", pattern: "*", action: "allow" }]
-  }
-}
+export const Event = PermissionRuleset.Event
 
 export interface Interface {
   readonly ask: (input: PermissionRuleset.AskInput) => Effect.Effect<void, PermissionRuleset.Error>

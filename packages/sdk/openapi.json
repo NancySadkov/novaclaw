@@ -6490,175 +6490,6 @@
         ]
       }
     },
-    "/permission": {
-      "get": {
-        "tags": ["permission"],
-        "operationId": "permission.list",
-        "parameters": [
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "List of pending permissions",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "array",
-                  "items": {
-                    "$ref": "#/components/schemas/PermissionRequest"
-                  },
-                  "description": "List of pending permissions"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Bad request",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/BadRequestError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Get all pending permission requests across all sessions.",
-        "summary": "List pending permissions",
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.permission.list({\n  ...\n})"
-          }
-        ]
-      }
-    },
-    "/permission/{requestID}/reply": {
-      "post": {
-        "tags": ["permission"],
-        "operationId": "permission.reply",
-        "parameters": [
-          {
-            "name": "requestID",
-            "in": "path",
-            "schema": {
-              "type": "string",
-              "pattern": "^per"
-            },
-            "required": true
-          },
-          {
-            "name": "directory",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          },
-          {
-            "name": "workspace",
-            "in": "query",
-            "schema": {
-              "type": "string"
-            },
-            "required": false
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Permission processed successfully",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "boolean",
-                  "description": "Permission processed successfully"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "BadRequest | InvalidRequestError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "anyOf": [
-                    {
-                      "$ref": "#/components/schemas/effect_HttpApiError_BadRequest"
-                    },
-                    {
-                      "$ref": "#/components/schemas/InvalidRequestError"
-                    }
-                  ]
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "PermissionNotFoundError",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/PermissionNotFoundError"
-                }
-              }
-            }
-          }
-        },
-        "description": "Approve or deny a permission request from the AI assistant.",
-        "summary": "Respond to permission request",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "reply": {
-                    "type": "string",
-                    "enum": [
-                      "once",
-                      "always",
-                      "reject",
-                      "allow-once",
-                      "allow-file",
-                      "allow-always",
-                      "deny-once",
-                      "deny-file",
-                      "deny-always"
-                    ]
-                  },
-                  "message": {
-                    "type": "string"
-                  }
-                },
-                "required": ["reply"],
-                "additionalProperties": false
-              }
-            }
-          }
-        },
-        "x-codeSamples": [
-          {
-            "lang": "js",
-            "source": "import { createNovaclawClient } from \"@novaclaw/sdk\n\nconst client = createNovaclawClient()\nawait client.permission.reply({\n  ...\n})"
-          }
-        ]
-      }
-    },
     "/provider": {
       "get": {
         "tags": ["provider"],
@@ -21701,69 +21532,6 @@
         "required": ["_tag", "requestID", "message"],
         "additionalProperties": false
       },
-      "PermissionRequest": {
-        "type": "object",
-        "properties": {
-          "id": {
-            "type": "string",
-            "pattern": "^per"
-          },
-          "sessionID": {
-            "type": "string",
-            "pattern": "^ses"
-          },
-          "permission": {
-            "type": "string"
-          },
-          "patterns": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "metadata": {
-            "type": "object"
-          },
-          "always": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            }
-          },
-          "tool": {
-            "type": "object",
-            "properties": {
-              "messageID": {
-                "type": "string"
-              },
-              "callID": {
-                "type": "string"
-              }
-            },
-            "required": ["messageID", "callID"],
-            "additionalProperties": false
-          }
-        },
-        "required": ["id", "sessionID", "permission", "patterns", "metadata", "always"],
-        "additionalProperties": false
-      },
-      "PermissionNotFoundError": {
-        "type": "object",
-        "properties": {
-          "_tag": {
-            "type": "string",
-            "enum": ["PermissionNotFoundError"]
-          },
-          "requestID": {
-            "type": "string"
-          },
-          "message": {
-            "type": "string"
-          }
-        },
-        "required": ["_tag", "requestID", "message"],
-        "additionalProperties": false
-      },
       "Workspace": {
         "type": "object",
         "properties": {
@@ -22312,6 +22080,23 @@
           }
         },
         "required": ["_tag", "providerID", "message"],
+        "additionalProperties": false
+      },
+      "PermissionNotFoundError": {
+        "type": "object",
+        "properties": {
+          "_tag": {
+            "type": "string",
+            "enum": ["PermissionNotFoundError"]
+          },
+          "requestID": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": ["_tag", "requestID", "message"],
         "additionalProperties": false
       },
       "messenger.account.status": {
@@ -38525,10 +38310,6 @@
     {
       "name": "registry",
       "description": "Developer-mode database registry (Regedit-style browse/edit)."
-    },
-    {
-      "name": "permission",
-      "description": "Experimental HttpApi permission routes."
     },
     {
       "name": "provider",

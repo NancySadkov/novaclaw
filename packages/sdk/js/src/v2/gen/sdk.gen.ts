@@ -138,10 +138,6 @@ import type {
   MoveSessionDestination,
   PathGetErrors,
   PathGetResponses,
-  PermissionListErrors,
-  PermissionListResponses,
-  PermissionReplyErrors,
-  PermissionReplyResponses,
   PermissionRuleset,
   PermissionV2Reply,
   PermissionV2Source,
@@ -3588,88 +3584,6 @@ export class Registry extends HeyApiClient {
   }
 }
 
-export class Permission extends HeyApiClient {
-  /**
-   * List pending permissions
-   *
-   * Get all pending permission requests across all sessions.
-   */
-  public list<ThrowOnError extends boolean = false>(
-    parameters?: {
-      directory?: string
-      workspace?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).get<PermissionListResponses, PermissionListErrors, ThrowOnError>({
-      url: "/permission",
-      ...options,
-      ...params,
-    })
-  }
-
-  /**
-   * Respond to permission request
-   *
-   * Approve or deny a permission request from the AI assistant.
-   */
-  public reply<ThrowOnError extends boolean = false>(
-    parameters: {
-      requestID: string
-      directory?: string
-      workspace?: string
-      reply?:
-        | "once"
-        | "always"
-        | "reject"
-        | "allow-once"
-        | "allow-file"
-        | "allow-always"
-        | "deny-once"
-        | "deny-file"
-        | "deny-always"
-      message?: string
-    },
-    options?: Options<never, ThrowOnError>,
-  ) {
-    const params = buildClientParams(
-      [parameters],
-      [
-        {
-          args: [
-            { in: "path", key: "requestID" },
-            { in: "query", key: "directory" },
-            { in: "query", key: "workspace" },
-            { in: "body", key: "reply" },
-            { in: "body", key: "message" },
-          ],
-        },
-      ],
-    )
-    return (options?.client ?? this.client).post<PermissionReplyResponses, PermissionReplyErrors, ThrowOnError>({
-      url: "/permission/{requestID}/reply",
-      ...options,
-      ...params,
-      headers: {
-        "Content-Type": "application/json",
-        ...options?.headers,
-        ...params.headers,
-      },
-    })
-  }
-}
-
 export class Provider extends HeyApiClient {
   /**
    * List providers
@@ -4268,7 +4182,7 @@ export class Revert extends HeyApiClient {
   }
 }
 
-export class Permission2 extends HeyApiClient {
+export class Permission extends HeyApiClient {
   /**
    * List session permission requests
    *
@@ -5504,9 +5418,9 @@ export class Session extends HeyApiClient {
     return (this._revert ??= new Revert({ client: this.client }))
   }
 
-  private _permission?: Permission2
-  get permission(): Permission2 {
-    return (this._permission ??= new Permission2({ client: this.client }))
+  private _permission?: Permission
+  get permission(): Permission {
+    return (this._permission ??= new Permission({ client: this.client }))
   }
 
   private _question?: Question2
@@ -6790,7 +6704,7 @@ export class Saved extends HeyApiClient {
   }
 }
 
-export class Permission3 extends HeyApiClient {
+export class Permission2 extends HeyApiClient {
   private _request?: Request
   get request(): Request {
     return (this._request ??= new Request({ client: this.client }))
@@ -7391,9 +7305,9 @@ export class V2 extends HeyApiClient {
     return (this._recipe ??= new Recipe({ client: this.client }))
   }
 
-  private _permission?: Permission3
-  get permission(): Permission3 {
-    return (this._permission ??= new Permission3({ client: this.client }))
+  private _permission?: Permission2
+  get permission(): Permission2 {
+    return (this._permission ??= new Permission2({ client: this.client }))
   }
 
   private _fs?: Fs
@@ -7543,11 +7457,6 @@ export class NovaclawClient extends HeyApiClient {
   private _registry?: Registry
   get registry(): Registry {
     return (this._registry ??= new Registry({ client: this.client }))
-  }
-
-  private _permission?: Permission
-  get permission(): Permission {
-    return (this._permission ??= new Permission({ client: this.client }))
   }
 
   private _provider?: Provider

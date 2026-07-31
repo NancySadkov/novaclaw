@@ -1,4 +1,3 @@
-import { PermissionRuleset } from "@novaclaw/schema/permission-ruleset"
 import { NodeHttpServer, NodeServices } from "@effect/platform-node"
 import { Flag } from "@novaclaw/core/flag/flag"
 import { describe, expect } from "bun:test"
@@ -122,7 +121,12 @@ describe("instance HttpApi", () => {
     }),
   )
 
-  it.live("rejects malformed permission and question request ids", () =>
+  // The V1 `/permission/:requestID/reply` legs of this test and the next one went with the V1
+  // permission ROUTES (v0.2.0-prep Wave 4 §5) — those routes served the V1 engine's asks only, and
+  // the V1 engine is gone. The equivalent V2 guarantees are asserted on the native route in
+  // `packages/server`'s handler tests + `httpapi-public-openapi.test.ts`; what is left here is the
+  // question surface, which is still legacy.
+  it.live("rejects malformed question request ids", () =>
     Effect.gen(function* () {
       const dir = yield* tmpdirScoped({ git: true })
       const request = (path: string, init?: RequestInit) =>
@@ -135,12 +139,8 @@ describe("instance HttpApi", () => {
             handlerContext,
           ),
         )
-      const [permission, questionReply, questionReject] = yield* Effect.all(
+      const [questionReply, questionReject] = yield* Effect.all(
         [
-          request("/permission/invalid-permission-id/reply", {
-            method: "POST",
-            body: JSON.stringify({ reply: "once" }),
-          }),
           request("/question/invalid-question-id/reply", {
             method: "POST",
             body: JSON.stringify({ answers: [["Yes"]] }),
@@ -150,13 +150,12 @@ describe("instance HttpApi", () => {
         { concurrency: "unbounded" },
       )
 
-      expect(permission.status).toBe(400)
       expect(questionReply.status).toBe(400)
       expect(questionReject.status).toBe(400)
     }),
   )
 
-  it.live("returns typed not found bodies for missing permission and question requests", () =>
+  it.live("returns typed not found bodies for missing question requests", () =>
     Effect.gen(function* () {
       const dir = yield* tmpdirScoped({ git: true })
       const request = (path: string, init?: RequestInit) =>
@@ -169,15 +168,10 @@ describe("instance HttpApi", () => {
             handlerContext,
           ),
         )
-      const permissionID = PermissionRuleset.ID.ascending()
       const questionReplyID = QuestionID.ascending()
       const questionRejectID = QuestionID.ascending()
-      const [permission, questionReply, questionReject] = yield* Effect.all(
+      const [questionReply, questionReject] = yield* Effect.all(
         [
-          request(`/permission/${permissionID}/reply`, {
-            method: "POST",
-            body: JSON.stringify({ reply: "once" }),
-          }),
           request(`/question/${questionReplyID}/reply`, {
             method: "POST",
             body: JSON.stringify({ answers: [["Yes"]] }),
@@ -187,12 +181,6 @@ describe("instance HttpApi", () => {
         { concurrency: "unbounded" },
       )
 
-      expect(permission.status).toBe(404)
-      expect(yield* Effect.promise(() => permission.json())).toEqual({
-        _tag: "PermissionNotFoundError",
-        requestID: permissionID,
-        message: `Permission request not found: ${permissionID}`,
-      })
       expect(questionReply.status).toBe(404)
       expect(yield* Effect.promise(() => questionReply.json())).toEqual({
         _tag: "QuestionNotFoundError",

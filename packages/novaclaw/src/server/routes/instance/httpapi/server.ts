@@ -90,7 +90,6 @@ import { instanceHandlers } from "./handlers/instance"
 import { registryHandlers } from "./handlers/registry"
 import { memoryHandlers } from "./handlers/memory"
 import { mcpHandlers } from "./handlers/mcp"
-import { permissionHandlers } from "./handlers/permission"
 import { providerHandlers } from "./handlers/provider"
 import { ptyConnectHandlers, ptyHandlers } from "./handlers/pty"
 import { questionHandlers } from "./handlers/question"
@@ -167,7 +166,6 @@ const instanceApiRoutes = HttpApiBuilder.layer(InstanceHttpApi).pipe(
     mcpHandlers,
     ptyHandlers,
     questionHandlers,
-    permissionHandlers,
     providerHandlers,
     shellHandlers,
     syncHandlers,

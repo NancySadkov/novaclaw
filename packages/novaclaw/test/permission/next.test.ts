@@ -1109,16 +1109,9 @@ it.instance(
   { git: true },
 )
 
-test("modeRuleset - maps each mode to its V1 overlay", () => {
-  expect(Permission.modeRuleset("plan")).toEqual([{ permission: "edit", pattern: "*", action: "deny" }])
-  expect(Permission.modeRuleset("ask")).toEqual([])
-  expect(Permission.modeRuleset("surgical")).toEqual([])
-  expect(Permission.modeRuleset("bypass")).toEqual([
-    { permission: "edit", pattern: "*", action: "allow" },
-    { permission: "bash", pattern: "*", action: "allow" },
-  ])
-  expect(Permission.modeRuleset("yolo")).toEqual([{ permission: "*", pattern: "*", action: "allow" }])
-})
+// `modeRuleset` was deleted with the V1 permission ROUTES (v0.2.0-prep Wave 4 §5). The test that
+// stood here asserted its five-case table back to it and was its only caller anywhere — i.e. the
+// function was kept alive by its own test, which todo.md names as cruft in its own right.
 
 it.instance(
   "reply - publishes replied event",

@@ -37,11 +37,17 @@ import path from "node:path"
  * outright; a listed path the spec no longer declares fails with "delete the ledger line", so
  * un-pinning is mandatory rather than optional and the set can only get smaller.
  *
- * ⚠️ **Measured 2026-07-30, and it bounds what this file claims.** 174 paths: 86 under `/api/*`,
- * **88 legacy** (102 legacy operations across the five methods). Ruling 11 was written against 97
- * legacy paths, so the set has already shrunk by nine — this file is what stops it going back. It
+ * ⚠️ **Measured 2026-07-31, and it bounds what this file claims.** 172 paths: 86 under `/api/*`,
+ * **86 legacy** (100 legacy operations across the five methods). Ruling 11 was written against 97
+ * legacy paths, so the set has already shrunk by eleven — this file is what stops it going back. It
  * closes no live bug; it is a guard against the NEXT route, which is the only form this invariant
  * can take.
+ *
+ * ⚠️ **The 2026-07-31 shrink is `GET /permission` + `POST /permission/{requestID}/reply`** — the V1
+ * permission routes, deleted with the V1 engine they served (v0.2.0-prep Wave 4 §5). This edit is
+ * only true once `bun run --cwd packages/sdk/js regen` has rewritten `openapi.json`: the ledger
+ * measures the committed spec, so ledger and spec must move in the SAME commit or this file is red
+ * either way round.
  */
 
 /** `packages/sdk/js/test` → `packages/sdk/openapi.json`, the committed generated spec. */
@@ -59,8 +65,8 @@ const METHODS = ["get", "post", "put", "delete", "patch"] as const
 type Document = { paths: Record<string, Record<string, unknown>> }
 
 /**
- * **The legacy paths, pinned as of 2026-07-30.** Grouped by first segment with its count so the
- * shape is readable at a glance: 27 families, 88 paths. This list may only ever get SHORTER.
+ * **The legacy paths, pinned as of 2026-07-31.** Grouped by first segment with its count so the
+ * shape is readable at a glance: 26 families, 86 paths. This list may only ever get SHORTER.
  *
  * There is no production module that owns this set — it is a property of the union of two route
  * trees — so the ledger lives here, next to the assertions that read it.
@@ -139,9 +145,6 @@ export const LEGACY_PATHS: readonly string[] = [
   "/memory/stats",
   // /path — 1
   "/path",
-  // /permission — 2
-  "/permission",
-  "/permission/{requestID}/reply",
   // /provider — 3
   "/provider",
   "/provider/presets",
@@ -184,14 +187,14 @@ export const LEGACY_PATHS: readonly string[] = [
 ]
 
 /**
- * Legacy OPERATIONS (method + path), measured 2026-07-30: GET 48, POST 43, DELETE 6, PUT 3,
+ * Legacy OPERATIONS (method + path), measured 2026-07-31: GET 47, POST 42, DELETE 6, PUT 3,
  * PATCH 2.
  *
  * The path ledger alone would let `POST /file` be added beside the existing `GET /file` — a new
  * legacy route on an already-pinned path, which is the same widening under a different name. This
  * number closes that seam without a second 102-line list.
  */
-const LEGACY_OPERATION_COUNT = 102
+const LEGACY_OPERATION_COUNT = 100
 
 const PINNED = new Set(LEGACY_PATHS)
 
@@ -314,11 +317,11 @@ describe("every legacy path is on the ledger, and the ledger can only shrink", (
     // Pinned as a MEASUREMENT, not a preference: the honest answer to "how big is the legacy surface
     // right now". Removing a legacy route is supposed to fail here — that failure IS the ratchet
     // clicking, and lowering these numbers is how the removal gets recorded.
-    expect(LEGACY_PATHS.length, "the ledger's own length moved — recount and update this pin").toBe(88)
+    expect(LEGACY_PATHS.length, "the ledger's own length moved — recount and update this pin").toBe(86)
     expect(
       SPEC_LEGACY_PATHS.length,
       "the spec's legacy path count moved — reconcile LEGACY_PATHS and update this pin",
-    ).toBe(88)
+    ).toBe(86)
     expect(
       legacyOperations(DOCUMENT).length,
       [
