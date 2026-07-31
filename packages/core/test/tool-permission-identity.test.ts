@@ -3,9 +3,10 @@ import fs from "node:fs"
 import path from "node:path"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { ToolOutputStore } from "@novaclaw/core/tool-output-store"
+import { ApplicationTools } from "@novaclaw/core/tool/application-tools"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import { Tool } from "@novaclaw/core/tool/tool"
-import { Effect, JsonSchema, Layer, Schema } from "effect"
+import { Cause, Effect, Exit, JsonSchema, Layer, Option, Schema } from "effect"
 import { testEffect } from "./lib/effect"
 import { toolDefinitions } from "./lib/tool"
 
@@ -23,16 +24,42 @@ import { toolDefinitions } from "./lib/tool"
  * from here on, not less: B4c inverts the permission baseline from allow-all to an explicit
  * allowlist, at which point these stop being paperwork and start being live gates.
  *
- * So this file does two things. First it PINS the equivalence by exercising the real registry — a
- * declared-own-name tool and an undeclared one are withdrawn by exactly the same rules — which is
- * what makes deleting the nine a no-behaviour-change edit rather than a claim. Then it ratchets: any
- * `withPermission` call in shipping source must be a genuine remap and must be ledgered below.
+ * **The no-op is now impossible, not merely swept for** (the stronger arm, landed here).
+ * `ToolRegistry.register` runs `Tool.validateRegistration`, which fails with a `RegistrationError`
+ * when a tool declares the very key it is being registered under. A registration is the only kind of
+ * seam that can see this at all — `withPermission` runs before the key exists, so it is blind to its
+ * own no-op. **There are TWO such seams and both now run the check**: `ToolRegistry.register` and
+ * `ApplicationTools.register`. The second has no caller in shipping source, which is precisely why it
+ * would have drifted unnoticed — ruling 6's lesson is that a decision made at two call sites diverges
+ * at the one nobody exercises, so it is covered here rather than excused.
+ *
+ * So this file does three things.
+ *  1. It PINS the fallback by exercising the real registry: an UNDECLARED tool is governed by the
+ *     name it was registered under. That is the whole mechanism the nine deleted calls were
+ *     shadowing, and it is why deleting them changed no behaviour.
+ *  2. It pins the REFUSAL, both that it fires and that it takes the whole batch down with it
+ *     (todo.md ruling 2 — a failed mutation never reports success), and that a genuine remap is
+ *     untouched.
+ *  3. It still RATCHETS statically: any `withPermission` call in shipping source must be a genuine
+ *     remap and must be ledgered below.
+ *
+ * ⚠️ **(2) does not retire (3), and swapping one for the other would be a real loss** (ruling 1).
+ * A runtime refusal only fires where a registration actually runs — a tool behind a config branch, a
+ * package whose suites do not execute, a seam that is not `ToolRegistry.register` — while the sweep
+ * reads every file in `packages/**\/src` whether or not a single line of it is ever reached. They
+ * catch different populations; the runtime arm additionally covers what no sweep can read (a name
+ * computed at runtime, a decorated tool hoisted into a variable before registration).
  */
 
 const outputStore = Layer.mock(ToolOutputStore.Service, {
   bound: (input) => Effect.succeed({ output: input.output, outputPaths: [] }),
 })
 const it = testEffect(AppNodeBuilder.build(ToolRegistry.node, [[ToolOutputStore.node, outputStore]]))
+// `ToolRegistry.node` PROVIDES `ApplicationTools` rather than exporting it, so the second
+// registration seam is unreachable from the graph above and needs its own build. Measured, not
+// assumed: reaching for it through the registry's context fails "Service not found:
+// @novaclaw/ApplicationTools" — which is also the reason that seam had no coverage until now.
+const itApplications = testEffect(AppNodeBuilder.build(ApplicationTools.node))
 
 const echo = () =>
   Tool.make({
@@ -68,18 +95,70 @@ describe("the name fallback IS the gate", () => {
     }),
   )
 
-  it.effect("declaring your OWN name is observationally the identity — same rules, same outcome", () =>
+  it.effect("declaring your OWN name is REFUSED by the registry, by name and with a reason", () =>
     Effect.gen(function* () {
       const registry = yield* ToolRegistry.Service
       const advertised = (rules?: Parameters<ToolRegistry.Interface["materialize"]>[0]) =>
         toolDefinitions(registry, rules).pipe(Effect.map((definitions) => definitions.map((one) => one.name)))
-      yield* registry.register({ write: Tool.withPermission(echo(), "write") })
 
-      // Byte-identical expectations to the test above. If these two ever diverge, the fallback has
-      // changed meaning and the nine deletions need revisiting.
-      expect(yield* advertised()).toContain("write")
-      expect(yield* advertised(deny("write"))).not.toContain("write")
-      expect(yield* advertised(deny("edit"))).toContain("write")
+      // Until this landed, THIS registration succeeded and behaved byte-identically to the
+      // undeclared one above — which is exactly what made the wrap a guard that guards nothing.
+      // ⚠️ `Effect.exit` rather than the shorter `Effect.flip`: flipping a SUCCESS fails the test
+      // with a bare `Unknown error: undefined`, so the one regression this test exists to report
+      // would read as a broken test. Measured — that is what the negative control printed.
+      const exit = yield* registry.register({ write: Tool.withPermission(echo(), "write") }).pipe(Effect.exit)
+      expect(Exit.isFailure(exit), "registering a tool that declares its own name must be REFUSED").toBe(true)
+      const error = Exit.isFailure(exit) ? Option.getOrUndefined(Cause.findErrorOption(exit.cause)) : undefined
+
+      expect(error).toBeInstanceOf(Tool.RegistrationError)
+      // ruling 2 — a failed mutation is loud and NAMED, not a silent skip and not a bare boolean.
+      expect(error?.name).toBe("write")
+      expect(error?.message).toContain("no-op")
+      expect(error?.message).toContain("Tool.withPermission")
+      // …and it really did not land. A refusal that still registered the tool would be the same
+      // dishonesty in the opposite direction.
+      expect(yield* advertised()).toEqual([])
+    }),
+  )
+
+  it.effect("a refused entry takes its whole batch with it — no half-landed registration", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const advertised = (rules?: Parameters<ToolRegistry.Interface["materialize"]>[0]) =>
+        toolDefinitions(registry, rules).pipe(Effect.map((definitions) => definitions.map((one) => one.name)))
+
+      // `read` is legal, comes FIRST, and is the tool that would be silently half-registered if the
+      // check ran inside the mutation loop instead of as a pre-pass over every entry. `registry.ts`
+      // validates the whole batch before it touches `local`; this is what pins that ordering.
+      const exit = yield* registry
+        .register({ read: echo(), edit: Tool.withPermission(echo(), "edit") })
+        .pipe(Effect.exit)
+      expect(Exit.isFailure(exit), "a batch holding a self-declaration must be REFUSED whole").toBe(true)
+      expect(
+        Exit.isFailure(exit) ? Option.getOrUndefined(Cause.findErrorOption(exit.cause)) : undefined,
+      ).toBeInstanceOf(Tool.RegistrationError)
+      expect(yield* advertised()).toEqual([])
+    }),
+  )
+
+  itApplications.effect("the OTHER registration seam refuses it too — ApplicationTools.register", () =>
+    Effect.gen(function* () {
+      // `ApplicationTools.register` is the second place a registration key and its tool are in scope
+      // together, and it has zero callers in shipping source. That is the reason to cover it, not a
+      // reason to skip it: an unexercised duplicate of a decision is where the divergence lands (the
+      // COMSPEC split ruling 6 was written for). A remap must still pass here, or the guard is
+      // refusing the one thing withPermission is FOR.
+      const applications = yield* ApplicationTools.Service
+
+      const exit = yield* applications.register({ write: Tool.withPermission(echo(), "write") }).pipe(Effect.exit)
+      expect(Exit.isFailure(exit), "ApplicationTools must refuse a self-declaration like the registry does").toBe(true)
+      expect(
+        Exit.isFailure(exit) ? Option.getOrUndefined(Cause.findErrorOption(exit.cause)) : undefined,
+      ).toBeInstanceOf(Tool.RegistrationError)
+      expect(applications.entries().size, "a refused registration must not land").toBe(0)
+
+      yield* applications.register({ apply_patch: Tool.withPermission(echo(), "edit") })
+      expect([...applications.entries().keys()]).toEqual(["apply_patch"])
     }),
   )
 
@@ -115,9 +194,11 @@ describe("the name fallback IS the gate", () => {
     }),
   )
 
-  test("Tool.permission answers the same for both forms", () => {
+  test("Tool.permission answers the same for both forms — which is WHY the registry refuses one", () => {
     // The equivalence stated at the unit, not just at the registry: `permission` is the ONE consumer
     // of a declaration (registry.ts `whollyDisabled`), so agreement here is agreement everywhere.
+    // Note these still hold — `withPermission` itself is not the thing that refuses, because it
+    // cannot see a registration key. The refusal lives at the seam that can.
     for (const name of ["write", "spawn", "quality_provision", "register-app"]) {
       expect(Tool.permission(echo(), name)).toBe(name)
       expect(Tool.permission(Tool.withPermission(echo(), name), name)).toBe(name)
@@ -126,6 +207,22 @@ describe("the name fallback IS the gate", () => {
     // …and the same statement for the dynamic half, which now has no override to answer with.
     for (const name of ["searxng_search", "playwright_click", "mcp"])
       expect(Tool.permission(external(), name)).toBe(name)
+  })
+
+  test("Tool.declaredPermission is the ONE reader that can tell the two apart", () => {
+    // `permission` above answers "write" for both an undeclared tool and one declaring "write", so a
+    // refusal cannot be written against it. This is the distinction the guard is built on, and it is
+    // the whole reason a second accessor exists rather than a cleverer use of the first.
+    expect(Tool.declaredPermission(echo())).toBeUndefined()
+    expect(Tool.declaredPermission(external())).toBeUndefined()
+    expect(Tool.declaredPermission(Tool.withPermission(echo(), "write"))).toBe("write")
+    expect(Tool.declaredPermission(Tool.withPermission(echo(), "edit"))).toBe("edit")
+    // Decoration does not mutate the tool it wraps — the undecorated original still declares nothing,
+    // which is what keeps `keeps permission decoration isolated between registrations`
+    // (session-runner-tool-registry.test.ts) true.
+    const undecorated = echo()
+    Tool.withPermission(undecorated, "explore")
+    expect(Tool.declaredPermission(undecorated)).toBeUndefined()
   })
 })
 
@@ -141,9 +238,12 @@ describe("the name fallback IS the gate", () => {
  * a raw NUL as binary, and this tree has had exactly that), and it RECURSES: a Wave-1 guard scanned
  * `src/tool/*.ts` non-recursively and `src/jh/**` was invisible to it.
  *
- * ⚠️ Tests are deliberately out of the sweep. `test/session-runner-tool-registry.test.ts` registers
- * `edit: make("edit")` on purpose — a synthetic registry proving wildcard precedence, where the
- * declaration is the fixture rather than a claim about a shipped tool.
+ * ⚠️ Tests are deliberately out of the sweep — the invariant is about SHIPPED source, and a test
+ * that constructs a bad registration in order to assert it is refused (the two `Effect.flip` cases
+ * above) would otherwise fail the very guard it is exercising. That carve-out used to also cover
+ * `test/session-runner-tool-registry.test.ts`, which registered `edit: make("edit")` on purpose;
+ * `ToolRegistry.register` now refuses that, so the fixture is `edit: make()` and no test in the tree
+ * can complete a self-declaration by accident.
  */
 
 /** The app repo root: `packages/core/test` → `packages/core` → `packages` → repo. */
@@ -319,6 +419,27 @@ describe("no withPermission call is the identity", () => {
     expect(sources.map((source) => source.name)).toContain("packages/core/src/tool/write.ts")
   })
 
+  test("the identity reader actually bites (negative control)", () => {
+    // The tree is clean, so the assertions below only ever see an empty list — which proves nothing
+    // about whether they would report a dirty one. Feed `sitesIn` the exact shape `write.ts` carried
+    // until 2026-07-29 and check it is both READ and classified as the identity.
+    const offender: Source = {
+      name: "packages/core/src/tool/write.ts",
+      text: ["yield* tools.register({", '  write: Tool.withPermission(tool, "write"),', "})"].join("\n"),
+    }
+    expect(sitesIn(offender)).toEqual([{ file: offender.name, line: 2, key: "write", permission: "write" }])
+    expect(sitesIn(offender).filter((site) => site.permission === site.key)).toHaveLength(1)
+
+    // …and the other direction, which matters just as much: a genuine remap must NOT be flagged, or
+    // the guard would order `apply_patch`'s only reason to exist deleted.
+    const remap: Source = {
+      name: "packages/core/src/tool/apply-patch.ts",
+      text: '  apply_patch: Tool.withPermission(tool, "edit"),',
+    }
+    expect(sitesIn(remap)).toEqual([{ file: remap.name, line: 1, key: "apply_patch", permission: "edit" }])
+    expect(sitesIn(remap).filter((site) => site.permission === site.key)).toEqual([])
+  })
+
   test("every call site is readable, and none passes the tool's own registered name", () => {
     expect(
       unaccounted.map(
@@ -336,7 +457,9 @@ describe("no withPermission call is the identity", () => {
       identity.map(
         (site) =>
           `${site.file}:${site.line} — withPermission(…, "${site.permission}") on a tool registered as ` +
-          `"${site.key}" is a no-op: Tool.permission already falls back to the registered name. Delete the wrap.`,
+          `"${site.key}" is a no-op: Tool.permission already falls back to the registered name. Delete the wrap. ` +
+          `(ToolRegistry.register refuses this at runtime too — this arm catches it in a file whose ` +
+          `registration may never run, and reports the file and line instead of a stack.)`,
       ),
     ).toEqual([])
   })

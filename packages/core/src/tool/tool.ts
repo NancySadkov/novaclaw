@@ -205,21 +205,82 @@ export function makeExternal(config: {
   return tool
 }
 
-export const validateName = (name: string) =>
+export const validateName = (name: string): Effect.Effect<void, RegistrationError> =>
   /^[A-Za-z][A-Za-z0-9_-]{0,63}$/.test(name)
     ? Effect.void
     : Effect.fail(new RegistrationError({ name, message: `Invalid tool name: ${name}` }))
 
 /**
- * Point a tool at a permission action OTHER than its own registered name, so one user rule governs
- * several tools. `apply_patch` declaring `edit` is the only live case in the tree: a rule about
- * editing files must reach every tool that edits a file, whatever it is called.
+ * The permission action a tool DECLARED, or `undefined` when it declared none.
  *
- * ⚠️ **Passing a tool's OWN registered name is a literal no-op** — `permission` below already falls
- * back to that name — so such a call adds nothing while reading as a guard. Nine of them
- * (spawn · write · trash · revert · define_tool · quality_provision · register-app · reconfigure ·
- * edit) were deleted on 2026-07-29 with no behaviour change; `test/tool-permission-identity.test.ts`
- * pins the equivalence by exercising the registry and fails if a tenth appears.
+ * Deliberately distinct from `permission` below, which applies the registered-name fallback and
+ * therefore **cannot tell "declared nothing" from "declared its own name"** — the two are the same
+ * answer at every consumer in the tree. Reading the raw declaration is the only way to separate them,
+ * which is what makes the refusal in `validateRegistration` expressible at all.
+ */
+export const declaredPermission = (tool: AnyTool): string | undefined => runtimeOf(tool).permission
+
+/**
+ * The check a registration seam runs before a tool becomes visible: the key must be a legal tool
+ * name, and it must not be the very action the tool already declares. Supersedes a bare
+ * `validateName` call, which it performs first.
+ *
+ * ⚠️ **BOTH registration seams run this** — `ToolRegistry.register` and `ApplicationTools.register`.
+ * A registration is the only kind of seam that can see the violation at all: `withPermission` runs
+ * before the key exists, so it is structurally blind to its own no-op. The application seam has no
+ * caller in shipping source, which is the reason to cover it rather than to skip it — ruling 6's
+ * lesson is that a decision duplicated across call sites diverges at the one nobody exercises. Both
+ * are pinned, each with a negative control, in `test/tool-permission-identity.test.ts`.
+ *
+ * ⚠️ **The second arm is a structural refusal, and it replaces a convention.**
+ * `withPermission(tool, "<the name it is registered under>")` is a literal no-op — `permission` below
+ * already falls back to the registered name — yet it reads as a permission gate at the exact seam
+ * where a reader goes looking for one. Nine tools shipped one until 2026-07-29 (spawn · write · trash ·
+ * revert · define_tool · quality_provision · register-app · reconfigure · edit); deleting them changed
+ * no behaviour, which is the proof that they gated nothing. Deleting was half the job. This is the
+ * other half: the no-op is now impossible to complete rather than merely swept for.
+ *
+ * ⚠️ **Both halves ship, and neither subsumes the other** (todo.md ruling 1). The static sweep in
+ * `test/tool-permission-identity.test.ts` still fails on a call site in shipping source, because a
+ * registration that never runs on this machine — a tool behind a config branch, a package whose tests
+ * do not execute — never reaches this function; and this function still catches what no sweep can
+ * read, a name computed at runtime (an app or an MCP server naming its own tool) or a decorated tool
+ * hoisted into a variable before it is registered.
+ *
+ * A genuine REMAP is untouched and must stay that way — `apply_patch` → `edit`, `glob`/`grep` →
+ * `explore`. If this ever refuses one of those, it is this function that is wrong, not the tool.
+ */
+export const validateRegistration = (name: string, tool: AnyTool): Effect.Effect<void, RegistrationError> =>
+  validateName(name).pipe(
+    Effect.flatMap((): Effect.Effect<void, RegistrationError> => {
+      if (declaredPermission(tool) !== name) return Effect.void
+      return Effect.fail(
+        new RegistrationError({
+          name,
+          message:
+            `Tool "${name}" declares the permission action "${name}" — the same name it is being ` +
+            `registered under. That is a no-op rather than a gate: Tool.permission already falls back ` +
+            `to the registered name, so the tool answers to "${name}" either way. Drop the ` +
+            `Tool.withPermission wrap, or point it at the action this tool must actually answer to.`,
+        }),
+      )
+    }),
+  )
+
+/**
+ * Point a tool at a permission action OTHER than its own registered name, so one user rule governs
+ * several tools. `apply_patch` → `edit` and `glob`/`grep` → `explore` are the live cases in the tree:
+ * a rule about editing files must reach every tool that edits a file, whatever it is called.
+ *
+ * ⚠️ **Passing a tool's OWN registered name is REFUSED by `ToolRegistry.register`** — see
+ * `validateRegistration` above, which carries the full rationale and names the one seam that does
+ * not yet run it.
+ *
+ * ⚠️ **The refusal structurally CANNOT live here.** This function runs *before* the tool has a
+ * registration key: `edit: Tool.withPermission(tool, "edit")` never shows this call the word `edit`,
+ * because the key is the property name of the object literal it is being placed into. So it is blind
+ * to its own no-op by construction, and only a seam that sees the key and the tool together — a
+ * registration — can refuse it.
  */
 export const withPermission = <Input extends SchemaType<any>, Output extends SchemaType<any>>(
   tool: Definition<Input, Output>,
@@ -247,6 +308,11 @@ export const withPermission = <Input extends SchemaType<any>, Output extends Sch
  * advertised name, which is also the action its source asserts at execution time. Do not describe
  * MCP as gated by a shared `mcp` action, and do not reintroduce a per-tool declaration that the
  * execution gate does not spend.
+ *
+ * ⚠️ **Consumers want THIS, not `declaredPermission`.** The `?? name` fallback is the whole gate, so
+ * anything deciding what a tool answers to must go through here. `declaredPermission` exists for the
+ * one question this function is unable to answer — *did the tool declare anything at all* — and the
+ * one caller that needs it is `validateRegistration`.
  */
 export const permission = (tool: AnyTool, name: string) => runtimeOf(tool).permission ?? name
 export const definition = (name: string, tool: AnyTool) => runtimeOf(tool).definition(name)

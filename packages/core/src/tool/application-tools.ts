@@ -43,7 +43,12 @@ export const layer = Layer.effect(
       register: Effect.fn("ApplicationTools.register")(function* (tools) {
         const entries = Object.entries(tools)
         if (entries.length === 0) return
-        yield* Effect.forEach(entries, ([name]) => Tool.validateName(name), { discard: true })
+        // `validateRegistration`, not `validateName` — this is the SECOND seam holding a registration
+        // key and its tool together (`ToolRegistry.register` is the first), and ruling 6's lesson is
+        // that a duplicated decision drifts. It has no shipping caller today, which is exactly why it
+        // would have drifted unnoticed: a self-declared permission is a guard-shaped no-op, and this
+        // seam would have kept accepting one after the registry stopped.
+        yield* Effect.forEach(entries, ([name, tool]) => Tool.validateRegistration(name, tool), { discard: true })
         const registrations = entries.map(([name, tool]) => [name, { identity: {}, tool }] as const)
         yield* state.transform((draft) => {
           for (const [name, entry] of registrations) draft.set(name, entry)

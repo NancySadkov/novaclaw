@@ -47,6 +47,12 @@ const call = (name: string, id = `call-${name}`): ToolRegistry.ExecuteInput => (
   call: { type: "tool-call", id, name, input: { text: name } },
 })
 
+/**
+ * `permission` is a REMAP — the action this tool answers to instead of the name it gets registered
+ * under. Passing a tool's own registration key is refused by `ToolRegistry.register` (see
+ * `Tool.validateRegistration`), so `make("edit")` is only legal for a key that is NOT `edit`; a tool
+ * meant to answer to its own name passes nothing and rides the `Tool.permission` fallback.
+ */
 const make = (permission?: string) => {
   const tool = Tool.make({
     description: "Echo text",
@@ -65,7 +71,14 @@ describe("ToolRegistry", () => {
       yield* service.register({
         question: make(),
         bash: make(),
-        edit: make("edit"),
+        // ⚠️ `edit` declares NOTHING and is still governed by `edit` — that is the fallback in
+        // `Tool.permission`, and it is what makes the last assertion in this test withdraw all three.
+        // It read `make("edit")` until the registry started refusing a tool that declares its own
+        // registration key; the wrap was a no-op then and the deletion changed no expectation below,
+        // which is exactly the claim `test/tool-permission-identity.test.ts` exists to pin.
+        edit: make(),
+        // These two ARE remaps: registered under one name, answering to another. They are the shape
+        // `apply-patch.ts` ships, and the only shape `make(permission)` is still legal for.
         write: make("edit"),
         apply_patch: make("edit"),
       })
