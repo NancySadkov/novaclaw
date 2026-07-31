@@ -65,7 +65,12 @@ import { SessionStrict } from "./strict"
 import { JhStore } from "../../jh/store"
 import type { JhEngine } from "../../jh/engine"
 import { createLLMEventPublisher } from "./publish-llm-event"
-import { attachmentModality, toLLMMessages, unreadableTurnAttachments } from "./to-llm-message"
+import {
+  attachmentModality,
+  needsCapabilityEvidence,
+  toLLMMessages,
+  unreadableTurnAttachments,
+} from "./to-llm-message"
 import { AdhocGuidance } from "../../adhoc-tools/guidance"
 import { Affective } from "./affective"
 import { SessionDrive } from "./drive"
@@ -722,12 +727,15 @@ export const layer = Layer.effect(
       // decision it names. Here we only act on the verdict: refuse BEFORE the request is built, so
       // the user reads "this model can't read images" instead of a provider's media-type 400.
       //
-      // The catalog read is gated on there being an attachment at all, so the overwhelmingly common
-      // attachment-free turn pays nothing; `undefined` capabilities is the pass-everything answer,
-      // which is exactly what an attachment-free turn wants anyway.
-      const modelCapabilities = context.some(
-        (message) => message.type === "user" && (message.files?.length ?? 0) > 0,
-      )
+      // The catalog read is gated on there being MEDIA at all, so the overwhelmingly common
+      // media-free turn pays nothing; `undefined` capabilities is the pass-everything answer, which
+      // is exactly what a media-free turn wants anyway.
+      // ⚠️ The predicate is `to-llm-message`'s and NOT an inline test, and that is the whole point:
+      // this line used to read "some user message has files", which is the ATTACHMENT door only. A
+      // tool-returned image (`read.ts` emits one for jpeg/png/gif/webp today) rides an assistant
+      // message, so the inline form made the capability gate inert for exactly the case Computer Use
+      // will produce — a gate that looked complete and covered one of two doors.
+      const modelCapabilities = needsCapabilityEvidence(context)
         ? yield* models.capabilities({ ...session, model: config.model as typeof session.model })
         : undefined
       const unreadable = unreadableTurnAttachments(context, modelCapabilities)

@@ -4,6 +4,7 @@ import * as OpenAIChat from "@novaclaw/llm/protocols/openai-chat"
 import { ModelV2 } from "@novaclaw/core/model"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { SessionMessage } from "@novaclaw/core/session/message"
+import { SessionOrigin } from "@novaclaw/core/session/origin"
 import { AgentAttachment, FileAttachment } from "@novaclaw/core/session/prompt"
 import { toLLMMessages } from "@novaclaw/core/session/runner/to-llm-message"
 import { SessionV2 } from "@novaclaw/core/session"
@@ -334,6 +335,10 @@ Recent work
           type: "content",
           value: [
             { type: "text", text: "Hello" },
+            // The untrusted-media frame rides AHEAD of the image as its own text part — an image has
+            // no delimiter to prefix, and the words rendered inside the pixels are the thing that
+            // has to be labelled. `read.ts` emits this shape for jpeg/png/gif/webp today.
+            { type: "text", text: SessionOrigin.externalMediaFrame("image", "the read tool") },
             { type: "file", uri: "data:image/png;base64,aGVsbG8=", mime: "image/png", name: "hello.png" },
           ],
         },

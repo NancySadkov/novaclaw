@@ -3,9 +3,12 @@ import {
   ToolCallPart,
   ToolOutput,
   ToolResultPart,
+  ToolResultValue,
   type ContentPart,
   type Model,
   type ProviderMetadata,
+  type ToolContent,
+  type ToolFileContent,
 } from "@novaclaw/llm"
 import { SessionMessage } from "../message"
 import { SessionOrigin } from "../origin"
@@ -139,6 +142,174 @@ export const unreadableTurnAttachments = (
   return []
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// THE SAME GATE, THE OTHER DOOR: media returned as TOOL OUTPUT.
+//
+// Everything above reaches a user's `FileAttachment` through `message.files`. A tool's result never
+// touches any of it: `toolResult()` below lowers `tool.state.content` / `tool.state.result` straight
+// through `ToolOutput.toResultValue`, so until this section existed an image in a tool result
+// reached the provider having consulted NEITHER the capability gate NOR any untrusted-input framing.
+//
+// ⚠️ **THIS IS NOT A HYPOTHETICAL DOOR — `read` WALKS THROUGH IT TODAY.** `tool/read.ts`'s
+// `toModelOutput` returns `{type:"file", data, mime, name}` for jpeg/png/gif/webp, `Tool.make`'s
+// settlement turns that into a `ToolFileContent`, and `toResultValue` lowers it as
+// `{type:"content", value:[…]}` — which `openai-chat.ts` and `anthropic-messages.ts` both lower as
+// real image parts. So `read screenshot.png` on a text-only model failed at the PROVIDER, exactly
+// the fault the attachment gate was built to stop, and did so unframed. Computer Use (the v0.2.0
+// north star) arrives through this same path, which is why it is closed before it lands.
+//
+// TWO decisions are made here, and they are independent of each other:
+//
+//  · **CAPABILITY — replace, never refuse and never drop.** For a user attachment the landed rule is
+//    refuse-the-turn (the image IS the question). A tool result cannot take that rule: it is lowered
+//    from HISTORY, always — `toolResult` only ever runs over an assistant message that is already
+//    recorded — so refusing would not stop a bad turn, it would make every later turn in that chat
+//    refuse forever, on a model the user is free to switch to. That is the dead-end the history arm
+//    already forbids for attachments, and "the UI never crashes to a dead-end" forbids it outright.
+//    Dropping the part silently is the other wrong answer (ruling 2: a dropped image must not read
+//    as a seen one). So the file part becomes an honest notice naming the tool, exactly as history
+//    attachments become `unreadableAttachmentNotice`.
+//    ⚠️ **The residual, stated rather than papered over:** a blind model driving a screenshot loop
+//    now gets told at every step that it cannot see, which is honest but is not a stop. The place to
+//    stop that loop is tool AVAILABILITY — do not offer a screen-capture tool to a model whose
+//    declared input has no `image` — and that lives in the tool registry, not in lowering. It is a
+//    Computer Use P4 obligation; lowering cannot do it, because by the time bytes arrive here the
+//    tool has already run.
+//
+//  · **FRAMING — at lowering, not per-tool, because it is a fact about the MEDIUM.** The five tools
+//    that call `externalContentFrame` do so because THEY know they fetched a stranger's text. Pixels
+//    are different: instruction-shaped text painted into an image is read by a vision model and is
+//    invisible to every string check in this process, whichever tool produced it. That danger is
+//    identical for `webfetch`, for `read`, and for a screenshot tool that does not exist yet — so
+//    the frame belongs at the ONE place every tool result passes through, where a new tool cannot
+//    forget it. See `SessionOrigin.externalMediaFrame` for why it is a sibling text part and not a
+//    prefix, and why it is not a double-frame of a tool that already frames its own text.
+//    ⚠️ This deliberately overrides `read.ts`'s recorded decision not to frame — for its IMAGE
+//    branch only. Both halves of that decision's reasoning are about text: "the frame carries no
+//    fact the turn does not already hold" is false for pixels (a path name says nothing about words
+//    rendered inside them), and "the single hottest tool in the tree" is false for a branch that
+//    fires only on an image, whose bytes already cost a thousand times the frame.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/**
+ * What the MODEL is told in place of a tool-returned file it cannot read. Distinct wording from
+ * `unreadableAttachmentNotice` on purpose: the model asked for this and needs to know WHICH call
+ * came back blind, so the tool is named. Same closing instruction, for the same reason — a small
+ * model handed "an image was returned" will describe it.
+ */
+export const unreadableToolMediaNotice = (
+  file: Pick<ToolFileContent, "mime" | "name">,
+  toolName: string,
+): string => {
+  const modality = attachmentModality(file.mime) ?? "this kind of"
+  return `[The ${toolName} tool returned ${file.name ? `${file.name} ` : ""}(${file.mime}), which was NOT sent to you: the selected model cannot read ${modality} input. You have not seen it — say so rather than describing or guessing its contents.]`
+}
+
+/** The frame that rides immediately ahead of a tool-returned media part. */
+const toolMediaFrame = (file: Pick<ToolFileContent, "mime">, toolName: string): ToolContent => ({
+  type: "text",
+  text: SessionOrigin.externalMediaFrame(attachmentModality(file.mime) ?? "file", `the ${toolName} tool`),
+})
+
+/**
+ * THE one gate for media in a tool result. Both decisions above, applied to a settled content array.
+ *
+ * Reuses `attachmentSupport` rather than re-deriving the tri-state (ruling 6: one gate, not two
+ * synchronised call sites) — so `unknown` means *nobody told us* here too, and a hand-added local
+ * endpoint keeps receiving images exactly as it does today.
+ *
+ * Returns the SAME array when there is nothing to do, so the overwhelmingly common text-only result
+ * pays one `some()` and allocates nothing.
+ */
+const gateToolMedia = (
+  content: ReadonlyArray<ToolContent>,
+  capabilities: InputCapabilities | undefined,
+  toolName: string,
+): ReadonlyArray<ToolContent> => {
+  if (!content.some((part) => part.type === "file")) return content
+  return content.flatMap((part): ToolContent[] => {
+    if (part.type !== "file") return [part]
+    // ⚠️ REPLACE, never delete. An empty `content` sends `structured` instead
+    // (`ToolOutput.toResultValue`), and for `read` that structured value is the whole base64 image —
+    // so deleting the part would ship the bytes again as JSON text, which is worse than sending them
+    // as an image and is invisible in the transcript.
+    if (attachmentSupport(capabilities, part) === "unsupported")
+      return [{ type: "text", text: unreadableToolMediaNotice(part, toolName) }]
+    return [toolMediaFrame(part, toolName), part]
+  })
+}
+
+/**
+ * The `ToolContent` entries inside an opaque settled result, or `undefined` when it holds none.
+ *
+ * ⚠️ The value is widened to `unknown` before the array test ON PURPOSE. `tool.state.result` is
+ * `Schema.Unknown` — a provider wrote it — so "it decodes as the content arm" is a claim about a
+ * *shape we did not build*, and `ToolResultValue.is` only checks the tag plus the presence of a
+ * `value` key. Trusting the schema's declared element type here would be trusting the provider.
+ */
+const contentEntries = (result: unknown): ReadonlyArray<ToolContent> | undefined => {
+  if (!ToolResultValue.is(result)) return undefined
+  // ⚠️ Re-widened by hand rather than relying on the guard to narrow: `ToolResultValue` is assembled
+  // with `Object.assign(Schema.Union([...]), { is })`, and the predicate signature does not survive
+  // that assembly — `result` stays `unknown` to the compiler even inside the `if`. Reading the two
+  // fields off an explicit shape keeps the runtime check exactly as it was while giving the compiler
+  // something to hold, and it does NOT widen trust: the point of this function (see above) is that
+  // the element type is a claim about bytes a PROVIDER wrote, so the `Array.isArray` test below is
+  // the real gate either way.
+  const tagged = result as { readonly type: string; readonly value: unknown }
+  if (tagged.type !== "content") return undefined
+  return Array.isArray(tagged.value) ? (tagged.value as ReadonlyArray<ToolContent>) : undefined
+}
+
+/**
+ * The same gate over a PROVIDER-EXECUTED result, which reaches lowering as an opaque `unknown`
+ * (`tool.state.result`) and never touches `tool.state.content` at all — a third path into the same
+ * door. Anything that is not the `{type:"content"}` shape is passed through untouched: it carries no
+ * `ToolContent`, so there is nothing here to decide about — and rewriting an opaque provider payload
+ * we do not understand would corrupt round-tripped server-tool results.
+ */
+const gateToolResultValue = (
+  result: unknown,
+  capabilities: InputCapabilities | undefined,
+  toolName: string,
+): unknown => {
+  const value = contentEntries(result)
+  if (value === undefined) return result
+  const gated = gateToolMedia(value, capabilities, toolName)
+  return gated === value ? result : { type: "content", value: gated }
+}
+
+const carriesMedia = (content: ReadonlyArray<ToolContent>) => content.some((part) => part.type === "file")
+
+const toolCarriesMedia = (tool: SessionMessage.AssistantTool): boolean => {
+  const state = tool.state
+  if (state.status === "pending") return false
+  if (carriesMedia(state.content)) return true
+  if (state.status === "running") return false
+  const value = contentEntries(state.result)
+  return value !== undefined && carriesMedia(value)
+}
+
+/**
+ * Does lowering this history need the resolved model's declared capabilities?
+ *
+ * ⚠️ **This exists because the runner reads the catalog CONDITIONALLY**, and the condition it used
+ * was "some user message has files" — which is false for a conversation whose only image came back
+ * from a tool. Under that condition `capabilities` arrives `undefined`, `attachmentSupport` answers
+ * `unknown`, and the gate above is inert for exactly the case it was written for. The predicate is
+ * exported (rather than the runner asking twice) so the two doors are decided by ONE function and
+ * cannot drift apart.
+ *
+ * It stays a predicate, not an unconditional read: the catalog lookup costs a turn nothing to skip,
+ * and the overwhelming majority of turns carry no media at all.
+ */
+export const needsCapabilityEvidence = (messages: readonly SessionMessage.Message[]): boolean =>
+  messages.some((message) => {
+    if (message.type === "user") return (message.files?.length ?? 0) > 0
+    if (message.type !== "assistant") return false
+    return message.content.some((item) => item.type === "tool" && toolCarriesMedia(item))
+  })
+
 // Decode a data: URI's payload to text (base64 or percent-encoded). Returns undefined
 // for any other URI scheme or a malformed data URI.
 const textFromDataUri = (uri: string): string | undefined => {
@@ -191,14 +362,29 @@ const toolCall = (tool: SessionMessage.AssistantTool, providerMetadata: Provider
     providerMetadata,
   })
 
-const toolResult = (tool: SessionMessage.AssistantTool, providerMetadata: ProviderMetadata | undefined) => {
+/**
+ * ⚠️ **EVERY read of `tool.state.content` / `tool.state.result` in this function goes through
+ * `gateToolMedia` / `gateToolResultValue`, and that is the invariant, not an implementation detail.**
+ * There are three ways a settled tool reaches the wire — completed, completed-provider-executed, and
+ * error — and a new branch that reaches for the raw arrays would silently re-open the door for every
+ * tool at once. `test/tool-result-media-gate.test.ts` reads this source and fails if a raw read
+ * appears, because such a branch compiles green and nothing else in the tree would notice (ruling 1).
+ */
+const toolResult = (
+  tool: SessionMessage.AssistantTool,
+  providerMetadata: ProviderMetadata | undefined,
+  capabilities: InputCapabilities | undefined,
+) => {
   if (tool.state.status === "completed") {
     // TODO: Materialize remote and managed URIs before provider-history lowering.
     // ToolOutput.toResultValue rejects unresolved URIs rather than treating them as media bytes.
     const result =
       tool.provider?.executed === true && tool.state.result !== undefined
-        ? tool.state.result
-        : ToolOutput.toResultValue({ structured: tool.state.structured, content: tool.state.content })
+        ? gateToolResultValue(tool.state.result, capabilities, tool.name)
+        : ToolOutput.toResultValue({
+            structured: tool.state.structured,
+            content: gateToolMedia(tool.state.content, capabilities, tool.name),
+          })
     return ToolResultPart.make({
       id: tool.id,
       name: tool.name,
@@ -211,10 +397,19 @@ const toolResult = (tool: SessionMessage.AssistantTool, providerMetadata: Provid
     return ToolResultPart.make({
       id: tool.id,
       name: tool.name,
+      // The error arm gates too. A failed tool's `content` is lowered as JSON inside the error value
+      // rather than as image parts, so an unreadable file here would not reach the model as an image
+      // — it would reach it as the whole base64 data: URI stringified into the prompt, which is the
+      // context blow-up `anthropic-messages.ts` names by hand. The notice is strictly smaller and
+      // strictly truer. Media the model CAN read is left alone: this arm changes nothing for it.
       result:
         tool.provider?.executed === true && tool.state.result !== undefined
-          ? tool.state.result
-          : { error: tool.state.error, content: tool.state.content, structured: tool.state.structured },
+          ? gateToolResultValue(tool.state.result, capabilities, tool.name)
+          : {
+              error: tool.state.error,
+              content: gateToolMedia(tool.state.content, capabilities, tool.name),
+              structured: tool.state.structured,
+            },
       resultType: "error",
       providerExecuted: tool.provider?.executed,
       providerMetadata,
@@ -222,7 +417,11 @@ const toolResult = (tool: SessionMessage.AssistantTool, providerMetadata: Provid
   }
 }
 
-const assistant = (message: SessionMessage.Assistant, model: Model) => {
+const assistant = (
+  message: SessionMessage.Assistant,
+  model: Model,
+  capabilities: InputCapabilities | undefined,
+) => {
   const sameModel =
     String(message.model.providerID) === String(model.provider) && String(message.model.id) === String(model.id)
   const reuseProviderMetadata = sameModel && message.error === undefined
@@ -245,6 +444,7 @@ const assistant = (message: SessionMessage.Assistant, model: Model) => {
     const result = toolResult(
       item,
       reuseProviderMetadata ? (item.provider.resultMetadata ?? item.provider.metadata) : undefined,
+      capabilities,
     )
     return result ? [call, result] : [call]
   })
@@ -266,7 +466,11 @@ const assistant = (message: SessionMessage.Assistant, model: Model) => {
   const results = message.content
     .filter((item): item is SessionMessage.AssistantTool => item.type === "tool" && item.provider?.executed !== true)
     .map((item) =>
-      toolResult(item, reuseProviderMetadata ? (item.provider?.resultMetadata ?? item.provider?.metadata) : undefined),
+      toolResult(
+        item,
+        reuseProviderMetadata ? (item.provider?.resultMetadata ?? item.provider?.metadata) : undefined,
+        capabilities,
+      ),
     )
     .filter((message) => message !== undefined)
     .map(Message.tool)
@@ -318,7 +522,7 @@ function toLLMMessage(
         }),
       ]
     case "assistant":
-      return assistant(message, model)
+      return assistant(message, model, capabilities)
     case "compaction":
       return [
         Message.make({
@@ -344,9 +548,11 @@ ${message.recent}
 /**
  * Translate projected V2 Session history into canonical @novaclaw/llm context.
  *
- * `capabilities` is the RESOLVED catalog model's declared input modalities. Omitted (or
+ * `capabilities` is the RESOLVED catalog model's declared input modalities, and it gates BOTH doors
+ * into the context window: a user's attachments and a tool's returned media. Omitted (or
  * `undefined`) means *no evidence* and lowers exactly as it always has — that default is what keeps
- * every existing caller, test seam and hand-added local endpoint behaving unchanged.
+ * every existing caller, test seam and hand-added local endpoint behaving unchanged. Ask
+ * `needsCapabilityEvidence(messages)` whether it is worth resolving.
  */
 export const toLLMMessages = (
   messages: readonly SessionMessage.Message[],
