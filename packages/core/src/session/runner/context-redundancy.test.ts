@@ -71,8 +71,14 @@ const carries = (messages: ReadonlyArray<Message>, body: string) => messages.som
 const noticeCount = (messages: ReadonlyArray<Message>) =>
   messages.filter((m) => textOf(m).startsWith(ELISION_NOTICE_PREFIX)).length
 
-/** An assistant that lowers to `{"role":"assistant","content":null}` — wire-illegal. */
-const lowersToNullContent = (message: Message) =>
+/**
+ * An assistant with neither a text part nor a tool call — nothing a wire can render as speech.
+ * ⚠️ Not "wire-illegal": the old `{"role":"assistant","content":null}` form was measured returning
+ * HTTP 200 from a real backend. It is a wasted turn, and since 2026-07-31 `openai-chat` omits it
+ * outright while the other routes lower it to a legal-but-empty block. See the fuller note on the
+ * twin of this helper in `context-pack.test.ts`.
+ */
+const unrenderableAssistant = (message: Message) =>
   message.role === "assistant" &&
   !message.content.some((part) => part.type === "text") &&
   !message.content.some((part) => part.type === "tool-call")
@@ -94,7 +100,7 @@ const expectWireLegal = (messages: ReadonlyArray<Message>) => {
     expect(id).not.toBe("")
     expect(callIds.has(id)).toBe(true)
   }
-  expect(messages.some(lowersToNullContent)).toBe(false)
+  expect(messages.some(unrenderableAssistant)).toBe(false)
   expect(messages.some((m) => m.role === "system")).toBe(false)
 }
 

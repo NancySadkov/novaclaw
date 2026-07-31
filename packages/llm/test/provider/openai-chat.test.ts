@@ -462,17 +462,133 @@ describe("OpenAI Chat route", () => {
     }),
   )
 
-  it.effect("lowers reasoning-only assistant history", () =>
+  // ⭐ This pin used to assert `[{ role: "assistant", content: null, reasoning_content: "hidden" }]`
+  // as CORRECT — it was green, and it was pinning the defect. A turn that thought and produced
+  // nothing else is a NORMAL finish for a thinking model, the row is durable, and qwen's chat
+  // template strips think blocks, so that shape renders as an empty assistant turn in the prompt
+  // the model actually sees, on every subsequent request, forever. Its real intent (reasoning
+  // reaches this wire at all) is held independently by "replays canonical reasoning as
+  // OpenAI-compatible reasoning_content" above, which is untouched.
+  //
+  // The user turns on both sides are load-bearing: they are the realistic shape (the empty-turn
+  // recovery steers straight after), and they prove the drop does not empty the request.
+  it.effect("omits a reasoning-ONLY assistant instead of sending content:null", () =>
     Effect.gen(function* () {
       const prepared = yield* LLMClient.prepare<OpenAIChat.OpenAIChatBody>(
         LLM.request({
           id: "req_reasoning",
           model,
-          messages: [Message.assistant({ type: "reasoning", text: "hidden" })],
+          messages: [
+            Message.user("do the thing"),
+            Message.assistant({ type: "reasoning", text: "hidden" }),
+            Message.user("well?"),
+          ],
         }),
       )
 
-      expect(prepared.body.messages).toEqual([{ role: "assistant", content: null, reasoning_content: "hidden" }])
+      expect(prepared.body.messages).toEqual([
+        { role: "user", content: "do the thing" },
+        { role: "user", content: "well?" },
+      ])
+    }),
+  )
+
+  // The guard keys on the two RENDERABLE channels, not on "has reasoning". `[reasoning, tool-call]`
+  // is the everyday assistant shape on our canonical `dgx-spark/qwen3.6-35b`; a mis-keyed guard
+  // would delete it and break every tool loop while the test above stayed green.
+  it.effect("keeps reasoning that accompanies a tool call", () =>
+    Effect.gen(function* () {
+      const prepared = yield* LLMClient.prepare<OpenAIChat.OpenAIChatBody>(
+        LLM.request({
+          id: "req_reasoning_tool",
+          model,
+          messages: [
+            Message.user("count the files"),
+            Message.assistant([
+              { type: "reasoning", text: "I should call ls" },
+              { type: "tool-call", id: "call_1", name: "ls", input: {} },
+            ]),
+          ],
+        }),
+      )
+
+      expect(prepared.body.messages).toEqual([
+        { role: "user", content: "count the files" },
+        {
+          role: "assistant",
+          content: null,
+          tool_calls: [{ id: "call_1", type: "function", function: { name: "ls", arguments: "{}" } }],
+          reasoning_content: "I should call ls",
+        },
+      ])
+    }),
+  )
+
+  // ⚠️ The drop is UNCONDITIONAL with respect to reasoning `providerMetadata`, and that is the
+  // whole difference between this fix and the core-side one that was rejected. A guard that
+  // exempts a reasoning part carrying provider state (`if (… && reasoning.every((p) =>
+  // p.providerMetadata === undefined))`) passes every other test in this file and still emits
+  // `{"role":"assistant","content":null,"reasoning_content":""}` — verbatim the reported defect.
+  // It is exempt-shaped for a reason that does not apply here: an Anthropic `signature` and an
+  // OpenAI Responses `itemId` ARE round-trip carriers, but only on their own wires. This lowering
+  // reads `part.text` and nothing else from a reasoning part, so on THIS wire such a message
+  // carries literally zero information whatever its metadata — the mapper keeps it
+  // (`@novaclaw/core` session/runner/to-llm-message.ts, pinned by session-runner-message.test.ts)
+  // precisely because the mapper cannot know which protocol it is feeding; this one can.
+  //
+  // The rows also cover the shapes a mis-keyed guard would leak: zero content parts at all, and
+  // more than one reasoning part.
+  it.effect("drops an unrenderable assistant whatever its reasoning carries", () =>
+    Effect.gen(function* () {
+      const unrenderable = [
+        // The shape `to-llm-message.ts` deliberately keeps alive as an Anthropic metadata carrier.
+        [{ type: "reasoning" as const, text: "", providerMetadata: { anthropic: { signature: "sig_1" } } }],
+        // The shape `openai-responses` reads back as `itemId`; this wire never sees the field.
+        [{ type: "reasoning" as const, text: "think", providerMetadata: { openai: { itemId: "rs_1" } } }],
+        [
+          { type: "reasoning" as const, text: "a" },
+          { type: "reasoning" as const, text: "b" },
+        ],
+        [],
+      ]
+
+      for (const content of unrenderable) {
+        const prepared = yield* LLMClient.prepare<OpenAIChat.OpenAIChatBody>(
+          LLM.request({ model, messages: [Message.user("u1"), Message.assistant(content), Message.user("u2")] }),
+        )
+
+        expect(prepared.body.messages).toEqual([
+          { role: "user", content: "u1" },
+          { role: "user", content: "u2" },
+        ])
+      }
+    }),
+  )
+
+  // The deliberate NON-coverage, pinned so widening it is a decision rather than an accident.
+  // `""` is a different wire shape from `null`: it is a legal assistant turn that renders as an
+  // empty string, and `to-llm-message.ts` already strips empty text parts upstream, so nothing
+  // known produces it. Whether to drop it too needs its own measurement — until then, a guard
+  // keyed on the JOINED text rather than on `content.length` would silently swallow this.
+  it.effect("keeps an empty-string assistant, which is a different wire shape from null", () =>
+    Effect.gen(function* () {
+      const prepared = yield* LLMClient.prepare<OpenAIChat.OpenAIChatBody>(
+        LLM.request({
+          model,
+          messages: [
+            Message.user("u1"),
+            Message.assistant([
+              { type: "reasoning", text: "hidden" },
+              { type: "text", text: "" },
+            ]),
+          ],
+        }),
+      )
+
+      expect(prepared.body.messages).toEqual([
+        { role: "user", content: "u1" },
+        { role: "assistant", content: "", reasoning_content: "hidden" },
+      ])
     }),
   )
 

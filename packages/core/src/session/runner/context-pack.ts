@@ -119,9 +119,16 @@ const toolResultIds = (messages: ReadonlyArray<Message>): Set<string> => {
  * the bug. `[reasoning, tool-call]` is the NORMAL assistant shape for a thinking model (our
  * canonical `dgx-spark/qwen3.6-35b` is one): `to-llm-message.ts` emits the reasoning part whenever
  * the turn came from the same model. Strip the unanswered call and a reasoning-ONLY message
- * survives the length test, then lowers to `{"role":"assistant","content":null}` with no
- * `tool_calls` (`packages/llm/src/protocols/openai-chat.ts` `lowerAssistantMessage`) — chain-of-
- * thought narrating a call and a result that have both been deleted.
+ * survives the length test — chain-of-thought narrating a call and a result that have both been
+ * deleted.
+ *
+ * ⚠️ That remainder is no longer wire-illegal on every route, and this pass is NOT redundant
+ * because of it. `openai-chat` / `openai-compatible-chat` now OMIT such a message outright
+ * (`packages/llm/src/protocols/openai-chat.ts` `lowerAssistantMessage`, 2026-07-31 — the drop is
+ * per-wire, so it lives at the lowering, ruling 6). But `anthropic-messages`, `gemini` and
+ * `bedrock-converse` all lower it to a well-formed, merely semantically-empty block, so THOSE
+ * wires would still carry the orphaned narration. Keeping it off them is exactly what this pass
+ * is for; the two predicates look alike and answer different questions.
  *
  * The full `ContentPart` union (`packages/llm/src/schema/messages.ts`) is
  * `text | media | tool-call | tool-result | reasoning`. Only `reasoning` is non-renderable on its

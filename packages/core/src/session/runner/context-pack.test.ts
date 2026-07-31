@@ -29,11 +29,17 @@ const assistantThinkCall = (id: string, thought = "let me read it") =>
   Message.assistant([reasoning(thought), { type: "tool-call", id, name: "read", input: { path: "a" } }])
 
 /**
- * The wire predicate the fix exists for: an assistant that lowers to
- * `{"role":"assistant","content":null}` with no tool_calls (openai-chat `lowerAssistantMessage`
- * emits `content: null` when there are no text parts and omits `tool_calls` when there are none).
+ * An assistant with neither a text part nor a tool call — nothing a wire can render as speech.
+ *
+ * ⚠️ It no longer lowers the same way everywhere, and the old name for this
+ * (`lowersToNullContent`) has stopped being true: `openai-chat` and `openai-compatible-chat` now
+ * OMIT such a message outright (`packages/llm/src/protocols/openai-chat.ts`
+ * `lowerAssistantMessage`, 2026-07-31 — the answer is per-wire, so the drop lives at the lowering),
+ * while `anthropic-messages`, `gemini` and `bedrock-converse` all lower it to a well-formed but
+ * semantically EMPTY block. Keeping it off THOSE wires is exactly what this pass is still for, so
+ * the two predicates look alike and are not the same check.
  */
-const lowersToNullContent = (message: Message) =>
+const unrenderableAssistant = (message: Message) =>
   message.role === "assistant" &&
   !message.content.some((part) => part.type === "text") &&
   !message.content.some((part) => part.type === "tool-call")
@@ -109,15 +115,17 @@ describe("dropDanglingToolCalls", () => {
     expect(dropDanglingToolCalls(messages)).toEqual(messages)
   })
 
-  // The thinking-model defect: `remaining.length === 0` is not "nothing meaningful remains" —
-  // a surviving reasoning part defeats it and the message reaches the provider as
-  // {"role":"assistant","content":null} with no tool_calls.
+  // The thinking-model defect: `remaining.length === 0` is not "nothing meaningful remains" — a
+  // surviving reasoning part defeats it, and the wreckage then narrates to the provider a call and
+  // a result that were BOTH deleted. What that looks like is per-wire: a legal-but-empty `thinking`
+  // block on anthropic-messages/gemini/bedrock, and nothing at all on openai-chat, which omits it
+  // at the lowering (2026-07-31). The name below is kept because the shape is what matters here.
   test("a reasoning-ONLY remainder is dropped, not sent as content:null", () => {
     const messages = [user("go"), assistantThinkCall("c1")]
     const repaired = dropDanglingToolCalls(messages)
     expect(repaired).toHaveLength(1)
     expect(repaired[0]!.role).toBe("user")
-    expect(repaired.some(lowersToNullContent)).toBe(false)
+    expect(repaired.some(unrenderableAssistant)).toBe(false)
   })
 
   test("multiple reasoning parts around a dangling call still count as nothing renderable", () => {
@@ -138,7 +146,7 @@ describe("dropDanglingToolCalls", () => {
     const repaired = dropDanglingToolCalls([message])
     expect(repaired).toHaveLength(1)
     expect(repaired[0]!.content.map((part) => part.type)).toEqual(["reasoning", "text"])
-    expect(lowersToNullContent(repaired[0]!)).toBe(false)
+    expect(unrenderableAssistant(repaired[0]!)).toBe(false)
   })
 
   test("a thinking assistant whose call IS answered is untouched", () => {
@@ -160,7 +168,7 @@ describe("dropDanglingToolCalls", () => {
     )
     expect(callIds).toEqual(["c2"])
     expect(resultIds).toEqual(["c2"])
-    expect(repaired.some(lowersToNullContent)).toBe(false)
+    expect(repaired.some(unrenderableAssistant)).toBe(false)
   })
 })
 
@@ -252,7 +260,7 @@ describe("pack", () => {
     // Newest turn: the model thought, called a tool, and was aborted before the result existed.
     const messages = [user("original task"), assistantText("ok"), assistantThinkCall("c1")]
     const result = pack(messages, 10_000)
-    expect(result.messages.some(lowersToNullContent)).toBe(false)
+    expect(result.messages.some(unrenderableAssistant)).toBe(false)
     expect(result.changed).toBe(true)
     expect(result.messages.some(isRealUserMessage)).toBe(true)
   })
@@ -261,7 +269,7 @@ describe("pack", () => {
     const filler = "q".repeat(8000)
     const messages = [user("original task"), assistantText(filler), assistantThinkCall("c1")]
     const result = pack(messages, 100)
-    expect(result.messages.some(lowersToNullContent)).toBe(false)
+    expect(result.messages.some(unrenderableAssistant)).toBe(false)
     // The anchor still survives even though the tail was dropped entirely.
     expect(result.messages.some(isRealUserMessage)).toBe(true)
   })

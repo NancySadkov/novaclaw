@@ -369,15 +369,61 @@ const lowerAssistantMessage = Effect.fn("OpenAIChat.lowerAssistantMessage")(func
       continue
     }
   }
-  return {
-    role: "assistant" as const,
-    content: content.length === 0 ? null : ProviderShared.joinText(content),
-    tool_calls: toolCalls.length === 0 ? undefined : toolCalls,
-    reasoning_content:
-      reasoning.length > 0
-        ? reasoning.map((part) => part.text).join("")
-        : openAICompatibleReasoningContent(message.native?.openaiCompatible),
-  }
+  // ⭐ OMITTED, not refused. `text` and `tool_calls` are this wire's only renderable assistant
+  // channels; an assistant with neither lowers to `{"role":"assistant","content":null}` with no
+  // `tool_calls`, and `reasoning_content` is a vLLM/DeepSeek extension, not an OpenAI field —
+  // qwen's own chat template STRIPS think blocks (verified live: `@novaclaw/core`
+  // session/runner/reasoning-budget.ts), so the turn renders as an EMPTY assistant message in the
+  // prompt the model actually sees. A thinking model that reasons and produces nothing else mints
+  // this shape on a NORMAL finish (`@novaclaw/core` session/runner/doom-loop.ts
+  // `isEmptyAssistantTurn`, whose own comment states the same two-channel rule this guard keys on),
+  // and the row is durable, so it is re-sent on every later turn forever.
+  //
+  // Why omit rather than `unsupportedContent`: `InvalidRequestReason.retryable` is `false`
+  // (schema/errors.ts), so a refusal would turn one routine empty turn into a permanently
+  // unrunnable session. Ruling 2 agrees — there is no fault to describe: the reasoning is
+  // model-authored scratch, the durable transcript still holds it, and the user still sees it.
+  // Refusal is right one branch up, for MEDIA, because that is user-authored content this wire
+  // cannot carry and silence would lose the user's own data.
+  //
+  // ⚠️ Why HERE and not in `@novaclaw/core` (ruling 6): the answer is per-wire, not shared.
+  // Anthropic lowers the same message to a legal `thinking` block carrying the signature it must
+  // echo back, Gemini to `{thought:true}`, Bedrock to `reasoningContent`, and `openai-responses`
+  // ALREADY omits it (`lowerReasoning` returns undefined without an itemId) — precedent for this
+  // exact drop in this exact layer. A core-side drop would strip all four, and it was rejected for
+  // that reason: it turns `session-runner-message.test.ts` red on two round-trip pins that exist to
+  // keep an empty-text reasoning part alive as a metadata carrier. `openai-compatible-chat`
+  // inherits this fix for free — it reuses `OpenAIChat.protocol` verbatim, and that is the local
+  // vLLM/qwen3.6-35b path where this actually bites.
+  //
+  // The condition keys on the two renderable channels, NOT on "has reasoning": `[reasoning,
+  // tool-call]` is the normal thinking-model assistant and must survive untouched. It is also
+  // UNCONDITIONAL with respect to reasoning `providerMetadata` — an Anthropic signature or an
+  // OpenAI Responses `itemId` never reaches this body (only `part.text` is read below), so on THIS
+  // wire the message carries zero information whatever it is carrying for another one. Exempting
+  // metadata here is the mistake that leaves the defect reachable, and it is pinned red by "drops
+  // an unrenderable assistant whatever its reasoning carries". Note what the guard narrows: past
+  // it, `content.length === 0` implies `toolCalls.length > 0`, so `content: null` now ships ONLY
+  // alongside `tool_calls` — the one configuration our own recorded cassettes show a live backend
+  // accepting.
+  //
+  // ⚠️ KNOWN RESIDUAL, deliberately not handled here: if this drops the last entry, `fromRequest`
+  // emits `messages: []`, which a backend rejects. Measured over the owner's real sessions it
+  // happens only for a session with NO user message at all, and only before `lowerMessages`
+  // prepends the system turn — which `@novaclaw/core` always supplies, so the production floor is a
+  // system-only request, not an empty array. An empty-request guard is a separate decision.
+  if (content.length === 0 && toolCalls.length === 0) return []
+  return [
+    {
+      role: "assistant" as const,
+      content: content.length === 0 ? null : ProviderShared.joinText(content),
+      tool_calls: toolCalls.length === 0 ? undefined : toolCalls,
+      reasoning_content:
+        reasoning.length > 0
+          ? reasoning.map((part) => part.text).join("")
+          : openAICompatibleReasoningContent(message.native?.openaiCompatible),
+    },
+  ]
 })
 
 const lowerToolMessages = Effect.fn("OpenAIChat.lowerToolMessages")(function* (message: OpenAIChatRequestMessage) {
@@ -405,7 +451,8 @@ const lowerToolMessages = Effect.fn("OpenAIChat.lowerToolMessages")(function* (m
 
 const lowerMessage = Effect.fn("OpenAIChat.lowerMessage")(function* (message: OpenAIChatRequestMessage) {
   if (message.role === "user") return [yield* lowerUserMessage(message)]
-  if (message.role === "assistant") return [yield* lowerAssistantMessage(message)]
+  // 0..n, like `lowerToolMessages` — the assistant arm drops unrenderable messages (see there).
+  if (message.role === "assistant") return yield* lowerAssistantMessage(message)
   return (yield* lowerToolMessages(message)).messages
 })
 

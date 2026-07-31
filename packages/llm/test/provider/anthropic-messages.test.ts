@@ -362,6 +362,44 @@ describe("Anthropic Messages route", () => {
     }),
   )
 
+  // ⭐ THE LAYER CONTROL for the openai-chat reasoning-only drop (2026-07-31). openai-chat OMITS a
+  // reasoning-ONLY assistant because `content` + `tool_calls` are its only renderable channels;
+  // this wire lowers the same message to a legal `thinking` block that CARRIES the signature
+  // Anthropic requires echoed back. That asymmetry is the whole reason the drop lives in the
+  // protocol lowering and not in `@novaclaw/core` (ruling 6), and ruling 1 says a layering
+  // decision with no mechanical check does not exist — so this goes red the moment anyone hoists
+  // the drop into a shared or core location.
+  //
+  // Honest about its marginal value (measured, 2026-07-31): the sibling above (`lowers preserved
+  // Anthropic reasoning signature metadata`) ALSO goes red on that hoist — both fail together. So
+  // this is not the only guard against the stated threat; what it adds over the sibling's partial
+  // match on a lone assistant is POSITION, which the sibling cannot see. Pinning the assistant
+  // reordering out of a two-message array was verified by `messages.unshift(...)` in the lowering:
+  // this test failed, the sibling passed.
+  it.effect("a reasoning-only assistant still lowers to a signed thinking block", () =>
+    Effect.gen(function* () {
+      const prepared = yield* LLMClient.prepare<AnthropicMessages.AnthropicMessagesBody>(
+        LLM.request({
+          model,
+          // The default `cache: "auto"` policy would stamp `cache_control` onto the user turn; this
+          // test is about the assistant block, so pin the policy off to keep the array exact.
+          cache: "none",
+          messages: [
+            Message.user("go"),
+            Message.assistant([
+              { type: "reasoning", text: "hidden", providerMetadata: { anthropic: { signature: "sig_1" } } },
+            ]),
+          ],
+        }),
+      )
+
+      expect(prepared.body.messages).toEqual([
+        { role: "user", content: [{ type: "text", text: "go" }] },
+        { role: "assistant", content: [{ type: "thinking", thinking: "hidden", signature: "sig_1" }] },
+      ])
+    }),
+  )
+
   it.effect("parses text, reasoning, and usage stream fixtures", () =>
     Effect.gen(function* () {
       const body = sseEvents(
