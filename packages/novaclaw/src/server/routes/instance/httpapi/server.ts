@@ -104,7 +104,7 @@ import { schemaErrorLayer as v2SchemaErrorLayer } from "@novaclaw/server/middlew
 import { workspaceHandlers } from "./handlers/workspace"
 import { instanceContextLayer } from "./middleware/instance-context"
 import { workspaceRoutingLayer } from "./middleware/workspace-routing"
-import { disposeMiddleware } from "./lifecycle"
+import { disposeMiddleware, locationDisposerLayer } from "./lifecycle"
 import { memoMap } from "@novaclaw/core/effect/memo-map"
 import { compressionLayer } from "./middleware/compression"
 import { corsVaryFix } from "./middleware/cors-vary"
@@ -341,6 +341,11 @@ export function createRoutes(
     serverRoutes,
     docRoute,
     uiRoute,
+    // Not a route: it registers the "release this directory's location graph on instance disposal"
+    // disposer. Merged as a ROOT rather than provided to a group, because it used to live inside the
+    // pty handler group — which made every dispose path (the `/instance` endpoint, the init-git
+    // reload, shutdown) contingent on the Terminal routes being mounted. See `./lifecycle`.
+    locationDisposerLayer,
   ).pipe(
     Layer.provide([
       errorLayer,

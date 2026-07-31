@@ -12,7 +12,6 @@ import { Effect, Layer, Schema } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
 import { InstanceHttpApi } from "../api"
 import { rejectUnknownConfigKeys } from "../groups/config"
-import { markInstanceForDisposal } from "../lifecycle"
 
 export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (handlers) =>
   Effect.gen(function* () {
@@ -32,8 +31,47 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
 
     // Config→SQLite step 9: settings are instance-wide, so the instance-scoped update routes
     // through the same store router as the global one (there is no per-instance config.json
-    // anymore). Invalidate refreshes the service's cached store view; disposal makes location
-    // boots re-snapshot.
+    // anymore). `invalidate()` refreshes the service's cached store view.
+    //
+    // ─── v0.2.0-prep B7, FINAL STEP: a settings change is not a reboot (ruling 3) ─────────────────
+    //
+    // This handler used to end with `markInstanceForDisposal(...)`, which deferred an
+    // `InstanceStore.dispose` to the post-response middleware: the instance was dropped from the
+    // store, every `InstanceState` cache in the process was invalidated, and the whole per-location
+    // layer graph was released. **Saving a preference killed the user's terminals, failed every
+    // pending permission ask, and shut down every MCP child**, then paid a ~1 s location boot on the
+    // next request. That was the only reason an edited setting applied at all — root cause S1: every
+    // runtime-editable value was snapshotted at layer-build time, so the only repair was destroying
+    // the layer graph.
+    //
+    // It is gone because the four cures that replace it are all in the tree, each read-through or
+    // re-materialising at the write itself rather than at a rebuild:
+    //   · tier-1   — `Config.entries()` reads through to the store; the runner derives harness config
+    //                per turn, so every plain settings key is live with no invalidation at all.
+    //   · tier-2a  — `tool/profile.ts` gates on a live per-turn availability predicate instead of a
+    //                layer-scope snapshot.
+    //   · tier-2b  — `filesystem/watcher.ts` RE-SUBSCRIBES on a `watcher.ignore` change (an OS
+    //                subscription cannot be read through), fired from `ConfigStoreWrite.apply`.
+    //   · tier-2c+ — the per-domain reload registry in `ConfigStoreWrite.apply` re-materialises the
+    //                domains that are a built graph: agents · commands · references · skills, and
+    //                (added with this step) the CATALOG, i.e. providers/models plus the integrations
+    //                derived from them. Without that last one, dropping the teardown would have
+    //                silently broken AGENTS.md's self-healing example — one PATCH fixing a moved
+    //                provider URL, no restart. Measured, then fixed:
+    //                `packages/core/test/config-catalog-reload.test.ts`.
+    //
+    // `Offline.reload()` rides the same chokepoint (A3), so the airgap applies immediately too.
+    //
+    // ⚠️ What is NOT yet live, so nobody reads this as "everything applies": the novaclaw-side
+    // per-instance `InstanceState` caches (`Config`, `Agent`, `MCP`, `Skill`, `Format`) were also
+    // refreshed by that teardown and have no other invalidation — `Config.invalidate()` clears only
+    // the process-global store view, and there are ZERO callers of `InstanceState.invalidate` in the
+    // tree. The keys behind them (`mcp` via a config import, `formatter`, `snapshots`, `plugins`)
+    // still want a restart. They are tracked as B7 tier-3 rather than fixed here: their cure is a
+    // per-service refresh registry like the one above, NOT a blanket cache flush — a blanket flush is
+    // what shuts MCP children down and fails pending asks, i.e. this defect wearing a smaller
+    // footprint. `GET /config` is unaffected either way: it answers from `ConfigStoreWrite.overlay`,
+    // which reads the stores directly.
     const update = Effect.fn("ConfigHttpApi.update")(function* (ctx) {
       // Ruling 2, FIRST: an unknown top-level key never survives the payload decode
       // (`onExcessProperty: "ignore"`), so it would answer 200 for a write that never happened.
@@ -43,7 +81,6 @@ export const configHandlers = HttpApiBuilder.group(InstanceHttpApi, "config", (h
       yield* rejectUnknownConfigKeys(ctx.request)
       const consumed = yield* ConfigStoreWrite.apply(ctx.payload)
       if (consumed.size > 0) yield* configSvc.invalidate()
-      yield* markInstanceForDisposal(yield* InstanceState.context)
       // Answer with what the STORES hold, never an echo of the request (ruling 2: a failed mutation
       // never reports success). An echo claims success for a key that did not route — `models` was
       // swallowed entirely until Wave 1 — and misreports a write whose stored shape differs from

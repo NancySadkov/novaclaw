@@ -1,5 +1,4 @@
 import * as InstanceState from "@/effect/instance-state"
-import { registerDisposer } from "@/effect/instance-registry"
 import { InstanceRef, WorkspaceRef } from "@/effect/instance-ref"
 import { Pty } from "@novaclaw/core/pty"
 import { PtyProtocol } from "@novaclaw/core/pty/protocol"
@@ -43,10 +42,6 @@ export const ptyHandlers = HttpApiBuilder.group(InstanceHttpApi, "pty", (handler
     const tickets = yield* PtyTicket.Service
     const cors = yield* CorsConfig
     const locations = yield* LocationServiceMap.Service
-    const unregister = registerDisposer((directory) =>
-      Effect.runPromise(locations.invalidate(Location.Ref.make({ directory: AbsolutePath.make(directory) }))),
-    )
-    yield* Effect.addFinalizer(() => Effect.sync(unregister))
 
     const pty = Effect.fnUntraced(function* <A, E, R>(effect: Effect.Effect<A, E, R>) {
       return yield* effect.pipe(
@@ -163,10 +158,6 @@ export const ptyConnectHandlers = HttpApiBuilder.group(PtyConnectApi, "pty-conne
     const tickets = yield* PtyTicket.Service
     const cors = yield* CorsConfig
     const locations = yield* LocationServiceMap.Service
-    const unregister = registerDisposer((directory) =>
-      Effect.runPromise(locations.invalidate(Location.Ref.make({ directory: AbsolutePath.make(directory) }))),
-    )
-    yield* Effect.addFinalizer(() => Effect.sync(unregister))
 
     const pty = Effect.fnUntraced(function* <A, E, R>(effect: Effect.Effect<A, E, R>) {
       return yield* effect.pipe(
