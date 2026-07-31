@@ -124,10 +124,19 @@ describe("LocationServiceMap", () => {
             "js",
             "kb",
             "messenger",
+            // ⚠️ `profile` joined this list on 2026-07-31 and that is a DELIBERATE behaviour change, not
+            // drift. It used to skip `tools.register` at layer scope unless the profile was enabled AND
+            // non-empty; B7 tier-2 made the switch a live per-turn availability predicate and dropped the
+            // emptiness half as a gate (an empty profile is a tool whose OUTPUT is empty, and conflating
+            // the two made "the user forbade this" and "the user has not typed anything yet" the same
+            // observation). So a fresh instance now advertises it. If this line ever needs removing again,
+            // that is a real regression in the availability predicate — check it before editing the list.
+            "profile",
             "quality_provision",
             "question",
             "read",
             "read-hex",
+            "recipe",
             "reconfigure",
             "register-app",
             "revert",
@@ -159,10 +168,19 @@ describe("LocationServiceMap", () => {
             "js",
             "kb",
             "messenger",
+            // ⚠️ `profile` joined this list on 2026-07-31 and that is a DELIBERATE behaviour change, not
+            // drift. It used to skip `tools.register` at layer scope unless the profile was enabled AND
+            // non-empty; B7 tier-2 made the switch a live per-turn availability predicate and dropped the
+            // emptiness half as a gate (an empty profile is a tool whose OUTPUT is empty, and conflating
+            // the two made "the user forbade this" and "the user has not typed anything yet" the same
+            // observation). So a fresh instance now advertises it. If this line ever needs removing again,
+            // that is a real regression in the availability predicate — check it before editing the list.
+            "profile",
             "quality_provision",
             "question",
             "read",
             "read-hex",
+            "recipe",
             "reconfigure",
             "register-app",
             "revert",

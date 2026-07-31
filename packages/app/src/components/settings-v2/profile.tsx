@@ -13,7 +13,13 @@ import "./settings-v2.css"
 // short "about me"; the Enable switch is the master consent gate. When enabled, the model can look the
 // profile up ON DEMAND through the `profile` tool (core/tool/profile.ts) instead of it always sitting
 // in the prompt — off means the assistant never sees it. Persisting goes through updateConfig, which
-// patch-merges the user_profile record into the global novaclaw.jsonc (see AGENTS.md config notes).
+// patch-merges the `user_profile` record into the SQLite settings store.
+// ⚠️ This used to say "the global novaclaw.jsonc". That has been wrong since the settings-in-SQLite
+// migration: a jsonc file is an import/export wire, never a runtime source, and re-adding a runtime
+// jsonc read is a named regression rule (AGENTS.md §Config).
+// ⚠️ The Enable switch takes effect on the NEXT TURN, not the next location open — `tool/profile.ts`
+// registers with a live availability predicate that `ToolRegistry.materialize` evaluates per step
+// (B7 tier-2, 2026-07-31). Turning it off withdraws the tool from the model's horizon mid-chat.
 
 interface UserProfileConfig {
   enabled?: boolean

@@ -10,7 +10,7 @@ import { ToolOutputStore } from "../tool-output-store"
 import { Wildcard } from "../util/wildcard"
 import { ApplicationTools } from "./application-tools"
 import { ExternalToolSource } from "./external-tool-source"
-import { definition, permission, settle, validateName, type AnyTool, type RegistrationError } from "./tool"
+import { definition, permission, settle, validateRegistration, type AnyTool, type RegistrationError } from "./tool"
 import { Tools } from "./tools"
 import { makeLocationNode } from "../effect/app-node"
 
@@ -54,6 +54,44 @@ export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2
 // the only end that can hold the shared gate. **Do not re-add a copy here** — the check that keeps that
 // sentence true rather than aspirational is `test/tool-registry.test.ts` → "there is exactly ONE
 // unknown-tool message".
+
+/** Keyed by the tool VALUE, so a registration never has to carry an extra field. See below. */
+const availabilityOf = new WeakMap<AnyTool, Effect.Effect<boolean>>()
+
+/**
+ * Declare a live availability predicate for a tool: `materialize` evaluates it when the model's
+ * horizon is built, and withdraws the tool for that horizon when it answers `false`.
+ *
+ * ⚠️ **This is the SECOND horizon filter, and it is deliberately generic — the registry must never
+ * learn a tool's name.** The first is `whollyDisabled` below, which withdraws a tool the permission
+ * ruleset wholly denies. This one withdraws a tool whose OWN module says it is unavailable right
+ * now, and the reason it exists is todo.md **ruling 3** (*read every runtime-editable value through
+ * to its store at the point of use; a settings change is not a reboot*): a tool that decides its
+ * availability from config cannot decide it once, at `Layer.effect` scope, because that answer is
+ * frozen until the whole location is torn down. `tool/profile.ts` is the only such tool in the tree
+ * and carries the full design argument, including the two options that were rejected.
+ *
+ * Both filters answer the same question — *is this tool on the horizon* — and they answer it in one
+ * place, which is what ruling 6 asks for. Neither advertises-then-refuses: a withdrawn tool is
+ * absent from `definitions`, and a call arriving for it from an older horizon is settled by
+ * `ToolRuntime.unknownToolMessage`, which names the tools that DO exist.
+ *
+ * **Cost.** `materialize` runs per turn AND per step (`session/runner/llm.ts`), so a predicate is on
+ * a hot path. Only a tool that declares one pays anything — the `WeakMap` lookup for every other
+ * tool is a miss and the loop is unchanged — but the declaring module owes a measurement. Measured
+ * for the one live predicate (2026-07-31, 28 tools on the horizon): `materialize()` is 0.029 ms/call
+ * with no predicate evaluated and 0.570 ms/call with `profile`'s, i.e. one `SELECT` over
+ * `runtime_setting`. Numbers and the ceiling live in `test/tool-profile-availability.test.ts`.
+ *
+ * ⚠️ **Apply this LAST, to the exact value being registered.** It keys on the tool object, and
+ * `Tool.withPermission` returns a NEW object carrying a copy of the tool's runtime — so
+ * `withAvailability(withPermission(t, "edit"), p)` works and `withPermission(withAvailability(t, p),
+ * "edit")` silently loses the predicate. Pinned both ways in `test/tool-profile-availability.test.ts`.
+ */
+export const withAvailability = <T extends AnyTool>(tool: T, available: Effect.Effect<boolean>): T => {
+  availabilityOf.set(tool, available)
+  return tool
+}
 
 const registryLayer = Layer.effect(
   Service,
@@ -103,7 +141,18 @@ const registryLayer = Layer.effect(
       register: Effect.fn("ToolRegistry.register")(function* (tools) {
         const entries = Object.entries(tools)
         if (entries.length === 0) return
-        yield* Effect.forEach(entries, ([name]) => validateName(name), { discard: true })
+        // ⚠️ A PRE-PASS over every entry, and that ordering is load-bearing (todo.md ruling 2 — a
+        // failed mutation never reports success): validation completes for the whole batch before the
+        // uninterruptible block below touches `local`, so one refused entry takes its siblings with
+        // it rather than leaving half a registration behind. Keep any new check here, not in the loop.
+        //
+        // `validateRegistration` — not `validateName` — because a registration is the only kind of
+        // seam that holds the key and the tool together, and therefore the only kind that can see a
+        // tool declaring the very name it is being registered under. `Tool.withPermission` runs before
+        // the key exists, so it is blind to that no-op by construction; see the note on it in
+        // `tool.ts`, which also names the one other registration seam (`ApplicationTools.register`)
+        // that still runs the weaker `validateName`.
+        yield* Effect.forEach(entries, ([name, tool]) => validateRegistration(name, tool), { discard: true })
         yield* Effect.uninterruptible(
           Effect.gen(function* () {
             const token = {}
@@ -128,8 +177,16 @@ const registryLayer = Layer.effect(
           const registration = entries.at(-1)?.registration
           if (registration) registrations.set(name, registration)
         }
-        for (const [name, registration] of registrations)
-          if (whollyDisabled(permission(registration.tool, name), permissions)) registrations.delete(name)
+        // Two withdrawals, one seam. The permission ruleset decides first because it is free and
+        // because a wholly-denied tool must not get to run an Effect to decide it is available.
+        for (const [name, registration] of registrations) {
+          if (whollyDisabled(permission(registration.tool, name), permissions)) {
+            registrations.delete(name)
+            continue
+          }
+          const available = availabilityOf.get(registration.tool)
+          if (available !== undefined && !(yield* available)) registrations.delete(name)
+        }
         return {
           definitions: Array.from(registrations, ([name, registration]) => definition(name, registration.tool)),
           settle: (input) => {
