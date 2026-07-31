@@ -11,6 +11,7 @@ import { ConfigCommand } from "./config/command"
 import { ConfigProvider } from "./config/provider"
 import { ConfigReference } from "./config/reference"
 import { Database } from "./database/database"
+import { Watcher } from "./filesystem/watcher"
 import { MergePatch } from "./merge-patch"
 import { Offline } from "./offline"
 import { PluginConfigSeed } from "./plugin-config-seed"
@@ -355,6 +356,12 @@ const applyToStores = (patch: Config.Info) =>
  *     call sites is one a new caller can forget — ruling 2 wants it mechanical, not remembered.
  * `Offline.reload` is a no-op with no I/O in a process that never built the layer (the CLI, most
  * tests), so this costs nothing where no guard exists.
+ *
+ * v0.2.0-prep B7 tier-2 — `Watcher.reload` rides the same chokepoint for the same reasons, but it
+ * is a different CURE. Offline froze a value, so reading through fixes it; the watcher hands its
+ * ignore list to `@parcel/watcher` when the subscription is established, so no read-through can
+ * reach a live subscription — it has to re-SUBSCRIBE. Same seam, same "one place every config write
+ * lands" argument, same no-op-where-no-layer-was-built property.
  */
 export const apply = (patch: Config.Info) =>
   Effect.gen(function* () {
@@ -371,6 +378,7 @@ export const apply = (patch: Config.Info) =>
           allowedHosts: [...policy.allowedHosts],
         })
     }
+    if (consumed.has("watcher")) yield* Watcher.reload()
     return consumed
   })
 
