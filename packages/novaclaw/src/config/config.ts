@@ -587,9 +587,41 @@ export const layer = Layer.effect(
       Effect.provideService(FSUtil.Service, fs),
     )
 
-    const state = yield* InstanceState.make<State>(
+    // ─── v0.2.0-prep B7 tier-3 / ruling 3 — *a settings change is not a reboot* ───────────────────
+    //
+    // ⚠️ THIS is the cache the four "still needs a restart" keys were actually stuck behind, and it
+    // is one level below where the tier-2 note looked for them. Every novaclaw service reads its
+    // config through `Config.get()`, which is this per-instance-directory `InstanceState` holding the
+    // fully merged document (stores overlay + dir-discovered markdown + managed MDM + remote
+    // well-known + env). `invalidate()` below clears only the process-global store view; nothing ever
+    // replaced THIS. So `snapshots` — which `snapshot/index.ts:170` already re-reads on every call,
+    // i.e. a key that looked read-through — was stale anyway, because the document it reads from was.
+    //
+    // `makeRematerializable` rather than `make` is a declaration with teeth: re-running this
+    // initializer closes the superseded entry's scope, and this one owns nothing it would destroy
+    // (the only fibers it forks are `forkDetach`ed by design, so they are not scope-owned). `MCP.state`
+    // deliberately does not carry that marker — see `effect/instance-state.ts`.
+    const state = yield* InstanceState.makeRematerializable<State>(
       Effect.fn("Config.state")(function* (ctx) {
         return yield* loadInstanceState(ctx).pipe(Effect.orDie)
+      }),
+    )
+
+    // Registered for the life of THIS layer's scope, so a torn-down instance graph deregisters and a
+    // stale closure never fans out on a later write. Fired from `ConfigStoreWrite.apply` — the one
+    // place a config write commits — and FIRST among the reload domains, because `format/index.ts`
+    // and `mcp/index.ts` reconcile against the document this rebuilds.
+    //
+    // ⚠️ The global view is invalidated BEFORE the rematerialise, not after: `loadInstanceState`
+    // merges `getGlobal()` into the document it builds, and that view is
+    // `Effect.cachedInvalidateWithTTL(…, Duration.infinity)`. Rebuilding first would fold the
+    // pre-write stores back in and leave the document looking refreshed while carrying the old value
+    // — a reload that reports success for a change that is not live, which is the ruling-2 shape this
+    // whole tier exists to remove.
+    yield* ConfigStoreWrite.registerReload("instance_config", () =>
+      Effect.gen(function* () {
+        yield* invalidateGlobal
+        yield* InstanceState.rematerializeAll(state)
       }),
     )
 

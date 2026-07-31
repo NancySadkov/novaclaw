@@ -38,7 +38,7 @@ import { McpOAuthCallback } from "./oauth-callback"
 import { McpAuth } from "./auth"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import open from "open"
-import { Cause, Effect, Exit, Layer, Context, Schema } from "effect"
+import { Cause, Effect, Exit, Layer, Context, Schema, Semaphore } from "effect"
 import { EffectBridge } from "@/effect/bridge"
 import { InstanceState } from "@/effect/instance-state"
 import { McpCatalog } from "./catalog"
@@ -178,6 +178,24 @@ export type Status = Schema.Schema.Type<typeof Status>
 // Store transports for OAuth servers to allow finishing auth
 type TransportWithAuth = StreamableHTTPClientTransport | SSEClientTransport
 const pendingOAuthTransports = new Map<string, { transport: TransportWithAuth; provider?: McpOAuthPendingProvider }>()
+
+// ─── v0.2.0-prep B7 tier-3 bookkeeping ──────────────────────────────────────────────────────────
+//
+// Module-level for the same reason `Watcher`'s counters are: the properties they make assertable are
+// otherwise invisible. "The reconcile ran and left this server alone" and "the reconcile never ran"
+// look identical from the outside — the second is a silent regression of the whole item, and only a
+// counter can tell them apart. Module scope also makes the suppression conservative rather than
+// clever: two layer builds in one process share it, so the worst case is one skipped reconcile that
+// the next config write performs anyway (the diff converges).
+let selfWrites = 0
+let reconcilesRun = 0
+let reconcilesSuppressed = 0
+
+/** Reconciles this module has RUN (a config write reached the live server set) and SUPPRESSED (the
+ *  write came from `add`/`connect`/`disconnect`, which apply themselves in memory). */
+export function reconcileStats(): { readonly run: number; readonly suppressed: number } {
+  return { run: reconcilesRun, suppressed: reconcilesSuppressed }
+}
 
 // Prompt cache types
 type PromptInfo = Awaited<ReturnType<MCPClient["listPrompts"]>>["prompts"][number]
@@ -566,11 +584,26 @@ export const layer = Layer.effect(
           return new Error(`mcp: server "${name}" is not a valid config entry: ${reason}`)
         },
       }).pipe(Effect.orDie)
-      yield* provideConfigStores(ConfigStoreWrite.apply(patch))
-      // The instance's config is a boot-time snapshot (S1), so the running process still serves the
-      // old document from a cache with no TTL. Invalidating is not the read-through fix B7 owes —
-      // it just stops the NEXT location/instance boot in this process from resurrecting a stale view
-      // of a key we have already committed.
+      // ⚠️ SUPPRESSED, and this is the one place in the module that needs it. Since B7 tier-3 every
+      // `ConfigStoreWrite.apply` that consumes `mcp` fans out to `reconcile` below — which is exactly
+      // right for a config IMPORT and exactly wrong for this call, because `add`/`connect`/`disconnect`
+      // persist first and then mutate the live state themselves. Without the guard, `add` would have
+      // the reconcile spawn the new server's child and `createAndStore` immediately spawn a second and
+      // tree-kill the first: correct in the end, two processes and one kill along the way. The
+      // reconcile is a converging diff, so the suppressed write is not "lost" — the state this caller
+      // is about to write IS the reconciled one.
+      yield* Effect.acquireUseRelease(
+        Effect.sync(() => {
+          selfWrites++
+        }),
+        () => provideConfigStores(ConfigStoreWrite.apply(patch)),
+        () =>
+          Effect.sync(() => {
+            selfWrites--
+          }),
+      )
+      // The global store view is process-wide and cached with no TTL; the per-instance merged
+      // document is refreshed by the `instance_config` reload domain that `apply` above fires.
       yield* cfgSvc.invalidate()
     })
 
@@ -624,6 +657,12 @@ export const layer = Layer.effect(
       }
     }
 
+    // ⚠️ `InstanceState.make`, NEVER `makeRematerializable` — and the finalizer below is the whole
+    // reason. Re-running this initializer would close the superseded entry's scope, which walks
+    // `s.clients` and tree-kills every connected server's child processes: the stop-the-world teardown
+    // B7 tier-2 deleted, at a smaller size. The cure for a changed `mcp.servers` is `reconcile` below,
+    // which touches only the servers that actually changed. The missing marker is what makes that a
+    // compile error rather than a comment (`effect/instance-state.ts` → `Rematerializable`).
     const state = yield* InstanceState.make<State>(
       Effect.fn("MCP.state")(function* () {
         const cfg = yield* cfgSvc.get()
@@ -645,6 +684,14 @@ export const layer = Layer.effect(
                 yield* Effect.logError("Ignoring MCP config entry without type", { key })
                 return
               }
+
+              // `s.config` now means "the entry each server is RUNNING with", not "entries added at
+              // runtime". That is what lets `reconcile` tell a changed server from an untouched one
+              // without re-reading the config a second time — and it is a widening of the same
+              // meaning `add`/`connect`/`disconnect` already wrote into it, so `getMcpConfig`,
+              // `status()` and `requestTimeout` all keep answering exactly what they answered before
+              // (they preferred this map already, and it now holds the value they fell back to).
+              s.config[key] = mcp
 
               if (mcp.disabled === true) {
                 s.status[key] = { status: "disabled" }
@@ -759,6 +806,101 @@ export const layer = Layer.effect(
 
       return yield* storeClient(s, name, result.mcpClient, result.defs!, result.instructions, mcp.timeout?.request)
     })
+
+    // ─── v0.2.0-prep B7 tier-3: `mcp` applies live, WITHOUT a stop-the-world reconnect ────────────
+    //
+    // The gap this closes is narrow and was measured rather than assumed: the product's own MCP
+    // surface (`POST /api/mcp`, the app's per-server switch, `nova-cli mcp add`) all go through
+    // `add`/`connect`/`disconnect`, which persist and then mutate the live state in place — those
+    // were never stale. What WAS stale is every other writer of `mcp.servers`: a config Import, a
+    // `PATCH /config`, the `configure` tool. For those, the only thing that ever applied the change
+    // was the instance being destroyed on save.
+    //
+    // ⚠️ So this is a DIFF, not a rebuild, and the difference is the entire point of the item. A
+    // rebuild (or an `InstanceState.invalidate`) releases the state's scope, whose finalizer walks
+    // `s.clients` → `shutdownClient` → `killTransportTree`: editing one server's timeout would kill
+    // every OTHER server's child process tree. An untouched server must come through a config write
+    // with the same client, the same child pid and the same tool list.
+
+    /** Order-independent identity of an entry, so "did this server change?" cannot answer yes on key
+     *  order alone. Entries arrive both as decoded `Config.Info` class instances and as plain object
+     *  literals (the CLI and the tests), and JSON key order follows insertion for both. */
+    const entryIdentity = (value: unknown): string =>
+      JSON.stringify(value, (_key, item: unknown) =>
+        item !== null && typeof item === "object" && !Array.isArray(item)
+          ? Object.fromEntries(Object.entries(item as Record<string, unknown>).sort(([a], [b]) => (a < b ? -1 : 1)))
+          : item,
+      )
+
+    /**
+     * Bring the live server set in line with the stored one. Idempotent: a second run with the same
+     * config does nothing at all, which is what makes it safe to fire on every `mcp` write.
+     */
+    const reconcile = Effect.fn("MCP.reconcile")(function* (s: State) {
+      const cfg = yield* cfgSvc.get()
+      const wanted = new Map<string, McpEntry>()
+      for (const [name, entry] of Object.entries(cfg.mcp?.servers ?? {})) {
+        if (!isMcpConfigured(entry)) {
+          yield* Effect.logError("Ignoring MCP config entry without type", { key: name })
+          continue
+        }
+        wanted.set(name, entry)
+      }
+
+      // Removed from config: close the client (tree-kills ITS child, which is correct — the user
+      // deleted the server) and forget it. `closeClient` is a no-op when nothing was connected.
+      for (const name of Object.keys(s.config)) {
+        if (wanted.has(name)) continue
+        yield* Effect.logInfo("MCP server removed by a config write", { server: name })
+        yield* closeClient(s, name)
+        delete s.config[name]
+        delete s.status[name]
+      }
+
+      for (const [name, entry] of wanted) {
+        const applied = s.config[name]
+        // THE invariant: an entry that did not change is not touched. No close, no connect, no kill.
+        if (applied !== undefined && entryIdentity(applied) === entryIdentity(entry)) continue
+        s.config[name] = entry
+        if (entry.disabled === true) {
+          yield* Effect.logInfo("MCP server disabled by a config write", { server: name })
+          yield* closeClient(s, name)
+          s.status[name] = { status: "disabled" }
+          continue
+        }
+        yield* Effect.logInfo("MCP server added or changed by a config write — connecting", { server: name })
+        // Replaces a superseded client through `storeClient`, which shuts the old one down AFTER the
+        // new one is up — the same build-before-release ordering the reconnect path already used.
+        yield* createAndStore(name, entry)
+      }
+    })
+
+    // One reconcile at a time, and never after teardown — the shape `filesystem/watcher.ts`
+    // establishes for the same hazard: a config write racing a scope close would otherwise connect a
+    // server into a state whose finalizer has already run, leaving a child process nobody owns.
+    const reconcileGate = Semaphore.makeUnsafe(1)
+    let disposed = false
+    yield* ConfigStoreWrite.registerReload("mcp", () =>
+      reconcileGate.withPermit(
+        Effect.suspend(() => {
+          if (disposed) return Effect.void
+          // See `persistServer`: this module's own writes have already applied themselves in memory.
+          if (selfWrites > 0) {
+            reconcilesSuppressed++
+            return Effect.void
+          }
+          reconcilesRun++
+          return InstanceState.forEachCached(state, (s) => reconcile(s))
+        }),
+      ),
+    )
+    yield* Effect.addFinalizer(() =>
+      reconcileGate.withPermit(
+        Effect.sync(() => {
+          disposed = true
+        }),
+      ),
+    )
 
     /**
      * Add a server: persist it, then connect it.

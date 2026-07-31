@@ -467,9 +467,57 @@ const applyToStores = (patch: Config.Info) =>
  * client), and importing them from here would drag all of that into every process that can write
  * config — the CLI included. So the four plugins register INTO this module instead. Nothing in this
  * file's own import graph reaches `plugin/internal.ts`, so that direction stays acyclic.
+ *
+ * ⚠️ B7 tier-3 added three registrants from `packages/novaclaw` (`config/config.ts`,
+ * `format/index.ts`, `mcp/index.ts`) and the acyclic argument above is UNCHANGED by them, for a
+ * stronger reason than it holds for the plugins: `packages/core` cannot import `packages/novaclaw` at
+ * all — the dependency runs one way — so a registrant there can only ever add an edge INTO this
+ * module. Nothing was added to this file's own imports.
+ *
+ * ⚠️ **ORDER IS PART OF THE CONTRACT here too, and `refreshDomains` honours this array's order.**
+ * `instance_config` re-derives the novaclaw-side merged instance document, which `formatter` and
+ * `mcp` then read to decide what changed — so it MUST come first, and putting it anywhere else in
+ * this array would make both of them reconcile against the document they were already holding. The
+ * five middle domains are mutually independent and their relative order carries no meaning.
  */
-export const RELOAD_DOMAINS = ["agents", "commands", "references", "skills", "catalog"] as const
+export const RELOAD_DOMAINS = [
+  "instance_config",
+  "agents",
+  "commands",
+  "references",
+  "skills",
+  "catalog",
+  "formatter",
+  "mcp",
+] as const
 export type ReloadDomain = (typeof RELOAD_DOMAINS)[number]
+
+/**
+ * ─── keys a config write CANNOT make live, each with the reason ──────────────────────────────────
+ *
+ * v0.2.0 ruling 2 — *a fault is never described falsely*, and ruling 3's *a settings change is not a
+ * reboot* is a goal rather than a licence to pretend. A key here is accepted, stored durably, served
+ * back by `GET /config` — and NOT in force in this process until it restarts. That is a real, partial
+ * failure, so `apply` SAYS SO by name instead of answering an unqualified 200.
+ *
+ * ⚠️ An entry is a confession, not a category. It must name the mechanism that makes the key
+ * unreachable, and `config-instance-reload-ledger.test.ts` ratchets the list in both directions: an
+ * entry that stops being a `Config.Info` key fails, and an entry that acquires a reload trigger fails
+ * with "drop it" — so the list can only shrink.
+ */
+export const RESTART_REQUIRED_KEYS: ReadonlyMap<string, string> = new Map([
+  [
+    "plugins",
+    "An external plugin is a JavaScript module `config/plugin/external.ts` brings into this process " +
+      "with `import()`, and ESM caches a module URL for the life of the process: a changed plugin " +
+      "file cannot be re-read, and an already-registered plugin cannot be unregistered. So there is " +
+      "no in-place cure — only a restart, or a redesign that runs plugins out-of-process. Ruling 5 " +
+      "has already chosen the second and deleted the premise: outside code never runs in-process, " +
+      "MCP is the out-of-process seam, and this loader plus this key are scheduled for removal " +
+      "(todo.md → 'Ruling 5 in execution', item ②). Building a live reload for it would add " +
+      "third-party code execution to the config-write path to serve a surface we are deleting.",
+  ],
+])
 
 /**
  * Which `Config.Info` keys leave which domain stale — the per-key discipline `consumed.has(...)`
@@ -514,13 +562,51 @@ export type ReloadDomain = (typeof RELOAD_DOMAINS)[number]
  * keys that no core reader consults — grepped 2026-07-31: `config.ts` declares them, the settings
  * seed stores them, and nothing else in `packages/core/src` reads either one. Adding them would be a
  * reload fired on a key that changes nothing, i.e. the per-key discipline abandoned for a guess.
+ *
+ * ─── the three B7 tier-3 domains, which live in `packages/novaclaw` ──────────────────────────────
+ *
+ *  · `instance_config` — the novaclaw-side MERGED INSTANCE DOCUMENT (`novaclaw/src/config/config.ts`,
+ *    an `InstanceState` keyed by instance directory). It is what every novaclaw service means by
+ *    "the config", and until B7 tier-3 nothing refreshed it: `Config.invalidate()` clears only the
+ *    process-global store overlay, so the per-instance document stayed at its first-read value for
+ *    the life of the process and the ONLY thing that replaced it was the instance being destroyed.
+ *    The reload re-runs that merge. Cost is the honest reason its trigger list is SHORT: the merge
+ *    re-reads the stores, re-globs `{agent,agents}`/`{command,commands}`/`{plugin,plugins}` under
+ *    each config directory, re-reads the managed-MDM directory, and re-fetches any `.well-known`
+ *    remote config the user has authenticated against — bounded, and strictly cheaper than the
+ *    location boot the teardown used to pay, but not free enough to fire on every key.
+ *
+ *    ⚠️ **`skills`, `agents`, `permissions` and `references` are deliberately NOT triggers for it,
+ *    and that is a scoping decision with a name, not an oversight.** Those keys DO reach the merged
+ *    document, and `novaclaw/src/{skill,agent}` read them — but each of those services caches its own
+ *    DERIVED value in its own `InstanceState` (`Skill.discovery`, `Skill.state`, `Agent.state`), so
+ *    refreshing the document underneath them would change nothing any caller can observe. Adding
+ *    them would buy a glob per config write and a claim that the domain is handled. The core-side
+ *    `agents`/`skills`/`references` domains above ARE handled; the novaclaw-side duplicates are a
+ *    separate, pre-existing gap (they serve the CLI and two HTTP handlers, not the V2 session
+ *    runner), filed rather than half-fixed.
+ *
+ *  · `formatter` — `novaclaw/src/format/index.ts` builds its formatter table once per instance from
+ *    `formatter`, so the reload re-derives it. Cost: rebuilding a record of ~10 formatter descriptors
+ *    plus dropping the memoized "is this binary on PATH" probes, which are re-taken lazily on the
+ *    next format.
+ *
+ *  · `mcp` — `novaclaw/src/mcp/index.ts` RECONCILES: it connects servers the write added, closes the
+ *    ones it removed, and reconnects the ones whose entry changed. ⚠️ It is emphatically not a
+ *    rebuild. The state's finalizer tree-kills every connected server's child processes, so
+ *    re-materialising this domain would destroy MCP servers the user never touched — the precise
+ *    behaviour tier-2 removed, at a smaller size. Cost for an unrelated `mcp` write (e.g. a timeout
+ *    change on one server): one comparison per configured server, no I/O.
  */
 const RELOAD_TRIGGERS: Record<ReloadDomain, readonly (keyof Config.Info)[]> = {
+  instance_config: ["formatter", "snapshots", "mcp"],
   agents: ["agents", "default_agent", "permissions"],
   commands: ["commands"],
   references: ["references"],
   skills: ["skills"],
   catalog: ["providers", "models", "model"],
+  formatter: ["formatter"],
+  mcp: ["mcp"],
 }
 
 interface ReloadRegistration {
@@ -528,19 +614,25 @@ interface ReloadRegistration {
 }
 
 const registered: Record<ReloadDomain, Set<ReloadRegistration>> = {
+  instance_config: new Set(),
   agents: new Set(),
   commands: new Set(),
   references: new Set(),
   skills: new Set(),
   catalog: new Set(),
+  formatter: new Set(),
+  mcp: new Set(),
 }
 
 const dispatched: Record<ReloadDomain, number> = {
+  instance_config: 0,
   agents: 0,
   commands: 0,
   references: 0,
   skills: 0,
   catalog: 0,
+  formatter: 0,
+  mcp: 0,
 }
 
 /**
@@ -577,9 +669,14 @@ export function reloadsDispatched(domain: ReloadDomain): number {
   return dispatched[domain]
 }
 
-/** The domains a write consuming `consumed` has left stale. */
-const staleDomains = (consumed: ReadonlySet<string>): ReloadDomain[] =>
+/** The domains a write consuming `consumed` has left stale, in `RELOAD_DOMAINS` order. Exported so
+ *  the ordering contract can be asserted directly rather than inferred from a live `apply`. */
+export const staleDomains = (consumed: ReadonlySet<string>): ReloadDomain[] =>
   RELOAD_DOMAINS.filter((domain) => RELOAD_TRIGGERS[domain].some((key) => consumed.has(key)))
+
+/** The keys of `consumed` this process cannot make live — see {@link RESTART_REQUIRED_KEYS}. */
+export const restartRequired = (consumed: ReadonlySet<string>): string[] =>
+  [...RESTART_REQUIRED_KEYS.keys()].filter((key) => consumed.has(key))
 
 /**
  * Re-materialise every registered location for each stale domain.
@@ -595,33 +692,43 @@ const staleDomains = (consumed: ReadonlySet<string>): ReloadDomain[] =>
  * of this call: `materialize` builds a fresh value and only `commit`s it after every transform has
  * run, so a transform that dies leaves the PREVIOUS good state in place. A failed reload is stale,
  * never torn.
+ *
+ * ⚠️ **Domains run in `RELOAD_DOMAINS` order, one domain at a time; registrations WITHIN a domain
+ * still run concurrently.** This used to be one flat unbounded fan-out, which was correct while every
+ * domain was independent and stopped being correct when `instance_config` landed: `formatter` and
+ * `mcp` both reconcile against the document that domain re-derives, so a race would let either read
+ * the value it was already holding — a reload that runs and changes nothing, which is worse than not
+ * running because `reloadsDispatched` would report it as done. The cost of serialising is one extra
+ * round of SQLite reads end-to-end rather than in parallel; the domains that were already here are
+ * unaffected in behaviour.
  */
 const refreshDomains = (domains: readonly ReloadDomain[]) =>
   Effect.gen(function* () {
-    const targets = domains.flatMap((domain) =>
-      [...registered[domain]].map((registration) => ({ domain, registration })),
-    )
-    for (const { domain } of targets) dispatched[domain] += 1
-
     const failures: { readonly domain: ReloadDomain; readonly cause: Cause.Cause<never> }[] = []
-    yield* Effect.forEach(
-      targets,
-      ({ domain, registration }) =>
-        // `Effect.exit` rather than `catchCause` because a transform failure is turned into a DEFECT
-        // by `State.apply`'s `orDie` — a handler that only sees the typed error channel would let it
-        // through and lose the "committed, not live" message below.
-        Effect.suspend(registration.reload).pipe(
-          Effect.exit,
-          Effect.flatMap((exit) =>
-            Exit.isFailure(exit)
-              ? Effect.sync(() => {
-                  failures.push({ domain, cause: exit.cause })
-                })
-              : Effect.void,
+
+    for (const domain of RELOAD_DOMAINS) {
+      if (!domains.includes(domain)) continue
+      const targets = [...registered[domain]]
+      dispatched[domain] += targets.length
+      yield* Effect.forEach(
+        targets,
+        (registration) =>
+          // `Effect.exit` rather than `catchCause` because a transform failure is turned into a
+          // DEFECT by `State.apply`'s `orDie` — a handler that only sees the typed error channel
+          // would let it through and lose the "committed, not live" message below.
+          Effect.suspend(registration.reload).pipe(
+            Effect.exit,
+            Effect.flatMap((exit) =>
+              Exit.isFailure(exit)
+                ? Effect.sync(() => {
+                    failures.push({ domain, cause: exit.cause })
+                  })
+                : Effect.void,
+            ),
           ),
-        ),
-      { discard: true, concurrency: "unbounded" },
-    )
+        { discard: true, concurrency: "unbounded" },
+      )
+    }
     if (failures.length === 0) return
 
     const named = [...new Set(failures.map((failure) => failure.domain))].sort()
@@ -696,6 +803,13 @@ const refreshDomains = (domains: readonly ReloadDomain[]) =>
  * graph was destroyed — the `markInstanceForDisposal` path B7 removes — so an agent, command,
  * reference, skill or PROVIDER edited in Settings would have silently stopped applying the moment
  * that teardown was dropped.
+ *
+ * v0.2.0-prep B7 tier-3 — the same seam again, now for the caches that live in `packages/novaclaw`
+ * rather than in core: the per-instance merged config document (`instance_config`), the formatter
+ * table (`formatter`) and the connected MCP server set (`mcp`). Those were the last things the
+ * teardown was silently refreshing, and `InstanceState.invalidate` had ZERO callers tree-wide — the
+ * instance being destroyed WAS their refresh. `plugins` is the one key that stays stuck, and it says
+ * so by name rather than by omission (`RESTART_REQUIRED_KEYS`).
  */
 export const apply = (patch: Config.Info) =>
   Effect.gen(function* () {
@@ -713,6 +827,14 @@ export const apply = (patch: Config.Info) =>
         })
     }
     if (consumed.has("watcher")) yield* Watcher.reload()
+    // Ruling 2 BEFORE the reloads, not after: the reloads can die ("committed, not live"), and a key
+    // this process was never going to apply is a fact the operator needs either way.
+    const stuck = restartRequired(consumed)
+    if (stuck.length > 0)
+      yield* Effect.logWarning("a config write is stored but NOT LIVE until this instance restarts", {
+        keys: stuck,
+        reasons: stuck.map((key) => RESTART_REQUIRED_KEYS.get(key)),
+      })
     yield* refreshDomains(staleDomains(consumed))
     return consumed
   })

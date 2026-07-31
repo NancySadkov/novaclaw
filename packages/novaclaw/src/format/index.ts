@@ -3,6 +3,7 @@ import { Effect, Layer, Context, Schema } from "effect"
 import { serviceUse } from "@novaclaw/core/effect/service-use"
 import { ChildProcess } from "effect/unstable/process"
 import { AppProcess } from "@novaclaw/core/process"
+import { ConfigStoreWrite } from "@novaclaw/core/config-store-write"
 import { InstanceState } from "@/effect/instance-state"
 import path from "path"
 import { mergeDeep } from "remeda"
@@ -35,7 +36,13 @@ export const layer = Layer.effect(
     const appProcess = yield* AppProcess.Service
     const flags = yield* RuntimeFlags.Service
 
-    const state = yield* InstanceState.make(
+    // v0.2.0-prep B7 tier-3: the formatter table below is DERIVED from `cfg.formatter` at build
+    // time, so editing formatters in Settings used to take effect only when the whole instance was
+    // destroyed. `makeRematerializable` declares that re-deriving it is safe — this initializer owns
+    // no external resource (the `commands` map memoizes "is this binary usable" probes, which are
+    // simply re-taken lazily) and registers no finalizer, so closing the superseded entry's scope
+    // destroys nothing. Contrast `MCP.state`, which does and therefore must not carry the marker.
+    const state = yield* InstanceState.makeRematerializable(
       Effect.fn("Format.state")(function* (ctx) {
         const commands: Record<string, string[] | false> = {}
         const formatters: Record<string, Formatter.Info> = {}
@@ -166,6 +173,11 @@ export const layer = Layer.effect(
         }
       }),
     )
+
+    // Fired from `ConfigStoreWrite.apply` when a write consumed `formatter`, AFTER the
+    // `instance_config` domain has re-derived the document this reads (`RELOAD_DOMAINS` order is the
+    // contract that guarantees it). Scoped to this layer, so a disposed instance graph deregisters.
+    yield* ConfigStoreWrite.registerReload("formatter", () => InstanceState.rematerializeAll(state))
 
     const init = Effect.fn("Format.init")(function* () {
       yield* InstanceState.get(state)
