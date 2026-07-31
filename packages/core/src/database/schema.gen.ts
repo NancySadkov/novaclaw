@@ -269,6 +269,15 @@ export default {
         );
       `)
       yield* tx.run(`
+        CREATE TABLE \`messenger_initiation\` (
+          \`scope\` text PRIMARY KEY,
+          \`day\` text NOT NULL,
+          \`count\` integer NOT NULL,
+          \`time_created\` integer NOT NULL,
+          \`time_updated\` integer NOT NULL
+        );
+      `)
+      yield* tx.run(`
         CREATE TABLE \`permission\` (
           \`id\` text PRIMARY KEY,
           \`origin\` text NOT NULL,

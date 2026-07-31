@@ -231,16 +231,58 @@ const graph = LayerNode.group([Database.node, EventV2.node, FSUtil.node, Messeng
  *
  * The ratchet that keeps both halves honest is at the bottom of this file.
  */
-const it = testEffect(
-  AppNodeBuilder.build(graph, [
-    [MessengerDrivers.node, Layer.succeed(MessengerDrivers.Service, MessengerDrivers.Service.of(MessengerDrivers.make([fake.driver])))],
-    [Offline.node, offlineMock(false)],
-    [SessionV2.node, session.layer],
-    // Instant, still-serialized pacing: these tests exercise routing LOGIC; the real human-typing
-    // timing is proven directly in messenger-pace.test.ts.
-    [MessengerPace.node, MessengerPace.layerWith({ sleep: () => Effect.void })],
-  ]),
-)
+const REPLACEMENTS = [
+  [MessengerDrivers.node, Layer.succeed(MessengerDrivers.Service, MessengerDrivers.Service.of(MessengerDrivers.make([fake.driver])))],
+  [Offline.node, offlineMock(false)],
+  [SessionV2.node, session.layer],
+  // Instant, still-serialized pacing: these tests exercise routing LOGIC; the real human-typing
+  // timing is proven directly in messenger-pace.test.ts.
+  [MessengerPace.node, MessengerPace.layerWith({ sleep: () => Effect.void })],
+] satisfies LayerNode.Replacements
+
+const it = testEffect(AppNodeBuilder.build(graph, REPLACEMENTS))
+
+/**
+ * The SAME graph, over a database FILE instead of the suite's per-connection `:memory:` — a whole
+ * second instance of the product, for the tests that have to outlive one.
+ *
+ * ⚠️ **`Layer.fresh` is not decoration, and leaving it off makes the restart test pass for the wrong
+ * reason.** Effect memoizes a layer by its INNER reference, not by the wrapper (AGENTS.md pitfall
+ * -1), and `Effect.provide` inherits the memo map already on the fiber — the one the suite's own
+ * layer established. So a second `Effect.provide(AppNodeBuilder.build(...))` inside a test hands back
+ * the gateway and store that are ALREADY built, database replacement and all: one instance wearing
+ * two names. Measured here 2026-07-31, and it is worth stating how it was caught, because nothing
+ * about the test looked wrong. Under a negative control that put the daily bucket back on the
+ * gateway's heap, the restart test still PASSED — the two "instances" were sharing one heap, so the
+ * counter it was supposed to prove durable was never asked to survive anything. `Layer.fresh` builds
+ * from a brand-new ROOT memo map, which is the one construction that genuinely gives a second
+ * instance. The restart test additionally asserts the two services are different objects, so this
+ * can never silently rot back.
+ *
+ * It deliberately reuses `REPLACEMENTS` rather than restating the mocks: a second copy of that list
+ * is how the restart test and every other test in this file would come to disagree about what they
+ * are testing (todo.md ruling 6).
+ */
+const overFile = (file: string) =>
+  Layer.fresh(AppNodeBuilder.build(graph, [...REPLACEMENTS, [Database.node, Database.layerFromPath(file)]]))
+
+/**
+ * Delete a test database and its WAL sidecars, BEST EFFORT.
+ *
+ * ⚠️ Windows keeps the file handle a moment past `close()`, so a prompt `rmSync` raises EBUSY —
+ * measured here, and it failed the restart test on cleanup alone while every assertion in it had
+ * already passed. A leftover pid-named file in the OS temp dir is not worth failing a test over
+ * (and principle 11 puts it in a sanctioned location), so the removal is attempted and forgiven.
+ */
+const discardDb = (file: string) => {
+  for (const suffix of ["", "-wal", "-shm"]) {
+    try {
+      nodeFs.rmSync(`${file}${suffix}`, { force: true })
+    } catch {
+      // best effort — see above
+    }
+  }
+}
 
 let messageSeq = 0
 const message = (
@@ -1058,6 +1100,98 @@ describe("MessengerGateway pipeline", () => {
     }).pipe(Effect.ensuring(Effect.sync(() => (fake.state.sendFails = false)))),
   )
 
+  // ⭐ THE INVARIANT THIS BUCKET EXISTS FOR, and the one a single-process test cannot see.
+  //
+  // The cap was `{ day, count }` on the gateway's heap until 2026-07-31 — per gateway INSTANCE. Every
+  // assertion in the test above passes against that object, because they all live inside one process;
+  // what none of them can notice is that the count is gone the moment the process is. And this
+  // product restarts on purpose: the supervisor auto-restarts a crashed server (AGENTS.md → *It never
+  // breaks in your hands*), so a crash-loop — or simply a restart-happy day — bought a fresh twenty
+  // cold DMs each time, on the owner's real messaging account. That is exactly the mass cold-outreach
+  // AGENTS.md #9(b) forbids, arrived at by two safe-looking features composing.
+  //
+  // So this test spans two INSTANCES: `overFile` builds the whole graph twice over one database file,
+  // and the second build shares nothing with the first except the bytes on disk.
+  it.live("the daily cold-start budget SURVIVES a restart — a second gateway resumes the same bucket", () =>
+    Effect.gen(function* () {
+      const file = nodePath.join(WORKDIR, `initiation-restart-${process.pid}.db`)
+      const cap = MessengerGateway.DAILY_NEW_CONVERSATION_CAP
+
+      // ── Instance #1: spend all but one of the day's slots, then let its scope close.
+      const first = yield* Effect.gen(function* () {
+        const store = yield* MessengerStore.Service
+        const gateway = yield* MessengerGateway.Service
+        const account = yield* store.createAccount({ driverID: "fake", label: "restart", enabled: true, settings: {} })
+        yield* gateway.reload()
+        yield* eventually(gateway.status(), (map) => map.get(account.id)?.state === "connected", "connected #1")
+        for (let index = 0; index < cap - 1; index++) {
+          const attempt = yield* gateway.send({
+            accountID: account.id,
+            chatID: `restart-${index}`,
+            text: "hi",
+            initiate: true,
+          })
+          expect(attempt.kind).toBe("sent")
+        }
+        return { accountID: account.id, gateway }
+      }).pipe(Effect.scoped, Effect.provide(overFile(file)))
+      const accountID = first.accountID
+
+      // ── Instance #2: a brand-new gateway over the same file. It inherits ONE slot, not twenty.
+      yield* Effect.gen(function* () {
+        const gateway = yield* MessengerGateway.Service
+        // ⚠️ THE GUARD THAT MAKES THE REST OF THIS TEST MEAN ANYTHING. Effect memoizes layers by
+        // inner reference and `Effect.provide` inherits the fiber's memo map, so without
+        // `overFile`'s `Layer.fresh` this is the SAME gateway object — and every assertion below
+        // would then hold against a purely in-memory counter, which is exactly what was measured
+        // before the fresh build went in. One `not.toBe` is the difference between a durability
+        // test and a very convincing tautology.
+        expect(gateway).not.toBe(first.gateway)
+        yield* gateway.reload()
+        yield* eventually(gateway.status(), (map) => map.get(accountID)?.state === "connected", "connected #2")
+        const last = yield* gateway.send({ accountID, chatID: "restart-last", text: "hi", initiate: true })
+        expect(last.kind).toBe("sent")
+        // The day's 21st cold start, attempted by a process that has made exactly one. Against the
+        // in-memory bucket this send succeeded — that is the whole regression, in one assertion.
+        const overCap = yield* gateway.send({ accountID, chatID: "restart-over", text: "hi", initiate: true })
+        expect(overCap.kind).toBe("refused")
+        if (overCap.kind === "refused") expect(overCap.reason).toContain("Daily new-conversation limit")
+      }).pipe(Effect.scoped, Effect.provide(overFile(file)))
+    }).pipe(Effect.ensuring(Effect.sync(() => discardDb(nodePath.join(WORKDIR, `initiation-restart-${process.pid}.db`))))),
+  )
+
+  // The durable counter's fail-CLOSED arm. A budget we cannot spend is not a budget with room in it:
+  // sending anyway would put an UNCOUNTED cold DM on the account, which is the one outcome the cap
+  // exists to prevent. It must also not borrow the ordinary refusal — "try again tomorrow" asserts
+  // that today's twenty were used, a claim about traffic, made from a write that never happened.
+  it.live("a daily budget that cannot be spent answers `unavailable` — never an uncounted cold DM", () =>
+    Effect.gen(function* () {
+      const { store, gateway, account, queue } = yield* online("initiate-unreadable")
+      const { db } = yield* Database.Service
+
+      // A chat that HAS written to us, so the reply leg below is a genuine control and not a fluke.
+      yield* Queue.offer(queue, message("881", { text: "hello", sender: "friend" }))
+      yield* eventually(store.hasChat(account.id, "881"), (seen) => seen === true, "seen 881")
+
+      const sentBefore = fake.state.sent.length
+      yield* db.run("DROP TABLE messenger_initiation")
+
+      const blind = yield* gateway.send({ accountID: account.id, chatID: "no-budget", text: "hi", initiate: true })
+      expect(blind.kind).toBe("unavailable")
+      if (blind.kind === "unavailable") {
+        expect(blind.reason).toContain("new-conversation limit")
+        expect(blind.reason).not.toContain("Try again tomorrow")
+      }
+      // Nothing left the machine…
+      expect(fake.state.sent.slice(sentBefore)).toEqual([])
+      // …and the failure is SCOPED to cold starts. Answering someone who wrote to us is not rationed
+      // and never touches the budget, so an unreadable counter must not silence ordinary replies.
+      expect((yield* gateway.send({ accountID: account.id, chatID: "881", text: "hi back" })).kind).toBe("sent")
+
+      // No cleanup: `NOVACLAW_DB=:memory:` is per-connection, so the dropped table dies with the scope.
+    }),
+  )
+
   it.live("a driver that refuses the send comes back REFUSED with the reason — never a false 'Sent'", () =>
     Effect.gen(function* () {
       const { store, gateway, account, queue } = yield* online("send-fails")
@@ -1524,6 +1658,7 @@ const CITED_GATEWAY_SYMBOLS: readonly string[] = [
 const LIVE_LEDGER: readonly string[] = [
   "a CAPTCHA notice that FAILS to send is not swallowed — the parked status says so (#9(c))",
   "a FAILED initiation still spends its daily slot — the cap counts attempts, not deliveries",
+  "a daily budget that cannot be spent answers `unavailable` — never an uncounted cold DM",
   "a THREAD routes to its parent's binding, and the reply goes back to the thread",
   "a chat flooding past the per-minute cap is dropped with ONE slow-down reply (§7.6)",
   "a driver that refuses the send comes back REFUSED with the reason — never a false 'Sent'",
@@ -1545,6 +1680,7 @@ const LIVE_LEDGER: readonly string[] = [
   "pairs an operator, lists sessions, /use binds the chat, and plain text injects a turn",
   "parks enabled accounts as airgapped and never dials out",
   "the account owner is a born-paired operator — /sessions works with zero pairing (§0.1.5)",
+  "the daily cold-start budget SURVIVES a restart — a second gateway resumes the same bucket",
   "the operator's self-chat binds ITSELF a console session on first use (no /sessions + /use)",
 ]
 
@@ -1692,9 +1828,28 @@ describe("the wall-clock ledger actually bites (negative control)", () => {
 // `sendFile` (which has none), so they are exactly similar enough to drift apart unnoticed.
 // ───────────────────────────────────────────────────────────────────────────────────────────────
 
-/** Producers of the `unavailable` arm today: `send` and `sendFile`. Shrink-only in spirit — a third
- *  is not forbidden, but it must justify itself on its own line, from the one collapse. */
-const UNAVAILABLE_PRODUCERS = 2
+/**
+ * Producers of the `unavailable` arm today: `send`'s cold-start collapse, `sendFile`'s, and — since
+ * 2026-07-31 — `send`'s DAILY BUDGET charge.
+ *
+ * ⚠️ **The third one is the case the old wording anticipated** ("a third is not forbidden, but it
+ * must justify itself on its own line"), so here is the justification. It is NOT a second opinion
+ * about the tri-state: it sits *after* `invited === "cold"` has already been decided, and answers a
+ * different unreadable read — the durable cold-start counter. Both facts have to be known before a
+ * cold start may go out (*is this a cold start?* and *may we still afford one today?*), each is a
+ * database read, and each therefore has an "we could not find out" arm. What must NOT happen is a
+ * producer with no named condition at all, which is why the check below is by CONDITION rather than
+ * by count alone.
+ */
+const UNAVAILABLE_PRODUCERS = 3
+
+/**
+ * The unreadable-read tests that may earn an `unavailable`, spelled exactly as they appear in
+ * `gateway.ts`. Checked in BOTH directions: every producer must sit on a line carrying one of these,
+ * and every entry must be carried by some producer — so an entry cannot rot into a licence that
+ * nothing uses, and a new producer cannot appear without naming what it could not read.
+ */
+const UNAVAILABLE_EARNED_BY: readonly string[] = ['invited === "unknown"', "!charge.read"]
 
 describe("MessengerGateway.invitationOf", () => {
   // The complete 3×3 table, because the interesting rows are the mixed ones and a partial table is
@@ -1725,12 +1880,24 @@ describe("the cold-start tri-state collapses in exactly one place", () => {
     expect(GATEWAY_SOURCE.match(/store\.hasChat\(/g) ?? []).toHaveLength(1)
   })
 
-  test("every `unavailable` send outcome is produced from the one tri-state answer", () => {
+  test("every `unavailable` send outcome names the read it could not perform", () => {
     const producers = GATEWAY_SOURCE.split("\n").filter((line) => line.includes('return { kind: "unavailable"'))
     expect(producers).toHaveLength(UNAVAILABLE_PRODUCERS)
     // Each must sit on the same line as the check that earned it. A producer reached from a
     // hand-rolled `!known && bound === undefined` is the defect this whole change removed.
-    for (const line of producers) expect(line).toContain('invited === "unknown"')
+    const unearned = producers.filter((line) => !UNAVAILABLE_EARNED_BY.some((test) => line.includes(test)))
+    expect(unearned).toEqual([])
+    // …and the shrink direction: a condition nobody produces from is a stale licence.
+    const unused = UNAVAILABLE_EARNED_BY.filter((test) => !producers.some((line) => line.includes(test)))
+    expect(unused).toEqual([])
+  })
+
+  test("the cold-start tri-state still has exactly ONE collapse — the budget arm did not fork it", () => {
+    // The third producer must be a DIFFERENT question, not a second opinion on the same one: it may
+    // not re-derive "is this cold?" for itself. Two sites deciding that is the drift ruling 6 names.
+    const collapses = GATEWAY_SOURCE.split("\n").filter((line) => line.includes('invited === "unknown"'))
+    expect(collapses).toHaveLength(2)
+    expect(GATEWAY_SOURCE.match(/yield\* invitation\(/g) ?? []).toHaveLength(2)
   })
 })
 
@@ -1739,7 +1906,17 @@ describe("the collapse-point ledger actually bites (negative control)", () => {
     const rogue = '  if (bound === undefined) return { kind: "unavailable", reason: "the db is down" }'
     const producers = rogue.split("\n").filter((line) => line.includes('return { kind: "unavailable"'))
     expect(producers).toHaveLength(1)
-    expect(producers.every((line) => line.includes('invited === "unknown"'))).toBe(false)
+    // It names no read it could not perform, so no entry in the allowlist covers it.
+    expect(producers.filter((line) => !UNAVAILABLE_EARNED_BY.some((test) => line.includes(test)))).toEqual(producers)
+  })
+
+  test("a stale entry in the earned-by allowlist is what the shrink direction reports", () => {
+    // The direction that keeps the allowlist from becoming a list of licences nobody uses — which is
+    // how a condition that was renamed in gateway.ts goes on "covering" producers that no longer
+    // exist. Exercised on a synthetic producer set that carries only the first entry.
+    const producers = ['  if (invited === "unknown") return { kind: "unavailable", reason: X }']
+    const unused = UNAVAILABLE_EARNED_BY.filter((test) => !producers.some((line) => line.includes(test)))
+    expect(unused).toEqual(["!charge.read"])
   })
 
   test("a second raw `hasChat` read outside the collapse is what the count reports", () => {

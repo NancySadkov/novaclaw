@@ -601,6 +601,18 @@ describe("the hostility tri-state has exactly ONE collapse point", () => {
         "`decideBash` runs, the unanswerable case has already been decided. It is a separate file this " +
         "change deliberately does not edit, so the mapping lives in the gate rather than being pushed here.",
     ],
+    [
+      "src/tool/messenger.ts",
+      "⚠️ A FALSE POSITIVE of the sweep, ledgered rather than silenced. `initiationRefusal` matches the " +
+        "tri-state EXHAUSTIVELY — `false` → clear, `\"unknown\"` → `unavailable`, `true` → `failed` — so " +
+        "it EXPANDS the distinction into three outcomes instead of collapsing it to two. The sweep " +
+        "cannot tell the two apart, because an exhaustive match necessarily compares against literals; " +
+        "that is a limit of a text sweep, not a defect in the file. It is listed here (rather than the " +
+        "regex being loosened) because loosening would blind the sweep to the real regression in every " +
+        "file at once, and because the property that makes this entry legitimate is itself pinned: " +
+        "`test/messenger-tool.test.ts` asserts the three outcomes are distinct, negative-controlled. If " +
+        "that ever reduces to two, this entry becomes a lie and that test — not this one — is what bites.",
+    ],
   ])
 
   test("the sweep actually has the package to look at", () => {

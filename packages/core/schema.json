@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "f41ba119-e5b4-49fb-8400-015482215653",
+  "id": "a3c4d9f0-7f5d-4969-92d8-a65da463caf4",
   "prevIds": [
-    "01888532-ce08-480a-8ea5-edf907ca6093"
+    "f41ba119-e5b4-49fb-8400-015482215653"
   ],
   "ddl": [
     {
@@ -108,6 +108,10 @@
     },
     {
       "name": "messenger_cursor",
+      "entityType": "tables"
+    },
+    {
+      "name": "messenger_initiation",
       "entityType": "tables"
     },
     {
@@ -1690,6 +1694,56 @@
       "autoincrement": false,
       "default": null,
       "generated": null,
+      "name": "scope",
+      "entityType": "columns",
+      "table": "messenger_initiation"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "day",
+      "entityType": "columns",
+      "table": "messenger_initiation"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "count",
+      "entityType": "columns",
+      "table": "messenger_initiation"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_created",
+      "entityType": "columns",
+      "table": "messenger_initiation"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_updated",
+      "entityType": "columns",
+      "table": "messenger_initiation"
+    },
+    {
+      "type": "text",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
       "name": "id",
       "entityType": "columns",
       "table": "permission"
@@ -2976,6 +3030,15 @@
       "nameExplicit": false,
       "name": "messenger_cursor_pk",
       "table": "messenger_cursor",
+      "entityType": "pks"
+    },
+    {
+      "columns": [
+        "scope"
+      ],
+      "nameExplicit": false,
+      "name": "messenger_initiation_pk",
+      "table": "messenger_initiation",
       "entityType": "pks"
     },
     {

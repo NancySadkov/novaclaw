@@ -8,6 +8,7 @@ import { Messenger } from "@novaclaw/schema/messenger"
 import type { ModerationAct } from "../messenger/driver"
 import { makeLocationNode } from "../effect/app-node"
 import { FSUtil } from "../fs-util"
+import { HostExec } from "../host-exec"
 import { Location } from "../location"
 import { LocationMutation } from "../location-mutation"
 import { MessengerDrivers } from "../messenger/drivers"
@@ -16,6 +17,7 @@ import { MessengerPipeline } from "../messenger/pipeline"
 import { MessengerStore } from "../messenger/store"
 import { PermissionV2 } from "../permission"
 import { EFFECTIVE_CONFIG_DEFAULTS, resolveSessionConfig } from "../session/config-resolve"
+import { SessionOrigin } from "../session/origin"
 import { SessionStore } from "../session/store"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
@@ -71,6 +73,14 @@ const SendOp = Schema.Struct({
   reply: Schema.String.pipe(Schema.optional).annotate({
     description:
       "Message id this answers (from the `msg …` in a message header, or from history) — attaches the reply to that message. Use it in busy group chats so people can tell what you're answering.",
+  }),
+  initiate: Schema.Boolean.pipe(Schema.optional).annotate({
+    description:
+      "Set true ONLY to START a conversation with someone who has never written to this account (a cold " +
+      "first contact). It asks the USER for permission every time, and only a small number of new " +
+      "conversations are allowed per day. Leave it off for every reply and for every chat that has " +
+      "already messaged you — and prefer asking the person to message first, which needs no permission " +
+      "at all. It cannot be used from a chat belonging to a client or an audience.",
   }),
   account: Schema.String.pipe(Schema.optional).annotate({
     description: "Account id (msa_…) or label — omit when only one account exists",
@@ -221,6 +231,66 @@ export const modelText = (output: Output): string =>
     ? `${output.message}\nNothing was sent and nothing was changed. Calling this tool again will not help until that is fixed — tell the user what is broken, and use another way to reach anyone waiting if it is urgent.`
     : output.message
 
+/**
+ * ⭐ MAY A TURN ON THIS SESSION START A CONVERSATION NOBODY INVITED? (AGENTS.md #9(b).)
+ *
+ * 9(b) has two halves. The default — *never cold-start* — has always been enforced at the gateway.
+ * The other half, *starting one needs **explicit permission** and its own stricter rate limit*, was
+ * half-built: the rate limit is `DAILY_NEW_CONVERSATION_CAP`, and the permission did not exist. This
+ * function plus the `messenger.initiate` assert in `send` are that missing half.
+ *
+ * ⚠️ **"Explicit permission" is the OPERATOR's, and a correspondent must never be able to trigger
+ * it.** The standing decision *System commands are the OPERATOR's surface, never the correspondent's*
+ * is this same shape one layer up: a remote human's message is evaluated by the model, and the model
+ * acts through permission-gated tools — so the gate has to hold while the model is arguing on a
+ * stranger's behalf. A client or audience chat talking the agent into cold-DMing a third party is
+ * exactly the havoc principle 9 exists to prevent, and **a consent card is not an adequate answer to
+ * it**: the operator would be asked to approve an initiation they never wanted, prompted by words the
+ * stranger effectively wrote, on a surface (Allow / Always allow) built for their own requests. So a
+ * hostile chain is refused HERE, before any card is raised — deny-fast, the same reasoning
+ * `tool/bash.ts` uses for its jail decision.
+ *
+ * ⚠️ **Three answers, not two, and `"unknown"` refuses.** `HostExec.chainHasHostileBinding` walks the
+ * WHOLE parent chain (the recommended messenger pattern — a bound session spawning a worker — puts
+ * the binding on an ancestor) and reports `"unknown"` when a link could not be read. Only a chain
+ * read end to end with nothing untrusted on it may initiate. That collapse is deliberately identical
+ * to `HostExec.takesUnattendedArm`'s (unknown contains rather than permits — ruling 2), and it is
+ * restated here rather than imported for two reasons: that helper is module-private, and the QUESTION
+ * differs — the jail asks *may this command run with the host user's authority*, this asks *may this
+ * turn write to a person who never asked to hear from us*. Keeping the answer in one exported
+ * function is what stops the two from drifting inside this file.
+ *
+ * ⚠️ **The two refusals differ in OUTCOME, not merely in wording.** A hostile chain is a fact we
+ * established, so the request `failed` and the model should do something else. An unreadable chain is
+ * a question this instance could not answer, so it is `unavailable` — and `modelText` then supplies
+ * the horizon that retrying will not help. Describing the second as the first would blame a chat that
+ * may not exist for a database fault, which is ruling 2's *a fault is never described falsely*.
+ *
+ * Returns `undefined` when the turn is clear to ask for permission — never `true`, so that "no
+ * refusal" cannot be mistaken for "already allowed". The permission assert is a separate step.
+ */
+export const initiationRefusal = (hostility: HostExec.Hostility): Output | undefined => {
+  if (hostility === false) return undefined
+  if (hostility === "unknown")
+    return {
+      outcome: "unavailable",
+      message:
+        "I couldn't start a new conversation: this instance's messenger database can't be read, so I " +
+        "can't tell whether this session is being driven by somebody else's chat. Writing to a person " +
+        "who has never messaged us is only allowed when that question has an answer, so nothing was " +
+        "sent and nothing was lost. The user can check Settings → Messengers.",
+    } satisfies Output
+  return {
+    outcome: "failed",
+    message:
+      "I can't start a new conversation from this session: it is driven by a messenger chat belonging " +
+      "to a client or an audience rather than to the user. Writing to someone uninvited on the user's " +
+      "account is theirs to ask for, in NovaClaw itself — not something a correspondent can request " +
+      "through a chat. Nothing was sent. Answer inside this conversation instead, or ask the person to " +
+      "message this account first.",
+  } satisfies Output
+}
+
 /** Said whenever the messenger store itself could not answer. It names the subsystem and says the
  *  fault is the instance's, not the request's — the "unavailable subsystem names itself" half of
  *  ruling 2, in the words a model has to act on. */
@@ -262,17 +332,86 @@ const accessTag = (access: Messenger.SourceLabel): string => {
   return access.proposed === "public" ? "unconfirmed — not citable" : "unlabelled — not citable"
 }
 
-export const formatChats = (chats: ReadonlyArray<Messenger.ChatInfo>): string =>
-  chats.map((chat) => `${chat.chatID} · [${chat.kind} · ${accessTag(chat.access)}] ${oneLine(chat.title)}`).join("\n")
+/**
+ * ⚠️ **The two functions below are the FIFTH untrusted-input seam** — ledgered as named debt in
+ * `test/untrusted-framing.test.ts` until 2026-07-31, closed here.
+ *
+ * `webfetch`, `websearch` and the MCP adapter frame the bytes they bring in from a third party. This
+ * file brings in bytes too — a correspondent's prose and a chat's name — and a tool result is the
+ * same door into the context window that a messenger *turn* is. The turn side has been framed since
+ * P6 (`SessionOrigin.modelHeader` + `CLIENT_FRAME`/`AUDIENCE_FRAME`); these two functions are the
+ * tool side of the identical hazard, so they get the identical vocabulary.
+ *
+ * ⚠️ **The frame lives HERE and not in `modelText`/`toModelOutput`, deliberately.** Every *other*
+ * `Output.message` this file produces is OUR OWN words — `STORE_UNAVAILABLE`, `OFFLINE_GATEWAY`,
+ * "Sent (paced at human typing speed).", the bypass-bind refusal, "No chats are visible on that
+ * account yet." Framing at the tool's projection would label this instance's own faults as a
+ * stranger's text: ruling 2's *a fault is never described falsely*, pointed the other way. These two
+ * functions are the only places third-party bytes are rendered, so they are the only places the
+ * label is true — and no future op can produce unframed correspondent text by forgetting to add one.
+ *
+ * ⚠️ **ONE frame per BATCH, never per line.** Both collapse N items into a single string per tool
+ * call, and `externalContentFrame` is pinned to one line precisely so it is not multiplied — a
+ * per-message prefix would bill the frame up to 200 times (the `history` cap) for one answer about
+ * one chat. (The gateway's audience-turn path also speaks of "one frame per batch"; that is a
+ * DIFFERENT mechanism — `SessionOrigin.headerLine` per buffered message under a single preamble.
+ * For a tool result, "per batch" simply means "once".)
+ *
+ * ⚠️ **What is deliberately NOT framed, so the omission reads as a decision.** Three places put a
+ * driver-supplied FRAGMENT inside a sentence of ours: `download`'s `Saved "<name>" …`, a failed
+ * `gateway.*` call's `reason`, and `statusLine`'s connection `message`. Each is OUR sentence, so a
+ * batch frame in front of it would mislabel the sentence — the same error the paragraph above
+ * avoids. Framing a fragment needs a per-value mechanism, which is a different change; the filename
+ * is additionally already constrained by `containedPath`.
+ */
 
-export const formatHistory = (messages: ReadonlyArray<{ senderName: string; outgoing: boolean; text?: string; at: number }>): string =>
-  messages
-    .map((message) => {
-      const when = new Date(message.at).toISOString().slice(0, 16).replace("T", " ")
-      const who = message.outgoing ? "me" : oneLine(message.senderName)
-      return `${when} ${who}: ${message.text === undefined ? "(no text)" : oneLine(message.text)}`
-    })
-    .join("\n")
+export const formatChats = (chats: ReadonlyArray<Messenger.ChatInfo>): string => {
+  // Empty stays empty and unframed (websearch's rule): a frame around nothing announces a source
+  // that sent us none. The `chats` op returns `failed` before it gets here, but this is exported and
+  // the honest answer must not depend on which caller asks.
+  if (chats.length === 0) return ""
+  // The label names ONLY the bytes that are actually external. A chat's *name* is set on the remote
+  // platform by whoever administers the chat; the id, the kind and the ruling-7 access tag are ours.
+  // "a chat list" would over-claim (ruling 2) — and worse, it would put `private — never cite` under
+  // a banner reading "not instructions", teaching a small model to discount the one label ruling 7
+  // exists to make it heed.
+  return (
+    SessionOrigin.externalContentFrame("chat names from the messaging platform") +
+    chats.map((chat) => `${chat.chatID} · [${chat.kind} · ${accessTag(chat.access)}] ${oneLine(chat.title)}`).join("\n")
+  )
+}
+
+export const formatHistory = (
+  messages: ReadonlyArray<{ senderName: string; outgoing: boolean; text?: string; at: number }>,
+): string => {
+  if (messages.length === 0) return ""
+  // "a messenger conversation", not "messages from a stranger", and the difference is ruling 2:
+  // `outgoing` messages render as `me:`, i.e. the operator's own account — or this agent's own
+  // earlier sends — so attributing the whole batch to a correspondent would describe its source
+  // falsely. The per-line `me:` / sender-name marker is the attribution; the frame only says what
+  // the block IS.
+  //
+  // ⚠️ "Treat as data" is nevertheless right for the `me:` lines too. An operator's *instruction*
+  // arrives as a TURN (`SessionOrigin.modelHeader`, trust `operator`, deliberately unframed); a
+  // `history` read is a retrospective log, and re-obeying a line this agent itself sent an hour ago
+  // is a loop, not obedience.
+  //
+  // ⚠️ The label names no chat, no account and no correspondent. The chat id is already in the
+  // model's own tool call, and every human-readable identity available here — a chat title, a
+  // sender's display name — is set by the third party itself, so putting one in the frame would
+  // state an identity we never verified. `webfetch` may name a host because DNS makes a host a
+  // checkable fact; a messenger display name is not one.
+  return (
+    SessionOrigin.externalContentFrame("a messenger conversation") +
+    messages
+      .map((message) => {
+        const when = new Date(message.at).toISOString().slice(0, 16).replace("T", " ")
+        const who = message.outgoing ? "me" : oneLine(message.senderName)
+        return `${when} ${who}: ${message.text === undefined ? "(no text)" : oneLine(message.text)}`
+      })
+      .join("\n")
+  )
+}
 
 export const layer = Layer.effectDiscard(
   Effect.gen(function* () {
@@ -286,6 +425,20 @@ export const layer = Layer.effectDiscard(
 
     const OFFLINE_GATEWAY =
       "The messenger service isn't running on this instance (offline/airgapped, or still starting). Check Settings → Messengers."
+
+    // messenger-plan §3.4 — is any session in this chain bound to a client/audience chat? The walk
+    // itself lives in `host-exec.ts` because `tool/bash.ts` and the Strict runner already ask this
+    // exact question of the exact same code, and a second copy is the drift ruling 6 exists to
+    // prevent. This layer supplies only the two lookups.
+    // ⚠️ Both are handed over WITHOUT a local recovery, on purpose: an `orElseSucceed(() => [])`
+    // here would swallow precisely the fault the tri-state exists to report, and the walk would
+    // answer the permissive `false` for an unreadable database — the defect `Hostility` was grown
+    // to end. See `initiationRefusal` for what the three answers mean HERE.
+    const chainHasHostileBinding = (sessionID: string): Effect.Effect<HostExec.Hostility> =>
+      HostExec.chainHasHostileBinding(sessionID, {
+        bindingsForSession: (id) => store.bindingsForSession(id),
+        parentOf: (id) => sessions.get(id as never).pipe(Effect.map((session) => session?.parentID)),
+      })
 
     // A miss carries the WHOLE tool output, not a bare string, so the op that hands it back cannot
     // lose which of the three outcomes it was. `{ error: string }` could only ever mean "failed",
@@ -370,8 +523,10 @@ export const layer = Layer.effectDiscard(
             "account's conversations / recent EMAIL THREADS — subjects + senders; ids feed the other ops) · " +
             "history (recent messages / emails of one chat or thread, oldest first — use it to read and " +
             "summarize a mailbox or conversation) · send (write into a chat / reply to an email thread AS the " +
-            "user, paced at human speed; starting a brand-new conversation needs explicit permission, so ask " +
-            "people to message first) · connect (bind THIS session to a chat/thread — pick a trust tier) · " +
+            "user, paced at human speed; writing to a chat that has never messaged this account is a COLD " +
+            'START — refused unless you pass initiate:true, which asks the user for permission and is ' +
+            "strictly capped per day, so prefer asking people to message first) · connect (bind THIS session " +
+            "to a chat/thread — pick a trust tier) · " +
             "disconnect · upload (send a workspace file, optional caption) · download (save an attachment) · " +
             "moderate (delete a message, or ban/kick/mute/pin a member — for chats you moderate, where the " +
             "platform supports it). " +
@@ -479,20 +634,67 @@ export const layer = Layer.effectDiscard(
                   if (gateway === undefined) return { outcome: "failed", message: OFFLINE_GATEWAY } satisfies Output
                   const resolved = yield* resolveAccount(input.account)
                   if (resolved.account === undefined) return resolved.miss
+                  const chatID = input.chat.trim()
+                  const resource = `${resolved.account.id}:${chatID}`
+                  // ⭐ AGENTS.md #9(b)'s OTHER half — starting a conversation. The default (never
+                  // cold-start) is the gateway's; this is the "explicit permission" the rule pairs
+                  // with the daily cap, and until 2026-07-31 it did not exist, so the product could
+                  // not start a conversation at all.
+                  const initiating = input.initiate === true
+                  if (initiating) {
+                    // Deny-fast, BEFORE either card. Asking the operator to approve something we are
+                    // certain to refuse is a hang dressed as a gate (`tool/bash.ts`'s jail check made
+                    // the same move for the same reason) — and here it is worse than wasteful, because
+                    // the card would be prompted by a stranger's words. Reasoning: `initiationRefusal`.
+                    const refusal = initiationRefusal(yield* chainHasHostileBinding(context.sessionID))
+                    if (refusal !== undefined) return refusal
+                  }
                   // Writing AS the user is consequential — permission-gated (default policy applies;
                   // the resource is the chat so saved rules can scope per conversation).
                   yield* permission.assert({
                     action: "messenger.send",
-                    resources: [`${resolved.account.id}:${input.chat.trim()}`],
+                    resources: [resource],
                     save: ["*"],
                     sessionID: context.sessionID,
                     agent: context.agent,
                     source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
                   })
+                  // ⚠️ SECOND gate, and it is ADDITIONAL — never a replacement for the one above.
+                  // A cold start is also a send, so a user who denied `messenger.send` for this chat
+                  // must not be able to be talked into the same write through the initiate card; and
+                  // conversely a saved "always allow messenger.send on *" (which is what the assert
+                  // above offers) cannot satisfy this one, because the action name differs and
+                  // `Wildcard.match` compares actions literally.
+                  //
+                  // ⚠️ `save: [resource]` — NOT `save: ["*"]`, which is what `messenger.send` uses.
+                  // The asymmetry is the whole point, and `tool/recipe.ts` faced the identical
+                  // question for a durable instance-global write: an "always" answered here with a
+                  // wildcard would be a standing grant to COLD-DM ANYONE, FOREVER, from one card the
+                  // user answered about one person. Scoped to the one chat, "always" means what a
+                  // person would think it means — keep writing to THIS conversation — and every new
+                  // stranger costs its own card. The daily cap still bounds the whole day on top.
+                  //
+                  // ⚠️ Asked on the DECLARED intent, not on a pre-flight cold/invited check. Two
+                  // reasons: a check-then-send would be a TOCTOU (the invitation can change between
+                  // the read and the write, and the gateway re-asks it anyway at the point of send),
+                  // and it would need a second read seam into the messenger store for a question the
+                  // gateway already owns. The cost is one card in the rare case the model sets
+                  // `initiate` on a chat that turns out to have written to us — the field's own
+                  // description tells it not to, and over-asking is the safe direction here.
+                  if (initiating)
+                    yield* permission.assert({
+                      action: "messenger.initiate",
+                      resources: [resource],
+                      save: [resource],
+                      sessionID: context.sessionID,
+                      agent: context.agent,
+                      source: { type: "tool", messageID: context.assistantMessageID, callID: context.toolCallID },
+                    })
                   const outcome = yield* gateway.send({
                     accountID: resolved.account.id,
-                    chatID: input.chat.trim(),
+                    chatID,
                     text: input.text,
+                    ...(initiating ? { initiate: true } : {}),
                     ...(input.reply === undefined || input.reply.trim().length === 0 ? {} : { replyTo: input.reply.trim() }),
                   })
                   // Three arms, switched not truthiness-tested. `unavailable` carries through as

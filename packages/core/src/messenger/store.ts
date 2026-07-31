@@ -1,6 +1,6 @@
 export * as MessengerStore from "./store"
 
-import { and, eq } from "drizzle-orm"
+import { and, eq, sql } from "drizzle-orm"
 import { Cause, Context, Effect, Layer, Schema } from "effect"
 import { Messenger } from "@novaclaw/schema/messenger"
 import { Database } from "../database/database"
@@ -11,6 +11,7 @@ import {
   MessengerChatTable,
   MessengerContactTable,
   MessengerCursorTable,
+  MessengerInitiationTable,
 } from "./sql"
 
 // The Messenger module's persistence (notes/messenger-plan.md §3.1): accounts, the seen-chat
@@ -203,7 +204,68 @@ export interface Interface {
 
   readonly getCursor: (accountID: Messenger.AccountID) => Effect.Effect<unknown>
   readonly setCursor: (accountID: Messenger.AccountID, value: unknown) => Effect.Effect<void>
+
+  /**
+   * Spend one slot from the DURABLE daily cold-start budget, or answer that today's is gone.
+   *
+   * ⚠️ **Test-and-charge is ONE statement, and that is the whole point of it living here.** The
+   * in-memory bucket this replaces read and wrote in the same synchronous tick, so no read-then-write
+   * window existed; a durable counter introduces one, and two concurrent initiations that both read
+   * 19 would both send — the day exceeds the cap and the account it protects is the owner's real one.
+   * So the check, the day rollover and the increment are a single SQLite upsert whose `DO UPDATE …
+   * WHERE` *is* the cap test: SQLite skips a `DO UPDATE` whose `WHERE` is false and returns no row,
+   * which is exactly `exhausted`. No transaction to forget, and it holds across PROCESSES too (two
+   * instances on one database file serialize on the write lock) — which an in-process mutex would not.
+   *
+   * ⚠️ **Fails typed rather than answering `exhausted` or `charged`** — the ruling-2 discipline this
+   * module already applies to `hasChat` and `bindingForChat`. Neither invented answer is acceptable:
+   * `charged` on an unreadable database is an uncounted cold DM to a stranger (the ban risk 9(b)
+   * exists to bound), and `exhausted` states "you have used today's twenty" — a claim about the day's
+   * traffic made from a write that never happened. The caller must decide, and `gateway.send` decides
+   * `unavailable`: we could not find out whether we were allowed to, so nothing goes out.
+   *
+   * `at` is the caller's clock reading (never read here — the gateway is on `Clock.currentTimeMillis`
+   * so tests can cross midnight on the TestClock), and `cap` is the caller's policy number, so the
+   * limit stays declared in exactly one place (`MessengerGateway.DAILY_NEW_CONVERSATION_CAP`).
+   */
+  readonly chargeInitiation: (input: {
+    readonly at: number
+    readonly cap: number
+  }) => Effect.Effect<InitiationCharge, UnavailableError>
 }
+
+/**
+ * The answer to *may we start one more conversation today?* — asked and answered by SPENDING it.
+ *
+ * A `kind` discriminant rather than a boolean, for the reason `SendOutcome` gives at length: a
+ * two-state answer invites `if (!charge.ok)`, and the third state this question really has (the
+ * database did not answer) rides the error channel precisely so no truthiness test can swallow it.
+ */
+export type InitiationCharge =
+  /** A slot was spent. `used` is the day's running total INCLUDING this one, so `used === cap` is
+   *  the last one of the day and the next call answers `exhausted`. */
+  | { readonly kind: "charged"; readonly used: number; readonly day: string }
+  /** Today's budget is gone. Nothing was charged — a refusal must never cost a slot it did not use. */
+  | { readonly kind: "exhausted" }
+
+/** The one row of `messenger_initiation`. See that table's note for why the budget is global. */
+export const INITIATION_SCOPE = "global"
+
+/**
+ * Which day a moment belongs to, for the cold-start budget: the **UTC calendar date**, `YYYY-MM-DD`.
+ *
+ * ⚠️ **UTC, deliberately, and it is not the obvious choice.** A user-local day would reset at the
+ * user's midnight, which reads nicer — and is the one property a durable counter must not have. The
+ * local day is a function of the machine's timezone, so a laptop that crosses a timezone, a DST
+ * transition, or a `TZ` change would move the boundary underneath a counter that has already been
+ * charged, and moving it BACKWARDS mints a second budget for one real day. UTC is a pure function of
+ * the instant: no zone, no DST, no ambiguous hour. The cap is an anti-spam pacing device, not an
+ * appointment — nothing about it needs to align with the user's breakfast.
+ *
+ * ⚠️ And ISO dates compare lexicographically the way they compare chronologically, which is what lets
+ * `chargeInitiation` do "roll over only FORWARD" as a plain `>` inside SQL.
+ */
+export const initiationDay = (at: number): string => new Date(at).toISOString().slice(0, 10)
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/MessengerStore") {}
 
@@ -592,6 +654,65 @@ export const layer = Layer.effect(
           .onConflictDoUpdate({ target: MessengerCursorTable.account_id, set: { cursor: value } })
           .run()
           .pipe(Effect.orDie)
+      }),
+
+      // ⚠️ NOT `Effect.orDie`, and NOT a silent `exhausted`/`charged`: both are claims about the
+      // day's cold outreach, and one of them puts an uncounted DM on the owner's real account.
+      // See the interface note; the SQL below is explained line by line because every clause of it
+      // is load-bearing.
+      chargeInitiation: Effect.fn("MessengerStore.chargeInitiation")(function* (input) {
+        // ⚠️ A cap below one is answered WITHOUT touching the table, and this is not paranoia about
+        // an input nobody passes — it closes a real hole in the statement below. `setWhere` governs
+        // the DO UPDATE arm only; the plain INSERT arm (the day's very first charge, when no row
+        // exists yet) is not filtered by it, so a zero cap would still hand out one cold start per
+        // day. Nothing passes zero today — but "set the cap to 0 to stop initiating" is the obvious
+        // next feature, and it would ship silently broken.
+        if (input.cap < 1) return { kind: "exhausted" } satisfies InitiationCharge
+        const today = initiationDay(input.at)
+        // Unqualified column references: inside `DO UPDATE SET` a bare name is the EXISTING row's
+        // value (`excluded.x` would be the one we tried to insert), which is what both CASEs want.
+        const day = sql.identifier(MessengerInitiationTable.day.name)
+        const count = sql.identifier(MessengerInitiationTable.count.name)
+        const rows = yield* nameTheFault(
+          db
+            .insert(MessengerInitiationTable)
+            .values({
+              scope: INITIATION_SCOPE,
+              day: today,
+              count: 1,
+              time_created: input.at,
+              time_updated: input.at,
+            })
+            .onConflictDoUpdate({
+              target: MessengerInitiationTable.scope,
+              set: {
+                // ⚠️ **Rolls over only FORWARD** (`today > day`, never `today !== day`). A clock that
+                // jumps BACKWARDS — an NTP correction, a user fixing the date, a VM resuming from a
+                // snapshot — would otherwise look exactly like a new day and hand out a second budget
+                // for one real day. Keeping the later stored day means a backwards jump charges the
+                // bucket that is already running, which is the fail-closed direction. (A jump
+                // FORWARDS past midnight does mint a fresh bucket, and nothing durable can prevent
+                // that without a monotonic clock we do not have across restarts; it is the same
+                // exposure the in-memory version had, minus the restart one this table removes.)
+                day: sql`CASE WHEN ${today} > ${day} THEN ${today} ELSE ${day} END`,
+                count: sql`CASE WHEN ${today} > ${day} THEN 1 ELSE ${count} + 1 END`,
+                time_updated: input.at,
+              },
+              // THE CAP, enforced by SQLite rather than by us. A `DO UPDATE` whose `WHERE` is false
+              // is skipped — no update, no constraint error, and (the part that makes this work) no
+              // `RETURNING` row. So an empty result IS "today's budget is gone", established in the
+              // same statement that would have spent the slot. Nothing between the test and the
+              // charge can interleave, because there is no "between".
+              setWhere: sql`${today} > ${day} OR ${count} < ${input.cap}`,
+            })
+            .returning({ day: MessengerInitiationTable.day, count: MessengerInitiationTable.count })
+            .all(),
+          `chargeInitiation(${today})`,
+        )
+        const charged = rows[0]
+        return charged === undefined
+          ? ({ kind: "exhausted" } satisfies InitiationCharge)
+          : ({ kind: "charged", used: charged.count, day: charged.day } satisfies InitiationCharge)
       }),
     })
   }),

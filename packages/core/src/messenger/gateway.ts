@@ -146,6 +146,21 @@ const COLD_START_UNKNOWABLE =
   "account flagged, so nothing was sent and nothing was lost. Ask the user to check " +
   "Settings → Messengers before trying again."
 
+/**
+ * The initiation was ALLOWED and still did not go out, because the durable daily budget could not be
+ * spent — the one write that says "this cold start is counted" never happened.
+ *
+ * ⚠️ It is a separate sentence from `COLD_START_UNKNOWABLE` on purpose, even though both name an
+ * unreadable database. That one means *we don't know whether this is a cold start*; this one means
+ * *we know it is, and we cannot count it*. Sending anyway would be an uncounted cold DM — the exact
+ * traffic AGENTS.md #9(b)'s "own stricter rate limit" exists to bound — so an unspendable budget
+ * refuses like a spent one rather than falling through to the send.
+ */
+const INITIATION_UNCOUNTABLE =
+  "I couldn't start that conversation: this instance's messenger database can't be read, so I can't " +
+  "count it against today's new-conversation limit. Starting conversations we don't count is how an " +
+  "account gets flagged, so nothing was sent. Check Settings → Messengers and try again."
+
 /** What an operator's chat is told when a `/status`-style question cannot be answered at all. */
 const STATE_UNREADABLE =
   "I can't reach this instance's messenger database right now, so I can't tell what this chat is " +
@@ -260,34 +275,49 @@ export interface Interface {
    * conversation is refused unless the caller passes `initiate`, and then capped by the daily
    * new-conversation bucket.
    *
-   * ⚠️ **NOTHING IN THE PRODUCT PASSES `initiate`** (audited 2026-07-28). This method's only
-   * non-test caller is the `messenger` tool (`tool/messenger.ts`), whose `SendOp` schema has no
-   * `initiate` field — and the `messenger.initiate` permission that this comment used to say the
-   * tool checks **does not exist anywhere in the tree**. So NovaClaw currently cannot start a
-   * conversation at all: every product-path cold start takes the refusal below, and the daily
-   * bucket is exercised only by tests. Stating it plainly because the previous wording described a
-   * gate that was never built, which is worse than the missing feature.
+   * ✅ **BOTH HALVES OF AGENTS.md #9(b) ARE NOW PRESENT (2026-07-31).** The rule is *never
+   * cold-start … and starting a new conversation needs **explicit permission** and its own stricter
+   * rate limit*. The default refusal below is the first clause; `DAILY_NEW_CONVERSATION_CAP` is the
+   * rate limit; and the permission — which this comment once described while it **existed nowhere in
+   * the tree** — is now `messenger.initiate`, asserted by the `messenger` tool before it may pass
+   * `initiate` at all.
    *
-   * That default is the safe half of AGENTS.md #9(b) (*never cold-start*), but it is only half:
-   * 9(b) also says starting one is allowed with **explicit permission and its own stricter rate
-   * limit**. The rate limit exists (`DAILY_NEW_CONVERSATION_CAP`); the permission does not. Wiring
-   * it needs BOTH halves, and the second USED to be the one that bites: a `messenger.initiate`
-   * permission that actually **asks by default** was impossible while the agent baseline opened with
-   * a catch-all `{ action: "*", resource: "*", effect: "allow" }`, because the gate would have
-   * granted itself — a false promise, which ruling 2 forbids more strongly than a known gap.
-   * ✅ **That blocker is GONE (v0.2.0 B4c).** `plugin/agent.ts` now opens with
-   * `PermissionV2.AMBIENT_SAFE_BASELINE`, which names nothing beginning `messenger.`, so a new
-   * `messenger.initiate` action asks by default the moment it is asserted — pinned by
-   * `test/permission-baseline.test.ts`, which already holds the three existing `messenger.*` actions
-   * to `ask`. What remains is the FIRST half: an `initiate` field on `SendOp` and an assert on it.
-   * Until that lands, `initiate` is the enforcement point and nothing more; `messenger-tool.test.ts`
-   * keeps it honest.
+   * **Why it could not ship earlier, and what unblocked it.** A `messenger.initiate` permission that
+   * actually *asks* by default was impossible while the agent baseline opened with a catch-all
+   * `{ action: "*", resource: "*", effect: "allow" }`: the gate would have granted itself, which is a
+   * false promise, and ruling 2 forbids that more strongly than it minds a known gap. v0.2.0 **B4c**
+   * removed the catch-all — `plugin/agent.ts` opens with `PermissionV2.AMBIENT_SAFE_BASELINE`, which
+   * names nothing beginning `messenger.`, so the action falls through to `evaluate`'s `ask` default.
+   * `test/permission-baseline.test.ts` pins that for the `messenger.*` family.
+   *
+   * ⚠️ **This method is still the ENFORCEMENT point, not the gate.** The permission, and the refusal
+   * that keeps an untrusted correspondent from triggering it, live in `tool/messenger.ts`
+   * (`initiationRefusal` + the `messenger.initiate` assert) — where the session, its agent and its
+   * parent chain are known, and where the permission service is reachable at all; this service is
+   * instance-global and has neither. What lives HERE and must not migrate: the cold-start default,
+   * the pacer, and the decision to spend a daily slot. A caller passing `initiate` is asserting that
+   * a human said yes; the tool is the only product caller, and `messenger-tool.test.ts` holds that
+   * ledger.
+   *
+   * ⚠️ **The daily bucket's STORAGE is no longer here, and that is the 2026-07-31 fix.** It was a
+   * `{ day, count }` object on this service's heap, i.e. per gateway INSTANCE — so a restart handed
+   * the day a fresh twenty, and this product's supervisor restarts a crashed server on purpose. The
+   * count now lives in `messenger_initiation` and is spent through `MessengerStore.chargeInitiation`,
+   * one atomic upsert that rolls the UTC day, tests the cap and increments together. The decision
+   * (when to spend, what a refusal says, what an unreadable budget means) stays in this method.
+   *
+   * ⚠️ **A successful initiation does NOT mark the chat as seen, deliberately.** It would make every
+   * follow-up an ordinary reply — no card, no slot — and a string of unanswered DMs to somebody who
+   * never wrote back is exactly the pattern providers flag. So each cold send to a silent chat keeps
+   * costing a slot and a consent card until the person actually replies (which seeds the cache
+   * through the inbound path, as an invitation should be).
    */
   readonly send: (input: {
     readonly accountID: Messenger.AccountID
     readonly chatID: string
     readonly text: string
-    /** Lift the cold-start refusal for THIS send. No product surface sets it — see the note above. */
+    /** Lift the cold-start refusal for THIS send, and spend a slot from the daily bucket. Set ONLY
+     *  by `tool/messenger.ts`, and only after `messenger.initiate` was granted — see the note above. */
     readonly initiate?: boolean
     /** Attach the answer to the message that asked (a busy channel is unreadable otherwise).
      *  Ignored by platforms without replies — never an error, the message still goes out. */
@@ -368,8 +398,10 @@ const build = (options: Options) =>
     const pairing = new Map<string, { accountID: Messenger.AccountID; trust: Messenger.ContactTrust; expiresAt: number }>()
     // Last `/sessions` listing per operator chat, so `/use N` indexes exactly what they saw.
     const listings = new Map<string, string[]>()
-    // The daily cold-start bucket (traffic rules §2.3).
-    const initiations = { day: "", count: 0 }
+    // The daily cold-start bucket (traffic rules §2.3) is NOT here any more, and its absence is the
+    // point: it was `{ day, count }` on this heap until 2026-07-31, i.e. per gateway instance, so
+    // every restart handed the day a fresh twenty. It now lives in `messenger_initiation` — see
+    // `store.chargeInitiation` and the charge site in `send`.
     // §0.1.5 dispatcher: chatKey -> recent task-spawn timestamps (the per-chat rate guard).
     const dispatchRate = new Map<string, number[]>()
     // §0.1.5 dispatcher: dispatched sessionID -> the last narration already relayed to its chat, so
@@ -1417,25 +1449,17 @@ const build = (options: Options) =>
           // user's real account (AGENTS.md #9(b)) — but we refuse under our own name.
           if (invited === "unknown") return { kind: "unavailable", reason: COLD_START_UNKNOWABLE } satisfies SendOutcome
           if (invited === "cold") {
-            // Traffic rules §2.3 / AGENTS.md #9(b): the agent must be INVITED to write first. No
-            // product surface passes `initiate` today (see the interface note above), so THIS is
-            // what every real cold start currently gets — the branch below is test-only.
+            // Traffic rules §2.3 / AGENTS.md #9(b): the agent must be INVITED to write first, so
+            // this is what a cold start gets unless the caller has already obtained the user's
+            // explicit permission (`messenger.initiate`, asserted in `tool/messenger.ts` — see the
+            // interface note above). The wording keeps pointing at that route rather than at a
+            // retry, because the model's next move is to ask the person to write first.
             if (!input.initiate)
               return {
                 kind: "refused",
                 reason:
                   "This chat has never messaged us — starting a new conversation isn't allowed by default. " +
                   "Ask the person to message first, or (if you have permission) retry as an explicit initiation.",
-              } satisfies SendOutcome
-            const today = new Date(Date.now()).toISOString().slice(0, 10)
-            if (initiations.day !== today) {
-              initiations.day = today
-              initiations.count = 0
-            }
-            if (initiations.count >= DAILY_NEW_CONVERSATION_CAP)
-              return {
-                kind: "refused",
-                reason: `Daily new-conversation limit (${DAILY_NEW_CONVERSATION_CAP}) reached — pacing to avoid a provider flag. Try again tomorrow.`,
               } satisfies SendOutcome
             // The bucket is charged on the ATTEMPT, and never refunded. Both halves are deliberate,
             // and both are the ban-safe reading of 9(b) rather than the tidy one:
@@ -1447,7 +1471,7 @@ const build = (options: Options) =>
             //   still cost a slot. Everything refused by OUR OWN code before any wire traffic
             //   (no live connection, `initiate` absent, bucket empty) is decided ABOVE this line,
             //   so nothing provably pre-delivery is ever charged.
-            // · NEVER REFUNDED, and the increment does NOT move to the success path. Past this line
+            // · NEVER REFUNDED, and the charge does NOT move to the success path. Past this line
             //   the only remaining failure is the driver's `SendError`, which is irreducibly
             //   ambiguous: a timeout can arrive after the write landed. Refunding it would
             //   UNDER-count real deliveries and let one day exceed the cap — the single direction
@@ -1455,7 +1479,28 @@ const build = (options: Options) =>
             //   `retryable: false` is not a licence to refund either: it means "do not retry", not
             //   "the platform never saw it".
             // Pinned by "a FAILED initiation still spends its daily slot" in messenger-gateway.test.ts.
-            initiations.count += 1
+            //
+            // ⚠️ **The budget is DURABLE, and testing it is the same act as spending it.** It used to
+            // be a `{day, count}` object on this service's heap, which made the cap per gateway
+            // instance: a restart — and this product's supervisor restarts a crashed server on
+            // purpose — reset the day to zero, so a crash-loop could spray far past twenty on the
+            // owner's real account. `chargeInitiation` is one atomic upsert against
+            // `messenger_initiation`: it rolls the UTC day over, tests the cap and increments in a
+            // single statement, so two concurrent initiations can never both see nineteen, and a
+            // restart resumes the same bucket. `Clock.currentTimeMillis` rather than `Date.now()`
+            // keeps the day boundary drivable from the TestClock (this file's suite ledger).
+            const charge = yield* MessengerStore.attempted(
+              store.chargeInitiation({ at: yield* Clock.currentTimeMillis, cap: DAILY_NEW_CONVERSATION_CAP }),
+            )
+            // Fail CLOSED, and under our own name. An unreadable budget is not an empty one and not a
+            // full one; "0 used, go ahead" would be an UNCOUNTED cold DM, which is the one outcome
+            // the cap exists to prevent (ruling 2 — say we could not find out, never guess).
+            if (!charge.read) return { kind: "unavailable", reason: INITIATION_UNCOUNTABLE } satisfies SendOutcome
+            if (charge.value.kind === "exhausted")
+              return {
+                kind: "refused",
+                reason: `Daily new-conversation limit (${DAILY_NEW_CONVERSATION_CAP}) reached — pacing to avoid a provider flag. Try again tomorrow.`,
+              } satisfies SendOutcome
           }
           // The driver's verdict IS the answer — same shape as sendFile below. A refused or failed
           // send comes back as {ok:false, reason}, which the `messenger` tool hands straight to the
