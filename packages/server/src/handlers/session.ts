@@ -103,9 +103,26 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
               title: ctx.payload.title,
               permission: ctx.payload.permission,
               strict: ctx.payload.strict,
+              // ⚠️ The per-session feature overrides are forwarded ONE-FOR-ONE with
+              // `SessionFeature.Name`, and a plain `ctx.payload.<name>` is deliberate: each is a
+              // TRI-STATE where `undefined` means INHERIT. Never coalesce one to a boolean here
+              // (`?? false` and friends) — `createSessionRecord` writes exactly what it is handed,
+              // so a coalesced default would stamp a stance into every new session's row and, for
+              // the three narrowing switches, hand a fork of a restricted parent LESS restriction
+              // than its source (ruling 8).
+              //
+              // This list was the SECOND of three places a draft's restrictions were dropped (the
+              // payload schema and `app/.../prompt-input/submit.ts` were the others): it carried
+              // only the first three until 2026-07-31, so `thinkingBudget`, `surgicalEdits`,
+              // `askBeforeChanges` and `safeMode` never reached the kernel, which had accepted all
+              // seven since 2026-07-29. Pinned by `./session-create-features.test.ts`.
               introspection: ctx.payload.introspection,
               quality: ctx.payload.quality,
               affective: ctx.payload.affective,
+              thinkingBudget: ctx.payload.thinkingBudget,
+              surgicalEdits: ctx.payload.surgicalEdits,
+              askBeforeChanges: ctx.payload.askBeforeChanges,
+              safeMode: ctx.payload.safeMode,
               location: ctx.payload.location ?? { directory: AbsolutePath.make(process.cwd()) },
             }),
           }

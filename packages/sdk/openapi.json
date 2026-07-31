@@ -8742,6 +8742,18 @@
                   },
                   "affective": {
                     "type": "boolean"
+                  },
+                  "thinkingBudget": {
+                    "type": "boolean"
+                  },
+                  "surgicalEdits": {
+                    "type": "boolean"
+                  },
+                  "askBeforeChanges": {
+                    "type": "boolean"
+                  },
+                  "safeMode": {
+                    "type": "boolean"
                   }
                 },
                 "additionalProperties": false

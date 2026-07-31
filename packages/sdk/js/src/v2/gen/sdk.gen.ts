@@ -4588,6 +4588,10 @@ export class Session extends HeyApiClient {
       introspection?: boolean
       quality?: boolean
       affective?: boolean
+      thinkingBudget?: boolean
+      surgicalEdits?: boolean
+      askBeforeChanges?: boolean
+      safeMode?: boolean
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -4611,6 +4615,10 @@ export class Session extends HeyApiClient {
             { in: "body", key: "introspection" },
             { in: "body", key: "quality" },
             { in: "body", key: "affective" },
+            { in: "body", key: "thinkingBudget" },
+            { in: "body", key: "surgicalEdits" },
+            { in: "body", key: "askBeforeChanges" },
+            { in: "body", key: "safeMode" },
           ],
         },
       ],

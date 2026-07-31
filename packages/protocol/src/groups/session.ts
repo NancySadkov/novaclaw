@@ -155,10 +155,33 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
           permission: PermissionRuleset.Ruleset.pipe(Schema.optional),
           // Per-session overrides staged from the composer (V1-nuke slice C: these rode $body_
           // extras over the V1 create before).
+          //
+          // ⚠️ EVERY member of `SessionFeature.Name` belongs here, and the payload is
+          // `additionalProperties: false`, so a missing field is not "passed through unread" — it is
+          // REJECTED at the edge. From the landing of `safeMode` (2026-07-31) until 2026-07-31 only
+          // the first three were listed, so a draft that ticked *Safe mode*, *Ask before changes* or
+          // *Surgical edits* in the composer's Tuning panel created a session without them: three
+          // RESTRICTIONS the UI accepted and the wire discarded, which is ruling 2 (*a failed
+          // mutation never reports success*) on the surface a user actually touches.
+          //
+          // ⚠️ Each is a TRI-STATE, never a boolean with a default: absent = INHERIT (the parent
+          // chain, then the global config block), which is the ECS sparse-override discipline
+          // (`todo.md` → *The ECS lens*; `session/config-resolve.ts`). Giving any of them a
+          // `Schema.withDecodingDefault` would stamp a stance into every new session — for the three
+          // narrowing switches that would silently WIDEN a fork of a restricted parent, which
+          // ruling 8 calls a defect rather than a preference.
+          //
+          // `packages/server/src/handlers/session-create-features.test.ts` is the ratchet: it reads
+          // the field list off `SessionFeature.Name` and drives the real registered handler, so an
+          // eighth kernel feature fails there until this payload and the handler both carry it.
           strict: SessionStrict.Override.pipe(Schema.optional),
           introspection: Schema.Boolean.pipe(Schema.optional),
           quality: Schema.Boolean.pipe(Schema.optional),
           affective: Schema.Boolean.pipe(Schema.optional),
+          thinkingBudget: Schema.Boolean.pipe(Schema.optional),
+          surgicalEdits: Schema.Boolean.pipe(Schema.optional),
+          askBeforeChanges: Schema.Boolean.pipe(Schema.optional),
+          safeMode: Schema.Boolean.pipe(Schema.optional),
         }),
         success: Schema.Struct({ data: Session.Info }),
       }).annotateMerge(

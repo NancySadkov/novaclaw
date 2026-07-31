@@ -8,12 +8,19 @@ import { useTabs } from "@/context/tabs"
 import { useServerSync, type ServerSync } from "@/context/server-sync"
 import { useLanguage } from "@/context/language"
 import { useLayout } from "@/context/layout"
-import { useLocal } from "@/context/local"
+import {
+  useLocal,
+  type FeatureChoices,
+  type PermissionMode,
+  type SessionModeChoice,
+  type StrictChoice,
+} from "@/context/local"
 import { usePermission } from "@/context/permission"
 import { type ContextItem, type ImageAttachmentPart, type Prompt, type usePrompt } from "@/context/prompt"
 import { useSDK, type DirectorySDK } from "@/context/sdk"
 import { useSync, type DirectorySync } from "@/context/sync"
 import { Identifier } from "@/utils/id"
+import type { SessionFeatureName } from "@/utils/fs-api"
 import { Worktree as WorktreeState } from "@/utils/worktree"
 import { buildPrompt } from "./build-request-parts"
 import { setCursorPosition } from "./editor-dom"
@@ -27,6 +34,74 @@ type PendingPrompt = {
 }
 
 const pending = new Map<string, PendingPrompt>()
+
+/**
+ * Every per-chat Tuning switch, keyed so the COMPILER refuses an incomplete list: an eighth member
+ * added to `SessionFeature.Name` (`packages/schema/src/session-feature.ts`, mirrored on the wire as
+ * `SessionFeatureName`) breaks this object before it can break a user's session.
+ *
+ * ⚠️ It exists as a list rather than a hand-written spread per feature because the hand-written
+ * version shipped WRONG. Until 2026-07-31 the create call carried only `introspection`, `quality`
+ * and `affective`, so a draft that ticked *Safe mode*, *Ask before changes* or *Surgical edits* —
+ * three RESTRICTIONS, i.e. switches that narrow what the agent may do — was created without them
+ * and the UI reported success. That is ruling 2 (*a failed mutation never reports success*) on the
+ * surface where it matters most, and `session-composer-controls.ts` has no post-create catch-up
+ * loop to rescue it: its `switchFeature` call is guarded on an existing session `id`, which a draft
+ * does not have.
+ */
+const DRAFT_FEATURES = {
+  introspection: true,
+  quality: true,
+  affective: true,
+  thinkingBudget: true,
+  surgicalEdits: true,
+  askBeforeChanges: true,
+  safeMode: true,
+} satisfies Record<SessionFeatureName, true>
+
+/** The switch names a draft can stage, in one place, so no call site re-lists them. */
+export const DRAFT_FEATURE_NAMES = Object.keys(DRAFT_FEATURES) as readonly SessionFeatureName[]
+
+/** The composer's staged choices for a chat that does not exist yet. */
+export type NewSessionDraft = {
+  permissionMode: PermissionMode
+  strict: StrictChoice | undefined
+  features: FeatureChoices | undefined
+  mode: SessionModeChoice | undefined
+}
+
+export type NewSessionCreateBody = Partial<Record<SessionFeatureName, boolean>> & {
+  permissionMode?: PermissionMode
+  strict?: StrictChoice
+  type?: Exclude<SessionModeChoice, "interactive">
+}
+
+/**
+ * Fold the composer's staged draft into the `session.create` body — the ONE place a draft choice
+ * becomes a per-chat override (1K + V1-nuke slice C).
+ *
+ * ⚠️ A key is emitted only when the user actually took a stance. That is not a micro-optimisation,
+ * it is the ECS sparse-override discipline (`todo.md` → *The ECS lens*): `undefined` means INHERIT
+ * — the parent chain, then the global config block — and only a divergent value creates a row
+ * value. Emitting `false` for an untouched switch would stamp a stance into every new session, and
+ * for the three narrowing switches it would hand a fork of a restricted parent LESS restriction
+ * than its source, which ruling 8 calls a defect rather than a preference. So: never `?? false`.
+ */
+export function newSessionCreateBody(draft: NewSessionDraft): NewSessionCreateBody {
+  const features: Partial<Record<SessionFeatureName, boolean>> = {}
+  for (const name of DRAFT_FEATURE_NAMES) {
+    const stance = draft.features?.[name]
+    if (stance !== undefined) features[name] = stance
+  }
+  return {
+    ...(draft.permissionMode !== "ask" ? { permissionMode: draft.permissionMode } : {}),
+    ...(draft.strict !== undefined ? { strict: draft.strict } : {}),
+    ...features,
+    // The composer's Mode choice becomes the session's kernel thread type at create time
+    // (interactive is the server default — only an explicit unattended choice is sent).
+    ...(draft.mode !== undefined && draft.mode !== "interactive" ? { type: draft.mode } : {}),
+  }
+}
 
 export type FollowupDraft = {
   sessionID: string
@@ -351,22 +426,17 @@ export function createPromptSubmit(input: PromptSubmitInput) {
     if (!session && isNewSession) {
       // 1K + V1-nuke slice C: the composer's staged choices (permission mode, the Strict switch,
       // the Tuning toggles) are FIRST-CLASS fields on the native create — a draft choice becomes
-      // the new session's per-chat override.
-      const permissionMode = local.permissionMode.current()
-      const strict = local.strict.current()
-      const features = local.features.current()
-      const mode = local.mode.current()
+      // the new session's per-chat override. `newSessionCreateBody` owns that mapping so no switch
+      // can be forgotten here again; see its comment for what forgetting three of them cost.
       const created = await client.v2.session
-        .create({
-          ...(permissionMode !== "ask" ? { permissionMode } : {}),
-          ...(strict !== undefined ? { strict } : {}),
-          ...(features?.introspection !== undefined ? { introspection: features.introspection } : {}),
-          ...(features?.quality !== undefined ? { quality: features.quality } : {}),
-          ...(features?.affective !== undefined ? { affective: features.affective } : {}),
-          // The composer's Mode choice becomes the session's kernel thread type at create time
-          // (interactive is the server default — only an explicit unattended choice is sent).
-          ...(mode !== undefined && mode !== "interactive" ? { type: mode } : {}),
-        })
+        .create(
+          newSessionCreateBody({
+            permissionMode: local.permissionMode.current(),
+            strict: local.strict.current(),
+            features: local.features.current(),
+            mode: local.mode.current(),
+          }),
+        )
         .then((x) => x.data?.data ?? undefined)
         .catch((err) => {
           showToast({

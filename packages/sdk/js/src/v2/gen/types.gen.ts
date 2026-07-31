@@ -10167,6 +10167,10 @@ export type V2SessionCreateData = {
     introspection?: boolean
     quality?: boolean
     affective?: boolean
+    thinkingBudget?: boolean
+    surgicalEdits?: boolean
+    askBeforeChanges?: boolean
+    safeMode?: boolean
   }
   path?: never
   query?: never
