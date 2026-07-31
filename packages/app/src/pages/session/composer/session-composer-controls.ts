@@ -92,6 +92,7 @@ export function createPromptInputController(input: {
           thinkingBudget?: boolean
           surgicalEdits?: boolean
           askBeforeChanges?: boolean
+          safeMode?: boolean
         }
       | undefined
     const config = sync().data.config as Partial<Record<SessionFeatureName, { enabled?: boolean }>>
@@ -108,6 +109,11 @@ export function createPromptInputController(input: {
       thinkingBudget: pick("thinkingBudget"),
       surgicalEdits: pick("surgicalEdits"),
       askBeforeChanges: pick("askBeforeChanges"),
+      // `safeMode` has no global `{ enabled }` block either, and its instance default is OFF (the
+      // owner's 2026-07-30 directive: unattended bash runs unless the user opts into confinement).
+      // `pick` already lands on `config.safeMode?.enabled === true` → `false`, which is exactly that
+      // default — no special case, unlike `thinkingBudget` whose default is ON.
+      safeMode: pick("safeMode"),
     }
   }
 

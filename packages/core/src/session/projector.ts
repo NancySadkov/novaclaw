@@ -89,6 +89,9 @@ export function sessionRow(info: SessionSchema.Info): typeof SessionTable.$infer
     thinking_budget: info.thinkingBudget,
     surgical_edits: info.surgicalEdits,
     ask_before_changes: info.askBeforeChanges,
+    // Same class as the two above, and for the same reason: safe mode is a RESTRICTION, so a create
+    // that meant to restrict must not silently produce an unrestricted session.
+    safe_mode: info.safeMode,
     time_created: DateTime.toEpochMillis(info.time.created),
     time_updated: DateTime.toEpochMillis(info.time.updated),
     time_archived: info.time.archived ? DateTime.toEpochMillis(info.time.archived) : undefined,
@@ -339,7 +342,9 @@ export const layer = Layer.effectDiscard(
                 ? { surgical_edits: event.data.enabled, ...stamp }
                 : event.data.feature === "askBeforeChanges"
                   ? { ask_before_changes: event.data.enabled, ...stamp }
-                  : { affective: event.data.enabled, ...stamp }
+                  : event.data.feature === "safeMode"
+                    ? { safe_mode: event.data.enabled, ...stamp }
+                    : { affective: event.data.enabled, ...stamp }
       return db
         .update(SessionTable)
         .set(patch)

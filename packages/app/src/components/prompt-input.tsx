@@ -112,10 +112,17 @@ export type PromptInputControls = {
   }
   // The per-chat Tuning toggles: current = the EFFECTIVE stance per feature (draft → session
   // record → global config); set writes this chat's explicit stance (and persists it live).
-  features: {
-    current: Record<"introspection" | "quality" | "affective" | "thinkingBudget" | "surgicalEdits" | "askBeforeChanges", boolean>
-    set: (feature: "introspection" | "quality" | "affective" | "thinkingBudget" | "surgicalEdits" | "askBeforeChanges", enabled: boolean) => void
-  }
+  // ⚠️ A `Pick` of `ComposerFeaturesControlState`, not a hand-written copy of it. This was an inline
+  // `Record<"introspection" | … | "askBeforeChanges", boolean>` plus a matching `set` signature — a
+  // second spelling of a union this file ALREADY imports, which meant every new switch had to be
+  // added here too or the build broke in a place that reads nothing like the change. Adding
+  // `safeMode` (2026-07-31) is what surfaced it.
+  // ⚠️ `Pick`, and not the whole state, because the two are NOT the same type: the control's state
+  // also carries `mode`/`remote`/`style`/`setMode`/`onClose`, which this prop deliberately does not
+  // require. Widening it to the full state was tried and is a compile error at the one call site that
+  // builds this object — the narrowness is load-bearing, only the duplicated key union was not.
+  features: Pick<ComposerFeaturesControlState, "current" | "set">
+
   // The per-chat Mode control (kernel thread type): interactive, or the unattended pair
   // (auto-prompting · goal-oriented — asks auto-allow, bash confined by the Agent Jail).
   mode: {

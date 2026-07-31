@@ -6,7 +6,14 @@ import { Switch as SwitchToggle } from "@novaclaw/ui/v2/switch-v2"
 import { TooltipV2 } from "@novaclaw/ui/v2/tooltip-v2"
 import { useLanguage } from "@/context/language"
 
-export type ComposerFeature = "introspection" | "quality" | "affective" | "thinkingBudget" | "surgicalEdits" | "askBeforeChanges"
+export type ComposerFeature =
+  | "introspection"
+  | "quality"
+  | "affective"
+  | "thinkingBudget"
+  | "surgicalEdits"
+  | "askBeforeChanges"
+  | "safeMode"
 export type ComposerMode = "interactive" | "auto-prompting" | "goal-oriented"
 
 // The Remote-chat section (messenger-plan §6.2): where does THIS chat live remotely? The trust
@@ -62,7 +69,12 @@ export type ComposerFeaturesControlState = {
 // to one chat, and it now lives in Settings → Models → configure, where "Disabled" is simply one of the
 // budget values. The per-session plumbing (event, column, config walk) is left in place and inert — it costs
 // nothing, and ripping a column out of shipped sessions buys nothing at this point.
+// `safeMode` sits FIRST and next to the other two restrictions (anti-obscurantist UI: a per-session
+// toggle is a visible composer control, never a hidden menu). It is the control `agent-jail.ts`'s
+// deny message points at by name — "Turn Safe mode off in this chat's Tuning controls" — so it
+// being on this list is what makes that sentence true rather than a ruling-2 false description.
 const COMPOSER_FEATURES: readonly ComposerFeature[] = [
+  "safeMode",
   "askBeforeChanges",
   "surgicalEdits",
   "introspection",

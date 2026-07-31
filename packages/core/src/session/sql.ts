@@ -61,6 +61,10 @@ export const SessionTable = sqliteTable(
     thinking_budget: integer({ mode: "boolean" }),
     surgical_edits: integer({ mode: "boolean" }),
     ask_before_changes: integer({ mode: "boolean" }),
+    // SAFE MODE (owner 2026-07-30): the opt-in half of "unattended `bash` is ALLOWED by default".
+    // ON = an unattended chain's host execution must be sandbox-confined, and is REFUSED on a host
+    // with no backend. Tri-state like the switches above; NULL = inherit, effective default OFF.
+    safe_mode: integer({ mode: "boolean" }),
     result: text({ mode: "json" }).$type<unknown>(),
     ...Timestamps,
     time_compacting: integer(),

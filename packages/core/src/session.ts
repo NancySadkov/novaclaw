@@ -160,6 +160,9 @@ type CreateInput = {
   // floor, so a create meaning to restrict a session silently produced an unrestricted one.
   surgicalEdits?: boolean
   askBeforeChanges?: boolean
+  // SAFE MODE (owner 2026-07-30) — also a RESTRICTION: it puts an unattended chain's host execution
+  // back behind sandbox confinement, and refuses on a host with no backend.
+  safeMode?: boolean
   location: Location.Ref
   // F1c fork: a fork seeds its record from the source (title + cloned metadata).
   title?: string
@@ -260,7 +263,14 @@ export interface Interface {
   }) => Effect.Effect<void, NotFoundError>
   readonly switchFeature: (input: {
     sessionID: SessionSchema.ID
-    feature: "introspection" | "quality" | "affective" | "thinkingBudget" | "surgicalEdits" | "askBeforeChanges"
+    feature:
+      | "introspection"
+      | "quality"
+      | "affective"
+      | "thinkingBudget"
+      | "surgicalEdits"
+      | "askBeforeChanges"
+      | "safeMode"
     enabled: boolean | null
   }) => Effect.Effect<void, NotFoundError>
   readonly switchType: (input: {
@@ -386,6 +396,7 @@ export const createSessionRecord = (
       thinkingBudget: input.thinkingBudget,
       surgicalEdits: input.surgicalEdits,
       askBeforeChanges: input.askBeforeChanges,
+      safeMode: input.safeMode,
       cost: 0,
       tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
       time: { created: DateTime.makeUnsafe(now), updated: DateTime.makeUnsafe(now) },
@@ -1032,6 +1043,10 @@ export const layer = Layer.effect(
             thinkingBudget: inherited.thinkingBudget,
             surgicalEdits: inherited.surgicalEdits,
             askBeforeChanges: inherited.askBeforeChanges,
+            // Ruling 8's exact case: safe mode is a RESTRICTION, so a fork of a safe-mode chain must
+            // come back in safe mode. It arrives via the chain fold like the three above (it became
+            // `"resolved"` when the column landed), not off the source's raw row.
+            safeMode: inherited.safeMode,
           },
         )
         const sourceRows = yield* db

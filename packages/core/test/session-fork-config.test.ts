@@ -93,6 +93,7 @@ const createFullyConfigured = (session: SessionV2.Interface, parentID?: SessionS
     yield* session.switchFeature({ sessionID: created.id, feature: "thinkingBudget", enabled: true })
     yield* session.switchFeature({ sessionID: created.id, feature: "surgicalEdits", enabled: true })
     yield* session.switchFeature({ sessionID: created.id, feature: "askBeforeChanges", enabled: true })
+    yield* session.switchFeature({ sessionID: created.id, feature: "safeMode", enabled: true })
     return yield* session.get(created.id)
   })
 
@@ -119,6 +120,7 @@ describe("SESSION_CONFIG_FIELDS — the descriptor is honest about what a row ca
         thinkingBudget: true,
         surgicalEdits: true,
         askBeforeChanges: true,
+        safeMode: true,
         strict: { enabled: true },
         device: "spark",
         tools: ["bash"],
@@ -243,6 +245,7 @@ describe("SessionV2.fork — the fork carries the source's resolved config", () 
       })
       yield* session.switchFeature({ sessionID: parent.id, feature: "askBeforeChanges", enabled: true })
       yield* session.switchFeature({ sessionID: parent.id, feature: "surgicalEdits", enabled: true })
+      yield* session.switchFeature({ sessionID: parent.id, feature: "safeMode", enabled: true })
       const child = yield* session.create({ location, parentID: parent.id, permissionMode: "yolo" })
       const childRow = yield* session.get(child.id)
       expectField("the child's RAW row asks for", childRow.permissionMode, "yolo")
@@ -254,6 +257,10 @@ describe("SessionV2.fork — the fork carries the source's resolved config", () 
       expectField("fork row type (attendance)", stored.type, "goal-oriented")
       expectField("fork row askBeforeChanges", stored.askBeforeChanges, true)
       expectField("fork row surgicalEdits", stored.surgicalEdits, true)
+      // Ruling 8's named case: safe mode is a RESTRICTION, and the child never declared it — it
+      // reaches the fork only through the chain walk. A fork that came back with it absent would be
+      // "less restricted than its source", i.e. the defect the ruling exists to forbid.
+      expectField("fork row safeMode", stored.safeMode, true)
       expectField("fork resolves to", (yield* resolveFor(forked.id)).permissionMode, "plan")
     }),
   )

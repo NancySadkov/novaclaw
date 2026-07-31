@@ -390,16 +390,21 @@ export interface SessionConfig {
 // ARE the precedent: both are former postures demoted to switches, and a fourth mechanism for a
 // fourth switch is how the mode picker got forked into two disagreeing surfaces before.
 //
-// ⚠️ NOT YET USER-SETTABLE, and `SESSION_CONFIG_FIELDS` below says so mechanically rather than in
-// prose: it is classified `absent-from-row`, the same class as `device`/`tools`/`permissionRules`,
-// because no session COLUMN carries it yet. What is missing is the persistence + surface chain, in
-// this order: `session/sql.ts` (a `safe_mode` column) → a migration + `database/schema.gen.ts` +
+// ✅ USER-SETTABLE since 2026-07-31, and `SESSION_CONFIG_FIELDS` below says so mechanically rather
+// than in prose: it is classified `"resolved"`, which is only legitimate while `sessionToConfig`
+// genuinely maps it. The whole chain landed together, in this order: `session/sql.ts` (the
+// `safe_mode` column) → `20260730221834_add_session_safe_mode` + `database/schema.gen.ts` +
 // `schema.json` → `session/info.ts` + `session/projector.ts` (row ⇄ Info, and the `switchFeature`
-// arm) → `session.ts` (`Info`, `CreateInput`, the fork's inherited set) → `@novaclaw/schema`'s
-// `Session.Info` + `SessionFeature.Name` → the SDK regen → the composer's Tuning control + i18n.
-// Adding the column is what flips the classification here, and `session-fork-config.test.ts`
-// enforces the equivalence (`"resolved"` ⇔ `sessionToConfig` maps it), so the ratchet catches a
-// half-landed chain rather than a reviewer having to.
+// arm) → `session.ts` (`CreateInput`, the `switchFeature` union, the fork's inherited set) →
+// `@novaclaw/schema`'s `Session.Info` + `SessionFeature.Name` → the composer's Tuning control + i18n.
+// `session-fork-config.test.ts` enforces the equivalence (`"resolved"` ⇔ `sessionToConfig` maps it)
+// and `session-safe-mode.test.ts` pins the rest, so a half-landed chain fails rather than compiling.
+//
+// ⚠️ WHY IT CLOSED A RULING-2 VIOLATION, not merely a gap. `agent-jail.ts`'s `denyMessage` told the
+// user to *"Turn Safe mode off in this chat's Tuning controls"* while `safeMode` had ZERO matches in
+// `packages/app` — the product named a control that did not exist, which is *a fault described
+// falsely*. That is why the surface half of this chain is not optional polish: the deny text is only
+// true because the switch is on the panel.
 // ─────────────────────────────────────────────────────────────────────────────
 
 /**
@@ -543,6 +548,10 @@ export interface SessionLike {
   readonly surgicalEdits?: boolean
   /** Tri-state: turn changes into consent prompts. Absent = inherit, then OFF. */
   readonly askBeforeChanges?: boolean
+  /** Tri-state: SAFE MODE — restore unattended host-execution confinement (§SAFE MODE above).
+   *  Absent = inherit, then OFF. A child cannot declare itself out of an ancestor's ON: absent
+   *  means inherit, and the only way to diverge is an explicit `false` the user had to set. */
+  readonly safeMode?: boolean
   // permissionRules / tools get mapped here as the session schema grows to carry them
   // (see architecture.md Phase 1 step 4).
 }
@@ -563,6 +572,7 @@ export const sessionToConfig = (session: SessionLike): SessionConfig => ({
   thinkingBudget: session.thinkingBudget,
   surgicalEdits: session.surgicalEdits,
   askBeforeChanges: session.askBeforeChanges,
+  safeMode: session.safeMode,
 })
 
 /**
@@ -660,7 +670,7 @@ export type SessionConfigForkCarry =
   | "resolved"
   /**
    * A `SessionConfig` field NO session row can express yet, so there is nothing on the chain to
-   * copy: `device`, `tools` and `safeMode` have no column at all, and `permissionRules` has a column
+   * copy: `device` and `tools` have no column at all, and `permissionRules` has a column
    * (`session.permission`) that `sessionToConfig` does not map — architecture.md Phase 1 step 4
    * is blocked on the V1/V2 ruleset reconciliation. The fork copies that column verbatim
    * meanwhile (see `session.ts`), which can only preserve restrictions, never widen them.
@@ -696,12 +706,10 @@ export const SESSION_CONFIG_FIELDS: Readonly<Record<keyof SessionConfig, Session
   thinkingBudget: "resolved",
   surgicalEdits: "resolved",
   askBeforeChanges: "resolved",
-  // ⚠️ `absent-from-row` is the HONEST classification today, not a dodge, and it is the ratchet
-  // doing its job: `safeMode` has no `session` column yet (see §SAFE MODE), so there is literally
-  // nothing on a chain for a fork to copy. Whoever lands the column MUST flip this to `"resolved"`
-  // in the same change — `session-fork-config.test.ts` asserts `"resolved" ⇔ sessionToConfig maps
-  // it` in both directions, so a column with no mapping (or a mapping with no fork carry) fails.
-  safeMode: "absent-from-row",
+  // Flipped from `absent-from-row` when the `safe_mode` column landed (2026-07-31, see §SAFE MODE).
+  // It is a RESTRICTION, so this is precisely the case ruling 8 exists for: a fork of a safe-mode
+  // session resolves to safe mode, because `"resolved"` puts it in `SESSION_CONFIG_FORK_FIELDS`.
+  safeMode: "resolved",
   strict: "resolved",
   tools: "absent-from-row",
 }

@@ -151,9 +151,12 @@ describe("② safe mode restores the refusal, and the refusal NAMES ITSELF (ruli
     // tri-state rather than a boolean: "off" and "unset" are different rows)
     expect(resolveConfig(D, [{ safeMode: true }, { safeMode: false }]).safeMode).toBe(false)
     expect(resolveConfig(D, [{ safeMode: false }, { safeMode: true }]).safeMode).toBe(true)
-    // and it is declared in the fork descriptor (ruling 8's ratchet), honestly classified: no
-    // session column carries it yet, so there is nothing on a chain for a fork to copy.
-    expect(SESSION_CONFIG_FIELDS.safeMode).toBe("absent-from-row")
+    // and it is declared in the fork descriptor (ruling 8's ratchet). Since the `safe_mode` column
+    // landed (2026-07-31) the honest classification is `"resolved"`: the chain carries it, so a fork
+    // of a safe-mode session is in safe mode — which is what ruling 8 demands of a RESTRICTION.
+    // (This line held `"absent-from-row"` while the column did not exist. It was the second of the
+    // two ratchets that forced whoever added the column to finish the job.)
+    expect(SESSION_CONFIG_FIELDS.safeMode).toBe("resolved")
   })
 })
 

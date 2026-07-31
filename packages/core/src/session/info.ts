@@ -39,6 +39,7 @@ export function fromRow(row: typeof SessionTable.$inferSelect): SessionSchema.In
     thinkingBudget: row.thinking_budget ?? undefined,
     surgicalEdits: row.surgical_edits ?? undefined,
     askBeforeChanges: row.ask_before_changes ?? undefined,
+    safeMode: row.safe_mode ?? undefined,
     result: row.result ?? undefined,
     cost: row.cost,
     tokens: {

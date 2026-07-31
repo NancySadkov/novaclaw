@@ -29,6 +29,7 @@ export type FeatureChoices = {
   thinkingBudget?: boolean
   surgicalEdits?: boolean
   askBeforeChanges?: boolean
+  safeMode?: boolean
 }
 
 /** The composer's Mode choice (kernel thread type): attended, or the unattended pair. */
