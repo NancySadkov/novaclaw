@@ -99,6 +99,32 @@ const toPlatformError = (
 
 type ExitSignal = Deferred.Deferred<readonly [code: number | null, signal: NodeJS.Signals | null]>
 
+/**
+ * ⚠️ **Two signals, because `'close'` is not a promise that the process is gone — it is a promise
+ * that the PIPES are gone, and those are different facts on Windows.**
+ *
+ * Node fires `'exit'` when the child terminates and `'close'` only once every stdio stream has also
+ * closed. A stream stays open while ANYONE holds the write end — including a grandchild that
+ * inherited it — so a command whose last act is to leave a background process behind (`npm run dev`,
+ * a watcher, a spawned server) fires `'exit'` immediately and `'close'` when that grandchild dies,
+ * which for a daemon is never. Measured 2026-07-31 with a plain node repro: `'exit'` at **70 ms**,
+ * `'close'` at **5107 ms**, delayed by exactly the grandchild's lifetime. The same shape also shows
+ * up as a RACE under load with no grandchild at all: a killed child's overlapped pipes can be left
+ * un-closed, giving `'exit'` and no `'close'` at all (observed on a 5-way-concurrent suite run; the
+ * child was dead within 360 ms and `'close'` had still not arrived 14 s later).
+ *
+ * That is why the `'close'` deferred cannot be what TEARDOWN waits on. The `acquireRelease` release
+ * below, and `handle.kill`, both used to `Deferred.await(signal)` with **no bound at all** — so
+ * closing a scope around such a command blocked forever, which surfaced as `BashJobs.stop` (the
+ * agent's "stop this job" control) never returning and the session's turn wedging behind it.
+ *
+ * So teardown awaits {@link exited} — "the process is gone", the fact it actually needs — while
+ * `exitCode`/`isRunning` keep awaiting `signal` so CONSUMERS still see fully drained output before
+ * an exit code. Do not collapse these two back into one deferred: each is load-bearing for a
+ * different caller, and the pinning test is `core/test/spawner-teardown-bounded.test.ts`.
+ */
+type ExitedSignal = Deferred.Deferred<readonly [code: number | null, signal: NodeJS.Signals | null]>
+
 export const make = Effect.gen(function* () {
   const fs = yield* FileSystem.FileSystem
   const path = yield* Path.Path
@@ -268,8 +294,14 @@ export const make = Effect.gen(function* () {
   }
 
   const spawn = (command: ChildProcess.StandardCommand, opts: NodeChildProcess.SpawnOptions) =>
-    Effect.callback<readonly [NodeChildProcess.ChildProcess, ExitSignal], PlatformError.PlatformError>((resume) => {
+    Effect.callback<readonly [NodeChildProcess.ChildProcess, ExitSignal, ExitedSignal], PlatformError.PlatformError>((
+      resume,
+    ) => {
       const signal = Deferred.makeUnsafe<readonly [code: number | null, signal: NodeJS.Signals | null]>()
+      // See ExitedSignal above: settled by whichever of 'exit'/'close' lands FIRST. 'close' is a real
+      // fallback rather than dead weight — a child that dies before it ever runs can close without
+      // emitting 'exit', and teardown must not wait forever for that one either.
+      const exited = Deferred.makeUnsafe<readonly [code: number | null, signal: NodeJS.Signals | null]>()
       const proc = launch(command.command, command.args, opts)
       let end = false
       let exit: readonly [code: number | null, signal: NodeJS.Signals | null] | undefined
@@ -278,14 +310,16 @@ export const make = Effect.gen(function* () {
       })
       proc.on("exit", (...args) => {
         exit = args
+        Deferred.doneUnsafe(exited, Exit.succeed(args))
       })
       proc.on("close", (...args) => {
+        Deferred.doneUnsafe(exited, Exit.succeed(exit ?? args))
         if (end) return
         end = true
         Deferred.doneUnsafe(signal, Exit.succeed(exit ?? args))
       })
       proc.on("spawn", () => {
-        resume(Effect.succeed([proc, signal]))
+        resume(Effect.succeed([proc, signal, exited]))
       })
       return Effect.sync(() => {
         // Interrupted before `spawn` fired, so `acquireRelease` never acquired and this is the ONLY
@@ -383,7 +417,7 @@ export const make = Effect.gen(function* () {
           const extra = fds(command.options)
           const dir = yield* cwd(command.options)
 
-          const [proc, signal] = yield* Effect.acquireRelease(
+          const [proc, signal, exited] = yield* Effect.acquireRelease(
             spawn(command, {
               cwd: dir,
               env: env(command.options),
@@ -392,7 +426,18 @@ export const make = Effect.gen(function* () {
               shell: command.options.shell,
               windowsHide: process.platform === "win32",
             }),
-            Effect.fnUntraced(function* ([proc, signal]) {
+            // ⚠️ Every WAIT in here is on `exited`, never on `signal` — see ExitedSignal above. This
+            // finalizer's job is "the child is gone before the scope releases"; waiting on the PIPES
+            // instead made it unbounded, and a scope that cannot close is a hang with no timeout
+            // anywhere above it to rescue it.
+            //
+            // ⚠️ The BRANCH, though, still asks `signal`, and that is deliberate: the fast path below
+            // skips the kill entirely, and it is only safe to skip when the pipes are closed too. A
+            // child that exited while a grandchild still holds its stdout is exactly the case that
+            // MUST fall through to `killGroup` — on POSIX that group signal is the only thing that
+            // ever reaps the grandchild. Keying this on `exited` reads as a tidy-up and quietly turns
+            // that reap off (AGENTS.md → Known pitfalls #8).
+            Effect.fnUntraced(function* ([proc, signal, exited]) {
               const done = yield* Deferred.isDone(signal)
               const kill = timeout(proc, command, command.options)
               if (done) {
@@ -404,11 +449,11 @@ export const make = Effect.gen(function* () {
               const send = (s: NodeJS.Signals) =>
                 Effect.catch(killGroup(command, proc, s), () => killOne(command, proc, s))
               const sig = command.options.killSignal ?? "SIGTERM"
-              const attempt = send(sig).pipe(Effect.andThen(Deferred.await(signal)), Effect.asVoid)
+              const attempt = send(sig).pipe(Effect.andThen(Deferred.await(exited)), Effect.asVoid)
               const escalated = command.options.forceKillAfter
                 ? Effect.timeoutOrElse(attempt, {
                     duration: command.options.forceKillAfter,
-                    orElse: () => send("SIGKILL").pipe(Effect.andThen(Deferred.await(signal)), Effect.asVoid),
+                    orElse: () => send("SIGKILL").pipe(Effect.andThen(Deferred.await(exited)), Effect.asVoid),
                   })
                 : attempt
               return yield* Effect.ignore(escalated)
@@ -437,15 +482,17 @@ export const make = Effect.gen(function* () {
                 ),
               )
             }),
+            // Same rule as the release finalizer: `kill` resolves when the PROCESS is gone, not when
+            // its pipes are. A caller that also wants drained output awaits `exitCode` after this.
             kill: (opts?: ChildProcess.KillOptions) => {
               const sig = opts?.killSignal ?? "SIGTERM"
               const send = (s: NodeJS.Signals) =>
                 Effect.catch(killGroup(command, proc, s), () => killOne(command, proc, s))
-              const attempt = send(sig).pipe(Effect.andThen(Deferred.await(signal)), Effect.asVoid)
+              const attempt = send(sig).pipe(Effect.andThen(Deferred.await(exited)), Effect.asVoid)
               if (!opts?.forceKillAfter) return attempt
               return Effect.timeoutOrElse(attempt, {
                 duration: opts.forceKillAfter,
-                orElse: () => send("SIGKILL").pipe(Effect.andThen(Deferred.await(signal)), Effect.asVoid),
+                orElse: () => send("SIGKILL").pipe(Effect.andThen(Deferred.await(exited)), Effect.asVoid),
               })
             },
             unref: Effect.sync(() => {

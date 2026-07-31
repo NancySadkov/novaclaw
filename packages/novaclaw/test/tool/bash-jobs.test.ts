@@ -110,6 +110,15 @@ describe("BashJobs (1H)", () => {
         })
         .pipe(Effect.flip)
       expect(refused).toBeInstanceOf(BashJobs.JobLimitError)
+      // ⚠️ These five stops are the reason this case existed as a HANG for a while, and the reason
+      // it is worth keeping exactly as it is. Root-caused 2026-07-31: `stop` unwinds the job's fiber,
+      // which closes the spawn scope, which used to wait for the child's `'close'` event — and a
+      // killed child's overlapped pipes can be left un-closed on Windows, so the wait never ended.
+      // Bisected by tracing the phases apart: all five STARTS and the refusal completed in ~1.2 s and
+      // `stop[0]` never returned. Fixed in `core/src/cross-spawn-spawner.ts` (teardown now waits on
+      // process EXIT, not pipe close) and pinned by `core/test/spawner-teardown-bounded.test.ts`.
+      // This case only reproduced under CONTENTION (~1 run in 10 with five suites competing), so it
+      // is a witness, not the mechanical check.
       for (const id of ids) yield* jobs.stop(id, "ses_cap")
     }),
   )
