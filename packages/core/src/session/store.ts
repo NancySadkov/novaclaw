@@ -13,6 +13,7 @@ import { fromRow } from "./info"
 
 export interface Interface {
   readonly get: (sessionID: SessionSchema.ID) => Effect.Effect<SessionSchema.Info | undefined>
+  readonly children: (sessionID: SessionSchema.ID) => Effect.Effect<ReadonlyArray<SessionSchema.ID>>
   readonly context: (sessionID: SessionSchema.ID) => Effect.Effect<SessionMessage.Message[], MessageDecodeError>
   readonly runnerContext: (
     sessionID: SessionSchema.ID,
@@ -35,6 +36,15 @@ export const layer = Layer.effect(
       get: Effect.fn("SessionStore.get")(function* (sessionID) {
         const row = yield* db.select().from(SessionTable).where(eq(SessionTable.id, sessionID)).get().pipe(Effect.orDie)
         return row ? fromRow(row) : undefined
+      }),
+      children: Effect.fn("SessionStore.children")(function* (sessionID) {
+        const rows = yield* db
+          .select({ id: SessionTable.id })
+          .from(SessionTable)
+          .where(eq(SessionTable.parent_id, sessionID))
+          .all()
+          .pipe(Effect.orDie)
+        return rows.map((row) => row.id)
       }),
       context: Effect.fn("SessionStore.context")(function* (sessionID) {
         return yield* SessionHistory.load(db, sessionID)

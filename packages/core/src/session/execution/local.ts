@@ -66,9 +66,26 @@ export const layer = Layer.effect(
       }),
     })
 
+    const interruptBranch = (
+      sessionID: SessionSchema.ID,
+      visited: Set<SessionSchema.ID>,
+    ): Effect.Effect<void> =>
+      Effect.gen(function* () {
+        if (visited.has(sessionID)) return
+        visited.add(sessionID)
+        // Stop the parent before discovering children. Taking the child snapshot first leaves a race
+        // where an in-flight parent can spawn another worker after the snapshot and orphan it.
+        yield* coordinator.interrupt(sessionID)
+        const children = yield* store.children(sessionID)
+        yield* Effect.forEach(children, (childID) => interruptBranch(childID, visited), {
+          concurrency: "unbounded",
+        })
+      }).pipe(Effect.withSpan("SessionExecution.interruptBranch"))
+    const interruptTree = (sessionID: SessionSchema.ID) => interruptBranch(sessionID, new Set())
+
     return SessionExecution.Service.of({
       active: coordinator.active,
-      interrupt: coordinator.interrupt,
+      interrupt: interruptTree,
       resume: coordinator.run,
       wake: coordinator.wake,
     })

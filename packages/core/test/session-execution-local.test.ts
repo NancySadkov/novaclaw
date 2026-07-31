@@ -1,5 +1,5 @@
 import { describe, expect } from "bun:test"
-import { Context, Effect, Layer } from "effect"
+import { Context, Deferred, Effect, Layer } from "effect"
 import type { LayerMap } from "effect"
 import { Database } from "@novaclaw/core/database/database"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
@@ -13,6 +13,7 @@ import { SessionExecution } from "@novaclaw/core/session/execution"
 import { SessionExecutionLocal } from "@novaclaw/core/session/execution/local"
 import { SessionRunner } from "@novaclaw/core/session/runner/index"
 import { SessionSchema } from "@novaclaw/core/session/schema"
+import { SessionTable } from "@novaclaw/core/session/sql"
 import { SessionStore } from "@novaclaw/core/session/store"
 import { location } from "./fixture/location"
 import { testEffect } from "./lib/effect"
@@ -23,14 +24,15 @@ import { testEffect } from "./lib/effect"
 // execution/local.ts is the authoritative seam: busy on start, idle on ANY settle — except after
 // exit(result), where the K1 terminal `exited` must not be stomped.
 
-const it = testEffect(AppNodeBuilder.build(LayerNode.group([Database.node, EventV2.node])))
+const it = testEffect(AppNodeBuilder.build(LayerNode.group([Database.node, EventV2.node, SessionStore.node])))
 
 const sessionID = "ses_0123456789abcdefghijklmn" as SessionSchema.ID
 
 type Captured = { type: string; status: { type: string }; directory: string | undefined }
 
 const harness = (input: {
-  run: (setResult: (value: string) => void) => Effect.Effect<void, never>
+  run: (setResult: (value: string) => void, sessionID: SessionSchema.ID) => Effect.Effect<void, never>
+  children?: Readonly<Record<string, ReadonlyArray<SessionSchema.ID>>>
 }) =>
   Effect.gen(function* () {
     const ref = Location.Ref.make({ directory: AbsolutePath.make(process.cwd()) })
@@ -39,12 +41,15 @@ const harness = (input: {
 
     const storeLayer = Layer.succeed(
       SessionStore.Service,
-      { get: () => Effect.succeed(record()) } as unknown as SessionStore.Interface,
+      {
+        get: () => Effect.succeed(record()),
+        children: (id: SessionSchema.ID) => Effect.succeed(input.children?.[id] ?? []),
+      } as unknown as SessionStore.Interface,
     )
     const locatedLayer = Layer.mergeAll(
       Layer.succeed(
         SessionRunner.Service,
-        SessionRunner.Service.of({ run: () => input.run((value) => (result = value)) }),
+        SessionRunner.Service.of({ run: ({ sessionID: id }) => input.run((value) => (result = value), id) }),
       ),
       Layer.succeed(Location.Service, Location.Service.of(location(ref))),
     ) as unknown as Layer.Layer<LocationServices, LocationError>
@@ -74,6 +79,37 @@ const harness = (input: {
   })
 
 describe("SessionExecutionLocal status lifecycle", () => {
+  it.effect("the store exposes direct children without folding grandchildren into the query", () =>
+    Effect.gen(function* () {
+      const { db } = yield* Database.Service
+      const parent = SessionSchema.ID.make("ses_store_parent")
+      const child = SessionSchema.ID.make("ses_store_child")
+      const grandchild = SessionSchema.ID.make("ses_store_grandchild")
+      yield* db
+        .insert(SessionTable)
+        .values(
+          [
+            { id: parent, slug: "parent", directory: "/project", title: "parent", version: "test" },
+            { id: child, slug: "child", directory: "/project", title: "child", version: "test", parent_id: parent },
+            {
+              id: grandchild,
+              slug: "grandchild",
+              directory: "/project",
+              title: "grandchild",
+              version: "test",
+              parent_id: child,
+            },
+          ],
+        )
+        .run()
+        .pipe(Effect.orDie)
+
+      const store = yield* SessionStore.Service
+      expect(yield* store.children(parent)).toEqual([child])
+      expect(yield* store.children(child)).toEqual([grandchild])
+    }),
+  )
+
   it.effect("publishes busy then idle around a successful drain, location-stamped", () =>
     Effect.scoped(
       Effect.gen(function* () {
@@ -102,6 +138,53 @@ describe("SessionExecutionLocal status lifecycle", () => {
         yield* h.exec.resume(sessionID)
         // exit.ts publishes `exited` itself; the drain must not follow with idle.
         expect(h.captured.map((c) => c.status.type)).toEqual(["busy"])
+      }),
+    ),
+  )
+
+  it.effect("stopping a session reaps its complete descendant tree and leaves unrelated work alone", () =>
+    Effect.scoped(
+      Effect.gen(function* () {
+        const child = SessionSchema.ID.make("ses_child")
+        const grandchild = SessionSchema.ID.make("ses_grandchild")
+        const sibling = SessionSchema.ID.make("ses_sibling")
+        const unrelated = SessionSchema.ID.make("ses_unrelated")
+        const started = yield* Deferred.make<void>()
+        const running = new Set<SessionSchema.ID>()
+        const interrupted: SessionSchema.ID[] = []
+        const h = yield* harness({
+          children: {
+            [sessionID]: [child, sibling],
+            [child]: [grandchild],
+            // Corrupt ancestry must terminate rather than turning Stop into an infinite walk.
+            [grandchild]: [sessionID],
+          },
+          run: (_setResult, id) =>
+            Effect.sync(() => {
+              running.add(id)
+              return running.size
+            }).pipe(
+              Effect.flatMap((size) => (size === 5 ? Deferred.succeed(started, undefined) : Effect.void)),
+              Effect.andThen(Effect.never),
+              Effect.onInterrupt(() =>
+                Effect.sync(() => {
+                  running.delete(id)
+                  interrupted.push(id)
+                }),
+              ),
+            ),
+        })
+
+        yield* Effect.forEach([sessionID, child, grandchild, sibling, unrelated], h.exec.wake, {
+          discard: true,
+        })
+        yield* Deferred.await(started)
+
+        yield* h.exec.interrupt(sessionID)
+
+        expect(new Set(interrupted)).toEqual(new Set([sessionID, child, grandchild, sibling]))
+        expect(Array.from(yield* h.exec.active)).toEqual([unrelated])
+        yield* h.exec.interrupt(unrelated)
       }),
     ),
   )
