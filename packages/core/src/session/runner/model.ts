@@ -55,6 +55,34 @@ export class VariantUnavailableError extends Schema.TaggedErrorClass<VariantUnav
   }
 }
 
+/**
+ * The turn's own input carries an attachment the resolved model cannot read (v0.2.0 prep §10).
+ *
+ * A PRE-TURN failure by design: it is raised before any request is built, so the user is told the
+ * true thing — a model-selection mistake — instead of the provider's 400 about an unsupported media
+ * type (ruling 2, *a fault is never described falsely*). `message` is written as a COMPLETE
+ * user-facing sentence because `runner/llm.ts`'s `surfacePreTurnFailure` renders it verbatim, and
+ * it names both repairs: pick a capable model, or fix this model's declared modalities — the
+ * catalog is runtime-editable, so a wrong models.dev entry is repairable from inside the OS
+ * (AGENTS.md → *one working model can repair the system*).
+ */
+export class ModelInputUnsupportedError extends Schema.TaggedErrorClass<ModelInputUnsupportedError>()(
+  "SessionRunnerModel.ModelInputUnsupportedError",
+  {
+    providerID: ProviderV2.ID,
+    modelID: ModelV2.ID,
+    /** The models.dev input modality that was refused ("image", "audio", …) — never a MIME type. */
+    modality: Schema.String,
+    /** The attachment names (or MIME types, when unnamed) that triggered the refusal. */
+    files: Schema.Array(Schema.String),
+  },
+) {
+  override get message() {
+    const names = this.files.length > 0 ? ` (${this.files.join(", ")})` : ""
+    return `\`${this.providerID}/${this.modelID}\` can't read ${this.modality} input, so the ${this.files.length === 1 ? "attachment" : "attachments"}${names} on this message could not be sent. Pick a model that accepts ${this.modality}, or correct this model's input modalities in Settings → Models`
+  }
+}
+
 export class UnsupportedApiError extends Schema.TaggedErrorClass<UnsupportedApiError>()(
   "SessionRunnerModel.UnsupportedApiError",
   {
@@ -73,6 +101,7 @@ export type Error =
   | ModelUnavailableError
   | VariantUnavailableError
   | UnsupportedApiError
+  | ModelInputUnsupportedError
   | Integration.AuthorizationError
 
 export interface Interface {
@@ -84,17 +113,29 @@ export interface Interface {
    *  same best-effort way as `tier`: it only decorates the system prompt, so an unresolvable model
    *  yields `undefined` rather than failing the turn. */
   readonly prePrompt: (session: SessionSchema.Info) => Effect.Effect<string | undefined>
+  /**
+   * The resolved catalog model's declared capabilities, for the runner's attachment gate. Read the
+   * same best-effort way as `tier`/`prePrompt`: an unresolvable model yields `undefined` rather
+   * than failing the turn.
+   *
+   * ⚠️ `undefined` means NO EVIDENCE, never "text-only" — see `to-llm-message.ts`
+   * `attachmentSupport`. Collapsing the two would refuse every image on every hand-added local
+   * endpoint (which is most of them, and all of ours).
+   */
+  readonly capabilities: (session: SessionSchema.Info) => Effect.Effect<ModelV2.Capabilities | undefined>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/SessionRunnerModel") {}
 
-/** Test or embedding seam. `tier`/`prePrompt` default to always-undefined so existing callers need
- *  not supply them. */
+/** Test or embedding seam. `tier`/`prePrompt`/`capabilities` default to always-undefined so
+ *  existing callers need not supply them — and `undefined` capabilities is the pass-everything
+ *  "no evidence" answer, so a seam that omits it never starts refusing attachments. */
 export const layerWith = (
   resolve: Interface["resolve"],
   tier: Interface["tier"] = () => Effect.succeed(undefined),
   prePrompt: Interface["prePrompt"] = () => Effect.succeed(undefined),
-) => Layer.succeed(Service, Service.of({ resolve, tier, prePrompt }))
+  capabilities: Interface["capabilities"] = () => Effect.succeed(undefined),
+) => Layer.succeed(Service, Service.of({ resolve, tier, prePrompt, capabilities }))
 
 const apiKey = (model: ModelV2.Info, credential?: Credential.Value) => {
   if (credential?.type === "key") return Auth.value(credential.key)
@@ -298,6 +339,12 @@ export const locationLayer = Layer.effect(
       // decorates the system prompt (never gates the turn), so an unresolvable model → undefined.
       prePrompt: Effect.fn("SessionRunnerModel.prePrompt")(function* (session) {
         return (yield* select(session).pipe(Effect.orElseSucceed(() => undefined)))?.prePrompt
+      }),
+      // The attachment gate's evidence, read exactly like `tier` above — no boot-latch wait, never
+      // fails. An unresolved model returns undefined, which the gate reads as "no evidence" and
+      // lets through; the turn's real model resolution (`resolve`) is what fails a missing model.
+      capabilities: Effect.fn("SessionRunnerModel.capabilities")(function* (session) {
+        return (yield* select(session).pipe(Effect.orElseSucceed(() => undefined)))?.capabilities
       }),
     })
   }),

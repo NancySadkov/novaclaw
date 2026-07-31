@@ -65,7 +65,7 @@ import { SessionStrict } from "./strict"
 import { JhStore } from "../../jh/store"
 import type { JhEngine } from "../../jh/engine"
 import { createLLMEventPublisher } from "./publish-llm-event"
-import { toLLMMessages } from "./to-llm-message"
+import { attachmentModality, toLLMMessages, unreadableTurnAttachments } from "./to-llm-message"
 import { AdhocGuidance } from "../../adhoc-tools/guidance"
 import { Affective } from "./affective"
 import { SessionDrive } from "./drive"
@@ -657,9 +657,15 @@ export const layer = Layer.effect(
       const surfacePreTurnFailure = (error: unknown) =>
         Effect.gen(function* () {
           const modelRef =
-            error !== null && typeof error === "object" && "providerID" in error && "modelID" in error
-              ? `${(error as { providerID: string }).providerID}/${(error as { modelID: string }).modelID}`
-              : undefined
+            // A capability refusal carries providerID/modelID too, but its own `message` is already
+            // the complete, accurate sentence — routing it through the "…is unavailable" template
+            // below would describe the fault falsely (ruling 2). The model is not unavailable; it
+            // is present, reachable, and simply cannot read what was attached.
+            error instanceof SessionRunnerModel.ModelInputUnsupportedError
+              ? undefined
+              : error !== null && typeof error === "object" && "providerID" in error && "modelID" in error
+                ? `${(error as { providerID: string }).providerID}/${(error as { modelID: string }).modelID}`
+                : undefined
           const text = modelRef
             ? `⚠️ This turn couldn't run — the selected model \`${modelRef}\` is unavailable. Pick an available model in Settings, or check that its backend is running.`
             : `⚠️ This turn couldn't run — ${error instanceof Error && error.message ? error.message : "an unexpected error occurred"}.`
@@ -710,6 +716,36 @@ export const layer = Layer.effect(
       )
       const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)
       const context = entries.map((entry) => entry.message)
+      // CAPABILITY GATE (v0.2.0 prep §10). The full reasoning — why the turn's OWN input refuses
+      // while history degrades to a placeholder, and why that one rule also covers a Computer Use
+      // screenshot — is at `unreadableTurnAttachments` in to-llm-message.ts, next to the pure
+      // decision it names. Here we only act on the verdict: refuse BEFORE the request is built, so
+      // the user reads "this model can't read images" instead of a provider's media-type 400.
+      //
+      // The catalog read is gated on there being an attachment at all, so the overwhelmingly common
+      // attachment-free turn pays nothing; `undefined` capabilities is the pass-everything answer,
+      // which is exactly what an attachment-free turn wants anyway.
+      const modelCapabilities = context.some(
+        (message) => message.type === "user" && (message.files?.length ?? 0) > 0,
+      )
+        ? yield* models.capabilities({ ...session, model: config.model as typeof session.model })
+        : undefined
+      const unreadable = unreadableTurnAttachments(context, modelCapabilities)
+      if (unreadable.length > 0) {
+        // Name the model the USER picked, not the wire id: `model.id` is the API-side id
+        // (`fromCatalogModel` builds the route from `api.id`), which can differ from the catalog
+        // entry shown in the model picker. Falling back to the wire id covers the default-model
+        // case, where the session pinned nothing.
+        const picked = config.model as typeof session.model
+        const refusal = new SessionRunnerModel.ModelInputUnsupportedError({
+          providerID: ProviderV2.ID.make(picked?.providerID ?? model.provider),
+          modelID: ModelV2.ID.make(picked?.id ?? model.id),
+          modality: [...new Set(unreadable.map((file) => attachmentModality(file.mime) ?? "this"))].join(" or "),
+          files: unreadable.map((file) => file.name ?? file.mime),
+        })
+        yield* surfacePreTurnFailure(refusal)
+        return yield* refusal
+      }
       // The files the USER attached, by canonical identity — resolved ONCE here rather than per tool
       // call, so a mutation cannot be judged against a set that shifted mid-turn. Every mutation tool
       // forwards this to `permission.assert`, which is what makes overwriting the user's own source
@@ -818,7 +854,10 @@ export const layer = Layer.effect(
           projectScope: SystemCompose.projectScopeSection(config.permissionMode),
           base: system.baseline,
         }).map(SystemPart.make),
-        messages: [...toLLMMessages(context, model), ...(isLastStep ? [Message.assistant(MAX_STEPS_PROMPT)] : [])],
+        messages: [
+          ...toLLMMessages(context, model, modelCapabilities),
+          ...(isLastStep ? [Message.assistant(MAX_STEPS_PROMPT)] : []),
+        ],
         tools: toolMaterialization?.definitions ?? [],
         toolChoice: isLastStep ? "none" : undefined,
         ...(affectiveGeneration === undefined ? {} : { generation: affectiveGeneration }),
@@ -2036,7 +2075,10 @@ export const layer = Layer.effect(
             // wrote (a ```bash fence is ordinary output, so running it would turn docs into execution).
             if (!textualNudged) {
               // Names come from a fresh materialization: the settlement branch is a different scope from
-              // the turn-attempt's own, and this runs at most once per drain (registry read, no I/O).
+              // the turn-attempt's own, and this runs at most once per drain. ⚠️ "no I/O" was true
+              // until `ToolRegistry.withAvailability` landed (2026-07-31): a tool carrying a live
+              // availability predicate reads its store here, measured at ~0.54 ms for the one that
+              // does (`profile`). Cheap, and the point — a frozen answer was the B7 bug.
               // A failure here must never break the drain — degrade to the name-free tells.
               const offeredToolNames = yield* tools.materialize().pipe(
                 Effect.map((materialized) => materialized.definitions.map((definition) => definition.name)),
