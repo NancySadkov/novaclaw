@@ -30,7 +30,9 @@ describe("McpExternal.fromMcpTool", () => {
     })
     const out: any = await Effect.runPromise(Tool.settle(tool, call({ query: "effect" }), ctx) as any)
     expect(received).toEqual({ query: "effect" })
-    expect(out.content).toEqual([{ type: "text", text: "2 results" }])
+    // A third party's text arrives framed as data (ruling 5's out-of-process half). Referenced, not
+    // re-typed — `test/untrusted-framing.test.ts` in `packages/core` pins the wording itself.
+    expect(out.content).toEqual([{ type: "text", text: McpExternal.FRAME + "2 results" }])
   })
 
   test("an MCP error (thrown execute) becomes a ToolFailure, not a crash", async () => {
@@ -47,6 +49,6 @@ describe("McpExternal.fromMcpTool", () => {
   test("falls back to structuredContent as JSON text when there are no content parts", async () => {
     const tool = McpExternal.fromMcpTool({ inputSchema: {}, execute: async () => ({ structuredContent: { hits: 2 } }) })
     const out: any = await Effect.runPromise(Tool.settle(tool, call({}), ctx) as any)
-    expect(out.content).toEqual([{ type: "text", text: '{"hits":2}' }])
+    expect(out.content).toEqual([{ type: "text", text: McpExternal.FRAME + '{"hits":2}' }])
   })
 })

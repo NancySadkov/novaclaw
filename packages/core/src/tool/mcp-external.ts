@@ -1,6 +1,7 @@
 export * as McpExternal from "./mcp-external"
 
 import { Effect } from "effect"
+import { SessionOrigin } from "../session/origin"
 import { type AnyTool, type Content, type Context, Failure, makeExternal } from "./tool"
 
 // Adapt an MCP tool — produced by the MCP service as an AI-SDK `dynamicTool`
@@ -27,6 +28,25 @@ const rawSchema = (tool: AiSdkTool) => {
   return (wrapped?.jsonSchema ?? tool.inputSchema ?? { type: "object" }) as Parameters<typeof makeExternal>[0]["inputSchema"]
 }
 
+/**
+ * The untrusted-input framing for the OUT-OF-PROCESS half of ruling 5. An MCP server is a third
+ * party's program, and by the 2026-07-30 third-party-surface ruling it is deliberately free to do
+ * things we decline to ship — so its answer is a stranger's text arriving inside our turn, exactly
+ * like a fetched page. The shared vocabulary lives in `session/origin.ts`.
+ *
+ * ⚠️ It names "an MCP server" and NOT the server, because the server's identity is not something
+ * this adapter is given: `fromMcpTool` receives an AI-SDK tool shape (description + inputSchema +
+ * execute) and a `Context` that carries session/agent/call ids and no tool name. Naming a server we
+ * cannot identify would be a frame that describes its source falsely (ruling 2), so it says the one
+ * thing that is true here. If the label should get sharper, the fix is to thread the connection's
+ * name in from `novaclaw/src/mcp/external-tool-source.ts` — not to guess in this file.
+ *
+ * Exported so the tests that assert model-facing bytes reference the frame instead of re-typing it;
+ * a literal copied into a test file is the drift shape, and there are two such suites (this
+ * package's `mcp-external.test.ts` and `novaclaw/test/tool/external-tool-source.test.ts`).
+ */
+export const FRAME = SessionOrigin.externalContentFrame("output from an MCP server")
+
 const toContent = (result: unknown): ReadonlyArray<Content> => {
   const parts = (result as { content?: unknown } | undefined)?.content
   const texts = Array.isArray(parts)
@@ -36,9 +56,13 @@ const toContent = (result: unknown): ReadonlyArray<Content> => {
           : [],
       )
     : []
-  if (texts.length > 0) return texts.map((text) => ({ type: "text", text }))
+  // The frame rides the FIRST part only — the parts arrive as one ordered answer from one server, so
+  // repeating it per part would pay the token cost N times to say the same thing once.
+  if (texts.length > 0) return texts.map((text, index) => ({ type: "text", text: index === 0 ? FRAME + text : text }))
   const structured = (result as { structuredContent?: unknown } | undefined)?.structuredContent ?? result
-  return [{ type: "text", text: typeof structured === "string" ? structured : JSON.stringify(structured ?? {}) }]
+  return [
+    { type: "text", text: FRAME + (typeof structured === "string" ? structured : JSON.stringify(structured ?? {})) },
+  ]
 }
 
 /**

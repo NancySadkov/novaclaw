@@ -5,6 +5,7 @@ import { Effect, Layer, Schema } from "effect"
 import { makeLocationNode } from "../effect/app-node"
 import { PermissionV2 } from "../permission"
 import { PositiveInt } from "../schema"
+import { SessionOrigin } from "../session/origin"
 import { WebSearch } from "../websearch/service"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
@@ -38,16 +39,35 @@ export const Input = Schema.Struct({
 const Output = Schema.Struct({ ok: Schema.Boolean, message: Schema.String })
 type Output = typeof Output.Type
 
-/** Linearized results — one block per hit, the shape a model reads without parsing JSON. */
+/**
+ * Linearized results — one block per hit, the shape a model reads without parsing JSON.
+ *
+ * ⚠️ **Every byte after the frame is a stranger's**: titles, URLs and snippets are authored by
+ * whoever owns the page, and a snippet is a free-text field an attacker controls outright. So this
+ * carries `SessionOrigin.externalContentFrame` — the same untrusted-input vocabulary a hostile
+ * messenger turn gets, since a tool result and a prompt turn are two doors into one context window.
+ *
+ * ⚠️ **The frame lives HERE and not in `toModelOutput`, deliberately.** The tool's `message` field
+ * also carries OUR OWN words on two other paths — "Search failed.", "No results found for that
+ * query.", the offline refusal — and labelling those as external content would describe their source
+ * falsely (ruling 2). This function is the one place third-party text is produced, so it is the one
+ * place the label is true, and no caller can produce unframed results text by forgetting.
+ *
+ * An empty list stays empty and unframed: a frame around nothing announces a source that sent us
+ * nothing.
+ */
 export const formatResults = (
   results: readonly { readonly title: string; readonly url: string; readonly snippet?: string; readonly engine: string }[],
-): string =>
-  results
+): string => {
+  if (results.length === 0) return ""
+  const body = results
     .map((result, index) => {
       const snippet = result.snippet === undefined || result.snippet.length === 0 ? "" : `\n   ${result.snippet.slice(0, 400)}`
       return `${index + 1}. ${result.title}\n   ${result.url} [${result.engine}]${snippet}`
     })
     .join("\n\n")
+  return SessionOrigin.externalContentFrame("web search results") + body
+}
 
 export const description =
   "Search the web for current information — anything past your knowledge cutoff, or that you should not guess at. " +

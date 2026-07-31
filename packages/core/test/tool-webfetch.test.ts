@@ -98,11 +98,15 @@ describe("WebFetchTool registration", () => {
       const url = "http://example.com/public"
 
       expect((yield* toolDefinitions(registry)).map((tool) => tool.name)).toEqual(["webfetch"])
+      // The model-facing halves carry the untrusted-content frame; the STORED `structured.output`
+      // does not. Expressed through the projection rather than as a literal so the wording lives in
+      // exactly one place (`test/untrusted-framing.test.ts` pins the wording itself).
+      const framed = WebFetchTool.toModelOutput({ url, output: "hello" })
       expect(yield* settleTool(registry, call({ url, format: "text", timeout: 4 }))).toEqual({
-        result: { type: "text", value: "hello" },
+        result: { type: "text", value: framed },
         output: {
           structured: { url, contentType: "text/plain", format: "text", output: "hello" },
-          content: [{ type: "text", text: "hello" }],
+          content: [{ type: "text", text: framed }],
         },
       })
       expect(assertions).toMatchObject([
@@ -120,7 +124,7 @@ describe("WebFetchTool registration", () => {
 
       expect(yield* executeTool(registry, call({ url, format: "text" }))).toEqual({
         type: "text",
-        value: "hello",
+        value: WebFetchTool.toModelOutput({ url, output: "hello" }),
       })
       expect(assertions).toMatchObject([
         { sessionID, action: "webfetch", resources: [url], save: ["*"], metadata: { url, format: "text" } },
@@ -148,7 +152,9 @@ describe("WebFetchTool registration", () => {
 
           expect(yield* executeTool(registry, call({ url, format: "text" }))).toEqual({
             type: "text",
-            value: "redirected",
+            // Through the projection, not a literal: the frame names the HOST and this server's port
+            // is assigned at boot, so a literal would be unwritable here.
+            value: WebFetchTool.toModelOutput({ url, output: "redirected" }),
           })
           expect(assertions).toMatchObject([
             { sessionID, action: "webfetch", resources: [url], save: ["*"], metadata: { url, format: "text" } },
@@ -185,11 +191,11 @@ describe("WebFetchTool registration", () => {
 
       expect(yield* executeTool(registry, call({ url: "https://1.1.1.1", format: "markdown" }))).toEqual({
         type: "text",
-        value: "# Hello\n\nworld",
+        value: WebFetchTool.toModelOutput({ url: "https://1.1.1.1", output: "# Hello\n\nworld" }),
       })
       expect(yield* executeTool(registry, call({ url: "https://1.1.1.1", format: "text" }))).toEqual({
         type: "text",
-        value: "Helloworld",
+        value: WebFetchTool.toModelOutput({ url: "https://1.1.1.1", output: "Helloworld" }),
       })
     }),
   )
@@ -271,7 +277,7 @@ describe("WebFetchTool registration", () => {
 
       expect(yield* executeTool(registry, call({ url: "https://1.1.1.1", format: "text" }))).toEqual({
         type: "text",
-        value: "ok",
+        value: WebFetchTool.toModelOutput({ url: "https://1.1.1.1", output: "ok" }),
       })
       expect(requests).toHaveLength(2)
       expect(requests[0]?.headers["user-agent"]).toContain("Mozilla/5.0")

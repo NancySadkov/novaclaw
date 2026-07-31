@@ -8,6 +8,7 @@ import TurndownService from "turndown"
 import { makeLocationNode } from "../effect/app-node"
 import { LayerNodePlatform } from "../effect/app-node-platform"
 import { PermissionV2 } from "../permission"
+import { SessionOrigin } from "../session/origin"
 import { collectBoundedResponseBody } from "./http-body"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
@@ -111,6 +112,31 @@ const isTextualMime = (mime: string) =>
   mime.endsWith("+xml") ||
   mime === "application/javascript" ||
   mime === "application/x-javascript"
+
+// ── Untrusted-input framing ─────────────────────────────────────────────────────────────────────
+//
+// A fetched page is a stranger's prose arriving inside our own turn — the same class of input the
+// messenger client/audience frames exist for (`session/origin.ts`), and until 2026-07-30 the only
+// one of the two that was framed at all. The shared helper owns the WORDING; this file only decides
+// what to call the source.
+//
+// The HOST, not the whole URL: the URL is already in the model's own tool call, so repeating it
+// costs tokens on every fetch and says nothing new, while the host is the fact that actually decides
+// how much weight to give the bytes. A URL that will not parse is named verbatim rather than
+// guessed at — the frame says what is known and no more (ruling 2).
+export const sourceLabel = (url: string): string => {
+  try {
+    return `fetched from ${new URL(url).host}`
+  } catch {
+    return `fetched from ${url}`
+  }
+}
+
+/** The model-facing projection: the frame, then the page. Exported so the wording is pinned by a
+ *  test rather than by whoever reads the file next (`test/untrusted-framing.test.ts`). */
+export const toModelOutput = (output: { readonly url: string; readonly output: string }): string =>
+  SessionOrigin.externalContentFrame(sourceLabel(output.url)) + output.output
+
 const convert = (content: string, contentType: string, format: Format) => {
   if (!contentType.includes("text/html")) return content
   if (format === "markdown") return convertHTMLToMarkdown(content)
@@ -131,7 +157,7 @@ export const layer = Layer.effectDiscard(
           description,
           input: Input,
           output: Output,
-          toModelOutput: ({ output }) => [{ type: "text", text: output.output }],
+          toModelOutput: ({ output }) => [{ type: "text", text: toModelOutput(output) }],
           execute: (input, context) =>
             Effect.gen(function* () {
               yield* Effect.try({

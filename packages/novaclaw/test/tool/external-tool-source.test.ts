@@ -18,7 +18,10 @@ import { Config } from "@novaclaw/core/config"
 import { Location } from "@novaclaw/core/location"
 import { Project } from "@novaclaw/core/project"
 import { PermissionV2 } from "@novaclaw/core/permission"
-import type { McpExternal } from "@novaclaw/core/tool/mcp-external"
+// Value import, not `import type`: this file asserts model-facing bytes, and an MCP answer now
+// carries the untrusted-content frame. Referencing `McpExternal.FRAME` keeps the wording defined
+// once (`packages/core/src/tool/mcp-external.ts`) instead of copied into a second package's test.
+import { McpExternal } from "@novaclaw/core/tool/mcp-external"
 import { PluginTools } from "@novaclaw/core/tool/plugin-tools"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
 import { ApplicationTools } from "@novaclaw/core/tool/application-tools"
@@ -167,7 +170,7 @@ describe("AggregateExternalToolSource", () => {
     const settlement = await Effect.runPromise(
       settleCall("searxng_search", {}, "mcp").pipe(Effect.scoped, Effect.provide(registryOver(base))),
     )
-    expect(settlement.result).toEqual({ type: "text", value: "MCP:results" })
+    expect(settlement.result).toEqual({ type: "text", value: McpExternal.FRAME + "MCP:results" })
   })
 
   // PRECEDENCE PIN. Two rungs remain and they must not be ambiguous: the aggregate
