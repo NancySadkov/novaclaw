@@ -15,7 +15,8 @@ import { Api } from "../api"
 // Recipes handlers (AGENTS.md → *Recipes are source code for the AI era*). The store is plain async fns
 // over the filesystem, so these mostly translate — except `run`, which is the feature:
 //
-//   materialize the recipe's assets into a WORK DIR  →  start a session there with the prompt
+//   check the recipe's `needs` against this host  →  materialize its assets into a WORK DIR
+//     →  start a session there with the prompt
 //
 // The recipe folder itself is never touched, which is what keeps a recipe re-runnable forever. The work
 // dir defaults to a per-recipe folder under the app-managed scratch workspace; a caller (the app's folder
@@ -81,6 +82,33 @@ export const RecipeHandler = HttpApiBuilder.group(Api, "server.recipe", (handler
         Effect.fn(function* (ctx) {
           const recipe = yield* Effect.promise(() => Recipe.read(ctx.params.slug, builtins))
           if (recipe === undefined) return yield* new InvalidRequestError({ message: `No recipe named "${ctx.params.slug}"` })
+
+          // ── THE DOOR: ruling 14's one machine-read field, checked before anything happens ──────────
+          //
+          // `needs` states host-capability facts ("a C compiler"). This is the only place that reads
+          // them, and it runs BEFORE `Recipe.materialize` and BEFORE `sessions.create` deliberately:
+          // everything below cooks with `permissionMode: "bypass"` in a freshly materialized folder, so
+          // a recipe whose prerequisites are absent used to fail at a compile step — or after doing
+          // partial work — rather than at the door, and left a scratch folder behind either way.
+          // AGENTS.md calls the bundled set *the install's health check*; one that cannot say "you are
+          // missing a C compiler" is failing its stated job.
+          //
+          // ⚠️ It REFUSES; it can never install, grant or run anything. Ruling 14's own reasoning: a
+          // shared recipe is untrusted input the moment it lands, so it *may state what it needs and may
+          // never state what it gets* — a `needs` entry that triggered a package install would be that
+          // escalation wearing a different hat. The probe resolves names on PATH and stats paths, and
+          // that is the whole of its authority.
+          //
+          // ⚠️ Ruling 2 is why this can only block on a fact we actually probed: an unrecognised `needs`
+          // entry is `unknown`, never `absent`, so it NEVER blocks a cook — a false "you are missing gcc"
+          // on a machine that has one is worse than no check. The refusal names what was looked for and
+          // says how to override it, which is editing the recipe's own prose (there is no setting, by
+          // design). It surfaces as the Recipes app's error toast, the same path an unknown slug takes.
+          const unmet = Recipe.unmetMessage(
+            recipe.name,
+            Recipe.checkNeeds(yield* Effect.promise(() => Recipe.needsOf(recipe.slug))),
+          )
+          if (unmet !== undefined) return yield* new InvalidRequestError({ message: unmet })
 
           // Default work dir: a per-recipe folder under the scratch workspace, suffixed with the run time
           // so a second cook never collides with the first one's files.

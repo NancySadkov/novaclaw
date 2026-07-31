@@ -1,8 +1,10 @@
 export * as Recipe from "./recipe"
 
+import { existsSync } from "node:fs"
 import fs from "node:fs/promises"
 import path from "node:path"
 import { Global } from "./global"
+import { which } from "./util/which"
 
 /**
  * Recipes — "source code for the AI era" (AGENTS.md → *Recipes are source code for the AI era*).
@@ -45,14 +47,15 @@ export interface SaveInput {
    * The host capabilities this recipe needs ("a C compiler", "python3"), written into frontmatter as a
    * single `needs:` line.
    *
-   * ⚠️ **This is the ONE machine-read field todo.md ruling 14 permits, and we still do NOT machine-read
-   * it.** Ruling 14: frontmatter may carry `needs` — host-capability facts a normal person can verify —
-   * and *no configuration or grant token*, because an artifact designed to travel between strangers is
-   * untrusted input the moment it lands. So `needs` may say what a recipe NEEDS and never what it GETS.
-   * Writing it as a carried frontmatter LINE rather than a `RESERVED` key is deliberate: `parse`/`render`
-   * stay the untouched inverse pair the lossless-writes suite pins, and nothing downstream can start
-   * treating this string as a grant by accident. When something eventually *reads* `needs` to check a
-   * host, that is a separate, deliberate change with its own tests.
+   * ⚠️ **This is the ONE machine-read field todo.md ruling 14 permits, and as of 2026-07-31 it IS read**
+   * — see the `needs` section below (`parseNeeds` / `checkNeeds` / `unmetMessage`), consumed by
+   * `recipe.run` before a cook starts. Ruling 14: frontmatter may carry `needs` — host-capability facts a
+   * normal person can verify — and *no configuration or grant token*, because an artifact designed to
+   * travel between strangers is untrusted input the moment it lands. So `needs` may say what a recipe
+   * NEEDS and never what it GETS, and reading it may REFUSE a cook but may never install or grant
+   * anything. Writing it as a carried frontmatter LINE rather than a `RESERVED` key is still deliberate:
+   * `parse`/`render` stay the untouched inverse pair the lossless-writes suite pins, and nothing
+   * downstream can start treating this string as a grant by accident.
    *
    * `undefined` leaves whatever the author already wrote alone; `[]` clears the line.
    */
@@ -212,6 +215,211 @@ const withNeeds = (carried: readonly string[], needs: readonly string[] | undefi
 }
 
 // =============================================================================
+// `needs` — ruling 14's ONE machine-read field, finally READ
+// =============================================================================
+//
+// Until 2026-07-31 `needs` was written, carried and preserved by everything above and read by NOTHING,
+// so a recipe declaring `needs: a C compiler` stated a prerequisite the product never checked. That is
+// not a latent nicety: `server/handlers/recipe.ts`'s `recipe.run` cooks with `permissionMode: "bypass"`,
+// so a recipe whose prerequisites are absent runs unattended-ish and fails at a compile step — or worse,
+// after doing partial work — instead of at the door. AGENTS.md calls the bundled set *the install's
+// health check*; one that cannot say "you are missing a C compiler" is failing its stated job.
+//
+// ⚠️ **`needs` is STILL NOT a `RESERVED` key, and that is the load-bearing decision in this block.**
+// Promoting it would make `parse` consume the line and `render` re-emit it — a modelled field — and
+// three things say don't:
+//   · the lossless `parse`/`render` inverse pair is the property this file was rebuilt around (ruling 14,
+//     "a portable folder of prose"), and its two fixtures — `recipe.test.ts`'s `AWKWARD` and `UNMODELLED`
+//     — both use `needs: gcc` as their example of a line that must survive byte-for-byte. Promoting it
+//     rewrites the ratchet that makes this field addable at all;
+//   · `test/tool-recipe.test.ts` pins the loaded record's key set EXACTLY
+//     (`Object.keys(loaded).sort()` === assets/builtin/description/name/prompt/slug/updatedAt), so a
+//     `needs` field on `Recipe` is a change to a suite this file does not own;
+//   · `todo/recipes.md` already sequences the promotion with `collection` and `level` — "one schema
+//     change, not two (three, counting the level)". A wire-visible `needs` needs a `packages/protocol`
+//     field to be worth anything, and that is that batch's work.
+// Reading the carried line at the point of use costs one regex and changes no stored byte. When the
+// schema change lands, `parseNeeds` is what it should feed.
+//
+// ⚠️ **What a failed check may do, and what it may never do.** Ruling 14's reasoning is that an artifact
+// designed to travel between strangers is untrusted input the moment it lands, so it *"may state what it
+// needs and may never state what it gets"*. A `needs` entry may therefore cause a REFUSAL or a warning.
+// It may never cause an install, a grant, or anything that runs — a `needs` line that triggered a package
+// install would be the escalation the ruling forbids, wearing a different hat. Nothing below executes a
+// candidate: it resolves a name on PATH or stats a path, and that is the whole of its authority.
+
+/** How a candidate binary is resolved. Injected so the policy is testable without a host. */
+export type ResolveCommand = (candidate: string) => string | null
+
+export type NeedStatus =
+  /** Probed and found. */
+  | "present"
+  /** Probed, and every candidate came back empty. */
+  | "absent"
+  /**
+   * No probe exists for this fact — so we know NOTHING about it.
+   *
+   * ⚠️ Ruling 2 lives in this arm: *a fault is never described falsely*. A check that cannot verify a
+   * claim must say "I could not check this", never "missing". A false "you are missing gcc" on a machine
+   * that has it is worse than no check at all, so `unknown` never blocks a cook and never appears in a
+   * sentence that says something is absent.
+   */
+  | "unknown"
+
+export interface NeedCheck {
+  /** The author's own words, unchanged — messages quote the recipe rather than our paraphrase of it. */
+  readonly fact: string
+  readonly status: NeedStatus
+  /**
+   * Every candidate actually tried, in order. The claim is then checkable by hand, which is
+   * `agent-jail.ts`'s `probeCommand` lesson: report the OBSERVATION, not only the verdict.
+   */
+  readonly looked: readonly string[]
+  /** What resolved, when the fact is met. */
+  readonly found?: string
+}
+
+/**
+ * The Windows install roots `hello-c`'s own prompt requires the agent to test before it may conclude
+ * "no compiler" — *"You may **not** conclude 'no compiler' until every path in (b) has actually been
+ * tested"*. A compiler installed off-PATH is normal on Windows, so a PATH-only probe would report
+ * `absent` on a machine that has one; this list holds the checker to the same bar the shipped prompt
+ * sets for the model. Widening it is always safe (it can only turn a false `absent` into `present`);
+ * narrowing it is not.
+ */
+const WINDOWS_GCC = [
+  "C:/soft/w64devkit/bin/gcc.exe",
+  "C:/msys64/mingw64/bin/gcc.exe",
+  "C:/mingw64/bin/gcc.exe",
+  "C:/TDM-GCC-64/bin/gcc.exe",
+] as const
+
+/**
+ * The closed recognition table — deliberately TINY, and deliberately not a dependency resolver.
+ *
+ * Ruling 14 restricts `needs` to *"host-capability facts a normal person can verify"* and its own
+ * examples are `"a C compiler"` and `"python3"`. A table that grew a member per package name would be
+ * the dependency manifest — i.e. the configuration — that ruling forbids, so growing this is a
+ * deliberate act with a reason, not a chore performed whenever a recipe says something new. Anything
+ * not in it is `unknown`, which is the honest answer and costs nobody a cook.
+ *
+ * ⚠️ Case-insensitive, and NO `g` flag: a `g` regex carries `lastIndex` across `.test` calls, so the
+ * same fact would match and then not match on alternate evaluations.
+ */
+const CAPABILITIES: readonly { readonly match: RegExp; readonly candidates: readonly string[] }[] = [
+  {
+    // "a C compiler", "C99 compiler", "gcc", "clang". NOT "a C++ compiler" — we do not probe g++, and
+    // claiming to have checked it would be the false description ruling 2 rules out.
+    match: /\bc\s?(?:99|11|17)?\s*compiler\b|\b(?:gcc|clang|cc)\b/i,
+    candidates: ["cc", "gcc", "clang", "cl", ...WINDOWS_GCC],
+  },
+  { match: /\bpython\s?3?\b/i, candidates: ["python3", "python"] },
+  { match: /\bnode(?:\.?js)?\b/i, candidates: ["node"] },
+  { match: /\bgit\b/i, candidates: ["git"] },
+]
+
+/**
+ * Resolve a name on PATH, or stat a path. Never EXECUTES the candidate.
+ *
+ * ⚠️ **A shared recipe's text never becomes a candidate.** The fact only SELECTS rows from the compiled
+ * table above; every string that reaches here is a constant from this file. So a hostile `needs` entry
+ * cannot steer a stat at a path of its choosing, cannot enumerate the disk one probe at a time, and
+ * cannot name a binary to look for. That is the untrusted-input half of ruling 14 holding at the one
+ * place in this module where prose meets the host.
+ */
+const resolveCommand: ResolveCommand = (candidate) =>
+  /[\\/]/.test(candidate) ? (existsSync(candidate) ? candidate : null) : which(candidate)
+
+/**
+ * The facts stated by a recipe's carried frontmatter, in the order the author wrote them.
+ *
+ * Accepts both shapes a person actually writes: the inline `needs: gcc, python3` this module emits, and
+ * the YAML block list (`needs:` followed by indented `- item` lines). Ignoring the block form would mean
+ * a declaration that silently does nothing — the same defect this whole section exists to close, one
+ * layer down.
+ */
+export const parseNeeds = (frontmatter: readonly string[]): string[] => {
+  const facts: string[] = []
+  let inBlock = false
+  for (const line of frontmatter) {
+    if (NEEDS_LINE.test(line)) {
+      // NEEDS_LINE anchors at the start, so the FIRST colon is the key separator; a colon inside the
+      // value (`needs: a compiler: gcc`) stays in the value.
+      const inline = line.slice(line.indexOf(":") + 1)
+      facts.push(...inline.split(","))
+      // `needs:` with nothing after it opens a block list. `needs: gcc` does not, so a following
+      // `  - one` belongs to some other key.
+      inBlock = inline.trim() === ""
+      continue
+    }
+    const item = inBlock ? /^\s+-\s*(.*)$/.exec(line) : null
+    if (item) facts.push(item[1] ?? "")
+    else inBlock = false
+  }
+  return facts.map((fact) => fact.trim()).filter((fact) => fact.length > 0)
+}
+
+/** Probe one stated fact against this host. Pure given `resolve`. */
+export const checkNeed = (fact: string, resolve: ResolveCommand = resolveCommand): NeedCheck => {
+  const matched = CAPABILITIES.filter((capability) => capability.match.test(fact))
+  if (matched.length === 0) return { fact, status: "unknown", looked: [] }
+  const looked: string[] = []
+  const found: string[] = []
+  let missing = false
+  // ALL matching capabilities, not the first: "python3 and a C compiler" is one fact naming two, and
+  // checking only one of them would report `present` for a host missing the other.
+  for (const capability of matched) {
+    let hit: string | undefined
+    for (const candidate of capability.candidates) {
+      looked.push(candidate)
+      const resolved = resolve(candidate)
+      if (resolved !== null) {
+        hit = resolved
+        break
+      }
+    }
+    if (hit === undefined) missing = true
+    else found.push(hit)
+  }
+  return missing ? { fact, status: "absent", looked } : { fact, status: "present", looked, found: found.join(", ") }
+}
+
+export const checkNeeds = (facts: readonly string[], resolve?: ResolveCommand): NeedCheck[] =>
+  facts.map((fact) => checkNeed(fact, resolve))
+
+/** A stranger's `needs` entry is untrusted text on its way into a toast; keep it a phrase, not a wall. */
+const clip = (fact: string) => (fact.length > 60 ? `${fact.slice(0, 59)}…` : fact)
+
+/**
+ * The user-facing refusal, or `undefined` when nothing is provably missing.
+ *
+ * House style is *teach the way forward*, and the sentence carries four things on purpose: what the
+ * recipe said it needs (its words), what was actually looked for (so the claim is checkable by hand),
+ * what we could NOT check (ruling 2 — the refusal must never imply we verified the rest), and the way
+ * past it. **The way past it is editing the recipe's own prose, not a setting.** There is no "cook
+ * anyway" toggle by design: ruling 14 keeps configuration out of this artifact, and the recipe is on the
+ * user's disk in a text file they own — which is the anti-elitist escape hatch, not a missing feature.
+ *
+ * ⚠️ It never says "you do not have X". It says we looked HERE and did not find it, because that is the
+ * only claim the probe supports.
+ */
+export const unmetMessage = (recipeName: string, checks: readonly NeedCheck[]): string | undefined => {
+  const absent = checks.filter((check) => check.status === "absent")
+  if (absent.length === 0) return undefined
+  const unchecked = checks.filter((check) => check.status === "unknown")
+  const looked = [...new Set(absent.flatMap((check) => check.looked))]
+  return (
+    `Not cooking “${recipeName}”: it says it needs ${absent.map((check) => clip(check.fact)).join(" and ")}, ` +
+    `and I could not find ${absent.length > 1 ? "them" : "it"} on this machine — I looked for ` +
+    `${looked.join(", ")}. ` +
+    (unchecked.length > 0 ? `(I could not check: ${unchecked.map((check) => clip(check.fact)).join("; ")}.) ` : "") +
+    `Install what is missing and try again, or run the “Install health check” recipe to see what this ` +
+    `machine has. If it is installed somewhere I did not look, delete this recipe's “needs:” line and ` +
+    `cook anyway — the recipe is yours.`
+  )
+}
+
+// =============================================================================
 // Filesystem
 // =============================================================================
 
@@ -253,6 +461,24 @@ export async function list(options?: Options & { builtinSlugs?: ReadonlySet<stri
 
 export async function read(slug: string, options?: Options & { builtinSlugs?: ReadonlySet<string> }) {
   return readOne(recipesRoot(options), slug, options?.builtinSlugs ?? new Set())
+}
+
+/**
+ * The host-capability facts a recipe declares — the read half of ruling 14's one machine-read field.
+ *
+ * A separate read rather than a field on `Recipe` on purpose: the record's key set is pinned exactly by
+ * `test/tool-recipe.test.ts`, and a wire-visible `needs` wants a `packages/protocol` field that
+ * `todo/recipes.md` sequences with `collection`. See the block comment above `parseNeeds`.
+ *
+ * An unreadable folder declares NOTHING rather than throwing: the caller has already resolved the
+ * recipe, so this can only lose a race — and returning "no declarations" degrades to today's behaviour
+ * (cook it) instead of inventing a prerequisite the author never wrote.
+ */
+export async function needsOf(slug: string, options?: Options): Promise<string[]> {
+  if (!isValidSlug(slug)) return []
+  const file = path.join(recipesRoot(options), slug, RECIPE_FILE)
+  const raw = await fs.readFile(file, "utf8").catch(() => undefined)
+  return raw === undefined ? [] : parseNeeds(parse(raw).frontmatter)
 }
 
 /** Validate + write. Returns the persisted recipe; throws with a user-legible message on bad input. */

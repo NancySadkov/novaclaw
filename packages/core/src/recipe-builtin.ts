@@ -16,6 +16,24 @@ import { Recipe } from "./recipe"
  *
  * ⚠️ Keep every prompt TOOLCHAIN-AGNOSTIC. These run on strangers' machines: discover the compiler, do
  * not hardcode one person's install path.
+ *
+ * ⚠️ **`needs` is declared only where it is TRUE and CHECKABLE** (ruling 14's one machine-read field —
+ * `recipe.ts` → the `needs` section, read by `recipe.run` before a cook starts). Two of the seven declare
+ * one; the rest declare nothing, and the two most interesting absences are worth stating out loud:
+ *
+ *  · **`install-health-check` declares NOTHING, deliberately.** Its entire job is to run on a machine
+ *    that may be broken and REPORT what is missing, so a door check would refuse the one recipe designed
+ *    for exactly that machine. A prerequisite gate on the diagnostic is the diagnostic failing.
+ *  · **`osint-brief` declares nothing either**, though it plainly wants web search and web fetch: those
+ *    are kernel tools and instance configuration, not host-capability facts a person can verify on their
+ *    own machine, and a declaration nothing can probe would only ever report "I could not check this".
+ *
+ * A declaration must be a fact a normal person could verify by hand — never a package list, which is the
+ * dependency manifest ruling 14 forbids under the name "configuration".
+ *
+ * ⚠️ Seeding is non-destructive, so adding `needs` to a builtin only reaches installs that have not
+ * seeded that slug yet. Existing users keep their copy — they own it once it is on their disk — which is
+ * correct, and is why nothing here should be understood as a migration.
  */
 
 export interface Builtin extends Recipe.SaveInput {
@@ -28,6 +46,10 @@ export const BUILTINS: readonly Builtin[] = [
     slug: "install-health-check",
     name: "Install health check",
     description: "Fast end-to-end check that this NovaClaw can actually work — run this first.",
+    // ⚠️ NO `needs:` — and do not add one. This recipe exists to run on a machine that may be missing
+    // everything and tell the user what is missing; a prerequisite gate here would refuse the diagnostic
+    // precisely when it is the thing to run. It is also where the refusal on the OTHER recipes sends
+    // people, so it has to be reachable from a broken install by definition.
     prompt: `Check whether this NovaClaw installation is working, then report a short verdict table.
 
 Test each capability once, in this order, and keep it quick — no deep work:
@@ -49,6 +71,10 @@ install anything; just report.`,
     slug: "hello-c",
     name: "Hello, C",
     description: "Compiles and runs a C99 program — the toolchain smoke test.",
+    // The prompt below spends 40 lines on finding a compiler and names "reporting no compiler found" as
+    // a way to FAIL the task. Stating it here means the answer arrives in milliseconds, with the search
+    // set named, instead of after a cook that could only ever end there.
+    needs: ["a C compiler"],
     prompt: `Write, compile and run a C99 "hello world" program in this folder.
 
 Steps, in this order:
@@ -91,6 +117,10 @@ Three ways to fail this task that are worth naming, because they are the common 
     slug: "pi-100-machin",
     name: "100 digits of Pi (BigInt Machin)",
     description: "Long-horizon exact math: arbitrary-precision arithmetic from scratch, verified digit by digit.",
+    // The other half of the pair AGENTS.md calls the install health check, and the more expensive one to
+    // discover late: this recipe is deliberately long-horizon, so "no compiler" found at the end costs a
+    // lot more model time than "no compiler" found at the door.
+    needs: ["a C compiler"],
     prompt: `Write a C99 program that prints the first 100 decimal digits of π, then verify it.
 
 Requirements:
