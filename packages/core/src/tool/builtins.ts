@@ -5,6 +5,7 @@ import { Layer } from "effect"
 import { BashTool } from "./bash"
 import { BashJobs } from "./bash-jobs"
 import { ApplyPatchTool } from "./apply-patch"
+import { ConfigureTool } from "./configure"
 import { DefineToolTool } from "./define-tool"
 import { EditTool } from "./edit"
 import { GlobTool } from "./glob"
@@ -50,6 +51,13 @@ import { WriteHexTool } from "./write-hex"
 export const locationLayer = Layer.mergeAll(
   ApplyPatchTool.layer,
   BashTool.layer.pipe(Layer.provide(BashJobs.layer)),
+  // Registered under its own name with no `Tool.withPermission` wrap, for `recipe.ts`'s reason: the
+  // name fallback in `tool.ts` already resolves it, and `validateRegistration` refuses a declaration
+  // that repeats the name. ⚠️ `configure` spends TWO actions rather than one — `configure` for a
+  // consequential key and `configure_privileged` for a privileged one (ruling 4's tiers; see
+  // `configure.ts`) — and neither is declarable through `withPermission`, which carries a single
+  // action. The tiering lives in the asserts, which is where a per-key decision belongs.
+  ConfigureTool.layer,
   DefineToolTool.layer,
   EditTool.layer,
   GlobTool.layer,
@@ -89,6 +97,7 @@ export const node = makeLocationNode({
   deps: [
     ApplyPatchTool.node,
     BashTool.node,
+    ConfigureTool.node,
     DefineToolTool.node,
     EditTool.node,
     GlobTool.node,

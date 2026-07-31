@@ -32,6 +32,14 @@ import { ConfigWatcher } from "./config/watcher"
 import { SettingsConfigSeed } from "./settings-config-seed"
 import { SettingsConfigStore } from "./settings-config-store"
 
+/**
+ * ⚠️ **Every key below is also priced.** todo.md ruling 4 — *config writes are privilege-tiered:
+ * operational · consequential · privileged, unclassified ⇒ privileged* — and the table that prices
+ * them is `KEY_TIERS` in [`tool/configure.ts`](./tool/configure.ts), typed
+ * `Record<keyof Config.Info, Tier>` so **a field added here does not compile until it is
+ * classified there**. The annotations in this file carry the tier only where the answer is
+ * surprising or lives in a third file; the table itself is the record.
+ */
 export class Info extends Schema.Class<Info>("Config.Info")({
   $schema: Schema.optional(Schema.String).annotate({
     description: "JSON schema reference for configuration validation",
@@ -43,7 +51,10 @@ export class Info extends Schema.Class<Info>("Config.Info")({
     description: "Default model to use when no session or agent model is selected",
   }),
   default_agent: Schema.String.pipe(Schema.optional).annotate({
-    description: "Default primary agent to use when no session agent is selected",
+    description:
+      "Default primary agent to use when no session agent is selected. ⚠️ Ruling 4: PRIVILEGED — " +
+      "selection is authorship here, because the chosen agent decides both the system prompt and the " +
+      "permission ruleset every future session opens with.",
   }),
   autoupdate: Schema.Union([Schema.Boolean, Schema.Literal("notify")])
     .pipe(Schema.optional)
@@ -51,7 +62,10 @@ export class Info extends Schema.Class<Info>("Config.Info")({
       description: "Automatically update or notify when a new version is available",
     }),
   username: Schema.String.pipe(Schema.optional).annotate({
-    description: "Username displayed in conversations and used for telemetry identity",
+    description:
+      "Username displayed in conversations and used for telemetry identity. ⚠️ Ruling 4: PRIVILEGED, " +
+      "which is not obvious from the name — `tool/profile.ts` falls back to this string as the profile " +
+      "NAME it hands the model, so it is free text that reaches a future session's context.",
   }),
   expertise: Schema.Literals(["normal", "advanced", "developer"])
     .pipe(Schema.optional)
@@ -148,7 +162,10 @@ export class Info extends Schema.Class<Info>("Config.Info")({
     description:
       "User-pinned folder bookmarks shown in the directory picker's rail (absolute paths on the " +
       "instance host). Instance-wide, exported with config, and agent-editable via PATCH /config " +
-      "(self-healing: an agent can add/fix pins; the array replaces wholesale per the patch contract).",
+      "(self-healing: an agent can add/fix pins; the array replaces wholesale per the patch contract). " +
+      "⚠️ Ruling 4: OPERATIONAL — one of only five keys an agent may write with no consent card. " +
+      "Verified 2026-07-31: the only consumers are the directory picker and the Files app, so a pin " +
+      "is presentation and grants no access.",
   }),
   virtualFs: Schema.Boolean.pipe(Schema.optional).annotate({
     description:
@@ -282,8 +299,14 @@ export class Info extends Schema.Class<Info>("Config.Info")({
         "Merged field-wise over the builtins by id — e.g. {\"anthropic\":{\"baseURL\":\"https://…\"}} repairs a " +
         "moved vendor endpoint at RUNTIME (self-healing: any working model can PATCH /config with this key; " +
         "no config-file edits, no rebuild). Unknown ids add new presets; hidden:true hides one. " +
-        "Already-imported providers are repaired via providers.<id>.api.url instead — presets shape future imports only.",
+        "Already-imported providers are repaired via providers.<id>.api.url instead — presets shape future imports only. " +
+        "⚠️ Ruling 4: CONSEQUENTIAL, and deliberately a tier below `providers` — a preset changes no LIVE " +
+        "provider, so a hostile baseURL here still has to be picked up by a user-driven import that shows " +
+        "the URL and asks for a key.",
     }),
+  // ⚠️ Ruling 4: PRIVILEGED, and the reason is not the URL alone. Each nested model carries a
+  // `prePrompt` that `config/provider.ts` describes as "prepended to the system context" — so this key
+  // is a prompt-text channel as well as an endpoint, and it fails ruling 4's fourth test outright.
   providers: Schema.Record(Schema.String, ConfigProvider.Info).pipe(Schema.optional),
   // Models-primary (notes/models-primary-plan.md P1): the flat successor to `providers` — a map
   // of models keyed by id, each with its OWN endpoint `url` + params + `tier`. Decoded in
@@ -295,6 +318,10 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   // Transitional — dies with the models-primary data model (a model is just a URL; there is
   // no first-class provider entity). Promoted into V2 (F1d D2) because the Settings UI and the
   // `/provider` filter still read these by name today.
+  // ⚠️ Ruling 4: both are CONSEQUENTIAL rather than operational, for one reason that has nothing to
+  // do with execution or egress — either one can leave the instance with NO working model, and "as
+  // long as at least one working model remains" is the self-healing law's own precondition. It is the
+  // single outage `configure` could cause that `configure` could not then repair.
   disabled_providers: Schema.String.pipe(Schema.Array, Schema.optional).annotate({
     description: "Providers to disable that would otherwise load automatically",
   }),
