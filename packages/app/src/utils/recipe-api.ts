@@ -1,9 +1,12 @@
 import type { ServerConnection } from "@/context/server"
-import { authTokenFromCredentials } from "@/utils/server"
+import { instanceFetch } from "@/utils/instance-fetch"
 
-// Raw-fetch client for /api/recipe — NOT in the generated SDK (golden rule: never hand-edit
-// packages/sdk/**/gen/**). Mirrors calendar-api.ts / messenger-api.ts. Recipes are instance-global, so the
-// connection (base URL + creds) is the only routing needed.
+// Raw-fetch client for /api/recipe. Recipes are instance-global, so the connection (base URL +
+// creds) is the only routing needed — no `directory`.
+//
+// ⚠️ Base URL, auth, and fault decoding live in `utils/instance-fetch.ts`. This file's old
+// hand-rolled decoder preferred the server's `message` over a bare status ("a bad name / unknown
+// recipe"); that preference is now the SEAM's behaviour and every sibling client inherits it.
 
 export interface Recipe {
   readonly slug: string
@@ -28,29 +31,8 @@ export interface RunResult {
   readonly assets: readonly string[]
 }
 
-async function call<T>(server: ServerConnection.HttpBase, method: string, route: string, body?: unknown): Promise<T> {
-  const url = new URL(route, server.url.endsWith("/") ? server.url : `${server.url}/`)
-  const res = await fetch(url, {
-    method,
-    headers: {
-      "content-type": "application/json",
-      ...(server.password
-        ? { Authorization: `Basic ${authTokenFromCredentials({ username: server.username, password: server.password })}` }
-        : {}),
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  })
-  if (res.status === 204) return undefined as T
-  if (!res.ok) {
-    // The server sends a legible message for a bad name / unknown recipe — show THAT, not a bare status.
-    const detail = await res
-      .json()
-      .then((data: unknown) => (data && typeof data === "object" && "message" in data ? String(data.message) : ""))
-      .catch(() => "")
-    throw new Error(detail || `${method} ${route} failed: ${res.status}`)
-  }
-  return (await res.json()) as T
-}
+const call = <T,>(server: ServerConnection.HttpBase, method: string, route: string, body?: unknown): Promise<T> =>
+  instanceFetch<T>(server, { method, route, body })
 
 export const listRecipes = (server: ServerConnection.HttpBase) => call<Recipe[]>(server, "GET", "api/recipe")
 

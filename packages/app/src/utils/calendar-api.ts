@@ -1,9 +1,13 @@
 import type { ServerConnection } from "@/context/server"
-import { authTokenFromCredentials } from "@/utils/server"
+import { instanceFetch } from "@/utils/instance-fetch"
 
-// Raw-fetch client for /api/calendar/schedule — NOT in the generated SDK (golden rule: never hand-edit
-// packages/sdk/**/gen/**). Mirrors messenger-api.ts / scheduler-api.ts. Schedules are instance-global, so
-// `server` (base URL + creds) is the only routing needed.
+// Raw-fetch client for /api/calendar/schedule. Schedules are instance-global, so `server` (base URL
+// + creds) is the only routing needed — no `directory`.
+//
+// ⚠️ Base URL, auth, and fault decoding all live in `utils/instance-fetch.ts`; nothing HTTP-shaped
+// belongs in this file. It used to say these routes are "NOT in the generated SDK" — measured false
+// on 2026-07-31 (`/api/calendar/*` is in `sdk.gen.ts`). Moving onto the SDK is a separate decision;
+// this file is a typed shape over the shared seam until it is made.
 
 export interface HM {
   readonly hour: number
@@ -55,27 +59,8 @@ export interface CreateScheduleInput {
   readonly enabled?: boolean
 }
 
-async function call<T>(
-  server: ServerConnection.HttpBase,
-  method: string,
-  route: string,
-  body?: unknown,
-): Promise<T> {
-  const url = new URL(route, server.url.endsWith("/") ? server.url : `${server.url}/`)
-  const res = await fetch(url, {
-    method,
-    headers: {
-      "content-type": "application/json",
-      ...(server.password
-        ? { Authorization: `Basic ${authTokenFromCredentials({ username: server.username, password: server.password })}` }
-        : {}),
-    },
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  })
-  if (res.status === 204) return undefined as T
-  if (!res.ok) throw new Error(`${method} ${route} failed: ${res.status}`)
-  return (await res.json()) as T
-}
+const call = <T,>(server: ServerConnection.HttpBase, method: string, route: string, body?: unknown): Promise<T> =>
+  instanceFetch<T>(server, { method, route, body })
 
 export const listSchedules = (server: ServerConnection.HttpBase) =>
   call<Schedule[]>(server, "GET", "api/calendar/schedule")

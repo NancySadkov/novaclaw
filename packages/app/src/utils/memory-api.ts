@@ -1,10 +1,10 @@
 import type { ServerConnection } from "@/context/server"
-import { authTokenFromCredentials } from "@/utils/server"
+import { instanceFetch } from "@/utils/instance-fetch"
 
-// Raw-fetch helpers for the graph-memory `/memory/*` endpoints (notes/kb-graph-plan.md §5, P5) —
-// the read/edit surface the Memory settings tab + the (later) advanced viewer bind to. NOT in the
-// generated SDK (golden rule: never hand-edit packages/sdk/**/gen/**) — plain fetch with the
-// createSdkForServer auth recipe, exactly like registry-api.ts / fs-api.ts.
+// The graph-memory `/memory/*` endpoints (notes/kb-graph-plan.md §5, P5) — the read/edit surface
+// the Memory settings tab + the (later) advanced viewer bind to.
+//
+// ⚠️ Base URL, auth, and fault decoding live in `utils/instance-fetch.ts`.
 //
 // The memory engine is a server-GLOBAL singleton (one graph per instance, like the SQLite DB), so
 // `directory` here is only request routing (optional server-side; passed for parity with the other
@@ -52,34 +52,14 @@ export interface MemoryStats {
 
 export type PathResult = { readonly ids: readonly string[]; readonly hops: number } | null
 
-function headersFor(server: ServerConnection.HttpBase): Record<string, string> {
-  return {
-    "content-type": "application/json",
-    ...(server.password
-      ? { Authorization: `Basic ${authTokenFromCredentials({ username: server.username, password: server.password })}` }
-      : {}),
-  }
-}
-
-async function call<T>(
+const call = <T,>(
   server: ServerConnection.HttpBase,
   method: "GET" | "POST",
   route: string,
   directory: string,
   body?: unknown,
-  query?: Record<string, string>,
-): Promise<T> {
-  const url = new URL(route, server.url.endsWith("/") ? server.url : `${server.url}/`)
-  url.searchParams.set("directory", directory)
-  for (const [key, value] of Object.entries(query ?? {})) url.searchParams.set(key, value)
-  const res = await fetch(url, {
-    method,
-    headers: headersFor(server),
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  })
-  if (!res.ok) throw new Error(`${method} ${route} failed: ${res.status} ${await res.text().catch(() => "")}`)
-  return (await res.json()) as T
-}
+  query?: Record<string, string | undefined>,
+): Promise<T> => instanceFetch<T>(server, { method, route, directory, body, query })
 
 const csv = (values: readonly string[] | undefined): string | undefined =>
   values && values.length ? values.join(",") : undefined
@@ -104,11 +84,11 @@ export function memoryList(
   const scopes = csv(input.scopes)
   const kinds = csv(input.kinds)
   return call<MemoryRow[]>(server, "GET", "memory/list", input.directory, undefined, {
-    ...(scopes ? { scopes } : {}),
-    ...(kinds ? { kinds } : {}),
-    ...(input.includeInvalid ? { includeInvalid: "1" } : {}),
-    ...(input.limit !== undefined ? { limit: String(input.limit) } : {}),
-    ...(input.offset !== undefined ? { offset: String(input.offset) } : {}),
+    scopes,
+    kinds,
+    includeInvalid: input.includeInvalid ? "1" : undefined,
+    limit: input.limit === undefined ? undefined : String(input.limit),
+    offset: input.offset === undefined ? undefined : String(input.offset),
   })
 }
 
@@ -118,8 +98,8 @@ export function memoryGraph(
 ) {
   const scopes = csv(input.scopes)
   return call<MemoryGraph>(server, "GET", "memory/graph", input.directory, undefined, {
-    ...(scopes ? { scopes } : {}),
-    ...(input.limit !== undefined ? { limit: String(input.limit) } : {}),
+    scopes,
+    limit: input.limit === undefined ? undefined : String(input.limit),
   })
 }
 

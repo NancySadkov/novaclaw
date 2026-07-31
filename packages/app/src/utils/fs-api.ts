@@ -1,11 +1,15 @@
 import type { ServerConnection } from "@/context/server"
-import { authTokenFromCredentials } from "@/utils/server"
+import { instanceFetch } from "@/utils/instance-fetch"
 
-// Raw-fetch helpers for the FS-1b write endpoints (M4). These are NOT in the generated SDK
-// (golden rule: never hand-edit packages/sdk/js/src/gen/**), so the app calls them with plain
-// fetch using exactly the createSdkForServer auth recipe (utils/server.ts).
+// The FS-1b write endpoints (M4) plus the live session controls, the provider/shell probes and the
+// ad-hoc recipe surface — the widest of this folder's instance clients.
 //
-// All paths are RELATIVE to `directory` (the routed root); the server re-asserts containment.
+// `call` paths are RELATIVE to `directory` (the routed root); the server re-asserts containment.
+//
+// ⚠️ Base URL, auth, and fault decoding live in `utils/instance-fetch.ts`. This file previously
+// exported `headersFor` "so sibling raw-fetch clients reuse the SAME auth handling" — one sibling
+// took it up (`session-pending-api.ts`), seven re-derived it anyway, and an exported header helper
+// was never going to be the thing that held them together. `instanceHeaders` is.
 
 export interface TrashEntry {
   readonly id: string
@@ -14,34 +18,13 @@ export interface TrashEntry {
   readonly type: "file" | "directory"
 }
 
-/** Auth/content headers for a raw fetch against a server connection. Exported so sibling raw-fetch
- *  clients reuse the SAME auth handling instead of each re-deriving it. */
-export function headersFor(server: ServerConnection.HttpBase): Record<string, string> {
-  return {
-    "content-type": "application/json",
-    ...(server.password
-      ? { Authorization: `Basic ${authTokenFromCredentials({ username: server.username, password: server.password })}` }
-      : {}),
-  }
-}
-
-async function call<T>(
+const call = <T,>(
   server: ServerConnection.HttpBase,
   method: "GET" | "POST" | "PUT" | "DELETE",
   route: string,
   directory: string,
   body?: unknown,
-): Promise<T> {
-  const url = new URL(route, server.url.endsWith("/") ? server.url : `${server.url}/`)
-  url.searchParams.set("directory", directory)
-  const res = await fetch(url, {
-    method,
-    headers: headersFor(server),
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  })
-  if (!res.ok) throw new Error(`${method} ${route} failed: ${res.status} ${await res.text().catch(() => "")}`)
-  return (await res.json()) as T
-}
+): Promise<T> => instanceFetch<T>(server, { method, route, directory, body })
 
 export function fsWrite(
   server: ServerConnection.HttpBase,
@@ -153,26 +136,22 @@ export function offlineStatus(server: ServerConnection.HttpBase, input: { direct
   return call<OfflineStatus>(server, "GET", "shell/offline", input.directory)
 }
 
-// B10/1K — live session controls. These V2 endpoints are NOT in the generated SDK; call them
-// raw with the x-novaclaw-directory header (session-location routing) and tolerate 204.
-async function sessionPost(
+// B10/1K — live session controls. Routed by the `x-novaclaw-directory` HEADER rather than a query
+// param (the `/api/session/*` surface), and every one of them is declared 204 no-content.
+const sessionPost = (
   server: ServerConnection.HttpBase,
   directory: string,
   sessionID: string,
   segment: string,
   body: unknown,
-): Promise<void> {
-  const url = new URL(
-    `api/session/${sessionID}/${segment}`,
-    server.url.endsWith("/") ? server.url : `${server.url}/`,
-  )
-  const res = await fetch(url, {
+): Promise<void> =>
+  instanceFetch<void>(server, {
     method: "POST",
-    headers: { ...headersFor(server), "x-novaclaw-directory": directory },
-    body: JSON.stringify(body),
+    route: `api/session/${sessionID}/${segment}`,
+    directory,
+    directoryVia: "header",
+    body,
   })
-  if (!res.ok) throw new Error(`session/${segment} failed: ${res.status} ${await res.text().catch(() => "")}`)
-}
 
 // Export a whole session as a Markdown file into `directory` (Chats → Export). Returns where it landed
 // plus whether the session was still running — the caller says so in its toast, and the file says so too.
@@ -182,32 +161,19 @@ export interface SessionExportResult {
   running: boolean
 }
 
-export async function exportSessionMarkdown(
+// The server puts a legible reason in `message` (e.g. an unwritable folder) and the seam prefers it
+// over the status line — the behaviour this function used to hand-roll on its own.
+export function exportSessionMarkdown(
   server: ServerConnection.HttpBase,
   input: { directory: string; sessionID: string; into: string; filename?: string },
 ): Promise<SessionExportResult> {
-  const url = new URL(
-    `api/session/${input.sessionID}/export-markdown`,
-    server.url.endsWith("/") ? server.url : `${server.url}/`,
-  )
-  const res = await fetch(url, {
+  return instanceFetch<SessionExportResult>(server, {
     method: "POST",
-    headers: { ...headersFor(server), "x-novaclaw-directory": input.directory },
-    body: JSON.stringify({ directory: input.into, ...(input.filename ? { filename: input.filename } : {}) }),
+    route: `api/session/${input.sessionID}/export-markdown`,
+    directory: input.directory,
+    directoryVia: "header",
+    body: { directory: input.into, ...(input.filename ? { filename: input.filename } : {}) },
   })
-  const text = await res.text().catch(() => "")
-  if (!res.ok) {
-    // The server puts a legible reason in `message` (e.g. an unwritable folder) — prefer it over the status.
-    let detail = `${res.status} ${text}`
-    try {
-      const parsed = JSON.parse(text) as { message?: string }
-      if (parsed.message) detail = parsed.message
-    } catch {
-      /* not json — keep the status line */
-    }
-    throw new Error(detail)
-  }
-  return JSON.parse(text) as SessionExportResult
 }
 
 export function switchResponder(
@@ -240,9 +206,23 @@ export function switchStrict(
   return sessionPost(server, input.directory, input.sessionID, "strict", { strict: input.strict })
 }
 
-// A per-session harness-feature toggle (the composer's Tuning control — introspection ·
-// quality · affective). `enabled: null` clears the override back to inherit (global config).
-export type SessionFeatureName = "introspection" | "quality" | "affective" | "thinkingBudget" | "surgicalEdits" | "askBeforeChanges"
+// A per-session harness-feature toggle (the composer's Tuning control). `enabled: null` clears the
+// override back to inherit (global config).
+//
+// ⚠️ This is the WIRE-side spelling of `SessionFeature.Name` (`packages/schema/src/session-feature.ts`)
+// and it is a third copy of that union — the schema's, the composer's `ComposerFeature`, and this
+// one. It is kept separate because this file is a raw-fetch client that deliberately does not depend
+// on the kernel schema, but the duplication is real and it is why adding `safeMode` (2026-07-31)
+// touched three files. `packages/core/test/session-safe-mode.test.ts` pins the schema↔composer half;
+// this half is only checked by the compiler, at the `switchFeature` call sites.
+export type SessionFeatureName =
+  | "introspection"
+  | "quality"
+  | "affective"
+  | "thinkingBudget"
+  | "surgicalEdits"
+  | "askBeforeChanges"
+  | "safeMode"
 
 export function switchFeature(
   server: ServerConnection.HttpBase,

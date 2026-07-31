@@ -1,12 +1,14 @@
 import type { ServerConnection } from "@/context/server"
-import { authTokenFromCredentials } from "@/utils/server"
+import { instanceFetch } from "@/utils/instance-fetch"
 
-// Raw-fetch helper for `GET /scheduler/snapshot` — the live `ps` view over the running session world
-// (the EEVDF ledger's own introspection surface). NOT in the generated SDK (golden rule: never
-// hand-edit packages/sdk/**/gen/**) — plain fetch with the createSdkForServer auth recipe, exactly like
-// registry-api.ts / memory-api.ts.
+// `GET /scheduler/snapshot` — the live `ps` view over the running session world (the EEVDF ledger's
+// own introspection surface).
 //
 // The scheduler is a per-instance singleton, so `directory` here is only request routing.
+//
+// ⚠️ Base URL, auth, and fault decoding live in `utils/instance-fetch.ts`. This client used to throw
+// a bare `GET scheduler/snapshot failed: <status>`; through the seam it now surfaces the server's
+// own message when there is one, which is strictly more than it said before.
 
 export interface SchedulerLedgerEntry {
   readonly id: string
@@ -28,17 +30,5 @@ export interface SchedulerDevice {
 }
 
 export function schedulerSnapshot(server: ServerConnection.HttpBase, input: { directory: string }) {
-  const url = new URL("scheduler/snapshot", server.url.endsWith("/") ? server.url : `${server.url}/`)
-  url.searchParams.set("directory", input.directory)
-  return fetch(url, {
-    headers: {
-      "content-type": "application/json",
-      ...(server.password
-        ? { Authorization: `Basic ${authTokenFromCredentials({ username: server.username, password: server.password })}` }
-        : {}),
-    },
-  }).then(async (res) => {
-    if (!res.ok) throw new Error(`GET scheduler/snapshot failed: ${res.status}`)
-    return (await res.json()) as SchedulerDevice[]
-  })
+  return instanceFetch<SchedulerDevice[]>(server, { route: "scheduler/snapshot", directory: input.directory })
 }

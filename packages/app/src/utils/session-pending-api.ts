@@ -1,5 +1,5 @@
 import type { ServerConnection } from "@/context/server"
-import { headersFor } from "./fs-api"
+import { instanceFetch } from "@/utils/instance-fetch"
 
 // Prompts the user has SENT but the agent has not read yet.
 //
@@ -15,18 +15,23 @@ export interface PendingPrompt {
   timeCreated: number
 }
 
+/**
+ * ⚠️ **The one client on this seam that deliberately swallows its fault, and why it is not ruling 2's
+ * "renders empty instead of naming itself".** This polls every 2 s while a turn is in flight, and its
+ * sole caller (`pages/session/timeline/native-timeline.tsx`) already wraps it in `.catch(() => [])`.
+ * Naming a transient 404/offline blip here would emit thirty console lines a minute into the Debug
+ * app's error log while changing nothing a user sees. The surface it renders is additive — prompts
+ * the user just typed and can still see in the composer — so "not shown yet" is not a false claim
+ * about the world. If this ever becomes the ONLY view of a pending prompt, the swallow has to go.
+ */
 export async function fetchPendingPrompts(
   server: ServerConnection.HttpBase,
   input: { directory: string; sessionID: string },
 ): Promise<PendingPrompt[]> {
-  const url = new URL(
-    `api/session/${input.sessionID}/pending`,
-    server.url.endsWith("/") ? server.url : `${server.url}/`,
-  )
-  const res = await fetch(url, {
-    headers: { ...headersFor(server), "x-novaclaw-directory": input.directory },
-  })
-  if (!res.ok) return []
-  const body = (await res.json()) as { data?: PendingPrompt[] }
+  const body = await instanceFetch<{ data?: PendingPrompt[] }>(server, {
+    route: `api/session/${input.sessionID}/pending`,
+    directory: input.directory,
+    directoryVia: "header",
+  }).catch(() => ({}) as { data?: PendingPrompt[] })
   return body.data ?? []
 }

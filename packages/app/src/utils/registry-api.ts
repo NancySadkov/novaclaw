@@ -1,10 +1,9 @@
 import type { ServerConnection } from "@/context/server"
-import { authTokenFromCredentials } from "@/utils/server"
+import { instanceFetch } from "@/utils/instance-fetch"
 
-// Raw-fetch helpers for the Registry app's /registry endpoints (the Regedit-style database
-// editor, Developer mode). NOT in the generated SDK (golden rule: never hand-edit
-// packages/sdk/**/gen/**) — plain fetch with the createSdkForServer auth recipe, exactly
-// like fs-api.ts.
+// The Registry app's /registry endpoints (the Regedit-style database editor, Developer mode).
+//
+// ⚠️ Base URL, auth, and fault decoding live in `utils/instance-fetch.ts`.
 
 export interface RegistryTable {
   readonly name: string
@@ -23,34 +22,14 @@ export interface RegistryPage {
   readonly rows: readonly RegistryRow[]
 }
 
-function headersFor(server: ServerConnection.HttpBase): Record<string, string> {
-  return {
-    "content-type": "application/json",
-    ...(server.password
-      ? { Authorization: `Basic ${authTokenFromCredentials({ username: server.username, password: server.password })}` }
-      : {}),
-  }
-}
-
-async function call<T>(
+const call = <T,>(
   server: ServerConnection.HttpBase,
   method: "GET" | "POST",
   route: string,
   directory: string,
   body?: unknown,
-  query?: Record<string, string>,
-): Promise<T> {
-  const url = new URL(route, server.url.endsWith("/") ? server.url : `${server.url}/`)
-  url.searchParams.set("directory", directory)
-  for (const [key, value] of Object.entries(query ?? {})) url.searchParams.set(key, value)
-  const res = await fetch(url, {
-    method,
-    headers: headersFor(server),
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  })
-  if (!res.ok) throw new Error(`${method} ${route} failed: ${res.status} ${await res.text().catch(() => "")}`)
-  return (await res.json()) as T
-}
+  query?: Record<string, string | undefined>,
+): Promise<T> => instanceFetch<T>(server, { method, route, directory, body, query })
 
 export function registryTables(server: ServerConnection.HttpBase, input: { directory: string }) {
   return call<RegistryTable[]>(server, "GET", "registry/tables", input.directory)
@@ -62,8 +41,8 @@ export function registryRows(
 ) {
   return call<RegistryPage>(server, "GET", "registry/rows", input.directory, undefined, {
     table: input.table,
-    ...(input.limit !== undefined ? { limit: String(input.limit) } : {}),
-    ...(input.offset !== undefined ? { offset: String(input.offset) } : {}),
+    limit: input.limit === undefined ? undefined : String(input.limit),
+    offset: input.offset === undefined ? undefined : String(input.offset),
   })
 }
 

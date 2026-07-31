@@ -1,11 +1,14 @@
 import type { ServerConnection } from "@/context/server"
-import { authTokenFromCredentials } from "@/utils/server"
+import { InstanceFetchError, instanceFetch, instanceFetchList, type InstanceFault } from "@/utils/instance-fetch"
 
-// Raw-fetch helpers for the instance-global `/api/messenger/*` endpoints (notes/messenger-plan.md
-// §5) — what the Settings → Messengers tab binds to. Plain fetch with the createSdkForServer auth
-// recipe, exactly like memory-api.ts / registry-api.ts. Secrets flow IN through `secret` only and
-// never come back (responses carry credentialID references); the login flow's session credential
-// never touches the client at all — the wire carries only the phone/code the user types.
+// The instance-global `/api/messenger/*` endpoints (notes/messenger-plan.md §5) — what the
+// Settings → Messengers tab binds to. Secrets flow IN through `secret` only and never come back
+// (responses carry credentialID references); the login flow's session credential never touches the
+// client at all — the wire carries only the phone/code the user types.
+//
+// ⚠️ Base URL, auth, and fault decoding live in `utils/instance-fetch.ts`. This client keeps its own
+// ERROR CLASS (below) because three call sites branch on `instanceof MessengerApiError`; what it no
+// longer keeps is its own copy of how a fault is decoded.
 
 export interface DriverPrompt {
   readonly type: "text" | "select"
@@ -80,15 +83,20 @@ export interface PairingCode {
   readonly expiresAt: number
 }
 
-/** A 400 from the messenger routes — `kind` distinguishes a retryable login miss
- *  (`messenger_login_retry`: the attempt is still pending, just re-ask for the code). */
-export class MessengerApiError extends Error {
-  constructor(
-    message: string,
-    readonly kind: string | undefined,
-    readonly status: number,
-  ) {
-    super(message)
+/**
+ * A 400 from the messenger routes — `kind` distinguishes a retryable login miss
+ * (`messenger_login_retry`: the attempt is still pending, just re-ask for the code) from a chat
+ * already bound elsewhere (`messenger_chat_bound`).
+ *
+ * ⚠️ It is a SUBCLASS of the seam's error rather than a parallel one. Three call sites test
+ * `error instanceof MessengerApiError` — `settings-v2/messengers.tsx` (twice) and
+ * `session/composer/session-composer-controls.ts` — and every one of them still works, because the
+ * class survived the collapse even though its hand-rolled decoder did not. `kind`, `status` and
+ * `message` are now inherited fields with exactly the same meanings.
+ */
+export class MessengerApiError extends InstanceFetchError {
+  constructor(fault: InstanceFault) {
+    super(fault)
     this.name = "MessengerApiError"
   }
   get retryableLogin(): boolean {
@@ -96,76 +104,23 @@ export class MessengerApiError extends Error {
   }
 }
 
-function headersFor(server: ServerConnection.HttpBase): Record<string, string> {
-  return {
-    "content-type": "application/json",
-    ...(server.password
-      ? { Authorization: `Basic ${authTokenFromCredentials({ username: server.username, password: server.password })}` }
-      : {}),
-  }
-}
+const fault = (input: InstanceFault) => new MessengerApiError(input)
 
-async function call<T>(
+const call = <T,>(
   server: ServerConnection.HttpBase,
   method: "GET" | "POST" | "PATCH" | "DELETE",
   route: string,
   body?: unknown,
-): Promise<T> {
-  const url = new URL(route, server.url.endsWith("/") ? server.url : `${server.url}/`)
-  const res = await fetch(url, {
-    method,
-    headers: headersFor(server),
-    ...(body === undefined ? {} : { body: JSON.stringify(body) }),
-  })
-  if (!res.ok) {
-    const text = await res.text().catch(() => "")
-    let message = `${method} ${route} failed (${res.status})`
-    let kind: string | undefined
-    try {
-      const parsed = JSON.parse(text) as { message?: string; kind?: string }
-      if (typeof parsed.message === "string") message = parsed.message
-      if (typeof parsed.kind === "string") kind = parsed.kind
-    } catch {
-      if (text) message = text
-    }
-    throw new MessengerApiError(message, kind, res.status)
-  }
-  if (res.status === 204) return undefined as T
-  return (await res.json()) as T
-}
+): Promise<T> => instanceFetch<T>(server, { method, route, body, fault })
 
 /**
- * A list endpoint that cannot take the whole app down when the answer is not a list.
- *
- * ⚠️ Every consumer of these three reads `resource.latest` and immediately calls `.filter`/`.find`
- * on it (`session/composer/session-composer-controls.ts`, 5 sites). `createResource`'s
- * `initialValue: []` only covers the *pending* state — once a fetch RESOLVES with a non-array, that
- * value becomes `.latest` and the next `.filter` throws inside a render, which the app error
- * boundary catches by replacing the entire UI with "Something went wrong". A messenger panel we
- * could not parse must not cost the user their session; that is the dead-end AGENTS.md's *never
- * breaks in your hands* clause forbids outright.
- *
- * ⚠️ This matters beyond a malformed reply: instances are PEERS and may run different versions
- * (AGENTS.md → *P2P instances*), so "an endpoint answered a shape this build did not expect" is a
- * normal, permanent condition of the product — not a bug to be fixed once upstream.
- *
- * It coerces rather than throws, but it does NOT pretend the list was empty: the fault is named on
- * the console, which `utils/error-log.ts` taps into the Debug app. Rendering empty *silently* would
- * be ruling 2's "an unavailable subsystem names itself instead of rendering empty" — the same defect
- * the messenger STORE was fixed for on 2026-07-28, one layer down.
- *
- * Found by an e2e spec whose mock returns `{}` from its catch-all, which is exactly the shape a peer
- * on an older protocol would send.
+ * The non-list guard now lives on the seam (`instanceFetchList`) because the identical defect and
+ * fix exist in `apps/persisted.ts` — the two were found together on 2026-07-28 and fixed twice.
+ * It coerces rather than throws, and names the fault on the console rather than silently showing
+ * nothing; the reasoning is written out where it now lives.
  */
-async function callList<T>(server: ServerConnection.HttpBase, route: string, what: string): Promise<T[]> {
-  const value = await call<unknown>(server, "GET", route)
-  if (Array.isArray(value)) return value as T[]
-  console.warn(
-    `messenger: ${route} answered ${value === null ? "null" : typeof value}, not a list of ${what} — ` +
-      `showing none. The instance may be running a different version.`,
-  )
-  return []
-}
+const callList = <T,>(server: ServerConnection.HttpBase, route: string, what: string): Promise<T[]> =>
+  instanceFetchList<T>(server, { route, fault }, what)
 
 export function messengerDrivers(server: ServerConnection.HttpBase) {
   return callList<DriverMeta>(server, "api/messenger/driver", "drivers")
