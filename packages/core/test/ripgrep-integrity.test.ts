@@ -11,15 +11,15 @@ import { RipgrepBinary } from "@novaclaw/core/ripgrep/binary"
  * account compromise was arbitrary code execution inside NovaClaw (`todo/supply-chain.md` §1, the
  * highest-severity finding that audit produced).
  *
- * The fix is a per-triple SHA-256 pin — of the archive, verified **before** the bytes touch disk, and
+ * The fix is a per-triple SHA-256 pin — of the archive, verified **before extraction or publication**, and
  * of the executable, so an `rg` inherited from a pre-pin build is verified too rather than trusted
  * forever. This file is the mechanical half of it (todo.md ruling 1), and it protects five things
  * that all compile green when broken:
  *   ① a platform triple added to `PLATFORM` with no digest — verification silently skipped for it;
  *   ② `VERSION` bumped without re-pinning — the old release's digests vouching for a new download;
  *   ③ a refusal turned into a fall-through — the guard-shaped no-op this codebase keeps finding;
- *   ④ the verify call moved *after* the write or the extract — still reads as a checksum, protects
- *      nothing, because by then the archive is on disk and has been handed to PowerShell/tar;
+ *   ④ the shared verified downloader moved *after* the extract — still reads as a checksum, protects
+ *      nothing, because by then the archive has been handed to PowerShell/tar;
  *   ⑤ the pre-installed binary short-circuited on `isFile` alone — the shipped shape, which returns
  *      whatever an earlier unverified build left behind.
  *
@@ -195,7 +195,7 @@ describe("matchesDigest agrees with verifyDigest in every direction", () => {
   })
 })
 
-describe("the download path verifies BEFORE it writes or extracts", () => {
+describe("the download path verifies BEFORE it extracts", () => {
   // ④/⑤. Every assertion here is on comment-stripped source: prose about verification is not
   // verification, which is the distinction the finding turned on in the first place.
 
@@ -204,25 +204,18 @@ describe("the download path verifies BEFORE it writes or extracts", () => {
     expect(SOURCE).toContain("BurntSushi/ripgrep/releases/download")
   })
 
-  test("there are exactly three verify call sites, and each is the one it claims to be", () => {
-    // Three: `matchesDigest`'s delegation, the archive gate, the extracted-executable post-condition.
-    // A fourth means a call site nobody has read; a second one spelled `verifyDigest(bytes` would make
-    // the ordering assertion below match the WRONG line, so that spelling is asserted unique.
-    expect(SOURCE.match(/verifyDigest\(/g)?.length, "unexpected verifyDigest(...) call count").toBe(3)
-    expect(SOURCE.match(/verifyDigest\(bytes/g)?.length, "`verifyDigest(bytes` must identify one line").toBe(1)
-    expect(SOURCE).toMatch(/verifyDigest\(\s*bytes\s*,\s*pin\?\.archive\s*,/)
+  test("the two local verify call sites cover inherited and extracted executables", () => {
+    // Archive verification moved into the shared streaming primitive. The two local calls that remain
+    // are `matchesDigest`'s delegation and the extracted-executable post-condition.
+    expect(SOURCE.match(/verifyDigest\(/g)?.length, "unexpected local verifyDigest(...) call count").toBe(2)
     expect(SOURCE).toMatch(/verifyDigest\(\s*installed\s*,\s*pin\?\.executable\s*,/)
     expect(SOURCE).toMatch(/verifyDigest\(\s*candidate\s*,\s*expected\s*,/)
   })
 
-  test("the archive is verified before every disk write and before the extract", () => {
-    const verifyAt = SOURCE.indexOf("verifyDigest(bytes")
-    expect(verifyAt, "no verifyDigest(bytes, …) call in binary.ts").toBeGreaterThan(-1)
-
-    const writes = [...SOURCE.matchAll(/fs\.writeWithDirs\(/g)].map((match) => match.index!)
-    expect(writes.length, "no fs.writeWithDirs in binary.ts — did the download path move?").toBeGreaterThan(0)
-    for (const at of writes) expect(at, "a disk write happens before the archive is verified").toBeGreaterThan(verifyAt)
-
+  test("the archive goes through the pinned shared downloader before extraction", () => {
+    const verifyAt = SOURCE.indexOf("Download.toFile(")
+    expect(verifyAt, "ripgrep bypasses the shared verified downloader").toBeGreaterThan(-1)
+    expect(SOURCE.slice(verifyAt)).toMatch(/integrity:\s*\{\s*sha256:\s*pin\?\.archive\s*\?\?\s*""\s*\}/)
     const extractAt = SOURCE.indexOf("extract(archive")
     expect(extractAt, "no extract(archive, …) call in binary.ts").toBeGreaterThan(-1)
     expect(extractAt, "the archive is extracted before it is verified").toBeGreaterThan(verifyAt)
@@ -254,20 +247,19 @@ describe("the guards bite (negative control on the checkers themselves)", () => 
     expect(pinned).not.toEqual(platform)
   })
 
-  test("the ordering check reports a verify that happens after the write", () => {
+  test("the ordering check reports verification after extraction", () => {
     const rogue = stripComments(`
-      const bytes = new Uint8Array(body)
-      yield* fs.writeWithDirs(archive, bytes)
-      verifyDigest(bytes, pin?.archive, filename)
+      yield* extract(archive, config, target)
+      yield* Download.toFile({ url, destination: archive, integrity: { sha256: pin?.archive ?? "" } })
     `)
-    expect(rogue.indexOf("fs.writeWithDirs(")).toBeLessThan(rogue.indexOf("verifyDigest(bytes"))
+    expect(rogue.indexOf("extract(archive")).toBeLessThan(rogue.indexOf("Download.toFile("))
   })
 
   test("prose about verifying does not count as verifying", () => {
     const rogue = stripComments(`
-      // we verifyDigest(bytes, pin?.archive, filename) here, honest
-      yield* fs.writeWithDirs(archive, bytes)
+      // we use Download.toFile with a pin here, honest
+      yield* extract(archive, config, target)
     `)
-    expect(rogue).not.toContain("verifyDigest(")
+    expect(rogue).not.toContain("Download.toFile(")
   })
 })

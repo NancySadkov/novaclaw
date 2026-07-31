@@ -4,6 +4,7 @@ import { NodePath } from "@effect/platform-node"
 import { Effect, Layer, Path, Schema, Context } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
 import { withTransientReadRetry } from "@/util/effect-http-client"
+import { Download } from "@novaclaw/core/download"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { Global } from "@novaclaw/core/global"
 
@@ -31,16 +32,14 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | Path.Path | Htt
   Effect.gen(function* () {
     const fs = yield* FSUtil.Service
     const path = yield* Path.Path
-    const http = HttpClient.filterStatusOk(withTransientReadRetry(yield* HttpClient.HttpClient))
+    const client = yield* HttpClient.HttpClient
+    const http = HttpClient.filterStatusOk(withTransientReadRetry(client))
     const cache = path.join(Global.Path.cache, "skills")
 
     const download = Effect.fn("Discovery.download")(function* (url: string, dest: string) {
-      if (yield* fs.exists(dest).pipe(Effect.orDie)) return true
-
-      return yield* HttpClientRequest.get(url).pipe(
-        http.execute,
-        Effect.flatMap((res) => res.arrayBuffer),
-        Effect.flatMap((body) => fs.writeWithDirs(dest, new Uint8Array(body))),
+      return yield* Download.toFile({ url, destination: dest, integrity: { transportOnly: true } }).pipe(
+        Effect.provideService(FSUtil.Service, fs),
+        Effect.provideService(HttpClient.HttpClient, client),
         Effect.as(true),
         Effect.catch((err) => Effect.logError("failed to download", { url: url, error: err }).pipe(Effect.as(false))),
       )

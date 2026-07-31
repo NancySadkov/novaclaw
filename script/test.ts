@@ -62,6 +62,7 @@ import { readdirSync, readFileSync } from "node:fs"
 import { join } from "node:path"
 
 import { enforce } from "./lib/heavy-guard"
+import { readFailingNames, stripAnsi } from "./lib/test-output"
 import { typecheckUnits } from "./lib/typecheck-units"
 
 // Refuse to run alongside a build or another suite, or on a machine already short of memory. Both
@@ -200,10 +201,6 @@ type Result = {
 }
 const results: Result[] = []
 
-// Built from a char code so no literal control byte is ever authored into this file.
-const ANSI = new RegExp(String.fromCharCode(27) + "\\[[0-9;]*m", "g")
-const stripAnsi = (text: string) => text.replace(ANSI, "")
-
 /**
  * bun's end-of-run summary looks like ` 1234 pass` / `  12 skip` / `   0 fail`, one per line. The `pass`
  * line is the POSITIVE signal that we actually reached a summary: without it we return `undefined`
@@ -215,16 +212,6 @@ function readSkipCount(output: string): number | undefined {
   let total = 0
   for (const match of plain.matchAll(/^\s*(\d+)\s+skip\b/gm)) total += Number(match[1])
   return total
-}
-
-/**
- * The names bun reported as failing, e.g. `(fail) config HttpApi > serves config update [34ms]`. The
- * trailing duration is stripped so a baseline is not invalidated by timing jitter.
- */
-function readFailingNames(output: string): string[] {
-  return [...stripAnsi(output).matchAll(/^\(fail\) (.+?)(?: \[[\d.]+m?s\])?$/gm)]
-    .map((match) => match[1]!.trim())
-    .sort()
 }
 
 /**

@@ -3,6 +3,7 @@ export * as SkillDiscovery from "./discovery"
 import path from "path"
 import { Context, Effect, Layer, Schedule, Schema } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/unstable/http"
+import { Download } from "../download"
 import { FSUtil } from "../fs-util"
 import { Global } from "../global"
 import { makeGlobalNode } from "../effect/app-node"
@@ -73,7 +74,8 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const fs = yield* FSUtil.Service
     const global = yield* Global.Service
-    const http = (yield* HttpClient.HttpClient).pipe(
+    const client = yield* HttpClient.HttpClient
+    const http = client.pipe(
       HttpClient.retryTransient({
         retryOn: "errors-and-responses",
         times: 2,
@@ -83,11 +85,9 @@ export const layer = Layer.effect(
     )
 
     const download = Effect.fn("SkillDiscovery.download")(function* (url: string, destination: string) {
-      if (yield* fs.exists(destination).pipe(Effect.orDie)) return true
-      return yield* HttpClientRequest.get(url).pipe(
-        http.execute,
-        Effect.flatMap((response) => response.arrayBuffer),
-        Effect.flatMap((body) => fs.writeWithDirs(destination, new Uint8Array(body))),
+      return yield* Download.toFile({ url, destination, integrity: { transportOnly: true } }).pipe(
+        Effect.provideService(FSUtil.Service, fs),
+        Effect.provideService(HttpClient.HttpClient, client),
         Effect.as(true),
         Effect.catch((error) =>
           Effect.logError("failed to download skill file", { url, error }).pipe(Effect.as(false)),

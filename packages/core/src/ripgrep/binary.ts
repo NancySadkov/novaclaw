@@ -1,10 +1,11 @@
 import { createHash } from "node:crypto"
 import path from "path"
 import { Context, Effect, Layer, Stream } from "effect"
-import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/unstable/http"
+import { FetchHttpClient, HttpClient } from "effect/unstable/http"
 import { ChildProcess } from "effect/unstable/process"
 import { ChildProcessSpawner } from "effect/unstable/process/ChildProcessSpawner"
 import { CrossSpawnSpawner } from "../cross-spawn-spawner"
+import { Download } from "../download"
 import { makeGlobalNode } from "../effect/app-node"
 import { httpClient } from "../effect/app-node-platform"
 import { FSUtil } from "../fs-util"
@@ -157,7 +158,7 @@ export namespace RipgrepBinary {
     Service,
     Effect.gen(function* () {
       const fs = yield* FSUtil.Service
-      const http = HttpClient.filterStatusOk(yield* HttpClient.HttpClient)
+      const http = yield* HttpClient.HttpClient
       const spawner = yield* ChildProcessSpawner
 
       const run = Effect.fnUntraced(function* (command: string, args: string[]) {
@@ -216,6 +217,9 @@ export namespace RipgrepBinary {
       return Service.of({
         filepath: yield* Effect.cached(
           Effect.gen(function* () {
+            // A system rg is the user's own OS package (winget/apt/brew), not an artefact NovaClaw
+            // downloaded. The pin below governs only our acquisition path; refusing a user-selected
+            // system version would turn supply-chain verification into package-manager policy.
             const system = yield* Effect.sync(() => which(process.platform === "win32" ? "rg.exe" : "rg"))
             if (system && (yield* fs.isFile(system).pipe(Effect.orDie))) return system
 
@@ -241,20 +245,11 @@ export namespace RipgrepBinary {
 
             yield* Effect.logInfo("downloading ripgrep", { url })
             yield* fs.ensureDir(Global.Path.bin).pipe(Effect.orDie)
-            const body = yield* HttpClientRequest.get(url).pipe(
-              http.execute,
-              Effect.flatMap((response) => response.arrayBuffer),
-              Effect.mapError((cause) => (cause instanceof Error ? cause : new Error(String(cause)))),
-            )
-            const bytes = new Uint8Array(body)
-
-            // ⚠️ THE integrity gate, and its position is the point: before the archive touches disk
-            // and before `extract` hands anything to PowerShell/tar. Moving this below the write —
-            // or below `extract` — restores the shipped defect while still reading as a checksum.
-            // `test/ripgrep-integrity.test.ts` asserts this ordering, because reordering compiles green.
-            verifyDigest(bytes, pin?.archive, url)
-
-            yield* fs.writeWithDirs(archive, bytes)
+            yield* Download.toFile({
+              url,
+              destination: archive,
+              integrity: { sha256: pin?.archive ?? "" },
+            }).pipe(Effect.provideService(FSUtil.Service, fs), Effect.provideService(HttpClient.HttpClient, http))
             yield* extract(archive, config, target)
             yield* fs.remove(archive, { force: true }).pipe(Effect.ignore)
 
