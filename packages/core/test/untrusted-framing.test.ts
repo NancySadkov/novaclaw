@@ -309,7 +309,7 @@ const messenger = testEffect(
       Layer.succeed(Location.Service, Location.Service.of(location({ directory: AbsolutePath.make(process.cwd()) }))),
     ],
     [LocationMutation.node, Layer.mock(LocationMutation.Service)({})],
-    [SessionStore.node, Layer.mock(SessionStore.Service)({})],
+    [SessionStore.node, Layer.mock(SessionStore.Service)({ get: () => Effect.succeed(undefined) })],
     [
       MessengerStore.node,
       Layer.mock(MessengerStore.Service)({

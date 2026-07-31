@@ -449,11 +449,14 @@ export const layer = Layer.effectDiscard(
       | { readonly miss?: undefined; readonly account: Messenger.AccountInfo }
 
     // Resolve the account by id, label, or driver id — or the sole account when unambiguous.
-    const resolveAccount = (selector: string | undefined): Effect.Effect<Resolved> =>
+    const resolveAccount = (
+      selector: string | undefined,
+      allowed?: ReadonlySet<Messenger.AccountID>,
+    ): Effect.Effect<Resolved> =>
       Effect.gen(function* () {
         const listed = yield* MessengerStore.attempted(store.listAccounts())
         if (!listed.read) return { miss: { outcome: "unavailable", message: STORE_UNAVAILABLE } satisfies Output }
-        const accounts = listed.value
+        const accounts = allowed === undefined ? listed.value : listed.value.filter((account) => allowed.has(account.id))
         if (accounts.length === 0)
           return {
             miss: {
@@ -490,6 +493,44 @@ export const layer = Layer.effectDiscard(
           }
         return { account: match }
       })
+
+    type ReadScope = false | "unknown" | ReadonlySet<string>
+    const readScope = (sessionID: string): Effect.Effect<ReadScope> =>
+      chainHasHostileBinding(sessionID).pipe(
+        Effect.flatMap((hostility): Effect.Effect<ReadScope> => {
+          if (hostility !== true) return Effect.succeed(hostility)
+          return Effect.gen(function* () {
+            const resources = new Set<string>()
+            const seen = new Set<string>()
+            let id: string | undefined = sessionID
+            while (id !== undefined && !seen.has(id)) {
+              seen.add(id)
+              const bindings = yield* store.bindingsForSession(id)
+              for (const binding of bindings) {
+                if (binding.status !== "active" || binding.trust === "operator") continue
+                resources.add(`${binding.accountID}:${binding.chatID}`)
+              }
+              id = (yield* sessions.get(id as never))?.parentID
+            }
+            return resources
+          }).pipe(Effect.orElseSucceed(() => "unknown" as const))
+        }),
+      )
+
+    const scopedReadRefusal = (scope: ReadScope, resource?: string): Output | undefined => {
+      if (scope === false) return undefined
+      if (scope === "unknown") return { outcome: "unavailable", message: STORE_UNAVAILABLE }
+      if (resource !== undefined && scope.has(resource)) return undefined
+      return {
+        outcome: "failed",
+        message:
+          "This session is being driven by a client or audience conversation, so it may read only that bound conversation. Other accounts and chats stay private.",
+      }
+    }
+    const scopedAccounts = (scope: ReadScope): ReadonlySet<Messenger.AccountID> | undefined =>
+      scope instanceof Set
+        ? new Set([...scope].map((resource) => Messenger.AccountID.make(resource.slice(0, resource.indexOf(":")))))
+        : undefined
 
     /**
      * Contain a caller-supplied path to this session's workspace, CANONICALLY.
@@ -564,9 +605,15 @@ export const layer = Layer.effectDiscard(
                   // in Settings → Messengers" — a database fault rendered as a claim about the
                   // user's setup, on the one surface a model consults before deciding it has no
                   // messaging at all.
+                  const scope = yield* readScope(context.sessionID)
+                  if (scope === "unknown") return scopedReadRefusal(scope)!
                   const listed = yield* MessengerStore.attempted(store.listAccounts())
                   if (!listed.read) return { outcome: "unavailable", message: STORE_UNAVAILABLE } satisfies Output
-                  const accounts = listed.value
+                  const allowedAccounts = scopedAccounts(scope)
+                  const accounts =
+                    allowedAccounts === undefined
+                      ? listed.value
+                      : listed.value.filter((account) => allowedAccounts.has(account.id))
                   if (accounts.length === 0)
                     return {
                       outcome: "failed",
@@ -581,7 +628,9 @@ export const layer = Layer.effectDiscard(
                   // statement about THIS session made from a read that failed. Reporting the
                   // accounts and naming the missing half beats withholding both.
                   const bindings = yield* MessengerStore.attempted(store.bindingsForSession(context.sessionID))
-                  const bound = !bindings.read
+                  const bound = scope instanceof Set
+                    ? `This chat is privacy-scoped to ${[...scope].join(", ")}.`
+                    : !bindings.read
                     ? "I could not read this instance's binding table, so I can't say whether this chat is linked to a remote chat."
                     : bindings.value.length === 0
                       ? "This chat has no remote binding."
@@ -600,6 +649,9 @@ export const layer = Layer.effectDiscard(
                 }
                 case "chats": {
                   if (gateway === undefined) return { outcome: "failed", message: OFFLINE_GATEWAY } satisfies Output
+                  const scope = yield* readScope(context.sessionID)
+                  const refusal = scopedReadRefusal(scope)
+                  if (refusal !== undefined) return refusal
                   const resolved = yield* resolveAccount(input.account)
                   if (resolved.account === undefined) return resolved.miss
                   const outcome = yield* gateway.chats(resolved.account.id)
@@ -613,8 +665,12 @@ export const layer = Layer.effectDiscard(
                 }
                 case "history": {
                   if (gateway === undefined) return { outcome: "failed", message: OFFLINE_GATEWAY } satisfies Output
-                  const resolved = yield* resolveAccount(input.account)
+                  const scope = yield* readScope(context.sessionID)
+                  if (scope === "unknown") return scopedReadRefusal(scope)!
+                  const resolved = yield* resolveAccount(input.account, scopedAccounts(scope))
                   if (resolved.account === undefined) return resolved.miss
+                  const refusal = scopedReadRefusal(scope, `${resolved.account.id}:${input.chat.trim()}`)
+                  if (refusal !== undefined) return refusal
                   const limit = Math.max(1, Math.min(200, Math.floor(input.limit ?? 50)))
                   const outcome = yield* gateway.history({
                     accountID: resolved.account.id,
@@ -809,8 +865,12 @@ export const layer = Layer.effectDiscard(
                 }
                 case "download": {
                   if (gateway === undefined) return { outcome: "failed", message: OFFLINE_GATEWAY } satisfies Output
-                  const resolved = yield* resolveAccount(input.account)
+                  const scope = yield* readScope(context.sessionID)
+                  if (scope === "unknown") return scopedReadRefusal(scope)!
+                  const resolved = yield* resolveAccount(input.account, scopedAccounts(scope))
                   if (resolved.account === undefined) return resolved.miss
+                  const refusal = scopedReadRefusal(scope, `${resolved.account.id}:${input.chat.trim()}`)
+                  if (refusal !== undefined) return refusal
                   // Pulling remote data into the workspace moves the user's files around — the
                   // same messenger.send gate covers both directions (plan §4).
                   yield* permission.assert({

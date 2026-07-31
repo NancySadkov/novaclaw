@@ -83,6 +83,13 @@ const account = new Messenger.AccountInfo({
   enabled: true,
   settings: {},
 })
+const otherAccount = new Messenger.AccountInfo({
+  id: Messenger.AccountID.make("msa_other"),
+  driverID: "fake",
+  label: "Other Account",
+  enabled: true,
+  settings: {},
+})
 
 /** Every `permission.assert` this tool made during the current test, in order. Module-level because
  *  the layer is built once per runtime and the tests run sequentially; `withPermission` resets it. */
@@ -137,6 +144,20 @@ const hostileStoreLayer = Layer.mock(MessengerStore.Service)({
     Effect.succeed([
       new Messenger.BindingInfo({
         id: Messenger.BindingID.make("msb_client"),
+        accountID: account.id,
+        chatID: "4242",
+        sessionID: sessionID as never,
+        trust: "client",
+        status: "active",
+      }),
+    ]),
+})
+const hostileTwoAccountStoreLayer = Layer.mock(MessengerStore.Service)({
+  listAccounts: () => Effect.succeed([account, otherAccount]),
+  bindingsForSession: () =>
+    Effect.succeed([
+      new Messenger.BindingInfo({
+        id: Messenger.BindingID.make("msb_client_two_accounts"),
         accountID: account.id,
         chatID: "4242",
         sessionID: sessionID as never,
@@ -200,6 +221,7 @@ const it = runtime(storeLayer)
 const itEmptyStore = runtime(emptyStoreLayer)
 const itBrokenStore = runtime(unreadableStoreLayer)
 const itHostileChain = runtime(hostileStoreLayer)
+const itHostileTwoAccounts = runtime(hostileTwoAccountStoreLayer)
 const itUnreadableBindings = runtime(unreadableBindingsStoreLayer)
 
 /** The permission resource every gate in the `send` path names: account, then chat. */
@@ -226,12 +248,131 @@ type StubOutcome = { kind: "sent" } | { kind: "refused"; reason: string } | { ki
 const withGateway = <A, E, R>(
   send: (input: Record<string, unknown>) => Effect.Effect<StubOutcome>,
   body: Effect.Effect<A, E, R>,
-): Effect.Effect<A, E, R> =>
+): Effect.Effect<A, E, R> => withGatewayHandle({ send }, body)
+
+const withGatewayHandle = <A, E, R>(stub: object, body: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> =>
   Effect.suspend(() => {
-    const stub = { send } as never
-    MessengerGatewayHandle.set(stub)
-    return body.pipe(Effect.ensuring(Effect.sync(() => MessengerGatewayHandle.clear(stub))))
+    MessengerGatewayHandle.set(stub as never)
+    return body.pipe(Effect.ensuring(Effect.sync(() => MessengerGatewayHandle.clear(stub as never))))
   })
+
+const readCall = (id: string, input: Record<string, unknown>) => ({
+  sessionID,
+  ...toolIdentity,
+  call: { type: "tool-call" as const, id, name: MessengerTool.name, input },
+})
+
+describe("MessengerTool reads — session privacy scope", () => {
+  itHostileTwoAccounts.effect("status hides every account outside the bound conversation", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const result = yield* executeTool(registry, readCall("call-hostile-status", { op: "status" }))
+      const text = String(result.value)
+
+      expect(text).toContain(account.id)
+      expect(text).toContain(`${account.id}:4242`)
+      expect(text).not.toContain(otherAccount.id)
+      expect(text).not.toContain(otherAccount.label)
+    }),
+  )
+
+  itHostileChain.effect("a client-bound session cannot enumerate the account's other chats", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      let reads = 0
+      const result = yield* withGatewayHandle(
+        {
+          chats: () => {
+            reads += 1
+            return Effect.succeed({ ok: true, chats: [] })
+          },
+        },
+        executeTool(registry, readCall("call-hostile-chats", { op: "chats" })),
+      )
+
+      expect(reads).toBe(0)
+      expect(String(result.value)).toContain("may read only that bound conversation")
+    }),
+  )
+
+  itHostileChain.effect("a client-bound session reads its own chat and hard-denies another", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      const reads: string[] = []
+      const gateway = {
+        history: (input: { chatID: string }) => {
+          reads.push(input.chatID)
+          return Effect.succeed({
+            ok: true,
+            messages: [{ senderName: "Client", outgoing: false, text: `message from ${input.chatID}`, at: 0 }],
+          })
+        },
+      }
+
+      const denied = yield* withGatewayHandle(
+        gateway,
+        executeTool(registry, readCall("call-hostile-other-history", { op: "history", chat: "77" })),
+      )
+      expect(reads).toEqual([])
+      expect(String(denied.value)).toContain("Other accounts and chats stay private")
+
+      const allowed = yield* withGatewayHandle(
+        gateway,
+        executeTool(registry, readCall("call-hostile-own-history", { op: "history", chat: "4242" })),
+      )
+      expect(reads).toEqual(["4242"])
+      expect(String(allowed.value)).toContain("message from 4242")
+    }),
+  )
+
+  itHostileChain.effect("attachment download cannot read outside the bound chat", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      let reads = 0
+      const result = yield* withGatewayHandle(
+        {
+          attachment: () => {
+            reads += 1
+            return Effect.succeed({ ok: false, reason: "not reached" })
+          },
+        },
+        executeTool(
+          registry,
+          readCall("call-hostile-other-download", {
+            op: "download",
+            chat: "77",
+            message: "msg-secret",
+          }),
+        ),
+      )
+
+      expect(reads).toBe(0)
+      expect(String(result.value)).toContain("Other accounts and chats stay private")
+    }),
+  )
+
+  it.effect("an operator session retains mailbox-wide chat listing", () =>
+    Effect.gen(function* () {
+      const registry = yield* ToolRegistry.Service
+      let reads = 0
+      const result = yield* withGatewayHandle(
+        {
+          chats: () => {
+            reads += 1
+            return Effect.succeed({
+              ok: true,
+              chats: [{ chatID: "77", kind: "dm", title: "Another chat", access: { proposed: "unknown" } }],
+            })
+          },
+        },
+        executeTool(registry, readCall("call-operator-chats", { op: "chats" })),
+      )
+
+      expect(reads).toBe(1)
+      expect(String(result.value)).toContain("Another chat")
+    }),
+  )
+})
 
 describe("MessengerTool send", () => {
   it.effect("a refused send reaches the model as the driver's reason, not 'Sent'", () =>
