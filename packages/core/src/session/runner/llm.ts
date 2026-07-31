@@ -1594,6 +1594,13 @@ export const layer = Layer.effect(
             task: goal,
             cwd,
             strict,
+            // The completion GATE's verifier (jh.md §14.1 — a judge or a self-assessment is fallible
+            // input, never ground truth). Without this line the gate is unreachable and Strict's
+            // whole-task authority stays `verifyGoal`'s LLM goal-check, i.e. the model grading its own
+            // homework. Overlaid the same way `strict` is above, so the per-chat Quality switch wins
+            // over the instance default; `Quality.DEFAULTS.enabled` is false, so an instance that has
+            // configured no commands sees no behaviour change at all.
+            quality: { ...harness.quality, enabled: resolved.quality ?? harness.quality.enabled },
             host: strictHost,
             completeOnce: completeAbortable,
             ...(resumeState === undefined ? {} : { resume: resumeState }),

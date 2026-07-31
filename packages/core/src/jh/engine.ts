@@ -104,8 +104,42 @@ export interface Deps {
    *  qwen memorizes Pi to ~50 digits, so it false-done'd a 50-correct output). Given the workspace + last
    *  run stdout, returns whether the task is truly done and, if not, a coarse hint for the fix node. When
    *  absent, root-completion falls back to the LLM goal-check. The program still must COMPUTE the result;
-   *  this only CHECKS it (a test oracle, not the model cheating). */
+   *  this only CHECKS it (a test oracle, not the model cheating).
+   *
+   * ⚠️ **This is a RIG dep, and that is an information fact rather than a wiring gap.** It needs the
+   * EXPECTED ANSWER up front, so only a benchmark/recipe caller that already knows the deliverable can
+   * supply it; a user's Strict session cannot, because nobody — including us — knows what the correct
+   * output of "fix the login bug" looks like. Everything downstream of `score` (keep-best,
+   * restore-on-drop, the near-done oracle directive) is therefore rig-only too. It is NOT blocked by
+   * `session/runner/strict.ts`'s `flagsFor` return type: `runTask` assembles a full `Deps` literal and
+   * could add this key beside `verifyGoal` at any time. The production answer to "may this run report
+   * done" is `completionGate` below — a verifier that EXECUTES rather than one that knows.
+   */
   readonly taskComplete?: (input: { readonly workspace: string; readonly lastOutput: string }) => { readonly done: boolean; readonly detail: string; readonly score?: number }
+  /**
+   * The MECHANICAL completion veto (v0.2.0). Asked — and only asked — when some path is about to
+   * declare the WHOLE TASK done; a red verdict refuses the commit and grows ONE fix node naming what
+   * failed, exactly like the phase gate does for a phase.
+   *
+   * Why it exists: jh.md §14.1's design law is *push everything checkable out of the model's head into
+   * executed, mechanical checks, and treat whatever remains — judge calls, self-assessments — as
+   * fallible input, never as ground truth.* Without `taskComplete` the whole-task authority was
+   * `verifyGoal`'s LLM goal-check, i.e. the model grading its own homework, which is precisely what
+   * that law forbids. The caller injects whatever real verifier its environment has (the session route
+   * uses the instance's provisioned quality commands — typecheck/test/lint — through the same
+   * host-execution gate every other harness command goes through). Absent = today's behaviour exactly.
+   *
+   * The engine knows only the delivery rule; the commands, their text and their timeouts are the
+   * caller's (L3), and the effect must not fail — a verifier that errors has to decide for itself
+   * whether that reads as "not verified" or "nothing to verify".
+   */
+  readonly completionGate?: () => Effect.Effect<{ readonly ok: boolean; readonly detail: string }>
+  /** MECHANICAL hard stop for `completionGate` (default COMPLETION_GATE_MAX_CHECKS = 2). Each check
+   *  runs the caller's REAL commands — a project test suite is minutes, not milliseconds — so an
+   *  unbounded completion guard eats the wall in a fix-then-recheck loop, which is strictly worse than
+   *  the self-attested completion it replaces. Past the cap the gate neither runs nor passes: the run
+   *  finalizes `blocked / completion_unverified`. 2 = one refusal, one repair, one honest verdict. */
+  readonly completionGateChecks?: number
   /** R3 (jh-improve1): keep the best-scoring workspace snapshot; on escalation + a score regression, restore it
    *  to disk so a rewrite improves on the best attempt instead of discarding it. Needs a graded taskComplete
    *  (score) + listFiles. Default ON. */
@@ -356,6 +390,13 @@ const NEVERGREEN_AFTER = 3
 // improve10 P2: lifetime per-file edit_file misses before the coordinate lock goes STICKY — run140's 17
 // misses never tripped the consecutive counter (interleaved successes reset it by design).
 const COORD_CUMULATIVE = 6
+// v0.2.0 COMPLETION GATE: how many times ONE run may execute the caller's mechanical completion
+// verifier. Each execution runs real project commands (a typecheck + a test suite is minutes), and the
+// gate sits in a refuse → grow-a-fix-node → re-check cycle, so an unbounded guard converts the wall
+// into verifier time and lands the run on `wall_exhausted` — strictly worse than the self-attested
+// completion it replaces (the thinking-budget RUNAWAY lesson: every phase bounded, with a MECHANICAL
+// hard stop). 2 = the model gets ONE refusal it can repair, then the run answers honestly either way.
+export const COMPLETION_GATE_MAX_CHECKS = 2
 // improve5 P1b: the per-file render cap. Raised 8000 → 24000 so a whole bignum/formula source is VISIBLE
 // (run84: pi.c > 8000 → the model was asked to quote invisible text, 73 misses). A 24000-char file ≈ 6–7K
 // tokens; a ~5-file workspace fits qwen's 64K with headroom (P0-measured). Over the cap → head+tail with a
@@ -581,6 +622,46 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
     logArr.push(seqd)
     deps.onLog?.(seqd)
   }
+  // ── v0.2.0 COMPLETION GATE state ──────────────────────────────────────────────────────────────
+  // How many times the caller's mechanical verifier has been EXECUTED this run (the hard stop), and
+  // whether it has ever come back green (the finalize chokepoint reads this, so a path that forgets to
+  // ask cannot smuggle a `done` past a verifier that never passed).
+  let gateChecks = 0
+  let completionVerified = false
+  // The spent-budget refusal is logged ONCE. A caller that arms both `taskComplete` and
+  // `completionGate` re-asks on every loop iteration (each sample can re-set `oracleDone`), and an
+  // entry per iteration would be an unbounded log — which is also an unbounded number of `jh_log` rows
+  // the next checkpoint writes. The refusal itself still happens every time; only the noise is capped.
+  let gateSpentLogged = false
+  /** The whole-task veto. `ok` = the run may declare itself done; otherwise `detail` names what
+   *  failed and `retry` says whether growing a fix node is still in budget. Absent gate = always ok
+   *  (today's behaviour, byte-for-byte). */
+  const completionGateCheck = (
+    nodeId: JhStep.StepID,
+  ): Effect.Effect<{ readonly ok: true } | { readonly ok: false; readonly detail: string; readonly retry: boolean }> =>
+    Effect.gen(function* () {
+      if (!deps.completionGate) return { ok: true } as const
+      const cap = deps.completionGateChecks ?? COMPLETION_GATE_MAX_CHECKS
+      if (gateChecks >= cap) {
+        // Spent, and therefore REFUSING — the cap bounds how much verifier time a run may spend, it
+        // does not license a self-attested pass (ruling 2: a task that cannot be verified complete is
+        // reported "not verified", never "complete").
+        const detail = `the deliverable was checked ${gateChecks} time(s) against this project's own verification commands and did not pass; the harness will not report the task complete on the model's say-so`
+        if (!gateSpentLogged) {
+          gateSpentLogged = true
+          emit({ type: "completion_gate", step: nodeId, ok: false, spent: true, detail })
+        }
+        return { ok: false, detail, retry: false } as const
+      }
+      gateChecks++
+      const verdict = yield* deps.completionGate()
+      emit({ type: "completion_gate", step: nodeId, ok: verdict.ok, spent: false, detail: verdict.detail })
+      if (verdict.ok) {
+        completionVerified = true
+        return { ok: true } as const
+      }
+      return { ok: false, detail: verdict.detail, retry: gateChecks < cap } as const
+    })
   const telemetryOf = (id: string): JhBudget.Telemetry => telemetry.get(id) ?? JhBudget.emptyTelemetry
   const updateTelemetry = (id: string, fn: (t: JhBudget.Telemetry) => JhBudget.Telemetry): void => {
     telemetry.set(id, fn(telemetryOf(id)))
@@ -761,8 +842,21 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
   // scores below its own best (run112 walked away from 82 digits, run113 from 98; wave-6's keep-best only
   // restored via escalation). `restoreBest` no-ops unless the current state is a genuine regression, so a
   // clean `done` (current == best) is untouched.
-  const finalizeReport = (status: "done" | "blocked", reason?: string): Effect.Effect<Report> =>
+  const finalizeReport = (statusIn: "done" | "blocked", reasonIn?: string): Effect.Effect<Report> =>
     Effect.gen(function* () {
+      // v0.2.0 COMPLETION-GATE CHOKEPOINT. Every terminal path funnels through here, so this is the one
+      // place where "the run reported done" is finally true — and a `done` that never satisfied the
+      // caller's mechanical verifier is downgraded rather than trusted. It DOWNGRADES only; it can
+      // never turn a blocked run into a done one. In normal operation it is dead weight (the decision
+      // sites below ask the gate before committing); it exists so that a future path which forgets to
+      // ask fails CLOSED, which is the whole difference between a guard and a convention.
+      let status = statusIn
+      let reason = reasonIn
+      if (status === "done" && deps.completionGate && !completionVerified) {
+        emit({ type: "task_blocked", reason: "completion_unverified" })
+        status = "blocked"
+        reason = "completion_unverified"
+      }
       // improve9 P2: trailing UNVERIFIED edits lose to the last VERIFIED state. A best-snapshot file
       // whose on-disk content matches NEITHER the best snapshot NOR the last verified-green capture is
       // unverified surgery (run136's tail — invisible to the score because no successful run
@@ -984,7 +1078,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         if (!JhTree.allChildrenCommitted(tree, parentID)) break
         // With a root gate on, the ROOT is not auto-committed here: the main loop runs a final whole-task
         // check first (and EXTENDS with a fix node if the deliverable isn't actually done).
-        if ((deps.verifyGoal || deps.taskComplete) && parentID === tree.root) break
+        if ((deps.verifyGoal || deps.taskComplete || deps.completionGate) && parentID === tree.root) break
         // P2: gate the phase on the regression suite; a red test → fix node grown, stop (do not commit).
         if (phaseGateOn && (yield* runPhaseGate(parentID))) return
         tree = JhTree.setStatus(tree, parentID, "committed")
@@ -1531,6 +1625,14 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
           const tc = deps.taskComplete({ workspace: renderWorkspace(), lastOutput: lastRunOutput })
           if (!tc.done) vr = { ok: false, detail: `the whole task is not done yet — ${tc.detail}` }
         }
+        // v0.2.0: the same D12 hole for the MECHANICAL gate — an atomic root commits straight from
+        // here, so a completion verifier that is only consulted at the root-completion block would have
+        // a bypass. A refusal demotes to a verify FAIL, which is exactly what the leaf's own recovery
+        // loop already knows how to work on (and is bounded by that leaf's budget).
+        if (vr.ok && node.id === tree.root && deps.completionGate) {
+          const gate = yield* completionGateCheck(node.id)
+          if (!gate.ok) vr = { ok: false, detail: `the whole task is not VERIFIED complete yet — ${gate.detail}` }
+        }
         emit({ type: "verification", step: node.id, ok: vr.ok, detail: vr.detail })
         // improve9 P2: a green verification blesses the CURRENT workspace text — capture it so the
         // finalize drift check can tell a verified tail from unverified surgery.
@@ -1861,7 +1963,10 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       // clears the flag and resumes normal flow.
       if (oracleDone && deps.taskComplete) {
         const tc = deps.taskComplete({ workspace: renderWorkspace(), lastOutput: lastRunOutput })
-        if (tc.done) {
+        // v0.2.0: a short-circuit is still a way to say "done", so it asks the mechanical gate too. A
+        // refusal simply resumes normal flow (the oracle keeps its verdict, it just does not get to
+        // END the run on it) — no fix node here, because the tree still has pending work to do.
+        if (tc.done && (yield* completionGateCheck(tree.root)).ok) {
           tree = JhTree.setStatus(tree, tree.root, "committed")
           emit({ type: "oracle_done", step: tree.root })
           emit({ type: "committed", step: tree.root })
@@ -1882,6 +1987,17 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
       if (!node) {
         const root = JhTree.get(tree, tree.root)
         if (root && root.status === "committed") {
+          // v0.2.0: this path also reports done — reached after an atomic root commits (already gated
+          // above, hence the `completionVerified` skip) and by a RESUME whose saved tree arrives with
+          // the root committed. A resumed run has verified nothing in THIS process, so it asks rather
+          // than trusting a flag that a previous process set. No pending work exists to grow a fix on.
+          if (!completionVerified) {
+            const gate = yield* completionGateCheck(tree.root)
+            if (!gate.ok) {
+              emit({ type: "task_blocked", reason: "completion_unverified" })
+              return yield* finalizeReport("blocked", "completion_unverified")
+            }
+          }
           emit({ type: "task_done" })
           return yield* finalizeReport("done")
         }
@@ -1889,7 +2005,7 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
         // bubble deferred the root under verifyGoal. Verify the WHOLE-TASK goal against the workspace; if
         // the deliverable is NOT actually done (e.g. the program runs but prints wrong digits), EXTEND the
         // root with ONE fix node and keep going — never a false-done. Block only at the global step budget.
-        if (root && (deps.verifyGoal || deps.taskComplete) && root.status === "expanded" && JhTree.allChildrenCommitted(tree, tree.root)) {
+        if (root && (deps.verifyGoal || deps.taskComplete || deps.completionGate) && root.status === "expanded" && JhTree.allChildrenCommitted(tree, tree.root)) {
           // improve4 P2: cheap mechanical FIRST (the D2 ordering lesson) — re-run the regression suite before
           // the (expensive, precision-bounded) oracle/goal-check. A red foundation grows a fix node on the
           // root and re-loops; the oracle never even runs on a broken suite.
@@ -1902,13 +2018,36 @@ export function runTask(deps: Deps, task: { readonly goal: string }, resume?: St
           if (deps.taskComplete) {
             const tc = deps.taskComplete({ workspace: renderWorkspace(), lastOutput: lastRunOutput })
             verdict = { achieved: tc.done, missing: tc.detail }
-          } else {
+          } else if (deps.verifyGoal) {
             const res = yield* runGoalCheck(task.goal, true) // R2: cached + evidence-quoted (root whole-task LLM fallback)
             verdict = { achieved: res.achieved, missing: res.missing }
             if (res.cached) cachedMarker = " (cached — state unchanged)"
+          } else {
+            // Gate-only caller: no oracle and no LLM goal-check was asked for, so there is no claim to
+            // weigh — every phase committed, and the mechanical gate below is the whole verdict. Do NOT
+            // spend an unrequested goal-check call here just to have something to veto.
+            verdict = { achieved: true, missing: "" }
           }
-          emit({ type: "verification", step: tree.root, ok: verdict.achieved, detail: (verdict.achieved ? "task goal achieved" : `task goal NOT achieved — ${verdict.missing}`) + cachedMarker })
+          if (deps.taskComplete || deps.verifyGoal)
+            emit({ type: "verification", step: tree.root, ok: verdict.achieved, detail: (verdict.achieved ? "task goal achieved" : `task goal NOT achieved — ${verdict.missing}`) + cachedMarker })
           if (verdict.achieved) {
+            // v0.2.0 THE COMPLETION GATE. Whatever just said "achieved" — the caller's oracle or, in
+            // every real Strict session, the model's own goal-check — the caller's MECHANICAL verifier
+            // gets the last word. Placed AFTER the claim rather than before it on purpose: the gate
+            // runs the project's real commands, so paying for them only on a claimed completion caps
+            // the cost at `COMPLETION_GATE_MAX_CHECKS` runs instead of one per loop, and a claim of
+            // "not achieved" already grows a fix node without needing a test suite to say so.
+            const gate = yield* completionGateCheck(tree.root)
+            if (!gate.ok) {
+              if (gate.retry && JhTree.size(tree) < maxTotalSteps) {
+                const gBefore = JhTree.get(tree, tree.root)!.children.length
+                yield* growFixNode(tree.root, task.goal, gate.detail, "the project's own verification commands pass")
+                if (JhTree.get(tree, tree.root)!.children.length > gBefore) continue
+              }
+              // Out of repair budget (or out of tree). Ruling 2: say "not verified", never "complete".
+              emit({ type: "task_blocked", reason: "completion_unverified" })
+              return yield* finalizeReport("blocked", "completion_unverified")
+            }
             tree = JhTree.setStatus(tree, tree.root, "committed")
             emit({ type: "committed", step: tree.root })
             emit({ type: "task_done" })

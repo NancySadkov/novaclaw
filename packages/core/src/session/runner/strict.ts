@@ -29,6 +29,7 @@ import { Shell } from "../../shell"
 import type { ConfigStrict } from "../../config/strict"
 import { SessionInput } from "../input"
 import type { SessionMessage } from "../message"
+import { Quality } from "./quality"
 
 export const WALL_DEFAULT_MIN = 45
 export const MAX_DEPTH = 5
@@ -133,9 +134,15 @@ export function terminalNotice(input: {
   const state = input.keptBest
     ? `${KEPT_BEST} in ${input.single ? "the working directory" : "the attempt workspaces"}`
     : `${NO_BEST_HELD}, so ${input.single ? "the working directory holds" : "the attempt workspaces hold"} the run's last state`
-  return input.reason === "aborted"
-    ? `⏹️ Strict run stopped at your request after ${input.steps} steps — ${state}. Say "resume" to pick it up again.`
-    : `⚠️ Strict run stopped (${input.reason ?? "blocked"}) after ${input.steps} steps — ${state}. Say "resume" to continue it.`
+  if (input.reason === "aborted")
+    return `⏹️ Strict run stopped at your request after ${input.steps} steps — ${state}. Say "resume" to pick it up again.`
+  // The completion gate's own stop, said in words rather than as a reason code. It is a DIFFERENT fact
+  // from a wall or a step budget — the run believed it was finished and this project's own verification
+  // commands disagreed — and "stopped" alone would hide the only part the user needs (ruling 2: a fault
+  // is never described falsely, and "ran out of time" would be a false description of this one).
+  if (input.reason === "completion_unverified")
+    return `⚠️ Strict stopped after ${input.steps} steps: the work did NOT pass this project's own verification commands, so the task is not reported complete — ${state}. Say "resume" to keep working on it.`
+  return `⚠️ Strict run stopped (${input.reason ?? "blocked"}) after ${input.steps} steps — ${state}. Say "resume" to continue it.`
 }
 
 /** The prompt pair for the end-of-run assistant summary — the user's readable answer to "what did
@@ -210,6 +217,75 @@ export function flagsFor(strict: ConfigStrict.Info): Pick<
   }
 }
 
+// ── The COMPLETION GATE (v0.2.0) ────────────────────────────────────────────────────────────────
+//
+// jh.md §14.1 states the law this closes: *push everything checkable out of the model's head into
+// executed, mechanical checks — and treat whatever remains (judge calls, self-assessments) as fallible
+// input under suspicion machinery, never as ground truth.* Until now the whole-task authority in a real
+// Strict session was `verifyGoal`'s LLM goal-check: the model deciding whether the model was finished.
+// `JhEngine.Deps.taskComplete` is the engine's slot for a better answer, but it wants the EXPECTED
+// OUTPUT and only a benchmark rig has that — so the production answer has to be a verifier that
+// EXECUTES rather than one that knows, and the product already has one: the instance's provisioned
+// quality commands (Settings → Quality, or auto-derived by the `quality_provision` tool), which the
+// ordinary drain loop already runs as steers. Strict — the mode whose entire premise is verification —
+// was the only place ignoring them.
+//
+// Scope, deliberately: only the WHOLE-PROJECT commands. `syntax` and `check` are per-file templates
+// (`Quality.renderCommand` substitutes `{file}`) and answer a question about one edit, not about the
+// deliverable. Order is cheapest-decisive first and it SHORT-CIRCUITS at the first failure, so the
+// worst case is one full test suite per check rather than the whole battery.
+export const COMPLETION_TYPECHECK_TIMEOUT = 120_000
+export const COMPLETION_LINT_TIMEOUT = 120_000
+
+export interface CompletionCheck {
+  readonly label: "typecheck" | "test" | "lint"
+  readonly command: string
+  readonly timeoutMs: number
+}
+
+/** The whole-project quality commands, in gate order. Empty ⇒ this instance declared no verifier, and
+ *  the engine keeps exactly its current behaviour (an absent gate is not a failing gate). */
+export function completionChecks(quality: Quality.Config | undefined): ReadonlyArray<CompletionCheck> {
+  if (quality === undefined || !quality.enabled) return []
+  const out: CompletionCheck[] = []
+  if (quality.commands.typecheck) out.push({ label: "typecheck", command: quality.commands.typecheck, timeoutMs: COMPLETION_TYPECHECK_TIMEOUT })
+  if (quality.commands.test) out.push({ label: "test", command: quality.commands.test, timeoutMs: quality.testTimeout })
+  if (quality.commands.lint) out.push({ label: "lint", command: quality.commands.lint, timeoutMs: COMPLETION_LINT_TIMEOUT })
+  return out
+}
+
+/** Build the engine's `completionGate` over a runner. Never fails: a command that cannot even start
+ *  (ENOENT) or times out is a RunResult like any other, and reads as NOT VERIFIED — the honest answer
+ *  for a verifier that did not get to say yes (ruling 2). */
+export function completionGateFor(
+  runner: JhProcessRunner.Runner,
+  checks: ReadonlyArray<CompletionCheck>,
+  cwd: string,
+): () => Effect.Effect<{ readonly ok: boolean; readonly detail: string }> {
+  return () =>
+    Effect.gen(function* () {
+      for (const check of checks) {
+        const r = yield* runner.run({ command: check.command, cwd, timeoutMs: check.timeoutMs })
+        const ok = r.exitCode === 0 && !r.timedOut
+        if (!ok)
+          return {
+            ok: false,
+            // The product's own wording for a failed quality gate — one text, one stance ("does not
+            // count as done until this passes"), whether the failure steers a normal turn or vetoes a
+            // Strict completion.
+            detail: Quality.failureMessage({
+              label: check.label,
+              command: check.command,
+              output: r.output,
+              ...(r.exitCode === undefined ? {} : { exit: r.exitCode }),
+              ...(r.timedOut ? { timedOut: true } : {}),
+            }),
+          }
+      }
+      return { ok: true, detail: `this project's own checks pass (${checks.map((c) => c.label).join(", ")})` }
+    })
+}
+
 // Milestones the user sees as chat notices. Leaf-level noise (every action/observation/verification)
 // stays in the engine log; PHASE-level progress (root + its direct children) and every safety event
 // surface. task_started is implicit in the opener the runner publishes.
@@ -222,6 +298,10 @@ const SAFETY_TYPES = new Set<JhLog.Entry["type"]>([
   "coord_mode",
   "numerics_hint",
   "budget_note",
+  // The completion gate is a SAFETY event by the same logic as `restored_best`: it is the harness
+  // overriding what the model just claimed, and a user who is told "done" needs to see the thing that
+  // decided it (or, on a refusal, why the run kept going).
+  "completion_gate",
   "depth_degraded",
   "root_degraded",
   "split_degraded",
@@ -512,6 +592,16 @@ export interface RunArgs {
    * messenger dispatch) to be confined or denied the way the `bash` tool already is.
    */
   readonly host?: HostExec.SessionHost
+  /**
+   * The instance's quality configuration (`Settings → Quality`, the same block the normal drain loop
+   * runs as steers). Supplies the COMPLETION GATE: with whole-project commands configured, a Strict run
+   * cannot report the task complete until they actually pass. Omitted, or configured with no
+   * whole-project command, and completion stays exactly as it is today — the model's own goal-check.
+   *
+   * ⚠️ Only `session/runner/llm.ts` can resolve this (it is per-session, on the resolved harness
+   * config), so it is injected here for the same reason `host` is.
+   */
+  readonly quality?: Quality.Config
   readonly now?: () => number
 }
 
@@ -584,6 +674,10 @@ export function runTask(args: RunArgs): Effect.Effect<JhEngine.Report> {
         ...(args.host === undefined ? {} : { host: args.host }),
       }),
   })
+  // The completion gate's commands, resolved once: they run through the SAME planned runner as every
+  // other harness command, so `bun test` in a Strict run is jailed, secret-free and shell-consistent
+  // exactly like a `run` atom (ruling 6 — there is one host-execution gate, not one per call site).
+  const gateChecks = completionChecks(args.quality)
   const wallMin = args.strict.wallMinutes !== undefined && args.strict.wallMinutes > 0 ? args.strict.wallMinutes : WALL_DEFAULT_MIN
   const queue: string[] = []
   const flush: Effect.Effect<void> = Effect.suspend(() => {
@@ -623,6 +717,10 @@ export function runTask(args: RunArgs): Effect.Effect<JhEngine.Report> {
     trigger: JhBudget.DEFAULT_TRIGGER,
     budget: { startedAt: nowFn(), wallMs: wallMin * 60 * 1000, now: nowFn },
     ...flagsFor(args.strict),
+    // The mechanical whole-task veto. Absent when this instance provisioned no whole-project quality
+    // command — an instance with no verifier gets no fake one (ruling 2 cuts both ways: we neither
+    // claim a verification we did not do, nor block a run on a check nobody configured).
+    ...(gateChecks.length === 0 ? {} : { completionGate: completionGateFor(runner, gateChecks, args.cwd) }),
     aborted: args.aborted,
     checkpoint: args.checkpoint,
     onLog: (entry) => {

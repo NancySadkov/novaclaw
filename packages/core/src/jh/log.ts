@@ -91,6 +91,12 @@ export type Entry =
   // improve5 P4: a wall-clock budget threshold (0.5 / 0.75) was crossed → a calm "simplify / land it" steer
   // was injected into the next introspection (one-shot per threshold).
   | { readonly type: "budget_note"; readonly step: string; readonly fraction: number }
+  // v0.2.0 (the COMPLETION GATE): the caller's injected MECHANICAL verifier was asked whether the
+  // WHOLE task may be declared complete. `ok:false` VETOES the done — the model's own goal-check is
+  // never the last word (jh.md §14.1: judge calls and self-assessments are fallible input, never
+  // ground truth). `spent` marks the refusal that comes from the per-run budget rather than from a
+  // command that actually ran, so a transcript never reads a budget stop as a test failure.
+  | { readonly type: "completion_gate"; readonly step: string; readonly ok: boolean; readonly spent: boolean; readonly detail: string }
   | { readonly type: "committed"; readonly step: string }
   // A leaf the harness gave up VERIFYING (stuck/budget) but committed best-effort so the tree can grow a
   // fix sibling instead of dead-ending (engine.ts stuck path). NOT a success — the reason carries the
@@ -180,6 +186,10 @@ function describe(e: Sequenced): string {
       return `forced_split_advisory ${e.step} (cardinality ${e.cardinality}, density ${e.density} — disarmed)`
     case "budget_note":
       return `budget_note ${e.step}: ${Math.round(e.fraction * 100)}% of the time budget consumed`
+    case "completion_gate":
+      return e.ok
+        ? `completion_gate ${e.step}: VERIFIED — ${e.detail}`
+        : `completion_gate ${e.step}: NOT verified${e.spent ? " (verifier budget spent)" : ""} — ${e.detail}`
     case "committed":
       return `committed ${e.step}`
     case "committed_best_effort":
