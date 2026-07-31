@@ -20,6 +20,12 @@ import { SessionCommand } from "./cli/cmd/session"
 import { DbCommand } from "./cli/cmd/db"
 import { errorMessage } from "./util/error"
 import { Heap } from "./cli/heap"
+import { BootProfile } from "@novaclaw/core/observability/boot-profile"
+
+// The CLI's whole module graph is loaded by the time this line runs, and `performance.now()` counts
+// from process start — so this single mark IS "runtime start + import cost", the phase no span could
+// ever see because it happens before any Effect runtime exists. See `todo/startup.md` Phase 1.
+BootProfile.mark("cli:modules-loaded")
 
 const args = hideBin(process.argv)
 
@@ -62,6 +68,7 @@ const cli = yargs(args)
     type: "string",
   })
   .middleware(async (opts) => {
+    BootProfile.mark("cli:args-parsed")
     if (opts.printLogs) process.env.NOVACLAW_PRINT_LOGS = "1"
     if (opts.logLevel) process.env.NOVACLAW_LOG_LEVEL = opts.logLevel
     // Mirror it into the environment so anything spawned from this process (plugins, MCP servers, a

@@ -7,6 +7,7 @@ import { OpenApi } from "effect/unstable/httpapi"
 import { createServer } from "node:http"
 import { InstallationVersion } from "@novaclaw/core/installation/version"
 import { InstanceIdentityStore } from "@novaclaw/core/instance-identity-store"
+import { BootProfile } from "@novaclaw/core/observability/boot-profile"
 import { MDNS } from "./mdns"
 import { HttpApiApp } from "./routes/instance/httpapi/server"
 import { disposeMiddleware } from "./routes/instance/httpapi/lifecycle"
@@ -17,6 +18,12 @@ import { lazy } from "@/util/lazy"
 
 // @ts-ignore This global is needed to prevent ai-sdk from logging warnings to stdout https://github.com/vercel/ai/blob/2dc67e0ef538307f21368db32d5a12345d98831b/packages/ai/src/logger/log-warnings.ts#L85
 globalThis.AI_SDK_LOG_WARNINGS = false
+
+// ⚠️ This file is the ONE shared boot path of both entry points: `cli/cmd/serve.ts` reaches it by
+// dynamic import, and the Electron sidecar reaches the same `Server.listen` through
+// `virtual:novaclaw-server` → `src/node.ts`. Every mark below is therefore measured twice over —
+// once per entry point — with no second harness. (`todo/startup.md` Phase 1.)
+BootProfile.mark("server:module-loaded")
 
 export type Listener = {
   hostname: string
@@ -83,11 +90,20 @@ export async function listen(opts: ListenOptions): Promise<Listener> {
 
 const listenEffect: (opts: ListenOptions) => Effect.Effect<EffectListener, unknown> = Effect.fn("Server.listen")(
   function* (opts: ListenOptions) {
+    BootProfile.mark("server:listen-start")
     const state = yield* startWithPortFallback(opts)
     const address = yield* tcpAddress(state)
+    BootProfile.mark("server:tcp-address")
     const listenerUrl = makeURL(opts.hostname, address.port)
     const unpublishMdns = yield* setupMdns(opts, address.port, state.scope)
+    BootProfile.mark("server:mdns")
     url = listenerUrl
+    BootProfile.mark("server:listening")
+    // Observation only — `report` prints nothing unless NOVACLAW_BOOT_PROFILE is set, and returns the
+    // timeline either way so a caller can assert on its STRUCTURE. The entry point is derived from
+    // what was observed (`cli:*` marks exist or they do not), never from a flag someone must set.
+    const segment = BootProfile.entryPoint()
+    BootProfile.report(segment === "serve" ? "novaclaw serve" : "electron sidecar", BootProfile.PHASES[segment])
 
     return {
       hostname: opts.hostname,
@@ -99,13 +115,26 @@ const listenEffect: (opts: ListenOptions) => Effect.Effect<EffectListener, unkno
 )
 
 function listenerLayer(opts: ListenOptions, port: number) {
-  return HttpRouter.serve(HttpApiApp.createRoutes(opts), {
-    middleware: disposeMiddleware,
-    disableLogger: true,
-    disableListenLog: true,
-  }).pipe(
+  // The two taps split the single biggest phase of the boot into its two honest halves: binding the
+  // TCP socket (`serverLayer` → `NodeHttpServer.layer`) and building the whole instance service graph
+  // behind the routes (`createRoutes` — Database + migration, every config store, MCP, skills, the
+  // messenger drivers…). `provideMerge` builds its argument FIRST, so the bind precedes the graph:
+  // the port is listening while the services are still coming up, which is a fact about this boot
+  // that no total could have told us. Neither tap changes what is built or in what order.
+  return HttpRouter.serve(
+    Layer.tap(HttpApiApp.createRoutes(opts), () => Effect.sync(() => BootProfile.mark("server:services-built"))),
+    {
+      middleware: disposeMiddleware,
+      disableLogger: true,
+      disableListenLog: true,
+    },
+  ).pipe(
     Layer.provideMerge(WebSocketTracker.layer),
-    Layer.provideMerge(serverLayer({ port, hostname: opts.hostname })),
+    Layer.provideMerge(
+      Layer.tap(serverLayer({ port, hostname: opts.hostname }), () =>
+        Effect.sync(() => BootProfile.mark("server:http-bound")),
+      ),
+    ),
     // Install a fresh `ConfigProvider` per listener so `Config.string(...)`
     // reads reflect the current `process.env`. Effect's default
     // `ConfigProvider` snapshots `process.env` on first read and caches the

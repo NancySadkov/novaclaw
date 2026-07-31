@@ -3,7 +3,17 @@ import path from "path"
 import { Global } from "../global"
 import { runID } from "./shared"
 
-function formatter(id: string = runID) {
+/**
+ * The one logfmt renderer. Every sink below is this function plus a destination, which is why it is
+ * the only honest place to assert what a log LINE looks like.
+ *
+ * ⚠️ Exported for that reason and no other: `packages/core/test/log-events.test.ts` drives real
+ * `Effect.log*` records through it to prove that a keyed event (`observability/log.ts`) lands in
+ * THIS line rather than in a channel of its own, and that an un-keyed record is byte-identical to
+ * what it was before the key set existed. A test that re-implemented the format would assert
+ * against a copy and pass while production drifted.
+ */
+export function formatter(id: string = runID) {
   return Logger.map(Logger.formatStructured, (output) => {
     const messages = Array.isArray(output.message) ? output.message : [output.message]
     return [

@@ -16,6 +16,7 @@ import { Integration } from "./integration"
 import { Location } from "./location"
 import { LocationMutation } from "./location-mutation"
 import { LocationServiceMap } from "./location-service-map"
+import { BootProfile } from "./observability/boot-profile"
 import { PermissionV2 } from "./permission"
 import { PluginV2 } from "./plugin"
 import { PluginInternal } from "./plugin/internal"
@@ -135,6 +136,29 @@ const canonicalRef = (ref: Location.Ref): Location.Ref =>
 // `Location.node` binding below — all `location`-tagged, and a `location`-tagged node can never
 // appear inside a `global` one's subtree because the tag config forbids that edge. The invariant is
 // pinned by `test/location-services-hoist-replacements.test.ts`.
+// ⚠️ BOOT INSTRUMENTATION — observation only, and the DEFAULT path is byte-identical to one with
+// this block deleted. `todo/startup.md` Phase 1 asks for per-node build times for this graph and
+// nobody had ever measured them; `BootProfile` supplies them without an OTLP collector.
+//
+// The per-node rewrite is FLAG-GATED (`NOVACLAW_BOOT_PROFILE=1`) rather than always-on, because it
+// is the one part of this instrument that changes the layer OBJECT graph — it preserves service
+// identity and replacement resolution (see the contract on `instrumentNodeTree`), but "preserves"
+// is a claim, and the way to owe nothing on a normal boot is to hand back the original object.
+// Computed ONCE and cached: a fresh rewrite per location would give every location its own node
+// objects and thus its own `compile` cache entries, which is exactly the split this file exists to
+// prevent.
+let profiledServices: typeof locationServices | undefined
+function servicesForBoot(): typeof locationServices {
+  if (!BootProfile.enabled()) return locationServices
+  profiledServices ??= BootProfile.instrumentNodeTree(locationServices)
+  return profiledServices
+}
+
+/** Locations booted in this process. The first is COLD (it pays for the global half); the rest are
+ *  WARM, and warm is the common case — so a timeline that only measured the first would answer the
+ *  wrong question. */
+let locationBoots = 0
+
 export function buildLocationServiceMap(
   replacements: LayerNode.Replacements = [],
 ): Layer.Layer<LocationServiceMap.Service> {
@@ -143,8 +167,21 @@ export function buildLocationServiceMap(
     Effect.map(
       LayerMap.make(
         (ref: Location.Ref) => {
-          const allReplacements = replacements.concat([[Location.node, Location.boundNode(ref)]])
-          const location = LayerNode.hoist(locationServices, Node.tags.values.global, allReplacements)
+          BootProfile.mark("location:boot-start")
+          let allReplacements: LayerNode.Replacement[] = replacements.concat([[Location.node, Location.boundNode(ref)]])
+          // ⚠️ Under the profile flag the replacements must be rewritten too, through the SAME node
+          // cache as the tree. `Location.boundNode(ref)` declares `deps: [Project.node]` — the
+          // ORIGINAL object — so a rewritten tree plus an un-rewritten replacement hands `hoist` two
+          // different nodes named `@novaclaw/ProjectV2` and it refuses to hoist. Measured, not
+          // reasoned: it killed the first location boot outright.
+          if (BootProfile.enabled())
+            allReplacements = allReplacements.map(
+              ([source, replacement]): LayerNode.Replacement => [
+                source,
+                BootProfile.instrumentReplacement(replacement),
+              ],
+            )
+          const location = LayerNode.hoist(servicesForBoot(), Node.tags.values.global, allReplacements)
 
           return LayerNode.compile(location.node).pipe(
             Layer.fresh,
@@ -154,7 +191,29 @@ export function buildLocationServiceMap(
                 workspaceID: ref.workspaceID,
               }),
             ),
-            Layer.provide(LayerNode.compile(location.hoisted)),
+            Layer.tap(() =>
+              Effect.sync(() => {
+                BootProfile.mark("location:booted")
+                const warm = locationBoots++ > 0
+                // `origin: "segment"` — a location boots when a request arrives, so its own first
+                // mark is its origin. Charging it the idle wait since the listener came up would
+                // overstate it by seconds.
+                BootProfile.report(
+                  `location ${warm ? "warm" : "cold"} · ${ref.directory}`,
+                  BootProfile.PHASES.location,
+                  { origin: "segment" },
+                )
+              }),
+            ),
+            // The global half. In a `serve` boot these are already memoized by the HTTP graph, so
+            // this mark lands ~0 ms after the start and the location cost is genuinely the
+            // per-location half; in a bare location boot it is most of the bill. Distinguishing the
+            // two is the whole point — `Layer.fresh` stays INSIDE this `Layer.provide` (see above).
+            Layer.provide(
+              Layer.tap(LayerNode.compile(location.hoisted), () =>
+                Effect.sync(() => BootProfile.mark("location:globals-built")),
+              ),
+            ),
           )
         },
         { idleTimeToLive: "60 minutes" },
