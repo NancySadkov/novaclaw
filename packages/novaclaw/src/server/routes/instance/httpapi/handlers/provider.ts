@@ -11,14 +11,128 @@ import { InstanceState } from "@/effect/instance-state"
 
 import { Effect, Layer } from "effect"
 import { HttpApiBuilder } from "effect/unstable/httpapi"
+import { HttpClient, HttpClientError, HttpClientRequest } from "effect/unstable/http"
+import { isEgressBlocked } from "@novaclaw/llm"
 import { InstanceHttpApi } from "../api"
 import { ConfigProviderPreset } from "@novaclaw/core/config/provider-preset"
 import { ProviderV2 } from "@novaclaw/core/provider"
+
+/** How long one probe may take end to end (connect + headers + body). */
+const PROBE_TIMEOUT = "5 seconds"
+
+/**
+ * The airgap verdict's headline, kept SHORT and FIRST so it survives any downstream truncation.
+ *
+ * ⚠️ It is prose rather than a `status` arm because the wire schema (`groups/provider.ts`'s
+ * `ProbeResult`) has no `"blocked"` literal, and adding one is a four-file change this handler does
+ * not own (schema + SDK regen + `probeLabel`'s exhaustive switch in `settings-v2/models.tsx` +
+ * `dialog-new-model.tsx`'s `statusMessage`). What ruling 2 demands is that a refusal is never
+ * *described* as unreachability — so it is filed under `error`, never `unreachable`, and says what
+ * it is in the first clause. See the report accompanying this change for the follow-up.
+ */
+export const AIRGAP_BLOCK_PREFIX = "Blocked by airgap — this request never left your computer."
+
+/**
+ * What the probe's ONE network round trip produced. Each failure arm carries the exact `status` the
+ * handler puts on the wire, so a test of this function is a test of what the user is told.
+ */
+export type ProbeTransport =
+  | { readonly kind: "ok"; readonly body: unknown }
+  /** The instance's own offline policy refused the host — a DECISION, not an outage. */
+  | { readonly kind: "blocked"; readonly status: "error"; readonly host: string; readonly detail: string }
+  | { readonly kind: "auth"; readonly status: "auth"; readonly detail: string }
+  | { readonly kind: "http"; readonly status: "error"; readonly detail: string }
+  | { readonly kind: "unreachable"; readonly status: "unreachable"; readonly detail: string }
+
+/** Best text available for a transport failure, without leaking the whole error object. */
+function transportDetail(error: unknown): string {
+  if (!HttpClientError.isHttpClientError(error)) return String(error)
+  const reason = error.reason as { _tag: string; description?: string; cause?: unknown }
+  const cause = reason.cause
+  const causeText =
+    cause instanceof Error
+      ? `${cause.message}${cause.cause === undefined ? "" : `: ${String((cause.cause as { message?: unknown })?.message ?? cause.cause)}`}`
+      : cause === undefined
+        ? undefined
+        : String(cause)
+  return `${reason._tag}: ${reason.description ?? causeText ?? "no detail"}`
+}
+
+/**
+ * OFF-A — the probe's single round trip, through the SHARED guarded `HttpClient`.
+ *
+ * ⚠️ This used to be a raw global `fetch`, which meant *Settings → Models → Custom endpoint → Find
+ * models* EGRESSED with airgap mode ON — while `/shell/offline` reported 9/9 layers active and
+ * `offline.ts`'s layer-1 manifest named "probe" as one of the callers riding the chokepoint. The
+ * payload can carry an API key (the handler below falls back to the saved provider's
+ * `request.body.apiKey`), so what escaped was a credential, not just a URL. Design-principle 4 says
+ * the data plane never egresses; ruling 2 says a fault is never described falsely. This is the fix
+ * that makes the manifest's existing claim TRUE rather than correcting the claim downward.
+ *
+ * Loopback keeps working with airgap ON, by construction: `Offline.checkUrl` allows loopback
+ * unconditionally before it ever consults the allowlist ("the app talking to itself is not egress"),
+ * which is what the local-runtime sweep (`core/src/config/local-runtime.ts`) is built on.
+ *
+ * Never fails — every outcome classifies, exactly as the old `fetch` version did.
+ */
+export const probeEndpoint = (
+  client: HttpClient.HttpClient,
+  url: string,
+  headers: Record<string, string>,
+): Effect.Effect<ProbeTransport> =>
+  client.execute(HttpClientRequest.get(url).pipe(HttpClientRequest.setHeaders(headers))).pipe(
+    Effect.flatMap((response) => {
+      if (response.status === 401 || response.status === 403)
+        return Effect.succeed<ProbeTransport>({ kind: "auth", status: "auth", detail: `HTTP ${response.status}` })
+      if (response.status < 200 || response.status >= 300)
+        return Effect.succeed<ProbeTransport>({ kind: "http", status: "error", detail: `HTTP ${response.status}` })
+      return response.json.pipe(
+        Effect.map((body): ProbeTransport => ({ kind: "ok", body })),
+        Effect.orElseSucceed((): ProbeTransport => ({ kind: "ok", body: undefined })),
+      )
+    }),
+    Effect.timeoutOrElse({
+      duration: PROBE_TIMEOUT,
+      orElse: () =>
+        Effect.succeed<ProbeTransport>({
+          kind: "unreachable",
+          status: "unreachable",
+          detail: `No answer within ${PROBE_TIMEOUT}.`,
+        }),
+    }),
+    Effect.catch((error) => {
+      // The offline policy declares itself in the reason's `cause` (see `core/src/offline.ts`), and
+      // is recognised STRUCTURALLY by `_tag` — `isEgressBlocked`, the same predicate the LLM
+      // RequestExecutor uses to lift a block into `OfflineBlockedReason`. Tag-sniffing the platform's
+      // `InvalidUrlError` instead would confuse a deliberate refusal with a genuinely malformed URL.
+      const blocked = "cause" in error.reason ? error.reason.cause : undefined
+      if (isEgressBlocked(blocked))
+        return Effect.succeed<ProbeTransport>({
+          kind: "blocked",
+          status: "error",
+          host: blocked.host,
+          // The policy's own words stay verbatim after the headline: they carry the remedy ("add the
+          // provider…, extend NOVACLAW_OFFLINE_ALLOW…, or turn offline mode off"), and NOT truncated
+          // — this string is ours and bounded, unlike an arbitrary transport error.
+          detail: `${AIRGAP_BLOCK_PREFIX} ${blocked.reason}`,
+        })
+      return Effect.succeed<ProbeTransport>({
+        kind: "unreachable",
+        status: "unreachable",
+        detail: transportDetail(error).slice(0, 300),
+      })
+    }),
+  )
 
 export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider", (handlers) =>
   Effect.gen(function* () {
     const cfg = yield* Config.Service
     const locations = yield* LocationServiceMap.Service
+    // The ONE shared HttpClient — `Offline.guard(FetchHttpClient)` from
+    // `core/src/effect/app-node-platform.ts`. Resolvable here because `httpClient` is a member of the
+    // compiled `app` graph that `httpapi/server.ts` provides to the whole route tree (the
+    // workspace-routing middleware already resolves it the same way).
+    const http = yield* HttpClient.HttpClient
 
     // F1-final: the provider catalog now comes from the V2 `Catalog` (config +
     // ModelsDev, seeded into CatalogStore), projected onto the V1 wire shape the
@@ -102,22 +216,12 @@ export const providerHandlers = HttpApiBuilder.group(InstanceHttpApi, "provider"
           ? { "anthropic-version": "2023-06-01" }
           : {}
       const started = Date.now()
-      const response = yield* Effect.tryPromise(() =>
-        fetch(url, {
-          method: "GET",
-          signal: AbortSignal.timeout(5000),
-          headers: authHeaders,
-        }),
-      ).pipe(Effect.catch((error) => Effect.succeed(String((error as { cause?: unknown }).cause ?? error))))
+      const transport = yield* probeEndpoint(http, url, authHeaders)
       const latencyMs = Date.now() - started
-      if (typeof response === "string")
-        return { status: "unreachable" as const, latencyMs, detail: response.slice(0, 300) }
-      if (response.status === 401 || response.status === 403)
-        return { status: "auth" as const, latencyMs, detail: `HTTP ${response.status}` }
-      if (!response.ok) return { status: "error" as const, latencyMs, detail: `HTTP ${response.status}` }
-      const body = yield* Effect.tryPromise(() => response.json() as Promise<unknown>).pipe(
-        Effect.orElseSucceed(() => undefined),
-      )
+      // Every non-`ok` arm already carries the status the wire schema will show, including the
+      // airgap refusal — which is `error` + an airgap-shaped detail, deliberately NOT `unreachable`.
+      if (transport.kind !== "ok") return { status: transport.status, latencyMs, detail: transport.detail }
+      const body = transport.body
       const data =
         typeof body === "object" && body !== null && Array.isArray((body as { data?: unknown }).data)
           ? ((body as { data: unknown[] }).data as Array<Record<string, unknown>>)

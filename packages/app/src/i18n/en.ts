@@ -1695,6 +1695,17 @@ export const dict = {
   "settings.models.new.preset": "{{family}} defaults",
   "settings.models.new.add": "Add selected",
   "settings.models.new.toast.added": "Models added",
+  // S0 — the local-runtime probe. A model server the user ALREADY runs is the shortest path out of
+  // the zero-provider first-run state, so it is offered above the presets instead of behind a form.
+  // ⚠️ The wording is careful on purpose (ruling 2): we verified an endpoint, not a vendor, so the
+  // card asserts the address and only HINTS at the program that usually answers there. And
+  // "couldn't check" is a separate string from "nothing here" — they are different facts.
+  "settings.models.new.local.checking": "Looking for a model server on this machine…",
+  "settings.models.new.local.title": "Already on this machine",
+  "settings.models.new.local.models": "{{count}} ready to use",
+  "settings.models.new.local.needsKey": "Needs an API key",
+  "settings.models.new.local.usually": "usually {{runtime}}",
+  "settings.models.new.local.unavailable": "Couldn't check this machine for a model server.",
   "settings.models.clone.action": "Clone",
   "settings.models.clone.toast.done": "Created {{model}}",
   "settings.models.clone.toast.failed": "Could not clone that model",

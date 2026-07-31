@@ -1,5 +1,6 @@
 export * as KbEmbedder from "./embedder"
 
+import { Offline } from "../offline"
 import { MemorySetting } from "./memory-setting"
 
 // The memory VECTOR leg — a minimal OpenAI-compatible embeddings client for the LAN embedding device
@@ -62,7 +63,31 @@ export async function embedOne(text: string, dbFile?: string): Promise<number[] 
   return vectors?.[0]
 }
 
+/**
+ * ⚠️ OFF-B: this transport is NOT the shared `HttpClient` chokepoint, so it must carry its own
+ * offline check — AGENTS.md → *Runtime ground truth* §5: *"every new feature's egress must ride it
+ * or add its own `Offline` policy check."* It did neither until 2026-07-31.
+ *
+ * This is the worst payload of the three raw-`fetch` sites an audit found that day, because the body
+ * is `input: batch` — **the user's own KB and chat text** — POSTed to a URL the user configured. It
+ * has never fired only because `memory.embedding.url` is unset by default; a user who configures a
+ * hosted embedding endpoint and then turns on airgap was shipping their data plane out while
+ * `/shell/offline` reported every layer active. Design-principle 4 is a promise, not a preference.
+ *
+ * `currentPolicy()` is read live, per batch — a settings change is not a reboot (ruling 3), and the
+ * sibling defect in `npm.ts` was exactly a policy captured once at layer init.
+ *
+ * ⚠️ A blocked batch returns `undefined` like every other failure here, and that is deliberate:
+ * every caller already degrades to keyword-only search, so a throw would take memory search down
+ * rather than narrowing it. But it is NOT silent — an outage and a refusal are different facts
+ * (ruling 2), so the block is logged with the policy's own message while a timeout stays quiet.
+ */
 async function requestBatch(settings: MemorySetting.EmbeddingSettings, batch: readonly string[]): Promise<number[][] | undefined> {
+  const verdict = Offline.checkUrl(settings.url, Offline.currentPolicy())
+  if (!verdict.allowed) {
+    console.warn(`[kb-memory] embedding request blocked: ${verdict.message}`)
+    return undefined
+  }
   try {
     const response = await fetch(`${settings.url}/embeddings`, {
       method: "POST",

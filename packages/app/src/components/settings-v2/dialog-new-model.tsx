@@ -11,9 +11,11 @@ import { useServerSync } from "@/context/server-sync"
 import { showToast } from "@/utils/toast"
 import { providerPresets, providerProbe, type ProbeResult, type ProviderPreset } from "@/utils/fs-api"
 import { matchPreset } from "@/utils/model-presets"
+import { ConfigLocalRuntime } from "@novaclaw/core/config/local-runtime"
 import type { ServerConnection } from "@/context/server"
 
 // "Add models" — the provider-import flow. Three steps in one dialog:
+//   0. (S0) offer any model server ALREADY running on the instance's machine — see below
 //   1. pick a provider (the preset catalog served by GET /provider/presets — builtins merged
 //      with `provider_presets` config overrides, so runtime endpoint repairs show immediately)
 //   2. connect (API key + get-a-key link; URL prefilled from the preset or the saved provider)
@@ -71,6 +73,61 @@ export const DialogNewModel: Component<{
     const id = presetID()
     return id === undefined || id === "custom" ? undefined : presets.latest[id]
   }
+  // ── S0 — "you may not need the sidecar": the local-runtime probe ────────────────────────────
+  //
+  // A fresh install has no providers BY DESIGN (AGENTS.md → Config) and this dialog is where that
+  // state is resolved — a model-less instance is routed straight here (dialog-select-model.tsx).
+  // What it asked of a normal person, though, was to know what a base URL is. If Ollama or LM Studio
+  // is already running, the honest answer is to find it and offer it, which is the whole of slice S0.
+  //
+  // ⚠️ WHEN, and why not at boot. Four TCP connects on every launch is a startup cost paid by every
+  // machine that has none of them, and startup speed is first-class here. Opening THIS dialog is the
+  // moment the user has asked the question, and it still covers first run for free because the
+  // no-models path lands here anyway. Nothing probes until this dialog is opened.
+  //
+  // ⚠️ The probe runs SERVER-SIDE, through the shipped `POST /provider/:id/probe`. That is not an
+  // implementation convenience: the UI and the runtime need never share a machine (AGENTS.md → P2P
+  // instances), so a browser-side fetch to `localhost:11434` would probe the user's laptop instead of
+  // the instance that will actually serve the turn. It also means no new route — the sweep is four
+  // calls to an endpoint that already exists.
+  //
+  // ⚠️ Airgap: NOT suppressed, deliberately. `offline.ts`'s checkUrl allows loopback unconditionally
+  // ("the app talking to itself is not egress"), and an airgapped user is exactly the one whose only
+  // possible model is a local one. Loopback-only is enforced in the core module, before any socket.
+  const configuredURLs = () =>
+    Object.values(config().providers ?? {}).flatMap((entry) =>
+      typeof entry.api?.url === "string" ? [entry.api.url] : [],
+    )
+  /**
+   * A provider id that is NOT a saved provider — used both to probe under and to adopt as.
+   *
+   * 🔴 Probing under a taken id LEAKS A CREDENTIAL. `POST /provider/:providerID/probe` falls back to
+   * the saved provider's `request.body.apiKey` whenever the payload carries no key of its own, so a
+   * bare `providerID: "ollama"` on an instance that already has a provider called `ollama` (pointed
+   * at a paid API, holding that API's key) would send that key as a Bearer token to whatever program
+   * happens to be listening on loopback :11434. Resolving to a free id first means the handler finds
+   * no entry, and the probe goes out with no `Authorization` header at all.
+   */
+  const freeProviderID = (base: string) =>
+    ConfigLocalRuntime.uniqueProviderID(base, Object.keys(config().providers ?? {}))
+  const [localSweep] = createResource(() =>
+    ConfigLocalRuntime.sweep({
+      probe: (localCandidate) =>
+        providerProbe(props.http, {
+          directory: props.directory,
+          providerID: freeProviderID(localCandidate.id),
+          baseURL: localCandidate.baseURL,
+        }),
+    }),
+  )
+  /** Adoptable runtimes minus the ones this instance already points at. */
+  const localFound = (): readonly ConfigLocalRuntime.Outcome[] => {
+    const result = localSweep.latest
+    return result === undefined ? [] : ConfigLocalRuntime.excludeConfigured(result.adoptable, configuredURLs())
+  }
+  /** ⚠️ Ruling 2: "we could not look" is a different fact from "nothing is there". Only this is it. */
+  const localUnavailable = () => localSweep.latest !== undefined && !localSweep.latest.ran
+
   const saved = (): SavedProvider | undefined => config().providers?.[form.providerID.trim()]
   const savedKey = () => typeof saved()?.request?.body?.apiKey === "string" && !!saved()?.request?.body?.apiKey
   const models = () => result()?.models ?? []
@@ -118,6 +175,36 @@ export const DialogNewModel: Component<{
     setForm({ baseURL: "", providerID: "", name: "", apiKey: "" })
     setResult(undefined)
     setError(undefined)
+    setStep("connect")
+  }
+
+  // Adopt a runtime the sweep found. `presetID` is set to "custom" because that is what this IS —
+  // a user-owned OpenAI-compatible endpoint — so Back shows the editable Short-name field and no
+  // branded preset can leak an api channel or a keyURL into a local server.
+  const adoptLocal = (outcome: ConfigLocalRuntime.Outcome) => {
+    const found = outcome.candidate
+    setPresetID("custom")
+    setForm({
+      baseURL: found.baseURL,
+      // Never silently repoint an existing id: if `ollama` is taken by a provider aimed elsewhere,
+      // overwriting its endpoint would break a working setup in order to install a new one. Same
+      // resolution the probe used, so the id on screen is the id that was tested.
+      providerID: freeProviderID(found.id),
+      name: found.label,
+      apiKey: "",
+    })
+    setError(undefined)
+    if (outcome.kind === "found") {
+      // The sweep already carries the model list — probing the same endpoint twice to learn the
+      // same answer would be a second wait for nothing.
+      setResult({ status: "ok", models: outcome.models })
+      for (const id of outcome.models) setPicked(id, true)
+      setStep("choose")
+      return
+    }
+    // needs-key: something is listening and wants credentials. The URL is filled in; the key is not
+    // something we can guess, so this is the one local case that still needs the connect step.
+    setResult(undefined)
     setStep("connect")
   }
 
@@ -240,45 +327,96 @@ export const DialogNewModel: Component<{
         </div>
 
         <Show when={step() === "pick"}>
-          <div class="grid grid-cols-2 gap-2">
-            {/* Custom endpoint FIRST (owner, 2026-07-27). It used to trail every branded preset, which
-                had the priority backwards: NovaClaw's own story is "point it at your own model" — a local
-                vLLM / llama.cpp / LM Studio / Ollama endpoint — and that is also the path a user with no
-                models at all is most likely arriving on, since the picker now sends them straight here.
-                The branded presets are the convenience; they follow. */}
-            <button
-              type="button"
-              data-action="new-model-custom"
-              class="flex flex-col items-start gap-1.5 rounded-xl px-3.5 py-3 text-left ring-1 ring-v2-border-border-base hover:bg-v2-background-bg-layer-01 transition-colors"
-              onClick={chooseCustom}
-            >
-              <span class="flex items-center gap-2">
-                <Icon name="sliders" size="small" class="shrink-0 text-v2-icon-icon-accent" />
-                <span class="text-[13px] font-semibold text-v2-text-text-base">
-                  {t("settings.models.new.custom.name")}
+          <div class="flex flex-col gap-3">
+            {/* S0 — a model server already running on the instance's machine. Above the presets and
+                above Custom endpoint, because it is the only option here that needs no typing at
+                all: one click and the model list is already in hand. */}
+            <Show when={localSweep.loading}>
+              <span class="text-[11px] text-v2-text-text-faint">{t("settings.models.new.local.checking")}</span>
+            </Show>
+            <Show when={localFound().length > 0}>
+              <div class="flex flex-col gap-2">
+                <span class="text-[12px] font-medium text-v2-text-text-faint">
+                  {t("settings.models.new.local.title")}
                 </span>
-              </span>
-              <span class="text-[11px] leading-snug text-v2-text-text-faint">
-                {t("settings.models.new.custom.description")}
-              </span>
-            </button>
-            <For each={visiblePresets()}>
-              {([id, entry]) => (
-                <button
-                  type="button"
-                  class="flex flex-col items-start gap-1.5 rounded-xl px-3.5 py-3 text-left ring-1 ring-v2-border-border-base hover:bg-v2-background-bg-layer-01 transition-colors"
-                  onClick={() => choose(id, entry)}
-                >
-                  <span class="flex items-center gap-2">
-                    <ProviderIcon id={id} class="size-4 shrink-0" />
-                    <span class="text-[13px] font-semibold text-v2-text-text-base">{entry.name ?? id}</span>
+                <div class="grid grid-cols-2 gap-2">
+                  <For each={localFound()}>
+                    {(outcome) => (
+                      <button
+                        type="button"
+                        data-action="new-model-local"
+                        class="flex flex-col items-start gap-1.5 rounded-xl px-3.5 py-3 text-left ring-1 ring-v2-text-text-accent bg-v2-background-bg-layer-01 hover:bg-v2-background-bg-layer-02 transition-colors"
+                        onClick={() => adoptLocal(outcome)}
+                      >
+                        <span class="flex items-center gap-2">
+                          <Icon name="server" size="small" class="shrink-0 text-v2-icon-icon-accent" />
+                          {/* The ADDRESS is what we verified, so the address is what the card claims.
+                              Ruling 2: a `/v1/models` answer on :11434 does not prove that the program
+                              answering is Ollama — that is a hint, and it reads as one. */}
+                          <span class="text-[13px] font-semibold text-v2-text-text-base">
+                            {`localhost:${outcome.candidate.port}`}
+                          </span>
+                        </span>
+                        <span class="text-[11px] leading-snug text-v2-text-text-faint">
+                          {outcome.kind === "found"
+                            ? t("settings.models.new.local.models", { count: outcome.models.length })
+                            : t("settings.models.new.local.needsKey")}
+                          {" · "}
+                          {t("settings.models.new.local.usually", { runtime: outcome.candidate.usually })}
+                        </span>
+                      </button>
+                    )}
+                  </For>
+                </div>
+              </div>
+            </Show>
+            {/* Not "nothing found" — the probe itself could not run, and saying the former would be
+                ruling 2's *a fault described falsely*. */}
+            <Show when={localUnavailable()}>
+              <span class="text-[11px] text-v2-text-text-faint">{t("settings.models.new.local.unavailable")}</span>
+            </Show>
+            <div class="grid grid-cols-2 gap-2">
+              {/* Custom endpoint FIRST (owner, 2026-07-27). It used to trail every branded preset, which
+                  had the priority backwards: NovaClaw's own story is "point it at your own model" — a local
+                  vLLM / llama.cpp / LM Studio / Ollama endpoint — and that is also the path a user with no
+                  models at all is most likely arriving on, since the picker now sends them straight here.
+                  The branded presets are the convenience; they follow.
+                  ⚠️ S0 sits ABOVE this, not in place of it: a found runtime is the same story with the
+                  typing already done, and when nothing is found this is still the first card. */}
+              <button
+                type="button"
+                data-action="new-model-custom"
+                class="flex flex-col items-start gap-1.5 rounded-xl px-3.5 py-3 text-left ring-1 ring-v2-border-border-base hover:bg-v2-background-bg-layer-01 transition-colors"
+                onClick={chooseCustom}
+              >
+                <span class="flex items-center gap-2">
+                  <Icon name="sliders" size="small" class="shrink-0 text-v2-icon-icon-accent" />
+                  <span class="text-[13px] font-semibold text-v2-text-text-base">
+                    {t("settings.models.new.custom.name")}
                   </span>
-                  <Show when={entry.description}>
-                    <span class="text-[11px] leading-snug text-v2-text-text-faint">{entry.description}</span>
-                  </Show>
-                </button>
-              )}
-            </For>
+                </span>
+                <span class="text-[11px] leading-snug text-v2-text-text-faint">
+                  {t("settings.models.new.custom.description")}
+                </span>
+              </button>
+              <For each={visiblePresets()}>
+                {([id, entry]) => (
+                  <button
+                    type="button"
+                    class="flex flex-col items-start gap-1.5 rounded-xl px-3.5 py-3 text-left ring-1 ring-v2-border-border-base hover:bg-v2-background-bg-layer-01 transition-colors"
+                    onClick={() => choose(id, entry)}
+                  >
+                    <span class="flex items-center gap-2">
+                      <ProviderIcon id={id} class="size-4 shrink-0" />
+                      <span class="text-[13px] font-semibold text-v2-text-text-base">{entry.name ?? id}</span>
+                    </span>
+                    <Show when={entry.description}>
+                      <span class="text-[11px] leading-snug text-v2-text-text-faint">{entry.description}</span>
+                    </Show>
+                  </button>
+                )}
+              </For>
+            </div>
           </div>
         </Show>
 
