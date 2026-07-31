@@ -4,6 +4,7 @@ import { define } from "../../plugin/internal"
 import path from "path"
 import { Effect } from "effect"
 import { Config } from "../../config"
+import { ConfigStoreWrite } from "../../config-store-write"
 import { AbsolutePath } from "../../schema"
 import { SkillV2 } from "../../skill"
 import { SkillConfigSeed } from "../../skill-config-seed"
@@ -55,5 +56,10 @@ export const Plugin = define({
         }
       }),
     )
+
+    // v0.2.0-prep B7 / ruling 3 — see the same registration in `config/plugin/agent.ts`. Cheapest of
+    // the four on the write path: the reload rebuilds the SOURCE list and clears the summary cache
+    // (`skill.ts`'s `finalize`); globbing and reading every SKILL.md stays lazy, on the next `list()`.
+    yield* ConfigStoreWrite.registerReload("skills", ctx.skill.reload)
   }),
 })

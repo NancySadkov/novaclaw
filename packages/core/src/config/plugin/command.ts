@@ -6,6 +6,7 @@ import path from "path"
 import { Effect, Option, Schema } from "effect"
 import { CommandConfigStore } from "../../command-config-store"
 import { Config } from "../../config"
+import { ConfigStoreWrite } from "../../config-store-write"
 import { FSUtil } from "../../fs-util"
 import { ModelV2 } from "../../model"
 import { ConfigCommand } from "../command"
@@ -40,6 +41,11 @@ export const Plugin = define({
         }
       }),
     )
+
+    // v0.2.0-prep B7 / ruling 3 — see the same registration in `config/plugin/agent.ts` for why this
+    // exists and why it lives here rather than in `config-store-write.ts`. A `commands` write now
+    // re-runs the transform above instead of waiting for the layer graph to be torn down.
+    yield* ConfigStoreWrite.registerReload("commands", ctx.command.reload)
   }),
 })
 

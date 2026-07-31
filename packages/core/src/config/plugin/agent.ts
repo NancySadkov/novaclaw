@@ -7,6 +7,7 @@ import { Effect, Option, Schema } from "effect"
 import { AgentV2 } from "../../agent"
 import { AgentConfigStore } from "../../agent-config-store"
 import { Config } from "../../config"
+import { ConfigStoreWrite } from "../../config-store-write"
 import { ConfigAgent } from "../agent"
 import { ConfigMarkdown } from "../markdown"
 import { FSUtil } from "../../fs-util"
@@ -72,6 +73,15 @@ export const Plugin = define({
             applyItem(draft, AgentV2.ID.make(name), item, global)
       }),
     )
+
+    // v0.2.0-prep B7 / ruling 3 — the transform above reads the store, but `state.ts` only re-runs it
+    // on an explicit `.reload()`, and nothing on the config-write path called one. So editing an agent
+    // in Settings took effect only when the whole layer graph was destroyed. This hands THIS location's
+    // re-materialise to `ConfigStoreWrite.apply` — the one place every config write commits — for the
+    // life of this plugin's scope. `ctx.agent.reload` IS `AgentV2.Service.reload` (plugin/host.ts), so
+    // no extra service requirement is introduced. Registered AFTER the transform so the first thing a
+    // write can trigger is a materialisation that already includes it.
+    yield* ConfigStoreWrite.registerReload("agents", ctx.agent.reload)
   }),
 })
 

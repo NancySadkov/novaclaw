@@ -1,7 +1,7 @@
 export * as PluginConfigStore from "./plugin-config-store"
 
-import { eq } from "drizzle-orm"
 import { Context, Effect, Layer } from "effect"
+import { ConfigStoreFactory } from "./config-store-factory"
 import { Database } from "./database/database"
 import { makeGlobalNode } from "./effect/app-node"
 import { PluginConfigTable } from "./plugin-config/sql"
@@ -12,10 +12,13 @@ export type PluginConfigEntry = {
 }
 
 // Config→SQLite step 5: the instance-wide, SQLite-backed source of truth for config-borne
-// external plugin specs (the catalog/agent/command/skill-store template). Global so every
-// directory — including the shared scratch dir — loads the same plugins. jsonc becomes
-// import/export only: the config-plugin loader seeds this store from an existing
-// novaclaw.jsonc on first boot (transitional — removed in migration step 8).
+// external plugin specs. Global so every directory — including the shared scratch dir — loads the
+// same plugins. jsonc becomes import/export only: the config-plugin loader seeds this store from
+// an existing novaclaw.jsonc on first boot (transitional — removed in migration step 8).
+//
+// A LIST store, like the skill store, but with one payload column: the package string is the
+// identity and `options` is last-write-wins. It consumes `makeRowStore` directly — the row→entry
+// mapping below is the only thing a list-shaped factory would have held, and it is not shared.
 export interface Interface {
   /** Every stored plugin spec (normalized package + options), in insertion order. */
   readonly plugins: () => Effect.Effect<PluginConfigEntry[]>
@@ -33,27 +36,24 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const { db } = yield* Database.Service
+    const rows = ConfigStoreFactory.makeRowStore(db, PluginConfigTable, PluginConfigTable.package)
 
     return Service.of({
       plugins: Effect.fn("PluginConfigStore.plugins")(function* () {
-        const rows = yield* db.select().from(PluginConfigTable).all().pipe(Effect.orDie)
-        return rows.map((row) => ({ package: row.package, ...(row.options ? { options: row.options } : {}) }))
+        return (yield* rows.selectAll()).map((row) => ({
+          package: row.package as string,
+          ...(row.options ? { options: row.options as Record<string, unknown> } : {}),
+        }))
       }),
       setPlugin: Effect.fn("PluginConfigStore.setPlugin")(function* (entry) {
         const options = entry.options ?? null
-        yield* db
-          .insert(PluginConfigTable)
-          .values({ package: entry.package, options })
-          .onConflictDoUpdate({ target: PluginConfigTable.package, set: { options } })
-          .run()
-          .pipe(Effect.orDie)
+        yield* rows.upsert({ package: entry.package, options }, { options })
       }),
       removePlugin: Effect.fn("PluginConfigStore.removePlugin")(function* (pkg) {
-        yield* db.delete(PluginConfigTable).where(eq(PluginConfigTable.package, pkg)).run().pipe(Effect.orDie)
+        yield* rows.deleteOne(pkg)
       }),
       isEmpty: Effect.fn("PluginConfigStore.isEmpty")(function* () {
-        const row = yield* db.select().from(PluginConfigTable).get().pipe(Effect.orDie)
-        return row === undefined
+        return yield* rows.isEmpty()
       }),
     })
   }),

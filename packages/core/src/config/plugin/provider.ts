@@ -3,6 +3,7 @@ export * as ConfigProviderPlugin from "./provider"
 import { define } from "../../plugin/internal"
 import { Effect } from "effect"
 import { CatalogStore } from "../../catalog-store"
+import { ConfigStoreWrite } from "../../config-store-write"
 import { ModelV2 } from "../../model"
 import { ProviderV2 } from "../../provider"
 
@@ -115,6 +116,22 @@ export const Plugin = define({
           }
         }
       }),
+    )
+
+    // v0.2.0-prep B7 (final) / ruling 3 — both transforms above read `CatalogStore` ONCE, at location
+    // boot, and `state.ts` re-runs a transform only on an explicit `.reload()`. So an edited provider
+    // used to take effect only when the whole layer graph was destroyed (`markInstanceForDisposal`),
+    // which is the stop-the-world teardown B7 deletes. This hands THIS location's re-materialise to
+    // `ConfigStoreWrite.apply` — the one place every config write commits — for the life of this
+    // plugin's scope, exactly as `config/plugin/{agent,command,reference,skill}.ts` do.
+    //
+    // ⚠️ INTEGRATION FIRST, then catalog, and the order is not cosmetic: `catalog.provider.available()`
+    // reads `Integration.list()`, and the integration transform above is what turns a provider's `env`
+    // names into an integration record. Reloading the catalog against stale integrations would answer
+    // "configured but unavailable" for a provider the user just added. `plugin/models-dev.ts` chains
+    // the same two in the same order for the same reason.
+    yield* ConfigStoreWrite.registerReload("catalog", () =>
+      ctx.integration.reload().pipe(Effect.andThen(ctx.catalog.reload())),
     )
   }),
 })

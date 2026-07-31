@@ -1,6 +1,6 @@
 export * as ConfigStoreWrite from "./config-store-write"
 
-import { Effect, Option, Schema } from "effect"
+import { Cause, Effect, Exit, Option, Schema } from "effect"
 import { AgentConfigStore } from "./agent-config-store"
 import { CatalogSeed } from "./catalog-seed"
 import { CatalogStore } from "./catalog-store"
@@ -8,6 +8,7 @@ import { CommandConfigStore } from "./command-config-store"
 import { Config } from "./config"
 import { ConfigAgent } from "./config/agent"
 import { ConfigCommand } from "./config/command"
+import type { ConfigPlugin } from "./config/plugin"
 import { ConfigProvider } from "./config/provider"
 import { ConfigReference } from "./config/reference"
 import { Database } from "./database/database"
@@ -162,6 +163,177 @@ export const unroutedKeys = (patch: Config.Info, consumed: ReadonlySet<string>):
 }
 
 /**
+ * ─── the routing table ──────────────────────────────────────────────────────────────────────────
+ *
+ * Six of the ten router arms were the same eight lines with four nouns substituted, which is the
+ * same copy-paste that `config-store-factory.ts` removed from the stores themselves. They are rows
+ * now. What is NOT a row, and deliberately so:
+ *  · `settings` — a loop already, over `SETTINGS_KEYS`, with its own deep-merge semantics;
+ *  · `models` — the models-primary flat→nested expansion, which must run AFTER `providers` and
+ *    dies rather than skipping on a decode failure;
+ *  · `model` / `default_agent` — one whole-value write each into a `*_setting` table, and `model`
+ *    additionally depends on the expansion above.
+ * Forcing those three shapes into the table would mean a row with an escape hatch per column, i.e.
+ * the table describing nothing. Six rows and three named exceptions is the honest split.
+ *
+ * ⚠️ ORDER IS PART OF THE CONTRACT, twice over. `providers` must precede `models` so a patch
+ * carrying both folds hand-authored-provider-first (see the `expanded` block). And `plugins` must
+ * stay LAST — `config-store-write.test.ts`'s rollback test fails it precisely because everything
+ * else has already written by then.
+ */
+
+/** The store operations one layered arm needs, resolved from context when the arm actually fires. */
+interface LayeredWriter<Item> {
+  readonly read: () => Effect.Effect<Record<string, Item[]>>
+  readonly write: (name: string, layers: Item[]) => Effect.Effect<void>
+}
+
+/**
+ * One layered-entity arm. `Item` is erased at the return type so the four rows share an array,
+ * and this function is where each row's types are actually checked.
+ *
+ * ⚠️ Each call site ANNOTATES its `write` lambda's `layers` parameter, and that is load-bearing rather
+ * than decorative: the codecs arrive by spread (`...providerCodec`) *after* `store` in the object
+ * literal, so when TypeScript checks the store Effect it has nothing to infer `Item` from yet and
+ * falls back to `unknown` — which then fails against the real `setLayers` signature. The annotation
+ * is the anchor. Reordering the literal would also work and is more fragile, because a later editor
+ * moving a line back would silently re-break it.
+ */
+const layeredArm = <Item, R>(spec: {
+  readonly key: keyof Config.Info & string
+  readonly fragments: (patch: Config.Info) => { readonly [name: string]: Item } | undefined
+  readonly store: Effect.Effect<LayeredWriter<Item>, never, R>
+  readonly encode: (layer: Item) => unknown
+  readonly decode: (value: unknown) => Option.Option<Item>
+}) => ({
+  key: spec.key,
+  route: (patch: Config.Info): Effect.Effect<boolean, never, R> =>
+    Effect.gen(function* () {
+      const fragments = spec.fragments(patch)
+      if (fragments === undefined) return false
+      const store = yield* spec.store
+      const layers = yield* store.read()
+      for (const [name, fragment] of Object.entries(fragments)) {
+        yield* store.write(name, collapseLayers(layers[name] ?? [], fragment, spec.encode, spec.decode))
+      }
+      return true
+    }),
+})
+
+/** The store operations one list arm needs. `keys()` yields exactly what `remove()` accepts. */
+interface ListWriter<Entry> {
+  readonly keys: () => Effect.Effect<string[]>
+  readonly put: (entry: Entry) => Effect.Effect<void>
+  readonly remove: (key: string) => Effect.Effect<void>
+}
+
+/**
+ * One list-store arm: the config value is an array (replace-wholesale contract), so the stored
+ * content is wiped and reinserted. ⚠️ That is only safe because `apply` runs the whole route inside
+ * ONE transaction — un-transacted, a failure landing between the two loops leaves the store EMPTY,
+ * which is the ruling-2 defect the transaction was added for.
+ */
+const listArm = <Entry, Item, R>(spec: {
+  readonly key: keyof Config.Info & string
+  readonly items: (patch: Config.Info) => readonly Item[] | undefined
+  readonly store: Effect.Effect<ListWriter<Entry>, never, R>
+  readonly normalize: (item: Item) => Entry
+}) => ({
+  key: spec.key,
+  route: (patch: Config.Info): Effect.Effect<boolean, never, R> =>
+    Effect.gen(function* () {
+      const items = spec.items(patch)
+      if (items === undefined) return false
+      const store = yield* spec.store
+      for (const key of yield* store.keys()) yield* store.remove(key)
+      for (const item of items) yield* store.put(spec.normalize(item))
+      return true
+    }),
+})
+
+const LAYERED_ARMS = [
+  layeredArm({
+    key: "providers",
+    fragments: (patch) => patch.providers,
+    store: Effect.gen(function* () {
+      const catalog = yield* CatalogStore.Service
+      return {
+        read: () => catalog.providers(),
+        write: (id, layers: ConfigProvider.Info[]) => catalog.setLayers(ProviderV2.ID.make(id), layers),
+      }
+    }),
+    ...providerCodec,
+  }),
+  layeredArm({
+    key: "agents",
+    fragments: (patch) => patch.agents,
+    store: Effect.gen(function* () {
+      const agents = yield* AgentConfigStore.Service
+      return {
+        read: () => agents.agents(),
+        write: (name, layers: ConfigAgent.Info[]) => agents.setLayers(name, layers),
+      }
+    }),
+    ...agentCodec,
+  }),
+  layeredArm({
+    key: "commands",
+    fragments: (patch) => patch.commands,
+    store: Effect.gen(function* () {
+      const commands = yield* CommandConfigStore.Service
+      return {
+        read: () => commands.commands(),
+        write: (name, layers: ConfigCommand.Info[]) => commands.setLayers(name, layers),
+      }
+    }),
+    ...commandCodec,
+  }),
+  layeredArm({
+    key: "references",
+    fragments: (patch) => patch.references,
+    store: Effect.gen(function* () {
+      const references = yield* ReferenceConfigStore.Service
+      return {
+        read: () => references.references(),
+        write: (name, layers: ConfigReference.Entry[]) => references.setLayers(name, layers),
+      }
+    }),
+    ...referenceCodec,
+  }),
+]
+
+const LIST_ARMS = [
+  listArm({
+    key: "skills",
+    items: (patch) => patch.skills,
+    // UI/import writes are expected to carry absolute paths or URLs (there is no declaring file to
+    // resolve a relative entry against here), so the entry is stored as given.
+    normalize: (item: string) => item,
+    store: Effect.gen(function* () {
+      const skills = yield* SkillConfigStore.Service
+      return {
+        keys: () => skills.sources(),
+        put: (source: string) => skills.addSource(source),
+        remove: (source) => skills.removeSource(source),
+      }
+    }),
+  }),
+  listArm({
+    key: "plugins",
+    items: (patch) => patch.plugins,
+    normalize: (item: ConfigPlugin.Plugin) => PluginConfigSeed.normalizePluginEntry("", item),
+    store: Effect.gen(function* () {
+      const plugins = yield* PluginConfigStore.Service
+      return {
+        keys: () => plugins.plugins().pipe(Effect.map((entries) => entries.map((entry) => entry.package))),
+        put: (entry: PluginConfigStore.PluginConfigEntry) => plugins.setPlugin(entry),
+        remove: (pkg) => plugins.removePlugin(pkg),
+      }
+    }),
+  }),
+]
+
+/**
  * The routing itself. Kept separate from `apply` only so the transaction boundary is one
  * readable line; it must NEVER be called directly — un-transacted, a failure part-way through
  * leaves the stores in a half-written state (see `apply`).
@@ -196,18 +368,14 @@ const applyToStores = (patch: Config.Info) =>
     }
 
     const catalog = yield* CatalogStore.Service
-    if (patch.providers !== undefined) {
-      const layers = yield* catalog.providers()
-      for (const [id, fragment] of Object.entries(patch.providers)) {
-        yield* catalog.setLayers(
-          ProviderV2.ID.make(id),
-          collapseLayers(layers[id] ?? [], fragment, providerCodec.encode, providerCodec.decode),
-        )
-      }
-      consumed.add("providers")
-    }
+    const agents = yield* AgentConfigStore.Service
+
+    // The four layered arms, `providers` FIRST — the `models` expansion below re-reads the catalog
+    // and must fold on top of a hand-authored provider from the same patch, never under it.
+    for (const arm of LAYERED_ARMS) if (yield* arm.route(patch)) consumed.add(arm.key)
+
     if (expanded !== undefined) {
-      // Read AFTER the `providers` block above so a patch carrying both shapes folds in order
+      // Read AFTER the `providers` arm above so a patch carrying both shapes folds in order
       // (hand-authored provider first, the flat model on top) instead of clobbering.
       const layers = yield* catalog.providers()
       for (const [id, fragment] of Object.entries(expanded.providers ?? {})) {
@@ -224,72 +392,30 @@ const applyToStores = (patch: Config.Info) =>
       }
       consumed.add("models")
     }
+
+    // The two singleton default refs. One whole-value write each into a `*_setting` table, and
+    // `model` additionally reads the expansion above — neither is a layered fold.
     if (patch.model !== undefined) {
       yield* catalog.setDefault(expanded?.model ?? patch.model)
       consumed.add("model")
-    }
-
-    const agents = yield* AgentConfigStore.Service
-    if (patch.agents !== undefined) {
-      const layers = yield* agents.agents()
-      for (const [name, fragment] of Object.entries(patch.agents)) {
-        yield* agents.setLayers(
-          name,
-          collapseLayers(layers[name] ?? [], fragment, agentCodec.encode, agentCodec.decode),
-        )
-      }
-      consumed.add("agents")
     }
     if (patch.default_agent !== undefined) {
       yield* agents.setDefault(patch.default_agent)
       consumed.add("default_agent")
     }
 
-    if (patch.commands !== undefined) {
-      const commands = yield* CommandConfigStore.Service
-      const layers = yield* commands.commands()
-      for (const [name, fragment] of Object.entries(patch.commands)) {
-        yield* commands.setLayers(
-          name,
-          collapseLayers(layers[name] ?? [], fragment, commandCodec.encode, commandCodec.decode),
-        )
-      }
-      consumed.add("commands")
-    }
-
-    if (patch.references !== undefined) {
-      const references = yield* ReferenceConfigStore.Service
-      const layers = yield* references.references()
-      for (const [name, fragment] of Object.entries(patch.references)) {
-        yield* references.setLayers(
-          name,
-          collapseLayers(layers[name] ?? [], fragment, referenceCodec.encode, referenceCodec.decode),
-        )
-      }
-      consumed.add("references")
-    }
-
-    if (patch.skills !== undefined) {
-      // Array key: replace wholesale. UI/import writes are expected to carry absolute paths
-      // or URLs (there is no declaring file to resolve a relative entry against here).
-      const skills = yield* SkillConfigStore.Service
-      for (const source of yield* skills.sources()) yield* skills.removeSource(source)
-      for (const item of patch.skills) yield* skills.addSource(item)
-      consumed.add("skills")
-    }
-
-    if (patch.plugins !== undefined) {
-      const plugins = yield* PluginConfigStore.Service
-      for (const entry of yield* plugins.plugins()) yield* plugins.removePlugin(entry.package)
-      for (const item of patch.plugins) yield* plugins.setPlugin(PluginConfigSeed.normalizePluginEntry("", item))
-      consumed.add("plugins")
-    }
+    // The list arms, `plugins` LAST — the rollback test in config-store-write.test.ts fails the
+    // plugin write precisely because every other store has committed by the time it runs.
+    for (const arm of LIST_ARMS) if (yield* arm.route(patch)) consumed.add(arm.key)
 
     // Ruling 2, second clause — *a failed mutation never reports success.* Everything above is a
-    // per-key `if`, so the failure mode of forgetting one is not a compile error and not a test
-    // failure: it is a 200 for a write that went nowhere. This is the ONE place that can tell the
-    // difference, because `consumed` is the router's own record of what it did rather than a second
-    // list that can drift from it.
+    // per-key arm — three hand-written `if`s and six table rows — so the failure mode of forgetting
+    // one is not a compile error and not a test failure: it is a 200 for a write that went nowhere.
+    // This is the ONE place that can tell the difference, because `consumed` is the router's own
+    // record of what it did rather than a second list that can drift from it. (The table did not
+    // make that impossible either: a row whose `key` disagrees with its `fragments` reader routes
+    // the wrong thing just as quietly, which is why `config-routing-ledger.test.ts` reads the rows
+    // out of this source AND ties them to a live `apply`.)
     //
     // It runs INSIDE the transaction on purpose, and dies rather than failing:
     //  · inside, so the earlier stores roll back — a partial apply that reports failure is its own
@@ -311,6 +437,206 @@ const applyToStores = (patch: Config.Info) =>
       )
 
     return consumed
+  })
+
+/**
+ * ─── the runtime-domain reload registry ─────────────────────────────────────────────────────────
+ *
+ * v0.2.0-prep B7 / ruling 3 — *a settings change is not a reboot*, for the domains a user edits in
+ * Settings that are MATERIALISED rather than read through: agents, commands, references, skills —
+ * and the CATALOG (providers/models, which carries `integration` with it).
+ *
+ * Each of those is built once, at location boot, by a `ctx.<domain>.transform(...)` callback that
+ * `config/plugin/{agent,command,reference,skill,provider}.ts` registers on the domain's `State` — and
+ * `state.ts` re-runs a transform only on an explicit `.reload()`. Until this registry existed,
+ * nothing on the config-write path called it: the ONLY thing that made an edited agent take effect
+ * was the whole layer graph being torn down (`markInstanceForDisposal`), i.e. terminals, pending
+ * asks and MCP children destroyed because someone renamed an agent. B7 exists to delete that
+ * teardown, so this has to land first or dropping it turns "edit an agent" into a silent no-op.
+ *
+ * ⚠️ Why a module-level registry and not a service lookup, exactly as `filesystem/watcher.ts`
+ * argues for itself: the caller that must fire it is `apply` — the one place a config write commits
+ * — and `apply`'s context carries the config STORES, never `AgentV2.Service`/`CommandV2.Service`/
+ * `Reference.Service`/`SkillV2.Service`/`Catalog.Service`. Those are per-LOCATION, and a config write
+ * is instance-wide, so it is a SET per domain: one process holds one of each per open location and
+ * all of them re-materialise.
+ *
+ * ⚠️ The dependency direction is the opposite of the watcher's, on purpose. `Offline` and `Watcher`
+ * are leaf modules, so `apply` can import them; `config/plugin/*.ts` sit inside the plugin graph
+ * (each imports `plugin/internal.ts`, which pulls Catalog, Integration, ModelsDev, Npm and the HTTP
+ * client), and importing them from here would drag all of that into every process that can write
+ * config — the CLI included. So the four plugins register INTO this module instead. Nothing in this
+ * file's own import graph reaches `plugin/internal.ts`, so that direction stays acyclic.
+ */
+export const RELOAD_DOMAINS = ["agents", "commands", "references", "skills", "catalog"] as const
+export type ReloadDomain = (typeof RELOAD_DOMAINS)[number]
+
+/**
+ * Which `Config.Info` keys leave which domain stale — the per-key discipline `consumed.has(...)`
+ * already uses for `offline`/`watcher`, because a reload is not free and an unconditional one would
+ * be its own bug (a `references` reload re-fetches every remote git reference; see below).
+ *
+ * The cost of each, so the next person does not have to re-derive it — all of them are bounded by
+ * "a few SQLite reads plus a markdown glob over the config directories", never a layer build:
+ *  · `agents` — two transforms. The built-in (`plugin/agent.ts`) is pure CPU: it rebuilds ~7 agents'
+ *    permission rulesets. The config one re-reads the agent store, `config.entries()` (one settings
+ *    SELECT) and re-globs `{agent,agents}/**` + `{mode,modes}/*.md` under each config directory.
+ *  · `commands` — same shape, one glob (`{command,commands}/**\/*.md`), smaller built-in.
+ *  · `references` — one store read and a map rebuild. ⚠️ Its `finalize` also forks a
+ *    `RepositoryCache.ensure({refresh:true})` per REMOTE git reference, i.e. a git fetch. Forked, so
+ *    it does not block the write, and it only fires when the user edited `references` — which is
+ *    when re-fetching is the thing they asked for. It must never be triggered by an unrelated key.
+ *  · `skills` — one store read plus `config.entries()`. The expensive part (globbing and reading
+ *    every SKILL.md) is NOT paid here: the reload only clears the summary cache and the walk is
+ *    lazy, on the next `SkillV2.list()`.
+ *
+ *  · `catalog` — two store reads (`CatalogStore.providers()` + `getDefault()`) replayed onto a fresh
+ *    draft, plus the `integration` reload it chains (a second pass over the same layers). No network:
+ *    the models.dev refresh is a SEPARATE trigger (`plugin/models-dev.ts`), and credentials are read
+ *    lazily at use. Measured on a booted location: the whole write + re-materialise is in the same
+ *    band as `agents`.
+ *
+ * `permissions` is in the `agents` list and that is not scope creep: `config/plugin/agent.ts` folds
+ * the global ruleset out of `config.entries()` into EVERY agent's `permissions` at materialisation
+ * time, so an edited global rule is frozen into agent state exactly the way an edited agent is.
+ * Leaving it out would keep a ruling-3 hole open in the very domain this closes.
+ *
+ * ⚠️ `catalog` was NOT in this table when the registry landed, and it is the domain B7's final step
+ * could least afford to miss: `config/plugin/provider.ts` materialises every provider and model from
+ * `CatalogStore` at location boot, so dropping `markInstanceForDisposal` without it would have made
+ * AGENTS.md's own self-healing example stop working verbatim — *"a lay user whose provider moved its
+ * servers just asks any still-working model to fix it (one PATCH updates `providers.<id>.api.url`),
+ * no restart"*. Measured 2026-07-31 before this entry existed: the write commits, `/config` reads it
+ * back, and the location's `Catalog` still served nothing at all
+ * (`packages/core/test/config-catalog-reload.test.ts`).
+ *
+ * ⚠️ And `disabled_providers`/`enabled_providers` are deliberately NOT triggers. They are settings
+ * keys that no core reader consults — grepped 2026-07-31: `config.ts` declares them, the settings
+ * seed stores them, and nothing else in `packages/core/src` reads either one. Adding them would be a
+ * reload fired on a key that changes nothing, i.e. the per-key discipline abandoned for a guess.
+ */
+const RELOAD_TRIGGERS: Record<ReloadDomain, readonly (keyof Config.Info)[]> = {
+  agents: ["agents", "default_agent", "permissions"],
+  commands: ["commands"],
+  references: ["references"],
+  skills: ["skills"],
+  catalog: ["providers", "models", "model"],
+}
+
+interface ReloadRegistration {
+  readonly reload: () => Effect.Effect<void>
+}
+
+const registered: Record<ReloadDomain, Set<ReloadRegistration>> = {
+  agents: new Set(),
+  commands: new Set(),
+  references: new Set(),
+  skills: new Set(),
+  catalog: new Set(),
+}
+
+const dispatched: Record<ReloadDomain, number> = {
+  agents: 0,
+  commands: 0,
+  references: 0,
+  skills: 0,
+  catalog: 0,
+}
+
+/**
+ * Register one location's re-materialise for `domain`, for the life of the calling Scope.
+ *
+ * Called from the config plugin that owns the domain's transform, so the registration lives and
+ * dies with that plugin's scope — a plugin reload or a location close deregisters it, and a stale
+ * closure never fans out on a later write. The registration token is an object rather than the
+ * function itself so two locations that somehow share a `reload` reference still count as two.
+ */
+export const registerReload = (domain: ReloadDomain, reload: () => Effect.Effect<void>) =>
+  Effect.acquireRelease(
+    Effect.sync(() => {
+      const registration: ReloadRegistration = { reload }
+      registered[domain].add(registration)
+      return registration
+    }),
+    (registration) =>
+      Effect.sync(() => {
+        registered[domain].delete(registration)
+      }),
+  ).pipe(Effect.asVoid)
+
+/** Live registrations for `domain` (one per open location). Exported so "the wiring exists" can be
+ *  asserted rather than reasoned about — the job `Watcher.registeredWatchers()` does for watchers. */
+export function registeredReloads(domain: ReloadDomain): number {
+  return registered[domain].size
+}
+
+/** Reloads this module has DISPATCHED for `domain` (monotonic, counts attempts not successes).
+ *  Pairs with the above to tell "refreshed" from "never asked", and is what makes "an unrelated
+ *  config key costs this domain nothing" a measurement instead of a claim. */
+export function reloadsDispatched(domain: ReloadDomain): number {
+  return dispatched[domain]
+}
+
+/** The domains a write consuming `consumed` has left stale. */
+const staleDomains = (consumed: ReadonlySet<string>): ReloadDomain[] =>
+  RELOAD_DOMAINS.filter((domain) => RELOAD_TRIGGERS[domain].some((key) => consumed.has(key)))
+
+/**
+ * Re-materialise every registered location for each stale domain.
+ *
+ * Ruling 2, and the honest answer is neither of the two obvious ones. The transaction has already
+ * COMMITTED when this runs, so the write is durable and cannot be rolled back — "it failed" would
+ * describe the fault falsely, and a plain 200 would report success for a change that is not live.
+ * So: attempt every domain (one broken domain must not cost the others their refresh), then say
+ * exactly what happened — a log naming the domains and their causes, and a defect whose message is
+ * *committed, not live*, so the caller does not re-send the write expecting a different outcome.
+ *
+ * Half-materialisation is not reachable from here, and that is a property of `state.ts` rather than
+ * of this call: `materialize` builds a fresh value and only `commit`s it after every transform has
+ * run, so a transform that dies leaves the PREVIOUS good state in place. A failed reload is stale,
+ * never torn.
+ */
+const refreshDomains = (domains: readonly ReloadDomain[]) =>
+  Effect.gen(function* () {
+    const targets = domains.flatMap((domain) =>
+      [...registered[domain]].map((registration) => ({ domain, registration })),
+    )
+    for (const { domain } of targets) dispatched[domain] += 1
+
+    const failures: { readonly domain: ReloadDomain; readonly cause: Cause.Cause<never> }[] = []
+    yield* Effect.forEach(
+      targets,
+      ({ domain, registration }) =>
+        // `Effect.exit` rather than `catchCause` because a transform failure is turned into a DEFECT
+        // by `State.apply`'s `orDie` — a handler that only sees the typed error channel would let it
+        // through and lose the "committed, not live" message below.
+        Effect.suspend(registration.reload).pipe(
+          Effect.exit,
+          Effect.flatMap((exit) =>
+            Exit.isFailure(exit)
+              ? Effect.sync(() => {
+                  failures.push({ domain, cause: exit.cause })
+                })
+              : Effect.void,
+          ),
+        ),
+      { discard: true, concurrency: "unbounded" },
+    )
+    if (failures.length === 0) return
+
+    const named = [...new Set(failures.map((failure) => failure.domain))].sort()
+    yield* Effect.logError("a config write committed but the runtime could not re-materialise", {
+      domains: named,
+      causes: failures.map((failure) => Cause.pretty(failure.cause)),
+    })
+    return yield* Effect.die(
+      new Error(
+        `config: the write is COMMITTED and durable, but ${named.map((domain) => `"${domain}"`).join(", ")} ` +
+          `could not be re-materialised, so the change is saved but NOT LIVE until this instance restarts. ` +
+          `This is not a rejected write — re-sending it will not change the outcome; the logged cause names ` +
+          `what failed.`,
+      ),
+    )
   })
 
 /**
@@ -362,6 +688,14 @@ const applyToStores = (patch: Config.Info) =>
  * ignore list to `@parcel/watcher` when the subscription is established, so no read-through can
  * reach a live subscription — it has to re-SUBSCRIBE. Same seam, same "one place every config write
  * lands" argument, same no-op-where-no-layer-was-built property.
+ *
+ * v0.2.0-prep B7 tier-2 — and `refreshDomains` is the THIRD cure at the same seam, for the domains
+ * that are neither a frozen value nor an OS subscription but a MATERIALISED graph: agents, commands,
+ * references, skills and the catalog. Their cure is re-running the transform that built them
+ * (`registerReload` above). Until this landed, an edited agent only took effect when the whole layer
+ * graph was destroyed — the `markInstanceForDisposal` path B7 removes — so an agent, command,
+ * reference, skill or PROVIDER edited in Settings would have silently stopped applying the moment
+ * that teardown was dropped.
  */
 export const apply = (patch: Config.Info) =>
   Effect.gen(function* () {
@@ -379,6 +713,7 @@ export const apply = (patch: Config.Info) =>
         })
     }
     if (consumed.has("watcher")) yield* Watcher.reload()
+    yield* refreshDomains(staleDomains(consumed))
     return consumed
   })
 

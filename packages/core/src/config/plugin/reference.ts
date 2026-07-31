@@ -4,6 +4,7 @@ import { define } from "../../plugin/internal"
 import path from "path"
 import { Effect } from "effect"
 import { Config } from "../../config"
+import { ConfigStoreWrite } from "../../config-store-write"
 import { ConfigReference } from "../reference"
 import { Reference } from "../../reference"
 import { ReferenceConfigSeed } from "../../reference-config-seed"
@@ -56,6 +57,13 @@ export const Plugin = define({
         for (const [name, source] of entries) draft.add(name, source)
       }),
     )
+
+    // v0.2.0-prep B7 / ruling 3 — see the same registration in `config/plugin/agent.ts`. ⚠️ This is
+    // the most expensive of the four: `Reference`'s own `finalize` forks a repository-cache refresh
+    // per REMOTE git alias, i.e. a git fetch. That is why the trigger in `config-store-write.ts` is
+    // the `references` key alone and never "a config write happened" — an unrelated preference save
+    // must not re-fetch the user's reference repositories.
+    yield* ConfigStoreWrite.registerReload("references", ctx.reference.reload)
   }),
 })
 

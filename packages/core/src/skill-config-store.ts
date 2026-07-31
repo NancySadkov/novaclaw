@@ -1,17 +1,20 @@
 export * as SkillConfigStore from "./skill-config-store"
 
-import { eq } from "drizzle-orm"
 import { Context, Effect, Layer } from "effect"
+import { ConfigStoreFactory } from "./config-store-factory"
 import { Database } from "./database/database"
 import { makeGlobalNode } from "./effect/app-node"
 import { SkillConfigTable } from "./skill-config/sql"
 
 // Config→SQLite step 4: the instance-wide, SQLite-backed source of truth for config-borne skill
-// DISCOVERY SOURCES (the catalog/agent/command-store template). Global so every directory —
-// including the shared scratch dir — discovers the same skills. jsonc becomes import/export only:
-// the config-skill plugin seeds this store from an existing novaclaw.jsonc on first boot
-// (transitional — removed in migration step 8). The `skill(s)/` directory walk under config dirs
-// stays filesystem-driven (D2).
+// DISCOVERY SOURCES. Global so every directory — including the shared scratch dir — discovers the
+// same skills. jsonc becomes import/export only: the config-skill plugin seeds this store from an
+// existing novaclaw.jsonc on first boot (transitional — removed in migration step 8). The
+// `skill(s)/` directory walk under config dirs stays filesystem-driven (D2).
+//
+// A LIST store: the row IS its own identity, so there is no payload to decode and nothing to warn
+// about. It consumes `makeRowStore` directly rather than a list-shaped factory — the only thing a
+// third mould would hold is the row→entry mapping below, which differs in every list store.
 export interface Interface {
   /** Every stored discovery source (a URL or an absolute directory path), in insertion order. */
   readonly sources: () => Effect.Effect<string[]>
@@ -29,21 +32,21 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const { db } = yield* Database.Service
+    const rows = ConfigStoreFactory.makeRowStore(db, SkillConfigTable, SkillConfigTable.source)
 
     return Service.of({
       sources: Effect.fn("SkillConfigStore.sources")(function* () {
-        const rows = yield* db.select().from(SkillConfigTable).all().pipe(Effect.orDie)
-        return rows.map((row) => row.source)
+        return (yield* rows.selectAll()).map((row) => row.source as string)
       }),
       addSource: Effect.fn("SkillConfigStore.addSource")(function* (source) {
-        yield* db.insert(SkillConfigTable).values({ source }).onConflictDoNothing().run().pipe(Effect.orDie)
+        // No `set`: the row's identity IS its content, so a conflict is a no-op (dedup by string).
+        yield* rows.upsert({ source })
       }),
       removeSource: Effect.fn("SkillConfigStore.removeSource")(function* (source) {
-        yield* db.delete(SkillConfigTable).where(eq(SkillConfigTable.source, source)).run().pipe(Effect.orDie)
+        yield* rows.deleteOne(source)
       }),
       isEmpty: Effect.fn("SkillConfigStore.isEmpty")(function* () {
-        const row = yield* db.select().from(SkillConfigTable).get().pipe(Effect.orDie)
-        return row === undefined
+        return yield* rows.isEmpty()
       }),
     })
   }),

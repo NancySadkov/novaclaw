@@ -1,18 +1,23 @@
 export * as SettingsConfigStore from "./settings-config-store"
 
-import { eq } from "drizzle-orm"
 import { Context, Effect, Layer } from "effect"
+import { ConfigStoreFactory } from "./config-store-factory"
 import { Database } from "./database/database"
 import { makeGlobalNode } from "./effect/app-node"
 import { RuntimeSettingTable } from "./settings-config/sql"
 
-// Config→SQLite step 6: the instance-wide, SQLite-backed source of truth for runtime settings
-// (the catalog/agent/command/skill/plugin-store template). Global so every directory — including
-// the shared scratch dir — resolves the same settings. Readers stay untouched: the Config layer
-// appends ONE synthetic document holding these values to `entries()`, so every
-// `Config.latest(entries, key)` reader picks them up (findLast = most specific wins). jsonc
-// becomes import/export only: the Config layer seeds this store from the location's config
-// documents on first boot (transitional — removed in migration step 8).
+// Config→SQLite step 6: the instance-wide, SQLite-backed source of truth for runtime settings.
+// Global so every directory — including the shared scratch dir — resolves the same settings.
+// Readers stay untouched: the Config layer appends ONE synthetic document holding these values to
+// `entries()`, so every `Config.latest(entries, key)` reader picks them up (findLast = most
+// specific wins). jsonc becomes import/export only: the Config layer seeds this store from the
+// location's config documents on first boot (transitional — removed in migration step 8).
+//
+// `runtime_setting` is one of the three byte-identical `(key text primary key, value text json)`
+// tables — the other two are `catalog_setting` and `agent_setting`, which back the default-model
+// and default-agent refs. All three are served by `ConfigStoreFactory.makeKeyValueStore`. ⚠️ That
+// is the TYPESCRIPT collapse only: the three tables are still three tables, because merging them
+// physically is a schema change and needs a migration.
 export interface Interface {
   /** Every stored setting, keyed by the top-level config key. */
   readonly all: () => Effect.Effect<Record<string, unknown>>
@@ -30,28 +35,24 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const { db } = yield* Database.Service
+    const settings = ConfigStoreFactory.makeKeyValueStore({
+      db,
+      table: RuntimeSettingTable,
+      keyColumn: RuntimeSettingTable.key,
+    })
 
     return Service.of({
       all: Effect.fn("SettingsConfigStore.all")(function* () {
-        const rows = yield* db.select().from(RuntimeSettingTable).all().pipe(Effect.orDie)
-        const result: Record<string, unknown> = {}
-        for (const row of rows) result[row.key] = row.value
-        return result
+        return yield* settings.all()
       }),
       set: Effect.fn("SettingsConfigStore.set")(function* (key, value) {
-        yield* db
-          .insert(RuntimeSettingTable)
-          .values({ key, value })
-          .onConflictDoUpdate({ target: RuntimeSettingTable.key, set: { value } })
-          .run()
-          .pipe(Effect.orDie)
+        yield* settings.set(key, value)
       }),
       remove: Effect.fn("SettingsConfigStore.remove")(function* (key) {
-        yield* db.delete(RuntimeSettingTable).where(eq(RuntimeSettingTable.key, key)).run().pipe(Effect.orDie)
+        yield* settings.remove(key)
       }),
       isEmpty: Effect.fn("SettingsConfigStore.isEmpty")(function* () {
-        const row = yield* db.select().from(RuntimeSettingTable).get().pipe(Effect.orDie)
-        return row === undefined
+        return yield* settings.isEmpty()
       }),
     })
   }),
