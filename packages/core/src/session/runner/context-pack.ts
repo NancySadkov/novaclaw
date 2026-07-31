@@ -10,15 +10,20 @@
 // assembly AFTER the compaction check. History stays intact in the DB — a bigger window
 // instantly restores evicted turns; no summarization happens here.
 //
+// Over budget, what the window ALREADY SAYS goes before what is merely old: pass 1.5 collapses a
+// repeated tool result to a one-line notice (`context-redundancy.ts`, A2.1 ①) so a page fetched
+// three times cannot cost the agent its original task.
+//
 // The window packed to is the server's HONORED window (`model.limit.context` from config /
 // catalog), NOT the model's theoretical max — qwen does 256k only if vLLM `--max-model-len` /
 // OLLAMA_CONTEXT_LENGTH says so. When no window is configured we assume a conservative default:
 // silently losing the system prompt is strictly worse than evicting old turns early.
 
 import { Message } from "@novaclaw/llm"
-import type { LLMRequest, SystemPart, ToolDefinition } from "@novaclaw/llm"
+import type { LLMRequest, SystemPart, ToolDefinition, ToolResultPart, ToolResultValue } from "@novaclaw/llm"
 import { Token } from "../../util/token"
 import { applySteerProvenance, isSteerText } from "../steer-provenance"
+import { ContextRedundancy } from "./context-redundancy"
 
 export * as ContextPack from "./context-pack"
 
@@ -174,58 +179,356 @@ export const demoteSystemMessages = (messages: ReadonlyArray<Message>): Message[
     return Message.make({ ...message, role: "user", content: [Message.text(applySteerProvenance(text))] })
   })
 
+// ── Pass 1.5 — redundancy-aware reclamation (A2.1 ①) ────────────────────────────────────────────
+//
+// THE SAFETY INVARIANT, stated once, because it is the whole unit:
+//
+//   (INV-W) wire shape is untouched — pass 1.5 changes no message count, no role, no part type,
+//           and no tool-call/result id, so `dropDanglingToolCalls` / `dropOrphanTools` /
+//           `demoteSystemMessages` behave IDENTICALLY with it and without it; and
+//   (INV-R) nothing unique leaves the window — a text is only ever collapsed when an equivalent
+//           text produced by the SAME tool call is present at a HIGHER index, and pack's survivors
+//           are a suffix (plus the anchor), so if the collapsed message survives, its retainer did.
+//
+// ⚠️ INV-W is why this pass REWRITES a duplicate result in place instead of deleting the message.
+// The first attempt at this feature (branch `a21-redundancy-eviction`, preserved and NOT landed)
+// deleted them, and that is where all of its unfixable defects lived: deleting a tool result makes
+// its call dangling, pass 1 then strips the call, the emptied assistant is dropped, and the message
+// that JUSTIFIED the deletion can be the one that dies — voiding the safety argument after the
+// decision was already made. In-place rewriting cannot express that failure at all, and it costs
+// almost nothing: a collapsed result is ~20 tokens of framing, so deleting the message outright
+// would reclaim ~20 tokens more than rewriting it and buy back the entire defect class. That trade
+// is not close. `preservesWireShape` is the mechanical guard (ruling 1) — if a future edit ever
+// breaks INV-W the pass withdraws entirely rather than emitting a repaired-differently transcript.
+
+/**
+ * A result must be at least this big to be worth collapsing. Below it the chars/4 estimator's own
+ * error is comparable to the saving, while the notice that replaces the payload costs ~23 tokens of
+ * its own. It is also what makes the pass idempotent: a collapsed message is far under this floor,
+ * so on the next turn it is neither a candidate nor a cover.
+ */
+export const MIN_ELIDABLE_TOKENS = 128
+
+/** Prefix of the notice a collapsed tool result carries — stable, so a reader can grep for it. */
+export const ELISION_NOTICE_PREFIX = "[novaclaw: duplicate output elided"
+
+/**
+ * What a collapsed tool result says on the wire. It names itself and says where the content went,
+ * because ruling 2's worst outcome is a *silent* loss — this one is legible to the model reading it
+ * and to a human reading the transcript, and the content it points at is genuinely still there.
+ */
+export const elisionNotice = (toolName: string): string =>
+  `${ELISION_NOTICE_PREFIX} — an equivalent result for this same \`${toolName}\` call appears later in this conversation]`
+
+/** The lone `tool-result` part of a tool message, or undefined for any other shape. */
+const soleToolResult = (message: Message): ToolResultPart | undefined => {
+  if (message.role !== "tool" || message.content.length !== 1) return undefined
+  const part = message.content[0]!
+  return part.type === "tool-result" ? part : undefined
+}
+
+/**
+ * The comparable text of a settled tool result — what it actually SAYS.
+ *
+ * `undefined` means "no lexical signal, do not judge this message". A `content` payload abstains
+ * for the WHOLE message as soon as any entry is not text (a `ToolFileContent` screenshot/PDF/audio
+ * reaches the window as uri + mime scaffolding, and two unrelated captures of one path look
+ * identical on it — judging the text around a binary is worse than not judging at all).
+ */
+const resultSignalText = (result: ToolResultValue): string | undefined => {
+  if (result.type === "content") {
+    const entries = result.value
+    if (!Array.isArray(entries)) return undefined
+    const texts: string[] = []
+    for (const entry of entries) {
+      if (entry.type !== "text") return undefined
+      texts.push(entry.text)
+    }
+    return texts.join("\n")
+  }
+  if (typeof result.value === "string") return result.value
+  try {
+    return JSON.stringify(result.value) ?? undefined
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * The identity of a tool CALL: name plus its input, verbatim. This is the gate that keeps this pass
+ * from doing the thing that would be worst — collapsing two different files, or two different
+ * pages, because their contents happen to look alike. A lexical score alone cannot tell "the same
+ * thing twice" from "two things that resemble each other", and no downstream check can recover the
+ * difference, so identity is required BEFORE similarity is even computed.
+ *
+ * ⚠️ Key ORDER in the input matters here, deliberately. Two encodings of the same object with keys
+ * in a different order produce different identities and therefore never collapse — the conservative
+ * direction, and it costs nothing in practice because a model re-issuing the same call emits the
+ * same JSON. Canonicalising would be a second thing that can be wrong.
+ */
+const callIdentity = (name: string, input: unknown): string | undefined => {
+  try {
+    const encoded = JSON.stringify([name, input])
+    return encoded === undefined ? undefined : encoded
+  } catch {
+    return undefined
+  }
+}
+
+/** A settled tool exchange: what identifies it, and which assistant owns it. */
+interface ToolExchange {
+  readonly key: string
+  /**
+   * Index of the assistant message that issued the call. INV-R needs it: pack keeps a suffix and
+   * then drops orphaned tool messages, so "the retainer survives whenever the collapsed message
+   * does" holds exactly when the retainer's owner is not older than the collapsed message's owner.
+   * That is the normal shape (results follow their assistant); `elideRedundant` refuses the pair
+   * when it is not, rather than reasoning about whether the abnormal shape can occur.
+   */
+  readonly owner: number
+}
+
+/**
+ * Per message index, the tool exchange it settles — `undefined` for everything that is not a lone
+ * tool result whose owning call can be named.
+ *
+ * Pairing is POSITIONAL, not set-based: a result consumes the oldest not-yet-answered call bearing
+ * its id. That is how the wire itself pairs them, and it is what makes this correct when id
+ * generators restart their counters per turn (multi-turn Strict sessions; local models that emit
+ * their own ids) — the case where a set-based reading fuses two different exchanges into one, and
+ * the case where the first attempt at this feature froze into a permanent no-op.
+ *
+ * ⚠️ EVERY call enqueues and EVERY result consumes, including the ones this pass can do nothing
+ * with (an unnameable input, a provider-executed pair, a multi-result tool message). Skipping a
+ * slot instead of consuming it is how the queue drifts, and a drifted queue does not merely lose a
+ * collapse — it hands one exchange ANOTHER exchange's identity, which is precisely the "two
+ * different files read as one" failure the identity gate exists to prevent.
+ */
+const toolExchanges = (messages: ReadonlyArray<Message>): Array<ToolExchange | undefined> => {
+  const pending = new Map<string, Array<ToolExchange | undefined>>()
+  const exchanges: Array<ToolExchange | undefined> = new Array(messages.length).fill(undefined)
+  for (let index = 0; index < messages.length; index++) {
+    const message = messages[index]!
+    for (const part of message.content) {
+      if (part.type !== "tool-call") continue
+      const identity = part.providerExecuted === true ? undefined : callIdentity(part.name, part.input)
+      const slot = identity === undefined ? undefined : { key: identity, owner: index }
+      const queue = pending.get(part.id)
+      if (queue === undefined) pending.set(part.id, [slot])
+      else queue.push(slot)
+    }
+    let settled: ToolExchange | undefined
+    for (const part of message.content) {
+      if (part.type !== "tool-result") continue
+      const call = pending.get(part.id)?.shift()
+      if (call === undefined) continue
+      // The result's own shape joins the identity: an `error` payload never collapses into a
+      // `text` one, however alike they read.
+      settled = { key: `${call.key} ${part.result.type}`, owner: call.owner }
+    }
+    if (soleToolResult(message) !== undefined) exchanges[index] = settled
+  }
+  return exchanges
+}
+
+/**
+ * INV-W, mechanically. True when `after` differs from `before` only in ways the wire-legality
+ * passes cannot see: same length, same roles, same part types in the same positions, same tool
+ * ids and names. Those are exactly the fields `dropDanglingToolCalls`, `dropOrphanTools`,
+ * `rendersNothing` and `demoteSystemMessages` read, so a `true` here is a proof that inserting
+ * pass 1.5 cannot change what any of them decides.
+ *
+ * Exported because it is the check, not a detail: it is what would have caught the original
+ * pre-legalisation defect (a pass that DELETES a message fails the length test on its first line),
+ * and `elideRedundant` withdraws its whole output rather than return something that fails it.
+ */
+export const preservesWireShape = (before: ReadonlyArray<Message>, after: ReadonlyArray<Message>): boolean => {
+  if (before.length !== after.length) return false
+  for (let index = 0; index < before.length; index++) {
+    const original = before[index]!
+    const rewritten = after[index]!
+    if (original === rewritten) continue
+    if (original.role !== rewritten.role) return false
+    if (original.content.length !== rewritten.content.length) return false
+    for (let position = 0; position < original.content.length; position++) {
+      const source = original.content[position]!
+      const target = rewritten.content[position]!
+      if (source.type !== target.type) return false
+      if (source.type === "tool-call" && target.type === "tool-call")
+        if (
+          source.id !== target.id ||
+          source.name !== target.name ||
+          // `localToolCallIds` reads this, so pass 1 sees it — it belongs in the comparison.
+          source.providerExecuted !== target.providerExecuted
+        )
+          return false
+      if (source.type === "tool-result" && target.type === "tool-result")
+        if (source.id !== target.id || source.name !== target.name) return false
+    }
+  }
+  return true
+}
+
+export interface ElisionResult {
+  /** The rewritten window — the INPUT ARRAY ITSELF when nothing was collapsed. */
+  readonly messages: Message[]
+  readonly elisions: ReadonlyArray<ContextRedundancy.Redundancy>
+  /** Estimated tokens the rewrite reclaimed. */
+  readonly reclaimed: number
+}
+
+/**
+ * Wire-legality pass 1.5 — redundancy-aware reclamation. Runs INSIDE the existing pass sequence
+ * (after `dropDanglingToolCalls`, before the newest-first recency loop), so redundancy is reclaimed
+ * before age decides anything, and nothing downstream has to know it happened.
+ *
+ * ⚠️ It collapses ALL detected redundancy, not "just enough to fit". That is deliberate and it is
+ * what removes an entire defect class: a shortfall budget has to be counted against the
+ * POST-legalisation state to be honest, and getting that wrong is how the first attempt turned a
+ * one-token overflow into three thousand reclaimed tokens. Here the question does not arise — the
+ * content stays in the window (in its retainer), so there is nothing to be minimal about, the
+ * decision does not depend on the budget, and the same history therefore collapses the same way on
+ * every turn as the conversation grows.
+ *
+ * Reasons a message abstains, all of them structural rather than heuristic:
+ *  - it is not a lone `tool-result` message (an assistant, a user, a multi-part tool message);
+ *  - its owning call cannot be named, or its payload is not text (binary abstains wholesale);
+ *  - it is under `MIN_ELIDABLE_TOKENS`;
+ *  - no other message in the window settles the SAME call with the same result shape.
+ * A message that is none of those is still only collapsed when `context-redundancy.ts` says a
+ * strictly newer sibling already carries its content, under a hard cap on unique content lost.
+ */
+export const elideRedundant = (messages: Message[], estimates: ReadonlyArray<number>): ElisionResult => {
+  const nothing: ElisionResult = { messages, elisions: [], reclaimed: 0 }
+  const exchanges = toolExchanges(messages)
+
+  // Two passes, because building a comparison text means materialising a whole tool payload as a
+  // string and `pack()` runs every turn. The first pass is index arithmetic only; the second builds
+  // text for the identities that actually REPEAT — so an ordinary window, where every call is
+  // distinct, never pays for the signal at all.
+  const collapsible: Array<ToolResultPart | undefined> = new Array(messages.length).fill(undefined)
+  const repeats = new Map<string, number>()
+  for (let index = 0; index < messages.length; index++) {
+    const exchange = exchanges[index]
+    if (exchange === undefined) continue
+    const message = messages[index]!
+    if ((estimates[index] ?? estimateMessage(message)) < MIN_ELIDABLE_TOKENS) continue
+    const part = soleToolResult(message)
+    if (part === undefined) continue
+    collapsible[index] = part
+    repeats.set(exchange.key, (repeats.get(exchange.key) ?? 0) + 1)
+  }
+  const items = collapsible.map((part, index): ContextRedundancy.RedundancyItem | undefined => {
+    if (part === undefined) return undefined
+    const key = exchanges[index]!.key
+    if ((repeats.get(key) ?? 0) < 2) return undefined
+    const text = resultSignalText(part.result)
+    return text === undefined ? undefined : { key, text }
+  })
+
+  const found = ContextRedundancy.findRedundant(items)
+  if (found.length === 0) return nothing
+
+  const rewritten = [...messages]
+  const applied: ContextRedundancy.Redundancy[] = []
+  let reclaimed = 0
+  for (const redundancy of found) {
+    // INV-R, structurally: pack keeps a SUFFIX and then drops orphans, so the retainer outlives the
+    // collapsed message exactly when its owning assistant is not the older of the two. Refuse the
+    // pair otherwise — a notice pointing at content that left the window is a lie, and the payload
+    // it replaced was a fact nothing else in the window holds.
+    if (exchanges[redundancy.index]!.owner > exchanges[redundancy.retainedIndex]!.owner) continue
+    const message = messages[redundancy.index]!
+    const part = soleToolResult(message)
+    if (part === undefined) continue
+    const notice = Message.make({
+      ...message,
+      content: [{ ...part, result: { type: "text" as const, value: elisionNotice(part.name) } }],
+    })
+    const saved = (estimates[redundancy.index] ?? estimateMessage(message)) - estimateMessage(notice)
+    // A notice bigger than the payload it replaces is not a saving — leave that message alone.
+    if (saved <= 0) continue
+    rewritten[redundancy.index] = notice
+    reclaimed += saved
+    applied.push(redundancy)
+  }
+  if (applied.length === 0) return nothing
+  // INV-W or nothing: a pass that cannot prove it left the wire shape alone does not run at all.
+  if (!preservesWireShape(messages, rewritten)) return nothing
+  return { messages: rewritten, elisions: applied, reclaimed }
+}
+
 export interface PackResult {
   readonly messages: Message[]
   /** true when anything was evicted or repaired — the runner rebuilds the request only then. */
   readonly changed: boolean
   readonly dropped: number
   readonly estimatedTokens: number
+  /** How many duplicate tool results pass 1.5 collapsed (A2.1 ①). */
+  readonly elided: number
 }
 
 /**
  * Pack whole messages newest-first until the budget, return chronological; the newest message is
- * always kept even if alone over budget. Then repair the kept set: orphan results dropped,
- * newest assistant+results group recovered whole if eviction emptied the window, and the FIRST
- * real user message re-prepended when packing would evict the sole user message — "the original
- * task, the agent's anchor against drift" — deliberately over budget.
+ * always kept even if alone over budget. Over budget, duplicate tool output is collapsed first
+ * (pass 1.5) so recency only ever decides between things the window does NOT already say. Then
+ * repair the kept set: orphan results dropped, newest assistant+results group recovered whole if
+ * eviction emptied the window, and the FIRST real user message re-prepended when packing would
+ * evict the sole user message — "the original task, the agent's anchor against drift" —
+ * deliberately over budget.
  */
 export const pack = (messages: ReadonlyArray<Message>, budgetTokens: number): PackResult => {
   const repaired = dropDanglingToolCalls(messages)
-  const estimates = repaired.map(estimateMessage)
-  const total = estimates.reduce((sum, tokens) => sum + tokens, 0)
+  let working = repaired
+  let estimates = repaired.map(estimateMessage)
+  let total = estimates.reduce((sum, tokens) => sum + tokens, 0)
+  let elided = 0
+
+  // Pass 1.5 — only when the window actually overflows: collapsing rewrites the middle of the
+  // prompt, which costs a prefix-cache hit, and there is nothing to buy while everything fits.
+  if (total > budgetTokens) {
+    const reclaimed = elideRedundant(repaired, estimates)
+    if (reclaimed.messages !== repaired) {
+      working = reclaimed.messages
+      elided = reclaimed.elisions.length
+      estimates = working.map(estimateMessage)
+      total = estimates.reduce((sum, tokens) => sum + tokens, 0)
+    }
+  }
+
   if (total <= budgetTokens) {
-    const legal = demoteSystemMessages(dropOrphanTools(repaired))
+    const legal = demoteSystemMessages(dropOrphanTools(working))
     const changed = legal.length !== messages.length || legal.some((message, i) => message !== messages[i])
-    return { messages: legal, changed, dropped: messages.length - legal.length, estimatedTokens: total }
+    return { messages: legal, changed, dropped: messages.length - legal.length, estimatedTokens: total, elided }
   }
 
   // Newest-first, whole messages; newest always kept.
   let used = 0
-  let start = repaired.length
-  for (let i = repaired.length - 1; i >= 0; i--) {
+  let start = working.length
+  for (let i = working.length - 1; i >= 0; i--) {
     const next = used + estimates[i]!
-    if (next > budgetTokens && start < repaired.length) break
+    if (next > budgetTokens && start < working.length) break
     used = next
     start = i
   }
-  let kept = dropOrphanTools(repaired.slice(start))
+  let kept = dropOrphanTools(working.slice(start))
 
   // Recover the newest assistant+results group whole (deliberately over budget) if the orphan
   // pass emptied the window down to nothing usable.
   if (kept.length === 0 || kept.every((message) => message.role === "tool")) {
     let newestAssistant = -1
-    for (let i = repaired.length - 1; i >= 0; i--) {
-      if (repaired[i]!.role === "assistant") {
+    for (let i = working.length - 1; i >= 0; i--) {
+      if (working[i]!.role === "assistant") {
         newestAssistant = i
         break
       }
     }
-    if (newestAssistant >= 0) kept = dropOrphanTools(repaired.slice(newestAssistant))
+    if (newestAssistant >= 0) kept = dropOrphanTools(working.slice(newestAssistant))
   }
 
   // Original-task anchoring (pass 4): never let packing evict the sole real user message.
   if (!kept.some(isRealUserMessage)) {
-    const anchor = repaired.find(isRealUserMessage)
+    const anchor = working.find(isRealUserMessage)
     if (anchor !== undefined) kept = [anchor, ...kept]
   }
 
@@ -235,6 +538,7 @@ export const pack = (messages: ReadonlyArray<Message>, budgetTokens: number): Pa
     changed: true,
     dropped: messages.length - kept.length,
     estimatedTokens: estimateMessages(kept),
+    elided,
   }
 }
 
