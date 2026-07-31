@@ -1,7 +1,8 @@
 {
-  "note": "Baseline for `bun run test`. `units` = tests bun reported SKIPPED per run unit; `failing` = failures PINNED as known, by name. Both are ratchets: any change fails the run and prints what moved. Pin only failures that are understood and filed \u2014 never to make a red go away. Seeded 2026-07-27 (v0.2.0 PREP Wave 0).",
+  "note": "Baseline for `bun run test`. `units` = tests bun reported SKIPPED per run unit; `failing` = failures PINNED as known, by name. Both are ratchets: any change fails the run and prints what moved. Pin only failures that are understood and filed — never to make a red go away. Seeded 2026-07-27 (v0.2.0 PREP Wave 0).",
   "reasons": {
-    "novaclaw:server": "Pre-existing Windows-from-source failures in the promoted novaclaw:server unit. DO NOT un-pin on a single green run: measured 2026-07-28, SEVENTEEN of these flip between pass and fail across consecutive full-gate runs on an otherwise unchanged tree (they reported now-passing at 565s wall, then NEW FAILURE at 318s). They are FLAKY, not fixed \u2014 the unit boots a real server per suite and its runtime already swings +/-30%. Un-pinning them makes the next run red for the opposite reason. The ledger is the authority on the count; prose here drifts."
+    "novaclaw:server": "Pre-existing Windows-from-source failures in the promoted novaclaw:server unit. DO NOT un-pin on a single green run: measured 2026-07-28, SEVENTEEN of these flip between pass and fail across consecutive full-gate runs on an otherwise unchanged tree (they reported now-passing at 565s wall, then NEW FAILURE at 318s). They are FLAKY, not fixed — the unit boots a real server per suite and its runtime already swings +/-30%. Un-pinning them makes the next run red for the opposite reason. The ledger is the authority on the count; prose here drifts.",
+    "novaclaw:tool": "PRE-EXISTING and PROVEN so, not introduced by the 2026-07-31 batch: the same failure reproduces at HEAD with the entire batch stashed. It is the concurrent-bun-spawn family AGENTS.md already documents for run-process.test.ts on this box — the four sibling tests in the file each spawn ONE `bun -e` child and all pass; only the case that holds FIVE concurrent sleepers hangs. Measured: it does not finish at a 60 s budget either (so it is a hang, not a slow test), on a swept box with zero surviving `bun` processes. The cap check itself is synchronous and cheap (bash-jobs.ts:145-146), so the hang is in the spawn/stop path, not in the policy under test. Root cause NOT identified — filed in todo/test-speed.md. Un-pin the moment it goes green."
   },
   "units": {
     "llm": 30,
@@ -46,10 +47,13 @@
       "project directories and copies endpoints > lists directories and manages git worktree copies",
       "project.initGit endpoint > does not reload when the project is already git",
       "project.initGit endpoint > initializes git and reloads immediately",
-      "promptAsync routes to the V2 native engine (F1b: one engine) > fresh session + model routes promptAsync to V2 (prompted on stream, busy\u2192idle bracket, zero legacy rows)",
+      "promptAsync routes to the V2 native engine (F1b: one engine) > fresh session + model routes promptAsync to V2 (prompted on stream, busy→idle bracket, zero legacy rows)",
       "v2 SDK error shape > 400 schema rejection: SDK extracts the field-level reason from the NamedError body",
       "v2 location HttpApi > returns command and skill snapshots with resolved locations",
       "workspace HttpApi > proxies remote workspace requests selected from session ownership"
+    ],
+    "novaclaw:tool": [
+      "BashJobs (1H) > per-session cap: the 6th concurrent job is refused"
     ]
   }
 }
