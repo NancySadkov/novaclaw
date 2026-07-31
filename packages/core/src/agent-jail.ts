@@ -43,8 +43,18 @@ export * as AgentJail from "./agent-jail"
 import { spawnSync } from "node:child_process"
 import { attendedRoot, type SessionType } from "./session/config-resolve"
 
-/** The platform sandbox families the probe can report (notes/agent-jail-plan.md §2.2). */
-export type BackendKind = "namespaces" | "seatbelt" | "appcontainer" | "none"
+/**
+ * The platform sandbox families the probe can report (notes/agent-jail-plan.md §2.2).
+ *
+ * ⚠️ Declared as a RUNTIME tuple rather than a bare type union, and that is load-bearing rather than
+ * stylistic. The posture surface (Settings → General → *How this machine is confined*) has to be able
+ * to NAME whichever of these a host reports, and a `type`-only union is invisible to any test — a
+ * fifth member could land with no label anywhere and every check would stay green, which is the
+ * ruling-1 defect class exactly. Because the union is DERIVED from this array, adding a member is
+ * what makes `packages/app/src/components/settings-v2/confinement.test.ts` demand copy for it.
+ */
+export const BACKEND_KINDS = ["namespaces", "seatbelt", "appcontainer", "none"] as const
+export type BackendKind = (typeof BACKEND_KINDS)[number]
 
 export interface BackendInfo {
   readonly kind: BackendKind
@@ -98,22 +108,146 @@ export function detectBackend(
   return run("bwrap", PROBE_ARGS) === 0 ? NAMESPACES : NO_BACKEND
 }
 
-let probed: BackendInfo | undefined
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+// THE POSTURE — what the probe OBSERVED, not only what it concluded.
+//
+// `detectBackend` answers one question ("can this host confine?") with one bit, and for the DECISION
+// that is the whole of it. It is not enough for a surface a person reads, because three completely
+// different worlds collapse into its single `NO_BACKEND`:
+//
+//   · this OS has no backend implemented at all (every non-Linux host today — the probe never ran);
+//   · Linux, but `bwrap` is not installed (the probe could not start);
+//   · Linux with `bwrap` installed and a POLICY refusing it — the measured Spark failure, where
+//     Ubuntu 24.04's `apparmor_restrict_unprivileged_userns=1` with no `/etc/apparmor.d/bwrap`
+//     profile makes every sandbox fail (AGENTS.md → The DGX Spark). The probe ran and said no.
+//
+// Only the third has a fix the user can act on, and telling that user "your platform has no sandbox
+// backend" would be ruling 2's *a fault described falsely* — it is not the platform, it is one
+// missing file. So the posture keeps the OBSERVATION alongside the verdict.
+//
+// ⚠️ The verdict itself is still `detectBackend`'s, called below rather than re-derived: a second
+// implementation of "what confines this host" is the duplication ruling 6 exists to forbid, and it
+// would let the screen and the shell come to disagree. `detectPosture` only WATCHES.
+// ─────────────────────────────────────────────────────────────────────────────────────────────────
+
+/** What running the probe command actually did. Distinguishing these two is the whole point. */
+export type ProbeObservation =
+  /** The probe binary ran to completion. `status` 0 means the sandbox came up. */
+  | { readonly kind: "exited"; readonly status: number }
+  /** The probe binary could not be run at all (not installed, no permission, timed out). */
+  | { readonly kind: "unavailable"; readonly detail?: string }
+
+export type ProbeRunner = (cmd: string, args: readonly string[]) => ProbeObservation
+
+/**
+ * Why this host is (or is not) able to confine. Each arm is a different thing to TELL someone, which
+ * is why it is not a boolean — see the block comment above.
+ *
+ *   · `confined`            — a backend enforces both boundaries; unattended commands run in a box.
+ *   · `partial-backend`     — a backend exists but does not enforce BOTH boundaries, so `decideBash`
+ *                             cannot use it (the v0.3.0 note above: the shape a Windows
+ *                             restricted-token backend has). Nothing is actually confined.
+ *   · `platform-unsupported`— no backend is implemented for this platform in this build; the probe
+ *                             was never attempted.
+ *   · `backend-absent`      — the platform has a backend but its tool could not be run (not installed).
+ *   · `backend-blocked`     — the tool ran and the sandbox failed to come up; a host policy refuses it.
+ *
+ * ⚠️ A runtime tuple for the same reason `BACKEND_KINDS` is one: the posture surface must have copy
+ * for every arm, and a `type`-only union cannot be enumerated by the test that checks it.
+ */
+export const CONFINEMENT_REASONS = [
+  "confined",
+  "partial-backend",
+  "platform-unsupported",
+  "backend-absent",
+  "backend-blocked",
+] as const
+export type ConfinementReason = (typeof CONFINEMENT_REASONS)[number]
+
+export interface JailPosture {
+  /** The host this was measured on. */
+  readonly platform: string
+  /** `detectBackend`'s verdict, unmodified — the same value `decideBash` consumes. */
+  readonly backend: BackendInfo
+  readonly reason: ConfinementReason
+  /**
+   * The probe that was actually run, if one was. `undefined` means no probe was ATTEMPTED — which is
+   * itself the evidence for `platform-unsupported`, and is observed rather than assumed: if a future
+   * `detectBackend` learns to probe macOS, this stops saying "unsupported" there with no edit here.
+   */
+  readonly probe?: { readonly command: string; readonly observation: ProbeObservation }
+}
+
+/** Exported for its own test: the `partial-backend` arm is not reachable through `detectPosture`
+ *  until a partial backend exists, and an untested arm of a ruling-2 surface is a lie waiting. */
+export function confinementReason(backend: BackendInfo, probe: JailPosture["probe"]): ConfinementReason {
+  if (backend.fs && backend.net) return "confined"
+  if (backend.kind !== "none") return "partial-backend"
+  if (!probe) return "platform-unsupported"
+  // A probe that ran and left us with no backend is a REFUSAL, whatever its exit status: the tool was
+  // reachable, so "not installed" is not the honest answer.
+  return probe.observation.kind === "unavailable" ? "backend-absent" : "backend-blocked"
+}
+
+/** The pure half of the posture: a platform + a probe runner in, the full observation out. */
+export function detectPosture(platform: NodeJS.Platform, run: ProbeRunner): JailPosture {
+  let probe: JailPosture["probe"]
+  const backend = detectBackend(platform, (cmd, args) => {
+    const observation = run(cmd, args)
+    probe = { command: [cmd, ...args].join(" "), observation }
+    return observation.kind === "exited" ? observation.status : undefined
+  })
+  return { platform, backend, probe, reason: confinementReason(backend, probe) }
+}
+
+/** How long the probe may take before it counts as unavailable. */
+export const PROBE_TIMEOUT_MS = 5_000
+
+let probed: JailPosture | undefined
+
+/**
+ * What confinement this host can enforce RIGHT NOW, with the evidence.
+ *
+ * ⚠️ CACHING — this SPAWNS A PROCESS, so it is memoised for the life of the process and there is
+ * exactly one spawn per instance, on first use. That is not a performance shortcut: the answer is a
+ * HOST-CAPABILITY fact (which kernel, which OS, which AppArmor profile is installed), so it changes
+ * about as often as the operating system does and never under a running instance. Installing
+ * `/etc/apparmor.d/bwrap` while NovaClaw is up therefore does NOT change what this reports until the
+ * instance restarts — which is the honest behaviour, because the running shell tool is caching the
+ * same value. Anything that displays this must say what it is showing: the posture this instance
+ * measured at startup. `resetProbeCache()` is the test seam and the only invalidation.
+ */
+export function posture(): JailPosture {
+  probed ??= detectPosture(process.platform, (cmd, args) => {
+    try {
+      const result = spawnSync(cmd, args as string[], { timeout: PROBE_TIMEOUT_MS, stdio: "ignore" })
+      // ⚠️ `status` is null for BOTH "could not spawn" and "killed by a signal/timeout", and the old
+      // `result.status ?? undefined` collapsed them into the same nothing. `error` is what separates
+      // "bwrap is not installed" from "bwrap ran and the kernel refused it" — the one distinction a
+      // Linux user can act on.
+      if (result.error) {
+        const code = (result.error as NodeJS.ErrnoException).code
+        return { kind: "unavailable", detail: code ?? result.error.message }
+      }
+      if (typeof result.status === "number") return { kind: "exited", status: result.status }
+      return { kind: "unavailable", detail: result.signal ? `killed by ${result.signal}` : "no exit status" }
+    } catch (error) {
+      return { kind: "unavailable", detail: error instanceof Error ? error.message : String(error) }
+    }
+  })
+  return probed
+}
 
 /**
  * What confinement this host can enforce RIGHT NOW. Cached per process (the answer cannot
  * change under a running instance, and bash calls must not each pay a spawn).
+ *
+ * Now a projection of `posture()` rather than its own probe — one spawn, one cache, one answer. Two
+ * caches would have meant two `bwrap` spawns per process AND a way for the screen and the shell to
+ * disagree about the same host.
  */
 export function probe(): BackendInfo {
-  probed ??= detectBackend(process.platform, (cmd, args) => {
-    try {
-      const result = spawnSync(cmd, args as string[], { timeout: 5_000, stdio: "ignore" })
-      return result.status ?? undefined
-    } catch {
-      return undefined
-    }
-  })
-  return probed
+  return posture().backend
 }
 
 /** Test seam: clear the per-process probe cache. */
@@ -133,7 +267,15 @@ export function resetProbeCache(): void {
  */
 export { attendedRoot }
 
-export type BashDecision = "raw" | "confined" | "deny"
+/**
+ * ⚠️ A runtime tuple for the third time, and for the same reason as `BACKEND_KINDS` and
+ * `CONFINEMENT_REASONS`: the posture surface renders one phrase per decision, and the wire schema
+ * that carries them has to enumerate them. A `type`-only union can be extended with nothing noticing.
+ * (todo/jail.md B4 already plans to reshape this into `{fs, net}` for v0.3.0 — when that happens,
+ * every consumer that must be updated is reachable from this array.)
+ */
+export const BASH_DECISIONS = ["raw", "confined", "deny"] as const
+export type BashDecision = (typeof BASH_DECISIONS)[number]
 
 /**
  * The pure bash-confinement policy (plan §2.1/§2.3). Evaluated AFTER permission consent:
@@ -176,6 +318,72 @@ export function decideBash(input: {
   if (hostile) return "deny"
   if (input.safeMode === true) return "deny"
   return "raw"
+}
+
+/**
+ * What will ACTUALLY happen on this host, per kind of turn — the four rows a posture surface has to
+ * be able to state.
+ *
+ * ⚠️ Every field is `decideBash`'s own answer, obtained by CALLING it. A surface that restated the
+ * policy in its own words would be a normative claim about code in another file — the ruling-1 defect
+ * class — and it would go quietly wrong the next time the policy moves, which it did on 2026-07-30
+ * and will again when `BashDecision` is reshaped into `{fs, net}` for v0.3.0. The point of this
+ * function is that there is nothing here to keep in sync.
+ */
+export interface BashPlan {
+  /** A chat a human is watching (`interactive`). */
+  readonly attended: BashDecision
+  /** An unattended chain (auto-prompting / goal-oriented) with safe mode off — the default posture. */
+  readonly unattended: BashDecision
+  /** The same chain with the Tuning *Safe mode* switch on. */
+  readonly unattendedSafeMode: BashDecision
+  /** A turn driven by an untrusted messenger correspondent, on an otherwise-attended chat. */
+  readonly untrusted: BashDecision
+}
+
+export function bashPlan(backend: BackendInfo): BashPlan {
+  return {
+    attended: decideBash({ rootType: "interactive", backend }),
+    unattended: decideBash({ rootType: "goal-oriented", backend }),
+    unattendedSafeMode: decideBash({ rootType: "goal-oriented", backend, safeMode: true }),
+    untrusted: decideBash({ rootType: "interactive", backend, hostileInput: true }),
+  }
+}
+
+/**
+ * The posture flattened for the wire — what an instance reports about itself so a UI (which may be
+ * driving this instance from another machine entirely, so it can NEVER answer any of this locally)
+ * can state the truth about the host the agent actually runs on.
+ *
+ * Flat and optional-heavy on purpose: it rides an existing response, and an older client that does
+ * not know the field simply ignores it.
+ */
+export interface JailPostureWire {
+  readonly kind: BackendKind
+  readonly fs: boolean
+  readonly net: boolean
+  readonly reason: ConfinementReason
+  /** The exact command that was run, so the claim is checkable by hand. Absent = no probe attempted. */
+  readonly probeCommand?: string
+  readonly probeExit?: number
+  readonly probeError?: string
+  readonly bash: BashPlan
+}
+
+export function postureWire(value: JailPosture): JailPostureWire {
+  const observation = value.probe?.observation
+  return {
+    kind: value.backend.kind,
+    fs: value.backend.fs,
+    net: value.backend.net,
+    reason: value.reason,
+    ...(value.probe === undefined ? {} : { probeCommand: value.probe.command }),
+    ...(observation?.kind === "exited" ? { probeExit: observation.status } : {}),
+    ...(observation?.kind === "unavailable" && observation.detail !== undefined
+      ? { probeError: observation.detail }
+      : {}),
+    bash: bashPlan(value.backend),
+  }
 }
 
 export interface WrapArgvInput {

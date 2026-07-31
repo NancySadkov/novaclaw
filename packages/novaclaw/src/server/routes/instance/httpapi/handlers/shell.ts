@@ -1,3 +1,4 @@
+import { AgentJail } from "@novaclaw/core/agent-jail"
 import { Git } from "@novaclaw/core/git"
 import { Offline } from "@novaclaw/core/offline"
 import { Shell } from "@novaclaw/core/shell"
@@ -30,6 +31,11 @@ const status = () => {
         }
       : null,
     provisionSupported: process.platform === "win32",
+    // `posture()` memoises for the process — ONE `bwrap` spawn per instance, not one per request,
+    // and it shares that cache with the `bash` tool's own probe so the screen and the shell can never
+    // disagree about one host. Consequence worth knowing: installing the AppArmor profile on a live
+    // Linux instance does not change this report until restart.
+    jail: AgentJail.postureWire(AgentJail.posture()),
   }
 }
 

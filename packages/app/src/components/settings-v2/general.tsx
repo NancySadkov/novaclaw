@@ -17,6 +17,7 @@ import { useServerSDK } from "@/context/server-sdk"
 import { ServerConnection, serverName } from "@/context/server"
 import { useServerManagementController } from "../dialog-select-server"
 import { ConfigExportImport } from "./config-io"
+import { SettingsConfinementSection, type ShellStatusWithJail } from "./confinement"
 import { useSettings } from "@/context/settings"
 import { offlineStatus, shellProvision, shellStatus, type OfflineStatus, type ShellStatus } from "@/utils/fs-api"
 import { useUpdaterAction } from "../updater-action"
@@ -628,6 +629,14 @@ export const SettingsGeneralV2: Component<{
 
       <div class="settings-v2-tab-body">
         <GeneralSection />
+
+        {/* Confinement sits directly under the safety rows above (Ask-before-reading, Offline mode)
+            because it answers the question those two raise: what actually stops the agent, as
+            opposed to what asks it nicely. It rides the SAME `shell/status` fetch the shell-bundle
+            row already makes — the posture is a field on that response, so this section adds no
+            request of its own and no second probe. `jail` is absent on an instance older than this
+            screen, which the section reports rather than papers over. */}
+        <SettingsConfinementSection status={bundle.latest as ShellStatusWithJail | undefined} loading={bundle.loading} />
 
         <NotificationsSection />
 

@@ -437,6 +437,9 @@ export const dict = {
   "prompt.features.affective.description":
     "Adapts the model's sampling to its appraised mood — steadier when frustrated, freer when exploring.",
 
+  "prompt.features.safeMode.title": "Safe mode",
+  "prompt.features.safeMode.description":
+    "When this chat works unattended, only let it run shell commands inside a sandbox — and refuse them outright on a computer that has no sandbox yet, rather than running them with your full account. Off by default, so the agent can install packages, build and run tests on its own. Turning it on trades some of that away for a harder boundary. It does not change anything while you are here answering: chats you drive yourself run the same either way, and commands from an untrusted messenger contact stay confined whatever this says.",
   "prompt.features.askBeforeChanges.title": "Ask before every change",
   "prompt.features.askBeforeChanges.description":
     "Stop and ask you before the agent edits, creates or deletes anything, and before it runs a shell command. Off by default — the permission mode already decides where it may work.",
@@ -452,8 +455,14 @@ export const dict = {
   "prompt.mode.interactive.title": "Interactive",
   "prompt.mode.interactive.description": "You drive: the agent answers and waits for you.",
   "prompt.mode.auto-prompting.title": "Auto-prompting",
+  // ⚠️ This said "shell commands run sandboxed" until 2026-07-31, and the owner's 2026-07-30 directive
+  // had already made that false: unattended shell runs UNBOXED by default so the agent can actually
+  // work, and Safe mode is the opt-in that puts it back in a sandbox. Caught in the web preview,
+  // where the new Confinement panel two clicks away stated the opposite — a promise of containment
+  // the product does not keep is ruling 2's *a fault is never described falsely*, and it is worse
+  // than silence because a user picks this mode BECAUSE of it.
   "prompt.mode.auto-prompting.description":
-    "Unattended: the agent keeps prompting itself until the task is done. Permission asks are auto-approved and shell commands run sandboxed.",
+    "Unattended: the agent keeps prompting itself until the task is done. Permission asks are auto-approved, and shell commands run with your account unless you turn on Safe mode below.",
   "prompt.mode.goal-oriented.title": "Goal-oriented",
   "prompt.mode.goal-oriented.description":
     "Unattended: the agent loops toward the goal you set until it's reached. Same guardrails as auto-prompting.",
@@ -1320,6 +1329,74 @@ export const dict = {
     "Block all network access except your model providers, so nothing else can phone home (fail-closed: if in doubt, it's blocked). This stops package installs, usage/telemetry uploads, and any network calls the agent's shell tries to make. Restart the server to apply.",
   "settings.general.row.offline.active": "airgapped",
   "settings.general.row.offline.inactive": "ready (offline mode is off)",
+
+  // Settings → General → Confinement (todo/jail.md — the honest posture surface). ⚠️ ENGLISH-ONLY on
+  // purpose, like `askBeforeChanges` and `surgicalEdits` before it: the parity ratchet fails on an
+  // EXTRA key in a locale and only COUNTS a missing one, and pasting English into de.ts et al. would
+  // make the translation backlog read as done. Translate properly or leave the key out.
+  "settings.confinement.section": "Confinement",
+  "settings.confinement.title": "Sandbox for the agent's shell",
+  "settings.confinement.description":
+    "Whether this machine can put an agent's shell commands inside an operating-system sandbox — a box that can only change files in your project folder and has no network at all.",
+  "settings.confinement.reason.confined":
+    "This machine can sandbox, and it does ({{backend}}). A chat running on its own gets its shell commands boxed in: they can only change files in the project folder, and they have no network.",
+  "settings.confinement.reason.partial-backend":
+    "This machine has {{backend}}, which can restrict files but not the network. NovaClaw does not count half a box as containment, so shell commands still run with your own access.",
+  "settings.confinement.reason.platform-unsupported":
+    "NovaClaw has no operating-system sandbox for {{platform}} yet — that arrives in the next release, the one about security. Until then a shell command an agent runs here reaches whatever you can reach, exactly like a program you started yourself.",
+  "settings.confinement.reason.backend-absent":
+    "This machine runs Linux, where NovaClaw sandboxes with bwrap — and bwrap is not installed here, so there is no box to put commands in. Install it (on Debian or Ubuntu: apt install bubblewrap) and restart this instance.",
+  "settings.confinement.reason.backend-blocked":
+    "bwrap is installed here, and the sandbox was refused when this instance tested it — so commands are not being boxed. On Ubuntu 24.04 and its relatives that is usually one missing file, the /etc/apparmor.d/bwrap profile. Add it, restart this instance, and the check below should pass.",
+  "settings.confinement.reason.unreported":
+    "This instance runs {{platform}}, where NovaClaw has a sandbox — but it did not report whether the sandbox actually works on its machine, and this screen will not guess. Update the instance to get a real answer.",
+  "settings.confinement.reason.unknown":
+    "This screen could not reach the instance to ask, so it has nothing to tell you. That means it does not know — not that nothing is protecting you.",
+  "settings.confinement.reason.checking": "Asking this instance what it can enforce on its own machine…",
+  "settings.confinement.verdict.confined": "Sandboxed",
+  "settings.confinement.verdict.partial-backend": "Partly sandboxed",
+  "settings.confinement.verdict.platform-unsupported": "No sandbox yet",
+  "settings.confinement.verdict.backend-absent": "No sandbox — bwrap missing",
+  "settings.confinement.verdict.backend-blocked": "Sandbox blocked",
+  "settings.confinement.verdict.unreported": "Not reported",
+  "settings.confinement.verdict.unknown": "Unknown",
+  "settings.confinement.verdict.checking": "Checking…",
+  "settings.confinement.backend.namespaces": "Linux namespaces, via bwrap",
+  "settings.confinement.backend.seatbelt": "macOS Seatbelt",
+  "settings.confinement.backend.appcontainer": "Windows AppContainer",
+  "settings.confinement.backend.none": "no sandbox backend",
+  "settings.confinement.platform.win32": "Windows",
+  "settings.confinement.platform.darwin": "macOS",
+  "settings.confinement.platform.linux": "Linux",
+  "settings.confinement.guards.title": "What holds either way",
+  "settings.confinement.guards.description":
+    "Three things do not depend on the sandbox. Analyze mode refuses to run shell commands at all — a hard rule, not advice. A turn driven by someone messaging you from outside can only ever run a shell command inside the sandbox, and where there is none it is refused outright; no switch changes that. And in every mode except YOLO the agent is told in writing that it may read anything it needs but must not create, change, move or delete anything outside your project folder — that last one is an instruction the model follows rather than a wall, which is exactly why the sandbox matters.",
+  "settings.confinement.safeMode.title": "Safe mode, per chat",
+  "settings.confinement.safeMode.description":
+    "Safe mode lives in each chat's Tuning controls. It can only ever refuse — it never lets a chat do more, and it never changes what a chat you are watching is allowed to do.",
+  "settings.confinement.safeMode.changes":
+    "On this machine it makes a real difference: with it on, a chat running on its own refuses shell commands instead of running them unboxed.",
+  "settings.confinement.safeMode.noChange":
+    "On this machine it changes nothing, because those commands are sandboxed already.",
+  "settings.confinement.probe.title": "What was actually tested",
+  "settings.confinement.probe.description":
+    "The exact check this instance ran on its own machine when it started, and what came back. Run it yourself to confirm — this screen is only repeating it.",
+  "settings.confinement.probe.unreported": "This instance did not report a check.",
+  "settings.confinement.probe.checking": "Asking the instance…",
+  "settings.confinement.probe.none": "No check runs on {{platform}} — there is no sandbox to test yet.",
+  "settings.confinement.probe.exit": "exit {{code}}",
+  "settings.confinement.probe.error": "could not run: {{detail}}",
+  "settings.confinement.probe.noOutcome": "no result",
+  "settings.confinement.outcomes.title": "What happens to a shell command",
+  "settings.confinement.outcomes.description":
+    "This instance's own answer for each kind of turn, asked of the same code that decides it — not a summary written here.",
+  "settings.confinement.turn.attended": "A chat you are watching",
+  "settings.confinement.turn.unattended": "A chat running on its own",
+  "settings.confinement.turn.unattendedSafeMode": "…the same chat, with Safe mode on",
+  "settings.confinement.turn.untrusted": "A turn driven by someone messaging you",
+  "settings.confinement.decision.raw": "runs with your access",
+  "settings.confinement.decision.confined": "runs in the sandbox",
+  "settings.confinement.decision.deny": "refused",
   "settings.instances.access.title": "This instance",
   "settings.instances.access.hint":
     "The API token other instances and agents must present to reach this one (HTTP Basic, username 'novaclaw'). Empty means open. Applies immediately.",
