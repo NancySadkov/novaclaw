@@ -90,11 +90,55 @@ const OpenAIChatToolChoice = Schema.Union([
   }),
 ])
 
+// S5 — constrained decoding, the protocol half.
+//
+// `response_format` is the one constraint channel that is CROSS-ENGINE on THIS wire — the OpenAI
+// standard, which api.openai.com, vLLM (guided decoding), `llama-server` and SGLang all expose on
+// their `/chat/completions`. That is why it — and not a grammar field — is what the protocol owns:
+// ruling 10 (the Wire Test) says a thing needing new code stays a CLOSED COMPILED SET whose every
+// member must be reachable, and `text`/`json_schema` are reachable on all four.
+//
+// ⚠️ UNVERIFIED HERE, and it is the live smoke's job: per-engine acceptance is read from vendor
+// docs, not measured. `todo/sidecar-inference.md` records llama.cpp's constraint surface as the
+// SERVER FLAGS `--grammar`/`--json-schema`; that the per-REQUEST `response_format` form is honoured
+// by `llama-server` and by the Spark's vLLM has not been observed by anyone on this codebase. An
+// engine that ignores it degrades to today's behaviour (see the "asks, and assumes nothing" tests)
+// — it never fails a turn — but do not describe this as proven until a real endpoint has echoed it.
+//
+// ⚠️ Engine-specific constraint knobs (llama.cpp `grammar`, vLLM `guided_regex`/`guided_choice`)
+// are the OTHER half of ruling 10 — values that travel an existing wire, so they go to an OPEN
+// RUNTIME STORE and need no code at all. They already work: a key in a model's config `options`
+// that is not canonical sampling lands in `http.body` (runner `sampling-split.ts`) and is merged
+// into the body by the transport, and `grammar` is NOT on that transport's denylist. Do not add a
+// `grammar` field here — it would move a per-engine knob into the one place that must stay
+// engine-neutral, and it belongs in the runtime profile S3 owns.
+//
+// ⚠️ `strict` is deliberately NOT sent. OpenAI's strict subset additionally demands
+// `additionalProperties: false` plus EVERY property listed in `required`; `strict: true` with a
+// schema missing either is a hard 400 on every turn — which is the "worse than no constraint"
+// failure this slice exists to prevent. Local engines ignore `strict` and enforce the schema by
+// grammar regardless, so omitting it costs nothing on the models this product targets. Add it the
+// day someone has measured a real endpoint, not before.
+const OpenAIChatResponseFormat = Schema.Union([
+  Schema.Struct({ type: Schema.Literal("text") }),
+  Schema.Struct({
+    type: Schema.Literal("json_schema"),
+    json_schema: Schema.Struct({ name: Schema.String, schema: JsonObject }),
+  }),
+])
+
 export const bodyFields = {
   model: Schema.String,
   messages: Schema.Array(OpenAIChatMessage),
   tools: optionalArray(OpenAIChatTool),
   tool_choice: Schema.optional(OpenAIChatToolChoice),
+  // S5: built ONLY from `LLMRequest.responseFormat`, which is absent unless a caller asks for a
+  // constraint — so a request that wants none is byte-identical to before and api.openai.com sees
+  // no new field. Same config-gated shape as `top_k` below. The key is also on the transport's
+  // `PROTOCOL_BODY_OVERLAY_DENYLIST`, where it had been RESERVED but unimplemented since the
+  // denylist was written; this is the commit that makes that reservation honest — the protocol now
+  // owns the field, so an `http.body` overlay of it is correctly refused as a second source.
+  response_format: Schema.optional(OpenAIChatResponseFormat),
   stream: Schema.Literal(true),
   stream_options: Schema.optional(Schema.Struct({ include_usage: Schema.Boolean })),
   store: Schema.optional(Schema.Boolean),
@@ -217,6 +261,51 @@ const lowerToolChoice = (toolChoice: NonNullable<LLMRequest["toolChoice"]>) =>
     required: () => "required" as const,
     tool: (name) => ({ type: "function" as const, function: { name } }),
   })
+
+// The `json_schema.name` OpenAI requires. A CONSTANT, not the schema's own `title`: upstream
+// validates this field against a name charset, and a human-authored title ("My Result") would turn
+// a constraint into a 400 — the failure mode this slice is written to avoid.
+const RESPONSE_FORMAT_NAME = "novaclaw_response"
+
+/**
+ * `LLMRequest.responseFormat` -> the OpenAI Chat wire.
+ *
+ * The caller's JSON Schema travels **verbatim**. It is deliberately NOT run through
+ * `ToolSchemaProjection.openAI` (which force-sets `type: "object"` and flattens `anyOf`): that
+ * projection exists to work around per-model TOOL-schema quirks, and applying it here would send a
+ * constraint the caller did not ask for. A schema the backend rejects should produce the backend's
+ * own complaint, which is the true one — ruling 2, *a fault is never described falsely*.
+ *
+ * ⚠️ **This constrains the assistant's CONTENT, not tool-call arguments.** On the OpenAI Chat wire
+ * a tool call is constrained by `function.strict` (OpenAI) or by the server's own tool grammar
+ * (llama.cpp `--jinja`, vLLM `tool_choice: "required"`), never by `response_format`. The roadmap's
+ * "a malformed tool call becomes unrepresentable" is real but is a DIFFERENT field; see
+ * `todo/sidecar-inference.md` S5.
+ */
+const lowerResponseFormat = Effect.fn("OpenAIChat.lowerResponseFormat")(function* (
+  format: NonNullable<LLMRequest["responseFormat"]>,
+) {
+  if (format.type === "text") return { type: "text" as const }
+  if (format.type === "json")
+    return {
+      type: "json_schema" as const,
+      json_schema: { name: RESPONSE_FORMAT_NAME, schema: format.schema },
+    }
+  // Named rather than silently dropped (ruling 2) — for whatever member arrives, not for one spelling.
+  //
+  // ⚠️ **This branch is unreachable from the TYPE and live at RUNTIME, deliberately.** The member it
+  // used to name by hand, `responseFormat: { type: "tool" }`, was deleted from the closed set on
+  // 2026-07-31 for having no producer anywhere in the tree (ruling 10 — see `ResponseFormat`'s own
+  // comment in `schema/messages.ts`; the short version is that "call this tool" is `tool_choice`,
+  // which this protocol already lowers from `request.toolChoice` and which `LLM.generateObject`
+  // already drives). What survives is the guard: the day a third member is added to `ResponseFormat`
+  // without a lowering here, a caller's constraint would otherwise be dropped on the floor silently.
+  // `schema/response-format-members.test.ts` fails on that same day and names the missing arm.
+  const unexpressible = (format as { readonly type: string }).type
+  return yield* invalid(
+    `OpenAI Chat cannot express responseFormat \`${unexpressible}\` as response_format — force the call with toolChoice instead (LLM.generateObject already does)`,
+  )
+})
 
 const lowerToolCall = (part: ToolCallPart): OpenAIChatAssistantToolCall => ({
   id: part.id,
@@ -386,6 +475,10 @@ const fromRequest = Effect.fn("OpenAIChat.fromRequest")(function* (request: LLMR
             lowerTool(tool, ToolSchemaProjection.modelCompatibility(tool.inputSchema, toolSchemaCompatibility)),
           ),
     tool_choice: request.toolChoice ? yield* lowerToolChoice(request.toolChoice) : undefined,
+    // Spread, not `key: undefined`: an unrequested constraint leaves the key ABSENT from the body.
+    ...(request.responseFormat === undefined
+      ? {}
+      : { response_format: yield* lowerResponseFormat(request.responseFormat) }),
     stream: true as const,
     stream_options: { include_usage: true },
     max_tokens: generation?.maxTokens,

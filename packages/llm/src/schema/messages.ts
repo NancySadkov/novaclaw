@@ -261,10 +261,29 @@ export namespace ToolChoice {
   }
 }
 
+/**
+ * The constraint a caller may put on the assistant's own CONTENT. A closed compiled set, and by
+ * ruling 10 (*The Wire Test*) every member of one must be REACHABLE — which is why there are two
+ * members here and not three.
+ *
+ * ⚠️ **A third member, `tool: { tool: ToolDefinition }`, was deleted 2026-07-31 because nothing could
+ * ever produce it.** Measured before removing it: zero producers tree-wide (the only occurrences were
+ * this declaration, the refusal in `protocols/openai-chat.ts`, and a test that reached it through a
+ * cast); `LLMRequest` is never decoded from a wire, so no outside caller can construct one either;
+ * and `LLM.generateObject` — the one structured-output entry point in the product —
+ * `Omit`s `responseFormat` from its options by construction and forces the call with `toolChoice`.
+ *
+ * It was not merely unimplemented, it was a category error, and that is the part worth keeping:
+ * *"call this tool"* is not a response FORMAT on any of the five protocols here — OpenAI Chat,
+ * OpenAI Responses, Anthropic, Bedrock and Gemini all spell it `tool_choice`/`toolConfig`, which
+ * `LLMRequest.toolChoice` already lowers. Reviving the member would therefore add a second way to say
+ * what one field already says, which is the duplication ruling 6 exists to refuse. If a protocol ever
+ * grows a genuine third *format*, add it here **and** give it a lowering —
+ * `schema/response-format-members.test.ts` fails until both halves exist.
+ */
 export const ResponseFormat = Schema.Union([
   Schema.Struct({ type: Schema.Literal("text") }),
   Schema.Struct({ type: Schema.Literal("json"), schema: JsonSchema }),
-  Schema.Struct({ type: Schema.Literal("tool"), tool: ToolDefinition }),
 ]).pipe(Schema.toTaggedUnion("type"))
 export type ResponseFormat = Schema.Schema.Type<typeof ResponseFormat>
 
