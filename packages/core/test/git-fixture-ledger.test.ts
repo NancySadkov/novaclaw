@@ -87,6 +87,15 @@ const sources = collect(path.join(ROOT, SCAN_ROOT), [])
  * could rename away — and each is deliberately narrow enough that a SCENARIO git call (a
  * `git worktree add` the test is about, a `git add` whose staging it then asserts on) does not trip
  * it. Only repository CREATION is the pattern being collapsed.
+ *
+ * ⚠️ **Known blind spot, measured 2026-07-31: the sweep strips COMMENTS but not string literals, so a
+ * test TITLE reading "…`git init` must be seen immediately" trips it.** That happened once
+ * (`project-resolve-cache.test.ts`, a file that spawns no git at all — every repository in it is a
+ * stub), and the fix was to rename the title, NOT to add a ledger entry: ledgering a file that does
+ * not build a repository would have made this ledger's own claim false while looking like diligence.
+ * Stripping literals too was considered and declined — a title is the only literal that plausibly
+ * carries the phrase, and a stripper that ate strings would also eat the argv forms above, which are
+ * literals by construction. If this false-positives a second time, that trade is worth re-opening.
  */
 const SHAPES: ReadonlyArray<{ readonly what: string; readonly re: RegExp }> = [
   // `git init` in every spelling this tree has used: a bun `$` template string, and the argv forms

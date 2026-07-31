@@ -5,7 +5,7 @@ import { Effect } from "effect"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { Git } from "@novaclaw/core/git"
 import { AbsolutePath, RelativePath } from "@novaclaw/core/schema"
-import { branch, commit, repo, withRemote } from "./fixture/git"
+import { branch, commit, git as gitCmd, repo, withRemote } from "./fixture/git"
 import { tmpdir } from "./fixture/tmpdir"
 import { testEffect } from "./lib/effect"
 
@@ -61,6 +61,49 @@ describe("Git", () => {
 function read(file: string) {
   return Effect.promise(() => fs.readFile(file, "utf8")).pipe(Effect.map((content) => content.replace(/\r\n/g, "\n")))
 }
+
+// `repo.discover` is the hottest git call the product makes — `Project.resolve` reaches it for every
+// request, measured at 111 `rev-parse` processes in ONE test file. It used to spawn three of them
+// (`--show-toplevel`, `--git-dir`, `--git-common-dir`); `rev-parse` answers all three in one
+// invocation, one value per line in argument order, so it now spawns one.
+//
+// The collapse is only safe WITH the fallback, and this is the case that proves it. Measured on
+// git-for-windows: when `--show-toplevel` is not answerable the whole invocation dies — exit 128,
+// **nothing printed**, not even the two queries that would have succeeded. The three-spawn version
+// tolerated that by construction, because only the latter two were required and a failed
+// `--show-toplevel` fell back to the containing directory. So a naive one-call rewrite turns a
+// repository we resolve today into `undefined` — a silent regression with no compile error and no
+// failing assertion anywhere else in this file.
+//
+// `core.bare = true` on a repository whose `.git` is still on disk is that shape, reachable with
+// real git: the `.git` walk still finds it, so `discover` runs, and only `--show-toplevel` fails.
+describe("Git repo.discover", () => {
+  it.live("falls back when --show-toplevel is unanswerable, instead of losing the repository", () =>
+    Effect.gen(function* () {
+      const root = yield* Effect.acquireRelease(
+        Effect.promise(() => tmpdir()),
+        (dir) => Effect.promise(() => dir[Symbol.asyncDispose]()),
+      )
+      yield* Effect.promise(() => repo(root.path))
+      const directory = AbsolutePath.make(yield* Effect.promise(() => fs.realpath(root.path)))
+      const git = yield* Git.Service
+
+      // Sanity first, so a failure here reads as "the fixture broke", not "the fallback broke".
+      const before = yield* git.repo.discover(directory)
+      expect(before?.worktree).toBe(directory)
+
+      yield* Effect.promise(() => gitCmd(root.path, "config", "core.bare", "true"))
+
+      const found = yield* git.repo.discover(directory)
+      // The assertion that matters is `toBeDefined`: the pre-collapse code answered here, so
+      // answering `undefined` would be a capability we silently lost.
+      expect(found, "a bare-flagged repository must still resolve — this is what the fallback buys").toBeDefined()
+      expect(found?.worktree).toBe(directory)
+      expect(found?.gitDirectory).toBe(AbsolutePath.make(path.join(directory, ".git")))
+      expect(found?.commonDirectory).toBe(found?.gitDirectory)
+    }),
+  )
+})
 
 describe("Git worktrees", () => {
   it.live("creates, lists, and removes linked worktrees", () =>

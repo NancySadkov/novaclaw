@@ -207,13 +207,43 @@ export const layer = Layer.effect(
 
       const cwd = path.dirname(dotgit)
       const git = run(cwd, proc)
-      const topLevel = yield* git(["rev-parse", "--show-toplevel"])
+
+      // `rev-parse` answers many queries in ONE invocation, one value per line and in argument
+      // order. This used to be three spawns, and `discover` is the hottest git call we make —
+      // `Project.resolve` reaches it for every request, which measured 111 `rev-parse` processes in
+      // a single test file. Collapsing it is a 3:1 cut on the dominant cost with no behaviour to
+      // trade, provided the fallback below is kept.
+      //
+      // ⚠️ **The fallback is load-bearing and the naive collapse is WRONG without it.** Measured on
+      // git-for-windows: in a BARE repository `--show-toplevel` fails with *"this operation must be
+      // run in a work tree"* and takes the whole invocation down — exit 128, **nothing printed**,
+      // not even the two queries that would have answered. The three-spawn version tolerated that by
+      // construction: only `--git-dir` and `--git-common-dir` were required, and a failed
+      // `--show-toplevel` fell back to `cwd`. So a single combined call would turn a repository we
+      // resolve today into `undefined`. The retry preserves the old semantics exactly, and costs an
+      // extra process only on the path that was already the pathological one — never worse than the
+      // three it replaces. (Verified on the shapes that matter: a normal repo and a LINKED WORKTREE
+      // both answer 3 lines/exit 0, the worktree's git-dir and common-dir correctly differing.)
+      const combined = yield* git(["rev-parse", "--show-toplevel", "--git-dir", "--git-common-dir"])
+      const lines = combined.text.split("\n").map((line) => line.trim())
+      if (combined.exitCode === 0 && lines.filter(Boolean).length >= 3) {
+        const [topLevel, gitDir, commonDir] = lines as [string, string, string]
+        return new Repository({
+          worktree: AbsolutePath.make(resolvePath(cwd, topLevel)),
+          gitDirectory: AbsolutePath.make(resolvePath(cwd, gitDir)),
+          commonDirectory: AbsolutePath.make(resolvePath(cwd, commonDir)),
+        })
+      }
+
       const gitDir = yield* git(["rev-parse", "--git-dir"])
       const commonDir = yield* git(["rev-parse", "--git-common-dir"])
       if (gitDir.exitCode !== 0 || commonDir.exitCode !== 0) return undefined
 
       return new Repository({
-        worktree: AbsolutePath.make(topLevel.exitCode === 0 ? resolvePath(cwd, topLevel.text) : cwd),
+        // No `--show-toplevel` here on purpose: the only way to reach this branch is that the query
+        // failed, so `cwd` is the answer the old code gave and re-asking would just spend a process
+        // to fail again.
+        worktree: AbsolutePath.make(cwd),
         gitDirectory: AbsolutePath.make(resolvePath(cwd, gitDir.text)),
         commonDirectory: AbsolutePath.make(resolvePath(cwd, commonDir.text)),
       })
