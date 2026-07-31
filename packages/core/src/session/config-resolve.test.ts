@@ -445,6 +445,16 @@ describe("the root tri-state has ONE collapse point (shrink-only ledger)", () =>
         "decides containment through `unattendedStanceRules`/`attendedRoot` and never folds the " +
         "value itself.",
     ],
+    [
+      "tool/permission.ts",
+      "Auto mode's tool, and it READS the tri-state without folding it: `attendedRoot(rootType)` " +
+        "decides whether a self-grant is capped at `bypass`, and `\"unknown\"` takes the restrictive " +
+        "arm through that same helper. Entitled because the alternative is worse — a self-managing " +
+        "agent on a chain we could not read is exactly the case that must NOT reach `yolo`, and a " +
+        "two-valued read here would answer `attended` for an unreadable chain (the dangling-parent " +
+        "shape `rootSessionType` was fixed for). It never calls `narrowRootType`; the collapse stays " +
+        "in `config-resolve.ts`.",
+    ],
   ])
 
   test("the sweep actually has the package to look at", () => {

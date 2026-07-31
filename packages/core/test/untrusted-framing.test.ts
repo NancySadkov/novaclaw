@@ -574,6 +574,7 @@ const NO_EXTERNAL = [
   "js.ts",
   "kb.ts",
   "plugin-tools.ts",
+  "permission.ts",
   "profile.ts",
   "quality-provision.ts",
   "question.ts",

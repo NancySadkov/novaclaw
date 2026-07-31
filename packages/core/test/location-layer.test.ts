@@ -125,6 +125,11 @@ describe("LocationServiceMap", () => {
             "js",
             "kb",
             "messenger",
+            // Auto mode's self-management tool (`tool/permission.ts`, 2026-07-31). It is advertised
+            // to every agent because LOWERING is always permitted; the ceiling is what bounds it, not
+            // the horizon. A user who wants the mode pinned denies the `permission` action, which
+            // withdraws it here through `whollyDisabled` like any other tool.
+            "permission",
             // ⚠️ `profile` joined this list on 2026-07-31 and that is a DELIBERATE behaviour change, not
             // drift. It used to skip `tools.register` at layer scope unless the profile was enabled AND
             // non-empty; B7 tier-2 made the switch a live per-turn availability predicate and dropped the
@@ -170,6 +175,11 @@ describe("LocationServiceMap", () => {
             "js",
             "kb",
             "messenger",
+            // Auto mode's self-management tool (`tool/permission.ts`, 2026-07-31). It is advertised
+            // to every agent because LOWERING is always permitted; the ceiling is what bounds it, not
+            // the horizon. A user who wants the mode pinned denies the `permission` action, which
+            // withdraws it here through `whollyDisabled` like any other tool.
+            "permission",
             // ⚠️ `profile` joined this list on 2026-07-31 and that is a DELIBERATE behaviour change, not
             // drift. It used to skip `tools.register` at layer scope unless the profile was enabled AND
             // non-empty; B7 tier-2 made the switch a live per-turn availability predicate and dropped the

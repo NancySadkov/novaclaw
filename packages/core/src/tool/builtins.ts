@@ -13,6 +13,7 @@ import { GrepTool } from "./grep"
 import { JsTool } from "./js"
 import { KbTool } from "./kb"
 import { MessengerTool } from "./messenger"
+import { PermissionTool } from "./permission"
 import { ProfileTool } from "./profile"
 import { QualityProvisionTool } from "./quality-provision"
 import { QuestionTool } from "./question"
@@ -65,6 +66,14 @@ export const locationLayer = Layer.mergeAll(
   JsTool.layer,
   KbTool.layer,
   MessengerTool.layer,
+  // Auto mode (`tool/permission.ts`). Registered under its own name with no `Tool.withPermission`
+  // wrap, for the same reason `configure` and `recipe` are: the name fallback in `tool.ts` already
+  // makes it answer to `permission`, and `validateRegistration` REFUSES a declaration that repeats
+  // the registration key. ⚠️ Like `configure` it spends a SECOND action — `permission_privileged`,
+  // for the one raise that routes through the ask (a return to `yolo`) — and a second action is not
+  // declarable through `withPermission`, which carries one. The split lives in the assert, which is
+  // where a per-target decision belongs.
+  PermissionTool.layer,
   ProfileTool.layer,
   QualityProvisionTool.layer,
   QuestionTool.layer,
@@ -105,6 +114,7 @@ export const node = makeLocationNode({
     JsTool.node,
     KbTool.node,
     MessengerTool.node,
+    PermissionTool.node,
     ProfileTool.node,
     QualityProvisionTool.node,
     QuestionTool.node,

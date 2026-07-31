@@ -844,3 +844,138 @@ export const rootSessionType = <E, R>(
   sessionID: string,
   getSession: (id: string) => Effect.Effect<SessionLike | undefined, E, R>,
 ): Effect.Effect<SessionType, E, R> => rootAttendance(sessionID, getSession).pipe(Effect.map(narrowRootType))
+
+// ─────────────────────────────────────────────────────────────────────────────
+// AUTO MODE — the agent sets its own level and OWNS it (todo/permissions.md).
+//
+// The owner's ask: a session where the MODEL raises and lowers its own permission level explicitly,
+// in writing, *acknowledging that it now owns it* — the self-authored-commitment lever. AGENTS.md
+// pitfall #1 states the law it must obey: **informational levers engage, mechanical ones convert.**
+// The written justification is the informational half and it is the point; everything in this block
+// is the mechanical half, and without it Auto mode is `yolo` with extra prose.
+//
+// ── AUTO IS NOT A SIXTH RUNG ───────────────────────────────────────────────────────────────────
+// `MODE_RANK` is untouched and `MODE_RULES` gains no member. Auto is a POLICY that lets a session
+// move inside a `[floor, ceiling]`, and the ladder above stays king: a self-grant is applied with
+// `moreRestrictive` and can therefore only ever NARROW what the chain already resolved to. That one
+// line is the whole safety argument, and it is why it is stated as an invariant rather than as a
+// check somebody could forget to run:
+//
+//   ⭐ **A self-grant is structurally incapable of granting a capability the user did not.**
+//
+// So the question *"where is the ceiling stored, and why can a session not move it?"* has a short
+// answer: the ceiling is not stored anywhere new. It is the session's own chain-RESOLVED
+// `permissionMode` — the column only the user's surfaces write (`SessionV2.switchMode` from the
+// composer, session create, spawn, fork) — narrowed further by attendance and by any ancestor's own
+// self-revocation. No tool writes that column, and even if one did, `autoResolvedMode` below would
+// still refuse to widen past it.
+//
+// ── THE BAND ──────────────────────────────────────────────────────────────────────────────────
+//   floor   = `AUTO_FLOOR` (`plan`) — rank 0, i.e. the bottom of the ladder itself.
+//   ceiling = min(chain-resolved mode · the attendance cap · every ancestor's self-grant)
+//
+// ⚠️ THE ATTENDANCE CAP APPLIES TO GRANTS ONLY, and that asymmetry is deliberate rather than an
+// oversight. An UNATTENDED root the user deliberately set to `yolo` keeps `yolo` while it holds no
+// grant — that is the documented escape from the deny-fast stance (§UNATTENDED CONFINEMENT above),
+// and capping it here would silently rewrite a posture the user chose. What the cap forbids is the
+// SESSION handing itself `yolo`: the moment a chain self-manages, `AUTO_UNATTENDED_CEILING` binds,
+// so an unattended agent that lowers itself can never climb back past `bypass`. Which is exactly
+// *"Unattended: `bypass` at most, never `yolo`"* — a self-raising unattended agent would otherwise
+// route straight around the stance, which exists because nobody is there to say no.
+//
+// ⚠️ AND IT IS KEYED ON THE RESOLVED ROOT TYPE, never on the session's own claim. `RootType`'s
+// `"unknown"` arm reaches `attendedRoot` intact and takes the restrictive branch, so a chain we
+// could not read is capped like an unattended one. Same collapse point, no second predicate.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** The ladder position of a mode. Exported so a caller can tell a RAISE from a LOWER without
+ *  re-typing the order — `MODE_RANK` itself stays private so there is one table. */
+export const modeRank = (mode: PermissionMode): number => MODE_RANK[mode]
+
+/**
+ * The lowest rung a session may put itself at. `plan` is rank 0, so this is the floor of the ladder
+ * rather than a policy choice — it is a named constant so a test can bind to it and so a future
+ * user-set floor has one place to land.
+ */
+export const AUTO_FLOOR: PermissionMode = "plan"
+
+/**
+ * The most an UNATTENDED chain may ever grant ITSELF (see the ⚠️ above). A constant so
+ * `auto-mode-algebra.test.ts` can flip it and watch the refusal invert.
+ */
+export const AUTO_UNATTENDED_CEILING: PermissionMode = "bypass"
+
+/**
+ * The most a session may grant itself: its chain-resolved mode, narrowed by the attendance cap and
+ * by any ancestor's self-grant.
+ *
+ * `ancestorGrant` is what makes *Privilege self-revocation* (todo.md → Vision) reach CHILDREN rather
+ * than only the session that performed it. Without it the revocation is escapable by spawning: a
+ * child resolves its mode from the parent's stored ROW, which a self-grant deliberately never
+ * touches, so a parent that dropped itself to `plan` would hand a fresh `bypass` to the next
+ * sub-agent it created.
+ */
+export const autoCeiling = (input: {
+  readonly resolvedMode: PermissionMode
+  readonly rootType: RootType
+  readonly ancestorGrant?: PermissionMode
+}): PermissionMode => {
+  const capped = attendedRoot(input.rootType)
+    ? input.resolvedMode
+    : moreRestrictive(input.resolvedMode, AUTO_UNATTENDED_CEILING)
+  return input.ancestorGrant === undefined ? capped : moreRestrictive(capped, input.ancestorGrant)
+}
+
+/**
+ * The mode a session actually RUNS at once auto-mode grants are taken into account. `grant` is the
+ * `moreRestrictive` fold of every self-grant on `[root … session]` (see `chainAutoGrant`), or
+ * `undefined` when nobody on the chain has self-managed.
+ *
+ * ⚠️ **No grant means NO CHANGE — not "clamped to the ceiling".** A chain that never called the tool
+ * must behave exactly as it did before this feature existed, including the unattended-`yolo` escape
+ * hatch. The attendance cap enters only through `autoCeiling`, i.e. only once a grant exists.
+ *
+ * ⚠️ **The fold is `moreRestrictive` against BOTH the resolved mode and the ceiling, which makes a
+ * forged grant harmless.** There is exactly one writer of the grant map (`tool/permission.ts`, via
+ * `PermissionV2.setAutoGrant`), but the guarantee does not rest on that: the worst a grant of `yolo`
+ * can do to an `ask` session is leave it at `ask`.
+ */
+export const autoResolvedMode = (input: {
+  readonly resolvedMode: PermissionMode
+  readonly rootType: RootType
+  readonly grant?: PermissionMode
+}): PermissionMode =>
+  input.grant === undefined
+    ? input.resolvedMode
+    : moreRestrictive(input.grant, autoCeiling({ resolvedMode: input.resolvedMode, rootType: input.rootType }))
+
+/**
+ * The `moreRestrictive` fold of every auto-mode self-grant on `[root … session]`, walking `parentID`
+ * root-ward with the same cycle guard as `resolveSessionConfig`. `undefined` when no layer has one.
+ *
+ * `grantOf` is a plain lookup rather than an Effect so this stays cheap enough to run on the
+ * permission evaluator's hot path — and the evaluator skips the walk entirely while no grant exists
+ * anywhere, so a default install pays nothing for this feature.
+ *
+ * ⚠️ It reads `grantOf(id)` BEFORE confirming the row is still there. That is deliberate: a grant is
+ * a restriction, so honouring a stale one over a vanished row can only refuse more, never less.
+ */
+export const chainAutoGrant = <E, R>(
+  sessionID: string,
+  getSession: (id: string) => Effect.Effect<SessionLike | undefined, E, R>,
+  grantOf: (id: string) => PermissionMode | undefined,
+): Effect.Effect<PermissionMode | undefined, E, R> =>
+  Effect.gen(function* () {
+    const seen = new Set<string>()
+    let id: string | undefined = sessionID
+    let grant: PermissionMode | undefined
+    while (id !== undefined && !seen.has(id)) {
+      seen.add(id)
+      const own = grantOf(id)
+      if (own !== undefined) grant = grant === undefined ? own : moreRestrictive(grant, own)
+      const session: SessionLike | undefined = yield* getSession(id)
+      if (!session) break
+      id = session.parentID
+    }
+    return grant
+  })

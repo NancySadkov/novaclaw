@@ -14,6 +14,8 @@ import { Wildcard } from "./util/wildcard"
 import {
   ASK_BEFORE_CHANGES_RULES,
   attendedRoot,
+  autoResolvedMode,
+  chainAutoGrant,
   EFFECTIVE_CONFIG_DEFAULTS,
   MODE_RULES,
   resolveSessionConfig,
@@ -380,6 +382,69 @@ export const AMBIENT_SAFE_BASELINE: Permission.Ruleset = [
 export const catchAllAllowRules = (ruleset: Permission.Ruleset): Permission.Ruleset =>
   ruleset.filter((rule) => rule.action === "*" && rule.resource === "*" && rule.effect === "allow")
 
+// ─────────────────────────────────────────────────────────────────────────────
+// AUTO MODE — where a session's SELF-GRANT lives (todo/permissions.md; the algebra and the whole
+// safety argument are in `session/config-resolve.ts` §AUTO MODE).
+//
+// ── WHY THIS IS A PROCESS-LOCAL MAP AND NOT A COLUMN, stated rather than discovered later ──────
+//
+//  1. **It is run-scoped by design, and that is the honest scope for it.** A self-grant answers
+//     *"what level is this session operating at RIGHT NOW, and on whose written say-so"*. A turn
+//     runs inside a live instance; if the instance goes away, so does the run. Resetting to the
+//     mode the USER picked is the fail-closed direction for the half that matters (a raise), and it
+//     never exceeds what the user granted in either direction.
+//  2. **A grant must never be mistaken for the user's own pick.** `session.permission_mode` is the
+//     ceiling precisely because only the user's surfaces write it. Storing the grant in the same
+//     column would let the agent ratchet its own ceiling upward — *an agent that can raise its own
+//     ceiling has no ceiling* — and storing it in a NEW column would put a second per-session mode
+//     fact on the wire, which is the fork the mode picker already suffered once.
+//  3. **Keying by sessionID alone is correct, not a shortcut.** Session ids are globally unique and
+//     `SessionStore` is itself a GLOBAL node, so two Locations can never collide here.
+//
+// ⚠️ **What this costs, named because ruling 2 forbids overclaiming:** a *lowering* does not
+// survive an instance restart. `tool/permission.ts` says so in the text it returns, so a model
+// never reports a durable revocation it did not make. The durable half needs a `SessionConfig`
+// field + a column + a migration; it is filed, not silently assumed.
+//
+// ⚠️ **Growth:** one small entry per session that has actually called the `permission` tool, for
+// the life of the process — the same shape and a strictly smaller footprint than `pending` below.
+// ─────────────────────────────────────────────────────────────────────────────
+
+/** A session's self-granted permission level, and the written justification that bought it. */
+export interface AutoGrant {
+  readonly mode: PermissionMode
+  /** The model's own words. Never empty — `tool/permission.ts` refuses a blank one. */
+  readonly justification: string
+  /** Epoch millis, so the tool can report *when* the session took this level. */
+  readonly at: number
+}
+
+const autoGrants = new Map<string, AutoGrant>()
+
+/** The self-grant a session currently holds, or `undefined`. */
+export const autoGrant = (sessionID: string): AutoGrant | undefined => autoGrants.get(sessionID)
+
+/** The self-granted MODE only — the shape `chainAutoGrant`'s `grantOf` lookup wants. */
+export const autoGrantMode = (sessionID: string): PermissionMode | undefined => autoGrants.get(sessionID)?.mode
+
+/**
+ * Record a session's self-grant. The ONLY writer is `tool/permission.ts`, which is also the only
+ * place that checks the ceiling and spends the permission action — but the guarantee does not rest
+ * on that, because `autoResolvedMode` folds whatever lands here with `moreRestrictive` and so
+ * cannot widen anything (see `config-resolve.ts` §AUTO MODE).
+ */
+export const setAutoGrant = (sessionID: string, grant: AutoGrant): void => {
+  autoGrants.set(sessionID, grant)
+}
+
+/** Whether ANY session in this process holds a self-grant — the evaluator's cheap skip. */
+export const anyAutoGrant = (): boolean => autoGrants.size > 0
+
+/** Test-only reset. Production never clears the map; a session's level is its own until it moves. */
+export const clearAutoGrants = (): void => {
+  autoGrants.clear()
+}
+
 // ⚠️ The `resource` match is only as strong as what `resource` MEANS for that action. For path-shaped
 // actions (read/write/external_directory_*) it is a resolved, canonicalized path — a real semantic
 // gate. For `bash` the resource is the raw COMMAND STRING, and matching it is a prompt-reduction
@@ -558,7 +623,9 @@ export const layer = Layer.effect(
       const resolved = yield* sessionConfig(input.sessionID).pipe(
         EffectRuntime.catch(() => EffectRuntime.succeed(EFFECTIVE_CONFIG_DEFAULTS)),
       )
-      const mode: PermissionMode = resolved.permissionMode
+      // ⚠️ `mode` is NOT read off `resolved` here any more — it is computed below, AFTER `rootType`,
+      // because Auto mode's cap is keyed on attendance. Moving the line is the whole ordering
+      // change; every consumer of `mode` already sat below the attendance walk.
       // Deny-fast — the unattended confinement stance (config-resolve.ts §UNATTENDED CONFINEMENT).
       // Under an UNATTENDED chain ROOT, an out-of-folder create/modify (and its read twin) is
       // refused OUTRIGHT instead of being parked as an ask nobody can answer. Its own HARD arm,
@@ -579,6 +646,24 @@ export const layer = Layer.effect(
       const rootType = yield* rootAttendance(input.sessionID, (id) => sessions.get(id as SessionV2.ID)).pipe(
         EffectRuntime.catch(() => EffectRuntime.succeed("unknown" as const)),
       )
+      // ── AUTO MODE: the session's own self-grant, folded down the chain ────────────────────────
+      // `autoResolvedMode` folds with `moreRestrictive`, so this line is structurally incapable of
+      // granting anything the user did not — it can only narrow (config-resolve.ts §AUTO MODE). The
+      // walk is SKIPPED entirely while nothing in this process holds a grant, so a default install
+      // pays neither a query nor an allocation for the feature.
+      // ⚠️ It folds the whole CHAIN, not just this session, which is what makes a parent's
+      // self-revocation reach the children it spawns afterwards (todo.md → Vision → *Privilege
+      // self-revocation*: "drops capabilities from itself AND ITS CHILDREN"). A child resolves its
+      // mode from the parent's stored ROW, and a self-grant deliberately never touches that row, so
+      // without this fold the revocation would be escapable by spawning.
+      const chainGrant = anyAutoGrant()
+        ? yield* chainAutoGrant(input.sessionID, (id) => sessions.get(id as SessionV2.ID), autoGrantMode)
+        : undefined
+      const mode: PermissionMode = autoResolvedMode({
+        resolvedMode: resolved.permissionMode,
+        rootType,
+        grant: chainGrant,
+      })
       // ...with ONE exemption: the managed tool-output store. A tool whose output is too large is spilled
       // to `<data>/tool-output/` and the model is told to go read it — but that store sits outside every
       // Location, so inspecting it classifies as an external-directory READ and the blanket deny above
