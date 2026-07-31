@@ -1703,7 +1703,7 @@ export class Trash extends HeyApiClient {
   /**
    * List trash
    *
-   * List trashed entries, newest first (expired entries are purged lazily).
+   * List trashed entries, newest first. Read-only: listing never purges or otherwise modifies the store, so an entry past its TTL is reported while it is still on disk and still restorable.
    */
   public list<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -1733,7 +1733,7 @@ export class Trash extends HeyApiClient {
   /**
    * Restore from trash
    *
-   * Restore a trashed entry to its original path (collision-safe suffix if occupied).
+   * Restore a trashed entry to its original path (collision-safe suffix if occupied). Succeeds even if the entry is past its TTL; the retention sweep runs after the restore, never before it.
    */
   public restore<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -1942,7 +1942,7 @@ export class File extends HeyApiClient {
   /**
    * Trash file or directory
    *
-   * Safe-delete: move a file or directory into the dated Trash store (restorable, TTL ~2 days).
+   * Safe-delete: move a file or directory into the dated Trash store. Restorable for at least ~2 days — this write is also where the retention sweep runs, so entries past the TTL are reclaimed here.
    */
   public trash<ThrowOnError extends boolean = false>(
     parameters?: {
@@ -4689,7 +4689,7 @@ export class Session extends HeyApiClient {
       metadata?: {
         [key: string]: unknown
       }
-      archived?: number
+      archived?: number | null
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -4967,7 +4967,7 @@ export class Session extends HeyApiClient {
   public switchStrict<ThrowOnError extends boolean = false>(
     parameters: {
       sessionID: string
-      strict?: SessionStrictOverride
+      strict?: SessionStrictOverride | null
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -5006,8 +5006,15 @@ export class Session extends HeyApiClient {
   public switchFeature<ThrowOnError extends boolean = false>(
     parameters: {
       sessionID: string
-      feature?: "introspection" | "quality" | "affective" | "thinkingBudget" | "surgicalEdits" | "askBeforeChanges"
-      enabled?: boolean
+      feature?:
+        | "introspection"
+        | "quality"
+        | "affective"
+        | "thinkingBudget"
+        | "surgicalEdits"
+        | "askBeforeChanges"
+        | "safeMode"
+      enabled?: boolean | null
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -5084,7 +5091,7 @@ export class Session extends HeyApiClient {
   public switchPromptOverride<ThrowOnError extends boolean = false>(
     parameters: {
       sessionID: string
-      override?: string
+      override?: string | null
     },
     options?: Options<never, ThrowOnError>,
   ) {

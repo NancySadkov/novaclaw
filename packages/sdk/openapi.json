@@ -4112,13 +4112,27 @@
                         "type": "string"
                       },
                       "name": {
-                        "type": "string"
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       },
                       "scope": {
                         "type": "string"
                       },
                       "source": {
-                        "type": "string"
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       },
                       "confidence": {
                         "anyOf": [
@@ -4140,6 +4154,9 @@
                           {
                             "type": "string",
                             "enum": ["Infinity", "-Infinity", "NaN"]
+                          },
+                          {
+                            "type": "null"
                           }
                         ]
                       },
@@ -4237,13 +4254,27 @@
                             "type": "string"
                           },
                           "name": {
-                            "type": "string"
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "scope": {
                             "type": "string"
                           },
                           "source": {
-                            "type": "string"
+                            "anyOf": [
+                              {
+                                "type": "string"
+                              },
+                              {
+                                "type": "null"
+                              }
+                            ]
                           },
                           "confidence": {
                             "anyOf": [
@@ -4265,6 +4296,9 @@
                               {
                                 "type": "string",
                                 "enum": ["Infinity", "-Infinity", "NaN"]
+                              },
+                              {
+                                "type": "null"
                               }
                             ]
                           },
@@ -4366,13 +4400,27 @@
                         "type": "string"
                       },
                       "name": {
-                        "type": "string"
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       },
                       "scope": {
                         "type": "string"
                       },
                       "source": {
-                        "type": "string"
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       },
                       "confidence": {
                         "anyOf": [
@@ -4394,6 +4442,9 @@
                           {
                             "type": "string",
                             "enum": ["Infinity", "-Infinity", "NaN"]
+                          },
+                          {
+                            "type": "null"
                           }
                         ]
                       },
@@ -4642,40 +4693,48 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "ids": {
-                      "type": "array",
-                      "items": {
-                        "type": "string"
-                      }
-                    },
-                    "hops": {
-                      "anyOf": [
-                        {
-                          "type": "number"
+                  "anyOf": [
+                    {
+                      "type": "object",
+                      "properties": {
+                        "ids": {
+                          "type": "array",
+                          "items": {
+                            "type": "string"
+                          }
                         },
-                        {
-                          "type": "string",
-                          "enum": ["NaN"]
-                        },
-                        {
-                          "type": "string",
-                          "enum": ["Infinity"]
-                        },
-                        {
-                          "type": "string",
-                          "enum": ["-Infinity"]
-                        },
-                        {
-                          "type": "string",
-                          "enum": ["Infinity", "-Infinity", "NaN"]
+                        "hops": {
+                          "anyOf": [
+                            {
+                              "type": "number"
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["NaN"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["-Infinity"]
+                            },
+                            {
+                              "type": "string",
+                              "enum": ["Infinity", "-Infinity", "NaN"]
+                            }
+                          ]
                         }
-                      ]
+                      },
+                      "required": ["ids", "hops"],
+                      "additionalProperties": false
+                    },
+                    {
+                      "type": "null"
                     }
-                  },
-                  "required": ["ids", "hops"],
-                  "additionalProperties": false
+                  ],
+                  "description": "Shortest path between two memories, if any"
                 }
               }
             }
@@ -6900,35 +6959,115 @@
                       "type": "string"
                     },
                     "bash": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "git": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "bundle": {
-                      "type": "object",
-                      "properties": {
-                        "root": {
-                          "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "root": {
+                              "type": "string"
+                            },
+                            "bash": {
+                              "type": "string"
+                            },
+                            "git": {
+                              "type": "string"
+                            },
+                            "version": {
+                              "type": "string"
+                            },
+                            "provisionedAt": {
+                              "type": "number"
+                            }
+                          },
+                          "required": ["root", "bash", "git"],
+                          "additionalProperties": false
                         },
-                        "bash": {
-                          "type": "string"
-                        },
-                        "git": {
-                          "type": "string"
-                        },
-                        "version": {
-                          "type": "string"
-                        },
-                        "provisionedAt": {
-                          "type": "number"
+                        {
+                          "type": "null"
                         }
-                      },
-                      "required": ["root", "bash", "git"],
-                      "additionalProperties": false
+                      ]
                     },
                     "provisionSupported": {
                       "type": "boolean"
+                    },
+                    "jail": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": ["namespaces", "seatbelt", "appcontainer", "none"]
+                        },
+                        "fs": {
+                          "type": "boolean"
+                        },
+                        "net": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": "string",
+                          "enum": [
+                            "confined",
+                            "partial-backend",
+                            "platform-unsupported",
+                            "backend-absent",
+                            "backend-blocked"
+                          ]
+                        },
+                        "probeCommand": {
+                          "type": "string"
+                        },
+                        "probeExit": {
+                          "type": "number"
+                        },
+                        "probeError": {
+                          "type": "string"
+                        },
+                        "bash": {
+                          "type": "object",
+                          "properties": {
+                            "attended": {
+                              "type": "string",
+                              "enum": ["raw", "confined", "deny"]
+                            },
+                            "unattended": {
+                              "type": "string",
+                              "enum": ["raw", "confined", "deny"]
+                            },
+                            "unattendedSafeMode": {
+                              "type": "string",
+                              "enum": ["raw", "confined", "deny"]
+                            },
+                            "untrusted": {
+                              "type": "string",
+                              "enum": ["raw", "confined", "deny"]
+                            }
+                          },
+                          "required": ["attended", "unattended", "unattendedSafeMode", "untrusted"],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": ["kind", "fs", "net", "reason", "bash"],
+                      "additionalProperties": false
                     }
                   },
                   "required": ["platform", "agentShell", "bash", "git", "bundle", "provisionSupported"],
@@ -7086,35 +7225,115 @@
                       "type": "string"
                     },
                     "bash": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "git": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "bundle": {
-                      "type": "object",
-                      "properties": {
-                        "root": {
-                          "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "object",
+                          "properties": {
+                            "root": {
+                              "type": "string"
+                            },
+                            "bash": {
+                              "type": "string"
+                            },
+                            "git": {
+                              "type": "string"
+                            },
+                            "version": {
+                              "type": "string"
+                            },
+                            "provisionedAt": {
+                              "type": "number"
+                            }
+                          },
+                          "required": ["root", "bash", "git"],
+                          "additionalProperties": false
                         },
-                        "bash": {
-                          "type": "string"
-                        },
-                        "git": {
-                          "type": "string"
-                        },
-                        "version": {
-                          "type": "string"
-                        },
-                        "provisionedAt": {
-                          "type": "number"
+                        {
+                          "type": "null"
                         }
-                      },
-                      "required": ["root", "bash", "git"],
-                      "additionalProperties": false
+                      ]
                     },
                     "provisionSupported": {
                       "type": "boolean"
+                    },
+                    "jail": {
+                      "type": "object",
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": ["namespaces", "seatbelt", "appcontainer", "none"]
+                        },
+                        "fs": {
+                          "type": "boolean"
+                        },
+                        "net": {
+                          "type": "boolean"
+                        },
+                        "reason": {
+                          "type": "string",
+                          "enum": [
+                            "confined",
+                            "partial-backend",
+                            "platform-unsupported",
+                            "backend-absent",
+                            "backend-blocked"
+                          ]
+                        },
+                        "probeCommand": {
+                          "type": "string"
+                        },
+                        "probeExit": {
+                          "type": "number"
+                        },
+                        "probeError": {
+                          "type": "string"
+                        },
+                        "bash": {
+                          "type": "object",
+                          "properties": {
+                            "attended": {
+                              "type": "string",
+                              "enum": ["raw", "confined", "deny"]
+                            },
+                            "unattended": {
+                              "type": "string",
+                              "enum": ["raw", "confined", "deny"]
+                            },
+                            "unattendedSafeMode": {
+                              "type": "string",
+                              "enum": ["raw", "confined", "deny"]
+                            },
+                            "untrusted": {
+                              "type": "string",
+                              "enum": ["raw", "confined", "deny"]
+                            }
+                          },
+                          "required": ["attended", "unattended", "unattendedSafeMode", "untrusted"],
+                          "additionalProperties": false
+                        }
+                      },
+                      "required": ["kind", "fs", "net", "reason", "bash"],
+                      "additionalProperties": false
                     }
                   },
                   "required": ["platform", "agentShell", "bash", "git", "bundle", "provisionSupported"],
@@ -7877,7 +8096,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/Workspace"
+                  "anyOf": [
+                    {
+                      "$ref": "#/components/schemas/Workspace"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "description": "Workspace removed"
                 }
               }
             }
@@ -8907,7 +9134,14 @@
                     "type": "object"
                   },
                   "archived": {
-                    "type": "number"
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "additionalProperties": false
@@ -9748,7 +9982,14 @@
                 "type": "object",
                 "properties": {
                   "strict": {
-                    "$ref": "#/components/schemas/SessionStrictOverride"
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/SessionStrictOverride"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": ["strict"],
@@ -9840,11 +10081,19 @@
                       "affective",
                       "thinkingBudget",
                       "surgicalEdits",
-                      "askBeforeChanges"
+                      "askBeforeChanges",
+                      "safeMode"
                     ]
                   },
                   "enabled": {
-                    "type": "boolean"
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": ["feature", "enabled"],
@@ -10015,7 +10264,14 @@
                 "type": "object",
                 "properties": {
                   "override": {
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": ["override"],
@@ -10980,7 +11236,14 @@
                   "type": "object",
                   "properties": {
                     "id": {
-                      "type": "string"
+                      "anyOf": [
+                        {
+                          "type": "string"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     },
                     "event": {
                       "type": "string"
@@ -11989,7 +12252,14 @@
                       "$ref": "#/components/schemas/LocationInfo"
                     },
                     "data": {
-                      "$ref": "#/components/schemas/IntegrationInfo"
+                      "anyOf": [
+                        {
+                          "$ref": "#/components/schemas/IntegrationInfo"
+                        },
+                        {
+                          "type": "null"
+                        }
+                      ]
                     }
                   },
                   "required": ["location", "data"],
@@ -17795,7 +18065,14 @@
                         "pattern": "^msg_"
                       },
                       "strict": {
-                        "$ref": "#/components/schemas/SessionStrictOverride"
+                        "anyOf": [
+                          {
+                            "$ref": "#/components/schemas/SessionStrictOverride"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       }
                     },
                     "required": ["timestamp", "sessionID", "messageID", "strict"],
@@ -17838,11 +18115,19 @@
                           "affective",
                           "thinkingBudget",
                           "surgicalEdits",
-                          "askBeforeChanges"
+                          "askBeforeChanges",
+                          "safeMode"
                         ]
                       },
                       "enabled": {
-                        "type": "boolean"
+                        "anyOf": [
+                          {
+                            "type": "boolean"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       }
                     },
                     "required": ["timestamp", "sessionID", "messageID", "feature", "enabled"],
@@ -17915,7 +18200,14 @@
                         "pattern": "^msg_"
                       },
                       "override": {
-                        "type": "string"
+                        "anyOf": [
+                          {
+                            "type": "string"
+                          },
+                          {
+                            "type": "null"
+                          }
+                        ]
                       }
                     },
                     "required": ["timestamp", "sessionID", "messageID", "override"],
@@ -22790,6 +23082,9 @@
           "askBeforeChanges": {
             "type": "boolean"
           },
+          "safeMode": {
+            "type": "boolean"
+          },
           "result": {},
           "cost": {
             "type": "number"
@@ -24359,7 +24654,14 @@
                     "pattern": "^msg_"
                   },
                   "strict": {
-                    "$ref": "#/components/schemas/SessionStrictOverride"
+                    "anyOf": [
+                      {
+                        "$ref": "#/components/schemas/SessionStrictOverride"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": ["timestamp", "sessionID", "messageID", "strict"],
@@ -24423,11 +24725,19 @@
                       "affective",
                       "thinkingBudget",
                       "surgicalEdits",
-                      "askBeforeChanges"
+                      "askBeforeChanges",
+                      "safeMode"
                     ]
                   },
                   "enabled": {
-                    "type": "boolean"
+                    "anyOf": [
+                      {
+                        "type": "boolean"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": ["timestamp", "sessionID", "messageID", "feature", "enabled"],
@@ -24542,7 +24852,14 @@
                     "pattern": "^msg_"
                   },
                   "override": {
-                    "type": "string"
+                    "anyOf": [
+                      {
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ]
                   }
                 },
                 "required": ["timestamp", "sessionID", "messageID", "override"],
@@ -28524,7 +28841,14 @@
                 "pattern": "^msg_"
               },
               "strict": {
-                "$ref": "#/components/schemas/SessionStrictOverride"
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/SessionStrictOverride"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": ["timestamp", "sessionID", "messageID", "strict"],
@@ -28583,10 +28907,25 @@
               },
               "feature": {
                 "type": "string",
-                "enum": ["introspection", "quality", "affective", "thinkingBudget", "surgicalEdits", "askBeforeChanges"]
+                "enum": [
+                  "introspection",
+                  "quality",
+                  "affective",
+                  "thinkingBudget",
+                  "surgicalEdits",
+                  "askBeforeChanges",
+                  "safeMode"
+                ]
               },
               "enabled": {
-                "type": "boolean"
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": ["timestamp", "sessionID", "messageID", "feature", "enabled"],
@@ -28703,7 +29042,14 @@
                 "pattern": "^msg_"
               },
               "override": {
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": ["timestamp", "sessionID", "messageID", "override"],
@@ -31826,16 +32172,44 @@
             "type": "string"
           },
           "agent": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "model": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "location": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "permissionMode": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "enabled": {
             "type": "boolean"
@@ -31860,6 +32234,9 @@
               {
                 "type": "string",
                 "enum": ["Infinity", "-Infinity", "NaN"]
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -31883,6 +32260,9 @@
               {
                 "type": "string",
                 "enum": ["Infinity", "-Infinity", "NaN"]
+              },
+              {
+                "type": "null"
               }
             ]
           },
@@ -32041,16 +32421,44 @@
             "type": "string"
           },
           "agent": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "model": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "location": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "permissionMode": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "enabled": {
             "type": "boolean"
@@ -32114,7 +32522,14 @@
             ]
           },
           "sessionId": {
-            "type": "string"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
           },
           "status": {
             "type": "string",
@@ -35360,7 +35775,14 @@
                 "pattern": "^msg_"
               },
               "strict": {
-                "$ref": "#/components/schemas/SessionStrictOverride"
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/SessionStrictOverride"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": ["timestamp", "sessionID", "messageID", "strict"],
@@ -35397,10 +35819,25 @@
               },
               "feature": {
                 "type": "string",
-                "enum": ["introspection", "quality", "affective", "thinkingBudget", "surgicalEdits", "askBeforeChanges"]
+                "enum": [
+                  "introspection",
+                  "quality",
+                  "affective",
+                  "thinkingBudget",
+                  "surgicalEdits",
+                  "askBeforeChanges",
+                  "safeMode"
+                ]
               },
               "enabled": {
-                "type": "boolean"
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": ["timestamp", "sessionID", "messageID", "feature", "enabled"],
@@ -35473,7 +35910,14 @@
                 "pattern": "^msg_"
               },
               "override": {
-                "type": "string"
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
               }
             },
             "required": ["timestamp", "sessionID", "messageID", "override"],

@@ -89,9 +89,10 @@ function matchLegacyOpenApi(input: Record<string, unknown>) {
   // actual schema from any parent union that references them.
   fixSelfReferencingComponents(spec)
 
-  // Effect's Schema.optional emits `anyOf: [T, {type:"null"}]` in OpenAPI,
-  // but the legacy SDK expected plain `T` for optional fields. Strip null
-  // from all component schemas so both request and response types match.
+  // Effect's Schema.optional emits `anyOf: [T, {type:"null"}]` in OpenAPI, but the legacy SDK expected
+  // plain `T` for optional fields. Strip that arm — and ONLY that arm: `Schema.NullOr` emits the same
+  // shape and its `null` is a value callers send, so `stripOptionalNull` discriminates on the enclosing
+  // `required` array. See its doc comment.
   for (const [name, schema] of Object.entries(spec.components?.schemas ?? {})) {
     spec.components!.schemas![name] = stripOptionalNull(structuredClone(schema))
   }
@@ -113,30 +114,6 @@ function matchLegacyOpenApi(input: Record<string, unknown>) {
         if (!isV2Api) delete operation.requestBody.required
         const body = operation.requestBody.content?.["application/json"]
         if (body?.schema) body.schema = stripOptionalNull(structuredClone(body.schema))
-        if (path === "/experimental/workspace" && method === "post") {
-          // Workspace creation fields `branch` and `extra` are Schema.NullOr —
-          // genuinely nullable, not just optional. Re-add the null that the
-          // component-level strip above removed.
-          const ref = operation.requestBody.content?.["application/json"]?.schema?.$ref?.replace(
-            "#/components/schemas/",
-            "",
-          )
-          const properties = ref
-            ? spec.components?.schemas?.[ref]?.properties
-            : operation.requestBody.content?.["application/json"]?.schema?.properties
-          if (properties?.branch) properties.branch = { anyOf: [properties.branch, { type: "null" }] }
-          if (properties?.extra) properties.extra = { anyOf: [properties.extra, { type: "null" }] }
-        }
-        if (path === "/experimental/workspace/warp" && method === "post") {
-          const ref = operation.requestBody.content?.["application/json"]?.schema?.$ref?.replace(
-            "#/components/schemas/",
-            "",
-          )
-          const properties = ref
-            ? spec.components?.schemas?.[ref]?.properties
-            : operation.requestBody.content?.["application/json"]?.schema?.properties
-          if (properties?.id) properties.id = { anyOf: [properties.id, { type: "null" }] }
-        }
       }
       for (const response of Object.values(operation.responses ?? {})) {
         for (const content of Object.values(response.content ?? {})) {
@@ -257,25 +234,25 @@ function componentTypeName(name: string) {
     .join("")
 }
 
+/**
+ * What is left of the hand-maintained corrections, and why only this one.
+ *
+ * This function used to carry a **nullability re-add list** — `Workspace.branch/directory/extra`,
+ * `GlobalSession.project`, `SyncEventSessionUpdated.data.info` — patching back, one field at a time,
+ * the `null` that `stripOptionalNull` had just wrongly eaten. Fixing the strip at its source (see
+ * `stripOptionalNull`) restored **49 positions** rather than those few, so the list is gone; ruling 11
+ * wants fewer hand-written corrections to the one generated artifact, not more.
+ *
+ * Three further overrides went with it, and they were removed on measurement rather than on judgement.
+ * `AgentConfig.additionalProperties`, `ProviderConfig.options.additionalProperties` and the
+ * `ProviderConfig.models.*.variants` walk were **dead**: none of those components exists in the emitted
+ * document at all, so every one of their `if` guards was false. Ablated 2026-07-31 — the generated spec
+ * is byte-identical without them. `Command.template` is the one that still fires.
+ */
 function applyLegacySchemaOverrides(spec: OpenApiSpec) {
   const schemas = spec.components?.schemas
   if (!schemas) return
-  if (schemas.AgentConfig) schemas.AgentConfig.additionalProperties = {}
   if (schemas.Command?.properties?.template) schemas.Command.properties.template = { type: "string" }
-  if (schemas.Workspace?.properties) {
-    schemas.Workspace.properties.branch = nullable(schemas.Workspace.properties.branch)
-    schemas.Workspace.properties.directory = nullable(schemas.Workspace.properties.directory)
-    schemas.Workspace.properties.extra = nullable(schemas.Workspace.properties.extra)
-  }
-  if (schemas.GlobalSession?.properties?.project)
-    schemas.GlobalSession.properties.project = nullable(schemas.GlobalSession.properties.project)
-  const providerOptions = schemas.ProviderConfig?.properties?.options
-  if (providerOptions) providerOptions.additionalProperties = {}
-  const model = schemas.ProviderConfig?.properties?.models?.additionalProperties
-  const variants = typeof model === "object" ? model.properties?.variants?.additionalProperties : undefined
-  if (variants && typeof variants === "object") variants.additionalProperties = {}
-  const syncInfo = schemas.SyncEventSessionUpdated?.properties?.data?.properties?.info
-  if (syncInfo?.properties) makePropertiesNullable(syncInfo.properties)
 }
 
 function normalizeComponentDescriptions(spec: OpenApiSpec) {
@@ -287,25 +264,6 @@ function normalizeComponentDescriptions(spec: OpenApiSpec) {
     }
     delete schema.description
   }
-}
-
-function makePropertiesNullable(properties: Record<string, OpenApiSchema>) {
-  for (const [key, value] of Object.entries(properties)) {
-    if (key === "share" && value.properties?.url) {
-      value.properties.url = nullable(value.properties.url)
-      continue
-    }
-    if (key === "time" && value.properties) {
-      makePropertiesNullable(value.properties)
-      continue
-    }
-    properties[key] = nullable(value)
-  }
-}
-
-function nullable(schema: OpenApiSchema): OpenApiSchema {
-  if (flattenOptions(schema.anyOf ?? schema.oneOf)?.some((item) => item.type === "null")) return schema
-  return { anyOf: [schema, { type: "null" }] }
 }
 
 function stableSchema(input: unknown, schemas: Record<string, OpenApiSchema>): string {
@@ -456,23 +414,52 @@ function fixSelfReferencingComponents(spec: OpenApiSpec) {
   }
 }
 
-/** Strip `{type:"null"}` arms that Effect's `Schema.optional` adds to OpenAPI unions. */
-function stripOptionalNull(schema: OpenApiSchema): OpenApiSchema {
+/**
+ * Strip the `{type:"null"}` arm that Effect's `Schema.optional` adds to OpenAPI unions — and ONLY that
+ * one.
+ *
+ * ⚠️ **Shape alone cannot tell an optional field from a nullable one.** `Schema.optional(T)` and
+ * `Schema.NullOr(T)` emit the byte-identical `anyOf: [T, {type:"null"}]`; what separates them is the
+ * enclosing object's `required` array — a `Schema.NullOr` property IS listed there, a `Schema.optional`
+ * one is not. Until 2026-07-31 this function never read `required` at all and therefore stripped both,
+ * silently deleting `null` from **46 required-and-nullable positions** in the spec. Three of them are
+ * the per-session override endpoints (`POST /api/session/{id}/strict`, `.../feature`,
+ * `.../prompt-override`) whose own OpenAPI descriptions read *"null clears the override back to
+ * inherit"* — so the generated SDK typed the body as `{ strict: SessionStrictOverride }` and a typed
+ * caller could not express *inherit* at all. That is architecture.md's sparse-override keystone lost in
+ * transit, and it was patched over by a hand-maintained re-add list rather than fixed at the source.
+ *
+ * `optional` is therefore the caller's answer to *"is a lone `null` arm here an artifact?"*:
+ *
+ * - **`false` (the default, and every non-property position)** — a component root, a payload/response
+ *   root, an array item, a record value, a union arm. `Schema.optional` cannot occur in any of these,
+ *   so every `null` found here is real and is kept.
+ * - **`true`** — the schema of a property absent from its parent's `required` array. A single `null`
+ *   arm is Effect's optionality marker and is stripped; **two or more** are not, because
+ *   `Schema.optional(Schema.NullOr(T))` nests the unions and flattens to a doubled `null` (13 such
+ *   positions exist, `Workspace.branch` among them). One `null` is kept in that case.
+ */
+function stripOptionalNull(schema: OpenApiSchema, optional = false): OpenApiSchema {
   if (schema.allOf?.length === 1) {
     const [constraint] = schema.allOf
     delete schema.allOf
-    return stripOptionalNull({ ...schema, ...constraint })
+    return stripOptionalNull({ ...schema, ...constraint }, optional)
   }
   if (isEmptyObjectUnion(schema)) return { type: "object", properties: {} }
   const options = flattenOptions(schema.anyOf ?? schema.oneOf)
   if (options) {
     const withoutNull = options.filter((item) => item.type !== "null")
-    if (withoutNull.length === 1) return stripOptionalNull(withoutNull[0])
-    if (schema.anyOf) schema.anyOf = withoutNull.map(stripOptionalNull)
-    if (schema.oneOf) schema.oneOf = withoutNull.map(stripOptionalNull)
+    const nullArms = options.length - withoutNull.length
+    const keepNull = nullArms > 0 && (!optional || nullArms > 1)
+    // `null` last, matching how a hand-written `{anyOf:[T,{type:"null"}]}` was spelled before this
+    // function learned to produce them itself.
+    const kept: OpenApiSchema[] = keepNull ? [...withoutNull, { type: "null" }] : withoutNull
+    if (kept.length === 1) return stripOptionalNull(kept[0])
+    if (schema.anyOf) schema.anyOf = kept.map((item) => stripOptionalNull(item))
+    if (schema.oneOf) schema.oneOf = kept.map((item) => stripOptionalNull(item))
   }
   if (schema.allOf) {
-    const allOf = schema.allOf.map(stripOptionalNull)
+    const allOf = schema.allOf.map((item) => stripOptionalNull(item))
     if (schema.type) {
       delete schema.allOf
       for (const item of allOf) Object.assign(schema, item)
@@ -483,8 +470,9 @@ function stripOptionalNull(schema: OpenApiSchema): OpenApiSchema {
   if (schema.prefixItems && schema.items) delete schema.prefixItems
   if (schema.items) schema.items = stripOptionalNull(schema.items)
   if (schema.properties) {
+    const required = new Set(schema.required ?? [])
     for (const [key, value] of Object.entries(schema.properties)) {
-      schema.properties[key] = stripOptionalNull(value)
+      schema.properties[key] = stripOptionalNull(value, !required.has(key))
     }
   }
   if (schema.additionalProperties && typeof schema.additionalProperties === "object") {
@@ -512,8 +500,13 @@ function flattenOptions(options: OpenApiSchema[] | undefined): OpenApiSchema[] |
 
 function normalizeParameter(param: OpenApiParameter, route: string) {
   if (!param.schema || typeof param.schema !== "object") return
+  // A parameter carries its own optionality flag, so it plays the role the enclosing `required` array
+  // plays for a struct field: an optional query param's lone `null` arm is Effect's marker, not a value
+  // a caller may send. Measured 2026-07-31 over the whole spec: 247 parameters carry a `null` arm and
+  // **none** of them is required, so this leaves every parameter byte-identical today — it is here so
+  // the day a required-nullable parameter appears it survives instead of being silently narrowed.
   if (param.in === "path") {
-    param.schema = stripOptionalNull(param.schema)
+    param.schema = stripOptionalNull(param.schema, param.required !== true)
     return
   }
   if (param.in === "query") {
@@ -523,7 +516,7 @@ function normalizeParameter(param: OpenApiParameter, route: string) {
       return
     }
   }
-  param.schema = stripOptionalNull(param.schema)
+  param.schema = stripOptionalNull(param.schema, param.required !== true)
 }
 
 export const PublicApi = NovaClawHttpApi.annotateMerge(

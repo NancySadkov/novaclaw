@@ -362,7 +362,7 @@ export type GlobalEvent = {
           timestamp: number
           sessionID: string
           messageID: string
-          strict: SessionStrictOverride
+          strict: SessionStrictOverride | null
         }
       }
     | {
@@ -372,8 +372,15 @@ export type GlobalEvent = {
           timestamp: number
           sessionID: string
           messageID: string
-          feature: "introspection" | "quality" | "affective" | "thinkingBudget" | "surgicalEdits" | "askBeforeChanges"
-          enabled: boolean
+          feature:
+            | "introspection"
+            | "quality"
+            | "affective"
+            | "thinkingBudget"
+            | "surgicalEdits"
+            | "askBeforeChanges"
+            | "safeMode"
+          enabled: boolean | null
         }
       }
     | {
@@ -393,7 +400,7 @@ export type GlobalEvent = {
           timestamp: number
           sessionID: string
           messageID: string
-          override: string
+          override: string | null
         }
       }
     | {
@@ -1131,6 +1138,17 @@ export type GlobalEvent = {
     | SyncEventSessionNextRevertCommitted
 }
 
+export type ResourcePressure = {
+  warning?: {
+    memory_used_fraction?: number
+    disk_free_bytes?: number
+  }
+  floor?: {
+    memory_used_fraction?: number
+    disk_free_bytes?: number
+  }
+}
+
 export type NotFoundError = {
   name: "NotFoundError"
   data: {
@@ -1862,6 +1880,7 @@ export type SessionV2Info = {
   thinkingBudget?: boolean
   surgicalEdits?: boolean
   askBeforeChanges?: boolean
+  safeMode?: boolean
   result?: unknown
   cost: number
   tokens: {
@@ -2398,7 +2417,7 @@ export type SyncEventSessionNextStrictSwitched = {
       timestamp: number
       sessionID: string
       messageID: string
-      strict: SessionStrictOverride
+      strict: SessionStrictOverride | null
     }
   }
 }
@@ -2415,8 +2434,15 @@ export type SyncEventSessionNextFeatureSwitched = {
       timestamp: number
       sessionID: string
       messageID: string
-      feature: "introspection" | "quality" | "affective" | "thinkingBudget" | "surgicalEdits" | "askBeforeChanges"
-      enabled: boolean
+      feature:
+        | "introspection"
+        | "quality"
+        | "affective"
+        | "thinkingBudget"
+        | "surgicalEdits"
+        | "askBeforeChanges"
+        | "safeMode"
+      enabled: boolean | null
     }
   }
 }
@@ -2450,7 +2476,7 @@ export type SyncEventSessionNextPromptOverrideSwitched = {
       timestamp: number
       sessionID: string
       messageID: string
-      override: string
+      override: string | null
     }
   }
 }
@@ -3306,6 +3332,7 @@ export type ConfigInfo = {
       }
   attachments?: ConfigV2Attachments
   tool_output?: ConfigV2ToolOutput
+  resource_pressure?: ResourcePressure
   mcp?: ConfigV2Mcp
   compaction?: ConfigV2Compaction
   persona?: {
@@ -3721,7 +3748,7 @@ export type SessionNextStrictSwitched = {
     timestamp: number
     sessionID: string
     messageID: string
-    strict: SessionStrictOverride
+    strict: SessionStrictOverride | null
   }
 }
 
@@ -3741,8 +3768,15 @@ export type SessionNextFeatureSwitched = {
     timestamp: number
     sessionID: string
     messageID: string
-    feature: "introspection" | "quality" | "affective" | "thinkingBudget" | "surgicalEdits" | "askBeforeChanges"
-    enabled: boolean
+    feature:
+      | "introspection"
+      | "quality"
+      | "affective"
+      | "thinkingBudget"
+      | "surgicalEdits"
+      | "askBeforeChanges"
+      | "safeMode"
+    enabled: boolean | null
   }
 }
 
@@ -3782,7 +3816,7 @@ export type SessionNextPromptOverrideSwitched = {
     timestamp: number
     sessionID: string
     messageID: string
-    override: string
+    override: string | null
   }
 }
 
@@ -4519,12 +4553,20 @@ export type MessengerAccountWithStatus = {
 
 export type MessengerChatKind = "dm" | "group" | "channel" | "thread" | "mailbox" | "topic"
 
+export type MessengerSourceAccess = "unknown" | "public" | "private"
+
+export type MessengerSourceLabel = {
+  proposed: MessengerSourceAccess
+  declared?: MessengerSourceAccess
+}
+
 export type MessengerChatInfo = {
   accountID: string
   chatID: string
   kind: MessengerChatKind
   title: string
   lastSeen: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  access: MessengerSourceLabel
 }
 
 export type MessengerTrust = "operator" | "client" | "audience"
@@ -4605,13 +4647,13 @@ export type CalendarSchedule = {
   recurrence: CalendarRecurrence
   tzOffsetMin: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   prompt: string
-  agent: string
-  model: string
-  location: string
-  permissionMode: string
+  agent: string | null
+  model: string | null
+  location: string | null
+  permissionMode: string | null
   enabled: boolean
-  nextFireAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  lastFiredAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+  nextFireAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
+  lastFiredAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
   timeCreated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   timeUpdated: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
 }
@@ -4633,10 +4675,10 @@ export type CalendarUpdateInput = {
   recurrence?: CalendarRecurrence
   tzOffsetMin?: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   prompt?: string
-  agent?: string
-  model?: string
-  location?: string
-  permissionMode?: string
+  agent?: string | null
+  model?: string | null
+  location?: string | null
+  permissionMode?: string | null
   enabled?: boolean
 }
 
@@ -4645,7 +4687,7 @@ export type CalendarFire = {
   scheduleId: string
   occurrenceMillis: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   firedAt: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  sessionId: string
+  sessionId: string | null
   status: "spawned" | "skipped" | "error"
 }
 
@@ -5780,7 +5822,7 @@ export type EventSessionNextStrictSwitched = {
     timestamp: number
     sessionID: string
     messageID: string
-    strict: SessionStrictOverride
+    strict: SessionStrictOverride | null
   }
 }
 
@@ -5791,8 +5833,15 @@ export type EventSessionNextFeatureSwitched = {
     timestamp: number
     sessionID: string
     messageID: string
-    feature: "introspection" | "quality" | "affective" | "thinkingBudget" | "surgicalEdits" | "askBeforeChanges"
-    enabled: boolean
+    feature:
+      | "introspection"
+      | "quality"
+      | "affective"
+      | "thinkingBudget"
+      | "surgicalEdits"
+      | "askBeforeChanges"
+      | "safeMode"
+    enabled: boolean | null
   }
 }
 
@@ -5814,7 +5863,7 @@ export type EventSessionNextPromptOverrideSwitched = {
     timestamp: number
     sessionID: string
     messageID: string
-    override: string
+    override: string | null
   }
 }
 
@@ -8404,10 +8453,10 @@ export type MemoryListResponses = {
     id: string
     kind: string
     text: string
-    name: string
+    name: string | null
     scope: string
-    source: string
-    confidence: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    source: string | null
+    confidence: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
     relation: string
   }>
 }
@@ -8444,10 +8493,10 @@ export type MemoryGraphResponses = {
       id: string
       kind: string
       text: string
-      name: string
+      name: string | null
       scope: string
-      source: string
-      confidence: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+      source: string | null
+      confidence: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
       relation: string
     }>
     edges: Array<{
@@ -8492,10 +8541,10 @@ export type MemorySearchResponses = {
     id: string
     kind: string
     text: string
-    name: string
+    name: string | null
     scope: string
-    source: string
-    confidence: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
+    source: string | null
+    confidence: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN" | null
     relation: string
     score: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
   }>
@@ -8568,7 +8617,7 @@ export type MemoryPathResponses = {
   200: {
     ids: Array<string>
     hops: number | "NaN" | "Infinity" | "-Infinity" | "Infinity" | "-Infinity" | "NaN"
-  }
+  } | null
 }
 
 export type MemoryPathResponse = MemoryPathResponses[keyof MemoryPathResponses]
@@ -9432,16 +9481,31 @@ export type ShellStatusResponses = {
   200: {
     platform: string
     agentShell: string
-    bash: string
-    git: string
+    bash: string | null
+    git: string | null
     bundle: {
       root: string
       bash: string
       git: string
       version?: string
       provisionedAt?: number
-    }
+    } | null
     provisionSupported: boolean
+    jail?: {
+      kind: "namespaces" | "seatbelt" | "appcontainer" | "none"
+      fs: boolean
+      net: boolean
+      reason: "confined" | "partial-backend" | "platform-unsupported" | "backend-absent" | "backend-blocked"
+      probeCommand?: string
+      probeExit?: number
+      probeError?: string
+      bash: {
+        attended: "raw" | "confined" | "deny"
+        unattended: "raw" | "confined" | "deny"
+        unattendedSafeMode: "raw" | "confined" | "deny"
+        untrusted: "raw" | "confined" | "deny"
+      }
+    }
   }
 }
 
@@ -9511,16 +9575,31 @@ export type ShellProvisionResponses = {
   200: {
     platform: string
     agentShell: string
-    bash: string
-    git: string
+    bash: string | null
+    git: string | null
     bundle: {
       root: string
       bash: string
       git: string
       version?: string
       provisionedAt?: number
-    }
+    } | null
     provisionSupported: boolean
+    jail?: {
+      kind: "namespaces" | "seatbelt" | "appcontainer" | "none"
+      fs: boolean
+      net: boolean
+      reason: "confined" | "partial-backend" | "platform-unsupported" | "backend-absent" | "backend-blocked"
+      probeCommand?: string
+      probeExit?: number
+      probeError?: string
+      bash: {
+        attended: "raw" | "confined" | "deny"
+        unattended: "raw" | "confined" | "deny"
+        unattendedSafeMode: "raw" | "confined" | "deny"
+        untrusted: "raw" | "confined" | "deny"
+      }
+    }
   }
 }
 
@@ -9849,7 +9928,7 @@ export type ExperimentalWorkspaceRemoveResponses = {
   /**
    * Workspace removed
    */
-  200: Workspace
+  200: Workspace | null
 }
 
 export type ExperimentalWorkspaceRemoveResponse =
@@ -10299,7 +10378,7 @@ export type V2SessionUpdateData = {
     metadata?: {
       [key: string]: unknown
     }
-    archived?: number
+    archived?: number | null
   }
   path: {
     sessionID: string
@@ -10639,7 +10718,7 @@ export type V2SessionSwitchModeResponse = V2SessionSwitchModeResponses[keyof V2S
 
 export type V2SessionSwitchStrictData = {
   body: {
-    strict: SessionStrictOverride
+    strict: SessionStrictOverride | null
   }
   path: {
     sessionID: string
@@ -10676,8 +10755,15 @@ export type V2SessionSwitchStrictResponse = V2SessionSwitchStrictResponses[keyof
 
 export type V2SessionSwitchFeatureData = {
   body: {
-    feature: "introspection" | "quality" | "affective" | "thinkingBudget" | "surgicalEdits" | "askBeforeChanges"
-    enabled: boolean
+    feature:
+      | "introspection"
+      | "quality"
+      | "affective"
+      | "thinkingBudget"
+      | "surgicalEdits"
+      | "askBeforeChanges"
+      | "safeMode"
+    enabled: boolean | null
   }
   path: {
     sessionID: string
@@ -10751,7 +10837,7 @@ export type V2SessionSwitchTypeResponse = V2SessionSwitchTypeResponses[keyof V2S
 
 export type V2SessionSwitchPromptOverrideData = {
   body: {
-    override: string
+    override: string | null
   }
   path: {
     sessionID: string
@@ -11221,7 +11307,7 @@ export type V2SessionEventsResponses = {
    * Success
    */
   200: {
-    id: string
+    id: string | null
     event: string
     data: SessionDurableEventStream
   }
@@ -11632,7 +11718,7 @@ export type V2IntegrationGetResponses = {
    */
   200: {
     location: LocationInfo
-    data: IntegrationInfo
+    data: IntegrationInfo | null
   }
 }
 
