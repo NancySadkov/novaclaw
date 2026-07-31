@@ -19,6 +19,7 @@ import { ReadTool } from "./read"
 import { ReconfigureTool } from "./reconfigure"
 import { ReadHexTool } from "./read-hex"
 import { ReadToolFileSystem } from "./read-filesystem"
+import { RecipeTool } from "./recipe"
 import { RegisterAppTool } from "./register-app"
 import { RevertTool } from "./revert"
 import { SkillTool } from "./skill"
@@ -61,6 +62,11 @@ export const locationLayer = Layer.mergeAll(
   QuestionTool.layer,
   ReadTool.layer.pipe(Layer.provide(ReadToolFileSystem.layer)),
   ReadHexTool.layer,
+  // Registered under its own name with no `Tool.withPermission` wrap: the permission fallback in
+  // `tool.ts` already makes a tool answer to the name it is registered under, and
+  // `validateRegistration` REFUSES a declaration that repeats it (that shape reads as a gate while
+  // gating nothing). `recipe.ts` asserts the `recipe` action itself, on `save` only.
+  RecipeTool.layer,
   ReconfigureTool.layer,
   RegisterAppTool.layer,
   RevertTool.layer,
@@ -95,6 +101,7 @@ export const node = makeLocationNode({
     QuestionTool.node,
     ReadTool.node,
     ReadHexTool.node,
+    RecipeTool.node,
     ReconfigureTool.node,
     RegisterAppTool.node,
     RevertTool.node,

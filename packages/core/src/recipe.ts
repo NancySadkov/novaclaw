@@ -41,6 +41,22 @@ export interface SaveInput {
   readonly description?: string
   readonly prompt: string
   readonly builtin?: boolean
+  /**
+   * The host capabilities this recipe needs ("a C compiler", "python3"), written into frontmatter as a
+   * single `needs:` line.
+   *
+   * ⚠️ **This is the ONE machine-read field todo.md ruling 14 permits, and we still do NOT machine-read
+   * it.** Ruling 14: frontmatter may carry `needs` — host-capability facts a normal person can verify —
+   * and *no configuration or grant token*, because an artifact designed to travel between strangers is
+   * untrusted input the moment it lands. So `needs` may say what a recipe NEEDS and never what it GETS.
+   * Writing it as a carried frontmatter LINE rather than a `RESERVED` key is deliberate: `parse`/`render`
+   * stay the untouched inverse pair the lossless-writes suite pins, and nothing downstream can start
+   * treating this string as a grant by accident. When something eventually *reads* `needs` to check a
+   * host, that is a separate, deliberate change with its own tests.
+   *
+   * `undefined` leaves whatever the author already wrote alone; `[]` clears the line.
+   */
+  readonly needs?: readonly string[]
 }
 
 /** Injectable seams for tests (temp root, fake clock). */
@@ -51,7 +67,19 @@ export interface Options {
 
 export const RECIPE_FILE = "recipe.md"
 
-const recipesRoot = (options?: Options) => options?.root ?? path.join(Global.Path.data, "recipes")
+/**
+ * The recipes folder under a given instance data directory — the ONE place this store ever writes
+ * (AGENTS.md design principle 11: outside the home, the OS temp dir and the session's working folder,
+ * the filesystem is read-only to us; `Global.Path.data` is the home arm).
+ *
+ * Exported so a caller holding `Global.Service` resolves the same root this module does without
+ * respelling the directory name. That is the `adhoc-tools.storeRootIn` lesson, verbatim: `define_tool`
+ * and `tool_manual` once resolved the same store two ways, and a writer and a reader disagreeing about
+ * where the data is is the failure that stays silent longest.
+ */
+export const rootIn = (dataDirectory: string) => path.join(dataDirectory, "recipes")
+
+const recipesRoot = (options?: Options) => options?.root ?? rootIn(Global.Path.data)
 
 // The slug doubles as the folder name, so it MUST stay traversal-proof — users and models both feed it.
 const SLUG_PATTERN = /^[a-z0-9][a-z0-9-_]{0,63}$/
@@ -145,6 +173,44 @@ export const render = (input: {
   return lines.join("\n")
 }
 
+/** A carried frontmatter line that states a `needs:`, in any casing/spacing an author might write. */
+const NEEDS_LINE = /^\s*needs\s*:/i
+
+/**
+ * The single `needs:` line for a set of capability facts, or `undefined` when there is nothing to say.
+ *
+ * ⚠️ **The sanitising is a containment boundary, not tidiness.** These strings arrive from a model, and
+ * frontmatter is line-structured: one un-stripped `\n` turns `needs: gcc` into `needs: gcc` **plus** a
+ * second key the author never wrote — `permissionMode: bypass`, say, which is precisely the thing ruling
+ * 14 rules out of frontmatter. Control characters are collapsed to spaces before anything is joined, so
+ * a `needs` entry can only ever produce ONE line. Pinned, with the injection attempt as the fixture, in
+ * `test/tool-recipe.test.ts`.
+ */
+export const needsLine = (needs: readonly string[]): string | undefined => {
+  const facts = needs
+    .map((entry) =>
+      entry
+        // ONE expression, deliberately: two overlapping strips would each be individually
+        // removable without failing a test, which is an invariant with no mechanical check
+        // (ruling 1). `\s` alone would miss NUL and DEL; the control range alone reads as
+        // being about exotica rather than about newlines. Measured: deleting this line fails
+        // `test/tool-recipe.test.ts` → "`needs` cannot open a second frontmatter key".
+        // oxlint-disable-next-line no-control-regex -- collapsing control characters IS the job
+        .replace(/[\s\u0000-\u001f\u007f]+/g, " ")
+        .trim(),
+    )
+    .filter((entry) => entry.length > 0)
+  return facts.length === 0 ? undefined : `needs: ${facts.join(", ")}`
+}
+
+/** Replace the author's `needs:` line when a new one is stated; leave everything else exactly as written. */
+const withNeeds = (carried: readonly string[], needs: readonly string[] | undefined): readonly string[] => {
+  if (needs === undefined) return carried
+  const rest = carried.filter((line) => !NEEDS_LINE.test(line))
+  const line = needsLine(needs)
+  return line === undefined ? rest : [line, ...rest]
+}
+
 // =============================================================================
 // Filesystem
 // =============================================================================
@@ -208,7 +274,7 @@ export async function save(input: SaveInput, options?: Options): Promise<Recipe>
     render({
       name: input.name.trim(),
       ...(input.description ? { description: input.description.trim() } : {}),
-      frontmatter: existing === undefined ? [] : parse(existing).frontmatter,
+      frontmatter: withNeeds(existing === undefined ? [] : parse(existing).frontmatter, input.needs),
       prompt: input.prompt,
     }),
     "utf8",
