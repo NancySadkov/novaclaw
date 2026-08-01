@@ -6,6 +6,8 @@ import { Config } from "@novaclaw/core/config"
 import { SettingsConfigSeed } from "@novaclaw/core/settings-config-seed"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { Database } from "@novaclaw/core/database/database"
+import { RuntimeSettingTable } from "@novaclaw/core/settings-config/sql"
+import { eq } from "drizzle-orm"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { FSUtil } from "@novaclaw/core/fs-util"
@@ -45,6 +47,39 @@ describe("SettingsConfigStore", () => {
       yield* store.remove("snapshots")
       yield* store.remove("quality")
       expect(yield* store.isEmpty()).toBe(true)
+    }),
+  )
+
+  it.effect("encrypts secret fields and migrates legacy plaintext settings on read", () =>
+    Effect.gen(function* () {
+      const store = yield* SettingsConfigStore.Service
+      const { db } = yield* Database.Service
+      yield* store.set("server", { port: 4096, password: "incoming-secret" })
+      yield* store.set("instances", [
+        { name: "spark", url: "http://spark:4096", token: "peer-secret" },
+        { name: "open", url: "http://open:4096" },
+      ])
+
+      expect(yield* store.all()).toMatchObject({
+        server: { port: 4096, password: "incoming-secret" },
+        instances: [{ name: "spark", token: "peer-secret" }, { name: "open" }],
+      })
+      const raw = JSON.stringify(yield* db.select().from(RuntimeSettingTable).all())
+      expect(raw).toContain("$novaclawEncrypted")
+      expect(raw).not.toContain("incoming-secret")
+      expect(raw).not.toContain("peer-secret")
+
+      yield* db
+        .update(RuntimeSettingTable)
+        .set({ value: { port: 4097, password: "legacy-server-secret" } })
+        .where(eq(RuntimeSettingTable.key, "server"))
+        .run()
+      expect((yield* store.all()).server).toEqual({ port: 4097, password: "legacy-server-secret" })
+      const migrated = JSON.stringify(
+        yield* db.select().from(RuntimeSettingTable).where(eq(RuntimeSettingTable.key, "server")).get(),
+      )
+      expect(migrated).toContain("$novaclawEncrypted")
+      expect(migrated).not.toContain("legacy-server-secret")
     }),
   )
 
@@ -159,10 +194,7 @@ describe("Config layer settings overlay (8c: jsonc is not a runtime source)", ()
         Layer.succeed(
           Location.Service,
           Location.Service.of(
-            location(
-              { directory: AbsolutePath.make(directory) },
-              { projectDirectory: AbsolutePath.make(directory) },
-            ),
+            location({ directory: AbsolutePath.make(directory) }, { projectDirectory: AbsolutePath.make(directory) }),
           ),
         ),
       ],

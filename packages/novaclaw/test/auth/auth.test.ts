@@ -1,10 +1,13 @@
 import { describe, expect } from "bun:test"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { Effect } from "effect"
+import path from "node:path"
+import { FSUtil } from "@novaclaw/core/fs-util"
+import { Global } from "@novaclaw/core/global"
 import { Auth } from "../../src/auth"
 import { testEffect } from "../lib/effect"
 
-const it = testEffect(LayerNode.compile(Auth.node))
+const it = testEffect(LayerNode.compile(LayerNode.group([Auth.node, FSUtil.node])))
 
 describe("Auth", () => {
   it.instance("set normalizes trailing slashes in keys", () =>
@@ -18,6 +21,9 @@ describe("Auth", () => {
       const data = yield* auth.all()
       expect(data["https://example.com"]).toBeDefined()
       expect(data["https://example.com/"]).toBeUndefined()
+      const raw = JSON.stringify(yield* (yield* FSUtil.Service).readJson(path.join(Global.Path.data, "auth.json")))
+      expect(raw).toContain("$novaclawEncrypted")
+      expect(raw).not.toContain("abc")
     }),
   )
 
@@ -70,6 +76,20 @@ describe("Auth", () => {
       yield* auth.remove("anthropic")
       const after = yield* auth.all()
       expect(after["anthropic"]).toBeUndefined()
+    }),
+  )
+
+  it.instance("migrates a legacy plaintext auth file on read", () =>
+    Effect.gen(function* () {
+      const fs = yield* FSUtil.Service
+      const auth = yield* Auth.Service
+      const target = path.join(Global.Path.data, "auth.json")
+      yield* fs.writeJson(target, { anthropic: { type: "api", key: "plaintext-api-key" } }, 0o600)
+
+      expect((yield* auth.get("anthropic"))?.type).toBe("api")
+      const raw = JSON.stringify(yield* fs.readJson(target))
+      expect(raw).toContain("$novaclawEncrypted")
+      expect(raw).not.toContain("plaintext-api-key")
     }),
   )
 })

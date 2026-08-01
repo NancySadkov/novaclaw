@@ -3,10 +3,13 @@ import { setTimeout as sleep } from "node:timers/promises"
 import { Effect, Layer } from "effect"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { EffectFlock } from "@novaclaw/core/util/effect-flock"
+import { CredentialCipher } from "@novaclaw/core/credential-cipher"
 import { McpAuth } from "../../src/mcp/auth"
 
-function authFile() {
-  let raw = ""
+const testCipher = Layer.succeed(CredentialCipher.Service)(CredentialCipher.make(Buffer.alloc(32, 9)))
+
+function authFile(initial?: unknown) {
+  let raw = initial === undefined ? "" : JSON.stringify(initial)
   let activeWrites = 0
   let sawOverlap = false
 
@@ -48,7 +51,9 @@ function authFile() {
 
 function authService(layer: Layer.Layer<FSUtil.Service>) {
   return McpAuth.Service.use((auth) => Effect.succeed(auth)).pipe(
-    Effect.provide(McpAuth.layer.pipe(Layer.provide(EffectFlock.defaultLayer), Layer.provide(layer))),
+    Effect.provide(
+      McpAuth.layer.pipe(Layer.provide(EffectFlock.defaultLayer), Layer.provide(layer), Layer.provide(testCipher)),
+    ),
   )
 }
 
@@ -73,6 +78,27 @@ test("serializes concurrent auth file updates across service instances", async (
       expect(entry?.clientInfo?.clientId).toBe("client-id")
       expect(entry?.serverUrl).toBe("https://mcp.posthog.com/mcp")
       expect(() => JSON.parse(file.raw())).not.toThrow()
+      expect(file.raw()).toContain("$novaclawEncrypted")
+      expect(file.raw()).not.toContain("access-token")
+      expect(file.raw()).not.toContain("client-id")
+    }),
+  )
+})
+
+test("migrates a legacy plaintext MCP auth file on read", async () => {
+  const file = authFile({
+    posthog: {
+      tokens: { accessToken: "plaintext-access-token" },
+      serverUrl: "https://mcp.posthog.com/mcp",
+    },
+  })
+
+  await Effect.runPromise(
+    Effect.gen(function* () {
+      const auth = yield* authService(file.layer)
+      expect((yield* auth.get("posthog"))?.tokens?.accessToken).toBe("plaintext-access-token")
+      expect(file.raw()).toContain("$novaclawEncrypted")
+      expect(file.raw()).not.toContain("plaintext-access-token")
     }),
   )
 })

@@ -5,6 +5,7 @@ import { Global } from "@novaclaw/core/global"
 import { Effect, Layer, Context, Option, Schema } from "effect"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { EffectFlock } from "@novaclaw/core/util/effect-flock"
+import { CredentialCipher } from "@novaclaw/core/credential-cipher"
 
 export const Tokens = Schema.Struct({
   accessToken: Schema.mutableKey(Schema.String),
@@ -36,6 +37,7 @@ type AuthData = Record<string, Entry>
 
 const filepath = path.join(Global.Path.data, "mcp-auth.json")
 const lockKey = `mcp-auth:${filepath}`
+const fileAad = "novaclaw:mcp-auth.json"
 
 export interface Interface {
   readonly all: () => Effect.Effect<Record<string, Entry>>
@@ -61,23 +63,34 @@ export const layer = Layer.effect(
   Effect.gen(function* () {
     const fs = yield* FSUtil.Service
     const flock = yield* EffectFlock.Service
+    const cipher = yield* CredentialCipher.Service
+
+    const write = (data: AuthData) =>
+      fs.writeJson(filepath, CredentialCipher.encryptJson(cipher, data, fileAad), 0o600).pipe(Effect.orDie)
 
     const read = Effect.fn("McpAuth.read")(function* () {
-      return yield* fs.readJson(filepath).pipe(
-        Effect.map((data): AuthData => Option.getOrElse(decodeAuthData(data), () => ({}) as AuthData) as AuthData),
-        Effect.catch(() => Effect.succeed({} as AuthData)),
-      )
+      const raw = yield* fs.readJson(filepath).pipe(Effect.catch(() => Effect.succeed(undefined)))
+      if (raw === undefined) return { data: {} as AuthData, legacy: false }
+      const opened = yield* CredentialCipher.decryptJson(cipher, raw, fileAad)
+      return {
+        data: Option.getOrElse(decodeAuthData(opened.value), () => ({}) as AuthData) as AuthData,
+        legacy: !opened.encrypted,
+      }
     })
 
     const all = Effect.fn("McpAuth.all")(function* () {
-      return yield* read().pipe(flock.withLock(lockKey), Effect.orDie)
+      return yield* Effect.gen(function* () {
+        const current = yield* read()
+        if (current.legacy) yield* write(current.data)
+        return current.data
+      }).pipe(flock.withLock(lockKey), Effect.orDie)
     })
 
     const mutate = Effect.fn("McpAuth.mutate")(function* (update: (data: AuthData) => AuthData | undefined) {
       yield* Effect.gen(function* () {
-        const next = update(yield* read())
+        const next = update((yield* read()).data)
         if (!next) return
-        yield* fs.writeJson(filepath, next, 0o600).pipe(Effect.orDie)
+        yield* write(next)
       }).pipe(flock.withLock(lockKey), Effect.orDie)
     })
 
@@ -158,8 +171,16 @@ export const layer = Layer.effect(
   }),
 )
 
-export const defaultLayer = layer.pipe(Layer.provide(EffectFlock.defaultLayer), Layer.provide(FSUtil.defaultLayer))
+export const defaultLayer = layer.pipe(
+  Layer.provide(EffectFlock.defaultLayer),
+  Layer.provide(FSUtil.defaultLayer),
+  Layer.provide(CredentialCipher.defaultLayer),
+)
 
-export const node = LayerNode.make({ service: Service, layer: layer, deps: [FSUtil.node, EffectFlock.node] })
+export const node = LayerNode.make({
+  service: Service,
+  layer: layer,
+  deps: [FSUtil.node, EffectFlock.node, CredentialCipher.node],
+})
 
 export * as McpAuth from "./auth"

@@ -154,6 +154,9 @@ export const layer = Layer.effect(
   }),
 )
 
-export const defaultLayer = layer.pipe(Layer.provide(Database.defaultLayer), Layer.provide(CredentialCipher.layer))
+export const defaultLayer = layer.pipe(
+  Layer.provide(Database.defaultLayer),
+  Layer.provide(CredentialCipher.defaultLayer),
+)
 
 export const node = makeGlobalNode({ service: Service, layer, deps: [Database.node, CredentialCipher.node] })

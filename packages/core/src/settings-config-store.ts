@@ -5,6 +5,7 @@ import { ConfigStoreFactory } from "./config-store-factory"
 import { Database } from "./database/database"
 import { makeGlobalNode } from "./effect/app-node"
 import { RuntimeSettingTable } from "./settings-config/sql"
+import { CredentialCipher } from "./credential-cipher"
 
 // Config→SQLite step 6: the instance-wide, SQLite-backed source of truth for runtime settings.
 // Global so every directory — including the shared scratch dir — resolves the same settings.
@@ -35,18 +36,72 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const { db } = yield* Database.Service
+    const cipher = yield* CredentialCipher.Service
     const settings = ConfigStoreFactory.makeKeyValueStore({
       db,
       table: RuntimeSettingTable,
       keyColumn: RuntimeSettingTable.key,
     })
 
+    const isRecord = (value: unknown): value is Record<string, unknown> =>
+      typeof value === "object" && value !== null && !Array.isArray(value)
+    const secretAad = (path: string) => `novaclaw:runtime-setting:${path}`
+    const protectSecret = (value: unknown, path: string): unknown =>
+      typeof value === "string" ? CredentialCipher.encryptJson(cipher, value, secretAad(path)) : value
+    const revealSecret = Effect.fn("SettingsConfigStore.revealSecret")(function* (value: unknown, path: string) {
+      if (typeof value === "string") return { value, legacy: true }
+      const opened = yield* CredentialCipher.decryptJson(cipher, value, secretAad(path))
+      return { value: opened.value, legacy: false }
+    })
+
+    const protect = (key: string, value: unknown): unknown => {
+      if (key === "server" && isRecord(value) && value.password !== undefined)
+        return { ...value, password: protectSecret(value.password, "server.password") }
+      if (key === "instances" && Array.isArray(value))
+        return value.map((entry, index) =>
+          isRecord(entry) && entry.token !== undefined
+            ? {
+                ...entry,
+                token: protectSecret(entry.token, `instances.${String(entry.name ?? index)}.token`),
+              }
+            : entry,
+        )
+      return value
+    }
+
+    const reveal = Effect.fn("SettingsConfigStore.reveal")(function* (key: string, value: unknown) {
+      if (key === "server" && isRecord(value) && value.password !== undefined) {
+        const password = yield* revealSecret(value.password, "server.password")
+        return { value: { ...value, password: password.value }, legacy: password.legacy }
+      }
+      if (key === "instances" && Array.isArray(value)) {
+        let legacy = false
+        const entries = yield* Effect.forEach(value, (entry, index) =>
+          Effect.gen(function* () {
+            if (!isRecord(entry) || entry.token === undefined) return entry
+            const token = yield* revealSecret(entry.token, `instances.${String(entry.name ?? index)}.token`)
+            legacy ||= token.legacy
+            return { ...entry, token: token.value }
+          }),
+        )
+        return { value: entries, legacy }
+      }
+      return { value, legacy: false }
+    })
+
     return Service.of({
       all: Effect.fn("SettingsConfigStore.all")(function* () {
-        return yield* settings.all()
+        const stored = yield* settings.all()
+        const result: Record<string, unknown> = {}
+        for (const [key, value] of Object.entries(stored)) {
+          const opened = yield* reveal(key, value).pipe(Effect.orDie)
+          result[key] = opened.value
+          if (opened.legacy) yield* settings.set(key, protect(key, opened.value))
+        }
+        return result
       }),
       set: Effect.fn("SettingsConfigStore.set")(function* (key, value) {
-        yield* settings.set(key, value)
+        yield* settings.set(key, protect(key, value))
       }),
       remove: Effect.fn("SettingsConfigStore.remove")(function* (key) {
         yield* settings.remove(key)
@@ -58,6 +113,9 @@ export const layer = Layer.effect(
   }),
 )
 
-export const defaultLayer = layer.pipe(Layer.provide(Database.defaultLayer))
+export const defaultLayer = layer.pipe(
+  Layer.provide(Database.defaultLayer),
+  Layer.provide(CredentialCipher.defaultLayer),
+)
 
-export const node = makeGlobalNode({ service: Service, layer, deps: [Database.node] })
+export const node = makeGlobalNode({ service: Service, layer, deps: [Database.node, CredentialCipher.node] })

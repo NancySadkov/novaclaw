@@ -4,10 +4,12 @@ import { Effect, Layer, Record, Result, Schema, Context } from "effect"
 import { NonNegativeInt } from "@novaclaw/core/schema"
 import { Global } from "@novaclaw/core/global"
 import { FSUtil } from "@novaclaw/core/fs-util"
+import { CredentialCipher } from "@novaclaw/core/credential-cipher"
 
 export const OAUTH_DUMMY_KEY = "novaclaw-oauth-dummy-key"
 
 const file = path.join(Global.Path.data, "auth.json")
+const fileAad = "novaclaw:auth.json"
 
 const fail = (message: string) => (cause: unknown) => new AuthError({ message, cause })
 
@@ -52,7 +54,13 @@ export const layer = Layer.effect(
   Service,
   Effect.gen(function* () {
     const fsys = yield* FSUtil.Service
+    const cipher = yield* CredentialCipher.Service
     const decode = Schema.decodeUnknownOption(Info)
+
+    const write = (data: unknown) =>
+      fsys
+        .writeJson(file, CredentialCipher.encryptJson(cipher, data, fileAad), 0o600)
+        .pipe(Effect.mapError(fail("Failed to write auth data")))
 
     const all = Effect.fn("Auth.all")(function* () {
       if (process.env.NOVACLAW_AUTH_CONTENT) {
@@ -61,7 +69,13 @@ export const layer = Layer.effect(
         } catch (err) {}
       }
 
-      const data = (yield* fsys.readJson(file).pipe(Effect.orElseSucceed(() => ({})))) as Record<string, unknown>
+      const raw = yield* fsys.readJson(file).pipe(Effect.orElseSucceed(() => undefined))
+      if (raw === undefined) return {}
+      const opened = yield* CredentialCipher.decryptJson(cipher, raw, fileAad).pipe(
+        Effect.mapError(fail("Failed to decrypt auth data")),
+      )
+      if (!opened.encrypted && typeof raw === "object" && raw !== null) yield* write(raw)
+      const data = opened.value as Record<string, unknown>
       return Record.filterMap(data, (value) => Result.fromOption(decode(value), () => undefined))
     })
 
@@ -74,9 +88,7 @@ export const layer = Layer.effect(
       const data = yield* all()
       if (norm !== key) delete data[key]
       delete data[norm + "/"]
-      yield* fsys
-        .writeJson(file, { ...data, [norm]: info }, 0o600)
-        .pipe(Effect.mapError(fail("Failed to write auth data")))
+      yield* write({ ...data, [norm]: info })
     })
 
     const remove = Effect.fn("Auth.remove")(function* (key: string) {
@@ -84,15 +96,15 @@ export const layer = Layer.effect(
       const data = yield* all()
       delete data[key]
       delete data[norm]
-      yield* fsys.writeJson(file, data, 0o600).pipe(Effect.mapError(fail("Failed to write auth data")))
+      yield* write(data)
     })
 
     return Service.of({ get, all, set, remove })
   }),
 )
 
-export const defaultLayer = layer.pipe(Layer.provide(FSUtil.defaultLayer))
+export const defaultLayer = layer.pipe(Layer.provide(FSUtil.defaultLayer), Layer.provide(CredentialCipher.defaultLayer))
 
-export const node = LayerNode.make({ service: Service, layer: layer, deps: [FSUtil.node] })
+export const node = LayerNode.make({ service: Service, layer: layer, deps: [FSUtil.node, CredentialCipher.node] })
 
 export * as Auth from "."

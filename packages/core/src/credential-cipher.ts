@@ -10,6 +10,7 @@ import { Global } from "./global"
 const ENVELOPE = "nc1"
 const KEY_FILE = "credential.key"
 const KEY_HEADER = "novaclaw-credential-key-v1:"
+const JSON_ENVELOPE_FIELD = "$novaclawEncrypted"
 const TEST_KEY = Buffer.alloc(32, 0x42)
 
 export class InvalidKeyError extends Schema.TaggedErrorClass<InvalidKeyError>()("CredentialCipher.InvalidKeyError", {
@@ -70,6 +71,38 @@ export function make(key: Uint8Array): Interface {
   })
 }
 
+export interface JsonValue {
+  readonly value: unknown
+  readonly encrypted: boolean
+}
+
+/** Wrap a whole JSON document without teaching its filesystem owner about crypto details. */
+export const encryptJson = (cipher: Interface, value: unknown, aad: string): Record<string, string> => ({
+  [JSON_ENVELOPE_FIELD]: cipher.encrypt(JSON.stringify(value), aad),
+})
+
+/** Open the versioned wrapper, or return a legacy plaintext document for online migration. */
+export const decryptJson = (cipher: Interface, value: unknown, aad: string): Effect.Effect<JsonValue, DecryptError> => {
+  if (
+    typeof value !== "object" ||
+    value === null ||
+    Array.isArray(value) ||
+    Object.keys(value).length !== 1 ||
+    !(JSON_ENVELOPE_FIELD in value) ||
+    typeof (value as Record<string, unknown>)[JSON_ENVELOPE_FIELD] !== "string"
+  )
+    return Effect.succeed({ value, encrypted: false })
+
+  return cipher.decrypt((value as Record<string, string>)[JSON_ENVELOPE_FIELD]!, aad).pipe(
+    Effect.flatMap((plaintext) =>
+      Effect.try({
+        try: () => ({ value: JSON.parse(plaintext), encrypted: true }),
+        catch: () => new DecryptError({ message: "Stored encrypted JSON could not be decoded." }),
+      }),
+    ),
+  )
+}
+
 const unavailable = (message: string): Interface =>
   Service.of({
     encrypted: (value) => value.startsWith(`${ENVELOPE}:`),
@@ -121,5 +154,7 @@ export const layer = Layer.effect(
     }),
   ),
 )
+
+export const defaultLayer = layer.pipe(Layer.provide(Global.defaultLayer))
 
 export const node = makeGlobalNode({ service: Service, layer, deps: [Global.node] })
