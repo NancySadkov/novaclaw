@@ -5,6 +5,7 @@ import { Duration, Effect, Layer } from "effect"
 import { makeGlobalNode } from "../effect/app-node"
 import { Flag } from "../flag/flag"
 import { Global } from "../global"
+import { Log } from "../observability/log"
 import { KbEmbedder } from "./embedder"
 import { MemoryClient } from "./memory-client"
 import { MemorySetting } from "./memory-setting"
@@ -68,7 +69,7 @@ export const layerFromConfig = (cfg: MemoryConfig): Layer.Layer<MemoryClient.Ser
               delegate = MemoryClient.fromEngine(opened)
             }),
           ),
-          Effect.tapError((cause) => Effect.logWarning(`kb-memory failed to open: ${cause}`)),
+          Effect.tapError((cause) => Log.event("kb.memory.open.failed", { "kb.cause": String(cause) })),
           Effect.ignore, // open failure stays degraded — never a hard boot dependency
         ),
       )

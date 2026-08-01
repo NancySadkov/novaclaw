@@ -76,10 +76,6 @@
     "count": 1
   },
   {
-    "name": "packages/core/src/kb-graph/memory.ts :: Effect.logWarning(`kb-memory failed to open: ${cause}`)",
-    "count": 1
-  },
-  {
     "name": "packages/core/src/location-services.ts :: Effect.logInfo(\"booting location services\")",
     "count": 1
   },

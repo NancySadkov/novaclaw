@@ -87,6 +87,7 @@ export const SUBSYSTEMS = {
   format: "Code formatters",
   git: "Version control",
   instance: "Instance lifecycle",
+  kb: "Knowledge",
   location: "Workspace locations",
   mcp: "MCP servers",
   patch: "File changes",
@@ -274,6 +275,16 @@ export const EVENTS = {
     attributes: { directory: "path" },
     content: "user",
     file: "packages/novaclaw/src/project/instance-store.ts",
+  },
+
+  // ── kb ────────────────────────────────────────────────────────────────────────────────────────
+  /** The optional in-process graph could not open; memory stays safely degraded. */
+  "kb.memory.open.failed": {
+    level: "warn",
+    message: "kb-memory failed to open:",
+    attributes: { "kb.cause": "fault" },
+    content: "user",
+    file: "packages/core/src/kb-graph/memory.ts",
   },
 
   // ── location ──────────────────────────────────────────────────────────────────────────────────
