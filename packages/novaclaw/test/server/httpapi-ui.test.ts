@@ -5,8 +5,6 @@ import { ConfigProvider, Effect, Layer } from "effect"
 import { HttpRouter, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { RuntimeFlags } from "../../src/effect/runtime-flags"
-import { ServerAuth } from "../../src/server/auth"
-import { authorizationRouterMiddleware } from "../../src/server/routes/instance/httpapi/middleware/authorization"
 import { HttpApiApp } from "../../src/server/routes/instance/httpapi/server"
 import { serveEmbeddedUIEffect, serveUIEffect } from "../../src/server/shared/ui"
 import { testEffect } from "../lib/effect"
@@ -70,23 +68,20 @@ function app(input?: { password?: string; username?: string }) {
 }
 
 // There is no embedded web UI in the test build (novaclaw-web-ui.gen.ts only exists in
-// packaged binaries) and no remote fallback by design, so an authorized request to the
-// UI catch-all resolves to a plain 404. Auth semantics are still observable: unauthorized
-// requests get 401 before the route runs.
-function uiApp(input?: { password?: string; username?: string; disableEmbeddedWebUi?: boolean }) {
+// packaged binaries) and no remote fallback by design. The root serves the API explainer;
+// other unmatched GETs are 404. Auth semantics remain observable because unauthorized
+// requests get 401 before either response.
+function uiApp(input?: {
+  password?: string
+  username?: string
+  disableEmbeddedWebUi?: boolean
+  embeddedWebUI?: Record<string, string>
+  fs?: FSUtil.Interface
+}) {
   const handler = HttpRouter.toWebHandler(
-    HttpRouter.use((router) =>
-      Effect.gen(function* () {
-        const fs = yield* FSUtil.Service
-        const flags = yield* RuntimeFlags.Service
-        yield* router.add("*", "/*", (request) =>
-          serveUIEffect(request, { fs, disableEmbeddedWebUi: flags.disableEmbeddedWebUi }),
-        )
-      }),
-    ).pipe(
-      Layer.provide(authorizationRouterMiddleware.layer.pipe(Layer.provide(ServerAuth.Config.defaultLayer))),
+    HttpApiApp.createUIRoute(input?.embeddedWebUI).pipe(
       Layer.provide([
-        FSUtil.defaultLayer,
+        input?.fs ? Layer.succeed(FSUtil.Service)(input.fs) : FSUtil.defaultLayer,
         RuntimeFlags.layer({ disableEmbeddedWebUi: input?.disableEmbeddedWebUi ?? false }),
         HttpServer.layerServices,
         ConfigProvider.layer(
@@ -122,7 +117,7 @@ function routeOrderingApp() {
         yield* router.add("GET", "/session/:sessionID", () =>
           Effect.succeed(HttpServerResponse.jsonUnsafe({ matched: "api-route" }, { status: 200 })),
         )
-        yield* router.add("*", "/*", (request) =>
+        yield* router.add("GET", "/*", (request) =>
           serveUIEffect(request, { fs, disableEmbeddedWebUi: flags.disableEmbeddedWebUi }),
         )
       }),
@@ -154,12 +149,13 @@ function responseText(response: Response) {
 }
 
 describe("HttpApi UI fallback", () => {
-  it.live("returns 404 from the UI catch-all when no embedded UI is present", () =>
+  it.live("serves the API explainer at root when no embedded UI is present", () =>
     Effect.gen(function* () {
       const response = yield* uiApp({ disableEmbeddedWebUi: true }).request("/")
 
-      expect(response.status).toBe(404)
-      expect(yield* responseText(response)).toContain("Not Found")
+      expect(response.status).toBe(200)
+      expect(response.headers.get("content-type")).toContain("text/html")
+      expect(yield* responseText(response)).toContain("NovaClaw API")
     }),
   )
 
@@ -239,6 +235,35 @@ describe("HttpApi UI fallback", () => {
     }),
   )
 
+  it.live("serves an embedded SPA fallback only to safe page methods", () =>
+    Effect.gen(function* () {
+      const fs = yield* FSUtil.Service
+      const server = uiApp({
+        embeddedWebUI: { "index.html": "/$bunfs/root/index.html" },
+        fs: {
+          ...fs,
+          readFile: (path) =>
+            path === "/$bunfs/root/index.html"
+              ? Effect.succeed(new TextEncoder().encode("<html>embedded novaclaw</html>"))
+              : Effect.die(`unexpected embedded UI path: ${path}`),
+        },
+      })
+
+      for (const method of ["GET", "HEAD"]) {
+        const response = yield* server.request("/deleted-route", { method })
+        expect(response.status).toBe(200)
+        expect(response.headers.get("content-type")).toContain("text/html")
+      }
+
+      for (const method of ["POST", "PUT", "PATCH", "DELETE"]) {
+        const response = yield* server.request("/deleted-route", { method })
+        expect(response.status).toBe(404)
+        expect(response.headers.get("content-type") ?? "").not.toContain("text/html")
+        expect(yield* responseText(response)).not.toContain("embedded novaclaw")
+      }
+    }),
+  )
+
   it.live("keeps matched API routes ahead of the UI fallback", () =>
     Effect.gen(function* () {
       const server = routeOrderingApp()
@@ -270,8 +295,8 @@ describe("HttpApi UI fallback", () => {
         disableEmbeddedWebUi: true,
       }).request(`/?auth_token=${btoa("novaclaw:secret")}`)
 
-      // Auth accepted: the request reaches the route (404 without an embedded UI), not 401.
-      expect(response.status).toBe(404)
+      // Auth accepted: the request reaches the API explainer, not the 401 middleware response.
+      expect(response.status).toBe(200)
     }),
   )
 
@@ -285,7 +310,7 @@ describe("HttpApi UI fallback", () => {
         headers: { authorization: `Basic ${btoa("novaclaw:secret")}` },
       })
 
-      expect(response.status).toBe(404)
+      expect(response.status).toBe(200)
     }),
   )
 
@@ -299,7 +324,7 @@ describe("HttpApi UI fallback", () => {
         headers: { authorization: `Basic ${btoa("novaclaw:sec:ret")}` },
       })
 
-      expect(response.status).toBe(404)
+      expect(response.status).toBe(200)
     }),
   )
 

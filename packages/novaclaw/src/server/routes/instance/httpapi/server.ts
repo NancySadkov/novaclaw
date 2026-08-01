@@ -1,6 +1,6 @@
 import { Config as EffectConfig, Context, Effect, Layer } from "effect"
 import { HttpApiBuilder, OpenApi } from "effect/unstable/httpapi"
-import { HttpMiddleware, HttpRouter, HttpServer, HttpServerResponse } from "effect/unstable/http"
+import { HttpMiddleware, HttpRouter, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
 import * as Socket from "effect/unstable/socket/Socket"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
@@ -192,15 +192,22 @@ const docRoute = HttpRouter.use((router) => router.add("GET", "/doc", () => Effe
   Layer.provide(authOnlyRouterLayer),
 )
 
-const uiRoute = HttpRouter.use((router) =>
-  Effect.gen(function* () {
-    const fs = yield* FSUtil.Service
-    const flags = yield* RuntimeFlags.Service
-    yield* router.add("*", "/*", (request) =>
-      serveUIEffect(request, { fs, disableEmbeddedWebUi: flags.disableEmbeddedWebUi }),
-    )
-  }),
-).pipe(Layer.provide(authOnlyRouterLayer))
+export function createUIRoute(embeddedWebUI?: Record<string, string>) {
+  return HttpRouter.use((router) =>
+    Effect.gen(function* () {
+      const fs = yield* FSUtil.Service
+      const flags = yield* RuntimeFlags.Service
+      const serve = (request: HttpServerRequest.HttpServerRequest) =>
+        serveUIEffect(request, { fs, disableEmbeddedWebUi: flags.disableEmbeddedWebUi, embeddedWebUI })
+      // Effect's router intentionally has no HEAD registration verb: when HEAD has no direct match,
+      // `asHttpEffect` retries the GET table. One GET route therefore covers exactly GET + HEAD,
+      // while mutations fall through to the ordinary JSON/empty 404 instead of receiving index.html.
+      yield* router.add("GET", "/*", serve)
+    }),
+  ).pipe(Layer.provide(authOnlyRouterLayer))
+}
+
+const uiRoute = createUIRoute()
 
 type RouteRequirements =
   | HttpRouter.HttpRouter

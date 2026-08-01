@@ -86,10 +86,15 @@ export function serveEmbeddedUIEffect(
 // web app here, which both phones home and breaks offline.
 export function serveUIEffect(
   request: HttpServerRequest.HttpServerRequest,
-  services: { fs: FSUtil.Interface; disableEmbeddedWebUi: boolean },
+  services: {
+    fs: FSUtil.Interface
+    disableEmbeddedWebUi: boolean
+    embeddedWebUI?: Record<string, string>
+  },
 ) {
   return Effect.gen(function* () {
-    const embeddedWebUI = yield* Effect.promise(() => embeddedUI(services.disableEmbeddedWebUi))
+    const embeddedWebUI =
+      services.embeddedWebUI ?? (yield* Effect.promise(() => embeddedUI(services.disableEmbeddedWebUi)))
     const path = new URL(request.url, "http://localhost").pathname
     // No embedded UI (running from source, or deliberately disabled). Anyone who points a BROWSER at the
     // API root then gets a bare `{"error":"Not Found"}`, which reads as a broken server rather than a

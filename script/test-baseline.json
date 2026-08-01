@@ -26,10 +26,6 @@
     "novaclaw:server": [
       "HttpApi SDK > matches generated SDK missing session errors",
       "HttpApi SDK > uses the generated SDK for safe instance routes",
-      "HttpApi UI fallback > accepts auth token for the web UI",
-      "HttpApi UI fallback > accepts basic auth for the web UI",
-      "HttpApi UI fallback > accepts basic auth passwords containing colons for the web UI",
-      "HttpApi UI fallback > returns 404 from the UI catch-all when no embedded UI is present",
       "HttpApi instance context middleware > falls back to the raw directory when URI decoding fails",
       "HttpApi workspace routing middleware > uses directory query/header fallback when no workspace is selected",
       "PublicApi OpenAPI v2 errors > documents nested legacy global sync events",
