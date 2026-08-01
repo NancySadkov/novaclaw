@@ -144,26 +144,6 @@
     "count": 1
   },
   {
-    "name": "packages/novaclaw/src/question/index.ts :: Effect.logInfo(\"asking\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/question/index.ts :: Effect.logInfo(\"rejected\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/question/index.ts :: Effect.logInfo(\"replied\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/question/index.ts :: Effect.logWarning(\"reject for unknown request\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/question/index.ts :: Effect.logWarning(\"reply for unknown request\")",
-    "count": 1
-  },
-  {
     "name": "packages/novaclaw/src/server/global-lifecycle.ts :: Effect.logWarning(\"global disposal failed\")",
     "count": 1
   },

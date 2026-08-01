@@ -96,6 +96,7 @@ export const SUBSYSTEMS = {
   mcp: "MCP servers",
   patch: "File changes",
   plugin: "Plugins",
+  question: "Questions",
   resource: "Host resources",
   server: "HTTP server",
   session: "Sessions and agent turns",
@@ -763,6 +764,48 @@ export const EVENTS = {
     attributes: { "plugin.package": "text", "plugin.cause": "fault" },
     content: "user",
     file: "packages/core/src/config/plugin/external.ts",
+  },
+
+  // ── question ──────────────────────────────────────────────────────────────────────────────────
+  /** A session is waiting for answers to one or more questions. */
+  "question.request.ask": {
+    level: "info",
+    message: "asking",
+    attributes: { "question.request": "id", "question.count": "count" },
+    content: "none",
+    file: "packages/novaclaw/src/question/index.ts",
+  },
+  /** The user rejected a pending question request. */
+  "question.request.reject": {
+    level: "info",
+    message: "rejected",
+    attributes: { "question.request": "id" },
+    content: "none",
+    file: "packages/novaclaw/src/question/index.ts",
+  },
+  /** A rejection named no pending question request. */
+  "question.request.reject.unknown": {
+    level: "warn",
+    message: "reject for unknown request",
+    attributes: { "question.request": "id" },
+    content: "none",
+    file: "packages/novaclaw/src/question/index.ts",
+  },
+  /** The user answered a pending question request. */
+  "question.request.reply": {
+    level: "info",
+    message: "replied",
+    attributes: { "question.request": "id", "question.answers": "text" },
+    content: "user",
+    file: "packages/novaclaw/src/question/index.ts",
+  },
+  /** A reply named no pending question request. */
+  "question.request.reply.unknown": {
+    level: "warn",
+    message: "reply for unknown request",
+    attributes: { "question.request": "id" },
+    content: "none",
+    file: "packages/novaclaw/src/question/index.ts",
   },
 
   // ── resource ──────────────────────────────────────────────────────────────────────────────────

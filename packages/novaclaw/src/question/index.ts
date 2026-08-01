@@ -5,6 +5,7 @@ import { SessionID } from "@/session/schema"
 import { QuestionID } from "./schema"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { QuestionRequest } from "@novaclaw/schema/question-request"
+import { Log } from "@novaclaw/schema/log"
 
 export const Option = QuestionRequest.Option
 export type Option = typeof Option.Type
@@ -91,7 +92,10 @@ export const layer = Layer.effect(
     }) {
       const pending = (yield* InstanceState.get(state)).pending
       const id = QuestionID.ascending()
-      yield* Effect.logInfo("asking", { id, questions: input.questions.length })
+      yield* Log.event("question.request.ask", {
+        "question.request": id,
+        "question.count": input.questions.length,
+      })
 
       const deferred = yield* Deferred.make<ReadonlyArray<Answer>, RejectedError>()
       const info: Request = {
@@ -118,11 +122,14 @@ export const layer = Layer.effect(
       const pending = (yield* InstanceState.get(state)).pending
       const existing = pending.get(input.requestID)
       if (!existing) {
-        yield* Effect.logWarning("reply for unknown request", { requestID: input.requestID })
+        yield* Log.event("question.request.reply.unknown", { "question.request": input.requestID })
         return yield* new NotFoundError({ requestID: input.requestID })
       }
       pending.delete(input.requestID)
-      yield* Effect.logInfo("replied", { requestID: input.requestID, answers: input.answers })
+      yield* Log.event("question.request.reply", {
+        "question.request": input.requestID,
+        "question.answers": JSON.stringify(input.answers),
+      })
       yield* events.publish(Event.Replied, {
         sessionID: existing.info.sessionID,
         requestID: existing.info.id,
@@ -135,11 +142,11 @@ export const layer = Layer.effect(
       const pending = (yield* InstanceState.get(state)).pending
       const existing = pending.get(requestID)
       if (!existing) {
-        yield* Effect.logWarning("reject for unknown request", { requestID })
+        yield* Log.event("question.request.reject.unknown", { "question.request": requestID })
         return yield* new NotFoundError({ requestID })
       }
       pending.delete(requestID)
-      yield* Effect.logInfo("rejected", { requestID })
+      yield* Log.event("question.request.reject", { "question.request": requestID })
       yield* events.publish(Event.Rejected, {
         sessionID: existing.info.sessionID,
         requestID: existing.info.id,

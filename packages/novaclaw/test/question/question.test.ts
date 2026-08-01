@@ -1,6 +1,7 @@
 import { afterEach, expect } from "bun:test"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
-import { Cause, Effect, Exit, Fiber, Layer, Queue } from "effect"
+import { Logging } from "@novaclaw/core/observability/logging"
+import { Cause, Effect, Exit, Fiber, Layer, Logger, Queue, References } from "effect"
 import { Question } from "../../src/question"
 import { InstanceRef } from "../../src/effect/instance-ref"
 import { InstanceStore } from "../../src/project/instance-store"
@@ -272,6 +273,65 @@ it.instance(
       if (Exit.isFailure(exit)) {
         expect(Cause.squash(exit.cause)).toMatchObject({ _tag: "Question.NotFoundError", requestID: "que_unknown" })
       }
+    }),
+  { git: true },
+)
+
+it.instance(
+  "emits stable keys for ask, reply, reject, and unknown requests",
+  () =>
+    Effect.gen(function* () {
+      const lines: string[] = []
+      const capture = Logger.map(Logging.formatter("question-test"), (line) => lines.push(line))
+      const questions: ReadonlyArray<Question.Info> = [
+        {
+          question: "Choose an action",
+          header: "Action",
+          options: [{ label: "Build", description: "Build the project" }],
+        },
+      ]
+
+      yield* Effect.gen(function* () {
+        const answered = yield* askEffect({ sessionID: SessionID.make("ses_answer"), questions }).pipe(
+          Effect.forkScoped,
+        )
+        const [answerRequest] = yield* waitForPending(1)
+        yield* replyEffect({ requestID: answerRequest.id, answers: [["Build"]] })
+        expect(yield* Fiber.join(answered)).toEqual([["Build"]])
+        expect(
+          Exit.isFailure(
+            yield* replyEffect({
+              requestID: QuestionID.make("que_unknown_reply"),
+              answers: [["Build"]],
+            }).pipe(Effect.exit),
+          ),
+        ).toBe(true)
+
+        const rejected = yield* askEffect({ sessionID: SessionID.make("ses_reject"), questions }).pipe(
+          Effect.forkScoped,
+        )
+        const [rejectRequest] = yield* waitForPending(1)
+        yield* rejectEffect(rejectRequest.id)
+        expect((yield* Fiber.await(rejected))._tag).toBe("Failure")
+        expect(
+          Exit.isFailure(yield* rejectEffect(QuestionID.make("que_unknown_reject")).pipe(Effect.exit)),
+        ).toBe(true)
+      }).pipe(
+        Effect.provide(Logger.layer([capture], { mergeWithExisting: false })),
+        Effect.provideService(References.MinimumLogLevel, "Info"),
+      )
+
+      const questionLines = lines.filter((line) => line.includes("event=question.request."))
+      expect(questionLines.map((line) => line.match(/event=([^ ]+)/)?.[1])).toEqual([
+        "question.request.ask",
+        "question.request.reply",
+        "question.request.reply.unknown",
+        "question.request.ask",
+        "question.request.reject",
+        "question.request.reject.unknown",
+      ])
+      expect(questionLines[1]).toContain("question.answers=")
+      expect(questionLines[1]).toContain('message=replied')
     }),
   { git: true },
 )
