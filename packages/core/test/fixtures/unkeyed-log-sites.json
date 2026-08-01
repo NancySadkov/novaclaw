@@ -532,22 +532,6 @@
     "count": 1
   },
   {
-    "name": "packages/novaclaw/src/patch/index.ts :: Effect.logInfo(`Added file: ${hunk.path}`)",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/patch/index.ts :: Effect.logInfo(`Deleted file: ${hunk.path}`)",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/patch/index.ts :: Effect.logInfo(`Moved file: ${hunk.path} -> ${hunk.move_path}`)",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/patch/index.ts :: Effect.logInfo(`Updated file: ${hunk.path}`)",
-    "count": 1
-  },
-  {
     "name": "packages/novaclaw/src/permission/index.ts :: Effect.logInfo(\"asking\")",
     "count": 1
   },

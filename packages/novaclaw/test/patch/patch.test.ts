@@ -1,6 +1,7 @@
 import { describe, test, expect, beforeEach, afterEach } from "bun:test"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
-import { Effect } from "effect"
+import { Logging } from "@novaclaw/core/observability/logging"
+import { Effect, Logger, References } from "effect"
 import * as fs from "fs/promises"
 import * as path from "path"
 import { tmpdir } from "os"
@@ -258,6 +259,59 @@ PATCH`
         expect(result.added).toHaveLength(1)
         expect(result.modified).toHaveLength(1)
         expect(result.deleted).toHaveLength(1)
+      }),
+    )
+
+    it.live("emits stable event keys and keeps paths out of message text", () =>
+      Effect.gen(function* () {
+        const added = path.join(tempDir, "added.txt")
+        const deleted = path.join(tempDir, "deleted.txt")
+        const updated = path.join(tempDir, "updated.txt")
+        const movedFrom = path.join(tempDir, "move-from.txt")
+        const movedTo = path.join(tempDir, "move-to.txt")
+        yield* Effect.promise(() =>
+          Promise.all([
+            fs.writeFile(deleted, "delete me"),
+            fs.writeFile(updated, "before\n"),
+            fs.writeFile(movedFrom, "before\n"),
+          ]),
+        )
+
+        const lines: string[] = []
+        const capture = Logger.map(Logging.formatter("patch-test"), (line) => lines.push(line))
+        yield* Patch.applyHunksToFiles([
+          { type: "add", path: added, contents: "created" },
+          { type: "delete", path: deleted },
+          {
+            type: "update",
+            path: updated,
+            chunks: [{ old_lines: ["before"], new_lines: ["after"] }],
+          },
+          {
+            type: "update",
+            path: movedFrom,
+            move_path: movedTo,
+            chunks: [{ old_lines: ["before"], new_lines: ["after"] }],
+          },
+        ]).pipe(
+          Effect.provide(Logger.layer([capture], { mergeWithExisting: false })),
+          Effect.provideService(References.MinimumLogLevel, "Info"),
+        )
+
+        expect(lines).toHaveLength(4)
+        expect(lines.map((line) => line.match(/event=([^ ]+)/)?.[1])).toEqual([
+          "patch.file.add",
+          "patch.file.delete",
+          "patch.file.update",
+          "patch.file.move",
+        ])
+        expect(lines[0]).toContain('message="Added file:"')
+        expect(lines[1]).toContain('message="Deleted file:"')
+        expect(lines[2]).toContain('message="Updated file:"')
+        expect(lines[3]).toContain('message="Moved file:"')
+        expect(lines[0]).toContain("patch.file=")
+        expect(lines[3]).toContain("patch.from=")
+        expect(lines[3]).toContain("patch.to=")
       }),
     )
 

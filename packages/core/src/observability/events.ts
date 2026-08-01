@@ -69,8 +69,9 @@
  * The seed is deliberately SMALL and it is not the finished vocabulary. It covers the seven message
  * strings that are 69% of every line in the real log (§0.3), plus the three sites `todo/logging.md`
  * §0.4 names as already-broken. Item 1b grows it subsystem by subsystem as it converts call sites;
- * the wrapper and registry shipped separately from that migration, and `mcp.server.output` became
- * the first converted site only after the shrink-only source ledger was in force.
+ * the wrapper and registry shipped separately from that migration. `mcp.server.output` became the
+ * first converted site only after the shrink-only source ledger was in force; the four `patch.file.*`
+ * template-literal sites followed as the first whole-subsystem vocabulary pass.
  */
 
 /**
@@ -87,6 +88,7 @@ export const SUBSYSTEMS = {
   instance: "Instance lifecycle",
   location: "Workspace locations",
   mcp: "MCP servers",
+  patch: "File changes",
   server: "HTTP server",
   skill: "Skills",
 } as const
@@ -296,6 +298,40 @@ export const EVENTS = {
     attributes: { server: "id" },
     content: "none",
     file: "packages/novaclaw/src/mcp/index.ts",
+  },
+
+  // ── patch ─────────────────────────────────────────────────────────────────────────────────────
+  /** A patch created a file. The path used to be interpolated into `message=`. */
+  "patch.file.add": {
+    level: "info",
+    message: "Added file:",
+    attributes: { "patch.file": "path" },
+    content: "user",
+    file: "packages/novaclaw/src/patch/index.ts",
+  },
+  /** A patch removed a file. The path used to be interpolated into `message=`. */
+  "patch.file.delete": {
+    level: "info",
+    message: "Deleted file:",
+    attributes: { "patch.file": "path" },
+    content: "user",
+    file: "packages/novaclaw/src/patch/index.ts",
+  },
+  /** A patch moved a file, possibly while changing its contents. */
+  "patch.file.move": {
+    level: "info",
+    message: "Moved file:",
+    attributes: { "patch.from": "path", "patch.to": "path" },
+    content: "user",
+    file: "packages/novaclaw/src/patch/index.ts",
+  },
+  /** A patch changed a file in place. The path used to be interpolated into `message=`. */
+  "patch.file.update": {
+    level: "info",
+    message: "Updated file:",
+    attributes: { "patch.file": "path" },
+    content: "user",
+    file: "packages/novaclaw/src/patch/index.ts",
   },
 
   // ── server ────────────────────────────────────────────────────────────────────────────────────
