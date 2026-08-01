@@ -39,6 +39,8 @@ import { ConfigPlugin } from "./plugin"
 import { ConfigVariable } from "./variable"
 import { Npm } from "@novaclaw/core/npm"
 import { withTransientReadRetry } from "@/util/effect-http-client"
+import { errorFormat } from "@/util/error"
+import { Log } from "@novaclaw/schema/log"
 
 // The `.well-known/novaclaw` payload shape: an inline `config` and/or a pointer to a `remote_config`.
 const WellKnown = Schema.Struct({
@@ -304,7 +306,7 @@ export const layer = Layer.effect(
     })
 
     const loadFile = Effect.fnUntraced(function* (filepath: string, env?: Record<string, string>) {
-      yield* Effect.logInfo("loading", { path: filepath })
+      yield* Log.event("config.file.load", { path: filepath })
       const text = yield* readConfigFile(filepath)
       if (!text) return {} as Info
       return yield* loadConfig(text, { path: filepath }, env)
@@ -327,7 +329,7 @@ export const layer = Layer.effect(
     const [cachedGlobal, invalidateGlobal] = yield* Effect.cachedInvalidateWithTTL(
       loadStores().pipe(
         Effect.tapError((error) =>
-          Effect.logError("failed to load global config, using defaults", { error: String(error) }),
+          Log.event("config.global.load.failed", { "config.cause": String(error) }),
         ),
         Effect.orElseSucceed((): Info => ({})),
       ),
@@ -403,7 +405,7 @@ export const layer = Layer.effect(
             const url = key.replace(/\/+$/, "")
             authEnv[value.key] = value.token
             const wellknownURL = `${url}/.well-known/novaclaw`
-            yield* Effect.logDebug("fetching remote config", { url: wellknownURL })
+            yield* Log.event("config.remote.fetch", { "config.url": wellknownURL })
             const wellknown = yield* fetchRemoteJson(wellknownURL, undefined, WellKnown, url)
             const remote = yield* Effect.promise(() =>
               substituteWellKnownRemoteConfig({
@@ -415,7 +417,7 @@ export const layer = Layer.effect(
             )
             const fetchedConfig = remote
               ? yield* Effect.gen(function* () {
-                  yield* Effect.logDebug("fetching remote config", { url: remote.url })
+                  yield* Log.event("config.remote.fetch", { "config.url": remote.url })
                   const data = yield* fetchRemoteJson(remote.url, remote.headers, Schema.Json, url)
                   if (isRecord(data) && isRecord(data.config)) return data.config
                   if (isRecord(data)) return data
@@ -436,7 +438,7 @@ export const layer = Layer.effect(
               authEnv,
             )
             yield* merge(source, next, "global")
-            yield* Effect.logDebug("loaded remote config from well-known", { url })
+            yield* Log.event("config.remote.load.ok", { "config.url": url })
           }
         }
 
@@ -455,7 +457,7 @@ export const layer = Layer.effect(
         const directories = yield* ConfigPaths.directories(ctx.directory, ctx.worktree)
 
         if (Flag.NOVACLAW_CONFIG_DIR) {
-          yield* Effect.logDebug("loading config from NOVACLAW_CONFIG_DIR", { path: Flag.NOVACLAW_CONFIG_DIR })
+          yield* Log.event("config.directory.load", { "config.directory": Flag.NOVACLAW_CONFIG_DIR })
         }
 
         const deps: Fiber.Fiber<void>[] = []
@@ -491,7 +493,10 @@ export const layer = Layer.effect(
                 Effect.exit,
                 Effect.tap((exit) =>
                   Exit.isFailure(exit)
-                    ? Effect.logWarning("background dependency install failed", { dir, error: String(exit.cause) })
+                    ? Log.event("config.dependency.install.failed", {
+                        "config.directory": dir,
+                        "config.cause": String(exit.cause),
+                      })
                     : Effect.void,
                 ),
                 Effect.asVoid,
@@ -524,7 +529,7 @@ export const layer = Layer.effect(
             source,
           })
           yield* merge(source, next, "local")
-          yield* Effect.logDebug("loaded custom config from NOVACLAW_CONFIG_CONTENT")
+          yield* Log.event("config.content.load", {})
         }
 
         const managedDir = ConfigManaged.managedConfigDir()
@@ -558,7 +563,7 @@ export const layer = Layer.effect(
             const rules = ConfigPermission.ruleset(JSON.parse(Flag.NOVACLAW_PERMISSION))
             if (rules?.length) result.permissions = [...(result.permissions ?? []), ...rules]
           } catch (err) {
-            yield* Effect.logWarning("NOVACLAW_PERMISSION contains invalid JSON, skipping", { err })
+            yield* Log.event("config.permission.parse.failed", { "config.cause": errorFormat(err) })
           }
         }
 
@@ -566,7 +571,7 @@ export const layer = Layer.effect(
           try {
             result.username = os.userInfo().username || "user"
           } catch (err) {
-            yield* Effect.logWarning("failed to read system username, using fallback", { err })
+            yield* Log.event("config.username.read.failed", { "config.cause": errorFormat(err) })
             result.username = "user"
           }
         }

@@ -156,42 +156,6 @@
     "count": 1
   },
   {
-    "name": "packages/novaclaw/src/config/config.ts :: Effect.logDebug(\"fetching remote config\")",
-    "count": 2
-  },
-  {
-    "name": "packages/novaclaw/src/config/config.ts :: Effect.logDebug(\"loaded custom config from NOVACLAW_CONFIG_CONTENT\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/config/config.ts :: Effect.logDebug(\"loaded remote config from well-known\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/config/config.ts :: Effect.logDebug(\"loading config from NOVACLAW_CONFIG_DIR\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/config/config.ts :: Effect.logError(\"failed to load global config, using defaults\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/config/config.ts :: Effect.logInfo(\"loading\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/config/config.ts :: Effect.logWarning(\"background dependency install failed\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/config/config.ts :: Effect.logWarning(\"failed to read system username, using fallback\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/config/config.ts :: Effect.logWarning(\"NOVACLAW_PERMISSION contains invalid JSON, skipping\")",
-    "count": 1
-  },
-  {
     "name": "packages/novaclaw/src/format/index.ts :: Effect.logError(\"failed to format file\")",
     "count": 1
   },

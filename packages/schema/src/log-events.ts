@@ -202,11 +202,67 @@ export const RESERVED_ATTRIBUTES: ReadonlyArray<string> = ["timestamp", "level",
  */
 export const EVENTS = {
   // ── config ────────────────────────────────────────────────────────────────────────────────────
+  /** Inline configuration supplied explicitly through the environment was loaded. */
+  "config.content.load": {
+    level: "debug",
+    message: "loaded custom config from NOVACLAW_CONFIG_CONTENT",
+    attributes: {},
+    content: "none",
+    file: "packages/novaclaw/src/config/config.ts",
+  },
+  /** The instance is loading resources from its explicit configuration directory. */
+  "config.directory.load": {
+    level: "debug",
+    message: "loading config from NOVACLAW_CONFIG_DIR",
+    attributes: { "config.directory": "path" },
+    content: "user",
+    file: "packages/novaclaw/src/config/config.ts",
+  },
+  /** Installing dependencies declared by one configuration directory failed in the background. */
+  "config.dependency.install.failed": {
+    level: "warn",
+    message: "background dependency install failed",
+    attributes: { "config.directory": "path", "config.cause": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/config/config.ts",
+  },
   /** The instance is reading a config document off disk. 929 lines in the measured corpus. */
   "config.file.load": {
     level: "info",
     message: "loading",
     attributes: { path: "path" },
+    content: "user",
+    file: "packages/novaclaw/src/config/config.ts",
+  },
+  /** The store-backed global configuration could not load, so safe defaults were used. */
+  "config.global.load.failed": {
+    level: "error",
+    message: "failed to load global config, using defaults",
+    attributes: { "config.cause": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/config/config.ts",
+  },
+  /** The legacy permission environment override was malformed and was skipped. */
+  "config.permission.parse.failed": {
+    level: "warn",
+    message: "NOVACLAW_PERMISSION contains invalid JSON, skipping",
+    attributes: { "config.cause": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/config/config.ts",
+  },
+  /** One well-known or delegated remote configuration document is being fetched. */
+  "config.remote.fetch": {
+    level: "debug",
+    message: "fetching remote config",
+    attributes: { "config.url": "text" },
+    content: "user",
+    file: "packages/novaclaw/src/config/config.ts",
+  },
+  /** A provider's well-known remote configuration was decoded and merged. */
+  "config.remote.load.ok": {
+    level: "debug",
+    message: "loaded remote config from well-known",
+    attributes: { "config.url": "text" },
     content: "user",
     file: "packages/novaclaw/src/config/config.ts",
   },
@@ -223,6 +279,14 @@ export const EVENTS = {
     },
     content: "user",
     file: "packages/core/src/config-store-factory.ts",
+  },
+  /** The OS username could not be read, so the stable friendly fallback was used. */
+  "config.username.read.failed": {
+    level: "warn",
+    message: "failed to read system username, using fallback",
+    attributes: { "config.cause": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/config/config.ts",
   },
 
   // ── credential ────────────────────────────────────────────────────────────────────────────────

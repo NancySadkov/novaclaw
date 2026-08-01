@@ -493,7 +493,18 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     expect(mayEgress("workspace.target.response.rejected")).toBe(false)
   })
 
-  test("an UN-keyed record is untouched — the 98 remaining call sites are not affected", () => {
+  test("remote config URLs are structured but remain on the data plane", () => {
+    const [line] = lines(
+      Log.event("config.remote.fetch", { "config.url": "https://private.example/config" }),
+      "Debug",
+    )
+    expect(line).toContain("event=config.remote.fetch")
+    expect(line).toContain('message="fetching remote config"')
+    expect(line).toContain("config.url=https://private.example/config")
+    expect(mayEgress("config.remote.fetch")).toBe(false)
+  })
+
+  test("an UN-keyed record is untouched — the 88 remaining call sites are not affected", () => {
     // 1a adds a column; it takes nothing away and rewrites nothing. This is the assertion that says
     // the wrapper is a column rather than a second system.
     const [line] = lines(Effect.logInfo("watcher backend", { directory: "/tmp/x", backend: "parcel" }))
