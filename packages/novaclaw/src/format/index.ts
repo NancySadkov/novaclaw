@@ -11,6 +11,7 @@ import { Config } from "@/config/config"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { errorMessage } from "@/util/error"
 import * as Formatter from "./formatter"
+import { Log } from "@novaclaw/schema/log"
 
 export const Status = Schema.Struct({
   name: Schema.String,
@@ -79,13 +80,16 @@ export const layer = Layer.effect(
 
         function formatFile(filepath: string) {
           return Effect.gen(function* () {
-            yield* Effect.logInfo("formatting", { file: filepath })
+            yield* Log.event("format.file.start", { "format.file": filepath })
             const formatters = yield* Effect.promise(() => getFormatter(path.extname(filepath)))
 
             if (!formatters.length) return false
 
             for (const { item, cmd } of formatters) {
-              yield* Effect.logInfo("running", { command: cmd })
+              yield* Log.event("format.command.run", {
+                "format.file": filepath,
+                "format.command": JSON.stringify(cmd),
+              })
               const replaced = cmd.map((x) => x.replace("$FILE", filepath))
               const dir = yield* InstanceState.directory
               const result = yield* appProcess
@@ -101,19 +105,19 @@ export const layer = Layer.effect(
                 )
                 .pipe(
                   Effect.catch((error) =>
-                    Effect.logError("failed to format file", {
-                      error: "spawn failed",
-                      command: cmd,
-                      ...item.environment,
-                      file: filepath,
-                      cause: errorMessage(error.cause ?? error),
+                    Log.event("format.file.spawn.failed", {
+                      "format.file": filepath,
+                      "format.command": JSON.stringify(cmd),
+                      "format.environment": JSON.stringify(item.environment),
+                      "format.cause": errorMessage(error.cause ?? error),
                     }).pipe(Effect.as(undefined)),
                   ),
                 )
               if (result && result.exitCode !== 0) {
-                yield* Effect.logError("failed", {
-                  command: cmd,
-                  ...item.environment,
+                yield* Log.event("format.file.format.failed", {
+                  "format.file": filepath,
+                  "format.command": JSON.stringify(cmd),
+                  "format.environment": JSON.stringify(item.environment),
                 })
               }
             }
@@ -125,8 +129,8 @@ export const layer = Layer.effect(
         const cfg = yield* config.get()
 
         if (!cfg.formatter) {
-          yield* Effect.logInfo("all formatters are disabled")
-          yield* Effect.logInfo("init")
+          yield* Log.event("format.registry.init.disabled", {})
+          yield* Log.event("format.registry.init", {})
           return {
             formatters,
             isEnabled,
@@ -164,7 +168,7 @@ export const layer = Layer.effect(
           }
         }
 
-        yield* Effect.logInfo("init")
+        yield* Log.event("format.registry.init", {})
 
         return {
           formatters,

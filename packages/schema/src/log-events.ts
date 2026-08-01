@@ -362,6 +362,43 @@ export const EVENTS = {
   },
 
   // ── format ────────────────────────────────────────────────────────────────────────────────────
+  /** One configured formatter command is about to run for a file. */
+  "format.command.run": {
+    level: "info",
+    message: "running",
+    attributes: { "format.file": "path", "format.command": "text" },
+    content: "user",
+    file: "packages/novaclaw/src/format/index.ts",
+  },
+  /** A formatter command exited non-zero. */
+  "format.file.format.failed": {
+    level: "error",
+    message: "failed",
+    attributes: { "format.file": "path", "format.command": "text", "format.environment": "text" },
+    content: "user",
+    file: "packages/novaclaw/src/format/index.ts",
+  },
+  /** The formatter process could not be spawned. */
+  "format.file.spawn.failed": {
+    level: "error",
+    message: "failed to format file",
+    attributes: {
+      "format.file": "path",
+      "format.command": "text",
+      "format.environment": "text",
+      "format.cause": "fault",
+    },
+    content: "user",
+    file: "packages/novaclaw/src/format/index.ts",
+  },
+  /** Formatting was requested for one file. */
+  "format.file.start": {
+    level: "info",
+    message: "formatting",
+    attributes: { "format.file": "path" },
+    content: "user",
+    file: "packages/novaclaw/src/format/index.ts",
+  },
   /** The formatter registry finished loading. 1183 lines share the word `init` with `skill` (§0.4). */
   "format.registry.init": {
     level: "info",
@@ -376,20 +413,6 @@ export const EVENTS = {
     message: "all formatters are disabled",
     attributes: {},
     content: "none",
-    file: "packages/novaclaw/src/format/index.ts",
-  },
-  /**
-   * A formatter command exited non-zero.
-   *
-   * ⚠️ One of the TWO unrelated sites that both log the bare word `failed` — the miniature of this
-   * whole item (`todo/logging.md` §0.4). The other is `server.request.fail` below. Same word, two
-   * subsystems, and until this key existed nothing on the line could tell them apart.
-   */
-  "format.file.format.failed": {
-    level: "error",
-    message: "failed",
-    attributes: { command: "id", "format.file": "path" },
-    content: "user",
     file: "packages/novaclaw/src/format/index.ts",
   },
 

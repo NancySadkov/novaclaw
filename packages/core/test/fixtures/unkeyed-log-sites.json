@@ -128,30 +128,6 @@
     "count": 1
   },
   {
-    "name": "packages/novaclaw/src/format/index.ts :: Effect.logError(\"failed to format file\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/format/index.ts :: Effect.logError(\"failed\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/format/index.ts :: Effect.logInfo(\"all formatters are disabled\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/format/index.ts :: Effect.logInfo(\"formatting\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/format/index.ts :: Effect.logInfo(\"init\")",
-    "count": 2
-  },
-  {
-    "name": "packages/novaclaw/src/format/index.ts :: Effect.logInfo(\"running\")",
-    "count": 1
-  },
-  {
     "name": "packages/novaclaw/src/permission/index.ts :: Effect.logInfo(\"asking\")",
     "count": 1
   },

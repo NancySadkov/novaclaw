@@ -376,13 +376,20 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     // `todo/logging.md` §0.4's argument in miniature: one word, two subsystems, and until now
     // nothing on the line could tell them apart.
     const server = lines(Log.event("server.request.fail", { ref: "err_1", "server.error": "e", "server.cause": "c" }))[0]
-    const format = lines(Log.event("format.file.format.failed", { command: "prettier", "format.file": "a.ts" }))[0]
+    const format = lines(
+      Log.event("format.file.format.failed", {
+        "format.file": "a.ts",
+        "format.command": '["prettier","a.ts"]',
+        "format.environment": '{"PRIVATE_TOKEN":"secret"}',
+      }),
+    )[0]
     expect(server).toContain("message=failed")
     expect(format).toContain("message=failed")
     expect(server).toContain("event=server.request.fail")
     expect(format).toContain("event=format.file.format.failed")
     expect(subsystemOf("server.request.fail")).toBe("server")
     expect(subsystemOf("format.file.format.failed")).toBe("format")
+    expect(mayEgress("format.file.format.failed")).toBe(false)
   })
 
   test("a keyed line has NO duplicate column — and the raw path does (negative control)", () => {
@@ -518,7 +525,7 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     expect(mayEgress("filesystem.watcher.resubscribe.stale")).toBe(false)
   })
 
-  test("an UN-keyed record is untouched — the 81 remaining call sites are not affected", () => {
+  test("an UN-keyed record is untouched — the 74 remaining call sites are not affected", () => {
     // 1a adds a column; it takes nothing away and rewrites nothing. This is the assertion that says
     // the wrapper is a column rather than a second system.
     const [line] = lines(Effect.logInfo("watcher backend", { directory: "/tmp/x", backend: "parcel" }))
