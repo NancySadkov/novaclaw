@@ -5,12 +5,13 @@ import { WorkspaceContext } from "@/control-plane/workspace-context"
 import { InstanceRef } from "@/effect/instance-ref"
 import { disposeInstance as runDisposers } from "@/effect/instance-registry"
 import { FSUtil } from "@novaclaw/core/fs-util"
-import { Context, Deferred, Duration, Effect, Exit, Layer, Scope } from "effect"
+import { Cause, Context, Deferred, Duration, Effect, Exit, Layer, Scope } from "effect"
 import { type InstanceContext } from "./instance-context"
 import { InstanceBootstrap } from "./bootstrap-service"
 import { InstanceBootstrap as InstanceBootstrapGraph } from "./bootstrap"
 import { ProjectV2 } from "@novaclaw/core/project"
 import { AbsolutePath } from "@novaclaw/core/schema"
+import { Log } from "@novaclaw/schema/log"
 
 export interface LoadInput {
   directory: string
@@ -86,7 +87,7 @@ export const layer: Layer.Layer<Service, never, ProjectV2.Service | InstanceBoot
       )
 
     const disposeContext = Effect.fn("InstanceStore.disposeContext")(function* (ctx: InstanceContext) {
-      yield* Effect.logInfo("disposing instance", { directory: ctx.directory })
+      yield* Log.event("instance.store.dispose", { directory: ctx.directory })
       yield* Effect.promise(() => runDisposers(ctx.directory))
       yield* emitDisposed({ directory: ctx.directory, project: ctx.origin })
     })
@@ -109,7 +110,7 @@ export const layer: Layer.Layer<Service, never, ProjectV2.Service | InstanceBoot
           const entry: Entry = { deferred: Deferred.makeUnsafe<InstanceContext>() }
           cache.set(directory, entry)
           yield* Effect.gen(function* () {
-            yield* Effect.logInfo("creating instance", { directory: directory })
+            yield* Log.event("instance.store.create", { directory })
             yield* completeLoad(directory, input, entry)
           }).pipe(Effect.forkIn(scope, { startImmediately: true }))
           return yield* restore(Deferred.await(entry.deferred))
@@ -125,7 +126,7 @@ export const layer: Layer.Layer<Service, never, ProjectV2.Service | InstanceBoot
           const entry: Entry = { deferred: Deferred.makeUnsafe<InstanceContext>() }
           cache.set(directory, entry)
           yield* Effect.gen(function* () {
-            yield* Effect.logInfo("reloading instance", { directory: directory })
+            yield* Log.event("instance.store.reload", { directory })
             if (previous) {
               yield* Deferred.await(previous.deferred).pipe(Effect.ignore)
               yield* Effect.promise(() => runDisposers(directory))
@@ -158,14 +159,17 @@ export const layer: Layer.Layer<Service, never, ProjectV2.Service | InstanceBoot
     })
 
     const disposeAllOnce = Effect.fnUntraced(function* () {
-      yield* Effect.logInfo("disposing all instances")
+      yield* Log.event("instance.store.dispose.all", {})
       yield* Effect.forEach(
         [...cache.entries()],
         (item) =>
           Effect.gen(function* () {
             const exit = yield* Deferred.await(item[1].deferred).pipe(Effect.exit)
             if (Exit.isFailure(exit)) {
-              yield* Effect.logWarning("instance dispose failed", { key: item[0], cause: exit.cause })
+              yield* Log.event("instance.store.dispose.failed", {
+                directory: item[0],
+                "instance.cause": Cause.pretty(exit.cause),
+              })
               yield* removeEntry(item[0], item[1])
               return
             }

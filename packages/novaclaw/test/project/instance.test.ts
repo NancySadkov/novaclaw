@@ -1,7 +1,8 @@
 import { describe, expect } from "bun:test"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { CrossSpawnSpawner } from "@novaclaw/core/cross-spawn-spawner"
-import { Deferred, Effect, Fiber, Layer } from "effect"
+import { Logging } from "@novaclaw/core/observability/logging"
+import { Deferred, Effect, Fiber, Layer, Logger, References } from "effect"
 import { InstanceRef } from "../../src/effect/instance-ref"
 import { registerDisposer } from "../../src/effect/instance-registry"
 import { InstanceBootstrap } from "../../src/project/bootstrap"
@@ -163,6 +164,78 @@ describe("InstanceStore", () => {
 
       expect(second).not.toBe(first)
       expect(cached).toBe(second)
+    }),
+  )
+
+  it.live("emits stable keys for the instance-store lifecycle", () =>
+    Effect.gen(function* () {
+      const firstDirectory = yield* tmpdirScoped({ git: true })
+      const secondDirectory = yield* tmpdirScoped({ git: true })
+      const store = yield* InstanceStore.Service
+      const lines: string[] = []
+      const capture = Logger.map(Logging.formatter("instance-store-test"), (line) => lines.push(line))
+
+      yield* Effect.gen(function* () {
+        yield* store.load({ directory: firstDirectory })
+        const reloaded = yield* store.reload({ directory: firstDirectory })
+        yield* store.dispose(reloaded)
+        yield* store.load({ directory: secondDirectory })
+        yield* store.disposeAll()
+      }).pipe(
+        Effect.provide(Logger.layer([capture], { mergeWithExisting: false })),
+        Effect.provideService(References.MinimumLogLevel, "Info"),
+      )
+
+      const instanceLines = lines.filter((line) => line.includes("event=instance.store."))
+      expect(instanceLines.map((line) => line.match(/event=([^ ]+)/)?.[1])).toEqual([
+        "instance.store.create",
+        "instance.store.reload",
+        "instance.store.dispose",
+        "instance.store.create",
+        "instance.store.dispose.all",
+        "instance.store.dispose",
+      ])
+      expect(instanceLines.filter((line) => line.includes("directory=")).length).toBe(5)
+    }),
+  )
+
+  it.live("records a failed in-flight entry during bulk disposal without a duplicate cause column", () =>
+    Effect.gen(function* () {
+      const dir = yield* tmpdirScoped({ git: true })
+      const store = yield* InstanceStore.Service
+      const started = yield* Deferred.make<void>()
+      const release = yield* Deferred.make<void>()
+      const lines: string[] = []
+      const capture = Logger.map(Logging.formatter("instance-store-test"), (line) => lines.push(line))
+
+      yield* Effect.gen(function* () {
+        yield* setBootstrap(
+          Effect.gen(function* () {
+            yield* Deferred.succeed(started, undefined)
+            yield* Deferred.await(release)
+            yield* Effect.sync(() => {
+              throw new Error("instance bootstrap failed")
+            })
+          }),
+        )
+
+        const loading = yield* store.load({ directory: dir }).pipe(Effect.forkScoped)
+        yield* Deferred.await(started)
+        const disposing = yield* store.disposeAll().pipe(Effect.forkScoped)
+        yield* Effect.yieldNow
+        expect(lines.some((line) => line.includes("event=instance.store.dispose.all"))).toBe(true)
+        yield* Deferred.succeed(release, undefined)
+        expect((yield* Fiber.await(loading))._tag).toBe("Failure")
+        yield* Fiber.join(disposing)
+      }).pipe(
+        Effect.provide(Logger.layer([capture], { mergeWithExisting: false })),
+        Effect.provideService(References.MinimumLogLevel, "Info"),
+      )
+
+      const [failed] = lines.filter((line) => line.includes("event=instance.store.dispose.failed"))
+      expect(failed).toContain("directory=")
+      expect(failed).toContain("instance.cause=")
+      expect(failed?.match(/(?:^| )cause=/g)).toBeNull()
     }),
   )
 

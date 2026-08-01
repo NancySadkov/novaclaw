@@ -144,26 +144,6 @@
     "count": 1
   },
   {
-    "name": "packages/novaclaw/src/project/instance-store.ts :: Effect.logInfo(\"creating instance\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/project/instance-store.ts :: Effect.logInfo(\"disposing all instances\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/project/instance-store.ts :: Effect.logInfo(\"disposing instance\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/project/instance-store.ts :: Effect.logInfo(\"reloading instance\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/project/instance-store.ts :: Effect.logWarning(\"instance dispose failed\")",
-    "count": 1
-  },
-  {
     "name": "packages/novaclaw/src/question/index.ts :: Effect.logInfo(\"asking\")",
     "count": 1
   },

@@ -443,6 +443,38 @@ export const EVENTS = {
     content: "user",
     file: "packages/novaclaw/src/project/instance-store.ts",
   },
+  /** One cached instance is about to be disposed. */
+  "instance.store.dispose": {
+    level: "info",
+    message: "disposing instance",
+    attributes: { directory: "path" },
+    content: "user",
+    file: "packages/novaclaw/src/project/instance-store.ts",
+  },
+  /** Every cached instance is about to be disposed. */
+  "instance.store.dispose.all": {
+    level: "info",
+    message: "disposing all instances",
+    attributes: {},
+    content: "none",
+    file: "packages/novaclaw/src/project/instance-store.ts",
+  },
+  /** An instance entry failed before bulk disposal could obtain its context. */
+  "instance.store.dispose.failed": {
+    level: "warn",
+    message: "instance dispose failed",
+    attributes: { directory: "path", "instance.cause": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/project/instance-store.ts",
+  },
+  /** One cached instance is being replaced with a fresh context. */
+  "instance.store.reload": {
+    level: "info",
+    message: "reloading instance",
+    attributes: { directory: "path" },
+    content: "user",
+    file: "packages/novaclaw/src/project/instance-store.ts",
+  },
 
   // ── kb ────────────────────────────────────────────────────────────────────────────────────────
   /** The optional in-process graph could not open; memory stays safely degraded. */
