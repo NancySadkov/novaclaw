@@ -109,6 +109,7 @@ import { makeLocationNode } from "../../effect/app-node"
 import { llmClient } from "../../effect/app-node-platform"
 import { AttachmentPaths } from "./attachment-paths"
 import { TodoReminder } from "./todo-reminder"
+import { CalloutPolicy } from "../../callout-policy"
 
 // Ordering can only choose among retrieved candidates — fetch wider than the recall budget.
 
@@ -251,6 +252,7 @@ export const layer = Layer.effect(
       shell: string,
       check: { readonly label: string; readonly command: string; readonly timeoutMs?: number },
     ) {
+      const policy = CalloutPolicy.qualityGate(check.timeoutMs ?? 60_000)
       const command = ChildProcess.make(check.command, [], {
         cwd: location.directory,
         shell,
@@ -261,7 +263,7 @@ export const layer = Layer.effect(
       const result = yield* appProcess
         .run(command, {
           combineOutput: true,
-          timeout: Duration.millis(check.timeoutMs ?? 60_000),
+          timeout: Duration.millis(policy.timeoutMs),
           maxOutputBytes: 32_768,
         })
         .pipe(

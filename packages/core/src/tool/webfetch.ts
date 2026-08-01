@@ -14,6 +14,7 @@ import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
 import { WebGovernor } from "../web/governor"
+import { CalloutPolicy } from "../callout-policy"
 
 export const name = "webfetch"
 export const MAX_RESPONSE_BYTES = 5 * 1024 * 1024
@@ -179,6 +180,7 @@ export const layer = Layer.effectDiscard(
               // capped per host per day, one request in flight per host, and refused outright if this URL
               // is being re-fetched in a loop. The wait happens BEFORE the timeout starts, so a paced
               // delay can never be mistaken for a slow server.
+              const policy = CalloutPolicy.webfetch((input.timeout ?? DEFAULT_TIMEOUT_SECONDS) * 1_000)
               const { body, contentType } = yield* governor.guard({
                 url: input.url,
                 sessionID: context.sessionID,
@@ -195,7 +197,7 @@ export const layer = Layer.effectDiscard(
                   return { body: yield* collectBody(response), contentType }
                 }).pipe(
                   Effect.timeoutOrElse({
-                    duration: Duration.seconds(input.timeout ?? DEFAULT_TIMEOUT_SECONDS),
+                    duration: Duration.millis(policy.timeoutMs),
                     orElse: () => Effect.fail(new Error("Request timed out")),
                   }),
                 ),

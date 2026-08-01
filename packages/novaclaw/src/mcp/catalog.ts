@@ -7,6 +7,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js"
 import { McpExternal } from "@novaclaw/core/tool/mcp-external"
 import { Effect } from "effect"
+import { CalloutPolicy } from "@novaclaw/core/callout-policy"
 
 const DEFAULT_TIMEOUT = 30_000
 const MAX_LIST_PAGES = 1_000
@@ -46,6 +47,7 @@ export function defs(client: Client, timeout?: number) {
 // dependency without changing the downstream contract — `fromMcpTool` reads
 // `inputSchema` directly and calls `execute(args, { toolCallId, messages })`.
 export function convertTool(mcpTool: MCPToolDef, client: Client, timeout?: number): McpExternal.AiSdkTool {
+  const policy = CalloutPolicy.mcpTool(timeout ?? DEFAULT_TIMEOUT)
   const inputSchema = {
     ...(mcpTool.inputSchema as Record<string, unknown>),
     type: "object" as const,
@@ -66,7 +68,7 @@ export function convertTool(mcpTool: MCPToolDef, client: Client, timeout?: numbe
         {
           resetTimeoutOnProgress: true,
           signal: options.abortSignal,
-          timeout,
+          timeout: policy.timeoutMs,
           // The MCP SDK only sends a progress token when this hook is present, enabling timeout resets.
           onprogress: () => {},
         },

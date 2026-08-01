@@ -6,6 +6,7 @@ import { Offline } from "../offline"
 import { SettingsConfigStore } from "../settings-config-store"
 import { WebGovernor } from "../web/governor"
 import { WebSearchEngine } from "./engine"
+import { CalloutPolicy } from "../callout-policy"
 
 // The web-search service: ONE entry point the agent's tool calls, which decides at CALL TIME what
 // is actually available. Three rules, in order:
@@ -193,9 +194,10 @@ export const layerWith = (fetchImpl: WebSearchEngine.FetchLike) =>
           if (engines.length === 0)
             return { ok: false, results: [], reason: "Every search engine is disabled in settings." } satisfies SearchOutcome
           const limit = Math.max(1, Math.min(25, Math.floor(options?.limit ?? DEFAULT_LIMIT)))
+          const policy = CalloutPolicy.websearch(settings.timeoutMs ?? DEFAULT_TIMEOUT_MS, engines.length)
           const searchOptions = {
             limit,
-            timeoutMs: settings.timeoutMs ?? DEFAULT_TIMEOUT_MS,
+            timeoutMs: policy.timeoutMs,
             gate: gateFor(trimmed, options?.sessionID),
           }
 
@@ -208,7 +210,7 @@ export const layerWith = (fetchImpl: WebSearchEngine.FetchLike) =>
                 Effect.catch((error) => Effect.succeed({ engine, results: [] as readonly WebSearchEngine.Result[], failure: error.reason })),
               ),
             ),
-            { concurrency: "unbounded" },
+            { concurrency: policy.maxConcurrency },
           )
 
           const worked = settled.filter((entry) => entry.failure === undefined)

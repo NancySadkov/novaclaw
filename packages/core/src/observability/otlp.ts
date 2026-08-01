@@ -1,8 +1,9 @@
-import { Layer } from "effect"
+import { Duration, Layer } from "effect"
 import { OtlpLogger } from "effect/unstable/observability"
 import { Flag } from "../flag/flag"
 import { InstallationChannel, InstallationVersion } from "../installation/version"
 import { runID } from "./shared"
+import { CalloutPolicy } from "../callout-policy"
 
 const endpoint = Flag.OTEL_EXPORTER_OTLP_ENDPOINT
 
@@ -49,7 +50,20 @@ export function resource(): { serviceName: string; serviceVersion: string; attri
 
 export function loggers() {
   if (!endpoint) return []
-  return [OtlpLogger.make({ url: `${endpoint}/v1/logs`, resource: resource(), headers })]
+  return [
+    OtlpLogger.make({
+      url: `${endpoint}/v1/logs`,
+      resource: resource(),
+      headers,
+      maxBatchSize: CalloutPolicy.telemetryLogs.queueLimit,
+      shutdownTimeout: Duration.millis(CalloutPolicy.telemetryLogs.timeoutMs),
+    }),
+  ]
+}
+
+const positiveEnvironmentInteger = (name: string, fallback: number) => {
+  const parsed = Number.parseInt(process.env[name] ?? "", 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
 }
 
 export async function tracingLayer() {
@@ -59,6 +73,10 @@ export async function tracingLayer() {
   const SdkBase = await import("@opentelemetry/sdk-trace-base")
   const { AsyncLocalStorageContextManager } = await import("@opentelemetry/context-async-hooks")
   const { context } = await import("@opentelemetry/api")
+  const policy = CalloutPolicy.telemetryTraces(
+    positiveEnvironmentInteger("OTEL_BSP_EXPORT_TIMEOUT", 30_000),
+    positiveEnvironmentInteger("OTEL_BSP_MAX_QUEUE_SIZE", 2_048),
+  )
 
   // The Effect Node SDK does not register a global context manager, but the AI SDK uses it to parent spans.
   const manager = new AsyncLocalStorageContextManager()
@@ -72,6 +90,10 @@ export async function tracingLayer() {
         url: `${endpoint}/v1/traces`,
         headers,
       }),
+      {
+        exportTimeoutMillis: policy.timeoutMs,
+        maxQueueSize: policy.queueLimit,
+      },
     ),
   }))
 }

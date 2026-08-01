@@ -10,6 +10,7 @@ import { SessionMessage } from "./message"
 import { SessionSchema } from "./schema"
 import { isSteerText, stripSteerProvenance } from "./steer-provenance"
 import { Token } from "../util/token"
+import { CalloutPolicy } from "../callout-policy"
 
 const DEFAULT_BUFFER = 20_000
 const DEFAULT_KEEP_TOKENS = 8_000
@@ -293,6 +294,10 @@ export const make = (dependencies: Dependencies) => {
         }),
         Effect.as(true),
         Effect.catchTag("LLM.Error", () => Effect.succeed(false)),
+        Effect.timeoutOrElse({
+          duration: CalloutPolicy.summarizer.timeoutMs,
+          orElse: () => Effect.succeed(false),
+        }),
       )
     const summary = chunks.join("")
     if (!summarized || failed || !summary.trim()) return false
