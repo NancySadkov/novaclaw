@@ -2,6 +2,7 @@ export * as ConfigExternalPlugin from "./external"
 
 import type { Plugin as EffectPlugin } from "@novaclaw/plugin/v2/effect"
 import type { Plugin as PromisePlugin } from "@novaclaw/plugin/v2/promise"
+import { Log } from "@novaclaw/schema/log"
 import { Cause, Effect, Schema } from "effect"
 import path from "path"
 import { pathToFileURL } from "url"
@@ -104,10 +105,10 @@ export const Plugin = define({
           // fault. A warn log is the right surface: this loader is instance-wide, not per-session,
           // and core has no session-event bridge to publish to.
           Effect.tapCause((cause) =>
-            Effect.logWarning(
-              `external plugin failed to load and is UNAVAILABLE — every other plugin still loaded: ${ref.package}`,
-              { cause: Cause.pretty(cause) },
-            ),
+            Log.event("plugin.external.load.failed", {
+              "plugin.package": ref.package,
+              "plugin.cause": Cause.pretty(cause),
+            }),
           ),
           Effect.ignoreCause,
         )

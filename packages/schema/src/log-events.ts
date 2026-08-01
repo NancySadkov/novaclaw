@@ -95,6 +95,7 @@ export const SUBSYSTEMS = {
   messenger: "Messenger",
   mcp: "MCP servers",
   patch: "File changes",
+  plugin: "Plugins",
   resource: "Host resources",
   server: "HTTP server",
   skill: "Skills",
@@ -586,6 +587,16 @@ export const EVENTS = {
     attributes: { "patch.file": "path" },
     content: "user",
     file: "packages/novaclaw/src/patch/index.ts",
+  },
+
+  // ── plugin ────────────────────────────────────────────────────────────────────────────────────
+  /** One external plugin could not be imported or decoded; its peers remain available. */
+  "plugin.external.load.failed": {
+    level: "warn",
+    message: "external plugin failed to load and is UNAVAILABLE — every other plugin still loaded",
+    attributes: { "plugin.package": "text", "plugin.cause": "fault" },
+    content: "user",
+    file: "packages/core/src/config/plugin/external.ts",
   },
 
   // ── resource ──────────────────────────────────────────────────────────────────────────────────

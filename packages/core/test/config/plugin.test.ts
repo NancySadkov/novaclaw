@@ -39,12 +39,12 @@ const memoryStore = () => {
 
 /** Collect every WARN emitted while `effect` runs — including from fibers it forks. */
 const collectWarnings = () => {
-  const warnings: string[] = []
+  const records: unknown[][] = []
   const collector = Logger.make((options: Logger.Options<unknown>) => {
     if (options.logLevel !== "Warn") return
-    warnings.push(Array.isArray(options.message) ? options.message.map(String).join(" ") : String(options.message))
+    records.push(Array.isArray(options.message) ? [...options.message] : [options.message])
   })
-  return { warnings, layer: Logger.layer([collector]) }
+  return { records, layer: Logger.layer([collector]) }
 }
 
 describe("ConfigExternalPlugin", () => {
@@ -162,7 +162,7 @@ describe("ConfigExternalPlugin", () => {
       const location = yield* Location.Service
       const npm = yield* Npm.Service
       const host = yield* PluginHost.make(plugins)
-      const { warnings, layer } = collectWarnings()
+      const { records, layer } = collectWarnings()
 
       yield* ConfigExternalPlugin.Plugin.effect(host).pipe(
         Effect.provide(layer),
@@ -191,10 +191,22 @@ describe("ConfigExternalPlugin", () => {
         description: "Loaded after broken plugins",
       })
 
-      const reported = warnings.filter((line) => line.includes("failed to load and is UNAVAILABLE"))
-      expect(reported.some((line) => line.includes("missing-plugin.ts"))).toBe(true)
-      expect(reported.some((line) => line.includes("invalid-plugin.ts"))).toBe(true)
-      expect(reported.some((line) => line.includes("config-promise-plugin.ts"))).toBe(false)
+      const reported = records.filter(
+        (record) => (record[0] as { event?: string } | undefined)?.event === "plugin.external.load.failed",
+      )
+      expect(reported).toHaveLength(2)
+      expect(
+        reported
+          .map((record) => (record[2] as { "plugin.package": string })["plugin.package"])
+          .sort(),
+      ).toEqual([fixture("invalid-plugin.ts"), fixture("missing-plugin.ts")].sort())
+      for (const record of reported) {
+        expect(record).toEqual([
+          { event: "plugin.external.load.failed" },
+          "external plugin failed to load and is UNAVAILABLE — every other plugin still loaded",
+          { "plugin.package": expect.any(String), "plugin.cause": expect.any(String) },
+        ])
+      }
     }),
   )
 

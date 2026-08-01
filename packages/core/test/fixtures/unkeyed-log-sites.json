@@ -24,10 +24,6 @@
     "count": 1
   },
   {
-    "name": "packages/core/src/config/plugin/external.ts :: Effect.logWarning(`external plugin failed to load and is UNAVAILABLE — every other plugin still loaded: ${ref.package}`)",
-    "count": 1
-  },
-  {
     "name": "packages/core/src/event.ts :: Effect.logError(\"Event listener failed\")",
     "count": 1
   },
