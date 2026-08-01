@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "ce28743b-bd88-479a-8b20-16fb9c963834",
+  "id": "a6c3b6a1-3845-4d23-876e-4098f3464e23",
   "prevIds": [
-    "6188ddf0-87f7-44bf-ba85-73bdb3bfb106"
+    "ce28743b-bd88-479a-8b20-16fb9c963834"
   ],
   "ddl": [
     {
@@ -160,6 +160,10 @@
     },
     {
       "name": "skill_config",
+      "entityType": "tables"
+    },
+    {
+      "name": "tool_catalogue",
       "entityType": "tables"
     },
     {
@@ -2783,6 +2787,106 @@
       "table": "skill_config"
     },
     {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "scope",
+      "entityType": "columns",
+      "table": "tool_catalogue"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "name",
+      "entityType": "columns",
+      "table": "tool_catalogue"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "server",
+      "entityType": "columns",
+      "table": "tool_catalogue"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "description",
+      "entityType": "columns",
+      "table": "tool_catalogue"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "argument_names",
+      "entityType": "columns",
+      "table": "tool_catalogue"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "arguments",
+      "entityType": "columns",
+      "table": "tool_catalogue"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "input_schema",
+      "entityType": "columns",
+      "table": "tool_catalogue"
+    },
+    {
+      "type": "text",
+      "notNull": true,
+      "autoincrement": false,
+      "default": "''",
+      "generated": null,
+      "name": "keywords",
+      "entityType": "columns",
+      "table": "tool_catalogue"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_created",
+      "entityType": "columns",
+      "table": "tool_catalogue"
+    },
+    {
+      "type": "integer",
+      "notNull": true,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "time_updated",
+      "entityType": "columns",
+      "table": "tool_catalogue"
+    },
+    {
       "columns": [
         "active_account_id"
       ],
@@ -2971,6 +3075,16 @@
       "name": "todo_pk",
       "entityType": "pks",
       "table": "todo"
+    },
+    {
+      "columns": [
+        "scope",
+        "name"
+      ],
+      "nameExplicit": false,
+      "name": "tool_catalogue_pk",
+      "entityType": "pks",
+      "table": "tool_catalogue"
     },
     {
       "columns": [
@@ -3651,6 +3765,24 @@
       "name": "todo_session_idx",
       "entityType": "indexes",
       "table": "todo"
+    },
+    {
+      "columns": [
+        {
+          "value": "scope",
+          "isExpression": false
+        },
+        {
+          "value": "server",
+          "isExpression": false
+        }
+      ],
+      "isUnique": false,
+      "where": null,
+      "origin": "manual",
+      "name": "tool_catalogue_scope_server_idx",
+      "entityType": "indexes",
+      "table": "tool_catalogue"
     }
   ],
   "renames": []

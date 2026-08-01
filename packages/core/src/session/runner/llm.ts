@@ -24,6 +24,7 @@ import { ProviderV2 } from "../../provider"
 import { QuestionV2 } from "../../question"
 import { SystemContext } from "../../system-context/index"
 import { SystemContextRegistry } from "../../system-context/registry"
+import { ToolCatalogueGuidance } from "../../tool-catalogue-guidance"
 import { SkillGuidance } from "../../skill/guidance"
 import { ReferenceGuidance } from "../../reference/guidance"
 import { ToolRegistry } from "../../tool/registry"
@@ -195,6 +196,7 @@ export const layer = Layer.effect(
     const store = yield* SessionStore.Service
     const location = yield* Location.Service
     const systemContext = yield* SystemContextRegistry.Service
+    const toolCatalogueGuidance = yield* ToolCatalogueGuidance.Service
     const skillGuidance = yield* SkillGuidance.Service
     const referenceGuidance = yield* ReferenceGuidance.Service
     const adhocGuidance = yield* AdhocGuidance.Service
@@ -661,7 +663,13 @@ export const layer = Layer.effect(
 
     const loadSystemContext = (agent: AgentV2.Selection, sessionID: SessionSchema.ID) =>
       Effect.all(
-        [systemContext.load(), skillGuidance.load(agent), referenceGuidance.load(), adhocGuidance.load(sessionID)],
+        [
+          systemContext.load(),
+          skillGuidance.load(agent),
+          referenceGuidance.load(),
+          adhocGuidance.load(sessionID),
+          toolCatalogueGuidance.load(),
+        ],
         { concurrency: "unbounded" },
       ).pipe(Effect.map(SystemContext.combine))
 
@@ -2267,6 +2275,7 @@ export const node = makeLocationNode({
     llmClient,
     AgentV2.node,
     ToolRegistry.node,
+    ToolCatalogueGuidance.node,
     SessionRunnerModel.node,
     SessionStore.node,
     Location.node,

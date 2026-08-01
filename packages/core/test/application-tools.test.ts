@@ -39,6 +39,22 @@ const contextual = (contexts: Tool.Context[]) =>
   })
 
 describe("ApplicationTools", () => {
+  it.effect("catalogues application and Location tools through the canonical registry", () =>
+    Effect.gen(function* () {
+      const applications = yield* ApplicationTools.Service
+      const tools = yield* Tools.Service
+      const registry = yield* ToolRegistry.Service
+
+      yield* applications.register({ application_echo: contextual([]) })
+      yield* tools.register({ core_echo: contextual([]) })
+
+      expect((yield* registry.catalogue()).map((source) => [source.definition.name, source.server])).toEqual([
+        ["application_echo", "application"],
+        ["core_echo", "core"],
+      ])
+    }),
+  )
+
   it.effect("keeps the Core carrier opaque and executes its single handler", () =>
     Effect.gen(function* () {
       const applications = yield* ApplicationTools.Service

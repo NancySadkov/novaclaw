@@ -7,6 +7,7 @@ import { PermissionV2 } from "../permission"
 import { SessionMessage } from "../session/message"
 import { SessionSchema } from "../session/schema"
 import { ToolOutputStore } from "../tool-output-store"
+import { ToolCatalogue } from "../tool-catalogue"
 import { Wildcard } from "../util/wildcard"
 import { ApplicationTools } from "./application-tools"
 import { ExternalToolSource } from "./external-tool-source"
@@ -32,6 +33,8 @@ export type ExecuteInput = {
 }
 
 export interface Interface {
+  /** Every currently registered canonical tool, before per-agent visibility filters. */
+  readonly catalogue: () => Effect.Effect<ReadonlyArray<ToolCatalogue.Source>>
   readonly materialize: (
     permissions?: PermissionV2.Ruleset,
     offered?: (name: string) => boolean,
@@ -186,6 +189,21 @@ const registryLayer = Layer.effect(
             )
           }),
         )
+      }),
+      catalogue: Effect.fn("ToolRegistry.catalogue")(function* () {
+        const sources = new Map<string, ToolCatalogue.Source>()
+        for (const [name, registration] of applications.entries())
+          sources.set(name, { server: "application", definition: definition(name, registration.tool) })
+        for (const [name, registration] of yield* external.entries())
+          sources.set(name, {
+            server: ToolCatalogue.externalServer(name),
+            definition: definition(name, registration.tool),
+          })
+        for (const [name, entries] of local) {
+          const registration = entries.at(-1)?.registration
+          if (registration) sources.set(name, { server: "core", definition: definition(name, registration.tool) })
+        }
+        return [...sources.values()].toSorted((a, b) => a.definition.name.localeCompare(b.definition.name))
       }),
       materialize: Effect.fn("ToolRegistry.materialize")(function* (permissions = [], offered = () => true) {
         const registrations = new Map(applications.entries())

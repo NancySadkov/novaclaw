@@ -39,6 +39,7 @@ import { ExternalToolSource } from "./tool/external-tool-source"
 import { ReadToolFileSystem } from "./tool/read-filesystem"
 import { ToolRegistry } from "./tool/registry"
 import { ToolOutputStore } from "./tool-output-store"
+import { ToolCatalogueGuidance } from "./tool-catalogue-guidance"
 
 export { LocationServiceMap } from "./location-service-map"
 
@@ -69,6 +70,7 @@ export const locationServices = LayerNode.group([
   ExternalToolSource.node,
   ToolRegistry.node,
   ToolRegistry.toolsNode,
+  ToolCatalogueGuidance.node,
   Image.node,
   SkillGuidance.node,
   ReferenceGuidance.node,
