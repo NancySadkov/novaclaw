@@ -314,6 +314,31 @@ describe("FileMutation", () => {
     ),
   )
 
+  it.live("reports a removed conditional-write target as stale", () =>
+    withTmp((directory) =>
+      Effect.gen(function* () {
+        const targetPath = path.join(directory, "removed.txt")
+        yield* Effect.promise(() => fs.writeFile(targetPath, "expected"))
+        const target = yield* (yield* LocationMutation.Service).resolve({ path: "removed.txt" })
+        yield* Effect.promise(() => fs.unlink(targetPath))
+
+        expect(
+          yield* (yield* FileMutation.Service)
+            .writeIfUnchanged({ target, expected: new TextEncoder().encode("expected"), content: "replacement" })
+            .pipe(Effect.flip),
+        ).toMatchObject({ _tag: "FileMutation.StaleContentError", path: target.canonical })
+        expect(
+          yield* Effect.promise(() =>
+            fs.access(targetPath).then(
+              () => true,
+              () => false,
+            ),
+          ),
+        ).toBe(false)
+      }).pipe(provide(directory)),
+    ),
+  )
+
   it.live("allows distinct canonical targets to proceed independently", () =>
     withTmp((directory) =>
       Effect.gen(function* () {

@@ -24,12 +24,16 @@ const sessionID = SessionV2.ID.make("ses_write_tool_test")
 const assertions: PermissionV2.AssertInput[] = []
 const writes: string[] = []
 let denyAction: string | undefined
+let onAssert: ((input: PermissionV2.AssertInput) => Promise<void>) | undefined
 
 const permission = Layer.succeed(
   PermissionV2.Service,
   PermissionV2.Service.of({
     assert: (input) =>
-      Effect.sync(() => assertions.push(input)).pipe(
+      Effect.promise(async () => {
+        assertions.push(input)
+        await onAssert?.(input)
+      }).pipe(
         Effect.andThen(
           input.action === denyAction ? Effect.fail(new PermissionV2.DeniedError({ rules: [] })) : Effect.void,
         ),
@@ -46,6 +50,7 @@ const reset = () => {
   assertions.length = 0
   writes.length = 0
   denyAction = undefined
+  onAssert = undefined
 }
 
 const filesystem = Layer.effect(
@@ -55,7 +60,9 @@ const filesystem = Layer.effect(
     return FSUtil.Service.of({
       ...fs,
       writeWithDirs: (target, content, mode) =>
-        Effect.sync(() => writes.push(target)).pipe(Effect.andThen(fs.writeWithDirs(target, content, mode))),
+        fs.writeWithDirs(target, content, mode).pipe(Effect.tap(() => Effect.sync(() => writes.push(target)))),
+      writeFileString: (target, content, options) =>
+        fs.writeFileString(target, content, options).pipe(Effect.tap(() => Effect.sync(() => writes.push(target)))),
     })
   }),
 ).pipe(Layer.provide(LayerNode.compile(FSUtil.node)))
@@ -178,6 +185,65 @@ describe("WriteTool", () => {
                 expect(yield* Effect.promise(() => fs.readFile(deduplicated, "utf8"))).toBe("\uFEFFafter")
               }),
             ),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("refuses to overwrite an existing file changed during permission approval", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        const target = path.join(tmp.path, "raced.txt")
+        return Effect.promise(() => fs.writeFile(target, "before")).pipe(
+          Effect.andThen(
+            withTool(tmp.path, (registry) => {
+              onAssert = async (input) => {
+                if (input.action === "write") await fs.writeFile(target, "changed by the user")
+              }
+              return settleTool(registry, call({ path: "raced.txt", content: "agent overwrite" }))
+            }),
+          ),
+          Effect.andThen((settled) =>
+            Effect.gen(function* () {
+              expect(settled.result).toEqual({
+                type: "error",
+                value: "File changed after permission approval. Read it again before writing.",
+              })
+              expect(yield* Effect.promise(() => fs.readFile(target, "utf8"))).toBe("changed by the user")
+              expect(writes).toEqual([])
+            }),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("refuses to replace a new file that appears during permission approval", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        const target = path.join(tmp.path, "appeared.txt")
+        return withTool(tmp.path, (registry) => {
+          onAssert = async (input) => {
+            if (input.action === "create") await fs.writeFile(target, "created by the user")
+          }
+          return settleTool(registry, call({ path: "appeared.txt", content: "agent overwrite" }))
+        }).pipe(
+          Effect.andThen((settled) =>
+            Effect.gen(function* () {
+              expect(settled.result).toEqual({
+                type: "error",
+                value: "File changed after permission approval. Read it again before writing.",
+              })
+              expect(yield* Effect.promise(() => fs.readFile(target, "utf8"))).toBe("created by the user")
+              expect(writes).toEqual([])
+            }),
           ),
         )
       },

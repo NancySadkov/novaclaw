@@ -78,12 +78,16 @@ export const layer = Layer.effectDiscard(
               // 1I: creating a NEW file and overwriting an existing one WHOLESALE are distinct
               // actions, so a mode (1K "surgical") can permit edits + new files while denying
               // full rewrites — the classic small-model failure of regenerating a whole file.
-              const existed = yield* Effect.promise(() =>
-                fs.access(target.canonical).then(
-                  () => true,
-                  () => false,
+              const current = yield* Effect.promise(() =>
+                fs.readFile(target.canonical).then(
+                  (content) => content,
+                  (error: NodeJS.ErrnoException) => {
+                    if (error.code === "ENOENT") return undefined
+                    throw error
+                  },
                 ),
               )
+              const existed = current !== undefined
               yield* permission.assert({
                 action: existed ? "write" : "create",
                 resources: [target.resource],
@@ -94,11 +98,22 @@ export const layer = Layer.effectDiscard(
                 agent: context.agent,
                 source,
               })
-              return yield* files.writeTextPreservingBom({ target, content: input.content })
+              const content = preserveBom(input.content, current)
+              return yield* current
+                ? files.writeIfUnchanged({ target, expected: current, content })
+                : files.create({ target, content })
             }).pipe(
               Effect.mapError((error) => {
                 const denial = PermissionV2.denialMessage(error)
                 if (denial) return new ToolFailure({ message: denial })
+                if (
+                  error instanceof FileMutation.StaleContentError ||
+                  error instanceof FileMutation.TargetExistsError
+                ) {
+                  return new ToolFailure({
+                    message: "File changed after permission approval. Read it again before writing.",
+                  })
+                }
                 return new ToolFailure({ message: `Unable to write ${input.path}` })
               }),
             ),
@@ -113,3 +128,13 @@ export const node = makeLocationNode({
   layer,
   deps: [ToolRegistry.node, LocationMutation.node, FileMutation.node, PermissionV2.node],
 })
+
+function preserveBom(content: string, current: Uint8Array | undefined) {
+  const stripped = content.replace(/^\uFEFF+/, "")
+  const needsBom = stripped.length !== content.length || Boolean(current && hasUtf8Bom(current))
+  return needsBom ? `\uFEFF${stripped}` : stripped
+}
+
+function hasUtf8Bom(content: Uint8Array) {
+  return content[0] === 0xef && content[1] === 0xbb && content[2] === 0xbf
+}
