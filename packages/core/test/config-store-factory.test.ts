@@ -7,6 +7,7 @@ import { CommandConfigStore } from "@novaclaw/core/command-config-store"
 import { ConfigAgent } from "@novaclaw/core/config/agent"
 import { ConfigCommand } from "@novaclaw/core/config/command"
 import { ConfigProvider } from "@novaclaw/core/config/provider"
+import { ConfigStoreFactory } from "@novaclaw/core/config-store-factory"
 import { Database } from "@novaclaw/core/database/database"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
@@ -52,17 +53,17 @@ const it = testEffect(
   ),
 )
 
-/** Run `effect` with the loggers replaced by a collector, and hand back every WARN it emitted. */
-const withWarnings = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+/** Run `effect` with the loggers replaced by a collector, and hand back every WARN record it emitted. */
+const withWarningRecords = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
   Effect.suspend(() => {
-    const warnings: string[] = []
+    const records: unknown[][] = []
     const collector = Logger.make((options: Logger.Options<unknown>) => {
       if (options.logLevel !== "Warn") return
-      warnings.push(Array.isArray(options.message) ? options.message.join(" ") : String(options.message))
+      records.push(Array.isArray(options.message) ? [...options.message] : [options.message])
     })
     return effect.pipe(
       Effect.provide(Logger.layer([collector])),
-      Effect.map((value) => ({ value, warnings })),
+      Effect.map((value) => ({ value, records })),
     )
   })
 
@@ -88,8 +89,8 @@ interface LayeredCase {
   readonly notAList: string
   /** A `layers` blob whose FIRST entry decodes and whose SECOND does not. */
   readonly mixed: string
-  /** What the warning calls the rows that DID load ("every other <each> still loaded"). */
-  readonly each: string
+  /** The bounded entity kind carried by the warning record. */
+  readonly kind: string
 }
 
 const layeredCases = Effect.gen(function* () {
@@ -109,7 +110,7 @@ const layeredCases = Effect.gen(function* () {
       layers: [decodeProvider({ name: "First" }), decodeProvider({ name: "Second" })],
       notAList: '"nope"',
       mixed: '[{"name":"Fine"},123]',
-      each: "provider",
+      kind: "provider",
     },
     {
       label: "AgentConfigStore",
@@ -122,7 +123,7 @@ const layeredCases = Effect.gen(function* () {
       layers: [decodeAgent({ description: "first" }), decodeAgent({ hidden: true })],
       notAList: '"nope"',
       mixed: '[{"description":"fine"},123]',
-      each: "agent",
+      kind: "agent",
     },
     {
       label: "CommandConfigStore",
@@ -135,7 +136,7 @@ const layeredCases = Effect.gen(function* () {
       layers: [decodeCommand({ template: "first" }), decodeCommand({ template: "second", subtask: true })],
       notAList: '"nope"',
       mixed: '[{"template":"fine"},123]',
-      each: "command",
+      kind: "command",
     },
     {
       label: "ReferenceConfigStore",
@@ -148,15 +149,38 @@ const layeredCases = Effect.gen(function* () {
       layers: ["https://example.test/first.git", "https://example.test/second.git"],
       notAList: '"nope"',
       mixed: '["https://example.test/fine.git",123]',
-      // ⚠️ "alias", not "reference" — the reference store spells its nouns out because its plural is
-      // "aliases". A `+ "s"` rule in the factory would silently reword the notice an operator reads.
-      each: "alias",
+      kind: "reference alias",
     },
   ]
   return cases
 })
 
 describe("every layered store (one factory, four stores)", () => {
+  it.effect("batches multiple unreadable rows into one counted, local-only record", () =>
+    Effect.gen(function* () {
+      const reported = new Set<string>()
+      const { records } = yield* withWarningRecords(
+        ConfigStoreFactory.warnUnreadable(reported, ["alpha: invalid", "beta: missing key"], {
+          kind: "agent",
+          table: "agent_config",
+        }),
+      )
+
+      expect(records).toEqual([
+        [
+          { event: "config.store.read.degraded" },
+          "stored config rows failed validation and are unavailable; every other row still loaded. Fix or delete the named rows in the Registry app.",
+          {
+            "config.kind": "agent",
+            "config.table": "agent_config",
+            "config.invalid": 2,
+            "config.rows": "  - alpha: invalid\n  - beta: missing key",
+          },
+        ],
+      ])
+    }),
+  )
+
   it.effect("round-trips layers IN ORDER, replaces on set, removes, and reports emptiness", () =>
     Effect.gen(function* () {
       for (const store of yield* layeredCases) {
@@ -194,21 +218,28 @@ describe("every layered store (one factory, four stores)", () => {
           )
           .pipe(Effect.orDie)
 
-        const { value, warnings } = yield* withWarnings(store.read())
+        const { value, records } = yield* withWarningRecords(store.read())
         // Degrades, never vanishes.
         expect(Object.keys(value).sort(), store.label).toEqual(["healthy"])
         expect(value["healthy"], store.label).toEqual([store.layers[0]])
 
         // Never silently: the row is named, the table an operator opens is named, and the notice
         // says what survived.
-        expect(warnings, store.label).toHaveLength(1)
-        expect(warnings[0], store.label).toContain("broken")
-        expect(warnings[0], store.label).toContain(store.table)
-        expect(warnings[0], store.label).toContain(`every other ${store.each} still loaded`)
-        expect(warnings[0], store.label).not.toContain("healthy:")
+        expect(records, store.label).toHaveLength(1)
+        expect(records[0], store.label).toEqual([
+          { event: "config.store.read.degraded" },
+          "stored config rows failed validation and are unavailable; every other row still loaded. Fix or delete the named rows in the Registry app.",
+          {
+            "config.kind": store.kind,
+            "config.table": store.table,
+            "config.invalid": 1,
+            "config.rows": expect.stringContaining("broken:"),
+          },
+        ])
+        expect(JSON.stringify(records[0]), store.label).not.toContain("healthy:")
 
         // Deduped: a second read is not a second log line (config reads are hot).
-        expect((yield* withWarnings(store.read())).warnings, store.label).toEqual([])
+        expect((yield* withWarningRecords(store.read())).records, store.label).toEqual([])
 
         // A read never DESTROYS — both rows are still there afterwards.
         const remaining = (yield* db
@@ -235,15 +266,24 @@ describe("every layered store (one factory, four stores)", () => {
           )
           .pipe(Effect.orDie)
 
-        const { value, warnings } = yield* withWarnings(store.read())
+        const { value, records } = yield* withWarningRecords(store.read())
         expect(value["partly"], store.label).toBeUndefined()
         // Spelled out, because "undefined" alone would also pass if the store returned the good
         // layer under some other key: the entity is ABSENT, and the surviving layer is nowhere.
         expect(JSON.stringify(value), `${store.label} leaked the readable layer of a broken row`).not.toContain(
           "fine",
         )
-        expect(warnings, store.label).toHaveLength(1)
-        expect(warnings[0], store.label).toContain("partly")
+        expect(records, store.label).toHaveLength(1)
+        expect(records[0], store.label).toEqual([
+          { event: "config.store.read.degraded" },
+          "stored config rows failed validation and are unavailable; every other row still loaded. Fix or delete the named rows in the Registry app.",
+          {
+            "config.kind": store.kind,
+            "config.table": store.table,
+            "config.invalid": 1,
+            "config.rows": expect.stringContaining("partly:"),
+          },
+        ])
       }
     }),
   )

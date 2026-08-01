@@ -25,7 +25,8 @@ const withWarnings = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
     const warnings: string[] = []
     const collector = Logger.make((options: Logger.Options<unknown>) => {
       if (options.logLevel !== "Warn") return
-      warnings.push(Array.isArray(options.message) ? options.message.join(" ") : String(options.message))
+      const parts = Array.isArray(options.message) ? options.message : [options.message]
+      warnings.push(parts.map((part) => (typeof part === "string" ? part : JSON.stringify(part))).join(" "))
     })
     return effect.pipe(
       Effect.provide(Logger.layer([collector])),

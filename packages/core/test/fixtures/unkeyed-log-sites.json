@@ -4,10 +4,6 @@
     "count": 1
   },
   {
-    "name": "packages/core/src/config-store-factory.ts :: Effect.logWarning(`${fresh.length} stored ${one ? report.one : report.many} failed validation and ${one ? \"is\" : \"are\"} ` + `UNAVAILABLE — every other ${report.each} still loaded. Fix or delete the row ` + `(Registry app → ${report.table}):\\n` + fresh.map((line) => ` - ${line}`).join(\"\\n\"))",
-    "count": 1
-  },
-  {
     "name": "packages/core/src/config-store-write.ts :: Effect.logError(\"a config write committed but the runtime could not re-materialise\")",
     "count": 1
   },

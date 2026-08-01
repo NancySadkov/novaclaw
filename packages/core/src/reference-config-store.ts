@@ -39,14 +39,7 @@ export const layer = Layer.effect(
       keyColumn: ReferenceConfigTable.name,
       keyName: "name",
       decode: Schema.decodeUnknownExit(Schema.Array(ConfigReference.Entry)),
-      // Spelled out, not derived: the plural is "aliases" and the survivors are "aliases", so a
-      // `+ "s"` rule would silently reword the notice an operator reads.
-      report: {
-        one: "reference alias",
-        many: "reference aliases",
-        each: "alias",
-        table: "reference_config",
-      },
+      report: { kind: "reference alias", table: "reference_config" },
     })
 
     return Service.of({

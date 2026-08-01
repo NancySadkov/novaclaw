@@ -58,7 +58,7 @@ export const layer = Layer.effect(
       keyColumn: AgentConfigTable.name,
       keyName: "name",
       decode: Schema.decodeUnknownExit(Schema.Array(ConfigAgent.Info)),
-      report: { one: "agent", many: "agents", each: "agent", table: "agent_config" },
+      report: { kind: "agent", table: "agent_config" },
     })
     const settings = ConfigStoreFactory.makeKeyValueStore<string>({
       db,

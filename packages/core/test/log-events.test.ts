@@ -410,7 +410,7 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     expect(shadowed).toContain("level=error")
   })
 
-  test("an UN-keyed record is untouched — the 169 remaining call sites are not affected", () => {
+  test("an UN-keyed record is untouched — the 168 remaining call sites are not affected", () => {
     // 1a adds a column; it takes nothing away and rewrites nothing. This is the assertion that says
     // the wrapper is a column rather than a second system.
     const [line] = lines(Effect.logInfo("watcher backend", { directory: "/tmp/x", backend: "parcel" }))

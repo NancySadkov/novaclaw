@@ -38,7 +38,7 @@ export const layer = Layer.effect(
       keyColumn: CommandConfigTable.name,
       keyName: "name",
       decode: Schema.decodeUnknownExit(Schema.Array(ConfigCommand.Info)),
-      report: { one: "command", many: "commands", each: "command", table: "command_config" },
+      report: { kind: "command", table: "command_config" },
     })
 
     return Service.of({

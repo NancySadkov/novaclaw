@@ -206,6 +206,20 @@ export const EVENTS = {
     content: "user",
     file: "packages/novaclaw/src/config/config.ts",
   },
+  /** One or more stored config rows were unreadable; valid peers remain available. */
+  "config.store.read.degraded": {
+    level: "warn",
+    message:
+      "stored config rows failed validation and are unavailable; every other row still loaded. Fix or delete the named rows in the Registry app.",
+    attributes: {
+      "config.kind": "id",
+      "config.table": "id",
+      "config.invalid": "count",
+      "config.rows": "text",
+    },
+    content: "user",
+    file: "packages/core/src/config-store-factory.ts",
+  },
 
   // ── credential ────────────────────────────────────────────────────────────────────────────────
   /** The durable credential key could not be loaded or created; credential I/O stays disabled. */

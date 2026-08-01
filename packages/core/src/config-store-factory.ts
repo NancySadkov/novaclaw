@@ -3,6 +3,7 @@ export * as ConfigStoreFactory from "./config-store-factory"
 import { eq } from "drizzle-orm"
 import type { SQLiteColumn, SQLiteTable } from "drizzle-orm/sqlite-core"
 import { Cause, Effect, Exit, Schema, SchemaIssue } from "effect"
+import { Log } from "@novaclaw/schema/log"
 import type { Database } from "./database/database"
 
 // ─────────────────────────────────────────────────────────────────────────────────────────────────
@@ -117,16 +118,11 @@ export function decodeFailureReason(cause: Cause.Cause<unknown>): string {
 
 /**
  * How one layered store names itself in the operator-facing warning. Spelled out rather than
- * derived: `reference-config-store` pluralises "reference alias" as "reference aliases" and calls
- * the survivors "aliases", so a `+ "s"` rule would have silently reworded it.
+ * derived: the reference store is a "reference alias", not merely a generic reference.
  */
 export interface LayeredReport {
-  /** The noun after the count when exactly one row failed — "1 stored provider …". */
-  readonly one: string
-  /** The noun after the count otherwise — "2 stored reference aliases …". */
-  readonly many: string
-  /** The noun in "every other <each> still loaded". */
-  readonly each: string
+  /** The bounded entity kind whose stored rows are being decoded. */
+  readonly kind: string
   /** The SQLite table an operator opens in the Registry app to fix the row. */
   readonly table: string
 }
@@ -142,13 +138,12 @@ export const warnUnreadable = (reported: Set<string>, skipped: readonly string[]
     const fresh = skipped.filter((line) => !reported.has(line))
     if (fresh.length === 0) return Effect.void
     for (const line of fresh) reported.add(line)
-    const one = fresh.length === 1
-    return Effect.logWarning(
-      `${fresh.length} stored ${one ? report.one : report.many} failed validation and ${one ? "is" : "are"} ` +
-        `UNAVAILABLE — every other ${report.each} still loaded. Fix or delete the row ` +
-        `(Registry app → ${report.table}):\n` +
-        fresh.map((line) => `  - ${line}`).join("\n"),
-    )
+    return Log.event("config.store.read.degraded", {
+      "config.kind": report.kind,
+      "config.table": report.table,
+      "config.invalid": fresh.length,
+      "config.rows": fresh.map((line) => `  - ${line}`).join("\n"),
+    })
   })
 
 /** The read/write half every layered store exposes under its own nouns. */

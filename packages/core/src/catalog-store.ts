@@ -50,7 +50,7 @@ export const layer = Layer.effect(
       keyColumn: CatalogProviderTable.id,
       keyName: "id",
       decode: Schema.decodeUnknownExit(Schema.Array(ConfigProvider.Info)),
-      report: { one: "provider", many: "providers", each: "provider", table: "catalog_provider" },
+      report: { kind: "provider", table: "catalog_provider" },
     })
     // `catalog_setting` is one of the three byte-identical `(key, value)` tables, so the
     // default-model ref is a key/value read and not four hand-written statements.
