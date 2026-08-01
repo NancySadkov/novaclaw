@@ -1,21 +1,12 @@
 import { afterEach, describe, expect } from "bun:test"
-import path from "path"
 import { Server } from "../../src/server/server"
-import { Effect, Fiber } from "effect"
+import { Effect } from "effect"
 import { resetDatabase } from "../fixture/db"
 import { disposeAllInstances, tmpdir } from "../fixture/fixture"
 import { it } from "../lib/effect"
-import { waitGlobalBusEvent } from "./global-bus"
 
 function app() {
   return Server.Default().app
-}
-
-function waitDisposed(directory: string) {
-  return waitGlobalBusEvent({
-    message: "timed out waiting for instance disposal",
-    predicate: (event) => event.payload.type === "server.instance.disposed" && event.directory === directory,
-  })
 }
 
 const tmpdirEffect = (options: Parameters<typeof tmpdir>[0]) =>
@@ -34,7 +25,6 @@ describe("config HttpApi", () => {
     "serves config update through the default server app",
     Effect.gen(function* () {
       const tmp = yield* tmpdirEffect({ config: { formatter: false } })
-      const disposed = yield* waitDisposed(tmp.path).pipe(Effect.forkScoped({ startImmediately: true }))
 
       const response = yield* Effect.promise(() =>
         Promise.resolve(
@@ -54,8 +44,13 @@ describe("config HttpApi", () => {
         username: "patched-user",
         formatter: false,
       })
-      yield* Fiber.join(disposed)
-      expect(yield* Effect.promise(() => Bun.file(path.join(tmp.path, "config.json")).json())).toMatchObject({
+      // PATCH applies through the live graph. It deliberately does NOT dispose the instance;
+      // httpapi-config-no-teardown.test.ts pins that lifecycle contract directly.
+      const persisted = yield* Effect.promise(() =>
+        Promise.resolve(app().request("/config", { headers: { "x-novaclaw-directory": tmp.path } })),
+      )
+      expect(persisted.status).toBe(200)
+      expect(yield* Effect.promise(() => persisted.json())).toMatchObject({
         username: "patched-user",
         formatter: false,
       })
