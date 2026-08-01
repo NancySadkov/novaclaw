@@ -600,18 +600,6 @@
     "count": 1
   },
   {
-    "name": "packages/novaclaw/src/tool/external-tool-source.ts :: Effect.logDebug(\"could not scan config dir for retired tool files \" + dir + \": \" + String(error))",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/tool/external-tool-source.ts :: Effect.logWarning(`NOT LOADED: ${names.length} config-dir tool file(s) in ${dir} (${names.join(\", \")}). ` + `NovaClaw no longer runs third-party tool code inside its own process, so these files are ignored — ` + `they are NOT providing any tool to your sessions. MCP is the supported out-of-process tool seam: ` + `re-expose them as an MCP server and connect it with \\`novaclaw mcp add\\`. ` + `Delete the directory to silence this warning.`)",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/tool/truncate.ts :: Effect.logError(\"truncation cleanup failed\")",
-    "count": 1
-  },
-  {
     "name": "packages/novaclaw/src/worktree/index.ts :: Effect.logError(\"worktree bootstrap failed\")",
     "count": 2
   },

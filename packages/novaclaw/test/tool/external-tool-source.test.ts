@@ -12,7 +12,7 @@
 //      `ToolRegistry`.
 import { describe, expect, test } from "bun:test"
 import path from "path"
-import { Effect, Layer, Logger } from "effect"
+import { Effect, Layer, Logger, References } from "effect"
 import { AbsolutePath } from "@novaclaw/core/schema"
 import { Config } from "@novaclaw/core/config"
 import { Location } from "@novaclaw/core/location"
@@ -50,15 +50,17 @@ export default {
 }
 `
 
-/** Collect every WARN emitted while the effect (layer build included) runs. */
-const collectWarnings = () => {
-  const warnings: string[] = []
+/** Collect every record at one wire level while the effect (layer build included) runs. */
+const collectLogs = (level: "Debug" | "Warn") => {
+  const records: unknown[][] = []
   const collector = Logger.make((options: Logger.Options<unknown>) => {
-    if (options.logLevel !== "Warn") return
-    warnings.push(Array.isArray(options.message) ? options.message.map(String).join(" ") : String(options.message))
+    if (options.logLevel !== level) return
+    records.push(Array.isArray(options.message) ? [...options.message] : [options.message])
   })
-  return { warnings, layer: Logger.layer([collector]) }
+  return { records, layer: Logger.layer([collector]) }
 }
+
+const collectWarnings = () => collectLogs("Warn")
 
 /** A stand-in for one connected MCP server's tool, in the AI-SDK shape `MCP.tools()` yields. */
 const mcpTool = (text: string): McpExternal.AiSdkTool => ({
@@ -120,7 +122,7 @@ describe("AggregateExternalToolSource", () => {
     const marker = path.join(tmp.path, "tool", "IMPORTED.marker")
 
     const base = testBase(root, "prj_ruling5", {})
-    const { warnings, layer: loggerLayer } = collectWarnings()
+    const { records, layer: loggerLayer } = collectWarnings()
 
     const program = Effect.gen(function* () {
       const service = yield* ToolRegistry.Service
@@ -136,11 +138,13 @@ describe("AggregateExternalToolSource", () => {
     expect(await Bun.file(marker).exists()).toBe(false)
 
     // ...and the skip is stated out loud, naming the directory, the file, and MCP.
-    const reported = warnings.filter((line) => line.includes("NOT LOADED"))
-    expect(reported.length).toBe(1)
-    expect(reported[0]).toContain(tmp.path)
-    expect(reported[0]).toContain("tool/echo.ts")
-    expect(reported[0]).toContain("MCP")
+    expect(records).toEqual([
+      [
+        { event: "tool.config.load.skipped" },
+        "NOT LOADED: config-dir tool files were ignored. NovaClaw no longer runs third-party tool code inside its own process, so these files are NOT providing any tool to your sessions. MCP is the supported out-of-process tool seam: re-expose them as an MCP server and connect it with `novaclaw mcp add`. Delete the directory to silence this warning.",
+        { "tool.directory": tmp.path, "tool.files": "tool/echo.ts", "tool.count": 1 },
+      ],
+    ])
   })
 
   // No config dir, no warning — the honest surface must not cry wolf.
@@ -149,7 +153,7 @@ describe("AggregateExternalToolSource", () => {
     const root = AbsolutePath.make(tmp.path)
 
     const base = testBase(root, "prj_quiet", {})
-    const { warnings, layer: loggerLayer } = collectWarnings()
+    const { records, layer: loggerLayer } = collectWarnings()
 
     await Effect.runPromise(
       Effect.gen(function* () {
@@ -158,7 +162,36 @@ describe("AggregateExternalToolSource", () => {
       }).pipe(Effect.scoped, Effect.provide(registryOver(base)), Effect.provide(loggerLayer)),
     )
 
-    expect(warnings.filter((line) => line.includes("NOT LOADED"))).toEqual([])
+    expect(records).toEqual([])
+  })
+
+  test("degrades an unreadable config-dir scan to a keyed debug record", async () => {
+    await using tmp = await tmpdir<void>({ init: async () => {} })
+    const blocked = AbsolutePath.make(tmp.path)
+    const configLayer = Layer.succeed(
+      Config.Service,
+      Config.Service.of({
+        entries: () => Effect.succeed([new Config.Directory({ type: "directory", path: blocked })]),
+      }),
+    )
+    const { records, layer: loggerLayer } = collectLogs("Debug")
+
+    await Effect.runPromise(
+      AggregateExternalToolSource.warnRetiredConfigDirTools(() => {
+        throw new Error("scan denied")
+      }).pipe(
+        Effect.provideService(References.MinimumLogLevel, "Debug"),
+        Effect.provide(configLayer),
+        Effect.provide(loggerLayer),
+      ),
+    )
+
+    expect(records).toHaveLength(1)
+    expect(records[0]).toEqual([
+      { event: "tool.config.scan.failed" },
+      "could not scan config dir for retired tool files",
+      { "tool.directory": blocked, "tool.error": expect.any(String) },
+    ])
   })
 
   // The MCP rung — the seam ruling 5 keeps — is deferred, discoverable, and still executes.

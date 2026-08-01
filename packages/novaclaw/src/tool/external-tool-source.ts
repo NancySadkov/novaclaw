@@ -10,6 +10,7 @@ import { PermissionV2 } from "@novaclaw/core/permission"
 import { Glob } from "@novaclaw/core/util/glob"
 import { makeLocationNode } from "@novaclaw/core/effect/app-node"
 import { type ToolContext as PluginToolContext, type ToolDefinition } from "@novaclaw/plugin/tool"
+import { Log } from "@novaclaw/schema/log"
 import path from "path"
 import { MCP } from "@/mcp"
 import { McpExternalToolSource } from "@/mcp/external-tool-source"
@@ -106,6 +107,11 @@ export const makeDefinitionAdapter = Effect.gen(function* () {
 // warning below can name exactly what is being skipped.
 export const RETIRED_CONFIG_DIR_TOOL_GLOB = "{tool,tools}/*.{js,ts}"
 
+type RetiredToolScanner = (
+  pattern: string,
+  options: { cwd: string; absolute: true; dot: true; symlink: true },
+) => string[]
+
 /**
  * Ruling 2, the honest half of ruling 5's removal: a config dir that still holds
  * `{tool,tools}/*.{js,ts}` files used to have them imported and run in-process. They
@@ -116,31 +122,31 @@ export const RETIRED_CONFIG_DIR_TOOL_GLOB = "{tool,tools}/*.{js,ts}"
  *
  * Never fails the boot — an unreadable config dir degrades to a debug line.
  */
-export const warnRetiredConfigDirTools = Effect.gen(function* () {
-  const config = yield* Config.Service
-  const dirs = (yield* config.entries()).flatMap((entry) => (entry.type === "directory" ? [entry.path] : []))
-  for (const dir of dirs) {
-    const matches = yield* Effect.try({
-      try: () => Glob.scanSync(RETIRED_CONFIG_DIR_TOOL_GLOB, { cwd: dir, absolute: true, dot: true, symlink: true }),
-      catch: (error) => error,
-    }).pipe(
-      Effect.catch((error) =>
-        Effect.logDebug("could not scan config dir for retired tool files " + dir + ": " + String(error)).pipe(
-          Effect.as([] as string[]),
+export const warnRetiredConfigDirTools = (scan: RetiredToolScanner = Glob.scanSync) =>
+  Effect.gen(function* () {
+    const config = yield* Config.Service
+    const dirs = (yield* config.entries()).flatMap((entry) => (entry.type === "directory" ? [entry.path] : []))
+    for (const dir of dirs) {
+      const matches = yield* Effect.try({
+        try: () => scan(RETIRED_CONFIG_DIR_TOOL_GLOB, { cwd: dir, absolute: true, dot: true, symlink: true }),
+        catch: (error) => error,
+      }).pipe(
+        Effect.catch((error) =>
+          Log.event("tool.config.scan.failed", {
+            "tool.directory": dir,
+            "tool.error": String(error),
+          }).pipe(Effect.as([] as string[])),
         ),
-      ),
-    )
-    if (matches.length === 0) continue
-    const names = matches.map((match) => path.relative(dir, match).replaceAll("\\", "/")).sort()
-    yield* Effect.logWarning(
-      `NOT LOADED: ${names.length} config-dir tool file(s) in ${dir} (${names.join(", ")}). ` +
-        `NovaClaw no longer runs third-party tool code inside its own process, so these files are ignored — ` +
-        `they are NOT providing any tool to your sessions. MCP is the supported out-of-process tool seam: ` +
-        `re-expose them as an MCP server and connect it with \`novaclaw mcp add\`. ` +
-        `Delete the directory to silence this warning.`,
-    )
-  }
-})
+      )
+      if (matches.length === 0) continue
+      const names = matches.map((match) => path.relative(dir, match).replaceAll("\\", "/")).sort()
+      yield* Log.event("tool.config.load.skipped", {
+        "tool.directory": dir,
+        "tool.files": names.join(", "),
+        "tool.count": names.length,
+      })
+    }
+  })
 
 // V2-plugin-registered tool source (F1a plugin-tool parity). Plugins
 // register/unregister at any time, so the map is
@@ -179,7 +185,7 @@ export const makePluginRegistered = Effect.gen(function* () {
 export const layer = Layer.effect(
   ExternalToolSource.Service,
   Effect.gen(function* () {
-    yield* warnRetiredConfigDirTools
+    yield* warnRetiredConfigDirTools()
     const mcp = yield* McpExternalToolSource.make
     const plugin = yield* makePluginRegistered
     return ExternalToolSource.Service.of({

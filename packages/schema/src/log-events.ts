@@ -99,6 +99,7 @@ export const SUBSYSTEMS = {
   server: "HTTP server",
   skill: "Skills",
   storage: "Storage migrations",
+  tool: "Tools",
 } as const
 
 /** The subsystem a key's first segment must name. */
@@ -752,6 +753,33 @@ export const EVENTS = {
     attributes: { "storage.project": "id" },
     content: "none",
     file: "packages/novaclaw/src/storage/storage.ts",
+  },
+
+  // ── tool ──────────────────────────────────────────────────────────────────────────────────────
+  /** Retired in-process tool files were found and deliberately skipped in favour of MCP. */
+  "tool.config.load.skipped": {
+    level: "warn",
+    message:
+      "NOT LOADED: config-dir tool files were ignored. NovaClaw no longer runs third-party tool code inside its own process, so these files are NOT providing any tool to your sessions. MCP is the supported out-of-process tool seam: re-expose them as an MCP server and connect it with `novaclaw mcp add`. Delete the directory to silence this warning.",
+    attributes: { "tool.directory": "path", "tool.files": "text", "tool.count": "count" },
+    content: "user",
+    file: "packages/novaclaw/src/tool/external-tool-source.ts",
+  },
+  /** The retired-tool-file compatibility scan could not read one configured directory. */
+  "tool.config.scan.failed": {
+    level: "debug",
+    message: "could not scan config dir for retired tool files",
+    attributes: { "tool.directory": "path", "tool.error": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/tool/external-tool-source.ts",
+  },
+  /** The hourly cleanup of saved, truncated tool output failed unexpectedly. */
+  "tool.truncation.cleanup.failed": {
+    level: "error",
+    message: "truncation cleanup failed",
+    attributes: { "tool.cause": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/tool/truncate.ts",
   },
 } as const satisfies Record<string, EventDeclaration>
 

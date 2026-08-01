@@ -9,6 +9,7 @@ import { Config } from "@/config/config"
 import { Identifier } from "../id/id"
 import { ToolID } from "./schema"
 import { TRUNCATION_DIR } from "./truncation-dir"
+import { Log } from "@novaclaw/schema/log"
 
 const RETENTION = Duration.days(7)
 
@@ -141,7 +142,9 @@ export const layer = Layer.effect(
     })
 
     yield* cleanup().pipe(
-      Effect.catchCause((cause) => Effect.logError("truncation cleanup failed", { cause: Cause.pretty(cause) })),
+      Effect.catchCause((cause) =>
+        Log.event("tool.truncation.cleanup.failed", { "tool.cause": Cause.pretty(cause) }),
+      ),
       Effect.repeat(Schedule.spaced(Duration.hours(1))),
       Effect.delay(Duration.minutes(1)),
       Effect.forkScoped,
