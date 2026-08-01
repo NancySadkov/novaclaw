@@ -4506,6 +4506,7 @@ export class Session extends HeyApiClient {
       surgicalEdits?: boolean
       askBeforeChanges?: boolean
       safeMode?: boolean
+      contextBudget?: boolean
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -4533,6 +4534,7 @@ export class Session extends HeyApiClient {
             { in: "body", key: "surgicalEdits" },
             { in: "body", key: "askBeforeChanges" },
             { in: "body", key: "safeMode" },
+            { in: "body", key: "contextBudget" },
           ],
         },
       ],
@@ -4936,6 +4938,7 @@ export class Session extends HeyApiClient {
         | "surgicalEdits"
         | "askBeforeChanges"
         | "safeMode"
+        | "contextBudget"
       enabled?: boolean | null
     },
     options?: Options<never, ThrowOnError>,

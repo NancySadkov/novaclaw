@@ -42,7 +42,8 @@ export function controlPatch(event: Envelope): ControlPatch | undefined {
         feature !== "thinkingBudget" &&
         feature !== "surgicalEdits" &&
         feature !== "askBeforeChanges" &&
-        feature !== "safeMode"
+        feature !== "safeMode" &&
+        feature !== "contextBudget"
       )
         return undefined
       return { sessionID, patch: { [feature]: props.enabled ?? undefined } }

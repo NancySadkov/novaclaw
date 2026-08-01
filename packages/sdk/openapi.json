@@ -8585,6 +8585,9 @@
                   },
                   "safeMode": {
                     "type": "boolean"
+                  },
+                  "contextBudget": {
+                    "type": "boolean"
                   }
                 },
                 "additionalProperties": false
@@ -9925,7 +9928,8 @@
                       "thinkingBudget",
                       "surgicalEdits",
                       "askBeforeChanges",
-                      "safeMode"
+                      "safeMode",
+                      "contextBudget"
                     ]
                   },
                   "enabled": {
@@ -17959,7 +17963,8 @@
                           "thinkingBudget",
                           "surgicalEdits",
                           "askBeforeChanges",
-                          "safeMode"
+                          "safeMode",
+                          "contextBudget"
                         ]
                       },
                       "enabled": {
@@ -22885,6 +22890,9 @@
           "safeMode": {
             "type": "boolean"
           },
+          "contextBudget": {
+            "type": "boolean"
+          },
           "result": {},
           "cost": {
             "type": "number"
@@ -23648,6 +23656,48 @@
                     }
                   },
                   "required": ["kind", "tool", "tokens", "percent"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": ["category-budget"]
+                    },
+                    "category": {
+                      "type": "string",
+                      "enum": ["system", "messages", "retrieval", "memory", "tool_output"]
+                    },
+                    "limitTokens": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "beforeTokens": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "afterTokens": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "affectedMessages": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "protected": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": [
+                    "kind",
+                    "category",
+                    "limitTokens",
+                    "beforeTokens",
+                    "afterTokens",
+                    "affectedMessages",
+                    "protected"
+                  ],
                   "additionalProperties": false
                 }
               ]
@@ -24611,7 +24661,8 @@
                       "thinkingBudget",
                       "surgicalEdits",
                       "askBeforeChanges",
-                      "safeMode"
+                      "safeMode",
+                      "contextBudget"
                     ]
                   },
                   "enabled": {
@@ -26748,6 +26799,67 @@
         },
         "additionalProperties": false
       },
+      "ConfigV2ContextProfile": {
+        "type": "object",
+        "properties": {
+          "system": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "messages": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "retrieval": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "memory": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "tool_output": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 100
+          }
+        },
+        "additionalProperties": false
+      },
+      "ConfigV2ContextProfiles": {
+        "type": "object",
+        "properties": {
+          "interactive": {
+            "$ref": "#/components/schemas/ConfigV2ContextProfile"
+          },
+          "sub-agent": {
+            "$ref": "#/components/schemas/ConfigV2ContextProfile"
+          },
+          "auto-prompting": {
+            "$ref": "#/components/schemas/ConfigV2ContextProfile"
+          },
+          "goal-oriented": {
+            "$ref": "#/components/schemas/ConfigV2ContextProfile"
+          }
+        },
+        "additionalProperties": false
+      },
+      "ConfigV2Context": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "profiles": {
+            "$ref": "#/components/schemas/ConfigV2ContextProfiles"
+          }
+        },
+        "additionalProperties": false
+      },
       "ConfigV2Command": {
         "type": "object",
         "properties": {
@@ -27398,6 +27510,9 @@
           },
           "compaction": {
             "$ref": "#/components/schemas/ConfigV2Compaction"
+          },
+          "context": {
+            "$ref": "#/components/schemas/ConfigV2Context"
           },
           "persona": {
             "type": "object",
@@ -28802,7 +28917,8 @@
                   "thinkingBudget",
                   "surgicalEdits",
                   "askBeforeChanges",
-                  "safeMode"
+                  "safeMode",
+                  "contextBudget"
                 ]
               },
               "enabled": {
@@ -35717,7 +35833,8 @@
                   "thinkingBudget",
                   "surgicalEdits",
                   "askBeforeChanges",
-                  "safeMode"
+                  "safeMode",
+                  "contextBudget"
                 ]
               },
               "enabled": {

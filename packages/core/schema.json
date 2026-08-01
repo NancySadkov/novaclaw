@@ -1,9 +1,9 @@
 {
   "version": "7",
   "dialect": "sqlite",
-  "id": "a3c4d9f0-7f5d-4969-92d8-a65da463caf4",
+  "id": "6188ddf0-87f7-44bf-ba85-73bdb3bfb106",
   "prevIds": [
-    "f41ba119-e5b4-49fb-8400-015482215653"
+    "a3c4d9f0-7f5d-4969-92d8-a65da463caf4"
   ],
   "ddl": [
     {
@@ -2435,6 +2435,16 @@
       "default": null,
       "generated": null,
       "name": "safe_mode",
+      "entityType": "columns",
+      "table": "session"
+    },
+    {
+      "type": "integer",
+      "notNull": false,
+      "autoincrement": false,
+      "default": null,
+      "generated": null,
+      "name": "context_budget",
       "entityType": "columns",
       "table": "session"
     },

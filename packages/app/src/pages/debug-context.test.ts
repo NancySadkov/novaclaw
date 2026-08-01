@@ -46,6 +46,31 @@ describe("Debug context findings", () => {
     ).toBe("browser output occupies 64.2% of this turn’s context (about 13k tokens).")
   })
 
+  test("explains a typed share as a concrete action and names protected overflow", () => {
+    expect(
+      formatContextFinding({
+        kind: "category-budget",
+        category: "tool_output",
+        limitTokens: 8_000,
+        beforeTokens: 12_400,
+        afterTokens: 7_900,
+        affectedMessages: 2,
+        protected: false,
+      }),
+    ).toBe("Tool output was reduced from about 12k to 7.9k tokens to stay inside its 8k-token share.")
+    expect(
+      formatContextFinding({
+        kind: "category-budget",
+        category: "system",
+        limitTokens: 8_000,
+        beforeTokens: 9_200,
+        afterTokens: 9_200,
+        affectedMessages: 0,
+        protected: true,
+      }),
+    ).toContain("kept on purpose")
+  })
+
   test("formats small and large token counts for scanning", () => {
     expect(formatContextTokens(942)).toBe("942")
     expect(formatContextTokens(1_240)).toBe("1.2k")

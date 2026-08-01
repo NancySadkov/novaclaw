@@ -65,6 +65,7 @@ export const SessionTable = sqliteTable(
     // ON = an unattended chain's host execution must be sandbox-confined, and is REFUSED on a host
     // with no backend. Tri-state like the switches above; NULL = inherit, effective default OFF.
     safe_mode: integer({ mode: "boolean" }),
+    context_budget: integer({ mode: "boolean" }),
     result: text({ mode: "json" }).$type<unknown>(),
     ...Timestamps,
     time_compacting: integer(),

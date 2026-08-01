@@ -1347,6 +1347,11 @@ const build = (options: Options) =>
     yield* Effect.forkScoped(relay.pipe(Effect.catchCause(() => Effect.void)))
     yield* Effect.forkScoped(dispatchCompleted.pipe(Effect.catchCause(() => Effect.void)))
     yield* Effect.forkScoped(dispatchNotices.pipe(Effect.catchCause(() => Effect.void)))
+    // `EventV2.subscribe` acquires its PubSub subscription when the stream fiber starts, not when
+    // the stream value is constructed. Let all three fibers reach that acquisition before this
+    // layer reports itself ready; otherwise an event published immediately after boot can land in
+    // the gap and disappear (the direct-session relay is the shortest reproducer).
+    yield* Effect.yieldNow
     yield* reload().pipe(Effect.ignore)
 
     const service = Service.of({

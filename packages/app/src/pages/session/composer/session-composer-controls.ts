@@ -25,7 +25,14 @@ import type { QueryOptionsApi } from "@/context/server-sync"
 import { useServerSDK } from "@/context/server-sdk"
 import { serverName, ServerConnection, useServer } from "@/context/server"
 import { useSDK } from "@/context/sdk"
-import { switchFeature, switchMode, switchStrict, switchType, type SessionFeatureName, type SessionModeName } from "@/utils/fs-api"
+import {
+  switchFeature,
+  switchMode,
+  switchStrict,
+  switchType,
+  type SessionFeatureName,
+  type SessionModeName,
+} from "@/utils/fs-api"
 import { useSync } from "@/context/sync"
 import { useSessionView } from "@/pages/session/use-session-view"
 import { useTabs } from "@/context/tabs"
@@ -83,7 +90,7 @@ export function createPromptInputController(input: {
   // feature: this browser's explicit stance, then the session record, then the global config
   // block's `enabled`. The control shows the EFFECTIVE state, so a globally-on feature reads ON
   // here and flipping it writes this chat's explicit off.
-  const featuresCurrent = (): Record<SessionFeatureName, boolean> => {
+  const featureState = () => {
     const record = sessionView.record() as
       | {
           introspection?: boolean
@@ -93,28 +100,45 @@ export function createPromptInputController(input: {
           surgicalEdits?: boolean
           askBeforeChanges?: boolean
           safeMode?: boolean
+          contextBudget?: boolean
         }
       | undefined
-    const config = sync().data.config as Partial<Record<SessionFeatureName, { enabled?: boolean }>>
+    const config = sync().data.config as Partial<Record<SessionFeatureName, { enabled?: boolean }>> & {
+      context?: { enabled?: boolean }
+    }
     const draft = local.features.current()
-    const pick = (feature: SessionFeatureName) =>
+    const override = (feature: SessionFeatureName): boolean | undefined =>
+      draft && Object.prototype.hasOwnProperty.call(draft, feature) ? draft[feature] : record?.[feature]
+    const baseline = (feature: SessionFeatureName) =>
       // `thinkingBudget` has no global `{ enabled }` block to fall back on — its instance default IS the
       // model's own budget, which the browser cannot know per-model. Default it ON (enforced) so the
       // control matches the runner's `config.thinkingBudget ?? true`; flipping it writes this chat's off.
-      draft?.[feature] ?? record?.[feature] ?? (feature === "thinkingBudget" ? true : config[feature]?.enabled === true)
-    return {
-      introspection: pick("introspection"),
-      quality: pick("quality"),
-      affective: pick("affective"),
-      thinkingBudget: pick("thinkingBudget"),
-      surgicalEdits: pick("surgicalEdits"),
-      askBeforeChanges: pick("askBeforeChanges"),
-      // `safeMode` has no global `{ enabled }` block either, and its instance default is OFF (the
-      // owner's 2026-07-30 directive: unattended bash runs unless the user opts into confinement).
-      // `pick` already lands on `config.safeMode?.enabled === true` → `false`, which is exactly that
-      // default — no special case, unlike `thinkingBudget` whose default is ON.
-      safeMode: pick("safeMode"),
+      feature === "thinkingBudget"
+        ? true
+        : feature === "contextBudget"
+          ? config.context?.enabled !== false
+          : config[feature]?.enabled === true
+    const overrides: Record<SessionFeatureName, boolean | undefined> = {
+      introspection: override("introspection"),
+      quality: override("quality"),
+      affective: override("affective"),
+      thinkingBudget: override("thinkingBudget"),
+      surgicalEdits: override("surgicalEdits"),
+      askBeforeChanges: override("askBeforeChanges"),
+      safeMode: override("safeMode"),
+      contextBudget: override("contextBudget"),
     }
+    const current: Record<SessionFeatureName, boolean> = {
+      introspection: overrides.introspection ?? baseline("introspection"),
+      quality: overrides.quality ?? baseline("quality"),
+      affective: overrides.affective ?? baseline("affective"),
+      thinkingBudget: overrides.thinkingBudget ?? baseline("thinkingBudget"),
+      surgicalEdits: overrides.surgicalEdits ?? baseline("surgicalEdits"),
+      askBeforeChanges: overrides.askBeforeChanges ?? baseline("askBeforeChanges"),
+      safeMode: overrides.safeMode ?? baseline("safeMode"),
+      contextBudget: overrides.contextBudget ?? baseline("contextBudget"),
+    }
+    return { current, overrides }
   }
 
   // The Remote-chat control (messenger-plan §6.2): which messenger chat drives THIS session.
@@ -150,7 +174,8 @@ export function createPromptInputController(input: {
   const remoteCurrent = (): ComposerRemoteChatState => {
     const id = input.sessionID()
     const row = id === undefined ? undefined : remoteBindings.latest.find((entry) => entry.binding.sessionID === id)
-    const account = row === undefined ? undefined : remoteAccounts.latest.find((a) => a.account.id === row.binding.accountID)
+    const account =
+      row === undefined ? undefined : remoteAccounts.latest.find((a) => a.account.id === row.binding.accountID)
     return {
       bindable: id !== undefined,
       accounts: remoteAccounts.latest
@@ -185,7 +210,11 @@ export function createPromptInputController(input: {
           void remoteBindingsRes.refetch()
           return "ok"
         } catch (error) {
-          if (error instanceof MessengerApiError && error.kind === "messenger_chat_bound" && connectInput.steal !== true)
+          if (
+            error instanceof MessengerApiError &&
+            error.kind === "messenger_chat_bound" &&
+            connectInput.steal !== true
+          )
             return "bound"
           remoteFail(error)
           return "failed"
@@ -193,7 +222,8 @@ export function createPromptInputController(input: {
       },
       disconnect: async () => {
         const current = input.sessionID()
-        const bound = current === undefined ? undefined : remoteBindings.latest.find((entry) => entry.binding.sessionID === current)
+        const bound =
+          current === undefined ? undefined : remoteBindings.latest.find((entry) => entry.binding.sessionID === current)
         if (bound === undefined) return
         try {
           await messengerRemoveBinding(messengerServer(), bound.binding.id)
@@ -290,7 +320,8 @@ export function createPromptInputController(input: {
       },
     },
     features: {
-      current: featuresCurrent(),
+      current: featureState().current,
+      override: featureState().overrides,
       set: (feature, enabled) => {
         // The draft signal is the instant UI truth (and the create-time payload); a live session
         // ALSO persists the stance server-side so the runner reads it on the next turn.
@@ -301,6 +332,19 @@ export function createPromptInputController(input: {
         if (id && conn && directory)
           void switchFeature(conn.http, { directory, sessionID: id, feature, enabled }).catch((error) =>
             console.error("switchFeature failed", error),
+          )
+      },
+      inherit: (feature) => {
+        // An own property with `undefined` is an intentional local reset marker: it bypasses a
+        // briefly stale projected record while the null event folds, yet JSON omits it from a new
+        // session create body so the sparse inherit-on-undefined contract remains intact.
+        local.features.set({ ...local.features.current(), [feature]: undefined })
+        const id = input.sessionID()
+        const conn = server.current
+        const directory = sessionView.directory()
+        if (id && conn && directory)
+          void switchFeature(conn.http, { directory, sessionID: id, feature, enabled: null }).catch((error) =>
+            console.error("switchFeature reset failed", error),
           )
       },
     },

@@ -46,6 +46,7 @@ function populatedInfo(): SessionSchema.Info {
     thinkingBudget: true,
     surgicalEdits: true,
     askBeforeChanges: true,
+    contextBudget: true,
     cost: 0,
     tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
     time: { created: NOW, updated: NOW },
@@ -73,6 +74,7 @@ describe("sessionRow is fromRow's inverse", () => {
       info.askBeforeChanges,
     )
     expect(back.responder, "responder did not survive").toBe(info.responder)
+    expect(back.contextBudget, "contextBudget did not survive").toBe(info.contextBudget)
   })
 
   test("no field of a fully-populated Info is silently dropped", () => {
@@ -119,6 +121,7 @@ describe("sessionRow is fromRow's inverse", () => {
     expect(back.askBeforeChanges).toBeUndefined()
     expect(back.thinkingBudget).toBeUndefined()
     expect(back.responder).toBeUndefined()
+    expect(back.contextBudget).toBeUndefined()
     expect(back.systemPromptOverride).toBeUndefined()
   })
 })

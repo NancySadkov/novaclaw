@@ -380,6 +380,7 @@ export type GlobalEvent = {
             | "surgicalEdits"
             | "askBeforeChanges"
             | "safeMode"
+            | "contextBudget"
           enabled: boolean | null
         }
       }
@@ -1867,6 +1868,7 @@ export type SessionV2Info = {
   surgicalEdits?: boolean
   askBeforeChanges?: boolean
   safeMode?: boolean
+  contextBudget?: boolean
   result?: unknown
   cost: number
   tokens: {
@@ -2139,6 +2141,15 @@ export type SessionMessageContext = {
         target?: string
         tokens: number
         percent: number
+      }
+    | {
+        kind: "category-budget"
+        category: "system" | "messages" | "retrieval" | "memory" | "tool_output"
+        limitTokens: number
+        beforeTokens: number
+        afterTokens: number
+        affectedMessages: number
+        protected: boolean
       }
   >
 }
@@ -2453,6 +2464,7 @@ export type SyncEventSessionNextFeatureSwitched = {
         | "surgicalEdits"
         | "askBeforeChanges"
         | "safeMode"
+        | "contextBudget"
       enabled: boolean | null
     }
   }
@@ -3107,6 +3119,26 @@ export type ConfigV2Compaction = {
   buffer?: number
 }
 
+export type ConfigV2ContextProfile = {
+  system?: number
+  messages?: number
+  retrieval?: number
+  memory?: number
+  tool_output?: number
+}
+
+export type ConfigV2ContextProfiles = {
+  interactive?: ConfigV2ContextProfile
+  "sub-agent"?: ConfigV2ContextProfile
+  "auto-prompting"?: ConfigV2ContextProfile
+  "goal-oriented"?: ConfigV2ContextProfile
+}
+
+export type ConfigV2Context = {
+  enabled?: boolean
+  profiles?: ConfigV2ContextProfiles
+}
+
 export type ConfigV2Command = {
   template: string
   description?: string
@@ -3347,6 +3379,7 @@ export type ConfigInfo = {
   resource_pressure?: ResourcePressure
   mcp?: ConfigV2Mcp
   compaction?: ConfigV2Compaction
+  context?: ConfigV2Context
   persona?: {
     enabled?: boolean
     name?: string
@@ -3788,6 +3821,7 @@ export type SessionNextFeatureSwitched = {
       | "surgicalEdits"
       | "askBeforeChanges"
       | "safeMode"
+      | "contextBudget"
     enabled: boolean | null
   }
 }
@@ -5854,6 +5888,7 @@ export type EventSessionNextFeatureSwitched = {
       | "surgicalEdits"
       | "askBeforeChanges"
       | "safeMode"
+      | "contextBudget"
     enabled: boolean | null
   }
 }
@@ -10111,6 +10146,7 @@ export type V2SessionCreateData = {
     surgicalEdits?: boolean
     askBeforeChanges?: boolean
     safeMode?: boolean
+    contextBudget?: boolean
   }
   path?: never
   query?: never
@@ -10707,6 +10743,7 @@ export type V2SessionSwitchFeatureData = {
       | "surgicalEdits"
       | "askBeforeChanges"
       | "safeMode"
+      | "contextBudget"
     enabled: boolean | null
   }
   path: {

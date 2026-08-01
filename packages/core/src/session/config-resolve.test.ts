@@ -58,9 +58,9 @@ describe("resolveConfig — simple fields (undefined = inherit)", () => {
     expect(resolveConfig(DEFAULTS, [{ systemPromptOverride: "You are Neo." }, {}]).systemPromptOverride).toBe(
       "You are Neo.",
     )
-    expect(resolveConfig(DEFAULTS, [{ systemPromptOverride: "A" }, { systemPromptOverride: "B" }]).systemPromptOverride).toBe(
-      "B",
-    )
+    expect(
+      resolveConfig(DEFAULTS, [{ systemPromptOverride: "A" }, { systemPromptOverride: "B" }]).systemPromptOverride,
+    ).toBe("B")
   })
 
   test("feature toggles (T1): tri-state — child inherits parent's stance, own stance wins, explicit false is real", () => {
@@ -79,9 +79,7 @@ describe("resolveConfig — simple fields (undefined = inherit)", () => {
       root: { id: "root", quality: true, introspection: true, affective: true },
       child: { id: "child", parentID: "root", introspection: false },
     }
-    const resolved = Effect.runSync(
-      resolveSessionConfig(DEFAULTS, "child", (id) => Effect.succeed(sessions[id])),
-    )
+    const resolved = Effect.runSync(resolveSessionConfig(DEFAULTS, "child", (id) => Effect.succeed(sessions[id])))
     expect(resolved.quality).toBe(true) // inherited
     expect(resolved.affective).toBe(true) // inherited
     expect(resolved.introspection).toBe(false) // the child's explicit off wins
@@ -109,6 +107,21 @@ describe("resolveConfig — simple fields (undefined = inherit)", () => {
     const walk = (id: string) => Effect.runSync(resolveSessionConfig(DEFAULTS, id, (x) => Effect.succeed(sessions[x])))
     expect(walk("child").thinkingBudget).toBe(false) // inherited from the root
     expect(walk("loud").thinkingBudget).toBe(true) // the child re-enables its own cap
+  })
+
+  test("contextBudget is a sparse Tune: absent inherits and an explicit child stance wins", () => {
+    expect(resolveConfig(DEFAULTS, []).contextBudget).toBeUndefined()
+    expect(resolveConfig(DEFAULTS, [{ contextBudget: false }, {}]).contextBudget).toBe(false)
+    expect(resolveConfig(DEFAULTS, [{ contextBudget: false }, { contextBudget: true }]).contextBudget).toBe(true)
+
+    const sessions: Record<string, SessionLike> = {
+      root: { id: "root", contextBudget: true },
+      child: { id: "child", parentID: "root" },
+      override: { id: "override", parentID: "root", contextBudget: false },
+    }
+    const walk = (id: string) => Effect.runSync(resolveSessionConfig(DEFAULTS, id, (x) => Effect.succeed(sessions[x])))
+    expect(walk("child").contextBudget).toBe(true)
+    expect(walk("override").contextBudget).toBe(false)
   })
 
   test("B10 responder: defaults to nova, inherits down the chain, child can override", () => {
@@ -150,13 +163,10 @@ describe("resolveConfig — permission MODE narrowing (the safety invariant)", (
 
 describe("resolveConfig — permission RULES accumulate", () => {
   test("rules concatenate down the chain (a parent deny survives a child allow)", () => {
-    const eff = resolveConfig(
-      { ...DEFAULTS, permissionRules: [{ action: "read", resource: "*", effect: "allow" }] },
-      [
-        { permissionRules: [{ action: "write", resource: "/etc/*", effect: "deny" }] },
-        { permissionRules: [{ action: "write", resource: "*", effect: "ask" }] },
-      ],
-    )
+    const eff = resolveConfig({ ...DEFAULTS, permissionRules: [{ action: "read", resource: "*", effect: "allow" }] }, [
+      { permissionRules: [{ action: "write", resource: "/etc/*", effect: "deny" }] },
+      { permissionRules: [{ action: "write", resource: "*", effect: "ask" }] },
+    ])
     expect(eff.permissionRules).toEqual([
       { action: "read", resource: "*", effect: "allow" },
       { action: "write", resource: "/etc/*", effect: "deny" },
@@ -448,7 +458,7 @@ describe("the root tri-state has ONE collapse point (shrink-only ledger)", () =>
     [
       "tool/permission.ts",
       "Auto mode's tool, and it READS the tri-state without folding it: `attendedRoot(rootType)` " +
-        "decides whether a self-grant is capped at `bypass`, and `\"unknown\"` takes the restrictive " +
+        'decides whether a self-grant is capped at `bypass`, and `"unknown"` takes the restrictive ' +
         "arm through that same helper. Entitled because the alternative is worse — a self-managing " +
         "agent on a chain we could not read is exactly the case that must NOT reach `yolo`, and a " +
         "two-valued read here would answer `attended` for an unreadable chain (the dangling-parent " +
@@ -525,7 +535,10 @@ describe("resolveConfig — thread type + priority (K1)", () => {
   })
 
   test("a child's own type/priority win over the parent's", () => {
-    const resolved = resolveConfig(DEFAULTS, [{ type: "auto-prompting", priority: 3 }, { type: "sub-agent", priority: 1 }])
+    const resolved = resolveConfig(DEFAULTS, [
+      { type: "auto-prompting", priority: 3 },
+      { type: "sub-agent", priority: 1 },
+    ])
     expect(resolved.type).toBe("sub-agent")
     expect(resolved.priority).toBe(1)
   })
@@ -540,9 +553,7 @@ describe("resolveConfig — thread type + priority (K1)", () => {
       root: { id: "root", type: "goal-oriented", priority: 7 },
       child: { id: "child", parentID: "root" },
     }
-    const resolved = Effect.runSync(
-      resolveSessionConfig(DEFAULTS, "child", (id) => Effect.succeed(sessions[id])),
-    )
+    const resolved = Effect.runSync(resolveSessionConfig(DEFAULTS, "child", (id) => Effect.succeed(sessions[id])))
     expect(resolved).toMatchObject({ type: "goal-oriented", priority: 7 })
   })
 })

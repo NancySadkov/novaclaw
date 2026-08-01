@@ -14,6 +14,7 @@ export type ComposerFeature =
   | "surgicalEdits"
   | "askBeforeChanges"
   | "safeMode"
+  | "contextBudget"
 export type ComposerMode = "interactive" | "auto-prompting" | "goal-oriented"
 
 // The Remote-chat section (messenger-plan §6.2): where does THIS chat live remotely? The trust
@@ -43,7 +44,9 @@ export type ComposerRemoteChatState = {
   bindable: boolean
   accounts: readonly ComposerRemoteAccount[]
   binding: ComposerRemoteBinding | undefined
-  loadChats: (accountID: string) => Promise<{ ok: boolean; chats: readonly ComposerRemoteChatChoice[]; reason?: string }>
+  loadChats: (
+    accountID: string,
+  ) => Promise<{ ok: boolean; chats: readonly ComposerRemoteChatChoice[]; reason?: string }>
   /** "bound" = the chat already drives another session — offer an explicit steal (edge #3). */
   connect: (input: {
     accountID: string
@@ -57,10 +60,12 @@ export type ComposerRemoteChatState = {
 
 export type ComposerFeaturesControlState = {
   current: Record<ComposerFeature, boolean>
+  override: Partial<Record<ComposerFeature, boolean>>
   mode: ComposerMode
   remote: ComposerRemoteChatState
   style: JSX.CSSProperties | undefined
   set: (feature: ComposerFeature, enabled: boolean) => void
+  inherit: (feature: ComposerFeature) => void
   setMode: (value: ComposerMode) => void
   onClose: () => void
 }
@@ -77,6 +82,7 @@ const COMPOSER_FEATURES: readonly ComposerFeature[] = [
   "safeMode",
   "askBeforeChanges",
   "surgicalEdits",
+  "contextBudget",
   "introspection",
   "quality",
   "affective",
@@ -120,9 +126,16 @@ function RemoteChatSection(props: { remote: ComposerRemoteChatState }) {
     setAccount(entry)
     setStage("chat")
     setChats({ loading: true, ok: true, list: [] })
-    void props.remote.loadChats(entry.id).then((result) =>
-      setChats({ loading: false, ok: result.ok, list: result.chats, ...(result.reason ? { reason: result.reason } : {}) }),
-    )
+    void props.remote
+      .loadChats(entry.id)
+      .then((result) =>
+        setChats({
+          loading: false,
+          ok: result.ok,
+          list: result.chats,
+          ...(result.reason ? { reason: result.reason } : {}),
+        }),
+      )
   }
 
   const finish = (trust: ComposerRemoteTrust, steal?: boolean) => {
@@ -152,7 +165,9 @@ function RemoteChatSection(props: { remote: ComposerRemoteChatState }) {
         fallback={
           <Show
             when={props.remote.bindable}
-            fallback={<span class="text-[12px] leading-4 text-v2-text-text-faint">{language.t("prompt.remote.draft")}</span>}
+            fallback={
+              <span class="text-[12px] leading-4 text-v2-text-text-faint">{language.t("prompt.remote.draft")}</span>
+            }
           >
             <Show
               when={props.remote.accounts.length > 0}
@@ -170,12 +185,7 @@ function RemoteChatSection(props: { remote: ComposerRemoteChatState }) {
               <Show
                 when={stage() !== "idle"}
                 fallback={
-                  <button
-                    type="button"
-                    data-action="remote-link"
-                    class={row}
-                    onClick={() => setStage("account")}
-                  >
+                  <button type="button" data-action="remote-link" class={row} onClick={() => setStage("account")}>
                     <span class="text-[13px] text-v2-text-text-base">{language.t("prompt.remote.link")}</span>
                     <Icon name="chevron-right" size="small" class="mt-0.5 shrink-0 text-v2-icon-icon-muted" />
                   </button>
@@ -185,9 +195,16 @@ function RemoteChatSection(props: { remote: ComposerRemoteChatState }) {
                   <span class="text-[12px] text-v2-text-text-faint">{language.t("prompt.remote.pickAccount")}</span>
                   <For each={props.remote.accounts}>
                     {(entry) => (
-                      <button type="button" data-remote-account={entry.id} class={row} onClick={() => pickAccount(entry)}>
+                      <button
+                        type="button"
+                        data-remote-account={entry.id}
+                        class={row}
+                        onClick={() => pickAccount(entry)}
+                      >
                         <span class="flex items-center gap-2">
-                          <span class={`size-2 shrink-0 rounded-full ${REMOTE_DOT[entry.state] ?? "bg-v2-icon-icon-muted"}`} />
+                          <span
+                            class={`size-2 shrink-0 rounded-full ${REMOTE_DOT[entry.state] ?? "bg-v2-icon-icon-muted"}`}
+                          />
                           <span class="text-[13px] text-v2-text-text-base">{entry.label}</span>
                           <span class="text-[12px] text-v2-text-text-faint">{entry.driverName}</span>
                         </span>
@@ -199,7 +216,9 @@ function RemoteChatSection(props: { remote: ComposerRemoteChatState }) {
                   <span class="text-[12px] text-v2-text-text-faint">{language.t("prompt.remote.pickChat")}</span>
                   <Show
                     when={!chats()?.loading}
-                    fallback={<span class="text-[12px] text-v2-text-text-faint">{language.t("prompt.remote.loading")}</span>}
+                    fallback={
+                      <span class="text-[12px] text-v2-text-text-faint">{language.t("prompt.remote.loading")}</span>
+                    }
                   >
                     <Show when={chats()?.ok === false}>
                       <span class="text-[12px] leading-4 text-v2-text-text-faint">{chats()?.reason}</span>
@@ -254,7 +273,9 @@ function RemoteChatSection(props: { remote: ComposerRemoteChatState }) {
                   </Show>
                 </Show>
                 <Show when={stage() === "trust"}>
-                  <span class="text-[12px] font-[560] text-v2-text-text-base">{language.t("prompt.remote.trust.title")}</span>
+                  <span class="text-[12px] font-[560] text-v2-text-text-base">
+                    {language.t("prompt.remote.trust.title")}
+                  </span>
                   <Show when={conflict()}>
                     <div class="flex flex-col gap-1 rounded-md border border-border-base px-2.5 py-1.5">
                       <span class="text-[12px] leading-4 text-v2-text-text-faint">
@@ -319,9 +340,14 @@ function RemoteChatSection(props: { remote: ComposerRemoteChatState }) {
         }
       >
         {(binding) => (
-          <div class="flex items-center justify-between gap-2 rounded-md border border-border-base px-2.5 py-1.5" data-remote-bound>
+          <div
+            class="flex items-center justify-between gap-2 rounded-md border border-border-base px-2.5 py-1.5"
+            data-remote-bound
+          >
             <span class="flex min-w-0 items-center gap-2">
-              <span class={`size-2 shrink-0 rounded-full ${REMOTE_DOT[binding().accountState] ?? "bg-v2-icon-icon-muted"}`} />
+              <span
+                class={`size-2 shrink-0 rounded-full ${REMOTE_DOT[binding().accountState] ?? "bg-v2-icon-icon-muted"}`}
+              />
               <span class="truncate text-[13px] text-v2-text-text-base">
                 {language.t("prompt.remote.connected", { driver: binding().driverName, chat: binding().chatTitle })}
               </span>
@@ -413,59 +439,63 @@ function TuningPanel(props: { state: ComposerFeaturesControlState; onDismiss: ()
         data-component="prompt-features-panel"
         class="flex max-h-[80vh] w-[min(30rem,calc(100vw-2rem))] flex-col gap-3 overflow-y-auto p-5"
       >
-          <div class="flex flex-col gap-1">
-            <span class="text-[13px] font-[560] text-v2-text-text-base">
-              {language.t("prompt.features.popover.title")}
-            </span>
-            <span class="text-[12px] leading-4 text-v2-text-text-faint">
-              {language.t("prompt.features.popover.description")}
-            </span>
-          </div>
-          {/* The chat's Mode — plain radio rows (a Kobalte Select re-emits onChange; see the
+        <div class="flex flex-col gap-1">
+          <span class="text-[13px] font-[560] text-v2-text-text-base">
+            {language.t("prompt.features.popover.title")}
+          </span>
+          <span class="text-[12px] leading-4 text-v2-text-text-faint">
+            {language.t("prompt.features.popover.description")}
+          </span>
+        </div>
+        {/* The chat's Mode — plain radio rows (a Kobalte Select re-emits onChange; see the
               per-session-toggle template notes), and the unattended options explain their
               guardrails inline so the switch teaches what it does. */}
-          <div class="flex flex-col gap-1.5" data-section="mode">
-            <span class="text-[13px] font-[560] text-v2-text-text-base">{language.t("prompt.mode.title")}</span>
-            <div role="radiogroup" aria-label={language.t("prompt.mode.title")} class="flex flex-col gap-1">
-              {COMPOSER_MODES.map((mode) => (
-                <button
-                  type="button"
-                  role="radio"
-                  data-mode-option={mode}
-                  aria-checked={props.state.mode === mode}
-                  onClick={() => props.state.setMode(mode)}
-                  class="flex items-start justify-between gap-3 rounded-md border px-2.5 py-1.5 text-left hover:bg-v2-background-bg-subtle"
-                  classList={{
-                    "border-v2-border-border-focus bg-v2-background-bg-layer-01": props.state.mode === mode,
-                    "border-transparent": props.state.mode !== mode,
-                  }}
-                >
-                  <span class="flex flex-col gap-0.5">
-                    <span class="text-[13px] text-v2-text-text-base">
-                      {language.t(`prompt.mode.${mode}.title`)}
-                    </span>
-                    <span class="text-[12px] leading-4 text-v2-text-text-faint">
-                      {language.t(`prompt.mode.${mode}.description`)}
-                    </span>
+        <div class="flex flex-col gap-1.5" data-section="mode">
+          <span class="text-[13px] font-[560] text-v2-text-text-base">{language.t("prompt.mode.title")}</span>
+          <div role="radiogroup" aria-label={language.t("prompt.mode.title")} class="flex flex-col gap-1">
+            {COMPOSER_MODES.map((mode) => (
+              <button
+                type="button"
+                role="radio"
+                data-mode-option={mode}
+                aria-checked={props.state.mode === mode}
+                onClick={() => props.state.setMode(mode)}
+                class="flex items-start justify-between gap-3 rounded-md border px-2.5 py-1.5 text-left hover:bg-v2-background-bg-subtle"
+                classList={{
+                  "border-v2-border-border-focus bg-v2-background-bg-layer-01": props.state.mode === mode,
+                  "border-transparent": props.state.mode !== mode,
+                }}
+              >
+                <span class="flex flex-col gap-0.5">
+                  <span class="text-[13px] text-v2-text-text-base">{language.t(`prompt.mode.${mode}.title`)}</span>
+                  <span class="text-[12px] leading-4 text-v2-text-text-faint">
+                    {language.t(`prompt.mode.${mode}.description`)}
                   </span>
-                  {props.state.mode === mode && (
-                    <Icon name="check" size="small" class="mt-0.5 shrink-0 text-v2-icon-icon-accent" />
-                  )}
-                </button>
-              ))}
-            </div>
+                </span>
+                {props.state.mode === mode && (
+                  <Icon name="check" size="small" class="mt-0.5 shrink-0 text-v2-icon-icon-accent" />
+                )}
+              </button>
+            ))}
           </div>
-          <RemoteChatSection remote={props.state.remote} />
-          {COMPOSER_FEATURES.map((feature) => (
-            <div class="flex items-start justify-between gap-3" data-feature={feature}>
-              <div class="flex flex-col gap-0.5">
-                <span class="text-[13px] text-v2-text-text-base">
-                  {language.t(`prompt.features.${feature}.title`)}
-                </span>
-                <span class="text-[12px] leading-4 text-v2-text-text-faint">
-                  {language.t(`prompt.features.${feature}.description`)}
-                </span>
-              </div>
+        </div>
+        <RemoteChatSection remote={props.state.remote} />
+        {COMPOSER_FEATURES.map((feature) => (
+          <div class="flex items-start justify-between gap-3" data-feature={feature}>
+            <div class="flex flex-col gap-0.5">
+              <span class="text-[13px] text-v2-text-text-base">{language.t(`prompt.features.${feature}.title`)}</span>
+              <span class="text-[12px] leading-4 text-v2-text-text-faint">
+                {language.t(`prompt.features.${feature}.description`)}
+              </span>
+              <span class="text-[11px] leading-4 text-v2-text-text-faint" data-feature-source>
+                {props.state.override[feature] === undefined
+                  ? language.t("prompt.features.source.inherit", {
+                      state: language.t(`prompt.features.state.${props.state.current[feature] ? "on" : "off"}`),
+                    })
+                  : language.t("prompt.features.source.override")}
+              </span>
+            </div>
+            <div class="flex shrink-0 flex-col items-end gap-1">
               <SwitchToggle
                 checked={props.state.current[feature]}
                 onChange={(checked) => props.state.set(feature, checked)}
@@ -473,8 +503,19 @@ function TuningPanel(props: { state: ComposerFeaturesControlState; onDismiss: ()
               >
                 {language.t(`prompt.features.${feature}.title`)}
               </SwitchToggle>
+              <Show when={props.state.override[feature] !== undefined}>
+                <button
+                  type="button"
+                  data-action="prompt-feature-inherit"
+                  class="text-[11px] text-v2-text-text-faint underline decoration-dotted hover:text-v2-text-text-base"
+                  onClick={() => props.state.inherit(feature)}
+                >
+                  {language.t("prompt.features.useDefault")}
+                </button>
+              </Show>
             </div>
-          ))}
+          </div>
+        ))}
       </div>
     </Dialog>
   )

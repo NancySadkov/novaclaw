@@ -171,6 +171,9 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   // The session's own context-reclaim policy. `prune` MARKS rows already out of the model's context
   // (`session/compaction-prune.ts`); it destroys no stored message, so "a read never destroys" holds.
   compaction: "operational",
+  // Closed percentages governing what the agent sends to its own model; no text, endpoint,
+  // execution, egress, or destructive store action. Like compaction, this is self-repairable policy.
+  context: "operational",
   // Pins in the directory picker's rail. Grepped 2026-07-31: the only consumers are
   // `dialog-select-directory-v2.tsx` and `pages/files.tsx` — presentation, granting no access, and
   // `config.ts` already documents the key as agent-editable for self-healing.

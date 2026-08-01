@@ -148,9 +148,16 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
         .map(([key]) => key)
         .sort()
 
-    // FIVE of forty-four, and the shortness is the measurement rather than an oversight: the config
+    // SIX of forty-five, and the shortness is the measurement rather than an oversight: the config
     // surface really is mostly execution surfaces, prompt text and endpoint URLs (review finding S2).
-    expect(of("operational")).toEqual(["$schema", "attachments", "compaction", "folder_bookmarks", "tool_output"])
+    expect(of("operational")).toEqual([
+      "$schema",
+      "attachments",
+      "compaction",
+      "context",
+      "folder_bookmarks",
+      "tool_output",
+    ])
 
     expect(of("consequential")).toEqual([
       "affective",

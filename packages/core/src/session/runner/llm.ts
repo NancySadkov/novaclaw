@@ -76,6 +76,7 @@ import { Affective } from "./affective"
 import { SessionDrive } from "./drive"
 import { FinishRecovery } from "./finish-recovery"
 import { ContextPack } from "./context-pack"
+import { ContextBudget } from "./context-budget"
 import {
   detectDoomLoop,
   redirectMessage,
@@ -884,6 +885,10 @@ export const layer = Layer.effect(
       const packed = ContextPack.packRequest({
         request: fullRequest,
         contextSize: model.route.defaults.limits?.context,
+        profile: ContextBudget.enabled(harness.context, config.contextBudget)
+          ? ContextBudget.resolve(harness.context, config.type)
+          : undefined,
+        memoryRecall,
       })
       if (packed.dropped > 0)
         yield* Effect.logWarning("context pack evicted history from the outgoing request", {
@@ -893,7 +898,7 @@ export const layer = Layer.effect(
           contextSize: packed.contextSize,
         })
       const request = packed.changed
-        ? LLM.request({ ...LLM.requestInput(fullRequest), messages: packed.messages })
+        ? LLM.request({ ...LLM.requestInput(fullRequest), system: packed.system, messages: packed.messages })
         : fullRequest
       const startSnapshot = yield* snapshots.capture()
       const publisher = createLLMEventPublisher(events, {

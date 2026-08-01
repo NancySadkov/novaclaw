@@ -427,6 +427,11 @@ export const dict = {
   "prompt.features.popover.title": "Tune this chat",
   "prompt.features.popover.description":
     "These switches apply to this chat only (chats spawned from it inherit them). Everything else about each helper is configured in Settings.",
+  "prompt.features.source.inherit": "Using Settings default: {{state}}",
+  "prompt.features.source.override": "This chat overrides Settings",
+  "prompt.features.useDefault": "Use Settings default",
+  "prompt.features.state.on": "On",
+  "prompt.features.state.off": "Off",
   "prompt.features.introspection.title": "Stuck detector",
   "prompt.features.introspection.description":
     "A judge model periodically checks whether the agent is stuck and nudges it to change approach.",
@@ -446,6 +451,9 @@ export const dict = {
   "prompt.features.surgicalEdits.title": "Edits instead of overwriting",
   "prompt.features.surgicalEdits.description":
     "Refuse to replace a whole file. The agent must make the smallest change that works, which keeps diffs readable and avoids losing parts of a file it did not mean to touch.",
+  "prompt.features.contextBudget.title": "Context guard",
+  "prompt.features.contextBudget.description":
+    "Keep conversation, recalled memory, knowledge retrieval, and tool output from crowding one another out.",
   "prompt.features.thinkingBudget.title": "Thinking budget",
   "prompt.features.thinkingBudget.description":
     "Caps how long the model reasons before it must answer, and stops it looping. Turn off to let it think as long as it wants — useful for comparing the two on the same task.",
@@ -1187,6 +1195,31 @@ export const dict = {
   "settings.tab.recovery": "Recovery",
   "settings.tab.about": "About",
   "settings.tab.storage": "Storage",
+  "settings.tunes.title": "Tunes",
+  "settings.tunes.description":
+    "Choose how NovaClaw protects the instructions, conversation, recalled memory, knowledge, and tool evidence that a model needs to keep working.",
+  "settings.tunes.toast.failed": "Saving Tune settings failed",
+  "settings.tunes.context.enabled.title": "Context guard",
+  "settings.tunes.context.enabled.description":
+    "Keep one kind of context from crowding out the others. System instructions and the original task are always protected.",
+  "settings.tunes.profiles.title": "Context profiles",
+  "settings.tunes.profiles.description":
+    "NovaClaw chooses a profile from the chat's working mode. Attended chats preserve more conversation; unattended workers reserve more room for tool evidence.",
+  "settings.tunes.profile.interactive": "Interactive chat",
+  "settings.tunes.profile.sub-agent": "Sub-agent",
+  "settings.tunes.profile.auto-prompting": "Auto-prompting",
+  "settings.tunes.profile.goal-oriented": "Goal-oriented",
+  "settings.tunes.profile.total": "{{total}}% allocated",
+  "settings.tunes.category.system": "Instructions",
+  "settings.tunes.category.system.description": "System guidance and the agent's operating rules.",
+  "settings.tunes.category.messages": "Conversation",
+  "settings.tunes.category.messages.description": "User and assistant messages, including the original task anchor.",
+  "settings.tunes.category.retrieval": "Knowledge retrieval",
+  "settings.tunes.category.retrieval.description": "Results recalled from the durable knowledge base.",
+  "settings.tunes.category.memory": "Memory",
+  "settings.tunes.category.memory.description": "Personal and session memories recalled before the turn.",
+  "settings.tunes.category.tool_output": "Tool output",
+  "settings.tunes.category.tool_output.description": "Evidence returned by files, commands, browsers, and other tools.",
 
   // The Storage tab (Advanced+): where this instance keeps its files. Read-only — these are chosen at
   // startup by --home/NOVACLAW_HOME and the XDG environment, so an editable field would be a lie.

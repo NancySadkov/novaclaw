@@ -74,5 +74,6 @@ export const migrations = (
     import("./migration/20260730201959_add_messenger_source_access"),
     import("./migration/20260730221834_add_session_safe_mode"),
     import("./migration/20260731023939_add_messenger_initiation_budget"),
+    import("./migration/20260801043513_add_session_context_budget"),
   ])
 ).map((module) => module.default) satisfies DatabaseMigration.Migration[]

@@ -502,6 +502,49 @@
   outline-offset: 1px;
 }
 
+/* A2.1/A5 — readable context-budget profiles; raw percentages unlock only in Developer mode. */
+.settings-v2-tunes-profiles {
+  gap: 16px;
+}
+
+.settings-v2-tunes-profile {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.settings-v2-tunes-profile-header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-v2-tunes-profile-title {
+  font-size: 13px;
+  font-weight: 560;
+  color: var(--v2-text-text-base);
+}
+
+.settings-v2-tunes-profile-total,
+.settings-v2-tunes-share,
+.settings-v2-tunes-input {
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+  color: var(--v2-text-text-muted);
+}
+
+.settings-v2-tunes-input {
+  display: flex;
+  width: 88px;
+  align-items: center;
+  gap: 6px;
+}
+
+.settings-v2-tunes-input [data-component="text-input-v2"] {
+  width: 64px;
+}
+
 /* B15 — per-model probe button + result chip */
 .settings-v2-models-row-actions {
   display: flex;

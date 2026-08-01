@@ -94,6 +94,7 @@ const createFullyConfigured = (session: SessionV2.Interface, parentID?: SessionS
     yield* session.switchFeature({ sessionID: created.id, feature: "surgicalEdits", enabled: true })
     yield* session.switchFeature({ sessionID: created.id, feature: "askBeforeChanges", enabled: true })
     yield* session.switchFeature({ sessionID: created.id, feature: "safeMode", enabled: true })
+    yield* session.switchFeature({ sessionID: created.id, feature: "contextBudget", enabled: true })
     return yield* session.get(created.id)
   })
 
@@ -121,17 +122,14 @@ describe("SESSION_CONFIG_FIELDS — the descriptor is honest about what a row ca
         surgicalEdits: true,
         askBeforeChanges: true,
         safeMode: true,
+        contextBudget: true,
         strict: { enabled: true },
         device: "spark",
         tools: ["bash"],
       } as unknown as SessionLike
       const mapped = sessionToConfig(everything) as Record<string, unknown>
       for (const key of SESSION_CONFIG_FIELD_KEYS)
-        expectField(
-          `sessionToConfig maps ${key}`,
-          mapped[key] !== undefined,
-          SESSION_CONFIG_FIELDS[key] === "resolved",
-        )
+        expectField(`sessionToConfig maps ${key}`, mapped[key] !== undefined, SESSION_CONFIG_FIELDS[key] === "resolved")
     }),
   )
 

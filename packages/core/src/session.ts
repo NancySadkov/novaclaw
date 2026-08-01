@@ -163,6 +163,7 @@ type CreateInput = {
   // SAFE MODE (owner 2026-07-30) — also a RESTRICTION: it puts an unattended chain's host execution
   // back behind sandbox confinement, and refuses on a host with no backend.
   safeMode?: boolean
+  contextBudget?: boolean
   location: Location.Ref
   // F1c fork: a fork seeds its record from the source (title + cloned metadata).
   title?: string
@@ -271,6 +272,7 @@ export interface Interface {
       | "surgicalEdits"
       | "askBeforeChanges"
       | "safeMode"
+      | "contextBudget"
     enabled: boolean | null
   }) => Effect.Effect<void, NotFoundError>
   readonly switchType: (input: {
@@ -397,6 +399,7 @@ export const createSessionRecord = (
       surgicalEdits: input.surgicalEdits,
       askBeforeChanges: input.askBeforeChanges,
       safeMode: input.safeMode,
+      contextBudget: input.contextBudget,
       cost: 0,
       tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
       time: { created: DateTime.makeUnsafe(now), updated: DateTime.makeUnsafe(now) },
@@ -1047,6 +1050,7 @@ export const layer = Layer.effect(
             // come back in safe mode. It arrives via the chain fold like the three above (it became
             // `"resolved"` when the column landed), not off the source's raw row.
             safeMode: inherited.safeMode,
+            contextBudget: inherited.contextBudget,
           },
         )
         const sourceRows = yield* db

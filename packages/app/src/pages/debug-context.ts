@@ -24,5 +24,19 @@ export const formatContextFinding = (finding: SessionMessageContext["findings"][
       ? `${subject} appeared ${finding.occurrences} times; NovaClaw folded the repeats, saving ${repeated}.`
       : `${subject} appears ${finding.occurrences} times and contains ${repeated}.`
   }
+  if (finding.kind === "category-budget") {
+    const label =
+      finding.category === "tool_output"
+        ? "Tool output"
+        : finding.category === "retrieval"
+          ? "Knowledge retrieval"
+          : finding.category[0]!.toUpperCase() + finding.category.slice(1)
+    const before = formatContextTokens(finding.beforeTokens)
+    const after = formatContextTokens(finding.afterTokens)
+    const limit = formatContextTokens(finding.limitTokens)
+    return finding.protected
+      ? `${label} used about ${after} tokens, above its ${limit}-token share; the newest evidence, system instructions, or original task was kept on purpose.`
+      : `${label} was reduced from about ${before} to ${after} tokens to stay inside its ${limit}-token share.`
+  }
   return `${finding.tool} output${targetLabel(finding.target)} occupies ${finding.percent}% of this turn’s context (about ${formatContextTokens(finding.tokens)} tokens).`
 }

@@ -182,6 +182,7 @@ export const makeSessionGroup = <I extends HttpApiMiddleware.AnyId, S>(sessionLo
           surgicalEdits: Schema.Boolean.pipe(Schema.optional),
           askBeforeChanges: Schema.Boolean.pipe(Schema.optional),
           safeMode: Schema.Boolean.pipe(Schema.optional),
+          contextBudget: Schema.Boolean.pipe(Schema.optional),
         }),
         success: Schema.Struct({ data: Session.Info }),
       }).annotateMerge(

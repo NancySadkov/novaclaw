@@ -360,6 +360,8 @@ export interface SessionConfig {
   readonly askBeforeChanges?: boolean
   /** Tri-state: SAFE MODE — see `SAFE_MODE` below. Absent = inherit, then OFF. */
   readonly safeMode?: boolean
+  /** Tri-state: enforce typed context shares in this chat. Absent = inherit, then the instance Tune. */
+  readonly contextBudget?: boolean
   readonly strict?: StrictOverride
   readonly tools?: readonly string[]
 }
@@ -447,6 +449,8 @@ export interface EffectiveConfig {
   /** Tri-state: SAFE MODE — restore unattended host-execution confinement (see §SAFE MODE above).
    *  Absent = inherit, then OFF (the default posture: unattended commands run). */
   readonly safeMode?: boolean
+  /** Tri-state: enforce typed context shares in this chat. Absent = inherit, then the instance Tune. */
+  readonly contextBudget?: boolean
   /** The nearest per-session Strict override on the chain; `undefined` = none (use global config). */
   readonly strict?: StrictOverride
   readonly tools?: readonly string[]
@@ -471,6 +475,7 @@ export function resolveConfig(defaults: EffectiveConfig, chain: readonly Session
   let surgicalEdits = defaults.surgicalEdits
   let askBeforeChanges = defaults.askBeforeChanges
   let safeMode = defaults.safeMode
+  let contextBudget = defaults.contextBudget
   let strict = defaults.strict
   let tools = defaults.tools
   let permissionMode = defaults.permissionMode
@@ -491,6 +496,7 @@ export function resolveConfig(defaults: EffectiveConfig, chain: readonly Session
     if (layer.surgicalEdits !== undefined) surgicalEdits = layer.surgicalEdits
     if (layer.askBeforeChanges !== undefined) askBeforeChanges = layer.askBeforeChanges
     if (layer.safeMode !== undefined) safeMode = layer.safeMode
+    if (layer.contextBudget !== undefined) contextBudget = layer.contextBudget
     if (layer.strict !== undefined) strict = layer.strict
     if (layer.tools !== undefined) tools = layer.tools
     if (layer.permissionRules !== undefined) permissionRules = [...permissionRules, ...layer.permissionRules]
@@ -517,6 +523,7 @@ export function resolveConfig(defaults: EffectiveConfig, chain: readonly Session
     surgicalEdits,
     askBeforeChanges,
     safeMode,
+    contextBudget,
     strict,
     tools,
   }
@@ -552,6 +559,7 @@ export interface SessionLike {
    *  Absent = inherit, then OFF. A child cannot declare itself out of an ancestor's ON: absent
    *  means inherit, and the only way to diverge is an explicit `false` the user had to set. */
   readonly safeMode?: boolean
+  readonly contextBudget?: boolean
   // permissionRules / tools get mapped here as the session schema grows to carry them
   // (see architecture.md Phase 1 step 4).
 }
@@ -573,6 +581,7 @@ export const sessionToConfig = (session: SessionLike): SessionConfig => ({
   surgicalEdits: session.surgicalEdits,
   askBeforeChanges: session.askBeforeChanges,
   safeMode: session.safeMode,
+  contextBudget: session.contextBudget,
 })
 
 /**
@@ -710,6 +719,7 @@ export const SESSION_CONFIG_FIELDS: Readonly<Record<keyof SessionConfig, Session
   // It is a RESTRICTION, so this is precisely the case ruling 8 exists for: a fork of a safe-mode
   // session resolves to safe mode, because `"resolved"` puts it in `SESSION_CONFIG_FORK_FIELDS`.
   safeMode: "resolved",
+  contextBudget: "resolved",
   strict: "resolved",
   tools: "absent-from-row",
 }

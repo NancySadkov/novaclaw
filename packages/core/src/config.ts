@@ -13,6 +13,7 @@ import { AbsolutePath } from "./schema"
 import { ConfigAgent } from "./config/agent"
 import { ConfigAttachments } from "./config/attachments"
 import { ConfigCompaction } from "./config/compaction"
+import { ConfigContext } from "./config/context"
 import { ConfigCommand } from "./config/command"
 import { ConfigExperimental } from "./config/experimental"
 import { ConfigFormatter } from "./config/formatter"
@@ -113,6 +114,10 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   }),
   compaction: ConfigCompaction.Info.pipe(Schema.optional).annotate({
     description: "Conversation compaction behavior",
+  }),
+  context: ConfigContext.Info.pipe(Schema.optional).annotate({
+    description:
+      "Typed context-window guard: live instance default plus per-session-type share ceilings for system, conversation, KB retrieval, recalled memory, and tool output",
   }),
   persona: ConfigPersona.Info.pipe(Schema.optional).annotate({
     description: "Persona baseline prepended to every agent's system prompt (B3)",

@@ -21,8 +21,8 @@ const wholeDocumentDecode = (values: Record<string, unknown>) =>
   Option.getOrUndefined(Schema.decodeUnknownOption(Config.Info, DECODE_OPTIONS)(values))
 
 /**
- * One valid value for EVERY key in SETTINGS_KEYS, so "one bad key keeps the other 31" is a literal
- * claim about all 32 and not a claim about a hand-picked sample. Test 1 asserts the count, so this
+ * One valid value for EVERY key in SETTINGS_KEYS, so "one bad key keeps the other 34" is a literal
+ * claim about all 35 and not a claim about a hand-picked sample. Test 1 asserts the count, so this
  * table cannot silently drift out of sync with SETTINGS_KEYS.
  */
 const VALID: Record<string, unknown> = {
@@ -46,6 +46,7 @@ const VALID: Record<string, unknown> = {
   resource_pressure: { warning: { memory_used_fraction: 0.75 }, floor: { disk_free_bytes: 512 * 1024 * 1024 } },
   mcp: {},
   compaction: {},
+  context: { enabled: true },
   permissions: [{ action: "bash", resource: "*", effect: "ask" }],
   persona: {},
   user_profile: { enabled: true, name: "Nancy" },
@@ -73,7 +74,7 @@ describe("settingsInfoFromStore — per-key fallback (B5)", () => {
     expect(settingsInfoFromStore({ agents: { build: { description: "x" } } })).toEqual({ skipped: [] })
   })
 
-  test("an all-valid snapshot decodes every one of the 32 settings keys, with nothing skipped", () => {
+  test("an all-valid snapshot decodes every one of the 35 settings keys, with nothing skipped", () => {
     // Guards the fixture: if SETTINGS_KEYS grows, VALID must grow with it or this fails.
     expect(Object.keys(VALID).sort()).toEqual([...SETTINGS_KEYS].sort())
 
@@ -84,11 +85,11 @@ describe("settingsInfoFromStore — per-key fallback (B5)", () => {
     expect(wholeDocumentDecode({ ...VALID })).toBeDefined()
   })
 
-  test("one bad key is dropped and NAMED; the other 31 still apply", () => {
+  test("one bad key is dropped and NAMED; the other 34 still apply", () => {
     const input = { ...VALID, mcp: "not-a-valid-mcp-config" }
 
     // NEGATIVE CONTROL. This is the old implementation's entire body run on the same input: it
-    // returns undefined, i.e. all 32 keys vanish. Every assertion below therefore fails against
+    // returns undefined, i.e. all 35 keys vanish. Every assertion below therefore fails against
     // the pre-B5 code by construction — the salvage is the only thing keeping the siblings alive.
     expect(wholeDocumentDecode(input)).toBeUndefined()
 

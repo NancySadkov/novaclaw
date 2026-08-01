@@ -241,6 +241,15 @@ export const ContextFinding = Schema.Union([
     tokens: NonNegativeInt,
     percent: Schema.Finite,
   }),
+  Schema.Struct({
+    kind: Schema.Literal("category-budget"),
+    category: Schema.Literals(["system", "messages", "retrieval", "memory", "tool_output"]),
+    limitTokens: NonNegativeInt,
+    beforeTokens: NonNegativeInt,
+    afterTokens: NonNegativeInt,
+    affectedMessages: NonNegativeInt,
+    protected: Schema.Boolean,
+  }),
 ]).pipe(Schema.toTaggedUnion("kind"))
 export type ContextFinding = typeof ContextFinding.Type
 

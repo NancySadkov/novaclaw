@@ -52,6 +52,7 @@ export const SETTINGS_KEYS = [
   "resource_pressure",
   "mcp",
   "compaction",
+  "context",
   "permissions",
   "persona",
   "user_profile",

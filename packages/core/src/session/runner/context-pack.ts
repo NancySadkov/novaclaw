@@ -25,6 +25,7 @@ import type { SessionMessage } from "@novaclaw/schema/session-message"
 import { Token } from "../../util/token"
 import { applySteerProvenance, isSteerText } from "../steer-provenance"
 import { ContextRedundancy } from "./context-redundancy"
+import { ContextBudget } from "./context-budget"
 
 export * as ContextPack from "./context-pack"
 
@@ -554,10 +555,7 @@ const contextFindings = (
   return [...duplicateFindings(matches, elided), ...(dominant === undefined ? [] : [dominant])]
 }
 
-const applyRedundancy = (
-  messages: Message[],
-  matches: ReadonlyArray<RedundancyMatch>,
-): ElisionResult => {
+const applyRedundancy = (messages: Message[], matches: ReadonlyArray<RedundancyMatch>): ElisionResult => {
   const nothing: ElisionResult = { messages, elisions: [], reclaimed: 0 }
   if (matches.length === 0) return nothing
   const rewritten = [...messages]
@@ -595,6 +593,107 @@ export const elideRedundant = (messages: Message[], estimates: ReadonlyArray<num
   return applyRedundancy(messages, analyzeRedundancy(messages, estimates).matches)
 }
 
+type HistoryCategory = "messages" | "retrieval" | "tool_output"
+
+const historyCategory = (message: Message): HistoryCategory => {
+  const result = soleToolResult(message)
+  if (result === undefined) return "messages"
+  return result.name === "kb" ? "retrieval" : "tool_output"
+}
+
+const historyUsage = (messages: ReadonlyArray<Message>, estimates: ReadonlyArray<number>) => {
+  const usage: Record<HistoryCategory, number> = { messages: 0, retrieval: 0, tool_output: 0 }
+  messages.forEach((message, index) => {
+    usage[historyCategory(message)] += estimates[index] ?? estimateMessage(message)
+  })
+  return usage
+}
+
+const categoryNotice = (category: Exclude<HistoryCategory, "messages">, name: string): string =>
+  `[novaclaw: older ${category === "retrieval" ? "knowledge retrieval" : `${name} tool output`} omitted to preserve this context share]`
+
+interface CategoryBudgetResult {
+  readonly messages: Message[]
+  readonly findings: SessionMessage.ContextFinding[]
+}
+
+/** Enforce the three history shares before ordinary recency packing. Tool results are rewritten in
+ * place so call/result wire shape survives; conversation messages are removed oldest-first, with
+ * both the original task anchor and newest message protected. The legality passes get the last word. */
+const enforceHistoryBudgets = (
+  messages: Message[],
+  estimates: ReadonlyArray<number>,
+  caps: Readonly<Record<HistoryCategory, number>>,
+): CategoryBudgetResult => {
+  const before = historyUsage(messages, estimates)
+  let working = [...messages]
+  let workingEstimates = [...estimates]
+  const affected: Record<HistoryCategory, number> = { messages: 0, retrieval: 0, tool_output: 0 }
+
+  for (const category of ["retrieval", "tool_output"] as const) {
+    const indexes = working.flatMap((message, index) => (historyCategory(message) === category ? [index] : []))
+    let used = indexes.reduce((sum, index) => sum + workingEstimates[index]!, 0)
+    const newest = indexes.at(-1)
+    for (const index of indexes) {
+      if (used <= caps[category] || index === newest) break
+      const message = working[index]!
+      const part = soleToolResult(message)
+      if (part === undefined) continue
+      const replacement = Message.make({
+        ...message,
+        content: [
+          {
+            ...part,
+            result: { type: "text" as const, value: categoryNotice(category, part.name) },
+          },
+        ],
+      })
+      const next = estimateMessage(replacement)
+      const saved = workingEstimates[index]! - next
+      if (saved <= 0) continue
+      working[index] = replacement
+      workingEstimates[index] = next
+      used -= saved
+      affected[category]++
+    }
+  }
+
+  let messageUsed = historyUsage(working, workingEstimates).messages
+  const anchor = working.findIndex(isRealUserMessage)
+  const newest = working.length - 1
+  const removed = new Set<number>()
+  for (let index = 0; index < working.length && messageUsed > caps.messages; index++) {
+    if (historyCategory(working[index]!) !== "messages" || index === anchor || index === newest) continue
+    removed.add(index)
+    messageUsed -= workingEstimates[index]!
+    affected.messages++
+  }
+  if (removed.size > 0) {
+    working = working.filter((_, index) => !removed.has(index))
+    working = dropOrphanTools(dropDanglingToolCalls(working))
+    workingEstimates = working.map(estimateMessage)
+  }
+
+  const after = historyUsage(working, workingEstimates)
+  const findings = (["messages", "retrieval", "tool_output"] as const).flatMap(
+    (category): SessionMessage.ContextFinding[] =>
+      before[category] <= caps[category]
+        ? []
+        : [
+            {
+              kind: "category-budget",
+              category,
+              limitTokens: caps[category],
+              beforeTokens: before[category],
+              afterTokens: after[category],
+              affectedMessages: affected[category],
+              protected: after[category] > caps[category],
+            },
+          ],
+  )
+  return { messages: working, findings }
+}
+
 export interface PackResult {
   readonly messages: Message[]
   /** true when anything was evicted or repaired — the runner rebuilds the request only then. */
@@ -616,7 +715,11 @@ export interface PackResult {
  * evict the sole user message — "the original task, the agent's anchor against drift" —
  * deliberately over budget.
  */
-export const pack = (messages: ReadonlyArray<Message>, budgetTokens: number): PackResult => {
+export const pack = (
+  messages: ReadonlyArray<Message>,
+  budgetTokens: number,
+  options: { readonly historyCaps?: Readonly<Record<HistoryCategory, number>> } = {},
+): PackResult => {
   const repaired = dropDanglingToolCalls(messages)
   let working = repaired
   let estimates = repaired.map(estimateMessage)
@@ -624,10 +727,17 @@ export const pack = (messages: ReadonlyArray<Message>, budgetTokens: number): Pa
   let elided = 0
   const analysisEstimates = estimates
   const analysis = analyzeRedundancy(repaired, analysisEstimates)
+  let budgetFindings: SessionMessage.ContextFinding[] = []
+  const categoryOverflow =
+    options.historyCaps === undefined
+      ? false
+      : Object.entries(historyUsage(repaired, estimates)).some(
+          ([category, used]) => used > options.historyCaps![category as HistoryCategory],
+        )
 
   // Pass 1.5 — only when the window actually overflows: collapsing rewrites the middle of the
   // prompt, which costs a prefix-cache hit, and there is nothing to buy while everything fits.
-  if (total > budgetTokens) {
+  if (total > budgetTokens || categoryOverflow) {
     const reclaimed = applyRedundancy(repaired, analysis.matches)
     if (reclaimed.messages !== repaired) {
       working = reclaimed.messages
@@ -635,6 +745,16 @@ export const pack = (messages: ReadonlyArray<Message>, budgetTokens: number): Pa
       estimates = working.map(estimateMessage)
       total = estimates.reduce((sum, tokens) => sum + tokens, 0)
     }
+  }
+
+  if (options.historyCaps !== undefined) {
+    const budgeted = enforceHistoryBudgets(working, estimates, options.historyCaps)
+    if (budgeted.messages.length !== working.length || budgeted.messages.some((message, i) => message !== working[i])) {
+      working = budgeted.messages
+      estimates = working.map(estimateMessage)
+      total = estimates.reduce((sum, tokens) => sum + tokens, 0)
+    }
+    budgetFindings = budgeted.findings
   }
 
   if (total <= budgetTokens) {
@@ -646,7 +766,10 @@ export const pack = (messages: ReadonlyArray<Message>, budgetTokens: number): Pa
       dropped: messages.length - legal.length,
       estimatedTokens: total,
       elided,
-      findings: contextFindings(repaired, analysisEstimates, analysis.exchanges, analysis.matches, elided > 0),
+      findings: [
+        ...contextFindings(repaired, analysisEstimates, analysis.exchanges, analysis.matches, elided > 0),
+        ...budgetFindings,
+      ],
     }
   }
 
@@ -687,27 +810,115 @@ export const pack = (messages: ReadonlyArray<Message>, budgetTokens: number): Pa
     dropped: messages.length - kept.length,
     estimatedTokens: estimateMessages(kept),
     elided,
-    findings: contextFindings(repaired, analysisEstimates, analysis.exchanges, analysis.matches, elided > 0),
+    findings: [
+      ...contextFindings(repaired, analysisEstimates, analysis.exchanges, analysis.matches, elided > 0),
+      ...budgetFindings,
+    ],
   }
 }
 
 /** The runner-facing composition: budget from the request's own system/tools, then pack. */
+const enforceSystemBudgets = (input: {
+  readonly system: ReadonlyArray<SystemPart>
+  readonly memoryRecall?: string
+  readonly contextSize: number
+  readonly profile: ContextBudget.Profile
+}): {
+  readonly system: SystemPart[]
+  readonly changed: boolean
+  readonly findings: SessionMessage.ContextFinding[]
+} => {
+  let system = [...input.system]
+  const memoryIndex =
+    input.memoryRecall === undefined ? -1 : system.findIndex((part) => part.text === input.memoryRecall)
+  const memoryBefore = memoryIndex < 0 ? 0 : Token.estimate(system[memoryIndex]!.text)
+  const memoryLimit = ContextBudget.cap(input.contextSize, input.profile.memory)
+  let memoryAfter = memoryBefore
+  let memoryAffected = 0
+  if (memoryIndex >= 0 && memoryBefore > memoryLimit) {
+    const lines = system[memoryIndex]!.text.split("\n")
+    let kept = ""
+    for (const line of lines) {
+      const candidate = kept.length === 0 ? line : `${kept}\n${line}`
+      if (Token.estimate(candidate) > memoryLimit) break
+      kept = candidate
+    }
+    if (kept.length === 0) system.splice(memoryIndex, 1)
+    else system[memoryIndex] = { ...system[memoryIndex]!, text: kept }
+    memoryAfter = kept.length === 0 ? 0 : Token.estimate(kept)
+    memoryAffected = 1
+  }
+
+  const systemBefore = input.system.reduce((sum, part, index) => {
+    return index === memoryIndex ? sum : sum + Token.estimate(part.text)
+  }, 0)
+  const systemLimit = ContextBudget.cap(input.contextSize, input.profile.system)
+  const findings: SessionMessage.ContextFinding[] = []
+  if (systemBefore > systemLimit)
+    findings.push({
+      kind: "category-budget",
+      category: "system",
+      limitTokens: systemLimit,
+      beforeTokens: systemBefore,
+      afterTokens: systemBefore,
+      affectedMessages: 0,
+      protected: true,
+    })
+  if (memoryBefore > memoryLimit)
+    findings.push({
+      kind: "category-budget",
+      category: "memory",
+      limitTokens: memoryLimit,
+      beforeTokens: memoryBefore,
+      afterTokens: memoryAfter,
+      affectedMessages: memoryAffected,
+      protected: memoryAfter > memoryLimit,
+    })
+  return { system, changed: memoryAffected > 0, findings }
+}
+
 export const packRequest = (input: {
   readonly request: LLMRequest
   readonly contextSize: number | undefined
-}): PackResult & { readonly contextSize: number } => {
+  readonly profile?: ContextBudget.Profile
+  readonly memoryRecall?: string
+}): PackResult & { readonly contextSize: number; readonly system: ReadonlyArray<SystemPart> } => {
   const contextSize =
     input.contextSize !== undefined && input.contextSize > 0 ? input.contextSize : DEFAULT_CONTEXT_SIZE
+  const systemBudget =
+    input.profile === undefined
+      ? { system: [...input.request.system], changed: false, findings: [] }
+      : enforceSystemBudgets({
+          system: input.request.system,
+          memoryRecall: input.memoryRecall,
+          contextSize,
+          profile: input.profile,
+        })
   const result = pack(
     input.request.messages,
     budget({
       contextSize,
-      system: input.request.system,
+      system: systemBudget.system,
       tools: input.request.tools,
       maxTokens: input.request.generation?.maxTokens,
     }),
+    input.profile === undefined
+      ? undefined
+      : {
+          historyCaps: {
+            messages: ContextBudget.cap(contextSize, input.profile.messages),
+            retrieval: ContextBudget.cap(contextSize, input.profile.retrieval),
+            tool_output: ContextBudget.cap(contextSize, input.profile.tool_output),
+          },
+        },
   )
-  return { ...result, contextSize }
+  return {
+    ...result,
+    changed: result.changed || systemBudget.changed,
+    findings: [...systemBudget.findings, ...result.findings],
+    contextSize,
+    system: systemBudget.system,
+  }
 }
 
 /**

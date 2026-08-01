@@ -82,6 +82,7 @@ export interface Derived {
   readonly strict: Config.Info["strict"]
   readonly affective: Config.Info["affective"]
   readonly introspection: Introspection.Resolved
+  readonly context: Config.Info["context"]
 }
 
 const fallbackShell = (options: Options): string =>
@@ -111,5 +112,6 @@ export const derive = (entries: readonly Config.Entry[], options: Options = {}):
     strict: Config.latest(entries, "strict"),
     affective: Config.latest(entries, "affective"),
     introspection: Introspection.resolve(Config.latest(entries, "introspection")),
+    context: Config.latest(entries, "context"),
   }
 }

@@ -223,6 +223,7 @@ export type SessionFeatureName =
   | "surgicalEdits"
   | "askBeforeChanges"
   | "safeMode"
+  | "contextBudget"
 
 export function switchFeature(
   server: ServerConnection.HttpBase,

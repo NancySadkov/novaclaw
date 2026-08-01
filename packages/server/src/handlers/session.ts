@@ -123,6 +123,7 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
               surgicalEdits: ctx.payload.surgicalEdits,
               askBeforeChanges: ctx.payload.askBeforeChanges,
               safeMode: ctx.payload.safeMode,
+              contextBudget: ctx.payload.contextBudget,
               location: ctx.payload.location ?? { directory: AbsolutePath.make(process.cwd()) },
             }),
           }

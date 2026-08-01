@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test"
-import { Message, SystemPart, ToolDefinition } from "@novaclaw/llm"
+import { LLM, Message, Model, SystemPart, ToolDefinition } from "@novaclaw/llm"
+import * as OpenAIChat from "@novaclaw/llm/protocols/openai-chat"
 import { SessionInput } from "../input"
 import {
   budget,
@@ -10,6 +11,7 @@ import {
   estimateMessage,
   isRealUserMessage,
   pack,
+  packRequest,
   BUDGET_KEEP_FRACTION,
   DEFAULT_CONTEXT_SIZE,
   MIN_RESPONSE_RESERVE,
@@ -46,6 +48,7 @@ const unrenderableAssistant = (message: Message) =>
 
 const noSystem: SystemPart[] = []
 const noTools: ToolDefinition[] = []
+const fakeModel = Model.make({ id: "fake", provider: "fake", route: OpenAIChat.route })
 
 // Empty tools still stringify to "[]" (~1 token); mirror the impl formula exactly.
 const expectedBudget = (contextSize: number, reserve: number) =>
@@ -103,7 +106,10 @@ describe("dropDanglingToolCalls", () => {
   })
 
   test("keeps text siblings when only the call part is dangling", () => {
-    const mixed = Message.assistant([Message.text("thinking"), { type: "tool-call", id: "c1", name: "read", input: {} }])
+    const mixed = Message.assistant([
+      Message.text("thinking"),
+      { type: "tool-call", id: "c1", name: "read", input: {} },
+    ])
     const repaired = dropDanglingToolCalls([mixed])
     expect(repaired).toHaveLength(1)
     expect(repaired[0]!.content).toHaveLength(1)
@@ -160,12 +166,8 @@ describe("dropDanglingToolCalls", () => {
     // c1 dangles (thinking-only assistant -> dropped); c2 is answered and must survive intact.
     const messages = [user("go"), assistantThinkCall("c1"), assistantThinkCall("c2"), toolResult("c2")]
     const repaired = dropOrphanTools(dropDanglingToolCalls(messages))
-    const callIds = repaired.flatMap((m) =>
-      m.content.flatMap((p) => (p.type === "tool-call" ? [p.id] : [])),
-    )
-    const resultIds = repaired.flatMap((m) =>
-      m.content.flatMap((p) => (p.type === "tool-result" ? [p.id] : [])),
-    )
+    const callIds = repaired.flatMap((m) => m.content.flatMap((p) => (p.type === "tool-call" ? [p.id] : [])))
+    const resultIds = repaired.flatMap((m) => m.content.flatMap((p) => (p.type === "tool-result" ? [p.id] : [])))
     expect(callIds).toEqual(["c2"])
     expect(resultIds).toEqual(["c2"])
     expect(repaired.some(unrenderableAssistant)).toBe(false)
@@ -204,6 +206,86 @@ describe("pack", () => {
     expect(result.messages).toHaveLength(2)
     expect(result.changed).toBe(false)
     expect(result.dropped).toBe(0)
+  })
+
+  test("typed tool-output share folds older evidence but keeps the newest result", () => {
+    const huge = "tool evidence ".repeat(1_200)
+    const messages = [
+      user("task"),
+      assistantCall("old"),
+      toolResult("old", "read", huge),
+      assistantCall("new"),
+      toolResult("new", "read", huge),
+      assistantText("continue"),
+    ]
+    const result = pack(messages, 100_000, {
+      historyCaps: { messages: 100_000, retrieval: 100_000, tool_output: estimateMessage(messages[4]!) + 200 },
+    })
+    expect(
+      result.messages.some((message) =>
+        message.content.some((part) => part.type === "tool-result" && part.id === "new" && part.result.value === huge),
+      ),
+    ).toBe(true)
+    expect(
+      result.messages.some((message) =>
+        message.content.some(
+          (part) =>
+            part.type === "tool-result" &&
+            part.id === "old" &&
+            part.result.type === "text" &&
+            String(part.result.value).includes("older read tool output omitted"),
+        ),
+      ),
+    ).toBe(true)
+    expect(result.findings).toContainEqual({
+      kind: "category-budget",
+      category: "tool_output",
+      limitTokens: expect.any(Number),
+      beforeTokens: expect.any(Number),
+      afterTokens: expect.any(Number),
+      affectedMessages: 1,
+      protected: false,
+    })
+  })
+
+  test("KB retrieval has its own share and does not spend the ordinary tool-output share", () => {
+    const huge = "knowledge fact ".repeat(1_200)
+    const messages = [
+      user("task"),
+      assistantCall("kb1", "kb"),
+      toolResult("kb1", "kb", huge),
+      assistantCall("read1", "read"),
+      toolResult("read1", "read", huge),
+      assistantText("continue"),
+    ]
+    const result = pack(messages, 100_000, {
+      historyCaps: { messages: 100_000, retrieval: 0, tool_output: 100_000 },
+    })
+    expect(
+      result.findings.some((finding) => finding.kind === "category-budget" && finding.category === "retrieval"),
+    ).toBe(true)
+    expect(
+      result.findings.some((finding) => finding.kind === "category-budget" && finding.category === "tool_output"),
+    ).toBe(false)
+  })
+
+  test("typed conversation share never evicts the original task or newest message", () => {
+    const huge = "conversation ".repeat(1_200)
+    const messages = [user("original task"), assistantText(huge), user(huge), assistantText("newest")]
+    const result = pack(messages, 100_000, {
+      historyCaps: { messages: 100, retrieval: 100_000, tool_output: 100_000 },
+    })
+    expect(result.messages[0]!.content).toEqual(user("original task").content)
+    expect(result.messages.at(-1)!.content).toEqual(assistantText("newest").content)
+    expect(result.findings).toContainEqual({
+      kind: "category-budget",
+      category: "messages",
+      limitTokens: 100,
+      beforeTokens: expect.any(Number),
+      afterTokens: expect.any(Number),
+      affectedMessages: 2,
+      protected: false,
+    })
   })
 
   test("over budget: evicts oldest whole messages, keeps chronology", () => {
@@ -248,9 +330,7 @@ describe("pack", () => {
       if (message.role !== "tool") continue
       for (const part of message.content)
         if (part.type === "tool-result") {
-          const owned = result.messages.some((m) =>
-            m.content.some((p) => p.type === "tool-call" && p.id === part.id),
-          )
+          const owned = result.messages.some((m) => m.content.some((p) => p.type === "tool-call" && p.id === part.id))
           expect(owned).toBe(true)
         }
     }
@@ -279,9 +359,43 @@ describe("pack", () => {
     const messages = [user("go"), assistantCall("c1"), toolResult("c1", "read", "x".repeat(30_000))]
     const result = pack(messages, 50)
     expect(result.messages.some((m) => m.role === "assistant")).toBe(true)
-    expect(
-      result.messages.some((m) => m.content.some((p) => p.type === "tool-result" && p.id === "c1")),
-    ).toBe(true)
+    expect(result.messages.some((m) => m.content.some((p) => p.type === "tool-result" && p.id === "c1"))).toBe(true)
+  })
+})
+
+describe("packRequest typed system shares", () => {
+  test("memory is line-trimmed while an oversized system prompt is protected", () => {
+    const memory = `Remember these:\n${Array.from({ length: 20 }, (_, index) => `- fact ${index} ${"x".repeat(80)}`).join("\n")}`
+    const request = LLM.request({
+      model: fakeModel,
+      system: [SystemPart.make("kernel instruction ".repeat(300)), SystemPart.make(memory)],
+      messages: [user("task")],
+    })
+    const result = packRequest({
+      request,
+      contextSize: 10_000,
+      memoryRecall: memory,
+      profile: { system: 1, messages: 40, retrieval: 10, memory: 1, tool_output: 20 },
+    })
+    expect(result.system.some((part) => part.text === memory)).toBe(false)
+    expect(result.findings).toContainEqual({
+      kind: "category-budget",
+      category: "system",
+      limitTokens: 100,
+      beforeTokens: expect.any(Number),
+      afterTokens: expect.any(Number),
+      affectedMessages: 0,
+      protected: true,
+    })
+    expect(result.findings).toContainEqual({
+      kind: "category-budget",
+      category: "memory",
+      limitTokens: 100,
+      beforeTokens: expect.any(Number),
+      afterTokens: expect.any(Number),
+      affectedMessages: 1,
+      protected: false,
+    })
   })
 })
 

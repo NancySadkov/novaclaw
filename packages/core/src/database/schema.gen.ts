@@ -376,6 +376,7 @@ export default {
           \`surgical_edits\` integer,
           \`ask_before_changes\` integer,
           \`safe_mode\` integer,
+          \`context_budget\` integer,
           \`result\` text,
           \`time_created\` integer NOT NULL,
           \`time_updated\` integer NOT NULL,

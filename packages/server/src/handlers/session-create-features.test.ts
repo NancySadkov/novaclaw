@@ -1,7 +1,7 @@
-// A NEW-SESSION DRAFT'S PER-CHAT SWITCHES MUST SURVIVE `session.create` — all seven of them.
+// A NEW-SESSION DRAFT'S PER-CHAT SWITCHES MUST SURVIVE `session.create` — all eight of them.
 //
 // The defect this pins (fixed 2026-07-31): the composer's Tuning panel lets a user set per-chat
-// switches on a DRAFT — a chat that does not exist yet — and on create only three of the seven
+// switches on a DRAFT — a chat that does not exist yet — and on create only three of the then-seven
 // travelled. `thinkingBudget`, `surgicalEdits`, `askBeforeChanges` and `safeMode` were accepted by
 // the UI and dropped. Three of those four are RESTRICTIONS: they narrow what the agent may do. A
 // user who ticks *Ask before changes* on a new chat and then watches the agent change files has
@@ -21,7 +21,7 @@
 // And there was no post-create catch-up loop to rescue it: `session-composer-controls.ts` calls
 // `switchFeature` only when a session `id` already exists, which a draft does not have.
 //
-// The kernel was NOT the problem — `SessionV2.CreateInput` has accepted all seven since 2026-07-29
+// The kernel was NOT the problem — `SessionV2.CreateInput` accepted all seven original switches since 2026-07-29
 // (`safeMode` since 2026-07-31), and `packages/core/test/session-safe-mode.test.ts` already pins
 // the column's create → row → Info → resolve → fork behaviour. What was missing was the WIRE, so
 // this file drives the wire: a JSON body through the REAL protocol payload schema, into the REAL
@@ -189,19 +189,31 @@ const createAndReload = (body: Record<string, unknown>) =>
       const store = yield* SessionStore.Service
       const reloaded = yield* store.get(response.data.id)
       expect(reloaded, "the handler returned a session that is not in the store").toBeDefined()
-      return { echoed: response.data as unknown as Record<string, unknown>, stored: reloaded as Record<string, unknown> }
+      return {
+        echoed: response.data as unknown as Record<string, unknown>,
+        stored: reloaded as Record<string, unknown>,
+      }
     }),
   )
 
 describe("session.create carries every per-chat switch a draft can stage", () => {
   // The premise of everything below. If this drops to three again, the rest of the file would still
   // pass while testing nothing that matters.
-  test("the kernel declares the seven switches this file is about", () => {
+  test("the kernel declares the eight switches this file is about", () => {
     expect(
       [...FEATURES].map(String).sort(),
       "SessionFeature.Name changed. Every case below iterates it, so they will keep passing over the NEW set — but a switch is only real once the payload schema (packages/protocol), the handler (./session.ts) AND the composer's create body (packages/app/.../prompt-input/submit.ts) all carry it. Check those three, then update this list.",
     ).toEqual(
-      ["affective", "askBeforeChanges", "introspection", "quality", "safeMode", "surgicalEdits", "thinkingBudget"].sort(),
+      [
+        "affective",
+        "askBeforeChanges",
+        "contextBudget",
+        "introspection",
+        "quality",
+        "safeMode",
+        "surgicalEdits",
+        "thinkingBudget",
+      ].sort(),
     )
   })
 
@@ -226,7 +238,7 @@ describe("session.create carries every per-chat switch a draft can stage", () =>
   })
 
   // DROP POINT 2 — the handler, end to end. This is the test that would have caught the defect.
-  test("a create setting all seven persists all seven", async () => {
+  test("a create setting all eight persists all eight", async () => {
     const { echoed, stored } = await createAndReload(Object.fromEntries(FEATURES.map((name) => [name, true])))
     const lost = FEATURES.filter((name) => stored[name] !== true)
     expect(
