@@ -131,16 +131,16 @@ describe("no transcript consumer ever reads the harness's own words as the user'
 })
 
 describe("auto-extraction (the durable-memory leg of B2)", () => {
-  test("anchors on the real user turn and keeps the assistant text that followed the steer", () => {
+  test("anchors on the real user turn and excludes every assistant-originated byte", () => {
     const exchange = SessionExtract.buildExchange([
       user("my name is Nadia"),
       assistant("Nice to meet you"),
       steer(NUDGE),
       assistant("Continuing."),
     ])
-    // The steer is dropped from the exchange, NOT used as the boundary — so the assistant text
-    // produced after it still belongs to this exchange.
-    expect(exchange).toBe("User: my name is Nadia\nAssistant: Nice to meet you Continuing.")
+    // Both assistant replies may have been influenced by auto-recalled memory. Excluding them by
+    // origin prevents a recalled fact from manufacturing a new durable candidate through paraphrase.
+    expect(exchange).toBe("User: my name is Nadia")
   })
 
   test("the memory id of an extracted fact never keys off harness text", () => {

@@ -1,6 +1,7 @@
 export * as SessionExtract from "./extract"
 
 import { createHash } from "node:crypto"
+import type { SessionType } from "@novaclaw/schema/session-type"
 import { lastRealUserTurn } from "../steer-provenance"
 import type { SessionMessage } from "../message"
 
@@ -9,6 +10,19 @@ import type { SessionMessage } from "../message"
 // agent calling `remember`. Pure helpers here (the runner does the model call + the writes). Idempotent
 // by content hash — re-extracting the same fact collides on id and dedups. Extracted memory is imperfect
 // → always `staged` + provenance (§4.6), never masquerading as curated.
+
+// Durable auto-extraction accepts only an attended, user-authored chat. This table is deliberately
+// exhaustive over the schema's CLOSED session-kind vocabulary: adding a new kind cannot silently
+// inherit permission to write candidates that consolidation may later promote to GLOBAL memory.
+// `auto-prompting` covers heartbeat-style work; Calendar launches scheduled work as `goal-oriented`.
+const DURABLE_MEMORY_BY_SESSION_TYPE = {
+  interactive: true,
+  "sub-agent": false,
+  "auto-prompting": false,
+  "goal-oriented": false,
+} as const satisfies Record<SessionType.Info, boolean>
+
+export const allowsDurableMemory = (type: SessionType.Info): boolean => DURABLE_MEMORY_BY_SESSION_TYPE[type]
 
 // `name` is the graph NODE's identity, so its wording is load-bearing twice over: vague names cannot be
 // linked (stage 2 below picks endpoints from these) and cannot match across sessions. Measured
@@ -57,8 +71,11 @@ export interface Extracted {
   readonly text: string
 }
 
-/** Serialize the latest exchange (the last REAL user message + the assistant text that followed it)
- *  as the extraction input. Undefined if there's no user message to anchor on.
+/** Serialize the latest REAL user message as the extraction input. Undefined if there is no user
+ *  message to anchor on. Assistant output is excluded BY ORIGIN, not by trying to recognize recalled
+ *  prose: the assistant saw auto-recalled memory in its system prompt, so feeding its answer back to
+ *  extraction would let memory manufacture a fresh candidate and eventually a GLOBAL twin. A later
+ *  user assertion is user-authored again and is eligible normally.
  *
  *  ⚠️ B2 — the anchor MUST be the real user, never a harness steer. Steers (doom-loop redirects,
  *  quality nudges, introspection prompts) are stored as `user`-type messages, so anchoring on the
@@ -69,18 +86,7 @@ export interface Extracted {
 export const buildExchange = (context: ReadonlyArray<SessionMessage.Message>): string | undefined => {
   const anchor = lastRealUserTurn(context)
   if (anchor === undefined) return undefined
-  const assistantMessages: string[] = []
-  for (let i = anchor.index + 1; i < context.length; i++) {
-    const message = context[i]!
-    if (message.type !== "assistant") continue
-    const parts: string[] = []
-    for (const part of message.content) if (part.type === "text" && part.text) parts.push(part.text)
-    if (parts.length) assistantMessages.push(parts.join(" ")) // whole message, in forward order
-  }
-  const lines = [`User: ${anchor.text}`]
-  const assistant = assistantMessages.join(" ").replace(/\s+/g, " ").trim()
-  if (assistant) lines.push(`Assistant: ${assistant}`)
-  return lines.join("\n")
+  return `User: ${anchor.text}`
 }
 
 /** Parse the model's output into facts. Tolerant: strips ``` fences and any prose around the JSON

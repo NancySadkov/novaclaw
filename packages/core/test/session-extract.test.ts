@@ -1,20 +1,59 @@
 import { describe, expect, test } from "bun:test"
+import { readFileSync } from "node:fs"
+import path from "node:path"
 import { SessionExtract } from "@novaclaw/core/session/runner/extract"
 import type { SessionMessage } from "@novaclaw/core/session/message"
+import type { SessionType } from "@novaclaw/schema/session-type"
 
 const user = (text: string): SessionMessage.Message => ({ type: "user", text }) as unknown as SessionMessage.Message
 const assistant = (...texts: string[]): SessionMessage.Message =>
   ({ type: "assistant", content: texts.map((text) => ({ type: "text", text })) }) as unknown as SessionMessage.Message
 
 describe("SessionExtract.buildExchange", () => {
-  test("serializes the latest user message + the assistant text that followed it", () => {
+  test("serializes only the latest real user message", () => {
     const ex = SessionExtract.buildExchange([user("old"), assistant("old reply"), user("my name is Nadia"), assistant("Nice to", " meet you")])
-    expect(ex).toBe("User: my name is Nadia\nAssistant: Nice to meet you")
+    expect(ex).toBe("User: my name is Nadia")
   })
   test("no assistant reply yet → just the user line; no user → undefined", () => {
     expect(SessionExtract.buildExchange([user("hi there")])).toBe("User: hi there")
     expect(SessionExtract.buildExchange([assistant("hello")])).toBeUndefined()
     expect(SessionExtract.buildExchange([])).toBeUndefined()
+  })
+})
+
+describe("SessionExtract durable-memory origin policy", () => {
+  const expected = {
+    interactive: true,
+    "sub-agent": false,
+    "auto-prompting": false,
+    "goal-oriented": false,
+  } as const satisfies Record<SessionType.Info, boolean>
+
+  test("permits only interactive sessions; every unattended kind produces zero candidates", () => {
+    for (const [type, allowed] of Object.entries(expected) as Array<[SessionType.Info, boolean]>) {
+      expect(SessionExtract.allowsDurableMemory(type), type).toBe(allowed)
+    }
+  })
+
+  test("memory-influenced assistant output is structurally absent from extraction input", () => {
+    const recalled = "The recalled preference is purple"
+    const exchange = SessionExtract.buildExchange([user("What do I prefer?"), assistant(recalled)])
+    expect(exchange).toBe("User: What do I prefer?")
+    expect(exchange).not.toContain(recalled)
+  })
+
+  test("the runner applies the kind gate before touching memory health or starting model work", () => {
+    const source = readFileSync(path.join(import.meta.dir, "../src/session/runner/llm.ts"), "utf8")
+    const start = source.indexOf('const extractMemory = Effect.fn("SessionRunner.extractMemory")')
+    const end = source.indexOf("const refreshChangesSummary", start)
+    expect(start).toBeGreaterThan(0)
+    expect(end).toBeGreaterThan(start)
+    const body = source.slice(start, end)
+    const gate = body.indexOf("SessionExtract.allowsDurableMemory(config.type)")
+    expect(gate).toBeGreaterThan(0)
+    expect(gate).toBeLessThan(body.indexOf("memory.health()"))
+    expect(gate).toBeLessThan(body.indexOf(".stream("))
+    expect(body).toContain("resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, session.id")
   })
 })
 

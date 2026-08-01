@@ -457,17 +457,22 @@ export const layer = Layer.effect(
       )
 
     // Auto-extraction (kb-graph §1.3.3): after the drain settles, a model pass reads the latest
-    // exchange and records durable facts into SESSION-scope memory (staged) — so memory fills WITHOUT
-    // the agent calling `remember`, and auto-recall surfaces them in future turns. Idempotent by
-    // content hash (re-extraction dedups). Best-effort + gated on the engine being live so a disabled/
-    // still-opening memory costs no model call.
+    // REAL user turn and records durable facts into SESSION-scope memory (staged) — so memory fills
+    // WITHOUT the agent calling `remember`, and auto-recall surfaces them in future turns. Only an
+    // interactive session may enter: sub-agents and scheduled/heartbeat work are proposers, not
+    // durable-memory authorities. Idempotent by content hash (re-extraction dedups). Best-effort +
+    // gated on the engine being live so a disabled/still-opening memory costs no model call.
     const extractMemory = Effect.fn("SessionRunner.extractMemory")(function* (sessionID: SessionSchema.ID) {
+      const session = yield* getSession(sessionID)
+      const config = yield* resolveSessionConfig(EFFECTIVE_CONFIG_DEFAULTS, session.id, (id) =>
+        store.get(id as SessionSchema.ID),
+      )
+      if (!SessionExtract.allowsDurableMemory(config.type)) return
       if (!MemorySetting.memoryEnabled()) return // the user turned memory off — record nothing
       if (!(yield* memory.health())) return
       const exchange = SessionExtract.buildExchange(yield* getContext(sessionID))
       if (!exchange) return
-      const session = yield* getSession(sessionID)
-      const model = yield* models.resolve(session)
+      const model = yield* models.resolve({ ...session, model: config.model as typeof session.model })
       const chunks: string[] = []
       yield* llm
         .stream(
