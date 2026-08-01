@@ -1,8 +1,9 @@
 import { describe, expect } from "bun:test"
 import path from "path"
-import { Effect, Exit, Layer } from "effect"
+import { Effect, Exit, Layer, Logger, References } from "effect"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { CrossSpawnSpawner } from "@novaclaw/core/cross-spawn-spawner"
+import { Logging } from "@novaclaw/core/observability/logging"
 import { Git } from "../../src/git"
 import { Global } from "@novaclaw/core/global"
 import { Storage } from "@/storage/storage"
@@ -239,46 +240,84 @@ describe("Storage", () => {
     }),
   )
 
-  it.live("migration 1 tolerates malformed legacy records", () =>
-    Effect.gen(function* () {
-      const fs = yield* FSUtil.Service
-      const tmp = yield* tmpdirScoped({ git: true })
-      const storage = path.join(tmp, "storage")
-      const legacy = path.join(tmp, "project", "legacy")
+  it.live(
+    "migration 1 tolerates malformed legacy records",
+    () =>
+      Effect.gen(function* () {
+        const fs = yield* FSUtil.Service
+        const tmp = yield* tmpdirScoped({ git: true })
+        const storage = path.join(tmp, "storage")
+        const legacy = path.join(tmp, "project", "legacy")
+        const logLines: string[] = []
+        const capture = Logger.map(Logging.formatter("storage-test"), (line) => logLines.push(line))
 
-      yield* fs.writeWithDirs(path.join(legacy, "storage", "session", "message", "probe", "0.json"), "[]")
-      yield* fs.writeWithDirs(
-        path.join(legacy, "storage", "session", "message", "probe", "1.json"),
-        JSON.stringify({ path: { root: tmp } }),
-      )
-      yield* fs.writeWithDirs(
-        path.join(legacy, "storage", "session", "info", "ses_legacy.json"),
-        JSON.stringify({ id: "ses_legacy", title: "legacy" }),
-      )
-      yield* fs.writeWithDirs(
-        path.join(legacy, "storage", "session", "message", "ses_legacy", "msg_legacy.json"),
-        JSON.stringify({ role: "user", text: "hello" }),
-      )
+        yield* fs.writeWithDirs(path.join(legacy, "storage", "session", "message", "probe", "0.json"), "[]")
+        yield* fs.writeWithDirs(
+          path.join(legacy, "storage", "session", "message", "probe", "1.json"),
+          JSON.stringify({ path: { root: tmp } }),
+        )
+        yield* fs.writeWithDirs(
+          path.join(legacy, "storage", "session", "info", "ses_legacy.json"),
+          JSON.stringify({ id: "ses_legacy", title: "legacy" }),
+        )
+        yield* fs.writeWithDirs(
+          path.join(legacy, "storage", "session", "message", "ses_legacy", "msg_legacy.json"),
+          JSON.stringify({ id: "msg_legacy", role: "user", text: "hello" }),
+        )
+        yield* fs.writeWithDirs(
+          path.join(legacy, "storage", "session", "part", "ses_legacy", "msg_legacy", "prt_legacy.json"),
+          JSON.stringify({ id: "prt_legacy", type: "text", text: "hello" }),
+        )
 
-      yield* Effect.gen(function* () {
-        const svc = yield* Storage.Service
-        const projects = yield* svc.list(["project"])
-        expect(projects).toHaveLength(1)
-        const project = projects[0]![1]
+        yield* Effect.gen(function* () {
+          const svc = yield* Storage.Service
+          const projects = yield* svc.list(["project"])
+          expect(projects).toHaveLength(1)
+          const project = projects[0]![1]
 
-        expect(yield* svc.list(["session", project])).toEqual([["session", project, "ses_legacy"]])
-        expect(yield* svc.read<{ id: string; title: string }>(["session", project, "ses_legacy"])).toEqual({
-          id: "ses_legacy",
-          title: "legacy",
-        })
-        expect(yield* svc.read<{ role: string; text: string }>(["message", "ses_legacy", "msg_legacy"])).toEqual({
-          role: "user",
-          text: "hello",
-        })
-      }).pipe(Effect.provide(remappedStorage(tmp)))
+          expect(yield* svc.list(["session", project])).toEqual([["session", project, "ses_legacy"]])
+          expect(yield* svc.read<{ id: string; title: string }>(["session", project, "ses_legacy"])).toEqual({
+            id: "ses_legacy",
+            title: "legacy",
+          })
+          expect(
+            yield* svc.read<{ id: string; role: string; text: string }>(["message", "ses_legacy", "msg_legacy"]),
+          ).toEqual({
+            id: "msg_legacy",
+            role: "user",
+            text: "hello",
+          })
+          expect(
+            yield* svc.read<{ id: string; type: string; text: string }>(["part", "msg_legacy", "prt_legacy"]),
+          ).toEqual({
+            id: "prt_legacy",
+            type: "text",
+            text: "hello",
+          })
+        }).pipe(
+          Effect.provide(remappedStorage(tmp)),
+          Effect.provide(Logger.layer([capture], { mergeWithExisting: false })),
+          Effect.provideService(References.MinimumLogLevel, "Info"),
+        )
 
-      expect(yield* fs.readFileString(path.join(storage, "migration"))).toBe("2")
-    }),
+        expect(yield* fs.readFileString(path.join(storage, "migration"))).toBe("2")
+        expect(
+          logLines
+            .map((line) => line.match(/event=(storage\.[^ ]+)/)?.[1])
+            .filter((event): event is string => event !== undefined),
+        ).toEqual([
+          "storage.migration.run",
+          "storage.project.migrate",
+          "storage.session.migrate",
+          "storage.session.copy",
+          "storage.message.migrate",
+          "storage.message.copy",
+          "storage.part.migrate",
+          "storage.part.copy",
+          "storage.migration.run",
+        ])
+      }),
+    { timeout: 10_000 },
   )
 
   it.live("failed migrations do not advance the marker", () =>
@@ -287,16 +326,26 @@ describe("Storage", () => {
       const tmp = yield* tmpdirScoped()
       const storage = path.join(tmp, "storage")
       const legacy = path.join(tmp, "project", "legacy")
+      const logLines: string[] = []
+      const capture = Logger.map(Logging.formatter("storage-test"), (line) => logLines.push(line))
 
       yield* fs.writeWithDirs(path.join(legacy, "storage", "session", "message", "probe", "0.json"), "{")
 
       yield* Effect.gen(function* () {
         const svc = yield* Storage.Service
         expect(yield* svc.list(["project"])).toEqual([])
-      }).pipe(Effect.provide(remappedStorage(tmp)))
+      }).pipe(
+        Effect.provide(remappedStorage(tmp)),
+        Effect.provide(Logger.layer([capture], { mergeWithExisting: false })),
+        Effect.provideService(References.MinimumLogLevel, "Info"),
+      )
 
       const exit = yield* fs.access(path.join(storage, "migration")).pipe(Effect.exit)
       expect(Exit.isFailure(exit)).toBe(true)
+      const failure = logLines.find((line) => line.includes("event=storage.migration.run.failed"))
+      expect(failure).toContain("level=ERROR")
+      expect(failure).toContain("storage.index=0")
+      expect(failure).toContain("storage.cause=")
     }),
   )
 })

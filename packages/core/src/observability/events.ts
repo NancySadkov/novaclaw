@@ -95,6 +95,7 @@ export const SUBSYSTEMS = {
   resource: "Host resources",
   server: "HTTP server",
   skill: "Skills",
+  storage: "Storage migrations",
 } as const
 
 /** The subsystem a key's first segment must name. */
@@ -401,6 +402,80 @@ export const EVENTS = {
     attributes: { count: "count" },
     content: "none",
     file: "packages/novaclaw/src/skill/index.ts",
+  },
+
+  // ── storage ───────────────────────────────────────────────────────────────────────────────────
+  /** A legacy message document is copied into the current layout. */
+  "storage.message.copy": {
+    level: "info",
+    message: "copying",
+    attributes: { "storage.source": "path", "storage.destination": "path" },
+    content: "user",
+    file: "packages/novaclaw/src/storage/storage.ts",
+  },
+  /** Migration is about to copy the messages belonging to one session. */
+  "storage.message.migrate": {
+    level: "info",
+    message: "migrating messages for session",
+    attributes: { "storage.session": "id" },
+    content: "none",
+    file: "packages/novaclaw/src/storage/storage.ts",
+  },
+  /** One numbered migration is starting. */
+  "storage.migration.run": {
+    level: "info",
+    message: "running migration",
+    attributes: { "storage.index": "count" },
+    content: "none",
+    file: "packages/novaclaw/src/storage/storage.ts",
+  },
+  /** A numbered migration failed and later migrations will not run. */
+  "storage.migration.run.failed": {
+    level: "error",
+    message: "failed to run migration",
+    attributes: { "storage.index": "count", "storage.cause": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/storage/storage.ts",
+  },
+  /** A legacy part document is copied into the current layout. */
+  "storage.part.copy": {
+    level: "info",
+    message: "copying",
+    attributes: { "storage.source": "path", "storage.destination": "path" },
+    content: "user",
+    file: "packages/novaclaw/src/storage/storage.ts",
+  },
+  /** Migration is about to copy the parts belonging to one message. */
+  "storage.part.migrate": {
+    level: "info",
+    message: "migrating parts for message",
+    attributes: { "storage.message": "id" },
+    content: "none",
+    file: "packages/novaclaw/src/storage/storage.ts",
+  },
+  /** One legacy project directory is being inspected and migrated. */
+  "storage.project.migrate": {
+    level: "info",
+    message: "migrating project",
+    attributes: { "storage.legacy_project": "path" },
+    content: "user",
+    file: "packages/novaclaw/src/storage/storage.ts",
+  },
+  /** A legacy session document is copied into the current layout. */
+  "storage.session.copy": {
+    level: "info",
+    message: "copying",
+    attributes: { "storage.source": "path", "storage.destination": "path" },
+    content: "user",
+    file: "packages/novaclaw/src/storage/storage.ts",
+  },
+  /** Migration is about to copy the sessions belonging to one project. */
+  "storage.session.migrate": {
+    level: "info",
+    message: "migrating sessions for project",
+    attributes: { "storage.project": "id" },
+    content: "none",
+    file: "packages/novaclaw/src/storage/storage.ts",
   },
 } as const satisfies Record<string, EventDeclaration>
 

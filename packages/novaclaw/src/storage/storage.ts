@@ -3,8 +3,9 @@ import path from "path"
 import { Global } from "@novaclaw/core/global"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
-import { Effect, Exit, Layer, Option, RcMap, Schema, Context, TxReentrantLock } from "effect"
+import { Cause, Effect, Exit, Layer, Option, RcMap, Schema, Context, TxReentrantLock } from "effect"
 import { NonNegativeInt } from "@novaclaw/core/schema"
+import { Log } from "@novaclaw/core/observability/log"
 import { Git } from "@/git"
 import { Pressure } from "./pressure"
 
@@ -101,7 +102,7 @@ const MIGRATIONS: Migration[] = [
     for (const projectDir of projectDirs) {
       const full = path.join(project, projectDir)
       if (!(yield* fs.isDir(full))) continue
-      yield* Effect.logInfo(`migrating project ${projectDir}`)
+      yield* Log.event("storage.project.migrate", { "storage.legacy_project": projectDir })
       let projectID = projectDir
       let worktree = "/"
 
@@ -147,42 +148,45 @@ const MIGRATIONS: Migration[] = [
           ),
         )
 
-        yield* Effect.logInfo(`migrating sessions for project ${projectID}`)
+        yield* Log.event("storage.session.migrate", { "storage.project": projectID })
         for (const sessionFile of yield* fs.glob("storage/session/info/*.json", {
           cwd: full,
           absolute: true,
         })) {
           const dest = path.join(dir, "session", projectID, path.basename(sessionFile))
-          yield* Effect.logInfo("copying", { sessionFile, dest })
+          yield* Log.event("storage.session.copy", {
+            "storage.source": sessionFile,
+            "storage.destination": dest,
+          })
           const session = yield* fs.readJson(sessionFile)
           const info = decodeSession(session, { onExcessProperty: "preserve" })
           yield* fs.writeWithDirs(dest, JSON.stringify(session, null, 2))
           if (Option.isNone(info)) continue
-          yield* Effect.logInfo(`migrating messages for session ${info.value.id}`)
+          yield* Log.event("storage.message.migrate", { "storage.session": info.value.id })
           for (const msgFile of yield* fs.glob(`storage/session/message/${info.value.id}/*.json`, {
             cwd: full,
             absolute: true,
           })) {
             const next = path.join(dir, "message", info.value.id, path.basename(msgFile))
-            yield* Effect.logInfo("copying", {
-              msgFile,
-              dest: next,
+            yield* Log.event("storage.message.copy", {
+              "storage.source": msgFile,
+              "storage.destination": next,
             })
             const message = yield* fs.readJson(msgFile)
             const item = decodeMessage(message, { onExcessProperty: "preserve" })
             yield* fs.writeWithDirs(next, JSON.stringify(message, null, 2))
             if (Option.isNone(item)) continue
 
-            yield* Effect.logInfo(`migrating parts for message ${item.value.id}`)
+            yield* Log.event("storage.part.migrate", { "storage.message": item.value.id })
             for (const partFile of yield* fs.glob(`storage/session/part/${info.value.id}/${item.value.id}/*.json`, {
               cwd: full,
               absolute: true,
             })) {
               const out = path.join(dir, "part", item.value.id, path.basename(partFile))
               const part = yield* fs.readJson(partFile)
-              yield* Effect.logInfo("copying", {
-                partFile,
-                dest: out,
+              yield* Log.event("storage.part.copy", {
+                "storage.source": partFile,
+                "storage.destination": out,
               })
               yield* fs.writeWithDirs(out, JSON.stringify(part, null, 2))
             }
@@ -242,11 +246,14 @@ export const layer = Layer.effect(
           Effect.orElseSucceed(() => 0),
         )
         for (let i = migration; i < MIGRATIONS.length; i++) {
-          yield* Effect.logInfo("running migration", { index: i })
+          yield* Log.event("storage.migration.run", { "storage.index": i })
           const step = MIGRATIONS[i]!
           const exit = yield* Effect.exit(step(dir, fs, git))
           if (Exit.isFailure(exit)) {
-            yield* Effect.logError("failed to run migration", { index: i, cause: exit.cause })
+            yield* Log.event("storage.migration.run.failed", {
+              "storage.index": i,
+              "storage.cause": Cause.pretty(exit.cause),
+            })
             break
           }
           yield* fs.writeWithDirs(marker, String(i + 1))

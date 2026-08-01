@@ -756,34 +756,6 @@
     "count": 1
   },
   {
-    "name": "packages/novaclaw/src/storage/storage.ts :: Effect.logError(\"failed to run migration\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/storage/storage.ts :: Effect.logInfo(\"copying\")",
-    "count": 3
-  },
-  {
-    "name": "packages/novaclaw/src/storage/storage.ts :: Effect.logInfo(\"running migration\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/storage/storage.ts :: Effect.logInfo(`migrating messages for session ${info.value.id}`)",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/storage/storage.ts :: Effect.logInfo(`migrating parts for message ${item.value.id}`)",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/storage/storage.ts :: Effect.logInfo(`migrating project ${projectDir}`)",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/storage/storage.ts :: Effect.logInfo(`migrating sessions for project ${projectID}`)",
-    "count": 1
-  },
-  {
     "name": "packages/novaclaw/src/tool/external-tool-source.ts :: Effect.logDebug(\"could not scan config dir for retired tool files \" + dir + \": \" + String(error))",
     "count": 1
   },
