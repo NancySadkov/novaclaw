@@ -69,8 +69,8 @@
  * The seed is deliberately SMALL and it is not the finished vocabulary. It covers the seven message
  * strings that are 69% of every line in the real log (§0.3), plus the three sites `todo/logging.md`
  * §0.4 names as already-broken. Item 1b grows it subsystem by subsystem as it converts call sites;
- * this file ships with the wrapper UNUSED, on purpose, so that the type and its checks can be
- * reviewed apart from a ~230-site mechanical diff.
+ * the wrapper and registry shipped separately from that migration, and `mcp.server.output` became
+ * the first converted site only after the shrink-only source ledger was in force.
  */
 
 /**
@@ -170,11 +170,11 @@ export type EventDeclaration = {
  * on the line TWICE, and duplicate keys break the naive `grep`/`cut` mining that is this whole
  * item's requirement.
  *
- * ⚠️ **This is a live defect, not a hypothetical.** Measured 2026-07-31 over every package source
- * tree: **39 single-line `Effect.log` sites pass a field named `cause` (36) or `message` (3)**, and the
- * MCP relay's multi-line field object passes `level` — so it emits `level=INFO … level=error` on one
- * line today. The fix is namespacing (`mcp.level`, `server.cause`), which is 1b's job; declaring the
- * reserved set here is what makes the fix expressible and stops the next one being added.
+ * ⚠️ **This was measured as a live defect, not invented.** On 2026-07-31, 39 single-line
+ * `Effect.log` sites passed a field named `cause` (36) or `message` (3), and the MCP relay's
+ * multi-line field object passed `level`, emitting `level=INFO … level=error` on one line. The MCP
+ * collision is now fixed as `mcp.level`; the remaining names are 1b migration work. Declaring the
+ * reserved set here makes every conversion prove its fix and stops the next collision being added.
  */
 export const RESERVED_ATTRIBUTES: ReadonlyArray<string> = ["timestamp", "level", "run", "event", "message", "cause"]
 
@@ -277,10 +277,10 @@ export const EVENTS = {
   /**
    * An MCP server relayed a log record of its own.
    *
-   * ⚠️ Fix 1d, declared. Today this one sentence is logged at all four of OUR levels depending on
-   * what the foreign server said, so a stranger's `debug` print competes with our faults for the
-   * operator's attention. Here the foreign severity is an ATTRIBUTE (`mcp.level`) under one key at
-   * one level, and the namespacing also lifts it off the line's own `level=` column.
+   * Fix 1d, shipped: this sentence used to be logged at all four of OUR levels depending on what the
+   * foreign server said, so a stranger's output could compete with our faults for the operator's
+   * attention. The foreign severity is now an ATTRIBUTE (`mcp.level`) under one key at one level,
+   * and the namespacing also lifts it off the line's own `level=` column.
    */
   "mcp.server.output": {
     level: "info",

@@ -484,16 +484,8 @@
     "count": 1
   },
   {
-    "name": "packages/novaclaw/src/mcp/index.ts :: Effect.logDebug(\"MCP server log\")",
-    "count": 1
-  },
-  {
     "name": "packages/novaclaw/src/mcp/index.ts :: Effect.logError(\"Ignoring MCP config entry without type\")",
     "count": 2
-  },
-  {
-    "name": "packages/novaclaw/src/mcp/index.ts :: Effect.logError(\"MCP server log\")",
-    "count": 1
   },
   {
     "name": "packages/novaclaw/src/mcp/index.ts :: Effect.logError(`failed to ${label}`)",
@@ -508,19 +500,11 @@
     "count": 1
   },
   {
-    "name": "packages/novaclaw/src/mcp/index.ts :: Effect.logInfo(\"MCP server log\")",
-    "count": 1
-  },
-  {
     "name": "packages/novaclaw/src/mcp/index.ts :: Effect.logInfo(\"MCP server removed by a config write\")",
     "count": 1
   },
   {
     "name": "packages/novaclaw/src/mcp/index.ts :: Effect.logWarning(\"MCP connection closed\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/mcp/index.ts :: Effect.logWarning(\"MCP server log\")",
     "count": 1
   },
   {

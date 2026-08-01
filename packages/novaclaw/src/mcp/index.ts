@@ -32,6 +32,7 @@ import { withTimeout } from "@/util/timeout"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { Global } from "@novaclaw/core/global"
 import { Offline } from "@novaclaw/core/offline"
+import { Log } from "@novaclaw/core/observability/log"
 import { Shell } from "@novaclaw/core/shell"
 import { McpOAuthPendingProvider, McpOAuthProvider, OAUTH_CALLBACK_PATH } from "./oauth-provider"
 import { McpOAuthCallback } from "./oauth-callback"
@@ -80,6 +81,20 @@ export class NotFoundError extends Schema.TaggedErrorClass<NotFoundError>()("MCP
 }) {}
 
 type MCPClient = Client
+
+/**
+ * Relay a foreign server's record under one of OUR event keys and one of OUR severities.
+ * The server's own level is data, not authority to promote its debug output into our error stream.
+ */
+export function serverLog(name: string, params: LoggingMessageNotification["params"]) {
+  const data = typeof params.data === "string" ? params.data : (JSON.stringify(params.data) ?? String(params.data))
+  return Log.event("mcp.server.output", {
+    server: name,
+    "mcp.logger": params.logger ?? "",
+    "mcp.level": params.level,
+    "mcp.data": data,
+  })
+}
 
 function createClient(directory: string) {
   const client = new Client({ name: "novaclaw", version: InstallationVersion }, CLIENT_OPTIONS)
@@ -637,24 +652,6 @@ export const layer = Layer.effect(
         s.defs[name] = listed
         await bridge.promise(events.publish(ToolsChanged, { server: name }).pipe(Effect.ignore))
       })
-    }
-
-    function serverLog(name: string, params: LoggingMessageNotification["params"]) {
-      const fields = { server: name, logger: params.logger, level: params.level, data: params.data }
-      switch (params.level) {
-        case "debug":
-          return Effect.logDebug("MCP server log", fields)
-        case "info":
-        case "notice":
-          return Effect.logInfo("MCP server log", fields)
-        case "warning":
-          return Effect.logWarning("MCP server log", fields)
-        case "error":
-        case "critical":
-        case "alert":
-        case "emergency":
-          return Effect.logError("MCP server log", fields)
-      }
     }
 
     // ⚠️ `InstanceState.make`, NEVER `makeRematerializable` — and the finalizer below is the whole

@@ -137,7 +137,7 @@ describe("attributes cannot shadow the line's own columns", () => {
 
   test("the shadow check bites (negative control)", () => {
     // The live tree is clean because this file existed before the keys did. Drive the same function
-    // over the shape that is NOT clean: the MCP relay passes a bare `level` today.
+    // over the shape that is NOT clean: the MCP relay passed a bare `level` before fix 1d.
     const synthetic: EventDeclaration = {
       level: "info",
       message: "MCP server log",
@@ -391,10 +391,10 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     //     raw call emits that column twice. Three live sites pass a field named `message`.
     const raw = lines(Effect.logInfo("first", "second"))[0]
     expect(columns(raw ?? "").filter((name) => name === "message")).toHaveLength(2)
-    // (2) A FIELD may collide with one of the line's own columns. This is the exact shape of the MCP
-    //     relay (`novaclaw/src/mcp/index.ts`, `serverLog`), which passes a bare `level` carrying the
-    //     foreign server's severity — so its line says `level=INFO … level=error`, and a naive
-    //     `grep -o 'level=[^ ]*'` gets two answers. 36 further sites do the same with `cause`.
+    // (2) A FIELD may collide with one of the line's own columns. This reproduces the retired MCP
+    //     relay shape: a bare `level` carrying the foreign server's severity made the line say
+    //     `level=INFO … level=error`, so a naive `grep -o 'level=[^ ]*'` got two answers. Fix 1d now
+    //     emits `mcp.level`; 36 further raw sites still collide with `cause` until their 1b passes.
     //     RESERVED_ATTRIBUTES is what stops a DECLARED key ever reaching this state.
     const shadowed = lines(Effect.logInfo("MCP server log", { server: "s", level: "error" }))[0]
     expect(columns(shadowed ?? "").filter((name) => name === "level")).toHaveLength(2)
@@ -402,7 +402,7 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     expect(shadowed).toContain("level=error")
   })
 
-  test("an UN-keyed record is untouched — the 233 existing call sites are not affected", () => {
+  test("an UN-keyed record is untouched — the 229 remaining call sites are not affected", () => {
     // 1a adds a column; it takes nothing away and rewrites nothing. This is the assertion that says
     // the wrapper is a column rather than a second system.
     const [line] = lines(Effect.logInfo("watcher backend", { directory: "/tmp/x", backend: "parcel" }))
