@@ -212,22 +212,6 @@
     "count": 1
   },
   {
-    "name": "packages/novaclaw/src/worktree/index.ts :: Effect.logError(\"worktree bootstrap failed\")",
-    "count": 2
-  },
-  {
-    "name": "packages/novaclaw/src/worktree/index.ts :: Effect.logError(\"worktree checkout failed\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/worktree/index.ts :: Effect.logError(\"worktree start command failed\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/worktree/index.ts :: Effect.logError(\"worktree start task failed\")",
-    "count": 1
-  },
-  {
     "name": "packages/server/src/handlers/message.ts :: Effect.logError(\"failed to decode session message\")",
     "count": 1
   },

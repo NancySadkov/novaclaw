@@ -9,13 +9,14 @@ import { Slug } from "@novaclaw/core/util/slug"
 import { errorMessage } from "../util/error"
 import { GlobalBus } from "@/bus/global"
 import { Git } from "@/git"
-import { Effect, Layer, Path, Schema, Scope, Context } from "effect"
+import { Cause, Effect, Layer, Path, Schema, Scope, Context } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { NodePath } from "@effect/platform-node"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { AppProcess } from "@novaclaw/core/process"
 import { InstanceState } from "@/effect/instance-state"
 import { WorktreeEvent } from "@novaclaw/schema/worktree-event"
+import { Log } from "@novaclaw/schema/log"
 
 export const Event = WorktreeEvent
 
@@ -232,7 +233,10 @@ export const layer: Layer.Layer<
       const populated = yield* git(["reset", "--hard"], { cwd: info.directory })
       if (populated.code !== 0) {
         const message = populated.stderr || populated.text || "Failed to populate worktree"
-        yield* Effect.logError("worktree checkout failed", { directory: info.directory, message })
+        yield* Log.event("worktree.checkout.failed", {
+          "worktree.directory": info.directory,
+          "worktree.cause": message,
+        })
         GlobalBus.emit("event", {
           directory: info.directory,
           project: ctx.origin,
@@ -247,7 +251,10 @@ export const layer: Layer.Layer<
         Effect.catch((error) =>
           Effect.gen(function* () {
             const message = errorMessage(error)
-            yield* Effect.logError("worktree bootstrap failed", { directory: info.directory, message })
+            yield* Log.event("worktree.bootstrap.load.failed", {
+              "worktree.directory": info.directory,
+              "worktree.cause": message,
+            })
             GlobalBus.emit("event", {
               directory: info.directory,
               project: ctx.origin,
@@ -276,7 +283,12 @@ export const layer: Layer.Layer<
     const createFromInfo = Effect.fn("Worktree.createFromInfo")(function* (info: Info, startCommand?: string) {
       yield* setup(info)
       yield* boot(info, startCommand).pipe(
-        Effect.catchCause((cause) => Effect.logError("worktree bootstrap failed", { cause })),
+        Effect.catchCause((cause) =>
+          Log.event("worktree.bootstrap.run.failed", {
+            "worktree.directory": info.directory,
+            "worktree.cause": Cause.pretty(cause),
+          }),
+        ),
         Effect.forkIn(scope),
       )
     })
@@ -469,7 +481,11 @@ export const layer: Layer.Layer<
       if (!text) return true
       const result = yield* runStartCommand(directory, text)
       if (result.code === 0) return true
-      yield* Effect.logError("worktree start command failed", { kind, directory, message: result.stderr })
+      yield* Log.event("worktree.start.command.failed", {
+        "worktree.start.kind": kind,
+        "worktree.directory": directory,
+        "worktree.cause": result.stderr,
+      })
       return false
     })
 
@@ -587,7 +603,12 @@ export const layer: Layer.Layer<
       }
 
       yield* runStartScripts(worktreePath, {}).pipe(
-        Effect.catchCause((cause) => Effect.logError("worktree start task failed", { cause })),
+        Effect.catchCause((cause) =>
+          Log.event("worktree.start.task.failed", {
+            "worktree.directory": worktreePath,
+            "worktree.cause": Cause.pretty(cause),
+          }),
+        ),
         Effect.forkIn(scope),
       )
 

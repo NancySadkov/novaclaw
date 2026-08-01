@@ -104,6 +104,7 @@ export const SUBSYSTEMS = {
   snapshot: "Snapshots",
   storage: "Storage migrations",
   tool: "Tools",
+  worktree: "Worktrees",
   workspace: "Remote workspaces",
 } as const
 
@@ -1472,6 +1473,48 @@ export const EVENTS = {
     attributes: { "tool.cause": "fault" },
     content: "user",
     file: "packages/novaclaw/src/tool/truncate.ts",
+  },
+
+  // ── worktree ──────────────────────────────────────────────────────────────────────────────────
+  /** A populated worktree could not load its instance. */
+  "worktree.bootstrap.load.failed": {
+    level: "error",
+    message: "worktree bootstrap failed",
+    attributes: { "worktree.directory": "path", "worktree.cause": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/worktree/index.ts",
+  },
+  /** A new worktree could not populate its checkout. */
+  "worktree.checkout.failed": {
+    level: "error",
+    message: "worktree checkout failed",
+    attributes: { "worktree.directory": "path", "worktree.cause": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/worktree/index.ts",
+  },
+  /** The asynchronous worktree boot task failed outside its handled stages. */
+  "worktree.bootstrap.run.failed": {
+    level: "error",
+    message: "worktree bootstrap failed",
+    attributes: { "worktree.directory": "path", "worktree.cause": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/worktree/index.ts",
+  },
+  /** An explicitly configured worktree start command exited non-zero. */
+  "worktree.start.command.failed": {
+    level: "error",
+    message: "worktree start command failed",
+    attributes: { "worktree.start.kind": "id", "worktree.directory": "path", "worktree.cause": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/worktree/index.ts",
+  },
+  /** The asynchronous worktree reset start task failed unexpectedly. */
+  "worktree.start.task.failed": {
+    level: "error",
+    message: "worktree start task failed",
+    attributes: { "worktree.directory": "path", "worktree.cause": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/worktree/index.ts",
   },
 
   // ── workspace ─────────────────────────────────────────────────────────────────────────────────
