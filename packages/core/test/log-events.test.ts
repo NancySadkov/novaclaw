@@ -504,7 +504,21 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     expect(mayEgress("config.remote.fetch")).toBe(false)
   })
 
-  test("an UN-keyed record is untouched — the 88 remaining call sites are not affected", () => {
+  test("watcher fallback records both attempted and still-active ignore lists", () => {
+    const [line] = lines(
+      Log.event("filesystem.watcher.resubscribe.stale", {
+        directory: "/private/project",
+        "filesystem.ignore.attempted": '["new/**"]',
+        "filesystem.ignore.active": '["old/**"]',
+      }),
+    )
+    expect(line).toContain("event=filesystem.watcher.resubscribe.stale")
+    expect(line).toContain("filesystem.ignore.attempted=")
+    expect(line).toContain("filesystem.ignore.active=")
+    expect(mayEgress("filesystem.watcher.resubscribe.stale")).toBe(false)
+  })
+
+  test("an UN-keyed record is untouched — the 81 remaining call sites are not affected", () => {
     // 1a adds a column; it takes nothing away and rewrites nothing. This is the assertion that says
     // the wrapper is a column rather than a second system.
     const [line] = lines(Effect.logInfo("watcher backend", { directory: "/tmp/x", backend: "parcel" }))

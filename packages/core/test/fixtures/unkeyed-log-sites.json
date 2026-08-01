@@ -32,34 +32,6 @@
     "count": 2
   },
   {
-    "name": "packages/core/src/filesystem/watcher.ts :: Effect.logError(\"failed to init watcher service\")",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/filesystem/watcher.ts :: Effect.logError(\"failed to subscribe\")",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/filesystem/watcher.ts :: Effect.logError(\"watcher backend not supported\")",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/filesystem/watcher.ts :: Effect.logError(\"watcher: failed to release a subscription\")",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/filesystem/watcher.ts :: Effect.logError(\"watcher: re-subscribe failed — the PREVIOUS ignore list is still in force\")",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/filesystem/watcher.ts :: Effect.logError(\"watcher: re-subscribe failed\")",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/filesystem/watcher.ts :: Effect.logInfo(\"watcher backend\")",
-    "count": 1
-  },
-  {
     "name": "packages/core/src/jh/store.ts :: Effect.logWarning(\"jh artifact body over the size cap — refused, not truncated\")",
     "count": 1
   },

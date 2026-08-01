@@ -300,6 +300,42 @@ export const EVENTS = {
   },
 
   // ── filesystem ────────────────────────────────────────────────────────────────────────────────
+  /** The watcher service could not initialize and the location continues without file events. */
+  "filesystem.watcher.init.failed": {
+    level: "error",
+    message: "failed to init watcher service",
+    attributes: { "filesystem.cause": "fault" },
+    content: "user",
+    file: "packages/core/src/filesystem/watcher.ts",
+  },
+  /** A live OS watcher subscription could not be released during reconciliation. */
+  "filesystem.watcher.release.failed": {
+    level: "error",
+    message: "watcher: failed to release a subscription",
+    attributes: { directory: "path", "filesystem.cause": "fault" },
+    content: "user",
+    file: "packages/core/src/filesystem/watcher.ts",
+  },
+  /** Reconciliation itself failed before it could settle all watcher subscriptions. */
+  "filesystem.watcher.resubscribe.failed": {
+    level: "error",
+    message: "watcher: re-subscribe failed",
+    attributes: { directory: "path", "filesystem.cause": "fault" },
+    content: "user",
+    file: "packages/core/src/filesystem/watcher.ts",
+  },
+  /** A replacement subscription failed, so the prior ignore list remains authoritative. */
+  "filesystem.watcher.resubscribe.stale": {
+    level: "error",
+    message: "watcher: re-subscribe failed — the PREVIOUS ignore list is still in force",
+    attributes: {
+      directory: "path",
+      "filesystem.ignore.attempted": "text",
+      "filesystem.ignore.active": "text",
+    },
+    content: "user",
+    file: "packages/core/src/filesystem/watcher.ts",
+  },
   /** Which watcher backend a location got. The single most frequent line in the corpus (1511). */
   "filesystem.watcher.start": {
     level: "info",
@@ -313,6 +349,14 @@ export const EVENTS = {
     level: "error",
     message: "watcher backend not supported",
     attributes: { directory: "path", platform: "id" },
+    content: "user",
+    file: "packages/core/src/filesystem/watcher.ts",
+  },
+  /** The OS watcher backend could not establish a subscription for one directory. */
+  "filesystem.watcher.subscribe.failed": {
+    level: "error",
+    message: "failed to subscribe",
+    attributes: { directory: "path", "filesystem.cause": "fault" },
     content: "user",
     file: "packages/core/src/filesystem/watcher.ts",
   },

@@ -16,6 +16,7 @@ import { Location } from "../location"
 import { lazy } from "../util/lazy"
 import { Ignore } from "./ignore"
 import { Protected } from "./protected"
+import { Log } from "@novaclaw/schema/log"
 
 declare const NOVACLAW_LIBC: string | undefined
 
@@ -142,7 +143,7 @@ export const layer = Layer.effect(
     const backend = getBackend()
     const location = yield* Location.Service
     if (!backend) {
-      yield* Effect.logError("watcher backend not supported", {
+      yield* Log.event("filesystem.watcher.start.unsupported", {
         directory: location.directory,
         platform: process.platform,
       })
@@ -152,7 +153,11 @@ export const layer = Layer.effect(
     const w = binding()
     if (!w) return Service.of({})
 
-    yield* Effect.logInfo("watcher backend", { directory: location.directory, platform: process.platform, backend })
+    yield* Log.event("filesystem.watcher.start", {
+      directory: location.directory,
+      platform: process.platform,
+      backend,
+    })
     const events = yield* EventV2.Service
     const fs = yield* FSUtil.Service
     const git = yield* Git.Service
@@ -194,7 +199,10 @@ export const layer = Layer.effect(
             // The timeout arm can still be handed a subscription later — release it rather than
             // letting an OS watch nobody tracks outlive the process's interest in it.
             pending.then((subscription) => subscription.unsubscribe()).catch(() => {})
-            return Effect.logError("failed to subscribe", { directory, cause: Cause.pretty(cause) }).pipe(
+            return Log.event("filesystem.watcher.subscribe.failed", {
+              directory,
+              "filesystem.cause": Cause.pretty(cause),
+            }).pipe(
               Effect.as(undefined),
             )
           }),
@@ -219,7 +227,10 @@ export const layer = Layer.effect(
             : // Ruling 2 — an unavailable subsystem names itself. A watch we failed to release is an
               // OS resource still delivering events into a dead callback; silence here is how that
               // becomes an unexplained event storm later.
-              Effect.logError("watcher: failed to release a subscription", { directory, cause: String(cause) }),
+              Log.event("filesystem.watcher.release.failed", {
+                directory,
+                "filesystem.cause": String(cause),
+              }),
         ),
       )
 
@@ -289,10 +300,13 @@ export const layer = Layer.effect(
           // UI stops seeing file changes entirely, and nothing would ever re-establish it because
           // the next reload with an unchanged config finds nothing to do. So we keep it and say so
           // loudly, naming which ignore list is actually in force.
-          yield* Effect.logError("watcher: re-subscribe failed — the PREVIOUS ignore list is still in force", {
+          yield* Log.event("filesystem.watcher.resubscribe.stale", {
             directory,
-            attempted: item.ignore,
-            inForce: current === undefined ? "nothing — this directory is not being watched" : current.ignore,
+            "filesystem.ignore.attempted": JSON.stringify(item.ignore),
+            "filesystem.ignore.active":
+              current === undefined
+                ? "nothing — this directory is not being watched"
+                : JSON.stringify(current.ignore),
           })
           continue
         }
@@ -344,9 +358,9 @@ export const layer = Layer.effect(
     const refresh = gate.withPermit(Effect.suspend(() => (disposed ? Effect.void : reconcile()))).pipe(
       Effect.catchCause((cause) =>
         // One location's failure must never abort the config write that fanned out to it.
-        Effect.logError("watcher: re-subscribe failed", {
+        Log.event("filesystem.watcher.resubscribe.failed", {
           directory: location.directory,
-          cause: Cause.pretty(cause),
+          "filesystem.cause": Cause.pretty(cause),
         }),
       ),
     )
@@ -378,7 +392,7 @@ export const layer = Layer.effect(
     return Service.of({})
   }).pipe(
     Effect.catchCause((cause) => {
-      return Effect.logError("failed to init watcher service", { cause: Cause.pretty(cause) }).pipe(
+      return Log.event("filesystem.watcher.init.failed", { "filesystem.cause": Cause.pretty(cause) }).pipe(
         Effect.as(Service.of({})),
       )
     }),
