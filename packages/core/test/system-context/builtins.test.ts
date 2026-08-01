@@ -11,6 +11,8 @@ import { SystemContext } from "@novaclaw/core/system-context"
 import { Shell } from "@novaclaw/core/shell"
 import { SystemContextBuiltIns } from "@novaclaw/core/system-context/builtins"
 import { SystemContextRegistry } from "@novaclaw/core/system-context/registry"
+import { ResourcePressureContext } from "@novaclaw/core/resource-pressure-context"
+import { makeGlobalNode } from "@novaclaw/core/effect/app-node"
 import { location } from "../fixture/location"
 import { testEffect } from "../lib/effect"
 
@@ -54,6 +56,22 @@ const itWithInstructions = testEffect(
     [Global.node, Global.layerWith({ config: "/global" })],
   ]),
 )
+let resourceLines: ReadonlyArray<string> = ["Resource pressure: ok."]
+const resourcePressureNode = makeGlobalNode({
+  service: ResourcePressureContext.Service,
+  layer: Layer.succeed(
+    ResourcePressureContext.Service,
+    ResourcePressureContext.Service.of({ lines: () => Effect.sync(() => resourceLines) }),
+  ),
+  deps: [],
+})
+const itWithResourcePressure = testEffect(
+  AppNodeBuilder.build(builtInsNode, [
+    [Location.node, locationLayer],
+    [Global.node, Global.layerWith({ config: "/global" })],
+    [ResourcePressureContext.node, resourcePressureNode],
+  ]),
+)
 
 describe("SystemContextBuiltIns", () => {
   it.effect("loads location-scoped environment and host-local date context", () =>
@@ -72,11 +90,29 @@ describe("SystemContextBuiltIns", () => {
           `  Platform: ${process.platform}`,
           `  Shell: ${Shell.agentDefault()}`,
           ...(Shell.bashFallbackNote() ? [`  ${Shell.bashFallbackNote()}`] : []),
+          "  Resource headroom: unavailable in this runtime.",
           "</env>",
           "",
           `Today's date: ${localDate(timestamp)}`,
         ].join("\n"),
       )
+    }),
+  )
+
+  itWithResourcePressure.effect("reconciles live resource headroom without rebuilding the location", () =>
+    Effect.gen(function* () {
+      resourceLines = ["Resource pressure: ok.", "Memory headroom: 12.0 GiB free."]
+      const context = yield* SystemContextRegistry.Service
+      const initialized = yield* SystemContext.initialize(yield* context.load())
+
+      resourceLines = ["Resource pressure: warning — plan conservatively.", "Memory headroom: 1.0 GiB free."]
+      const refreshed = yield* SystemContext.reconcile(yield* context.load(), initialized.snapshot)
+
+      expect(refreshed).toMatchObject({ _tag: "Updated" })
+      if (refreshed._tag !== "Updated") return
+      expect(refreshed.text).toContain("The environment you are running in is now:")
+      expect(refreshed.text).toContain("  Resource pressure: warning — plan conservatively.")
+      expect(refreshed.text).toContain("  Memory headroom: 1.0 GiB free.")
     }),
   )
 
@@ -122,6 +158,7 @@ describe("SystemContextBuiltIns", () => {
           `  Platform: ${process.platform}`,
           `  Shell: ${Shell.agentDefault()}`,
           ...(Shell.bashFallbackNote() ? [`  ${Shell.bashFallbackNote()}`] : []),
+          "  Resource headroom: unavailable in this runtime.",
           "</env>",
           "",
           `Today's date: ${localDate(timestamp)}`,

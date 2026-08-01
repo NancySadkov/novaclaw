@@ -7,6 +7,8 @@ import { ExternalCommandSource } from "@novaclaw/core/command/external-command-s
 import { ExternalToolSource } from "@novaclaw/core/tool/external-tool-source"
 import { AggregateExternalToolSource } from "@/tool/external-tool-source"
 import { McpExternalCommandSource } from "@/mcp/external-command-source"
+import { ResourcePressureContext } from "@novaclaw/core/resource-pressure-context"
+import { StorageResourcePressureContext } from "@/storage/resource-pressure-context"
 
 // THE process-wide LocationServiceMap for the novaclaw server, with the MCP-backed
 // ExternalToolSource injected so MCP tools (searxng et al.) appear on the V2 registry,
@@ -24,6 +26,7 @@ import { McpExternalCommandSource } from "@/mcp/external-command-source"
 export const layer: Layer.Layer<LocationServiceMap.Service> = buildLocationServiceMap([
   [ExternalToolSource.node, AggregateExternalToolSource.node],
   [ExternalCommandSource.node, McpExternalCommandSource.node],
+  [ResourcePressureContext.node, StorageResourcePressureContext.node],
 ])
 
 export const node = LayerNode.make({
