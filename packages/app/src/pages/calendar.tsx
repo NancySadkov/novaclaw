@@ -1,5 +1,6 @@
 import { createMemo, createResource, createSignal, For, onCleanup, onMount, Show } from "solid-js"
 import { Icon } from "@novaclaw/ui/icon"
+import { ButtonV2 } from "@novaclaw/ui/v2/button-v2"
 import { useServerSDK } from "@/context/server-sdk"
 import { useServer } from "@/context/server"
 import { useDirectoryPicker } from "@/components/directory-picker"
@@ -26,6 +27,7 @@ const RECURRENCE_KINDS: Recurrence["kind"][] = ["once", "daily", "weekly", "mont
 // inside the work folder (external-directory writes still gate); "ask" stalls (no human to approve).
 const PERMISSION_MODES: { value: string; label: string }[] = [
   { value: "bypass", label: "Act within its folder (recommended)" },
+  { value: "", label: "Use the instance default" },
   { value: "surgical", label: "Edit files, no full rewrites" },
   { value: "plan", label: "Read-only (no file changes)" },
   { value: "ask", label: "Ask each time (needs you watching)" },
@@ -34,6 +36,10 @@ const PERMISSION_MODES: { value: string; label: string }[] = [
 
 const pad = (n: number) => String(n).padStart(2, "0")
 const hm = (t: { hour: number; minute: number }) => `${pad(t.hour)}:${pad(t.minute)}`
+const datetimeLocal = (ms: number) => {
+  const date = new Date(ms)
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`
+}
 
 function describeRecurrence(r: Recurrence): string {
   switch (r.kind) {
@@ -42,7 +48,10 @@ function describeRecurrence(r: Recurrence): string {
     case "daily":
       return `Every day at ${hm(r.time)}`
     case "weekly":
-      return `Weekly on ${[...r.weekdays].sort().map((d) => WEEKDAYS[d] ?? d).join(", ")} at ${hm(r.time)}`
+      return `Weekly on ${[...r.weekdays]
+        .sort()
+        .map((d) => WEEKDAYS[d] ?? d)
+        .join(", ")} at ${hm(r.time)}`
     case "monthly":
       return `Monthly on day ${r.day} at ${hm(r.time)}`
     case "yearly":
@@ -66,10 +75,11 @@ function relative(ms: number, now: number): string {
 const FIELD =
   "rounded-md border border-v2-border-border-base bg-v2-background-bg-layer-01 px-2.5 py-1.5 text-sm text-v2-text-text-base outline-none focus:border-v2-border-border-focus"
 const BTN =
-  "rounded-md border border-v2-border-border-strong bg-v2-background-bg-layer-02 px-3 py-1.5 text-sm font-medium hover:bg-v2-background-bg-layer-03 disabled:opacity-50"
+  "rounded-md border border-v2-border-border-strong bg-v2-background-bg-layer-02 px-3 py-1.5 text-sm font-medium outline-none hover:bg-v2-background-bg-layer-03 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-v2-border-border-focus disabled:opacity-50"
 const CARD = "rounded-lg border border-v2-border-border-base bg-v2-background-bg-layer-01 p-4"
 
 export function CalendarPage() {
+  let editor: HTMLFormElement | undefined
   const sdk = useServerSDK()
   const httpBase = createMemo(() => sdk()?.server?.http)
 
@@ -118,8 +128,7 @@ export function CalendarPage() {
     })
   })
 
-  const titleFor = (scheduleId: string) =>
-    schedules().find((s) => s.id === scheduleId)?.title || "Untitled task"
+  const titleFor = (scheduleId: string) => schedules().find((s) => s.id === scheduleId)?.title || "Untitled task"
 
   const upcoming = createMemo(() =>
     schedules()
@@ -128,7 +137,8 @@ export function CalendarPage() {
   )
   const nextUp = createMemo(() => upcoming()[0])
 
-  // ---- New-task form state ----
+  // ---- Create/edit form state ----
+  const [editingID, setEditingID] = createSignal<string | undefined>()
   const [title, setTitle] = createSignal("")
   const [prompt, setPrompt] = createSignal("")
   const [kind, setKind] = createSignal<Recurrence["kind"]>("daily")
@@ -138,17 +148,72 @@ export function CalendarPage() {
   const [monthDay, setMonthDay] = createSignal(1)
   const [yearMonth, setYearMonth] = createSignal(1)
   const [yearDay, setYearDay] = createSignal(1)
+  const [agent, setAgent] = createSignal("")
   const [model, setModel] = createSignal("")
   const [folder, setFolder] = createSignal("")
   const [permission, setPermission] = createSignal("bypass")
+  const [tzOffsetMin, setTzOffsetMin] = createSignal(-new Date().getTimezoneOffset())
   const [busy, setBusy] = createSignal(false)
   const [error, setError] = createSignal<string | undefined>()
 
-  const toggleWeekday = (d: number) =>
-    setWeekdays((ws) => (ws.includes(d) ? ws.filter((x) => x !== d) : [...ws, d]))
+  const toggleWeekday = (d: number) => setWeekdays((ws) => (ws.includes(d) ? ws.filter((x) => x !== d) : [...ws, d]))
+
+  function resetEditor() {
+    setEditingID(undefined)
+    setTitle("")
+    setPrompt("")
+    setKind("daily")
+    setTime("09:00")
+    setOnceAt("")
+    setWeekdays([1])
+    setMonthDay(1)
+    setYearMonth(1)
+    setYearDay(1)
+    setAgent("")
+    setModel("")
+    setFolder("")
+    setPermission("bypass")
+    setTzOffsetMin(-new Date().getTimezoneOffset())
+  }
+
+  function edit(schedule: Schedule) {
+    setEditingID(schedule.id)
+    setTitle(schedule.title)
+    setPrompt(schedule.prompt)
+    setKind(schedule.recurrence.kind)
+    setAgent(schedule.agent ?? "")
+    setModel(schedule.model ?? "")
+    setFolder(schedule.location ?? "")
+    setPermission(schedule.permissionMode ?? "")
+    setTzOffsetMin(schedule.tzOffsetMin)
+    switch (schedule.recurrence.kind) {
+      case "once":
+        setOnceAt(datetimeLocal(schedule.recurrence.at))
+        break
+      case "daily":
+        setTime(hm(schedule.recurrence.time))
+        break
+      case "weekly":
+        setTime(hm(schedule.recurrence.time))
+        setWeekdays([...schedule.recurrence.weekdays])
+        break
+      case "monthly":
+        setTime(hm(schedule.recurrence.time))
+        setMonthDay(schedule.recurrence.day)
+        break
+      case "yearly":
+        setTime(hm(schedule.recurrence.time))
+        setYearMonth(schedule.recurrence.month)
+        setYearDay(schedule.recurrence.day)
+        break
+    }
+    queueMicrotask(() => editor?.scrollIntoView({ block: "nearest" }))
+  }
 
   function buildRecurrence(): Recurrence {
-    const [hh, mm] = time().split(":").map((n) => Number(n))
+    const [hh, mm] = time()
+      .split(":")
+      .map((n) => Number(n))
     const t = { hour: hh || 0, minute: mm || 0 }
     switch (kind()) {
       case "once":
@@ -176,17 +241,32 @@ export function CalendarPage() {
       if (rec.kind === "once" && Number.isNaN(rec.at)) throw new Error("Pick a date and time")
       if (rec.kind === "weekly" && rec.weekdays.length === 0) throw new Error("Pick at least one weekday")
       if (!prompt().trim()) throw new Error("Enter a prompt for the agent to run")
-      await createSchedule(base, {
-        title: title().trim() || undefined,
+      const id = editingID()
+      const common = {
         prompt: prompt().trim(),
         recurrence: rec,
-        tzOffsetMin: -new Date().getTimezoneOffset(),
-        model: model().trim() || undefined,
-        location: folder().trim() || undefined,
-        permissionMode: permission() || undefined,
-      })
-      setTitle("")
-      setPrompt("")
+        tzOffsetMin: tzOffsetMin(),
+      }
+      if (id) {
+        await updateSchedule(base, id, {
+          ...common,
+          title: title().trim(),
+          agent: agent().trim() || null,
+          model: model().trim() || null,
+          location: folder().trim() || null,
+          permissionMode: permission() || null,
+        })
+      } else {
+        await createSchedule(base, {
+          ...common,
+          title: title().trim() || undefined,
+          agent: agent().trim() || undefined,
+          model: model().trim() || undefined,
+          location: folder().trim() || undefined,
+          permissionMode: permission() || undefined,
+        })
+      }
+      resetEditor()
       await refetch()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -212,6 +292,7 @@ export function CalendarPage() {
     if (!base) return
     try {
       await removeSchedule(base, id)
+      if (editingID() === id) resetEditor()
       await refetch()
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err))
@@ -303,14 +384,23 @@ export function CalendarPage() {
                         {s.model ? ` · model: ${s.model}` : ""}
                       </div>
                       <div class="mt-1 text-xs text-v2-text-text-accent">
-                        <Show when={s.nextFireAt !== null} fallback={<span class="text-v2-text-text-faint">no next run</span>}>
+                        <Show
+                          when={s.nextFireAt !== null}
+                          fallback={<span class="text-v2-text-text-faint">no next run</span>}
+                        >
                           next {relative(s.nextFireAt ?? 0, now())} · {new Date(s.nextFireAt ?? 0).toLocaleString()}
                         </Show>
                         <Show when={s.lastFiredAt}>
-                          <span class="text-v2-text-text-faint"> · last ran {new Date(s.lastFiredAt ?? 0).toLocaleString()}</span>
+                          <span class="text-v2-text-text-faint">
+                            {" "}
+                            · last ran {new Date(s.lastFiredAt ?? 0).toLocaleString()}
+                          </span>
                         </Show>
                       </div>
                     </div>
+                    <button class={BTN} onClick={() => edit(s)} title="Edit task" aria-pressed={editingID() === s.id}>
+                      Edit
+                    </button>
                     <button
                       class={BTN}
                       onClick={() => void toggle(s)}
@@ -338,7 +428,9 @@ export function CalendarPage() {
                   <div class={`${CARD} flex items-center gap-3 py-2`}>
                     <span class="min-w-0 flex-1 truncate text-sm">{titleFor(f.scheduleId)}</span>
                     <span class="text-xs text-v2-text-text-faint">{new Date(f.firedAt).toLocaleString()}</span>
-                    <span class={`text-xs ${f.status === "error" ? "text-v2-state-fg-danger" : "text-v2-text-text-muted"}`}>
+                    <span
+                      class={`text-xs ${f.status === "error" ? "text-v2-state-fg-danger" : "text-v2-text-text-muted"}`}
+                    >
                       {f.status === "spawned" ? "ran" : f.status}
                     </span>
                   </div>
@@ -348,11 +440,27 @@ export function CalendarPage() {
           </div>
         </Show>
 
-        {/* New task form */}
-        <form class={`${CARD} flex flex-col gap-3`} onSubmit={submit}>
-          <div class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-faint">New task</div>
-          <input class={FIELD} placeholder="Title (e.g. New Year greeting)" value={title()} onInput={(e) => setTitle(e.currentTarget.value)} />
+        {/* Create/edit task form */}
+        <form ref={editor} class={`${CARD} flex flex-col gap-3`} onSubmit={submit}>
+          <div class="flex items-center justify-between gap-3">
+            <div class="text-xs font-semibold uppercase tracking-wide text-v2-text-text-faint">
+              {editingID() ? "Edit task" : "New task"}
+            </div>
+            <Show when={editingID()}>
+              <button class={BTN} type="button" onClick={resetEditor} disabled={busy()}>
+                Cancel
+              </button>
+            </Show>
+          </div>
+          <input
+            aria-label="Title"
+            class={FIELD}
+            placeholder="Title (e.g. New Year greeting)"
+            value={title()}
+            onInput={(e) => setTitle(e.currentTarget.value)}
+          />
           <textarea
+            aria-label="Prompt"
             class={FIELD}
             rows={2}
             placeholder="Prompt the agent runs — e.g. Congratulate our clients with the New Year and unobtrusively promote our product."
@@ -360,17 +468,36 @@ export function CalendarPage() {
             onInput={(e) => setPrompt(e.currentTarget.value)}
           />
           <div class="flex flex-wrap items-center gap-2">
-            <label class="text-sm text-v2-text-text-muted">Repeat</label>
-            <select class={FIELD} value={kind()} onChange={(e) => setKind(e.currentTarget.value as Recurrence["kind"])}>
+            <label for="calendar-repeat" class="text-sm text-v2-text-text-muted">
+              Repeat
+            </label>
+            <select
+              id="calendar-repeat"
+              class={FIELD}
+              value={kind()}
+              onChange={(e) => setKind(e.currentTarget.value as Recurrence["kind"])}
+            >
               <For each={RECURRENCE_KINDS}>{(k) => <option value={k}>{k}</option>}</For>
             </select>
 
             <Show when={kind() === "once"}>
-              <input class={FIELD} type="datetime-local" value={onceAt()} onInput={(e) => setOnceAt(e.currentTarget.value)} />
+              <input
+                aria-label="Run once at"
+                class={FIELD}
+                type="datetime-local"
+                value={onceAt()}
+                onInput={(e) => setOnceAt(e.currentTarget.value)}
+              />
             </Show>
             <Show when={kind() !== "once"}>
               <label class="text-sm text-v2-text-text-muted">at</label>
-              <input class={FIELD} type="time" value={time()} onInput={(e) => setTime(e.currentTarget.value)} />
+              <input
+                aria-label="Run at"
+                class={FIELD}
+                type="time"
+                value={time()}
+                onInput={(e) => setTime(e.currentTarget.value)}
+              />
             </Show>
 
             <Show when={kind() === "weekly"}>
@@ -379,6 +506,7 @@ export function CalendarPage() {
                   {(name, i) => (
                     <button
                       type="button"
+                      aria-pressed={weekdays().includes(i())}
                       class={`rounded px-2 py-1 text-xs ${weekdays().includes(i()) ? "bg-v2-background-bg-layer-03 text-v2-text-text-base" : "text-v2-text-text-faint"}`}
                       onClick={() => toggleWeekday(i())}
                     >
@@ -390,19 +518,56 @@ export function CalendarPage() {
             </Show>
             <Show when={kind() === "monthly"}>
               <label class="text-sm text-v2-text-text-muted">day</label>
-              <input class={`${FIELD} w-20`} type="number" min={1} max={31} value={monthDay()} onInput={(e) => setMonthDay(Number(e.currentTarget.value))} />
+              <input
+                aria-label="Day of month"
+                class={`${FIELD} w-20`}
+                type="number"
+                min={1}
+                max={31}
+                value={monthDay()}
+                onInput={(e) => setMonthDay(Number(e.currentTarget.value))}
+              />
             </Show>
             <Show when={kind() === "yearly"}>
-              <select class={FIELD} value={yearMonth()} onChange={(e) => setYearMonth(Number(e.currentTarget.value))}>
+              <select
+                aria-label="Month"
+                class={FIELD}
+                value={yearMonth()}
+                onChange={(e) => setYearMonth(Number(e.currentTarget.value))}
+              >
                 <For each={MONTHS}>{(m, i) => <option value={i() + 1}>{m}</option>}</For>
               </select>
-              <input class={`${FIELD} w-20`} type="number" min={1} max={31} value={yearDay()} onInput={(e) => setYearDay(Number(e.currentTarget.value))} />
+              <input
+                aria-label="Day of month"
+                class={`${FIELD} w-20`}
+                type="number"
+                min={1}
+                max={31}
+                value={yearDay()}
+                onInput={(e) => setYearDay(Number(e.currentTarget.value))}
+              />
             </Show>
           </div>
 
           <div class="flex flex-wrap items-center gap-2">
-            <label class="text-sm text-v2-text-text-muted">Model</label>
+            <label for="calendar-agent" class="text-sm text-v2-text-text-muted">
+              Agent
+            </label>
             <input
+              id="calendar-agent"
+              class={`${FIELD} min-w-[220px] flex-1`}
+              placeholder="Agent name — blank = instance default"
+              value={agent()}
+              onInput={(e) => setAgent(e.currentTarget.value)}
+            />
+          </div>
+
+          <div class="flex flex-wrap items-center gap-2">
+            <label for="calendar-model" class="text-sm text-v2-text-text-muted">
+              Model
+            </label>
+            <input
+              id="calendar-model"
               class={`${FIELD} min-w-[260px] flex-1`}
               placeholder="providerID/modelID — blank = instance default (e.g. dgx-spark/qwen3.6-35b)"
               value={model()}
@@ -411,8 +576,11 @@ export function CalendarPage() {
           </div>
 
           <div class="flex flex-wrap items-center gap-2">
-            <label class="text-sm text-v2-text-text-muted">Folder</label>
+            <label for="calendar-folder" class="text-sm text-v2-text-text-muted">
+              Folder
+            </label>
             <input
+              id="calendar-folder"
               class={`${FIELD} min-w-[220px] flex-1`}
               placeholder="Work folder — where it reads inputs + writes the report (blank = instance home)"
               value={folder()}
@@ -424,8 +592,15 @@ export function CalendarPage() {
           </div>
 
           <div class="flex flex-wrap items-center gap-2">
-            <label class="text-sm text-v2-text-text-muted">Permissions</label>
-            <select class={FIELD} value={permission()} onChange={(e) => setPermission(e.currentTarget.value)}>
+            <label for="calendar-permissions" class="text-sm text-v2-text-text-muted">
+              Permissions
+            </label>
+            <select
+              id="calendar-permissions"
+              class={FIELD}
+              value={permission()}
+              onChange={(e) => setPermission(e.currentTarget.value)}
+            >
               <For each={PERMISSION_MODES}>{(m) => <option value={m.value}>{m.label}</option>}</For>
             </select>
             <span class="text-xs text-v2-text-text-faint">Runs unattended — “Ask” stalls with no one to approve.</span>
@@ -436,9 +611,9 @@ export function CalendarPage() {
           </Show>
 
           <div class="flex items-center gap-3">
-            <button class={BTN} type="submit" disabled={busy() || !httpBase()}>
-              {busy() ? "Adding…" : "Add task"}
-            </button>
+            <ButtonV2 variant="gold" type="submit" disabled={busy() || !httpBase()}>
+              {busy() ? (editingID() ? "Saving…" : "Adding…") : editingID() ? "Save changes" : "Add task"}
+            </ButtonV2>
             <span class="text-xs text-v2-text-text-faint">Times are in your local timezone.</span>
           </div>
         </form>
