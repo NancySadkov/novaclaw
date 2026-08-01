@@ -348,9 +348,12 @@ export const layer: Layer.Layer<
         return yield* new ListFailedError({ message: result.stderr || result.text || "Failed to read git worktrees" })
       }
 
-      const primary = yield* canonical(ctx.worktree)
+      const entries = parseWorktreeList(result.text)
+      // `git worktree list --porcelain` guarantees the main worktree first. The caller may itself be
+      // inside a linked worktree, so `ctx.worktree` is not a valid proxy for the project checkout.
+      const primary = entries[0]?.path ? yield* canonical(entries[0].path) : yield* canonical(ctx.worktree)
       const primaryName = pathSvc.basename(primary).toLowerCase()
-      return yield* Effect.forEach(parseWorktreeList(result.text), (entry) =>
+      return yield* Effect.forEach(entries, (entry) =>
         Effect.gen(function* () {
           if (!entry.path) return undefined
           const directory = yield* canonical(entry.path)
