@@ -37,27 +37,19 @@ export const markInstanceForDisposal = (ctx: InstanceContext) =>
     )
   })
 
-export const markInstanceForReload = (ctx: InstanceContext, next: InstanceStore.LoadInput) =>
-  Effect.gen(function* () {
-    const marked = yield* mark(ctx)
-    return yield* HttpEffect.appendPreResponseHandler((_request, response) =>
-      Effect.as(Effect.uninterruptible(marked.bridge.run(marked.store.reload(next))), response),
-    )
-  })
-
 /**
  * Release a directory's LOCATION layer graph when its instance is disposed.
  *
  * `InstanceStore.dispose`/`reload`/`disposeAll` fan out through the process-wide disposer set
  * (`@/effect/instance-registry`), which is keyed only by directory. The `LayerMap` behind
  * `LocationServiceMap` is the one cache whose entry outlives that fan-out on its own — its idle TTL
- * is 60 minutes — so without this registration a disposed or RELOADED instance keeps serving the old
- * location graph: after `project.initGit`, a `Location.Info` whose `vcs` is still undefined.
+ * is 60 minutes — so without this registration a disposed or RELOADED instance keeps serving its old
+ * location graph even after `InstanceStore.reload` resolves different location metadata.
  *
  * ⚠️ **It lives here, and not in a handler group, because it is not about any route.** It used to be
  * registered inside `handlers/pty.ts` — twice, once per pty group — which made "an instance disposal
  * actually releases its location" contingent on the **Terminal** routes having been constructed in
- * this process. Every dispose path (the explicit `/instance` endpoint, the init-git reload, server
+ * this process. Every dispose path (the explicit `/instance` endpoint, direct instance reloads, server
  * shutdown) depends on it, and none of them has anything to do with a pty. `createRoutes` merges
  * this layer directly, so it is built for every assembly that serves routes at all.
  *

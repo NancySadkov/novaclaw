@@ -353,8 +353,8 @@ export function createRoutes(
     uiRoute,
     // Not a route: it registers the "release this directory's location graph on instance disposal"
     // disposer. Merged as a ROOT rather than provided to a group, because it used to live inside the
-    // pty handler group — which made every dispose path (the `/instance` endpoint, the init-git
-    // reload, shutdown) contingent on the Terminal routes being mounted. See `./lifecycle`.
+    // pty handler group — which made every dispose path (the `/instance` endpoint, direct reloads,
+    // shutdown) contingent on the Terminal routes being mounted. See `./lifecycle`.
     locationDisposerLayer,
   ).pipe(
     Layer.provide([
