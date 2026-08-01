@@ -119,6 +119,7 @@ export const PHASES = {
   /** `novaclaw serve` — the CLI entry point, from process start to a bound listener. */
   serve: [
     "cli:modules-loaded",
+    "cli:command-loaded",
     "cli:args-parsed",
     "server:module-loaded",
     "server:listen-start",

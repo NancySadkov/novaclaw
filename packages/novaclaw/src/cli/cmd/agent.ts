@@ -10,6 +10,7 @@ import { EOL } from "os"
 import type { Argv } from "yargs"
 import { Effect } from "effect"
 import { effectCmd } from "../effect-cmd"
+import { CommandSpec } from "../command-spec"
 
 type AgentMode = "all" | "primary" | "subagent"
 
@@ -22,16 +23,7 @@ type AgentMode = "all" | "primary" | "subagent"
 // is never described falsely*, on a surface a user drives by hand. Retired 2026-07-30: `glob`/`grep`
 // (both remapped onto `explore`, see `core/src/config/permission.ts`) and `task` (live only on the
 // legacy `packages/novaclaw/src/agent` island, never on the V2 path these files are loaded by).
-const AVAILABLE_PERMISSIONS = [
-  "bash",
-  "read",
-  "edit",
-  "explore",
-  "webfetch",
-  "todowrite",
-  "websearch",
-  "skill",
-]
+const AVAILABLE_PERMISSIONS = ["bash", "read", "edit", "explore", "webfetch", "todowrite", "websearch", "skill"]
 
 const AgentCreateCommand = effectCmd({
   command: "create",
@@ -82,7 +74,6 @@ const AgentCreateCommand = effectCmd({
         UI.empty()
         prompts.intro("Create agent")
       }
-
 
       // Determine scope/path
       let targetPath: string
@@ -194,9 +185,11 @@ const AgentCreateCommand = effectCmd({
       // whole permission map was silently dropped. Every agent this command has ever created was
       // unrestricted while the CLI reported it had denied things. The evaluator is findLast, so these
       // are emitted in a stable order and anything the user's own later rules say still wins.
-      const permissions = AVAILABLE_PERMISSIONS.filter((action) => !selected.includes(action)).map(
-        (action) => ({ action, resource: "*", effect: "deny" as const }),
-      )
+      const permissions = AVAILABLE_PERMISSIONS.filter((action) => !selected.includes(action)).map((action) => ({
+        action,
+        resource: "*",
+        effect: "deny" as const,
+      }))
 
       // Build frontmatter
       const frontmatter: {
@@ -253,7 +246,9 @@ const AgentListCommand = effectCmd({
     const { Location } = yield* Effect.promise(() => import("@novaclaw/core/location"))
     const { AbsolutePath } = yield* Effect.promise(() => import("@novaclaw/core/schema"))
     const agents = yield* Agent.listV2.pipe(
-      Effect.provide(LocationServiceMap.Service.get(Location.Ref.make({ directory: AbsolutePath.make(process.cwd()) }))),
+      Effect.provide(
+        LocationServiceMap.Service.get(Location.Ref.make({ directory: AbsolutePath.make(process.cwd()) })),
+      ),
       Effect.provide(locationServiceMapLayer),
     )
     const sortedAgents = agents.sort((a, b) => {
@@ -271,8 +266,7 @@ const AgentListCommand = effectCmd({
 })
 
 export const AgentCommand = cmd({
-  command: "agent",
-  describe: "manage agents",
+  ...CommandSpec.agent,
   builder: (yargs) => yargs.command(AgentCreateCommand).command(AgentListCommand).demandCommand(),
   async handler() {},
 })

@@ -202,6 +202,7 @@ describe("the waterfall describes what it measured, and says so when it measured
 const CALL_SITE_FILES = [
   "../src/location-services.ts",
   "../../novaclaw/src/index.ts",
+  "../../novaclaw/src/cli/lazy-command.ts",
   "../../novaclaw/src/server/server.ts",
 ] as const
 
@@ -231,7 +232,11 @@ describe("the phase catalogue and the boot call sites agree", () => {
     // The Electron sidecar reaches `Server.listen` directly (sidecar.ts → virtual:novaclaw-server →
     // src/node.ts), so it pays every `server:*` phase and none of the `cli:*` ones. If that ever
     // stops being true the two lists stop differing by exactly the `cli:` prefix.
-    expect([...serve].filter((phase) => !sidecar.has(phase))).toEqual(["cli:modules-loaded", "cli:args-parsed"])
+    expect([...serve].filter((phase) => !sidecar.has(phase))).toEqual([
+      "cli:modules-loaded",
+      "cli:command-loaded",
+      "cli:args-parsed",
+    ])
     expect([...sidecar].filter((phase) => !serve.has(phase))).toEqual([])
     expect([...sidecar].every((phase) => phase.startsWith("server:"))).toBe(true)
   })

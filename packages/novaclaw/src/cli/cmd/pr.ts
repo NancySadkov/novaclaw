@@ -4,10 +4,10 @@ import { effectCmd, fail } from "../effect-cmd"
 import { Git } from "@/git"
 import { InstanceRef } from "@/effect/instance-ref"
 import { Process } from "@/util/process"
+import { CommandSpec } from "../command-spec"
 
 export const PrCommand = effectCmd({
-  command: "pr <number>",
-  describe: "fetch and checkout a GitHub PR branch, then run novaclaw",
+  ...CommandSpec.pr,
   builder: (yargs) =>
     yargs.positional("number", {
       type: "number",
@@ -37,7 +37,14 @@ export const PrCommand = effectCmd({
 
     const prInfoResult = yield* Effect.promise(() =>
       Process.text(
-        ["gh", "pr", "view", `${prNumber}`, "--json", "headRepository,headRepositoryOwner,isCrossRepository,headRefName"],
+        [
+          "gh",
+          "pr",
+          "view",
+          `${prNumber}`,
+          "--json",
+          "headRepository,headRepositoryOwner,isCrossRepository,headRefName",
+        ],
         { nothrow: true },
       ),
     )

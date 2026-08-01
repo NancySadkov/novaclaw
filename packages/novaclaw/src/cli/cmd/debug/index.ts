@@ -13,10 +13,10 @@ import { SnapshotCommand } from "./snapshot"
 import { AgentCommand } from "./agent"
 import { StartupCommand } from "./startup"
 import { V2Command } from "./v2"
+import { CommandSpec } from "../../command-spec"
 
 export const DebugCommand = cmd({
-  command: "debug",
-  describe: "debugging and troubleshooting tools",
+  ...CommandSpec.debug,
   builder: (yargs) =>
     yargs
       .command(ConfigCommand)

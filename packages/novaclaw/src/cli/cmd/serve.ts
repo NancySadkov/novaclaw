@@ -6,6 +6,7 @@ import { Flag } from "@novaclaw/core/flag/flag"
 // THE one tree-kill, in its leaf spelling (`Shell.killTreeSync` is the same function). The leaf
 // imports `node:` builtins only, which keeps it off the CLI's startup cost.
 import { killTreeSync } from "@novaclaw/core/util/kill-tree"
+import { CommandSpec } from "../command-spec"
 
 // Dependability P4 (uix-dependability-plan): `novaclaw serve` is SUPERVISED BY DEFAULT — the
 // managed-by-default stance. The parent process is a tiny restart loop; the actual server runs as a
@@ -87,23 +88,20 @@ const superviseLoop = async (): Promise<"clean" | "giveup"> => {
       )
       return "giveup"
     }
-    console.error(
-      `[supervise] server exited (code ${code}) — restarting in ${decision.delayMs / 1000}s`,
-    )
+    console.error(`[supervise] server exited (code ${code}) — restarting in ${decision.delayMs / 1000}s`)
     await new Promise((resolve) => setTimeout(resolve, decision.delayMs))
     state = decision.next
   }
 }
 
 export const ServeCommand = effectCmd({
-  command: "serve",
+  ...CommandSpec.serve,
   builder: (yargs) =>
     withNetworkOptions(yargs).option("supervise", {
       type: "boolean",
       default: true,
       describe: "restart the server automatically if it crashes (--no-supervise runs it bare)",
     }),
-  describe: "starts a headless novaclaw server",
   // Server loads instances per-request via x-novaclaw-directory header — no
   // need for an ambient project InstanceContext at startup.
   instance: false,

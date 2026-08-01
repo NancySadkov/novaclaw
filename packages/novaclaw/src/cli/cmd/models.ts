@@ -9,10 +9,10 @@ import { ProviderCatalogResult } from "@/provider/catalog-result"
 import { Config } from "@/config/config"
 import { effectCmd, fail } from "../effect-cmd"
 import { UI } from "../ui"
+import { CommandSpec } from "../command-spec"
 
 export const ModelsCommand = effectCmd({
-  command: "models [provider]",
-  describe: "list all available models",
+  ...CommandSpec.models,
   // Lists the global catalog; no project state needed. Resolve the V2 Catalog for
   // the cwd through the core location-service map (cf. cli/cmd/debug/v2.ts).
   instance: false,
@@ -50,7 +50,9 @@ export const ModelsCommand = effectCmd({
       const available = yield* catalog.provider.available()
       return ProviderCatalogResult.listResult({ providers, models, connected: available.map((p) => p.id) })
     }).pipe(
-      Effect.provide(LocationServiceMap.Service.get(Location.Ref.make({ directory: AbsolutePath.make(process.cwd()) }))),
+      Effect.provide(
+        LocationServiceMap.Service.get(Location.Ref.make({ directory: AbsolutePath.make(process.cwd()) })),
+      ),
       Effect.provide(locationServiceMapLayer),
     )
 

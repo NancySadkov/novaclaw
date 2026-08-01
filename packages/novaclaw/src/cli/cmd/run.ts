@@ -20,6 +20,7 @@ import { open } from "node:fs/promises"
 import { Effect } from "effect"
 import { UI } from "../ui"
 import { effectCmd } from "../effect-cmd"
+import { CommandSpec } from "../command-spec"
 import { EOL } from "os"
 import { Filesystem } from "@/util/filesystem"
 import { createNovaclawClient, type NovaclawClient } from "@novaclaw/sdk/v2"
@@ -148,8 +149,7 @@ async function toolError(part: ToolPart) {
 }
 
 export const RunCommand = effectCmd({
-  command: "run [message..]",
-  describe: "run novaclaw with a message",
+  ...CommandSpec.run,
   // --attach connects to a remote server (no local instance needed); the
   // default path runs an in-process server and needs the project instance.
   instance: (args) => !args.attach,
@@ -426,7 +426,9 @@ export const RunCommand = effectCmd({
           }
         }
 
-        const base = args.continue ? (await sdk.v2.session.list()).data?.data?.find((item) => !item.parentID) : undefined
+        const base = args.continue
+          ? (await sdk.v2.session.list()).data?.data?.find((item) => !item.parentID)
+          : undefined
 
         if (base && args.fork) {
           const forked = await sdk.v2.session.fork({
@@ -609,7 +611,10 @@ export const RunCommand = effectCmd({
               .map((item) => item.text ?? "")
               .join("")
 
-          const toolPart = (input: { callID: string; state: Record<string, unknown> & { status: string } }): ToolPart => {
+          const toolPart = (input: {
+            callID: string
+            state: Record<string, unknown> & { status: string }
+          }): ToolPart => {
             const entry = calls.get(input.callID)
             const name = entry?.tool ?? "unknown"
             return {

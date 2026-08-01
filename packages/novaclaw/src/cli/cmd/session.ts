@@ -18,6 +18,7 @@ import { Process } from "@/util/process"
 import { EOL } from "os"
 import path from "path"
 import { which } from "@novaclaw/core/util/which"
+import { CommandSpec } from "../command-spec"
 
 function pagerCmd(): string[] {
   const lessOptions = ["-R", "-S"]
@@ -47,8 +48,7 @@ function pagerCmd(): string[] {
 }
 
 export const SessionCommand = cmd({
-  command: "session",
-  describe: "manage sessions",
+  ...CommandSpec.session,
   builder: (yargs: Argv) => yargs.command(SessionListCommand).command(SessionDeleteCommand).demandCommand(),
   async handler() {},
 })
@@ -100,7 +100,11 @@ export const SessionListCommand = effectCmd({
     if (!ctx) return
     // V1-nuke slice A: the native deps-taking read (same rows, native Session.Info shape).
     const { db } = yield* Database.Service
-    const sessions = yield* SessionRead.list(db, { under: AbsolutePath.make(ctx.worktree), roots: true, limit: args.maxCount })
+    const sessions = yield* SessionRead.list(db, {
+      under: AbsolutePath.make(ctx.worktree),
+      roots: true,
+      limit: args.maxCount,
+    })
 
     if (sessions.length === 0) return
 

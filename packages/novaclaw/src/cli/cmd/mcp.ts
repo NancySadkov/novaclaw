@@ -1,4 +1,5 @@
 import { cmd } from "./cmd"
+import { CommandSpec } from "../command-spec"
 import { Config as ConfigV2 } from "@novaclaw/core/config"
 import { effectCmd } from "../effect-cmd"
 import { Cause } from "effect"
@@ -83,8 +84,7 @@ function authState() {
 }
 
 export const McpCommand = cmd({
-  command: "mcp",
-  describe: "manage MCP (Model Context Protocol) servers",
+  ...CommandSpec.mcp,
   builder: (yargs) =>
     yargs
       .command(McpAddCommand)

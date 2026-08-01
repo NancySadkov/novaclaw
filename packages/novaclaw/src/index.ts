@@ -1,30 +1,31 @@
 import yargs from "yargs"
 import { hideBin } from "yargs/helpers"
-import { RunCommand } from "./cli/cmd/run"
-import { GenerateCommand } from "./cli/cmd/generate"
-import { ProvidersCommand } from "./cli/cmd/providers"
-import { AgentCommand } from "./cli/cmd/agent"
-import { ModelsCommand } from "./cli/cmd/models"
 import { UI } from "./cli/ui"
 import { InstallationVersion } from "@novaclaw/core/installation/version"
 import { FormatError } from "./cli/error"
-import { ServeCommand } from "./cli/cmd/serve"
-import { DebugCommand } from "./cli/cmd/debug"
-import { StatsCommand } from "./cli/cmd/stats"
-import { McpCommand } from "./cli/cmd/mcp"
-import { ExportCommand } from "./cli/cmd/export"
 import { EOL } from "os"
-import { WebCommand } from "./cli/cmd/web"
-import { PrCommand } from "./cli/cmd/pr"
-import { SessionCommand } from "./cli/cmd/session"
-import { DbCommand } from "./cli/cmd/db"
 import { errorMessage } from "./util/error"
 import { Heap } from "./cli/heap"
 import { BootProfile } from "@novaclaw/core/observability/boot-profile"
+import {
+  AgentCommand,
+  DbCommand,
+  DebugCommand,
+  ExportCommand,
+  GenerateCommand,
+  McpCommand,
+  ModelsCommand,
+  PrCommand,
+  ProvidersCommand,
+  RunCommand,
+  ServeCommand,
+  SessionCommand,
+  StatsCommand,
+  WebCommand,
+} from "./cli/command-registry"
 
-// The CLI's whole module graph is loaded by the time this line runs, and `performance.now()` counts
-// from process start — so this single mark IS "runtime start + import cost", the phase no span could
-// ever see because it happens before any Effect runtime exists. See `todo/startup.md` Phase 1.
+// The CLI shell's module graph is loaded by the time this line runs. The selected command's graph is
+// measured separately by lazy-command.ts; unselected command graphs are never imported.
 BootProfile.mark("cli:modules-loaded")
 
 const args = hideBin(process.argv)
@@ -116,13 +117,13 @@ const cli = yargs(args)
 
 try {
   if (args.includes("-h") || args.includes("--help")) {
-    await cli.parse(args, (err: Error | undefined, _argv: unknown, out: string) => {
+    await cli.parseAsync(args, (err: Error | undefined, _argv: unknown, out: string) => {
       if (err) throw err
       if (!out) return
       show(out)
     })
   } else {
-    await cli.parse()
+    await cli.parseAsync()
   }
 } catch (e) {
   const formatted = FormatError(e)

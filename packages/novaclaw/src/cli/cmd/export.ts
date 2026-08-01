@@ -11,6 +11,7 @@ import { UI } from "../ui"
 import * as prompts from "@clack/prompts"
 import { EOL } from "os"
 import { DateTime, Effect, Schema } from "effect"
+import { CommandSpec } from "../command-spec"
 
 // F1c-0 — export serves the NATIVE transcript (`session_message`, the F1e wire vocabulary);
 // the legacy message/part shape is no longer read here (pre-F0 legacy-only transcripts export
@@ -136,7 +137,8 @@ export function sanitizeMessage(msg: SessionMessage.Message): SessionMessage.Mes
         ...msg,
         metadata,
         content: msg.content.map(assistantContent),
-        error: msg.error === undefined ? undefined : { ...msg.error, message: redact("error", msg.id, msg.error.message) },
+        error:
+          msg.error === undefined ? undefined : { ...msg.error, message: redact("error", msg.id, msg.error.message) },
       }
     case "compaction":
       return {
@@ -178,8 +180,7 @@ export function sanitizeInfo(info: SessionSchema.Info) {
 }
 
 export const ExportCommand = effectCmd({
-  command: "export [sessionID]",
-  describe: "export session data as JSON",
+  ...CommandSpec.export,
   builder: (yargs) =>
     yargs
       .positional("sessionID", {

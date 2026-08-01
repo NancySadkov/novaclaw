@@ -3,6 +3,7 @@ import { Database } from "@novaclaw/core/database/database"
 import { Effect } from "effect"
 import { sql } from "drizzle-orm"
 import { effectCmd } from "../effect-cmd"
+import { CommandSpec } from "../command-spec"
 
 // Headless-only (one-UI rule, todo tie-break #3): the interactive sqlite3 shell died with the
 // TUI — interactive browsing lives in the Developer-mode Registry app; this runs one query.
@@ -26,7 +27,7 @@ const QueryCommand = effectCmd({
   handler: Effect.fn("Cli.db.query")(function* (args: { query?: string; format: string }) {
     const query = args.query as string | undefined
     if (!query) {
-      console.log("Pass a SQL query, e.g. `nova-cli db \"select count(*) from session\"`.")
+      console.log('Pass a SQL query, e.g. `nova-cli db "select count(*) from session"`.')
       console.log("For interactive browsing use the Registry app (Developer mode) in the NovaClaw UI.")
       return
     }
@@ -51,8 +52,7 @@ const PathCommand = effectCmd({
 })
 
 export const DbCommand = effectCmd({
-  command: "db",
-  describe: "database tools",
+  ...CommandSpec.db,
   instance: false,
   builder: (yargs: Argv) => {
     return yargs.command(QueryCommand).command(PathCommand).demandCommand()

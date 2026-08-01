@@ -1,9 +1,10 @@
 import type { CommandModule } from "yargs"
+import { CommandSpec } from "../command-spec"
 
 type Args = {}
 
 export const GenerateCommand = {
-  command: "generate",
+  ...CommandSpec.generate,
   builder: (yargs) => yargs,
   handler: async () => {
     const { Server } = await import("../../server/server")

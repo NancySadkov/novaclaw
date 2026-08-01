@@ -1,10 +1,11 @@
 import { Effect } from "effect"
 import { UI } from "../ui"
 import { effectCmd } from "../effect-cmd"
-import { withNetworkOptions, resolveNetworkOptions } from "../network"
+import { resolveNetworkOptions } from "../network"
 import { Flag } from "@novaclaw/core/flag/flag"
 import open from "open"
 import { networkInterfaces } from "os"
+import { CommandSpec } from "../command-spec"
 
 function getNetworkIPs() {
   const nets = networkInterfaces()
@@ -33,9 +34,7 @@ export const WebCommand = effectCmd({
   // is the product and the CLI is vestigial (AGENTS.md → Identity & mission), so the friendliest
   // no-argument behaviour is to show a person the thing they came for, not a help page. `db.ts`'s
   // `$0 [query]` is nested inside its own subcommand builder, so there is no top-level collision.
-  command: ["web", "$0"],
-  builder: (yargs) => withNetworkOptions(yargs),
-  describe: "start novaclaw server and open web interface",
+  ...CommandSpec.web,
   // Server loads instances per-request via x-novaclaw-directory header — no
   // ambient project InstanceContext needed at startup.
   instance: false,

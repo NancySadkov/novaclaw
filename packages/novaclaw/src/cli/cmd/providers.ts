@@ -15,6 +15,7 @@ import { Process } from "@/util/process"
 import { errorMessage } from "@/util/error"
 import { text } from "node:stream/consumers"
 import { Effect, Option } from "effect"
+import { CommandSpec } from "../command-spec"
 
 const promptValue = <Value>(value: Option.Option<Value>) => {
   if (Option.isNone(value)) return Effect.die(new UI.CancelledError())
@@ -28,9 +29,7 @@ const cliTry = <Value>(message: string, fn: () => PromiseLike<Value>) =>
   })
 
 export const ProvidersCommand = cmd({
-  command: "providers",
-  aliases: ["auth"],
-  describe: "manage AI providers and credentials",
+  ...CommandSpec.providers,
   builder: (yargs) =>
     yargs.command(ProvidersListCommand).command(ProvidersLoginCommand).command(ProvidersLogoutCommand).demandCommand(),
   async handler() {},

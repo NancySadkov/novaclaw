@@ -5,6 +5,7 @@ import { SessionTable } from "@novaclaw/core/session/sql"
 import { fromRow } from "@novaclaw/core/session/info"
 import { SessionMessageRead } from "@novaclaw/core/session/message-read"
 import { InstanceRef } from "@/effect/instance-ref"
+import { CommandSpec } from "../command-spec"
 
 interface SessionStats {
   totalSessions: number
@@ -46,8 +47,7 @@ interface SessionStats {
 }
 
 export const StatsCommand = effectCmd({
-  command: "stats",
-  describe: "show token usage and cost statistics",
+  ...CommandSpec.stats,
   builder: (yargs) =>
     yargs
       .option("days", {
@@ -109,7 +109,8 @@ const aggregateSessionStats = Effect.fn("Cli.stats.aggregate")(function* (
     return days
   })()
 
-  let filteredSessions = cutoffTime > 0 ? sessions.filter((session) => DateTime.toEpochMillis(session.time.updated) >= cutoffTime) : sessions
+  let filteredSessions =
+    cutoffTime > 0 ? sessions.filter((session) => DateTime.toEpochMillis(session.time.updated) >= cutoffTime) : sessions
 
   // T3 (entities.md): sessions carry no project — the scope is a directory root.
   const underRoot = (directory: string, root: string) =>
@@ -199,7 +200,8 @@ const aggregateSessionStats = Effect.fn("Cli.stats.aggregate")(function* (
 
             if (message.tokens) {
               sessionModelUsage[modelKey].tokens.input += message.tokens.input || 0
-              sessionModelUsage[modelKey].tokens.output += (message.tokens.output || 0) + (message.tokens.reasoning || 0)
+              sessionModelUsage[modelKey].tokens.output +=
+                (message.tokens.output || 0) + (message.tokens.reasoning || 0)
               sessionModelUsage[modelKey].tokens.cache.read += message.tokens.cache?.read || 0
               sessionModelUsage[modelKey].tokens.cache.write += message.tokens.cache?.write || 0
             }
