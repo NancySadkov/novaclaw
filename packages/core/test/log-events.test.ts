@@ -453,7 +453,24 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     expect(mayEgress("snapshot.restore.read.failed")).toBe(false)
   })
 
-  test("an UN-keyed record is untouched — the 145 remaining call sites are not affected", () => {
+  test("runner retries separate the provider fault from the stable event identity", () => {
+    const [line] = lines(
+      Log.event("session.provider.attempt.retry", {
+        "session.id": "ses_1",
+        attempt: 2,
+        "session.attempts.max": 3,
+        "session.provider.reason": "Transport",
+        "session.provider.message": "connection refused at a private endpoint",
+      }),
+    )
+    expect(line).toContain("event=session.provider.attempt.retry")
+    expect(line).toContain('message="provider attempt failed — retrying"')
+    expect(line).toContain("session.provider.reason=Transport")
+    expect(line).toContain('session.provider.message="connection refused at a private endpoint"')
+    expect(mayEgress("session.provider.attempt.retry")).toBe(false)
+  })
+
+  test("an UN-keyed record is untouched — the 109 remaining call sites are not affected", () => {
     // 1a adds a column; it takes nothing away and rewrites nothing. This is the assertion that says
     // the wrapper is a column rather than a second system.
     const [line] = lines(Effect.logInfo("watcher backend", { directory: "/tmp/x", backend: "parcel" }))

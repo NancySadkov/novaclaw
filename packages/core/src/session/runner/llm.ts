@@ -45,6 +45,7 @@ import { SessionSchema } from "../schema"
 import { SessionStore } from "../store"
 import { SessionTitle } from "../title"
 import { SessionTodo } from "../todo"
+import { Log } from "@novaclaw/schema/log"
 
 import { resolveSessionConfig, rootSessionType, EFFECTIVE_CONFIG_DEFAULTS, type EffectiveConfig } from "../config-resolve"
 import { AgentJail } from "../../agent-jail"
@@ -282,10 +283,16 @@ export const layer = Layer.effect(
           ? { output: result.run.output?.toString("utf8") ?? "", exit: result.run.exitCode }
           : undefined
       if (!failed) {
-        yield* Effect.logDebug("quality check passed", { sessionID, label: check.label })
+        yield* Log.event("session.quality.check.passed", {
+          "session.id": sessionID,
+          "session.quality.label": check.label,
+        })
         return false
       }
-      yield* Effect.logInfo("quality check FAILED — steering", { sessionID, label: check.label })
+      yield* Log.event("session.quality.check.failed", {
+        "session.id": sessionID,
+        "session.quality.label": check.label,
+      })
       yield* SessionInput.steer(
         db,
         events,
@@ -383,7 +390,7 @@ export const layer = Layer.effect(
         )
         if (generated.trim()) interjection = generated.trim()
       }
-      yield* Effect.logInfo("introspection interjecting", { sessionID })
+      yield* Log.event("session.introspection.interject", { "session.id": sessionID })
       yield* SessionInput.steer(db, events, sessionID, interjection)
     })
     // Auto-title (owner directive): runs right AFTER the drain settles — the user is busy
@@ -448,7 +455,7 @@ export const layer = Layer.effect(
       const raw = chunks.join("")
       // An EMPTY completion is a broken call, not "no title worth writing" — say so. Silence here is
       // exactly how this stayed dead across three shipped phases.
-      if (raw.trim() === "") yield* Effect.logWarning("auto-title: model returned an empty completion", { sessionID })
+      if (raw.trim() === "") yield* Log.event("session.title.generate.empty", { "session.id": sessionID })
       const title = SessionTitle.clean(raw)
       if (!title) return
       yield* SessionPatch.patchSessionRecord({ db, events }, sessionID, (info) =>
@@ -478,7 +485,12 @@ export const layer = Layer.effect(
       Effect.forkDetach(
         Effect.sleep(Duration.seconds(30)).pipe(
           Effect.andThen(generateTitleOnce(sessionID)),
-          Effect.catchCause((cause) => Effect.logWarning("early auto-title failed", { sessionID, cause })),
+          Effect.catchCause((cause) =>
+            Log.event("session.title.early.failed", {
+              "session.id": sessionID,
+              "session.cause": Cause.pretty(cause),
+            }),
+          ),
         ),
       )
 
@@ -522,7 +534,7 @@ export const layer = Layer.effect(
       // Distinguish "the model said there is nothing to remember" (a legitimate `[]`) from "the model
       // returned NOTHING" (a broken call). Conflating them is what hid this failure for three phases.
       if (rawExtraction.trim() === "")
-        yield* Effect.logWarning("memory extraction: model returned an empty completion", { sessionID })
+        yield* Log.event("session.memory.extract.empty", { "session.id": sessionID })
       const facts = SessionExtract.parseExtraction(rawExtraction)
       const namedFacts = facts.filter((f): f is SessionExtract.Extracted & { name: string } => !!f.name)
       const names = [...new Set(namedFacts.map((f) => f.name))]
@@ -963,11 +975,11 @@ export const layer = Layer.effect(
         memoryRecall,
       })
       if (packed.dropped > 0)
-        yield* Effect.logWarning("context pack evicted history from the outgoing request", {
-          sessionID: session.id,
-          dropped: packed.dropped,
-          keptTokens: packed.estimatedTokens,
-          contextSize: packed.contextSize,
+        yield* Log.event("session.context.pack.evicted", {
+          "session.id": session.id,
+          "session.dropped": packed.dropped,
+          "session.kept.tokens": packed.estimatedTokens,
+          "session.context.size": packed.contextSize,
         })
       const request = packed.changed
         ? LLM.request({ ...LLM.requestInput(fullRequest), system: packed.system, messages: packed.messages })
@@ -1035,9 +1047,7 @@ export const layer = Layer.effect(
               if (steerInterrupt) {
                 // Another step must run, or the steer would sit unread until the next drain.
                 needsContinuation = true
-                yield* Effect.logInfo("steer arrived mid-generation — cutting the stream", {
-                  sessionID: session.id,
-                })
+                yield* Log.event("session.steer.stream.interrupted", { "session.id": session.id })
               }
             }
             if (overflowFailure || publisher.hasProviderError()) return
@@ -1142,12 +1152,12 @@ export const layer = Layer.effect(
             // every arm of it went with the card. The user-visible half is unchanged: a retry that
             // SUCCEEDS is silent by design (the turn completed), and a retry that runs out of attempts
             // still surfaces as the assistant failure below, carrying the runner's own `retryable` verdict.
-            yield* Effect.logWarning("provider attempt failed — retrying", {
-              sessionID: session.id,
+            yield* Log.event("session.provider.attempt.retry", {
+              "session.id": session.id,
               attempt,
-              maxAttempts: ProviderRetry.MAX_PROVIDER_ATTEMPTS,
-              reason: transient.reason._tag,
-              message: transient.message,
+              "session.attempts.max": ProviderRetry.MAX_PROVIDER_ATTEMPTS,
+              "session.provider.reason": transient.reason._tag,
+              "session.provider.message": transient.message,
             })
             yield* restore(
               Effect.sleep(Duration.millis(ProviderRetry.retryDelayMs(attempt, transient.retryAfterMs))),
@@ -1253,11 +1263,11 @@ export const layer = Layer.effect(
             const reportedPrompt =
               stepSettlement.tokens.input + stepSettlement.tokens.cache.read + stepSettlement.tokens.cache.write
             if (ContextPack.ctxPressure(reportedPrompt, packed.contextSize))
-              yield* Effect.logWarning("ctx_pressure: real prompt near the context window", {
-                sessionID: session.id,
-                reportedPrompt,
-                estimatedTokens: packed.estimatedTokens,
-                contextSize: packed.contextSize,
+              yield* Log.event("session.context.pressure.high", {
+                "session.id": session.id,
+                "session.prompt.tokens": reportedPrompt,
+                "session.estimated.tokens": packed.estimatedTokens,
+                "session.context.size": packed.contextSize,
               })
           }
           if (publisher.hasProviderError())
@@ -1365,7 +1375,7 @@ export const layer = Layer.effect(
         { sessionID: session.id, entries, model, request },
         "manual",
       )
-      yield* Effect.logInfo("manual compaction settled", { sessionID: session.id, compacted })
+      yield* Log.event("session.compaction.manual.settled", { "session.id": session.id, compacted })
       if (!compacted)
         yield* events.publish(SessionEvent.Synthetic, {
           sessionID: session.id,
@@ -1380,13 +1390,28 @@ export const layer = Layer.effect(
     // review/badge), then the auto-title (an LLM call) while the user reads the response.
     const postRunMaintenance = Effect.fnUntraced(function* (sessionID: SessionSchema.ID) {
       yield* refreshChangesSummary(sessionID).pipe(
-        Effect.catchCause((cause) => Effect.logWarning("changes-summary refresh failed", { sessionID, cause })),
+        Effect.catchCause((cause) =>
+          Log.event("session.changes.refresh.failed", {
+            "session.id": sessionID,
+            "session.cause": Cause.pretty(cause),
+          }),
+        ),
       )
       yield* generateTitleOnce(sessionID).pipe(
-        Effect.catchCause((cause) => Effect.logWarning("auto-title failed", { sessionID, cause })),
+        Effect.catchCause((cause) =>
+          Log.event("session.title.generate.failed", {
+            "session.id": sessionID,
+            "session.cause": Cause.pretty(cause),
+          }),
+        ),
       )
       yield* extractMemory(sessionID).pipe(
-        Effect.catchCause((cause) => Effect.logWarning("memory extraction failed", { sessionID, cause })),
+        Effect.catchCause((cause) =>
+          Log.event("session.memory.extract.failed", {
+            "session.id": sessionID,
+            "session.cause": Cause.pretty(cause),
+          }),
+        ),
       )
     })
 
@@ -1507,12 +1532,18 @@ export const layer = Layer.effect(
         // hidden inside `latest`, because a read never destroys (todo.md ruling 3).
         yield* JhStore.purgeExpired(db, { now: Date.now() }).pipe(
           Effect.catchDefect((defect) =>
-            Effect.logWarning("strict retention purge failed", { sessionID, defect }).pipe(Effect.as(0)),
+            Log.event("session.strict.retention.failed", {
+              "session.id": sessionID,
+              "session.defect": String(defect),
+            }).pipe(Effect.as(0)),
           ),
         )
         const saved = yield* JhStore.latest(db, `jh_${sessionID}_`).pipe(
           Effect.catchDefect((defect) =>
-            Effect.logWarning("strict resume state unreadable", { sessionID, defect }).pipe(Effect.as(undefined)),
+            Log.event("session.strict.resume.failed", {
+              "session.id": sessionID,
+              "session.defect": String(defect),
+            }).pipe(Effect.as(undefined)),
           ),
         )
         const resumable = saved !== undefined && saved.status !== "done"
@@ -1690,7 +1721,12 @@ export const layer = Layer.effect(
               result: action.ok ? { type: "text", value: action.output } : { type: "error", value: action.output },
             })
           }).pipe(
-            Effect.catchCause((cause) => Effect.logWarning("strict action part failed", { sessionID, cause })),
+            Effect.catchCause((cause) =>
+              Log.event("session.strict.action.failed", {
+                "session.id": sessionID,
+                "session.cause": Cause.pretty(cause),
+              }),
+            ),
           )
         const runOne = (i: number, cwd: string) =>
           SessionStrict.runTask({
@@ -1723,7 +1759,11 @@ export const layer = Layer.effect(
               }),
             ),
             Effect.catchCause((cause: Cause.Cause<unknown>) =>
-              Effect.logError("strict attempt failed", { sessionID, attempt: i + 1, cause }).pipe(Effect.as(undefined)),
+              Log.event("session.strict.attempt.failed", {
+                "session.id": sessionID,
+                attempt: i + 1,
+                "session.cause": Cause.pretty(cause),
+              }).pipe(Effect.as(undefined)),
             ),
           )
         // The END boundary of the run, captured ONCE and shared by both settlement paths below.
@@ -1796,7 +1836,12 @@ export const layer = Layer.effect(
               })
             }
           }).pipe(
-            Effect.catchCause((cause) => Effect.logWarning("strict summary failed", { sessionID, cause })),
+            Effect.catchCause((cause) =>
+              Log.event("session.strict.summary.failed", {
+                "session.id": sessionID,
+                "session.cause": Cause.pretty(cause),
+              }),
+            ),
             // The run message may already exist (tool parts) — a failed/empty summary must not
             // leave it visibly unsettled forever. Best-effort: settle with a plain stop.
             Effect.andThen(
@@ -1868,7 +1913,12 @@ export const layer = Layer.effect(
           yield* publishSummary(report, appliedFiles)
           yield* postRunMaintenance(sessionID)
         }).pipe(
-          Effect.catchCause((cause) => Effect.logError("strict finalize failed", { sessionID, cause })),
+          Effect.catchCause((cause) =>
+            Log.event("session.strict.finalize.failed", {
+              "session.id": sessionID,
+              "session.cause": Cause.pretty(cause),
+            }),
+          ),
         )
         const worker = yield* Effect.forkDetach(finalize)
         strictInflight.set(sessionID, worker)
@@ -1902,7 +1952,10 @@ export const layer = Layer.effect(
         const manual = yield* harnessConfig()
         yield* runManualCompaction(input.sessionID, manual.compaction).pipe(
           Effect.catchCause((cause: Cause.Cause<unknown>) =>
-            Effect.logError("manual compaction failed", { sessionID: input.sessionID, cause }).pipe(
+            Log.event("session.compaction.manual.failed", {
+              "session.id": input.sessionID,
+              "session.cause": Cause.pretty(cause),
+            }).pipe(
               Effect.andThen(
                 Effect.gen(function* () {
                   yield* events.publish(SessionEvent.Synthetic, {
@@ -1928,9 +1981,7 @@ export const layer = Layer.effect(
         store.get(id as SessionSchema.ID),
       )
       if (handoff.responder === "operator") {
-        yield* Effect.logInfo("session under operator control — Nova is not responding", {
-          sessionID: input.sessionID,
-        })
+        yield* Log.event("session.control.operator", { "session.id": input.sessionID })
         return
       }
       yield* failInterruptedTools(input.sessionID)
@@ -2037,8 +2088,8 @@ export const layer = Layer.effect(
             const latest = yield* store.get(input.sessionID).pipe(Effect.orElseSucceed(() => undefined))
             if (latest?.result !== undefined) {
               exitedMidDrain = true
-              yield* Effect.logInfo("exit(result) recorded — stopping the drain", {
-                sessionID: input.sessionID,
+              yield* Log.event("session.drain.exit", {
+                "session.id": input.sessionID,
                 step,
               })
               break
@@ -2055,8 +2106,8 @@ export const layer = Layer.effect(
           // left as it stands: a truncated turn is neither progress nor an empty-turn strike.
           const truncation = FinishRecovery.decide(result.finish, result.needsContinuation, finishRecovery)
           if (truncation.kind === "continue") {
-            yield* Effect.logInfo("finish recovery: provider truncated at its output-token limit", {
-              sessionID: input.sessionID,
+            yield* Log.event("session.finish.recover", {
+              "session.id": input.sessionID,
               step,
               recoveries: finishRecovery.recoveries,
             })
@@ -2069,8 +2120,8 @@ export const layer = Layer.effect(
             // turn, so end the drain with a visible notice naming the actual fix. Any new input
             // re-wakes a FRESH drain through the coordinator's pendingWake (same guarantee the
             // exit-transition break above relies on), where the ledger starts at zero again.
-            yield* Effect.logWarning("finish recovery: truncated twice — pausing the drain", {
-              sessionID: input.sessionID,
+            yield* Log.event("session.finish.recover.paused", {
+              "session.id": input.sessionID,
               step,
             })
             yield* Effect.gen(function* () {
@@ -2120,14 +2171,19 @@ export const layer = Layer.effect(
             const streak = detectFailureStreak(sinceUser)
             if (streak && !nudgedTargets.has(streak.target)) {
               nudgedTargets.add(streak.target)
-              yield* Effect.logInfo("doom-loop failure streak", { sessionID: input.sessionID, ...streak })
+              yield* Log.event("session.doom.streak.detected", {
+                "session.id": input.sessionID,
+                "session.tool": streak.name,
+                "session.target": streak.target,
+                count: streak.count,
+              })
               yield* SessionInput.steer(db, events, input.sessionID, failureStreakMessage(streak))
             }
             if (!runawayNudged && detectRunaway(sinceUser.length)) {
               runawayNudged = true
-              yield* Effect.logInfo("doom-loop runaway self-check", {
-                sessionID: input.sessionID,
-                toolCalls: sinceUser.length,
+              yield* Log.event("session.doom.runaway.detected", {
+                "session.id": input.sessionID,
+                "session.tool.calls": sinceUser.length,
               })
               yield* SessionInput.steer(db, events, input.sessionID, runawayMessage(sinceUser.length))
             }
@@ -2136,7 +2192,12 @@ export const layer = Layer.effect(
             // never allowed to fail the drain it watches.
             if (introspectionOn && Introspection.shouldJudge(step, harness.introspection.cadence))
               yield* introspect(input.sessionID, harness.introspection).pipe(
-                Effect.catch((cause) => Effect.logWarning("introspection judge failed", { cause })),
+                Effect.catch((cause) =>
+                  Log.event("session.introspection.judge.failed", {
+                    "session.id": input.sessionID,
+                    "session.cause": String(cause),
+                  }),
+                ),
               )
             // QE-B steps 1–3: per touched file after a write-class tool settles (syntax +
             // incremental check), whole-module typecheck every Nth write. Best-effort — a
@@ -2144,7 +2205,12 @@ export const layer = Layer.effect(
             if (qualityOn)
               for (const check of Quality.dueMidLoop(harness.quality, quality, Quality.writeTargets(context)))
                 yield* runQualityCheck(input.sessionID, harness.shell, check).pipe(
-                  Effect.catchCause((cause) => Effect.logWarning("quality check errored", { cause })),
+                  Effect.catchCause((cause) =>
+                    Log.event("session.quality.check.errored", {
+                      "session.id": input.sessionID,
+                      "session.cause": Cause.pretty(cause),
+                    }),
+                  ),
                 )
           } else if (isEmptyAssistantTurn(context)) {
             // 1N/A3: the turn produced no text AND no tool call — typically a tool call streamed
@@ -2153,10 +2219,10 @@ export const layer = Layer.effect(
             // isn't working, so stop and surface the server-side fix instead of looping silently.
             consecutiveEmpty++
             if (consecutiveEmpty === 1) {
-              yield* Effect.logInfo("empty-turn recovery", { sessionID: input.sessionID })
+              yield* Log.event("session.turn.empty.recovered", { "session.id": input.sessionID })
               yield* SessionInput.steer(db, events, input.sessionID, EMPTY_TURN_RECOVERY)
             } else {
-              yield* Effect.logWarning(EMPTY_TURN_DIAGNOSTIC, { sessionID: input.sessionID })
+              yield* Log.event("session.turn.empty.paused", { "session.id": input.sessionID })
               // T4 (1N residue): the user must see WHY the chat went quiet — surface the calm
               // in-chat notice too (it names the server-side fix), not just a server log. Once
               // per drain (consecutiveEmpty === 2 exactly); best-effort like every Synthetic.
@@ -2190,17 +2256,17 @@ export const layer = Layer.effect(
               const attempted = TextualCall.detect(finalText, result.offeredTools)
               if (attempted) {
                 textualNudged = true
-                yield* Effect.logInfo("textual tool-call recovery", {
-                  sessionID: input.sessionID,
-                  tell: attempted.tell,
-                  detail: attempted.detail,
+                yield* Log.event("session.tool.textual.recovered", {
+                  "session.id": input.sessionID,
+                  "session.tool.tell": attempted.tell,
+                  "session.tool.detail": attempted.detail,
                 })
                 yield* SessionInput.steer(db, events, input.sessionID, TextualCall.recoveryMessage(attempted))
               }
             }
             if (!regrounded && shouldReground(finalText, toolCallsSinceLastUser(context).length)) {
               regrounded = true
-              yield* Effect.logInfo("finish re-grounding nudge", { sessionID: input.sessionID })
+              yield* Log.event("session.finish.reground", { "session.id": input.sessionID })
               yield* SessionInput.steer(db, events, input.sessionID, REGROUND_NUDGE)
             }
             // QE-B steps 4–5: the turn-end gate — test + structural pass, once per drain,
@@ -2209,7 +2275,12 @@ export const layer = Layer.effect(
             if (qualityOn)
               for (const check of Quality.dueTurnEnd(harness.quality, quality))
                 yield* runQualityCheck(input.sessionID, harness.shell, check).pipe(
-                  Effect.catchCause((cause) => Effect.logWarning("quality check errored", { cause })),
+                  Effect.catchCause((cause) =>
+                    Log.event("session.quality.check.errored", {
+                      "session.id": input.sessionID,
+                      "session.cause": Cause.pretty(cause),
+                    }),
+                  ),
                 )
           }
           if (!needsContinuation) needsContinuation = yield* SessionInput.hasPending(db, input.sessionID, "steer")
@@ -2237,16 +2308,16 @@ export const layer = Layer.effect(
           )
           if (decision.kind === "continue") {
             driveState.rounds++
-            yield* Effect.logInfo("self-drive continuation", {
-              sessionID: input.sessionID,
+            yield* Log.event("session.drive.continue", {
+              "session.id": input.sessionID,
               round: driveState.rounds,
             })
             yield* SessionInput.steer(db, events, input.sessionID, decision.message)
             shouldRun = true
             promotion = "steer"
           } else if (decision.kind === "cap") {
-            yield* Effect.logWarning("self-drive cap reached", {
-              sessionID: input.sessionID,
+            yield* Log.event("session.drive.cap.reached", {
+              "session.id": input.sessionID,
               rounds: driveState.rounds,
             })
             yield* Effect.gen(function* () {
