@@ -24,6 +24,7 @@ import { PermissionV2 } from "@novaclaw/core/permission"
 import { McpExternal } from "@novaclaw/core/tool/mcp-external"
 import { PluginTools } from "@novaclaw/core/tool/plugin-tools"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
+import { Tool } from "@novaclaw/core/tool/tool"
 import { ApplicationTools } from "@novaclaw/core/tool/application-tools"
 import { ToolOutputStore } from "@novaclaw/core/tool-output-store"
 import { AgentV2 } from "@novaclaw/core/agent"
@@ -95,7 +96,7 @@ const registryOver = (base: ReturnType<typeof testBase>) =>
 const settleCall = (name: string, input: Record<string, unknown>, tag: string) =>
   Effect.gen(function* () {
     const service = yield* ToolRegistry.Service
-    const materialized = yield* service.materialize()
+    const materialized = yield* service.materialize([], undefined, new Set([name]))
     const settlement = yield* materialized.settle({
       sessionID: SessionV2.ID.make(`ses_${tag}`),
       agent: AgentV2.ID.make("build"),
@@ -160,7 +161,7 @@ describe("AggregateExternalToolSource", () => {
     expect(warnings.filter((line) => line.includes("NOT LOADED"))).toEqual([])
   })
 
-  // The MCP rung — the seam ruling 5 keeps — still materializes and executes.
+  // The MCP rung — the seam ruling 5 keeps — is deferred, discoverable, and still executes.
   test("serves an MCP tool through ToolRegistry.materialize", async () => {
     await using tmp = await tmpdir<void>({ init: async () => {} })
     const root = AbsolutePath.make(tmp.path)
@@ -171,6 +172,58 @@ describe("AggregateExternalToolSource", () => {
       settleCall("searxng_search", {}, "mcp").pipe(Effect.scoped, Effect.provide(registryOver(base))),
     )
     expect(settlement.result).toEqual({ type: "text", value: McpExternal.FRAME + "MCP:results" })
+  })
+
+  test("keeps external schemas out of the resident array and unlocks settlement only after discovery", async () => {
+    await using tmp = await tmpdir<void>({ init: async () => {} })
+    const root = AbsolutePath.make(tmp.path)
+    const base = testBase(root, "prj_deferred", { github_create_issue: mcpTool("created") })
+
+    const program = Effect.gen(function* () {
+      const service = yield* ToolRegistry.Service
+      yield* service.register({
+        tool_call: ToolRegistry.withDeferredDispatcher(
+          Tool.makeExternal({
+            description: "test dispatcher",
+            inputSchema: { type: "object" },
+            execute: (raw, context) => {
+              const input = raw as { name: string; input: Record<string, unknown> }
+              if (!context.invokeDeferred)
+                return Effect.fail(new Tool.Failure({ message: "dispatcher unavailable" }))
+              return context.invokeDeferred(input.name, input.input).pipe(
+                Effect.map((output) => ({
+                  structured: output.structured,
+                  content: output.content.flatMap((part) => (part.type === "text" ? [part] : [])),
+                })),
+              )
+            },
+          }),
+        ),
+      })
+      const before = yield* service.materialize()
+      const after = yield* service.materialize([], undefined, new Set(["github_create_issue"]))
+      expect(before.deferred.map((source) => source.definition.name)).toEqual(["github_create_issue"])
+      expect(JSON.stringify(after.definitions)).toBe(JSON.stringify(before.definitions))
+
+      const input = {
+        sessionID: SessionV2.ID.make("ses_deferred"),
+        agent: AgentV2.ID.make("build"),
+        assistantMessageID: SessionMessage.ID.make("msg_deferred"),
+        call: {
+          type: "tool-call" as const,
+          id: "call-deferred",
+          name: "tool_call",
+          input: { name: "github_create_issue", input: {} },
+        },
+      }
+      expect((yield* before.settle(input)).result).toMatchObject({
+        type: "error",
+        value: expect.stringContaining("Call tool_search"),
+      })
+      expect((yield* after.settle(input)).result).toEqual({ type: "text", value: McpExternal.FRAME + "created" })
+    })
+
+    await Effect.runPromise(program.pipe(Effect.scoped, Effect.provide(registryOver(base))))
   })
 
   // PRECEDENCE PIN. Two rungs remain and they must not be ambiguous: the aggregate
@@ -192,10 +245,11 @@ describe("AggregateExternalToolSource", () => {
         }),
       )
 
-      // Both rungs offer `shout`; exactly one registration survives the merge.
+      // Both rungs offer `shout`; exactly one deferred registration survives the merge.
       const service = yield* ToolRegistry.Service
       const materialized = yield* service.materialize()
-      expect(materialized.definitions.filter((definition) => definition.name === "shout").length).toBe(1)
+      expect(materialized.definitions).toEqual([])
+      expect(materialized.deferred.filter((source) => source.definition.name === "shout").length).toBe(1)
 
       return yield* settleCall("shout", { text: "hi" }, "collide")
     })
@@ -208,7 +262,7 @@ describe("AggregateExternalToolSource", () => {
   })
 
   // The plugin rung on its own (F1a plugin-tool parity): a tool REGISTERED through
-  // the V2 `PluginTools` store is advertised and settles a call.
+  // the V2 `PluginTools` store is deferred and settles after transcript discovery.
   test("serves a V2-plugin-registered tool through ToolRegistry.materialize", async () => {
     await using tmp = await tmpdir<void>({ init: async () => {} })
     const root = AbsolutePath.make(tmp.path)
@@ -228,7 +282,8 @@ describe("AggregateExternalToolSource", () => {
 
       const service = yield* ToolRegistry.Service
       const materialized = yield* service.materialize()
-      expect(materialized.definitions.map((definition) => definition.name)).toContain("shout")
+      expect(materialized.definitions.map((definition) => definition.name)).not.toContain("shout")
+      expect(materialized.deferred.map((source) => source.definition.name)).toContain("shout")
 
       return yield* settleCall("shout", { text: "hi" }, "plugintools")
     })

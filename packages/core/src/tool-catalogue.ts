@@ -48,6 +48,8 @@ const CORE_CATEGORIES: Readonly<Record<string, string>> = {
   skill: "knowledge",
   spawn: "agents",
   todowrite: "agents",
+  tool_call: "knowledge",
+  tool_search: "knowledge",
   tool_manual: "knowledge",
   trash: "files",
   wait: "agents",

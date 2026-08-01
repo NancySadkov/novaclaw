@@ -538,7 +538,7 @@ const toolSources = collect(TOOL_DIR, TOOL_DIR, [])
 const { framed } = classify(toolSources)
 
 /** Goes and gets bytes from a third party. MUST frame. */
-const FRAMED = ["mcp-external.ts", "messenger.ts", "webfetch.ts", "websearch.ts"]
+const FRAMED = ["mcp-external.ts", "messenger.ts", "tool-search.ts", "webfetch.ts", "websearch.ts"]
 
 /**
  * Carries a third party's text and does NOT frame it. **Shrink-only** — an entry is a named gap, not
@@ -595,6 +595,8 @@ const NO_EXTERNAL = [
   "spawn.ts",
   "todowrite.ts",
   "tool-manual.ts",
+  // Pure dispatcher over output already produced (and framed when required) by the target tool.
+  "tool-call.ts",
   "tool.ts",
   "tools.ts",
   "trash.ts",

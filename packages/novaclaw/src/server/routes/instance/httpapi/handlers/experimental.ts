@@ -23,14 +23,13 @@ export const experimentalHandlers = HttpApiBuilder.group(InstanceHttpApi, "exper
     const locations = yield* LocationServiceMap.Service
     const worktreeSvc = yield* Worktree.Service
 
-    // F1f: tool enumeration rides the core V2 ToolRegistry (materialize().definitions), resolved
-    // per-request from the instance directory's location services (core registry is location-scoped;
-    // cf. handlers/file.ts). Lists the effective built-in + MCP tool set.
+    // Tool enumeration is an installed-catalogue surface, not a provider horizon: deferred external
+    // schemas still belong here even though materialize().definitions intentionally excludes them.
     const toolDefinitions = Effect.fn("ExperimentalHttpApi.toolDefinitions")(function* () {
       const directory = (yield* InstanceState.context).directory
       return yield* ToolRegistry.Service.pipe(
-        Effect.flatMap((registry) => registry.materialize()),
-        Effect.map((material) => material.definitions),
+        Effect.flatMap((registry) => registry.catalogue()),
+        Effect.map((sources) => sources.map((source) => source.definition)),
         Effect.provide(locations.get(Location.Ref.make({ directory: AbsolutePath.make(directory) }))),
       )
     })

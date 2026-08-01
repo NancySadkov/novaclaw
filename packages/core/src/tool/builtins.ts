@@ -27,6 +27,8 @@ import { RevertTool } from "./revert"
 import { SkillTool } from "./skill"
 import { TodoWriteTool } from "./todowrite"
 import { ToolManualTool } from "./tool-manual"
+import { ToolCallTool } from "./tool-call"
+import { ToolSearchTool } from "./tool-search"
 import { TrashTool } from "./trash"
 import { WebFetchTool } from "./webfetch"
 import { WebSearchTool } from "./websearch"
@@ -90,6 +92,8 @@ export const locationLayer = Layer.mergeAll(
   SkillTool.layer,
   TodoWriteTool.layer,
   ToolManualTool.layer,
+  ToolCallTool.layer,
+  ToolSearchTool.layer,
   TrashTool.layer,
   WebFetchTool.layer,
   WebSearchTool.layer,
@@ -127,6 +131,8 @@ export const node = makeLocationNode({
     SkillTool.node,
     TodoWriteTool.node,
     ToolManualTool.node,
+    ToolCallTool.node,
+    ToolSearchTool.node,
     TrashTool.node,
     WebFetchTool.node,
     WebSearchTool.node,

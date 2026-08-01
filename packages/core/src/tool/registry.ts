@@ -1,6 +1,13 @@
 export * as ToolRegistry from "./registry"
 
-import { ToolOutput, ToolRuntime, type ToolCall, type ToolDefinition, type ToolResultValue } from "@novaclaw/llm"
+import {
+  ToolFailure,
+  ToolOutput,
+  ToolRuntime,
+  type ToolCall,
+  type ToolDefinition,
+  type ToolResultValue,
+} from "@novaclaw/llm"
 import { Context, Effect, Layer, Scope } from "effect"
 import { AgentV2 } from "../agent"
 import { PermissionV2 } from "../permission"
@@ -18,6 +25,7 @@ import {
   settle,
   validateRegistration,
   type AnyTool,
+  type Context as ToolContext,
   type RegistrationError,
 } from "./tool"
 import { Tools } from "./tools"
@@ -38,6 +46,7 @@ export interface Interface {
   readonly materialize: (
     permissions?: PermissionV2.Ruleset,
     offered?: (name: string) => boolean,
+    discovered?: ReadonlySet<string>,
   ) => Effect.Effect<Materialization>
   /** Internal registration capability exposed publicly only through Tools.Service. */
   readonly register: (tools: Readonly<Record<string, AnyTool>>) => Effect.Effect<void, RegistrationError, Scope.Scope>
@@ -45,6 +54,8 @@ export interface Interface {
 
 export interface Materialization {
   readonly definitions: ReadonlyArray<ToolDefinition>
+  /** Filtered external schemas intentionally absent from `definitions`. */
+  readonly deferred: ReadonlyArray<ToolCatalogue.Source>
   readonly settle: (input: ExecuteInput) => Effect.Effect<Settlement, ToolOutputStore.Error>
 }
 
@@ -71,6 +82,14 @@ export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2
 
 /** Keyed by the tool VALUE, so a registration never has to carry an extra field. See below. */
 const availabilityOf = new WeakMap<AnyTool, Effect.Effect<boolean>>()
+const deferredDispatchers = new WeakSet<AnyTool>()
+
+/** Grant one trusted resident tool the per-materialization deferred dispatcher. The capability is
+ *  keyed by tool identity so the registry never learns a magic registration name. */
+export const withDeferredDispatcher = <T extends AnyTool>(tool: T): T => {
+  deferredDispatchers.add(tool)
+  return tool
+}
 
 /**
  * Declare a live availability predicate for a tool: `materialize` evaluates it when the model's
@@ -117,26 +136,41 @@ const registryLayer = Layer.effect(
     type Registration = { readonly identity: object; readonly tool: AnyTool }
     const local = new Map<string, Array<{ readonly token: object; readonly registration: Registration }>>()
 
-    // `advertised` is the identity materialization handed to the model, and it is always supplied: the only
-    // caller resolves the registration first and reports an unadvertised name itself
-    // (`ToolRuntime.unknownToolMessage`).
-    // Reaching here with no registration therefore means it was removed mid-turn — stale, never unknown.
-    const settleWith = Effect.fn("ToolRegistry.settle")(function* (input: ExecuteInput, advertised: object) {
+    const settleRaw = Effect.fn("ToolRegistry.settleRaw")(function* (
+      input: ExecuteInput,
+      advertised: object,
+      deferredTools: ReadonlyArray<ToolCatalogue.Source>,
+      invokeDeferred?: ToolContext["invokeDeferred"],
+    ) {
       const registration =
         local.get(input.call.name)?.at(-1)?.registration ??
         applications.entries().get(input.call.name) ??
         (yield* external.entries()).get(input.call.name)
-      if (!registration) return { result: { type: "error" as const, value: `Stale tool call: ${input.call.name}` } }
-      if (registration.identity !== advertised)
-        return { result: { type: "error" as const, value: `Stale tool call: ${input.call.name}` } }
-      const pending = yield* settle(registration.tool, input.call, {
+      if (!registration || registration.identity !== advertised)
+        return yield* new ToolFailure({ message: `Stale tool call: ${input.call.name}` })
+      const output = yield* settle(registration.tool, input.call, {
         sessionID: input.sessionID,
         agent: input.agent,
         assistantMessageID: input.assistantMessageID,
         toolCallID: input.call.id,
         attachmentPaths: input.attachmentPaths ?? new Set(),
-      }).pipe(
-        Effect.map((output) => ({ output })),
+        ...(deferredTools.length === 0 ? {} : { deferredTools }),
+        ...(invokeDeferred === undefined || !deferredDispatchers.has(registration.tool) ? {} : { invokeDeferred }),
+      })
+      return { output, tool: registration.tool }
+    })
+
+    // `advertised` is the identity materialization handed to the model, and it is always supplied: the only
+    // caller resolves the registration first and reports an unadvertised name itself
+    // (`ToolRuntime.unknownToolMessage`). Reaching the raw executor with no matching registration therefore
+    // means it was removed mid-turn — stale, never unknown.
+    const settleWith = Effect.fn("ToolRegistry.settle")(function* (
+      input: ExecuteInput,
+      advertised: object,
+      deferredTools: ReadonlyArray<ToolCatalogue.Source>,
+      invokeDeferred?: ToolContext["invokeDeferred"],
+    ) {
+      const pending = yield* settleRaw(input, advertised, deferredTools, invokeDeferred).pipe(
         Effect.catchTag("LLM.ToolFailure", (failure) =>
           Effect.succeed({ result: { type: "error" as const, value: failure.message } }),
         ),
@@ -147,7 +181,7 @@ const registryLayer = Layer.effect(
         sessionID: input.sessionID,
         toolCallID: input.call.id,
         output,
-        preview: outputPreview(registration.tool),
+        preview: outputPreview(pending.tool),
       })
       const result = ToolOutput.toResultValue(bounded.output)
       if (result.type === "error")
@@ -205,12 +239,18 @@ const registryLayer = Layer.effect(
         }
         return [...sources.values()].toSorted((a, b) => a.definition.name.localeCompare(b.definition.name))
       }),
-      materialize: Effect.fn("ToolRegistry.materialize")(function* (permissions = [], offered = () => true) {
-        const registrations = new Map(applications.entries())
-        for (const [name, entry] of yield* external.entries()) registrations.set(name, entry)
+      materialize: Effect.fn("ToolRegistry.materialize")(function* (
+        permissions = [],
+        offered = () => true,
+        discovered = new Set<string>(),
+      ) {
+        type MaterializedRegistration = Registration & { readonly external: boolean }
+        const registrations = new Map<string, MaterializedRegistration>()
+        for (const [name, entry] of applications.entries()) registrations.set(name, { ...entry, external: false })
+        for (const [name, entry] of yield* external.entries()) registrations.set(name, { ...entry, external: true })
         for (const [name, entries] of local) {
           const registration = entries.at(-1)?.registration
-          if (registration) registrations.set(name, registration)
+          if (registration) registrations.set(name, { ...registration, external: false })
         }
         // Three withdrawals, one seam. Permission decides first and permanently removes a denied
         // registration. Routing runs only over survivors, so a `true` route decision can undo an
@@ -228,15 +268,52 @@ const registryLayer = Layer.effect(
           const available = availabilityOf.get(registration.tool)
           if (available !== undefined && !(yield* available)) registrations.delete(name)
         }
+        const resident = new Map([...registrations].filter(([, registration]) => !registration.external))
+        const deferred = [...registrations]
+          .filter(([, registration]) => registration.external)
+          .map(([name, registration]) => ({
+            server: ToolCatalogue.externalServer(name),
+            definition: definition(name, registration.tool),
+          }))
+          .toSorted((a, b) => a.definition.name.localeCompare(b.definition.name))
+        const deferredByName = new Map(
+          deferred.map((source) => [source.definition.name, registrations.get(source.definition.name)!]),
+        )
+        const callableDeferred = new Map([...deferredByName].filter(([name]) => discovered.has(name)))
+        const callableNames = [...resident.keys(), ...callableDeferred.keys()]
         return {
-          definitions: Array.from(registrations, ([name, registration]) => definition(name, registration.tool)),
+          definitions: Array.from(resident, ([name, registration]) => definition(name, registration.tool)),
+          deferred,
           settle: (input) => {
-            const registration = registrations.get(input.call.name)
-            if (registration) return settleWith(input, registration.identity)
-            // `registrations` IS the advertised set — `definitions` above is built from it — so the model is
-            // handed back exactly the horizon it was given, in the same order.
+            const registration = resident.get(input.call.name) ?? callableDeferred.get(input.call.name)
+            const invokeDeferred: NonNullable<ToolContext["invokeDeferred"]> = (name, targetInput) => {
+              const target = callableDeferred.get(name)
+              if (!target)
+                return Effect.fail(
+                  new ToolFailure({
+                    message:
+                      `Deferred tool ${name} is not callable in this session. ` +
+                      `Call tool_search first and use an exact name it returned.`,
+                  }),
+                )
+              return settleRaw(
+                { ...input, call: { type: "tool-call", id: input.call.id, name, input: targetInput } },
+                target.identity,
+                deferred,
+              ).pipe(Effect.map((settled) => settled.output))
+            }
+            if (registration) return settleWith(input, registration.identity, deferred, invokeDeferred)
+            if (deferredByName.has(input.call.name))
+              return Effect.succeed({
+                result: {
+                  type: "error",
+                  value:
+                    `Tool ${input.call.name} is installed but its schema has not been disclosed in this session. ` +
+                    `Nothing ran. Call tool_search for the capability you need, then invoke an exact returned name through tool_call.`,
+                },
+              })
             return Effect.succeed({
-              result: { type: "error", value: ToolRuntime.unknownToolMessage(input.call.name, registrations.keys()) },
+              result: { type: "error", value: ToolRuntime.unknownToolMessage(input.call.name, callableNames) },
             })
           },
         }

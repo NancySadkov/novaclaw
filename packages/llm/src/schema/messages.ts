@@ -293,6 +293,9 @@ export class LLMRequest extends Schema.Class<LLMRequest>("LLM.Request")({
   system: Schema.Array(SystemPart),
   messages: Schema.Array(Message),
   tools: Schema.Array(ToolDefinition),
+  /** Tool names whose schemas already exist in append-only transcript results. Parser-only: protocol
+   *  request bodies must never serialize this field or re-add those schemas to `tools`. */
+  callableTools: Schema.optional(Schema.Array(Schema.String)),
   toolChoice: Schema.optional(ToolChoice),
   generation: Schema.optional(GenerationOptions),
   providerOptions: Schema.optional(ProviderOptions),
@@ -311,6 +314,7 @@ export namespace LLMRequest {
     system: request.system,
     messages: request.messages,
     tools: request.tools,
+    callableTools: request.callableTools,
     toolChoice: request.toolChoice,
     generation: request.generation,
     providerOptions: request.providerOptions,

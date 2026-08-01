@@ -12,6 +12,7 @@ import { Effect, JsonSchema, Schema } from "effect"
 import type { AgentV2 } from "../agent"
 import type { SessionMessage } from "../session/message"
 import type { SessionSchema } from "../session/schema"
+import type { ToolCatalogue } from "../tool-catalogue"
 import type { ToolTruncation } from "./truncation"
 
 export interface Context {
@@ -23,6 +24,11 @@ export interface Context {
    *  A mutation tool passes these to `permission.assert` so overwriting the user's own source
    *  asks first. See `session/runner/attachment-paths.ts`. */
   readonly attachmentPaths?: ReadonlySet<string>
+  /** Permission/routing-filtered schemas kept out of the provider's resident tool array. Only the
+   *  resident `tool_search` consumes these; ordinary tools should ignore them. */
+  readonly deferredTools?: ReadonlyArray<ToolCatalogue.Source>
+  /** Invoke a schema already disclosed by tool_search through the resident, cache-stable dispatcher. */
+  readonly invokeDeferred?: (name: string, input: Record<string, unknown>) => Effect.Effect<ToolOutput, ToolFailure>
 }
 
 export type SchemaType<A> = Schema.Codec<A, any, never, never>

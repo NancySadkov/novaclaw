@@ -1,20 +1,18 @@
 import { describe, expect, test } from "bun:test"
 import { Effect } from "effect"
-import type { LLMRequest } from "../schema"
+import { request as makeRequest } from "../llm"
+import { GenerationOptions, LLMRequest, Message, Model, ToolDefinition } from "../schema"
 import { OpenAIChat } from "./openai-chat"
 
 // `fromRequest` reads model/messages/tools/generation — a minimal cast drives the real
 // body construction without a live model (same pattern as the recovery test).
-const request = (generation: Record<string, unknown>) =>
-  ({
-    model: { id: "qwen3.6-35b" },
-    system: [],
-    messages: [],
-    tools: [],
+const request = (generation: GenerationOptions.Input) =>
+  makeRequest({
+    model: Model.make({ id: "qwen3.6-35b", provider: "dgx-spark", route: OpenAIChat.route }),
     generation,
-  }) as unknown as LLMRequest
+  })
 
-const body = (generation: Record<string, unknown>) =>
+const body = (generation: GenerationOptions.Input) =>
   Effect.runSync(OpenAIChat.protocol.body.from(request(generation))) as Record<string, unknown>
 
 describe("openai-chat — sampling passthrough (1C)", () => {
@@ -49,5 +47,57 @@ describe("openai-chat — sampling passthrough (1C)", () => {
       presence_penalty: 0.2,
       seed: 42,
     })
+  })
+})
+
+describe("openai-chat — append-only tool discovery", () => {
+  test("keeps the serialized prefix and tools byte-identical after a schema is disclosed in a tool result", () => {
+    const resident = new ToolDefinition({
+      name: "tool_search",
+      description: "Find a tool",
+      inputSchema: { type: "object", properties: { query: { type: "string" } }, required: ["query"] },
+    })
+    const dispatcher = new ToolDefinition({
+      name: "tool_call",
+      description: "Call a discovered tool",
+      inputSchema: {
+        type: "object",
+        properties: { name: { type: "string" }, input: { type: "object" } },
+        required: ["name", "input"],
+      },
+    })
+    const prefix = [Message.user("File a bug in my repository.")]
+    const before = LLMRequest.update(request({}), { messages: prefix, tools: [resident, dispatcher] })
+    const after = LLMRequest.update(request({}), {
+      messages: [
+        ...prefix,
+        Message.assistant({ type: "tool-call", id: "call_search", name: "tool_search", input: { query: "file bug" } }),
+        Message.tool({
+          id: "call_search",
+          name: "tool_search",
+          result: {
+            kind: "tool-discovery",
+            tools: [{ name: "github_create_issue", input_schema: { type: "object" } }],
+          },
+        }),
+      ],
+      tools: [resident, dispatcher],
+      callableTools: ["github_create_issue"],
+    })
+
+    const beforeBody = Effect.runSync(OpenAIChat.protocol.body.from(before))
+    const afterBody = Effect.runSync(OpenAIChat.protocol.body.from(after))
+    const beforeMessages = beforeBody.messages
+    const afterMessages = afterBody.messages
+
+    expect(JSON.stringify(afterBody.tools)).toBe(JSON.stringify(beforeBody.tools))
+    expect(JSON.stringify(afterMessages.slice(0, beforeMessages.length))).toBe(JSON.stringify(beforeMessages))
+    expect(JSON.stringify(afterBody)).not.toContain("callableTools")
+    expect(JSON.stringify(afterBody)).not.toContain("callable_tools")
+    expect(OpenAIChat.protocol.stream.initial(after).allowedToolNames).toEqual([
+      "tool_search",
+      "tool_call",
+      "github_create_issue",
+    ])
   })
 })

@@ -25,6 +25,7 @@ import { QuestionV2 } from "../../question"
 import { SystemContext } from "../../system-context/index"
 import { SystemContextRegistry } from "../../system-context/registry"
 import { ToolCatalogueGuidance } from "../../tool-catalogue-guidance"
+import { ToolDiscovery } from "../../tool-discovery"
 import { SkillGuidance } from "../../skill/guidance"
 import { ReferenceGuidance } from "../../reference/guidance"
 import { ToolRegistry } from "../../tool/registry"
@@ -761,6 +762,7 @@ export const layer = Layer.effect(
       )
       const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)
       const context = entries.map((entry) => entry.message)
+      const discoveredTools = ToolDiscovery.discovered(context)
       const todoReminderConfig = TodoReminder.resolve(harness.context?.todo_reminder)
       let todoReminder: string | undefined
       if (!todoReminderConfig.enabled) {
@@ -872,6 +874,7 @@ export const layer = Layer.effect(
               providerID: modelRef?.providerID ?? model.provider,
               modelID: modelRef?.id ?? model.id,
             }),
+            discoveredTools,
           )
       const promptCacheKey = /^ses_[0-9a-f]{64}$/.test(session.id) ? session.id.slice(4) : session.id
       // P3 (3A/3B): appraise the per-session mood from what has happened so far (runs BEFORE
@@ -941,6 +944,7 @@ export const layer = Layer.effect(
           ...(isLastStep ? [Message.assistant(MAX_STEPS_PROMPT)] : []),
         ],
         tools: toolMaterialization?.definitions ?? [],
+        callableTools: isLastStep ? [] : [...discoveredTools],
         toolChoice: isLastStep ? "none" : undefined,
         ...(affectiveGeneration === undefined ? {} : { generation: affectiveGeneration }),
       })

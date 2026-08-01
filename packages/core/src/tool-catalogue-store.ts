@@ -21,7 +21,12 @@ export interface SearchHit {
 
 export interface Interface {
   readonly replace: (scope: string, rows: ReadonlyArray<ToolCatalogue.Row>) => Effect.Effect<void, unknown>
-  readonly search: (scope: string, query: string, limit?: number) => Effect.Effect<ReadonlyArray<SearchHit>, unknown>
+  readonly search: (
+    scope: string,
+    query: string,
+    limit?: number,
+    allowedNames?: ReadonlySet<string>,
+  ) => Effect.Effect<ReadonlyArray<SearchHit>, unknown>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/ToolCatalogueStore") {}
@@ -88,7 +93,8 @@ export const layer = Layer.effect(
         )
         fingerprints.set(scope, fingerprint)
       }),
-      search: Effect.fn("ToolCatalogueStore.search")(function* (scope, query, limit = 5) {
+      search: Effect.fn("ToolCatalogueStore.search")(function* (scope, query, limit = 5, allowedNames) {
+        if (allowedNames !== undefined && allowedNames.size === 0) return []
         yield* ensureIndex()
         const terms = words(query)
         if (terms.length === 0) return []
@@ -112,6 +118,14 @@ export const layer = Layer.effect(
           JOIN tool_catalogue ON tool_catalogue.rowid = tool_catalogue_fts.rowid
           WHERE tool_catalogue_fts MATCH ${match}
             AND tool_catalogue.scope = ${scope}
+            ${
+              allowedNames === undefined
+                ? sql``
+                : sql`AND tool_catalogue.name IN (${sql.join(
+                    [...allowedNames].map((name) => sql`${name}`),
+                    sql`, `,
+                  )})`
+            }
           ORDER BY score, tool_catalogue.name
           LIMIT ${Math.max(1, Math.min(50, limit))}
         `)

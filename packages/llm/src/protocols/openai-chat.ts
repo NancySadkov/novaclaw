@@ -728,7 +728,12 @@ export const protocol = Protocol.make({
       tools: ToolStream.empty<number>(),
       toolCallEvents: [],
       lifecycle: Lifecycle.initial(),
-      allowedToolNames: request.tools.map((tool) => tool.name),
+      // Discovered tools are described by append-only tool results, never reinserted into the wire
+      // `tools` array. They still belong to the decoder's recovery whitelist: qwen occasionally
+      // prints a valid call as text, and losing that call solely because its schema arrived through
+      // the transcript would make discovery transport-dependent. Structured unknown names already
+      // pass through above; this closes the text-dumped sibling without changing `fromRequest`.
+      allowedToolNames: [...new Set([...request.tools.map((tool) => tool.name), ...(request.callableTools ?? [])])],
       content: "",
       reasoning: "",
     }),

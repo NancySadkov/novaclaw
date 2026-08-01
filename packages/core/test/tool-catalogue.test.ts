@@ -99,6 +99,9 @@ test("ToolCatalogueStore lazily indexes, searches, scopes, and replaces catalogu
         },
       ])
       expect(yield* store.search("/beta", "file bug")).toEqual([])
+      expect(yield* store.search("/alpha", "file bug", 5, new Set(["github_create_issue"]))).toHaveLength(1)
+      expect(yield* store.search("/alpha", "file bug", 5, new Set(["github_list_users"]))).toEqual([])
+      expect(yield* store.search("/alpha", "file bug", 5, new Set())).toEqual([])
 
       yield* store.replace("/alpha", [])
       expect(yield* store.search("/alpha", "file bug")).toEqual([])
