@@ -6,6 +6,7 @@ import { Context, Effect, Layer, Schema, Stream } from "effect"
 import { ChildProcess } from "effect/unstable/process"
 import { AbsolutePath, RelativePath } from "./schema"
 import { ChangesetBudget } from "./changeset-budget"
+import { Log } from "./observability/log"
 import { FSUtil } from "./fs-util"
 import { AppProcess } from "./process"
 import { makeGlobalNode } from "./effect/app-node"
@@ -691,7 +692,11 @@ export const layer = Layer.effect(
         bytes += Buffer.byteLength(patch, "utf8")
       }
       if (computed < paths.length)
-        yield* Effect.logWarning(`Git.tree.diff: ${ChangesetBudget.summary(paths.length, computed, bytes)}`)
+        yield* Log.event("git.tree.diff.truncated", {
+          "git.files": paths.length,
+          "git.computed": computed,
+          "git.bytes": bytes,
+        })
       return diffs
     })
 

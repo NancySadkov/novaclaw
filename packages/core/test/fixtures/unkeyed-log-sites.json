@@ -72,10 +72,6 @@
     "count": 1
   },
   {
-    "name": "packages/core/src/git.ts :: Effect.logWarning(`Git.tree.diff: ${ChangesetBudget.summary(paths.length, computed, bytes)}`)",
-    "count": 1
-  },
-  {
     "name": "packages/core/src/jh/store.ts :: Effect.logWarning(\"jh artifact body over the size cap — refused, not truncated\")",
     "count": 1
   },

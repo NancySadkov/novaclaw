@@ -85,6 +85,7 @@ export const SUBSYSTEMS = {
   config: "Configuration",
   filesystem: "Files and watchers",
   format: "Code formatters",
+  git: "Version control",
   instance: "Instance lifecycle",
   location: "Workspace locations",
   mcp: "MCP servers",
@@ -245,6 +246,16 @@ export const EVENTS = {
     attributes: { command: "id", "format.file": "path" },
     content: "user",
     file: "packages/novaclaw/src/format/index.ts",
+  },
+
+  // ── git ───────────────────────────────────────────────────────────────────────────────────────
+  /** A tree diff exceeded its bounded patch budget; remaining files carry omission markers. */
+  "git.tree.diff.truncated": {
+    level: "warn",
+    message: "Git.tree.diff:",
+    attributes: { "git.files": "count", "git.computed": "count", "git.bytes": "count" },
+    content: "none",
+    file: "packages/core/src/git.ts",
   },
 
   // ── instance ──────────────────────────────────────────────────────────────────────────────────
