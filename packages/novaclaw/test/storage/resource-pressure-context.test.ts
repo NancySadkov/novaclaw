@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test"
+import { Logging } from "@novaclaw/core/observability/logging"
+import { ResourcePressureContext } from "@novaclaw/core/resource-pressure-context"
+import { Effect, Layer, Logger, References } from "effect"
 import { Pressure } from "@/storage/pressure"
 import { StorageResourcePressureContext } from "@/storage/resource-pressure-context"
+import { Storage } from "@/storage/storage"
 
 const GIB = 1024 ** 3
 const thresholds: Pressure.Thresholds = Pressure.DEFAULT_THRESHOLDS
@@ -54,5 +58,28 @@ describe("StorageResourcePressureContext", () => {
       `Resource pressure notice: ${configNotice}`,
     ])
     expect(rendered.join("\n")).not.toContain("0 bytes")
+  })
+
+  test("measurement defects degrade and emit one keyed, local-only fault", async () => {
+    const logLines: string[] = []
+    const capture = Logger.map(Logging.formatter("resource-test"), (line) => logLines.push(line))
+    const rendered = await Effect.runPromise(
+      Effect.gen(function* () {
+        const context = yield* ResourcePressureContext.Service
+        return yield* context.lines()
+      }).pipe(
+        Effect.provide(StorageResourcePressureContext.layer),
+        Effect.provide(Layer.mock(Storage.Service, { pressure: () => Effect.die("probe exploded") })),
+        Effect.provide(Logger.layer([capture], { mergeWithExisting: false })),
+        Effect.provideService(References.MinimumLogLevel, "Info"),
+      ),
+    )
+
+    expect(rendered).toEqual(["Resource headroom: unavailable — the host measurement failed."])
+    expect(logLines).toHaveLength(1)
+    expect(logLines[0]).toContain("level=WARN")
+    expect(logLines[0]).toContain("event=resource.headroom.measure.failed")
+    expect(logLines[0]).toContain("resource.cause=")
+    expect(logLines[0]).toContain("probe exploded")
   })
 })

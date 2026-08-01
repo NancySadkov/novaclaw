@@ -91,6 +91,7 @@ export const SUBSYSTEMS = {
   location: "Workspace locations",
   mcp: "MCP servers",
   patch: "File changes",
+  resource: "Host resources",
   server: "HTTP server",
   skill: "Skills",
 } as const
@@ -354,6 +355,16 @@ export const EVENTS = {
     attributes: { "patch.file": "path" },
     content: "user",
     file: "packages/novaclaw/src/patch/index.ts",
+  },
+
+  // ── resource ──────────────────────────────────────────────────────────────────────────────────
+  /** Host memory/disk headroom could not be measured; the model receives an unavailable notice. */
+  "resource.headroom.measure.failed": {
+    level: "warn",
+    message: "Resource headroom measurement failed:",
+    attributes: { "resource.cause": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/storage/resource-pressure-context.ts",
   },
 
   // ── server ────────────────────────────────────────────────────────────────────────────────────

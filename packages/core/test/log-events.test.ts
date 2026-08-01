@@ -206,6 +206,7 @@ describe("redaction is in the record, and it cannot drift from the attributes", 
     expect(mayEgress("kb.memory.open.failed")).toBe(false)
     expect(mayEgress("config.file.load")).toBe(false)
     expect(mayEgress("git.tree.diff.truncated")).toBe(true)
+    expect(mayEgress("resource.headroom.measure.failed")).toBe(false)
     // Every content-free key must really be free of non-egress fields.
     const leaks = declarations
       .filter(([key]) => mayEgress(key))
@@ -404,7 +405,7 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     expect(shadowed).toContain("level=error")
   })
 
-  test("an UN-keyed record is untouched — the 223 remaining call sites are not affected", () => {
+  test("an UN-keyed record is untouched — the 222 remaining call sites are not affected", () => {
     // 1a adds a column; it takes nothing away and rewrites nothing. This is the assertion that says
     // the wrapper is a column rather than a second system.
     const [line] = lines(Effect.logInfo("watcher backend", { directory: "/tmp/x", backend: "parcel" }))

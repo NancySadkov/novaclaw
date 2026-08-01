@@ -760,10 +760,6 @@
     "count": 1
   },
   {
-    "name": "packages/novaclaw/src/storage/resource-pressure-context.ts :: Effect.logWarning(`Resource headroom measurement failed: ${Cause.pretty(cause)}`)",
-    "count": 1
-  },
-  {
     "name": "packages/novaclaw/src/storage/storage.ts :: Effect.logError(\"failed to run migration\")",
     "count": 1
   },
