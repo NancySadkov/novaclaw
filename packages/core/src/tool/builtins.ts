@@ -44,7 +44,7 @@ import { WriteHexTool } from "./write-hex"
  * than this static list. The caller intentionally supplies shared Location
  * services once to this merged set.
  *
- * TODO: Port the remaining launch-follow-up leaves deliberately: edit fuzzy
+ * TODO: Port the remaining launch-follow-up leaves deliberately:
  * parity, task,
  * repo_clone, repo_overview, plan_exit, and Rune/code mode. Keep MCP and plugin
  * transforms separate from this static built-in list.

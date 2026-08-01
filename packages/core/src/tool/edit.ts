@@ -1,5 +1,5 @@
 /**
- * Model-facing V2 exact-edit leaf. Relative paths resolve within the active
+ * Model-facing V2 costed-edit leaf. Relative paths resolve within the active
  * Location. Absolute paths inside that Location are accepted, while explicit
  * absolute external paths retain mutation capability through a separate
  * external_directory approval before edit approval.
@@ -15,6 +15,7 @@ import { FileMutation } from "../file-mutation"
 import { FSUtil } from "../fs-util"
 import { LocationMutation } from "../location-mutation"
 import { PermissionV2 } from "../permission"
+import { AUTO_APPLY_COST_CEILING, find as findMatch, replace as replaceMatches } from "./edit-match"
 import { ToolRegistry } from "./registry"
 import { Tool } from "./tool"
 import { Tools } from "./tools"
@@ -36,6 +37,11 @@ export const Input = Schema.Struct({
 export const Output = Schema.Struct({
   files: Schema.Array(FileDiff.Info),
   replacements: Schema.Number,
+  match: Schema.Struct({
+    tier: Schema.Literals([1, 2, 3, 4]),
+    cost: Schema.Literals([0, 1, 100, 1000]),
+    similarity: Schema.Number,
+  }),
 })
 export type Output = typeof Output.Type
 
@@ -52,33 +58,6 @@ const decodeUtf8 = (content: Uint8Array) => {
   return { bom, content, text: new TextDecoder().decode(bom ? content.slice(3) : content) }
 }
 
-// 1P/A5(3) — edit near-miss ergonomics: when the anchor isn't found, detect a block that differs
-// ONLY in whitespace (indentation, tabs-vs-spaces, trailing spaces, internal runs) and NAME that
-// in the failure, instead of a bare not-found. Detection only — never fuzzy auto-apply.
-const collapseWhitespace = (text: string) =>
-  text
-    .split("\n")
-    .map((line) => line.trim().replace(/[ \t]+/g, " "))
-    .join("\n")
-    .trim()
-
-export const whitespaceNearMiss = (content: string, search: string): boolean => {
-  const needle = collapseWhitespace(search)
-  if (needle === "") return false
-  return collapseWhitespace(content).includes(needle)
-}
-
-const countOccurrences = (content: string, search: string) => {
-  if (search === "") return content.length + 1
-  let count = 0
-  let offset = 0
-  while ((offset = content.indexOf(search, offset)) !== -1) {
-    count++
-    offset += search.length
-  }
-  return count
-}
-
 const previewLines = (value: string, prefix: "+" | "-") => {
   const lines = normalizeLineEndings(value).split("\n")
   const shown = lines.slice(0, 6).map((line) => `${prefix}${line.length > 240 ? `${line.slice(0, 240)}...` : line}`)
@@ -90,6 +69,11 @@ export const toModelOutput = (output: Output, oldString: string, newString: stri
   [
     `Edited file successfully: ${output.files[0]?.file}`,
     `Replacements: ${output.replacements}`,
+    ...(output.match.cost === 0
+      ? []
+      : [
+          `Match: tier ${output.match.tier}, cost ${output.match.cost} (${Math.round(output.match.similarity * 100)}% similar)`,
+        ]),
     "```diff",
     ...previewLines(oldString, "-"),
     ...previewLines(newString, "+"),
@@ -97,7 +81,6 @@ export const toModelOutput = (output: Output, oldString: string, newString: stri
   ].join("\n")
 
 /** Deferred V2 edit behavior and UX integrations remain visible at the model-facing seam. */
-// TODO: Port V1 fuzzy correction strategies only after exact-edit behavior is established: line-trimmed matching, block-anchor fallback, indentation correction, and similarity-threshold review.
 // TODO: Add formatter integration after V2 formatter runtime exists.
 // TODO: Publish watcher/file-edit events after V2 watcher integration exists.
 // TODO: Add snapshots / undo after design exists.
@@ -114,7 +97,7 @@ export const layer = Layer.effectDiscard(
       .register({
         [name]: Tool.make({
           description:
-            "Replace exact text in one file. Prefer this over `write` for any change short of a full rewrite — make the minimal change instead of regenerating the file. oldString must match the file's EXACT bytes, including whitespace and indentation: copy it from a fresh read, do not retype from memory. If it matches more than once, add surrounding context or set replaceAll. Relative paths resolve within the active Location. Absolute paths inside the Location are accepted. Explicit external absolute paths require external_directory approval before edit approval.",
+            "Replace text in one file. Prefer this over `write` for any change short of a full rewrite — make the minimal change instead of regenerating the file. Exact or Unicode-punctuation matches cost 0; trailing-whitespace-only drift costs 1 and may auto-apply. Indentation-stripped or similarity matches are reported with their cost but refused, so re-read and retry with the shown candidate. If a safe tier matches more than once, add surrounding context or set replaceAll. Relative paths resolve within the active Location. Absolute paths inside the Location are accepted. Explicit external absolute paths require external_directory approval before edit approval.",
           input: Input,
           output: Output,
           toModelOutput: ({ input, output }) => [
@@ -180,27 +163,39 @@ export const layer = Layer.effectDiscard(
               const ending = detectLineEnding(source.text)
               const oldString = convertToLineEnding(input.oldString, ending)
               const newString = convertToLineEnding(input.newString, ending)
-              const replacements = countOccurrences(source.text, oldString)
-              if (replacements === 0) {
-                return yield* new ToolFailure({
-                  message: whitespaceNearMiss(source.text, oldString)
-                    ? "Could not find oldString exactly, but a block there differs ONLY in whitespace " +
-                      "(indentation, tabs vs spaces, or trailing spaces). Re-read the exact lines and " +
-                      "copy the exact bytes, including indentation — do not retype from memory."
-                    : "Could not find oldString in the file. It must match exactly, including whitespace and indentation.",
-                })
-              }
-              if (replacements > 1 && input.replaceAll !== true) {
+              const match = findMatch(source.text, oldString)
+              if (!match.matched) {
+                const best = match.best
                 return yield* new ToolFailure({
                   message:
-                    "Found multiple exact matches for oldString. Provide more surrounding context or set replaceAll to true.",
+                    "Could not find oldString in the file." +
+                    (best === undefined
+                      ? ""
+                      : ` Closest candidate: tier ${best.tier}, cost ${best.cost}, ${Math.round(best.similarity * 100)}% similar:\n${previewLines(best.text, "-").join("\n")}`),
                 })
               }
+              const first = match.candidates[0]
+              if (first.cost > AUTO_APPLY_COST_CEILING) {
+                return yield* new ToolFailure({
+                  message:
+                    `Closest candidate matched at tier ${first.tier}, cost ${first.cost}, ` +
+                    `${Math.round(first.similarity * 100)}% similar — above the auto-apply ceiling ` +
+                    `${AUTO_APPLY_COST_CEILING}. Re-read the candidate and retry with exact text:\n` +
+                    previewLines(first.text, "-").join("\n"),
+                })
+              }
+              if (match.candidates.length > 1 && input.replaceAll !== true)
+                return yield* new ToolFailure({
+                  message:
+                    first.tier === 1 && match.candidates.every((item) => item.text === oldString)
+                      ? "Found multiple exact matches for oldString. Provide more surrounding context or set replaceAll to true."
+                      : `Found multiple tier-${first.tier} matches at cost ${first.cost}. ` +
+                        "Provide more surrounding context or set replaceAll to true.",
+                })
 
-              const replaced =
-                input.replaceAll === true
-                  ? source.text.replaceAll(oldString, newString)
-                  : source.text.replace(oldString, newString)
+              const selected = input.replaceAll === true ? match.candidates : [first]
+              const replacement = replaceMatches(source.text, selected, newString)
+              const replaced = replacement.content
               const counts = diffLines(source.text, replaced).reduce(
                 (result, item) => ({
                   additions: result.additions + (item.added ? (item.count ?? 0) : 0),
@@ -225,7 +220,8 @@ export const layer = Layer.effectDiscard(
                     ...counts,
                   },
                 ],
-                replacements,
+                replacements: replacement.replacements,
+                match: { tier: first.tier, cost: first.cost, similarity: first.similarity },
               } satisfies Output
             })
           },

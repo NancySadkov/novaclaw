@@ -562,6 +562,7 @@ const NO_EXTERNAL = [
   "builtins.ts",
   "configure.ts",
   "define-tool.ts",
+  "edit-match.ts",
   "edit.ts",
   "exit.ts",
   "external-tool-source.ts",

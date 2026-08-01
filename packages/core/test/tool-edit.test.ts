@@ -137,6 +137,7 @@ describe("EditTool", () => {
                 })
                 expect(settled.output?.structured).toEqual({
                   replacements: 1,
+                  match: { tier: 1, cost: 0, similarity: 1 },
                   files: [
                     {
                       file: "hello.txt",
@@ -311,7 +312,7 @@ describe("EditTool", () => {
                 ).toEqual({
                   type: "error",
                   value:
-                    "Could not find oldString in the file. It must match exactly, including whitespace and indentation.",
+                    "Could not find oldString in the file. Closest candidate: tier 4, cost 1000, 22% similar:\n-same same",
                 })
                 expect(
                   yield* executeTool(registry, call({ path: "matches.txt", oldString: "same", newString: "after" })),
@@ -321,6 +322,57 @@ describe("EditTool", () => {
                     "Found multiple exact matches for oldString. Provide more surrounding context or set replaceAll to true.",
                 })
                 expect(writes).toEqual([])
+              }),
+            ),
+          ),
+        )
+      },
+      (tmp) => Effect.promise(() => tmp[Symbol.asyncDispose]()),
+    ),
+  )
+
+  it.live("auto-applies cost-1 trailing whitespace and refuses higher-cost indentation drift", () =>
+    Effect.acquireUseRelease(
+      Effect.promise(() => tmpdir()),
+      (tmp) => {
+        reset()
+        const target = path.join(tmp.path, "fuzzy.txt")
+        return Effect.promise(() => fs.writeFile(target, "const a = 1  \nconst b = 2\t\n    run()\n")).pipe(
+          Effect.andThen(
+            withTool(tmp.path, (registry) =>
+              Effect.gen(function* () {
+                const applied = yield* settleTool(
+                  registry,
+                  call({
+                    path: "fuzzy.txt",
+                    oldString: "const a = 1\nconst b = 2",
+                    newString: "const a = 3\nconst b = 4",
+                  }),
+                )
+                expect(applied.result).toMatchObject({
+                  type: "text",
+                  value: expect.stringContaining("Match: tier 2, cost 1 (100% similar)"),
+                })
+                expect(applied.output?.structured).toMatchObject({ match: { tier: 2, cost: 1, similarity: 1 } })
+                expect(yield* Effect.promise(() => fs.readFile(target, "utf8"))).toBe(
+                  "const a = 3\nconst b = 4\n    run()\n",
+                )
+
+                const refused = yield* executeTool(
+                  registry,
+                  call({
+                    path: "fuzzy.txt",
+                    oldString: "const a = 3\nconst b = 4\nrun()",
+                    newString: "const a = 3\nconst b = 4\nfinish()",
+                  }),
+                )
+                expect(refused).toEqual({
+                  type: "error",
+                  value:
+                    "Closest candidate matched at tier 3, cost 100, 100% similar — above the auto-apply ceiling 1. " +
+                    "Re-read the candidate and retry with exact text:\n-const a = 3\n-const b = 4\n-    run()",
+                })
+                expect(yield* Effect.promise(() => fs.readFile(target, "utf8"))).toContain("    run()")
               }),
             ),
           ),
@@ -417,7 +469,6 @@ test("keeps the locked edit schema, semantics docstring, and deferred TODOs visi
     "absolute external paths retain mutation capability through a separate\n * external_directory approval before edit approval.",
   )
   for (const todo of [
-    "Port V1 fuzzy correction strategies only after exact-edit behavior is established: line-trimmed matching, block-anchor fallback, indentation correction, and similarity-threshold review.",
     "Add formatter integration after V2 formatter runtime exists.",
     "Publish watcher/file-edit events after V2 watcher integration exists.",
     "Add snapshots / undo after design exists.",
