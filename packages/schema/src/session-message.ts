@@ -5,7 +5,7 @@ import { optional } from "./schema"
 import { ProviderMetadata, ToolContent } from "./llm"
 import { Model } from "./model"
 import { FileAttachment, Prompt } from "./prompt"
-import { DateTimeUtcFromMillis, RelativePath, statics } from "./schema"
+import { DateTimeUtcFromMillis, NonNegativeInt, PositiveInt, RelativePath, statics } from "./schema"
 import { SessionID } from "./session-id"
 import { ascending } from "./identifier"
 
@@ -225,6 +225,36 @@ export const AssistantContent = Schema.Union([AssistantText, AssistantReasoning,
 )
 export type AssistantContent = AssistantText | AssistantReasoning | AssistantTool
 
+export const ContextFinding = Schema.Union([
+  Schema.Struct({
+    kind: Schema.Literal("duplicate-tool-output"),
+    tool: Schema.String,
+    target: Schema.String.pipe(optional),
+    occurrences: PositiveInt,
+    repeatedTokens: NonNegativeInt,
+    elided: Schema.Boolean,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("dominant-tool-output"),
+    tool: Schema.String,
+    target: Schema.String.pipe(optional),
+    tokens: NonNegativeInt,
+    percent: Schema.Finite,
+  }),
+]).pipe(Schema.toTaggedUnion("kind"))
+export type ContextFinding = typeof ContextFinding.Type
+
+/** What the deterministic packer put on one provider turn's wire. Optional on old rows and on
+ *  Strict turns, whose separate engine does not currently pass through the native packer. */
+export interface Context extends Schema.Schema.Type<typeof Context> {}
+export const Context = Schema.Struct({
+  window: PositiveInt,
+  estimatedTokens: NonNegativeInt,
+  droppedMessages: NonNegativeInt,
+  elidedOutputs: NonNegativeInt,
+  findings: Schema.Array(ContextFinding),
+}).annotate({ identifier: "Session.Message.Context" })
+
 export interface Assistant extends Schema.Schema.Type<typeof Assistant> {}
 export const Assistant = Schema.Struct({
   ...Base,
@@ -245,6 +275,7 @@ export const Assistant = Schema.Struct({
     reasoning: Schema.Finite,
     cache: Schema.Struct({ read: Schema.Finite, write: Schema.Finite }),
   }).pipe(optional),
+  context: Context.pipe(optional),
   error: UnknownError.pipe(optional),
   time: Schema.Struct({
     created: DateTimeUtcFromMillis,

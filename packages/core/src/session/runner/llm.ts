@@ -1147,6 +1147,13 @@ export const layer = Layer.effect(
                 finish: stepSettlement.finish,
                 cost: 0,
                 tokens: stepSettlement.tokens,
+                context: {
+                  window: packed.contextSize,
+                  estimatedTokens: packed.estimatedTokens,
+                  droppedMessages: packed.dropped,
+                  elidedOutputs: packed.elided,
+                  findings: [...packed.findings],
+                },
                 snapshot: endSnapshot,
                 files,
               }),

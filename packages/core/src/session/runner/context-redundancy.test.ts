@@ -398,6 +398,14 @@ describe("pack + pass 1.5", () => {
     expect(packed.elided).toBe(2)
     expect(noticeCount(packed.messages)).toBe(2)
     expect(packed.messages.filter((m) => textOf(m) === body)).toHaveLength(1)
+    expect(packed.findings).toContainEqual({
+      kind: "duplicate-tool-output",
+      tool: "webfetch",
+      target: "https://example/dup",
+      occurrences: 3,
+      repeatedTokens: expect.any(Number),
+      elided: true,
+    })
   })
 
   test("RULING 2: the unique older fact survives — recency would have dropped it", () => {
@@ -443,6 +451,14 @@ describe("pack + pass 1.5", () => {
     expect(packed.elided).toBe(0)
     expect(packed.changed).toBe(false)
     expect(packed.messages).toEqual(messages)
+    expect(packed.findings).toContainEqual({
+      kind: "duplicate-tool-output",
+      tool: "webfetch",
+      target: "https://example/dup",
+      occurrences: 3,
+      repeatedTokens: expect.any(Number),
+      elided: false,
+    })
   })
 
   test("deterministic and stable: two packs of one history agree exactly", () => {
@@ -464,6 +480,90 @@ describe("pack + pass 1.5", () => {
     for (const message of elided)
       if (textOf(message).startsWith(ELISION_NOTICE_PREFIX))
         expect(estimateMessage(message)).toBeLessThan(MIN_ELIDABLE_TOKENS)
+  })
+})
+
+describe("legible context findings (A2.1 ③)", () => {
+  test("names one dominant tool result with the number behind it", () => {
+    const body = prose(55, 2_400)
+    const messages = [
+      user("inspect it"),
+      call("large", "read", { path: "src/large.ts" }),
+      result("large", "read", body),
+      assistantText("done"),
+    ]
+    const finding = pack(messages, 100_000).findings.find((item) => item.kind === "dominant-tool-output")
+    expect(finding).toEqual({
+      kind: "dominant-tool-output",
+      tool: "read",
+      target: "src/large.ts",
+      tokens: expect.any(Number),
+      percent: expect.any(Number),
+    })
+    if (finding?.kind === "dominant-tool-output") {
+      expect(finding.tokens).toBeGreaterThanOrEqual(512)
+      expect(finding.percent).toBeGreaterThanOrEqual(50)
+    }
+  })
+
+  test("never serializes arbitrary call input into a diagnostic target", () => {
+    const body = prose(56, 2_400)
+    const messages = [
+      user("check it"),
+      call("secret", "request", { apiKey: "must-not-appear", prompt: "private content" }),
+      result("secret", "request", body),
+    ]
+    const encoded = JSON.stringify(pack(messages, 100_000).findings)
+    expect(encoded).not.toContain("must-not-appear")
+    expect(encoded).not.toContain("private content")
+  })
+
+  test("strips credentials and query secrets from a URL target", () => {
+    const body = prose(56, 2_400)
+    const url = "https://alice:password@example.test/private/report?token=DO-NOT-LEAK#secret"
+    const messages = [
+      user("inspect"),
+      call("1", "webfetch", { url }),
+      result("1", "webfetch", body),
+      assistantText("done"),
+    ]
+    const findings = pack(messages, 100_000).findings
+    expect(findings).toContainEqual({
+      kind: "dominant-tool-output",
+      tool: "webfetch",
+      target: "https://example.test/private/report",
+      tokens: expect.any(Number),
+      percent: expect.any(Number),
+    })
+    const encoded = JSON.stringify(findings)
+    expect(encoded).not.toContain("alice")
+    expect(encoded).not.toContain("password")
+    expect(encoded).not.toContain("DO-NOT-LEAK")
+    expect(encoded).not.toContain("#secret")
+  })
+
+  test("same payload from different file calls produces no duplicate finding", () => {
+    const body = prose(57)
+    const messages = [
+      user("compare"),
+      call("a", "read", { path: "src/a.ts" }),
+      result("a", "read", body),
+      call("b", "read", { path: "src/b.ts" }),
+      result("b", "read", body),
+    ]
+    expect(pack(messages, 100_000).findings.some((item) => item.kind === "duplicate-tool-output")).toBe(false)
+  })
+
+  test("findings are deterministic structured facts, never an opaque health score", () => {
+    const messages = [
+      user("read it"),
+      call("a", "read", { path: "src/a.ts" }),
+      result("a", "read", prose(58)),
+      call("b", "read", { path: "src/a.ts" }),
+      result("b", "read", prose(58)),
+    ]
+    expect(pack(messages, 100_000).findings).toEqual(pack(messages, 100_000).findings)
+    expect(JSON.stringify(pack(messages, 100_000).findings)).not.toMatch(/score|health/i)
   })
 })
 

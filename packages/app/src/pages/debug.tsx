@@ -8,6 +8,7 @@ import { sessionHref } from "@/utils/session-route"
 import { clearErrorLog, errorLogEntries } from "@/utils/error-log"
 import { showToast } from "@/utils/toast"
 import { schedulerSnapshot } from "@/utils/scheduler-api"
+import { contextTurns, formatContextFinding, formatContextTokens } from "./debug-context"
 
 // The Debug app (dependability P5) — the Developer-mode diagnostic surface. Read-only panels,
 // all fed from state the client ALREADY holds (no new server routes in v0): connection status per
@@ -78,6 +79,28 @@ export function DebugPage() {
     },
     ({ conn, dir }) => schedulerSnapshot(conn.http, { directory: dir }).catch(() => undefined),
   )
+
+  const contextSession = createMemo(() => sessions()[0])
+  const [contextLoad, { refetch: refetchContext }] = createResource(
+    () => {
+      const conn = focused()
+      const row = contextSession()
+      return conn && row ? { conn, sessionID: row.id } : undefined
+    },
+    async ({ conn, sessionID }) => {
+      await global
+        .ensureServerCtx(conn)
+        .sync.nativeMessages.load(sessionID)
+        .catch(() => undefined)
+      return sessionID
+    },
+  )
+  const packedTurns = createMemo(() => {
+    const conn = focused()
+    const row = contextSession()
+    if (!conn || !row) return []
+    return contextTurns(global.ensureServerCtx(conn).sync.nativeMessages.messages(row.id) ?? [])
+  })
 
   const copyLog = () => {
     const text = errorLogEntries()
@@ -166,7 +189,7 @@ export function DebugPage() {
                           </span>
                         </div>
                         <Show when={device.waiting.length > 0}>
-                          {/* Queued sessions are contention, not an error — inference is serialised per device. */}
+                          {/* Queued sessions reflect scheduler policy or configured capacity, not a hardware limit. */}
                           <div class="text-[11px] text-v2-state-fg-warning">queued: {device.waiting.join(", ")}</div>
                         </Show>
                         <For each={device.ledger}>
@@ -184,6 +207,74 @@ export function DebugPage() {
                     )}
                   </For>
                 </Show>
+              )}
+            </Show>
+          </div>
+        </div>
+
+        {/* ── Context findings ──────────────────────────────────────────────────────── */}
+        <div class={section} data-panel="context-findings">
+          <div class={heading}>
+            <span class={title}>Context findings</span>
+            <span class={hint}>what shaped recent turns — concrete findings, never a mystery score</span>
+            <button type="button" class={`${btn} ml-auto`} onClick={() => void refetchContext()}>
+              Refresh
+            </button>
+          </div>
+          <div class="px-4 pb-3">
+            <Show when={contextSession()} fallback={<div class={hint}>no cached session to inspect</div>}>
+              {(row) => (
+                <>
+                  <div class="mb-2 flex items-center gap-2 text-[11px]">
+                    <span class={hint}>latest cached session</span>
+                    <A href={row().href} class="max-w-96 truncate text-v2-text-text-muted hover:underline">
+                      {row().title || row().id}
+                    </A>
+                  </div>
+                  <Show
+                    when={packedTurns().length > 0}
+                    fallback={
+                      <div class={hint}>
+                        {contextLoad.loading
+                          ? "loading packed turns…"
+                          : "no packed turns recorded yet — the next completed turn will appear here"}
+                      </div>
+                    }
+                  >
+                    <For each={packedTurns()}>
+                      {(message) => (
+                        <div class="border-t border-v2-border-border-base py-2 first:border-t-0 first:pt-0">
+                          <div class="flex flex-wrap items-center gap-x-3 gap-y-0.5 text-[11px] text-v2-text-text-faint">
+                            <span>{new Date(message.time.completed ?? message.time.created).toLocaleString()}</span>
+                            <span>
+                              {formatContextTokens(message.context.estimatedTokens)} /{" "}
+                              {formatContextTokens(message.context.window)} tokens
+                            </span>
+                            <Show when={message.context.droppedMessages > 0}>
+                              <span class="text-v2-state-fg-warning">
+                                {message.context.droppedMessages} older message
+                                {message.context.droppedMessages === 1 ? "" : "s"} left out
+                              </span>
+                            </Show>
+                            <Show when={message.context.elidedOutputs > 0}>
+                              <span>{message.context.elidedOutputs} repeated output folded</span>
+                            </Show>
+                          </div>
+                          <Show
+                            when={message.context.findings.length > 0}
+                            fallback={<div class={`${hint} pt-1`}>No duplicate or dominant tool output found.</div>}
+                          >
+                            <ul class="list-disc space-y-0.5 pl-4 pt-1 text-[12px] text-v2-text-text-muted">
+                              <For each={message.context.findings}>
+                                {(finding) => <li>{formatContextFinding(finding)}</li>}
+                              </For>
+                            </ul>
+                          </Show>
+                        </div>
+                      )}
+                    </For>
+                  </Show>
+                </>
               )}
             </Show>
           </div>

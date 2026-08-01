@@ -21,6 +21,7 @@
 
 import { Message } from "@novaclaw/llm"
 import type { LLMRequest, SystemPart, ToolDefinition, ToolResultPart, ToolResultValue } from "@novaclaw/llm"
+import type { SessionMessage } from "@novaclaw/schema/session-message"
 import { Token } from "../../util/token"
 import { applySteerProvenance, isSteerText } from "../steer-provenance"
 import { ContextRedundancy } from "./context-redundancy"
@@ -216,6 +217,11 @@ export const demoteSystemMessages = (messages: ReadonlyArray<Message>): Message[
  */
 export const MIN_ELIDABLE_TOKENS = 128
 
+/** A single result below this size is noise even when it happens to dominate a tiny prompt. */
+export const DOMINANT_TOOL_RESULT_MIN_TOKENS = 512
+/** At half the message window, one result is the context rather than merely part of it. */
+export const DOMINANT_TOOL_RESULT_PERCENT = 50
+
 /** Prefix of the notice a collapsed tool result carries — stable, so a reader can grep for it. */
 export const ELISION_NOTICE_PREFIX = "[novaclaw: duplicate output elided"
 
@@ -285,6 +291,8 @@ const callIdentity = (name: string, input: unknown): string | undefined => {
 /** A settled tool exchange: what identifies it, and which assistant owns it. */
 interface ToolExchange {
   readonly key: string
+  readonly name: string
+  readonly target?: string
   /**
    * Index of the assistant message that issued the call. INV-R needs it: pack keeps a suffix and
    * then drops orphaned tool messages, so "the retainer survives whenever the collapsed message
@@ -293,6 +301,31 @@ interface ToolExchange {
    * when it is not, rather than reasoning about whether the abnormal shape can occur.
    */
   readonly owner: number
+}
+
+/** A conservative, non-secret label for a call in Developer diagnostics. Never serialize the whole
+ *  input: tool inputs may contain credentials or arbitrary user content. */
+const diagnosticTarget = (input: unknown): string | undefined => {
+  if (input === null || typeof input !== "object" || Array.isArray(input)) return undefined
+  for (const key of ["path", "file", "url"] as const) {
+    const value = (input as Record<string, unknown>)[key]
+    if (typeof value !== "string") continue
+    const trimmed = value.trim()
+    if (trimmed.length === 0) continue
+    if (key !== "url") return trimmed.slice(0, 240)
+    try {
+      const parsed = new URL(trimmed)
+      if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return undefined
+      parsed.username = ""
+      parsed.password = ""
+      parsed.search = ""
+      parsed.hash = ""
+      return parsed.toString().slice(0, 240)
+    } catch {
+      return undefined
+    }
+  }
+  return undefined
 }
 
 /**
@@ -319,7 +352,10 @@ const toolExchanges = (messages: ReadonlyArray<Message>): Array<ToolExchange | u
     for (const part of message.content) {
       if (part.type !== "tool-call") continue
       const identity = part.providerExecuted === true ? undefined : callIdentity(part.name, part.input)
-      const slot = identity === undefined ? undefined : { key: identity, owner: index }
+      const slot =
+        identity === undefined
+          ? undefined
+          : { key: identity, name: part.name, target: diagnosticTarget(part.input), owner: index }
       const queue = pending.get(part.id)
       if (queue === undefined) pending.set(part.id, [slot])
       else queue.push(slot)
@@ -331,7 +367,12 @@ const toolExchanges = (messages: ReadonlyArray<Message>): Array<ToolExchange | u
       if (call === undefined) continue
       // The result's own shape joins the identity: an `error` payload never collapses into a
       // `text` one, however alike they read.
-      settled = { key: `${call.key} ${part.result.type}`, owner: call.owner }
+      settled = {
+        key: `${call.key} ${part.result.type}`,
+        name: call.name,
+        ...(call.target === undefined ? {} : { target: call.target }),
+        owner: call.owner,
+      }
     }
     if (soleToolResult(message) !== undefined) exchanges[index] = settled
   }
@@ -384,29 +425,20 @@ export interface ElisionResult {
   readonly reclaimed: number
 }
 
-/**
- * Wire-legality pass 1.5 — redundancy-aware reclamation. Runs INSIDE the existing pass sequence
- * (after `dropDanglingToolCalls`, before the newest-first recency loop), so redundancy is reclaimed
- * before age decides anything, and nothing downstream has to know it happened.
- *
- * ⚠️ It collapses ALL detected redundancy, not "just enough to fit". That is deliberate and it is
- * what removes an entire defect class: a shortfall budget has to be counted against the
- * POST-legalisation state to be honest, and getting that wrong is how the first attempt turned a
- * one-token overflow into three thousand reclaimed tokens. Here the question does not arise — the
- * content stays in the window (in its retainer), so there is nothing to be minimal about, the
- * decision does not depend on the budget, and the same history therefore collapses the same way on
- * every turn as the conversation grows.
- *
- * Reasons a message abstains, all of them structural rather than heuristic:
- *  - it is not a lone `tool-result` message (an assistant, a user, a multi-part tool message);
- *  - its owning call cannot be named, or its payload is not text (binary abstains wholesale);
- *  - it is under `MIN_ELIDABLE_TOKENS`;
- *  - no other message in the window settles the SAME call with the same result shape.
- * A message that is none of those is still only collapsed when `context-redundancy.ts` says a
- * strictly newer sibling already carries its content, under a hard cap on unique content lost.
- */
-export const elideRedundant = (messages: Message[], estimates: ReadonlyArray<number>): ElisionResult => {
-  const nothing: ElisionResult = { messages, elisions: [], reclaimed: 0 }
+interface RedundancyMatch {
+  readonly redundancy: ContextRedundancy.Redundancy
+  readonly exchange: ToolExchange
+  readonly notice: Message
+  readonly saved: number
+}
+
+const analyzeRedundancy = (
+  messages: Message[],
+  estimates: ReadonlyArray<number>,
+): {
+  readonly matches: ReadonlyArray<RedundancyMatch>
+  readonly exchanges: ReadonlyArray<ToolExchange | undefined>
+} => {
   const exchanges = toolExchanges(messages)
 
   // Two passes, because building a comparison text means materialising a whole tool payload as a
@@ -433,36 +465,134 @@ export const elideRedundant = (messages: Message[], estimates: ReadonlyArray<num
     return text === undefined ? undefined : { key, text }
   })
 
-  const found = ContextRedundancy.findRedundant(items)
-  if (found.length === 0) return nothing
-
-  const rewritten = [...messages]
-  const applied: ContextRedundancy.Redundancy[] = []
-  let reclaimed = 0
-  for (const redundancy of found) {
+  const matches = ContextRedundancy.findRedundant(items).flatMap((redundancy): RedundancyMatch[] => {
+    const exchange = exchanges[redundancy.index]
+    if (exchange === undefined) return []
     // INV-R, structurally: pack keeps a SUFFIX and then drops orphans, so the retainer outlives the
-    // collapsed message exactly when its owning assistant is not the older of the two. Refuse the
-    // pair otherwise — a notice pointing at content that left the window is a lie, and the payload
-    // it replaced was a fact nothing else in the window holds.
-    if (exchanges[redundancy.index]!.owner > exchanges[redundancy.retainedIndex]!.owner) continue
+    // collapsed message exactly when its owning assistant is not the older of the two.
+    if (exchange.owner > exchanges[redundancy.retainedIndex]!.owner) return []
     const message = messages[redundancy.index]!
     const part = soleToolResult(message)
-    if (part === undefined) continue
+    if (part === undefined) return []
     const notice = Message.make({
       ...message,
       content: [{ ...part, result: { type: "text" as const, value: elisionNotice(part.name) } }],
     })
     const saved = (estimates[redundancy.index] ?? estimateMessage(message)) - estimateMessage(notice)
-    // A notice bigger than the payload it replaces is not a saving — leave that message alone.
-    if (saved <= 0) continue
-    rewritten[redundancy.index] = notice
-    reclaimed += saved
-    applied.push(redundancy)
+    return saved > 0 ? [{ redundancy, exchange, notice, saved }] : []
+  })
+  return { matches, exchanges }
+}
+
+const duplicateFindings = (
+  matches: ReadonlyArray<RedundancyMatch>,
+  elided: boolean,
+): SessionMessage.ContextFinding[] => {
+  const groups = new Map<
+    string,
+    { name: string; target?: string; indexes: Set<number>; repeatedTokens: number; first: number }
+  >()
+  for (const match of matches) {
+    const current = groups.get(match.exchange.key) ?? {
+      name: match.exchange.name,
+      ...(match.exchange.target === undefined ? {} : { target: match.exchange.target }),
+      indexes: new Set<number>(),
+      repeatedTokens: 0,
+      first: match.redundancy.index,
+    }
+    current.indexes.add(match.redundancy.index)
+    current.indexes.add(match.redundancy.retainedIndex)
+    current.repeatedTokens += match.saved
+    groups.set(match.exchange.key, current)
   }
-  if (applied.length === 0) return nothing
-  // INV-W or nothing: a pass that cannot prove it left the wire shape alone does not run at all.
+  return [...groups.values()]
+    .sort((a, b) => a.first - b.first)
+    .map((group) => ({
+      kind: "duplicate-tool-output" as const,
+      tool: group.name,
+      ...(group.target === undefined ? {} : { target: group.target }),
+      occurrences: group.indexes.size,
+      repeatedTokens: group.repeatedTokens,
+      elided,
+    }))
+}
+
+const dominantFinding = (
+  messages: Message[],
+  estimates: ReadonlyArray<number>,
+  exchanges: ReadonlyArray<ToolExchange | undefined>,
+): SessionMessage.ContextFinding | undefined => {
+  const total = estimates.reduce((sum, tokens) => sum + tokens, 0)
+  if (total === 0) return undefined
+  let largest: { exchange: ToolExchange; tokens: number } | undefined
+  for (let index = 0; index < messages.length; index++) {
+    const exchange = exchanges[index]
+    if (exchange === undefined || soleToolResult(messages[index]!) === undefined) continue
+    const tokens = estimates[index]!
+    if (largest === undefined || tokens > largest.tokens) largest = { exchange, tokens }
+  }
+  if (largest === undefined || largest.tokens < DOMINANT_TOOL_RESULT_MIN_TOKENS) return undefined
+  const percent = Math.round((largest.tokens / total) * 1_000) / 10
+  if (percent < DOMINANT_TOOL_RESULT_PERCENT) return undefined
+  return {
+    kind: "dominant-tool-output",
+    tool: largest.exchange.name,
+    ...(largest.exchange.target === undefined ? {} : { target: largest.exchange.target }),
+    tokens: largest.tokens,
+    percent,
+  }
+}
+
+const contextFindings = (
+  messages: Message[],
+  estimates: ReadonlyArray<number>,
+  exchanges: ReadonlyArray<ToolExchange | undefined>,
+  matches: ReadonlyArray<RedundancyMatch>,
+  elided: boolean,
+): SessionMessage.ContextFinding[] => {
+  const dominant = dominantFinding(messages, estimates, exchanges)
+  return [...duplicateFindings(matches, elided), ...(dominant === undefined ? [] : [dominant])]
+}
+
+const applyRedundancy = (
+  messages: Message[],
+  matches: ReadonlyArray<RedundancyMatch>,
+): ElisionResult => {
+  const nothing: ElisionResult = { messages, elisions: [], reclaimed: 0 }
+  if (matches.length === 0) return nothing
+  const rewritten = [...messages]
+  let reclaimed = 0
+  for (const match of matches) {
+    rewritten[match.redundancy.index] = match.notice
+    reclaimed += match.saved
+  }
   if (!preservesWireShape(messages, rewritten)) return nothing
-  return { messages: rewritten, elisions: applied, reclaimed }
+  return { messages: rewritten, elisions: matches.map((match) => match.redundancy), reclaimed }
+}
+
+/**
+ * Wire-legality pass 1.5 — redundancy-aware reclamation. Runs INSIDE the existing pass sequence
+ * (after `dropDanglingToolCalls`, before the newest-first recency loop), so redundancy is reclaimed
+ * before age decides anything, and nothing downstream has to know it happened.
+ *
+ * ⚠️ It collapses ALL detected redundancy, not "just enough to fit". That is deliberate and it is
+ * what removes an entire defect class: a shortfall budget has to be counted against the
+ * POST-legalisation state to be honest, and getting that wrong is how the first attempt turned a
+ * one-token overflow into three thousand reclaimed tokens. Here the question does not arise — the
+ * content stays in the window (in its retainer), so there is nothing to be minimal about, the
+ * decision does not depend on the budget, and the same history therefore collapses the same way on
+ * every turn as the conversation grows.
+ *
+ * Reasons a message abstains, all of them structural rather than heuristic:
+ *  - it is not a lone `tool-result` message (an assistant, a user, a multi-part tool message);
+ *  - its owning call cannot be named, or its payload is not text (binary abstains wholesale);
+ *  - it is under `MIN_ELIDABLE_TOKENS`;
+ *  - no other message in the window settles the SAME call with the same result shape.
+ * A message that is none of those is still only collapsed when `context-redundancy.ts` says a
+ * strictly newer sibling already carries its content, under a hard cap on unique content lost.
+ */
+export const elideRedundant = (messages: Message[], estimates: ReadonlyArray<number>): ElisionResult => {
+  return applyRedundancy(messages, analyzeRedundancy(messages, estimates).matches)
 }
 
 export interface PackResult {
@@ -473,6 +603,8 @@ export interface PackResult {
   readonly estimatedTokens: number
   /** How many duplicate tool results pass 1.5 collapsed (A2.1 ①). */
   readonly elided: number
+  /** Plain structured findings for Developer diagnostics — never an opaque composite score. */
+  readonly findings: ReadonlyArray<SessionMessage.ContextFinding>
 }
 
 /**
@@ -490,11 +622,13 @@ export const pack = (messages: ReadonlyArray<Message>, budgetTokens: number): Pa
   let estimates = repaired.map(estimateMessage)
   let total = estimates.reduce((sum, tokens) => sum + tokens, 0)
   let elided = 0
+  const analysisEstimates = estimates
+  const analysis = analyzeRedundancy(repaired, analysisEstimates)
 
   // Pass 1.5 — only when the window actually overflows: collapsing rewrites the middle of the
   // prompt, which costs a prefix-cache hit, and there is nothing to buy while everything fits.
   if (total > budgetTokens) {
-    const reclaimed = elideRedundant(repaired, estimates)
+    const reclaimed = applyRedundancy(repaired, analysis.matches)
     if (reclaimed.messages !== repaired) {
       working = reclaimed.messages
       elided = reclaimed.elisions.length
@@ -506,7 +640,14 @@ export const pack = (messages: ReadonlyArray<Message>, budgetTokens: number): Pa
   if (total <= budgetTokens) {
     const legal = demoteSystemMessages(dropOrphanTools(working))
     const changed = legal.length !== messages.length || legal.some((message, i) => message !== messages[i])
-    return { messages: legal, changed, dropped: messages.length - legal.length, estimatedTokens: total, elided }
+    return {
+      messages: legal,
+      changed,
+      dropped: messages.length - legal.length,
+      estimatedTokens: total,
+      elided,
+      findings: contextFindings(repaired, analysisEstimates, analysis.exchanges, analysis.matches, elided > 0),
+    }
   }
 
   // Newest-first, whole messages; newest always kept.
@@ -546,6 +687,7 @@ export const pack = (messages: ReadonlyArray<Message>, budgetTokens: number): Pa
     dropped: messages.length - kept.length,
     estimatedTokens: estimateMessages(kept),
     elided,
+    findings: contextFindings(repaired, analysisEstimates, analysis.exchanges, analysis.matches, elided > 0),
   }
 }
 

@@ -403,6 +403,22 @@ describe("SessionProjector", () => {
         finish: "stop",
         cost: 0,
         tokens: { input: 0, output: 0, reasoning: 0, cache: { read: 0, write: 0 } },
+        context: {
+          window: 32_000,
+          estimatedTokens: 12_000,
+          droppedMessages: 2,
+          elidedOutputs: 1,
+          findings: [
+            {
+              kind: "duplicate-tool-output",
+              tool: "read",
+              target: "src/a.ts",
+              occurrences: 2,
+              repeatedTokens: 1_200,
+              elided: true,
+            },
+          ],
+        },
       })
 
       const rows = yield* db
@@ -419,6 +435,10 @@ describe("SessionProjector", () => {
       expect(messages[1]).toMatchObject({
         type: "assistant",
         finish: "stop",
+        context: {
+          window: 32_000,
+          findings: [{ kind: "duplicate-tool-output", target: "src/a.ts" }],
+        },
         time: { completed: DateTime.makeUnsafe(1) },
       })
     }),

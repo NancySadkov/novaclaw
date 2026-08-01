@@ -517,6 +517,7 @@ export type GlobalEvent = {
           }
           snapshot?: string
           files?: Array<string>
+          context?: SessionMessageContext
         }
       }
     | {
@@ -2118,6 +2119,30 @@ export type SessionMessageAssistantTool = {
   }
 }
 
+export type SessionMessageContext = {
+  window: number
+  estimatedTokens: number
+  droppedMessages: number
+  elidedOutputs: number
+  findings: Array<
+    | {
+        kind: "duplicate-tool-output"
+        tool: string
+        target?: string
+        occurrences: number
+        repeatedTokens: number
+        elided: boolean
+      }
+    | {
+        kind: "dominant-tool-output"
+        tool: string
+        target?: string
+        tokens: number
+        percent: number
+      }
+  >
+}
+
 export type SessionMessageAssistant = {
   id: string
   metadata?: {
@@ -2147,6 +2172,7 @@ export type SessionMessageAssistant = {
       write: number
     }
   }
+  context?: SessionMessageContext
   error?: SessionErrorUnknown
 }
 
@@ -2648,6 +2674,7 @@ export type SyncEventSessionNextStepEnded = {
       }
       snapshot?: string
       files?: Array<string>
+      context?: SessionMessageContext
     }
   }
 }
@@ -4018,6 +4045,7 @@ export type SessionNextStepEnded = {
     }
     snapshot?: string
     files?: Array<string>
+    context?: SessionMessageContext
   }
 }
 
@@ -5975,6 +6003,7 @@ export type EventSessionNextStepEnded = {
     }
     snapshot?: string
     files?: Array<string>
+    context?: SessionMessageContext
   }
 }
 

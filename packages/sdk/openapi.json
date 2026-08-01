@@ -18463,6 +18463,9 @@
                         "items": {
                           "type": "string"
                         }
+                      },
+                      "context": {
+                        "$ref": "#/components/schemas/SessionMessageContext"
                       }
                     },
                     "required": ["timestamp", "sessionID", "assistantMessageID", "finish", "cost", "tokens"],
@@ -23572,6 +23575,88 @@
         "required": ["type", "id", "name", "state", "time"],
         "additionalProperties": false
       },
+      "SessionMessageContext": {
+        "type": "object",
+        "properties": {
+          "window": {
+            "type": "integer",
+            "exclusiveMinimum": 0
+          },
+          "estimatedTokens": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "droppedMessages": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "elidedOutputs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "findings": {
+            "type": "array",
+            "items": {
+              "anyOf": [
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": ["duplicate-tool-output"]
+                    },
+                    "tool": {
+                      "type": "string"
+                    },
+                    "target": {
+                      "type": "string"
+                    },
+                    "occurrences": {
+                      "type": "integer",
+                      "exclusiveMinimum": 0
+                    },
+                    "repeatedTokens": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "elided": {
+                      "type": "boolean"
+                    }
+                  },
+                  "required": ["kind", "tool", "occurrences", "repeatedTokens", "elided"],
+                  "additionalProperties": false
+                },
+                {
+                  "type": "object",
+                  "properties": {
+                    "kind": {
+                      "type": "string",
+                      "enum": ["dominant-tool-output"]
+                    },
+                    "tool": {
+                      "type": "string"
+                    },
+                    "target": {
+                      "type": "string"
+                    },
+                    "tokens": {
+                      "type": "integer",
+                      "minimum": 0
+                    },
+                    "percent": {
+                      "type": "number"
+                    }
+                  },
+                  "required": ["kind", "tool", "tokens", "percent"],
+                  "additionalProperties": false
+                }
+              ]
+            }
+          }
+        },
+        "required": ["window", "estimatedTokens", "droppedMessages", "elidedOutputs", "findings"],
+        "additionalProperties": false
+      },
       "SessionMessageAssistant": {
         "type": "object",
         "properties": {
@@ -23673,6 +23758,9 @@
             },
             "required": ["input", "output", "reasoning", "cache"],
             "additionalProperties": false
+          },
+          "context": {
+            "$ref": "#/components/schemas/SessionMessageContext"
           },
           "error": {
             "$ref": "#/components/schemas/SessionErrorUnknown"
@@ -25279,6 +25367,9 @@
                     "items": {
                       "type": "string"
                     }
+                  },
+                  "context": {
+                    "$ref": "#/components/schemas/SessionMessageContext"
                   }
                 },
                 "required": ["timestamp", "sessionID", "assistantMessageID", "finish", "cost", "tokens"],
@@ -29479,6 +29570,9 @@
                 "items": {
                   "type": "string"
                 }
+              },
+              "context": {
+                "$ref": "#/components/schemas/SessionMessageContext"
               }
             },
             "required": ["timestamp", "sessionID", "assistantMessageID", "finish", "cost", "tokens"],
@@ -36127,6 +36221,9 @@
                 "items": {
                   "type": "string"
                 }
+              },
+              "context": {
+                "$ref": "#/components/schemas/SessionMessageContext"
               }
             },
             "required": ["timestamp", "sessionID", "assistantMessageID", "finish", "cost", "tokens"],
