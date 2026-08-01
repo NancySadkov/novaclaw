@@ -50,6 +50,14 @@ const stepSettlementOptions = {
     version: 2,
   },
 } as const
+const compactionSettlementOptions = {
+  durable: {
+    aggregate: "sessionID",
+    // v2 adds the exact canonical-prefix identity. v1 summaries are deliberately skipped on
+    // replay because they cannot prove which transcript they cover.
+    version: 2,
+  },
+} as const
 
 export const UnknownError = SessionMessage.UnknownError
 export type UnknownError = SessionMessage.UnknownError
@@ -530,13 +538,15 @@ export namespace Compaction {
 
   export const Ended = Event.define({
     type: "session.next.compaction.ended",
-    ...options,
+    ...compactionSettlementOptions,
     schema: {
       ...Base,
       messageID: SessionMessage.ID,
       reason: Started.data.fields.reason,
       text: Schema.String,
       recent: Schema.String,
+      prefixSeq: NonNegativeInt,
+      prefixHash: Schema.String,
     },
   })
   export type Ended = typeof Ended.Type

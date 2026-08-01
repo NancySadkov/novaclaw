@@ -14,7 +14,7 @@ import { SessionMessageUpdater } from "./message-updater"
 import { SessionInput } from "./input"
 import { WorkspaceV2 } from "../workspace"
 import { SessionContextEpoch } from "./context-epoch"
-import { SessionInputTable, SessionMessageTable, SessionTable } from "./sql"
+import { SessionCompactionTable, SessionInputTable, SessionMessageTable, SessionTable } from "./sql"
 import { SessionSchema } from "./schema"
 
 type DatabaseService = Database.Interface["db"]
@@ -430,7 +430,25 @@ export const layer = Layer.effectDiscard(
     yield* events.project(SessionEvent.Tool.Failed, (event) => run(db, event))
     yield* events.project(SessionEvent.Reasoning.Started, (event) => run(db, event))
     yield* events.project(SessionEvent.Reasoning.Ended, (event) => run(db, event))
-    yield* events.project(SessionEvent.Compaction.Ended, (event) => run(db, event))
+    yield* events.project(SessionEvent.Compaction.Ended, (event) => {
+      if (event.durable === undefined) return Effect.die("Durable Session event is missing aggregate sequence")
+      return db
+        .insert(SessionCompactionTable)
+        .values({
+          id: event.data.messageID,
+          session_id: event.data.sessionID,
+          seq: event.durable.seq,
+          prefix_seq: event.data.prefixSeq,
+          prefix_hash: event.data.prefixHash,
+          reason: event.data.reason,
+          summary: event.data.text,
+          recent: event.data.recent,
+          metadata: event.metadata,
+          time_created: DateTime.toEpochMillis(event.data.timestamp),
+        })
+        .run()
+        .pipe(Effect.orDie)
+    })
     yield* events.project(SessionEvent.RevertEvent.Staged, (event) =>
       db
         .update(SessionTable)
@@ -471,6 +489,16 @@ export const layer = Layer.effectDiscard(
           .delete(SessionMessageTable)
           .where(
             and(eq(SessionMessageTable.session_id, event.data.sessionID), gt(SessionMessageTable.seq, boundary.seq)),
+          )
+          .run()
+          .pipe(Effect.orDie)
+        yield* db
+          .delete(SessionCompactionTable)
+          .where(
+            and(
+              eq(SessionCompactionTable.session_id, event.data.sessionID),
+              gt(SessionCompactionTable.prefix_seq, boundary.seq),
+            ),
           )
           .run()
           .pipe(Effect.orDie)

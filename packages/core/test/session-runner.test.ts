@@ -27,6 +27,7 @@ import { ContextSnapshotDecodeError } from "@novaclaw/core/session/error"
 import { SessionEvent } from "@novaclaw/core/session/event"
 import { SessionInput } from "@novaclaw/core/session/input"
 import { SessionMessage } from "@novaclaw/core/session/message"
+import { SessionHistory } from "@novaclaw/core/session/history"
 import { Prompt } from "@novaclaw/core/session/prompt"
 import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionExecution } from "@novaclaw/core/session/execution"
@@ -55,7 +56,7 @@ import { ModelV2 } from "@novaclaw/core/model"
 import { Location } from "@novaclaw/core/location"
 import { ProviderV2 } from "@novaclaw/core/provider"
 import { Cause, DateTime, Deferred, Effect, Exit, Fiber, Layer, Schema, Stream } from "effect"
-import { asc, eq } from "drizzle-orm"
+import { asc, desc, eq } from "drizzle-orm"
 import { testEffect } from "./lib/effect"
 import * as nodeFs from "node:fs"
 import * as nodeOs from "node:os"
@@ -352,6 +353,20 @@ const itBase = testEffect(
 // fork-bomb pile-up at the source. The singleton guard atop this file is the backstop. Runs on CI/Linux.
 const it = process.platform === "win32" ? { effect: itBase.effect.skip, live: itBase.live.skip } : itBase
 const sessionID = SessionV2.ID.make("ses_runner_test")
+
+const currentPrefix = Effect.fnUntraced(function* () {
+  const { db } = yield* Database.Service
+  const row = yield* db
+    .select({ seq: SessionMessageTable.seq })
+    .from(SessionMessageTable)
+    .where(eq(SessionMessageTable.session_id, sessionID))
+    .orderBy(desc(SessionMessageTable.seq))
+    .limit(1)
+    .get()
+    .pipe(Effect.orDie)
+  const prefixSeq = row?.seq ?? 0
+  return { prefixSeq, prefixHash: yield* SessionHistory.prefixHash(db, sessionID, prefixSeq) }
+})
 const otherSessionID = SessionV2.ID.make("ses_runner_other")
 
 const insertSession = (id: SessionV2.ID) =>
@@ -1123,6 +1138,7 @@ describe("SessionRunnerLLM", () => {
         reason: "manual",
         text: "summary",
         recent: "",
+        ...(yield* currentPrefix()),
       })
       systemBaseline = "Replacement context"
       yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Second" }), resume: false })
@@ -1407,6 +1423,7 @@ describe("SessionRunnerLLM", () => {
         reason: "manual",
         text: "summary",
         recent: "",
+        ...(yield* currentPrefix()),
       })
       systemUnavailable = true
       yield* session.prompt({ sessionID, prompt: Prompt.make({ text: "Third" }), resume: false })

@@ -18,7 +18,12 @@ import { SessionMessageUpdater } from "@novaclaw/core/session/message-updater"
 import { SessionProjector } from "@novaclaw/core/session/projector"
 import { SessionExecution } from "@novaclaw/core/session/execution"
 import { SessionInput } from "@novaclaw/core/session/input"
-import { SessionInputTable, SessionMessageTable, SessionTable } from "@novaclaw/core/session/sql"
+import {
+  SessionCompactionTable,
+  SessionInputTable,
+  SessionMessageTable,
+  SessionTable,
+} from "@novaclaw/core/session/sql"
 import { testEffect } from "./lib/effect"
 import { Snapshot } from "@novaclaw/core/snapshot"
 
@@ -274,6 +279,8 @@ describe("SessionProjector", () => {
         reason: "manual",
         text: "summary",
         recent: "recent context",
+        prefixSeq: 0,
+        prefixHash: "0".repeat(64),
       })
 
       const rows = yield* db
@@ -292,15 +299,16 @@ describe("SessionProjector", () => {
         "model-switched",
         "synthetic",
         "shell",
-        "compaction",
       ])
       expect(messages.find((message) => message.type === "shell")).toMatchObject({
         output: "/project",
         time: { completed: DateTime.makeUnsafe(1) },
       })
-      expect(messages.find((message) => message.type === "compaction")).toMatchObject({
+      expect(yield* db.select().from(SessionCompactionTable).get().pipe(Effect.orDie)).toMatchObject({
         summary: "summary",
         recent: "recent context",
+        prefix_seq: 0,
+        prefix_hash: "0".repeat(64),
       })
       expect(
         yield* db.select().from(SessionTable).where(eq(SessionTable.id, sessionID)).get().pipe(Effect.orDie),

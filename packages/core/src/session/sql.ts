@@ -71,10 +71,7 @@ export const SessionTable = sqliteTable(
     time_compacting: integer(),
     time_archived: integer(),
   },
-  (table) => [
-    index("session_workspace_idx").on(table.workspace_id),
-    index("session_parent_idx").on(table.parent_id),
-  ],
+  (table) => [index("session_workspace_idx").on(table.workspace_id), index("session_parent_idx").on(table.parent_id)],
 )
 
 export const TodoTable = sqliteTable(
@@ -129,6 +126,31 @@ export const SessionMessageTable = sqliteTable(
     index("session_message_session_type_seq_idx").on(table.session_id, table.type, table.seq),
     index("session_message_session_time_created_id_idx").on(table.session_id, table.time_created, table.id),
     index("session_message_time_created_idx").on(table.time_created),
+  ],
+)
+
+// Compaction is a derived context overlay, not transcript content. The source messages remain
+// intact in `session_message`; this row says exactly which canonical prefix the summary replaces.
+export const SessionCompactionTable = sqliteTable(
+  "session_compaction",
+  {
+    id: text().$type<SessionMessage.ID>().primaryKey(),
+    session_id: text()
+      .$type<SessionSchema.ID>()
+      .notNull()
+      .references(() => SessionTable.id, { onDelete: "cascade" }),
+    seq: integer().notNull(),
+    prefix_seq: integer().notNull(),
+    prefix_hash: text().notNull(),
+    reason: text().$type<"auto" | "manual">().notNull(),
+    summary: text().notNull(),
+    recent: text().notNull(),
+    metadata: text({ mode: "json" }).$type<Record<string, unknown>>(),
+    time_created: integer().notNull(),
+  },
+  (table) => [
+    uniqueIndex("session_compaction_session_seq_idx").on(table.session_id, table.seq),
+    index("session_compaction_session_prefix_idx").on(table.session_id, table.prefix_seq),
   ],
 )
 

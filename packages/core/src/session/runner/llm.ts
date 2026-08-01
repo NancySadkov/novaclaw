@@ -229,7 +229,15 @@ export const layer = Layer.effect(
       })
       // Built off `derived.entries`, i.e. the SAME read — a second `config.entries()` inside one
       // turn could hand the compactor a different snapshot than the system prompt was composed from.
-      return { ...derived, compaction: SessionCompaction.make({ events, llm, config: derived.entries }) }
+      return {
+        ...derived,
+        compaction: SessionCompaction.make({
+          events,
+          llm,
+          config: derived.entries,
+          prefixHash: (sessionID, prefixSeq) => SessionHistory.prefixHash(db, sessionID, prefixSeq).pipe(Effect.orDie),
+        }),
+      }
     })
     /** One turn's frozen view of the runtime-editable settings. Threaded, never re-derived per use. */
     type Harness = HarnessConfig.Derived & { readonly compaction: ReturnType<typeof SessionCompaction.make> }

@@ -87,6 +87,7 @@ type Dependencies = {
     readonly stream: (request: LLMRequest) => Stream.Stream<LLMEvent, LLMError>
   }
   readonly config: readonly Config.Entry[]
+  readonly prefixHash: (sessionID: SessionSchema.ID, prefixSeq: number) => Effect.Effect<string>
 }
 
 type Input = {
@@ -176,41 +177,30 @@ export const selectContext = (
 ): { readonly head: string; readonly recent: string } | undefined => {
   const conversation = entries
     .filter((entry) => entry.message.type !== "compaction")
-    .map((entry) => serializeMessage(entry.message))
-    .filter(Boolean)
+    .map((entry) => ({ message: entry.message, text: serializeMessage(entry.message) }))
+    .filter((entry) => entry.text.length > 0)
   if (conversation.length === 0) return
   let total = 0
-  // TWO bounds, not one. The message that STRADDLES the boundary contributes its prefix to `head`
-  // and its suffix to `recent`, so the whole message must be excluded from BOTH slices — and a
-  // single index cannot express that: `index + 1` leaves it whole in `head` beside its own prefix,
-  // while `index` leaves it whole in `recent` beside its own suffix. Either way one half pays for
-  // that message twice. It was `index + 1`, so every summarize call whose boundary fell inside a
-  // message (i.e. nearly all of them) sent the straddling message's prefix to the summarizer twice.
-  let headEnd = conversation.length
   let recentStart = conversation.length
-  let splitPrefix = ""
-  let splitSuffix = ""
   for (let index = conversation.length - 1; index >= 0; index--) {
-    const next = total + Token.estimate(conversation[index])
-    if (next > tokens) {
-      const remaining = Math.max(0, tokens - total) * 4
-      if (remaining > 0) {
-        splitPrefix = conversation[index].slice(0, -remaining)
-        splitSuffix = conversation[index].slice(-remaining)
-        headEnd = index
-        recentStart = index + 1
-      }
-      // `remaining === 0` leaves both bounds where the last fitting message put them, so the
-      // straddling message goes wholly to `head` and is still not duplicated.
-      break
-    }
+    const next = total + Token.estimate(conversation[index]!.text)
+    if (next > tokens) break
     total = next
-    headEnd = index
     recentStart = index
   }
+  // A context overlay may cut only AFTER a completed assistant turn. If the token target lands in
+  // the middle of an exchange, retain whole messages until the preceding message is an assistant.
+  // This makes the retained tail agentic history rather than a bag of token fragments.
+  while (recentStart > 0 && conversation[recentStart - 1]!.message.type !== "assistant") recentStart--
   return {
-    head: [...conversation.slice(0, headEnd), splitPrefix].filter(Boolean).join("\n\n"),
-    recent: [splitSuffix, ...conversation.slice(recentStart)].filter(Boolean).join("\n\n"),
+    head: conversation
+      .slice(0, recentStart)
+      .map((entry) => entry.text)
+      .join("\n\n"),
+    recent: conversation
+      .slice(recentStart)
+      .map((entry) => entry.text)
+      .join("\n\n"),
   }
 }
 
@@ -306,6 +296,7 @@ export const make = (dependencies: Dependencies) => {
       )
     const summary = chunks.join("")
     if (!summarized || failed || !summary.trim()) return false
+    const prefixSeq = entries.reduce((highest, entry) => Math.max(highest, entry.seq), 0)
     yield* dependencies.events.publish(SessionEvent.Compaction.Ended, {
       sessionID: input.sessionID,
       messageID,
@@ -313,6 +304,8 @@ export const make = (dependencies: Dependencies) => {
       reason,
       text: summary,
       recent: selected.recent,
+      prefixSeq,
+      prefixHash: yield* dependencies.prefixHash(input.sessionID, prefixSeq),
     })
     return true
   })

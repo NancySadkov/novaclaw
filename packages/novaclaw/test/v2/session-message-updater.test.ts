@@ -195,7 +195,7 @@ test.skip("tool completion stores completed timestamp", () => {
   expect(state.messages[0].content[0].provider).toEqual({ executed: true, metadata: { fake: { status: "done" } } })
 })
 
-test("compaction events reduce to compaction message only when completed", () => {
+test("compaction events never mutate the full-fidelity transcript", () => {
   const state: SessionMessageUpdater.MemoryState = { messages: [] }
   const sessionID = SessionID.make("session")
   const id = EventV2.ID.create()
@@ -253,17 +253,11 @@ test("compaction events reduce to compaction message only when completed", () =>
         reason: "auto",
         text: "final summary",
         recent: "recent context",
+        prefixSeq: 0,
+        prefixHash: "0".repeat(64),
       },
     } satisfies SessionEvent.Event),
   )
 
-  expect(state.messages).toHaveLength(1)
-  expect(state.messages[0]).toMatchObject({
-    id: compactionID,
-    type: "compaction",
-    reason: "auto",
-    summary: "final summary",
-    recent: "recent context",
-    time: { created: DateTime.makeUnsafe(4) },
-  })
+  expect(state.messages).toEqual([])
 })

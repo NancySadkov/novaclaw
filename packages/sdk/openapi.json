@@ -19200,9 +19200,25 @@
                       },
                       "recent": {
                         "type": "string"
+                      },
+                      "prefixSeq": {
+                        "type": "integer",
+                        "minimum": 0
+                      },
+                      "prefixHash": {
+                        "type": "string"
                       }
                     },
-                    "required": ["timestamp", "sessionID", "messageID", "reason", "text", "recent"],
+                    "required": [
+                      "timestamp",
+                      "sessionID",
+                      "messageID",
+                      "reason",
+                      "text",
+                      "recent",
+                      "prefixSeq",
+                      "prefixHash"
+                    ],
                     "additionalProperties": false
                   }
                 },
@@ -26235,7 +26251,7 @@
             "properties": {
               "type": {
                 "type": "string",
-                "enum": ["session.next.compaction.ended.1"]
+                "enum": ["session.next.compaction.ended.2"]
               },
               "id": {
                 "type": "string",
@@ -26270,9 +26286,25 @@
                   },
                   "recent": {
                     "type": "string"
+                  },
+                  "prefixSeq": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "prefixHash": {
+                    "type": "string"
                   }
                 },
-                "required": ["timestamp", "sessionID", "messageID", "reason", "text", "recent"],
+                "required": [
+                  "timestamp",
+                  "sessionID",
+                  "messageID",
+                  "reason",
+                  "text",
+                  "recent",
+                  "prefixSeq",
+                  "prefixHash"
+                ],
                 "additionalProperties": false
               }
             },
@@ -30582,9 +30614,16 @@
               },
               "recent": {
                 "type": "string"
+              },
+              "prefixSeq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "prefixHash": {
+                "type": "string"
               }
             },
-            "required": ["timestamp", "sessionID", "messageID", "reason", "text", "recent"],
+            "required": ["timestamp", "sessionID", "messageID", "reason", "text", "recent", "prefixSeq", "prefixHash"],
             "additionalProperties": false
           }
         },
@@ -37101,9 +37140,16 @@
               },
               "recent": {
                 "type": "string"
+              },
+              "prefixSeq": {
+                "type": "integer",
+                "minimum": 0
+              },
+              "prefixHash": {
+                "type": "string"
               }
             },
-            "required": ["timestamp", "sessionID", "messageID", "reason", "text", "recent"],
+            "required": ["timestamp", "sessionID", "messageID", "reason", "text", "recent", "prefixSeq", "prefixHash"],
             "additionalProperties": false
           }
         },

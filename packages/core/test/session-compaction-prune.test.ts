@@ -365,6 +365,7 @@ describe("the cheap tier runs inside compactAfterOverflow, ahead of the summariz
           info: { compaction: { keep: { tokens: 100 }, ...(input.prune ? { prune: true } : {}) } },
         } as unknown as Config.Entry,
       ],
+      prefixHash: () => Effect.succeed("0".repeat(64)),
     })
     const compacted = Effect.runSync(
       compactor.compactAfterOverflow(

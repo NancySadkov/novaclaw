@@ -391,19 +391,9 @@ export function update(adapter: Adapter, event: SessionEvent.Event) {
       },
       "session.next.compaction.started": () => Effect.void,
       "session.next.compaction.delta": () => Effect.void,
-      "session.next.compaction.ended": (event) => {
-        return adapter.appendMessage(
-          SessionMessage.Compaction.make({
-            id: event.data.messageID,
-            type: "compaction",
-            metadata: event.metadata,
-            reason: event.data.reason,
-            summary: event.data.text,
-            recent: event.data.recent,
-            time: { created: event.data.timestamp },
-          }),
-        )
-      },
+      // Compaction is projected into its own derived-overlay table by SessionProjector. It must
+      // never become a transcript message: the transcript is the recomputable source of truth.
+      "session.next.compaction.ended": () => Effect.void,
       "session.next.revert.staged": () => Effect.void,
       "session.next.revert.cleared": () => Effect.void,
       "session.next.revert.committed": () => Effect.void,

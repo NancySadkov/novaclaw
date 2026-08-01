@@ -728,6 +728,8 @@ export type GlobalEvent = {
           reason: "auto" | "manual"
           text: string
           recent: string
+          prefixSeq: number
+          prefixHash: string
         }
       }
     | {
@@ -2933,7 +2935,7 @@ export type SyncEventSessionNextCompactionEnded = {
   type: "sync"
   id: string
   syncEvent: {
-    type: "session.next.compaction.ended.1"
+    type: "session.next.compaction.ended.2"
     id: string
     seq: number
     aggregateID: string
@@ -2944,6 +2946,8 @@ export type SyncEventSessionNextCompactionEnded = {
       reason: "auto" | "manual"
       text: string
       recent: string
+      prefixSeq: number
+      prefixHash: string
     }
   }
 }
@@ -4390,6 +4394,8 @@ export type SessionNextCompactionEnded = {
     reason: "auto" | "manual"
     text: string
     recent: string
+    prefixSeq: number
+    prefixHash: string
   }
 }
 
@@ -6279,6 +6285,8 @@ export type EventSessionNextCompactionEnded = {
     reason: "auto" | "manual"
     text: string
     recent: string
+    prefixSeq: number
+    prefixHash: string
   }
 }
 
