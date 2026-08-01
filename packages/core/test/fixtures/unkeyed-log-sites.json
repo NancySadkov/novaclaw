@@ -32,10 +32,6 @@
     "count": 1
   },
   {
-    "name": "packages/core/src/credential-cipher.ts :: Effect.logError(`${message} ${Cause.pretty(cause)}`)",
-    "count": 1
-  },
-  {
     "name": "packages/core/src/event.ts :: Effect.logError(\"Event listener failed\")",
     "count": 1
   },

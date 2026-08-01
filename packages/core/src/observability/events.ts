@@ -83,6 +83,7 @@
  */
 export const SUBSYSTEMS = {
   config: "Configuration",
+  credential: "Credentials",
   filesystem: "Files and watchers",
   format: "Code formatters",
   git: "Version control",
@@ -198,6 +199,16 @@ export const EVENTS = {
     attributes: { path: "path" },
     content: "user",
     file: "packages/novaclaw/src/config/config.ts",
+  },
+
+  // ── credential ────────────────────────────────────────────────────────────────────────────────
+  /** The durable credential key could not be loaded or created; credential I/O stays disabled. */
+  "credential.cipher.load.failed": {
+    level: "error",
+    message: "Credential encryption is unavailable; credential reads and writes are disabled.",
+    attributes: { "credential.cause": "fault" },
+    content: "user",
+    file: "packages/core/src/credential-cipher.ts",
   },
 
   // ── filesystem ────────────────────────────────────────────────────────────────────────────────

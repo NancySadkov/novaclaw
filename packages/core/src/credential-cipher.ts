@@ -6,6 +6,7 @@ import path from "node:path"
 import { Cause, Context, Effect, Layer, Schema } from "effect"
 import { makeGlobalNode } from "./effect/app-node"
 import { Global } from "./global"
+import { Log } from "./observability/log"
 
 const ENVELOPE = "nc1"
 const KEY_FILE = "credential.key"
@@ -150,7 +151,9 @@ export const layer = Layer.effect(
   }).pipe(
     Effect.catchCause((cause) => {
       const message = "Credential encryption is unavailable; credential reads and writes are disabled."
-      return Effect.logError(`${message} ${Cause.pretty(cause)}`).pipe(Effect.as(unavailable(message)))
+      return Log.event("credential.cipher.load.failed", { "credential.cause": Cause.pretty(cause) }).pipe(
+        Effect.as(unavailable(message)),
+      )
     }),
   ),
 )
