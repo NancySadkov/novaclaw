@@ -4,6 +4,7 @@ import { Button } from "@novaclaw/ui/button"
 import { DockPrompt } from "@novaclaw/session-ui/dock-prompt"
 import { Icon } from "@novaclaw/ui/icon"
 import { dynamicKey, useLanguage } from "@/context/language"
+import { permissionOtherResources, permissionTargets } from "./session-permission-dock-domain"
 
 /** 1K: the six verdict-scope replies the dock can send (deny reasons ride `message`). */
 export type PermissionReply = "allow-once" | "allow-file" | "allow-always" | "deny-once" | "deny-file" | "deny-always"
@@ -33,6 +34,9 @@ export function SessionPermissionDock(props: {
     const message = reply.startsWith("deny") ? reason().trim() || undefined : undefined
     props.onDecide(reply, message)
   }
+
+  const targets = () => permissionTargets(props.request)
+  const resources = () => permissionOtherResources(props.request)
 
   return (
     <DockPrompt
@@ -106,6 +110,17 @@ export function SessionPermissionDock(props: {
         </div>
       }
     >
+      <Show when={targets().length > 0}>
+        <div data-slot="permission-row" data-variant="targets">
+          <span data-slot="permission-spacer" aria-hidden="true" />
+          <div data-slot="permission-patterns">
+            <For each={targets()}>
+              {(target) => <code class="text-12-regular text-text-base break-all">{target}</code>}
+            </For>
+          </div>
+        </div>
+      </Show>
+
       <Show when={toolDescription()}>
         <div data-slot="permission-row">
           <span data-slot="permission-spacer" aria-hidden="true" />
@@ -113,11 +128,11 @@ export function SessionPermissionDock(props: {
         </div>
       </Show>
 
-      <Show when={props.request.resources.length > 0}>
+      <Show when={resources().length > 0}>
         <div data-slot="permission-row">
           <span data-slot="permission-spacer" aria-hidden="true" />
           <div data-slot="permission-patterns">
-            <For each={props.request.resources}>
+            <For each={resources()}>
               {(pattern) => <code class="text-12-regular text-text-base break-all">{pattern}</code>}
             </For>
           </div>

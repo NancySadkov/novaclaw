@@ -284,9 +284,13 @@ describe("ApplyPatchTool", () => {
                   ),
                 ).toMatchObject({ type: "text" })
                 expect(assertions.map((input) => input.action)).toEqual(["external_directory_write", "edit"])
-                expect(assertions[0]?.resources).toEqual([
-                  path.join(yield* Effect.promise(() => fs.realpath(outside.path)), "*").replaceAll("\\", "/"),
-                ])
+                const root = yield* Effect.promise(() => fs.realpath(outside.path))
+                const resources = [first, second].map((file) => file.replaceAll("\\", "/"))
+                expect(assertions[0]).toMatchObject({
+                  resources,
+                  save: [path.join(root, "*").replaceAll("\\", "/")],
+                  metadata: { targets: resources },
+                })
               }),
             ),
           ),

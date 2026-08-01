@@ -29,8 +29,9 @@ export class PathError extends Schema.TaggedErrorClass<PathError>()("LocationMut
 export interface ExternalDirectoryAuthorization {
   /** Canonical existing directory used as the external approval boundary. */
   readonly directory: string
-  /** External-directory permission resource. */
+  /** Concrete target shown to the user and saved by a file-scoped verdict. */
   readonly resource: string
+  /** Directory-wide resource saved only by an always-scoped verdict. */
   readonly save: string
 }
 
@@ -44,6 +45,17 @@ export const externalDirectoryPermission = (input: ExternalDirectoryAuthorizatio
   action: access === "read" ? "external_directory_read" : "external_directory_write",
   resources: [input.resource],
   save: [input.save],
+  metadata: { targets: [input.resource] },
+})
+
+export const externalDirectoryPermissions = (
+  inputs: readonly ExternalDirectoryAuthorization[],
+  access: "read" | "write",
+) => ({
+  action: access === "read" ? "external_directory_read" : "external_directory_write",
+  resources: [...new Set(inputs.map((input) => input.resource))],
+  save: [...new Set(inputs.map((input) => input.save))],
+  metadata: { targets: [...new Set(inputs.map((input) => input.resource))] },
 })
 
 export interface Target {
@@ -150,7 +162,7 @@ export const layer = Layer.effect(
         externalDirectory: external
           ? {
               directory: externalDirectory,
-              resource: externalResource,
+              resource,
               save: externalResource,
             }
           : undefined,

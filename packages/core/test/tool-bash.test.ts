@@ -144,7 +144,13 @@ const withTool = <A, E, R>(
       AppNodeBuilder.build(
         // Database is already a transitive dep (BashTool → SessionStore → Database); listing it
         // EXPOSES it so a test can seed the session row whose thread type drives the jail decision.
-        LayerNode.group([Database.node, ToolRegistry.node, ToolRegistry.toolsNode, LocationMutation.node, BashTool.node]),
+        LayerNode.group([
+          Database.node,
+          ToolRegistry.node,
+          ToolRegistry.toolsNode,
+          LocationMutation.node,
+          BashTool.node,
+        ]),
         [
           [Location.node, activeLocation],
           [PermissionV2.node, permission],
@@ -300,8 +306,11 @@ describe("BashTool", () => {
           Effect.andThen(
             Effect.sync(() => {
               expect(assertions.map((item) => item.action)).toEqual(["external_directory_write", "bash"])
+              const root = realpathSync(outside.path).replaceAll("\\", "/")
               expect(assertions[0]).toMatchObject({
-                resources: [path.join(realpathSync(outside.path), "*").replaceAll("\\", "/")],
+                resources: [root],
+                save: [`${root}/*`],
+                metadata: { targets: [root] },
               })
               expect(runs).toHaveLength(1)
             }),

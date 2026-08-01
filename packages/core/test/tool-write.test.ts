@@ -283,13 +283,15 @@ describe("WriteTool", () => {
           Effect.andThen((settled) =>
             Effect.gen(function* () {
               const canonicalTarget = path.join(yield* Effect.promise(() => fs.realpath(outside.path)), "external.txt")
+              const resource = canonicalTarget.replaceAll("\\", "/")
+              const save = path.join(yield* Effect.promise(() => fs.realpath(outside.path)), "*").replaceAll("\\", "/")
               expect(assertions.map((input) => input.action)).toEqual(["external_directory_write", "create"])
               expect(assertions[0]).toMatchObject({
-                resources: [
-                  path.join(yield* Effect.promise(() => fs.realpath(outside.path)), "*").replaceAll("\\", "/"),
-                ],
+                resources: [resource],
+                save: [save],
+                metadata: { targets: [resource] },
               })
-              expect(assertions[1]).toMatchObject({ resources: [canonicalTarget.replaceAll("\\", "/")], save: ["*"] })
+              expect(assertions[1]).toMatchObject({ resources: [resource], save: ["*"] })
               expect(settled.output?.structured).toMatchObject({
                 target: canonicalTarget,
                 resource: canonicalTarget.replaceAll("\\", "/"),

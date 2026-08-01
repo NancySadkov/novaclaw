@@ -131,7 +131,8 @@ describe("LocationMutation", () => {
           })
           expect(target.externalDirectory).toMatchObject({
             directory: root,
-            resource: path.join(root, "*").replaceAll("\\", "/"),
+            resource: path.join(root, "new.txt").replaceAll("\\", "/"),
+            save: path.join(root, "*").replaceAll("\\", "/"),
           })
         }).pipe(provide(directory)),
       ),
@@ -162,7 +163,8 @@ describe("LocationMutation", () => {
           const root = yield* Effect.promise(() => fs.realpath(outside))
           expect(target.externalDirectory).toMatchObject({
             directory: root,
-            resource: path.join(root, "*").replaceAll("\\", "/"),
+            resource: path.join(root, "new", "nested", "file.txt").replaceAll("\\", "/"),
+            save: path.join(root, "*").replaceAll("\\", "/"),
           })
         }).pipe(provide(directory)),
       ),

@@ -123,14 +123,18 @@ export const layer = Layer.effectDiscard(
                 const targets: Array<{ readonly hunk: Patch.Hunk; readonly target: LocationMutation.Target }> = []
                 for (const hunk of hunks)
                   targets.push({ hunk, target: yield* mutation.resolve({ path: hunk.path, kind: "file" }) })
-                const externalDirectories = new Map<string, LocationMutation.ExternalDirectoryAuthorization>()
+                const externalDirectories = new Map<string, LocationMutation.ExternalDirectoryAuthorization[]>()
                 for (const { target } of targets) {
                   const external = target.externalDirectory
-                  if (external) externalDirectories.set(external.resource, external)
+                  if (external) {
+                    const group = externalDirectories.get(external.directory) ?? []
+                    group.push(external)
+                    externalDirectories.set(external.directory, group)
+                  }
                 }
                 for (const external of externalDirectories.values()) {
                   yield* permission.assert({
-                    ...LocationMutation.externalDirectoryPermission(external, "write"),
+                    ...LocationMutation.externalDirectoryPermissions(external, "write"),
                     sessionID: context.sessionID,
                     agent: context.agent,
                     source,

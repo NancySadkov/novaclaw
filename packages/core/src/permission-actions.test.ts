@@ -5,15 +5,26 @@ import { LocationMutation } from "./location-mutation"
 // 1I + 1J pure-logic coverage: the split action granularity (read-class external access never
 // authorizes write-class) and the denial-as-observation message lowering.
 
-const auth = { directory: "C:/soft/w64devkit", resource: "C:/soft/w64devkit/*", save: "C:/soft/w64devkit/*" }
+const auth = {
+  directory: "C:/soft/w64devkit",
+  resource: "C:/soft/w64devkit/bin/gcc.exe",
+  save: "C:/soft/w64devkit/*",
+}
 
 describe("externalDirectoryPermission — classed access (1I)", () => {
   test("read access maps to external_directory_read", () => {
     expect(LocationMutation.externalDirectoryPermission(auth, "read")).toEqual({
       action: "external_directory_read",
-      resources: ["C:/soft/w64devkit/*"],
+      resources: ["C:/soft/w64devkit/bin/gcc.exe"],
       save: ["C:/soft/w64devkit/*"],
+      metadata: { targets: ["C:/soft/w64devkit/bin/gcc.exe"] },
     })
+  })
+
+  test("file scope persists concrete targets while always persists the directory wildcard", () => {
+    const request = LocationMutation.externalDirectoryPermission(auth, "write")
+    expect(PermissionV2.savedResources(request, "file")).toEqual(["C:/soft/w64devkit/bin/gcc.exe"])
+    expect(PermissionV2.savedResources(request, "always")).toEqual(["C:/soft/w64devkit/*"])
   })
 
   test("write access maps to external_directory_write", () => {
