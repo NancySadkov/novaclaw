@@ -123,6 +123,9 @@ export interface Interface {
    * endpoint (which is most of them, and all of ours).
    */
   readonly capabilities: (session: SessionSchema.Info) => Effect.Effect<ModelV2.Capabilities | undefined>
+  /** Catalog identity of the model `resolve` selects. Unlike the wire route's `model.id`, this is
+   * the stable user-facing id and is therefore the identity model-routing config matches. */
+  readonly ref: (session: SessionSchema.Info) => Effect.Effect<ModelV2.Ref | undefined>
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/SessionRunnerModel") {}
@@ -135,7 +138,8 @@ export const layerWith = (
   tier: Interface["tier"] = () => Effect.succeed(undefined),
   prePrompt: Interface["prePrompt"] = () => Effect.succeed(undefined),
   capabilities: Interface["capabilities"] = () => Effect.succeed(undefined),
-) => Layer.succeed(Service, Service.of({ resolve, tier, prePrompt, capabilities }))
+  ref: Interface["ref"] = () => Effect.succeed(undefined),
+) => Layer.succeed(Service, Service.of({ resolve, tier, prePrompt, capabilities, ref }))
 
 const apiKey = (model: ModelV2.Info, credential?: Credential.Value) => {
   if (credential?.type === "key") return Auth.value(credential.key)
@@ -345,6 +349,10 @@ export const locationLayer = Layer.effect(
       // lets through; the turn's real model resolution (`resolve`) is what fails a missing model.
       capabilities: Effect.fn("SessionRunnerModel.capabilities")(function* (session) {
         return (yield* select(session).pipe(Effect.orElseSucceed(() => undefined)))?.capabilities
+      }),
+      ref: Effect.fn("SessionRunnerModel.ref")(function* (session) {
+        const model = yield* select(session).pipe(Effect.orElseSucceed(() => undefined))
+        return model === undefined ? undefined : { providerID: model.providerID, id: model.id }
       }),
     })
   }),

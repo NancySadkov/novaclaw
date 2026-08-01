@@ -148,7 +148,7 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
         .map(([key]) => key)
         .sort()
 
-    // SIX of forty-five, and the shortness is the measurement rather than an oversight: the config
+    // SIX operational keys, and the shortness is the measurement rather than an oversight: the config
     // surface really is mostly execution surfaces, prompt text and endpoint URLs (review finding S2).
     expect(of("operational")).toEqual([
       "$schema",
@@ -169,6 +169,7 @@ describe("ruling 4: every Config.Info key is classified, and an unclassified one
       "resource_pressure",
       "snapshots",
       "strict",
+      "tool_routing",
       "virtualFs",
       "watcher",
     ])

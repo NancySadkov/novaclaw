@@ -26642,6 +26642,42 @@
         },
         "additionalProperties": false
       },
+      "ConfigV2ToolRoutingRule": {
+        "type": "object",
+        "properties": {
+          "mode": {
+            "type": "string",
+            "enum": ["plan", "ask", "surgical", "bypass", "yolo"]
+          },
+          "provider": {
+            "type": "string"
+          },
+          "model": {
+            "type": "string"
+          },
+          "tools": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "boolean"
+            }
+          }
+        },
+        "required": ["tools"],
+        "additionalProperties": false
+      },
+      "ConfigV2ToolRouting": {
+        "type": "object",
+        "properties": {
+          "rules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ConfigV2ToolRoutingRule"
+            }
+          }
+        },
+        "required": ["rules"],
+        "additionalProperties": false
+      },
       "ConfigV2MCPTimeout": {
         "type": "object",
         "properties": {
@@ -27501,6 +27537,9 @@
           },
           "tool_output": {
             "$ref": "#/components/schemas/ConfigV2ToolOutput"
+          },
+          "tool_routing": {
+            "$ref": "#/components/schemas/ConfigV2ToolRouting"
           },
           "resource_pressure": {
             "$ref": "#/components/schemas/ResourcePressure"

@@ -21,7 +21,7 @@ export * as HarnessConfig from "./harness-config"
 //    Same move that made `system-compose.ts` testable.
 // 2. It puts the list of config keys the harness consumes in ONE place, so the ratchet in
 //    `test/runner-config-per-turn.test.ts` can ask the runner a structural question — "does any
-//    LAYER-scope declaration still derive one of these?" — instead of chasing eight names that a
+//    LAYER-scope declaration still derive one of these?" — instead of chasing a growing list of names that a
 //    refactor could rename out from under it.
 //
 // ⚠️ Derive ONCE PER TURN, never once per USE. The consumption sites number in the twenties; if each
@@ -83,6 +83,7 @@ export interface Derived {
   readonly affective: Config.Info["affective"]
   readonly introspection: Introspection.Resolved
   readonly context: Config.Info["context"]
+  readonly toolRouting: Config.Info["tool_routing"]
 }
 
 const fallbackShell = (options: Options): string =>
@@ -113,5 +114,6 @@ export const derive = (entries: readonly Config.Entry[], options: Options = {}):
     affective: Config.latest(entries, "affective"),
     introspection: Introspection.resolve(Config.latest(entries, "introspection")),
     context: Config.latest(entries, "context"),
+    toolRouting: Config.latest(entries, "tool_routing"),
   }
 }

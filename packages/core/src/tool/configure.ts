@@ -207,6 +207,9 @@ export const KEY_TIERS: Readonly<Record<keyof Config.Info, Tier>> = {
   snapshots: "consequential",
   // Harness booleans and budgets (jh.md). No prompt text, no command, no endpoint.
   strict: "consequential",
+  // Ordered booleans over ALREADY-REGISTERED tools. The table can change a model's working set or
+  // strand its repair tool, but registry permissions remain the final ceiling and cannot be widened.
+  tool_routing: "consequential",
   // Real filesystem vs an app-private root — it decides what the product will browse at all.
   virtualFs: "consequential",
   // The FS watcher's ignore globs: it decides which file changes the product NOTICES, so a write

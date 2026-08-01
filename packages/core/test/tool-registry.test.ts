@@ -151,6 +151,34 @@ describe("ToolRegistry settlement of an unadvertised name", () => {
       expect(text).not.toContain("Did you mean")
     }),
   )
+
+  it.effect("uses the routed horizon for definitions, settlement, and unknown-tool recovery", () =>
+    Effect.gen(function* () {
+      const service = yield* ToolRegistry.Service
+      yield* service.register({ read: echo(), write: echo(), apply_patch: echo() })
+      const materialized = yield* service.materialize([], (name) => name !== "write")
+
+      expect(materialized.definitions.map((definition) => definition.name)).toEqual(["read", "apply_patch"])
+      expect((yield* materialized.settle(call("read"))).result.type).toBe("json")
+      expect(message(yield* materialized.settle(call("write")))).toBe(
+        ToolRuntime.unknownToolMessage("write", ["read", "apply_patch"]),
+      )
+    }),
+  )
+
+  it.effect("cannot route a permission-withdrawn tool back onto the horizon", () =>
+    Effect.gen(function* () {
+      const service = yield* ToolRegistry.Service
+      yield* service.register({ read: echo(), write: Tool.withPermission(echo(), "edit") })
+      const materialized = yield* service.materialize(
+        [{ action: "edit", resource: "*", effect: "deny" }],
+        () => true,
+      )
+
+      expect(materialized.definitions.map((definition) => definition.name)).toEqual(["read"])
+      expect(message(yield* materialized.settle(call("write")))).toContain("Available tools: read.")
+    }),
+  )
 })
 
 /**

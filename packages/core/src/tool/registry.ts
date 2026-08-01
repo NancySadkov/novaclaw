@@ -24,7 +24,10 @@ export type ExecuteInput = {
 }
 
 export interface Interface {
-  readonly materialize: (permissions?: PermissionV2.Ruleset) => Effect.Effect<Materialization>
+  readonly materialize: (
+    permissions?: PermissionV2.Ruleset,
+    offered?: (name: string) => boolean,
+  ) => Effect.Effect<Materialization>
   /** Internal registration capability exposed publicly only through Tools.Service. */
   readonly register: (tools: Readonly<Record<string, AnyTool>>) => Effect.Effect<void, RegistrationError, Scope.Scope>
 }
@@ -62,17 +65,18 @@ const availabilityOf = new WeakMap<AnyTool, Effect.Effect<boolean>>()
  * Declare a live availability predicate for a tool: `materialize` evaluates it when the model's
  * horizon is built, and withdraws the tool for that horizon when it answers `false`.
  *
- * ⚠️ **This is the SECOND horizon filter, and it is deliberately generic — the registry must never
- * learn a tool's name.** The first is `whollyDisabled` below, which withdraws a tool the permission
- * ruleset wholly denies. This one withdraws a tool whose OWN module says it is unavailable right
+ * ⚠️ **This is one of THREE horizon filters, and it is deliberately generic — the registry must
+ * never learn a tool's name.** `whollyDisabled` below withdraws a tool the permission ruleset wholly
+ * denies; the caller's pure routing predicate withdraws model-specific variants. This one withdraws
+ * a tool whose OWN module says it is unavailable right
  * now, and the reason it exists is todo.md **ruling 3** (*read every runtime-editable value through
  * to its store at the point of use; a settings change is not a reboot*): a tool that decides its
  * availability from config cannot decide it once, at `Layer.effect` scope, because that answer is
  * frozen until the whole location is torn down. `tool/profile.ts` is the only such tool in the tree
  * and carries the full design argument, including the two options that were rejected.
  *
- * Both filters answer the same question — *is this tool on the horizon* — and they answer it in one
- * place, which is what ruling 6 asks for. Neither advertises-then-refuses: a withdrawn tool is
+ * All three filters answer the same question — *is this tool on the horizon* — and answer it in one
+ * place, which is what ruling 6 asks for. None advertises-then-refuses: a withdrawn tool is
  * absent from `definitions`, and a call arriving for it from an older horizon is settled by
  * `ToolRuntime.unknownToolMessage`, which names the tools that DO exist.
  *
@@ -170,17 +174,23 @@ const registryLayer = Layer.effect(
           }),
         )
       }),
-      materialize: Effect.fn("ToolRegistry.materialize")(function* (permissions = []) {
+      materialize: Effect.fn("ToolRegistry.materialize")(function* (permissions = [], offered = () => true) {
         const registrations = new Map(applications.entries())
         for (const [name, entry] of yield* external.entries()) registrations.set(name, entry)
         for (const [name, entries] of local) {
           const registration = entries.at(-1)?.registration
           if (registration) registrations.set(name, registration)
         }
-        // Two withdrawals, one seam. The permission ruleset decides first because it is free and
-        // because a wholly-denied tool must not get to run an Effect to decide it is available.
+        // Three withdrawals, one seam. Permission decides first and permanently removes a denied
+        // registration. Routing runs only over survivors, so a `true` route decision can undo an
+        // earlier ROUTING decision but can never resurrect a permission-withdrawn tool. Live tool
+        // availability runs last, and a routed-off tool never pays its predicate's I/O.
         for (const [name, registration] of registrations) {
           if (whollyDisabled(permission(registration.tool, name), permissions)) {
+            registrations.delete(name)
+            continue
+          }
+          if (!offered(name)) {
             registrations.delete(name)
             continue
           }

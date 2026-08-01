@@ -3066,6 +3066,19 @@ export type ConfigV2ToolOutput = {
   max_bytes?: number
 }
 
+export type ConfigV2ToolRoutingRule = {
+  mode?: "plan" | "ask" | "surgical" | "bypass" | "yolo"
+  provider?: string
+  model?: string
+  tools: {
+    [key: string]: boolean
+  }
+}
+
+export type ConfigV2ToolRouting = {
+  rules: Array<ConfigV2ToolRoutingRule>
+}
+
 export type ConfigV2McpTimeout = {
   startup?: number
   request?: number
@@ -3376,6 +3389,7 @@ export type ConfigInfo = {
       }
   attachments?: ConfigV2Attachments
   tool_output?: ConfigV2ToolOutput
+  tool_routing?: ConfigV2ToolRouting
   resource_pressure?: ResourcePressure
   mcp?: ConfigV2Mcp
   compaction?: ConfigV2Compaction

@@ -29,6 +29,7 @@ import { ConfigReference } from "./config/reference"
 import { ConfigServer } from "./config/server"
 import { ConfigStrict } from "./config/strict"
 import { ConfigToolOutput } from "./config/tool-output"
+import { ConfigToolRouting } from "./config/tool-routing"
 import { ConfigWatcher } from "./config/watcher"
 import { SettingsConfigSeed } from "./settings-config-seed"
 import { SettingsConfigStore } from "./settings-config-store"
@@ -101,6 +102,10 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   }),
   tool_output: ConfigToolOutput.Info.pipe(Schema.optional).annotate({
     description: "Tool output truncation thresholds",
+  }),
+  tool_routing: ConfigToolRouting.Info.pipe(Schema.optional).annotate({
+    description:
+      "Ordered per-model tool horizon rules. Mode/provider/model selectors match a turn; later boolean tool decisions win. Routing only withdraws or restores earlier routing choices and never overrides permissions",
   }),
   resource_pressure: ResourcePressure.Info.pipe(Schema.optional).annotate({
     description:

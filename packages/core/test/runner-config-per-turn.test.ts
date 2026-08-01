@@ -4,6 +4,7 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { Effect } from "effect"
 import { Config } from "@novaclaw/core/config"
+import { ConfigToolRouting } from "@novaclaw/core/config/tool-routing"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { Location } from "@novaclaw/core/location"
@@ -22,7 +23,7 @@ import { SettingsConfigStore } from "../src/settings-config-store"
  *
  * The first half (app `3757af64a`) made `Config.entries()` read through to `SettingsConfigStore` per
  * call. That changed nothing for the harness, because `runner/llm.ts` called it ONCE at
- * `Layer.effect` scope and hung eight derivations off the result — persona, expertise hint, quality,
+ * `Layer.effect` scope and hung the harness derivations off the result — persona, expertise hint, quality,
  * shell, strict, affective, introspection and the compactor were all frozen at location boot. A user
  * who edited any of them in Settings still needed a restart.
  *
@@ -79,6 +80,9 @@ describe("HarnessConfig.derive", () => {
           strict: { enabled: true, attempts: 3 },
           affective: { enabled: true, temperature: 0.42 },
           introspection: { enabled: true, cadence: 5, model: "prov/mod" },
+          tool_routing: new ConfigToolRouting.Info({
+            rules: [new ConfigToolRouting.Rule({ model: "qwen", tools: { write: false } })],
+          }),
         }),
       ],
       { platform: "linux", notesDir: "/home/u/notes" },
@@ -92,6 +96,7 @@ describe("HarnessConfig.derive", () => {
     expect(derived.strict).toMatchObject({ enabled: true, attempts: 3 })
     expect(derived.affective).toMatchObject({ enabled: true, temperature: 0.42 })
     expect(derived.introspection).toMatchObject({ enabled: true, cadence: 5, model: { providerID: "prov", id: "mod" } })
+    expect(derived.toolRouting?.rules[0]?.tools).toEqual({ write: false })
   })
 
   test("`persona: { enabled: false }` still turns the baseline off", () => {
@@ -141,10 +146,19 @@ const withLocation = <A, E, R>(body: (location: Location.Ref) => Effect.Effect<A
   ).pipe(Effect.flatMap((dir) => body(Location.Ref.make({ directory: AbsolutePath.make(dir.path) }))))
 
 /** Every settings key the harness derivation consumes. */
-const HARNESS_KEYS = ["persona", "expertise", "quality", "shell", "strict", "affective", "introspection"] as const
+const HARNESS_KEYS = [
+  "persona",
+  "expertise",
+  "quality",
+  "shell",
+  "strict",
+  "affective",
+  "introspection",
+  "tool_routing",
+] as const
 
 describe("the harness derivation follows the settings store", () => {
-  it.live("a Settings edit reaches all seven keys on the NEXT derivation — no layer rebuild", () =>
+  it.live("a Settings edit reaches every harness key on the NEXT derivation — no layer rebuild", () =>
     Effect.scoped(
       withLocation((location) =>
         Effect.gen(function* () {
@@ -167,6 +181,7 @@ describe("the harness derivation follows the settings store", () => {
             expect(before.strict?.enabled).toBeUndefined()
             expect(before.affective?.enabled).toBeUndefined()
             expect(before.introspection.enabled).toBe(false)
+            expect(before.toolRouting).toBeUndefined()
 
             yield* store.set("persona", { name: "Probe" })
             yield* store.set("expertise", "normal")
@@ -175,6 +190,7 @@ describe("the harness derivation follows the settings store", () => {
             yield* store.set("strict", { enabled: true })
             yield* store.set("affective", { enabled: true, temperature: 0.42 })
             yield* store.set("introspection", { enabled: true, cadence: 5 })
+            yield* store.set("tool_routing", { rules: [{ provider: "qwen", tools: { write: false } }] })
 
             const after = yield* derive()
             expect(after.persona).toContain("Probe")
@@ -185,6 +201,7 @@ describe("the harness derivation follows the settings store", () => {
             expect(after.strict?.enabled).toBe(true)
             expect(after.affective?.temperature).toBe(0.42)
             expect(after.introspection).toMatchObject({ enabled: true, cadence: 5 })
+            expect(after.toolRouting?.rules[0]?.tools).toEqual({ write: false })
 
             // …and a REMOVAL falls back too, so this is read-through and not merely write-visible.
             for (const key of HARNESS_KEYS) yield* store.remove(key)
@@ -195,6 +212,7 @@ describe("the harness derivation follows the settings store", () => {
             expect(restored.shell).toBe("/bin/sh")
             expect(restored.strict?.enabled).toBeUndefined()
             expect(restored.introspection.enabled).toBe(false)
+            expect(restored.toolRouting).toBeUndefined()
           }).pipe(Effect.provide(LocationServiceMap.Service.get(location)))
         }),
       ),
@@ -247,7 +265,7 @@ const codeOnly = (text: string) =>
  * statements sit at exactly four spaces; anything deeper belongs to a nested function — a turn, a
  * drain, a helper — and is therefore re-evaluated per call rather than frozen at construction. So
  * "four-space `const`" IS the question this ratchet needs to ask, which is why it is asked
- * structurally instead of by grepping for eight names a refactor could change.
+ * structurally instead of by grepping for a list of names a refactor could change.
  */
 const layerScopeDeclarations = (source: string): Declaration[] => {
   const lines = source.split("\n")
@@ -292,7 +310,7 @@ describe("runner/llm.ts derives the harness per TURN, never at layer scope", () 
     const home = declarations.find((entry) => entry.name === DERIVATION_HOME)
     expect(home, "runner/llm.ts: the `harnessConfig` declaration is gone").toBeDefined()
     // `const harnessConfig = yield* …` would type-check, read identically at every call site, and
-    // re-freeze all eight derivations. `Effect.fn` is what makes each call a fresh read.
+    // re-freeze every derivation. `Effect.fn` is what makes each call a fresh read.
     expect(
       /^ {4}const harnessConfig = Effect\.fn\(/.test(home!.text),
       "runner/llm.ts: `harnessConfig` is no longer an `Effect.fn` — a value here re-freezes the harness",
@@ -317,6 +335,27 @@ describe("runner/llm.ts derives the harness per TURN, never at layer scope", () 
     expect(
       source.includes("const result = yield* runTurn(input.sessionID, harness, promotion, step)"),
       "runner/llm.ts: the per-turn harness is no longer threaded into `runTurn`",
+    ).toBe(true)
+  })
+
+  test("the turn applies live routing after agent permissions and reuses the exact horizon for recovery", () => {
+    expect(
+      source.includes("ConfigToolRouting.offered(harness.toolRouting"),
+      "runner/llm.ts no longer compiles the live tool-routing table for the turn",
+    ).toBe(true)
+    expect(
+      source.includes("tools.materialize(\n            agent.info?.permissions,"),
+      "runner/llm.ts no longer hands agent permissions to the same materialization as routing",
+    ).toBe(true)
+    expect(
+      source.includes("providerID: modelRef?.providerID ?? model.provider") &&
+        source.includes("modelID: modelRef?.id ?? model.id"),
+      "runner/llm.ts no longer routes on stable catalog identity with a wire-identity fallback",
+    ).toBe(true)
+    expect(
+      source.includes("offeredTools: toolMaterialization?.definitions.map") &&
+        source.includes("TextualCall.detect(finalText, result.offeredTools)"),
+      "textual-call recovery no longer uses the exact horizon advertised for the provider turn",
     ).toBe(true)
   })
 })

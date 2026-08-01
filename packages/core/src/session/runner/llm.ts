@@ -14,6 +14,7 @@ import fs from "node:fs"
 import path from "path"
 import { AgentV2 } from "../../agent"
 import { Config } from "../../config"
+import { ConfigToolRouting } from "../../config/tool-routing"
 import { Global } from "../../global"
 import { Database } from "../../database/database"
 import { EventV2 } from "../../event"
@@ -207,14 +208,13 @@ export const layer = Layer.effect(
     const db = (yield* Database.Service).db
     /**
      * B7 tier-1 / ruling 3 — the harness configuration, derived ONCE PER TURN and never at layer
-     * scope. This used to be `const configEntries = yield* config.entries()` right here, plus eight
-     * derivations (compaction, persona, expertise, quality, shell, strict, affective, introspection)
-     * closed over for the life of the location. `Config.entries()` reading through to the settings
+     * scope. This used to be `const configEntries = yield* config.entries()` right here, with every
+     * runtime-settings derivation closed over for the life of the location. `Config.entries()` reading through to the settings
      * store did not help them: the read happened once, so every one of those values stayed frozen at
      * location boot and a Settings edit still needed a restart to take.
      *
      * ⚠️ It is an `Effect.fn`, i.e. a suspended computation, NOT a value. That is the invariant:
-     * turning it back into `const harness = yield* …` here would re-freeze all eight silently — same
+     * turning it back into `const harness = yield* …` here would re-freeze every value silently — same
      * names, same types, same call sites, green compile. `test/runner-config-per-turn.test.ts`
      * ratchets it.
      *
@@ -712,18 +712,22 @@ export const layer = Layer.effect(
         (yield* SessionContextEpoch.prepare(db, events, loadSystemContext(agent, session.id), session.id).pipe(
           Effect.tapError(surfacePreTurnFailure),
         ))
+      const modelSession = { ...session, model: config.model as typeof session.model }
       const model = yield* models
-        .resolve({ ...session, model: config.model as typeof session.model })
+        .resolve(modelSession)
         .pipe(Effect.tapError(surfacePreTurnFailure))
+      // Catalog identity, not the provider wire id: a model may deliberately route API requests
+      // under `api.id` while users and live config know it by a different stable catalog id.
+      const modelRef = yield* models.ref(modelSession)
       // Models item (c): scaffold the system prompt harder for a weak model (jh.md thesis). Reads
       // the resolved model's capability tier; best-effort (never gates the turn).
-      const tier = yield* models.tier({ ...session, model: config.model as typeof session.model })
+      const tier = yield* models.tier(modelSession)
       const tierHint = TierScaffold.tierScaffold(tier)
       // Per-model pre-prompt (owner 2026-07-29): the resolved model's optional user-authored
       // behaviour correction, wrapped as a distinct labelled section. Read best-effort off the
       // resolved catalog model exactly like the tier above; undefined ⇒ inert (see system-compose.ts).
       const modelPrePrompt = SystemCompose.modelPrePromptSection(
-        yield* models.prePrompt({ ...session, model: config.model as typeof session.model }),
+        yield* models.prePrompt(modelSession),
       )
       const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)
       const context = entries.map((entry) => entry.message)
@@ -742,7 +746,7 @@ export const layer = Layer.effect(
       // message, so the inline form made the capability gate inert for exactly the case Computer Use
       // will produce — a gate that looked complete and covered one of two doors.
       const modelCapabilities = needsCapabilityEvidence(context)
-        ? yield* models.capabilities({ ...session, model: config.model as typeof session.model })
+        ? yield* models.capabilities(modelSession)
         : undefined
       const unreadable = unreadableTurnAttachments(context, modelCapabilities)
       if (unreadable.length > 0) {
@@ -807,7 +811,16 @@ export const layer = Layer.effect(
         memoryRecall = SessionRecall.formatRecall(ordered.slice(0, budget))
       }
       const isLastStep = agent.info?.steps !== undefined && currentStep >= agent.info.steps
-      const toolMaterialization = isLastStep ? undefined : yield* tools.materialize(agent.info?.permissions)
+      const toolMaterialization = isLastStep
+        ? undefined
+        : yield* tools.materialize(
+            agent.info?.permissions,
+            ConfigToolRouting.offered(harness.toolRouting, {
+              mode: config.permissionMode,
+              providerID: modelRef?.providerID ?? model.provider,
+              modelID: modelRef?.id ?? model.id,
+            }),
+          )
       const promptCacheKey = /^ses_[0-9a-f]{64}$/.test(session.id) ? session.id.slice(4) : session.id
       // P3 (3A/3B): appraise the per-session mood from what has happened so far (runs BEFORE
       // this turn's request, afpro-style), modulate sampling AROUND the model's configured
@@ -1205,6 +1218,7 @@ export const layer = Layer.effect(
             needsContinuation: !publisher.hasProviderError() && needsContinuation,
             step: currentStep,
             finish: stepSettlement?.finish,
+            offeredTools: toolMaterialization?.definitions.map((definition) => definition.name) ?? [],
           }
         }),
       )
@@ -1219,7 +1233,12 @@ export const layer = Layer.effect(
       promotion: SessionInput.Delivery | undefined,
       step: number,
     ) => Effect.Effect<
-      { readonly needsContinuation: boolean; readonly step: number; readonly finish: string | undefined },
+      {
+        readonly needsContinuation: boolean
+        readonly step: number
+        readonly finish: string | undefined
+        readonly offeredTools: readonly string[]
+      },
       RunError
     >
 
@@ -2106,17 +2125,10 @@ export const layer = Layer.effect(
             // done nothing — fatal for an unattended scheduled agent. Steer once; never execute what it
             // wrote (a ```bash fence is ordinary output, so running it would turn docs into execution).
             if (!textualNudged) {
-              // Names come from a fresh materialization: the settlement branch is a different scope from
-              // the turn-attempt's own, and this runs at most once per drain. ⚠️ "no I/O" was true
-              // until `ToolRegistry.withAvailability` landed (2026-07-31): a tool carrying a live
-              // availability predicate reads its store here, measured at ~0.54 ms for the one that
-              // does (`profile`). Cheap, and the point — a frozen answer was the B7 bug.
-              // A failure here must never break the drain — degrade to the name-free tells.
-              const offeredToolNames = yield* tools.materialize().pipe(
-                Effect.map((materialized) => materialized.definitions.map((definition) => definition.name)),
-                Effect.catchCause(() => Effect.succeed([] as string[])),
-              )
-              const attempted = TextualCall.detect(finalText, offeredToolNames)
+              // Use the exact names this provider turn received. Re-materializing here would lose
+              // the turn's agent permissions and model route, and could nudge the model to call a
+              // tool that its own horizon never contained.
+              const attempted = TextualCall.detect(finalText, result.offeredTools)
               if (attempted) {
                 textualNudged = true
                 yield* Effect.logInfo("textual tool-call recovery", {
