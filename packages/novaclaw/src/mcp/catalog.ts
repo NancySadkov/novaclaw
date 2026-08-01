@@ -6,6 +6,7 @@ import {
   type Tool as MCPToolDef,
 } from "@modelcontextprotocol/sdk/types.js"
 import { McpExternal } from "@novaclaw/core/tool/mcp-external"
+import { Log } from "@novaclaw/core/observability/log"
 import { Effect } from "effect"
 import { CalloutPolicy } from "@novaclaw/core/callout-policy"
 
@@ -101,9 +102,10 @@ export function fetch<T extends { name: string }>(
     catch: (error) => error,
   }).pipe(
     Effect.tapError((error) =>
-      Effect.logWarning(`failed to get ${label}`, {
-        clientName,
-        error: error instanceof Error ? error.message : String(error),
+      Log.event("mcp.catalog.list.failed", {
+        server: clientName,
+        "mcp.catalog": label,
+        "mcp.error": error instanceof Error ? error.message : String(error),
       }),
     ),
     Effect.map((items) => {

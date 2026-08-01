@@ -4,6 +4,7 @@ import { Cause, Effect, Layer } from "effect"
 import { ExternalCommandSource } from "@novaclaw/core/command/external-command-source"
 import { makeLocationNode } from "@novaclaw/core/effect/app-node"
 import { Location } from "@novaclaw/core/location"
+import { Log } from "@novaclaw/core/observability/log"
 import { InstanceRef } from "@/effect/instance-ref"
 import type { InstanceContext } from "@/project/instance-context"
 import { MCP } from "."
@@ -36,9 +37,10 @@ export const make = Effect.gen(function* () {
         const prompts = yield* mcp.prompts().pipe(
           Effect.provideService(InstanceRef, instance),
           Effect.catchCause((cause) =>
-            Effect.logDebug(
-              "MCP prompts unavailable for V2 location " + location.directory + ": " + Cause.pretty(cause),
-            ).pipe(Effect.map(() => ({}) as Record<string, never>)),
+            Log.event("mcp.command.prompts.unavailable", {
+              directory: location.directory,
+              "mcp.cause": Cause.pretty(cause),
+            }).pipe(Effect.map(() => ({}) as Record<string, never>)),
           ),
         )
         const entries = new Map<string, ExternalCommandSource.Entry>()
@@ -63,9 +65,10 @@ export const make = Effect.gen(function* () {
                       .join("\n") || "",
                 ),
                 Effect.catchCause((cause) =>
-                  Effect.logWarning("MCP prompt resolution failed for " + name + ": " + Cause.pretty(cause)).pipe(
-                    Effect.as(""),
-                  ),
+                  Log.event("mcp.prompt.resolve.failed", {
+                    "mcp.prompt": name,
+                    "mcp.cause": Cause.pretty(cause),
+                  }).pipe(Effect.as("")),
                 ),
               ),
           })

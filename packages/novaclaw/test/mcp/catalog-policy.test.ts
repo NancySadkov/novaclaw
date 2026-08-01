@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import type { Client } from "@modelcontextprotocol/sdk/client/index.js"
 import type { Tool as MCPToolDef } from "@modelcontextprotocol/sdk/types.js"
+import { Effect, Logger } from "effect"
 import { McpCatalog } from "../../src/mcp/catalog"
 
 const definition = {
@@ -30,5 +31,37 @@ describe("MCP tool callout policy", () => {
   test("an unsafe direct timeout cannot disable the request ceiling", async () => {
     expect(await executeWith(Number.NaN)).toBe(30_000)
     expect(await executeWith(-1)).toBe(1)
+  })
+
+  test("catalog failures emit a stable key with the dynamic catalog and fault as attributes", async () => {
+    const records: unknown[][] = []
+    const collector = Logger.make((options: Logger.Options<unknown>) => {
+      if (options.logLevel !== "Warn") return
+      records.push(Array.isArray(options.message) ? [...options.message] : [options.message])
+    })
+
+    const result = await Effect.runPromise(
+      McpCatalog.fetch(
+        "docs-server",
+        {} as Client,
+        async () => {
+          throw new Error("catalog offline")
+        },
+        "resource templates",
+      ).pipe(Effect.provide(Logger.layer([collector]))),
+    )
+
+    expect(result).toBeUndefined()
+    expect(records).toEqual([
+      [
+        { event: "mcp.catalog.list.failed" },
+        "failed to get MCP catalog entries",
+        {
+          server: "docs-server",
+          "mcp.catalog": "resource templates",
+          "mcp.error": "catalog offline",
+        },
+      ],
+    ])
   })
 })

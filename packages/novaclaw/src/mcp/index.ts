@@ -464,15 +464,15 @@ export const layer = Layer.effect(
                   status: "needs_client_registration" as const,
                   error: "Server does not support dynamic client registration. Please provide clientId in config.",
                 }
-                return Effect.logWarning("MCP server requires a pre-registered client ID", { server: key }).pipe(
+                return Log.event("mcp.auth.registration.required", { server: key }).pipe(
                   Effect.as(undefined),
                 )
               } else {
                 pendingOAuthTransports.set(key, { transport })
                 lastStatus = { status: "needs_auth" as const }
-                return Effect.logWarning("MCP server requires authentication", {
+                return Log.event("mcp.auth.required", {
                   server: key,
-                  hint: `nova-cli mcp auth ${key}`,
+                  "mcp.hint": `nova-cli mcp auth ${key}`,
                 }).pipe(Effect.as(undefined))
               }
             }
@@ -535,7 +535,11 @@ export const layer = Layer.effect(
 
         if (!mcpClient) {
           if (status.status !== "connected" && status.status !== "disabled") {
-            yield* Effect.logWarning("server unavailable", { key, type: mcp.type, status: status.status })
+            yield* Log.event("mcp.server.unavailable", {
+              server: key,
+              "mcp.transport": mcp.type,
+              "mcp.status": status.status,
+            })
           }
           return { status } satisfies CreateResult
         }
@@ -630,7 +634,7 @@ export const layer = Layer.effect(
         delete s.instructions[name]
         s.status[name] = { status: "failed", error: "Connection closed" }
         bridge.fork(
-          Effect.logWarning("MCP connection closed", { server: name }).pipe(
+          Log.event("mcp.connection.close", { server: name }).pipe(
             Effect.andThen(events.publish(ToolsChanged, { server: name })),
             Effect.ignore,
           ),
@@ -678,7 +682,7 @@ export const layer = Layer.effect(
           ([key, mcp]) =>
             Effect.gen(function* () {
               if (!isMcpConfigured(mcp)) {
-                yield* Effect.logError("Ignoring MCP config entry without type", { key })
+                yield* Log.event("mcp.config.entry.invalid", { server: key })
                 return
               }
 
@@ -838,7 +842,7 @@ export const layer = Layer.effect(
       const wanted = new Map<string, McpEntry>()
       for (const [name, entry] of Object.entries(cfg.mcp?.servers ?? {})) {
         if (!isMcpConfigured(entry)) {
-          yield* Effect.logError("Ignoring MCP config entry without type", { key: name })
+          yield* Log.event("mcp.config.entry.invalid", { server: name })
           continue
         }
         wanted.set(name, entry)
@@ -848,7 +852,7 @@ export const layer = Layer.effect(
       // deleted the server) and forget it. `closeClient` is a no-op when nothing was connected.
       for (const name of Object.keys(s.config)) {
         if (wanted.has(name)) continue
-        yield* Effect.logInfo("MCP server removed by a config write", { server: name })
+        yield* Log.event("mcp.config.server.removed", { server: name })
         yield* closeClient(s, name)
         delete s.config[name]
         delete s.status[name]
@@ -860,12 +864,12 @@ export const layer = Layer.effect(
         if (applied !== undefined && entryIdentity(applied) === entryIdentity(entry)) continue
         s.config[name] = entry
         if (entry.disabled === true) {
-          yield* Effect.logInfo("MCP server disabled by a config write", { server: name })
+          yield* Log.event("mcp.config.server.disabled", { server: name })
           yield* closeClient(s, name)
           s.status[name] = { status: "disabled" }
           continue
         }
-        yield* Effect.logInfo("MCP server added or changed by a config write — connecting", { server: name })
+        yield* Log.event("mcp.config.server.connecting", { server: name })
         // Replaces a superseded client through `storeClient`, which shuts the old one down AFTER the
         // new one is up — the same build-before-release ordering the reconnect path already used.
         yield* createAndStore(name, entry)
@@ -971,7 +975,7 @@ export const layer = Layer.effect(
         const mcpConfig = config[clientName]
         const listed = s.defs[clientName]
         if (!listed) {
-          yield* Effect.logWarning("missing cached tools for connected server", { clientName })
+          yield* Log.event("mcp.tool.cache.missing", { server: clientName })
           continue
         }
         const timeout = requestTimeout(s, clientName, mcpConfig, defaultTimeout)
@@ -1037,12 +1041,12 @@ export const layer = Layer.effect(
       clientName: string,
       fn: (client: MCPClient, timeout?: number) => Promise<A>,
       label: string,
-      meta?: Record<string, unknown>,
+      target: string,
     ) {
       const s = yield* InstanceState.get(state)
       const client = s.clients[clientName]
       if (!client) {
-        yield* Effect.logWarning(`client not found for ${label}`, { clientName })
+        yield* Log.event("mcp.request.client.missing", { server: clientName, "mcp.operation": label })
         return undefined
       }
       const cfg = yield* cfgSvc.get()
@@ -1051,10 +1055,11 @@ export const layer = Layer.effect(
         catch: (error) => error,
       }).pipe(
         Effect.tapError((error) =>
-          Effect.logError(`failed to ${label}`, {
-            clientName,
-            ...meta,
-            error: error instanceof Error ? error.message : String(error),
+          Log.event("mcp.request.failed", {
+            server: clientName,
+            "mcp.operation": label,
+            "mcp.target": target,
+            "mcp.error": error instanceof Error ? error.message : String(error),
           }),
         ),
         Effect.orElseSucceed(() => undefined),
@@ -1070,7 +1075,7 @@ export const layer = Layer.effect(
         clientName,
         (client, timeout) => client.getPrompt({ name, arguments: args }, { timeout }),
         "getPrompt",
-        { promptName: name },
+        name,
       )
     })
 
@@ -1079,7 +1084,7 @@ export const layer = Layer.effect(
         clientName,
         (client, timeout) => client.readResource({ uri: resourceUri }, { timeout }),
         "readResource",
-        { resourceUri },
+        resourceUri,
       )
     })
 

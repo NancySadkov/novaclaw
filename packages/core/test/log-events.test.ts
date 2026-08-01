@@ -273,9 +273,9 @@ describe("the key set is MEASURED against the tree, not invented", () => {
     expect(
       unanchored([["mcp.server.spawn", { ...absent, file: "packages/no/such/file.ts" }]], ROOT),
     ).toHaveLength(1)
-    // Both arms really are reachable: the live declaration anchors by message today, and a key that
-    // the file DOES contain anchors by key — which is the state every entry reaches under 1b.
-    expect(anchorOf(EVENTS["mcp.connection.close"], "mcp.connection.close", ROOT)).toBe("message")
+    // Both arms really are reachable: the migrated live declaration anchors by key, while the
+    // synthetic declaration below still proves that a source file may anchor by message.
+    expect(anchorOf(EVENTS["mcp.connection.close"], "mcp.connection.close", ROOT)).toBe("key")
     // …anchored by KEY: this very file quotes "mcp.connection.close" all over. Pointing the check
     // at a file whose contents this test controls is what makes the second arm provable without
     // waiting for 1b to convert something. ⚠️ The sentinel message is ASSEMBLED rather than written
@@ -410,7 +410,7 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     expect(shadowed).toContain("level=error")
   })
 
-  test("an UN-keyed record is untouched — the 203 remaining call sites are not affected", () => {
+  test("an UN-keyed record is untouched — the 187 remaining call sites are not affected", () => {
     // 1a adds a column; it takes nothing away and rewrites nothing. This is the assertion that says
     // the wrapper is a column rather than a second system.
     const [line] = lines(Effect.logInfo("watcher backend", { directory: "/tmp/x", backend: "parcel" }))

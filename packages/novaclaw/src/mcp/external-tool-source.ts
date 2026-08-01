@@ -5,6 +5,7 @@ import { ExternalToolSource } from "@novaclaw/core/tool/external-tool-source"
 import { McpExternal } from "@novaclaw/core/tool/mcp-external"
 import { makeLocationNode } from "@novaclaw/core/effect/app-node"
 import { Location } from "@novaclaw/core/location"
+import { Log } from "@novaclaw/core/observability/log"
 import { PermissionV2 } from "@novaclaw/core/permission"
 import { Tool } from "@novaclaw/core/tool/tool"
 import { InstanceRef } from "@/effect/instance-ref"
@@ -77,9 +78,10 @@ export const make = Effect.gen(function* () {
           .pipe(
             Effect.provideService(InstanceRef, instance),
             Effect.catchCause((cause) =>
-              Effect.logDebug("MCP tools unavailable for V2 location " + location.directory + ": " + Cause.pretty(cause)).pipe(
-                Effect.map(() => ({}) as Record<string, unknown>),
-              ),
+              Log.event("mcp.tool.source.unavailable", {
+                directory: location.directory,
+                "mcp.cause": Cause.pretty(cause),
+              }).pipe(Effect.map(() => ({}) as Record<string, unknown>)),
             ),
           )
         const key = Object.keys(tools).sort().join(" ")

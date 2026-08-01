@@ -424,66 +424,6 @@
     "count": 1
   },
   {
-    "name": "packages/novaclaw/src/mcp/catalog.ts :: Effect.logWarning(`failed to get ${label}`)",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/mcp/external-command-source.ts :: Effect.logDebug(\"MCP prompts unavailable for V2 location \" + location.directory + \": \" + Cause.pretty(cause))",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/mcp/external-command-source.ts :: Effect.logWarning(\"MCP prompt resolution failed for \" + name + \": \" + Cause.pretty(cause))",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/mcp/external-tool-source.ts :: Effect.logDebug(\"MCP tools unavailable for V2 location \" + location.directory + \": \" + Cause.pretty(cause))",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/mcp/index.ts :: Effect.logError(\"Ignoring MCP config entry without type\")",
-    "count": 2
-  },
-  {
-    "name": "packages/novaclaw/src/mcp/index.ts :: Effect.logError(`failed to ${label}`)",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/mcp/index.ts :: Effect.logInfo(\"MCP server added or changed by a config write — connecting\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/mcp/index.ts :: Effect.logInfo(\"MCP server disabled by a config write\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/mcp/index.ts :: Effect.logInfo(\"MCP server removed by a config write\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/mcp/index.ts :: Effect.logWarning(\"MCP connection closed\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/mcp/index.ts :: Effect.logWarning(\"MCP server requires a pre-registered client ID\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/mcp/index.ts :: Effect.logWarning(\"MCP server requires authentication\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/mcp/index.ts :: Effect.logWarning(\"missing cached tools for connected server\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/mcp/index.ts :: Effect.logWarning(\"server unavailable\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/mcp/index.ts :: Effect.logWarning(`client not found for ${label}`)",
-    "count": 1
-  },
-  {
     "name": "packages/novaclaw/src/permission/index.ts :: Effect.logInfo(\"asking\")",
     "count": 1
   },

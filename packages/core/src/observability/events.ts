@@ -390,6 +390,110 @@ export const EVENTS = {
   },
 
   // ── mcp ───────────────────────────────────────────────────────────────────────────────────────
+  /** A remote MCP server cannot authenticate until the operator supplies a registered OAuth client id. */
+  "mcp.auth.registration.required": {
+    level: "warn",
+    message: "MCP server requires a pre-registered client ID",
+    attributes: { server: "id" },
+    content: "none",
+    file: "packages/novaclaw/src/mcp/index.ts",
+  },
+  /** A remote MCP server requires the operator to complete its authentication flow. */
+  "mcp.auth.required": {
+    level: "warn",
+    message: "MCP server requires authentication",
+    attributes: { server: "id", "mcp.hint": "text" },
+    content: "user",
+    file: "packages/novaclaw/src/mcp/index.ts",
+  },
+  /** Listing one kind of catalog entry failed; the other connected servers remain usable. */
+  "mcp.catalog.list.failed": {
+    level: "warn",
+    message: "failed to get MCP catalog entries",
+    attributes: { server: "id", "mcp.catalog": "id", "mcp.error": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/mcp/catalog.ts",
+  },
+  /** One advertised MCP prompt could not be resolved into its command template. */
+  "mcp.prompt.resolve.failed": {
+    level: "warn",
+    message: "MCP prompt resolution failed",
+    attributes: { "mcp.prompt": "text", "mcp.cause": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/mcp/external-command-source.ts",
+  },
+  /** MCP prompts are unavailable for a location, so its command source degrades to empty. */
+  "mcp.command.prompts.unavailable": {
+    level: "debug",
+    message: "MCP prompts unavailable for V2 location",
+    attributes: { directory: "path", "mcp.cause": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/mcp/external-command-source.ts",
+  },
+  /** A config entry lacks the discriminator needed to decode an MCP server. */
+  "mcp.config.entry.invalid": {
+    level: "error",
+    message: "Ignoring MCP config entry without type",
+    attributes: { server: "id" },
+    content: "none",
+    file: "packages/novaclaw/src/mcp/index.ts",
+  },
+  /** A config write added or changed an enabled MCP server, so its replacement is connecting. */
+  "mcp.config.server.connecting": {
+    level: "info",
+    message: "MCP server added or changed by a config write — connecting",
+    attributes: { server: "id" },
+    content: "none",
+    file: "packages/novaclaw/src/mcp/index.ts",
+  },
+  /** A config write disabled an MCP server and its live client is being closed. */
+  "mcp.config.server.disabled": {
+    level: "info",
+    message: "MCP server disabled by a config write",
+    attributes: { server: "id" },
+    content: "none",
+    file: "packages/novaclaw/src/mcp/index.ts",
+  },
+  /** A config write removed an MCP server and its live client is being forgotten. */
+  "mcp.config.server.removed": {
+    level: "info",
+    message: "MCP server removed by a config write",
+    attributes: { server: "id" },
+    content: "none",
+    file: "packages/novaclaw/src/mcp/index.ts",
+  },
+  /** An MCP server's connection dropped; its tools are gone until it reconnects. */
+  "mcp.connection.close": {
+    level: "warn",
+    message: "MCP connection closed",
+    attributes: { server: "id" },
+    content: "none",
+    file: "packages/novaclaw/src/mcp/index.ts",
+  },
+  /** A request named a server that has no connected client. */
+  "mcp.request.client.missing": {
+    level: "warn",
+    message: "MCP client not found for request",
+    attributes: { server: "id", "mcp.operation": "id" },
+    content: "none",
+    file: "packages/novaclaw/src/mcp/index.ts",
+  },
+  /** A request reached a connected MCP client but the remote operation failed. */
+  "mcp.request.failed": {
+    level: "error",
+    message: "MCP request failed",
+    attributes: { server: "id", "mcp.operation": "id", "mcp.target": "text", "mcp.error": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/mcp/index.ts",
+  },
+  /** An MCP server could not reach the connected state during creation. */
+  "mcp.server.unavailable": {
+    level: "warn",
+    message: "MCP server unavailable",
+    attributes: { server: "id", "mcp.transport": "id", "mcp.status": "id" },
+    content: "none",
+    file: "packages/novaclaw/src/mcp/index.ts",
+  },
   /**
    * An MCP server relayed a log record of its own.
    *
@@ -405,13 +509,21 @@ export const EVENTS = {
     content: "user",
     file: "packages/novaclaw/src/mcp/index.ts",
   },
-  /** An MCP server's connection dropped; its tools are gone until it reconnects. */
-  "mcp.connection.close": {
+  /** A connected server has no cached tool definitions, so it contributes no tools. */
+  "mcp.tool.cache.missing": {
     level: "warn",
-    message: "MCP connection closed",
+    message: "missing cached tools for connected server",
     attributes: { server: "id" },
     content: "none",
     file: "packages/novaclaw/src/mcp/index.ts",
+  },
+  /** MCP tools are unavailable for a location, so its tool source degrades to empty. */
+  "mcp.tool.source.unavailable": {
+    level: "debug",
+    message: "MCP tools unavailable for V2 location",
+    attributes: { directory: "path", "mcp.cause": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/mcp/external-tool-source.ts",
   },
 
   // ── patch ─────────────────────────────────────────────────────────────────────────────────────
