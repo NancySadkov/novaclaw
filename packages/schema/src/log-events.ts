@@ -103,6 +103,7 @@ export const SUBSYSTEMS = {
   snapshot: "Snapshots",
   storage: "Storage migrations",
   tool: "Tools",
+  workspace: "Remote workspaces",
 } as const
 
 /** The subsystem a key's first segment must name. */
@@ -1265,6 +1266,96 @@ export const EVENTS = {
     attributes: { "tool.cause": "fault" },
     content: "user",
     file: "packages/novaclaw/src/tool/truncate.ts",
+  },
+
+  // ── workspace ─────────────────────────────────────────────────────────────────────────────────
+  /** One registered workspace adapter could not enumerate its available workspaces. */
+  "workspace.adapter.list.failed": {
+    level: "warn",
+    message: "workspace adapter list failed",
+    attributes: { "workspace.adapter": "text", "workspace.cause": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/control-plane/workspace.ts",
+  },
+  /** A workspace was removed from the store after its backing adapter became unavailable. */
+  "workspace.adapter.remove.failed": {
+    level: "error",
+    message: "adapter not available when removing workspace",
+    attributes: { "workspace.adapter": "text" },
+    content: "user",
+    file: "packages/novaclaw/src/control-plane/workspace.ts",
+  },
+  /** A replayed remote event could not be emitted on the local global bus. */
+  "workspace.event.emit.failed": {
+    level: "warn",
+    message: "failed to emit global event",
+    attributes: { "workspace.id": "id", "workspace.cause": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/control-plane/workspace.ts",
+  },
+  /** A serialized remote event could not be replayed into the local event store. */
+  "workspace.event.replay.failed": {
+    level: "warn",
+    message: "failed to replay global event",
+    attributes: { "workspace.id": "id", "workspace.cause": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/control-plane/workspace.ts",
+  },
+  /** A workspace's long-lived synchronization listener stopped unexpectedly. */
+  "workspace.listener.run.failed": {
+    level: "warn",
+    message: "workspace listener failed",
+    attributes: { "workspace.id": "id", "workspace.cause": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/control-plane/workspace.ts",
+  },
+  /** The control plane could not establish the remote workspace's global event stream. */
+  "workspace.sync.connect.failed": {
+    level: "warn",
+    message: "failed to connect to global sync",
+    attributes: { "workspace.name": "text", "workspace.cause": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/control-plane/workspace.ts",
+  },
+  /** A successful remote workspace response did not decode as the expected representation. */
+  "workspace.target.decode.failed": {
+    level: "warn",
+    message: "workspace target response decode failed",
+    attributes: { "workspace.id": "id", "workspace.cause": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/control-plane/workspace.ts",
+  },
+  /** A request could not reach the resolved remote workspace target. */
+  "workspace.target.request.failed": {
+    level: "warn",
+    message: "workspace target request failed",
+    attributes: { "workspace.id": "id", "workspace.cause": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/control-plane/workspace.ts",
+  },
+  /** A remote workspace target responded, but rejected the request at the HTTP boundary. */
+  "workspace.target.response.rejected": {
+    level: "warn",
+    message: "workspace target request failed",
+    attributes: { "workspace.id": "id", "workspace.http.status": "count", "workspace.body": "text" },
+    content: "user",
+    file: "packages/novaclaw/src/control-plane/workspace.ts",
+  },
+  /** The workspace adapter could not resolve its local or remote execution target. */
+  "workspace.target.resolve.failed": {
+    level: "warn",
+    message: "workspace target failed",
+    attributes: { "workspace.id": "id", "workspace.cause": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/control-plane/workspace.ts",
+  },
+  /** The final source synchronization failed before a session moved between workspaces. */
+  "workspace.warp.sync.failed": {
+    level: "warn",
+    message: "session warp final source sync failed",
+    attributes: { "workspace.id": "id", "session.id": "id", "workspace.cause": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/control-plane/workspace.ts",
   },
 } as const satisfies Record<string, EventDeclaration>
 

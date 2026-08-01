@@ -470,7 +470,30 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     expect(mayEgress("session.provider.attempt.retry")).toBe(false)
   })
 
-  test("an UN-keyed record is untouched — the 109 remaining call sites are not affected", () => {
+  test("workspace transport and HTTP rejection share their English without sharing an identity", () => {
+    const [transport] = lines(
+      Log.event("workspace.target.request.failed", {
+        "workspace.id": "wrk_1",
+        "workspace.cause": "connection refused at a private endpoint",
+      }),
+    )
+    const [rejected] = lines(
+      Log.event("workspace.target.response.rejected", {
+        "workspace.id": "wrk_1",
+        "workspace.http.status": 403,
+        "workspace.body": "private response body",
+      }),
+    )
+    expect(transport).toContain("event=workspace.target.request.failed")
+    expect(rejected).toContain("event=workspace.target.response.rejected")
+    expect(transport).toContain('message="workspace target request failed"')
+    expect(rejected).toContain('message="workspace target request failed"')
+    expect(rejected).toContain("workspace.http.status=403")
+    expect(mayEgress("workspace.target.request.failed")).toBe(false)
+    expect(mayEgress("workspace.target.response.rejected")).toBe(false)
+  })
+
+  test("an UN-keyed record is untouched — the 98 remaining call sites are not affected", () => {
     // 1a adds a column; it takes nothing away and rewrites nothing. This is the assertion that says
     // the wrapper is a column rather than a second system.
     const [line] = lines(Effect.logInfo("watcher backend", { directory: "/tmp/x", backend: "parcel" }))

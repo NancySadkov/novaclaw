@@ -192,46 +192,6 @@
     "count": 1
   },
   {
-    "name": "packages/novaclaw/src/control-plane/workspace.ts :: Effect.logError(\"adapter not available when removing workspace\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/control-plane/workspace.ts :: Effect.logWarning(\"failed to connect to global sync\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/control-plane/workspace.ts :: Effect.logWarning(\"failed to emit global event\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/control-plane/workspace.ts :: Effect.logWarning(\"failed to replay global event\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/control-plane/workspace.ts :: Effect.logWarning(\"session warp final source sync failed\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/control-plane/workspace.ts :: Effect.logWarning(\"workspace adapter list failed\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/control-plane/workspace.ts :: Effect.logWarning(\"workspace listener failed\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/control-plane/workspace.ts :: Effect.logWarning(\"workspace target failed\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/control-plane/workspace.ts :: Effect.logWarning(\"workspace target request failed\")",
-    "count": 2
-  },
-  {
-    "name": "packages/novaclaw/src/control-plane/workspace.ts :: Effect.logWarning(\"workspace target response decode failed\")",
-    "count": 1
-  },
-  {
     "name": "packages/novaclaw/src/format/index.ts :: Effect.logError(\"failed to format file\")",
     "count": 1
   },

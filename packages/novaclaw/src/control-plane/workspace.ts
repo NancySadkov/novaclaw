@@ -1,6 +1,6 @@
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { httpClient } from "@novaclaw/core/effect/app-node-platform"
-import { Context, Effect, FiberMap, Iterable, Layer, Schema, Stream } from "effect"
+import { Cause, Context, Effect, FiberMap, Iterable, Layer, Schema, Stream } from "effect"
 import { serviceUse } from "@novaclaw/core/effect/service-use"
 import { FetchHttpClient, HttpBody, HttpClient, HttpClientError, HttpClientRequest } from "effect/unstable/http"
 import { Database } from "@novaclaw/core/database/database"
@@ -27,7 +27,7 @@ import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { Location } from "@novaclaw/core/location"
 import { SessionTable } from "@novaclaw/core/session/sql"
 import { SessionID } from "@/session/schema"
-import { errorData } from "@/util/error"
+import { errorFormat } from "@/util/error"
 import { waitEvent } from "./util"
 import { WorkspaceRef } from "@/effect/instance-ref"
 import { Vcs } from "@/project/vcs"
@@ -35,6 +35,7 @@ import { InstanceStore } from "@/project/instance-store"
 import { InstanceBootstrap } from "@/project/bootstrap"
 import { WorkspaceAdapterRuntime } from "./workspace-adapter-runtime"
 import { WorkspaceEvent } from "@novaclaw/schema/workspace-event"
+import { Log } from "@novaclaw/schema/log"
 
 export const Info = Schema.Struct({
   ...WorkspaceInfoSchema.fields,
@@ -290,19 +291,19 @@ export const layer = Layer.effect(
 
         const response = yield* http.execute(input.remote({ workspace, target })).pipe(
           Effect.catch((error) =>
-            Effect.logWarning("workspace target request failed", {
-              workspaceID: workspace.id,
-              error: errorData(error),
+            Log.event("workspace.target.request.failed", {
+              "workspace.id": workspace.id,
+              "workspace.cause": errorFormat(error),
             }).pipe(Effect.as(undefined)),
           ),
         )
         if (!response) return input.fallback
         if (response.status < 200 || response.status >= 300) {
           const body = yield* response.text.pipe(Effect.catch(() => Effect.succeed("")))
-          yield* Effect.logWarning("workspace target request failed", {
-            workspaceID: workspace.id,
-            status: response.status,
-            body,
+          yield* Log.event("workspace.target.response.rejected", {
+            "workspace.id": workspace.id,
+            "workspace.http.status": response.status,
+            "workspace.body": body,
           })
           return input.fallback
         }
@@ -311,9 +312,9 @@ export const layer = Layer.effect(
         return yield* body.pipe(
           Effect.map((result) => result as A),
           Effect.catch((error) =>
-            Effect.logWarning("workspace target response decode failed", {
-              workspaceID: workspace.id,
-              error: errorData(error),
+            Log.event("workspace.target.decode.failed", {
+              "workspace.id": workspace.id,
+              "workspace.cause": errorFormat(error),
             }).pipe(Effect.as(input.fallback)),
           ),
         )
@@ -393,9 +394,9 @@ export const layer = Layer.effect(
           Effect.catch((err) =>
             Effect.gen(function* () {
               setStatus(space.id, "error")
-              yield* Effect.logWarning("failed to connect to global sync", {
-                workspace: space.name,
-                error: errorData(err),
+              yield* Log.event("workspace.sync.connect.failed", {
+                "workspace.name": space.name,
+                "workspace.cause": errorFormat(err),
               })
               return null
             }),
@@ -417,10 +418,10 @@ export const layer = Layer.effect(
                 const failed = yield* events.replay(payload.syncEvent, { publish: true, ownerID: space.id }).pipe(
                   Effect.as(false),
                   Effect.catchCause((error) =>
-                    Effect.logWarning("failed to replay global event", error).pipe(
-                      Effect.annotateLogs({ workspaceID: space.id }),
-                      Effect.as(true),
-                    ),
+                    Log.event("workspace.event.replay.failed", {
+                      "workspace.id": space.id,
+                      "workspace.cause": Cause.pretty(error),
+                    }).pipe(Effect.as(true)),
                   ),
                 )
                 if (failed) return
@@ -435,9 +436,9 @@ export const layer = Layer.effect(
                   payload: event.payload,
                 })
               } catch (error) {
-                yield* Effect.logWarning("failed to emit global event", {
-                  workspaceID: space.id,
-                  error: errorData(error),
+                yield* Log.event("workspace.event.emit.failed", {
+                  "workspace.id": space.id,
+                  "workspace.cause": errorFormat(error),
                 })
               }
             }),
@@ -460,9 +461,9 @@ export const layer = Layer.effect(
         Effect.catch((error) =>
           Effect.gen(function* () {
             setStatus(space.id, "error")
-            yield* Effect.logWarning("workspace target failed", {
-              workspaceID: space.id,
-              error: errorData(error),
+            yield* Log.event("workspace.target.resolve.failed", {
+              "workspace.id": space.id,
+              "workspace.cause": errorFormat(error),
             })
             return null
           }),
@@ -489,9 +490,9 @@ export const layer = Layer.effect(
           Effect.catch((error) =>
             Effect.gen(function* () {
               setStatus(space.id, "error")
-              yield* Effect.logWarning("workspace listener failed", {
-                workspaceID: space.id,
-                error: errorData(error),
+              yield* Log.event("workspace.listener.run.failed", {
+                "workspace.id": space.id,
+                "workspace.cause": errorFormat(error),
               })
             }),
           ),
@@ -588,10 +589,10 @@ export const layer = Layer.effect(
             if (target.type === "remote") {
               yield* syncHistory(previous, target.url, target.headers).pipe(
                 Effect.catch((error) =>
-                  Effect.logWarning("session warp final source sync failed", {
-                    workspaceID: previous.id,
-                    sessionID: input.sessionID,
-                    error: errorData(error),
+                  Log.event("workspace.warp.sync.failed", {
+                    "workspace.id": previous.id,
+                    "session.id": input.sessionID,
+                    "workspace.cause": errorFormat(error),
                   }),
                 ),
               )
@@ -748,7 +749,10 @@ export const layer = Layer.effect(
         ([type, adapter]) =>
           WorkspaceAdapterRuntime.list(adapter).pipe(
             Effect.catchCause((error) =>
-              Effect.logWarning("workspace adapter list failed", { type, error }).pipe(Effect.as([])),
+              Log.event("workspace.adapter.list.failed", {
+                "workspace.adapter": type,
+                "workspace.cause": Cause.pretty(error),
+              }).pipe(Effect.as([])),
             ),
           ),
         { concurrency: "unbounded" },
@@ -831,7 +835,7 @@ export const layer = Layer.effect(
         Effect.gen(function* () {
           yield* WorkspaceAdapterRuntime.remove(info)
         }),
-        () => Effect.logError("adapter not available when removing workspace", { type: row.type }),
+        () => Log.event("workspace.adapter.remove.failed", { "workspace.adapter": row.type }),
       )
 
       yield* db.delete(WorkspaceTable).where(eq(WorkspaceTable.id, id)).run().pipe(Effect.orDie)
