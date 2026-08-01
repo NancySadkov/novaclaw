@@ -4,6 +4,7 @@ import path from "node:path"
 import { fileURLToPath } from "node:url"
 import { Effect } from "effect"
 import { Config } from "@novaclaw/core/config"
+import { ConfigContext } from "@novaclaw/core/config/context"
 import { ConfigToolRouting } from "@novaclaw/core/config/tool-routing"
 import { AppNodeBuilder } from "@novaclaw/core/effect/app-node-builder"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
@@ -80,6 +81,9 @@ describe("HarnessConfig.derive", () => {
           strict: { enabled: true, attempts: 3 },
           affective: { enabled: true, temperature: 0.42 },
           introspection: { enabled: true, cadence: 5, model: "prov/mod" },
+          context: new ConfigContext.Info({
+            todo_reminder: new ConfigContext.TodoReminder({ enabled: true, cadence: 9, max_tokens: 320 }),
+          }),
           tool_routing: new ConfigToolRouting.Info({
             rules: [new ConfigToolRouting.Rule({ model: "qwen", tools: { write: false } })],
           }),
@@ -96,6 +100,7 @@ describe("HarnessConfig.derive", () => {
     expect(derived.strict).toMatchObject({ enabled: true, attempts: 3 })
     expect(derived.affective).toMatchObject({ enabled: true, temperature: 0.42 })
     expect(derived.introspection).toMatchObject({ enabled: true, cadence: 5, model: { providerID: "prov", id: "mod" } })
+    expect(derived.context?.todo_reminder).toMatchObject({ enabled: true, cadence: 9, max_tokens: 320 })
     expect(derived.toolRouting?.rules[0]?.tools).toEqual({ write: false })
   })
 
@@ -154,6 +159,7 @@ const HARNESS_KEYS = [
   "strict",
   "affective",
   "introspection",
+  "context",
   "tool_routing",
 ] as const
 
@@ -181,6 +187,7 @@ describe("the harness derivation follows the settings store", () => {
             expect(before.strict?.enabled).toBeUndefined()
             expect(before.affective?.enabled).toBeUndefined()
             expect(before.introspection.enabled).toBe(false)
+            expect(before.context).toBeUndefined()
             expect(before.toolRouting).toBeUndefined()
 
             yield* store.set("persona", { name: "Probe" })
@@ -190,6 +197,7 @@ describe("the harness derivation follows the settings store", () => {
             yield* store.set("strict", { enabled: true })
             yield* store.set("affective", { enabled: true, temperature: 0.42 })
             yield* store.set("introspection", { enabled: true, cadence: 5 })
+            yield* store.set("context", { todo_reminder: { enabled: true, cadence: 9, max_tokens: 320 } })
             yield* store.set("tool_routing", { rules: [{ provider: "qwen", tools: { write: false } }] })
 
             const after = yield* derive()
@@ -201,6 +209,7 @@ describe("the harness derivation follows the settings store", () => {
             expect(after.strict?.enabled).toBe(true)
             expect(after.affective?.temperature).toBe(0.42)
             expect(after.introspection).toMatchObject({ enabled: true, cadence: 5 })
+            expect(after.context?.todo_reminder).toMatchObject({ enabled: true, cadence: 9, max_tokens: 320 })
             expect(after.toolRouting?.rules[0]?.tools).toEqual({ write: false })
 
             // …and a REMOVAL falls back too, so this is read-through and not merely write-visible.
@@ -212,6 +221,7 @@ describe("the harness derivation follows the settings store", () => {
             expect(restored.shell).toBe("/bin/sh")
             expect(restored.strict?.enabled).toBeUndefined()
             expect(restored.introspection.enabled).toBe(false)
+            expect(restored.context).toBeUndefined()
             expect(restored.toolRouting).toBeUndefined()
           }).pipe(Effect.provide(LocationServiceMap.Service.get(location)))
         }),

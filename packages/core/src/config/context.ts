@@ -22,7 +22,20 @@ export class Profiles extends Schema.Class<Profiles>("ConfigV2.Context.Profiles"
   "goal-oriented": Profile.pipe(Schema.optional),
 }) {}
 
+export class TodoReminder extends Schema.Class<TodoReminder>("ConfigV2.Context.TodoReminder")({
+  enabled: Schema.Boolean.pipe(Schema.optional).annotate({
+    description: "Periodically put the session checklist back into the model's working context (default true)",
+  }),
+  cadence: Schema.Finite.pipe(Schema.optional).annotate({
+    description: "Durable session messages between checklist reminders (default 6)",
+  }),
+  max_tokens: Schema.Finite.pipe(Schema.optional).annotate({
+    description: "Maximum estimated tokens in one checklist reminder (default 256)",
+  }),
+}) {}
+
 export class Info extends Schema.Class<Info>("ConfigV2.Context")({
   enabled: Schema.Boolean.pipe(Schema.optional),
   profiles: Profiles.pipe(Schema.optional),
+  todo_reminder: TodoReminder.pipe(Schema.optional),
 }) {}

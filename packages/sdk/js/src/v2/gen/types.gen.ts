@@ -3151,9 +3151,16 @@ export type ConfigV2ContextProfiles = {
   "goal-oriented"?: ConfigV2ContextProfile
 }
 
+export type ConfigV2ContextTodoReminder = {
+  enabled?: boolean
+  cadence?: number
+  max_tokens?: number
+}
+
 export type ConfigV2Context = {
   enabled?: boolean
   profiles?: ConfigV2ContextProfiles
+  todo_reminder?: ConfigV2ContextTodoReminder
 }
 
 export type ConfigV2Command = {

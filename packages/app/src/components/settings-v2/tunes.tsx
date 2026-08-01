@@ -15,6 +15,11 @@ type ContextProfile = Partial<Record<ContextCategory, number>>
 interface ContextConfig {
   enabled?: boolean
   profiles?: Partial<Record<ContextProfileName, ContextProfile>>
+  todo_reminder?: {
+    enabled?: boolean
+    cadence?: number
+    max_tokens?: number
+  }
 }
 
 const PROFILE_NAMES: readonly ContextProfileName[] = ["interactive", "sub-agent", "auto-prompting", "goal-oriented"]
@@ -37,6 +42,8 @@ export const SettingsTunesV2: Component = () => {
   const current = (): ContextConfig => (serverSync().data.config as { context?: ContextConfig }).context ?? {}
   const share = (profile: ContextProfileName, category: ContextCategory) =>
     current().profiles?.[profile]?.[category] ?? DEFAULTS[profile][category]
+  const reminderCadence = () => current().todo_reminder?.cadence ?? 6
+  const reminderBudget = () => current().todo_reminder?.max_tokens ?? 256
 
   async function persist(next: ContextConfig) {
     await serverSync()
@@ -55,6 +62,13 @@ export const SettingsTunesV2: Component = () => {
     void persist({
       ...current(),
       profiles: { ...current().profiles, [profile]: nextProfile },
+    })
+  }
+
+  const setReminder = (patch: NonNullable<ContextConfig["todo_reminder"]>) => {
+    void persist({
+      ...current(),
+      todo_reminder: { ...current().todo_reminder, ...patch },
     })
   }
 
@@ -79,6 +93,60 @@ export const SettingsTunesV2: Component = () => {
               >
                 {language.t("settings.tunes.context.enabled.title")}
               </Switch>
+            </SettingsRowV2>
+            <SettingsRowV2
+              title={language.t("settings.tunes.todo.enabled.title")}
+              description={language.t("settings.tunes.todo.enabled.description")}
+            >
+              <Switch
+                checked={current().todo_reminder?.enabled !== false}
+                onChange={(checked) => setReminder({ enabled: checked })}
+                hideLabel
+              >
+                {language.t("settings.tunes.todo.enabled.title")}
+              </Switch>
+            </SettingsRowV2>
+            <SettingsRowV2
+              title={language.t("settings.tunes.todo.cadence.title")}
+              description={language.t("settings.tunes.todo.cadence.description")}
+            >
+              <div class="settings-v2-tunes-input">
+                <TextInputV2
+                  type="number"
+                  appearance="base"
+                  min="1"
+                  max="1000"
+                  step="1"
+                  value={reminderCadence()}
+                  onInput={(event) => {
+                    const parsed = Number.parseInt(event.currentTarget.value, 10)
+                    if (Number.isFinite(parsed)) setReminder({ cadence: Math.max(1, Math.min(1000, parsed)) })
+                  }}
+                  aria-label={language.t("settings.tunes.todo.cadence.title")}
+                />
+                <span aria-hidden="true">msg</span>
+              </div>
+            </SettingsRowV2>
+            <SettingsRowV2
+              title={language.t("settings.tunes.todo.budget.title")}
+              description={language.t("settings.tunes.todo.budget.description")}
+            >
+              <div class="settings-v2-tunes-input">
+                <TextInputV2
+                  type="number"
+                  appearance="base"
+                  min="64"
+                  max="4096"
+                  step="16"
+                  value={reminderBudget()}
+                  onInput={(event) => {
+                    const parsed = Number.parseInt(event.currentTarget.value, 10)
+                    if (Number.isFinite(parsed)) setReminder({ max_tokens: Math.max(64, Math.min(4096, parsed)) })
+                  }}
+                  aria-label={language.t("settings.tunes.todo.budget.title")}
+                />
+                <span aria-hidden="true">tok</span>
+              </div>
             </SettingsRowV2>
           </SettingsListV2>
         </div>

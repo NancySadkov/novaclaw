@@ -42,6 +42,7 @@ import { SessionPatch } from "../patch"
 import { SessionSchema } from "../schema"
 import { SessionStore } from "../store"
 import { SessionTitle } from "../title"
+import { SessionTodo } from "../todo"
 
 import { resolveSessionConfig, rootSessionType, EFFECTIVE_CONFIG_DEFAULTS, type EffectiveConfig } from "../config-resolve"
 import { AgentJail } from "../../agent-jail"
@@ -107,6 +108,7 @@ import { ChildProcess } from "effect/unstable/process"
 import { makeLocationNode } from "../../effect/app-node"
 import { llmClient } from "../../effect/app-node-platform"
 import { AttachmentPaths } from "./attachment-paths"
+import { TodoReminder } from "./todo-reminder"
 
 // Ordering can only choose among retrieved candidates — fetch wider than the recall budget.
 
@@ -304,6 +306,16 @@ export const layer = Layer.effect(
     const rememberMood = (sessionID: string, mood: Affective.Mood) => {
       if (moods.size >= MAX_MOODS && !moods.has(sessionID)) moods.clear()
       moods.set(sessionID, mood)
+    }
+    // A9.5: delivery state for provider-only checklist reminders. The checklist itself is durable
+    // in TodoTable; this bounded map only prevents repeated projection within one message bucket.
+    // A process restart may repeat one reminder, which is safer than silently skipping a horizon.
+    const todoReminderStates = new Map<string, TodoReminder.ReminderState>()
+    const MAX_TODO_REMINDER_STATES = 500
+    const rememberTodoReminder = (sessionID: string, state: TodoReminder.ReminderState) => {
+      if (todoReminderStates.size >= MAX_TODO_REMINDER_STATES && !todoReminderStates.has(sessionID))
+        todoReminderStates.clear()
+      todoReminderStates.set(sessionID, state)
     }
     // QE-A: sessions already nudged to provision quality commands (once per session).
     const provisionNudged = new Set<string>()
@@ -739,6 +751,28 @@ export const layer = Layer.effect(
       )
       const entries = yield* SessionHistory.entriesForRunner(db, session.id, system.baselineSeq)
       const context = entries.map((entry) => entry.message)
+      const todoReminderConfig = TodoReminder.resolve(harness.context?.todo_reminder)
+      let todoReminder: string | undefined
+      if (!todoReminderConfig.enabled) {
+        // Re-enabling is an explicit request to resume reminders, including in the current bucket.
+        todoReminderStates.delete(session.id)
+      } else {
+        const reminderState = TodoReminder.due(
+          entries.at(-1)?.seq ?? 0,
+          todoReminderConfig,
+          todoReminderStates.get(session.id),
+        )
+        if (reminderState !== undefined) {
+          // Settle the bucket even for an empty list: repeated provider steps in one bucket must not
+          // turn this into a database poll. A later todowrite result already shows its new list and
+          // the periodic reminder begins at the next durable-message crossing.
+          rememberTodoReminder(session.id, reminderState)
+          todoReminder = TodoReminder.render(
+            yield* SessionTodo.readTodos(db, session.id),
+            todoReminderConfig.maxTokens,
+          )
+        }
+      }
       // CAPABILITY GATE (v0.2.0 prep §10). The full reasoning — why the turn's OWN input refuses
       // while history degrades to a placeholder, and why that one rule also covers a Computer Use
       // screenshot — is at `unreadableTurnAttachments` in to-llm-message.ts, next to the pure
@@ -891,6 +925,9 @@ export const layer = Layer.effect(
         }).map(SystemPart.make),
         messages: [
           ...toLLMMessages(context, model, modelCapabilities),
+          // Derived provider context only — never a transcript row. The provenance prefix makes
+          // every downstream real-user detector treat it as harness guidance rather than speech.
+          ...(todoReminder === undefined ? [] : [Message.user(todoReminder)]),
           ...(isLastStep ? [Message.assistant(MAX_STEPS_PROMPT)] : []),
         ],
         tools: toolMaterialization?.definitions ?? [],

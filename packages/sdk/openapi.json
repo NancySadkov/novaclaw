@@ -26916,6 +26916,21 @@
         },
         "additionalProperties": false
       },
+      "ConfigV2ContextTodoReminder": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "cadence": {
+            "type": "number"
+          },
+          "max_tokens": {
+            "type": "number"
+          }
+        },
+        "additionalProperties": false
+      },
       "ConfigV2Context": {
         "type": "object",
         "properties": {
@@ -26924,6 +26939,9 @@
           },
           "profiles": {
             "$ref": "#/components/schemas/ConfigV2ContextProfiles"
+          },
+          "todo_reminder": {
+            "$ref": "#/components/schemas/ConfigV2ContextTodoReminder"
           }
         },
         "additionalProperties": false

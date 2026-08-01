@@ -122,7 +122,7 @@ export class Info extends Schema.Class<Info>("Config.Info")({
   }),
   context: ConfigContext.Info.pipe(Schema.optional).annotate({
     description:
-      "Typed context-window guard: live instance default plus per-session-type share ceilings for system, conversation, KB retrieval, recalled memory, and tool output",
+      "Typed context-window guard: live instance default plus per-session-type share ceilings and the bounded, periodic task-checklist reminder",
   }),
   persona: ConfigPersona.Info.pipe(Schema.optional).annotate({
     description: "Persona baseline prepended to every agent's system prompt (B3)",

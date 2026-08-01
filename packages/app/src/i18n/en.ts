@@ -1202,6 +1202,14 @@ export const dict = {
   "settings.tunes.context.enabled.title": "Context guard",
   "settings.tunes.context.enabled.description":
     "Keep one kind of context from crowding out the others. System instructions and the original task are always protected.",
+  "settings.tunes.todo.enabled.title": "Checklist reminders",
+  "settings.tunes.todo.enabled.description":
+    "Periodically put the current task list back in front of the model so long jobs stay on course.",
+  "settings.tunes.todo.cadence.title": "Reminder cadence",
+  "settings.tunes.todo.cadence.description": "How many saved chat messages pass between checklist reminders.",
+  "settings.tunes.todo.budget.title": "Reminder budget",
+  "settings.tunes.todo.budget.description":
+    "The most context a reminder may use. Active work is kept first when the checklist is longer.",
   "settings.tunes.profiles.title": "Context profiles",
   "settings.tunes.profiles.description":
     "NovaClaw chooses a profile from the chat's working mode. Attended chats preserve more conversation; unattended workers reserve more room for tool evidence.",
