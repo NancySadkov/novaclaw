@@ -1,0 +1,882 @@
+[
+  {
+    "name": "packages/core/src/adhoc-tools/guidance.ts :: Effect.logWarning(\"adhoc session recipes unreadable\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/config-store-factory.ts :: Effect.logWarning(`${fresh.length} stored ${one ? report.one : report.many} failed validation and ${one ? \"is\" : \"are\"} ` + `UNAVAILABLE — every other ${report.each} still loaded. Fix or delete the row ` + `(Registry app → ${report.table}):\\n` + fresh.map((line) => ` - ${line}`).join(\"\\n\"))",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/config-store-write.ts :: Effect.logError(\"a config write committed but the runtime could not re-materialise\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/config-store-write.ts :: Effect.logInfo(\"offline policy changed by a config write\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/config-store-write.ts :: Effect.logWarning(\"a config write is stored but NOT LIVE until this instance restarts\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/config.ts :: Effect.logWarning(notice)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/config/plugin/external.ts :: Effect.logDebug(\"skipping external plugins (--pure)\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/config/plugin/external.ts :: Effect.logWarning(`external plugin failed to load and is UNAVAILABLE — every other plugin still loaded: ${ref.package}`)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/credential-cipher.ts :: Effect.logError(`${message} ${Cause.pretty(cause)}`)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/event.ts :: Effect.logError(\"Event listener failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/filesystem/search.ts :: Effect.logWarning(\"failed to initialize fff\")",
+    "count": 2
+  },
+  {
+    "name": "packages/core/src/filesystem/watcher.ts :: Effect.logError(\"failed to init watcher service\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/filesystem/watcher.ts :: Effect.logError(\"failed to subscribe\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/filesystem/watcher.ts :: Effect.logError(\"watcher backend not supported\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/filesystem/watcher.ts :: Effect.logError(\"watcher: failed to release a subscription\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/filesystem/watcher.ts :: Effect.logError(\"watcher: re-subscribe failed — the PREVIOUS ignore list is still in force\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/filesystem/watcher.ts :: Effect.logError(\"watcher: re-subscribe failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/filesystem/watcher.ts :: Effect.logInfo(\"watcher backend\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/git.ts :: Effect.logWarning(`Git.tree.diff: ${ChangesetBudget.summary(paths.length, computed, bytes)}`)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/jh/store.ts :: Effect.logWarning(\"jh artifact body over the size cap — refused, not truncated\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/kb-graph/memory.ts :: Effect.logWarning(`kb-memory failed to open: ${cause}`)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/location-services.ts :: Effect.logInfo(\"booting location services\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/messenger/driver/discord.ts :: Effect.logInfo(`discord: caught up ${BACKFILL_PAGE}+ missed messages in ${channelID}; older ones beyond the page were skipped`)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/messenger/gateway.ts :: Effect.logInfo(\"messenger gateway starting\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/messenger/gateway.ts :: Effect.logInfo(\"messenger: no connected operator chat to notify — the Settings banner carries the notice alone\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/messenger/gateway.ts :: Effect.logInfo(`messenger: bound the ${account.label} self-chat to a fresh console session`)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/messenger/gateway.ts :: Effect.logWarning(\"messenger: skipping reconcile — the account table could not be read; live connections are left exactly as they are\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/messenger/gateway.ts :: Effect.logWarning(`messenger: cannot route inbound on ${chatKey} — the messenger database could not be read; the message was not delivered`)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/messenger/gateway.ts :: Effect.logWarning(`messenger: could not deliver an operator notice to chat ${binding.chatID} on ${accountID}: ${failure}`)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/messenger/store.ts :: Effect.logWarning(`MessengerStore.${what}: the messenger database could not be read`)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/models-dev.ts :: Effect.logError(\"Failed to fetch models.dev\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/offline.ts :: Effect.logInfo(\"offline mode ACTIVE — HTTP restricted to loopback + provider hosts\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/offline.ts :: Effect.logWarning(\"offline mode blocked outbound request\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/plugin/host.ts :: Effect.logError(\"Plugin event handler failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/plugin/host.ts :: Effect.logError(\"Plugin event subscription stopped\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/plugin/host.ts :: Effect.logWarning(\"Plugin event dropped — subscriber buffer full\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/plugin/host.ts :: Effect.logWarning(\"Plugin subscribed to an event type the kernel never publishes\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/pty.ts :: Effect.logInfo(\"client attached to session\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/pty.ts :: Effect.logInfo(\"creating session\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/pty.ts :: Effect.logInfo(\"removing session\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/pty.ts :: Effect.logInfo(\"session exited\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/reference.ts :: Effect.logWarning(\"failed to materialize reference\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/ripgrep/binary.ts :: Effect.logInfo(\"downloading ripgrep\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/schedule/scheduler.ts :: Effect.logError(\"calendar-scheduler tick failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/compaction.ts :: Effect.logInfo(\"compaction prune planned\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/execution/local.ts :: Effect.logError(\"Failed to drain Session\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/history.ts :: Effect.logWarning(\"stale session compaction rejected\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/run-coordinator.ts :: Effect.logWarning(\"session wake dropped — no executor attached; queued input will not run\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: Effect.logDebug(\"quality check passed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: Effect.logError(\"manual compaction failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: Effect.logError(\"strict attempt failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: Effect.logError(\"strict finalize failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: Effect.logInfo(\"doom-loop failure streak\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: Effect.logInfo(\"doom-loop runaway self-check\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: Effect.logInfo(\"empty-turn recovery\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: Effect.logInfo(\"exit(result) recorded — stopping the drain\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: Effect.logInfo(\"finish re-grounding nudge\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: Effect.logInfo(\"finish recovery: provider truncated at its output-token limit\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: Effect.logInfo(\"introspection interjecting\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: Effect.logInfo(\"manual compaction settled\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: Effect.logInfo(\"quality check FAILED — steering\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: Effect.logInfo(\"self-drive continuation\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: Effect.logInfo(\"session under operator control — Nova is not responding\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: Effect.logInfo(\"steer arrived mid-generation — cutting the stream\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: Effect.logInfo(\"textual tool-call recovery\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: Effect.logWarning(\"auto-title failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: Effect.logWarning(\"auto-title: model returned an empty completion\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: Effect.logWarning(\"changes-summary refresh failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: Effect.logWarning(\"context pack evicted history from the outgoing request\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: Effect.logWarning(\"ctx_pressure: real prompt near the context window\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: Effect.logWarning(\"early auto-title failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: Effect.logWarning(\"finish recovery: truncated twice — pausing the drain\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: Effect.logWarning(\"introspection judge failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: Effect.logWarning(\"memory extraction failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: Effect.logWarning(\"memory extraction: model returned an empty completion\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: Effect.logWarning(\"provider attempt failed — retrying\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: Effect.logWarning(\"quality check errored\")",
+    "count": 2
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: Effect.logWarning(\"self-drive cap reached\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: Effect.logWarning(\"strict action part failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: Effect.logWarning(\"strict resume state unreadable\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: Effect.logWarning(\"strict retention purge failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: Effect.logWarning(\"strict summary failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/runner/llm.ts :: Effect.logWarning(EMPTY_TURN_DIAGNOSTIC)",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/session/spawner.ts :: Effect.logWarning(\"adhoc-tool copy-on-spawn failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/settings-config-seed.ts :: Effect.logWarning(formatSkippedNotice(skipped))",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/skill/discovery.ts :: Effect.logError(\"failed to download skill file\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/skill/discovery.ts :: Effect.logError(\"failed to fetch skill index\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/skill/discovery.ts :: Effect.logError(\"failed to refresh skill\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/snapshot.ts :: Effect.logWarning(\"failed to capture snapshot\")",
+    "count": 1
+  },
+  {
+    "name": "packages/core/src/tool-catalogue-guidance.ts :: Effect.logWarning(\"tool catalogue index unavailable; continuing with the live manifest\")",
+    "count": 1
+  },
+  {
+    "name": "packages/llm/src/protocols/anthropic-messages.ts :: Effect.logWarning(`Anthropic Messages: dropped ${breakpoints.dropped} cache breakpoint(s); the API allows at most ${ANTHROPIC_BREAKPOINT_CAP} per request.`)",
+    "count": 1
+  },
+  {
+    "name": "packages/llm/src/protocols/bedrock-converse.ts :: Effect.logWarning(`Bedrock Converse: dropped ${breakpoints.dropped} cache breakpoint(s); the API allows at most ${BedrockCache.BEDROCK_BREAKPOINT_CAP} per request.`)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/config/config.ts :: Effect.logDebug(\"fetching remote config\")",
+    "count": 2
+  },
+  {
+    "name": "packages/novaclaw/src/config/config.ts :: Effect.logDebug(\"loaded custom config from NOVACLAW_CONFIG_CONTENT\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/config/config.ts :: Effect.logDebug(\"loaded remote config from well-known\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/config/config.ts :: Effect.logDebug(\"loading config from NOVACLAW_CONFIG_DIR\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/config/config.ts :: Effect.logError(\"failed to load global config, using defaults\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/config/config.ts :: Effect.logInfo(\"loading\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/config/config.ts :: Effect.logWarning(\"background dependency install failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/config/config.ts :: Effect.logWarning(\"failed to read system username, using fallback\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/config/config.ts :: Effect.logWarning(\"NOVACLAW_PERMISSION contains invalid JSON, skipping\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/control-plane/workspace.ts :: Effect.logError(\"adapter not available when removing workspace\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/control-plane/workspace.ts :: Effect.logWarning(\"failed to connect to global sync\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/control-plane/workspace.ts :: Effect.logWarning(\"failed to emit global event\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/control-plane/workspace.ts :: Effect.logWarning(\"failed to replay global event\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/control-plane/workspace.ts :: Effect.logWarning(\"session warp final source sync failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/control-plane/workspace.ts :: Effect.logWarning(\"workspace adapter list failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/control-plane/workspace.ts :: Effect.logWarning(\"workspace listener failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/control-plane/workspace.ts :: Effect.logWarning(\"workspace target failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/control-plane/workspace.ts :: Effect.logWarning(\"workspace target request failed\")",
+    "count": 2
+  },
+  {
+    "name": "packages/novaclaw/src/control-plane/workspace.ts :: Effect.logWarning(\"workspace target response decode failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/format/index.ts :: Effect.logError(\"failed to format file\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/format/index.ts :: Effect.logError(\"failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/format/index.ts :: Effect.logInfo(\"all formatters are disabled\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/format/index.ts :: Effect.logInfo(\"formatting\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/format/index.ts :: Effect.logInfo(\"init\")",
+    "count": 2
+  },
+  {
+    "name": "packages/novaclaw/src/format/index.ts :: Effect.logInfo(\"running\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/mcp/catalog.ts :: Effect.logWarning(`failed to get ${label}`)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/mcp/external-command-source.ts :: Effect.logDebug(\"MCP prompts unavailable for V2 location \" + location.directory + \": \" + Cause.pretty(cause))",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/mcp/external-command-source.ts :: Effect.logWarning(\"MCP prompt resolution failed for \" + name + \": \" + Cause.pretty(cause))",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/mcp/external-tool-source.ts :: Effect.logDebug(\"MCP tools unavailable for V2 location \" + location.directory + \": \" + Cause.pretty(cause))",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/mcp/index.ts :: Effect.logDebug(\"MCP server log\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/mcp/index.ts :: Effect.logError(\"Ignoring MCP config entry without type\")",
+    "count": 2
+  },
+  {
+    "name": "packages/novaclaw/src/mcp/index.ts :: Effect.logError(\"MCP server log\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/mcp/index.ts :: Effect.logError(`failed to ${label}`)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/mcp/index.ts :: Effect.logInfo(\"MCP server added or changed by a config write — connecting\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/mcp/index.ts :: Effect.logInfo(\"MCP server disabled by a config write\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/mcp/index.ts :: Effect.logInfo(\"MCP server log\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/mcp/index.ts :: Effect.logInfo(\"MCP server removed by a config write\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/mcp/index.ts :: Effect.logWarning(\"MCP connection closed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/mcp/index.ts :: Effect.logWarning(\"MCP server log\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/mcp/index.ts :: Effect.logWarning(\"MCP server requires a pre-registered client ID\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/mcp/index.ts :: Effect.logWarning(\"MCP server requires authentication\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/mcp/index.ts :: Effect.logWarning(\"missing cached tools for connected server\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/mcp/index.ts :: Effect.logWarning(\"server unavailable\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/mcp/index.ts :: Effect.logWarning(`client not found for ${label}`)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/messenger/external-driver-source.ts :: Effect.logInfo(\"messenger: WhatsApp (Baileys) driver enabled\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/patch/index.ts :: Effect.logInfo(`Added file: ${hunk.path}`)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/patch/index.ts :: Effect.logInfo(`Deleted file: ${hunk.path}`)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/patch/index.ts :: Effect.logInfo(`Moved file: ${hunk.path} -> ${hunk.move_path}`)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/patch/index.ts :: Effect.logInfo(`Updated file: ${hunk.path}`)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/permission/index.ts :: Effect.logInfo(\"asking\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/permission/index.ts :: Effect.logInfo(\"evaluated\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/project/bootstrap.ts :: Effect.logInfo(\"bootstrapping\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/project/bootstrap.ts :: Effect.logWarning(\"init failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/project/instance-store.ts :: Effect.logInfo(\"creating instance\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/project/instance-store.ts :: Effect.logInfo(\"disposing all instances\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/project/instance-store.ts :: Effect.logInfo(\"disposing instance\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/project/instance-store.ts :: Effect.logInfo(\"reloading instance\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/project/instance-store.ts :: Effect.logWarning(\"instance dispose failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/question/index.ts :: Effect.logInfo(\"asking\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/question/index.ts :: Effect.logInfo(\"rejected\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/question/index.ts :: Effect.logInfo(\"replied\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/question/index.ts :: Effect.logWarning(\"reject for unknown request\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/question/index.ts :: Effect.logWarning(\"reply for unknown request\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/server/global-lifecycle.ts :: Effect.logWarning(\"global disposal failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/server/routes/instance/httpapi/groups/config.ts :: Effect.logWarning(\"config PATCH refused: unknown top-level key\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/server/routes/instance/httpapi/handlers/event.ts :: Effect.logInfo(\"event connected\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/server/routes/instance/httpapi/handlers/event.ts :: Effect.logInfo(\"event disconnected\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/server/routes/instance/httpapi/handlers/file.ts :: Effect.logInfo(\"find file\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/server/routes/instance/httpapi/handlers/global.ts :: Effect.logInfo(\"global event connected\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/server/routes/instance/httpapi/handlers/global.ts :: Effect.logInfo(\"global event disconnected\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/server/routes/instance/httpapi/handlers/sync.ts :: Effect.logInfo(\"sync replay complete\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/server/routes/instance/httpapi/handlers/sync.ts :: Effect.logInfo(\"sync replay requested\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/server/routes/instance/httpapi/handlers/sync.ts :: Effect.logInfo(\"sync session stolen\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/server/routes/instance/httpapi/lifecycle.ts :: Effect.logWarning(\"instance disposal failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/server/routes/instance/httpapi/middleware/error.ts :: Effect.logError(\"failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/server/routes/instance/httpapi/middleware/schema-error.ts :: Effect.logWarning(\"schema rejection\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/server/routes/instance/httpapi/server.ts :: Effect.logInfo(\"seeded recipes\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/server/server.ts :: Effect.logWarning(\"mDNS enabled but hostname is loopback; skipping mDNS publish\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/server/shared/fence.ts :: Effect.logInfo(\"state fully synced\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/server/shared/fence.ts :: Effect.logInfo(\"waiting for state\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/skill/discovery.ts :: Effect.logError(\"failed to download\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/skill/discovery.ts :: Effect.logError(\"failed to fetch index\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/skill/discovery.ts :: Effect.logError(\"failed to refresh skill\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/skill/discovery.ts :: Effect.logInfo(\"fetching index\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/skill/discovery.ts :: Effect.logWarning(\"skill entry missing SKILL.md\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/skill/index.ts :: Effect.logError(\"failed to load skill\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/skill/index.ts :: Effect.logError(`failed to scan ${opts.scope} skills`)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/skill/index.ts :: Effect.logInfo(\"init\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/skill/index.ts :: Effect.logWarning(\"duplicate skill name\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/skill/index.ts :: Effect.logWarning(\"skill path not found\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/snapshot/index.ts :: Effect.logError(\"cleanup loop failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/snapshot/index.ts :: Effect.logError(\"failed to restore snapshot\")",
+    "count": 2
+  },
+  {
+    "name": "packages/novaclaw/src/snapshot/index.ts :: Effect.logInfo(\"batched checkout failed, falling back to single-file revert\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/snapshot/index.ts :: Effect.logInfo(\"batched ls-tree failed, falling back to single-file revert\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/snapshot/index.ts :: Effect.logInfo(\"cleanup\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/snapshot/index.ts :: Effect.logInfo(\"file did not exist in snapshot, deleting\")",
+    "count": 2
+  },
+  {
+    "name": "packages/novaclaw/src/snapshot/index.ts :: Effect.logInfo(\"file existed in snapshot but checkout failed, keeping\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/snapshot/index.ts :: Effect.logInfo(\"git cat-file --batch failed during snapshot diff, falling back to per-file git show\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/snapshot/index.ts :: Effect.logInfo(\"initialized\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/snapshot/index.ts :: Effect.logInfo(\"removing gitignored files from snapshot\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/snapshot/index.ts :: Effect.logInfo(\"restore\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/snapshot/index.ts :: Effect.logInfo(\"reverting\")",
+    "count": 2
+  },
+  {
+    "name": "packages/novaclaw/src/snapshot/index.ts :: Effect.logInfo(\"tracking\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/snapshot/index.ts :: Effect.logWarning(\"cleanup failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/snapshot/index.ts :: Effect.logWarning(\"failed to add snapshot files\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/snapshot/index.ts :: Effect.logWarning(\"failed to get diff\")",
+    "count": 2
+  },
+  {
+    "name": "packages/novaclaw/src/snapshot/index.ts :: Effect.logWarning(\"failed to list snapshot files\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/snapshot/index.ts :: Effect.logWarning(`Snapshot.diffFull: ${ChangesetBudget.summary(rows.length, computed, bytes)}`)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/storage/resource-pressure-context.ts :: Effect.logWarning(`Resource headroom measurement failed: ${Cause.pretty(cause)}`)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/storage/storage.ts :: Effect.logError(\"failed to run migration\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/storage/storage.ts :: Effect.logInfo(\"copying\")",
+    "count": 3
+  },
+  {
+    "name": "packages/novaclaw/src/storage/storage.ts :: Effect.logInfo(\"running migration\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/storage/storage.ts :: Effect.logInfo(`migrating messages for session ${info.value.id}`)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/storage/storage.ts :: Effect.logInfo(`migrating parts for message ${item.value.id}`)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/storage/storage.ts :: Effect.logInfo(`migrating project ${projectDir}`)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/storage/storage.ts :: Effect.logInfo(`migrating sessions for project ${projectID}`)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/tool/external-tool-source.ts :: Effect.logDebug(\"could not scan config dir for retired tool files \" + dir + \": \" + String(error))",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/tool/external-tool-source.ts :: Effect.logWarning(`NOT LOADED: ${names.length} config-dir tool file(s) in ${dir} (${names.join(\", \")}). ` + `NovaClaw no longer runs third-party tool code inside its own process, so these files are ignored — ` + `they are NOT providing any tool to your sessions. MCP is the supported out-of-process tool seam: ` + `re-expose them as an MCP server and connect it with \\`novaclaw mcp add\\`. ` + `Delete the directory to silence this warning.`)",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/tool/truncate.ts :: Effect.logError(\"truncation cleanup failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/worktree/index.ts :: Effect.logError(\"worktree bootstrap failed\")",
+    "count": 2
+  },
+  {
+    "name": "packages/novaclaw/src/worktree/index.ts :: Effect.logError(\"worktree checkout failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/worktree/index.ts :: Effect.logError(\"worktree start command failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/novaclaw/src/worktree/index.ts :: Effect.logError(\"worktree start task failed\")",
+    "count": 1
+  },
+  {
+    "name": "packages/server/src/handlers/message.ts :: Effect.logError(\"failed to decode session message\")",
+    "count": 1
+  },
+  {
+    "name": "packages/server/src/handlers/session.ts :: Effect.logError(\"failed to clear session revert\")",
+    "count": 1
+  },
+  {
+    "name": "packages/server/src/handlers/session.ts :: Effect.logError(\"failed to decode session message\")",
+    "count": 1
+  },
+  {
+    "name": "packages/server/src/handlers/session.ts :: Effect.logError(\"failed to stage session revert\")",
+    "count": 1
+  },
+  {
+    "name": "packages/server/src/middleware/schema-error.ts :: Effect.logWarning(\"schema rejection\")",
+    "count": 1
+  }
+]

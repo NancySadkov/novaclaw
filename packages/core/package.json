@@ -51,7 +51,8 @@
     "@parcel/watcher-linux-x64-musl": "2.5.1",
     "@parcel/watcher-win32-arm64": "2.5.1",
     "@parcel/watcher-win32-x64": "2.5.1",
-    "drizzle-kit": "catalog:"
+    "drizzle-kit": "catalog:",
+    "typescript": "catalog:"
   },
   "dependencies": {
     "@effect/opentelemetry": "catalog:",

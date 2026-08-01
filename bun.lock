@@ -127,6 +127,7 @@
         "@types/turndown": "5.0.5",
         "@types/which": "3.0.4",
         "drizzle-kit": "catalog:",
+        "typescript": "catalog:",
       },
     },
     "packages/desktop": {

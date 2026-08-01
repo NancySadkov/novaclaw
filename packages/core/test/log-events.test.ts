@@ -252,25 +252,6 @@ describe("the key set is MEASURED against the tree, not invented", () => {
     expect(unanchored(declarations, ROOT)).toEqual([])
   })
 
-  test("the seed set is still un-migrated — 1a ships the wrapper UNUSED, on purpose", () => {
-    // Not a pin, a MEASUREMENT, and the honest statement of what this slice did and did not do.
-    // As item 1b converts subsystems these flip from "message" to "key" one at a time, and this
-    // assertion is the thing that makes that progress visible rather than asserted in a comment.
-    const migrated = declarations.filter(([key, declaration]) => anchorOf(declaration, key, ROOT) === "key")
-    expect(
-      migrated.map(([key]) => key),
-      [
-        "These keys are now emitted by their call sites rather than logged as raw English, which means",
-        "item 1b has started — good. Move them into the list in this assertion so the split stays a",
-        "true statement about the tree:",
-        `  ${migrated.map(([key]) => key).join("\n  ") || "(none)"}`,
-        "",
-        "  This is the migration's only progress meter until 1c's source scan exists. Deleting the",
-        "  assertion instead of updating it is how 1b gets quietly abandoned half-done.",
-      ].join("\n"),
-    ).toEqual([])
-  })
-
   test("the anchor check bites (negative control)", () => {
     const absent: EventDeclaration = {
       level: "info",
@@ -421,7 +402,7 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     expect(shadowed).toContain("level=error")
   })
 
-  test("an UN-keyed record is untouched — the 230 existing call sites are not affected", () => {
+  test("an UN-keyed record is untouched — the 233 existing call sites are not affected", () => {
     // 1a adds a column; it takes nothing away and rewrites nothing. This is the assertion that says
     // the wrapper is a column rather than a second system.
     const [line] = lines(Effect.logInfo("watcher backend", { directory: "/tmp/x", backend: "parcel" }))
