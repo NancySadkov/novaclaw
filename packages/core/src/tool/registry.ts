@@ -288,7 +288,15 @@ const registryLayer = Layer.effect(
             const registration = resident.get(input.call.name) ?? callableDeferred.get(input.call.name)
             const invokeDeferred: NonNullable<ToolContext["invokeDeferred"]> = (name, targetInput) => {
               const target = callableDeferred.get(name)
-              if (!target)
+              if (!target) {
+                if (resident.has(name))
+                  return Effect.fail(
+                    new ToolFailure({
+                      message:
+                        `${name} is a resident provider-native tool already advertised in this turn. ` +
+                        `Call ${name} directly as the tool name; do not use tool_call or tool_search for resident tools.`,
+                    }),
+                  )
                 return Effect.fail(
                   new ToolFailure({
                     message:
@@ -296,6 +304,7 @@ const registryLayer = Layer.effect(
                       `Call tool_search first and use an exact name it returned.`,
                   }),
                 )
+              }
               return settleRaw(
                 { ...input, call: { type: "tool-call", id: input.call.id, name, input: targetInput } },
                 target.identity,

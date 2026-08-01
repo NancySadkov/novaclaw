@@ -45,6 +45,38 @@ const echo = () =>
     execute: () => Effect.succeed({ ok: true }),
   })
 
+const deferredDispatcher = () =>
+  ToolRegistry.withDeferredDispatcher(
+    Tool.makeExternal({
+      description: "Dispatch a disclosed deferred tool",
+      inputSchema: { type: "object" },
+      execute: (input, context) => {
+        const value = input as { readonly name?: unknown; readonly input?: unknown }
+        const name = typeof value.name === "string" ? value.name : ""
+        const targetInput =
+          typeof value.input === "object" && value.input !== null && !Array.isArray(value.input)
+            ? (value.input as Record<string, unknown>)
+            : {}
+        if (!context.invokeDeferred) return Effect.die("test dispatcher was not granted deferred dispatch")
+        return context.invokeDeferred(name, targetInput).pipe(
+          Effect.map((output) => ({
+            structured: output.structured,
+            content: output.content.map((part) =>
+              part.type === "text"
+                ? part
+                : {
+                    type: "file" as const,
+                    data: part.uri.slice(part.uri.indexOf(",") + 1),
+                    mime: part.mime,
+                    name: part.name,
+                  },
+            ),
+          })),
+        )
+      },
+    }),
+  )
+
 const message = (input: ToolRegistry.Settlement) => {
   expect(input.result.type).toBe("error")
   return String(input.result.value)
@@ -177,6 +209,29 @@ describe("ToolRegistry settlement of an unadvertised name", () => {
 
       expect(materialized.definitions.map((definition) => definition.name)).toEqual(["read"])
       expect(message(yield* materialized.settle(call("write")))).toContain("Available tools: read.")
+    }),
+  )
+
+  it.effect("corrects a dispatcher call aimed at a resident tool toward the native name", () =>
+    Effect.gen(function* () {
+      const service = yield* ToolRegistry.Service
+      yield* service.register({ tool_call: deferredDispatcher(), spawn: echo() })
+      const materialized = yield* service.materialize()
+      const settled = yield* materialized.settle({
+        sessionID,
+        ...identity,
+        call: {
+          type: "tool-call",
+          id: "call-tool_call-resident",
+          name: "tool_call",
+          input: { name: "spawn", input: {} },
+        },
+      })
+
+      expect(message(settled)).toBe(
+        "spawn is a resident provider-native tool already advertised in this turn. " +
+          "Call spawn directly as the tool name; do not use tool_call or tool_search for resident tools.",
+      )
     }),
   )
 })
