@@ -6,6 +6,7 @@ import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } fr
 import { Download } from "../download"
 import { FSUtil } from "../fs-util"
 import { Global } from "../global"
+import { Log } from "../observability/log"
 import { makeGlobalNode } from "../effect/app-node"
 import { httpClient } from "../effect/app-node-platform"
 import { AbsolutePath } from "../schema"
@@ -90,7 +91,10 @@ export const layer = Layer.effect(
         Effect.provideService(HttpClient.HttpClient, client),
         Effect.as(true),
         Effect.catch((error) =>
-          Effect.logError("failed to download skill file", { url, error }).pipe(Effect.as(false)),
+          Log.event("skill.discovery.download.failed", {
+            "skill.url": url,
+            "skill.error": error instanceof Error ? error.message : String(error),
+          }).pipe(Effect.as(false)),
         ),
       )
     })
@@ -105,7 +109,10 @@ export const layer = Layer.effect(
           http.execute,
           Effect.flatMap(HttpClientResponse.schemaBodyJson(Index)),
           Effect.catch((error) =>
-            Effect.logError("failed to fetch skill index", { url: index, error }).pipe(Effect.as(undefined)),
+            Log.event("skill.index.fetch.failed", {
+              "skill.url": index,
+              "skill.error": error instanceof Error ? error.message : String(error),
+            }).pipe(Effect.as(undefined)),
           ),
         )
         if (!data) return []
@@ -194,7 +201,12 @@ export const layer = Layer.effect(
                     }),
                   )
                 }).pipe(
-                  Effect.catch((error) => Effect.logError("failed to refresh skill", { skill: skill.name, error })),
+                  Effect.catch((error) =>
+                    Log.event("skill.discovery.refresh.failed", {
+                      "skill.name": skill.name,
+                      "skill.error": error instanceof Error ? error.message : String(error),
+                    }),
+                  ),
                   Effect.ensuring(fs.remove(staging, { recursive: true, force: true }).pipe(Effect.ignore)),
                 )
               }

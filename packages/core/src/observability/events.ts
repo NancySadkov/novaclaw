@@ -586,12 +586,84 @@ export const EVENTS = {
   },
 
   // ── skill ─────────────────────────────────────────────────────────────────────────────────────
+  /** A file advertised by a remote skill catalog could not be downloaded. */
+  "skill.discovery.download.failed": {
+    level: "error",
+    message: "failed to download skill file",
+    attributes: { "skill.url": "text", "skill.error": "fault" },
+    content: "user",
+    file: "packages/core/src/skill/discovery.ts",
+  },
+  /** A versioned remote skill could not replace its cached copy atomically. */
+  "skill.discovery.refresh.failed": {
+    level: "error",
+    message: "failed to refresh skill",
+    attributes: { "skill.name": "text", "skill.error": "fault" },
+    content: "user",
+    file: "packages/core/src/skill/discovery.ts",
+  },
+  /** A discovered skill document could not be parsed and was omitted from the registry. */
+  "skill.file.load.failed": {
+    level: "error",
+    message: "failed to load skill",
+    attributes: { "skill.file": "path", "skill.error": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/skill/index.ts",
+  },
+  /** A remote catalog entry lacks the required SKILL.md document and is ignored. */
+  "skill.index.entry.invalid": {
+    level: "warn",
+    message: "skill entry missing SKILL.md",
+    attributes: { "skill.url": "text", "skill.name": "text" },
+    content: "user",
+    file: "packages/novaclaw/src/skill/discovery.ts",
+  },
+  /** A remote skill catalog index is about to be fetched. */
+  "skill.index.fetch": {
+    level: "info",
+    message: "fetching index",
+    attributes: { "skill.url": "text" },
+    content: "user",
+    file: "packages/novaclaw/src/skill/discovery.ts",
+  },
+  /** A remote skill catalog index could not be fetched or decoded. */
+  "skill.index.fetch.failed": {
+    level: "error",
+    message: "failed to fetch skill index",
+    attributes: { "skill.url": "text", "skill.error": "fault" },
+    content: "user",
+    file: "packages/core/src/skill/discovery.ts",
+  },
+  /** A configured local skill directory does not exist. */
+  "skill.path.missing": {
+    level: "warn",
+    message: "skill path not found",
+    attributes: { "skill.path": "path" },
+    content: "user",
+    file: "packages/novaclaw/src/skill/index.ts",
+  },
+  /** A later skill shadows an earlier document carrying the same declared name. */
+  "skill.registry.duplicate": {
+    level: "warn",
+    message: "duplicate skill name",
+    attributes: { "skill.name": "text", "skill.existing": "path", "skill.duplicate": "path" },
+    content: "user",
+    file: "packages/novaclaw/src/skill/index.ts",
+  },
   /** The skill registry finished loading. The other half of the `init` collision (§0.4). */
   "skill.registry.init": {
     level: "info",
     message: "init",
     attributes: { count: "count" },
     content: "none",
+    file: "packages/novaclaw/src/skill/index.ts",
+  },
+  /** A bounded global or project skill scan failed and contributes no documents. */
+  "skill.scan.failed": {
+    level: "error",
+    message: "failed to scan skills",
+    attributes: { "skill.scope": "id", "skill.directory": "path", "skill.error": "fault" },
+    content: "user",
     file: "packages/novaclaw/src/skill/index.ts",
   },
 

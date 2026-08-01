@@ -7,6 +7,7 @@ import { withTransientReadRetry } from "@/util/effect-http-client"
 import { Download } from "@novaclaw/core/download"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { Global } from "@novaclaw/core/global"
+import { Log } from "@novaclaw/core/observability/log"
 
 const skillConcurrency = 4
 const fileConcurrency = 8
@@ -41,7 +42,12 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | Path.Path | Htt
         Effect.provideService(FSUtil.Service, fs),
         Effect.provideService(HttpClient.HttpClient, client),
         Effect.as(true),
-        Effect.catch((err) => Effect.logError("failed to download", { url: url, error: err }).pipe(Effect.as(false))),
+        Effect.catch((err) =>
+          Log.event("skill.discovery.download.failed", {
+            "skill.url": url,
+            "skill.error": err instanceof Error ? err.message : String(err),
+          }).pipe(Effect.as(false)),
+        ),
       )
     })
 
@@ -50,14 +56,17 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | Path.Path | Htt
       const index = new URL("index.json", base).href
       const host = base.slice(0, -1)
 
-      yield* Effect.logInfo("fetching index", { url: index })
+      yield* Log.event("skill.index.fetch", { "skill.url": index })
 
       const data = yield* HttpClientRequest.get(index).pipe(
         HttpClientRequest.acceptJson,
         http.execute,
         Effect.flatMap(HttpClientResponse.schemaBodyJson(Index)),
         Effect.catch((err) =>
-          Effect.logError("failed to fetch index", { url: index, error: err }).pipe(Effect.as(null)),
+          Log.event("skill.index.fetch.failed", {
+            "skill.url": index,
+            "skill.error": err instanceof Error ? err.message : String(err),
+          }).pipe(Effect.as(null)),
         ),
       )
 
@@ -66,7 +75,8 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | Path.Path | Htt
       const missing = data.skills.filter((skill) => !skill.files.includes("SKILL.md"))
       yield* Effect.forEach(
         missing,
-        (skill) => Effect.logWarning("skill entry missing SKILL.md", { url: index, skill: skill.name }),
+        (skill) =>
+          Log.event("skill.index.entry.invalid", { "skill.url": index, "skill.name": skill.name }),
         { discard: true },
       )
       const list = data.skills.filter((skill) => skill.files.includes("SKILL.md"))
@@ -118,7 +128,12 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | Path.Path | Htt
                   }),
                 )
               }).pipe(
-                Effect.catch((error) => Effect.logError("failed to refresh skill", { skill: skill.name, error })),
+                Effect.catch((error) =>
+                  Log.event("skill.discovery.refresh.failed", {
+                    "skill.name": skill.name,
+                    "skill.error": error instanceof Error ? error.message : String(error),
+                  }),
+                ),
                 Effect.ensuring(fs.remove(staging, { recursive: true, force: true }).pipe(Effect.ignore)),
               )
             }

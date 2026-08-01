@@ -296,18 +296,6 @@
     "count": 1
   },
   {
-    "name": "packages/core/src/skill/discovery.ts :: Effect.logError(\"failed to download skill file\")",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/skill/discovery.ts :: Effect.logError(\"failed to fetch skill index\")",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/skill/discovery.ts :: Effect.logError(\"failed to refresh skill\")",
-    "count": 1
-  },
-  {
     "name": "packages/core/src/snapshot.ts :: Effect.logWarning(\"failed to capture snapshot\")",
     "count": 1
   },
@@ -545,46 +533,6 @@
   },
   {
     "name": "packages/novaclaw/src/server/shared/fence.ts :: Effect.logInfo(\"waiting for state\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/skill/discovery.ts :: Effect.logError(\"failed to download\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/skill/discovery.ts :: Effect.logError(\"failed to fetch index\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/skill/discovery.ts :: Effect.logError(\"failed to refresh skill\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/skill/discovery.ts :: Effect.logInfo(\"fetching index\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/skill/discovery.ts :: Effect.logWarning(\"skill entry missing SKILL.md\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/skill/index.ts :: Effect.logError(\"failed to load skill\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/skill/index.ts :: Effect.logError(`failed to scan ${opts.scope} skills`)",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/skill/index.ts :: Effect.logInfo(\"init\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/skill/index.ts :: Effect.logWarning(\"duplicate skill name\")",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/skill/index.ts :: Effect.logWarning(\"skill path not found\")",
     "count": 1
   },
   {

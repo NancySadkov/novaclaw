@@ -6,6 +6,7 @@ import type { Agent } from "@/agent/agent"
 import { EventV2Bridge } from "@/event-v2-bridge"
 import { InstanceState } from "@/effect/instance-state"
 import { Global } from "@novaclaw/core/global"
+import { Log } from "@novaclaw/core/observability/log"
 import { Permission } from "@/permission"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { Config } from "@/config/config"
@@ -107,7 +108,10 @@ const add = Effect.fnUntraced(function* (state: State, match: string, events: Ev
         const message = FrontmatterError.isInstance(err) ? err.data.message : `Failed to parse skill ${match}`
         const { SessionRecordEvent } = yield* Effect.promise(() => import("@novaclaw/schema/session-record-event"))
         yield* events.publish(SessionRecordEvent.Error, { error: new NamedError.Unknown({ message }).toObject() })
-        yield* Effect.logError("failed to load skill", { skill: match, error: err })
+        yield* Log.event("skill.file.load.failed", {
+          "skill.file": match,
+          "skill.error": err instanceof Error ? err.message : String(err),
+        })
         return undefined
       }),
     ),
@@ -118,10 +122,10 @@ const add = Effect.fnUntraced(function* (state: State, match: string, events: Ev
   if (!isSkillFrontmatter(md.data)) return
 
   if (state.skills[md.data.name]) {
-    yield* Effect.logWarning("duplicate skill name", {
-      name: md.data.name,
-      existing: state.skills[md.data.name].location,
-      duplicate: match,
+    yield* Log.event("skill.registry.duplicate", {
+      "skill.name": md.data.name,
+      "skill.existing": state.skills[md.data.name].location,
+      "skill.duplicate": match,
     })
   }
 
@@ -138,7 +142,7 @@ const scan = Effect.fnUntraced(function* (
   state: ScanState,
   root: string,
   pattern: string,
-  opts?: { dot?: boolean; scope?: string },
+  opts?: { dot?: boolean; scope?: "global" | "project" },
 ) {
   const matches = yield* Effect.tryPromise({
     try: () =>
@@ -153,9 +157,11 @@ const scan = Effect.fnUntraced(function* (
   }).pipe(
     Effect.catch((error) => {
       if (!opts?.scope) return Effect.die(error)
-      return Effect.logError(`failed to scan ${opts.scope} skills`, { dir: root, error: error }).pipe(
-        Effect.as([] as string[]),
-      )
+      return Log.event("skill.scan.failed", {
+        "skill.scope": opts.scope,
+        "skill.directory": root,
+        "skill.error": error instanceof Error ? error.message : String(error),
+      }).pipe(Effect.as([] as string[]))
     }),
   )
 
@@ -211,7 +217,7 @@ const discoverSkills = Effect.fnUntraced(function* (
     const expanded = item.startsWith("~/") ? path.join(global.home, item.slice(2)) : item
     const dir = path.isAbsolute(expanded) ? expanded : path.join(directory, expanded)
     if (!(yield* fsys.isDir(dir))) {
-      yield* Effect.logWarning("skill path not found", { path: dir })
+      yield* Log.event("skill.path.missing", { "skill.path": dir })
       continue
     }
 
@@ -241,7 +247,7 @@ const loadSkills = Effect.fnUntraced(function* (
     discard: true,
   })
 
-  yield* Effect.logInfo("init", { count: Object.keys(state.skills).length })
+  yield* Log.event("skill.registry.init", { count: Object.keys(state.skills).length })
 })
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/Skill") {}

@@ -1,7 +1,7 @@
 import { describe, expect, beforeAll, afterAll } from "bun:test"
 import { LayerNode } from "@novaclaw/core/effect/layer-node"
 import { FSUtil } from "@novaclaw/core/fs-util"
-import { Effect } from "effect"
+import { Effect, Logger } from "effect"
 import { Discovery } from "../../src/skill/discovery"
 import { Global } from "@novaclaw/core/global"
 import { Filesystem } from "@/util/filesystem"
@@ -94,8 +94,21 @@ describe("Discovery.pull", () => {
   it.live("returns empty array for invalid url", () =>
     Effect.gen(function* () {
       const discovery = yield* Discovery.Service
-      const dirs = yield* discovery.pull(`http://localhost:${server.port}/invalid-url/`)
+      const records: unknown[][] = []
+      const collector = Logger.make((options: Logger.Options<unknown>) => {
+        records.push(Array.isArray(options.message) ? [...options.message] : [options.message])
+      })
+      const index = `http://localhost:${server.port}/invalid-url/index.json`
+      const dirs = yield* discovery
+        .pull(`http://localhost:${server.port}/invalid-url/`)
+        .pipe(Effect.provide(Logger.layer([collector])))
       expect(dirs).toEqual([])
+      expect(records[0]).toEqual([{ event: "skill.index.fetch" }, "fetching index", { "skill.url": index }])
+      expect(records[1]?.slice(0, 2)).toEqual([
+        { event: "skill.index.fetch.failed" },
+        "failed to fetch skill index",
+      ])
+      expect(records[1]?.[2]).toMatchObject({ "skill.url": index, "skill.error": expect.any(String) })
     }),
   )
 
