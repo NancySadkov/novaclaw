@@ -430,7 +430,30 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     expect(line).toContain("snapshot.diff.bytes=4194304")
   })
 
-  test("an UN-keyed record is untouched — the 166 remaining call sites are not affected", () => {
+  test("snapshot phases with the same English remain distinguishable by key", () => {
+    const checkout = lines(
+      Log.event("snapshot.restore.checkout.failed", {
+        "snapshot.hash": "abc123",
+        "snapshot.exit": 1,
+        "snapshot.stderr": "checkout failed",
+      }),
+    )[0]
+    const read = lines(
+      Log.event("snapshot.restore.read.failed", {
+        "snapshot.hash": "abc123",
+        "snapshot.exit": 2,
+        "snapshot.stderr": "read-tree failed",
+      }),
+    )[0]
+    expect(checkout).toContain('message="failed to restore snapshot"')
+    expect(read).toContain('message="failed to restore snapshot"')
+    expect(checkout).toContain("event=snapshot.restore.checkout.failed")
+    expect(read).toContain("event=snapshot.restore.read.failed")
+    // A Git tree hash fingerprints user files; it is local-only text, not an egress-safe id.
+    expect(mayEgress("snapshot.restore.read.failed")).toBe(false)
+  })
+
+  test("an UN-keyed record is untouched — the 145 remaining call sites are not affected", () => {
     // 1a adds a column; it takes nothing away and rewrites nothing. This is the assertion that says
     // the wrapper is a column rather than a second system.
     const [line] = lines(Effect.logInfo("watcher backend", { directory: "/tmp/x", backend: "parcel" }))

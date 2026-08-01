@@ -708,6 +708,38 @@ export const EVENTS = {
   },
 
   // ── snapshot ─────────────────────────────────────────────────────────────────────────────────
+  /** The hourly maintenance loop itself failed; the next scheduled iteration will retry. */
+  "snapshot.cleanup.loop.failed": {
+    level: "error",
+    message: "cleanup loop failed",
+    attributes: { "snapshot.cause": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/snapshot/index.ts",
+  },
+  /** Snapshot-object garbage collection completed. */
+  "snapshot.cleanup.run": {
+    level: "info",
+    message: "cleanup",
+    attributes: { "snapshot.prune": "id" },
+    content: "none",
+    file: "packages/novaclaw/src/snapshot/index.ts",
+  },
+  /** Snapshot-object garbage collection failed without disabling later attempts. */
+  "snapshot.cleanup.run.failed": {
+    level: "warn",
+    message: "cleanup failed",
+    attributes: { "snapshot.exit": "count", "snapshot.stderr": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/snapshot/index.ts",
+  },
+  /** A full textual diff could not be computed; its caller receives an empty diff. */
+  "snapshot.diff.compute.failed": {
+    level: "warn",
+    message: "failed to get diff",
+    attributes: { "snapshot.hash": "text", "snapshot.exit": "count", "snapshot.stderr": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/snapshot/index.ts",
+  },
   /** A large change set was bounded for display; revert still uses the complete snapshot. */
   "snapshot.diff.compute.truncated": {
     level: "warn",
@@ -720,6 +752,147 @@ export const EVENTS = {
       "snapshot.diff.bytes": "count",
     },
     content: "none",
+    file: "packages/novaclaw/src/snapshot/index.ts",
+  },
+  /** Batched object loading failed and the diff falls back to individual git-show calls. */
+  "snapshot.diff.load.fallback": {
+    level: "info",
+    message: "git cat-file --batch failed during snapshot diff, falling back to per-file git show",
+    attributes: { "snapshot.refs": "count", "snapshot.stderr": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/snapshot/index.ts",
+  },
+  /** Batched object output was malformed and the diff falls back to individual git-show calls. */
+  "snapshot.diff.parse.fallback": {
+    level: "info",
+    message: "git cat-file --batch output was malformed during snapshot diff, falling back to per-file git show",
+    attributes: { "snapshot.reason": "id", "snapshot.header": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/snapshot/index.ts",
+  },
+  /** Git could not enumerate the tracked and untracked snapshot candidates. */
+  "snapshot.files.list.failed": {
+    level: "warn",
+    message: "failed to list snapshot files",
+    attributes: {
+      "snapshot.diff.exit": "count",
+      "snapshot.diff.stderr": "fault",
+      "snapshot.other.exit": "count",
+      "snapshot.other.stderr": "fault",
+    },
+    content: "user",
+    file: "packages/novaclaw/src/snapshot/index.ts",
+  },
+  /** Git could not stage a bounded set of paths into the private snapshot index. */
+  "snapshot.files.stage.failed": {
+    level: "warn",
+    message: "failed to add snapshot files",
+    attributes: { "snapshot.exit": "count", "snapshot.stderr": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/snapshot/index.ts",
+  },
+  /** Newly ignored paths are removed from the private snapshot index. */
+  "snapshot.files.untrack": {
+    level: "info",
+    message: "removing gitignored files from snapshot",
+    attributes: { count: "count" },
+    content: "none",
+    file: "packages/novaclaw/src/snapshot/index.ts",
+  },
+  /** Snapshot patch metadata could not list the files changed from a tree hash. */
+  "snapshot.patch.list.failed": {
+    level: "warn",
+    message: "failed to get diff",
+    attributes: { "snapshot.hash": "text", "snapshot.exit": "count" },
+    content: "user",
+    file: "packages/novaclaw/src/snapshot/index.ts",
+  },
+  /** Restoring the snapshot index succeeded, but writing it into the worktree failed. */
+  "snapshot.restore.checkout.failed": {
+    level: "error",
+    message: "failed to restore snapshot",
+    attributes: { "snapshot.hash": "text", "snapshot.exit": "count", "snapshot.stderr": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/snapshot/index.ts",
+  },
+  /** Git could not load the requested snapshot tree into the private index. */
+  "snapshot.restore.read.failed": {
+    level: "error",
+    message: "failed to restore snapshot",
+    attributes: { "snapshot.hash": "text", "snapshot.exit": "count", "snapshot.stderr": "fault" },
+    content: "user",
+    file: "packages/novaclaw/src/snapshot/index.ts",
+  },
+  /** Restoration of a complete snapshot tree started. */
+  "snapshot.restore.run": {
+    level: "info",
+    message: "restore",
+    attributes: { "snapshot.hash": "text" },
+    content: "user",
+    file: "packages/novaclaw/src/snapshot/index.ts",
+  },
+  /** A compatible batch of paths is being restored from one snapshot tree. */
+  "snapshot.revert.batch.start": {
+    level: "info",
+    message: "reverting",
+    attributes: { "snapshot.hash": "text", count: "count" },
+    content: "user",
+    file: "packages/novaclaw/src/snapshot/index.ts",
+  },
+  /** Batch checkout failed and the same paths will be retried individually. */
+  "snapshot.revert.checkout.fallback": {
+    level: "info",
+    message: "batched checkout failed, falling back to single-file revert",
+    attributes: { "snapshot.hash": "text", count: "count" },
+    content: "user",
+    file: "packages/novaclaw/src/snapshot/index.ts",
+  },
+  /** A path absent from its snapshot tree is being removed from the worktree. */
+  "snapshot.revert.file.deleted": {
+    level: "info",
+    message: "file did not exist in snapshot, deleting",
+    attributes: { "snapshot.file": "path", "snapshot.hash": "text" },
+    content: "user",
+    file: "packages/novaclaw/src/snapshot/index.ts",
+  },
+  /** Checkout failed but the tree proves the path existed, so the worktree copy is preserved. */
+  "snapshot.revert.file.kept": {
+    level: "info",
+    message: "file existed in snapshot but checkout failed, keeping",
+    attributes: { "snapshot.file": "path", "snapshot.hash": "text" },
+    content: "user",
+    file: "packages/novaclaw/src/snapshot/index.ts",
+  },
+  /** A single path is being restored from a snapshot tree. */
+  "snapshot.revert.file.start": {
+    level: "info",
+    message: "reverting",
+    attributes: { "snapshot.file": "path", "snapshot.hash": "text" },
+    content: "user",
+    file: "packages/novaclaw/src/snapshot/index.ts",
+  },
+  /** Batch tree inspection failed and the same paths will be retried individually. */
+  "snapshot.revert.list.fallback": {
+    level: "info",
+    message: "batched ls-tree failed, falling back to single-file revert",
+    attributes: { "snapshot.hash": "text", count: "count" },
+    content: "user",
+    file: "packages/novaclaw/src/snapshot/index.ts",
+  },
+  /** The private Git repository used for snapshots was created. */
+  "snapshot.store.init": {
+    level: "info",
+    message: "initialized",
+    attributes: {},
+    content: "none",
+    file: "packages/novaclaw/src/snapshot/index.ts",
+  },
+  /** The current worktree state was recorded as a Git tree. */
+  "snapshot.tree.track": {
+    level: "info",
+    message: "tracking",
+    attributes: { "snapshot.hash": "text", "snapshot.cwd": "path", "snapshot.store": "path" },
+    content: "user",
     file: "packages/novaclaw/src/snapshot/index.ts",
   },
 

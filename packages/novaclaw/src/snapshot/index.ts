@@ -155,9 +155,9 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
             },
           )
           if (result.code === 0) return
-          yield* Effect.logWarning("failed to add snapshot files", {
-            exitCode: result.code,
-            stderr: result.stderr,
+          yield* Log.event("snapshot.files.stage.failed", {
+            "snapshot.exit": result.code,
+            "snapshot.stderr": result.stderr,
           })
         })
 
@@ -248,11 +248,11 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
             { concurrency: 2 },
           )
           if (diff.code !== 0 || other.code !== 0) {
-            yield* Effect.logWarning("failed to list snapshot files", {
-              diffCode: diff.code,
-              diffStderr: diff.stderr,
-              otherCode: other.code,
-              otherStderr: other.stderr,
+            yield* Log.event("snapshot.files.list.failed", {
+              "snapshot.diff.exit": diff.code,
+              "snapshot.diff.stderr": diff.stderr,
+              "snapshot.other.exit": other.code,
+              "snapshot.other.stderr": other.stderr,
             })
             return
           }
@@ -269,7 +269,7 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
           // Remove newly-ignored files from snapshot index to prevent re-adding
           if (ignored.size > 0) {
             const ignoredFiles = Array.from(ignored)
-            yield* Effect.logInfo("removing gitignored files from snapshot", { count: ignoredFiles.length })
+            yield* Log.event("snapshot.files.untrack", { count: ignoredFiles.length })
             yield* drop(ignoredFiles)
           }
 
@@ -306,13 +306,13 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
               if (!(yield* exists(state.gitdir))) return
               const result = yield* git(args(["gc", `--prune=${prune}`]), { cwd: state.directory })
               if (result.code !== 0) {
-                yield* Effect.logWarning("cleanup failed", {
-                  exitCode: result.code,
-                  stderr: result.stderr,
+                yield* Log.event("snapshot.cleanup.run.failed", {
+                  "snapshot.exit": result.code,
+                  "snapshot.stderr": result.stderr,
                 })
                 return
               }
-              yield* Effect.logInfo("cleanup", { prune })
+              yield* Log.event("snapshot.cleanup.run", { "snapshot.prune": prune })
             }),
           )
         })
@@ -337,12 +337,16 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
                 yield* git(["--git-dir", state.gitdir, "config", "index.threads", "true"])
                 yield* git(["--git-dir", state.gitdir, "config", "core.untrackedCache", "true"])
                 yield* seed()
-                yield* Effect.logInfo("initialized")
+                yield* Log.event("snapshot.store.init", {})
               }
               yield* add()
               const result = yield* git(args(["write-tree"]), { cwd: state.directory })
               const hash = result.text.trim()
-              yield* Effect.logInfo("tracking", { hash, cwd: state.directory, git: state.gitdir })
+              yield* Log.event("snapshot.tree.track", {
+                "snapshot.hash": hash,
+                "snapshot.cwd": state.directory,
+                "snapshot.store": state.gitdir,
+              })
               return hash
             }),
           )
@@ -359,7 +363,10 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
                 },
               )
               if (result.code !== 0) {
-                yield* Effect.logWarning("failed to get diff", { hash, exitCode: result.code })
+                yield* Log.event("snapshot.patch.list.failed", {
+                  "snapshot.hash": hash,
+                  "snapshot.exit": result.code,
+                })
                 return { hash, files: [] }
               }
               const files = result.text
@@ -384,24 +391,24 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
         const restore = Effect.fnUntraced(function* (snapshot: string) {
           return yield* locked(
             Effect.gen(function* () {
-              yield* Effect.logInfo("restore", { commit: snapshot })
+              yield* Log.event("snapshot.restore.run", { "snapshot.hash": snapshot })
               const result = yield* git([...core, ...args(["read-tree", snapshot])], { cwd: state.worktree })
               if (result.code === 0) {
                 const checkout = yield* git([...core, ...args(["checkout-index", "-a", "-f"])], {
                   cwd: state.worktree,
                 })
                 if (checkout.code === 0) return
-                yield* Effect.logError("failed to restore snapshot", {
-                  snapshot,
-                  exitCode: checkout.code,
-                  stderr: checkout.stderr,
+                yield* Log.event("snapshot.restore.checkout.failed", {
+                  "snapshot.hash": snapshot,
+                  "snapshot.exit": checkout.code,
+                  "snapshot.stderr": checkout.stderr,
                 })
                 return
               }
-              yield* Effect.logError("failed to restore snapshot", {
-                snapshot,
-                exitCode: result.code,
-                stderr: result.stderr,
+              yield* Log.event("snapshot.restore.read.failed", {
+                "snapshot.hash": snapshot,
+                "snapshot.exit": result.code,
+                "snapshot.stderr": result.stderr,
               })
             }),
           )
@@ -425,7 +432,10 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
               }
 
               const single = Effect.fnUntraced(function* (op: (typeof ops)[number]) {
-                yield* Effect.logInfo("reverting", { file: op.file, hash: op.hash })
+                yield* Log.event("snapshot.revert.file.start", {
+                  "snapshot.file": op.file,
+                  "snapshot.hash": op.hash,
+                })
                 const result = yield* git([...core, ...args(["checkout", op.hash, "--", op.file])], {
                   cwd: state.worktree,
                 })
@@ -434,13 +444,16 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
                   cwd: state.worktree,
                 })
                 if (tree.code === 0 && tree.text.trim()) {
-                  yield* Effect.logInfo("file existed in snapshot but checkout failed, keeping", {
-                    file: op.file,
-                    hash: op.hash,
+                  yield* Log.event("snapshot.revert.file.kept", {
+                    "snapshot.file": op.file,
+                    "snapshot.hash": op.hash,
                   })
                   return
                 }
-                yield* Effect.logInfo("file did not exist in snapshot, deleting", { file: op.file, hash: op.hash })
+                yield* Log.event("snapshot.revert.file.deleted", {
+                  "snapshot.file": op.file,
+                  "snapshot.hash": op.hash,
+                })
                 yield* remove(op.file)
               })
 
@@ -473,9 +486,9 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
                 )
 
                 if (tree.code !== 0) {
-                  yield* Effect.logInfo("batched ls-tree failed, falling back to single-file revert", {
-                    hash: first.hash,
-                    files: run.length,
+                  yield* Log.event("snapshot.revert.list.fallback", {
+                    "snapshot.hash": first.hash,
+                    count: run.length,
                   })
                   for (const op of run) {
                     yield* single(op)
@@ -493,7 +506,10 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
                 )
                 const list = run.filter((item) => have.has(item.rel))
                 if (list.length) {
-                  yield* Effect.logInfo("reverting", { hash: first.hash, files: list.length })
+                  yield* Log.event("snapshot.revert.batch.start", {
+                    "snapshot.hash": first.hash,
+                    count: list.length,
+                  })
                   const result = yield* git(
                     [...core, ...args(["checkout", first.hash, "--", ...list.map((item) => item.file)])],
                     {
@@ -501,9 +517,9 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
                     },
                   )
                   if (result.code !== 0) {
-                    yield* Effect.logInfo("batched checkout failed, falling back to single-file revert", {
-                      hash: first.hash,
-                      files: list.length,
+                    yield* Log.event("snapshot.revert.checkout.fallback", {
+                      "snapshot.hash": first.hash,
+                      count: list.length,
                     })
                     for (const op of run) {
                       yield* single(op)
@@ -515,7 +531,10 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
 
                 for (const op of run) {
                   if (have.has(op.rel)) continue
-                  yield* Effect.logInfo("file did not exist in snapshot, deleting", { file: op.file, hash: op.hash })
+                  yield* Log.event("snapshot.revert.file.deleted", {
+                    "snapshot.file": op.file,
+                    "snapshot.hash": op.hash,
+                  })
                   yield* remove(op.file)
                 }
 
@@ -533,10 +552,10 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
                 cwd: state.worktree,
               })
               if (result.code !== 0) {
-                yield* Effect.logWarning("failed to get diff", {
-                  hash,
-                  exitCode: result.code,
-                  stderr: result.stderr,
+                yield* Log.event("snapshot.diff.compute.failed", {
+                  "snapshot.hash": hash,
+                  "snapshot.exit": result.code,
+                  "snapshot.stderr": result.stderr,
                 })
                 return ""
               }
@@ -611,20 +630,21 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
                     { stdin: refs.map((item) => item.ref).join("\n") + "\n" },
                   )
                   if (batch.exitCode !== 0) {
-                    yield* Effect.logInfo(
-                      "git cat-file --batch failed during snapshot diff, falling back to per-file git show",
-                      {
-                        stderr: batch.stderr.toString("utf8"),
-                        refs: refs.length,
-                      },
-                    )
+                    yield* Log.event("snapshot.diff.load.fallback", {
+                      "snapshot.stderr": batch.stderr.toString("utf8"),
+                      "snapshot.refs": refs.length,
+                    })
                     return
                   }
                   const out = batch.stdout
 
-                  const fail = (msg: string, extra?: Record<string, string>) => {
+                  const fail = Effect.fnUntraced(function* (reason: string, header = "") {
+                    yield* Log.event("snapshot.diff.parse.fallback", {
+                      "snapshot.reason": reason,
+                      "snapshot.header": header,
+                    })
                     return undefined
-                  }
+                  })
 
                   const map = new Map<string, { before: string; after: string }>()
                   const dec = new TextDecoder()
@@ -633,9 +653,7 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
                     let end = i
                     while (end < out.length && out[end] !== 10) end += 1
                     if (end >= out.length) {
-                      return fail(
-                        "git cat-file --batch returned a truncated header during snapshot diff, falling back to per-file git show",
-                      )
+                      return yield* fail("truncated-header")
                     }
 
                     const head = dec.decode(out.slice(i, end))
@@ -648,18 +666,12 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
 
                     const match = head.match(/^[0-9a-f]+ blob (\d+)$/)
                     if (!match) {
-                      return fail(
-                        "git cat-file --batch returned an unexpected header during snapshot diff, falling back to per-file git show",
-                        { head },
-                      )
+                      return yield* fail("unexpected-header", head)
                     }
 
                     const size = Number(match[1])
                     if (!Number.isInteger(size) || size < 0 || i + size >= out.length || out[i + size] !== 10) {
-                      return fail(
-                        "git cat-file --batch returned truncated content during snapshot diff, falling back to per-file git show",
-                        { head },
-                      )
+                      return yield* fail("truncated-content", head)
                     }
 
                     const text = dec.decode(out.slice(i, i + size))
@@ -670,9 +682,7 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
                   }
 
                   if (i !== out.length) {
-                    return fail(
-                      "git cat-file --batch returned trailing data during snapshot diff, falling back to per-file git show",
-                    )
+                    return yield* fail("trailing-data")
                   }
 
                   return map
@@ -803,7 +813,9 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
         })
 
         yield* cleanup().pipe(
-          Effect.catchCause((cause) => Effect.logError("cleanup loop failed", { cause: Cause.pretty(cause) })),
+          Effect.catchCause((cause) =>
+            Log.event("snapshot.cleanup.loop.failed", { "snapshot.cause": Cause.pretty(cause) }),
+          ),
           Effect.repeat(Schedule.spaced(Duration.hours(1))),
           Effect.delay(Duration.minutes(1)),
           Effect.forkScoped,
