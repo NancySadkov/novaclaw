@@ -2,6 +2,7 @@ export * as DiscordDriver from "./discord"
 
 import { Duration, Effect, Queue, Schema, Stream } from "effect"
 import { Messenger } from "@novaclaw/schema/messenger"
+import { Log } from "../../observability/log"
 import { MessengerFormat } from "../format"
 import type { ChatSnapshot, Connection, ConnectContext, Driver, FileRef, HistoryEntry, InboundEvent, ModerationAct, OutboundFile } from "../driver"
 import { ConnectError, FileError, ModerationError, SendError } from "../driver"
@@ -397,7 +398,10 @@ export const make = (fetchImpl: FetchLike, socketFactory: DiscordSocketFactory):
           for (const message of [...decoded.value].reverse()) yield* deliver(message, meta)
           yield* persistCursor
           if (decoded.value.length >= BACKFILL_PAGE)
-            yield* Effect.logInfo(`discord: caught up ${BACKFILL_PAGE}+ missed messages in ${channelID}; older ones beyond the page were skipped`)
+            yield* Log.event("messenger.discord.backfill.truncated", {
+              "messenger.limit": BACKFILL_PAGE,
+              "messenger.chat": channelID,
+            })
         }
       })
       // Only on a fresh identify: a RESUME already replays the gap through the gateway, and running

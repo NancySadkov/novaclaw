@@ -162,7 +162,8 @@ describe("MessengerStore", () => {
       // the cause. The default Effect logger writes through the Console service, which the test env
       // replaces with TestConsole, so this is the real log line the operator would get.
       const logged = (yield* TestConsole.logLines).map((line) => JSON.stringify(line)).join("\n")
-      expect(logged).toContain("MessengerStore.bindingsForSession(ses_guard)")
+      expect(logged).toContain("messenger.store.read.failed")
+      expect(logged).toContain('"messenger.operation":"bindingsForSession(ses_guard)"')
       expect(logged).toContain("messenger_binding")
     }),
   )
@@ -233,9 +234,10 @@ describe("MessengerStore", () => {
 
       // …and none of the three is silent about it (ruling 2: the subsystem NAMES itself).
       const logged = (yield* TestConsole.logLines).map((line) => JSON.stringify(line)).join("\n")
-      expect(logged).toContain("MessengerStore.listAccounts()")
-      expect(logged).toContain("MessengerStore.hasChat(")
-      expect(logged).toContain("MessengerStore.bindingForChat(")
+      expect(logged).toContain("messenger.store.read.failed")
+      expect(logged).toContain('"messenger.operation":"listAccounts()"')
+      expect(logged).toContain('"messenger.operation":"hasChat(')
+      expect(logged).toContain('"messenger.operation":"bindingForChat(')
     }),
   )
 

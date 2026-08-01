@@ -5,6 +5,7 @@ import nodePath from "node:path"
 import type { Cause } from "effect"
 import { Clock, DateTime, Duration, Effect, Layer, Queue, Stream } from "effect"
 import * as TestClock from "effect/testing/TestClock"
+import * as TestConsole from "effect/testing/TestConsole"
 import { Messenger } from "@novaclaw/schema/messenger"
 import { SessionEvent } from "@novaclaw/schema/session-event"
 import { SessionMessage } from "@novaclaw/schema/session-message"
@@ -544,6 +545,8 @@ describe("MessengerGateway pipeline", () => {
       )
       const parked = status.get(account.id)
       expect(parked?.state === "challenge" && parked.message).toContain("CAPTCHA")
+      const logged = (yield* TestConsole.logLines).map((line) => JSON.stringify(line)).join("\n")
+      expect(logged).toContain("messenger.operator.notice.unbound")
       yield* store.removeAccount(account.id)
       yield* gateway.reload()
     }),
@@ -578,6 +581,10 @@ describe("MessengerGateway pipeline", () => {
       // Settings banner is the one surface that is always there.
       expect(state?.state === "challenge" && state.message).toContain("CAPTCHA")
       expect(state?.state === "challenge" && state.message).toContain(SEND_REFUSAL)
+      const logged = (yield* TestConsole.logLines).map((line) => JSON.stringify(line)).join("\n")
+      expect(logged).toContain("messenger.operator.notice.failed")
+      expect(logged).toContain("op-dm")
+      expect(logged).toContain(SEND_REFUSAL)
 
       yield* store.removeAccount(parked.id)
       yield* store.removeAccount(notifier.id)
@@ -620,6 +627,9 @@ describe("MessengerGateway pipeline", () => {
         "self-chat bound itself",
       )
       expect(binding?.trust).toBe("operator")
+      const logged = (yield* TestConsole.logLines).map((line) => JSON.stringify(line)).join("\n")
+      expect(logged).toContain("messenger.console.bind.created")
+      expect(logged).toContain("autobind")
       // It bound a REAL new session, and the prompt still dispatched as a child of it.
       const consoleSession = session.created.slice(createdBefore).find((s) => s.id === binding?.sessionID)
       expect(consoleSession).toBeDefined()

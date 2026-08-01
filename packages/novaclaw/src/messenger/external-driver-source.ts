@@ -1,6 +1,7 @@
 export * as NovaclawExternalDriverSource from "./external-driver-source"
 
 import { Effect, Layer } from "effect"
+import { Log } from "@novaclaw/core/observability/log"
 import type { Driver } from "@novaclaw/core/messenger/driver"
 import { WhatsAppBaileysDriver } from "@novaclaw/core/messenger/driver/whatsapp-baileys"
 import { ExternalDriverSource } from "@novaclaw/core/messenger/external-driver-source"
@@ -22,7 +23,7 @@ export const layer = Layer.effect(
       // Loading the module evaluates the Baileys import; gated so that only happens on opt-in.
       const module = yield* Effect.promise(() => import("./whatsapp-baileys-socket"))
       drivers.push(WhatsAppBaileysDriver.make(module.factory))
-      yield* Effect.logInfo("messenger: WhatsApp (Baileys) driver enabled")
+      yield* Log.event("messenger.driver.whatsapp.enabled", {})
     }
     return ExternalDriverSource.Service.of({ drivers: () => Effect.succeed(drivers) })
   }),

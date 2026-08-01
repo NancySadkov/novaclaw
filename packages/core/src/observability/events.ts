@@ -20,7 +20,7 @@
  *
  * It is **not a second logging system.** The wrapper that consumes it (`./log.ts`) calls
  * `Effect.log*` and nothing else, so every keyed record lands in the SAME logfmt line, through the
- * SAME formatter, into the SAME `novaclaw.log` as the ~230 un-keyed sites do today. A second file
+ * SAME formatter, into the SAME `novaclaw.log` as the still-unkeyed sites do today. A second file
  * writer beside `novaclaw.log` is the copy-paste-store defect this project keeps finding
  * (`todo/logging.md` §0.2); there is no second sink here and there must never be one.
  *
@@ -34,10 +34,10 @@
  *    hot loops (§0.10).
  * 3. **The English lives WITH the key.** ⚠️ This is a deliberate departure from item 1b's sketched
  *    `Log.event(key, message, attrs)` signature, and the reason is the one 1b itself calls the acute
- *    case: 17 live sites interpolate values INTO the sentence
+ *    case: the seed had 17 sites that interpolate values INTO the sentence
  *    (`` `discord: caught up ${N}+ missed messages in ${id}` ``), which makes `message=` a
  *    high-cardinality field and buries an attribute inside prose. A `message` PARAMETER leaves that
- *    door open at all 230 sites forever. Declaring the sentence here shuts it by construction: the
+ *    door open at every remaining site forever. Declaring the sentence here shuts it by construction: the
  *    only place a value can go is an attribute. It also means `message=` is constant per key — which
  *    is precisely what lets property 4 be decided per key at all — and it keeps today's
  *    `grep "MCP server log"` working through the whole migration, because the string is unchanged.
@@ -90,6 +90,7 @@ export const SUBSYSTEMS = {
   instance: "Instance lifecycle",
   kb: "Knowledge",
   location: "Workspace locations",
+  messenger: "Messenger",
   mcp: "MCP servers",
   patch: "File changes",
   resource: "Host resources",
@@ -308,6 +309,84 @@ export const EVENTS = {
     attributes: { directory: "path", workspaceID: "id" },
     content: "user",
     file: "packages/core/src/location-services.ts",
+  },
+
+  // ── messenger ─────────────────────────────────────────────────────────────────────────────────
+  /** Account reconciliation is skipped because its durable account list could not be read. */
+  "messenger.account.reconcile.skipped": {
+    level: "warn",
+    message: "messenger: skipping reconcile — the account table could not be read; live connections are left exactly as they are",
+    attributes: {},
+    content: "none",
+    file: "packages/core/src/messenger/gateway.ts",
+  },
+  /** An operator's self-chat was attached to a newly created console session. */
+  "messenger.console.bind.created": {
+    level: "info",
+    message: "messenger: bound the self-chat to a fresh console session",
+    attributes: { "messenger.account_label": "text" },
+    content: "user",
+    file: "packages/core/src/messenger/gateway.ts",
+  },
+  /** Discord's bounded reconnect fetch filled one page, so older messages may remain unavailable. */
+  "messenger.discord.backfill.truncated": {
+    level: "info",
+    message: "discord: caught up missed messages; older ones beyond the page were skipped",
+    attributes: { "messenger.limit": "count", "messenger.chat": "text" },
+    content: "user",
+    file: "packages/core/src/messenger/driver/discord.ts",
+  },
+  /** The explicitly opted-in WhatsApp/Baileys driver was loaded into the registry. */
+  "messenger.driver.whatsapp.enabled": {
+    level: "info",
+    message: "messenger: WhatsApp (Baileys) driver enabled",
+    attributes: {},
+    content: "none",
+    file: "packages/novaclaw/src/messenger/external-driver-source.ts",
+  },
+  /** The singleton instance-global messenger gateway is starting. */
+  "messenger.gateway.start": {
+    level: "info",
+    message: "messenger gateway starting",
+    attributes: {},
+    content: "none",
+    file: "packages/core/src/messenger/gateway.ts",
+  },
+  /** An inbound message is refused because the durable route could not be read. */
+  "messenger.inbound.route.rejected": {
+    level: "warn",
+    message: "messenger: cannot route inbound — the messenger database could not be read; the message was not delivered",
+    attributes: { "messenger.route": "text" },
+    content: "user",
+    file: "packages/core/src/messenger/gateway.ts",
+  },
+  /** A best-effort operator notice could not be delivered through a connected account. */
+  "messenger.operator.notice.failed": {
+    level: "warn",
+    message: "messenger: could not deliver an operator notice",
+    attributes: {
+      "messenger.chat": "text",
+      "messenger.account": "id",
+      "messenger.failure": "fault",
+    },
+    content: "user",
+    file: "packages/core/src/messenger/gateway.ts",
+  },
+  /** No connected operator binding exists, so only the durable Settings banner carries a notice. */
+  "messenger.operator.notice.unbound": {
+    level: "info",
+    message: "messenger: no connected operator chat to notify — the Settings banner carries the notice alone",
+    attributes: {},
+    content: "none",
+    file: "packages/core/src/messenger/gateway.ts",
+  },
+  /** A MessengerStore read failed instead of fabricating an empty answer. */
+  "messenger.store.read.failed": {
+    level: "warn",
+    message: "MessengerStore: the messenger database could not be read",
+    attributes: { "messenger.operation": "text", "messenger.cause": "fault" },
+    content: "user",
+    file: "packages/core/src/messenger/store.ts",
   },
 
   // ── mcp ───────────────────────────────────────────────────────────────────────────────────────

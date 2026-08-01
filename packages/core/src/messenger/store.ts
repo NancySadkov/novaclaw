@@ -5,6 +5,7 @@ import { Cause, Context, Effect, Layer, Schema } from "effect"
 import { Messenger } from "@novaclaw/schema/messenger"
 import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
+import { Log } from "../observability/log"
 import {
   MessengerAccountTable,
   MessengerBindingTable,
@@ -329,8 +330,9 @@ const nameTheFault = <A, E>(query: Effect.Effect<A, E>, what: string): Effect.Ef
     Effect.catchCause((cause) =>
       Cause.hasInterrupts(cause)
         ? Effect.failCause(cause as Cause.Cause<never>)
-        : Effect.logWarning(`MessengerStore.${what}: the messenger database could not be read`, {
-            cause: Cause.pretty(cause),
+        : Log.event("messenger.store.read.failed", {
+            "messenger.operation": what,
+            "messenger.cause": Cause.pretty(cause),
           }).pipe(Effect.flatMap(() => Effect.fail(new UnavailableError({ read: what, detail: Cause.pretty(cause) })))),
     ),
   )

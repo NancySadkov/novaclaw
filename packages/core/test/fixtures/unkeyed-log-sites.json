@@ -76,38 +76,6 @@
     "count": 1
   },
   {
-    "name": "packages/core/src/messenger/driver/discord.ts :: Effect.logInfo(`discord: caught up ${BACKFILL_PAGE}+ missed messages in ${channelID}; older ones beyond the page were skipped`)",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/messenger/gateway.ts :: Effect.logInfo(\"messenger gateway starting\")",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/messenger/gateway.ts :: Effect.logInfo(\"messenger: no connected operator chat to notify — the Settings banner carries the notice alone\")",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/messenger/gateway.ts :: Effect.logInfo(`messenger: bound the ${account.label} self-chat to a fresh console session`)",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/messenger/gateway.ts :: Effect.logWarning(\"messenger: skipping reconcile — the account table could not be read; live connections are left exactly as they are\")",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/messenger/gateway.ts :: Effect.logWarning(`messenger: cannot route inbound on ${chatKey} — the messenger database could not be read; the message was not delivered`)",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/messenger/gateway.ts :: Effect.logWarning(`messenger: could not deliver an operator notice to chat ${binding.chatID} on ${accountID}: ${failure}`)",
-    "count": 1
-  },
-  {
-    "name": "packages/core/src/messenger/store.ts :: Effect.logWarning(`MessengerStore.${what}: the messenger database could not be read`)",
-    "count": 1
-  },
-  {
     "name": "packages/core/src/models-dev.ts :: Effect.logError(\"Failed to fetch models.dev\")",
     "count": 1
   },
@@ -513,10 +481,6 @@
   },
   {
     "name": "packages/novaclaw/src/mcp/index.ts :: Effect.logWarning(`client not found for ${label}`)",
-    "count": 1
-  },
-  {
-    "name": "packages/novaclaw/src/messenger/external-driver-source.ts :: Effect.logInfo(\"messenger: WhatsApp (Baileys) driver enabled\")",
     "count": 1
   },
   {

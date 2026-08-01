@@ -14,6 +14,7 @@ import { makeGlobalNode } from "../effect/app-node"
 import { EventV2 } from "../event"
 import { Global } from "../global"
 import { Offline } from "../offline"
+import { Log } from "../observability/log"
 import { SessionV2 } from "../session"
 import { SessionOrigin } from "../session/origin"
 import { MessengerCommands } from "./commands"
@@ -594,7 +595,7 @@ const build = (options: Options) =>
           sessionID: session.id,
           trust: "operator",
         })
-        yield* Effect.logInfo(`messenger: bound the ${account.label} self-chat to a fresh console session`)
+        yield* Log.event("messenger.console.bind.created", { "messenger.account_label": account.label })
         return binding
       }).pipe(Effect.catchCause(() => Effect.succeed(undefined)))
 
@@ -696,13 +697,14 @@ const build = (options: Options) =>
             }
             failed += 1
             reason ??= failure
-            yield* Effect.logWarning(
-              `messenger: could not deliver an operator notice to chat ${binding.chatID} on ${accountID}: ${failure}`,
-            )
+            yield* Log.event("messenger.operator.notice.failed", {
+              "messenger.chat": binding.chatID,
+              "messenger.account": accountID,
+              "messenger.failure": failure,
+            })
           }
         }
-        if (delivered === 0 && failed === 0)
-          yield* Effect.logInfo("messenger: no connected operator chat to notify — the Settings banner carries the notice alone")
+        if (delivered === 0 && failed === 0) yield* Log.event("messenger.operator.notice.unbound", {})
         return { delivered, failed, ...(reason === undefined ? {} : { reason }) }
       })
 
@@ -976,9 +978,7 @@ const build = (options: Options) =>
         const route = yield* bindingForRoute(account, event, trust)
         const chatKey = MessengerPipeline.chatKey(account.id, event.chat.chatID)
         if (!route.read) {
-          yield* Effect.logWarning(
-            `messenger: cannot route inbound on ${chatKey} — the messenger database could not be read; the message was not delivered`,
-          )
+          yield* Log.event("messenger.inbound.route.rejected", { "messenger.route": chatKey })
           // Told once per chat per outage, and only to somebody we already trust: replying to an
           // unpaired stranger would both break default-deny (§7.5 — a stranger gets silence, not a
           // signal that anyone is home) and hand a flooding stranger an outbound message per
@@ -1294,9 +1294,7 @@ const build = (options: Options) =>
       // is the same one. The operator's signal is the log line plus the store's own warning.
       const listed = yield* MessengerStore.attempted(store.listAccounts())
       if (!listed.read) {
-        yield* Effect.logWarning(
-          "messenger: skipping reconcile — the account table could not be read; live connections are left exactly as they are",
-        )
+        yield* Log.event("messenger.account.reconcile.skipped", {})
         return
       }
       const accounts = listed.value
@@ -1343,7 +1341,7 @@ const build = (options: Options) =>
     // Exactly-once proof line: the gateway must be a process singleton (two gateways = two
     // long-polls on one account, edge #16 self-inflicted). If this line ever logs twice in one
     // serve, the layer graph regressed into building a second instance.
-    yield* Effect.logInfo("messenger gateway starting")
+    yield* Log.event("messenger.gateway.start", {})
     yield* Effect.forkScoped(relay.pipe(Effect.catchCause(() => Effect.void)))
     yield* Effect.forkScoped(dispatchCompleted.pipe(Effect.catchCause(() => Effect.void)))
     yield* Effect.forkScoped(dispatchNotices.pipe(Effect.catchCause(() => Effect.void)))

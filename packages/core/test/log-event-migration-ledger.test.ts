@@ -30,7 +30,7 @@ const UNKEYED_LEDGER = JSON.parse(
 describe("the log-event migration ledger", () => {
   test("walks the real production source boundary", () => {
     expect(SITES.length).toBeGreaterThan(200)
-    expect(UNKEYED.length).toBeGreaterThan(200)
+    expect(KEYED.length).toBeGreaterThan(0)
     expect(SITES.length).toBe(
       [...UNKEYED, ...KEYED].reduce((total, entry) => total + entry.count, 0),
     )
