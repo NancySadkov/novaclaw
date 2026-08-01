@@ -1,7 +1,7 @@
 import { EventStreamCodec } from "@smithy/eventstream-codec"
 import { fromUtf8, toUtf8 } from "@smithy/util-utf8"
 import { describe, expect } from "bun:test"
-import { Effect } from "effect"
+import { Effect, Logger } from "effect"
 import { CacheHint, LLM, Message, ToolCallPart, ToolChoice } from "../../src"
 import { LLMClient } from "../../src/route"
 import { AmazonBedrock } from "../../src/providers"
@@ -632,6 +632,10 @@ describe("Bedrock Converse route", () => {
   it.effect("drops cachePoint markers past the 4-per-request cap", () =>
     Effect.gen(function* () {
       const cache = new CacheHint({ type: "ephemeral" })
+      const records: unknown[][] = []
+      const collector = Logger.make((options: Logger.Options<unknown>) => {
+        records.push(Array.isArray(options.message) ? [...options.message] : [options.message])
+      })
       const prepared = yield* LLMClient.prepare(
         LLM.request({
           model,
@@ -645,10 +649,17 @@ describe("Bedrock Converse route", () => {
           ],
           prompt: "hi",
         }),
-      )
+      ).pipe(Effect.provide(Logger.layer([collector])))
 
       const system = (prepared.body as { system: Array<{ cachePoint?: unknown }> }).system
       expect(system.filter((part) => "cachePoint" in part)).toHaveLength(4)
+      expect(records).toEqual([
+        [
+          { event: "llm.cache.breakpoint.truncated" },
+          "cache breakpoints beyond the protocol limit were dropped",
+          { "llm.protocol": "bedrock-converse", "llm.dropped": 3, "llm.limit": 4 },
+        ],
+      ])
     }),
   )
 })

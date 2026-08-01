@@ -3,7 +3,7 @@ export * as StorageResourcePressureContext from "./resource-pressure-context"
 import { Cause, Effect, Layer } from "effect"
 import { ResourcePressureContext } from "@novaclaw/core/resource-pressure-context"
 import { makeGlobalNode } from "@novaclaw/core/effect/app-node"
-import { Log } from "@novaclaw/core/observability/log"
+import { Log } from "@novaclaw/schema/log"
 import { Storage } from "./storage"
 import type { Pressure } from "./pressure"
 

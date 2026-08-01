@@ -6,7 +6,7 @@ import path from "node:path"
 import { Cause, Context, Effect, Layer, Schema } from "effect"
 import { makeGlobalNode } from "./effect/app-node"
 import { Global } from "./global"
-import { Log } from "./observability/log"
+import { Log } from "@novaclaw/schema/log"
 
 const ENVELOPE = "nc1"
 const KEY_FILE = "credential.key"

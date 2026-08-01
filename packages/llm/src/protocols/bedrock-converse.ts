@@ -1,4 +1,5 @@
 import { Effect, Schema } from "effect"
+import { Log } from "@novaclaw/schema/log"
 import { Route } from "../route/client"
 import { Endpoint } from "../route/endpoint"
 import { Protocol } from "../route/protocol"
@@ -398,9 +399,11 @@ const fromRequest = Effect.fn("BedrockConverse.fromRequest")(function* (request:
   const system = request.system.length === 0 ? undefined : lowerSystem(breakpoints, request.system)
   const messages = yield* lowerMessages(request, breakpoints)
   if (breakpoints.dropped > 0) {
-    yield* Effect.logWarning(
-      `Bedrock Converse: dropped ${breakpoints.dropped} cache breakpoint(s); the API allows at most ${BedrockCache.BEDROCK_BREAKPOINT_CAP} per request.`,
-    )
+    yield* Log.event("llm.cache.breakpoint.truncated", {
+      "llm.protocol": ADAPTER,
+      "llm.dropped": breakpoints.dropped,
+      "llm.limit": BedrockCache.BEDROCK_BREAKPOINT_CAP,
+    })
   }
   return {
     modelId: request.model.id,

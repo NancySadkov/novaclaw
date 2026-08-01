@@ -5,7 +5,7 @@ import { Cause, Context, Effect, Layer, Schema } from "effect"
 import { Messenger } from "@novaclaw/schema/messenger"
 import { Database } from "../database/database"
 import { makeGlobalNode } from "../effect/app-node"
-import { Log } from "../observability/log"
+import { Log } from "@novaclaw/schema/log"
 import {
   MessengerAccountTable,
   MessengerBindingTable,

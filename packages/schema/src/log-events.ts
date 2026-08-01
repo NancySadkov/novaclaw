@@ -1,4 +1,6 @@
 /**
+ * Canonical cross-package log-event contract.
+ *
  * **THE closed log-event key set.** One dotted `subsystem.object.action[.outcome]` identifier per
  * event, declared once, here, and nowhere else.
  *
@@ -66,12 +68,11 @@
  * fails if that file does not exist or no longer contains the declared `message`. So this set cannot
  * fill up with aspirational keys for events nobody emits: a key exists because a call site exists.
  *
- * The seed is deliberately SMALL and it is not the finished vocabulary. It covers the seven message
- * strings that are 69% of every line in the real log (§0.3), plus the three sites `todo/logging.md`
- * §0.4 names as already-broken. Item 1b grows it subsystem by subsystem as it converts call sites;
- * the wrapper and registry shipped separately from that migration. `mcp.server.output` became the
- * first converted site only after the shrink-only source ledger was in force; the four `patch.file.*`
- * template-literal sites followed as the first whole-subsystem vocabulary pass.
+ * The registry began as a deliberately small measured seed and grows only through ledger-backed,
+ * subsystem-by-subsystem migrations. `mcp.server.output` became the first converted site only after
+ * the shrink-only source ledger was in force; the four `patch.file.*` template-literal sites followed
+ * as the first whole-subsystem vocabulary pass. Every later pass keeps the same rule: declare only
+ * events a live call site emits, and remove exactly those sites from the source ledger.
  */
 
 /**
@@ -90,6 +91,7 @@ export const SUBSYSTEMS = {
   instance: "Instance lifecycle",
   kb: "Knowledge",
   location: "Workspace locations",
+  llm: "Model protocols",
   messenger: "Messenger",
   mcp: "MCP servers",
   patch: "File changes",
@@ -103,7 +105,7 @@ export const SUBSYSTEMS = {
 export type Subsystem = keyof typeof SUBSYSTEMS
 
 /**
- * The four levels on the wire. `minimumLogLevel()` in `./logging.ts` accepts exactly these, and
+ * The four levels on the wire. Core's `observability/logging.ts` accepts exactly these, and
  * `todo/logging.md` §0.8 settles the count: six recurs across the industry, and six is already too
  * many for a product surface — the renderer's extra `notice` is a UI concern, not a wire severity.
  */
@@ -173,7 +175,8 @@ export type EventDeclaration = {
 }
 
 /**
- * **The line's own columns.** `./logging.ts` emits `timestamp`, `level`, `run`, then the message
+ * **The line's own columns.** Core's `observability/logging.ts` emits `timestamp`, `level`, `run`,
+ * then the message
  * parts, then `cause`, spans and annotations. An attribute reusing one of these names puts the key
  * on the line TWICE, and duplicate keys break the naive `grep`/`cut` mining that is this whole
  * item's requirement.
@@ -309,6 +312,16 @@ export const EVENTS = {
     attributes: { directory: "path", workspaceID: "id" },
     content: "user",
     file: "packages/core/src/location-services.ts",
+  },
+
+  // ── llm ───────────────────────────────────────────────────────────────────────────────────────
+  /** A protocol request exceeded its provider's cache-breakpoint cap; excess markers were dropped. */
+  "llm.cache.breakpoint.truncated": {
+    level: "warn",
+    message: "cache breakpoints beyond the protocol limit were dropped",
+    attributes: { "llm.protocol": "id", "llm.dropped": "count", "llm.limit": "count" },
+    content: "none",
+    file: "packages/llm/src/protocols/anthropic-messages.ts",
   },
 
   // ── messenger ─────────────────────────────────────────────────────────────────────────────────
@@ -808,4 +821,4 @@ export function derivedContent(declaration: EventDeclaration): ContentClass {
  */
 export const mayEgress = (key: EventKey): boolean => EVENTS[key].content === "none"
 
-export * as LogEvents from "./events"
+export * as LogEvents from "./log-events"

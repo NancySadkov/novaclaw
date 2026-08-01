@@ -1,5 +1,5 @@
 import { describe, expect } from "bun:test"
-import { Effect } from "effect"
+import { Effect, Logger } from "effect"
 import { HttpClientRequest } from "effect/unstable/http"
 import { CacheHint, LLM, LLMError, Message, ToolCallPart, Usage } from "../../src"
 import { Auth, LLMClient } from "../../src/route"
@@ -860,6 +860,10 @@ describe("Anthropic Messages route", () => {
   it.effect("drops cache_control breakpoints past the 4-per-request cap", () =>
     Effect.gen(function* () {
       const hint = new CacheHint({ type: "ephemeral" })
+      const records: unknown[][] = []
+      const collector = Logger.make((options: Logger.Options<unknown>) => {
+        records.push(Array.isArray(options.message) ? [...options.message] : [options.message])
+      })
       const prepared = yield* LLMClient.prepare(
         LLM.request({
           model,
@@ -873,13 +877,20 @@ describe("Anthropic Messages route", () => {
           ],
           prompt: "hi",
         }),
-      )
+      ).pipe(Effect.provide(Logger.layer([collector])))
 
       const system = (prepared.body as { system: Array<{ cache_control?: unknown }> }).system
       const marked = system.filter((part) => part.cache_control !== undefined)
       expect(marked).toHaveLength(4)
       expect(system[4]?.cache_control).toBeUndefined()
       expect(system[5]?.cache_control).toBeUndefined()
+      expect(records).toEqual([
+        [
+          { event: "llm.cache.breakpoint.truncated" },
+          "cache breakpoints beyond the protocol limit were dropped",
+          { "llm.protocol": "anthropic-messages", "llm.dropped": 3, "llm.limit": 4 },
+        ],
+      ])
     }),
   )
 

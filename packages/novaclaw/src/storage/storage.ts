@@ -5,7 +5,7 @@ import { FSUtil } from "@novaclaw/core/fs-util"
 import { SettingsConfigStore } from "@novaclaw/core/settings-config-store"
 import { Cause, Effect, Exit, Layer, Option, RcMap, Schema, Context, TxReentrantLock } from "effect"
 import { NonNegativeInt } from "@novaclaw/core/schema"
-import { Log } from "@novaclaw/core/observability/log"
+import { Log } from "@novaclaw/schema/log"
 import { Git } from "@/git"
 import { Pressure } from "./pressure"
 

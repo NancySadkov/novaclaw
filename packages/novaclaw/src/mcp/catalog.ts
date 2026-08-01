@@ -6,7 +6,7 @@ import {
   type Tool as MCPToolDef,
 } from "@modelcontextprotocol/sdk/types.js"
 import { McpExternal } from "@novaclaw/core/tool/mcp-external"
-import { Log } from "@novaclaw/core/observability/log"
+import { Log } from "@novaclaw/schema/log"
 import { Effect } from "effect"
 import { CalloutPolicy } from "@novaclaw/core/callout-policy"
 

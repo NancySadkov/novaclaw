@@ -8,7 +8,7 @@ import { runID } from "./shared"
  * the only honest place to assert what a log LINE looks like.
  *
  * ⚠️ Exported for that reason and no other: `packages/core/test/log-events.test.ts` drives real
- * `Effect.log*` records through it to prove that a keyed event (`observability/log.ts`) lands in
+ * `Effect.log*` records through it to prove that a keyed event (`@novaclaw/schema/log`) lands in
  * THIS line rather than in a channel of its own, and that an un-keyed record is byte-identical to
  * what it was before the key set existed. A test that re-implemented the format would assert
  * against a copy and pass while production drifted.

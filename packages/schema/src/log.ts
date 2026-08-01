@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import { type Attributes, type EventKey, EVENTS } from "./events"
+import { type Attributes, type EventKey, EVENTS } from "./log-events"
 
 /**
  * **The keyed log call — a thin wrapper over `Effect.log*`, and nothing else.**
@@ -7,8 +7,9 @@ import { type Attributes, type EventKey, EVENTS } from "./events"
  * `todo/logging.md` item 1b, pass 1. There is exactly one line of behaviour in this module, and the
  * important thing about it is what it does NOT do: it opens no file, holds no state, starts no
  * daemon and adds no sink. A keyed record goes through the same `Effect.log*` entry point, the same
- * `Logger` layer, the same logfmt formatter (`./logging.ts`) and into the same `novaclaw.log` as the
- * ~230 un-keyed sites do today. §0.2 of that document is explicit that a second writer beside
+ * `Logger` layer, core's same logfmt formatter (`observability/logging.ts`) and into the same
+ * `novaclaw.log` as the 172 un-keyed sites do today. §0.2 of that document is explicit that a
+ * second writer beside
  * `novaclaw.log` is the defect class this project keeps re-finding; this is a column, not a channel.
  *
  * ── what the line looks like ────────────────────────────────────────────────────────────────────

@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect"
 import * as path from "path"
 import { FSUtil } from "@novaclaw/core/fs-util"
-import { Log } from "@novaclaw/core/observability/log"
+import { Log } from "@novaclaw/schema/log"
 import * as Bom from "../util/bom"
 
 export const PatchSchema = Schema.Struct({

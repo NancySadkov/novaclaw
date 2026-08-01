@@ -15,15 +15,15 @@ import {
   RESERVED_ATTRIBUTES,
   subsystemOf,
   SUBSYSTEMS,
-} from "@novaclaw/core/observability/events"
-import { Log } from "@novaclaw/core/observability/log"
+} from "@novaclaw/schema/log-events"
+import { Log } from "@novaclaw/schema/log"
 import { Logging } from "@novaclaw/core/observability/logging"
 
 /**
  * **The mechanical half of `todo/logging.md` 1a.** Ruling 1: an invariant whose violation compiles
  * green ships with a check, or the invariant does not exist.
  *
- * The type in `observability/events.ts` closes exactly one door — an UNDECLARED key does not
+ * The type in `schema/log-events.ts` closes exactly one door — an UNDECLARED key does not
  * compile. Everything else about a key set compiles green forever and therefore lives here:
  *
  *   · a key that is not `subsystem.object.action[.outcome]` is just a string;
@@ -55,7 +55,7 @@ const ROOT = path.resolve(import.meta.dir, "..", "..", "..")
 const declarations = Object.entries(EVENTS) as ReadonlyArray<readonly [EventKey, EventDeclaration]>
 
 /** The declaration source, read as TEXT — the only way to see a duplicate literal key. */
-const SOURCE_PATH = path.join(ROOT, "packages/core/src/observability/events.ts")
+const SOURCE_PATH = path.join(ROOT, "packages/schema/src/log-events.ts")
 const SOURCE = fs.readFileSync(SOURCE_PATH, "utf8")
 
 describe("the sweep reached something", () => {
@@ -410,7 +410,7 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     expect(shadowed).toContain("level=error")
   })
 
-  test("an UN-keyed record is untouched — the 174 remaining call sites are not affected", () => {
+  test("an UN-keyed record is untouched — the 172 remaining call sites are not affected", () => {
     // 1a adds a column; it takes nothing away and rewrites nothing. This is the assertion that says
     // the wrapper is a column rather than a second system.
     const [line] = lines(Effect.logInfo("watcher backend", { directory: "/tmp/x", backend: "parcel" }))

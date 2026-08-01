@@ -2,7 +2,7 @@ export * as DiscordDriver from "./discord"
 
 import { Duration, Effect, Queue, Schema, Stream } from "effect"
 import { Messenger } from "@novaclaw/schema/messenger"
-import { Log } from "../../observability/log"
+import { Log } from "@novaclaw/schema/log"
 import { MessengerFormat } from "../format"
 import type { ChatSnapshot, Connection, ConnectContext, Driver, FileRef, HistoryEntry, InboundEvent, ModerationAct, OutboundFile } from "../driver"
 import { ConnectError, FileError, ModerationError, SendError } from "../driver"

@@ -304,14 +304,6 @@
     "count": 1
   },
   {
-    "name": "packages/llm/src/protocols/anthropic-messages.ts :: Effect.logWarning(`Anthropic Messages: dropped ${breakpoints.dropped} cache breakpoint(s); the API allows at most ${ANTHROPIC_BREAKPOINT_CAP} per request.`)",
-    "count": 1
-  },
-  {
-    "name": "packages/llm/src/protocols/bedrock-converse.ts :: Effect.logWarning(`Bedrock Converse: dropped ${breakpoints.dropped} cache breakpoint(s); the API allows at most ${BedrockCache.BEDROCK_BREAKPOINT_CAP} per request.`)",
-    "count": 1
-  },
-  {
     "name": "packages/novaclaw/src/config/config.ts :: Effect.logDebug(\"fetching remote config\")",
     "count": 2
   },

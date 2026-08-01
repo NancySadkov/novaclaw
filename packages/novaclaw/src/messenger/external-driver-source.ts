@@ -1,7 +1,7 @@
 export * as NovaclawExternalDriverSource from "./external-driver-source"
 
 import { Effect, Layer } from "effect"
-import { Log } from "@novaclaw/core/observability/log"
+import { Log } from "@novaclaw/schema/log"
 import type { Driver } from "@novaclaw/core/messenger/driver"
 import { WhatsAppBaileysDriver } from "@novaclaw/core/messenger/driver/whatsapp-baileys"
 import { ExternalDriverSource } from "@novaclaw/core/messenger/external-driver-source"

@@ -7,7 +7,7 @@ import { withTransientReadRetry } from "@/util/effect-http-client"
 import { Download } from "@novaclaw/core/download"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { Global } from "@novaclaw/core/global"
-import { Log } from "@novaclaw/core/observability/log"
+import { Log } from "@novaclaw/schema/log"
 
 const skillConcurrency = 4
 const fileConcurrency = 8

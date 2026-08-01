@@ -1,4 +1,5 @@
 import { Effect, Schema } from "effect"
+import { Log } from "@novaclaw/schema/log"
 import { Route } from "../route/client"
 import { Auth } from "../route/auth"
 import { Endpoint } from "../route/endpoint"
@@ -532,9 +533,11 @@ const fromRequest = Effect.fn("AnthropicMessages.fromRequest")(function* (reques
         }))
   const messages = yield* lowerMessages(request, breakpoints)
   if (breakpoints.dropped > 0) {
-    yield* Effect.logWarning(
-      `Anthropic Messages: dropped ${breakpoints.dropped} cache breakpoint(s); the API allows at most ${ANTHROPIC_BREAKPOINT_CAP} per request.`,
-    )
+    yield* Log.event("llm.cache.breakpoint.truncated", {
+      "llm.protocol": ADAPTER,
+      "llm.dropped": breakpoints.dropped,
+      "llm.limit": ANTHROPIC_BREAKPOINT_CAP,
+    })
   }
   return {
     model: request.model.id,

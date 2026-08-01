@@ -6,7 +6,7 @@ import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } fr
 import { Download } from "../download"
 import { FSUtil } from "../fs-util"
 import { Global } from "../global"
-import { Log } from "../observability/log"
+import { Log } from "@novaclaw/schema/log"
 import { makeGlobalNode } from "../effect/app-node"
 import { httpClient } from "../effect/app-node-platform"
 import { AbsolutePath } from "../schema"
