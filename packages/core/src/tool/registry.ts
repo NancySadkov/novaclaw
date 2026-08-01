@@ -10,7 +10,15 @@ import { ToolOutputStore } from "../tool-output-store"
 import { Wildcard } from "../util/wildcard"
 import { ApplicationTools } from "./application-tools"
 import { ExternalToolSource } from "./external-tool-source"
-import { definition, permission, settle, validateRegistration, type AnyTool, type RegistrationError } from "./tool"
+import {
+  definition,
+  outputPreview,
+  permission,
+  settle,
+  validateRegistration,
+  type AnyTool,
+  type RegistrationError,
+} from "./tool"
 import { Tools } from "./tools"
 import { makeLocationNode } from "../effect/app-node"
 
@@ -132,7 +140,12 @@ const registryLayer = Layer.effect(
       )
       if ("result" in pending) return pending
       const output = pending.output
-      const bounded = yield* resources.bound({ sessionID: input.sessionID, toolCallID: input.call.id, output })
+      const bounded = yield* resources.bound({
+        sessionID: input.sessionID,
+        toolCallID: input.call.id,
+        output,
+        preview: outputPreview(registration.tool),
+      })
       const result = ToolOutput.toResultValue(bounded.output)
       if (result.type === "error")
         return bounded.outputPaths.length > 0 ? { result, outputPaths: bounded.outputPaths } : { result }

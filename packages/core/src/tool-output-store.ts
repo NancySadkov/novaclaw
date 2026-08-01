@@ -7,6 +7,7 @@ import { FSUtil } from "./fs-util"
 import { Global } from "./global"
 import { makeGlobalNode, makeLocationNode } from "./effect/app-node"
 import { SessionSchema } from "./session/schema"
+import { ToolTruncation } from "./tool/truncation"
 import { Identifier } from "./util/identifier"
 import type { ToolOutput } from "@novaclaw/llm"
 
@@ -20,6 +21,8 @@ export interface BoundInput {
   readonly sessionID: SessionSchema.ID
   readonly toolCallID: string
   readonly output: ToolOutput
+  /** Search results preserve earliest matches; other tools retain balanced head/tail context. */
+  readonly preview?: ToolTruncation.PreviewPolicy
 }
 
 export interface BoundResult {
@@ -46,68 +49,6 @@ export interface Interface {
 }
 
 export class Service extends Context.Service<Service, Interface>()("@novaclaw/v2/ToolOutputStore") {}
-
-const takePrefix = (input: string, maximumBytes: number) => {
-  let bytes = 0
-  let content = ""
-  for (const char of input) {
-    const size = Buffer.byteLength(char, "utf-8")
-    if (bytes + size > maximumBytes) break
-    content += char
-    bytes += size
-  }
-  return content
-}
-
-const takeSuffix = (input: string, maximumBytes: number) => {
-  let bytes = 0
-  const content: string[] = []
-  for (const char of Array.from(input).toReversed()) {
-    const size = Buffer.byteLength(char, "utf-8")
-    if (bytes + size > maximumBytes) break
-    content.unshift(char)
-    bytes += size
-  }
-  return content.join("")
-}
-
-const preview = (text: string, maxLines: number, maxBytes: number) => {
-  const lines = text.split("\n")
-  const headLines = Math.ceil(maxLines / 2)
-  const tailLines = Math.floor(maxLines / 2)
-  const sampled =
-    lines.length <= maxLines
-      ? text
-      : [
-          lines.slice(0, headLines).join("\n"),
-          ...(tailLines > 0 ? [lines.slice(lines.length - tailLines).join("\n")] : []),
-        ].join("\n")
-  if (Buffer.byteLength(sampled, "utf-8") <= maxBytes) {
-    return lines.length <= maxLines
-      ? { head: sampled, tail: "" }
-      : {
-          head: lines.slice(0, headLines).join("\n"),
-          tail: tailLines > 0 ? lines.slice(lines.length - tailLines).join("\n") : "",
-        }
-  }
-  const headBytes = Math.ceil(maxBytes / 2)
-  const tailBytes = Math.floor(maxBytes / 2)
-  return { head: takePrefix(sampled, headBytes), tail: takeSuffix(sampled, tailBytes) }
-}
-
-const boundedPreview = (text: string, marker: string, maxLines: number, maxBytes: number) => {
-  const markerOnly = takePrefix(marker, maxBytes).split("\n").slice(0, maxLines).join("\n")
-  const markerBytes = Buffer.byteLength(marker, "utf-8")
-  if (maxLines <= 4 || maxBytes <= markerBytes + 4) return markerOnly
-  const bounded = preview(text, maxLines - 4, maxBytes - markerBytes - 4)
-  return bounded.tail ? `${bounded.head}\n\n${marker}\n\n${bounded.tail}` : `${bounded.head}\n\n${marker}`
-}
-
-const lineCount = (text: string) => {
-  let count = 1
-  for (const char of text) if (char === "\n") count++
-  return count
-}
 
 export const layer = Layer.effect(
   Service,
@@ -147,7 +88,7 @@ export const layer = Layer.effect(
             })
           : text.map((item) => item.text).join("")
       if (
-        lineCount(contextual) <= outputLimits.maxLines &&
+        ToolTruncation.lineCount(contextual) <= outputLimits.maxLines &&
         Buffer.byteLength(contextual, "utf-8") <= outputLimits.maxBytes
       )
         return {
@@ -156,7 +97,10 @@ export const layer = Layer.effect(
         }
 
       const outputPath = yield* write(contextual)
-      const marker = `... output truncated; full content saved to ${outputPath} ...`
+      const marker =
+        input.preview === "earliest"
+          ? `... later results omitted from this preview (${ToolTruncation.lineCount(contextual)} lines total); full content saved to ${outputPath} ...`
+          : `... output truncated; full content saved to ${outputPath} ...`
 
       return {
         output: {
@@ -164,7 +108,13 @@ export const layer = Layer.effect(
           content: [
             {
               type: "text" as const,
-              text: boundedPreview(contextual, marker, outputLimits.maxLines, outputLimits.maxBytes),
+              text: ToolTruncation.boundedPreview({
+                text: contextual,
+                marker,
+                maxLines: outputLimits.maxLines,
+                maxBytes: outputLimits.maxBytes,
+                policy: input.preview ?? "balanced",
+              }),
             },
             ...media,
           ],

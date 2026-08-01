@@ -53,8 +53,7 @@ const think = (text: string) => ({ type: "reasoning" as const, text })
 /** The NORMAL thinking-model shape: chain-of-thought, then the call it narrates. */
 const call = (id: string, name: string, input: unknown) =>
   Message.assistant([think("let me look"), { type: "tool-call" as const, id, name, input }])
-const result = (id: string, name: string, body: string) =>
-  Message.tool({ id, name, result: body, resultType: "text" })
+const result = (id: string, name: string, body: string) => Message.tool({ id, name, result: body, resultType: "text" })
 
 const textOf = (message: Message): string =>
   message.content
@@ -92,9 +91,7 @@ const expectWireLegal = (messages: ReadonlyArray<Message>) => {
         : [],
     ),
   )
-  const resultIds = new Set(
-    messages.flatMap((m) => m.content.flatMap((p) => (p.type === "tool-result" ? [p.id] : []))),
-  )
+  const resultIds = new Set(messages.flatMap((m) => m.content.flatMap((p) => (p.type === "tool-result" ? [p.id] : []))))
   for (const id of callIds) expect(resultIds.has(id)).toBe(true)
   for (const id of resultIds) {
     expect(id).not.toBe("")
@@ -297,7 +294,10 @@ describe("preservesWireShape (INV-W)", () => {
     expect(preservesWireShape(messages, messages)).toBe(true)
     // Annotated: `content[0]` is the union of every part shape, and a bare spread of it does not
     // admit `result`/`id`. The fixture only ever builds a tool-result here.
-    const part = messages[2]!.content[0]! as Extract<(typeof messages)[number]["content"][number], { type: "tool-result" }>
+    const part = messages[2]!.content[0]! as Extract<
+      (typeof messages)[number]["content"][number],
+      { type: "tool-result" }
+    >
     const rewritten = [
       ...messages.slice(0, 2),
       Message.make({
@@ -310,13 +310,21 @@ describe("preservesWireShape (INV-W)", () => {
 
   test("NEGATIVE CONTROL: it fails for every mutation the wire passes can see", () => {
     // (1) a DELETION — the shape of the original, unlanded design.
-    expect(preservesWireShape(messages, messages.filter((_, i) => i !== 2))).toBe(false)
+    expect(
+      preservesWireShape(
+        messages,
+        messages.filter((_, i) => i !== 2),
+      ),
+    ).toBe(false)
     // (2) a changed role.
     expect(preservesWireShape(messages, [messages[0]!, messages[1]!, user("x")])).toBe(false)
     // (3) a changed tool-result id.
     // Annotated: `content[0]` is the union of every part shape, and a bare spread of it does not
     // admit `result`/`id`. The fixture only ever builds a tool-result here.
-    const part = messages[2]!.content[0]! as Extract<(typeof messages)[number]["content"][number], { type: "tool-result" }>
+    const part = messages[2]!.content[0]! as Extract<
+      (typeof messages)[number]["content"][number],
+      { type: "tool-result" }
+    >
     expect(
       preservesWireShape(messages, [
         ...messages.slice(0, 2),
@@ -445,17 +453,42 @@ describe("pack + pass 1.5", () => {
     }
   })
 
-  test("under budget nothing is collapsed — the packer behaves exactly as before", () => {
+  test("exact repeats are elided before they enter even a fitting provider context", () => {
     const messages = transcript()
+    const packed = pack(messages, 100_000)
+    expect(packed.elided).toBe(2)
+    expect(packed.changed).toBe(true)
+    expect(noticeCount(packed.messages)).toBe(2)
+    expect(packed.messages.filter((message) => textOf(message) === body)).toHaveLength(1)
+    expect(packed.findings).toContainEqual({
+      kind: "duplicate-tool-output",
+      tool: "webfetch",
+      target: "https://example/dup",
+      occurrences: 3,
+      repeatedTokens: expect.any(Number),
+      elided: true,
+    })
+  })
+
+  test("under budget a merely near-duplicate result stays byte-for-byte intact", () => {
+    const older = prose(22)
+    const newer = edit(older, 1)
+    const messages = [
+      user("compare this file"),
+      call("r1", "read", { path: "src/index.ts" }),
+      result("r1", "read", older),
+      call("r2", "read", { path: "src/index.ts" }),
+      result("r2", "read", newer),
+    ]
     const packed = pack(messages, 100_000)
     expect(packed.elided).toBe(0)
     expect(packed.changed).toBe(false)
     expect(packed.messages).toEqual(messages)
     expect(packed.findings).toContainEqual({
       kind: "duplicate-tool-output",
-      tool: "webfetch",
-      target: "https://example/dup",
-      occurrences: 3,
+      tool: "read",
+      target: "src/index.ts",
+      occurrences: 2,
       repeatedTokens: expect.any(Number),
       elided: false,
     })
@@ -660,8 +693,14 @@ describe("INV-R: a retainer that recency could outlive is refused", () => {
   // pair rather than argue about whether a provider can produce this ordering.
   const outOfOrder = [
     user("go"),
-    Message.assistant([think("first"), { type: "tool-call" as const, id: "c1", name: "webfetch", input: { url: "https://e/p" } }]),
-    Message.assistant([think("second"), { type: "tool-call" as const, id: "c2", name: "webfetch", input: { url: "https://e/p" } }]),
+    Message.assistant([
+      think("first"),
+      { type: "tool-call" as const, id: "c1", name: "webfetch", input: { url: "https://e/p" } },
+    ]),
+    Message.assistant([
+      think("second"),
+      { type: "tool-call" as const, id: "c2", name: "webfetch", input: { url: "https://e/p" } },
+    ]),
     result("c2", "webfetch", body),
     result("c1", "webfetch", body),
     assistantText("done"),

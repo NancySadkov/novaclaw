@@ -10,9 +10,9 @@
 // assembly AFTER the compaction check. History stays intact in the DB — a bigger window
 // instantly restores evicted turns; no summarization happens here.
 //
-// Over budget, what the window ALREADY SAYS goes before what is merely old: pass 1.5 collapses a
-// repeated tool result to a one-line notice (`context-redundancy.ts`, A2.1 ①) so a page fetched
-// three times cannot cost the agent its original task.
+// What the window ALREADY SAYS goes before what is merely old: pass 1.5 eagerly collapses an exact
+// repeated tool result to a one-line notice, and also reclaims safe near-duplicates on overflow
+// (`context-redundancy.ts`, A2.1 ①), so a page fetched three times cannot cost the original task.
 //
 // The window packed to is the server's HONORED window (`model.limit.context` from config /
 // catalog), NOT the model's theoretical max — qwen does 256k only if vLLM `--max-model-len` /
@@ -431,6 +431,8 @@ interface RedundancyMatch {
   readonly exchange: ToolExchange
   readonly notice: Message
   readonly saved: number
+  /** Byte-equivalent model-facing text, not merely a high lexical-overlap verdict. */
+  readonly exact: boolean
 }
 
 const analyzeRedundancy = (
@@ -480,18 +482,28 @@ const analyzeRedundancy = (
       content: [{ ...part, result: { type: "text" as const, value: elisionNotice(part.name) } }],
     })
     const saved = (estimates[redundancy.index] ?? estimateMessage(message)) - estimateMessage(notice)
-    return saved > 0 ? [{ redundancy, exchange, notice, saved }] : []
+    return saved > 0
+      ? [
+          {
+            redundancy,
+            exchange,
+            notice,
+            saved,
+            exact: items[redundancy.index]?.text === items[redundancy.retainedIndex]?.text,
+          },
+        ]
+      : []
   })
   return { matches, exchanges }
 }
 
 const duplicateFindings = (
   matches: ReadonlyArray<RedundancyMatch>,
-  elided: boolean,
+  elidedIndexes: ReadonlySet<number>,
 ): SessionMessage.ContextFinding[] => {
   const groups = new Map<
     string,
-    { name: string; target?: string; indexes: Set<number>; repeatedTokens: number; first: number }
+    { name: string; target?: string; indexes: Set<number>; repeatedTokens: number; first: number; elided: boolean }
   >()
   for (const match of matches) {
     const current = groups.get(match.exchange.key) ?? {
@@ -500,10 +512,12 @@ const duplicateFindings = (
       indexes: new Set<number>(),
       repeatedTokens: 0,
       first: match.redundancy.index,
+      elided: false,
     }
     current.indexes.add(match.redundancy.index)
     current.indexes.add(match.redundancy.retainedIndex)
     current.repeatedTokens += match.saved
+    current.elided ||= elidedIndexes.has(match.redundancy.index)
     groups.set(match.exchange.key, current)
   }
   return [...groups.values()]
@@ -514,7 +528,7 @@ const duplicateFindings = (
       ...(group.target === undefined ? {} : { target: group.target }),
       occurrences: group.indexes.size,
       repeatedTokens: group.repeatedTokens,
-      elided,
+      elided: group.elided,
     }))
 }
 
@@ -549,10 +563,10 @@ const contextFindings = (
   estimates: ReadonlyArray<number>,
   exchanges: ReadonlyArray<ToolExchange | undefined>,
   matches: ReadonlyArray<RedundancyMatch>,
-  elided: boolean,
+  elidedIndexes: ReadonlySet<number>,
 ): SessionMessage.ContextFinding[] => {
   const dominant = dominantFinding(messages, estimates, exchanges)
-  return [...duplicateFindings(matches, elided), ...(dominant === undefined ? [] : [dominant])]
+  return [...duplicateFindings(matches, elidedIndexes), ...(dominant === undefined ? [] : [dominant])]
 }
 
 const applyRedundancy = (messages: Message[], matches: ReadonlyArray<RedundancyMatch>): ElisionResult => {
@@ -708,8 +722,9 @@ export interface PackResult {
 
 /**
  * Pack whole messages newest-first until the budget, return chronological; the newest message is
- * always kept even if alone over budget. Over budget, duplicate tool output is collapsed first
- * (pass 1.5) so recency only ever decides between things the window does NOT already say. Then
+ * always kept even if alone over budget. Exact repeated output is always collapsed; on overflow,
+ * safe near-duplicates are collapsed too (pass 1.5), so recency only decides between things the
+ * window does NOT already say. Then
  * repair the kept set: orphan results dropped, newest assistant+results group recovered whole if
  * eviction emptied the window, and the FIRST real user message re-prepended when packing would
  * evict the sole user message — "the original task, the agent's anchor against drift" —
@@ -725,6 +740,7 @@ export const pack = (
   let estimates = repaired.map(estimateMessage)
   let total = estimates.reduce((sum, tokens) => sum + tokens, 0)
   let elided = 0
+  let elidedIndexes = new Set<number>()
   const analysisEstimates = estimates
   const analysis = analyzeRedundancy(repaired, analysisEstimates)
   let budgetFindings: SessionMessage.ContextFinding[] = []
@@ -735,13 +751,19 @@ export const pack = (
           ([category, used]) => used > options.historyCaps![category as HistoryCategory],
         )
 
-  // Pass 1.5 — only when the window actually overflows: collapsing rewrites the middle of the
-  // prompt, which costs a prefix-cache hit, and there is nothing to buy while everything fits.
-  if (total > budgetTokens || categoryOverflow) {
-    const reclaimed = applyRedundancy(repaired, analysis.matches)
+  // Pass 1.5 — exact repeats never enter provider context twice. This keeps the durable transcript
+  // complete while giving the model the same saving as a read cache, without a cache reference that
+  // can become orphaned after compaction or recency eviction. Near-duplicates remain overflow-only:
+  // their bounded lexical difference is an acceptable eviction trade, not a reason to churn a
+  // fitting prompt (or its prefix cache).
+  const overflow = total > budgetTokens || categoryOverflow
+  const applicable = overflow ? analysis.matches : analysis.matches.filter((match) => match.exact)
+  if (applicable.length > 0) {
+    const reclaimed = applyRedundancy(repaired, applicable)
     if (reclaimed.messages !== repaired) {
       working = reclaimed.messages
       elided = reclaimed.elisions.length
+      elidedIndexes = new Set(reclaimed.elisions.map((item) => item.index))
       estimates = working.map(estimateMessage)
       total = estimates.reduce((sum, tokens) => sum + tokens, 0)
     }
@@ -767,7 +789,7 @@ export const pack = (
       estimatedTokens: total,
       elided,
       findings: [
-        ...contextFindings(repaired, analysisEstimates, analysis.exchanges, analysis.matches, elided > 0),
+        ...contextFindings(repaired, analysisEstimates, analysis.exchanges, analysis.matches, elidedIndexes),
         ...budgetFindings,
       ],
     }
@@ -811,7 +833,7 @@ export const pack = (
     estimatedTokens: estimateMessages(kept),
     elided,
     findings: [
-      ...contextFindings(repaired, analysisEstimates, analysis.exchanges, analysis.matches, elided > 0),
+      ...contextFindings(repaired, analysisEstimates, analysis.exchanges, analysis.matches, elidedIndexes),
       ...budgetFindings,
     ],
   }

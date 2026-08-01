@@ -8,6 +8,7 @@ import { SessionV2 } from "@novaclaw/core/session"
 import { SessionMessage } from "@novaclaw/core/session/message"
 import { ToolOutputStore } from "@novaclaw/core/tool-output-store"
 import { ToolRegistry } from "@novaclaw/core/tool/registry"
+import type { ToolTruncation } from "@novaclaw/core/tool/truncation"
 import { executeTool, settleTool, toolDefinitions } from "./lib/tool"
 import { Cause, Deferred, Effect, Exit, Fiber, Layer, Option, Schema, SchemaGetter, SchemaIssue, Scope } from "effect"
 import { testEffect } from "./lib/effect"
@@ -53,9 +54,10 @@ const call = (name: string, id = `call-${name}`): ToolRegistry.ExecuteInput => (
  * `Tool.validateRegistration`), so `make("edit")` is only legal for a key that is NOT `edit`; a tool
  * meant to answer to its own name passes nothing and rides the `Tool.permission` fallback.
  */
-const make = (permission?: string) => {
+const make = (permission?: string, outputPreview?: ToolTruncation.PreviewPolicy) => {
   const tool = Tool.make({
     description: "Echo text",
+    outputPreview,
     input: Schema.Struct({ text: Schema.String }),
     output: Schema.Struct({ text: Schema.String }),
     execute: ({ text }) => Effect.succeed({ text }),
@@ -283,6 +285,21 @@ describe("ToolRegistry", () => {
         outputPaths: ["/managed/generic"],
       })
       expect(bounds).toHaveLength(1)
+    }),
+  )
+
+  it.effect("carries a tool's preview policy to the sole settlement bounding boundary", () =>
+    Effect.gen(function* () {
+      bounds.length = 0
+      const service = yield* ToolRegistry.Service
+      yield* service.register({ search: make(undefined, "earliest") })
+      yield* settleTool(service, {
+        sessionID,
+        ...identity,
+        call: { type: "tool-call", id: "call-search-preview", name: "search", input: { text: "matches" } },
+      })
+      expect(bounds).toHaveLength(1)
+      expect(bounds[0]?.preview).toBe("earliest")
     }),
   )
 

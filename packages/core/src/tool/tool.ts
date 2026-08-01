@@ -12,6 +12,7 @@ import { Effect, JsonSchema, Schema } from "effect"
 import type { AgentV2 } from "../agent"
 import type { SessionMessage } from "../session/message"
 import type { SessionSchema } from "../session/schema"
+import type { ToolTruncation } from "./truncation"
 
 export interface Context {
   readonly sessionID: SessionSchema.ID
@@ -56,6 +57,7 @@ type Config<
   readonly description: string
   readonly input: Input
   readonly output: Output
+  readonly outputPreview?: ToolTruncation.PreviewPolicy
   readonly structured?: Structured
   readonly toStructuredOutput?: (input: {
     readonly input: Schema.Schema.Type<Input>
@@ -73,6 +75,7 @@ type Config<
 
 type Runtime = {
   readonly permission?: string
+  readonly outputPreview?: ToolTruncation.PreviewPolicy
   readonly definition: (name: string) => ToolDefinition
   readonly settle: (call: ToolCall, context: Context) => Effect.Effect<ToolOutput, ToolFailure>
 }
@@ -87,6 +90,7 @@ export function make<
   const tool = Object.freeze({}) as Definition<Input, Structured>
   const definitions = new Map<string, ToolDefinition>()
   runtimes.set(tool, {
+    outputPreview: config.outputPreview,
     definition: (name) => {
       const cached = definitions.get(name)
       if (cached) return cached
@@ -316,6 +320,7 @@ export const withPermission = <Input extends SchemaType<any>, Output extends Sch
  */
 export const permission = (tool: AnyTool, name: string) => runtimeOf(tool).permission ?? name
 export const definition = (name: string, tool: AnyTool) => runtimeOf(tool).definition(name)
+export const outputPreview = (tool: AnyTool) => runtimeOf(tool).outputPreview ?? "balanced"
 export const settle = (tool: AnyTool, call: ToolCall, context: Context) => {
   // 1O/A4: a truncated-args sentinel (the decoder's stand-in for a call whose streamed JSON the
   // server truncated) short-circuits BEFORE the tool's own schema decode, so EVERY tool inherits the

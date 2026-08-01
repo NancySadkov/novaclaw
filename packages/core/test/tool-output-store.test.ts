@@ -225,6 +225,46 @@ describe("ToolOutputStore", () => {
     ),
   )
 
+  it.live("keeps earliest search results plus an omission summary", () =>
+    withStore(
+      ({ store, fs }) =>
+        Effect.gen(function* () {
+          const text = Array.from({ length: 10 }, (_, index) => `match-${index + 1}`).join("\n")
+          const result = yield* store.bound({
+            sessionID,
+            toolCallID: "call-search",
+            preview: "earliest",
+            output: { structured: {}, content: [{ type: "text", text }] },
+          })
+          if (result.output.content[0]?.type !== "text") throw new Error("expected text preview")
+          const preview = result.output.content[0].text
+          expect(preview).toContain("match-1")
+          expect(preview).toContain("match-5")
+          expect(preview).not.toContain("match-10")
+          expect(preview).toContain("later results omitted from this preview (10 lines total)")
+          expect(yield* fs.readFileString(result.outputPaths[0])).toBe(text)
+        }),
+      new Config.Info({ tool_output: new ConfigToolOutput.Info({ max_lines: 7, max_bytes: 1_000 }) }),
+    ),
+  )
+
+  it.live("NEGATIVE CONTROL: balanced previews still retain the output tail", () =>
+    withStore(
+      ({ store }) =>
+        Effect.gen(function* () {
+          const text = Array.from({ length: 10 }, (_, index) => `line-${index + 1}`).join("\n")
+          const result = yield* store.bound({
+            sessionID,
+            toolCallID: "call-balanced",
+            output: { structured: {}, content: [{ type: "text", text }] },
+          })
+          if (result.output.content[0]?.type !== "text") throw new Error("expected text preview")
+          expect(result.output.content[0].text).toContain("line-10")
+        }),
+      new Config.Info({ tool_output: new ConfigToolOutput.Info({ max_lines: 7, max_bytes: 1_000 }) }),
+    ),
+  )
+
   it.live("cleans expired managed files and preserves unrelated files", () =>
     withStore(({ root, store, fs }) =>
       Effect.gen(function* () {
