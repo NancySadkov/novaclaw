@@ -38,6 +38,7 @@ import { Worktree } from "@/worktree"
 import { RuntimeFlags } from "@/effect/runtime-flags"
 import { MoveSession } from "@novaclaw/core/control-plane/move-session"
 import { Credential } from "@novaclaw/core/credential"
+import { CredentialCipher } from "@novaclaw/core/credential-cipher"
 import { Database } from "@novaclaw/core/database/database"
 import { SessionScheduler } from "@novaclaw/core/session/scheduler"
 import { CalendarScheduler } from "@novaclaw/core/schedule/scheduler"
@@ -229,6 +230,10 @@ const app = LayerNode.group([
   SkillConfigStore.node,
   ReferenceConfigStore.node,
   Database.node,
+  // Credential.layer is composed into the instance-global messenger stack below instead of
+  // through Credential.node. Export its cipher from this shared graph so that stack uses the
+  // same per-instance key everywhere and remains a requirement-free route layer.
+  CredentialCipher.node,
   // The graph-memory engine — a per-process (per-instance) singleton like the DB. Provided at the
   // server-global scope so the HTTP handlers AND the location-scoped runner/kb-tool share ONE engine
   // (a second build would clobber the same on-disk snapshot). Opens only when NOVACLAW_KB_MEMORY is set.

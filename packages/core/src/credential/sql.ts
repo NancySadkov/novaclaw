@@ -6,7 +6,9 @@ export const CredentialTable = sqliteTable("credential", {
   id: text().$type<Credential.ID>().primaryKey(),
   integration_id: text().$type<Credential.Info["integrationID"]>(),
   label: text().notNull(),
-  value: text({ mode: "json" }).$type<Credential.Value>().notNull(),
+  // `Credential` owns the versioned AES-GCM envelope. Keep this column raw text so a SQL/debug
+  // reader sees ciphertext, never a Drizzle-decoded secret object.
+  value: text().notNull(),
   connector_id: text(),
   method_id: text(),
   active: integer({ mode: "boolean" }),
