@@ -588,10 +588,6 @@
     "count": 1
   },
   {
-    "name": "packages/novaclaw/src/snapshot/index.ts :: Effect.logWarning(`Snapshot.diffFull: ${ChangesetBudget.summary(rows.length, computed, bytes)}`)",
-    "count": 1
-  },
-  {
     "name": "packages/novaclaw/src/worktree/index.ts :: Effect.logError(\"worktree bootstrap failed\")",
     "count": 2
   },

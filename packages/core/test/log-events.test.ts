@@ -410,7 +410,27 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     expect(shadowed).toContain("level=error")
   })
 
-  test("an UN-keyed record is untouched — the 167 remaining call sites are not affected", () => {
+  test("snapshot truncation keeps every budget dimension as a numeric field", () => {
+    const [line] = lines(
+      Log.event("snapshot.diff.compute.truncated", {
+        "snapshot.files.total": 750,
+        "snapshot.files.listed": 500,
+        "snapshot.files.omitted": 250,
+        "snapshot.files.computed": 300,
+        "snapshot.diff.bytes": 4_194_304,
+      }),
+    )
+    expect(line).toContain("level=WARN")
+    expect(line).toContain("event=snapshot.diff.compute.truncated")
+    expect(line).toContain('message="Snapshot.diffFull: change set too large; display is partial"')
+    expect(line).toContain("snapshot.files.total=750")
+    expect(line).toContain("snapshot.files.listed=500")
+    expect(line).toContain("snapshot.files.omitted=250")
+    expect(line).toContain("snapshot.files.computed=300")
+    expect(line).toContain("snapshot.diff.bytes=4194304")
+  })
+
+  test("an UN-keyed record is untouched — the 166 remaining call sites are not affected", () => {
     // 1a adds a column; it takes nothing away and rewrites nothing. This is the assertion that says
     // the wrapper is a column rather than a second system.
     const [line] = lines(Effect.logInfo("watcher backend", { directory: "/tmp/x", backend: "parcel" }))

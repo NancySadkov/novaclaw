@@ -99,6 +99,7 @@ export const SUBSYSTEMS = {
   resource: "Host resources",
   server: "HTTP server",
   skill: "Skills",
+  snapshot: "Snapshots",
   storage: "Storage migrations",
   tool: "Tools",
 } as const
@@ -704,6 +705,22 @@ export const EVENTS = {
     attributes: { "skill.scope": "id", "skill.directory": "path", "skill.error": "fault" },
     content: "user",
     file: "packages/novaclaw/src/skill/index.ts",
+  },
+
+  // ── snapshot ─────────────────────────────────────────────────────────────────────────────────
+  /** A large change set was bounded for display; revert still uses the complete snapshot. */
+  "snapshot.diff.compute.truncated": {
+    level: "warn",
+    message: "Snapshot.diffFull: change set too large; display is partial",
+    attributes: {
+      "snapshot.files.total": "count",
+      "snapshot.files.listed": "count",
+      "snapshot.files.omitted": "count",
+      "snapshot.files.computed": "count",
+      "snapshot.diff.bytes": "count",
+    },
+    content: "none",
+    file: "packages/novaclaw/src/snapshot/index.ts",
   },
 
   // ── storage ───────────────────────────────────────────────────────────────────────────────────

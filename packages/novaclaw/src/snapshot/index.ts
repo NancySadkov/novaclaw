@@ -11,6 +11,7 @@ import { Hash } from "@novaclaw/core/util/hash"
 import { Config } from "@/config/config"
 import { Global } from "@novaclaw/core/global"
 import { Info } from "@novaclaw/schema/file-diff"
+import { Log } from "@novaclaw/schema/log"
 
 export const Patch = Schema.Struct({
   hash: Schema.String,
@@ -787,9 +788,13 @@ export const layer: Layer.Layer<Service, never, FSUtil.Service | AppProcess.Serv
                   deletions: omittedRows.reduce((sum, row) => sum + row.deletions, 0),
                   status: "modified",
                 })
-                yield* Effect.logWarning(
-                  `Snapshot.diffFull: ${ChangesetBudget.summary(rows.length, computed, bytes)}`,
-                )
+                yield* Log.event("snapshot.diff.compute.truncated", {
+                  "snapshot.files.total": rows.length,
+                  "snapshot.files.listed": listed.length,
+                  "snapshot.files.omitted": omittedRows.length,
+                  "snapshot.files.computed": computed,
+                  "snapshot.diff.bytes": bytes,
+                })
               }
 
               return result

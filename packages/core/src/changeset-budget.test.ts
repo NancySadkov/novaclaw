@@ -25,16 +25,6 @@ describe("omittedPatch", () => {
     expect(ChangesetBudget.omittedPatch("bytes", { maxBytes: 2 * 1024 * 1024 })).toContain("2 MB"))
 })
 
-describe("summary", () => {
-  test("undefined when everything was diffed", () => expect(ChangesetBudget.summary(10, 10, 1000)).toBeUndefined())
-  test("reports total, computed, and omitted counts", () => {
-    const s = ChangesetBudget.summary(5000, 300, 4 * 1024 * 1024)
-    expect(s).toContain("5000 files changed")
-    expect(s).toContain("first 300")
-    expect(s).toContain("4700 more")
-  })
-})
-
 describe("list cap (1G)", () => {
   test("truncatedListLabel names the omitted count", () =>
     expect(ChangesetBudget.truncatedListLabel(4500)).toBe("(+4500 more changed files)"))
