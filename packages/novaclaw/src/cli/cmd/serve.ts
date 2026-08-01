@@ -1,5 +1,4 @@
 import { Effect } from "effect"
-import path from "node:path"
 import { effectCmd, fail } from "../effect-cmd"
 import { withNetworkOptions, resolveNetworkOptions } from "../network"
 import { Flag } from "@novaclaw/core/flag/flag"
@@ -7,6 +6,7 @@ import { Flag } from "@novaclaw/core/flag/flag"
 // imports `node:` builtins only, which keeps it off the CLI's startup cost.
 import { killTreeSync } from "@novaclaw/core/util/kill-tree"
 import { CommandSpec } from "../command-spec"
+import { ServeChildCommand } from "../serve-child-command"
 
 // Dependability P4 (uix-dependability-plan): `novaclaw serve` is SUPERVISED BY DEFAULT — the
 // managed-by-default stance. The parent process is a tiny restart loop; the actual server runs as a
@@ -32,15 +32,6 @@ const treeKill = (proc: ReturnType<typeof Bun.spawn> | undefined) => {
   killTreeSync(proc.pid)
 }
 
-/** The child respawn recipe. `process.execArgv` carries the runtime flags (measured: bun preserves
- *  `--conditions=browser` there), argv[1..] the script + command line. A compiled single-binary can
- *  repeat the exe path as argv[1] — drop it rather than pass it as an argument. */
-const childCommand = (): string[] => {
-  const rest = process.argv.slice(1)
-  if (rest[0] && path.resolve(rest[0]) === path.resolve(process.execPath)) rest.shift()
-  return [process.execPath, ...process.execArgv, ...rest, "--no-supervise"]
-}
-
 const superviseLoop = async (): Promise<"clean" | "giveup"> => {
   let current: ReturnType<typeof Bun.spawn> | undefined
   let stopping = false
@@ -60,7 +51,7 @@ const superviseLoop = async (): Promise<"clean" | "giveup"> => {
   })
   process.on("exit", shutdown) // best-effort — a hard parent death still orphans (OS territory)
 
-  const cmd = childCommand()
+  const cmd = ServeChildCommand.current()
   for (;;) {
     const startedAt = Date.now()
     current = Bun.spawn(cmd, {

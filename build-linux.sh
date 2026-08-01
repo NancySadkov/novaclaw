@@ -457,10 +457,9 @@ smoke_binary() {
 
   SMOKE_HOME="$(mktemp -d "${TMPDIR:-/tmp}/novaclaw-smoke-XXXXXX")"
 
-  progress "Smoke: booting '${bin} serve --no-supervise' on 127.0.0.1:${port} (home ${SMOKE_HOME})"
-  # Own process group so the whole tree (serve + any MCP children) dies together. --no-supervise is
-  # REQUIRED from the compiled binary (blocker #2): the supervisor re-execs with baked runtime flags
-  # whose trailing `--` swallows the subcommand, and supervision gives up after five help prints.
+  progress "Smoke: booting supervised '${bin} serve' on 127.0.0.1:${port} (home ${SMOKE_HOME})"
+  # Own process group so the supervisor and its server/MCP descendants die together. This deliberately
+  # exercises the managed-by-default path; a bare-child smoke would miss a broken restart command.
   set -m
   # Clear inherited server auth for the child only (env -u), so the temp-home smoke is fully hermetic.
   # A fresh --home neutralizes the STORED password, but @novaclaw/server reads NOVACLAW_SERVER_PASSWORD
@@ -469,7 +468,7 @@ smoke_binary() {
   # smoke failure (exit 40) on a perfectly good binary.
   env -u NOVACLAW_SERVER_PASSWORD -u NOVACLAW_SERVER_USERNAME \
     NOVACLAW_OFFLINE=1 NOVACLAW_HOME="$SMOKE_HOME" \
-    "$bin" serve --no-supervise --port "$port" --home "$SMOKE_HOME" >> "$LOG" 2>&1 &
+    "$bin" serve --port "$port" --home "$SMOKE_HOME" >> "$LOG" 2>&1 &
   local spid=$!
   set +m
   SMOKE_PGID="$spid"

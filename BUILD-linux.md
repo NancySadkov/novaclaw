@@ -91,11 +91,8 @@ cd packages/novaclaw
 bun run --conditions=browser src/index.ts serve --port 4096
 ```
 
-**Run it from inside `packages/novaclaw`.** Launching it from the repo root as
-`bun run --cwd packages/novaclaw … serve` starts a supervisor whose restart child re-uses that
-relative `--cwd` from a directory where it no longer resolves, and you get a crash loop
-(`ENOENT: Could not change directory to "packages/novaclaw"`). Same on Windows; it is not a Linux
-quirk. Adding `--no-supervise` also avoids it.
+The supervised server inherits the resolved working directory, so launching this equivalently with
+`bun run --cwd packages/novaclaw … serve` from the repository root is supported too.
 
 Check it:
 
@@ -155,14 +152,12 @@ the UI embedded). Copy it anywhere. To run it:
 point a browser at the machine:
 
 ```bash
-NOVACLAW_SERVER_PASSWORD='choose-a-token' ./novaclaw serve --no-supervise \
+NOVACLAW_SERVER_PASSWORD='choose-a-token' ./novaclaw serve \
   --hostname 0.0.0.0 --port 4096 --home ~/novaclaw-instance
 ```
 
-**`--no-supervise` is required for `serve` from the compiled binary.** The supervisor re-executes
-the binary with its baked-in runtime flags, whose trailing `--` swallows the subcommand; the child
-then prints the CLI help and exits, five times, and supervision gives up. `web` does not supervise,
-so it is unaffected.
+`serve` is supervised by default: if the server crashes, the small parent process restarts it with
+bounded backoff. `--no-supervise` is an explicit diagnostic escape hatch, not a normal launch requirement.
 
 Without `NOVACLAW_SERVER_PASSWORD` the server is unauthenticated and it says so at startup — fine
 on `127.0.0.1`, not fine on `0.0.0.0`.
@@ -287,8 +282,6 @@ on memory; `--force` overrides that.
 |---|---|
 | `crypto.hash is not a function` during a Vite build | Node older than 20.19. §1. |
 | `error: preload not found "@opentui/solid/preload"` | An older checkout: `packages/novaclaw/bunfig.toml` preloaded a package that is no longer a dependency. It survives on machines with stale `node_modules` and breaks every fresh Linux install — including the desktop build. Delete the `preload` line. |
-| `[supervise] crash loop …` with `ENOENT: Could not change directory to "packages/novaclaw"` | The server was launched from the repo root with a relative `--cwd`. Run it from `packages/novaclaw`, or pass `--no-supervise`. §3. |
-| `[supervise] crash loop …` after the CLI help text | The compiled binary's `serve` under supervision. Use `--no-supervise`, or `web`. §4. |
 | `dlopen(): error loading libfuse.so.2` when running an AppImage | Install `libfuse2t64`, or run it as `./novaclaw-desktop-linux-<arch>.AppImage --appimage-extract-and-run`. |
 | `It is required to set Linux .deb package maintainer` | Pass `-c.linux.maintainer="Name <email>"`. §5. |
 | `Need executable 'rpmbuild' to convert dir to rpm` | `sudo apt-get install rpm`. |
