@@ -25,6 +25,7 @@ import { EOL } from "os"
 import { Filesystem } from "@/util/filesystem"
 import { createNovaclawClient, type NovaclawClient } from "@novaclaw/sdk/v2"
 import type { ToolPart } from "./run/types"
+import { resolveRunRoot } from "./run/root"
 import { FormatError, FormatUnknownError } from "../error"
 
 type ModelInput = string
@@ -250,6 +251,11 @@ export const RunCommand = effectCmd({
     const agentSvc = yield* Agent.Service
     const flags = yield* RuntimeFlags.Service
     const localInstance = yield* InstanceRef
+    const local = args.attach
+      ? undefined
+      : yield* Effect.promise(() => import("@/server/routes/instance/httpapi/server")).pipe(
+          Effect.flatMap(({ HttpApiApp }) => HttpApiApp.buildWebHandler),
+        )
     yield* Effect.promise(async () => {
       const thinking = args.thinking ?? false
 
@@ -269,7 +275,7 @@ export const RunCommand = effectCmd({
         .map((arg) => (arg.includes(" ") ? `"${arg.replace(/"/g, '\\"')}"` : arg))
         .join(" ")
 
-      const root = Filesystem.resolve(process.env.PWD ?? process.cwd())
+      const root = resolveRunRoot()
       const directory = (() => {
         if (!args.dir) return args.attach ? undefined : root
         if (args.attach) return args.dir
@@ -884,13 +890,13 @@ export const RunCommand = effectCmd({
         const sdk = attachSDK(directory)
         await execute(sdk)
       } else {
+        if (!local) throw new Error("Local run started without its in-process HTTP handler")
         const fetchFn = (async (input: RequestInfo | URL, init?: RequestInit) => {
-          const { Server } = await import("@/server/server")
           const request = new Request(input, init)
           const headers = new Headers(request.headers)
           const auth = ServerAuth.header()
           if (auth) headers.set("Authorization", auth)
-          return Server.Default().app.fetch(new Request(request, { headers }))
+          return local.handler(new Request(request, { headers }))
         }) as typeof globalThis.fetch
         const sdk = createNovaclawClient({
           baseUrl: "http://novaclaw.internal",
@@ -907,7 +913,8 @@ export const RunCommand = effectCmd({
       // then exit explicitly — best-effort background housekeeping dies with the process,
       // which is exactly the deal a one-shot CLI offers.
       await new Promise<void>((resolve) => process.stdout.write("", () => resolve()))
-      process.exit(process.exitCode ?? 0)
     })
+    if (local) yield* local.dispose
+    process.exit(process.exitCode ?? 0)
   }),
 })

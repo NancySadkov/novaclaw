@@ -1,6 +1,13 @@
-import { Config as EffectConfig, Context, Effect, Layer } from "effect"
+import { Config as EffectConfig, Context, Effect, Exit, Layer, Scope } from "effect"
 import { HttpApiBuilder, OpenApi } from "effect/unstable/httpapi"
-import { HttpMiddleware, HttpRouter, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/unstable/http"
+import {
+  HttpEffect,
+  HttpMiddleware,
+  HttpRouter,
+  HttpServer,
+  HttpServerRequest,
+  HttpServerResponse,
+} from "effect/unstable/http"
 import * as Socket from "effect/unstable/socket/Socket"
 import { FSUtil } from "@novaclaw/core/fs-util"
 import { AgentConfigStore } from "@novaclaw/core/agent-config-store"
@@ -399,6 +406,38 @@ export function createRoutes(
 }
 
 export const routes = createRoutes()
+
+/**
+ * Build and use the in-process Fetch handler inside the caller's Effect runtime.
+ *
+ * Effect's stock `HttpRouter.toWebHandler` intentionally defers its layer build until the first
+ * request, then starts that build with a bare `Effect.runPromise`. For the headless `run` command
+ * that loses AppRuntime's logger context, so startup records are printed by Effect's default logger
+ * onto stdout — corrupting both plain and JSON CLI output. Keeping construction in this Effect also
+ * gives the route graph a real scope instead of a module-global handler that can never be released.
+ */
+export const buildWebHandler = Effect.gen(function* () {
+  const scope = Scope.makeUnsafe()
+  // HttpRouter's Request markers describe the eventual request Effect; they are not services
+  // needed while building the layer. `HttpRouter.toWebHandler` performs the same narrowing
+  // internally before its lazy build.
+  const handlerLayer = Layer.provideMerge(routes, HttpRouter.layer) as Layer.Layer<
+    HttpRouter.HttpRouter,
+    EffectConfig.ConfigError
+  >
+  const services = yield* Layer.buildWithMemoMap(handlerLayer, memoMap, scope).pipe(
+    Effect.onError(() => Scope.close(scope, Exit.void).pipe(Effect.ignore)),
+    Effect.orDie,
+  )
+  const router = Context.get(services, HttpRouter.HttpRouter)
+  const handler = HttpEffect.toWebHandlerWith<HttpRouter.HttpRouter, HttpServerRequest.HttpServerRequest | Scope.Scope>(
+    services,
+  )(router.asHttpEffect(), disposeMiddleware)
+  return {
+    handler: (request: Request) => handler(request),
+    dispose: Scope.close(scope, Exit.void),
+  }
+})
 
 export const webHandler = lazy(() =>
   HttpRouter.toWebHandler(routes, {
