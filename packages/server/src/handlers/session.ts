@@ -21,6 +21,7 @@ import {
   UnknownError,
 } from "@novaclaw/protocol/errors"
 import { AbsolutePath } from "@novaclaw/core/schema"
+import { Log } from "@novaclaw/schema/log"
 
 const DefaultSessionsLimit = 50
 const DefaultSessionHistoryLimit = 50
@@ -603,7 +604,12 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
               ),
               Effect.catchTag("Snapshot.Error", (error) => {
                 const ref = `err_${crypto.randomUUID().slice(0, 8)}`
-                return Effect.logError("failed to stage session revert", { cause: error }).pipe(
+                return Log.event("session.revert.stage.failed", {
+                  "session.id": ctx.params.sessionID,
+                  "session.ref": ref,
+                  "snapshot.operation": error.operation,
+                  "snapshot.error": error.message,
+                }).pipe(
                   Effect.andThen(
                     Effect.fail(
                       new UnknownError({
@@ -632,7 +638,12 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
             ),
             Effect.catchTag("Snapshot.Error", (error) => {
               const ref = `err_${crypto.randomUUID().slice(0, 8)}`
-              return Effect.logError("failed to clear session revert", { cause: error }).pipe(
+              return Log.event("session.revert.clear.failed", {
+                "session.id": ctx.params.sessionID,
+                "session.ref": ref,
+                "snapshot.operation": error.operation,
+                "snapshot.error": error.message,
+              }).pipe(
                 Effect.andThen(
                   Effect.fail(
                     new UnknownError({
@@ -678,8 +689,11 @@ export const SessionHandler = HttpApiBuilder.group(Api, "server.session", (handl
               ),
               Effect.catchTag("Session.MessageDecodeError", (error) => {
                 const ref = `err_${crypto.randomUUID().slice(0, 8)}`
-                return Effect.logError("failed to decode session message").pipe(
-                  Effect.annotateLogs({ ref, sessionID: error.sessionID, messageID: error.messageID }),
+                return Log.event("session.message.decode.failed", {
+                  "session.id": error.sessionID,
+                  "session.message": error.messageID,
+                  "session.ref": ref,
+                }).pipe(
                   Effect.andThen(
                     Effect.fail(
                       new UnknownError({ message: NamedError.internalMessage(ref), ref }),

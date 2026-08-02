@@ -477,6 +477,25 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     expect(mayEgress("session.provider.attempt.retry")).toBe(false)
   })
 
+  test("session revert failures retain their public reference without a reserved cause column", () => {
+    const [line] = lines(
+      Log.event("session.revert.stage.failed", {
+        "session.id": "ses_1",
+        "session.ref": "err_1234",
+        "snapshot.operation": "preview",
+        "snapshot.error": "private snapshot path failed",
+      }),
+    )
+    expect(line).toContain("event=session.revert.stage.failed")
+    expect(line).toContain('message="failed to stage session revert"')
+    expect(line).toContain("session.ref=err_1234")
+    expect(line).toContain("snapshot.operation=preview")
+    expect(line).toContain('snapshot.error="private snapshot path failed"')
+    expect(columns(line ?? "").filter((name) => name === "cause")).toEqual([])
+    expect(mayEgress("session.revert.stage.failed")).toBe(false)
+    expect(mayEgress("session.message.decode.failed")).toBe(true)
+  })
+
   test("workspace transport and HTTP rejection share their English without sharing an identity", () => {
     const [transport] = lines(
       Log.event("workspace.target.request.failed", {
@@ -587,7 +606,7 @@ describe("a keyed record lands in the SAME line as every other log record", () =
     expect(mayEgress("pty.session.exit")).toBe(true)
   })
 
-  test("an UN-keyed record is untouched — the 45 remaining call sites are not affected", () => {
+  test("an UN-keyed record is untouched — the 42 remaining call sites are not affected", () => {
     // 1a adds a column; it takes nothing away and rewrites nothing. This is the assertion that says
     // the wrapper is a column rather than a second system.
     const [line] = lines(Effect.logInfo("watcher backend", { directory: "/tmp/x", backend: "parcel" }))

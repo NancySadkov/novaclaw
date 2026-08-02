@@ -1067,6 +1067,14 @@ export const EVENTS = {
     content: "user",
     file: "packages/core/src/session/runner/llm.ts",
   },
+  /** A stored session message could not be decoded for an API response. */
+  "session.message.decode.failed": {
+    level: "error",
+    message: "failed to decode session message",
+    attributes: { "session.id": "id", "session.message": "id", "session.ref": "id" },
+    content: "none",
+    file: "packages/server/src/handlers/session.ts",
+  },
   "session.provider.attempt.retry": {
     level: "warn",
     message: "provider attempt failed — retrying",
@@ -1100,6 +1108,32 @@ export const EVENTS = {
     attributes: { "session.id": "id", "session.quality.label": "text" },
     content: "user",
     file: "packages/core/src/session/runner/llm.ts",
+  },
+  /** Clearing a staged session revert failed at the snapshot boundary. */
+  "session.revert.clear.failed": {
+    level: "error",
+    message: "failed to clear session revert",
+    attributes: {
+      "session.id": "id",
+      "session.ref": "id",
+      "snapshot.operation": "id",
+      "snapshot.error": "fault",
+    },
+    content: "user",
+    file: "packages/server/src/handlers/session.ts",
+  },
+  /** Staging a session revert failed at the snapshot boundary. */
+  "session.revert.stage.failed": {
+    level: "error",
+    message: "failed to stage session revert",
+    attributes: {
+      "session.id": "id",
+      "session.ref": "id",
+      "snapshot.operation": "id",
+      "snapshot.error": "fault",
+    },
+    content: "user",
+    file: "packages/server/src/handlers/session.ts",
   },
   "session.steer.stream.interrupted": {
     level: "info",

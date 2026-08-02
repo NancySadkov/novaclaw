@@ -160,18 +160,6 @@
     "count": 1
   },
   {
-    "name": "packages/server/src/handlers/session.ts :: Effect.logError(\"failed to clear session revert\")",
-    "count": 1
-  },
-  {
-    "name": "packages/server/src/handlers/session.ts :: Effect.logError(\"failed to decode session message\")",
-    "count": 1
-  },
-  {
-    "name": "packages/server/src/handlers/session.ts :: Effect.logError(\"failed to stage session revert\")",
-    "count": 1
-  },
-  {
     "name": "packages/server/src/middleware/schema-error.ts :: Effect.logWarning(\"schema rejection\")",
     "count": 1
   }
